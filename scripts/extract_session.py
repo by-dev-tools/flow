@@ -10,6 +10,8 @@ auditor subagent. Output must be plain-text labeled sections matching the
 contract documented in the build handoff.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -44,11 +46,11 @@ PLAN_HINTS = (
 )
 NUMBERED_STEP_RE = re.compile(r"(?m)^\s*\d+\.\s+\S")
 
-COMPLETION_HINTS = (
-    "fixed", "done", "ready", "implemented", "all set",
-    "working now", "should now work", "now works",
-    "completed", "shipped",
+COMPLETION_WORD_RE = re.compile(
+    r"(?<![.\w])(fixed|done|implemented|completed|shipped|ready|complete)(?![.\w])",
+    re.IGNORECASE,
 )
+COMPLETION_PHRASES = ("all set", "working now", "should now work", "now works")
 
 
 # ---------------------------------------------------------------- session io
@@ -59,7 +61,10 @@ def slugify_cwd(cwd: str) -> str:
     return cwd.replace("/", "-").lstrip("-")
 
 
-def find_session_file() -> Path | None:
+def find_session_file(explicit: str | None = None) -> Path | None:
+    if explicit:
+        p = Path(explicit).expanduser().resolve()
+        return p if p.is_file() else None
     cwd = os.getcwd()
     slug = slugify_cwd(cwd)
     projects_dir = Path.home() / ".claude" / "projects" / f"-{slug}"
@@ -285,8 +290,10 @@ def looks_like_plan(text: str) -> bool:
 def looks_like_completion(text: str) -> bool:
     if not text:
         return False
+    if COMPLETION_WORD_RE.search(text):
+        return True
     low = text.lower()
-    return any(h in low for h in COMPLETION_HINTS)
+    return any(p in low for p in COMPLETION_PHRASES)
 
 
 def followed_by_change_tools(records: list[dict], turn_record_idx: int) -> bool:
@@ -346,9 +353,11 @@ def render_completion_context(completion_text: str, user_request: str,
 # ---------------------------------------------------------------- main
 
 
-def run(mode: str) -> str:
-    session_path = find_session_file()
+def run(mode: str, session_file: str | None = None) -> str:
+    session_path = find_session_file(session_file)
     if session_path is None:
+        if session_file:
+            return emit_cannot_audit(f"Session file not found at {session_file}.")
         return emit_cannot_audit("Session file not found for this working directory.")
 
     records = load_session(session_path)
@@ -361,11 +370,17 @@ def run(mode: str) -> str:
 
     last_assistant_idx = None
     for i in range(len(turns) - 1, -1, -1):
-        if turns[i].role == "assistant":
-            last_assistant_idx = i
-            break
+        if turns[i].role != "assistant":
+            continue
+        text = (turns[i].content or "").strip()
+        if not text:
+            continue
+        if text.startswith("[tool_use ") and text.endswith("]") and "\n" not in text:
+            continue
+        last_assistant_idx = i
+        break
     if last_assistant_idx is None:
-        return emit_cannot_audit("No assistant turn to audit.")
+        return emit_cannot_audit("No assistant turn with text content to audit.")
 
     last_assistant_text = turns[last_assistant_idx].content
 
@@ -434,8 +449,13 @@ def run(mode: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=("plan", "completion"), required=True)
+    ap.add_argument(
+        "--session-file",
+        default=None,
+        help="explicit session jsonl path (overrides CWD-based discovery, used by eval harness)",
+    )
     args = ap.parse_args()
-    sys.stdout.write(run(args.mode))
+    sys.stdout.write(run(args.mode, args.session_file))
     return 0
 
 

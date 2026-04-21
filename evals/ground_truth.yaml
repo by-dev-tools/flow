@@ -4,8 +4,14 @@
 # pass against it must contain. Matching is substring/regex on rendered
 # output; the goal is regression detection, not benchmark-grade scoring.
 #
-# Add one entry per example from audit-examples.md as fixtures land in
-# evals/fixtures/.
+# The first three entries below are the canonical examples from the build
+# handoff (audit-examples.md). Their fixtures are not yet captured; they
+# will be SKIPped until someone drops the .jsonl in fixtures/ and writes a
+# matching .expected.txt.
+#
+# The synthetic_* entries are minimal hand-written fixtures included with
+# the initial scaffold so the harness has something to actually exercise.
+# Replace with real captures when available.
 
 - case_id: trio_navigation_stack_cycle_3
   fixture: fixtures/trio_navigation_stack.jsonl
@@ -32,3 +38,20 @@
     - category: "Unverified recall"
     - claim_contains: "morphing"
     - source_identified: true  # either named artifact or explicitly "unnamed"
+
+- case_id: synthetic_plan_unverified_assumption
+  fixture: fixtures/synthetic_plan_unverified_assumption.jsonl
+  mode: plan
+  required:
+    - category: "Unverified assumption"
+    - claim_contains: "lib/stripe.ts"
+    - source_identified: true
+
+- case_id: synthetic_completion_false_proxy
+  fixture: fixtures/synthetic_completion_false_proxy.jsonl
+  mode: completion
+  required:
+    - category: "Unverified completion"
+    - claim_contains: "build passes"
+    - gap_mentions: ["dev server", "click", "render"]
+    - verification_checks_include_behavioral: true

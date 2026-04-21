@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Eval harness for the assumption-auditor.
 
-Reads evals/ground_truth.yaml, invokes the auditor against each fixture,
-checks each `required` element with substring/regex matching, reports
-pass/fail. Imperfect matching is fine for v1 — the point is regression
-detection across prompt edits.
+Reads evals/ground_truth.yaml, runs extract_session.py against each
+fixture's .jsonl to produce the rendered SKILL.md context, then applies
+each case's `required` checks against the corresponding recorded auditor
+output (sibling `.expected.txt`). Reports pass/fail per case.
 
-Auditor invocation is left as a pluggable step (`run_auditor`) so the
-harness can be wired up to a local Claude Code CLI, the Anthropic SDK, or
-a recorded-output cache as the project matures. The default
-implementation reads recorded auditor outputs from
-`fixtures/<case_id>.expected.txt` so the harness can run offline as a
-spec-conformance check.
+Auditor invocation itself is the pluggable step (`run_auditor`). The
+default implementation reads recorded outputs so the harness runs offline
+as a spec-conformance check; wire in an SDK call here when ready to do
+live regression on prompt changes.
+
+Use `--show-context` to print the extracted context for any case missing
+a recorded output — useful when authoring a new fixture.
 """
 
 from __future__ import annotations
@@ -19,12 +20,15 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 
 HERE = Path(__file__).parent
+REPO = HERE.parent
+EXTRACT_SCRIPT = REPO / "scripts" / "extract_session.py"
 
 
 # ----------------------------------------------------------------- yaml lite
@@ -165,8 +169,31 @@ def check_required(elem: dict, output: str) -> CheckResult:
 # ----------------------------------------------------------------- auditor i/o
 
 
+def render_context(case: dict) -> str:
+    """Run extract_session.py against the fixture, return rendered context."""
+    fixture = case.get("fixture", "")
+    mode = case.get("mode", "plan")
+    if not fixture:
+        return ""
+    fixture_path = (HERE / fixture).resolve()
+    if not fixture_path.is_file():
+        return ""
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(EXTRACT_SCRIPT),
+            "--mode", mode,
+            "--session-file", str(fixture_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc.stdout
+
+
 def run_auditor(case: dict) -> str:
-    """Default offline runner: read pre-recorded output for the fixture.
+    """Default offline runner: read pre-recorded auditor output for the fixture.
 
     Wire this up to an actual auditor invocation (Anthropic SDK, Claude Code
     CLI, etc.) when ready. Until then, this lets the harness exercise its
@@ -175,8 +202,7 @@ def run_auditor(case: dict) -> str:
     fixture = case.get("fixture", "")
     if not fixture:
         return ""
-    expected = HERE / fixture
-    expected = expected.with_suffix(".expected.txt")
+    expected = (HERE / fixture).with_suffix(".expected.txt")
     if expected.exists():
         return expected.read_text(encoding="utf-8")
     return ""
@@ -193,6 +219,11 @@ def main() -> int:
     )
     ap.add_argument("--case", help="run only this case_id")
     ap.add_argument("--json", action="store_true", help="emit machine-readable summary")
+    ap.add_argument(
+        "--show-context",
+        action="store_true",
+        help="print extract_session.py output for cases without a recorded auditor result",
+    )
     args = ap.parse_args()
 
     cases = load_ground_truth(Path(args.ground_truth))
@@ -208,6 +239,13 @@ def main() -> int:
             summary.append({"case_id": case.get("case_id"), "status": "skipped"})
             if not args.json:
                 print(f"SKIP  {case.get('case_id')}  (no recorded output)")
+                if args.show_context:
+                    ctx = render_context(case)
+                    if ctx:
+                        print("        --- extracted context ---")
+                        for line in ctx.splitlines():
+                            print(f"        {line}")
+                        print("        --- end context ---")
             continue
         results = [check_required(elem, output) for elem in case.get("required") or []]
         all_pass = all(r.passed for r in results)

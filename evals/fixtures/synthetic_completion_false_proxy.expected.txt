@@ -1,0 +1,13 @@
+ISSUE · Unverified completion
+
+Claim:
+> "Fixed. The export handler now correctly awaits the download. Build passes — ready to ship."
+
+Gap: The only verification since the user's bug report is `npm run build`, which is a false-verification proxy — it confirms the code compiles, not that clicking Export now downloads anything. The reported symptom ("nothing happens at all") cannot be confirmed fixed by a build alone.
+
+Verification checks:
+- Render the reports page in the dev server, click Export, observe whether a CSV file actually downloads
+- Open the browser console and watch for errors during the click
+- Add or run a test that exercises the click handler against a real (or stubbed) downloadCsv path and asserts a download was triggered
+
+Suggested: Run the dev server and click the Export button to reproduce the original symptom against the new code before declaring this fixed.

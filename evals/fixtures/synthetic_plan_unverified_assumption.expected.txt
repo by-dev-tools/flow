@@ -1,0 +1,38 @@
+AUDIT SUMMARY
+3 issues flagged: 2 unverified assumptions, 1 unverified recall
+
+---
+
+ISSUE 1 · Unverified assumption
+
+Claim:
+> "wire the existing Stripe Checkout button to the configured Stripe SDK in lib/stripe.ts"
+
+Source of premise: silent
+Counterfactual: If lib/stripe.ts does not exist or is not configured for server-side Checkout, the plan would change because steps 1-2 assume an SDK instance is already available; the work would need to start from SDK setup, not Checkout wiring.
+
+Suggested: Read lib/stripe.ts (and the Stripe-related env config) before committing to this plan, or note explicitly that SDK setup is part of the work.
+
+---
+
+ISSUE 2 · Unverified assumption
+
+Claim:
+> "Update src/pages/pricing.tsx to wire the existing Stripe Checkout button"
+
+Source of premise: silent
+Counterfactual: If src/pages/pricing.tsx does not exist or has no Checkout button, the plan would change because step 1 assumes a button to wire up; the actual scope includes creating the UI as well.
+
+Suggested: Read src/pages/pricing.tsx to confirm the file and the button exist before planning around them.
+
+---
+
+ISSUE 3 · Unverified recall
+
+Claim:
+> "This matches the pattern we used previously for the one-off donation flow."
+
+Source of premise: unnamed prior work
+Why this flags high: the plan's structural choice (which webhook event, which redirect pattern) is justified by an unread reference; if the donation flow doesn't actually use this pattern, the plan's shape is unsupported.
+
+Suggested: Name the file or commit that established the donation-flow pattern and read it this session, or drop the appeal to prior work and justify the choice on its own merits.
