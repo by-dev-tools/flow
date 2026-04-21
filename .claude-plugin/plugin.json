@@ -1,0 +1,6 @@
+{
+  "name": "assumption-auditor",
+  "version": "0.1.0",
+  "description": "Audits plans and completion claims for unverified assumptions, diagnoses, and claims.",
+  "author": "byamron"
+}

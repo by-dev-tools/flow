@@ -1,0 +1,34 @@
+# Ground truth for the assumption-auditor eval harness.
+#
+# Each entry pairs a captured session fixture with the elements an auditor
+# pass against it must contain. Matching is substring/regex on rendered
+# output; the goal is regression detection, not benchmark-grade scoring.
+#
+# Add one entry per example from audit-examples.md as fixtures land in
+# evals/fixtures/.
+
+- case_id: trio_navigation_stack_cycle_3
+  fixture: fixtures/trio_navigation_stack.jsonl
+  mode: completion
+  required:
+    - category: "Unverified diagnosis"
+    - claim_contains: "safeAreaPadding"
+    - gap_mentions: ["simulator", "screenshot", "visual"]
+    - falsifier_present: true
+
+- case_id: portfolio_blank_screen
+  fixture: fixtures/portfolio_blank_screen.jsonl
+  mode: completion
+  required:
+    - category: "Unverified completion"
+    - claim_contains: "Ready to commit"
+    - gap_mentions: ["dev server", "render", "console"]
+    - verification_checks_include_behavioral: true
+
+- case_id: trio_morphing_recall
+  fixture: fixtures/trio_morphing_recall.jsonl
+  mode: plan
+  required:
+    - category: "Unverified recall"
+    - claim_contains: "morphing"
+    - source_identified: true  # either named artifact or explicitly "unnamed"

@@ -1,0 +1,9 @@
+{
+  "plugins": [
+    {
+      "name": "assumption-auditor",
+      "source": "./",
+      "description": "Surfaces unverified assumptions, diagnoses, and completion claims in Claude Code output."
+    }
+  ]
+}
