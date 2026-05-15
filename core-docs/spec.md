@@ -37,6 +37,9 @@ The auditor itself is prompt-driven. No custom code runs in the subagent context
 | Auditor system prompt (`auditor.md`) | 132-line prompt defining categories, falsifiers, false-verification proxies, output schema | shipped (v0.1.0) |
 | Offline eval harness (`evals/run_evals.py`) | YAML-driven regression tests against pre-recorded expected outputs | shipped (v0.1.0) |
 | `DISAGREE.md` feedback log | Append-only log of user-disputed audit outputs; feeds prompt-tuning | shipped (empty) |
+| `/critique-plan` slash command | Dispatches preprocessor + plan-critic for scope / spec / coherence review of a proposed plan | shipped (v0.2.0) |
+| Plan-critic system prompt (`plan-critic.md`) | Three categories (scope drift, spec violation, internal incoherence) with two-citation discipline and severity tiers | shipped (v0.2.0) |
+| Reference-doc loading (`--reference-paths` / `--reference-glob`) | Preprocessor injects source-of-truth `.md` files into context so plan-critic can quote rules deterministically | shipped (v0.2.0) |
 | Live auditor integration in evals | Replace `.expected.txt` stub with real auditor invocation | planned |
 | Ground-truth fixtures for real cases | Three canonical cases (trio_navigation_stack_cycle_3, portfolio_blank_screen, trio_morphing_recall) still SKIP'd pending fixture capture | planned |
 | Structured output schema | Move auditor output from free text to a parseable format so eval checks don't rely on substring match | planned |

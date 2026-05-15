@@ -1,0 +1,11 @@
+ISSUE · BLOCKER · Spec violation
+
+Reference rule:
+> "Never bundle UI changes with refactors in the same plan. They obscure review and make rollback expensive." (core-docs/feedback.md, FB-0007)
+
+Plan step:
+> "Add a LoadingSkeleton component (src/components/LoadingSkeleton.tsx) and render it during the loading state on both pages so the UI doesn't flash blank"
+
+Conflict: the plan bundles a new visible UI component into a data-layer refactor; the feedback rule explicitly requires visual changes to be a separate request and review cycle.
+
+Suggested: Remove step 3 from this plan. If the loading flash is a problem worth solving, surface it as a separate request after the useQuery migration lands.

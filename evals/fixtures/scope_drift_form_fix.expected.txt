@@ -1,0 +1,44 @@
+CRITIQUE SUMMARY
+3 findings: 3 BLOCKER
+
+---
+
+ISSUE 1 · BLOCKER · Scope drift
+
+User request:
+> "the contact form submit button isn't working — clicks do nothing. fix it"
+
+Plan element:
+> "Redesign the ContactForm layout to be more mobile-friendly — increase touch targets and stack fields vertically below 640px"
+
+Conflict: the user asked for a behavioral bug fix; mobile layout redesign is a separate change with its own design considerations and was not requested.
+
+Suggested: Remove step 3 from this plan. If mobile layout is a known problem, surface it as a separate request so the user can decide whether to scope it in.
+
+---
+
+ISSUE 2 · BLOCKER · Scope drift
+
+User request:
+> "the contact form submit button isn't working — clicks do nothing. fix it"
+
+Plan element:
+> "Add a honeypot field to reduce spam submissions"
+
+Conflict: the user did not mention spam handling; honeypot addition is unrelated to the broken submit handler.
+
+Suggested: Remove step 4 from this plan. If spam is a problem worth solving, raise it as its own request.
+
+---
+
+ISSUE 3 · BLOCKER · Scope drift
+
+User request:
+> "the contact form submit button isn't working — clicks do nothing. fix it"
+
+Plan element:
+> "Migrate the form to React Hook Form so validation is centralized"
+
+Conflict: the user asked for a one-line behavioral fix, not a library migration; introducing React Hook Form is a structural change that the request does not authorize.
+
+Suggested: Remove step 5 from this plan. Library migrations need their own approval; do not bundle them with bug fixes.

@@ -25,6 +25,16 @@ from bounding_logic import Turn, find_bounding_message
 
 TOOL_CALL_CAP = 50
 
+# Reference-doc support (plan-critic). Opt-in via --reference-paths /
+# --reference-glob; existing audit-plan / audit-completion flows are unaffected.
+REFERENCE_DOC_CHAR_CAP = 12000
+DEFAULT_REFERENCE_SKIP_NAMES = {
+    # decision log and work trackers, not sources of truth for new plans
+    "history.md",
+    "plan.md",
+    "roadmap.md",
+}
+
 ARTIFACT_EXTENSIONS = (
     "md", "py", "ts", "tsx", "js", "jsx", "swift", "go", "rs",
     "json", "yaml", "yml", "toml", "css", "scss", "html",
@@ -274,6 +284,79 @@ def render_artifacts(paths: list[str], tool_calls: list[dict]) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------- references
+
+
+def gather_reference_docs(
+    paths: list[str],
+    globs: list[str],
+    skip_names: set[str],
+) -> list[tuple[str, str]]:
+    """Return ordered (display_path, contents) tuples for reference docs.
+
+    Resolution is relative to CWD. Missing files are silently skipped (same
+    grace as session loading). Files whose basename is in skip_names are
+    excluded. Each doc is truncated to REFERENCE_DOC_CHAR_CAP with a marker.
+    Duplicate paths (same resolved location) are de-duplicated, preserving the
+    first occurrence.
+    """
+    cwd = Path.cwd()
+    candidates: list[Path] = []
+    for p in paths:
+        candidates.append((cwd / p) if not Path(p).is_absolute() else Path(p))
+    for g in globs:
+        candidates.extend(sorted(cwd.glob(g)))
+
+    seen: set[Path] = set()
+    docs: list[tuple[str, str]] = []
+    for raw in candidates:
+        try:
+            resolved = raw.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if resolved.name in skip_names:
+            continue
+        if not resolved.is_file():
+            continue
+        try:
+            text = resolved.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        try:
+            display = str(resolved.relative_to(cwd))
+        except ValueError:
+            display = str(resolved)
+        if len(text) > REFERENCE_DOC_CHAR_CAP:
+            original = len(text)
+            text = (
+                text[:REFERENCE_DOC_CHAR_CAP]
+                + f"\n\n... (truncated; original {original} chars)"
+            )
+        docs.append((display, text))
+    return docs
+
+
+def render_reference_section(docs: list[tuple[str, str]]) -> str:
+    if not docs:
+        return ""
+    parts = [
+        "## Reference documents",
+        "",
+        "Sources of truth for plan critique. Quote rules from here with the "
+        "source path when flagging spec violations.",
+        "",
+    ]
+    for display, text in docs:
+        parts.append(f"### {display}")
+        parts.append("")
+        parts.append(text.rstrip())
+        parts.append("")
+    return "\n".join(parts) + "\n"
+
+
 # ---------------------------------------------------------------- mode detect
 
 
@@ -353,7 +436,12 @@ def render_completion_context(completion_text: str, user_request: str,
 # ---------------------------------------------------------------- main
 
 
-def run(mode: str, session_file: str | None = None) -> str:
+def run(
+    mode: str,
+    session_file: str | None = None,
+    reference_paths: list[str] | None = None,
+    reference_globs: list[str] | None = None,
+) -> str:
     session_path = find_session_file(session_file)
     if session_path is None:
         if session_file:
@@ -438,12 +526,21 @@ def run(mode: str, session_file: str | None = None) -> str:
 
     tool_calls = extract_tool_calls(records, bounding_record_idx)
 
+    ref_docs: list[tuple[str, str]] = []
+    if reference_paths or reference_globs:
+        ref_docs = gather_reference_docs(
+            reference_paths or [],
+            reference_globs or [],
+            DEFAULT_REFERENCE_SKIP_NAMES,
+        )
+    ref_section = render_reference_section(ref_docs)
+
+    artifacts = find_referenced_artifacts(last_assistant_text)
     if mode == "plan":
-        artifacts = find_referenced_artifacts(last_assistant_text)
-        return render_plan_context(last_assistant_text, user_request, tool_calls, artifacts)
+        body = render_plan_context(last_assistant_text, user_request, tool_calls, artifacts)
     else:
-        artifacts = find_referenced_artifacts(last_assistant_text)
-        return render_completion_context(last_assistant_text, user_request, tool_calls, artifacts)
+        body = render_completion_context(last_assistant_text, user_request, tool_calls, artifacts)
+    return ref_section + body
 
 
 def main() -> int:
@@ -454,8 +551,20 @@ def main() -> int:
         default=None,
         help="explicit session jsonl path (overrides CWD-based discovery, used by eval harness)",
     )
+    ap.add_argument(
+        "--reference-paths",
+        default="",
+        help="comma-separated reference doc paths to include in plan-critic context",
+    )
+    ap.add_argument(
+        "--reference-glob",
+        action="append",
+        default=[],
+        help="glob pattern for reference docs (can be repeated, e.g. core-docs/*.md)",
+    )
     args = ap.parse_args()
-    sys.stdout.write(run(args.mode, args.session_file))
+    ref_paths = [p.strip() for p in args.reference_paths.split(",") if p.strip()]
+    sys.stdout.write(run(args.mode, args.session_file, ref_paths, args.reference_glob))
     return 0
 
 

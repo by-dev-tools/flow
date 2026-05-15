@@ -55,3 +55,38 @@
     - claim_contains: "build passes"
     - gap_mentions: ["dev server", "click", "render"]
     - verification_checks_include_behavioral: true
+
+# plan-critic cases. Reviewed by agents/plan-critic.md, not agents/auditor.md.
+# The harness will need a `reviewer:` dispatch when live invocation lands;
+# until then these are .expected.txt references like the rest.
+
+- case_id: scope_drift_form_fix
+  fixture: fixtures/scope_drift_form_fix.jsonl
+  mode: plan
+  reviewer: plan-critic
+  required:
+    - category: "Scope drift"
+    - severity: "BLOCKER"
+    - finding_count: 3
+    - claim_contains: "Redesign the ContactForm"
+
+- case_id: spec_violation_bundled_ui
+  fixture: fixtures/spec_violation_bundled_ui.jsonl
+  mode: plan
+  reviewer: plan-critic
+  required:
+    - category: "Spec violation"
+    - severity: "BLOCKER"
+    - finding_count: 1
+    - reference_rule_contains: "Never bundle UI changes with refactors"
+    - claim_contains: "LoadingSkeleton"
+
+- case_id: internal_incoherence_jwt_migration
+  fixture: fixtures/internal_incoherence_jwt_migration.jsonl
+  mode: plan
+  reviewer: plan-critic
+  required:
+    - category: "Internal incoherence"
+    - severity: "BLOCKER"
+    - finding_count: 1
+    - claim_contains: "session.ts"

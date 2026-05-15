@@ -1,6 +1,17 @@
 {
   "name": "assumption-auditor",
-  "version": "0.1.0",
-  "description": "Audits plans and completion claims for unverified assumptions, diagnoses, and claims.",
-  "author": "byamron"
+  "version": "0.2.0",
+  "description": "Audits Claude Code sessions for unverified claims and critiques plans for scope drift, spec violation, and internal incoherence.",
+  "author": {
+    "name": "byamron"
+  },
+  "homepage": "https://github.com/byamron/llm-auditor",
+  "repository": "https://github.com/byamron/llm-auditor",
+  "keywords": [
+    "audit",
+    "review",
+    "critique",
+    "plans",
+    "verification"
+  ]
 }

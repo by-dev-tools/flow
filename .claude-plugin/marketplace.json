@@ -1,9 +1,33 @@
 {
+  "name": "llm-auditor",
+  "owner": {
+    "name": "byamron"
+  },
+  "metadata": {
+    "description": "Skeptical reviewers for Claude Code — audits sessions for unverified claims and critiques plans against intent.",
+    "version": "0.2.0"
+  },
   "plugins": [
     {
       "name": "assumption-auditor",
       "source": "./",
-      "description": "Surfaces unverified assumptions, diagnoses, and completion claims in Claude Code output."
+      "description": "Two passive reviewers. The auditor flags unverified diagnoses, completions, assumptions, and recalls in session output. The plan-critic critiques proposed plans for scope drift, spec violation, and internal incoherence against the user's request and reference docs.",
+      "version": "0.2.0",
+      "author": {
+        "name": "byamron"
+      },
+      "homepage": "https://github.com/byamron/llm-auditor",
+      "repository": "https://github.com/byamron/llm-auditor",
+      "category": "review",
+      "keywords": [
+        "audit",
+        "review",
+        "critique",
+        "plans",
+        "verification",
+        "assumptions",
+        "evidence"
+      ]
     }
   ]
 }
