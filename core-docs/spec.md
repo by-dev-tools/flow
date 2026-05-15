@@ -40,6 +40,8 @@ The auditor itself is prompt-driven. No custom code runs in the subagent context
 | `/critique-plan` slash command | Dispatches preprocessor + plan-critic for scope / spec / coherence review of a proposed plan | shipped (v0.2.0) |
 | Plan-critic system prompt (`plan-critic.md`) | Three categories (scope drift, spec violation, internal incoherence) with two-citation discipline and severity tiers | shipped (v0.2.0) |
 | Reference-doc loading (`--reference-paths` / `--reference-glob`) | Preprocessor injects source-of-truth `.md` files into context so plan-critic can quote rules deterministically | shipped (v0.2.0) |
+| `log-disagreement` auto-invoked skill | Model-invokable skill that captures user pushback on a finding to user-scope storage; no slash command required | shipped (v0.3.0) |
+| Reviewer output footer | Auditor and plan-critic outputs end with an invitation to push back, anchoring the auto-invocation contract | shipped (v0.3.0) |
 | Live auditor integration in evals | Replace `.expected.txt` stub with real auditor invocation | planned |
 | Ground-truth fixtures for real cases | Three canonical cases (trio_navigation_stack_cycle_3, portfolio_blank_screen, trio_morphing_recall) still SKIP'd pending fixture capture | planned |
 | Structured output schema | Move auditor output from free text to a parseable format so eval checks don't rely on substring match | planned |

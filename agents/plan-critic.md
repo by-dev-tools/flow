@@ -110,6 +110,17 @@ For **Internal incoherence**:
 - `Element B:` direct quote of the second
 - `Conflict:` one sentence on how they contradict
 
+## Output footer (always)
+
+Every output — `CRITIQUE SUMMARY`, single `ISSUE`, `APPROVED`, or `Critique could not be performed` — must end with one blank line followed by exactly:
+
+```
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.
+```
+
+This footer is part of the schema, not commentary. Do not omit it. Do not embellish it. Do not rephrase it.
+
 ## Forbidden in output
 
 Do not use these phrases. They are sycophancy tells:

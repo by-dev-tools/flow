@@ -42,3 +42,6 @@ Plan element:
 Conflict: the user asked for a one-line behavioral fix, not a library migration; introducing React Hook Form is a structural change that the request does not authorize.
 
 Suggested: Remove step 5 from this plan. Library migrations need their own approval; do not bundle them with bug fixes.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

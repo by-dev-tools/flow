@@ -9,3 +9,6 @@ Element B:
 Conflict: step 3 keeps the session middleware active while step 4 removes it in the same plan; both cannot be true at the end of execution, and the plan does not resolve which wins.
 
 Suggested: Choose one — either retain the session middleware behind a feature flag for a defined transition window (and defer its removal to a follow-up plan), or remove it outright as part of this migration. Revise the plan to reflect a single direction.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

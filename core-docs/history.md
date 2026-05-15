@@ -39,7 +39,56 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
-### Plan-critic sibling reviewer + marketplace metadata for v0.2.0
+### Auto-invoked disagreement loop for v0.3.0
+**Date:** 2026-05-15
+**Branch:** [pending]
+**Commit:** [pending]
+
+**What was done:**
+Closed the feedback loop on the auditor and plan-critic so users can register disagreement with a specific finding in plain language, without invoking a slash command. The plugin now ships an auto-invoked `log-disagreement` skill that the model triggers when it detects pushback on a recent finding, captures the session window and dispute metadata to user-scope storage, and confirms the capture in a single line.
+
+Concrete artifacts:
+- `skills/log-disagreement/SKILL.md` — model-invokable skill (`disable-model-invocation` omitted; default behavior allows the model to invoke). Description lists explicit invocation triggers (plain-language disagreement after an audit output) and anti-triggers (general conversation, acceptance, unrelated pushback). Body instructs the model to extract reviewer/category/severity/claim/reason and dispatch the capture script.
+- `scripts/log_disagreement.py` — captures the session window from the audit output forward (last ~12 turns by default) into a `.jsonl` plus a `.meta.json` with the structured dispute fields. Stored under `~/.claude/plugins/data/assumption-auditor/disagreements/` so disputes accumulate across projects and survive workspace cleanup.
+- `agents/auditor.md` and `agents/plan-critic.md` — added an "Output footer (always)" section requiring every output to end with the disagreement invitation. The footer is part of the schema, not commentary, so the existing "do not add commentary before or after" discipline remains intact.
+- `evals/fixtures/*.expected.txt` — footer appended to all five existing fixtures so they stay aligned with the new schema. The harness is still stubbed; once live invocation lands, expected outputs and live outputs will match exactly.
+- README updated with the auto-invocation flow and a new entry in the slash-command table.
+- `.claude-plugin/{plugin,marketplace}.json` bumped to 0.3.0 with descriptions reflecting the new feedback channel.
+
+**Why:**
+The v0.2.0 feedback loop was open: when a reviewer's output was wrong, users had to manually edit `DISAGREE.md` to register the disagreement. Most users would not bother. Maintainer-side prompt tuning depended on disagreements being captured, which depended on users doing free work — a brittle loop that empirically yielded zero entries in `DISAGREE.md` across the v0.1.0–v0.2.0 cycle. Without captured disputes the next prompt tune is data-blind; with them, every false positive becomes a regression test.
+
+The forcing function: as the plan-critic moves toward being a real approval gate (md-manager integration just shipped), the cost of a bad critic finding rises. Users will tolerate occasional false positives only if they have a near-zero-cost way to flag them. Manual `DISAGREE.md` editing fails that bar; "just say so in chat" passes it.
+
+**Design decisions:**
+- **Model-invokable skill instead of a hook.** Two options for auto-invocation: a `UserPromptSubmit` hook (deterministic but keyword-based) or a model-invokable skill (nuanced but probabilistic). Chose the skill because plain-language disagreement is too varied for keyword matching to catch well — "actually the scope is fine here" is disagreement; a keyword hook would miss it. The trade-off is silent-miss risk when the model fails to recognize disagreement. Mitigated by the explicit invitation footer (gives the user a near-explicit trigger) and by a documented v0.3.1 follow-up to add a hook as a deterministic safety net if smoke-testing shows the miss rate is non-trivial.
+- **User-scope storage, not project-scope.** Disagreements are plugin-improvement data, not project data. A project-scope log would scatter the feedback across repos and make maintainer-side analysis hard. User-scope under `~/.claude/plugins/data/` mirrors how forge stores its data and survives project deletion.
+- **Two paired files per disagreement.** `.jsonl` for the session window (fixture-skeleton), `.meta.json` for the structured fields (queryable). Splitting them means the maintainer can `cat *.meta.json | jq` to triage disputes without parsing session JSONL, while still having the session content available for promoting a disagreement to an eval fixture.
+- **Footer in the output schema, not in the skill output.** The footer needs to be inside the subagent's prescribed output so the existing "do not add commentary" rules don't conflict with it. Wrote it as a schema section, not a special case, so future schema additions follow the same pattern.
+- **No automatic promotion to eval fixture.** Disagreements land as candidates; promoting them to `evals/fixtures/` is still a manual maintainer step. Tempting to auto-promote but risky — a single misclassified disagreement becomes a permanent regression test pinning the wrong behavior. Manual review remains the gate.
+
+**Technical decisions:**
+- **`datetime.datetime.now(datetime.timezone.utc)` instead of `utcnow()`.** Python 3.7+ stdlib only is the project constraint. `utcnow()` is deprecated in 3.12+; `now(timezone.utc)` works in 3.2+ and isn't deprecated. Future-proof at zero cost.
+- **`SESSION_CAPTURE_WINDOW = 12` and `start = max(0, audit_idx - WINDOW//2)`.** Captures from a few turns before the audit forward, so the fixture includes the user request, the plan/completion, the audit output, and the user's pushback. Empirically sized; tuneable in a follow-up if it captures too little or too much.
+- **Walking records back-to-front for audit detection.** `find_recent_audit_record_idx` scans for assistant turns containing `AUDIT SUMMARY` / `CRITIQUE SUMMARY` / `ISSUE ·` / `No issues flagged` / `APPROVED`. Marker-based detection is brittle to future schema changes but cheap; documented as a known coupling.
+- **Slugify the category for the filename.** Prevents collision when multiple disputes land in the same second (rare but possible) and keeps filenames filesystem-safe across platforms.
+- **The skill calls the script via `Bash` only.** No file-edit tools needed in the skill; the model just packages the dispute fields and runs the script. Smaller blast radius.
+
+**Tradeoffs discussed:**
+- **Auto-invoke vs explicit `/disagree` slash command:** explicit is more reliable but adds friction; auto-invoke is frictionless but risks silent miss. Chose auto-invoke with the explicit-invitation footer as a hybrid — the model has full context to detect disagreement, the user has an obvious channel to push back. The silent-miss tradeoff is acknowledged and has a documented mitigation path.
+- **Footer wording:** considered "Disagree? Just say so." (terse), "If a finding is wrong, just say so. Your pushback will be logged for prompt tuning." (chosen — explicit about both the channel and what happens to the input), and a longer explanation of the loop (rejected as commentary).
+- **CLAUDE.md fragment for reliability:** original plan included a CLAUDE.md instruction telling the model to invoke `/log-disagreement` on detected disagreement. Plugins cannot inject CLAUDE.md fragments into host projects, so dropped. The skill description and footer carry the same instruction-load now.
+- **Bumping plan.md Current Focus to reference v0.3.0:** could have left it pointing at the v0.2.0 next-step (live eval invocation). Updated so the document reflects the current state; live-eval-invocation moves to the "next load-bearing step" framing inside the v0.3.0 entry.
+
+**Safety:**
+Touches `agents/auditor.md` and `agents/plan-critic.md` — both safety-critical per `.claude/rules/safety.md`. The change is additive (a new schema section requiring a footer) and does not modify, weaken, or remove any existing discipline: the "evidence or silence" rule, the two-citation rule, the forbidden phrases, the permission-to-find-nothing clause are all preserved. Existing fixtures' expected outputs were updated to include the new footer so the regression set stays aligned. The footer text is invariant ("If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.") — no variability that could erode reviewer discipline. Marked here per the safety rule's "Flag the change" requirement, though strictly this isn't an error-handling / persistence / fallback change.
+
+**Lessons learned:**
+- The "model-invokable skill description" doubles as documentation of the auto-invocation contract. Wrote it carefully because it's the only line of defense against silent miss — the more concrete and exemplified the description, the higher the recognition rate. Treating it like a regular skill description (one-line summary) would have been worse than the alternative.
+- The footer being part of the *schema* matters. Putting it in commentary territory would create a "the prompt says no commentary, but it also requires this commentary" contradiction. Naming it as a schema element resolves the conflict cleanly. Worth remembering for any future schema additions.
+- Storage location reveals product intent. User-scope under `~/.claude/plugins/data/` signals "this is plugin-improvement data, not project data." Project-scope would have signaled "this is a per-project audit log" — a different (and worse for this use case) product.
+
+
 **Date:** 2026-05-14
 **Branch:** project-status-overview
 **Commit:** 8ce9fb3

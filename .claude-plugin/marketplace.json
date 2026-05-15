@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Skeptical reviewers for Claude Code — audits sessions for unverified claims and critiques plans against intent.",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "assumption-auditor",
       "source": "./",
-      "description": "Two passive reviewers. The auditor flags unverified diagnoses, completions, assumptions, and recalls in session output. The plan-critic critiques proposed plans for scope drift, spec violation, and internal incoherence against the user's request and reference docs.",
-      "version": "0.2.0",
+      "description": "Two passive reviewers plus an auto-invoked feedback channel. The auditor flags unverified diagnoses, completions, assumptions, and recalls. The plan-critic critiques proposed plans for scope drift, spec violation, and internal incoherence. The log-disagreement skill auto-invokes when the user pushes back on a finding in plain language, capturing the disagreement for prompt tuning.",
+      "version": "0.3.0",
       "author": {
         "name": "byamron"
       },
