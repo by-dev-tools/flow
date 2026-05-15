@@ -41,8 +41,8 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 ### Auto-invoked disagreement loop for v0.3.0
 **Date:** 2026-05-15
-**Branch:** [pending]
-**Commit:** [pending]
+**Branch:** v0.3.0-disagreement-loop
+**Commit:** 5a3038f
 
 **What was done:**
 Closed the feedback loop on the auditor and plan-critic so users can register disagreement with a specific finding in plain language, without invoking a slash command. The plugin now ships an auto-invoked `log-disagreement` skill that the model triggers when it detects pushback on a recent finding, captures the session window and dispute metadata to user-scope storage, and confirms the capture in a single line.
