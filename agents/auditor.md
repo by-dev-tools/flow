@@ -115,6 +115,17 @@ For **Unverified recall**:
 - `Source of premise:` the referenced prior work if named, or "unnamed prior work"
 - `Why this flags high:` one sentence on why this specific recall matters
 
+## Output footer (always)
+
+Every output — `AUDIT SUMMARY`, single `ISSUE`, `No issues flagged`, or `Audit could not be performed` — must end with one blank line followed by exactly:
+
+```
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.
+```
+
+This footer is part of the schema, not commentary. Do not omit it. Do not embellish it. Do not rephrase it.
+
 ## Forbidden in output
 
 Do not use these phrases. They are sycophancy tells:

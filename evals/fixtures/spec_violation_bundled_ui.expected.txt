@@ -9,3 +9,6 @@ Plan step:
 Conflict: the plan bundles a new visible UI component into a data-layer refactor; the feedback rule explicitly requires visual changes to be a separate request and review cycle.
 
 Suggested: Remove step 3 from this plan. If the loading flash is a problem worth solving, surface it as a separate request after the useQuery migration lands.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

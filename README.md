@@ -11,6 +11,7 @@ Neither subagent runs verification itself — they read the session and surface 
 | `/audit-plan`      | Auditor pass over the most recent plan — looks for unverified assumptions and unverified recall  | After Claude produces a plan, before executing it                      |
 | `/audit-completion`| Auditor pass over the most recent completion claim — looks for false-verification proxies        | After Claude declares work done / fixed / ready, before trusting it    |
 | `/critique-plan`   | Plan-critic pass over the most recent plan — looks for scope / spec / coherence misalignment     | After Claude produces a plan, before user approval (complementary to `/audit-plan`) |
+| `log-disagreement` | (Auto-invoked, no slash command) — captures user pushback on a recent finding to user-scope storage | After a reviewer issues a finding the user disputes in plain language |
 
 ## What each reviewer catches
 
@@ -69,10 +70,10 @@ Plain text. Either a single `ISSUE` block, a multi-issue summary (`AUDIT SUMMARY
 ```
 .claude-plugin/   plugin.json, marketplace.json
 agents/           auditor.md, plan-critic.md
-skills/           audit-plan/, audit-completion/, critique-plan/
-scripts/          extract_session.py, bounding_logic.py
+skills/           audit-plan/, audit-completion/, critique-plan/, log-disagreement/
+scripts/          extract_session.py, bounding_logic.py, log_disagreement.py
 evals/            ground_truth.yaml, run_evals.py, fixtures/
-DISAGREE.md       append-only log of reviewer outputs the user disagreed with
+DISAGREE.md       legacy free-form log for feedback that isn't tied to a single finding
 ```
 
 ## Known limitations
@@ -88,4 +89,23 @@ These are tune-points, not blockers:
 
 ## Feedback loop
 
-When a reviewer's output is wrong, append to `DISAGREE.md`. Those entries feed the next prompt-tuning pass and become eval cases.
+When a reviewer's output is wrong, **just say so in plain language** — "no, finding 2 is wrong because ...", "false positive on the scope drift", "the spec rule doesn't apply here". The plugin's `log-disagreement` skill auto-invokes when it detects pushback on a recent finding and captures the disagreement to:
+
+```
+~/.claude/plugins/data/assumption-auditor/disagreements/
+```
+
+Each disagreement produces two paired files — a `.jsonl` slice of the session (the audit output plus your pushback) and a `.meta.json` with the dispute metadata. These become candidate eval fixtures in the next prompt-tuning pass.
+
+For wider feedback that isn't tied to a specific finding (overall behavior, missing features, requested categories), append to `DISAGREE.md` manually.
+
+### What auto-invocation looks like
+
+After the critic returns its findings, every output ends with:
+
+```
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.
+```
+
+You don't have to do anything special. Push back in plain language; the skill catches it. You'll see a one-line confirmation when a disagreement is logged.

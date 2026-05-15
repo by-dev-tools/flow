@@ -11,3 +11,6 @@ Verification checks:
 - Add or run a test that exercises the click handler against a real (or stubbed) downloadCsv path and asserts a download was triggered
 
 Suggested: Run the dev server and click the Export button to reproduce the original symptom against the new code before declaring this fixed.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

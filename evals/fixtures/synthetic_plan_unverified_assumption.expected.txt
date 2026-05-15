@@ -36,3 +36,6 @@ Source of premise: unnamed prior work
 Why this flags high: the plan's structural choice (which webhook event, which redirect pattern) is justified by an unread reference; if the donation flow doesn't actually use this pattern, the plan's shape is unsupported.
 
 Suggested: Name the file or commit that established the donation-flow pattern and read it this session, or drop the appeal to prior work and justify the choice on its own merits.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

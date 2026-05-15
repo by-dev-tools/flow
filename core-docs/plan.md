@@ -2,13 +2,29 @@
 
 ## Current Focus
 
-v0.1.0 plugin scaffold is shipped. Next load-bearing step is replacing the eval harness stub (`evals/run_evals.py:195` reads pre-recorded `.expected.txt` files) with live auditor invocation, then capturing fixtures for the three SKIP'd canonical cases in `evals/ground_truth.yaml`.
+v0.3.0 ships the auto-invoked disagreement loop. Next load-bearing step is replacing the eval harness stub (`evals/run_evals.py:195` reads pre-recorded `.expected.txt` files) with live reviewer invocation so disagreement-captured fixtures can flow back into the regression set.
 
 ## Handoff Notes
 
 None.
 
 ## Active Work Items
+
+### Disagreement loop (v0.3.0)
+
+Auto-invoked feedback capture so users can push back on findings in plain language without manual slash commands.
+
+**Done:**
+- `skills/log-disagreement/SKILL.md` — model-invokable skill (`disable-model-invocation: false`) with a tight description listing the invocation triggers and anti-triggers.
+- `scripts/log_disagreement.py` — captures session window (last ~12 turns from the audit output forward) to a `.jsonl`, plus a `.meta.json` with reviewer/category/severity/claim/reason. Stored under `~/.claude/plugins/data/assumption-auditor/disagreements/`.
+- `agents/auditor.md` + `agents/plan-critic.md` — added output footer schema requiring every output to end with the disagreement invitation. Anchors the auto-invocation contract: the model sees the invitation and listens for pushback in the next user message.
+- `evals/fixtures/*.expected.txt` — footer appended to all five existing fixtures so they stay aligned with the new schema.
+- README updated with the auto-invocation flow.
+- `.claude-plugin/{plugin,marketplace}.json` bumped to 0.3.0.
+
+**Next:**
+- Real-session smoke test: confirm the model reliably invokes `/log-disagreement` on plain-language pushback. If silent-miss rate is high, add a `UserPromptSubmit` hook in v0.3.1 as a deterministic fallback.
+- Maintainer-side tooling: a script that walks `~/.claude/plugins/data/assumption-auditor/disagreements/` and surfaces accumulated disputes by category/frequency.
 
 ### Plan critic (sibling to the evidence auditor)
 
