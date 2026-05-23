@@ -4,6 +4,28 @@
 
 A passive, skeptical auditor that runs inside Claude Code between "plan" and "execute" (or "done" and "trust"), surfacing claims the session never actually verified -- so users catch over-confident reasoning before it compounds into broken work.
 
+## Long-term direction
+
+The plugin's design is shaped by a longer-term goal: enabling AI agents to make decisions and approvals that humans can trust. Each piece contributes to that arc:
+
+- **The reviewers** identify the gaps that would erode trust if missed (unverified claims, plan misalignment).
+- **The two-citation discipline** keeps findings verifiable, not interpretive — a reviewer's claim can be falsified by inspecting its two quotes.
+- **The disagreement loop** captures human pushback as input to prompt tuning, so the reviewers' calibration improves with use.
+- **A planned verification sibling** (separate plugin, see plan.md) would close the loop further by executing the verification checks the auditor suggests — moving from "AI surfaces a concern" to "AI confirms or refutes the concern."
+
+Today the plugin informs human decisions; the user stays the approval authority. The long-term arc shifts load from human-as-final-approver toward agent-as-final-approver, one trust step at a time. No piece of that shift is rushed — each requires evidence that the previous step is reliable.
+
+## Usage guidance
+
+| Work type | Suggested reviewers | Rationale |
+|---|---|---|
+| Bug fix | `/audit-plan`, `/audit-completion` | diagnosis + completion categories dominate |
+| New feature | `/audit-plan`, `/critique-plan`, `/audit-completion` | assumption + scope + completion all matter |
+| Refactor | all three | surface-area assumptions, scope discipline, build ≠ behavior |
+| Throwaway prototype | none required | no trust context to protect |
+
+Features benefit from this plugin *more* than bug fixes. The "Unverified diagnosis" category is bug-flavored and quiet on features; the other three categories are most-active on feature/refactor work where there is no original symptom to manually verify against.
+
 ## Problem
 
 Claude produces confident plans and completion claims that are load-bearing but unverified. Common failure modes:

@@ -61,6 +61,19 @@ Or for local development:
 
 Both plan reviewers preprocess via `scripts/extract_session.py`. The plan-critic additionally loads `core-docs/*.md` (excluding `history.md`, `plan.md`, `roadmap.md`) into its context so it can quote project rules when flagging spec violations. Override the doc location via `--reference-paths` or `--reference-glob` if your project uses a different layout.
 
+## When to use each reviewer
+
+The right combination depends on the kind of work, not just the moment in the loop.
+
+| Work type | Suggested reviewers | Why |
+|---|---|---|
+| Bug fix | `/audit-plan` + `/audit-completion` | catches premature diagnosis and "fixed but unverified" — the two most common bug-fix failure modes |
+| New feature | `/audit-plan` + `/critique-plan` + `/audit-completion` | catches silent assumptions, scope drift / spec violation, and "shipped but never exercised" |
+| Refactor | all three | surface-area assumptions (which callers exist?), scope discipline (no UI changes bundled in), and "build passes ≠ behavior preserved" |
+| Throwaway prototype | none required | the reviewers' value is in trust contexts; one-off prototypes don't have one |
+
+**Features benefit from this plugin more than bug fixes**, not less. Bug fixes have an obvious verification target (does the bug still reproduce?), so the user can manually spot a missing check. Features don't — there's no "before" state to compare against, so the auditor's "you claimed X but didn't check" prompt catches gaps the user would otherwise miss. The one bug-flavored category (`Unverified diagnosis`) rarely fires on features and stays quiet per the auditor's "Permission to find nothing" rule; the other three categories all matter.
+
 ## Output
 
 Plain text. Either a single `ISSUE` block, a multi-issue summary (`AUDIT SUMMARY` or `CRITIQUE SUMMARY`), or a clean signal (`No issues flagged.` / `APPROVED`). Exact format lives in `agents/auditor.md` and `agents/plan-critic.md`.

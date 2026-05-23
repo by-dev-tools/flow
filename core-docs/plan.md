@@ -10,6 +10,25 @@ None.
 
 ## Active Work Items
 
+### Verification skill (planned, separate plugin)
+
+Build a sibling plugin (working name: `assumption-verifier`) that takes an `/audit-completion` or `/audit-plan` finding's `Verification checks:` list and executes the checks. Closes the loop between "auditor names a gap" and "user/agent confirms the gap is real" — the gating capability for the long-term trust-staging goal in `spec.md`.
+
+**Architecture decision:** separate plugin, not in `assumption-auditor`. The auditor's identity depends on being passive; mixing active behaviors dilutes the trust guarantee. Separate distribution lets users opt in to the active sibling without forcing it on everyone. Same reasoning pattern as the `forge vs independent marketplace` and `plugin vs in-repo` tradeoffs in history.md.
+
+**Prototype step before committing to a full plugin:**
+
+1. Build a non-shipped skill in this repo (`.claude/skills/verify-finding/`) that takes the most recent ISSUE block from the conversation and tries to execute its `Verification checks:` items.
+2. Smoke-test against real audit findings produced by `/audit-completion`. Two open questions only real-session use can answer:
+   - Can the human-readable `Verification checks:` list reliably translate into executable steps? (Today these are written for human readers — short imperatives that assume project context.)
+   - How often does the user want one-click verify vs. take the suggestion and adapt manually? (Shapes whether the skill is a "run these checks" button or a "draft the test, let me edit" assistant.)
+3. If both answers favor automation, split into a separate plugin and follow the `assumption-auditor` shipping pattern (marketplace metadata, version cadence, README, evals).
+4. If the answers favor per-project tuning, the verifier may need a configuration model that doesn't fit the plugin pattern — could become a per-project skill template instead.
+
+**Why this matters for the broader arc:** today the auditor surfaces gaps and the user closes them manually. For an agent to ever be trusted at a high-stakes gate (e.g., md-manager plan approval), there needs to be a credible "AI confirmed the gap is real / not real" step. The verifier is that step. Without it, agents are stuck at "AI flags the concern, human resolves it" — useful, but not trust-shifting.
+
+---
+
 ### Disagreement loop (v0.3.0)
 
 Auto-invoked feedback capture so users can push back on findings in plain language without manual slash commands.
