@@ -17,25 +17,25 @@ You are auditing recent changes against project standards. This runs in an isola
 - Run `git diff main..HEAD --name-only` to list changed files
 - Run `git log --oneline main..HEAD` for commit history
 - Read `CLAUDE.md` for project standards and the plugin-vs-dev boundary
-- Read `core-docs/feedback.md` for documented rules and past corrections
-- Read `core-docs/spec.md` for the canonical feature list and known limitations
+- Read `dev-docs/feedback.md` for documented rules and past corrections
+- Read `dev-docs/spec.md` for the canonical feature list and known limitations
 
 ## 2. Check documentation completeness
 
-- Does `core-docs/history.md` have entries for the changes? Are they complete (what, why, tradeoffs)?
-- Does `core-docs/plan.md` reflect the current state?
-- Were any user corrections made that aren't captured in `core-docs/feedback.md`?
+- Does `dev-docs/history.md` have entries for the changes? Are they complete (what, why, tradeoffs)?
+- Does `dev-docs/plan.md` reflect the current state?
+- Were any user corrections made that aren't captured in `dev-docs/feedback.md`?
 
 ## 3. Check against feedback rules
 
-For each entry in `core-docs/feedback.md`, check if the recent changes violate any synthesized rules. Flag violations.
+For each entry in `dev-docs/feedback.md`, check if the recent changes violate any synthesized rules. Flag violations.
 
 ## 4. Check plugin quality bar (from CLAUDE.md)
 
-For any changes under `agents/`, `skills/`, `scripts/`, `evals/`, or `.claude-plugin/`:
+For any changes under `plugins/flow/agents/`, `plugins/flow/skills/`, `plugins/flow/scripts/`, `plugins/flow/evals/`, or the manifests (`.claude-plugin/marketplace.json`, `plugins/flow/.claude-plugin/plugin.json`):
 
-- **Correct:** auditor outputs still match the `ISSUE` / `AUDIT SUMMARY` / `No issues flagged.` schema in `agents/auditor.md`. Evals pass.
-- **Evidence-backed:** any new category, rule, or heuristic has a fixture in `evals/fixtures/` demonstrating it.
+- **Correct:** auditor outputs still match the `ISSUE` / `AUDIT SUMMARY` / `No issues flagged.` schema in `plugins/flow/agents/auditor.md`. Evals pass.
+- **Evidence-backed:** any new category, rule, or heuristic has a fixture in `plugins/flow/evals/fixtures/` demonstrating it.
 - **Graceful on malformed input:** preprocessing paths still handle missing session files, empty transcripts, and malformed JSONL without crashing.
 - **Lean:** Python stdlib only. No new dependencies.
 - **Honest limitations:** if a limitation listed in `README.md` was addressed or a new one introduced, the README reflects it.

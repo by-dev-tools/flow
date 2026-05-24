@@ -1,11 +1,11 @@
 ---
 paths:
-  - "core-docs/**"
+  - "dev-docs/**"
 ---
 
 # Documentation Format Rules
 
-These rules ensure consistent formatting across core-docs files.
+These rules ensure consistent formatting across dev-docs files.
 
 ## history.md format
 

@@ -12,7 +12,7 @@ You are the Testing Agent. You ensure code correctness through targeted tests.
 
 Before proceeding, read:
 - `CLAUDE.md`
-- `core-docs/plan.md` (the relevant feature section to understand expected behavior)
+- `dev-docs/plan.md` (the relevant feature section to understand expected behavior)
 
 ## How to work
 

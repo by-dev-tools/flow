@@ -4,14 +4,14 @@ These rules apply to all work in this project. They enforce the documentation wo
 
 ## Documentation discipline
 
-- Every non-trivial change must have a corresponding `core-docs/history.md` entry before committing.
-- `core-docs/plan.md` must reflect reality. If you completed something, mark it done. If scope changed, update it.
-- When the user corrects your approach or expresses a preference, add a synthesized entry to `core-docs/feedback.md` before continuing.
-- Read `core-docs/feedback.md` before starting work to avoid repeating documented mistakes.
+- Every non-trivial change must have a corresponding `dev-docs/history.md` entry before committing.
+- `dev-docs/plan.md` must reflect reality. If you completed something, mark it done. If scope changed, update it.
+- When the user corrects your approach or expresses a preference, add a synthesized entry to `dev-docs/feedback.md` before continuing.
+- Read `dev-docs/feedback.md` before starting work to avoid repeating documented mistakes.
 
 ## Decision tracking
 
-- When a change involves a non-trivial decision (a reasonable alternative existed), document the options considered and why this one was chosen in `core-docs/history.md`.
+- When a change involves a non-trivial decision (a reasonable alternative existed), document the options considered and why this one was chosen in `dev-docs/history.md`.
 - "What" goes in the change itself. "Why" goes in the documentation.
 - Tradeoffs discussed during implementation must be captured -- they are the most valuable part of the history for future context.
 
