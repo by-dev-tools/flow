@@ -2,18 +2,31 @@
 
 ## Current Focus
 
-**PR 1 of the Flow plugin extraction umbrella.** Restructure this repo (the renamed `by-dev-tools/flow`, ex-`llm-auditor`) from its current flat root layout into Anthropic's marketplace + plugin shape (`plugins/flow/*`), rename internal `llm-auditor` / `assumption-auditor` identifiers to `flow`, bump version to 1.0.0, add the first workflow surface (`/flow:ship` skill + ported `workflow.md`), and rename this repo's own `core-docs/` to `dev-docs/` per the consumer-vs-plugin naming convention. PR 2 (rest of workflow skills + agents + rules + memory tooling + schema) and PR 3 (template directory) are explicitly out of scope here. Upstream architecture: md-manager's `core-docs/plan.md` "Flow plugin extraction" Active Work Item.
+**Awaiting PR 1 merge** ([by-dev-tools/flow#5](https://github.com/by-dev-tools/flow/pull/5)). After the user merges, the immediate next focus is **PR 2** of the flow extraction umbrella: backfill the `/flow:ship` PR-1 placeholders (security + a11y reviews; memory machinery) and port the rest of the workflow surface (`/flow:staff-review` with four parallel lenses, `/flow:security-review`, `/flow:accessibility-review`, `/flow:ship-spike`, `/flow:workflow-help`), the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the context-isolation agents (`planner`, `docs`), `tools/memory/check.mjs`, and the `flow.config.json` JSON Schema. Also addresses two FOLLOW-UPs surfaced by PR 1's walk-through-the-loop review pass (see "PR 2 follow-ups from PR 1 review" below).
+
+PR 3 (template directory: `template/base/` + per-stack overlays for web / swift / tauri-rust-ts) and PRs 4-6 (md-manager-side migration) remain queued in the umbrella; canonical state lives in md-manager's `core-docs/plan.md` § "Flow plugin extraction".
 
 ## Handoff Notes
 
-- PR 0 (operational rename from `llm-auditor` → `flow` at the GitHub-repo and local-dir level) shipped 2026-05-23. This repo is already at `by-dev-tools/flow`; `~/.claude/settings.json` URL points here, but the marketplace key + plugin key still say `llm-auditor` / `assumption-auditor` internally — that rename is part of this PR.
-- The `pre-flow-plugin` recovery tag referenced in the brief does NOT yet exist on this repo (verified via `git tag --list` and `gh api repos/by-dev-tools/flow/git/refs/tags`). The plan creates it against current HEAD (`8857ebd`) as Step A so the brief's recovery anchor is real.
-- After PR 1 merges, the user will need to update `~/.claude/settings.json`: `enabledPlugins."assumption-auditor@llm-auditor"` → `"flow@flow"`. This is a one-line user-side follow-up; flagged in the PR body — not done in PR 1.
-- Previous `core-docs/plan.md` content (the assumption-auditor-era plan, including the verification-skill placeholder and v0.3.0 disagreement-loop close-out) is preserved verbatim at git tag `pre-flow-plugin` and at `dev-docs/plan.md` after the rename — those items aren't being dropped, just superseded by the flow-plugin focus.
+- **PR 1 needs user-side settings.json update after merge.** One line: `enabledPlugins."assumption-auditor@llm-auditor"` → `"flow@flow"`. Plus re-add marketplace under the new name: `/plugin marketplace remove llm-auditor && /plugin marketplace add by-dev-tools/flow && /plugin install flow@flow`. settings.json backup exists at `~/.claude/settings.json.bak.20260523-144832` from PR 0.
+- **Optional disagreement-records migration:** `mv ~/.claude/plugins/data/assumption-auditor/disagreements/* ~/.claude/plugins/data/flow/disagreements/` if you want pre-v1.0.0 records to surface alongside post-rename ones.
+- **PR 2 brief is owed.** Lives in md-manager once the PR-1 handoff loop closes (`md-manager/core-docs/handoffs/pr2-flow-plugin-rest.md`).
+
+## PR 2 follow-ups from PR 1 review
+
+The walk-through-the-loop review on PR 1 surfaced two findings that are out-of-scope for PR 1 but in-scope for PR 2. Quoted here verbatim so PR 2's planner doesn't have to re-derive them:
+
+1. **Consumer-vs-flow path divergence in critique-plan default.** `plugins/flow/skills/critique-plan/SKILL.md:13` hardcodes `--reference-glob "core-docs/*.md"`. When flow runs `/flow:critique-plan` on itself (which uses `dev-docs/` not `core-docs/`), the plan-critic sees zero reference docs. The fix is a `flow.config.json.referenceGlob` slot that the SKILL reads at invocation, with the documented default chain (consumer projects: `core-docs/*.md`; flow's own repo: `dev-docs/*.md`). PR 2's `flow.config.schema.json` work picks this up. Cost: ~10 min once the config-slot machinery exists.
+
+2. **`extract_session.py --reference-paths` accepts arbitrary host paths.** Currently, `gather_reference_docs` reads any absolute path the caller passes; output is injected verbatim into the auditor subagent's context. In the current invocation chain, the caller is the `critique-plan` SKILL with a hardcoded glob, so consumer input never reaches it. But if a future skill or recipe ever forwards user-controlled paths, an attacker could exfil file contents (e.g., `~/.ssh/config`) into the subagent's prompt and out via tool output. Constrain to `cwd` (reject resolved paths outside `Path.cwd()`) unless an explicit override flag says otherwise. Document the trust model in the script docstring. Pairs naturally with PR 2's path-validation rule baseline (`plugins/flow/hooks/default-hooks.json`).
 
 ## Active Work Items
 
-### PR 1 — Flow plugin restructure + initial workflow surface (current)
+### PR 1 — Flow plugin restructure + initial workflow surface (SHIPPED — awaiting merge)
+
+Status: all spec-walk checkboxes complete; PR opened at [by-dev-tools/flow#5](https://github.com/by-dev-tools/flow/pull/5); walk-through-the-loop review pass surfaced 3 BLOCKERs + 2 cheap NITs, all fixed in follow-up commit `65a0a58`; plan-critic retroactive verdict APPROVED; recovery anchor at git tag `pre-flow-plugin`. Full history entry in `dev-docs/history.md`. Original plan spec-walk preserved below for reference.
+
+---
 
 **Mode:** feature
 
