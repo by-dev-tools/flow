@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Eval harness for the assumption-auditor.
+"""Eval harness for flow's auditor + plan-critic reviewers.
 
 Reads evals/ground_truth.yaml, runs extract_session.py against each
 fixture's .jsonl to produce the rendered SKILL.md context, then applies
