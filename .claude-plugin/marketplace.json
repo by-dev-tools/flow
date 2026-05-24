@@ -1,25 +1,30 @@
 {
-  "name": "llm-auditor",
+  "name": "flow",
   "owner": {
-    "name": "byamron"
+    "name": "by-dev-tools",
+    "url": "https://github.com/by-dev-tools"
   },
   "metadata": {
-    "description": "Skeptical reviewers for Claude Code — audits sessions for unverified claims and critiques plans against intent.",
-    "version": "0.3.0"
+    "description": "Managed-autonomy workflow for Claude Code: 11-step loop with audit/critique skills, agent-isolated reviewers, and project-config-driven ship pipeline.",
+    "version": "1.0.0",
+    "pluginRoot": "./plugins"
   },
   "plugins": [
     {
-      "name": "assumption-auditor",
-      "source": "./",
-      "description": "Two passive reviewers plus an auto-invoked feedback channel. The auditor flags unverified diagnoses, completions, assumptions, and recalls. The plan-critic critiques proposed plans for scope drift, spec violation, and internal incoherence. The log-disagreement skill auto-invokes when the user pushes back on a finding in plain language, capturing the disagreement for prompt tuning.",
-      "version": "0.3.0",
+      "name": "flow",
+      "source": "./plugins/flow",
+      "description": "Managed-autonomy 11-step loop. Bundles the skeptical reviewers (auditor + plan-critic) with /flow:ship and the canonical workflow doc. PR 1 (v1.0.0) ships the restructure + audit/critique surface + /flow:ship; PR 2 backfills the rest of the workflow skill set and config schema.",
+      "version": "1.0.0",
       "author": {
-        "name": "byamron"
+        "name": "by-dev-tools"
       },
-      "homepage": "https://github.com/byamron/llm-auditor",
-      "repository": "https://github.com/byamron/llm-auditor",
-      "category": "review",
+      "homepage": "https://github.com/by-dev-tools/flow",
+      "repository": "https://github.com/by-dev-tools/flow",
+      "category": "workflow",
       "keywords": [
+        "workflow",
+        "managed-autonomy",
+        "ship",
         "audit",
         "review",
         "critique",
