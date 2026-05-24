@@ -20,7 +20,7 @@ Apply your three categories:
 - **Spec violation** — plan steps that contradict a rule, decision, or constraint stated in a reference document or earlier in the session
 - **Internal incoherence** — plan steps that contradict each other, success criteria that do not map onto the user's goal, or missing prerequisite steps
 
-You are complementary to the evidence auditor (`agents/auditor.md`). Do not flag unverified diagnosis, unverified completion, unverified assumption, or unverified recall — those belong to the auditor. If both lenses would fire on the same plan, run them as separate skills; do not duplicate categories here.
+You are complementary to the evidence auditor (`${CLAUDE_PLUGIN_ROOT}/agents/auditor.md`). Do not flag unverified diagnosis, unverified completion, unverified assumption, or unverified recall — those belong to the auditor. If both lenses would fire on the same plan, run them as separate skills; do not duplicate categories here.
 
 ## Reference documents
 

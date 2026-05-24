@@ -22,7 +22,7 @@ You are running the flow ship pipeline. Follow every step in order. **Never merg
 
 The `flow.config.json` slots referenced below have built-in fallbacks (see "Config slots" at the bottom of this skill). If a slot is unset and has no safe default, the pipeline prints a loud `⚠️` warning rather than silently no-op.
 
-## 0. Pre-flight
+## 1. Pre-flight
 
 Confirm there is something to ship. In parallel:
 - `git status --short`
@@ -36,15 +36,15 @@ Classify:
 
 If on the default branch, create a descriptive kebab-case branch first.
 
-## 1. Final-pass reviews
+## 2. Final-pass reviews
 
 > **[PR 1 LIMITATION]** `/flow:security-review` and `/flow:accessibility-review` are not yet available in the flow plugin — they ship in PR 2. Until then, this step is a no-op placeholder.
 >
 > If your project ships its own equivalents (e.g., a project-local `/security-review` skill), invoke them manually here. Otherwise, the user should run them manually before saying "ship it" for any user-visible or high-risk change. Low-risk changes (typo fixes, doc-only edits, internal refactors) can skip without manual review.
 >
-> When PR 2 backfills this section, it will sequentially invoke `/flow:security-review` and `/flow:accessibility-review` via the Skill tool; each will self-triage and apply BLOCKER + cheap NIT fixes in-tree and return FOLLOW-UP findings for step 2 routing.
+> When PR 2 backfills this section, it will sequentially invoke `/flow:security-review` and `/flow:accessibility-review` via the Skill tool; each will self-triage and apply BLOCKER + cheap NIT fixes in-tree and return FOLLOW-UP findings for step 3 routing.
 
-## 2. Route follow-ups
+## 3. Route follow-ups
 
 Any FOLLOW-UP findings from the (currently manual) reviews — or from `/simplify` / `/flow:staff-review` (PR 2) earlier in the loop — need to land in the right doc:
 
@@ -56,18 +56,23 @@ Mention follow-ups in the PR body for reviewer awareness, but **never only in th
 If any new BLOCKER fix changed code, re-run the project's typecheck once before moving on:
 
 ```sh
-# Resolve and run the configured typecheck command
+# Resolve and run the configured typecheck command. The slot is a shell
+# command string; the project owns its own flow.config.json and is
+# trusted at the same level as any other repo-local config (package.json
+# scripts, .eslintrc, pre-commit hooks). Use sh -c rather than eval so
+# the subshell can't mutate caller-process state. The forthcoming PR-2
+# JSON Schema will document the trust boundary explicitly.
 TYPECHECK=$(cat flow.config.json 2>/dev/null | jq -r '.typecheckCmd // empty')
 if [ -n "$TYPECHECK" ]; then
-  eval "$TYPECHECK"
+  sh -c "$TYPECHECK"
 else
   echo "⚠️ flow.config.json.typecheckCmd not set; skipping typecheck re-run. Set this slot to enable typecheck on /flow:ship."
 fi
 ```
 
-## 3. Synthesize session feedback (two layers)
+## 4. Synthesize session feedback (two layers)
 
-### 3a. User feedback → `flow.config.json.feedbackPath` (default `dev-docs/feedback.md`; consumers typically `core-docs/feedback.md`)
+### 4a. User feedback → `flow.config.json.feedbackPath` (default `dev-docs/feedback.md`; consumers typically `core-docs/feedback.md`)
 
 Review this conversation (and any prior session since the last PR on this branch) for:
 - User corrections — places you got it wrong and the user fixed your direction.
@@ -77,7 +82,7 @@ Review this conversation (and any prior session since the last PR on this branch
 
 Add new entries to the configured feedback doc following the FB-XXXX format. Increment from the last ID. Skip anything already captured. The bar: would a future session benefit from this rule? If yes, write it down.
 
-### 3b. Agent self-feedback → failure-pattern memory
+### 4b. Agent self-feedback → failure-pattern memory
 
 > **[PR 1 LIMITATION]** The memory machinery (`tools/memory/check.mjs`, the source-diversity bar tooling, the audit-due check) ships in flow PR 2 at `plugins/flow/tools/memory/`. Until then, skip this sub-step.
 >
@@ -85,7 +90,7 @@ Add new entries to the configured feedback doc following the FB-XXXX format. Inc
 >
 > When PR 2 backfills this section, it will: (i) check corpus size via `node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs`; (ii) apply the source-diversity bar against this PR's findings; (iii) resolve contradictions with the feedback doc; (iv) write new entries to `~/.claude/projects/<canonical>/memory/feedback_<name>.md`; (v) update fire logs and flag 2+ fires as promotion candidates; (vi) trigger a fresh-context audit if `--audit-due` exits 1.
 
-## 4. Update project docs
+## 5. Update project docs
 
 For each meaningful change in the diff, update via the config slots (all default to `dev-docs/<name>.md`; consumer projects typically set them to `core-docs/<name>.md`):
 
@@ -96,7 +101,7 @@ For each meaningful change in the diff, update via the config slots (all default
 
 Do **not** add entries that already exist. Skip silently.
 
-## 5. Commit
+## 6. Commit
 
 Stage code changes + doc updates together (or in two commits if cleaner). Never stage `.env`, secrets, or credentials.
 
@@ -107,7 +112,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 If safety-critical code changed, include `SAFETY` in the commit subject.
 
-## 6. Push and PR
+## 7. Push and PR
 
 Push with `-u` if the branch isn't tracking yet.
 
@@ -134,7 +139,7 @@ The PR base branch is resolved via this fallback chain:
 
 **PR-OPEN**: push the new commits. Update the PR body if the summary/test plan needs to reflect the latest scope; otherwise leave it.
 
-## 7. Hand off
+## 8. Hand off
 
 Output the PR URL and a one-line summary of what shipped.
 
@@ -154,12 +159,12 @@ If your project has a dev-server skill (e.g., a `/link`-style skill), invoke it 
 
 | Slot | Default | Used by |
 |---|---|---|
-| `flow.config.json.defaultBranch` | falls back to `git symbolic-ref` then literal `main` | Step 0 (NOTHING-TO-SHIP check), Step 6 (PR base) |
-| `flow.config.json.typecheckCmd` | unset → loud warning, never silent | Step 2 (post-fix re-check) |
-| `flow.config.json.historyPath` | `dev-docs/history.md` | Step 4 |
-| `flow.config.json.planPath` | `dev-docs/plan.md` | Steps 2, 4 |
-| `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Steps 2, 4 |
-| `flow.config.json.specPath` | `dev-docs/spec.md` | Step 4 |
-| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 3a |
+| `flow.config.json.defaultBranch` | falls back to `git symbolic-ref` then literal `main` | Step 1 (NOTHING-TO-SHIP check), Step 7 (PR base) |
+| `flow.config.json.typecheckCmd` | unset → loud warning, never silent | Step 3 (post-fix re-check) |
+| `flow.config.json.historyPath` | `dev-docs/history.md` | Step 5 |
+| `flow.config.json.planPath` | `dev-docs/plan.md` | Steps 3, 5 |
+| `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Steps 3, 5 |
+| `flow.config.json.specPath` | `dev-docs/spec.md` | Step 5 |
+| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4a |
 
 Consumer projects typically override the `*Path` slots to `core-docs/<name>.md` since they keep their own project docs under `core-docs/`. Flow's own dev-tracking lives under `dev-docs/` to leave `core-docs/` free as a name that consumer-template-shipped scaffolding uses.

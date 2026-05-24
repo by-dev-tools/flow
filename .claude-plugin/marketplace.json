@@ -6,8 +6,7 @@
   },
   "metadata": {
     "description": "Managed-autonomy workflow for Claude Code: 11-step loop with audit/critique skills, agent-isolated reviewers, and project-config-driven ship pipeline.",
-    "version": "1.0.0",
-    "pluginRoot": "./plugins"
+    "version": "1.0.0"
   },
   "plugins": [
     {

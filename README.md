@@ -39,31 +39,11 @@ The narrative slot table lives in [`plugins/flow/docs/workflow.md`](plugins/flow
 
 ## The loop
 
-Long-form: [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md).
+11 steps, 2 human gates:
 
-Cheat sheet:
+> **Clarify → Plan (gate) → Execute → Preflight → Commit → `/simplify` → `/flow:staff-review` → Present → Iterate → `/flow:ship` → User merges (gate)**
 
-```
- 1. Clarify          read source-of-truth docs; surface conflicts; ask 2–4
-                     targeted questions (or list assumptions if autonomous)
- 2. Plan             write plan with spec-walk checkboxes + confidence
-                     verdict; run /flow:critique-plan; WAIT for human gate
- 3. Execute          implement against checkboxes; stay in scope
- 4. Preflight        mechanical gates (typecheck/build/test + invariants) —
-                     MUST be green before /simplify runs
- 5. Commit           "why" not "what"; co-author trailer; per-phase
- 6. /simplify        (bundled with Claude Code) cold-read for reuse,
-                     clarity, efficiency; fix in-tree; re-run preflight
- 7. /flow:staff-review (PR 2) four lenses in parallel (engineer / UX /
-                     design-eng / push-further); BLOCKER + cheap NIT in-tree;
-                     FOLLOW-UP → roadmap/plan
- 8. Present          reviewer notes + dev URL + branch state; flag MEDIUM-
-                     confidence assumptions for user redirect
- 9. Iterate          apply user feedback (mini-loop of 1–7)
-10. /flow:ship       security + a11y final pass (PR 2 backfill) → synthesize
-                     feedback → update docs → commit → push → open PR
-11. STOP             the user merges; Claude never does
-```
+Long-form with rationale for every step, gate semantics, spike/tiny mode escapes, and config-slot defaults: [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md).
 
 ## What the auditor + plan-critic catch
 
