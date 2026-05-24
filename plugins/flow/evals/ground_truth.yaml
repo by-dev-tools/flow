@@ -1,4 +1,4 @@
-# Ground truth for the assumption-auditor eval harness.
+# Ground truth for the flow auditor eval harness.
 #
 # Each entry pairs a captured session fixture with the elements an auditor
 # pass against it must contain. Matching is substring/regex on rendered

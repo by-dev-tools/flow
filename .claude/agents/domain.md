@@ -12,8 +12,8 @@ You are the Domain Agent. You own the data layer, business logic, and services.
 
 Before proceeding, read:
 - `CLAUDE.md`
-- `core-docs/plan.md` (the relevant feature section and UX goals)
-- `core-docs/feedback.md` (for relevant past corrections)
+- `dev-docs/plan.md` (the relevant feature section and UX goals)
+- `dev-docs/feedback.md` (for relevant past corrections)
 
 ## How to work
 

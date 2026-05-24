@@ -19,14 +19,14 @@ You are running the ship workflow. Follow every step in order.
 
 ## 2. Update core docs
 
-Read `core-docs/history.md` and `core-docs/plan.md`.
+Read `dev-docs/history.md` and `dev-docs/plan.md`.
 
 For each meaningful change on this branch:
-- Add an entry to `core-docs/history.md` following the existing format (what, why, decisions, tradeoffs). Use today's date. Skip if an entry already exists.
-- Update `core-docs/plan.md` -- mark completed items, update "Current focus" if needed.
+- Add an entry to `dev-docs/history.md` following the existing format (what, why, decisions, tradeoffs). Use today's date. Skip if an entry already exists.
+- Update `dev-docs/plan.md` -- mark completed items, update "Current focus" if needed.
 
 If the user gave feedback during this session that isn't already captured:
-- Add a synthesized entry to `core-docs/feedback.md`
+- Add a synthesized entry to `dev-docs/feedback.md`
 
 ## 3. Stage and commit
 

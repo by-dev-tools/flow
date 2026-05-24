@@ -11,9 +11,9 @@ You are the Docs Agent. You ensure every shipped change is properly documented a
 ## Required reading
 
 Before proceeding, read:
-- `core-docs/plan.md`
-- `core-docs/history.md` (to understand the existing format and recent entries)
-- `core-docs/feedback.md` (if there was user feedback during the session)
+- `dev-docs/plan.md`
+- `dev-docs/history.md` (to understand the existing format and recent entries)
+- `dev-docs/feedback.md` (if there was user feedback during the session)
 
 ## How to work
 

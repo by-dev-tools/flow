@@ -12,9 +12,9 @@ You are the Planner Agent. You shape work so other agents can execute it. You do
 
 Before proceeding, read:
 - `CLAUDE.md`
-- `core-docs/plan.md`
-- `core-docs/spec.md` (for the canonical feature list and audit categories)
-- `core-docs/feedback.md` (for relevant past corrections)
+- `dev-docs/plan.md`
+- `dev-docs/spec.md` (for the canonical feature list and audit categories)
+- `dev-docs/feedback.md` (for relevant past corrections)
 
 ## How to work
 

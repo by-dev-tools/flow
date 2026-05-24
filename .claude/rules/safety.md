@@ -1,27 +1,33 @@
 ---
 paths:
-  - "agents/auditor.md"
-  - "skills/audit-plan/SKILL.md"
-  - "skills/audit-completion/SKILL.md"
-  - "scripts/extract_session.py"
-  - "scripts/bounding_logic.py"
-  - ".claude-plugin/plugin.json"
+  - "plugins/flow/agents/auditor.md"
+  - "plugins/flow/agents/plan-critic.md"
+  - "plugins/flow/skills/audit-plan/SKILL.md"
+  - "plugins/flow/skills/audit-completion/SKILL.md"
+  - "plugins/flow/skills/critique-plan/SKILL.md"
+  - "plugins/flow/skills/ship/SKILL.md"
+  - "plugins/flow/scripts/extract_session.py"
+  - "plugins/flow/scripts/bounding_logic.py"
+  - "plugins/flow/scripts/log_disagreement.py"
   - ".claude-plugin/marketplace.json"
-  - "evals/run_evals.py"
-  - "evals/ground_truth.yaml"
+  - "plugins/flow/.claude-plugin/plugin.json"
+  - "plugins/flow/evals/run_evals.py"
+  - "plugins/flow/evals/ground_truth.yaml"
 ---
 
 # Safety-Critical Code Rules
 
-This file loads automatically when you touch the plugin's published artifacts or its eval harness. These are the files that determine what the auditor does, what it sees, and how we know whether it's right.
+This file loads automatically when you touch the plugin's published artifacts or its eval harness. These are the files that determine what the plugin does, what its reviewers see, and how we know whether it's right.
 
 Safety-critical surfaces in this plugin:
 
-- **`agents/auditor.md`** -- the auditor's system prompt. Changes here directly alter audit behavior. Small wording shifts can flip false-positive rates.
-- **`scripts/extract_session.py`** and **`scripts/bounding_logic.py`** -- session parsing and context assembly. Silent failure modes here starve the auditor of evidence without surfacing an error. Already known to skip malformed JSONL lines silently (line ~90); be deliberate about any change to that.
-- **`skills/audit-plan/SKILL.md`** and **`skills/audit-completion/SKILL.md`** -- slash command dispatch. Shell substitution is used to inject preprocessed context; no size guards today.
-- **`.claude-plugin/plugin.json`** and **`.claude-plugin/marketplace.json`** -- install surface. Breaking these breaks installation for every user.
-- **`evals/run_evals.py`** and **`evals/ground_truth.yaml`** -- the only regression signal we have. If evals break silently, we lose the ability to detect auditor behavior drift.
+- **`plugins/flow/agents/auditor.md`** and **`plugins/flow/agents/plan-critic.md`** -- the reviewer system prompts. Changes here directly alter audit/critique behavior. Small wording shifts can flip false-positive rates.
+- **`plugins/flow/scripts/extract_session.py`** and **`plugins/flow/scripts/bounding_logic.py`** -- session parsing and context assembly. Silent failure modes here starve the reviewers of evidence without surfacing an error. Already known to skip malformed JSONL lines silently (line ~90); be deliberate about any change to that.
+- **`plugins/flow/scripts/log_disagreement.py`** -- writes user-pushback records to user-scope storage. The storage path is load-bearing for the disagreement-capture contract; changes here orphan prior data.
+- **`plugins/flow/skills/audit-plan/SKILL.md`**, **`plugins/flow/skills/audit-completion/SKILL.md`**, **`plugins/flow/skills/critique-plan/SKILL.md`** -- slash command dispatch. Shell substitution is used to inject preprocessed context; no size guards today.
+- **`plugins/flow/skills/ship/SKILL.md`** -- the workflow ship pipeline. Changes here affect what every project's `/flow:ship` invocation does; placeholder sections for `/flow:security-review` and `/flow:accessibility-review` are intentional until PR 2 backfills them.
+- **`.claude-plugin/marketplace.json`** and **`plugins/flow/.claude-plugin/plugin.json`** -- install surface. Breaking these breaks installation for every user.
+- **`plugins/flow/evals/run_evals.py`** and **`plugins/flow/evals/ground_truth.yaml`** -- the only regression signal we have. If evals break silently, we lose the ability to detect reviewer behavior drift.
 
 ## Before modifying safety-critical code
 
@@ -32,7 +38,7 @@ Safety-critical surfaces in this plugin:
 ## When committing safety changes
 
 - Flag the change in the commit message with a `SAFETY` marker.
-- Flag the change in `core-docs/history.md` with a `SAFETY` marker.
+- Flag the change in `dev-docs/history.md` with a `SAFETY` marker.
 - Explain what safety behavior was preserved, modified, or added.
 
 ## Never silently downgrade error handling

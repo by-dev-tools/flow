@@ -2,12 +2,12 @@
 """Capture an audit-finding disagreement for prompt-tuning input.
 
 Invoked from skills/log-disagreement when the user pushes back on a finding
-from /audit-plan, /audit-completion, or /critique-plan.
+from /flow:audit-plan, /flow:audit-completion, or /flow:critique-plan.
 
 Writes two paired files to user-scope storage so the maintainer can review
 accumulated disagreements when tuning prompts:
 
-    ~/.claude/plugins/data/assumption-auditor/disagreements/
+    ~/.claude/plugins/data/flow/disagreements/
         <timestamp>-<reviewer>-<category>.jsonl   session window
         <timestamp>-<reviewer>-<category>.meta.json  dispute metadata
 
@@ -31,7 +31,7 @@ from extract_session import find_session_file, load_session
 
 DISAGREEMENT_DIR = (
     Path.home()
-    / ".claude" / "plugins" / "data" / "assumption-auditor" / "disagreements"
+    / ".claude" / "plugins" / "data" / "flow" / "disagreements"
 )
 
 # Turns to capture before the disagreement. Enough to cover the user request,
