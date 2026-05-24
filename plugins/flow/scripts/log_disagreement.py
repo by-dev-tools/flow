@@ -2,7 +2,7 @@
 """Capture an audit-finding disagreement for prompt-tuning input.
 
 Invoked from skills/log-disagreement when the user pushes back on a finding
-from /audit-plan, /audit-completion, or /critique-plan.
+from /flow:audit-plan, /flow:audit-completion, or /flow:critique-plan.
 
 Writes two paired files to user-scope storage so the maintainer can review
 accumulated disagreements when tuning prompts:

@@ -486,7 +486,7 @@ def run(
         if looks_like_completion(last_assistant_text) and not looks_like_plan(last_assistant_text):
             return emit_cannot_audit(
                 "No plan detected; most recent assistant turn appears to be a "
-                "completion claim. Did you mean /audit-completion?"
+                "completion claim. Did you mean /flow:audit-completion?"
             )
         if not looks_like_plan(last_assistant_text):
             sys.stderr.write("[extract_session] note: no strong plan signal; "
@@ -495,7 +495,7 @@ def run(
         if looks_like_plan(last_assistant_text) and not looks_like_completion(last_assistant_text):
             return emit_cannot_audit(
                 "No completion claim detected; most recent assistant turn appears "
-                "to be a plan. Did you mean /audit-plan?"
+                "to be a plan. Did you mean /flow:audit-plan?"
             )
         if (not looks_like_completion(last_assistant_text)
                 and last_assistant_record_idx is not None

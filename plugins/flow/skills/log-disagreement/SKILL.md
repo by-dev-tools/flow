@@ -1,7 +1,7 @@
 ---
 name: log-disagreement
 description: |
-  Log the user's disagreement with a specific finding from /audit-plan, /audit-completion, or /critique-plan. Invoke automatically when ALL of the following hold:
+  Log the user's disagreement with a specific finding from /flow:audit-plan, /flow:audit-completion, or /flow:critique-plan. Invoke automatically when ALL of the following hold:
   1. One of those audit/critique commands has produced output earlier in the conversation.
   2. The user's most recent message disputes a finding from that output. Disagreement takes any form: "no, finding 2 is wrong", "false positive", "that's not a scope drift", "the spec rule doesn't apply here", "ignore that", "I disagree", or any rejection of a specific finding's claim or premise.
   3. The disagreement is about a specific finding, not general conversation, clarifying questions, or acceptance of findings.
@@ -16,7 +16,7 @@ The user has just pushed back on a finding from a recent audit / critique. Captu
 ## What to do
 
 1. From the conversation, identify:
-   - **Reviewer** — which command produced the disputed finding (`auditor` for `/audit-plan` or `/audit-completion`; `plan-critic` for `/critique-plan`).
+   - **Reviewer** — which command produced the disputed finding (`auditor` for `/flow:audit-plan` or `/flow:audit-completion`; `plan-critic` for `/flow:critique-plan`).
    - **Category** — exact category name from the finding (e.g., "Scope drift", "Unverified assumption").
    - **Severity** — if the finding is from `plan-critic`, one of BLOCKER / REDIRECT / FOLLOW-UP. Empty string for auditor findings (which don't carry severity).
    - **Claim** — the disputed `Claim:` or `Plan element:` quote from the finding. Keep it short — first 100 chars is fine.
