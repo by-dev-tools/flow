@@ -1,0 +1,35 @@
+{
+  "$comment-1": "MERGE INTO YOUR PROJECT'S .claude/settings.json. Don't replace yours wholesale — your file may already have permissions, env vars, hooks, or enabledPlugins. Pull the keys below in.",
+  "$comment-2": "These two hooks are pulled from ${CLAUDE_PLUGIN_ROOT}/hooks/default-hooks.json. They opt in to flow's baseline safety hooks. Both are conservative (warn-only or block-on-clear-pattern); neither blocks arbitrary actions.",
+  "$comment-3": "DELETE THIS COMMENT BLOCK AND THE $comment-* lines BEFORE COMMITTING.",
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "$comment": "Hook 1: Block writes to sensitive-looking files (env, credentials, secrets, private keys, etc.). Hard block (exit 2). Catches accidents, not malice — sophisticated paths bypass.",
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // empty'); case \"$FILE\" in *.env|*.env.*|*credentials*|*secret*|*.key|*.p12|*.pfx|*.jks|*.keystore|*_ecdsa|*_ed25519|*_dsa|*.netrc|*.kdbx|*.ovpn|*token*) echo \"Blocked: refusing to write to sensitive file $FILE\" >&2; exit 2 ;; esac; exit 0"
+          }
+        ]
+      },
+      {
+        "$comment": "Hook 2: Warn when a tools/* script is invoked with an absolute --reference-paths argument. Warn-only (exit 0). The in-script cwd constraint in extract_session.py is the load-bearing defense; this is belt-to-braces. KNOWN BYPASSES: python -m invocation, env-var indirection, equals-form arg, shell-substituted variables — see plugins/flow/hooks/default-hooks.json $comment for the canonical list.",
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.tool_input.command // empty'); if echo \"$CMD\" | grep -qE '(extract_session\\.py|flow_extract).*--reference-paths[=\\s]+/'; then echo \"[flow hook] absolute --reference-paths detected; in-script cwd constraint will reject unless --allow-external-paths is also set\" >&2; fi; exit 0"
+          }
+        ]
+      }
+    ]
+  },
+
+  "$comment-enabledPlugins": "If you installed flow via /plugin marketplace add by-dev-tools/flow && /plugin install flow@flow, the line below is auto-managed. Listed for visibility.",
+  "enabledPlugins": {
+    "flow@flow": true
+  }
+}

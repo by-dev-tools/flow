@@ -1,0 +1,49 @@
+# {{PROJECT_NAME}}
+
+{{ONE_LINE_DESCRIPTION}}
+
+## Stack
+
+{{STACK}}
+
+## Workflow
+
+This project uses the [flow plugin](https://github.com/by-dev-tools/flow) for its 11-step managed-autonomy loop. See `core-docs/workflow.md` (project overlay, if any) and `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` (canonical) for the loop itself. Run `/flow:workflow-help` for an in-session reminder.
+
+Project-specific configuration lives in [`flow.config.json`](./flow.config.json) at the repo root.
+
+## Docs
+
+| File | Purpose |
+|---|---|
+| `core-docs/spec.md` | Product vision, problem, solution, feature table, open questions |
+| `core-docs/plan.md` | Current focus, active work items, handoff notes |
+| `core-docs/roadmap.md` | Horizons (Now / Next / Later) + § Exploration |
+| `core-docs/history.md` | Per-PR decision log: what + why + tradeoffs |
+| `core-docs/feedback.md` | User feedback synthesized to rules (FB-XXXX) |
+| `core-docs/design-language.md` | (UI projects) Tokens, axioms, components, motion — read before any UI change |
+
+## Rules (auto-loading)
+
+| Rule | Loads on | Purpose |
+|---|---|---|
+| `.claude/rules/safety.md` | safety-critical paths ({{SAFETY_PATHS}}) | Read recent git log before modifying; never silently downgrade error handling |
+| `.claude/rules/ui.md` (UI projects) | UI file edits | Read design-language.md first; use tokens, not raw values |
+
+Plugin-shipped rules (general workflow discipline, plan format, doc format, exploration triggers) load automatically when the flow plugin is installed. See `${CLAUDE_PLUGIN_ROOT}/rules/` for the full set.
+
+## Quality bar
+
+- **Polished over partial.** Every visible control does its job. Wire-vs-defer: if the gap is < 1 day, wire it; else remove the visible affordance and capture in roadmap.
+- **Scope expansion is additive.** Ship the smallest polished form first.
+- **No false affordances.** A button that doesn't work is a bug equivalent to a crash.
+
+## Quick start
+
+```sh
+# After cloning:
+{{INSTALL_STEPS}}
+
+# Verify flow is wired:
+claude --print "/flow:workflow-help" | head -20
+```
