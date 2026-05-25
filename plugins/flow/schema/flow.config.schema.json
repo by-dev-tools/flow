@@ -1,0 +1,84 @@
+{
+  "title": "flow.config.json",
+  "description": "Per-project configuration for the flow plugin. Every slot is optional; documented defaults apply when unset. Schema for the flow plugin v1.1.0+.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "defaultBranch": {
+      "type": "string",
+      "description": "The branch that PRs target and that diffs are computed against. If unset, flow resolves via `git symbolic-ref refs/remotes/origin/HEAD`, then falls back to the literal `main`.",
+      "examples": ["main", "trunk", "develop"]
+    },
+    "typecheckCmd": {
+      "type": "string",
+      "description": "Shell command to run as the project's typecheck. Run via `sh -c` (NOT eval) by /flow:ship and /flow:staff-review after applying review fixes. UNSET behavior: each invoking skill prints a loud ⚠️ warning, never silently no-ops. Project owns this string at the same trust level as package.json scripts or pre-commit hooks.",
+      "examples": ["npm run typecheck", "pnpm typecheck", "tsc --noEmit", "cargo check --workspace"]
+    },
+    "historyPath": {
+      "type": "string",
+      "description": "Path (relative to repo root) to the project's history doc. /flow:ship writes new entries here. /flow:ship-spike writes the spike entry here (it IS the deliverable). Default: dev-docs/history.md (flow's own repo convention). Consumer projects typically set this to core-docs/history.md.",
+      "default": "dev-docs/history.md"
+    },
+    "planPath": {
+      "type": "string",
+      "description": "Path to the project's plan doc. Read by every skill at session start (Current Focus + Handoff Notes); written by /flow:ship (move shipped → Recently Completed; refresh Current Focus) and the planner agent (Active Work Items). Default: dev-docs/plan.md.",
+      "default": "dev-docs/plan.md"
+    },
+    "roadmapPath": {
+      "type": "string",
+      "description": "Path to the project's roadmap doc. /flow:ship and /flow:staff-review route FOLLOW-UP findings here. Push-further lens routes future-exploration findings to the doc's § Exploration section. Default: dev-docs/roadmap.md.",
+      "default": "dev-docs/roadmap.md"
+    },
+    "specPath": {
+      "type": "string",
+      "description": "Path to the project's spec doc (product vision, problem, solution, feature table). Read by planner, /flow:critique-plan, /flow:security-review (for context). Default: dev-docs/spec.md.",
+      "default": "dev-docs/spec.md"
+    },
+    "feedbackPath": {
+      "type": "string",
+      "description": "Path to the project's user-feedback doc (FB-XXXX entries synthesized from user corrections / preferences / direction / review feedback). Written by /flow:ship step 4a; read by every reviewer for context. Default: dev-docs/feedback.md.",
+      "default": "dev-docs/feedback.md"
+    },
+    "designLanguagePath": {
+      "type": "string",
+      "description": "Path to the project's design-language doc (tokens, axioms, component conventions, motion principles). Optional — projects without a UI surface may not have one. Read by /flow:staff-review (UX + design-engineer + push-further lenses) and /flow:accessibility-review for grounding. Default: dev-docs/design-language.md.",
+      "default": "dev-docs/design-language.md"
+    },
+    "referenceGlob": {
+      "type": "string",
+      "description": "Glob pattern (relative to repo root) that /flow:critique-plan's preprocessor uses to load reference docs deterministically. Excludes history.md / plan.md / roadmap.md automatically (those churn too often to be reliable spec sources). Default: core-docs/*.md (the consumer-side convention). Flow's own repo overrides to dev-docs/*.md.",
+      "default": "core-docs/*.md",
+      "examples": ["core-docs/*.md", "dev-docs/*.md", "docs/**/*.md"]
+    },
+    "uiSurface": {
+      "type": "boolean",
+      "description": "Whether this project ships a UI surface. If false, /flow:accessibility-review exits early with a clean 'no UI surface declared' message instead of running an empty audit. Default: true.",
+      "default": true
+    },
+    "reviewLenses": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["staff-engineer", "ux-designer", "design-engineer", "push-further", "uncommon-care"]
+      },
+      "description": "Which lens agents /flow:staff-review spawns in parallel. Default is the 4-lens baseline; opt-in 'uncommon-care' (deeper standalone lens) when flow ships it in a future version. Removing a lens means /flow:staff-review won't spawn it; document the reason in the project's plan doc.",
+      "default": ["staff-engineer", "ux-designer", "design-engineer", "push-further"],
+      "examples": [
+        ["staff-engineer", "ux-designer", "design-engineer", "push-further"],
+        ["staff-engineer", "push-further"]
+      ]
+    },
+    "memoryHardCap": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Maximum number of failure-pattern memory entries before tools/memory/check.mjs forces curation. At cap, no new entries can be written without archiving or merging existing ones. Default: 30. Tuning advice: revisit when it bites; if you find yourself wanting more, audit first (most projects need < 30 if the source-diversity bar is honored).",
+      "default": 30
+    },
+    "branchPrefix": {
+      "type": "string",
+      "description": "Conventional prefix for feature branches (used by /flow:ship and /flow:ship-spike when they need to create a branch from main). Common values: 'claude/', 'feature/', 'fix/'. Empty string disables the prefix. Default: empty (flow doesn't add a prefix unless this is set).",
+      "default": "",
+      "examples": ["claude/", "feature/", "fix/"]
+    }
+  }
+}
