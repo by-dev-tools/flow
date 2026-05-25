@@ -38,11 +38,18 @@ If on the default branch, create a descriptive kebab-case branch first.
 
 ## 2. Final-pass reviews
 
-> **[PR 1 LIMITATION]** `/flow:security-review` and `/flow:accessibility-review` are not yet available in the flow plugin — they ship in PR 2. Until then, this step is a no-op placeholder.
->
-> If your project ships its own equivalents (e.g., a project-local `/security-review` skill), invoke them manually here. Otherwise, the user should run them manually before saying "ship it" for any user-visible or high-risk change. Low-risk changes (typo fixes, doc-only edits, internal refactors) can skip without manual review.
->
-> When PR 2 backfills this section, it will sequentially invoke `/flow:security-review` and `/flow:accessibility-review` via the Skill tool; each will self-triage and apply BLOCKER + cheap NIT fixes in-tree and return FOLLOW-UP findings for step 3 routing.
+Sequentially invoke `/flow:security-review` and `/flow:accessibility-review` via the Skill tool. Each reviewer cold-reads the workspace diff vs the default branch, applies BLOCKER + cheap NIT fixes in-tree, and returns FOLLOW-UP findings for step 3 routing.
+
+```
+Skill("flow:security-review")
+Skill("flow:accessibility-review")
+```
+
+Skip behavior:
+- `/flow:security-review`: skip if the diff is doc-only or trivially safe (a copy tweak). The reviewer self-detects this and exits early with a clean message.
+- `/flow:accessibility-review`: skip if `flow.config.json.uiSurface` is `false` (the reviewer self-detects this and exits early), or if the diff is non-UI (data layer, build config, doc-only).
+
+Both reviewers are tuned for the in-flow ship context; the bundled Claude Code `/security-review` is fine for out-of-band deep audits but `/flow:security-review` carries the config-slot doc-path resolution this pipeline needs.
 
 ## 3. Route follow-ups
 
@@ -84,11 +91,41 @@ Add new entries to the configured feedback doc following the FB-XXXX format. Inc
 
 ### 4b. Agent self-feedback → failure-pattern memory
 
-> **[PR 1 LIMITATION]** The memory machinery (`tools/memory/check.mjs`, the source-diversity bar tooling, the audit-due check) ships in flow PR 2 at `plugins/flow/tools/memory/`. Until then, skip this sub-step.
->
-> Single-source findings are intentionally low-value to capture; the source-diversity bar exists for a reason. For now, surface any pattern you noticed in the PR body under "Lessons learned" — it can be promoted to a real memory entry once PR 2 lands the tooling and the pattern recurs.
->
-> When PR 2 backfills this section, it will: (i) check corpus size via `node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs`; (ii) apply the source-diversity bar against this PR's findings; (iii) resolve contradictions with the feedback doc; (iv) write new entries to `~/.claude/projects/<canonical>/memory/feedback_<name>.md`; (v) update fire logs and flag 2+ fires as promotion candidates; (vi) trigger a fresh-context audit if `--audit-due` exits 1.
+Memory entries (`~/.claude/projects/<canonical>/memory/feedback_*.md`) capture failure patterns the agent should watch for across sessions. **All 5 guardrails from `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` § "Continuous improvement" apply** — most importantly the source-diversity bar (write only when 2-of-3 evidence sources support the entry: recurrence in time / two reviewers / one review + user correction).
+
+Run the sub-steps in order:
+
+**4b.i — Corpus health check.**
+
+```sh
+node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs
+```
+
+If output shows AT/OVER CAP, curate (archive or merge an existing entry) before writing a new one. The cap is `flow.config.json.memoryHardCap` (default 30).
+
+**4b.ii — Apply the source-diversity bar to this PR's findings.**
+
+For each finding from /simplify, /flow:staff-review (4 lenses), /flow:security-review, /flow:accessibility-review, ask: *would this same pattern recur on a similar surface, and is it not already mechanically checkable?* If yes AND 2-of-3 evidence sources support it, the finding earns a memory entry. Single-source findings do NOT earn an entry — that's the bar protecting against memory-amplification slop.
+
+**4b.iii — Resolve contradictions with the feedback doc.**
+
+If a candidate memory entry contradicts an FB-XXXX in `flow.config.json.feedbackPath`, user feedback wins automatically. Revise the candidate or skip.
+
+**4b.iv — Write the entry.**
+
+Path: `~/.claude/projects/<canonical-project>/memory/feedback_<short_snake_name>.md` (the memory tool resolves the canonical path; see its top-of-file comment). Format per `${CLAUDE_PLUGIN_ROOT}/rules/documentation.md` § "memory entry format" — required fields: Source, First seen, Source-diversity evidence, Pattern, Why I missed it, How to catch it next time, Promotion target, Fire log.
+
+**4b.v — Update fire logs on existing entries.**
+
+If a finding this PR matches an EXISTING memory entry's pattern, append `YYYY-MM-DD` to that entry's `Fire log`. When fire-log reaches 2+ entries, the pattern is a promotion candidate — file a roadmap entry naming the preflight rule that would catch it deterministically. Promotion is user-gated (preflight rules are permanent; a bad rule generates false positives forever).
+
+**4b.vi — Trigger fresh-context audit if due.**
+
+```sh
+node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs --audit-due
+```
+
+If exit 1 (audit due), spawn an Agent (subagent_type: Explore) with the memory directory as input. The audit reads ONLY the memory entries (no PR diff, no other context) and answers: which entries' fire logs show no activity in 60+ days (archive candidates)? which entries contradict each other (resolve)? which entries look like over-fitting on a single past incident (revise or delete)? This is the cure for memory ossification.
 
 ## 5. Update project docs
 
