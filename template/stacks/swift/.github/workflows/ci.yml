@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+    env:
+      XCODE_VERSION: "15.4"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_${{ env.XCODE_VERSION }}.app
+
+      - name: Resolve SPM dependencies (cached)
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Preflight (xcodebuild + xcodebuild test + swift-format)
+        run: |
+          chmod +x tools/preflight/check.sh
+          ./tools/preflight/check.sh
+
+  swift-format-check:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install swift-format
+        run: brew install swift-format
+      - name: Lint
+        run: swift-format lint --recursive --strict .

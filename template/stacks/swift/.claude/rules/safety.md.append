@@ -1,0 +1,10 @@
+## Swift-stack additions (append to template/base/.claude/rules/safety.md.template)
+
+Add these to your project's safety-critical surfaces list:
+
+- **`*.xcodeproj/project.pbxproj`** — Xcode project graph. Hand-edits are error-prone (UUIDs, build phases). Always check `git status` after Xcode edits; review for unintended target/scheme/dependency drift.
+- **`*.xcworkspace/contents.xcworkspacedata`** — workspace references. Wrong path = broken build for every team member.
+- **`*.xcconfig`** — build-setting overrides. Wrong order or wrong inheritance silently breaks signing, deployment-target, or framework search paths.
+- **`Package.swift`** / **`Package.resolved`** — SPM dependency manifest. Always commit `Package.resolved`; never hand-edit `Package.swift` to remove a dep without `swift package resolve` afterwards.
+- **`*.entitlements`** — capability manifest. Adding/removing capabilities (HealthKit, CloudKit, Push) requires App Store Connect coordination; getting this wrong on a shipping app blocks updates.
+- **Code signing config in `*.xcodeproj`** — `DEVELOPMENT_TEAM`, `CODE_SIGN_STYLE`, `PROVISIONING_PROFILE_SPECIFIER`. Wrong here = unsignable build.

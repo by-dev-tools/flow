@@ -1,0 +1,25 @@
+# Tauri + Rust + TS additions — APPEND to template/base/.gitignore.template entries.
+
+# Tauri build output
+src-tauri/target/
+src-tauri/gen/
+
+# Rust general
+target/
+**/target/
+*.rs.bk
+Cargo.lock
+# NOTE: Cargo.lock IS typically committed for application crates (Tauri apps qualify).
+#       If your project is a library, uncomment this line and ignore it.
+#
+# We keep it committed by default — uncomment the above if needed.
+
+# Vite / frontend (matches web stack)
+node_modules/
+dist/
+.vite/
+tsconfig.tsbuildinfo
+.vitest/
+
+# Tauri output bundles
+src-tauri/target/release/bundle/

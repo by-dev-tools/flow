@@ -1,0 +1,26 @@
+# Web-stack additions — APPEND to template/base/.gitignore.template entries (do not replace).
+
+# Node
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/cache/
+.yarn/install-state.gz
+
+# Build output
+dist/
+build/
+out/
+.next/
+.nuxt/
+.svelte-kit/
+.astro/
+.vite/
+
+# TypeScript incremental compile
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Vitest / Jest
+.vitest/
+__snapshots__/
