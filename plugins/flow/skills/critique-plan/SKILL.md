@@ -10,7 +10,7 @@ agent: plan-critic
 
 ## Session context (preprocessed)
 
-!`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --reference-glob "core-docs/*.md"`
+!`REFGLOB=$(cat flow.config.json 2>/dev/null | jq -r '.referenceGlob // empty' 2>/dev/null); [ -z "$REFGLOB" ] && REFGLOB="core-docs/*.md"; python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --reference-glob "$REFGLOB"`
 
 ## What to check
 
@@ -24,9 +24,9 @@ You are complementary to the evidence auditor (`${CLAUDE_PLUGIN_ROOT}/agents/aud
 
 ## Reference documents
 
-The preprocessor loads `core-docs/*.md` (excluding `history.md`, `plan.md`, `roadmap.md`) into a `## Reference documents` section above. Treat that section as your source of truth for spec violations — quote rules from it directly, with the source path. A spec violation cannot be flagged without quoting the rule it violates.
+The preprocessor loads docs matching `flow.config.json.referenceGlob` (default `core-docs/*.md`; flow's own repo overrides to `dev-docs/*.md`; excludes `history.md`, `plan.md`, `roadmap.md` automatically) into a `## Reference documents` section above. Treat that section as your source of truth for spec violations — quote rules from it directly, with the source path. A spec violation cannot be flagged without quoting the rule it violates.
 
-If the project uses a different doc location, the caller can override via `--reference-paths` or additional `--reference-glob` arguments to `extract_session.py`.
+To override per-invocation: set `flow.config.json.referenceGlob` (per-project) or pass additional `--reference-paths` / `--reference-glob` arguments. Reference paths must resolve under `cwd` unless `--allow-external-paths` is set (defense against arbitrary host-path reads).
 
 ## Output
 

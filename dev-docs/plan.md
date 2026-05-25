@@ -2,15 +2,40 @@
 
 ## Current Focus
 
-**Awaiting PR 1 merge** ([by-dev-tools/flow#5](https://github.com/by-dev-tools/flow/pull/5)). After the user merges, the immediate next focus is **PR 2** of the flow extraction umbrella: backfill the `/flow:ship` PR-1 placeholders (security + a11y reviews; memory machinery) and port the rest of the workflow surface (`/flow:staff-review` with four parallel lenses, `/flow:security-review`, `/flow:accessibility-review`, `/flow:ship-spike`, `/flow:workflow-help`), the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the context-isolation agents (`planner`, `docs`), `tools/memory/check.mjs`, and the `flow.config.json` JSON Schema. Also addresses two FOLLOW-UPs surfaced by PR 1's walk-through-the-loop review pass (see "PR 2 follow-ups from PR 1 review" below).
+**PR 2 awaiting merge** ([by-dev-tools/flow](https://github.com/by-dev-tools/flow) — PR URL captured at Phase 8 push). v1.0.0 → v1.1.0; full workflow surface backfilled; PR-1 placeholders gone; PR-1 FOLLOW-UPs addressed; bootstrap exception fully lifted for PR 3+. Dogfooded itself through `/flow:staff-review` + `/flow:security-review` in Phase 7 (caught 2 BLOCKER + 11 NIT + 8 FOLLOW-UP findings; all BLOCKER + NIT fixed in-tree; FOLLOW-UPs routed below).
 
-PR 3 (template directory: `template/base/` + per-stack overlays for web / swift / tauri-rust-ts) and PRs 4-6 (md-manager-side migration) remain queued in the umbrella; canonical state lives in md-manager's `core-docs/plan.md` § "Flow plugin extraction".
+After PR 2 merges: **PR 3** of the extraction umbrella — template directory (`template/base/` + per-stack overlays for web / swift / tauri-rust-ts) + `docs/bootstrap.md` + `docs/migration.md`. After PR 3 merges: md-manager PRs 4 → 5 → 6 sequentially per [`dev-docs/handoffs/md-manager-pr4-6-spec.md`](handoffs/md-manager-pr4-6-spec.md). Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
 
 ## Handoff Notes
 
-- **PR 1 needs user-side settings.json update after merge.** One line: `enabledPlugins."assumption-auditor@llm-auditor"` → `"flow@flow"`. Plus re-add marketplace under the new name: `/plugin marketplace remove llm-auditor && /plugin marketplace add by-dev-tools/flow && /plugin install flow@flow`. settings.json backup exists at `~/.claude/settings.json.bak.20260523-144832` from PR 0.
-- **Optional disagreement-records migration:** `mv ~/.claude/plugins/data/assumption-auditor/disagreements/* ~/.claude/plugins/data/flow/disagreements/` if you want pre-v1.0.0 records to surface alongside post-rename ones.
-- **PR 2 brief is owed.** Lives in md-manager once the PR-1 handoff loop closes (`md-manager/core-docs/handoffs/pr2-flow-plugin-rest.md`).
+- **PR 2 needs NO user-side settings update** — `flow@flow` install from PR 1 stays valid. Just `/plugin marketplace update flow` (or re-install) to pull v1.1.0 once PR 2 merges. If the user is testing via `--plugin-dir`, this is already live.
+- **PR 1 settings update reminder** (carried forward): `enabledPlugins."assumption-auditor@llm-auditor"` → `"flow@flow"` if not yet applied. Backup: `~/.claude/settings.json.bak.20260523-144832`.
+- **Optional disagreement-records migration** (carried forward): `mv ~/.claude/plugins/data/assumption-auditor/disagreements/* ~/.claude/plugins/data/flow/disagreements/`.
+- **PR 3 next.** Template directory + bootstrap/migration docs. The md-manager spec at `dev-docs/handoffs/md-manager-pr4-6-spec.md` was verified accurate against the shipped v1.1.0 surface in Phase 8 (the 13 flow.config.json slots there match the schema; the deletion list still matches md-manager state). PR 3 should be ~1 session; md-manager PR 4 starts only after PR 3 merges.
+
+## PR 3+ follow-ups from PR 2 review
+
+PR 2's Phase 7 dogfood (4 parallel lens agents + security review on PR 2's own diff) caught 2 BLOCKERs + 11 cheap NITs (all fixed in-tree) + 8 FOLLOW-UPs (routed here):
+
+1. **Eval coverage for cwd-constraint rejection path** (security lens). `extract_session.py`'s `allow_external_paths=False` default needs a regression fixture covering (a) symlink resolution under cwd, (b) `..` glob expansion, (c) absolute `--reference-paths` rejection, (d) `--allow-external-paths` opt-out. The constraint is a 30-line block in a 600-line file; future refactor could regress it silently. Owner: testing agent. Horizon: next reviewer-touching PR (could land in PR 3 or as a quick follow-up flow PR). Add fixtures under `plugins/flow/evals/fixtures/cwd-constraint/`.
+
+2. **Eval fixture for malicious-flow.config.json injection probe** (security lens). The `jq -r` + quoted-args pattern in skill `!<cmd>` blocks is correct today, but no fixture asserts that `flow.config.json` with shell metas in `referenceGlob`, `defaultBranch`, `typecheckCmd` is handled without command execution. One-line test would prevent silent regression. Horizon: PR 3.
+
+3. **Memory tool `validateMemoryDir` should `realpath` before prefix check** (security lens). Currently `Path.resolve()` collapses `..` but doesn't follow symlinks. Limited threat surface today (script only LISTS filenames; doesn't read contents). Revisit when `check.mjs` ever starts reading entry contents. Recommended fix when revisited: `realpathSync` before `startsWith(projectsRoot + '/')` check.
+
+4. **Single-source slot documentation** (push-further roadmap-concrete). Slot semantics duplicated across `flow.config.schema.json` (description fields), `workflow-help/SKILL.md` (slot table), `plugins/flow/docs/workflow.md` (slot table), and per-skill "Config slots used" tables. Will drift the first time a slot's behavior changes and someone updates 3 of 4. Pick schema as canonical; generate the others at release time, OR replace prose tables with a one-line pointer. Horizon: v1.2.
+
+5. **Loud-warning copy deduplication** (UX lens FOLLOW-UP). The `⚠️ flow.config.json.<slot> not set; ...` string appears verbatim in 5 skills. If wording evolves (e.g., add schema link), it's 5 edits. Extract to a single doc snippet referenced by `${CLAUDE_PLUGIN_ROOT}/docs/...`. Horizon: v1.2.
+
+6. **workflow-help vs README cheat-sheet duplication** (UX lens FOLLOW-UP — recurring; PR 1 review flagged the same shape for README+workflow.md). Workflow-help SKILL output overlaps the README cheat-sheet. Confirm side-by-side; decide canonical surface (probably README points at `/flow:workflow-help`, since the latter substitutes resolved project context). Horizon: next docs-touching PR.
+
+7. **workflow-help craft asymmetry vs flow's own preached doctrine** (push-further EXPLORATION). The plugin asks consumers to hold themselves to "uncommon care" but its own front door (`/flow:workflow-help`) is "comprehensive reference." Could be a one-line aphorism per step, a "what flow gives you / what flow asks of you" contract, or similar. Surfaces when: anyone edits `plugins/flow/skills/workflow-help/SKILL.md` or `plugins/flow/docs/workflow.md`.
+
+8. **Fallback message tone for missing project docs** (UX lens EXPLORATION). All 5 review skills emit `(no spec doc at $SPEC)` etc. when a doc is missing. Reads like shell output. Friendlier shape might be `Spec doc: not configured — set flow.config.json.specPath to enable spec-grounded review`. Surfaces when: a consumer reports the messages feel cryptic, OR when adding a new review skill (rule the tone in then).
+
+## Per-stack memory-tool foreign-cwd verification
+
+Routed for **PR 4 dogfood** (md-manager extraction umbrella): the `check.mjs` `deriveMemoryDir()` falls back to `~/.claude/projects/<slug-of-cwd>` when no project-name match exists under `~/.claude/projects/`. For consumers using flow at user-scope from a cwd that doesn't match any existing slug, this creates a separate memory dir per worktree — which the harness won't auto-load. Already documented in pr2-flow-plan.md's confidence verdict; surface as a real follow-up entry once md-manager PR 5 dogfoods.
 
 ## PR 2 follow-ups from PR 1 review
 
@@ -21,6 +46,20 @@ The walk-through-the-loop review on PR 1 surfaced two findings that are out-of-s
 2. **`extract_session.py --reference-paths` accepts arbitrary host paths.** Currently, `gather_reference_docs` reads any absolute path the caller passes; output is injected verbatim into the auditor subagent's context. In the current invocation chain, the caller is the `critique-plan` SKILL with a hardcoded glob, so consumer input never reaches it. But if a future skill or recipe ever forwards user-controlled paths, an attacker could exfil file contents (e.g., `~/.ssh/config`) into the subagent's prompt and out via tool output. Constrain to `cwd` (reject resolved paths outside `Path.cwd()`) unless an explicit override flag says otherwise. Document the trust model in the script docstring. Pairs naturally with PR 2's path-validation rule baseline (`plugins/flow/hooks/default-hooks.json`).
 
 ## Active Work Items
+
+### PR 2 — Workflow surface backfill (SHIPPED — awaiting merge)
+
+**Mode:** feature
+**Branch:** `pr2/workflow-backfill` (off `docs/pr2-handoffs`)
+**Canonical plan:** [`dev-docs/handoffs/pr2-flow-plan.md`](handoffs/pr2-flow-plan.md). 8 phases, per-phase verifiable success criteria, 6 confidence verdicts, 6 risks, ~24 files. User direction: execute autonomously, self-grade against success criteria, follow the workflow being implemented at each stage.
+
+**Phase 1 status (complete):** all 12 md-manager sources fetched to `/tmp/pr2-sources/` (sizes match estimates ±2%). Source-read observations refining the handoff plan:
+- Staff-review extraction (Phase 3-4): md-manager uses `subagent_type: Explore` with inline prompts; PR 2 changes to `subagent_type: lens-*` with extracted agent files. Structural change confirmed MEDIUM. Fallback documented.
+- Security/a11y reviews: heavier md-manager-specific token references than handoff anticipated (`--sand-9`, `--page-text-quiet`, "markdown-notes app"). De-projection effort scaled accordingly.
+- All 4 skills start step numbering at 0 (same off-by-one PR 1's `/flow:ship` had). Apply PR-1 NIT fix (start at 1) across all ports.
+- `ship-spike` references non-existent `tools/preflight/check.mjs` — port keeps as a config-slot opportunity (consumer-side preflight is project-specific per consolidation doc Decision 1).
+
+Execution proceeds through Phases 2-8 per the handoff.
 
 ### PR 1 — Flow plugin restructure + initial workflow surface (SHIPPED — awaiting merge)
 

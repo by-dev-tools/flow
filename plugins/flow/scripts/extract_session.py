@@ -291,6 +291,7 @@ def gather_reference_docs(
     paths: list[str],
     globs: list[str],
     skip_names: set[str],
+    allow_external_paths: bool = False,
 ) -> list[tuple[str, str]]:
     """Return ordered (display_path, contents) tuples for reference docs.
 
@@ -299,13 +300,35 @@ def gather_reference_docs(
     excluded. Each doc is truncated to REFERENCE_DOC_CHAR_CAP with a marker.
     Duplicate paths (same resolved location) are de-duplicated, preserving the
     first occurrence.
+
+    Security: by default, resolved paths MUST be under CWD. This prevents an
+    attacker who could influence the caller (e.g., a malicious skill recipe
+    forwarding user-controlled --reference-paths) from exfiltrating arbitrary
+    host files (e.g., ~/.ssh/config) into the reviewer subagent's context.
+    Glob patterns from caller config are also constrained — they expand only
+    against CWD. To opt-out (e.g., for cross-repo eval harnesses that
+    deliberately load fixtures outside the working tree), pass
+    allow_external_paths=True; the caller must explicitly own that trust
+    boundary. Out-of-cwd paths fail loudly with a stderr message, not
+    silently.
     """
-    cwd = Path.cwd()
+    cwd = Path.cwd().resolve()
     candidates: list[Path] = []
     for p in paths:
         candidates.append((cwd / p) if not Path(p).is_absolute() else Path(p))
     for g in globs:
-        candidates.extend(sorted(cwd.glob(g)))
+        # cwd.glob() raises NotImplementedError on absolute glob patterns
+        # (Path.glob requires relative patterns). Warn loudly + skip rather
+        # than crash the preprocessor for a misconfigured flow.config.json.
+        try:
+            candidates.extend(sorted(cwd.glob(g)))
+        except (NotImplementedError, ValueError) as e:
+            sys.stderr.write(
+                f"extract_session: ⚠️ skipping invalid reference glob {g!r}: {e}\n"
+                f"  Globs must be relative (e.g., 'core-docs/*.md'). "
+                f"For specific external paths use --reference-paths --allow-external-paths.\n"
+            )
+            continue
 
     seen: set[Path] = set()
     docs: list[tuple[str, str]] = []
@@ -317,6 +340,17 @@ def gather_reference_docs(
         if resolved in seen:
             continue
         seen.add(resolved)
+        # cwd-constraint: reject paths outside cwd unless explicitly allowed.
+        if not allow_external_paths:
+            try:
+                resolved.relative_to(cwd)
+            except ValueError:
+                sys.stderr.write(
+                    f"extract_session: rejecting reference path outside cwd: {resolved}\n"
+                    f"  cwd={cwd}\n"
+                    f"  pass --allow-external-paths if this is intentional.\n"
+                )
+                continue
         if resolved.name in skip_names:
             continue
         if not resolved.is_file():
@@ -441,6 +475,7 @@ def run(
     session_file: str | None = None,
     reference_paths: list[str] | None = None,
     reference_globs: list[str] | None = None,
+    allow_external_paths: bool = False,
 ) -> str:
     session_path = find_session_file(session_file)
     if session_path is None:
@@ -532,6 +567,7 @@ def run(
             reference_paths or [],
             reference_globs or [],
             DEFAULT_REFERENCE_SKIP_NAMES,
+            allow_external_paths=allow_external_paths,
         )
     ref_section = render_reference_section(ref_docs)
 
@@ -562,9 +598,22 @@ def main() -> int:
         default=[],
         help="glob pattern for reference docs (can be repeated, e.g. core-docs/*.md)",
     )
+    ap.add_argument(
+        "--allow-external-paths",
+        action="store_true",
+        help="permit reference paths to resolve outside cwd (default: rejected for safety). "
+        "Use only when the caller explicitly owns the trust boundary (e.g., eval harness loading "
+        "fixtures outside the working tree).",
+    )
     args = ap.parse_args()
     ref_paths = [p.strip() for p in args.reference_paths.split(",") if p.strip()]
-    sys.stdout.write(run(args.mode, args.session_file, ref_paths, args.reference_glob))
+    sys.stdout.write(run(
+        args.mode,
+        args.session_file,
+        ref_paths,
+        args.reference_glob,
+        allow_external_paths=args.allow_external_paths,
+    ))
     return 0
 
 
