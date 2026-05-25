@@ -2,9 +2,9 @@
 
 ## Current Focus
 
-**Awaiting PR 1 merge** ([by-dev-tools/flow#5](https://github.com/by-dev-tools/flow/pull/5)). After the user merges, the immediate next focus is **PR 2** of the flow extraction umbrella: backfill the `/flow:ship` PR-1 placeholders (security + a11y reviews; memory machinery) and port the rest of the workflow surface (`/flow:staff-review` with four parallel lenses, `/flow:security-review`, `/flow:accessibility-review`, `/flow:ship-spike`, `/flow:workflow-help`), the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the context-isolation agents (`planner`, `docs`), `tools/memory/check.mjs`, and the `flow.config.json` JSON Schema. Also addresses two FOLLOW-UPs surfaced by PR 1's walk-through-the-loop review pass (see "PR 2 follow-ups from PR 1 review" below).
+**PR 1 merged** (squash commit `f8610a1`, 2026-05-24). **PR 2 plan ready for next-session pickup** — full handoff at [`dev-docs/handoffs/pr2-flow-plan.md`](handoffs/pr2-flow-plan.md). 8 phases, each with verifiable success criteria. Phase 8 publishes the md-manager handoff at [`dev-docs/handoffs/md-manager-pr4-6-spec.md`](handoffs/md-manager-pr4-6-spec.md) (also already drafted in this docs-only precursor; Phase 8 verifies + updates against PR 2's actual shipped surface).
 
-PR 3 (template directory: `template/base/` + per-stack overlays for web / swift / tauri-rust-ts) and PRs 4-6 (md-manager-side migration) remain queued in the umbrella; canonical state lives in md-manager's `core-docs/plan.md` § "Flow plugin extraction".
+After PR 2 merges: PR 3 (template directory: `template/base/` + per-stack overlays for web / swift / tauri-rust-ts). After PR 3 merges: md-manager PRs 4 → 5 → 6 sequentially per the md-manager handoff spec. Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
 
 ## Handoff Notes
 
