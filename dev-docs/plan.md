@@ -64,7 +64,9 @@ The walk-through-the-loop review on PR 1 surfaced two findings that are out-of-s
 
 ### Consumer-feedback follow-ups (PRs A-E, sequential) — driven by md-manager PR 4 report 2026-05-25
 
-5 small focused PRs absorbing md-manager's first-real-consumer dogfood findings. FB-0005 through FB-0009 + 1 EXPLORATION (rule-of-three close-out skill) captured in PR A's intake. Each PR runs the workflow loop (plan → execute → preflight → /flow:staff-review or lens emulation → /flow:ship pipeline → open PR; user merges). Order is priority-sequenced per the consumer report; each can be reviewed + merged independently.
+5 small focused PRs absorbing md-manager's first-real-consumer dogfood findings. FB-0005 through FB-0009 + 1 EXPLORATION (rule-of-three close-out skill) captured in PR A's intake. Each PR runs the workflow loop (plan → execute → preflight → /flow:staff-review or lens emulation → /flow:ship pipeline → open PR; user merges).
+
+**Canonical priority sequence + one-liner per PR:** see [`dev-docs/roadmap.md`](roadmap.md) § Now. The per-PR plans below carry the detailed scope, spec-walk, and confidence verdicts; roadmap.md is the single source of truth for "what's the order + what's next."
 
 #### PR A — Consumer feedback intake (docs-only; in flight on `pr-a/consumer-feedback-intake`)
 
@@ -157,7 +159,7 @@ The walk-through-the-loop review on PR 1 surfaced two findings that are out-of-s
 - `plugins/flow/skills/security-review/SKILL.md` Step 1: add per-diff source-file detection (`git diff <base>..HEAD --name-only | grep -E ...`). If empty, emit "[security-review] no source/config files in diff; skipping." and exit 0.
 - `plugins/flow/skills/accessibility-review/SKILL.md` Step 1: add per-diff UI-file detection, AND in addition to the existing `uiSurface=false` project-wide gate. Same shape as security-review.
 - `plugins/flow/schema/flow.config.schema.json`: add two optional slots (`sourceFilePatterns`, `uiFilePatterns`) for projects with non-standard file layouts (e.g., monorepos). Defaults documented inline.
-- `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`: schema slot count 14 → 16.
+- `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`: bump metadata.version + plugin version to v1.2.1 (additive patch — no breaking changes). Update description text to reflect the new slot count (14 → 16) + the per-diff early-exit behavior.
 
 **Scope (out):** Restructuring the reviewers to take diff-paths as inputs (today they read from disk; the early-exit checks the path list but the reviewer itself still works as-is).
 
