@@ -145,22 +145,26 @@ Can also mention in the PR body for reviewer awareness, but the doc entry is can
 
 ### Reviewer notes template
 
+Fill every lens with a real summary, OR with the explicit null-finding shape ("Nothing of consequence" / "Acted on: —" / "Deferred: —"). Bare ellipses (`...`) read like Claude forgot to fill in the template; always concretize, even when the answer is "nothing."
+
 ```markdown
 ## Reviewer notes
 
 Four parallel reviews ran before this opened for human review. The first three (engineer / UX designer / design engineer) asked "is this good?"; the fourth (push-further) asked "could this go further?" and routes its findings to inline fixes, scoped roadmap items, or roadmap § Exploration.
 
-**Staff engineer.** _Findings:_ [one-line summary]. _Acted on:_ [what was fixed]. _Deferred:_ [follow-ups → roadmap/plan location].
+**Staff engineer.** _Findings:_ [one-line summary, or "Nothing of consequence"]. _Acted on:_ [what was fixed, or "—"]. _Deferred:_ [follow-ups → roadmap/plan location, or "—"].
 
-**Staff UX designer.** _Findings:_ ... _Acted on:_ ... _Deferred:_ ...
+**Staff UX designer.** _Findings:_ [...]. _Acted on:_ [...]. _Deferred:_ [...].
 
-**Staff design engineer.** _Findings:_ ... _Acted on:_ ... _Deferred:_ ...
+**Staff design engineer.** _Findings:_ [...]. _Acted on:_ [...]. _Deferred:_ [...].
 
-**Push-further (uncommon-care).** _Findings:_ [N inline-cheap / N roadmap-concrete / N future-exploration — or "Nothing to push — surface at ceiling for its scope"]. _Acted on:_ [what was applied inline]. _Deferred:_ [roadmap-concrete → roadmap horizon, future-exploration → roadmap § Exploration].
+**Push-further (uncommon-care).** _Findings:_ [N inline-cheap / N roadmap-concrete / N future-exploration — or "Nothing to push — surface at ceiling for its scope"]. _Acted on:_ [what was applied inline, or "—"]. _Deferred:_ [roadmap-concrete → roadmap horizon, future-exploration → roadmap § Exploration, or "—"].
 
 Typecheck (`flow.config.json.typecheckCmd`) re-run after fixes: [pass/fail/skipped].
 Dev URL for in-browser check: [link from /link-style skill, if running].
 ```
+
+Example of a clean null-finding fill: `**Staff UX designer.** _Findings:_ Nothing of consequence — no UI surface in this diff. _Acted on:_ —. _Deferred:_ —.`
 
 The bar is honesty over polish — if a review found nothing of consequence, say so. If you disagreed with a finding and didn't fix it, say so and why.
 

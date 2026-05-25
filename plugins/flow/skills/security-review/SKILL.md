@@ -6,12 +6,13 @@ description: >
   handling, secrets in committed files, persistence-layer leakage of
   sensitive data, unsafe third-party deps, path traversal, prototype
   pollution, unsafe iframe / postMessage patterns. Returns BLOCKER /
-  NIT / FOLLOW-UP findings. Use during /flow:ship's final-pass review,
-  on demand for any change touching rendering, file I/O, third-party
-  data, or persistence, or when the user says "security review", "audit
-  this for security", or similar. Invokable directly by the user
-  (`/flow:security-review`) or programmatically by `/flow:ship` via the
-  Skill tool.
+  NIT / FOLLOW-UP findings. Skips doc-only or trivially safe diffs
+  (e.g. copy tweaks) with a clean early-exit message. Use during
+  /flow:ship's final-pass review, on demand for any change touching
+  rendering, file I/O, third-party data, or persistence, or when the
+  user says "security review", "audit this for security", or similar.
+  Invokable directly by the user (`/flow:security-review`) or
+  programmatically by `/flow:ship` via the Skill tool.
 allowed-tools: Read, Glob, Grep, Bash, Agent
 ---
 

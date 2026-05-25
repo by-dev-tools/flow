@@ -9,7 +9,7 @@ description: >
   a PR. Never merges. Trigger phrases: "ship it", "ship this", "/flow:ship",
   "push and open the PR", "wrap this up".
 disable-model-invocation: true
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Agent, TaskCreate, TaskUpdate
+allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Agent, Skill
 ---
 
 You are running the flow ship pipeline. Follow every step in order. **Never merge.**
@@ -34,7 +34,12 @@ Classify:
 - **LOCAL-ONLY** — commits ahead and/or dirty tree, no PR yet.
 - **NOTHING-TO-SHIP** — clean tree at the default branch. Stop and tell the user.
 
-If on the default branch, create a descriptive kebab-case branch first.
+If on the default branch, create a descriptive kebab-case branch first. Prepend `flow.config.json.branchPrefix` if set (e.g., `claude/` → `claude/<descriptive-slug>`); empty prefix or unset means no prefix.
+
+```sh
+PREFIX=$(cat flow.config.json 2>/dev/null | jq -r '.branchPrefix // empty' 2>/dev/null)
+git checkout -b "${PREFIX}<descriptive-slug>"
+```
 
 ## 2. Final-pass reviews
 
@@ -50,6 +55,14 @@ Skip behavior:
 - `/flow:accessibility-review`: skip if `flow.config.json.uiSurface` is `false` (the reviewer self-detects this and exits early), or if the diff is non-UI (data layer, build config, doc-only).
 
 Both reviewers are tuned for the in-flow ship context; the bundled Claude Code `/security-review` is fine for out-of-band deep audits but `/flow:security-review` carries the config-slot doc-path resolution this pipeline needs.
+
+After both Skill calls return, emit one consolidated user-facing line so the user can see what actually ran vs skipped:
+
+```
+Final-pass reviews: security=[ran|skipped: <reason>], accessibility=[ran|skipped: <reason>].
+```
+
+Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=skipped (uiSurface:false).`
 
 ## 3. Route follow-ups
 

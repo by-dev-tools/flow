@@ -27,6 +27,8 @@ Output exactly this, with the resolved slot values substituted from the project 
 
 # The flow workflow loop (11 steps, 2 human gates)
 
+Flow is a managed-autonomy loop: the agent does the work it can do well; you stay in the loop where the cost of being wrong is high.
+
 ```
  1. Clarify          read source-of-truth docs; surface conflicts; ask 2–4
                      targeted questions (or list assumptions if autonomous)
@@ -80,9 +82,9 @@ To customize: edit `flow.config.json` at the project root. The schema lives at `
 
 | Skill | Purpose |
 |---|---|
-| `/flow:critique-plan` | Critique a plan for scope drift / spec violation / internal incoherence |
-| `/flow:audit-plan` | Audit a plan for unverified assumptions / unverified recall |
-| `/flow:audit-completion` | Audit a completion claim for false-verification proxies |
+| `/flow:critique-plan` | Critique a plan for scope drift / spec violation / internal incoherence (intent-vs-plan; complementary to audit-plan) |
+| `/flow:audit-plan` | Audit a plan for unverified assumptions / unverified recall (evidence-vs-claims; complementary to critique-plan) |
+| `/flow:audit-completion` | Audit a completion claim for false-verification proxies (evidence-vs-claims) |
 | `/flow:log-disagreement` | (Auto-invoked) capture user pushback on a reviewer finding |
 | `/flow:staff-review` | Four-lens parallel review (engineer / UX / design-eng / push-further) |
 | `/flow:security-review` | Diff-focused security audit |

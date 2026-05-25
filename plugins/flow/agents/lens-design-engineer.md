@@ -7,6 +7,7 @@ description: >
   values), micro-interactions, alignment with the existing visual
   system. Spawned in parallel with the other three lens agents by
   /flow:staff-review.
+tools: Read, Grep, Glob, Bash
 ---
 
 # Staff design engineer lens

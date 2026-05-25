@@ -8,6 +8,7 @@ description: >
   treatment, content-vs-chrome balance, alignment with the project's
   design-language doc. Spawned in parallel with the other three lens
   agents by /flow:staff-review.
+tools: Read, Grep, Glob, Bash
 ---
 
 # Staff UX designer lens

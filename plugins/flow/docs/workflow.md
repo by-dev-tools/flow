@@ -48,7 +48,7 @@ The user's request kicks the loop off (input, not a Claude step). From there:
  8. Present          reviewer notes + dev URL (project's dev-server skill,
                      not flow-provided) + branch state; NO PR yet; flag
                      MEDIUM-confidence assumptions for user redirect
- 9. Iterate          apply user feedback (mini-loop of 1–7)
+ 9. Iterate          apply user feedback (sub-loop of 1–7)
 10. /flow:ship       security + a11y final pass (PR 2) → feedback synthesis
                      → doc updates → commit → push → open PR
 11. STOP             the user merges; Claude never does
@@ -202,7 +202,7 @@ Claude returns:
 
 ## 9. Iterate
 
-User responds with feedback. Claude addresses it — code changes, doc updates, more review if scope changed materially. Each iteration is a normal request → clarify → plan → execute mini-loop. New scope = new plan (or amended plan with fresh confidence verdict).
+User responds with feedback. Claude addresses it — code changes, doc updates, more review if scope changed materially. Each iteration is a normal request → clarify → plan → execute sub-loop. New scope = new plan (or amended plan with fresh confidence verdict).
 
 ## 10. /flow:ship
 

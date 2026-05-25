@@ -8,6 +8,7 @@ description: >
   Permitted — and often correct — to return "Nothing to push — surface
   at ceiling for its scope." Spawned in parallel with the other three
   lens agents by /flow:staff-review.
+tools: Read, Grep, Glob, Bash
 ---
 
 # Push-further (uncommon-care) lens

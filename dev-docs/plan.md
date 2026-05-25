@@ -12,6 +12,30 @@ After PR 2 merges: PR 3 (template directory: `template/base/` + per-stack overla
 - **Optional disagreement-records migration:** `mv ~/.claude/plugins/data/assumption-auditor/disagreements/* ~/.claude/plugins/data/flow/disagreements/` if you want pre-v1.0.0 records to surface alongside post-rename ones.
 - **PR 2 brief is owed.** Lives in md-manager once the PR-1 handoff loop closes (`md-manager/core-docs/handoffs/pr2-flow-plugin-rest.md`).
 
+## PR 3+ follow-ups from PR 2 review
+
+PR 2's Phase 7 dogfood (4 parallel lens agents + security review on PR 2's own diff) caught 2 BLOCKERs + 11 cheap NITs (all fixed in-tree) + 8 FOLLOW-UPs (routed here):
+
+1. **Eval coverage for cwd-constraint rejection path** (security lens). `extract_session.py`'s `allow_external_paths=False` default needs a regression fixture covering (a) symlink resolution under cwd, (b) `..` glob expansion, (c) absolute `--reference-paths` rejection, (d) `--allow-external-paths` opt-out. The constraint is a 30-line block in a 600-line file; future refactor could regress it silently. Owner: testing agent. Horizon: next reviewer-touching PR (could land in PR 3 or as a quick follow-up flow PR). Add fixtures under `plugins/flow/evals/fixtures/cwd-constraint/`.
+
+2. **Eval fixture for malicious-flow.config.json injection probe** (security lens). The `jq -r` + quoted-args pattern in skill `!<cmd>` blocks is correct today, but no fixture asserts that `flow.config.json` with shell metas in `referenceGlob`, `defaultBranch`, `typecheckCmd` is handled without command execution. One-line test would prevent silent regression. Horizon: PR 3.
+
+3. **Memory tool `validateMemoryDir` should `realpath` before prefix check** (security lens). Currently `Path.resolve()` collapses `..` but doesn't follow symlinks. Limited threat surface today (script only LISTS filenames; doesn't read contents). Revisit when `check.mjs` ever starts reading entry contents. Recommended fix when revisited: `realpathSync` before `startsWith(projectsRoot + '/')` check.
+
+4. **Single-source slot documentation** (push-further roadmap-concrete). Slot semantics duplicated across `flow.config.schema.json` (description fields), `workflow-help/SKILL.md` (slot table), `plugins/flow/docs/workflow.md` (slot table), and per-skill "Config slots used" tables. Will drift the first time a slot's behavior changes and someone updates 3 of 4. Pick schema as canonical; generate the others at release time, OR replace prose tables with a one-line pointer. Horizon: v1.2.
+
+5. **Loud-warning copy deduplication** (UX lens FOLLOW-UP). The `⚠️ flow.config.json.<slot> not set; ...` string appears verbatim in 5 skills. If wording evolves (e.g., add schema link), it's 5 edits. Extract to a single doc snippet referenced by `${CLAUDE_PLUGIN_ROOT}/docs/...`. Horizon: v1.2.
+
+6. **workflow-help vs README cheat-sheet duplication** (UX lens FOLLOW-UP — recurring; PR 1 review flagged the same shape for README+workflow.md). Workflow-help SKILL output overlaps the README cheat-sheet. Confirm side-by-side; decide canonical surface (probably README points at `/flow:workflow-help`, since the latter substitutes resolved project context). Horizon: next docs-touching PR.
+
+7. **workflow-help craft asymmetry vs flow's own preached doctrine** (push-further EXPLORATION). The plugin asks consumers to hold themselves to "uncommon care" but its own front door (`/flow:workflow-help`) is "comprehensive reference." Could be a one-line aphorism per step, a "what flow gives you / what flow asks of you" contract, or similar. Surfaces when: anyone edits `plugins/flow/skills/workflow-help/SKILL.md` or `plugins/flow/docs/workflow.md`.
+
+8. **Fallback message tone for missing project docs** (UX lens EXPLORATION). All 5 review skills emit `(no spec doc at $SPEC)` etc. when a doc is missing. Reads like shell output. Friendlier shape might be `Spec doc: not configured — set flow.config.json.specPath to enable spec-grounded review`. Surfaces when: a consumer reports the messages feel cryptic, OR when adding a new review skill (rule the tone in then).
+
+## Per-stack memory-tool foreign-cwd verification
+
+Routed for **PR 4 dogfood** (md-manager extraction umbrella): the `check.mjs` `deriveMemoryDir()` falls back to `~/.claude/projects/<slug-of-cwd>` when no project-name match exists under `~/.claude/projects/`. For consumers using flow at user-scope from a cwd that doesn't match any existing slug, this creates a separate memory dir per worktree — which the harness won't auto-load. Already documented in pr2-flow-plan.md's confidence verdict; surface as a real follow-up entry once md-manager PR 5 dogfoods.
+
 ## PR 2 follow-ups from PR 1 review
 
 The walk-through-the-loop review on PR 1 surfaced two findings that are out-of-scope for PR 1 but in-scope for PR 2. Quoted here verbatim so PR 2's planner doesn't have to re-derive them:

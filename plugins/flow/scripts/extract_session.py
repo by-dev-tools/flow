@@ -317,7 +317,18 @@ def gather_reference_docs(
     for p in paths:
         candidates.append((cwd / p) if not Path(p).is_absolute() else Path(p))
     for g in globs:
-        candidates.extend(sorted(cwd.glob(g)))
+        # cwd.glob() raises NotImplementedError on absolute glob patterns
+        # (Path.glob requires relative patterns). Warn loudly + skip rather
+        # than crash the preprocessor for a misconfigured flow.config.json.
+        try:
+            candidates.extend(sorted(cwd.glob(g)))
+        except (NotImplementedError, ValueError) as e:
+            sys.stderr.write(
+                f"extract_session: ⚠️ skipping invalid reference glob {g!r}: {e}\n"
+                f"  Globs must be relative (e.g., 'core-docs/*.md'). "
+                f"For specific external paths use --reference-paths --allow-external-paths.\n"
+            )
+            continue
 
     seen: set[Path] = set()
     docs: list[tuple[str, str]] = []

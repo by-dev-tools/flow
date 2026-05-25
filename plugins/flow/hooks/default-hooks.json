@@ -3,22 +3,22 @@
   "hooks": {
     "PreToolUse": [
       {
-        "$comment": "Hook 1: refuse to write to sensitive files. Matches Edit and Write tool calls; blocks (exit 2) if the file_path looks like a secret container. The plugin's own .claude/settings.json (project-dev side) uses this pattern; recommending it to consumers via this default hooks file.",
+        "$comment": "Hook 1: refuse to write to sensitive files. Matches Edit and Write tool calls; blocks (exit 2) if the file_path looks like a secret container. The plugin's own .claude/settings.json (project-dev side) uses this pattern; recommending it to consumers via this default hooks file. Pattern list is intentionally broad but not exhaustive — consumers should extend for their specific stack (e.g. *.kubeconfig, *.config.local).",
         "matcher": "Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // empty'); if [[ \"$FILE\" == *.env* ]] || [[ \"$FILE\" == *credentials* ]] || [[ \"$FILE\" == *secret* ]] || [[ \"$FILE\" == *.pem ]] || [[ \"$FILE\" == *_rsa ]]; then echo \"Blocked by flow:default-hooks: refusing to write to sensitive file $FILE\" >&2; exit 2; fi; exit 0"
+            "command": "INPUT=$(cat); FILE=$(echo \"$INPUT\" | jq -r '.tool_input.file_path // empty'); if [[ \"$FILE\" == *.env* ]] || [[ \"$FILE\" == *credentials* ]] || [[ \"$FILE\" == *secret* ]] || [[ \"$FILE\" == *token* ]] || [[ \"$FILE\" == *.pem ]] || [[ \"$FILE\" == *.key ]] || [[ \"$FILE\" == *.p12 ]] || [[ \"$FILE\" == *.pfx ]] || [[ \"$FILE\" == *.jks ]] || [[ \"$FILE\" == *.keystore ]] || [[ \"$FILE\" == *_rsa ]] || [[ \"$FILE\" == *_ecdsa ]] || [[ \"$FILE\" == *_ed25519 ]] || [[ \"$FILE\" == *_dsa ]] || [[ \"$FILE\" == *.netrc ]] || [[ \"$FILE\" == *.kdbx ]] || [[ \"$FILE\" == *.ovpn ]]; then echo \"Blocked by flow:default-hooks: refusing to write to sensitive file $FILE\" >&2; exit 2; fi; exit 0"
           }
         ]
       },
       {
-        "$comment": "Hook 2: warn when Bash invokes a /flow:* plugin tool with a --reference-paths-style argument that resolves outside cwd. Defense-in-depth against the PR-1 FOLLOW-UP #2 surface (extract_session.py --reference-paths reading arbitrary host paths). The in-script cwd constraint in plugins/flow/scripts/extract_session.py is the primary defense; this hook is the belt to its braces. Exits 0 (warning only, not blocking) to avoid breaking legitimate uses of the --allow-external-paths escape hatch; consumers who want hard enforcement can change exit 0 → exit 2.",
+        "$comment": "Hook 2: warn when Bash invokes a /flow:* plugin tool with a --reference-paths-style argument that resolves outside cwd. Defense-in-depth against the PR-1 FOLLOW-UP #2 surface (extract_session.py --reference-paths reading arbitrary host paths). The in-script cwd constraint in plugins/flow/scripts/extract_session.py is the primary defense; this hook is the belt to its braces. Exits 0 (warning only) to avoid breaking legitimate --allow-external-paths uses; consumers wanting hard enforcement change exit 0 → exit 2. KNOWN BYPASSES (intentional limitation; the in-script constraint catches all of them): (a) `python3 -m extract_session` indirect-invocation, (b) env-var indirection (`X=/etc/passwd; ... $X`), (c) equals-form arg (`--reference-paths=/etc/passwd`), (d) absolute path via shell-substituted variable. Hook regex matches only the literal `plugins/flow/scripts/.../*.py --reference-paths /<abs>` invocation form. The in-script check is the load-bearing defense.",
         "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.tool_input.command // empty'); if echo \"$CMD\" | grep -qE 'plugins/flow/scripts/.*\\.py.*--reference-paths\\s+/' && ! echo \"$CMD\" | grep -qE -- '--allow-external-paths'; then echo \"flow:default-hooks warning: plugin script invoked with absolute --reference-paths but no --allow-external-paths flag. Verify the paths are intentional.\" >&2; fi; exit 0"
+            "command": "INPUT=$(cat); CMD=$(echo \"$INPUT\" | jq -r '.tool_input.command // empty'); if echo \"$CMD\" | grep -qE '(extract_session\\.py|flow_extract).*--reference-paths[=\\s]+/' && ! echo \"$CMD\" | grep -qE -- '--allow-external-paths'; then echo \"flow:default-hooks warning: plugin script invoked with absolute --reference-paths but no --allow-external-paths flag. Verify the paths are intentional. (The in-script cwd constraint will reject by default.)\" >&2; fi; exit 0"
           }
         ]
       }

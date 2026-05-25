@@ -9,7 +9,7 @@ description: >
   `spike`. Never merges. Only invoke when the plan declared `mode: spike`.
   Trigger phrases: "ship the spike", "/flow:ship-spike", "wrap up the spike".
 disable-model-invocation: true
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Agent, TaskCreate, TaskUpdate
+allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Agent
 ---
 
 You are running the flow ship-spike pipeline for a spike-mode PR. **Never merge.**
@@ -42,7 +42,12 @@ Classify (same shape as `/flow:ship`):
 - **LOCAL-ONLY** — commits ahead and/or dirty tree, no PR yet. The normal spike-ship path.
 - **NOTHING-TO-SHIP** — clean tree at default branch. Stop and tell the user.
 
-If on the default branch: create a `spike/<short-name>` branch first.
+If on the default branch: create a spike branch first. The conventional prefix is `spike/`; if `flow.config.json.branchPrefix` is set, prepend it (e.g., `claude/` + `spike/` → `claude/spike/<short-name>`).
+
+```sh
+PREFIX=$(cat flow.config.json 2>/dev/null | jq -r '.branchPrefix // empty' 2>/dev/null)
+git checkout -b "${PREFIX}spike/<short-name>"
+```
 
 ## 2. Skip the heavy reviews
 

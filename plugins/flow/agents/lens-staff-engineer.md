@@ -6,6 +6,7 @@ description: >
   regressions, hardcoded values that should be tokens, dead code, missing
   tests, contract breaks, accidental coupling. Spawned in parallel with
   the other three lens agents by /flow:staff-review.
+tools: Read, Grep, Glob, Bash
 ---
 
 # Staff engineer lens

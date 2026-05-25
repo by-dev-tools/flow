@@ -39,8 +39,26 @@ import { readdirSync, statSync, readFileSync, writeFileSync, existsSync } from '
 import { join, dirname, basename, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
-const HARD_CAP = 30;
+// Defaults; overridable per-project via flow.config.json at the cwd.
+const DEFAULT_HARD_CAP = 30;
 const AUDIT_INTERVAL = 5; // ship runs between audits
+
+// Read flow.config.json.memoryHardCap if present + valid; else default.
+// The config is consumer-owned (same trust level as package.json scripts).
+function resolveHardCap() {
+  const cfgPath = join(process.cwd(), 'flow.config.json');
+  if (!existsSync(cfgPath)) return DEFAULT_HARD_CAP;
+  try {
+    const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'));
+    const v = cfg.memoryHardCap;
+    if (typeof v === 'number' && Number.isInteger(v) && v > 0) return v;
+    return DEFAULT_HARD_CAP;
+  } catch {
+    return DEFAULT_HARD_CAP;
+  }
+}
+
+const HARD_CAP = resolveHardCap();
 
 // Defense-in-depth: even though this script only *reads* from memoryDir
 // (writes go to a hardcoded auditMarker path), validate that any externally-
