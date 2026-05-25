@@ -2,15 +2,16 @@
 
 ## Current Focus
 
-**PR 1 merged** (squash commit `f8610a1`, 2026-05-24). **PR 2 plan ready for next-session pickup** — full handoff at [`dev-docs/handoffs/pr2-flow-plan.md`](handoffs/pr2-flow-plan.md). 8 phases, each with verifiable success criteria. Phase 8 publishes the md-manager handoff at [`dev-docs/handoffs/md-manager-pr4-6-spec.md`](handoffs/md-manager-pr4-6-spec.md) (also already drafted in this docs-only precursor; Phase 8 verifies + updates against PR 2's actual shipped surface).
+**PR 2 awaiting merge** ([by-dev-tools/flow](https://github.com/by-dev-tools/flow) — PR URL captured at Phase 8 push). v1.0.0 → v1.1.0; full workflow surface backfilled; PR-1 placeholders gone; PR-1 FOLLOW-UPs addressed; bootstrap exception fully lifted for PR 3+. Dogfooded itself through `/flow:staff-review` + `/flow:security-review` in Phase 7 (caught 2 BLOCKER + 11 NIT + 8 FOLLOW-UP findings; all BLOCKER + NIT fixed in-tree; FOLLOW-UPs routed below).
 
-After PR 2 merges: PR 3 (template directory: `template/base/` + per-stack overlays for web / swift / tauri-rust-ts). After PR 3 merges: md-manager PRs 4 → 5 → 6 sequentially per the md-manager handoff spec. Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
+After PR 2 merges: **PR 3** of the extraction umbrella — template directory (`template/base/` + per-stack overlays for web / swift / tauri-rust-ts) + `docs/bootstrap.md` + `docs/migration.md`. After PR 3 merges: md-manager PRs 4 → 5 → 6 sequentially per [`dev-docs/handoffs/md-manager-pr4-6-spec.md`](handoffs/md-manager-pr4-6-spec.md). Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
 
 ## Handoff Notes
 
-- **PR 1 needs user-side settings.json update after merge.** One line: `enabledPlugins."assumption-auditor@llm-auditor"` → `"flow@flow"`. Plus re-add marketplace under the new name: `/plugin marketplace remove llm-auditor && /plugin marketplace add by-dev-tools/flow && /plugin install flow@flow`. settings.json backup exists at `~/.claude/settings.json.bak.20260523-144832` from PR 0.
-- **Optional disagreement-records migration:** `mv ~/.claude/plugins/data/assumption-auditor/disagreements/* ~/.claude/plugins/data/flow/disagreements/` if you want pre-v1.0.0 records to surface alongside post-rename ones.
-- **PR 2 brief is owed.** Lives in md-manager once the PR-1 handoff loop closes (`md-manager/core-docs/handoffs/pr2-flow-plugin-rest.md`).
+- **PR 2 needs NO user-side settings update** — `flow@flow` install from PR 1 stays valid. Just `/plugin marketplace update flow` (or re-install) to pull v1.1.0 once PR 2 merges. If the user is testing via `--plugin-dir`, this is already live.
+- **PR 1 settings update reminder** (carried forward): `enabledPlugins."assumption-auditor@llm-auditor"` → `"flow@flow"` if not yet applied. Backup: `~/.claude/settings.json.bak.20260523-144832`.
+- **Optional disagreement-records migration** (carried forward): `mv ~/.claude/plugins/data/assumption-auditor/disagreements/* ~/.claude/plugins/data/flow/disagreements/`.
+- **PR 3 next.** Template directory + bootstrap/migration docs. The md-manager spec at `dev-docs/handoffs/md-manager-pr4-6-spec.md` was verified accurate against the shipped v1.1.0 surface in Phase 8 (the 13 flow.config.json slots there match the schema; the deletion list still matches md-manager state). PR 3 should be ~1 session; md-manager PR 4 starts only after PR 3 merges.
 
 ## PR 3+ follow-ups from PR 2 review
 
@@ -46,7 +47,7 @@ The walk-through-the-loop review on PR 1 surfaced two findings that are out-of-s
 
 ## Active Work Items
 
-### PR 2 — Workflow surface backfill (executing autonomously per user direction)
+### PR 2 — Workflow surface backfill (SHIPPED — awaiting merge)
 
 **Mode:** feature
 **Branch:** `pr2/workflow-backfill` (off `docs/pr2-handoffs`)

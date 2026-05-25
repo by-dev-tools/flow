@@ -48,7 +48,8 @@ flow PR 2 merged ──> flow PR 3 merged ──> md-manager PR 4 ──> PR 5 �
   - `uiSurface: true` (md-manager has UI)
   - `reviewLenses: ["staff-engineer","ux-designer","design-engineer","push-further"]` (default 4 lenses)
   - `memoryHardCap: 30`
-  - `branchPrefix: "claude/"` (or `"feature/"` — match md-manager convention; if the v1.1 schema didn't include this slot, file a follow-up to flow's `dev-docs/plan.md` for v1.2 inclusion).
+  - `branchPrefix: "claude/"` (or `"feature/"` — match md-manager's convention; verified included in v1.1.0 schema, wired into ship + ship-spike branch creation).
+  - `designLanguagePath: "core-docs/design-language.md"` (read by /flow:staff-review's UX + design-engineer + push-further lenses and by /flow:accessibility-review for grounding; md-manager has this doc).
 - Add a small section to `md-manager/CLAUDE.md` titled "Flow plugin" or similar — single paragraph: "md-manager uses the flow plugin (`by-dev-tools/flow@1.1.0+`) for its workflow surface. Skills are namespaced `flow:*`. Local `.claude/skills/`, `.claude/agents/`, `.claude/rules/` are preserved for parity testing and will be removed in PR 6 after PR 5's dogfood validates the plugin matches their behavior."
 - Verify coexistence: `/help` lists BOTH local `/staff-review` AND plugin `/flow:staff-review` cleanly (plugins are auto-namespaced; no actual conflict per Anthropic docs — verify in practice).
 - Smoke test: trigger `/flow:staff-review` on the diff for PR 4 itself. Capture any errors or rough edges in `flow.config.json` adjustments OR in a follow-up entry to flow's `dev-docs/feedback.md` (NOT md-manager's feedback.md — plugin feedback belongs in the plugin's repo).
@@ -131,7 +132,7 @@ flow PR 2 merged ──> flow PR 3 merged ──> md-manager PR 4 ──> PR 5 �
 
 **Assumption:** All 11 `flow.config.json` slots map cleanly to md-manager's actual project shape (paths, commands, conventions).
 **Confidence:** MEDIUM
-**Why:** PR 2's schema was designed against md-manager as the reference consumer, but edge cases (branchPrefix, multi-stack typecheck commands, monorepo paths) may surface gaps. PR 4 is the first real-world consumer test.
+**Why:** PR 2's schema was designed against md-manager as the reference consumer (13 slots, including branchPrefix and designLanguagePath wired in response to Phase 7 dogfood findings). PR 4 is still the first real-world consumer test — edge cases (multi-stack typecheck commands, monorepo paths, project-specific lens additions like uncommon-care) may surface gaps.
 **If it flips:** Missing slots filed to flow's `dev-docs/plan.md` for v1.2 inclusion; meanwhile md-manager either tolerates the limitation or temporarily overrides via a local skill. Doesn't block PR 4.
 
 ### Risks (PR 4)
