@@ -27,7 +27,7 @@ Project-specific configuration lives in [`flow.config.json`](./flow.config.json)
 
 | Rule | Loads on | Purpose |
 |---|---|---|
-| `.claude/rules/safety.md` | safety-critical paths ({{SAFETY_PATHS}}) | Read recent git log before modifying; never silently downgrade error handling |
+| `.claude/rules/safety.md` | safety-critical paths (configured in safety.md `paths:` frontmatter — see that file for the list) | Read recent git log before modifying; never silently downgrade error handling |
 | `.claude/rules/ui.md` (UI projects) | UI file edits | Read design-language.md first; use tokens, not raw values |
 
 Plugin-shipped rules (general workflow discipline, plan format, doc format, exploration triggers) load automatically when the flow plugin is installed. See `${CLAUDE_PLUGIN_ROOT}/rules/` for the full set.

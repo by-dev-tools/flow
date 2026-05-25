@@ -11,35 +11,35 @@ For projects with NO prior `.claude/` content, see [`docs/bootstrap.md`](./boots
 ## The pattern: 3 PRs, gated by validation
 
 ```
-PR A (install non-breaking) ──> PR B (dogfood validation) ──> PR C (delete duplicates)
+Stage 1 (install non-breaking) ──> Stage 1.5 (dogfood validation) ──> Stage 2 (delete duplicates)
                                        │
                                        │ MUST ship clean
                                        │ before deletion
                                        │
-                                       └──► If blockers: fix in flow upstream, redo PR B
+                                       └──► If blockers: fix in flow upstream, redo Stage 1.5
 ```
 
-This is intentionally slower than a one-shot migration. The reason: parity is uncertain. Your local `/staff-review` may have project-specific behaviors flow doesn't yet — finding out at deletion time means losing work. PR B's dogfood gate exposes those gaps cheaply.
+This is intentionally slower than a one-shot migration. The reason: parity is uncertain. Your local `/staff-review` may have project-specific behaviors flow doesn't yet — finding out at deletion time means losing work. Stage 1.5's dogfood gate exposes those gaps cheaply.
 
 ---
 
-## PR A — Install non-breaking (Stage 1)
+## Stage 1 — Install non-breaking (one PR)
 
 **Goal:** flow installed alongside existing local skills. Both work simultaneously. Zero deletions.
 
 ### Scope (in)
 
-- Install flow plugin (project-scope recommended for the migration window so other projects don't see flow before you've validated it):
+- Install flow plugin (project-scope recommended for the migration window so other projects don't see flow before you've validated it). Edit `.claude/settings.json` — merge the `enabledPlugins` key in (Claude Code's settings.json is strict JSON, no comments):
 
-  ```sh
-  # In your project, edit .claude/settings.json:
+  ```json
   {
     "enabledPlugins": {
       "flow@flow": true
-      // ... your existing entries
     }
   }
   ```
+
+  (If your `.claude/settings.json` already has `enabledPlugins`, add `"flow@flow": true` as a sibling key — don't replace the whole object.)
 
   Plus, if not already done at user-scope: `/plugin marketplace add by-dev-tools/flow && /plugin install flow@flow`.
 
@@ -65,7 +65,7 @@ This is intentionally slower than a one-shot migration. The reason: parity is un
 
 - Add a short section to your `CLAUDE.md` referencing the plugin:
 
-  > **Flow plugin (in-migration):** This project is migrating to the flow plugin for its workflow. Both local skills (`/staff-review`, `/security-review`, etc.) and plugin skills (`/flow:staff-review`, `/flow:security-review`, etc.) currently work. Local skills will be removed after PR B's dogfood validation lands. Authoritative loop reference: `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md`.
+  > **Flow plugin (in-migration):** This project is migrating to the flow plugin for its workflow. Both local skills (`/staff-review`, `/security-review`, etc.) and plugin skills (`/flow:staff-review`, `/flow:security-review`, etc.) currently work. Local skills will be removed after Stage 1.5's dogfood validation lands. Authoritative loop reference: `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md`.
 
 - **Zero deletions of existing `.claude/` content.** Belt and suspenders.
 
@@ -81,13 +81,13 @@ You should see BOTH `/staff-review` (your local) AND `/flow:staff-review` (plugi
 
 ### Smoke test
 
-Invoke `/flow:staff-review` on PR A's own diff (the install + config + CLAUDE.md edit). All 4 lenses should spawn; output should match the documented BLOCKER/NIT/FOLLOW-UP/EXPLORATION shape. Any rough edges: capture in **flow's** `dev-docs/feedback.md` via a follow-up PR in flow's repo — NOT in your project's feedback.md (plugin feedback belongs to plugin's dev-tracking).
+Invoke `/flow:staff-review` on this PR's own diff (the install + config + CLAUDE.md edit). All 4 lenses should spawn; output should match the documented BLOCKER/NIT/FOLLOW-UP/EXPLORATION shape. Any rough edges: capture in **flow's** `dev-docs/feedback.md` via a follow-up PR in flow's repo — NOT in your project's feedback.md (plugin feedback belongs to plugin's dev-tracking).
 
-Open PR A against `main`. Don't merge — let the user merge.
+Open the Stage 1 PR against `main`. Don't merge — let the user merge.
 
 ---
 
-## PR B — Dogfood validation (Stage 1.5, the gate)
+## Stage 1.5 — Dogfood validation (one PR, the load-bearing gate)
 
 **Goal:** ship a real, small, user-facing change using ONLY `/flow:*` skills (+ bundled Claude Code natives: `/simplify`, `/batch`, etc.). NO invocation of local `/staff-review`, `/security-review`, `/ship`, `/ship-spike`, `/accessibility-review`. This is the validation that the plugin matches your project's actual needs.
 
@@ -114,7 +114,7 @@ Open PR A against `main`. Don't merge — let the user merge.
 
 - **Capture every rough edge** in flow's `dev-docs/feedback.md` via a follow-up flow PR. This is the load-bearing output.
 
-- **Do NOT fix flow bugs as part of PR B.** Fixes happen as follow-up PRs in flow, not bundled here. PR B is a clean test surface.
+- **Do NOT fix flow bugs as part of Stage 1.5.** Fixes happen as follow-up PRs in flow, not bundled here. Stage 1.5 is a clean test surface.
 
 ### Scope (out)
 
@@ -124,15 +124,15 @@ Open PR A against `main`. Don't merge — let the user merge.
 
 ### Validation gate
 
-If PR B surfaces:
-- **Zero blockers + minor friction only:** sign off in your project's plan ("PR B validated; ready for PR C"), proceed to PR C.
-- **Blockers OR substantial friction (>5 entries):** PAUSE. Address the flow bugs in separate flow PRs. Re-run PR B on a second small change once flow's fixes ship. Do NOT proceed to PR C until parity is real.
+If Stage 1.5 surfaces:
+- **Zero blockers + minor friction only:** sign off in your project's plan ("Stage 1.5 validated; ready for Stage 2"), proceed to Stage 2.
+- **Blockers OR substantial friction (>5 entries):** PAUSE. Address the flow bugs in separate flow PRs. Re-run Stage 1.5 on a second small change once flow's fixes ship. Do NOT proceed to Stage 2 until parity is real.
 
 The dogfood gate is the load-bearing checkpoint in this migration. Skipping it risks discovering parity gaps at deletion time, when recovery is more expensive.
 
 ---
 
-## PR C — Delete local duplicates + retire migration (Stage 2, breaking)
+## Stage 2 — Delete local duplicates + retire migration (one PR, breaking)
 
 **Goal:** Delete every file flow now provides redundantly. Your project becomes a pure consumer of the plugin: `.claude/` carries only project-shaped files (safety paths, UI tokens, dev-server skill).
 
@@ -156,8 +156,9 @@ rm .claude/rules/plan-discipline.md
 rm .claude/rules/documentation.md
 rm .claude/rules/exploration.md
 
-# Memory tool now provided by flow
-rm -rf tools/memory/
+# Memory tool now provided by flow (delete only the plugin-provided files; preserve any project-shaped tools/memory/ content)
+rm -f tools/memory/check.mjs tools/memory/.gitignore
+rmdir tools/memory 2>/dev/null || true   # leaves the dir if it has other project files
 ```
 
 Adjust the deletion list per what your project actually has. `/simplify` is bundled Claude Code native — your project never had a local `simplify` skill to delete.
@@ -214,9 +215,9 @@ ls .claude/rules
 ls .claude/agents
 # Should be empty (or only project-specific agents).
 
-# Full plugin loop works on PR C itself
-/flow:critique-plan   # on PR C's plan
-/flow:staff-review    # on PR C's diff
+# Full plugin loop works on the Stage 2 PR itself
+/flow:critique-plan   # on the Stage 2 PR's plan
+/flow:staff-review    # on the Stage 2 PR's diff
 /flow:ship            # to close out
 ```
 
@@ -231,6 +232,6 @@ In `core-docs/plan.md`: move any "Flow migration" Active Work Item to Recently C
 - **Plugin skill missing a behavior your local skill had.** Don't restore the local skill. File a flow follow-up PR. Workarounds in your project belong in `.claude/rules/<project-rule>.md` if they're rules, or `.claude/skills/<project-skill>/` if they're project-specific orchestration.
 - **`/flow:ship` writes docs to the wrong path.** Your `flow.config.json` slot values aren't being read. Run `claude --print "/flow:workflow-help"` — resolved slot values should match your `flow.config.json`. If not: JSON parse error.
 - **Memory entries written to the wrong project.** The plugin's `tools/memory/check.mjs` derives the canonical project path from the harness; for worktrees / Conductor workspaces, slug scoring is in play. Verify entries land at `~/.claude/projects/<your-project-canonical-slug>/memory/`. If a foreign slug wins, file a flow follow-up (this is the path-derivation cross-scope question PR 4-6 are designed to surface).
-- **PR B surfaced 5+ rough edges.** That's the gate working. Don't proceed to PR C. Open a flow PR with the entries, get it merged, re-run PR B on a second small change.
+- **Stage 1.5 surfaced 5+ rough edges.** That's the gate working. Don't proceed to Stage 2. Open a flow PR with the entries, get it merged, re-run Stage 1.5 on a second small change.
 
 Open issues + improvements: https://github.com/by-dev-tools/flow/issues

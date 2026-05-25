@@ -1,7 +1,12 @@
 ---
 description: Project safety-critical paths — read before modifying.
+# Replace {{SAFETY_PATH_N}} entries with one YAML list item per glob — add or remove items as needed.
+# Examples: - "src/lib/persistence.ts"
+#           - "tools/migrate/*.mjs"
+#           - ".github/workflows/*.yml"
 paths:
-  - "{{SAFETY_PATHS}}"
+  - "{{SAFETY_PATH_1}}"
+  - "{{SAFETY_PATH_2}}"
 ---
 
 # Safety-Critical Code Rules

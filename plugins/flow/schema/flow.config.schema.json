@@ -79,6 +79,12 @@
       "description": "Conventional prefix for feature branches (used by /flow:ship and /flow:ship-spike when they need to create a branch from main). Common values: 'claude/', 'feature/', 'fix/'. Empty string disables the prefix. Default: empty (flow doesn't add a prefix unless this is set).",
       "default": "",
       "examples": ["claude/", "feature/", "fix/"]
+    },
+    "rustWorkspaceDir": {
+      "type": "string",
+      "description": "(Tauri / Rust stacks only.) Directory containing the project's Rust workspace (Cargo.toml). Used by the tauri-rust-ts stack overlay's preflight runner to know where to run `cargo fmt`, `cargo clippy`, `cargo test`. Default: 'src-tauri' (the Tauri convention). Non-Tauri Rust projects typically set this to '.' (workspace at repo root) or to the workspace subdirectory.",
+      "default": "src-tauri",
+      "examples": ["src-tauri", ".", "crates"]
     }
   }
 }

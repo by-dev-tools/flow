@@ -31,22 +31,24 @@ Verify with `/help` — you should see `/flow:workflow-help`, `/flow:ship`, `/fl
 
 ## Step 2 — Copy `template/base/` to your project root
 
-The base layer is stack-agnostic. From a checkout of `by-dev-tools/flow` (or via `gh api` lookup):
+The base layer is stack-agnostic. **All `cp` invocations use `-n` (no-clobber)** so an accidental run in a project that already has `CLAUDE.md` / `README.md` / `.gitignore` will skip rather than overwrite. If you intentionally want to replace existing files, drop the `-n` per `cp`. For projects with significant pre-existing `.claude/` content, you want [`migration.md`](./migration.md), not this doc.
+
+From a checkout of `by-dev-tools/flow` (or via `gh api` lookup):
 
 ```sh
 PROJECT_ROOT=/path/to/your/project
 FLOW=/path/to/flow-checkout    # or use gh api per-file
 
-# Copy base scaffolding (renaming .template files as you go)
-cp $FLOW/template/base/CLAUDE.md.template          $PROJECT_ROOT/CLAUDE.md
-cp $FLOW/template/base/README.md.template          $PROJECT_ROOT/README.md
-cp $FLOW/template/base/flow.config.json.example    $PROJECT_ROOT/flow.config.json
-cp $FLOW/template/base/.gitignore.template         $PROJECT_ROOT/.gitignore
+# Copy base scaffolding (renaming .template files as you go; -n preserves any existing file)
+cp -n $FLOW/template/base/CLAUDE.md.template          $PROJECT_ROOT/CLAUDE.md
+cp -n $FLOW/template/base/README.md.template          $PROJECT_ROOT/README.md
+cp -n $FLOW/template/base/flow.config.json.example    $PROJECT_ROOT/flow.config.json
+cp -n $FLOW/template/base/.gitignore.template         $PROJECT_ROOT/.gitignore
 mkdir -p $PROJECT_ROOT/.claude/rules
-cp $FLOW/template/base/.claude/settings.json.example $PROJECT_ROOT/.claude/settings.json
-cp $FLOW/template/base/.claude/rules/safety.md.template $PROJECT_ROOT/.claude/rules/safety.md
+cp -n $FLOW/template/base/.claude/settings.json.example $PROJECT_ROOT/.claude/settings.json
+cp -n $FLOW/template/base/.claude/rules/safety.md.template $PROJECT_ROOT/.claude/rules/safety.md
 mkdir -p $PROJECT_ROOT/core-docs
-cp $FLOW/template/base/core-docs/*.md $PROJECT_ROOT/core-docs/
+cp -n $FLOW/template/base/core-docs/*.md $PROJECT_ROOT/core-docs/
 ```
 
 If you don't have a flow checkout, fetch each file via `gh api repos/by-dev-tools/flow/contents/template/base/<path> --header "Accept: application/vnd.github.raw" > $PROJECT_ROOT/<dest>`.
@@ -58,30 +60,32 @@ Pick one of `web`, `swift`, `tauri-rust-ts` (or a hybrid — see "Hybrid stacks"
 ### Web (Vite + React/Vue/Svelte + TypeScript)
 
 ```sh
-cp -R $FLOW/template/stacks/web/.claude/.       $PROJECT_ROOT/.claude/
-cp -R $FLOW/template/stacks/web/tools/.         $PROJECT_ROOT/tools/
-cp -R $FLOW/template/stacks/web/.github/.       $PROJECT_ROOT/.github/
-cat   $FLOW/template/stacks/web/.gitignore.append >> $PROJECT_ROOT/.gitignore
+mkdir -p $PROJECT_ROOT/.claude $PROJECT_ROOT/tools $PROJECT_ROOT/.github
+cp -Rn $FLOW/template/stacks/web/.claude/.      $PROJECT_ROOT/.claude/
+cp -Rn $FLOW/template/stacks/web/tools/.        $PROJECT_ROOT/tools/
+cp -Rn $FLOW/template/stacks/web/.github/.      $PROJECT_ROOT/.github/
+cat    $FLOW/template/stacks/web/.gitignore.append >> $PROJECT_ROOT/.gitignore
 ```
 
 ### Swift (Xcode-based macOS / iOS / multi-platform)
 
 ```sh
-mkdir -p $PROJECT_ROOT/tools
-cp $FLOW/template/stacks/swift/tools/preflight/check.sh $PROJECT_ROOT/tools/preflight/check.sh
+mkdir -p $PROJECT_ROOT/tools/preflight $PROJECT_ROOT/.github
+cp -n $FLOW/template/stacks/swift/tools/preflight/check.sh $PROJECT_ROOT/tools/preflight/check.sh
 chmod +x $PROJECT_ROOT/tools/preflight/check.sh
 cat   $FLOW/template/stacks/swift/.claude/rules/safety.md.append >> $PROJECT_ROOT/.claude/rules/safety.md
-cp -R $FLOW/template/stacks/swift/.github/.     $PROJECT_ROOT/.github/
+cp -Rn $FLOW/template/stacks/swift/.github/.    $PROJECT_ROOT/.github/
 cat   $FLOW/template/stacks/swift/.gitignore.append >> $PROJECT_ROOT/.gitignore
 ```
 
 ### Tauri (Vite frontend + Rust backend + TypeScript)
 
 ```sh
-cp -R $FLOW/template/stacks/tauri-rust-ts/.claude/.   $PROJECT_ROOT/.claude/
-cp -R $FLOW/template/stacks/tauri-rust-ts/tools/.     $PROJECT_ROOT/tools/
-cp -R $FLOW/template/stacks/tauri-rust-ts/.github/.   $PROJECT_ROOT/.github/
-cat   $FLOW/template/stacks/tauri-rust-ts/.gitignore.append >> $PROJECT_ROOT/.gitignore
+mkdir -p $PROJECT_ROOT/.claude $PROJECT_ROOT/tools $PROJECT_ROOT/.github
+cp -Rn $FLOW/template/stacks/tauri-rust-ts/.claude/.  $PROJECT_ROOT/.claude/
+cp -Rn $FLOW/template/stacks/tauri-rust-ts/tools/.    $PROJECT_ROOT/tools/
+cp -Rn $FLOW/template/stacks/tauri-rust-ts/.github/.  $PROJECT_ROOT/.github/
+cat    $FLOW/template/stacks/tauri-rust-ts/.gitignore.append >> $PROJECT_ROOT/.gitignore
 ```
 
 ### Hybrid stacks
@@ -98,11 +102,11 @@ Open `CLAUDE.md`, `README.md`, `flow.config.json`, `.claude/rules/safety.md` and
 | `{{ONE_LINE_DESCRIPTION}}` | `Local-first markdown notes with repo sync.` |
 | `{{STACK}}` | `TypeScript + React + Vite, Vitest tests, Vercel deploy` |
 | `{{LIFECYCLE_STATUS}}` | `pre-alpha` / `beta` / `production` |
-| `{{SAFETY_PATHS}}` | `src/lib/persistence.ts`, `tools/migrate/*.mjs` |
+| `{{SAFETY_PATH_1}}`, `{{SAFETY_PATH_2}}`, ... | One YAML list item per glob in `.claude/rules/safety.md` — add/remove as needed. Example items: `"src/lib/persistence.ts"`, `"tools/migrate/*.mjs"`. |
 | `{{INSTALL_STEPS}}` | `npm install && npm run dev` |
 
 In `flow.config.json`: remove the `$comment-*` keys (they're docs for the bootstrap reader) and verify each slot value matches your project's reality:
-- `typecheckCmd` matches your `package.json` `scripts.typecheck` (or `tsc --noEmit` if no script).
+- `typecheckCmd` matches your `package.json` `scripts.typecheck` (or `tsc --noEmit` if no script). **Trust model:** this slot is shell-executed by `/flow:ship` and `/flow:staff-review` (via `sh -c`), at the same trust level as `package.json` `scripts` or pre-commit hooks. Treat your committed `flow.config.json` with the same care.
 - `defaultBranch` matches your repo's primary branch.
 - Doc paths point to where you actually put `core-docs/`.
 - `uiSurface: false` if your project has no UI (set explicitly so `/flow:accessibility-review` skips early).

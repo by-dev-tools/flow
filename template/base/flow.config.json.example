@@ -28,5 +28,8 @@
   "memoryHardCap": 30,
 
   "$comment-branchPrefix": "Conventional prefix for feature branches created by /flow:ship and /flow:ship-spike. Common: 'claude/', 'feature/', 'fix/'. Empty disables.",
-  "branchPrefix": "claude/"
+  "branchPrefix": "claude/",
+
+  "$comment-rustWorkspaceDir": "(Tauri / Rust stacks only — omit on pure web / swift / non-Rust projects.) Directory holding your Cargo workspace. Default 'src-tauri' is the Tauri convention; non-Tauri Rust projects set '.' (workspace at root) or the subdir name.",
+  "rustWorkspaceDir": "src-tauri"
 }

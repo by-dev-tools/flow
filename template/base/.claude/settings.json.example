@@ -1,6 +1,6 @@
 {
   "$comment-1": "MERGE INTO YOUR PROJECT'S .claude/settings.json. Don't replace yours wholesale — your file may already have permissions, env vars, hooks, or enabledPlugins. Pull the keys below in.",
-  "$comment-2": "These two hooks are pulled from ${CLAUDE_PLUGIN_ROOT}/hooks/default-hooks.json. They opt in to flow's baseline safety hooks. Both are conservative (warn-only or block-on-clear-pattern); neither blocks arbitrary actions.",
+  "$comment-2": "These two hooks are MODELED ON ${CLAUDE_PLUGIN_ROOT}/hooks/default-hooks.json but DIFFER intentionally: this template uses POSIX `case` (works on /bin/sh) instead of bash `[[ ... ]]`, and the sensitive-file pattern omits a few wider matches (*.pem, *_rsa) that produced false positives in consumer projects. Both are conservative (block-on-clear-pattern OR warn-only); neither blocks arbitrary actions. If you want strict parity with default-hooks.json, copy that file's content verbatim and switch your settings.json to use bash by setting the `command` interpreter explicitly.",
   "$comment-3": "DELETE THIS COMMENT BLOCK AND THE $comment-* lines BEFORE COMMITTING.",
 
   "hooks": {

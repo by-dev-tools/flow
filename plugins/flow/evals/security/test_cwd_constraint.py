@@ -59,34 +59,41 @@ def run_extract(cwd: Path, args: list[str], session_path: Path) -> subprocess.Co
 
 
 def test_absolute_outside_cwd_rejected() -> None:
-    """Absolute path outside cwd must be rejected by default."""
+    """Absolute path outside cwd must be rejected by default.
+
+    Strong assert: /etc/hosts content sentinels (127.0.0.1 or ::1) must NOT
+    appear in stdout. A leak prints the file content, not the path string,
+    so checking on path-string absence is vacuous. (Caught by engineer-lens
+    review of PR 3: the original assert had an escape hatch where a
+    regression that drops the cwd check but doesn't print the path would
+    pass silently.)
+    """
     with tempfile.TemporaryDirectory() as td:
         cwd = Path(td)
         sess = make_minimal_session(cwd)
         # /etc/hosts is universally present on macos + linux
         result = run_extract(cwd, ["--reference-paths", "/etc/hosts"], sess)
-        # Exit code should be non-zero OR stderr must complain about outside-cwd.
-        # Implementation choice: it warns + skips rather than aborting, so check stderr.
-        combined = result.stdout + result.stderr
-        assert "/etc/hosts" not in result.stdout or "outside" in combined.lower() or "external" in combined.lower(), (
-            f"Expected /etc/hosts rejection signal; got:\nSTDOUT: {result.stdout[:300]}\nSTDERR: {result.stderr[:300]}"
+        assert "127.0.0.1" not in result.stdout and "::1" not in result.stdout, (
+            f"Expected /etc/hosts content blocked; got STDOUT containing host file content:\n{result.stdout[:500]}"
         )
-        print("  [PASS] /etc/hosts rejected without --allow-external-paths")
+        print("  [PASS] /etc/hosts content blocked without --allow-external-paths")
 
 
 def test_absolute_outside_cwd_accepted_with_optout() -> None:
-    """Absolute outside-cwd path must be accepted with --allow-external-paths."""
+    """Absolute outside-cwd path must be accepted with --allow-external-paths.
+
+    Strong assert: with the opt-out flag set, /etc/hosts content sentinels
+    (127.0.0.1 or ::1) MUST appear in stdout. This complements the rejection
+    test and confirms the opt-out path actually opts out.
+    """
     with tempfile.TemporaryDirectory() as td:
         cwd = Path(td)
         sess = make_minimal_session(cwd)
         result = run_extract(cwd, ["--reference-paths", "/etc/hosts", "--allow-external-paths"], sess)
-        # With opt-out, /etc/hosts content (some recognizable token from /etc/hosts) appears in stdout.
-        # /etc/hosts typically contains '127.0.0.1' as the first non-comment line.
-        # If the file isn't readable for any reason, the check still validates the absence-of-rejection.
-        assert "outside" not in result.stderr.lower() and "external" not in result.stderr.lower() or "/etc/hosts" in result.stdout, (
-            f"Expected /etc/hosts to be read with --allow-external-paths; got:\nSTDOUT: {result.stdout[:300]}\nSTDERR: {result.stderr[:300]}"
+        assert "127.0.0.1" in result.stdout or "::1" in result.stdout, (
+            f"Expected /etc/hosts content in stdout with --allow-external-paths; got:\nSTDOUT: {result.stdout[:500]}\nSTDERR: {result.stderr[:300]}"
         )
-        print("  [PASS] /etc/hosts accepted with --allow-external-paths")
+        print("  [PASS] /etc/hosts content accepted with --allow-external-paths")
 
 
 def test_relative_under_cwd_accepted() -> None:

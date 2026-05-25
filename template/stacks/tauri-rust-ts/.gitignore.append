@@ -8,11 +8,9 @@ src-tauri/gen/
 target/
 **/target/
 *.rs.bk
-Cargo.lock
-# NOTE: Cargo.lock IS typically committed for application crates (Tauri apps qualify).
-#       If your project is a library, uncomment this line and ignore it.
-#
-# We keep it committed by default — uncomment the above if needed.
+# Cargo.lock IS typically committed for application crates (Tauri apps qualify).
+# Default: kept committed (line below stays commented). Uncomment ONLY if this is a library crate.
+# Cargo.lock
 
 # Vite / frontend (matches web stack)
 node_modules/
