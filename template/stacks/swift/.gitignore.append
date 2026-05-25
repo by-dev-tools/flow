@@ -1,0 +1,31 @@
+# Swift-stack additions — APPEND to template/base/.gitignore.template entries.
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+.swiftpm/
+.build/
+
+# SPM
+Package.pins
+# Package.resolved is INTENTIONALLY committed — do not ignore.
+
+# Fastlane (if used)
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# CocoaPods (if used)
+Pods/
+*.xcworkspace/contents.xcworkspacedata.lock
+
+# Carthage (if used)
+Carthage/Build/

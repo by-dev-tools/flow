@@ -2,9 +2,9 @@
 
 ## Current Focus
 
-**PR 2 awaiting merge** ([by-dev-tools/flow](https://github.com/by-dev-tools/flow) — PR URL captured at Phase 8 push). v1.0.0 → v1.1.0; full workflow surface backfilled; PR-1 placeholders gone; PR-1 FOLLOW-UPs addressed; bootstrap exception fully lifted for PR 3+. Dogfooded itself through `/flow:staff-review` + `/flow:security-review` in Phase 7 (caught 2 BLOCKER + 11 NIT + 8 FOLLOW-UP findings; all BLOCKER + NIT fixed in-tree; FOLLOW-UPs routed below).
+**PR 3 awaiting merge** ([by-dev-tools/flow](https://github.com/by-dev-tools/flow) — PR URL captured at push). v1.1.0 → v1.2.0; template directory + bootstrap/migration docs + 2 PR-2 FOLLOW-UPs absorbed as security regression fixtures (cwd-constraint + malicious-config injection). 14-slot schema (rustWorkspaceDir added). Dogfooded itself through 3 parallel lens agents in Phase 7 (4 BLOCKER + 9 NIT + 4 FOLLOW-UP findings; all BLOCKER + NIT fixed in-tree; FOLLOW-UPs routed).
 
-After PR 2 merges: **PR 3** of the extraction umbrella — template directory (`template/base/` + per-stack overlays for web / swift / tauri-rust-ts) + `docs/bootstrap.md` + `docs/migration.md`. After PR 3 merges: md-manager PRs 4 → 5 → 6 sequentially per [`dev-docs/handoffs/md-manager-pr4-6-spec.md`](handoffs/md-manager-pr4-6-spec.md). Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
+After PR 3 merges: **md-manager PRs 4 → 5 → 6** sequentially per [`dev-docs/handoffs/md-manager-pr4-6-spec.md`](handoffs/md-manager-pr4-6-spec.md). Two prompts ready for md-manager session pickup (umbrella close-out for PR 1+2+3 + PR 4 install). Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
 
 ## Handoff Notes
 
@@ -12,6 +12,22 @@ After PR 2 merges: **PR 3** of the extraction umbrella — template directory (`
 - **PR 1 settings update reminder** (carried forward): `enabledPlugins."assumption-auditor@llm-auditor"` → `"flow@flow"` if not yet applied. Backup: `~/.claude/settings.json.bak.20260523-144832`.
 - **Optional disagreement-records migration** (carried forward): `mv ~/.claude/plugins/data/assumption-auditor/disagreements/* ~/.claude/plugins/data/flow/disagreements/`.
 - **PR 3 next.** Template directory + bootstrap/migration docs. The md-manager spec at `dev-docs/handoffs/md-manager-pr4-6-spec.md` was verified accurate against the shipped v1.1.0 surface in Phase 8 (the 13 flow.config.json slots there match the schema; the deletion list still matches md-manager state). PR 3 should be ~1 session; md-manager PR 4 starts only after PR 3 merges.
+
+## PR 4+ follow-ups from PR 3 review
+
+PR 3's Phase 7 dogfood (3 parallel lens agents — engineer+simplify combined + push-further + security; skipped UX-designer + design-engineer + accessibility with reason: doc/template surface, no UI) caught 4 BLOCKERs + 9 NITs + 4 FOLLOW-UPs. BLOCKERs + NITs fixed in-tree. FOLLOW-UPs routed here:
+
+1. **Preflight script library across 3 stacks** (engineer FOLLOW-UP). web/check.mjs and tauri/check.mjs share ~80% structure (`loadConfig`, `runGate`, GATES summary, exit-code handling). A shared helper module would let stack-specific gates be the diff. Defer to a "preflight library" PR if/when a 4th stack lands; today the divergence is borderline. Owner: domain agent. Horizon: when adding stack #4 (rust-only, python, go) OR when an existing stack's preflight needs a behavior change that has to land in all three.
+
+2. **`$comment-*` keys in flow.config.json.example are janitorial overhead** (push-further inline-cheap, deferred for design discussion). Replacing them with a sibling `flow.config.example.md` cheat-sheet was suggested. Counter-argument: putting docs in a separate file means the consumer holds two files in their head during bootstrap. Hold the existing pattern until PR 4 dogfood confirms or refutes the friction. If md-manager's PR 4 agent flags it, redesign in v1.3.
+
+3. **Collapse bootstrap's 6 steps to 4** (push-further inline-cheap, deferred for design discussion). Merging install+copy and verify+smoke-PR was suggested. Today the 6-step shape mirrors what an adopter actually does (each step has a different verification). PR 4 dogfood will surface whether the step count feels heavy in practice.
+
+4. **Ship `template/bootstrap.sh` shim** (push-further inline-cheap, deferred for design discussion). One-command bootstrap (`./bootstrap.sh --stack web` does Steps 2+3 in one invocation) was suggested. Real value, but the cp ladder doubles as documentation of WHAT the script would do. v2.0+ roadmap already lists `/flow:init` skill as the canonical answer; ship the shim ALONGSIDE that work to avoid two scaffolding paths competing.
+
+5. **Swift preflight unquoted `$WORKSPACE_OR_PROJECT` word-split** (security NIT). `WS=$(ls *.xcworkspace | head -n1)` then used unquoted via shellcheck-disable so xcodebuild gets two args. Filename with space breaks; filename with shell metas could in theory exec. Repo-owner-controlled, so not a real attack surface. Fix: use bash array `WS_ARGS=(-workspace "$WS")` then `xcodebuild "${WS_ARGS[@]}"`. Horizon: PR 4 or when first swift consumer touches the file.
+
+---
 
 ## PR 3+ follow-ups from PR 2 review
 
@@ -46,6 +62,71 @@ The walk-through-the-loop review on PR 1 surfaced two findings that are out-of-s
 2. **`extract_session.py --reference-paths` accepts arbitrary host paths.** Currently, `gather_reference_docs` reads any absolute path the caller passes; output is injected verbatim into the auditor subagent's context. In the current invocation chain, the caller is the `critique-plan` SKILL with a hardcoded glob, so consumer input never reaches it. But if a future skill or recipe ever forwards user-controlled paths, an attacker could exfil file contents (e.g., `~/.ssh/config`) into the subagent's prompt and out via tool output. Constrain to `cwd` (reject resolved paths outside `Path.cwd()`) unless an explicit override flag says otherwise. Document the trust model in the script docstring. Pairs naturally with PR 2's path-validation rule baseline (`plugins/flow/hooks/default-hooks.json`).
 
 ## Active Work Items
+
+### PR 3 — Template directory + bootstrap docs + absorb PR-2 follow-ups (SHIPPED — awaiting merge)
+
+**Mode:** feature
+**Branch:** `pr3/template-directory` (off `main` after PR 2 squash `3409103`)
+**Goal:** Ship the consumer-side scaffolding so a new project can adopt flow in ~10 minutes per `docs/bootstrap.md`. Cover the three stacks documented in the umbrella plan (web / swift / tauri-rust-ts). Provide `docs/migration.md` for existing projects (md-manager being the upcoming case in PRs 4-6). Absorb PR 2's two follow-up eval fixtures (cwd-constraint + malicious-config injection) since PR 3 is touching the eval surface anyway. Manifest bump v1.1.0 → v1.2.0.
+
+**Scope (in):**
+- `template/base/` — Tier 1 (required: CLAUDE.md.template, flow.config.json.example, .claude/settings.json.example, .claude/rules/safety.md.template, README.md.template, .gitignore.template) + Tier 2 (recommended-but-shippable-empty: core-docs/{spec,plan,roadmap,history,feedback}.md scaffolds with format headers).
+- `template/stacks/web/` — Vite/React/TS stack: `tools/preflight/check.mjs` (npm typecheck + build + test), `.claude/skills/link/SKILL.md` (vite dev server), `.claude/rules/{ui,dev-server}.md`, `.github/workflows/ci.yml` (Node CI), `.gitignore.append` (web-stack entries).
+- `template/stacks/swift/` — `tools/preflight/check.sh` (xcodebuild + xcodebuild test + swift-format lint), `.claude/rules/safety.md.append` (.xcodeproj/.xcworkspace edits), `.github/workflows/ci.yml` (macOS runner + Xcode action), `.gitignore.append` (DerivedData, xcuserdata).
+- `template/stacks/tauri-rust-ts/` — `tools/preflight/check.mjs` (npm typecheck + build + cargo fmt --check + cargo clippy -D warnings + cargo test), `.claude/skills/link/SKILL.md` (tauri dev), `.claude/rules/ui.md`, `.github/workflows/ci.yml` (Node + Cargo), `.gitignore.append` (target/, src-tauri/target).
+- `docs/bootstrap.md` — step-by-step adoption for a NEW project (per stack: which template/base files to copy, which stack overlay to merge, how to fill placeholders, how to install plugin, how to validate `flow.config.json`).
+- `docs/migration.md` — adoption for an EXISTING project with `.claude/` content (md-manager case): the additive-then-replace pattern, what to keep project-shaped (safety.md, ui.md, link/, project skills) vs delete (workflow skills, generic rules, planner+docs, memory tool).
+- PR-2 FOLLOW-UPs absorbed:
+  - `plugins/flow/evals/fixtures/cwd-constraint/` — fixtures covering symlink-into-cwd (accepted), `..` glob expansion (rejected), absolute `--reference-paths` (rejected with explicit stderr), `--allow-external-paths` opt-out (accepted). Wire into `evals/run_evals.py` or add a separate `evals/run_security_evals.py` if the existing harness shape doesn't fit security-class tests.
+  - `plugins/flow/evals/fixtures/malicious-config/` — fixture: `flow.config.json` with shell metas in `referenceGlob`, `defaultBranch`, `typecheckCmd`. Asserts no command execution; values land as opaque strings into their consumer skills.
+- Manifest bump in both `.claude-plugin/marketplace.json` (metadata.version + plugin version) and `plugins/flow/.claude-plugin/plugin.json`: 1.1.0 → 1.2.0. Description updated to mention "template directory + bootstrap docs."
+
+**Scope (out):**
+- md-manager-side changes (PRs 4-6).
+- Other PR-2 FOLLOW-UPs not tagged for PR 3 (items 3-8 in the FOLLOW-UPs section above stay deferred).
+- `/flow:init` auto-bootstrap skill (v2.0+ per post-extraction roadmap).
+- v1.x+ post-extraction features.
+
+**Locked patterns from PR 1 + PR 2 (still binding):**
+- Templates use `{{PLACEHOLDER}}` syntax for fill-in slots (CLAUDE.md.template, README.md.template, safety.md.template).
+- All shell command examples in template files use `sh -c "$VAR"`, never `eval "$VAR"`.
+- Per-stack preflight scripts print loud `⚠️` warnings for any unset config slot, never silently no-op.
+- Default-branch resolution in template-shipped scripts uses the 3-tier fallback chain.
+- Cross-file refs in template SKILL.md files (only `link/` ships in templates) use `${CLAUDE_PLUGIN_ROOT}` ONLY for plugin-shipped paths; consumer-side relative paths are fine.
+- No md-manager-specific tokens in template artifacts.
+
+**Phased execution (each ends with one commit; per-phase verifiable success criteria):**
+
+- **Phase 1 — Plan + consumer-model read.** Read schema (13 slots, defaults). Survey md-manager (the reference web consumer) for actual npm scripts, settings.json shape, .gitignore. Done. **Success:** schema slots enumerated; web-stack defaults validated against md-manager actuals.
+- **Phase 2 — `template/base/` (Tier 1 + Tier 2).** 8 files. **Success:** all 8 files exist; placeholders use `{{NAME}}` syntax consistently; flow.config.json.example parses with jq; settings.json.example parses; no md-manager tokens.
+- **Phase 3 — 3 stack overlays.** ~15 files total. **Success:** each stack has at least preflight + CI workflow + .gitignore.append; preflight scripts have node --check / shellcheck clean (where applicable); CI yamls parse with yq/python-yaml.
+- **Phase 4 — `docs/bootstrap.md` + `docs/migration.md`.** **Success:** bootstrap covers all 3 stacks; migration explicitly names the keep-vs-delete file lists matching the md-manager spec; both docs reference template paths that exist.
+- **Phase 5 — Absorb 2 PR-2 FOLLOW-UPs.** **Success:** cwd-constraint fixture rejects out-of-cwd path with non-zero exit + explicit message; malicious-config fixture asserts shell-meta values pass through as strings; both wired into the eval harness.
+- **Phase 6 — Bootstrap verification.** In `/tmp/`, follow `docs/bootstrap.md` for the web stack from scratch. Optional smoke for swift + tauri (full bootstrap may need a real Mac/Rust env). **Success:** web bootstrap produces a working project with `claude --plugin-dir <flow> --print "/flow:workflow-help"` returning the expected output; `claude plugin validate` clean against the bootstrapped project.
+- **Phase 7 — Dogfood PR 3 via `/flow:staff-review` + `/flow:security-review`.** Skills exist on main now (PR 2 shipped them). Spawn lens agents via Agent tool with `subagent_type: lens-*`. Triage; apply BLOCKER + cheap NIT inline; route FOLLOW-UPs. **Success:** at least 3 of 4 lenses ran (a11y likely skipped via uiSurface=false); all BLOCKERs fixed; FOLLOW-UPs routed.
+- **Phase 8 — `/flow:ship` + manifest bump + open PR.** Run the pipeline; bump to v1.2.0; verify md-manager spec accuracy (no changes expected — PR 3 is consumer-side); push; open PR; never merge. **Success:** PR open against main; MERGEABLE; PR body documents 8 phases; md-manager spec re-verified.
+
+**Confidence verdicts:**
+
+- **Three stack overlays are sufficient for v1.2.0 coverage.** HIGH. Web + swift + tauri match the umbrella's stated targets. Other stacks (python, go, rust-only) defer to v1.3+.
+- **`docs/bootstrap.md` is testable from scratch in `/tmp/` for the web stack.** HIGH. Node + npm are universally available.
+- **Swift + tauri bootstrap verification may be smoke-only** (no full Xcode/Rust env in this session). MEDIUM. Mitigation: document the assumption in the bootstrap docs; consumer reports become PR 3+ FOLLOW-UPs.
+- **PR-2 FOLLOW-UP eval fixtures slot cleanly into the existing harness.** MEDIUM. The existing `evals/run_evals.py` runs against jsonl session fixtures for the auditor; security-class tests (assert-no-shell-execution) need a different shape. Likely add a separate `evals/run_security_evals.py` (or skip the harness wiring and ship as standalone Python smoke tests under `evals/fixtures/cwd-constraint/test.py`). Decide at Phase 5.
+- **Manifest bump to v1.2.0 is additive (no breaking changes).** HIGH. Templates are consumer-pulled, not plugin-pushed.
+
+**Risks:**
+- Stack-overlay scope creep — keep each overlay to ~5 files, defer "everything a stack might need" to consumer fork.
+- Migration doc accuracy depends on md-manager's actual state at PR 4 time — keep it general where possible, point at md-manager-pr4-6-spec.md for specifics.
+- Bootstrap verification in `/tmp/` requires `claude` CLI access from the shell — confirmed available (used in PR 1 + PR 2 smoke tests).
+
+**Files touched (anticipated):**
+- New under `template/base/`: 8 files (Tier 1 + Tier 2)
+- New under `template/stacks/web/`: 5 files
+- New under `template/stacks/swift/`: 4 files
+- New under `template/stacks/tauri-rust-ts/`: 5 files
+- New under `docs/`: `bootstrap.md`, `migration.md`
+- New under `plugins/flow/evals/fixtures/`: 2 fixture dirs (cwd-constraint, malicious-config)
+- Modified: `.claude-plugin/marketplace.json`, `plugins/flow/.claude-plugin/plugin.json` (v1.2.0); `dev-docs/{history,plan,feedback}.md` (Phase 8 synthesis); possibly `plugins/flow/evals/run_evals.py` or new `evals/run_security_evals.py`.
 
 ### PR 2 — Workflow surface backfill (SHIPPED — awaiting merge)
 

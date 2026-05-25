@@ -1,0 +1,35 @@
+{
+  "$comment-1": "Per-project configuration for the flow plugin. Every slot is OPTIONAL — flow ships sensible defaults. Slots you DON'T set use the documented default. Schema: https://github.com/by-dev-tools/flow/blob/main/plugins/flow/schema/flow.config.schema.json",
+  "$comment-2": "DELETE THIS BLOCK AND THE $comment-* lines BEFORE COMMITTING. They are not part of the schema; they're here for the bootstrap reader.",
+
+  "defaultBranch": "main",
+
+  "$comment-typecheckCmd": "Shell command to run as the project's typecheck (after review fixes land). Run via sh -c, not eval. UNSET → /flow:ship prints a loud ⚠️ warning rather than silently skipping.",
+  "typecheckCmd": "npm run typecheck",
+
+  "$comment-paths": "Doc paths used by /flow:ship for synthesis and by the reviewers for grounding. Defaults below are the consumer convention (core-docs/). Flow's own repo overrides to dev-docs/.",
+  "historyPath": "core-docs/history.md",
+  "planPath": "core-docs/plan.md",
+  "roadmapPath": "core-docs/roadmap.md",
+  "specPath": "core-docs/spec.md",
+  "feedbackPath": "core-docs/feedback.md",
+  "designLanguagePath": "core-docs/design-language.md",
+
+  "$comment-referenceGlob": "Glob /flow:critique-plan uses to load reference docs. Excludes history/plan/roadmap automatically (those churn too often to be reliable spec sources).",
+  "referenceGlob": "core-docs/*.md",
+
+  "$comment-uiSurface": "Whether this project ships a UI. If false, /flow:accessibility-review exits early instead of running an empty audit. Backend / CLI / library projects: set to false.",
+  "uiSurface": true,
+
+  "$comment-reviewLenses": "Which /flow:staff-review lenses spawn in parallel. Removing a lens means it won't run — document why in your plan doc.",
+  "reviewLenses": ["staff-engineer", "ux-designer", "design-engineer", "push-further"],
+
+  "$comment-memoryHardCap": "Max failure-pattern memory entries before tools/memory/check.mjs forces curation. Most projects need < 30 if the source-diversity bar is honored.",
+  "memoryHardCap": 30,
+
+  "$comment-branchPrefix": "Conventional prefix for feature branches created by /flow:ship and /flow:ship-spike. Common: 'claude/', 'feature/', 'fix/'. Empty disables.",
+  "branchPrefix": "claude/",
+
+  "$comment-rustWorkspaceDir": "(Tauri / Rust stacks only — omit on pure web / swift / non-Rust projects.) Directory holding your Cargo workspace. Default 'src-tauri' is the Tauri convention; non-Tauri Rust projects set '.' (workspace at root) or the subdir name.",
+  "rustWorkspaceDir": "src-tauri"
+}

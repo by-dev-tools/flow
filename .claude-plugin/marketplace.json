@@ -5,15 +5,15 @@
     "url": "https://github.com/by-dev-tools"
   },
   "metadata": {
-    "description": "Managed-autonomy workflow for Claude Code: 11-step loop with audit/critique skills, four-lens parallel staff-review, diff-focused security + a11y reviews, agent-isolated planner + docs helpers, project-config-driven ship + ship-spike pipelines.",
-    "version": "1.1.0"
+    "description": "Managed-autonomy workflow for Claude Code: 11-step loop with audit/critique skills, four-lens parallel staff-review, diff-focused security + a11y reviews, agent-isolated planner + docs helpers, project-config-driven ship + ship-spike pipelines, plus consumer-side template directory (web / swift / tauri-rust-ts stacks) and bootstrap + migration docs.",
+    "version": "1.2.0"
   },
   "plugins": [
     {
       "name": "flow",
       "source": "./plugins/flow",
-      "description": "Managed-autonomy 11-step loop. Bundles the skeptical reviewers (auditor + plan-critic), the four-lens parallel staff-review (engineer / UX-designer / design-engineer / push-further), diff-focused /flow:security-review + /flow:accessibility-review, /flow:ship + /flow:ship-spike pipelines, /flow:workflow-help, planner + docs context-isolation agents, portable rules (general, plan-discipline, documentation, exploration), memory-corpus tool, flow.config.json JSON Schema, and default hooks. v1.1.0 backfills PR 1's placeholders and lands the full v1 workflow surface.",
-      "version": "1.1.0",
+      "description": "Managed-autonomy 11-step loop. Bundles the skeptical reviewers (auditor + plan-critic), the four-lens parallel staff-review (engineer / UX-designer / design-engineer / push-further), diff-focused /flow:security-review + /flow:accessibility-review, /flow:ship + /flow:ship-spike pipelines, /flow:workflow-help, planner + docs context-isolation agents, portable rules (general, plan-discipline, documentation, exploration), memory-corpus tool, flow.config.json JSON Schema (14 slots), and default hooks. v1.2.0 adds the consumer-side template directory (web / swift / tauri-rust-ts stack overlays + base scaffolds) and bootstrap + migration docs, plus security regression fixtures for the cwd-constraint + malicious-config defenses.",
+      "version": "1.2.0",
       "author": {
         "name": "by-dev-tools"
       },

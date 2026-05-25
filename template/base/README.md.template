@@ -1,0 +1,45 @@
+# {{PROJECT_NAME}}
+
+{{ONE_LINE_DESCRIPTION}}
+
+**Status:** {{LIFECYCLE_STATUS}}
+
+## What this is
+
+<!-- 2-4 sentences describing what the project does and who it's for. -->
+
+## Tech stack
+
+<!-- One-liner per stack component. Examples:
+- Language: TypeScript
+- Framework: React + Vite
+- Tests: Vitest
+- Deploy: Vercel
+-->
+
+## Quick start
+
+```sh
+{{INSTALL_STEPS}}
+```
+
+## Development workflow
+
+This project uses the [flow plugin](https://github.com/by-dev-tools/flow) for its 11-step managed-autonomy loop:
+
+```
+Clarify → Plan (gate) → Execute → Preflight → Commit → /simplify → /flow:staff-review → Present → Iterate → /flow:ship → User merges (gate)
+```
+
+See `CLAUDE.md` for the project's quality bar + doc index. Run `/flow:workflow-help` in a Claude Code session for the in-skill cheat sheet + your project's resolved `flow.config.json` slots.
+
+## Docs
+
+- [`core-docs/spec.md`](core-docs/spec.md) — what we're building + why
+- [`core-docs/plan.md`](core-docs/plan.md) — current focus
+- [`core-docs/roadmap.md`](core-docs/roadmap.md) — what's next
+- [`core-docs/history.md`](core-docs/history.md) — per-PR decision log
+
+## License
+
+<!-- MIT / Apache-2.0 / proprietary / etc. -->

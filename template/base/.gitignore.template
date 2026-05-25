@@ -1,0 +1,49 @@
+# Universal entries — applies to every stack. Per-stack additions live in template/stacks/<stack>/.gitignore.append.
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE local state
+*.swp
+*.swo
+*~
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# Environment + credentials (DO NOT commit these — the safety hook in .claude/settings.json.example also blocks Edit/Write to these patterns)
+.env
+.env.*
+!.env.example
+*credentials*
+*secret*
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*_ecdsa
+*_ed25519
+*_dsa
+.netrc
+*.kdbx
+*.ovpn
+*token*
+
+# Logs
+*.log
+logs/
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/forge/cache/
+.claude/forge/unanalyzed-sessions.log
+.claude/worktrees/
+.claude/local-*
+
+# Coverage / test artifacts
+coverage/
+.nyc_output/
