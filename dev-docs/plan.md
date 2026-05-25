@@ -2,9 +2,9 @@
 
 ## Current Focus
 
-**PR 2 merged** (squash `3409103`, 2026-05-25). **PR 3 in flight** on branch `pr3/template-directory`: template directory (`template/base/` + per-stack overlays for web / swift / tauri-rust-ts) + `docs/bootstrap.md` + `docs/migration.md` + absorb the 2 PR-2 FOLLOW-UPs tagged for PR 3 (cwd-constraint regression fixture + malicious-config injection fixture). v1.1.0 → v1.2.0.
+**PR 3 awaiting merge** ([by-dev-tools/flow](https://github.com/by-dev-tools/flow) — PR URL captured at push). v1.1.0 → v1.2.0; template directory + bootstrap/migration docs + 2 PR-2 FOLLOW-UPs absorbed as security regression fixtures (cwd-constraint + malicious-config injection). 14-slot schema (rustWorkspaceDir added). Dogfooded itself through 3 parallel lens agents in Phase 7 (4 BLOCKER + 9 NIT + 4 FOLLOW-UP findings; all BLOCKER + NIT fixed in-tree; FOLLOW-UPs routed).
 
-After PR 3 merges: md-manager PRs 4 → 5 → 6 sequentially per [`dev-docs/handoffs/md-manager-pr4-6-spec.md`](handoffs/md-manager-pr4-6-spec.md). Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
+After PR 3 merges: **md-manager PRs 4 → 5 → 6** sequentially per [`dev-docs/handoffs/md-manager-pr4-6-spec.md`](handoffs/md-manager-pr4-6-spec.md). Two prompts ready for md-manager session pickup (umbrella close-out for PR 1+2+3 + PR 4 install). Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
 
 ## Handoff Notes
 
@@ -63,7 +63,7 @@ The walk-through-the-loop review on PR 1 surfaced two findings that are out-of-s
 
 ## Active Work Items
 
-### PR 3 — Template directory + bootstrap docs + absorb PR-2 follow-ups (in flight)
+### PR 3 — Template directory + bootstrap docs + absorb PR-2 follow-ups (SHIPPED — awaiting merge)
 
 **Mode:** feature
 **Branch:** `pr3/template-directory` (off `main` after PR 2 squash `3409103`)
