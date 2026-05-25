@@ -2,16 +2,15 @@
 
 ## Current Focus
 
-**PR 3 awaiting merge** ([by-dev-tools/flow](https://github.com/by-dev-tools/flow) — PR URL captured at push). v1.1.0 → v1.2.0; template directory + bootstrap/migration docs + 2 PR-2 FOLLOW-UPs absorbed as security regression fixtures (cwd-constraint + malicious-config injection). 14-slot schema (rustWorkspaceDir added). Dogfooded itself through 3 parallel lens agents in Phase 7 (4 BLOCKER + 9 NIT + 4 FOLLOW-UP findings; all BLOCKER + NIT fixed in-tree; FOLLOW-UPs routed).
+**PRs 1-3 merged** (`f8610a1` / `3409103` / `3abc236`). md-manager PR 4 shipped + delivered a consumer-feedback report (5 rough edges + 1 EXPLORATION + 1 workflow-discipline insight). **5 follow-up flow PRs sequenced (PR A → PR E)** to absorb the report; PR A in flight. Roadmap canonicalized at [`dev-docs/roadmap.md`](roadmap.md).
 
-After PR 3 merges: **md-manager PRs 4 → 5 → 6** sequentially per [`dev-docs/handoffs/md-manager-pr4-6-spec.md`](handoffs/md-manager-pr4-6-spec.md). Two prompts ready for md-manager session pickup (umbrella close-out for PR 1+2+3 + PR 4 install). Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
+After PRs A-E land: standing by for md-manager PR 5 (dogfood) which may surface additional rough edges worth a second feedback bundle, then md-manager PR 6 (delete duplicates + retire umbrella). Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
 
 ## Handoff Notes
 
-- **PR 2 needs NO user-side settings update** — `flow@flow` install from PR 1 stays valid. Just `/plugin marketplace update flow` (or re-install) to pull v1.1.0 once PR 2 merges. If the user is testing via `--plugin-dir`, this is already live.
-- **PR 1 settings update reminder** (carried forward): `enabledPlugins."assumption-auditor@llm-auditor"` → `"flow@flow"` if not yet applied. Backup: `~/.claude/settings.json.bak.20260523-144832`.
-- **Optional disagreement-records migration** (carried forward): `mv ~/.claude/plugins/data/assumption-auditor/disagreements/* ~/.claude/plugins/data/flow/disagreements/`.
-- **PR 3 next.** Template directory + bootstrap/migration docs. The md-manager spec at `dev-docs/handoffs/md-manager-pr4-6-spec.md` was verified accurate against the shipped v1.1.0 surface in Phase 8 (the 13 flow.config.json slots there match the schema; the deletion list still matches md-manager state). PR 3 should be ~1 session; md-manager PR 4 starts only after PR 3 merges.
+- **Consumer-feedback PRs A-E are sequenced.** Each goes through the loop (plan → execute → preflight → /flow:staff-review or emulation → /flow:ship pipeline → open PR). User merges each as they ship.
+- **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key per md-manager PR 4 report observation. Cosmetic cleanup; doesn't block. PR C addresses the install-docs gap that this drift would surface in any new consumer.
+- **md-manager PR 5 (dogfood)** starts in a separate worktree after md-manager PR 4 merges. May surface additional flow rough edges — bundle into a second feedback intake PR if 2+ new items emerge; one-off if only 1.
 
 ## PR 4+ follow-ups from PR 3 review
 
@@ -62,6 +61,133 @@ The walk-through-the-loop review on PR 1 surfaced two findings that are out-of-s
 2. **`extract_session.py --reference-paths` accepts arbitrary host paths.** Currently, `gather_reference_docs` reads any absolute path the caller passes; output is injected verbatim into the auditor subagent's context. In the current invocation chain, the caller is the `critique-plan` SKILL with a hardcoded glob, so consumer input never reaches it. But if a future skill or recipe ever forwards user-controlled paths, an attacker could exfil file contents (e.g., `~/.ssh/config`) into the subagent's prompt and out via tool output. Constrain to `cwd` (reject resolved paths outside `Path.cwd()`) unless an explicit override flag says otherwise. Document the trust model in the script docstring. Pairs naturally with PR 2's path-validation rule baseline (`plugins/flow/hooks/default-hooks.json`).
 
 ## Active Work Items
+
+### Consumer-feedback follow-ups (PRs A-E, sequential) — driven by md-manager PR 4 report 2026-05-25
+
+5 small focused PRs absorbing md-manager's first-real-consumer dogfood findings. FB-0005 through FB-0009 + 1 EXPLORATION (rule-of-three close-out skill) captured in PR A's intake. Each PR runs the workflow loop (plan → execute → preflight → /flow:staff-review or lens emulation → /flow:ship pipeline → open PR; user merges). Order is priority-sequenced per the consumer report; each can be reviewed + merged independently.
+
+#### PR A — Consumer feedback intake (docs-only; in flight on `pr-a/consumer-feedback-intake`)
+
+**Mode:** feature (small)
+**Goal:** Capture md-manager's PR 4 consumer-feedback report as canonical flow `dev-docs/` artifacts before any implementation work begins. Closes the cross-repo signal loop (consumer flagged → captured → addressable).
+
+**Scope (in):**
+- Create `dev-docs/roadmap.md` with format header + Now / Next / Later / § Exploration sections. Flow has been deferring this since v1.0.0; right moment to land it (matches the consumer-template convention flow ships in PR 3).
+- Add 5 FB entries to `dev-docs/feedback.md` (FB-0005 through FB-0009) covering the 5 rough edges from the consumer report. Each entry: source, what-was-said, synthesized rule, applies-to, validation.
+- Add 1 EXPLORATION entry to `dev-docs/roadmap.md` § Exploration covering the rule-of-three `flow:close-out` skill abstraction observation (don't extract yet — wait for a fourth instance).
+- Update plan.md: Current Focus advances to "PRs A-E sequenced"; Handoff Notes refreshed for post-PR-3 state; PR A-E Active Work Item block added.
+
+**Scope (out):** Any code changes to plugin artifacts (PR B+ does that). The Workflow discipline lesson from md-manager FB-0033 (workflow.md should reinforce "don't skip even on docs-only") routes to PR C, not PR A.
+
+**Spec-walk:**
+- [ ] `dev-docs/roadmap.md` exists with the 4-section structure (Now / Next / Later / § Exploration) + the rule-of-three EXPLORATION entry.
+- [ ] `dev-docs/feedback.md` has 5 new entries (FB-0005 through FB-0009) per the documentation rule schema; each cites the consumer report as source.
+- [ ] `dev-docs/plan.md` Current Focus + Handoff Notes reflect the new state; PR A-E block added under Active Work Items.
+- [ ] No edits to `plugins/flow/*`, `template/*`, `docs/*`, `evals/*` (verify via `git diff --name-only origin/main..HEAD` returning only `dev-docs/` paths).
+- [ ] `claude plugin validate .` exits clean (sanity).
+
+**Confidence verdicts:**
+
+**Assumption:** Creating `dev-docs/roadmap.md` now (rather than deferring to a "roadmap initialization" PR) is the right moment because PR A has a real EXPLORATION entry to land + flow has been deferring this since v1.0.0 with no cost.
+**Confidence:** HIGH
+**Why:** Empty roadmap.md would be busy-work; one with a real entry is canonical reference material.
+**If it flips:** EXPLORATION moves to `dev-docs/plan.md` "Backlog" section instead. Single-file revert.
+
+**Assumption:** FB-0005 through FB-0009 numbering doesn't collide with any in-flight session writing to feedback.md.
+**Confidence:** HIGH
+**Why:** Single-author repo; no in-flight concurrent FB-writing session.
+**If it flips:** Renumber at commit time; non-architectural.
+
+**Risks:** none material — purely additive docs.
+
+**Files touched:** `dev-docs/roadmap.md` (new), `dev-docs/feedback.md` (5 entries added), `dev-docs/plan.md` (Current Focus + Handoff Notes + new Active Work Item block).
+
+#### PR B — Stale-base preflight in `/flow:ship` Step 1 (queued)
+
+**Mode:** feature (small) | **Priority: highest**
+**Goal:** Add a mechanical preflight check that prevents the stale-base BLOCKER class md-manager PR 4 burned 4 lens spawns surfacing. FB-0008 captures the rule + pattern.
+
+**Scope (in):** `plugins/flow/skills/ship/SKILL.md` Step 1 — add `git fetch origin --quiet` + `git merge-base --is-ancestor` check; exit 1 with clear stderr message if branch is behind. Mirror same check into `/flow:ship-spike` Step 1 and `/flow:staff-review` Step 1 (both also diff-vs-default-branch consumers).
+
+**Scope (out):** Auto-rebasing on detection. Stale-base detection is the gate; the fix is the user's call.
+
+**Spec-walk:**
+- [ ] All 3 skills (`ship`, `ship-spike`, `staff-review`) have the stale-base check at Step 1, before any expensive operation.
+- [ ] Check uses `flow.config.json.defaultBranch` with 3-tier fallback chain (matches PR 1 locked idiom).
+- [ ] `git fetch origin --quiet` precedes the check (otherwise it tests against a stale local view).
+- [ ] Error message names the gap (`(current HEAD: X; base needs N commits)`) so the user knows what's needed.
+- [ ] `claude plugin validate .` clean.
+- [ ] Smoke test: forge a stale branch in `/tmp/`; verify `/flow:ship` exits 1 with the expected message.
+
+**Confidence verdicts:**
+
+**Assumption:** Forced-update / shallow-clone consumers won't hit false positives from the `merge-base --is-ancestor` check.
+**Confidence:** HIGH
+**Why:** `git fetch origin` brings the remote ref current; `is-ancestor` is the standard idiom. Shallow clones fail-soft (no ancestry info = treats as ancestor).
+**If it flips:** Add `--depth=1` aware fallback (`git rev-parse origin/<branch> 2>/dev/null` first). Surface at smoke time.
+
+**Files touched:** `plugins/flow/skills/{ship,ship-spike,staff-review}/SKILL.md`.
+
+#### PR C — Marketplace install verification + `/flow:ship` assumption surfacing (queued)
+
+**Mode:** feature (small) | **Priority: high**
+**Goal:** Two related fixes pairs into one PR. Address FB-0005 (marketplace-key-mismatch install docs gap) by adding a verification step to `docs/bootstrap.md` + `docs/migration.md`. Address the workflow discipline lesson (md-manager FB-0033 cross-project applicability) by making `/flow:ship` print which workflow steps it assumes have already run.
+
+**Scope (in):**
+- `docs/bootstrap.md` Step 1 + `docs/migration.md` Stage 1: add `/plugin marketplace list | grep '^flow'` verification step after install, with fallback instruction to re-run `/plugin marketplace add by-dev-tools/flow` if absent. Document the rename-causes-stale-key class of issue.
+- `plugins/flow/skills/ship/SKILL.md` Step 1: print "ASSUMES: /critique-plan ran during plan; /simplify ran post-commit; /flow:staff-review ran with substantive output or explicit N/A per lens. Skips become visible at the next ship." Single-line; doesn't gate, just surfaces.
+- `plugins/flow/docs/workflow.md` Step 6 + Step 2 sub-step: add "even for docs-only diffs" qualifier per workflow discipline (a) recommendation from the consumer report.
+
+**Scope (out):** A `flow:doctor` skill (deferred; workflow discipline (b)). The doc fix + assumption-surfacing is enough behavior change to test the discipline; doctor is v1.2+ if discipline doesn't change.
+
+**Spec-walk:**
+- [ ] `docs/bootstrap.md` + `docs/migration.md` have the marketplace-name verification step at install-time.
+- [ ] `plugins/flow/skills/ship/SKILL.md` Step 1 prints the workflow-step assumption list.
+- [ ] `plugins/flow/docs/workflow.md` Step 6 + Step 2 have the "even for docs-only" qualifier.
+- [ ] `claude plugin validate .` clean.
+
+**Files touched:** `docs/bootstrap.md`, `docs/migration.md`, `plugins/flow/skills/ship/SKILL.md`, `plugins/flow/docs/workflow.md`.
+
+#### PR D — Per-diff non-UI early-exit (paired in `/flow:security-review` + `/flow:accessibility-review`) (queued)
+
+**Mode:** feature (medium) | **Priority: medium**
+**Goal:** Pair FB-0006 + FB-0007. Both reviewers should detect "no relevant files in diff" at Step 1 and early-exit cleanly, saving spawn cost on docs-only PRs.
+
+**Scope (in):**
+- `plugins/flow/skills/security-review/SKILL.md` Step 1: add per-diff source-file detection (`git diff <base>..HEAD --name-only | grep -E ...`). If empty, emit "[security-review] no source/config files in diff; skipping." and exit 0.
+- `plugins/flow/skills/accessibility-review/SKILL.md` Step 1: add per-diff UI-file detection, AND in addition to the existing `uiSurface=false` project-wide gate. Same shape as security-review.
+- `plugins/flow/schema/flow.config.schema.json`: add two optional slots (`sourceFilePatterns`, `uiFilePatterns`) for projects with non-standard file layouts (e.g., monorepos). Defaults documented inline.
+- `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`: schema slot count 14 → 16.
+
+**Scope (out):** Restructuring the reviewers to take diff-paths as inputs (today they read from disk; the early-exit checks the path list but the reviewer itself still works as-is).
+
+**Spec-walk:**
+- [ ] Both reviewers' Step 1 has per-diff detection wired.
+- [ ] Schema has 2 new slots with defaults + examples; consumers exist (the reviewer skills read them).
+- [ ] No false-positive on a real source-touching PR (smoke: stage a single `src/foo.ts` edit; verify both reviewers proceed without early-exit).
+- [ ] Manifest version + slot count reflected (note: doesn't necessarily bump major.minor; this is a 1.2.x patch since it's additive).
+- [ ] `claude plugin validate .` clean.
+
+**Files touched:** `plugins/flow/skills/{security-review,accessibility-review}/SKILL.md`, `plugins/flow/schema/flow.config.schema.json`, `.claude-plugin/marketplace.json`, `plugins/flow/.claude-plugin/plugin.json`.
+
+#### PR E — `gh` CLI fail-fast check (queued)
+
+**Mode:** feature (small) | **Priority: low**
+**Goal:** FB-0009. Add `command -v gh` check at `/flow:ship` Step 1, `/flow:staff-review` Step 1, `/flow:ship-spike` Step 1. Emit install hint + exit 1 if absent rather than exit 127 at invocation site.
+
+**Scope (in):**
+- 3 SKILL.md edits adding the `command -v gh` check.
+- `docs/bootstrap.md` Step 1 + `docs/migration.md` Stage 1: document `gh` as a prerequisite alongside `claude` + `node` + `jq`.
+
+**Spec-walk:**
+- [ ] All 3 skills' Step 1 has the gh-CLI check.
+- [ ] Install hint message includes both macOS (`brew install gh`) and the generic URL.
+- [ ] Both bootstrap + migration docs name `gh` in the prereq list.
+- [ ] `claude plugin validate .` clean.
+
+**Files touched:** `plugins/flow/skills/{ship,staff-review,ship-spike}/SKILL.md`, `docs/bootstrap.md`, `docs/migration.md`.
+
+---
 
 ### PR 3 — Template directory + bootstrap docs + absorb PR-2 follow-ups (SHIPPED — awaiting merge)
 
