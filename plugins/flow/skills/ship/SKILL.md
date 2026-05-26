@@ -36,9 +36,10 @@ Emit (verbatim, single block — do NOT customize per project; the consistency I
   Step 6 (/simplify)  — bundled-Claude-Code /simplify ran post-commit; even on docs-only.
   Step 7 (/flow:staff-review) — 4 lenses ran with substantive findings OR explicit N/A per lens with documented reason.
 
-  If any of the above was skipped without recorded reason, stop here and run it now. The PR-1+PR-3
-  dogfood discovery: skipped reviews compound into discovery cost at /ship time. /flow:ship will
-  proceed regardless (this is informational, not blocking) — but the assumption surface helps you
+  If any of the above was skipped without recorded reason, stop here and run it now.
+  Skipped reviews compound into discovery cost at ship time — what a 30-second critique
+  would have caught becomes a multi-lens-spawn forensic exercise. /flow:ship will proceed
+  regardless (this is informational, not blocking) — but the assumption surface helps you
   notice when the loop got short-circuited.
 ```
 

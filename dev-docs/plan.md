@@ -12,6 +12,14 @@ After PRs A-E land: standing by for md-manager PR 5 (dogfood) which may surface 
 - **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key per md-manager PR 4 report observation. Cosmetic cleanup; doesn't block. PR C addresses the install-docs gap that this drift would surface in any new consumer.
 - **md-manager PR 5 (dogfood)** starts in a separate worktree after md-manager PR 4 merges. May surface additional flow rough edges — bundle into a second feedback intake PR if 2+ new items emerge; one-off if only 1.
 
+## PR D+ follow-ups from PR C review
+
+PR C's lens dogfood (staff-engineer + push-further combined) caught 1 BLOCKER + 2 NITs (all fixed in-tree) + 1 FOLLOW-UP routed here:
+
+1. **Surface-AFTER variant of `/flow:ship` Step 1.0 workflow-step assumption block.** PR C ships the surface-BEFORE form (informational pre-flight; zero new infrastructure, prints what's ASSUMED to have run). The richer signal — what ACTUALLY ran — would come from a post-ship "Workflow steps actually executed this session" summary derived from session-transcript scan. Higher-signal than surface-before but requires session-introspection helper that doesn't exist yet. Ship the cheap form (PR C); add this as a v1.3+ enhancement when a session-introspection helper lands. Owner: domain agent. Horizon: post-extraction v1.3.
+
+---
+
 ## PR C+ follow-ups from PR B review
 
 PR B's Phase 7 dogfood (staff-engineer + simplify + security combined lens against the stale-base preflight implementation) caught 2 BLOCKERs + 2 NITs (all fixed in-tree) + 1 FOLLOW-UP routed here:

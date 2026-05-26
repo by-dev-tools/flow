@@ -46,8 +46,8 @@ This is intentionally slower than a one-shot migration. The reason: parity is un
   **Verify the install actually took** (two checks, both must pass — silent failure on either is a real consumer footgun per `dev-docs/feedback.md` FB-0005):
 
   ```
-  /plugin marketplace list | grep '^flow'   # must return a line starting with "flow"
-  /help | grep '/flow:'                     # must return matches
+  /plugin marketplace list | grep -E '^flow($|[[:space:]])'   # must return a line — word-anchored so a sibling marketplace doesn't false-positive
+  /help | grep -E '/flow:(ship|staff-review|workflow-help)'   # must return matches
   ```
 
   If `/plugin marketplace list | grep '^flow'` is empty, the marketplace registered under a different key (most common cause: stale-keyed `extraKnownMarketplaces.<old-name>` entry from before a rename — flow renamed from `llm-auditor`/`assumption-auditor` to `flow`/`flow` during PR 1, so any pre-rename install of the assumption-auditor plugin can leave this drift). Re-run `/plugin marketplace add by-dev-tools/flow` to register under the correct name; the stale entry is harmless once the canonical entry exists.

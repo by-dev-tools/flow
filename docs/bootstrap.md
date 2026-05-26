@@ -39,7 +39,7 @@ In any Claude Code session (or your global `~/.claude/settings.json`):
 Two checks. **Both must pass** — silent failure on either is a real consumer footgun (see `dev-docs/feedback.md` FB-0005 for the canonical class).
 
 ```
-/plugin marketplace list | grep '^flow'   # must return a line starting with "flow"
+/plugin marketplace list | grep -E '^flow($|[[:space:]])'   # must return a line — word-anchored so a sibling marketplace like 'flow-experimental' doesn't false-positive
 /help | grep -E '/flow:(ship|staff-review|workflow-help)'   # must return matches
 ```
 
