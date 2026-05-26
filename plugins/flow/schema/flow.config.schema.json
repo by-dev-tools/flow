@@ -85,6 +85,18 @@
       "description": "(Tauri / Rust stacks only.) Directory containing the project's Rust workspace (Cargo.toml). Used by the tauri-rust-ts stack overlay's preflight runner to know where to run `cargo fmt`, `cargo clippy`, `cargo test`. Default: 'src-tauri' (the Tauri convention). Non-Tauri Rust projects typically set this to '.' (workspace at repo root) or to the workspace subdirectory.",
       "default": "src-tauri",
       "examples": ["src-tauri", ".", "crates"]
+    },
+    "sourceFilePatterns": {
+      "type": "string",
+      "description": "Extended-regex pattern (passed to grep -E) matching source/config file paths in the diff. Used by /flow:security-review at Step 1 to early-exit when a diff contains no source files (e.g., docs-only PR). Default covers TS/JS/Python/Rust/Swift/Go/Ruby/Java/Kotlin/Shell + JSON/YAML/TOML. Override for projects with non-standard file layouts (monorepos, language-specific source roots).",
+      "default": "\\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash)$|\\.(json|ya?ml|toml)$",
+      "examples": ["\\.(ts|tsx|py)$", "^(packages|services)/.+\\.(ts|js|py)$"]
+    },
+    "uiFilePatterns": {
+      "type": "string",
+      "description": "Extended-regex pattern (passed to grep -E) matching UI file paths in the diff. Used by /flow:accessibility-review at Step 1 to early-exit when a diff contains no UI files (e.g., docs-only PR in a uiSurface=true project). Default covers TSX/JSX/Vue/Svelte/CSS/SCSS/Sass/Less/HTML + src/app/packages/ui path prefixes. Override for projects with non-standard UI layouts.",
+      "default": "\\.(tsx|jsx|vue|svelte|css|scss|sass|less|html)$|^(src|app|packages/ui)/",
+      "examples": ["\\.(tsx|css)$", "^(apps/web|packages/ui)/"]
     }
   }
 }

@@ -35,7 +35,7 @@ Skip if the diff is non-UI (data layer, build config, doc-only).
 - Design-language doc (for context): !`DL=$(cat flow.config.json 2>/dev/null | jq -r '.designLanguagePath // empty'); [ -z "$DL" ] && DL="dev-docs/design-language.md"; [ -f "$DL" ] && echo "$DL" || echo "(no design-language doc at $DL — many projects don't have one)"`
 - Feedback doc (for context): !`FB=$(cat flow.config.json 2>/dev/null | jq -r '.feedbackPath // empty'); [ -z "$FB" ] && FB="dev-docs/feedback.md"; [ -f "$FB" ] && echo "$FB" || echo "(no feedback doc at $FB)"`
 
-## 0. Honor uiSurface=false
+## 0. Honor uiSurface=false (project-wide gate)
 
 If `flow.config.json.uiSurface` is `false`, exit early with this message and stop:
 
@@ -46,10 +46,28 @@ If `flow.config.json.uiSurface` is `false`, exit early with this message and sto
 
 This lets backend-only projects (CLI tools, libraries, build systems) declare a11y N/A without false-positive findings.
 
-## 1. Save the diff
+## 1. Save the diff (with per-diff non-UI early-exit)
 
 ```sh
-BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main")
+# Resolve default branch via the 3-tier fallback chain with [ -z ] guards
+# (NOT the pipe-OR form; see /flow:ship Step 1a + FB-0008 lesson).
+BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+[ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+[ -z "$BASE" ] && BASE=main
+
+# Per-diff UI-file detection (PR D / FB-0007). Pairs with the project-wide uiSurface=false
+# gate above — that gate catches non-UI PROJECTS; this gate catches docs-only PRs in
+# UI-surface PROJECTS. Patterns configurable via flow.config.json.uiFilePatterns;
+# default covers TSX/JSX/Vue/Svelte/CSS/SCSS/HTML files + src/app/packages/ui path prefixes.
+UI_PATTERN=$(jq -r '.uiFilePatterns // empty' flow.config.json 2>/dev/null)
+[ -z "$UI_PATTERN" ] && UI_PATTERN='\.(tsx|jsx|vue|svelte|css|scss|sass|less|html)$|^(src|app|packages/ui)/'
+UI_FILES_IN_DIFF=$(git diff "origin/$BASE..HEAD" --name-only 2>/dev/null | grep -E "$UI_PATTERN" || true)
+UNTRACKED_UI=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E "$UI_PATTERN" || true)
+if [ -z "$UI_FILES_IN_DIFF" ] && [ -z "$UNTRACKED_UI" ]; then
+  echo "[a11y-review] no UI files in diff; skipping. (Pattern: $UI_PATTERN. Override via flow.config.json.uiFilePatterns.)"
+  exit 0
+fi
+
 { git diff "origin/$BASE..HEAD"; git diff HEAD; } > /tmp/flow-a11y-diff.patch
 git ls-files --others --exclude-standard > /tmp/flow-a11y-untracked.txt
 ```

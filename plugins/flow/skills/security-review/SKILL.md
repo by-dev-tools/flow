@@ -40,7 +40,25 @@ Skip if the diff is doc-only or trivially safe (e.g. a copy tweak).
 Capture both committed-since-base and uncommitted, plus untracked files (which `git diff` misses):
 
 ```sh
-BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main")
+# Resolve default branch via the 3-tier fallback chain with [ -z ] guards
+# (NOT the pipe-OR form — that fails on empty stdout; see /flow:ship Step 1a + FB-0008 lesson).
+BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+[ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+[ -z "$BASE" ] && BASE=main
+
+# Per-diff source-file detection (PR D / FB-0006). If no source/config files in the diff,
+# emit a clean early-exit instead of spawning the reviewer agent on a doc-only diff.
+# Patterns configurable via flow.config.json.sourceFilePatterns (extended regex); the
+# default below covers TS/JS/Python/Rust/Swift/Go/Ruby/Java/Shell/JSON/YAML.
+SOURCE_PATTERN=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
+[ -z "$SOURCE_PATTERN" ] && SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash)$|\.(json|ya?ml|toml)$'
+SOURCE_FILES_IN_DIFF=$(git diff "origin/$BASE..HEAD" --name-only 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+UNTRACKED_SOURCE=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+if [ -z "$SOURCE_FILES_IN_DIFF" ] && [ -z "$UNTRACKED_SOURCE" ]; then
+  echo "[security-review] no source/config files in diff; skipping. (Pattern: $SOURCE_PATTERN. Override via flow.config.json.sourceFilePatterns.)"
+  exit 0
+fi
+
 { git diff "origin/$BASE..HEAD"; git diff HEAD; } > /tmp/flow-sec-diff.patch
 git ls-files --others --exclude-standard > /tmp/flow-sec-untracked.txt
 ```
