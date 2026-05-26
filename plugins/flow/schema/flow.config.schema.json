@@ -88,15 +88,15 @@
     },
     "sourceFilePatterns": {
       "type": "string",
-      "description": "Extended-regex pattern (passed to grep -E) matching source/config file paths in the diff. Used by /flow:security-review at Step 1 to early-exit when a diff contains no source files (e.g., docs-only PR). Default covers TS/JS/Python/Rust/Swift/Go/Ruby/Java/Kotlin/Shell + JSON/YAML/TOML. Override for projects with non-standard file layouts (monorepos, language-specific source roots).",
-      "default": "\\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash)$|\\.(json|ya?ml|toml)$",
+      "description": "Extended-regex pattern (passed to grep -E) matching source/config file paths in the diff. Used by /flow:security-review at Step 1 to early-exit when a diff contains no source files (e.g., docs-only PR). Default covers TS/JS/Python/Rust/Swift/Go/Ruby/Java/Kotlin/Shell + JSON/YAML/TOML + Terraform/SQL/proto/GraphQL + Dockerfile/Makefile literals (security-relevant config classes). Override for projects with non-standard file layouts (monorepos, language-specific source roots). Invalid regex falls back to default + emits loud warning rather than silently skipping the review.",
+      "default": "\\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\\.|$)",
       "examples": ["\\.(ts|tsx|py)$", "^(packages|services)/.+\\.(ts|js|py)$"]
     },
     "uiFilePatterns": {
       "type": "string",
-      "description": "Extended-regex pattern (passed to grep -E) matching UI file paths in the diff. Used by /flow:accessibility-review at Step 1 to early-exit when a diff contains no UI files (e.g., docs-only PR in a uiSurface=true project). Default covers TSX/JSX/Vue/Svelte/CSS/SCSS/Sass/Less/HTML + src/app/packages/ui path prefixes. Override for projects with non-standard UI layouts.",
-      "default": "\\.(tsx|jsx|vue|svelte|css|scss|sass|less|html)$|^(src|app|packages/ui)/",
-      "examples": ["\\.(tsx|css)$", "^(apps/web|packages/ui)/"]
+      "description": "Extended-regex pattern (passed to grep -E) matching UI file paths in the diff. Used by /flow:accessibility-review at Step 1 to early-exit when a diff contains no UI files (e.g., docs-only PR in a uiSurface=true project). Default covers TSX/JSX/Vue/Svelte/Astro/MDX/CSS/SCSS/Sass/Less/HTML + njk/hbs/ejs templates. Path-prefix branch requires extension within prefixed dirs (avoids false-positive on src/**/*.md docs). Override for projects with non-standard UI layouts. Invalid regex falls back to default + emits loud warning.",
+      "default": "\\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$|^(src|app|packages/ui|public|static)/.+\\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$",
+      "examples": ["\\.(tsx|css)$", "^(apps/web|packages/ui)/.+\\.(tsx|css)$"]
     }
   }
 }

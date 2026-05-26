@@ -12,6 +12,16 @@ After PRs A-E land: standing by for md-manager PR 5 (dogfood) which may surface 
 - **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key per md-manager PR 4 report observation. Cosmetic cleanup; doesn't block. PR C addresses the install-docs gap that this drift would surface in any new consumer.
 - **md-manager PR 5 (dogfood)** starts in a separate worktree after md-manager PR 4 merges. May surface additional flow rough edges — bundle into a second feedback intake PR if 2+ new items emerge; one-off if only 1.
 
+## PR E+ follow-ups from PR D review
+
+PR D's lens dogfood (staff-engineer + security combined) caught 2 BLOCKERs + 2 NITs (all fixed in-tree) + 2 FOLLOW-UPs routed here:
+
+1. **Structured exit-status marker for `/flow:*review` early-exit vs clean-run.** PR D's early-exit uses `exit 0` + a `STATUS: SKIPPED — ...` stdout line as a soft marker. When `/flow:ship` Step 2 invokes the reviewers via `Skill('flow:security-review')`, the orchestrator can't programmatically distinguish "skipped — no source files" from "ran, no findings." Both are exit 0. A structured final-line marker (`STATUS: SKIPPED` / `STATUS: CLEAN` / `STATUS: FINDINGS`) would let `/flow:ship` audit-trail what actually ran. PR D adds the `STATUS: SKIPPED` line in the early-exit path; symmetric `STATUS: CLEAN` / `STATUS: FINDINGS` for the substantive paths is the v1.3+ enhancement. Owner: domain agent. Horizon: PR E or post-extraction.
+
+2. **Pattern-injection RCE confirmed safe (informational, no action).** PR D security lens explicitly verified that `grep -E "$PATTERN"` from a flow.config.json-sourced regex does NOT have command-injection surface — `grep` treats the arg as a POSIX ERE, not a shell expression; shell metas land as regex metachars or grep fails outright. Per FB-0004 trust model (flow.config.json = project-owned, package.json-tier trust), this is the correct posture. Captured here as audit-trail evidence; no code change.
+
+---
+
 ## PR D+ follow-ups from PR C review
 
 PR C's lens dogfood (staff-engineer + push-further combined) caught 1 BLOCKER + 2 NITs (all fixed in-tree) + 1 FOLLOW-UP routed here:

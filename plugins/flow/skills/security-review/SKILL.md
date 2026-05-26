@@ -49,13 +49,28 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 # Per-diff source-file detection (PR D / FB-0006). If no source/config files in the diff,
 # emit a clean early-exit instead of spawning the reviewer agent on a doc-only diff.
 # Patterns configurable via flow.config.json.sourceFilePatterns (extended regex); the
-# default below covers TS/JS/Python/Rust/Swift/Go/Ruby/Java/Shell/JSON/YAML.
+# default below covers TS/JS/Python/Rust/Swift/Go/Ruby/Java/Kotlin/Shell + JSON/YAML/TOML
+# + Terraform/Dockerfile/SQL/proto/GraphQL (security-relevant config classes).
 SOURCE_PATTERN=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
-[ -z "$SOURCE_PATTERN" ] && SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash)$|\.(json|ya?ml|toml)$'
+[ -z "$SOURCE_PATTERN" ] && SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
+
+# Validate the regex before using it. Invalid regex would error → empty result → silent skip
+# (the EXACT failure mode FB-0008 warned about for this class). Fall back to default on
+# invalid input + log a loud warning so consumers know their override didn't take.
+if ! echo "" | grep -qE "$SOURCE_PATTERN" 2>/dev/null && [ $? -ne 1 ]; then
+  echo "⚠️ [security-review] flow.config.json.sourceFilePatterns is invalid as an extended regex; falling back to default." >&2
+  SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
+fi
+
+# Three checks (not two) — must also catch uncommitted modifications to tracked files,
+# which `git diff origin/$BASE..HEAD --name-only` (committed-only) and `git ls-files
+# --others` (untracked-only) both miss. Without this third check, the common
+# 'iterate locally, then /flow:ship' loop silently skips review of work-in-progress.
 SOURCE_FILES_IN_DIFF=$(git diff "origin/$BASE..HEAD" --name-only 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+SOURCE_MODIFIED=$(git diff HEAD --name-only 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
 UNTRACKED_SOURCE=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
-if [ -z "$SOURCE_FILES_IN_DIFF" ] && [ -z "$UNTRACKED_SOURCE" ]; then
-  echo "[security-review] no source/config files in diff; skipping. (Pattern: $SOURCE_PATTERN. Override via flow.config.json.sourceFilePatterns.)"
+if [ -z "$SOURCE_FILES_IN_DIFF" ] && [ -z "$SOURCE_MODIFIED" ] && [ -z "$UNTRACKED_SOURCE" ]; then
+  echo "[security-review] STATUS: SKIPPED — no source/config files in diff (committed+uncommitted+untracked). Pattern: $SOURCE_PATTERN. Override via flow.config.json.sourceFilePatterns."
   exit 0
 fi
 

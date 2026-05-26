@@ -58,13 +58,27 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 # Per-diff UI-file detection (PR D / FB-0007). Pairs with the project-wide uiSurface=false
 # gate above — that gate catches non-UI PROJECTS; this gate catches docs-only PRs in
 # UI-surface PROJECTS. Patterns configurable via flow.config.json.uiFilePatterns;
-# default covers TSX/JSX/Vue/Svelte/CSS/SCSS/HTML files + src/app/packages/ui path prefixes.
+# default covers TSX/JSX/Vue/Svelte/Astro/MDX/CSS/SCSS/Sass/Less/HTML/template files.
+# Path-prefix anchors require extension within prefixed dirs (avoids false-positive
+# on src/**/*.md docs).
 UI_PATTERN=$(jq -r '.uiFilePatterns // empty' flow.config.json 2>/dev/null)
-[ -z "$UI_PATTERN" ] && UI_PATTERN='\.(tsx|jsx|vue|svelte|css|scss|sass|less|html)$|^(src|app|packages/ui)/'
+[ -z "$UI_PATTERN" ] && UI_PATTERN='\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$|^(src|app|packages/ui|public|static)/.+\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$'
+
+# Validate the regex before using it. Invalid regex → empty result → silent skip
+# (FB-0008 class). Fall back to default on invalid input + log a loud warning.
+if ! echo "" | grep -qE "$UI_PATTERN" 2>/dev/null && [ $? -ne 1 ]; then
+  echo "⚠️ [a11y-review] flow.config.json.uiFilePatterns is invalid as an extended regex; falling back to default." >&2
+  UI_PATTERN='\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$|^(src|app|packages/ui|public|static)/.+\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$'
+fi
+
+# Three checks (not two): committed + uncommitted-modified + untracked. The uncommitted-
+# modified check catches the 'iterate locally, then ship' loop that the two-check form
+# missed (work-in-progress UI files weren't seen by the reviewer).
 UI_FILES_IN_DIFF=$(git diff "origin/$BASE..HEAD" --name-only 2>/dev/null | grep -E "$UI_PATTERN" || true)
+UI_MODIFIED=$(git diff HEAD --name-only 2>/dev/null | grep -E "$UI_PATTERN" || true)
 UNTRACKED_UI=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E "$UI_PATTERN" || true)
-if [ -z "$UI_FILES_IN_DIFF" ] && [ -z "$UNTRACKED_UI" ]; then
-  echo "[a11y-review] no UI files in diff; skipping. (Pattern: $UI_PATTERN. Override via flow.config.json.uiFilePatterns.)"
+if [ -z "$UI_FILES_IN_DIFF" ] && [ -z "$UI_MODIFIED" ] && [ -z "$UNTRACKED_UI" ]; then
+  echo "[a11y-review] STATUS: SKIPPED — no UI files in diff (committed+uncommitted+untracked). Pattern: $UI_PATTERN. Override via flow.config.json.uiFilePatterns."
   exit 0
 fi
 
