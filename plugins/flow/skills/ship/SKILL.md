@@ -47,6 +47,34 @@ Emit (verbatim, single block — do NOT customize per project; the consistency I
   got short-circuited, whether or not subsequent gates allow ship to complete.
 ```
 
+### 1.5. External CLI dependency check (BLOCKING)
+
+Verify `gh` CLI is installed before any operation that needs it. `/flow:ship` Step 7 (PR creation via `gh pr create`) and Step 1b (`gh pr list` for PR-OPEN detection) both fail with `exit 127` and no diagnostic if `gh` is missing — surfaces only at the invocation site, by which point the user has done substantial pre-flight work that wasted. Per FB-0009 (md-manager PR 4 dogfood discovery): fail-fast at the workflow entrypoint with a clean install hint instead.
+
+```sh
+# POSIX-portable: space-delimited string (NOT a bash array, which breaks on dash —
+# Debian/Ubuntu's /bin/sh is dash; bash array syntax errors before the check fires,
+# making the gh-missing case worse than the original exit-127 it was meant to replace).
+MISSING=""
+command -v gh >/dev/null 2>&1 || MISSING="$MISSING gh"
+command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
+if [ -n "$MISSING" ]; then
+  # MISSING starts with a leading space; the install commands take that literally
+  # (`brew install gh jq` works either way).
+  MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
+  echo "⚠️ BLOCKER: /flow:ship requires $MISSING_TRIMMED (missing on PATH)." >&2
+  echo "   Install:" >&2
+  echo "     macOS:         brew install$MISSING" >&2
+  echo "     Debian/Ubuntu: apt install$MISSING" >&2
+  echo "     Other:         https://cli.github.com (gh), https://jqlang.org (jq)" >&2
+  # Only suggest gh auth login if gh was actually in MISSING (jq needs no auth).
+  case " $MISSING_TRIMMED " in *" gh "*) echo "   After install, run: gh auth login" >&2 ;; esac
+  exit 1
+fi
+```
+
+Per FB-0009's general rule: any external CLI invoked by a flow skill must fail-fast at the workflow entrypoint, not silently exit 127 at the invocation site. `gh` is mandatory for `gh pr create` at Step 7; `jq` is mandatory for the ~15 `flow.config.json` slot reads sprinkled throughout this skill.
+
 ### 1a. Stale-base check (BLOCKING)
 
 **Before any other pre-flight work**, confirm the branch isn't stale vs the default branch. A stale base produces phantom-deletion diffs that burn reviewer-agent spawns surfacing — see `dev-docs/feedback.md` FB-0008 for the dogfood discovery that motivated this gate. This is the cheapest mechanical check for the most expensive class of dogfood waste.

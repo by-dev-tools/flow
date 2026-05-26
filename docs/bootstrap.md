@@ -22,7 +22,7 @@ After bootstrap, your project has:
 
 - `git` (already required for any git repo).
 - `jq` (for `flow.config.json` reads — `brew install jq` on macOS, `apt install jq` on Linux).
-- `gh` (GitHub CLI — required by `/flow:ship` and `/flow:ship-spike` for `gh pr create`; `brew install gh` or [cli.github.com](https://cli.github.com)).
+- `gh` (GitHub CLI — required by `/flow:ship` and `/flow:ship-spike` for `gh pr create`; `brew install gh` (macOS) / `apt install gh` (Debian/Ubuntu) / [cli.github.com](https://cli.github.com); after install, run `gh auth login`).
 - `node` (≥ 20 if you'll use the `template/stacks/web/` or `tauri-rust-ts/` preflight runners).
 
 ### Install

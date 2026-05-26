@@ -32,6 +32,29 @@ If neither field exists, this is a feature plan and the wrong skill.
 
 ## 1. Pre-flight
 
+### 1.5. External CLI dependency check (BLOCKING)
+
+Fail-fast on missing `gh` CLI per FB-0009. Same shape as `/flow:ship` Step 1.5.
+
+```sh
+# POSIX-portable (NOT bash array — breaks on dash; see /flow:ship Step 1.5).
+MISSING=""
+command -v gh >/dev/null 2>&1 || MISSING="$MISSING gh"
+command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
+if [ -n "$MISSING" ]; then
+  MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
+  echo "⚠️ BLOCKER: /flow:ship-spike requires $MISSING_TRIMMED (missing on PATH)." >&2
+  echo "   Install:" >&2
+  echo "     macOS:         brew install$MISSING" >&2
+  echo "     Debian/Ubuntu: apt install$MISSING" >&2
+  echo "     Other:         https://cli.github.com (gh), https://jqlang.org (jq)" >&2
+  case " $MISSING_TRIMMED " in *" gh "*) echo "   After install, run: gh auth login" >&2 ;; esac
+  exit 1
+fi
+```
+
+Identical shape to `/flow:ship` Step 1.5 — the consistency itself is the value per FB-0009.
+
 ### 1a. Stale-base check (BLOCKING)
 
 Same gate as `/flow:ship` Step 1a — spike branches diff vs the default branch too, and a stale spike base produces phantom-deletion noise that obscures the actual research-question answer. See `dev-docs/feedback.md` FB-0008. See `/flow:ship` Step 1a for the rationale on the `[ -z ]` guards (the `||` pipe form silently fails on empty stdout).
