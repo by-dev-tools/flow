@@ -59,12 +59,12 @@ The lens prompts live in separate plugin-shipped agent files at `${CLAUDE_PLUGIN
 
 ### 1a. Stale-base check (BLOCKING)
 
-Same gate as `/flow:ship` Step 1a — staff-review reads the diff vs the default branch as its source of truth, so a stale base produces phantom-deletion findings that burn 4 lens spawns surfacing what's really just "rebase first." See `dev-docs/feedback.md` FB-0008 for the dogfood discovery.
+Same gate as `/flow:ship` Step 1a — staff-review reads the diff vs the default branch as its source of truth, so a stale base produces phantom-deletion findings that burn 4 lens spawns surfacing what's really just "rebase first." See `dev-docs/feedback.md` FB-0008 for the dogfood discovery + `/flow:ship` Step 1a for the rationale on the `[ -z ]` guards.
 
 ```sh
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' \
-  || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' \
-  || echo "main")
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
 
 git fetch origin --quiet
 if ! git merge-base --is-ancestor "origin/${DEFAULT_BRANCH}" HEAD; then
@@ -72,8 +72,6 @@ if ! git merge-base --is-ancestor "origin/${DEFAULT_BRANCH}" HEAD; then
   HEAD_SHORT=$(git rev-parse --short HEAD)
   echo "⚠️ BLOCKER: branch is stale vs origin/${DEFAULT_BRANCH}." >&2
   echo "   Current HEAD: ${HEAD_SHORT}; base is behind by ${BEHIND} commit(s)." >&2
-  echo "   Rebase or merge before /flow:staff-review — otherwise reviewer agents will" >&2
-  echo "   see phantom-deletion diff and surface findings about work that already landed." >&2
   echo "   Try: git fetch origin && git rebase origin/${DEFAULT_BRANCH}" >&2
   exit 1
 fi
@@ -81,10 +79,10 @@ fi
 
 ### 1b. Detect the artefact state
 
-Run in parallel:
+Run in parallel (each command is its own Bash invocation — `DEFAULT_BRANCH` from 1a does NOT persist, so the `git log` line re-resolves inline):
 ```sh
 git status --short
-git log --oneline origin/${DEFAULT_BRANCH}..HEAD
+git log --oneline "origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null || echo main)..HEAD"
 gh pr list --head $(git branch --show-current) --json number,url 2>/dev/null
 ```
 

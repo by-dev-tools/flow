@@ -29,10 +29,14 @@ The `flow.config.json` slots referenced below have built-in fallbacks (see "Conf
 **Before any other pre-flight work**, confirm the branch isn't stale vs the default branch. A stale base produces phantom-deletion diffs that burn reviewer-agent spawns surfacing — see `dev-docs/feedback.md` FB-0008 for the dogfood discovery that motivated this gate. This is the cheapest mechanical check for the most expensive class of dogfood waste.
 
 ```sh
-# Resolve default branch via the 3-tier fallback chain (matches PR 1 locked idiom)
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' \
-  || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' \
-  || echo "main")
+# Resolve default branch via the 3-tier fallback chain (matches PR 1 locked idiom).
+# Each stage is guarded on non-empty output: piping `||` between commands fails when
+# the upstream produces empty stdout but exits 0 (e.g., git symbolic-ref pipe returns
+# empty when no refs/remotes/origin/HEAD is configured — common in fresh clones, CI
+# checkouts, and any repo where nobody ran `git remote set-head`).
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
 
 git fetch origin --quiet
 if ! git merge-base --is-ancestor "origin/${DEFAULT_BRANCH}" HEAD; then
@@ -40,20 +44,18 @@ if ! git merge-base --is-ancestor "origin/${DEFAULT_BRANCH}" HEAD; then
   HEAD_SHORT=$(git rev-parse --short HEAD)
   echo "⚠️ BLOCKER: branch is stale vs origin/${DEFAULT_BRANCH}." >&2
   echo "   Current HEAD: ${HEAD_SHORT}; base is behind by ${BEHIND} commit(s)." >&2
-  echo "   Rebase or merge before /flow:ship — otherwise the diff will include phantom" >&2
-  echo "   deletions of work that landed on ${DEFAULT_BRANCH} since this branch forked." >&2
   echo "   Try: git fetch origin && git rebase origin/${DEFAULT_BRANCH}" >&2
   exit 1
 fi
 ```
 
-If the branch IS current, log a one-line confirmation: `[ship] base check: origin/${DEFAULT_BRANCH} is ancestor of HEAD ✓`. The check is silent on success otherwise (no extra noise for the common case).
+If the branch IS current, the check is silent (no extra noise for the common case).
 
 ### 1b. Confirm there is something to ship
 
-In parallel:
+In parallel (each bullet is its own Bash invocation — `DEFAULT_BRANCH` from 1a does NOT persist across separate tool calls per the Bash tool contract, so each invocation re-resolves inline):
 - `git status --short`
-- `git log --oneline origin/${DEFAULT_BRANCH}..HEAD`
+- `` git log --oneline origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null || echo main)..HEAD ``
 - `gh pr list --head $(git branch --show-current) --json number,url 2>/dev/null`
 
 Classify:
