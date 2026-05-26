@@ -24,9 +24,36 @@ The `flow.config.json` slots referenced below have built-in fallbacks (see "Conf
 
 ## 1. Pre-flight
 
-Confirm there is something to ship. In parallel:
+### 1a. Stale-base check (BLOCKING)
+
+**Before any other pre-flight work**, confirm the branch isn't stale vs the default branch. A stale base produces phantom-deletion diffs that burn reviewer-agent spawns surfacing — see `dev-docs/feedback.md` FB-0008 for the dogfood discovery that motivated this gate. This is the cheapest mechanical check for the most expensive class of dogfood waste.
+
+```sh
+# Resolve default branch via the 3-tier fallback chain (matches PR 1 locked idiom)
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' \
+  || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' \
+  || echo "main")
+
+git fetch origin --quiet
+if ! git merge-base --is-ancestor "origin/${DEFAULT_BRANCH}" HEAD; then
+  BEHIND=$(git rev-list --count HEAD..origin/${DEFAULT_BRANCH})
+  HEAD_SHORT=$(git rev-parse --short HEAD)
+  echo "⚠️ BLOCKER: branch is stale vs origin/${DEFAULT_BRANCH}." >&2
+  echo "   Current HEAD: ${HEAD_SHORT}; base is behind by ${BEHIND} commit(s)." >&2
+  echo "   Rebase or merge before /flow:ship — otherwise the diff will include phantom" >&2
+  echo "   deletions of work that landed on ${DEFAULT_BRANCH} since this branch forked." >&2
+  echo "   Try: git fetch origin && git rebase origin/${DEFAULT_BRANCH}" >&2
+  exit 1
+fi
+```
+
+If the branch IS current, log a one-line confirmation: `[ship] base check: origin/${DEFAULT_BRANCH} is ancestor of HEAD ✓`. The check is silent on success otherwise (no extra noise for the common case).
+
+### 1b. Confirm there is something to ship
+
+In parallel:
 - `git status --short`
-- `git log --oneline origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main)..HEAD`
+- `git log --oneline origin/${DEFAULT_BRANCH}..HEAD`
 - `gh pr list --head $(git branch --show-current) --json number,url 2>/dev/null`
 
 Classify:

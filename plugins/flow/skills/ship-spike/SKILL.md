@@ -32,9 +32,31 @@ If neither field exists, this is a feature plan and the wrong skill.
 
 ## 1. Pre-flight
 
+### 1a. Stale-base check (BLOCKING)
+
+Same gate as `/flow:ship` Step 1a — spike branches diff vs the default branch too, and a stale spike base produces phantom-deletion noise that obscures the actual research-question answer. See `dev-docs/feedback.md` FB-0008.
+
+```sh
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' \
+  || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' \
+  || echo "main")
+
+git fetch origin --quiet
+if ! git merge-base --is-ancestor "origin/${DEFAULT_BRANCH}" HEAD; then
+  BEHIND=$(git rev-list --count HEAD..origin/${DEFAULT_BRANCH})
+  HEAD_SHORT=$(git rev-parse --short HEAD)
+  echo "⚠️ BLOCKER: branch is stale vs origin/${DEFAULT_BRANCH}." >&2
+  echo "   Current HEAD: ${HEAD_SHORT}; base is behind by ${BEHIND} commit(s)." >&2
+  echo "   Rebase or merge before /flow:ship-spike. Try: git fetch origin && git rebase origin/${DEFAULT_BRANCH}" >&2
+  exit 1
+fi
+```
+
+### 1b. Confirm there is something to ship
+
 In parallel:
 - `git status --short`
-- `git log --oneline origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main)..HEAD`
+- `git log --oneline origin/${DEFAULT_BRANCH}..HEAD`
 - `gh pr list --head $(git branch --show-current) --json number,url 2>/dev/null`
 
 Classify (same shape as `/flow:ship`):
