@@ -62,13 +62,19 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 # Path-prefix anchors require extension within prefixed dirs (avoids false-positive
 # on src/**/*.md docs).
 UI_PATTERN=$(jq -r '.uiFilePatterns // empty' flow.config.json 2>/dev/null)
-[ -z "$UI_PATTERN" ] && UI_PATTERN='\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$|^(src|app|packages/ui|public|static)/.+\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$'
+# Default pattern: extension-only branch (the prefix-with-extension branch was redundant —
+# any file matching the prefix-form also matches the extension-only form). Override via
+# flow.config.json.uiFilePatterns if your project has UI files in non-standard dirs OR
+# if you want to constrain to specific path roots.
+[ -z "$UI_PATTERN" ] && UI_PATTERN='\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$'
 
 # Validate the regex before using it. Invalid regex → empty result → silent skip
-# (FB-0008 class). Fall back to default on invalid input + log a loud warning.
-if ! echo "" | grep -qE "$UI_PATTERN" 2>/dev/null && [ $? -ne 1 ]; then
-  echo "⚠️ [a11y-review] flow.config.json.uiFilePatterns is invalid as an extended regex; falling back to default." >&2
-  UI_PATTERN='\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$|^(src|app|packages/ui|public|static)/.+\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$'
+# (FB-0008 class). Capture grep's raw exit code; exit 2 means regex error.
+echo "" | grep -qE "$UI_PATTERN" 2>/dev/null
+GREP_RC=$?
+if [ "$GREP_RC" -gt 1 ]; then
+  echo "⚠️ [a11y-review] flow.config.json.uiFilePatterns is invalid as an extended regex (grep exit $GREP_RC); falling back to default." >&2
+  UI_PATTERN='\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$'
 fi
 
 # Three checks (not two): committed + uncommitted-modified + untracked. The uncommitted-

@@ -55,10 +55,16 @@ SOURCE_PATTERN=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/nu
 [ -z "$SOURCE_PATTERN" ] && SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
 
 # Validate the regex before using it. Invalid regex would error → empty result → silent skip
-# (the EXACT failure mode FB-0008 warned about for this class). Fall back to default on
-# invalid input + log a loud warning so consumers know their override didn't take.
-if ! echo "" | grep -qE "$SOURCE_PATTERN" 2>/dev/null && [ $? -ne 1 ]; then
-  echo "⚠️ [security-review] flow.config.json.sourceFilePatterns is invalid as an extended regex; falling back to default." >&2
+# (the EXACT failure mode FB-0008 warned about). Fall back to default on invalid input +
+# log a loud warning so consumers know their override didn't take.
+#
+# CRITICAL: capture grep's raw exit code BEFORE testing — the pattern `! cmd && [ $? ... ]`
+# tests $? against the negation's result, not grep's. grep -qE exits 0 (match), 1 (no
+# match), or 2 (regex error). Valid regex on empty stdin → exit 1; invalid → exit 2.
+echo "" | grep -qE "$SOURCE_PATTERN" 2>/dev/null
+GREP_RC=$?
+if [ "$GREP_RC" -gt 1 ]; then
+  echo "⚠️ [security-review] flow.config.json.sourceFilePatterns is invalid as an extended regex (grep exit $GREP_RC); falling back to default." >&2
   SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
 fi
 

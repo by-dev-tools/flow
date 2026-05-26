@@ -94,8 +94,8 @@
     },
     "uiFilePatterns": {
       "type": "string",
-      "description": "Extended-regex pattern (passed to grep -E) matching UI file paths in the diff. Used by /flow:accessibility-review at Step 1 to early-exit when a diff contains no UI files (e.g., docs-only PR in a uiSurface=true project). Default covers TSX/JSX/Vue/Svelte/Astro/MDX/CSS/SCSS/Sass/Less/HTML + njk/hbs/ejs templates. Path-prefix branch requires extension within prefixed dirs (avoids false-positive on src/**/*.md docs). Override for projects with non-standard UI layouts. Invalid regex falls back to default + emits loud warning.",
-      "default": "\\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$|^(src|app|packages/ui|public|static)/.+\\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$",
+      "description": "Extended-regex pattern (passed to grep -E) matching UI file paths in the diff. Used by /flow:accessibility-review at Step 1 to early-exit when a diff contains no UI files (e.g., docs-only PR in a uiSurface=true project). Default covers TSX/JSX/Vue/Svelte/Astro/MDX/CSS/SCSS/Sass/Less/HTML + njk/hbs/ejs templates (extension-only — the original path-prefix branch was redundant since any file matching the prefix-form also matched the extension-only form). Override to constrain to specific path roots (e.g., '^(apps/web|packages/ui)/.+\\.(tsx|css)$') or add non-standard extensions. Invalid regex falls back to default + emits loud warning (caught via grep -E exit-2 detection).",
+      "default": "\\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$",
       "examples": ["\\.(tsx|css)$", "^(apps/web|packages/ui)/.+\\.(tsx|css)$"]
     }
   }
