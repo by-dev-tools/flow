@@ -18,6 +18,15 @@ After bootstrap, your project has:
 
 ## Step 1 — Install the flow plugin
 
+### Prerequisites
+
+- `git` (already required for any git repo).
+- `jq` (for `flow.config.json` reads — `brew install jq` on macOS, `apt install jq` on Linux).
+- `gh` (GitHub CLI — required by `/flow:ship` and `/flow:ship-spike` for `gh pr create`; `brew install gh` or [cli.github.com](https://cli.github.com)).
+- `node` (≥ 20 if you'll use the `template/stacks/web/` or `tauri-rust-ts/` preflight runners).
+
+### Install
+
 In any Claude Code session (or your global `~/.claude/settings.json`):
 
 ```
@@ -25,9 +34,22 @@ In any Claude Code session (or your global `~/.claude/settings.json`):
 /plugin install flow@flow
 ```
 
-Verify with `/help` — you should see `/flow:workflow-help`, `/flow:ship`, `/flow:staff-review`, etc.
+### Verify the install actually took
 
-(For project-scope install instead of user-scope: add `"enabledPlugins": { "flow@flow": true }` to your project's `.claude/settings.json` after Step 3.)
+Two checks. **Both must pass** — silent failure on either is a real consumer footgun (see `dev-docs/feedback.md` FB-0005 for the canonical class).
+
+```
+/plugin marketplace list | grep -E '^flow($|[[:space:]])'   # must return a line — word-anchored so a sibling marketplace like 'flow-experimental' doesn't false-positive
+/help | grep -E '/flow:(ship|staff-review|workflow-help)'   # must return matches
+```
+
+The `^flow` anchor assumes `/plugin marketplace list` outputs the marketplace name at column 0 (no leading bullet, indent, or status glyph). This matches Claude Code's current output format. If a future Claude Code version prefixes lines (e.g., `* flow`, `  flow`), adjust to `grep -E '(^|\s)flow($|[[:space:]])'`.
+
+**If `/plugin marketplace list | grep -E '^flow($|[[:space:]])'` is empty:** the marketplace registered under a different key. Most common cause: an existing stale-keyed `extraKnownMarketplaces.<old-name>` entry in `~/.claude/settings.json` already points at this repo's URL. Claude Code's `enabledPlugins.<plugin>@<marketplace>` resolves by matching the marketplace's `name` field (which is `flow`), NOT the user-scope settings key. Re-running `/plugin marketplace add by-dev-tools/flow` resolves it (registers under the correct name regardless of existing entries).
+
+**If `/help | grep ...` is empty:** the marketplace registered but `flow@flow` isn't enabled. Either re-run `/plugin install flow@flow`, or directly edit your settings.json to add `"enabledPlugins": { "flow@flow": true }`.
+
+(For project-scope install instead of user-scope: add `"enabledPlugins": { "flow@flow": true }` to your project's `.claude/settings.json` after Step 3 + re-run the verify checks in a fresh `claude` session in the project root.)
 
 ## Step 2 — Copy `template/base/` to your project root
 

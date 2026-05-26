@@ -24,6 +24,29 @@ The `flow.config.json` slots referenced below have built-in fallbacks (see "Conf
 
 ## 1. Pre-flight
 
+### 1.0. Workflow-step assumptions (informational)
+
+Print the loop steps `/flow:ship` ASSUMES have already run during the feature work. Skips become visible at the next ship rather than weeks later. This is informational only — does not gate; just surfaces. See `dev-docs/feedback.md` FB-0033-style discipline (cross-repo with md-manager): "don't skip /critique-plan or /simplify, even on docs-only diffs."
+
+Emit (verbatim, single block — do NOT customize per project; the consistency IS the value):
+
+```
+[ship] ASSUMES the loop has already executed:
+  Step 2 (Plan)       — /flow:critique-plan ran on the per-PR plan (workflow.md § "Step 2"); even on docs-only.
+  Step 6 (/simplify)  — bundled-Claude-Code /simplify ran post-commit; even on docs-only.
+  Step 7 (/flow:staff-review) — 4 lenses ran with substantive findings OR explicit N/A per lens with documented reason.
+
+  If any of the above was skipped without recorded reason, stop here and run it now.
+  Skipped reviews compound into discovery cost at ship time — what a 30-second critique
+  would have caught becomes a multi-lens-spawn forensic exercise.
+
+  This block itself is informational; it does not gate. The pre-flight gates that DO
+  block (Step 1a stale-base, Step 1.5 external-CLI, etc.) run after this surface and
+  will exit 1 if any fail — in which case ship stops there, regardless of the assumption
+  state surfaced above. The surface is here pre-emptively so you notice when the loop
+  got short-circuited, whether or not subsequent gates allow ship to complete.
+```
+
 ### 1a. Stale-base check (BLOCKING)
 
 **Before any other pre-flight work**, confirm the branch isn't stale vs the default branch. A stale base produces phantom-deletion diffs that burn reviewer-agent spawns surfacing — see `dev-docs/feedback.md` FB-0008 for the dogfood discovery that motivated this gate. This is the cheapest mechanical check for the most expensive class of dogfood waste.

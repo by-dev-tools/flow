@@ -43,6 +43,15 @@ This is intentionally slower than a one-shot migration. The reason: parity is un
 
   Plus, if not already done at user-scope: `/plugin marketplace add by-dev-tools/flow && /plugin install flow@flow`.
 
+  **Verify the install actually took** (two checks, both must pass — silent failure on either is a real consumer footgun per `dev-docs/feedback.md` FB-0005):
+
+  ```
+  /plugin marketplace list | grep -E '^flow($|[[:space:]])'   # must return a line — word-anchored so a sibling marketplace doesn't false-positive
+  /help | grep -E '/flow:(ship|staff-review|workflow-help)'   # must return matches
+  ```
+
+  If `/plugin marketplace list | grep -E '^flow($|[[:space:]])'` is empty, the marketplace registered under a different key (most common cause: stale-keyed `extraKnownMarketplaces.<old-name>` entry from before a rename — flow renamed from `llm-auditor`/`assumption-auditor` to `flow`/`flow` during PR 1, so any pre-rename install of the assumption-auditor plugin can leave this drift). Re-run `/plugin marketplace add by-dev-tools/flow` to register under the correct name; the stale entry is harmless once the canonical entry exists.
+
 - Add `flow.config.json` at repo root declaring your project's slot values. Use `template/base/flow.config.json.example` as a starting point but tailor to your reality:
 
   ```json
