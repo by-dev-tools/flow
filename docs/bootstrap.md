@@ -143,6 +143,26 @@ In a Claude Code session: invoke `/flow:ship`. The pipeline runs (security + a11
 
 If anything fails: check the `/flow:ship` output for `⚠️` warnings and resolve them in `flow.config.json`.
 
+## Optional — GitHub merge queue
+
+Flow's own repo (`by-dev-tools/flow`) and `by-dev-tools/md-manager` both use a GitHub merge queue on `main` so every PR is force-batched through CI on a temporary `merge_group:` branch before landing. If you want the same discipline:
+
+1. **Enable auto-merge on the repo** (one-time prereq; the queue can't accept PRs without it):
+
+   ```sh
+   gh api -X PATCH /repos/<owner>/<repo> -f allow_auto_merge=true
+   ```
+
+   Or: Settings → General → "Pull Requests" → check **Allow auto-merge**.
+
+   Skipping this is the most common bootstrap error. Without it, `gh pr merge --auto` returns `GraphQL: Auto merge is not allowed for this repository (enablePullRequestAutoMerge)` and the PR never enters the queue.
+
+2. **Add a CI workflow** that triggers on both `pull_request:` and `merge_group:` (the latter is what the queue runs on). See `by-dev-tools/flow/.github/workflows/ci.yml` for a stdlib-Python reference, or `by-dev-tools/md-manager/.github/workflows/ci.yml` for a Node reference.
+
+3. **Apply a ruleset** to `main` with `required_status_checks` (whatever your CI jobs report) + a `merge_queue` rule. The shape used in flow + md-manager: deletion-block, non-fast-forward, required linear history, squash-only PRs, 0 required reviewers, `merge_queue` with `merge_method: SQUASH` + `grouping_strategy: ALLGREEN`. Copy the payload from `gh api /repos/by-dev-tools/flow/rulesets/<id>` and adjust the context names.
+
+4. **Queue a PR** via `gh pr merge <num> --auto` (no `--squash` flag — the queue dictates the strategy). The PR lands automatically once `merge_group:` CI passes.
+
 ## What's next
 
 - Read `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` for the full 11-step loop.
@@ -155,5 +175,6 @@ If anything fails: check the `/flow:ship` output for `⚠️` warnings and resol
 - **`flow.config.json` slot values not visible in `/flow:workflow-help`.** JSON parse error somewhere. Run `jq -e . flow.config.json` — if it errors, the slot reads in skill bodies will silently fall back to defaults.
 - **Preflight fails on a stack-specific gate** (e.g. `cargo` not installed for tauri overlay). The preflight runner skips with a loud warning, exit code 0. Install the missing tool, then re-run.
 - **`/flow:staff-review` produces empty findings.** That's valid (push-further lens explicitly preserves "Nothing to push" output). If multiple lenses produce nothing on a non-trivial diff, the lens prompts may need tuning for your project's idioms — file a feedback entry.
+- **`gh pr merge --auto` errors with `Auto merge is not allowed for this repository (enablePullRequestAutoMerge)`.** Repo-level prereq for the merge queue; see "Optional — GitHub merge queue" above. Enable with `gh api -X PATCH /repos/<owner>/<repo> -f allow_auto_merge=true`.
 
 Open issues + improvements: https://github.com/by-dev-tools/flow/issues
