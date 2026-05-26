@@ -163,6 +163,19 @@ def check_required(elem: dict, output: str) -> CheckResult:
     if key == "source_identified":
         ok = "source of premise:" in text
         return CheckResult("source_identified", ok)
+    if key == "severity":
+        target = str(value)
+        ok = f"· {target.lower()} ·" in text
+        return CheckResult(f"severity={target}", ok)
+    if key == "finding_count":
+        target = int(value)
+        count = len(re.findall(r"^ISSUE(?:\s+\d+)?\s+·", output, flags=re.MULTILINE))
+        ok = count == target
+        return CheckResult(f"finding_count={target}", ok, f"found {count}" if not ok else "")
+    if key == "reference_rule_contains":
+        target = str(value)
+        ok = target.lower() in text
+        return CheckResult(f"reference_rule_contains={target!r}", ok)
     return CheckResult(f"unknown={key}", False, "no rule wired up for this required key")
 
 

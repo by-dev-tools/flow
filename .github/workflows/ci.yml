@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+
+# Explicit minimum scope. Add `contents: write` (or narrower) only if a job
+# needs to push to the repo (e.g., auto-generated coverage badges, lint fixes).
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    name: evals
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 plugins/flow/evals/run_evals.py
+
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 plugins/flow/evals/run_security_evals.py
