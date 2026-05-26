@@ -68,7 +68,7 @@ if ! command -v gh >/dev/null 2>&1; then
 fi
 ```
 
-(Why warn-only here vs BLOCKING in /flow:ship + /flow:ship-spike: those skills MUST `gh pr create` at Step 7 / Step 6; /flow:staff-review's only `gh` use is the optional artefact-classification at Step 1b.)
+(Why warn-only here vs BLOCKING in /flow:ship + /flow:ship-spike: those skills MUST `gh pr create` at Step 7 / Step 6; /flow:staff-review's only mandatory `gh` use is the optional artefact-classification at Step 1b. The Step 7 `gh pr edit` invocation on the reviewer-notes template IS unsafe if gh is missing — but safe in practice because Step 1b's PR-OPEN detection silently fails to LOCAL-ONLY when gh is missing, so the Step 7 PR-OPEN branch is unreachable in the gh-missing case.)
 
 ### 1a. Stale-base check (BLOCKING)
 
