@@ -32,6 +32,19 @@ If neither field exists, this is a feature plan and the wrong skill.
 
 ## 1. Pre-flight
 
+### 1.5. External CLI dependency check (BLOCKING)
+
+Fail-fast on missing `gh` CLI per FB-0009. Same shape as `/flow:ship` Step 1.5.
+
+```sh
+if ! command -v gh >/dev/null 2>&1; then
+  echo "⚠️ BLOCKER: /flow:ship-spike requires the gh CLI." >&2
+  echo "   Install: brew install gh (macOS) | apt install gh (Debian/Ubuntu) | https://cli.github.com" >&2
+  echo "   After install, run: gh auth login" >&2
+  exit 1
+fi
+```
+
 ### 1a. Stale-base check (BLOCKING)
 
 Same gate as `/flow:ship` Step 1a — spike branches diff vs the default branch too, and a stale spike base produces phantom-deletion noise that obscures the actual research-question answer. See `dev-docs/feedback.md` FB-0008. See `/flow:ship` Step 1a for the rationale on the `[ -z ]` guards (the `||` pipe form silently fails on empty stdout).

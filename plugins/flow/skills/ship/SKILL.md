@@ -47,6 +47,24 @@ Emit (verbatim, single block — do NOT customize per project; the consistency I
   got short-circuited, whether or not subsequent gates allow ship to complete.
 ```
 
+### 1.5. External CLI dependency check (BLOCKING)
+
+Verify `gh` CLI is installed before any operation that needs it. `/flow:ship` Step 7 (PR creation via `gh pr create`) and Step 1b (`gh pr list` for PR-OPEN detection) both fail with `exit 127` and no diagnostic if `gh` is missing — surfaces only at the invocation site, by which point the user has done substantial pre-flight work that wasted. Per FB-0009 (md-manager PR 4 dogfood discovery): fail-fast at the workflow entrypoint with a clean install hint instead.
+
+```sh
+if ! command -v gh >/dev/null 2>&1; then
+  echo "⚠️ BLOCKER: /flow:ship requires the gh CLI." >&2
+  echo "   Install:" >&2
+  echo "     macOS:        brew install gh" >&2
+  echo "     Debian/Ubuntu: apt install gh" >&2
+  echo "     Other:        https://cli.github.com" >&2
+  echo "   After install, run: gh auth login" >&2
+  exit 1
+fi
+```
+
+(Same shape applies to `jq` if missing — `/flow:ship` reads many `flow.config.json` slots via `jq -r`. Most platforms ship `jq` by default; if you hit `jq: command not found`, install via the same package managers.)
+
 ### 1a. Stale-base check (BLOCKING)
 
 **Before any other pre-flight work**, confirm the branch isn't stale vs the default branch. A stale base produces phantom-deletion diffs that burn reviewer-agent spawns surfacing — see `dev-docs/feedback.md` FB-0008 for the dogfood discovery that motivated this gate. This is the cheapest mechanical check for the most expensive class of dogfood waste.

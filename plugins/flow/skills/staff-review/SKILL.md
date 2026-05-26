@@ -57,6 +57,19 @@ The lens prompts live in separate plugin-shipped agent files at `${CLAUDE_PLUGIN
 
 ## 1. Detect what artefact exists
 
+### 1.5. External CLI dependency check (informational; `gh` is OPTIONAL for /flow:staff-review)
+
+`gh` is used in Step 1b (`gh pr list` for PR-OPEN detection) but the failure mode is graceful (`2>/dev/null`); staff-review works without it (PR detection just returns LOCAL-ONLY). Warn-only — does NOT block.
+
+```sh
+if ! command -v gh >/dev/null 2>&1; then
+  echo "ℹ️ [staff-review] gh CLI not installed — PR-OPEN/LOCAL-ONLY detection will return LOCAL-ONLY for any branch." >&2
+  echo "   Install for full functionality: brew install gh | apt install gh | https://cli.github.com" >&2
+fi
+```
+
+(Why warn-only here vs BLOCKING in /flow:ship + /flow:ship-spike: those skills MUST `gh pr create` at Step 7 / Step 6; /flow:staff-review's only `gh` use is the optional artefact-classification at Step 1b.)
+
 ### 1a. Stale-base check (BLOCKING)
 
 Same gate as `/flow:ship` Step 1a — staff-review reads the diff vs the default branch as its source of truth, so a stale base produces phantom-deletion findings that burn 4 lens spawns surfacing what's really just "rebase first." See `dev-docs/feedback.md` FB-0008 for the dogfood discovery + `/flow:ship` Step 1a for the rationale on the `[ -z ]` guards.

@@ -29,6 +29,15 @@ This is intentionally slower than a one-shot migration. The reason: parity is un
 
 ### Scope (in)
 
+**Prerequisites** (same as `docs/bootstrap.md` Step 1 — most are common; verify `gh` since `/flow:ship` + `/flow:ship-spike` fail-fast on it missing per FB-0009):
+
+- `git` (already required).
+- `jq` (for `flow.config.json` reads — `brew install jq` / `apt install jq`).
+- `gh` (GitHub CLI — required by `/flow:ship` + `/flow:ship-spike` for `gh pr create`; `brew install gh` / `apt install gh` / [cli.github.com](https://cli.github.com); after install, run `gh auth login`).
+- `node` (≥ 20 if you're keeping any project-local preflight runners that use it).
+
+Once those are confirmed:
+
 - Install flow plugin (project-scope recommended for the migration window so other projects don't see flow before you've validated it). Edit `.claude/settings.json` — merge the `enabledPlugins` key in (Claude Code's settings.json is strict JSON, no comments):
 
   ```json
