@@ -43,7 +43,9 @@ Two checks. **Both must pass** — silent failure on either is a real consumer f
 /help | grep -E '/flow:(ship|staff-review|workflow-help)'   # must return matches
 ```
 
-**If `/plugin marketplace list | grep '^flow'` is empty:** the marketplace registered under a different key. Most common cause: an existing stale-keyed `extraKnownMarketplaces.<old-name>` entry in `~/.claude/settings.json` already points at this repo's URL. Claude Code's `enabledPlugins.<plugin>@<marketplace>` resolves by matching the marketplace's `name` field (which is `flow`), NOT the user-scope settings key. Re-running `/plugin marketplace add by-dev-tools/flow` resolves it (registers under the correct name regardless of existing entries).
+The `^flow` anchor assumes `/plugin marketplace list` outputs the marketplace name at column 0 (no leading bullet, indent, or status glyph). This matches Claude Code's current output format. If a future Claude Code version prefixes lines (e.g., `* flow`, `  flow`), adjust to `grep -E '(^|\s)flow($|[[:space:]])'`.
+
+**If `/plugin marketplace list | grep -E '^flow($|[[:space:]])'` is empty:** the marketplace registered under a different key. Most common cause: an existing stale-keyed `extraKnownMarketplaces.<old-name>` entry in `~/.claude/settings.json` already points at this repo's URL. Claude Code's `enabledPlugins.<plugin>@<marketplace>` resolves by matching the marketplace's `name` field (which is `flow`), NOT the user-scope settings key. Re-running `/plugin marketplace add by-dev-tools/flow` resolves it (registers under the correct name regardless of existing entries).
 
 **If `/help | grep ...` is empty:** the marketplace registered but `flow@flow` isn't enabled. Either re-run `/plugin install flow@flow`, or directly edit your settings.json to add `"enabledPlugins": { "flow@flow": true }`.
 

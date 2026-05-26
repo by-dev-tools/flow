@@ -38,9 +38,13 @@ Emit (verbatim, single block — do NOT customize per project; the consistency I
 
   If any of the above was skipped without recorded reason, stop here and run it now.
   Skipped reviews compound into discovery cost at ship time — what a 30-second critique
-  would have caught becomes a multi-lens-spawn forensic exercise. /flow:ship will proceed
-  regardless (this is informational, not blocking) — but the assumption surface helps you
-  notice when the loop got short-circuited.
+  would have caught becomes a multi-lens-spawn forensic exercise.
+
+  This block itself is informational; it does not gate. The pre-flight gates that DO
+  block (Step 1a stale-base, Step 1.5 external-CLI, etc.) run after this surface and
+  will exit 1 if any fail — in which case ship stops there, regardless of the assumption
+  state surfaced above. The surface is here pre-emptively so you notice when the loop
+  got short-circuited, whether or not subsequent gates allow ship to complete.
 ```
 
 ### 1a. Stale-base check (BLOCKING)

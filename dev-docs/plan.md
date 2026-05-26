@@ -18,6 +18,18 @@ PR C's lens dogfood (staff-engineer + push-further combined) caught 1 BLOCKER + 
 
 1. **Surface-AFTER variant of `/flow:ship` Step 1.0 workflow-step assumption block.** PR C ships the surface-BEFORE form (informational pre-flight; zero new infrastructure, prints what's ASSUMED to have run). The richer signal — what ACTUALLY ran — would come from a post-ship "Workflow steps actually executed this session" summary derived from session-transcript scan. Higher-signal than surface-before but requires session-introspection helper that doesn't exist yet. Ship the cheap form (PR C); add this as a v1.3+ enhancement when a session-introspection helper lands. Owner: domain agent. Horizon: post-extraction v1.3.
 
+### Additional FOLLOW-UPs from PR C **full-review re-pass** (4-parallel lens spawn matching the canonical /flow:staff-review pattern)
+
+Per user direction, ran the canonical 4-parallel pattern (engineer + push-further + security + plan-critic + audit-completion) instead of the combined-lens shortcut used in the initial PR C review. Caught 1 BLOCKER + 1 NIT + 2 MEDIUM (audit) — all fixed inline — plus 4 new FOLLOW-UPs:
+
+2. **Single-principle "skips compound" preamble in workflow.md** (push-further roadmap-concrete). PR C adds "even on docs-only ones" qualifier at Step 2 AND Step 6 — both restate the same FB-0008/FB-0033 lesson. A single principle near the top (e.g., a "Discipline" preamble after the 11-step list) cited from Step 2 + 6 would be tighter and prevent the next docs-only qualifier (security, a11y, ship-spike) from spawning a third copy. Horizon: next workflow.md-touching PR.
+
+3. **Cross-repo provenance one-liner inside /flow:ship Step 1.0 emitted block** (push-further roadmap-concrete). Current block cites "FB-0033-style discipline" only in the prose AROUND the verbatim emit. Surfacing "(dogfood-driven: md-manager FB-0033 + flow FB-0008)" inside the printed block would let consumers know this is real burned-cost lesson, not arbitrary nagging. Reduces "why is this here" friction. Horizon: same as #2.
+
+4. **Stacked-PR plan-noting convention** (plan-critic INTERNAL-INCOHERENCE FOLLOW-UP). When PRs chain off each other for review (B branched off A; C off B; D off C; E off D), the per-PR plan's "Files touched" list will appear to mismatch the actual PR diff (which contains stacked content from earlier PRs in the chain). Future stacked-PR plans should note "this is the C slice of a stacked A+B+C PR" so reviewers can map the file list correctly. Horizon: convention update in workflow.md or plan-template; trigger on next stacked-PR sequence.
+
+5. **`/plugin marketplace list` output-shape eval test** (audit-completion MEDIUM #2). The `^flow` anchor in PR C's verify recipe depends on marketplace-list outputting names at column 0 with no leading bullet/indent/glyph. Today's behavior matches; a Claude Code version change could break it silently. Add a regression fixture under `plugins/flow/evals/security/test_marketplace_list_format.py` paralleling the existing fixture shape — assert that `claude --print "/plugin marketplace list" 2>&1 | head -5` returns names at column 0 (or the test fails with a clear "output format changed; update bootstrap.md grep recipe" message). Cheap; one-shot. Bootstrap.md now documents this assumption inline so consumers can adjust without grepping the eval. Horizon: PR D or E.
+
 ---
 
 ## PR C+ follow-ups from PR B review
