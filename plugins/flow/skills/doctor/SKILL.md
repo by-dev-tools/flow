@@ -8,7 +8,8 @@ description: >
   have sensible values, auto-loading rules visible to Claude Code, the paths
   named in slots actually exist on disk, prerequisite CLI tools (gh, jq, git)
   installed, preflight + CI optionally wired. Each FAIL prints an actionable
-  fix command. Returns exit 0 only on all-pass. Use after `bash bootstrap.sh`
+  fix command. Emits a final-line verdict ([READY] / [READY with WARN] /
+  [NOT READY]) so the bottom line is scannable. Use after `bash bootstrap.sh`
   to confirm the scaffold took, OR any time something feels off ("is flow set
   up right?", "did install work?", "/flow:* skills not showing up", "checks
   not running"). Auto-triggers on those phrases or on explicit invocation.
@@ -40,32 +41,64 @@ Run the following checks in order. For each check: print `[PASS]` or `[FAIL]` or
 
 ### Section 1: install surface
 
-**Check 1.1 — marketplace registered under canonical name**
+**IMPORTANT:** these checks read Claude Code's settings.json files directly via `jq`. `/plugin marketplace list` and `/help` are slash commands (not shell commands), so they cannot be invoked from a Bash block — invoking them would attempt to resolve `/plugin` as an executable path and silently fail (returning empty, which would invert the check and FAIL on correctly-installed flow). Per the PR-D-class silent-skip lesson + FB-0008.
+
+**Check 1.1 — marketplace registered under canonical 'flow' name**
 
 ```sh
-if /plugin marketplace list 2>/dev/null | grep -qE '^flow($|[[:space:]])'; then
-  echo "[PASS] marketplace 'flow' registered"
+USER_SETTINGS="$HOME/.claude/settings.json"
+PROJECT_SETTINGS=".claude/settings.json"
+MARKETPLACE_FOUND=""
+for f in "$USER_SETTINGS" "$PROJECT_SETTINGS"; do
+  if [ -f "$f" ] && jq -e '.extraKnownMarketplaces.flow // empty' "$f" >/dev/null 2>&1; then
+    MARKETPLACE_FOUND="$f"
+    break
+  fi
+done
+
+if [ -n "$MARKETPLACE_FOUND" ]; then
+  echo "[PASS] marketplace 'flow' registered in $MARKETPLACE_FOUND"
 else
-  echo "[FAIL] marketplace 'flow' not found in /plugin marketplace list"
-  echo "       Fix: /plugin marketplace add by-dev-tools/flow"
-  echo "       (Most common cause: stale 'extraKnownMarketplaces.<old-name>' in ~/.claude/settings.json"
-  echo "        — re-adding registers under the correct name regardless.)"
+  echo "[FAIL] marketplace 'flow' not registered in user-scope ($USER_SETTINGS) or project-scope ($PROJECT_SETTINGS)"
+  echo "       Fix: in a Claude Code session, run: /plugin marketplace add by-dev-tools/flow"
+  echo "       (Most common cause: stale 'extraKnownMarketplaces.<old-name>' entry pointing"
+  echo "        at the right URL but under the wrong key — re-adding registers under 'flow'.)"
 fi
 ```
 
-The above grep pattern uses `^flow($|[[:space:]])` to word-anchor — avoids false-positive matches on a sibling marketplace named `flow-experimental` or similar. Per `dev-docs/feedback.md` FB-0005.
+The check uses `extraKnownMarketplaces.flow` (an exact-key JSON lookup) rather than a regex match — definitive, no false-positives from sibling marketplaces.
 
 **Check 1.2 — flow@flow plugin enabled**
 
 ```sh
-if /help 2>/dev/null | grep -qE '/flow:(ship|staff-review|workflow-help)'; then
-  echo "[PASS] flow@flow plugin is enabled and skills are visible"
+ENABLED_AT=""
+for f in "$USER_SETTINGS" "$PROJECT_SETTINGS"; do
+  if [ -f "$f" ] && jq -e '.enabledPlugins."flow@flow" == true' "$f" >/dev/null 2>&1; then
+    ENABLED_AT="$f"
+    break
+  fi
+done
+
+if [ -n "$ENABLED_AT" ]; then
+  echo "[PASS] flow@flow enabled in $ENABLED_AT"
 else
-  echo "[FAIL] flow@flow not visible in /help output"
+  echo "[FAIL] flow@flow not enabled in user-scope ($USER_SETTINGS) or project-scope ($PROJECT_SETTINGS)"
   echo "       Fix (one of):"
-  echo "         - /plugin install flow@flow                         (user-scope)"
-  echo "         - Edit .claude/settings.json: enabledPlugins.flow@flow = true   (project-scope)"
+  echo "         - User-scope:    /plugin install flow@flow   (in any Claude Code session)"
+  echo "         - Project-scope: add to .claude/settings.json:"
+  echo "                          \"enabledPlugins\": { \"flow@flow\": true }"
 fi
+```
+
+This is a direct JSON-key check — definitive, doesn't rely on the slash-command dispatcher's behavior.
+
+**Check 1.3 — /flow:* skills visible (optional cross-check via SlashCommand if available)**
+
+If the agent has the `SlashCommand` tool available, it CAN invoke `/help` via that tool and grep the returned text for `/flow:` entries — that's a useful cross-check that the registered + enabled plugin actually surfaces skills. If `SlashCommand` is not available in this session, skip this check and rely on Checks 1.1 + 1.2.
+
+```
+(Agent action: if SlashCommand tool is available, invoke `/help`, grep output for
+'/flow:(ship|staff-review|workflow-help)'. Otherwise emit [SKIP] for this check.)
 ```
 
 ### Section 2: project config
@@ -154,12 +187,14 @@ fi
 
 **Check 3.2 — plugin-shipped auto-load rules are reachable**
 
+Plugin-shipped rules live at `${CLAUDE_PLUGIN_ROOT}/rules/{general,plan-discipline,documentation,exploration}.md` and auto-load on path matches when `flow@flow` is enabled. Inferred-PASS if Checks 1.1 + 1.2 both passed above (those gate the entire plugin-rule-reachability). If 1.1 or 1.2 failed, emit `[SKIP] (depends on Section 1 passing)`.
+
 ```sh
-# Plugin-shipped rules live at ${CLAUDE_PLUGIN_ROOT}/rules/{general,plan-discipline,documentation,exploration}.md
-# Claude Code auto-loads them on path matches when flow@flow is enabled.
-# We can verify by checking the plugin's marketplace registration (passed in check 1.1+1.2 above).
-if /plugin marketplace list 2>/dev/null | grep -qE '^flow($|[[:space:]])' && /help 2>/dev/null | grep -qE '/flow:'; then
+# Re-test based on prior section's findings:
+if [ -n "$MARKETPLACE_FOUND" ] && [ -n "$ENABLED_AT" ]; then
   echo "[PASS] plugin-shipped rules (general/plan-discipline/documentation/exploration) auto-load via flow@flow"
+else
+  echo "[SKIP] plugin-shipped rules check — depends on Section 1 (marketplace + enabled) passing first"
 fi
 ```
 
@@ -222,9 +257,13 @@ After running all sections, emit a summary line:
   Overall: [READY] / [READY with WARN-level items] / [NOT READY — N FAILs blocking]
 ```
 
-Exit code:
-- `0` — all `PASS` and `WARN` checks; no `FAIL`.
-- `1` — any `FAIL`. The output names the fix for each FAIL.
+Final-line verdict (the skill's contract — not an exit code, since skill bodies are agent prompts not processes):
+
+- `[READY] flow is correctly set up; all checks pass.`
+- `[READY with WARN-level items] flow is functional; N optional items can be addressed at your discretion.`
+- `[NOT READY] N FAIL(s) block flow from working correctly. Address each FAIL's fix above before proceeding.`
+
+Always emit the verdict as the FINAL line so the agent/user can scan to the bottom for the bottom line.
 
 ## What doctor does NOT check
 

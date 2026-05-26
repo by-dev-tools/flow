@@ -27,7 +27,7 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 
 **The loop itself:** [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md) — canonical 11 steps with rationale, gate semantics, spike/tiny modes, config-slot reference.
 
-## What v1.2.1 ships
+## What v1.2.2 ships
 
 ### Workflow surface (10 user-visible skills)
 

@@ -27,7 +27,10 @@
 # Idempotent: re-running on a project where some files exist will skip those (cp -n).
 # To overwrite intentionally, edit the file directly or rm first.
 
-set -u
+set -eu
+# -e: exit on real errors (cp permission-denied, missing source, jq failure).
+#     cp -n returns 0 on skip, so idempotency is preserved.
+# -u: catch unset variables.
 TAG="[flow-bootstrap]"
 
 # --- arg parse ---------------------------------------------------------------
@@ -154,24 +157,41 @@ echo ""
 echo "$TAG Step C: overlaying template/stacks/$STACK/..."
 mkdir -p "$PROJECT_ROOT/tools" "$PROJECT_ROOT/.github/workflows"
 
+# Overlay each tree per-file via copy_n. We can't use `cp -Rn dir/. dest/` because
+# BSD cp (macOS default) returns exit 1 when dest files exist — incompatible with
+# `set -e`. Per-file copy_n is idempotent + portable + reports cleanly.
+copy_tree() {
+  src_root="$1"; dest_root="$2"
+  if [ ! -d "$src_root" ]; then return 0; fi
+  # find every regular file under src_root, compute its dest path, copy_n each.
+  while IFS= read -r src_file; do
+    rel="${src_file#"$src_root/"}"
+    dest_file="$dest_root/$rel"
+    mkdir -p "$(dirname "$dest_file")"
+    copy_n "$src_file" "$dest_file"
+  done < <(find "$src_root" -type f)
+}
+
 # Overlay .claude/ (web + tauri have skills/link, rules/ui+dev-server; swift only has .append)
 if [ -d "$FLOW_DIR/template/stacks/$STACK/.claude" ]; then
-  cp -Rn "$FLOW_DIR/template/stacks/$STACK/.claude/." "$PROJECT_ROOT/.claude/"
-  echo "         · merged .claude/ overlay"
+  copy_tree "$FLOW_DIR/template/stacks/$STACK/.claude" "$PROJECT_ROOT/.claude"
 fi
 
 # Overlay tools/ (all 3 stacks have preflight)
 if [ -d "$FLOW_DIR/template/stacks/$STACK/tools" ]; then
-  cp -Rn "$FLOW_DIR/template/stacks/$STACK/tools/." "$PROJECT_ROOT/tools/"
-  # preflight scripts must be executable
-  find "$PROJECT_ROOT/tools/preflight" -type f \( -name "*.sh" -o -name "*.mjs" \) -exec chmod +x {} \; 2>/dev/null || true
-  echo "         · merged tools/ overlay (preflight runner made executable)"
+  copy_tree "$FLOW_DIR/template/stacks/$STACK/tools" "$PROJECT_ROOT/tools"
+  # Preflight scripts must be executable. Don't swallow real chmod failures —
+  # if find finds zero matches, find returns 0 with no exec; if chmod fails on
+  # a real file (permission issue), `set -e` catches it so the consumer notices
+  # at scaffold time rather than at first /flow:ship.
+  if [ -d "$PROJECT_ROOT/tools/preflight" ]; then
+    find "$PROJECT_ROOT/tools/preflight" -type f \( -name "*.sh" -o -name "*.mjs" \) -exec chmod +x {} \;
+  fi
 fi
 
 # Overlay .github/
 if [ -d "$FLOW_DIR/template/stacks/$STACK/.github" ]; then
-  cp -Rn "$FLOW_DIR/template/stacks/$STACK/.github/." "$PROJECT_ROOT/.github/"
-  echo "         · merged .github/ overlay"
+  copy_tree "$FLOW_DIR/template/stacks/$STACK/.github" "$PROJECT_ROOT/.github"
 fi
 
 # Append stack-specific .gitignore entries (idempotent via marker check)
