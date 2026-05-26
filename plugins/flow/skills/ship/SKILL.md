@@ -52,16 +52,23 @@ Emit (verbatim, single block — do NOT customize per project; the consistency I
 Verify `gh` CLI is installed before any operation that needs it. `/flow:ship` Step 7 (PR creation via `gh pr create`) and Step 1b (`gh pr list` for PR-OPEN detection) both fail with `exit 127` and no diagnostic if `gh` is missing — surfaces only at the invocation site, by which point the user has done substantial pre-flight work that wasted. Per FB-0009 (md-manager PR 4 dogfood discovery): fail-fast at the workflow entrypoint with a clean install hint instead.
 
 ```sh
-MISSING=()
-command -v gh >/dev/null 2>&1 || MISSING+=("gh")
-command -v jq >/dev/null 2>&1 || MISSING+=("jq")
-if [ ${#MISSING[@]} -gt 0 ]; then
-  echo "⚠️ BLOCKER: /flow:ship requires ${MISSING[*]} (missing on PATH)." >&2
+# POSIX-portable: space-delimited string (NOT a bash array, which breaks on dash —
+# Debian/Ubuntu's /bin/sh is dash; bash array syntax errors before the check fires,
+# making the gh-missing case worse than the original exit-127 it was meant to replace).
+MISSING=""
+command -v gh >/dev/null 2>&1 || MISSING="$MISSING gh"
+command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
+if [ -n "$MISSING" ]; then
+  # MISSING starts with a leading space; the install commands take that literally
+  # (`brew install gh jq` works either way).
+  MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
+  echo "⚠️ BLOCKER: /flow:ship requires $MISSING_TRIMMED (missing on PATH)." >&2
   echo "   Install:" >&2
-  echo "     macOS:         brew install ${MISSING[*]}" >&2
-  echo "     Debian/Ubuntu: apt install ${MISSING[*]}" >&2
+  echo "     macOS:         brew install$MISSING" >&2
+  echo "     Debian/Ubuntu: apt install$MISSING" >&2
   echo "     Other:         https://cli.github.com (gh), https://jqlang.org (jq)" >&2
-  echo "   After install, run: gh auth login   (gh only — jq needs no auth)" >&2
+  # Only suggest gh auth login if gh was actually in MISSING (jq needs no auth).
+  case " $MISSING_TRIMMED " in *" gh "*) echo "   After install, run: gh auth login" >&2 ;; esac
   exit 1
 fi
 ```

@@ -37,16 +37,18 @@ If neither field exists, this is a feature plan and the wrong skill.
 Fail-fast on missing `gh` CLI per FB-0009. Same shape as `/flow:ship` Step 1.5.
 
 ```sh
-MISSING=()
-command -v gh >/dev/null 2>&1 || MISSING+=("gh")
-command -v jq >/dev/null 2>&1 || MISSING+=("jq")
-if [ ${#MISSING[@]} -gt 0 ]; then
-  echo "⚠️ BLOCKER: /flow:ship-spike requires ${MISSING[*]} (missing on PATH)." >&2
+# POSIX-portable (NOT bash array — breaks on dash; see /flow:ship Step 1.5).
+MISSING=""
+command -v gh >/dev/null 2>&1 || MISSING="$MISSING gh"
+command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
+if [ -n "$MISSING" ]; then
+  MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
+  echo "⚠️ BLOCKER: /flow:ship-spike requires $MISSING_TRIMMED (missing on PATH)." >&2
   echo "   Install:" >&2
-  echo "     macOS:         brew install ${MISSING[*]}" >&2
-  echo "     Debian/Ubuntu: apt install ${MISSING[*]}" >&2
+  echo "     macOS:         brew install$MISSING" >&2
+  echo "     Debian/Ubuntu: apt install$MISSING" >&2
   echo "     Other:         https://cli.github.com (gh), https://jqlang.org (jq)" >&2
-  echo "   After install, run: gh auth login   (gh only — jq needs no auth)" >&2
+  case " $MISSING_TRIMMED " in *" gh "*) echo "   After install, run: gh auth login" >&2 ;; esac
   exit 1
 fi
 ```

@@ -57,18 +57,29 @@ The lens prompts live in separate plugin-shipped agent files at `${CLAUDE_PLUGIN
 
 ## 1. Detect what artefact exists
 
-### 1.5. External CLI dependency check (informational; `gh` is OPTIONAL for /flow:staff-review)
+### 1.5. External CLI dependency check (warn-only for `gh`; informational for `jq`)
 
-`gh` is used in Step 1b (`gh pr list` for PR-OPEN detection) but the failure mode is graceful (`2>/dev/null`); staff-review works without it (PR detection just returns LOCAL-ONLY). Warn-only — does NOT block.
+`gh` is used in Step 1b (`gh pr list` for PR-OPEN detection) but the failure mode is graceful (`2>/dev/null`); staff-review works without it (PR detection just returns LOCAL-ONLY). `jq` is used by the frontmatter slot reads + Step 1a stale-base check + Step 4 config-slot consumers; if jq is missing, those silently degrade via `|| default` chains — which is fine for non-fatal slot reads but masks the real diagnostic. Both warn-only — do NOT block.
 
 ```sh
-if ! command -v gh >/dev/null 2>&1; then
-  echo "ℹ️ [staff-review] gh CLI not installed — PR-OPEN/LOCAL-ONLY detection will return LOCAL-ONLY for any branch." >&2
-  echo "   Install for full functionality: brew install gh | apt install gh | https://cli.github.com" >&2
+# POSIX-portable (same shape as /flow:ship Step 1.5 but warn-only — no exit).
+MISSING=""
+command -v gh >/dev/null 2>&1 || MISSING="$MISSING gh"
+command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
+if [ -n "$MISSING" ]; then
+  MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
+  echo "ℹ️ [staff-review] $MISSING_TRIMMED not installed on PATH:" >&2
+  case " $MISSING_TRIMMED " in
+    *" gh "*) echo "   - gh missing → PR-OPEN/LOCAL-ONLY detection will return LOCAL-ONLY for any branch." >&2 ;;
+  esac
+  case " $MISSING_TRIMMED " in
+    *" jq "*) echo "   - jq missing → flow.config.json slot reads silently degrade to defaults; project-specific config won't apply." >&2 ;;
+  esac
+  echo "   Install for full functionality: brew install$MISSING | apt install$MISSING | https://cli.github.com (gh), https://jqlang.org (jq)" >&2
 fi
 ```
 
-(Why warn-only here vs BLOCKING in /flow:ship + /flow:ship-spike: those skills MUST `gh pr create` at Step 7 / Step 6; /flow:staff-review's only mandatory `gh` use is the optional artefact-classification at Step 1b. The Step 7 `gh pr edit` invocation on the reviewer-notes template IS unsafe if gh is missing — but safe in practice because Step 1b's PR-OPEN detection silently fails to LOCAL-ONLY when gh is missing, so the Step 7 PR-OPEN branch is unreachable in the gh-missing case.)
+(Why warn-only here vs BLOCKING in /flow:ship + /flow:ship-spike: those skills MUST `gh pr create` at Step 7 / Step 6; /flow:staff-review's only mandatory `gh` use is the optional artefact-classification at Step 1b. The Step 7 `gh pr edit` invocation on the reviewer-notes template IS unsafe if gh is missing — but safe in practice because Step 1b's PR-OPEN detection silently fails to LOCAL-ONLY when gh is missing, so the Step 7 PR-OPEN branch is unreachable in the gh-missing case. jq is the same shape — slot reads degrade gracefully, so warn-only.)
 
 ### 1a. Stale-base check (BLOCKING)
 
