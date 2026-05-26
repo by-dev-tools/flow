@@ -114,6 +114,8 @@ Write the plan to the configured plan doc under "Active Work Items". The plan **
 
 ### After drafting, run `/flow:critique-plan`
 
+**Run on EVERY plan — including docs-only ones.** The dogfood lesson from md-manager PR 4 (`dev-docs/feedback.md` FB-0008 + FB-0033-style cross-repo discipline): skips compound. A docs-only PR's missing `/critique-plan` step is what surfaced the stale-base BLOCKER class. Diff-size is not a legitimate skip reason.
+
 The plan-critic reviews the plan against the user's request and the reference docs (`flow.config.json.referenceGlob`, default `core-docs/*.md`), returning either `APPROVED` or a `CRITIQUE SUMMARY` with BLOCKER / REDIRECT / FOLLOW-UP findings.
 
 - **BLOCKER** — fix in-plan before showing it to the user.
@@ -159,6 +161,8 @@ If safety-critical code changed, include `SAFETY` in the subject.
 **Commit at every phase boundary that produced changes** (Execute, /simplify, /flow:staff-review, /flow:ship). Deterministic rule, not judgment. Squash-merge on PR close keeps the default branch linear; intermediate commits live on the PR page indefinitely for review/recovery/blame.
 
 ## 6. /simplify (bundled with Claude Code)
+
+**Run on EVERY diff — including docs-only ones.** Same cross-repo discipline as Step 2: skips compound. `/simplify` is cheap (single-pass cold-read); the cost of running it on a docs-only PR is seconds. The cost of NOT running it is the next PR re-discovering structural drift that one cold-read would have surfaced. Diff-size is not a legitimate skip reason.
 
 Cold-read the changed code for **reuse, quality, and efficiency** and fix issues in-tree:
 
