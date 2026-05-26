@@ -6,11 +6,57 @@
 
 {{STACK}}
 
-## Workflow
+## Workflow — this project follows the `flow` plugin's 11-step loop
 
-This project uses the [flow plugin](https://github.com/by-dev-tools/flow) for its 11-step managed-autonomy loop. See `core-docs/workflow.md` (project overlay, if any) and `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` (canonical) for the loop itself. Run `/flow:workflow-help` for an in-session reminder.
+Canonical loop reference: [`${CLAUDE_PLUGIN_ROOT}/docs/workflow.md`](https://github.com/by-dev-tools/flow/blob/main/plugins/flow/docs/workflow.md). In-session reminder: `/flow:workflow-help`. Setup verification: `/flow:doctor`.
 
-Project-specific configuration lives in [`flow.config.json`](./flow.config.json) at the repo root.
+Project-specific configuration: [`flow.config.json`](./flow.config.json) at repo root. 14 slots; defaults documented in `${CLAUDE_PLUGIN_ROOT}/schema/flow.config.schema.json`.
+
+## How `flow` drives this project (the mechanism, not just the contract)
+
+Three layers, in order of decreasing strength:
+
+### 1. Auto-loading rules (deterministic — fire on path matches every relevant edit)
+
+Plugin-shipped rules (live at `${CLAUDE_PLUGIN_ROOT}/rules/`; auto-load when `flow@flow` is enabled):
+
+| Rule | Loads on path-match | Enforces |
+|---|---|---|
+| `general.md` | `**/*` (every edit) | Workflow discipline, scope, autonomy guardrails, "never merge" |
+| `plan-discipline.md` | `**/plan.md` | Required plan fields (mode, goal, scope in/out, spec-walk, confidence verdicts) + LOW = automatic human gate |
+| `documentation.md` | `**/{history,feedback,plan,roadmap,spec}.md` | Format rules (history entry shape, FB-XXXX entry shape, memory entry shape) |
+| `exploration.md` | `src/**`, `app/**`, `lib/**`, `packages/**` | Grep this project's `roadmap.md § Exploration` for `Surfaces when:` triggers matching the file you're editing |
+
+Project-side rules (live at `.claude/rules/`; this project owns them):
+
+| Rule | Loads on | Purpose |
+|---|---|---|
+| `safety.md` | safety-critical paths declared in its `paths:` frontmatter — see that file for the current list | Read recent git log before modifying; never silently downgrade error handling; flag SAFETY in commits + history.md |
+| `ui.md` (UI projects only) | UI file edits | Read `design-language.md` first; use tokens, not raw values; WCAG 2.1 AA baseline |
+| `dev-server.md` (UI projects only) | UI file edits | Surface dev URL via `/link` after UI changes |
+
+When you edit a file whose path matches any of these `paths:` globs, Claude Code automatically loads the rule into the agent's context. **This is the load-bearing enforcement layer** — even if a skill is skipped, the rules still fire.
+
+### 2. Skill auto-invocation (probabilistic — fires on description match)
+
+`/flow:*` skills auto-trigger when phrases in their `description:` field match the conversation. Examples:
+
+- After writing a plan → `/flow:critique-plan` (description: "Critique the most recent plan for scope drift, spec violation, internal incoherence")
+- After completing implementation → `/flow:staff-review` (description: "Reviews the workspace's pending changes from four parallel staff-level perspectives")
+- After saying "ship it" / "wrap this up" → `/flow:ship`
+
+Not guaranteed to fire — model invocation is probabilistic. Type `/flow:<skill-name>` explicitly when you want certainty.
+
+### 3. `/flow:ship` Step 1.0 assumption surface (after-the-fact — fires at ship time)
+
+When you invoke `/flow:ship`, the pipeline's first action prints the workflow steps it ASSUMES already ran (Step 2 `/flow:critique-plan`, Step 6 `/simplify`, Step 7 `/flow:staff-review`). This is **informational only — doesn't gate** — but it surfaces silent skips so you notice the short-circuit at ship time rather than weeks later. Even on docs-only PRs, the discipline holds; see `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` Step 2 + Step 6 "even on docs-only" notes.
+
+After the assumption surface, `/flow:ship` runs hard pre-flight gates (Step 1a stale-base, Step 1.5 gh+jq fail-fast, etc.) that DO block on failure.
+
+### What's NOT enforced today (honest gaps)
+
+- **No Stop hook** that fails a session if `/flow:critique-plan` was skipped on a plan. The user can technically execute against an un-critiqued plan. Workflow.md's "Run on EVERY plan" qualifier captures the discipline, but enforcement is the auto-loading rules + `/flow:ship` Step 1.0 surface, not a hard hook. v1.x autonomous-routines work will add Stop hooks for this class.
+- **No scope-check on Edit|Write** outside a plan's declared `files_touched`. Same v1.x scope.
 
 ## Docs
 
@@ -23,20 +69,21 @@ Project-specific configuration lives in [`flow.config.json`](./flow.config.json)
 | `core-docs/feedback.md` | User feedback synthesized to rules (FB-XXXX) |
 | `core-docs/design-language.md` | (UI projects) Tokens, axioms, components, motion — read before any UI change |
 
-## Rules (auto-loading)
-
-| Rule | Loads on | Purpose |
-|---|---|---|
-| `.claude/rules/safety.md` | safety-critical paths (configured in safety.md `paths:` frontmatter — see that file for the list) | Read recent git log before modifying; never silently downgrade error handling |
-| `.claude/rules/ui.md` (UI projects) | UI file edits | Read design-language.md first; use tokens, not raw values |
-
-Plugin-shipped rules (general workflow discipline, plan format, doc format, exploration triggers) load automatically when the flow plugin is installed. See `${CLAUDE_PLUGIN_ROOT}/rules/` for the full set.
-
 ## Quality bar
 
 - **Polished over partial.** Every visible control does its job. Wire-vs-defer: if the gap is < 1 day, wire it; else remove the visible affordance and capture in roadmap.
 - **Scope expansion is additive.** Ship the smallest polished form first.
 - **No false affordances.** A button that doesn't work is a bug equivalent to a crash.
+
+## Verify setup
+
+In a Claude Code session at this project's root:
+
+```
+/flow:doctor
+```
+
+PASS / FAIL / WARN per check. Each FAIL prints the fix command. If `/flow:doctor` doesn't surface in your session, the plugin isn't enabled — re-run `/plugin install flow@flow` or check `.claude/settings.json`'s `enabledPlugins` entry.
 
 ## Quick start
 
@@ -44,6 +91,9 @@ Plugin-shipped rules (general workflow discipline, plan format, doc format, expl
 # After cloning:
 {{INSTALL_STEPS}}
 
-# Verify flow is wired:
-claude --print "/flow:workflow-help" | head -20
+# In a Claude Code session in the project root:
+/flow:doctor          # confirm flow is wired correctly
+/flow:workflow-help   # see the 11-step loop + your resolved flow.config.json slots
 ```
+
+For a step-by-step walkthrough of your first PR through the loop, see [`docs/first-pr.md`](https://github.com/by-dev-tools/flow/blob/main/docs/first-pr.md) in the flow repo.
