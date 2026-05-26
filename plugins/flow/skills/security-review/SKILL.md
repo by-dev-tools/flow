@@ -40,7 +40,46 @@ Skip if the diff is doc-only or trivially safe (e.g. a copy tweak).
 Capture both committed-since-base and uncommitted, plus untracked files (which `git diff` misses):
 
 ```sh
-BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main")
+# Resolve default branch via the 3-tier fallback chain with [ -z ] guards
+# (NOT the pipe-OR form — that fails on empty stdout; see /flow:ship Step 1a + FB-0008 lesson).
+BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+[ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+[ -z "$BASE" ] && BASE=main
+
+# Per-diff source-file detection (PR D / FB-0006). If no source/config files in the diff,
+# emit a clean early-exit instead of spawning the reviewer agent on a doc-only diff.
+# Patterns configurable via flow.config.json.sourceFilePatterns (extended regex); the
+# default below covers TS/JS/Python/Rust/Swift/Go/Ruby/Java/Kotlin/Shell + JSON/YAML/TOML
+# + Terraform/Dockerfile/SQL/proto/GraphQL (security-relevant config classes).
+SOURCE_PATTERN=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
+[ -z "$SOURCE_PATTERN" ] && SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
+
+# Validate the regex before using it. Invalid regex would error → empty result → silent skip
+# (the EXACT failure mode FB-0008 warned about). Fall back to default on invalid input +
+# log a loud warning so consumers know their override didn't take.
+#
+# CRITICAL: capture grep's raw exit code BEFORE testing — the pattern `! cmd && [ $? ... ]`
+# tests $? against the negation's result, not grep's. grep -qE exits 0 (match), 1 (no
+# match), or 2 (regex error). Valid regex on empty stdin → exit 1; invalid → exit 2.
+echo "" | grep -qE "$SOURCE_PATTERN" 2>/dev/null
+GREP_RC=$?
+if [ "$GREP_RC" -gt 1 ]; then
+  echo "⚠️ [security-review] flow.config.json.sourceFilePatterns is invalid as an extended regex (grep exit $GREP_RC); falling back to default." >&2
+  SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
+fi
+
+# Three checks (not two) — must also catch uncommitted modifications to tracked files,
+# which `git diff origin/$BASE..HEAD --name-only` (committed-only) and `git ls-files
+# --others` (untracked-only) both miss. Without this third check, the common
+# 'iterate locally, then /flow:ship' loop silently skips review of work-in-progress.
+SOURCE_FILES_IN_DIFF=$(git diff "origin/$BASE..HEAD" --name-only 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+SOURCE_MODIFIED=$(git diff HEAD --name-only 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+UNTRACKED_SOURCE=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+if [ -z "$SOURCE_FILES_IN_DIFF" ] && [ -z "$SOURCE_MODIFIED" ] && [ -z "$UNTRACKED_SOURCE" ]; then
+  echo "[security-review] STATUS: SKIPPED — no source/config files in diff (committed+uncommitted+untracked). Pattern: $SOURCE_PATTERN. Override via flow.config.json.sourceFilePatterns."
+  exit 0
+fi
+
 { git diff "origin/$BASE..HEAD"; git diff HEAD; } > /tmp/flow-sec-diff.patch
 git ls-files --others --exclude-standard > /tmp/flow-sec-untracked.txt
 ```
