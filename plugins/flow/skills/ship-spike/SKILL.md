@@ -32,9 +32,31 @@ If neither field exists, this is a feature plan and the wrong skill.
 
 ## 1. Pre-flight
 
-In parallel:
+### 1a. Stale-base check (BLOCKING)
+
+Same gate as `/flow:ship` Step 1a — spike branches diff vs the default branch too, and a stale spike base produces phantom-deletion noise that obscures the actual research-question answer. See `dev-docs/feedback.md` FB-0008. See `/flow:ship` Step 1a for the rationale on the `[ -z ]` guards (the `||` pipe form silently fails on empty stdout).
+
+```sh
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
+
+git fetch origin --quiet
+if ! git merge-base --is-ancestor "origin/${DEFAULT_BRANCH}" HEAD; then
+  BEHIND=$(git rev-list --count HEAD..origin/${DEFAULT_BRANCH})
+  HEAD_SHORT=$(git rev-parse --short HEAD)
+  echo "⚠️ BLOCKER: branch is stale vs origin/${DEFAULT_BRANCH}." >&2
+  echo "   Current HEAD: ${HEAD_SHORT}; base is behind by ${BEHIND} commit(s)." >&2
+  echo "   Try: git fetch origin && git rebase origin/${DEFAULT_BRANCH}" >&2
+  exit 1
+fi
+```
+
+### 1b. Confirm there is something to ship
+
+In parallel (each bullet is its own Bash invocation — `DEFAULT_BRANCH` from 1a does NOT persist):
 - `git status --short`
-- `git log --oneline origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo main)..HEAD`
+- `` git log --oneline origin/$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null || echo main)..HEAD ``
 - `gh pr list --head $(git branch --show-current) --json number,url 2>/dev/null`
 
 Classify (same shape as `/flow:ship`):

@@ -12,6 +12,14 @@ After PRs A-E land: standing by for md-manager PR 5 (dogfood) which may surface 
 - **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key per md-manager PR 4 report observation. Cosmetic cleanup; doesn't block. PR C addresses the install-docs gap that this drift would surface in any new consumer.
 - **md-manager PR 5 (dogfood)** starts in a separate worktree after md-manager PR 4 merges. May surface additional flow rough edges — bundle into a second feedback intake PR if 2+ new items emerge; one-off if only 1.
 
+## PR C+ follow-ups from PR B review
+
+PR B's Phase 7 dogfood (staff-engineer + simplify + security combined lens against the stale-base preflight implementation) caught 2 BLOCKERs + 2 NITs (all fixed in-tree) + 1 FOLLOW-UP routed here:
+
+1. **Eval fixture for the stale-base gate.** Test cases: (a) current branch passes silently; (b) stale branch blocks with expected stderr + exit 1; (c) no `refs/remotes/origin/HEAD` configured + no `flow.config.json` → resolves to literal `main`; (d) `flow.config.json.defaultBranch = "trunk"` + no remote HEAD → resolves to `"trunk"`. Both empirical-smoke cases (c) + (d) were verified manually during PR B Phase 9 iteration, but no regression fixture protects them. Would have caught both BLOCKERs PR B's lens flagged (empty-DEFAULT_BRANCH degenerate; cross-shell variable scope). Owner: testing agent. Horizon: PR C or D. Place under `plugins/flow/evals/security/test_stale_base_check.py` paralleling the existing `test_cwd_constraint.py` + `test_malicious_config.py` shape (assert-on-exit-code + assert-on-stderr).
+
+---
+
 ## PR 4+ follow-ups from PR 3 review
 
 PR 3's Phase 7 dogfood (3 parallel lens agents — engineer+simplify combined + push-further + security; skipped UX-designer + design-engineer + accessibility with reason: doc/template surface, no UI) caught 4 BLOCKERs + 9 NITs + 4 FOLLOW-UPs. BLOCKERs + NITs fixed in-tree. FOLLOW-UPs routed here:
