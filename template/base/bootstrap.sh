@@ -11,8 +11,8 @@
 #                via curl, pass --flow-dir explicitly or set FLOW_DIR env.
 #
 # What this does:
-#   1. Copies template/base/* into your project (cp -n — never overwrites).
-#   2. Overlays template/stacks/<stack>/* (cp -Rn).
+#   1. Copies template/base/* into your project (per-file copy, idempotent — skips existing).
+#   2. Overlays template/stacks/<stack>/* (per-file copy, idempotent — skips existing).
 #   3. Strips $comment-* keys from the flow.config.json example so it parses cleanly.
 #   4. Prints a "next steps" punch list — fill placeholders, then run /flow:doctor.
 #
@@ -148,7 +148,7 @@ else
   jq 'with_entries(select(.key | startswith("$comment") | not))' \
     "$FLOW_DIR/template/base/flow.config.json.example" \
     > "$PROJECT_ROOT/flow.config.json"
-  echo "         · created:       flow.config.json (clean JSON, 14 slots)"
+  echo "         · created:       flow.config.json (clean JSON, 16 slots)"
   copied=$((copied+1))
 fi
 

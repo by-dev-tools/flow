@@ -4,7 +4,7 @@ description: >
   Verify that the flow plugin is correctly installed and configured for the
   current project. Runs a punch-list of PASS/FAIL checks: marketplace
   registered under the canonical 'flow' name, flow@flow enabled, project-root
-  flow.config.json present + parses + matches the v1.2+ schema, all 14 slots
+  flow.config.json present + parses + matches the v1.2+ schema, all 16 slots
   have sensible values, auto-loading rules visible to Claude Code, the paths
   named in slots actually exist on disk, prerequisite CLI tools (gh, jq, git)
   installed, preflight + CI optionally wired. Each FAIL prints an actionable
@@ -19,7 +19,7 @@ allowed-tools: Read, Glob, Grep, Bash
 
 # flow doctor
 
-Runs verification checks for a project's flow setup. Each check is a single line in the output: `[PASS]` / `[FAIL]` / `[WARN]` + a short label. FAILs always include a fix-it hint. The skill exits 0 only when all checks pass.
+Runs verification checks for a project's flow setup. Each check is a single line in the output: `[PASS]` / `[FAIL]` / `[WARN]` + a short label. FAILs always include a fix-it hint. The skill ends with a final-line verdict (`[READY]` / `[READY with WARN-level items]` / `[NOT READY]`) — see the contract at the bottom of this file.
 
 ## When to invoke
 
