@@ -23,7 +23,7 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 #    See docs/first-pr.md for a step-by-step walkthrough.
 ```
 
-**Full bootstrap docs:** [`docs/bootstrap.md`](docs/bootstrap.md) (new project) | [`docs/migration.md`](docs/migration.md) (existing project with prior `.claude/` content).
+**Full bootstrap docs:** [`docs/bootstrap.md`](docs/bootstrap.md) (new project) | [`docs/migration.md`](docs/migration.md) (existing project with prior `.claude/` content) | [`docs/upgrade.md`](docs/upgrade.md) (already installed; picking up a newer version).
 
 **The loop itself:** [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md) — canonical 11 steps with rationale, gate semantics, spike/tiny modes, config-slot reference.
 
@@ -191,13 +191,9 @@ git checkout pre-flow-plugin
 
 GitHub maintains a redirect from `byamron/llm-auditor` → `by-dev-tools/flow`, so old clones still pull from the same place.
 
-Versions:
-- **v1.0.0** — restructure + rename + initial workflow surface (`/flow:ship` + bundled auditor + plan-critic).
-- **v1.1.0** — full workflow surface backfill (staff-review with 4 parallel lenses, security/a11y reviews, ship-spike, workflow-help, planner+docs+lens agents, portable rules, memory tool, schema, hooks).
-- **v1.2.0** — consumer scaffolding (template/base + 3 stack overlays + bootstrap/migration docs + security regression fixtures).
-- **v1.2.1** — consumer-feedback follow-ups (stale-base preflight, marketplace install verify, /flow:ship assumption surfacing, per-diff non-UI early-exit, gh+jq fail-fast).
-- **v1.2.2** — consumer dogfood-readiness: `/flow:doctor` skill, `template/base/bootstrap.sh`, `docs/first-pr.md`, README + CLAUDE.md.template refresh.
-- **v1.2.3** (this release) — consistency discipline (FB-0010): `lens-staff-engineer` adds explicit fan-out + silent-skip sweeps; `/flow:doctor` gains Check 2.5 (documented slot count vs schema source-of-truth); workflow.md Step 4 names the discipline. Defense for the most-recurring bug class flow's own development has surfaced (6 incidents across PRs 1, B, D, E, F-pass-1, F-pass-2).
+**Per-version changelog:** [`CHANGELOG.md`](CHANGELOG.md). Currently at **v1.2.3** (2026-05-27).
+
+**Upgrading?** [`docs/upgrade.md`](docs/upgrade.md) — the 2-command ritual + verification with `/flow:doctor` + troubleshooting.
 
 ## License
 

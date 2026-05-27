@@ -200,7 +200,7 @@ else
     # this repo's own consumer-facing guides. Only emit SKIP if NONE exist —
     # an empty scan with no docs is itself a silent-skip class FB-0010 catches.
     SCAN_TARGETS=""
-    for t in CLAUDE.md CLAUDE.md.template README.md docs core-docs dev-docs; do
+    for t in CLAUDE.md CLAUDE.md.template README.md CHANGELOG.md docs core-docs dev-docs; do
       if [ -e "$t" ]; then
         if [ -z "$SCAN_TARGETS" ]; then
           SCAN_TARGETS="$t"
@@ -210,7 +210,7 @@ else
       fi
     done
     if [ -z "$SCAN_TARGETS" ]; then
-      echo "[SKIP] no project docs found to scan for slot-count consistency (looked for CLAUDE.md, CLAUDE.md.template, README.md, docs/, core-docs/, dev-docs/)"
+      echo "[SKIP] no project docs found to scan for slot-count consistency (looked for CLAUDE.md, CLAUDE.md.template, README.md, CHANGELOG.md, docs/, core-docs/, dev-docs/)"
     else
       # Portable across BSD + GNU: extract the FIRST "N slots" pair on each grep
       # output line via grep -oE (works around grep-prefix line-number digits that

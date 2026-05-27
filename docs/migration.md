@@ -243,6 +243,10 @@ ls .claude/agents
 
 In `core-docs/plan.md`: move any "Flow migration" Active Work Item to Recently Completed → eventually to `history.md`. From this point forward, plugin-related work happens in `by-dev-tools/flow/dev-docs/`, not in your project.
 
+### Keeping flow up to date
+
+After migration completes, picking up new flow versions follows the same 2-command ritual every consumer uses. See [`docs/upgrade.md`](upgrade.md).
+
 ---
 
 ## Troubleshooting

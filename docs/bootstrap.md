@@ -214,6 +214,7 @@ Flow's own repo (`by-dev-tools/flow`) and `by-dev-tools/md-manager` both use a G
 - Read `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` for the full 11-step loop.
 - Fill in your `core-docs/spec.md` with your actual product vision + feature table.
 - Start your first real PR with `/flow:critique-plan` on the plan, then execute against the spec-walk checkboxes.
+- When a new flow version ships, pick it up via the 2-command ritual in [`docs/upgrade.md`](upgrade.md).
 
 ## Troubleshooting
 

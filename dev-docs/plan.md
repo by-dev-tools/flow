@@ -2,18 +2,67 @@
 
 ## Current Focus
 
-**PRs 1-3 + A-F all merged.** Consumer-feedback umbrella complete (PR A intake → PRs B-F implementation). Plugin at **v1.2.2** on `main` (PR F squash `b1c8e01`).
+**PRs 1-3 + A-G all merged.** Plugin at **v1.2.3** on `main` (PR G squash `0c3386b`). Consumer-feedback umbrella complete + recurring-bug-class defense (FB-0010) encoded.
 
-**PR G in flight** (`pr-g/consistency-discipline`, off `main`) — dedicated defense for the recurring bug class flow's own development has surfaced 6 times: "consistency that depends on author memory" (silent-skip on edge case + fan-out contradiction). Encoded as **FB-0010** with concrete defenses (lens-staff-engineer prompt addition, `/flow:doctor` Check 2.5, workflow.md Step 4 paragraph, project-dev general.md subsection). Bumps to **v1.2.3**.
+**PR H1 in flight** (`pr-h1/upgrade-docs-changelog`, off `main`) — shore up the update infrastructure before user installs across 2 active consumer projects (md-manager + health-tracker). Tier-1 "what's solid" → Tier-2 "workable but rough" sweep identified the consumer-side rituals as the highest-value cheap fix. Ships **`docs/upgrade.md`** (2-command ritual + verify-with-doctor + troubleshooting) + **`CHANGELOG.md`** at repo root (extracted from inline README version notes + history.md), plus README cross-links. **No version bump** — pure-docs change at the repo root, doesn't ship inside the plugin install.
 
-After PR G ships: user has a new project lined up to dogfood the full adoption path (bootstrap.sh → install → `/flow:doctor` → first PR via the loop). That dogfood becomes the next feedback intake.
+After PR H1 ships: user installs flow at v1.2.3 across md-manager + health-tracker, begins active dogfood. Findings become next feedback intake (PR H proper, with the 12 FOLLOW-UPs already routed from PR G review + whatever new signal the dual-project dogfood surfaces).
 
 ## Handoff Notes
 
-- **PR G is prepared on `pr-g/consistency-discipline`** — push + open PR + regroup with user before merging per their explicit ask ("then we will regroup to continue development").
-- **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key per md-manager PR 4 report observation. Cosmetic cleanup; doesn't block.
-- **Md-manager PR 5 (dogfood)** still pending — separate worktree after md-manager PR 4 merged. May surface additional flow rough edges.
-- **User's new project dogfood** is the next consumer-feedback trigger. Bundle findings into a `pr-h/<topic>` PR after the dogfood completes.
+- **PR G shipped** at squash `0c3386b` on 2026-05-27; v1.2.3 live.
+- **PR H1 prepared on `pr-h1/upgrade-docs-changelog`** — push + open PR after the workflow loop completes (this is the small follow-on the user explicitly requested before installing).
+- **12 PR-G-review FOLLOW-UPs queued in plan.md** for PR H proper (after dogfood signal arrives).
+- **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key. Cosmetic; doesn't block.
+- **Md-manager PR 5 (dogfood)** still pending; separate worktree.
+
+## PR H1 — Upgrade docs + CHANGELOG (in flight)
+
+**Mode:** feature (small), docs-only | **Priority: highest (pre-install shore-up)**
+**Goal:** Make the update workflow discoverable + auditable before consumer install. Two cheap fixes from the "is the update infrastructure solid?" Tier-2 audit — the rituals that prevent silent version drift between 2 active consumer projects.
+
+**Scope (in):**
+- New file: `docs/upgrade.md` — the 2-command update ritual (`/plugin marketplace update flow` → `/plugin install flow@flow` → `/flow:doctor`), when-to-run guidance, verification steps, troubleshooting (FB-0005 silent-failure mode, marketplace-key-mismatch, `/flow:doctor` Section 1 failures), optional auto-update opt-in with breaking-change warning.
+- New file: `CHANGELOG.md` at repo root — extracted version-by-version from current README + history.md. Reverse chronological, one-liner per version + 2-3 bullets, breaking-change callouts (none yet). Replaces the inline "Versions:" block at the bottom of README.
+- `README.md` — replace inline "Versions:" block with link to `CHANGELOG.md`; add cross-link to `docs/upgrade.md` in install + bootstrap sections so consumers can find it after first install.
+- `docs/bootstrap.md` — add a "Keeping flow up to date" pointer to `docs/upgrade.md` at the end (after first PR walkthrough).
+- `docs/migration.md` — same pointer (existing-project consumers also need to know).
+- `dev-docs/history.md` — decision-log entry.
+- `dev-docs/plan.md` — this block + Current Focus refresh.
+
+**Scope (out):**
+- **Version bump** — pure docs-at-root change; doesn't ship in plugin install (manifests unchanged); consumers reading on GitHub get the new docs without a re-install. Spares users a no-op upgrade ritual.
+- **`minFlowVersion` slot + `/flow:doctor` Check 6** — deferred to PR H proper; mechanical defense for silent version drift, but ships best paired with the slot-count generalization (PR-G FOLLOW-UP #2).
+- **Post-merge GitHub Actions reminder** — deferred; cheap when needed but assumes a feedback mechanism we don't have yet.
+- **CHANGELOG auto-generation from history.md** — manual extraction this time; if drift becomes a maintenance burden, add a script later.
+
+**Spec-walk:**
+- [ ] `docs/upgrade.md` exists with: what-it-is, when-to-run, 2-command ritual, verification, troubleshooting (≥3 cases), auto-update note.
+- [ ] `CHANGELOG.md` exists at repo root with v1.0.0 through v1.2.3 entries; reverse chronological; each entry has date + headline + 2-4 bullets + "breaking changes: none" or explicit list.
+- [ ] `README.md` — inline "Versions:" block removed; replaced with one-line link to CHANGELOG.md; install section cross-references upgrade.md.
+- [ ] `docs/bootstrap.md` + `docs/migration.md` — both have a one-line pointer to `docs/upgrade.md`.
+- [ ] `claude plugin validate .` clean (no manifest changes; sanity).
+- [ ] `/flow:doctor` Check 2.5 still PASSes against current tree (docs additions don't introduce stale slot counts).
+- [ ] No version bump in either manifest; no v1.2.4 references anywhere.
+- [ ] Self-fan-out grep: no contradictions introduced (CHANGELOG vs README vs history.md version notes match).
+- [ ] `dev-docs/history.md` entry written (no SAFETY marker — no manifest/error-handling changes; verified against `.claude/rules/safety.md` `paths:` list — none of PR H1's 7 files match).
+- [ ] CHANGELOG entries follow Keep-a-Changelog-style (Date + headline + bullets + "Breaking changes:" callout, no SHA/branch/tradeoffs blocks) — distinct from `dev-docs/history.md` format spec; the two intentionally diverge (CHANGELOG is consumer-facing terse, history.md is internal-tracking verbose).
+
+**Confidence verdicts:**
+
+**Assumption:** Pure docs-at-root changes don't need a version bump because they don't ship in the plugin install (consumers fetch them from GitHub, not via `/plugin install`).
+**Confidence:** HIGH
+**Why:** `docs/` is not packaged into the plugin binary — only `plugins/flow/*` ships. Consumers on v1.2.3 read the new docs from GitHub the moment we merge; no client-side action required. Spares a no-op `/plugin marketplace update`.
+**If it flips:** A consumer reports they didn't NOTICE the new docs (they're delivered either way via GitHub, but the consumer's habit is to ignore unbumped versions). Bump to v1.2.4 then as a discoverability signal (not a delivery mechanism — the docs were already there). Single-file edit.
+
+**Assumption:** CHANGELOG.md manual extraction matches the inline README version notes + history.md decisions without drift.
+**Confidence:** MEDIUM
+**Why:** Manual extraction from two sources risks scribal mismatch; FB-0010 specifically warns against this. Mitigation: I'll grep both sources after writing CHANGELOG and reconcile; the FB-0010 lens-engineer hunt + Check 2.5 will catch survivors at review.
+**If it flips:** Lens-engineer flags fan-out between CHANGELOG and README. Fix inline before merge.
+
+**Files touched:** 7 — `docs/upgrade.md` (new), `CHANGELOG.md` (new), `README.md`, `docs/bootstrap.md`, `docs/migration.md`, `dev-docs/history.md`, `dev-docs/plan.md`.
+
+---
 
 ## PR G — Consistency discipline (FB-0010, in flight)
 
