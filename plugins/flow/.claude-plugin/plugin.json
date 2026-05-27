@@ -1,6 +1,6 @@
 {
   "name": "flow",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Managed-autonomy workflow for Claude Code. Ships /flow:ship + /flow:ship-spike + /flow:staff-review (four-lens parallel) + /flow:security-review + /flow:accessibility-review + /flow:workflow-help, alongside the skeptical-reviewer surface (/flow:audit-plan, /flow:audit-completion, /flow:critique-plan, /flow:log-disagreement). Plus planner + docs context-isolation agents, four portable rules (general / plan-discipline / documentation / exploration), memory-corpus tool, flow.config.json JSON Schema (16 slots), and default hooks. v1.2.1 adds consumer-feedback follow-ups from md-manager's first real-consumer dogfood: stale-base preflight gate, marketplace install verification docs, /flow:ship workflow-step assumption surfacing, per-diff early-exit in security+a11y reviewers. Canonical 11-step loop documented at plugins/flow/docs/workflow.md; project-specific values come from flow.config.json (schema at plugins/flow/schema/flow.config.schema.json).",
   "author": {
     "name": "by-dev-tools",

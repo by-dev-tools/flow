@@ -51,11 +51,35 @@ The `^flow` anchor assumes `/plugin marketplace list` outputs the marketplace na
 
 (For project-scope install instead of user-scope: add `"enabledPlugins": { "flow@flow": true }` to your project's `.claude/settings.json` after Step 3 + re-run the verify checks in a fresh `claude` session in the project root.)
 
-## Step 2 — Copy `template/base/` to your project root
+## Step 2 — Scaffold your project (Steps 2 + 3 combined)
 
-The base layer is stack-agnostic. **All `cp` invocations use `-n` (no-clobber)** so an accidental run in a project that already has `CLAUDE.md` / `README.md` / `.gitignore` will skip rather than overwrite. If you intentionally want to replace existing files, drop the `-n` per `cp`. For projects with significant pre-existing `.claude/` content, you want [`migration.md`](./migration.md), not this doc.
+**Fast path (recommended):** one command, deterministic, idempotent.
 
-From a checkout of `by-dev-tools/flow` (or via `gh api` lookup):
+```sh
+# From your project root:
+bash /path/to/flow-checkout/template/base/bootstrap.sh \
+  --stack web                       # or: swift | tauri-rust-ts
+  --project my-app                  # optional — defaults to basename of cwd
+```
+
+What this does:
+1. Copies `template/base/*` into your project (`cp -n` — never overwrites existing files).
+2. Generates a clean `flow.config.json` (strips the `$comment-*` doc keys from the example).
+3. Overlays the stack-specific files from `template/stacks/<stack>/`.
+4. Appends stack-specific `.gitignore` entries (idempotent via marker check).
+5. Prints a "Next steps" punch list — fill placeholders, install plugin, run `/flow:doctor`.
+
+You can re-run safely — existing files are skipped per `cp -n` semantics.
+
+For projects with significant pre-existing `.claude/` content, you want [`migration.md`](./migration.md), not this doc + bootstrap.sh.
+
+### Manual path (for transparency or hostile-environment fallback)
+
+If you'd rather see what bootstrap.sh does step-by-step (or you don't have a local flow checkout — but DO have `gh` + `jq` + a Claude session that can fetch files), the equivalent manual ladder is:
+
+```sh
+PROJECT_ROOT=/path/to/your/project
+FLOW=/path/to/flow-checkout    # or use gh api per-file
 
 ```sh
 PROJECT_ROOT=/path/to/your/project
