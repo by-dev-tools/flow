@@ -39,7 +39,7 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
-### Flow plugin v1.2.3 — consistency discipline (FB-0010 defense for the recurring bug class)
+### Flow plugin v1.2.3 — consistency discipline (FB-0010 defense for the recurring bug class)  `SAFETY`
 **Date:** 2026-05-26
 **Branch:** `pr-g/consistency-discipline`
 **Commit:** [SHA to be filled at ship time]
@@ -76,6 +76,12 @@ The engineer-lens missed 2 of 6 occurrences first-pass (both fan-out shapes — 
 **Lessons learned:**
 - 5 prior incidents (PRs 1, B, D, E, F-pass-1) all caught by the engineer-lens *eventually*. Only at occurrence 6 (PR F pass-2 — the slot-count fan-out) did the pattern require *adversarial* review to surface. That's the threshold for encoding: when the same lens that should catch it stops catching it reliably, give the lens explicit prompt-level vocabulary for the pattern.
 - "Internal contradictions inside one file" (line 22 vs line 260 of doctor/SKILL.md) is a sub-shape of fan-out contradiction that survives even careful single-file review. The discipline rule names it explicitly.
+- **SAFETY marker on this entry** is because `.claude-plugin/marketplace.json` and `plugins/flow/.claude-plugin/plugin.json` (both on `.claude/rules/safety.md`'s `paths:` list) had description text and version field changes. Runtime authority is unchanged — no allowedTools/sourcePaths/disable-model-invocation modifications; the changes are version + description prose only. Plus `/flow:doctor` Check 2.5 introduces a new WARN-branch error-handling shape (documentation.md format spec requires SAFETY marker on error-handling changes). Verified via `git diff main` that no authority-bearing keys changed in either manifest.
+
+**Self-review iterations (workflow pipeline ran 6 parallel reviewers — engineer + push-further + UX-designer + design-engineer + security + plan-critic):**
+- 2 BLOCKERs caught, both FB-0010 violations inside the PR that adds FB-0010 defenses: (a) `README.md:50` said "6 agents" but the count is 8; (b) `dev-docs/plan.md` "Files touched: 9 files" but Scope (in) enumerated 10. Both fixed inline before push. Validates the discipline's value and proves PR-G defenses applied to PR G itself work.
+- 6 cheap NITs fixed in-tree, mostly FB-0010 violations within `/flow:doctor` Check 2.5 itself: schema-not-reachable silent-skip, no-docs-found vacuous PASS, jq-failure unguarded, greedy-sed picking grep-line-number digit, narrow scan-target list (missed CLAUDE.md.template + core-docs/ + dev-docs/), and the "PRs 1, B, D, E, F" undercount vs "6 incidents." A SCAN_TARGETS leading-space word-split bug surfaced only at smoke-test time and was a 7th silent-skip flavor caught by tightening the test matrix.
+- 9 FOLLOW-UPs routed to plan.md (deferred deliberately): Defense #4 (silent-skip skill-code pairing), Check 2.5 generalization to skill/lens/rule counts, consumer-shipped consistency rule (`plugins/flow/rules/general.md`), plan-critic.md fan-out hunt addition, CLAUDE.md.template consumer mention, intra-file contradiction detection, schema-path fallback hardening, symlink-following grep hardening, citation drift across files.
 
 ### Bootstrap doc — document `allow_auto_merge` prereq for the merge queue
 **Date:** 2026-05-25

@@ -47,7 +47,7 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 
 ### Supporting surface
 
-- **6 agents:** `auditor`, `plan-critic`, `planner`, `docs`, plus 4 staff-review lens agents (`lens-staff-engineer`, `lens-ux-designer`, `lens-design-engineer`, `lens-push-further`).
+- **8 agents:** `auditor`, `plan-critic`, `planner`, `docs`, plus 4 staff-review lens agents (`lens-staff-engineer`, `lens-ux-designer`, `lens-design-engineer`, `lens-push-further`).
 - **4 auto-loading portable rules:** `general.md` (on `**/*` — workflow discipline), `plan-discipline.md` (on `**/plan.md` — required fields + LOW=gate), `documentation.md` (on `**/{history,feedback,plan,roadmap,spec}.md` — format rules), `exploration.md` (on `src/**`, `app/**`, `lib/**`, `packages/**` — § Exploration triggers).
 - **Memory tool:** `plugins/flow/tools/memory/check.mjs` — failure-pattern corpus cap + audit-due check.
 - **Schema:** `plugins/flow/schema/flow.config.schema.json` — 16 slots documented with defaults + examples.
@@ -197,7 +197,7 @@ Versions:
 - **v1.2.0** — consumer scaffolding (template/base + 3 stack overlays + bootstrap/migration docs + security regression fixtures).
 - **v1.2.1** — consumer-feedback follow-ups (stale-base preflight, marketplace install verify, /flow:ship assumption surfacing, per-diff non-UI early-exit, gh+jq fail-fast).
 - **v1.2.2** — consumer dogfood-readiness: `/flow:doctor` skill, `template/base/bootstrap.sh`, `docs/first-pr.md`, README + CLAUDE.md.template refresh.
-- **v1.2.3** (this release) — consistency discipline (FB-0010): `lens-staff-engineer` adds explicit fan-out + silent-skip sweeps; `/flow:doctor` gains Check 2.5 (documented slot count vs schema source-of-truth); workflow.md Step 4 names the discipline. Defense for the most-recurring bug class flow's own development has surfaced (6 incidents across PRs 1, B, D, E, F): "consistency that depends on author memory."
+- **v1.2.3** (this release) — consistency discipline (FB-0010): `lens-staff-engineer` adds explicit fan-out + silent-skip sweeps; `/flow:doctor` gains Check 2.5 (documented slot count vs schema source-of-truth); workflow.md Step 4 names the discipline. Defense for the most-recurring bug class flow's own development has surfaced (6 incidents across PRs 1, B, D, E, F-pass-1, F-pass-2).
 
 ## License
 

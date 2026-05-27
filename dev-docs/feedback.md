@@ -35,7 +35,7 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
-### FB-0010: Silent-skip on edge case + fan-out contradiction — the two flavors of "consistency that isn't mechanically enforced"
+### FB-0010: Consistency discipline — silent-skip on edge case + fan-out contradiction are the two flavors that survive single-pass review
 **Date:** 2026-05-26
 **Source:** review feedback (synthesized retrospectively after 6 occurrences across PRs 1, B, D, E, F-pass-1, F-pass-2)
 
@@ -55,7 +55,7 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 **Common root cause:** *consistency that depends on author memory*. Both shapes survive engineer-lens review when the reviewer is reading the diff (which looks self-consistent) without grepping the codebase for related references. Both shapes survive `claude plugin validate` because the manifest is syntactically clean. Both shapes survive `/simplify` because the per-file shape is fine.
 
-**Synthesized rule:** Treat consistency across files as a first-class review concern, not an emergent property. Three concrete defenses:
+**Synthesized rule:** Treat consistency across files as a first-class review concern, not an emergent property. Four concrete defenses:
 
 1. **In review prompts (consumer-shipped).** `lens-staff-engineer` should explicitly grep for stale references after any contract change. Pattern: "the diff claims contract X (e.g., 'N slots', 'flag --foo deprecated', 'now reads from config.bar'); grep the codebase for residual references to the OLD form and flag survivors." Make this explicit in the lens prompt rather than implicit in "specifically asks."
 

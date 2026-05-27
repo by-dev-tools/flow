@@ -44,7 +44,7 @@ Read the diff and untracked files first. Then read the relevant project docs for
 - Are tests covering actual contracts, or are they shallow (e.g. `expect(thing).toBeDefined()`)?
 - For typed languages: are type assertions (`as Foo`, `!`, force-unwraps) hiding real type holes?
 - For async code: are there unhandled promise rejections, missing `await`s, or race conditions on shared mutable state?
-- **Consistency sweep.** Did this diff change a count, name, slot, version, or file path that's referenced elsewhere? Run `git grep -nE '<old-value>'` across the repo and treat every survivor as a finding. The diff looks self-consistent — the contradiction lives in unchanged files.
+- **Consistency sweep.** Did this diff change a count, name, slot, version, or file path referenced elsewhere? `git grep -nE '<old-value>'` the OLD value across the repo; treat survivors as findings.
 - **Silent-skip sweep.** Search the diff for `2>/dev/null`, `|| true`, `// empty`, `|| ""` patterns. For each, verify the failure mode is either logged (`[WARN] ...`) or genuinely safe to ignore. Empty-fallback that flows into a downstream operation as-if-set is the bug shape.
 
 ## Triage your findings
