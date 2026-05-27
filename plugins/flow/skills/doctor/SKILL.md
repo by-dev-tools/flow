@@ -171,6 +171,75 @@ if [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
 fi
 ```
 
+**Check 2.5 — documented slot count matches schema source-of-truth (FB-0010 fan-out check)**
+
+If the consumer's CLAUDE.md, README.md, or any project doc references "N slots" as a literal count, that count must match `jq '.properties | keys | length'` on the schema. Stale counts after a contract change are the most-recurring fan-out bug class flow has surfaced (FB-0010); cheap to mechanize here.
+
+```sh
+# Resolve schema path: plugin-shipped (consumer scope) under CLAUDE_PLUGIN_ROOT,
+# or local if running inside the flow repo itself.
+SCHEMA=""
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/schema/flow.config.schema.json" ]; then
+  SCHEMA="${CLAUDE_PLUGIN_ROOT}/schema/flow.config.schema.json"
+elif [ -f "plugins/flow/schema/flow.config.schema.json" ]; then
+  SCHEMA="plugins/flow/schema/flow.config.schema.json"
+fi
+
+if [ -z "$SCHEMA" ]; then
+  echo "[SKIP] flow schema not reachable — install flow plugin (\$CLAUDE_PLUGIN_ROOT must point to a flow install) or run from the flow repo root"
+else
+  # Guard malformed schema with explicit FAIL (don't let jq error string flow into ACTUAL).
+  ACTUAL=$(jq -r '.properties | keys | length' "$SCHEMA" 2>/dev/null)
+  if ! [ "$ACTUAL" -gt 0 ] 2>/dev/null; then
+    echo "[FAIL] schema at $SCHEMA is not valid JSON or lacks a .properties object"
+    echo "       Fix: jq -e '.properties | keys' \"$SCHEMA\"   (will print the parse error)"
+  else
+    # Scope the doc scan to the union of flow's own convention (dev-docs/) and the
+    # consumer template's convention (CLAUDE.md, README.md, core-docs/, plus the
+    # CLAUDE.md.template that consumers may not yet have renamed). docs/ covers
+    # this repo's own consumer-facing guides. Only emit SKIP if NONE exist —
+    # an empty scan with no docs is itself a silent-skip class FB-0010 catches.
+    SCAN_TARGETS=""
+    for t in CLAUDE.md CLAUDE.md.template README.md docs core-docs dev-docs; do
+      if [ -e "$t" ]; then
+        if [ -z "$SCAN_TARGETS" ]; then
+          SCAN_TARGETS="$t"
+        else
+          SCAN_TARGETS="$SCAN_TARGETS $t"
+        fi
+      fi
+    done
+    if [ -z "$SCAN_TARGETS" ]; then
+      echo "[SKIP] no project docs found to scan for slot-count consistency (looked for CLAUDE.md, CLAUDE.md.template, README.md, docs/, core-docs/, dev-docs/)"
+    else
+      # Portable across BSD + GNU: extract the FIRST "N slots" pair on each grep
+      # output line via grep -oE (works around grep-prefix line-number digits that
+      # confused an earlier sed-anchor attempt, and works around the gawk-only
+      # 3-arg match() that an even earlier awk attempt silently no-op'd on BSD —
+      # both of those earlier attempts were silent-skip bugs of the exact class
+      # FB-0010 catches, fixed before this PR shipped).
+      # shellcheck disable=SC2086  # SCAN_TARGETS is space-separated paths, intentional
+      STALE=$(grep -rEn '([0-9]+) slots?' $SCAN_TARGETS \
+        | grep -vE ":[[:space:]]*#" \
+        | while IFS= read -r line; do
+            N=$(printf '%s\n' "$line" | grep -oE '[0-9]+ slots?' | head -n1 | grep -oE '^[0-9]+')
+            if [ -n "$N" ] && [ "$N" != "$ACTUAL" ]; then
+              printf '%s\n' "$line"
+            fi
+          done)
+      if [ -z "$STALE" ]; then
+        echo "[PASS] documented slot count matches schema ($ACTUAL slots; scanned:$SCAN_TARGETS)"
+      else
+        echo "[WARN] documented slot count contradicts schema (schema has $ACTUAL slots; survivors below)"
+        echo "       Survivors:"
+        printf '%s\n' "$STALE" | sed 's/^/         /'
+        echo "       Fix: update each line to '$ACTUAL slots' (grep-first-edit-second; FB-0010 discipline)"
+      fi
+    fi
+  fi
+fi
+```
+
 ### Section 3: auto-loading rules (the load-bearing enforcement mechanism)
 
 **Check 3.1 — project-side rules present**

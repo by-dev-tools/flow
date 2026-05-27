@@ -2,15 +2,95 @@
 
 ## Current Focus
 
-**PRs 1-3 merged** (`f8610a1` / `3409103` / `3abc236`). md-manager PR 4 shipped + delivered a consumer-feedback report (5 rough edges + 1 EXPLORATION + 1 workflow-discipline insight). **5 follow-up flow PRs sequenced (PR A → PR E)** to absorb the report; PR A in flight. Roadmap canonicalized at [`dev-docs/roadmap.md`](roadmap.md).
+**PRs 1-3 + A-F all merged.** Consumer-feedback umbrella complete (PR A intake → PRs B-F implementation). Plugin at **v1.2.2** on `main` (PR F squash `b1c8e01`).
 
-After PRs A-E land: standing by for md-manager PR 5 (dogfood) which may surface additional rough edges worth a second feedback bundle, then md-manager PR 6 (delete duplicates + retire umbrella). Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
+**PR G in flight** (`pr-g/consistency-discipline`, off `main`) — dedicated defense for the recurring bug class flow's own development has surfaced 6 times: "consistency that depends on author memory" (silent-skip on edge case + fan-out contradiction). Encoded as **FB-0010** with concrete defenses (lens-staff-engineer prompt addition, `/flow:doctor` Check 2.5, workflow.md Step 4 paragraph, project-dev general.md subsection). Bumps to **v1.2.3**.
+
+After PR G ships: user has a new project lined up to dogfood the full adoption path (bootstrap.sh → install → `/flow:doctor` → first PR via the loop). That dogfood becomes the next feedback intake.
 
 ## Handoff Notes
 
-- **Consumer-feedback PRs A-E are sequenced.** Each goes through the loop (plan → execute → preflight → /flow:staff-review or emulation → /flow:ship pipeline → open PR). User merges each as they ship.
-- **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key per md-manager PR 4 report observation. Cosmetic cleanup; doesn't block. PR C addresses the install-docs gap that this drift would surface in any new consumer.
-- **md-manager PR 5 (dogfood)** starts in a separate worktree after md-manager PR 4 merges. May surface additional flow rough edges — bundle into a second feedback intake PR if 2+ new items emerge; one-off if only 1.
+- **PR G is prepared on `pr-g/consistency-discipline`** — push + open PR + regroup with user before merging per their explicit ask ("then we will regroup to continue development").
+- **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key per md-manager PR 4 report observation. Cosmetic cleanup; doesn't block.
+- **Md-manager PR 5 (dogfood)** still pending — separate worktree after md-manager PR 4 merged. May surface additional flow rough edges.
+- **User's new project dogfood** is the next consumer-feedback trigger. Bundle findings into a `pr-h/<topic>` PR after the dogfood completes.
+
+## PR G — Consistency discipline (FB-0010, in flight)
+
+**Mode:** feature (small) | **Priority: highest**
+**Goal:** Defend against the most-recurring bug class (FB-0010, 6 incidents): silent-skip on edge case + fan-out contradiction. Encode as explicit lens prompts + a mechanical doctor check + a workflow.md preflight note + a project-dev rule.
+
+**Scope (in):**
+- `dev-docs/feedback.md` — FB-0010 entry with all 6 PR citations and the two-flavor synthesis.
+- `plugins/flow/agents/lens-staff-engineer.md` — silent-skip + fan-out hunts added to Hunts; consistency-sweep + silent-skip-sweep added to Specifically Asks; Gotchas reinforced.
+- `plugins/flow/skills/doctor/SKILL.md` — Check 2.5 comparing `jq '.properties | keys | length'` on the schema against "N slots" claims in CLAUDE.md/README.md/docs/.
+- `plugins/flow/docs/workflow.md` Step 4 — "consistency sweep" paragraph (FB-0010 reference).
+- `.claude/rules/general.md` — Consistency discipline subsection (project-dev rule, auto-loads on every edit).
+- `README.md` — v1.2.3 version note.
+- `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` — v1.2.2 → v1.2.3, descriptions refreshed.
+- `dev-docs/history.md` — decision-log entry.
+- `dev-docs/plan.md` — this block + Current Focus refresh.
+
+**Scope (out):**
+- Pre-commit hooks (rejected: install friction outweighs benefit at this scale).
+- Stop hook for skipped `/flow:critique-plan` (deferred to v1.x autonomous-routines work).
+- Auto-fix for stale slot counts (doctor flags WARN; fix is author judgment).
+- New eval fixtures (deferred until pattern proven by next consumer dogfood).
+
+**Spec-walk:**
+- [ ] FB-0010 entry exists with the two-flavor synthesis + all 6 PR citations.
+- [ ] `lens-staff-engineer.md` Hunts list, Specifically Asks, and Gotchas all reference the new patterns explicitly.
+- [ ] `/flow:doctor` Check 2.5 added; smoke against current flow repo emits PASS (all "16 slots" mentions match schema).
+- [ ] `workflow.md` Step 4 mentions the consistency sweep.
+- [ ] `.claude/rules/general.md` has the new subsection BEFORE "Autonomous work guardrails".
+- [ ] README v1.2.3 line added.
+- [ ] Both manifests bumped + descriptions refreshed; `claude plugin validate .` clean.
+- [ ] `dev-docs/history.md` entry written.
+- [ ] Self-test: grep for any remaining "14 slots" / "15 slots" / etc. across the tree returns nothing; no v1.2.2-only version strings in any new file.
+
+**Confidence verdicts:**
+
+**Assumption:** The lens-staff-engineer prompt addition will improve catch rate on the next consistency-class incident.
+**Confidence:** MEDIUM
+**Why:** Prompt-level vocabulary additions improve LLM behavior probabilistically. The shape is concrete enough (grep, then flag survivors) that the lens has a clear action to take. Adversarial review still serves as backstop.
+**If it flips:** Promote to mechanical pre-commit check (rejected for v1.2.3 but reachable in v1.3+).
+
+**Assumption:** Doctor Check 2.5's awk-filtered grep won't produce false positives on the current flow tree.
+**Confidence:** HIGH
+**Why:** Schema's slot count is THE source-of-truth and is single-pull-via-jq; any documented mismatch is genuinely stale. Verified via spec-walk smoke step.
+**If it flips:** Tighten regex or add a doctor-skip glob slot. Single-file fix.
+
+**Files touched:** 10 files (see Scope (in) — `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` count as 2 distinct edits even though the bullet groups them).
+
+### PR H+ FOLLOW-UPs routed from PR G review pipeline (6 parallel lenses)
+
+PR G's review (engineer + push-further + UX-designer + design-engineer + security + plan-critic) caught 2 BLOCKERs + 6 NITs (all fixed in-tree) + these 9 FOLLOW-UPs:
+
+1. **FB-0010 Defense #4 — silent-skip skill-code pairing across existing shipped skills.** PR G covers defenses #1-3 (lens prompt + doctor check + project-dev rule); defense #4 (skill code: "pair every `2>/dev/null || true` / `// empty` / `|| ""` with explicit positive assertion or `[WARN]` branch") was not applied to existing skill bodies. Scope-deferred because the pattern requires a sweep of all 11 shipped skills + 5 scripts + 1 tool; bigger than PR G's small-feature charter. Owner: domain agent. Horizon: PR H (consumer-feedback round 2 after the new-project dogfood).
+
+2. **Generalize Check 2.5 beyond slot count.** FB-0010 names 4 fan-out targets (counts, names, slots, version strings); Check 2.5 mechanizes only slot count. Symmetric pairs worth mechanizing: skill count (`ls plugins/flow/skills/ | wc -l` vs documented "N user-visible skills"), lens count (`ls plugins/flow/agents/lens-*.md` vs "four-lens"), rule count (`ls plugins/flow/rules/*.md` vs "four portable rules"). Each is ~5 lines of `ls | wc -l` + grep. Defer to v1.2.4 alongside next consumer dogfood. Owner: domain agent. Horizon: PR H.
+
+3. **Consumer-shipped consistency rule (`plugins/flow/rules/general.md`).** PR G added the rule to project-dev `.claude/rules/general.md` only. The shipped portable rule (`plugins/flow/rules/general.md`) has no equivalent — consumers don't inherit the discipline at the rule-level. Lens-engineer catches it at staff-review time; a rule would catch it during execution. Cheap to land. Owner: docs agent. Horizon: PR H or v1.2.4.
+
+4. **CLAUDE.md.template consumer-facing mention.** Consumers reading `template/base/CLAUDE.md.template` have no pointer to the consistency discipline (only `plugins/flow/docs/workflow.md` Step 4 surfaces it consumer-side). A one-line bullet would let consumers self-discover. Pairs naturally with #3. Horizon: PR H.
+
+5. **`plugins/flow/agents/plan-critic.md` fan-out hunt addition.** Plan-critic's "Internal incoherence" category covers "plan steps that contradict each other" but lacks explicit fan-out vocabulary the way `lens-staff-engineer` now has. A plan listing "16 slots" in one section and "14 slots" in another is the in-plan analog of the same bug class. One-line bullet under Internal incoherence: "count/name/slot/version referenced multiple times in the plan — values must agree." Horizon: PR H.
+
+6. **Schema-path fallback hardening in Check 2.5 (security).** When `CLAUDE_PLUGIN_ROOT` is unset, Check 2.5 falls back to `plugins/flow/schema/flow.config.schema.json` (project-relative). A malicious project shipping a same-named file under that path would have doctor report against the WRONG source-of-truth. No RCE, but "fails closed in wrong direction." Fix: require an explicit sentinel like `[ -f .claude-plugin/marketplace.json ]` before trusting the fallback path. Horizon: PR H or v1.2.4.
+
+7. **Symlink-following grep hardening in Check 2.5 (security).** `grep -rEn` follows symlinks on BSD/macOS by default. A `docs/` symlinked to `/etc` would surface `/etc/*.md` "N slots" lines to doctor output (information disclosure, no exec). Defensive fix: `find … -type f -name '*.md' -print0 | xargs -0 grep …`. Horizon: PR H.
+
+8. **Intra-file contradiction detection.** The PR F pass-2 doctor SKILL.md line 22 vs line 260 contradiction was a within-file fan-out shape. The lens-engineer's new hunt language is framed across-files; within-file is unmechanized. Worth a within-file consistency-sweep mode for the lens (or a new doctor check) once a 2nd within-file incident lands. Horizon: surfaces-when a second within-file incident lands.
+
+9. **"PRs 1, B, D, E, F (×2)" citation drift across files.** The 6-incidents-across-5-PRs phrasing now varies across README, marketplace.json description, plugin.json description, FB-0010 entry, history.md, plan.md. Worth defining canonical phrasing in FB-0010 and reference-by-FB elsewhere ("see FB-0010 for the incident list"). This is itself a fan-out shape — ironic but real. Horizon: PR H.
+
+10. **Re-open pre-commit-hook question if a 7th FB-0010 incident lands.** PR G explicitly rejected pre-commit hooks on install-friction grounds. The rejection is defensible only if the prompt-level + check-level defenses suffice. The 7th incident is the experimental signal. Trigger: any future PR that ships a stale count/name/slot/version that survives both `lens-staff-engineer` and Check 2.5. Horizon: triggered-by-occurrence; route to v1.3 if/when.
+
+11. **Workflow.md Step 4 placement of non-mechanical disciplines.** Step 4's lead sentence says "Mechanical gates that MUST be green." Both the existing "Failure-pattern memory" paragraph and PR G's new "Consistency sweep" paragraph are non-mechanical disciplines living inside the "mechanical gates" step. Design-engineer flagged the structural drift but the in-tree fix (sub-heading or move-to-Step-6) was deferred to avoid scope creep in PR G. Horizon: next workflow.md-touching PR.
+
+12. **"Consumer-shipped" vs "project-dev" terminology standardization.** FB entries use parenthetical labels; history.md uses "Two-layer defense" framing. Worth a style-guide note for future FB entries that span both surfaces. Horizon: dev-docs hygiene PR.
+
+---
 
 ## PR E+ follow-ups from PR D review
 

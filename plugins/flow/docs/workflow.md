@@ -148,6 +148,8 @@ Implement the approved plan against the spec-walk checkboxes. During execution:
 
 **Failure-pattern memory** (PR 2) is the agent's running record of "things I've gotten wrong before." Memory entries (`~/.claude/projects/.../memory/feedback_*.md`) load automatically across sessions. They name patterns that aren't yet mechanically checkable. New entries are written at `/flow:ship` step 3 (see § "Continuous improvement"). Patterns that fire repeatedly graduate to preflight checks — that's the **promotion path** that keeps the loop closing.
 
+**Consistency sweep** (FB-0010 discipline). If the diff changed a count, name, slot, version, or default path that's referenced elsewhere, grep the codebase for survivors of the OLD value before continuing. The diff is self-consistent by definition; fan-out contradictions live in unchanged files. `git grep -nE '<old-value>'` before `/simplify` catches this cheaply; the alternative is adversarial-review-pass-2 spotting the survivors in PR review. Same discipline applies to silent-skip patterns: every `2>/dev/null || true` / unset-var-fallback / `// empty` in shipped code should either log a `[WARN]` branch or fail-fast at the entrypoint — never flow into a downstream operation as-if-set.
+
 ## 5. Commit
 
 Commit the implementation with a message explaining **why**, not what. Subject under 70 chars; body if the why takes more than a line. Co-author trailer:

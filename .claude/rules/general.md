@@ -21,6 +21,16 @@ These rules apply to all work in this project. They enforce the documentation wo
 - No dead code, commented-out code, unused imports, or placeholder files.
 - If something isn't needed yet, don't create it.
 
+## Consistency discipline (FB-0010)
+
+Most recurring bug class flow's own development has surfaced (6 incidents across PRs 1, B, D, E, F-pass-1, F-pass-2): "consistency that depends on author memory." Two flavors:
+
+1. **Silent-skip on edge case.** Code that fails on an edge case without surfacing the failure (stale paths returning empty, unset vars expanding silently, slash-commands run in shell context, regex inversions, POSIX-vs-bash mismatches). Defense: pair every `2>/dev/null || true` / `// empty` / `|| ""` fallback with an explicit positive assertion or a `[WARN]` branch. If unset is fatal, fail-fast at the entrypoint with a clean install hint (FB-0009 pattern).
+
+2. **Fan-out contradiction.** A contract value (count, name, slot, version) referenced in N files, where a contract change only updated some of them. Defense: **grep first, edit second.** When changing a count or name, run `git grep -nE '<old-value>'` across the codebase before staging. Treat every survivor as a fix that ships with the contract change, not a follow-up. Specifically watch: schema slot counts (`N slots`), skill/agent counts (`N user-visible skills`), version strings, slot/flag/skill names.
+
+When in doubt, ask: "If a colleague greps for the old value tomorrow, will they find a contradiction?" If yes, fix it now.
+
 ## Autonomous work guardrails
 
 Always confirm with the user before proceeding if the action involves:
