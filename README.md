@@ -191,7 +191,7 @@ git checkout pre-flow-plugin
 
 GitHub maintains a redirect from `byamron/llm-auditor` → `by-dev-tools/flow`, so old clones still pull from the same place.
 
-**Per-version changelog:** [`CHANGELOG.md`](CHANGELOG.md). Currently at **v1.2.3** (2026-05-27).
+**Per-version changelog:** [`CHANGELOG.md`](CHANGELOG.md) — read this before upgrading.
 
 **Upgrading?** [`docs/upgrade.md`](docs/upgrade.md) — the 2-command ritual + verification with `/flow:doctor` + troubleshooting.
 

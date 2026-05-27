@@ -63,7 +63,13 @@ Two possibilities:
 2. **The plugin is enabled under a different marketplace name in `~/.claude/settings.json`.** Check `enabledPlugins`:
 
    ```sh
-   jq '.enabledPlugins' ~/.claude/settings.json
+   # jq version (clean output):
+   jq '.enabledPlugins' ~/.claude/settings.json 2>/dev/null \
+     || echo "(no settings.json yet — run /plugin install flow@flow first, OR install jq via 'brew install jq')"
+
+   # Fallback if jq isn't installed:
+   grep -A 3 enabledPlugins ~/.claude/settings.json 2>/dev/null \
+     || echo "(no settings.json at ~/.claude/settings.json)"
    ```
 
    The key must be `"flow@flow": true`. If it's `"flow@llm-auditor"` or anything else, fix it:
@@ -88,17 +94,14 @@ Two possibilities:
 
 ### Upgrade brought a breaking change you didn't expect
 
-Flow follows semver. Major bumps (`x.0.0`) are reserved for breaking changes and are called out in CHANGELOG.md with an explicit "Breaking changes:" block. Minor bumps (`1.y.0`) add user-visible surface. Patch bumps (`1.2.x`) are additive and shouldn't break anything — if one does, **that's a bug, not a feature**. File an issue at https://github.com/by-dev-tools/flow/issues with the version you upgraded from + to.
+Flow follows semver. Major bumps (`x.0.0`) are reserved for breaking changes and are called out in CHANGELOG.md with an explicit "Breaking changes:" block. Minor bumps (`1.y.0`) add user-visible surface. Patch bumps (`1.2.x`) follow flow's discipline of additive-only changes — but verify each upgrade with `/flow:doctor` regardless; the discipline is enforced by lens-staff-engineer + Check 2.5 + author care, not by tooling.
 
-To pin to a prior version while waiting for a fix:
+If a patch upgrade DOES break something, **that's a bug, not a feature**. File an issue at https://github.com/by-dev-tools/flow/issues with:
+- The version you upgraded from + to (read from CHANGELOG.md headers).
+- The `/flow:doctor` output (full).
+- The first command that misbehaved.
 
-```sh
-# Flow doesn't have first-party version pinning, but you can pin manually:
-cd ~/.claude/plugins/flow  # or wherever your plugin install lives
-git checkout v1.2.3        # or the tag matching the version you want
-```
-
-Restart the Claude Code session for the pinned version to take effect. Then file the bug.
+**Version pinning is not yet supported.** Flow does not currently tag releases at the git-tag level, so `git checkout v1.2.3` won't work. If you need to roll back, the practical path today is: revert the consumer's `/plugin install flow@flow` action by removing flow from `enabledPlugins` in `~/.claude/settings.json` and re-installing after the fix ships. Tracked as a FOLLOW-UP in flow's `dev-docs/plan.md` (release tagging + version-pinning recipe).
 
 ## Auto-update (opt-in)
 
@@ -118,19 +121,13 @@ By default, third-party Claude Code marketplaces require manual `/plugin marketp
 
 **Tradeoff:** auto-update means you'll silently pick up new versions without reading the CHANGELOG. For a patch bump (`1.2.x → 1.2.y`) this is usually fine — flow's discipline is additive-only at patch level. For minor + major bumps, you may prefer to read CHANGELOG first. Leave auto-update off if you want explicit control.
 
-## What about new project bootstrap
-
-If you're scaffolding a NEW project (not upgrading an existing one), use [`docs/bootstrap.md`](bootstrap.md) instead. That walkthrough includes the initial install + first-PR flow.
-
-If you're migrating an EXISTING project that pre-dates flow, use [`docs/migration.md`](migration.md) for the 3-stage migration pattern.
-
-This upgrade doc is specifically for projects that ALREADY have flow installed and just need to pick up a newer version.
-
 ## Multi-project ritual
 
 If you run flow across multiple projects (e.g., md-manager + health-tracker), the ritual must run **in each project's Claude Code session** — `/plugin marketplace update` updates the local catalog cache, which is per-session. A single update from one project doesn't propagate to others.
 
 Practical pattern: after merging a flow PR, open a session in each consumer project and run the ritual. Or set `"autoUpdate": true` and accept the silent-upgrade tradeoff.
+
+If you have flow installed **per-project** rather than user-scope (a custom workflow), the ritual is identical but the update is scoped to whichever project you run it in. Same `marketplace update` + `install` commands; just no cross-project propagation.
 
 ## What's NOT in this doc
 
