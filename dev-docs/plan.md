@@ -2,15 +2,67 @@
 
 ## Current Focus
 
-**PRs 1-3 merged** (`f8610a1` / `3409103` / `3abc236`). md-manager PR 4 shipped + delivered a consumer-feedback report (5 rough edges + 1 EXPLORATION + 1 workflow-discipline insight). **5 follow-up flow PRs sequenced (PR A → PR E)** to absorb the report; PR A in flight. Roadmap canonicalized at [`dev-docs/roadmap.md`](roadmap.md).
+**PRs 1-3 + A-F all merged.** Consumer-feedback umbrella complete (PR A intake → PRs B-F implementation). Plugin at **v1.2.2** on `main` (PR F squash `b1c8e01`).
 
-After PRs A-E land: standing by for md-manager PR 5 (dogfood) which may surface additional rough edges worth a second feedback bundle, then md-manager PR 6 (delete duplicates + retire umbrella). Cross-repo umbrella canonical state: md-manager's `core-docs/plan.md` § "Flow plugin extraction".
+**PR G in flight** (`pr-g/consistency-discipline`, off `main`) — dedicated defense for the recurring bug class flow's own development has surfaced 6 times: "consistency that depends on author memory" (silent-skip on edge case + fan-out contradiction). Encoded as **FB-0010** with concrete defenses (lens-staff-engineer prompt addition, `/flow:doctor` Check 2.5, workflow.md Step 4 paragraph, project-dev general.md subsection). Bumps to **v1.2.3**.
+
+After PR G ships: user has a new project lined up to dogfood the full adoption path (bootstrap.sh → install → `/flow:doctor` → first PR via the loop). That dogfood becomes the next feedback intake.
 
 ## Handoff Notes
 
-- **Consumer-feedback PRs A-E are sequenced.** Each goes through the loop (plan → execute → preflight → /flow:staff-review or emulation → /flow:ship pipeline → open PR). User merges each as they ship.
-- **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key per md-manager PR 4 report observation. Cosmetic cleanup; doesn't block. PR C addresses the install-docs gap that this drift would surface in any new consumer.
-- **md-manager PR 5 (dogfood)** starts in a separate worktree after md-manager PR 4 merges. May surface additional flow rough edges — bundle into a second feedback intake PR if 2+ new items emerge; one-off if only 1.
+- **PR G is prepared on `pr-g/consistency-discipline`** — push + open PR + regroup with user before merging per their explicit ask ("then we will regroup to continue development").
+- **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key per md-manager PR 4 report observation. Cosmetic cleanup; doesn't block.
+- **Md-manager PR 5 (dogfood)** still pending — separate worktree after md-manager PR 4 merged. May surface additional flow rough edges.
+- **User's new project dogfood** is the next consumer-feedback trigger. Bundle findings into a `pr-h/<topic>` PR after the dogfood completes.
+
+## PR G — Consistency discipline (FB-0010, in flight)
+
+**Mode:** feature (small) | **Priority: highest**
+**Goal:** Defend against the most-recurring bug class (FB-0010, 6 incidents): silent-skip on edge case + fan-out contradiction. Encode as explicit lens prompts + a mechanical doctor check + a workflow.md preflight note + a project-dev rule.
+
+**Scope (in):**
+- `dev-docs/feedback.md` — FB-0010 entry with all 6 PR citations and the two-flavor synthesis.
+- `plugins/flow/agents/lens-staff-engineer.md` — silent-skip + fan-out hunts added to Hunts; consistency-sweep + silent-skip-sweep added to Specifically Asks; Gotchas reinforced.
+- `plugins/flow/skills/doctor/SKILL.md` — Check 2.5 comparing `jq '.properties | keys | length'` on the schema against "N slots" claims in CLAUDE.md/README.md/docs/.
+- `plugins/flow/docs/workflow.md` Step 4 — "consistency sweep" paragraph (FB-0010 reference).
+- `.claude/rules/general.md` — Consistency discipline subsection (project-dev rule, auto-loads on every edit).
+- `README.md` — v1.2.3 version note.
+- `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` — v1.2.2 → v1.2.3, descriptions refreshed.
+- `dev-docs/history.md` — decision-log entry.
+- `dev-docs/plan.md` — this block + Current Focus refresh.
+
+**Scope (out):**
+- Pre-commit hooks (rejected: install friction outweighs benefit at this scale).
+- Stop hook for skipped `/flow:critique-plan` (deferred to v1.x autonomous-routines work).
+- Auto-fix for stale slot counts (doctor flags WARN; fix is author judgment).
+- New eval fixtures (deferred until pattern proven by next consumer dogfood).
+
+**Spec-walk:**
+- [ ] FB-0010 entry exists with the two-flavor synthesis + all 6 PR citations.
+- [ ] `lens-staff-engineer.md` Hunts list, Specifically Asks, and Gotchas all reference the new patterns explicitly.
+- [ ] `/flow:doctor` Check 2.5 added; smoke against current flow repo emits PASS (all "16 slots" mentions match schema).
+- [ ] `workflow.md` Step 4 mentions the consistency sweep.
+- [ ] `.claude/rules/general.md` has the new subsection BEFORE "Autonomous work guardrails".
+- [ ] README v1.2.3 line added.
+- [ ] Both manifests bumped + descriptions refreshed; `claude plugin validate .` clean.
+- [ ] `dev-docs/history.md` entry written.
+- [ ] Self-test: grep for any remaining "14 slots" / "15 slots" / etc. across the tree returns nothing; no v1.2.2-only version strings in any new file.
+
+**Confidence verdicts:**
+
+**Assumption:** The lens-staff-engineer prompt addition will improve catch rate on the next consistency-class incident.
+**Confidence:** MEDIUM
+**Why:** Prompt-level vocabulary additions improve LLM behavior probabilistically. The shape is concrete enough (grep, then flag survivors) that the lens has a clear action to take. Adversarial review still serves as backstop.
+**If it flips:** Promote to mechanical pre-commit check (rejected for v1.2.3 but reachable in v1.3+).
+
+**Assumption:** Doctor Check 2.5's awk-filtered grep won't produce false positives on the current flow tree.
+**Confidence:** HIGH
+**Why:** Schema's slot count is THE source-of-truth and is single-pull-via-jq; any documented mismatch is genuinely stale. Verified via spec-walk smoke step.
+**If it flips:** Tighten regex or add a doctor-skip glob slot. Single-file fix.
+
+**Files touched:** 9 files (see Scope (in)).
+
+---
 
 ## PR E+ follow-ups from PR D review
 

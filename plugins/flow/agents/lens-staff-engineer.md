@@ -32,6 +32,8 @@ Read the diff and untracked files first. Then read the relevant project docs for
 - Missing tests for newly-introduced contracts.
 - Contract breaks: function signatures, API shapes, persistence schemas, prop interfaces that changed without callers being updated.
 - Accidental coupling: a refactor that bound two previously-independent modules without naming it.
+- **Silent-skip on edge case.** Code paths that swallow failures without surfacing them: `2>/dev/null || true` with no fallback log, unset vars that expand to empty + are then concatenated into commands, regex inversions where the "no-match" branch is wrongly the happy path, slash-commands invoked inside `Bash` blocks (shell can't resolve them), POSIX-vs-bash mismatches in shipped scripts. Flag any code that fails-quiet on an edge case it should fail-loud on.
+- **Fan-out contradiction.** A contract value (count, name, slot, version, file path) referenced in N places where the diff updated some but not all. Specifically: if the diff changes a schema slot count, a skill/agent count, a version string, a flag name, or a default path, grep the codebase for survivors of the OLD value and flag them. The diff itself looks self-consistent; the contradiction lives in unchanged files.
 
 ## Specifically asks (adapt to the stack — these are illustrative)
 
@@ -42,6 +44,8 @@ Read the diff and untracked files first. Then read the relevant project docs for
 - Are tests covering actual contracts, or are they shallow (e.g. `expect(thing).toBeDefined()`)?
 - For typed languages: are type assertions (`as Foo`, `!`, force-unwraps) hiding real type holes?
 - For async code: are there unhandled promise rejections, missing `await`s, or race conditions on shared mutable state?
+- **Consistency sweep.** Did this diff change a count, name, slot, version, or file path that's referenced elsewhere? Run `git grep -nE '<old-value>'` across the repo and treat every survivor as a finding. The diff looks self-consistent — the contradiction lives in unchanged files.
+- **Silent-skip sweep.** Search the diff for `2>/dev/null`, `|| true`, `// empty`, `|| ""` patterns. For each, verify the failure mode is either logged (`[WARN] ...`) or genuinely safe to ignore. Empty-fallback that flows into a downstream operation as-if-set is the bug shape.
 
 ## Triage your findings
 
@@ -81,5 +85,5 @@ None.
 
 - **Reviewers can be confidently wrong.** Frame findings as observations to verify, not pronouncements.
 - **Spot-check high-impact findings against the actual code** before flagging BLOCKER. False BLOCKERs erode trust in the lens.
-- **Grep finds what reviews miss.** After reading the diff, run a focused `Grep` for the patterns the change claims to introduce or migrate. Treat survivors as findings.
+- **Grep finds what reviews miss.** After reading the diff, run a focused `Grep` for the patterns the change claims to introduce or migrate. Treat survivors as findings. This is the load-bearing defense against fan-out contradictions — the contradiction lives in files the diff doesn't touch.
 - **Don't flag style preferences** unless they break a documented project rule. The other lenses cover craft.

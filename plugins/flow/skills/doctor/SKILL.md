@@ -171,6 +171,40 @@ if [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
 fi
 ```
 
+**Check 2.5 — documented slot count matches schema source-of-truth (FB-0010 fan-out check)**
+
+If the consumer's CLAUDE.md, README.md, or any project doc references "N slots" as a literal count, that count must match `jq '.properties | keys | length'` on the schema. Stale counts after a contract change are the most-recurring fan-out bug class flow has surfaced (FB-0010); cheap to mechanize here.
+
+```sh
+# Resolve schema path: plugin-shipped (consumer scope) under CLAUDE_PLUGIN_ROOT,
+# or local if running inside the flow repo itself.
+SCHEMA="${CLAUDE_PLUGIN_ROOT}/schema/flow.config.schema.json"
+[ -f "$SCHEMA" ] || SCHEMA="plugins/flow/schema/flow.config.schema.json"
+
+if [ -f "$SCHEMA" ]; then
+  ACTUAL=$(jq -r '.properties | keys | length' "$SCHEMA")
+  # Scan project docs for "N slots" claims; flag any that don't match ACTUAL.
+  # Portable across BSD + GNU: sed -nE to extract the first integer-before-"slot"
+  # per line. (The 3-arg form of awk match() is gawk-only and would silently
+  # fail on BSD/macOS — exactly the silent-skip class FB-0010 catches.)
+  STALE=$(grep -rEn '([0-9]+) slots?' CLAUDE.md README.md docs/ 2>/dev/null \
+    | grep -vE ":[[:space:]]*#" \
+    | while IFS= read -r line; do
+        N=$(printf '%s\n' "$line" | sed -nE 's/.*[^0-9]([0-9]+) slots?.*/\1/p' | head -n1)
+        if [ -n "$N" ] && [ "$N" != "$ACTUAL" ]; then
+          printf '%s\n' "$line"
+        fi
+      done)
+  if [ -z "$STALE" ]; then
+    echo "[PASS] documented slot count matches schema ($ACTUAL slots)"
+  else
+    echo "[WARN] documented slot count contradicts schema (schema has $ACTUAL slots; survivors below)"
+    printf '%s\n' "$STALE" | sed 's/^/       /'
+    echo "       Fix: update each line to '$ACTUAL slots' (grep-first-edit-second; FB-0010 discipline)"
+  fi
+fi
+```
+
 ### Section 3: auto-loading rules (the load-bearing enforcement mechanism)
 
 **Check 3.1 — project-side rules present**
