@@ -2,19 +2,70 @@
 
 ## Current Focus
 
-**PRs 1-3 + A-G all merged.** Plugin at **v1.2.3** on `main` (PR G squash `0c3386b`). Consumer-feedback umbrella complete + recurring-bug-class defense (FB-0010) encoded.
+**PRs 1-3 + A-G + H1 all merged.** Plugin at **v1.2.3** on `main` (PR H1 squash `1a1cc12`). Consumer-feedback umbrella + recurring-bug-class defense (FB-0010) + upgrade infrastructure docs all live.
 
-**PR H1 in flight** (`pr-h1/upgrade-docs-changelog`, off `main`) — shore up the update infrastructure before user installs across 2 active consumer projects (md-manager + health-tracker). Tier-1 "what's solid" → Tier-2 "workable but rough" sweep identified the consumer-side rituals as the highest-value cheap fix. Ships **`docs/upgrade.md`** (2-command ritual + verify-with-doctor + troubleshooting) + **`CHANGELOG.md`** at repo root (extracted from inline README version notes + history.md), plus README cross-links. **No version bump** — pure-docs change at the repo root, doesn't ship inside the plugin install.
+**PR I in flight** (`pr-i/workflow-spawn-prevention`, off `main`) — defense for the 9th FB-0010 incident: workflow-step silent-skip surfaced during PR H1 when the author skipped spawning `/flow:security-review` + `/flow:accessibility-review` from the loop ("the per-diff gate would early-exit anyway"), missing that the discipline produces `STATUS: SKIPPED` audit-trail signal regardless of whether the body runs. The real skip: bypassed `/flow:ship` entirely and ran `gh pr create` manually, skipping the entire ship pipeline. Bumps to **v1.2.4**.
 
-After PR H1 ships: user installs flow at v1.2.3 across md-manager + health-tracker, begins active dogfood. Findings become next feedback intake (PR H proper, with the 12 FOLLOW-UPs already routed from PR G review + whatever new signal the dual-project dogfood surfaces).
+After PR I ships: user installs flow at v1.2.4 across md-manager + health-tracker, begins active dogfood. Findings become next feedback intake (PR H proper, with the 20 FOLLOW-UPs already routed from PR G + H1 reviews + whatever new signal the dual-project dogfood surfaces).
 
 ## Handoff Notes
 
 - **PR G shipped** at squash `0c3386b` on 2026-05-27; v1.2.3 live.
-- **PR H1 prepared on `pr-h1/upgrade-docs-changelog`** — push + open PR after the workflow loop completes (this is the small follow-on the user explicitly requested before installing).
-- **12 PR-G-review FOLLOW-UPs queued in plan.md** for PR H proper (after dogfood signal arrives).
+- **PR H1 shipped** at squash `1a1cc12` on 2026-05-27; docs/upgrade.md + CHANGELOG.md live.
+- **PR I in flight on `pr-i/workflow-spawn-prevention`** — defends against the workflow-spawn silent-skip surfaced by PR H1. The discipline PR — explicitly walks the full loop including security + a11y reviews this time.
+- **20 FOLLOW-UPs queued in plan.md** for PR H proper (after dogfood signal arrives).
 - **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key. Cosmetic; doesn't block.
 - **Md-manager PR 5 (dogfood)** still pending; separate worktree.
+
+## PR I — Workflow-spawn prevention (FOLLOW-UP #20 from PR H1, in flight)
+
+**Mode:** feature (small) | **Priority: highest (pre-dogfood mechanical defense)**
+**Goal:** Encode workflow-step discipline so future loops don't silent-skip the ship pipeline. User explicitly requested PR I after PR H1's review surfaced the issue + the "1 incident isn't usually enough threshold but the fix is trivially mechanizable" tradeoff was made explicit.
+
+**Root cause analysis:** PR H1's actual skip wasn't "forgot to add `/flow:security-review` to the pipeline" — it was "bypassed `/flow:ship` entirely and ran `gh pr create` manually." `/flow:ship` already spawns security + a11y in Step 2. So the defense isn't "add more spawns to staff-review"; it's "make it harder to skip `/flow:ship` without noticing."
+
+**Scope (in):** ← reduced from initial 12-file scope after observing audit/critique SKILL.md files end with rigid `## Output` blocks ("Do not add commentary before or after"). Adding "After this skill" footers there would conflict with the subagent output contract. Reduced scope keeps the footer addition tight to staff-review (the human-facing orchestration skill that's the natural pre-ship inflection point) + relies on workflow.md + `/flow:ship` Step 1.0 surface for the rest. Plan-critic Finding 1 REDIRECT confirmed this reduction.
+
+- `plugins/flow/skills/staff-review/SKILL.md` — append "After this skill" footer naming `/flow:ship` (which spawns security + a11y automatically) as the canonical next step. Reframe the existing "ends with work ready, not merged" line into actionable forward motion. **Primary fix for the root cause.**
+- `plugins/flow/skills/ship/SKILL.md` Step 1.0 — strengthen the assumption-surface block. Add `⚠️` per ASSUMES line + a new REMINDER paragraph naming the workflow-step silent-skip class explicitly + the "Always invoke /flow:ship, never `gh pr create`" rule. **Primary fix for the root cause.**
+- `plugins/flow/docs/workflow.md` Step 10 — add an explicit "Never bypass `/flow:ship` with `gh pr create` directly" discipline. Names the failure mode: skipping `/flow:ship` skips the entire Step 2 (security + a11y reviews). **Primary fix.**
+- `.claude/rules/general.md` (project-dev only — flow's own dev infra) — new "Workflow discipline" subsection: always invoke `/flow:ship` from this repo's `.claude/skills/ship`; never `gh pr create` directly. **Defense-in-depth for this repo's own development.**
+- `CHANGELOG.md` — new v1.2.4 entry.
+- `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` — v1.2.3 → v1.2.4 + description refresh.
+- `dev-docs/history.md` — entry with SAFETY marker (manifest + ship/SKILL.md edits — both on safety paths list).
+- `dev-docs/plan.md` — this block + mark FOLLOW-UP #20 done.
+
+Plan-critic Finding 7 framing FOLLOW-UP: reviewer-footer is reframed above as "Primary fix"; staff-review IS the canonical inflection point where the workflow author chooses next-step, so the footer addresses the root cause directly. Workflow.md Step 10 + general.md are belt-and-suspenders.
+
+**Scope (out):**
+- Auto-spawn missing reviewers from `/flow:staff-review` (would need session-introspection helper; deferred per existing FOLLOW-UP).
+- Pre-commit hooks (rejected: install friction; consistent with PR G decision).
+- `/flow:upgrade` skill (FOLLOW-UP #15 — separate scope).
+- README.md update (the existing version-log line just links to CHANGELOG.md per PR H1; no per-version inline entry needed).
+
+**Spec-walk:**
+- [ ] All 5 reviewer skills (`staff-review`, `critique-plan`, `audit-plan`, `audit-completion`, `log-disagreement`) have a uniform "After this skill" footer naming next step.
+- [ ] `workflow.md` Step 10 has the explicit "never `gh pr create` directly" discipline.
+- [ ] `/flow:ship` Step 1.0 assumption surface is visually louder (`⚠️` per line).
+- [ ] `.claude/rules/general.md` has the new Workflow discipline subsection.
+- [ ] CHANGELOG.md has a v1.2.4 entry; date matches the merge date; "Breaking changes: none" callout present.
+- [ ] Both manifests bumped + descriptions refreshed.
+- [ ] `claude plugin validate` clean.
+- [ ] `/flow:doctor` Check 2.5 still emits expected output (12 historical-narrative WARN — unchanged on the current dev-docs/).
+- [ ] Self-fan-out grep: no v1.2.3 references in v1.2.4-bumped descriptions; skill/agent/lens counts unchanged.
+- [ ] **`/flow:security-review` + `/flow:accessibility-review` ARE spawned during this PR's review pipeline** (the meta-discipline — eat my own dog food). Per-diff gates will early-exit cleanly (no source/UI files in PR I diff — markdown + skill body edits only).
+- [ ] `dev-docs/history.md` entry written with SAFETY marker.
+
+**Confidence verdicts:**
+
+**Assumption:** Per-skill exit reminders + workflow.md strictening will catch the workflow-spawn-skip class going forward without needing orchestration-level auto-spawn.
+**Confidence:** MEDIUM
+**Why:** Prompt-level reminders improve LLM behavior probabilistically. The exit-reminder is concrete enough that the next loop is likely to notice + act on it. Adversarial review + the FB-0010 lens hunt remain the backstop. If a 2nd workflow-spawn-skip incident occurs after PR I lands, that's the signal for orchestration-level auto-spawn (the harder fix).
+**If it flips:** Promote to auto-spawn in `/flow:staff-review` Step N. Cost: session-introspection helper. Horizon: PR if/when triggered.
+
+**Files touched:** 10 — `plugins/flow/skills/staff-review/SKILL.md`, `plugins/flow/skills/ship/SKILL.md`, `plugins/flow/docs/workflow.md`, `.claude/rules/general.md`, `CHANGELOG.md`, `README.md` (header rename only — `## What v1.2.3 ships` → `## What v1.2.4 ships`; caught by FB-0010 grep-first-edit-second pre-commit sweep), `.claude-plugin/marketplace.json`, `plugins/flow/.claude-plugin/plugin.json`, `dev-docs/history.md`, `dev-docs/plan.md`.
+
+---
 
 ## PR H1 — Upgrade docs + CHANGELOG (in flight)
 
@@ -153,7 +204,7 @@ PR G's review (engineer + push-further + UX-designer + design-engineer + securit
 
 19. **CHANGELOG framing softening** (PR H1 UX/design-engineer NIT). History.md describes CHANGELOG as "Keep-a-Changelog-style" but it lacks K-a-C's `[Unreleased]`, `Added/Changed/Fixed/Removed/Security` subhead categories, and the keepachangelog.com footer link. Honesty fix: change framing in history.md + (eventually) CHANGELOG header from "Keep-a-Changelog-style" to "flow's own consumer-changelog format (date + headline + bullets + breaking-change callout)." Cheap; ride next history.md-touching PR.
 
-20. **`/flow:security-review` + `/flow:accessibility-review` workflow-spawn discipline** (PR H1 self-audit on user prompt). PR H1's workflow loop spawned plan-critic + 4 staff-review lenses but DID NOT spawn `/flow:security-review` + `/flow:accessibility-review`. Skipped by author judgment ("they'd early-exit on docs-only anyway"). User caught: "were the ship reviews run?" — they hadn't been. **This is itself the FB-0010 silent-skip class applied to workflow discipline (not code).** The 9th FB-0010 incident, and a new sub-class (workflow-step-skip vs code-edge-skip). Per workflow.md Step 6 + FB-0008/FB-0033, the discipline is to ALWAYS spawn the reviewers — they produce a `STATUS: SKIPPED` audit-trail line that's load-bearing, NOT silent-skip the spawn itself. Make-good: ran both retroactively (security: STATUS SKIPPED no source/config in diff; a11y: STATUS SKIPPED no UI in diff). Defense: `/flow:ship` Step 1.0 already prints the workflow-step assumption surface (which lists security/a11y). Strengthen that surface to either (a) auto-spawn the reviewers if missing or (b) require an explicit author confirmation that they ran. Owner: domain. Horizon: PR H proper or next `/flow:ship`-touching PR. Promote at next /flow:ship feedback synthesis since this is now a 3rd-time-recurring discipline shape: PR F-pass-1 (gawk-only awk = portability silent-skip), PR H1 zsh-vs-bash (word-splitting silent-skip), PR H1 workflow-spawn-skip (judgment silent-skip).
+20. ✅ **`/flow:security-review` + `/flow:accessibility-review` workflow-spawn discipline** — **SHIPPED in PR I (v1.2.4).** PR H1's workflow loop spawned plan-critic + 4 staff-review lenses but DID NOT spawn `/flow:security-review` + `/flow:accessibility-review`. Skipped by author judgment ("they'd early-exit on docs-only anyway"). User caught: "were the ship reviews run?" — they hadn't been. **This is itself the FB-0010 silent-skip class applied to workflow discipline (not code).** The 9th FB-0010 incident, and a new sub-class (workflow-step-skip vs code-edge-skip). Per workflow.md Step 6 + FB-0008/FB-0033, the discipline is to ALWAYS spawn the reviewers — they produce a `STATUS: SKIPPED` audit-trail line that's load-bearing, NOT silent-skip the spawn itself. Make-good: ran both retroactively (security: STATUS SKIPPED no source/config in diff; a11y: STATUS SKIPPED no UI in diff). Defense: `/flow:ship` Step 1.0 already prints the workflow-step assumption surface (which lists security/a11y). Strengthen that surface to either (a) auto-spawn the reviewers if missing or (b) require an explicit author confirmation that they ran. Owner: domain. Horizon: PR H proper or next `/flow:ship`-touching PR. Promote at next /flow:ship feedback synthesis since this is now a 3rd-time-recurring discipline shape: PR F-pass-1 (gawk-only awk = portability silent-skip), PR H1 zsh-vs-bash (word-splitting silent-skip), PR H1 workflow-spawn-skip (judgment silent-skip).
 
 ---
 

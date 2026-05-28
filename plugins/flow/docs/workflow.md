@@ -226,6 +226,18 @@ User says "ship it" (or `/flow:ship`). Claude runs the ship pipeline (full spec:
 
 **Still never merged.** The user merges.
 
+### Never bypass `/flow:ship` with `gh pr create` directly (FB-0010 workflow-step sub-class)
+
+`/flow:ship` is not just "the thing that opens the PR" — it's the orchestrator that spawns `/flow:security-review` + `/flow:accessibility-review` (Step 1 above), synthesizes feedback into both layers, updates the project docs, and only THEN opens the PR. Running `gh pr create` directly skips all of that.
+
+Skipping doesn't feel like a skip in the moment — the diff still gets to GitHub, CI still runs, the PR still opens. What goes missing is the **STATUS: SKIPPED audit-trail signal** from the per-diff gates of security + a11y reviews. Even on a docs-only PR where both would early-exit, running them via `/flow:ship` produces a record that they ran; skipping the spawn means there's no record of the decision either way.
+
+This is the FB-0010 silent-skip class applied to workflow discipline (not code). Surfaced first as a 1-incident finding during PR H1; encoded here so the next loop doesn't repeat it. The rule:
+
+- **Always invoke `/flow:ship`** (or `/flow:ship-spike` for spike-mode PRs) at the end of the loop.
+- **Never invoke `gh pr create` directly** — even when the PR feels "obviously ready."
+- If `/flow:ship` errors at a pre-flight gate, fix the gate cause first; don't route around `/flow:ship`.
+
 ### Why the PR opens here, not earlier
 
 The PR is **deliberately the last artifact created**, not the first:

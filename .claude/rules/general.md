@@ -31,6 +31,14 @@ Most recurring bug class flow's own development has surfaced (6 incidents across
 
 When in doubt, ask: "If a colleague greps for the old value tomorrow, will they find a contradiction?" If yes, fix it now.
 
+## Workflow discipline (FB-0010 workflow-step sub-class)
+
+This repo dogfoods the flow plugin it ships. When opening a PR from this repo:
+
+- **Always invoke `/flow:ship`** (or `/flow:ship-spike` for spike-mode PRs) at the end of the loop. `/flow:ship` orchestrates the final-pass pipeline: `/flow:security-review` + `/flow:accessibility-review` (with per-diff early-exit on docs-only PRs), feedback synthesis into both layers, doc updates, then PR open.
+- **Never invoke `gh pr create` directly.** Doing so bypasses the entire ship pipeline. Even on docs-only PRs where the security + a11y reviews would early-exit, the `STATUS: SKIPPED` audit-trail signal is load-bearing — skipping the spawn means there's no record of the decision either way. (See `plugins/flow/docs/workflow.md` § "Never bypass `/flow:ship`" for the cross-shipped contract.)
+- If `/flow:ship` errors at a pre-flight gate, fix the root cause; don't route around it. Pre-flight failures are signal.
+
 ## Autonomous work guardrails
 
 Always confirm with the user before proceeding if the action involves:

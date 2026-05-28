@@ -5,15 +5,15 @@
     "url": "https://github.com/by-dev-tools"
   },
   "metadata": {
-    "description": "Managed-autonomy workflow for Claude Code: 11-step loop with audit/critique skills, four-lens parallel staff-review, diff-focused security + a11y reviews (with per-diff early-exit on docs-only PRs), agent-isolated planner + docs helpers, project-config-driven ship + ship-spike pipelines with stale-base preflight gate. v1.2.3 adds consistency discipline (FB-0010): lens-staff-engineer explicitly hunts fan-out contradictions + silent-skip patterns, and /flow:doctor gains Check 2.5 (documented slot count vs schema source-of-truth). Defenses for the most-recurring bug class flow's own development surfaced over 6 incidents.",
-    "version": "1.2.3"
+    "description": "Managed-autonomy workflow for Claude Code: 11-step loop with audit/critique skills, four-lens parallel staff-review, diff-focused security + a11y reviews (with per-diff early-exit on docs-only PRs), agent-isolated planner + docs helpers, project-config-driven ship + ship-spike pipelines with stale-base preflight gate, consistency discipline (FB-0010). v1.2.4 adds workflow-spawn skip prevention: /flow:staff-review gains an explicit 'next step is /flow:ship' footer, /flow:ship Step 1.0 surface adds the 'never bypass with gh pr create' rule, workflow.md Step 10 names the FB-0010 workflow-step sub-class.",
+    "version": "1.2.4"
   },
   "plugins": [
     {
       "name": "flow",
       "source": "./plugins/flow",
-      "description": "Managed-autonomy 11-step loop. Bundles the skeptical reviewers (auditor + plan-critic), the four-lens parallel staff-review (engineer / UX-designer / design-engineer / push-further), diff-focused /flow:security-review + /flow:accessibility-review, /flow:ship + /flow:ship-spike pipelines, /flow:workflow-help, /flow:doctor verification skill, planner + docs context-isolation agents, portable rules (general, plan-discipline, documentation, exploration), memory-corpus tool, flow.config.json JSON Schema (16 slots), and default hooks. v1.2.3 adds consistency discipline (FB-0010): the lens-staff-engineer agent now explicitly hunts fan-out contradictions (counts/names/slots referenced in N places, only some updated) and silent-skip patterns (failures swallowed via `2>/dev/null` / unset-fallback / regex inversion); /flow:doctor gains Check 2.5 comparing documented slot counts against the schema source-of-truth; workflow.md Step 4 names the discipline. Defense for the most-recurring bug class flow's own development surfaced over 6 incidents across PRs 1, B, D, E, F (×2).",
-      "version": "1.2.3",
+      "description": "Managed-autonomy 11-step loop. Bundles the skeptical reviewers (auditor + plan-critic), the four-lens parallel staff-review (engineer / UX-designer / design-engineer / push-further), diff-focused /flow:security-review + /flow:accessibility-review, /flow:ship + /flow:ship-spike pipelines, /flow:workflow-help, /flow:doctor verification skill, planner + docs context-isolation agents, portable rules (general, plan-discipline, documentation, exploration), memory-corpus tool, flow.config.json JSON Schema (16 slots), and default hooks. v1.2.4 adds workflow-spawn skip prevention (FB-0010 workflow-step sub-class): /flow:staff-review gains an 'After this skill' footer naming /flow:ship as the canonical next step, /flow:ship Step 1.0 assumption surface gains visual emphasis + a 'never bypass with gh pr create' reminder, and workflow.md Step 10 adds the explicit discipline statement. Defense for the 9th FB-0010 incident, surfaced when an author bypassed /flow:ship and ran gh pr create directly during PR H1.",
+      "version": "1.2.4",
       "author": {
         "name": "by-dev-tools"
       },
