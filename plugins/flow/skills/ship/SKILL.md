@@ -128,6 +128,72 @@ PREFIX=$(cat flow.config.json 2>/dev/null | jq -r '.branchPrefix // empty' 2>/de
 git checkout -b "${PREFIX}<descriptive-slug>"
 ```
 
+### 1c. Mechanical preflight (bounded retry — N ≤ 3)
+
+Run the project's mechanical preflight (typecheck + lint + fast tests) BEFORE invoking reviewers. On non-zero exit, fix and retry — up to 3 total invocations, with oscillation detection via diff-hash. **Loop only on this externally-verifiable exit signal.** Reviewer outputs at Step 2 are deliberately single-pass; iterating LLM-judgment outputs is reward-hackable. Per Anthropic's evaluator-optimizer guidance (Building Effective Agents): agent loops require mechanical stopping conditions and explicit success criteria; preflight exit code is the only loop-exit signal flow trusts.
+
+```sh
+# Resolve preflightCmd. Unset/whitespace-only → loud warning, proceed without retry (never silent).
+PREFLIGHT_CMD=$(jq -r '.preflightCmd // empty' flow.config.json 2>/dev/null)
+# Treat whitespace-only as unset (jq returns the literal whitespace string for "  " slot values;
+# `[ -z "$VAR" ]` doesn't catch that — would `sh -c "   "` silently pass and skip the loop).
+if [ -z "$(printf '%s' "$PREFLIGHT_CMD" | tr -d '[:space:]')" ]; then
+  echo "⚠️ flow.config.json.preflightCmd not set; skipping mechanical preflight. Set this slot to enable bounded-retry typecheck/lint/test on /flow:ship."
+  # Continue to Step 2 without running the loop.
+else
+  # Docs-only early-exit: reuse sourceFilePatterns (PR D lineage). DEFAULT_BRANCH
+  # is NOT in scope from earlier Bash invocations — re-resolve via the 3-tier chain.
+  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
+  SOURCE_PATTERN=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
+  [ -z "$SOURCE_PATTERN" ] && SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
+
+  # Validate sourceFilePatterns BEFORE using it — invalid regex would cause grep to exit 2,
+  # `|| true` would swallow it, and SOURCE_FILES would be empty → docs-only branch taken
+  # silently. Exactly the FB-0010 silent-skip class. Capture grep's raw exit code: 0=match,
+  # 1=no match (both fine), 2=regex error (fall back loud).
+  echo "" | grep -qE "$SOURCE_PATTERN" 2>/dev/null
+  GREP_RC=$?
+  if [ "$GREP_RC" -gt 1 ]; then
+    echo "⚠️ [preflight] flow.config.json.sourceFilePatterns is invalid as an extended regex (grep exit $GREP_RC); falling back to default." >&2
+    SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
+  fi
+
+  # Three checks (PR D pattern): committed diff, uncommitted modifications, untracked files.
+  # The common 'iterate locally then /flow:ship' loop hits uncommitted/untracked — must catch
+  # all three or the docs-only branch fires on a source-touching PR.
+  SOURCE_FILES_COMMITTED=$(git diff "origin/${DEFAULT_BRANCH}..HEAD" --name-only 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+  SOURCE_FILES_MODIFIED=$(git diff HEAD --name-only 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+  SOURCE_FILES_UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+  if [ -z "$SOURCE_FILES_COMMITTED" ] && [ -z "$SOURCE_FILES_MODIFIED" ] && [ -z "$SOURCE_FILES_UNTRACKED" ]; then
+    echo "[preflight] no source files in diff (committed+uncommitted+untracked); skipping mechanical preflight (docs-only PR)."
+    # Continue to Step 2 without running the loop.
+  fi
+  # If PREFLIGHT_CMD is set AND source files exist anywhere, follow the retry contract below.
+fi
+```
+
+**Retry contract** (followed by the agent executing this skill — the iteration discipline is in the prompt, not in shell):
+
+For each attempt `N` in 1..3:
+
+1. Run `sh -c "$PREFLIGHT_CMD"`. Capture exit code and stderr.
+2. If **exit 0**: log `[preflight] attempt N of 3: PASSED.` → proceed to Step 2.
+3. If **exit 127** (command not found): abort with `BLOCKER: preflightCmd resolved to a command not found on PATH ($PREFLIGHT_CMD). Fix the slot or install the script. Halting before Step 2.` → exit 1. Do NOT count this against the retry budget; a missing command isn't a fixable test failure.
+4. If **any other non-zero exit**: log `[preflight] attempt N of 3: FAILED (exit code <N>).` Capture the diff hash via `git diff HEAD | sha256sum | cut -d' ' -f1`. Record it for oscillation detection. Proceed to step 5.
+5. If `N == 3`: abort with `BLOCKER: preflight failed 3 attempts without convergence. Last error: <stderr>. All attempted fixes preserved in tree; inspect with 'git diff origin/${DEFAULT_BRANCH}..HEAD'. Halting before Step 2.` → exit 1.
+6. **Fix the failure.** Read the stderr; identify the specific failure (test name, type error, lint rule, build error). Make the **minimal** fix:
+   - Touch only files in the failure's blast radius. Do NOT refactor adjacent code.
+   - Do NOT modify or disable tests unless the failure is a genuine test bug — and if so, name the bug explicitly in the attempt log. Disabling a test to make preflight green is reward hacking; surface it as a FOLLOW-UP, never silently merge it.
+   - Do NOT add `// @ts-ignore`, `# noqa`, `# type: ignore`, `eslint-disable-next-line`, `// biome-ignore`, `@SuppressWarnings`, `#[allow(...)]`, or equivalent suppressors to silence the failure. Those are escape hatches; the human merge gate at Step 7 catches them but Step 1c should not produce them.
+7. Compute the new diff hash. Compare against ALL prior hashes from this Step 1c run. If it matches ANY prior hash: abort with `BLOCKER: oscillation detected (attempt N+1 produced the same diff as attempt M). The fix is reverting a prior fix — a different approach is required. Last error: <stderr>. All attempted fixes preserved in tree. Halting before Step 2.` → exit 1.
+8. Increment `N`. Return to step 1.
+
+The contract reads top-to-bottom; the cap is 3 invocations of the preflight command total (1 initial + up to 2 retries). The oscillation check compares `git diff HEAD` hashes — pure A↔B↔A oscillation aborts before attempt 3 is wasted. Drift (A→B→C, each different but each broken) is caught by N=3 exhaustion.
+
+If Step 1c passes (or is skipped via unset/docs-only), proceed to Step 2. The Step 3 `typecheckCmd` re-run is unaffected — it still fires after reviewer-applied BLOCKER fixes as a one-shot check.
+
 ## 2. Final-pass reviews
 
 Sequentially invoke `/flow:security-review` and `/flow:accessibility-review` via the Skill tool. Each reviewer cold-reads the workspace diff vs the default branch, applies BLOCKER + cheap NIT fixes in-tree, and returns FOLLOW-UP findings for step 3 routing.
@@ -296,8 +362,10 @@ If your project has a dev-server skill (e.g., a `/link`-style skill), invoke it 
 
 | Slot | Default | Used by |
 |---|---|---|
-| `flow.config.json.defaultBranch` | falls back to `git symbolic-ref` then literal `main` | Step 1 (NOTHING-TO-SHIP check), Step 7 (PR base) |
-| `flow.config.json.typecheckCmd` | unset → loud warning, never silent | Step 3 (post-fix re-check) |
+| `flow.config.json.defaultBranch` | falls back to `git symbolic-ref` then literal `main` | Step 1 (NOTHING-TO-SHIP check), Step 1c (docs-only diff base), Step 7 (PR base) |
+| `flow.config.json.preflightCmd` | unset → loud warning, never silent | Step 1c (bounded-retry mechanical preflight, N≤3) |
+| `flow.config.json.sourceFilePatterns` | covers common source/config extensions | Step 1c (docs-only early-exit) |
+| `flow.config.json.typecheckCmd` | unset → loud warning, never silent | Step 3 (post-reviewer-fix one-shot re-check) |
 | `flow.config.json.historyPath` | `dev-docs/history.md` | Step 5 |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Steps 3, 5 |
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Steps 3, 5 |

@@ -11,8 +11,13 @@
     },
     "typecheckCmd": {
       "type": "string",
-      "description": "Shell command to run as the project's typecheck. Run via `sh -c` (NOT eval) by /flow:ship and /flow:staff-review after applying review fixes. UNSET behavior: each invoking skill prints a loud ⚠️ warning, never silently no-ops. Project owns this string at the same trust level as package.json scripts or pre-commit hooks.",
+      "description": "Shell command to run as the project's typecheck. Run via `sh -c` (NOT eval) by /flow:ship Step 3 (one-shot after reviewer fixes) and /flow:staff-review after applying review fixes. UNSET behavior: each invoking skill prints a loud ⚠️ warning, never silently no-ops. Project owns this string at the same trust level as package.json scripts or pre-commit hooks. Precedence vs `preflightCmd`: if both are set, BOTH run (preflightCmd at Step 1c with bounded retry; typecheckCmd at Step 3 one-shot after reviewer fixes). To use only one, set the other to empty or unset.",
       "examples": ["npm run typecheck", "pnpm typecheck", "tsc --noEmit", "cargo check --workspace"]
+    },
+    "preflightCmd": {
+      "type": "string",
+      "description": "Shell command for the project's mechanical preflight (typecheck + lint + fast tests; project owns the composition). Run via `sh -c` (NOT eval) at /flow:ship Step 1c and /flow:ship-spike Step 1c, BEFORE the reviewers run. On non-zero exit, the skill enters a bounded-retry loop: fix the failure, re-run, up to N=3 total invocations, with oscillation detection via diff-hash (same diff at attempt N as a prior attempt aborts the loop). Invoked ONLY when the diff contains non-doc files (per `sourceFilePatterns`); docs-only PRs skip preflight entirely. UNSET behavior: each invoking skill prints a loud ⚠️ warning and proceeds, never silently no-ops. Project owns this string at the same trust level as `typecheckCmd`. Design rationale: per Anthropic's evaluator-optimizer guidance, agent loops must have mechanical stopping conditions and externally-verifiable success criteria; preflight script exit code is the only loop-exit signal flow trusts (reviewer outputs at Step 2 are deliberately single-pass to prevent reward hacking). See dev-docs/feedback.md FB-0011.",
+      "examples": ["npm run preflight", "npm run typecheck && npm run lint && npm test -- --bail", "pnpm preflight", "make preflight"]
     },
     "historyPath": {
       "type": "string",
