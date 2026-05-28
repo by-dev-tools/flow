@@ -100,7 +100,9 @@ Treat any survivors as candidate findings.
 
 Single `Agent` call with `subagent_type: Explore`. Cap at ~1000 words. Prompt scaffold:
 
-> You are a staff security engineer cold-reading a diff. The project's tech stack and product domain are documented in the spec doc (path injected above) and `flow.config.json`. Read those first to ground your audit; don't assume Vite/React/TypeScript or any specific stack.
+> You are a **red-team operator**. Your goal is to find an **exploitable vulnerability** in this diff — not to evaluate whether the code is clean or follow style preferences. Assume an attacker is reading this diff with intent and access to whatever user-input surfaces the application exposes. The project's tech stack and product domain are documented in the spec doc (path injected above) and `flow.config.json`. Read those first to ground your threat model; don't assume Vite/React/TypeScript or any specific stack.
+>
+> **Flag only gaps that are exploitable or that materially raise the attack surface.** Treat style preferences, unprovable risks, and "this could theoretically be unsafe in some hypothetical scenario" as out of scope. A red-team prompted to find vulnerabilities will usually report some, even when the code is sound — stay narrow. A missing input validator on a value that never reaches user-controlled data is not a finding; a sanitizer config that is wrong-by-default *is*. The over-engineering tax compounds across PRs.
 >
 > **Inputs:**
 > - Diff: `/tmp/flow-sec-diff.patch`
@@ -108,21 +110,23 @@ Single `Agent` call with `subagent_type: Explore`. Cap at ~1000 words. Prompt sc
 > - Spec doc (path injected by the SKILL above; may be absent)
 > - Feedback doc (path injected by the SKILL above; may be absent)
 >
-> **Hunt for:**
-> 1. **Injection in rendering** — `dangerouslySetInnerHTML`, raw HTML pass-through, unsanitized `<a href>`/`<img src>` URLs in any markdown/HTML/template renderer. If the project renders user content, the renderer's sanitizer config is load-bearing.
-> 2. **Unsafe URL handling** — `javascript:` URLs accepted; `window.open(userInput)`; user-controlled redirects; URL parsing that trusts the protocol.
-> 3. **Secrets in tree** — API keys, tokens, `.env` content, OAuth secrets in source files, configs, or test fixtures. Check `package.json`, build configs, and any new file.
-> 4. **Persistence leakage** — `localStorage` / `sessionStorage` / `IndexedDB` / Keychain / filesystem stores holding PII, tokens, or credentials in cleartext. Note that `localStorage` is readable by any script on the origin.
+> **Attack surface (categories to probe):**
+> 1. **Injection in rendering** — `dangerouslySetInnerHTML`, raw HTML pass-through, unsanitized `<a href>`/`<img src>` URLs in any markdown/HTML/template renderer. If the project renders user content, the renderer's sanitizer config is load-bearing. Trace user-controlled data to the sink.
+> 2. **Unsafe URL handling** — `javascript:` URLs accepted; `window.open(userInput)`; user-controlled redirects; URL parsing that trusts the protocol. Where is the attacker URL?
+> 3. **Secrets in tree** — API keys, tokens, `.env` content, OAuth secrets in source files, configs, or test fixtures. Check `package.json`, build configs, and any new file. A committed secret is an exploit, not a hygiene issue.
+> 4. **Persistence leakage** — `localStorage` / `sessionStorage` / `IndexedDB` / Keychain / filesystem stores holding PII, tokens, or credentials in cleartext. Note that `localStorage` is readable by any script on the origin — an XSS becomes a credential leak.
 > 5. **Dependency risk** — any new dep with a known reputation issue, very low download count, recent ownership change, or unpinned version range. Flag for human review; don't run an audit tool here.
-> 6. **Path traversal** — if file/repo/disk paths come from user input and are joined to filesystem reads or writes, check for `..` and absolute-path injection.
+> 6. **Path traversal** — if file/repo/disk paths come from user input and are joined to filesystem reads or writes, check for `..` and absolute-path injection. Can the attacker name a file outside the intended root?
 > 7. **Prototype pollution / object injection** — `Object.assign({}, userInput)` patterns, `JSON.parse` of user data merged into shared objects.
-> 8. **CSP / iframe / postMessage** — new iframes need `sandbox` attrs; `postMessage` usage needs `origin` validation.
-> 9. **Auth/session boundaries** — any new endpoint, file write, or shell exec that crosses a privilege boundary without a clear permission check.
+> 8. **CSP / iframe / postMessage** — new iframes need `sandbox` attrs; `postMessage` usage needs `origin` validation. Where does cross-origin trust enter?
+> 9. **Auth/session boundaries** — any new endpoint, file write, or shell exec that crosses a privilege boundary without a clear permission check. Is the boundary enforced server-side, or only by client convention?
+>
+> **Before emitting each BLOCKER/NIT, attempt to disprove it.** Trace the dangerous sink back to the input source: if the input source is not user-controllable in any realistic execution path, drop the finding. If you cannot construct a concrete attacker scenario in one sentence, the finding is speculative — drop it. A finding that survives this disproof is publishable; a finding that depends on an unstated assumption ("if an attacker could somehow…") is not.
 >
 > **Output format**, grouped by severity:
 > ```
 > ## BLOCKER
-> - <one-line description> — `path:line` — why it's a blocker — suggested fix
+> - <one-line description> — `path:line` — why it's exploitable (the attacker scenario in one sentence) — suggested fix
 >
 > ## NIT
 > - <one-line description> — `path:line` — suggested fix
@@ -131,7 +135,7 @@ Single `Agent` call with `subagent_type: Explore`. Cap at ~1000 words. Prompt sc
 > - <one-line description> — why it's deferred — proposed owner/horizon
 > ```
 >
-> If you find nothing of consequence in a category, say so explicitly. The bar is **honesty over polish**; do not invent findings to look productive.
+> If you find nothing of consequence in a category, say so explicitly. The bar is **honesty over polish**; do not invent findings to look productive. A clean review is a valid honest outcome.
 
 ## 4. Triage and act
 

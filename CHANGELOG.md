@@ -10,6 +10,18 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.2.5 — 2026-05-27
+
+**Adversarial sharpening of the reviewer pipeline (PR J; research-grounded — see Anthropic's "adversarial review step" best-practice + CriticGPT recall results).**
+
+- `auditor` agent gains a **Self-check before emitting** step: each finding must survive an attempted disproof — name the specific session text that would invalidate the finding, re-scan for it, drop if found or if the lookup is fuzzy. Mitigates the documented "reviewer prompted to find gaps will report some even when work is sound" failure mode.
+- `plan-critic` agent gains the same self-check adapted to the two-citation rule: each finding must survive an attempted third citation that would resolve the apparent conflict. Plan-critic's `Internal incoherence` category now also explicitly covers **fan-out contradictions within the plan** (count/name/slot/version referenced in N places where values disagree) — PR-G FOLLOW-UP #5 absorbed.
+- `lens-staff-engineer` agent gains an explicit **adversarial reading** preamble ("assume the diff is broken — what's the most likely break?"). This is the engineer-lens analog of the security lens's threat-model stance; the published research convergence is that explicit "find the break" framing materially raises recall on real defects.
+- `/flow:security-review` agent prompt shifts to **fully red-team identity** ("you are a red-team operator; your goal is to find an exploitable vulnerability — not to evaluate whether the code is good"). Adds a trace-input-source-back disprove step: if the dangerous sink can't be reached via a concrete attacker scenario, drop the finding. Operational logic (FB-0006/FB-0007 source-file early-exit, FB-0008 `[ -z ]` defaultBranch fallback chain discipline, FB-0009 fail-fast gh+jq, three-source diff capture) unchanged.
+- All four edited prompts adopt Anthropic's verbatim *"flag only gaps that affect correctness or the stated requirements, and treat the rest as optional"* warning at the top of each prompt, before any category logic — the explicit countermeasure to the over-engineering tax adversarial framing brings.
+
+**Breaking changes:** none. Prompt-only PR; existing eval fixtures remain green. Reviewer output schema unchanged. The change is additive: clean diffs continue to produce `No issues flagged.` / `APPROVED`; the sharper recall surfaces on diffs that genuinely warrant it.
+
 ## v1.2.4 — 2026-05-27
 
 **Workflow-spawn skip prevention (FB-0010 workflow-step sub-class).**

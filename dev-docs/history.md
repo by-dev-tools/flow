@@ -39,6 +39,77 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### PR J — Adversarial sharpening of the reviewer pipeline (v1.2.4 → v1.2.5) `SAFETY`
+**Date:** 2026-05-27
+**Branch:** `claude/youthful-chaum-500268`
+**Commit:** [SHA at ship time]
+
+**What was done:**
+Prompt-only PR sharpening Flow's four reviewer surfaces along the dimensions deep research on adversarial review and code-review best practices converges on. First of a three-PR sequence (PR J = sharpening; PR K = `/flow:red-team` skill + agent; PR L = trust-boundary detector + autonomous gate). Bumps to v1.2.5. *Note: originally drafted as "PR I" during the planning conversation; renamed to PR J after rebase on `origin/main` revealed that a separate "PR I — workflow-spawn skip prevention" had landed in parallel (squash `da0b2c4`, also bumping to v1.2.4). My PR is complementary (different reviewer surfaces); renumbered to PR J + v1.2.5 to avoid collision. Queued PR J → PR K, queued PR K → PR L throughout this entry, plan.md, FB-0011, and project memory.*
+
+Four reviewer prompts edited:
+
+1. **`plugins/flow/agents/auditor.md`** — added two new sections:
+   - `## Principle` (right after the intro): Anthropic's verbatim over-engineering warning ("flag only gaps that affect correctness or evidence-grounding; treat the rest as optional") promoted to a principle-level statement, not buried in schema.
+   - `## Self-check before emitting` (between False-verification proxies and Output format): three-step disproof routine. The reviewer must name the specific session text that would invalidate the finding, re-scan for it, and drop if found or if the lookup is fuzzy. Directly modeled on Anthropic's Claude Code Security pattern: "Claude re-examines each result, attempting to prove or disprove its own findings and filter out false positives."
+
+2. **`plugins/flow/agents/plan-critic.md`** — added two new sections + one in-place edit:
+   - `## Principle` (same shape as auditor): adversarial framing tempered with the over-engineering warning.
+   - `## Self-check before emitting` (between The two-citation rule and What does not count): the disproof routine adapted to the two-citation rule — the reviewer must attempt to find a *third* citation that would resolve the apparent conflict.
+   - `Internal incoherence` category extended to explicitly cover **fan-out contradictions within the plan** (count / name / slot / version / file path referenced in N places where values disagree). This absorbs **PR-G FOLLOW-UP #5** ("plan-critic.md fan-out hunt addition") from `dev-docs/plan.md` § "PR H+ FOLLOW-UPs routed from PR G review."
+
+3. **`plugins/flow/agents/lens-staff-engineer.md`** — added one new section:
+   - `## How to read this diff` (right after the title intro, before Inputs): explicit adversarial reading stance ("assume the diff is broken — what's the most likely break?") + the over-engineering warning. The framing is the engineer-lens analog of the security lens's threat-model stance; the existing FB-0010 hunts (silent-skip on edge case, fan-out contradiction) compose under this stance rather than replacing it.
+
+4. **`plugins/flow/skills/security-review/SKILL.md`** — modified the agent prompt block at Step 3 only; all operational logic (FB-0006/FB-0007 source-file early-exit, FB-0008 `[ -z ]` defaultBranch fallback chain discipline, FB-0009 fail-fast gh+jq, three-source diff capture including uncommitted + untracked) preserved untouched. *Note: FB-0008's full stale-base preflight gate (`git fetch + merge-base --is-ancestor`) lives in `/flow:ship` Step 1, `/flow:staff-review` Step 1, and `/flow:doctor`, not in `/flow:security-review`; what security-review applies from FB-0008 is the `[ -z ]` fallback chain pattern (not the pipe-OR form). The stale-base preflight gate proper is added to `/flow:red-team` in PR K per the plan-critic ISSUE 7 finding.*
+   - Identity shift: "You are a staff security engineer cold-reading a diff" → "You are a **red-team operator**. Your goal is to find an **exploitable vulnerability** — not to evaluate whether the code is good."
+   - Added over-engineering warning + an explicit narrowness reminder ("a missing input validator on a value that never reaches user-controlled data is not a finding; a sanitizer config that is wrong-by-default *is*").
+   - "Hunt for:" → "Attack surface (categories to probe):" — same nine categories, each gains an attacker-mindset trailing question (e.g., "Where is the attacker URL?", "Where does cross-origin trust enter?").
+   - Added a `Before emitting each BLOCKER/NIT` disprove paragraph: trace the dangerous sink back to the input source; if not user-controllable in any realistic execution path, drop the finding.
+   - Output format gains a "the attacker scenario in one sentence" requirement on BLOCKER lines, forcing the reviewer to produce a concrete exploit path rather than abstract speculation.
+
+Version bump: `1.2.4` → `1.2.5` in `plugins/flow/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` (both fields: top-level metadata + per-plugin entry). Marketplace descriptions refreshed to surface v1.2.5 framing (the v1.2.4 workflow-spawn summary moves to CHANGELOG history-of-record). README.md "What v1.2.4 ships" → "What v1.2.5 ships" (skill catalog unchanged — no slot/skill/lens/rule count drift).
+
+CHANGELOG.md gains a v1.2.5 entry following the established Date / Version / Headline / 2-4 bullets / "Breaking changes: none" pattern, placed above the v1.2.4 (PR I workflow-spawn) entry.
+
+**Why:**
+User asked: "should I add an additional adversarial review in the workflow of the flow plugin?" Triggered a deep-research pass across (a) frontier-lab official documentation (Anthropic Claude Code best-practices, Multi-Agent Coordination Patterns, Claude Code Security, OpenAI CriticGPT, DeepMind CodeMender), (b) AI-native production patterns (Anthropic's own Claude Code Review plugin, Cursor Bugbot, Cognition's "Don't Build Multi-Agents" carve-out for read-only review, GitHub Copilot Code Review's "silence is better than noise"), and (c) academic literature on multi-agent debate, LLM-as-judge bias, self-critique failure modes (Du et al., Liang et al., Smit et al., Zhang et al. ICML 2025 position paper, Zheng et al. NeurIPS 2023, Huang et al. ICLR 2024, Khan et al. ICML 2024 Best Paper, Kenton et al. NeurIPS 2024, McAleese et al. CriticGPT, Bai et al. Constitutional AI).
+
+Convergent findings that shape this PR:
+- **Anthropic explicitly recommends "an adversarial review step"** (Claude Code best-practices: "Before treating a task as done, have a subagent review the diff in a fresh context and report gaps"). Flow already has this in shape; the gap was that the prompts weren't explicit about the adversarial stance.
+- **Adversarial framing raises recall by 16–93% on security-sensitive tasks** (Mao et al. on multi-role vulnerability detection; multiple 2025–2026 studies on attacker-mindset prompting; CriticGPT catches ~85% of inserted bugs vs ~25% for human reviewers).
+- **But:** "A reviewer prompted to find gaps will usually report some, even when the work is sound" (Anthropic best-practices); CriticGPT hallucinates and human-machine teams outperform critic-alone. The over-engineering tax is documented and material.
+- **Mitigation: prove-or-disprove self-check.** Anthropic's Claude Code Security ships exactly this pattern at scale: "Claude re-examines each result, attempting to prove or disprove its own findings and filter out false positives." This PR backports the pattern into Flow's auditor + plan-critic + security-review reviewers.
+- **Categorical (pass/flag) outputs beat numeric scores** (OpenAI Cookbook LLM-as-judge: classifier 98% vs 92–95% for numeric raters). Flow's existing `ISSUE` / `AUDIT SUMMARY` / `No issues flagged.` / `APPROVED` schemas are already optimal — this PR resists the temptation to add confidence scores and reinforces the existing schemas.
+
+PR J scope: prompt-only. PR K adds `/flow:red-team` as a user-invocable standalone skill. PR L adds the trust-boundary detector + autonomous-invocation wiring at three workflow detection points (plan / staff-review / ship).
+
+**Design decisions:**
+- **Standalone `/flow:red-team` skill, not a 5th lens in `/flow:staff-review`** (decision made in plan; ships in PR K). The 4-lens ceiling stays. Red-team has its own threat-model categories and a different consequence asymmetry (false negatives much worse than false positives) — composes with `/flow:ship` the same way `/flow:security-review` and `/flow:accessibility-review` already do.
+- **Per-finding `Fix-confidence:` field on red-team output (ships PR L)** with values `AUTO-FIX-SAFE` vs `ESCALATE`. Encodes the user's stated autonomy bar (FB-0011, saved to project memory at `~/.claude/projects/-Users-benyamron-dev-flow/memory/feedback_autonomy_bar.md`): auto-fix only when fix is clearly best-practice + clearly aligned with spec/intent + low implementation risk; otherwise escalate. This extends the existing confidence-gate primitive into auto-fix routing.
+- **No debate loop.** "Judging with Many Minds" (arxiv 2505.19477) shows debate amplifies bias sharply after the initial round. Flow's parallel-then-merge topology is on the safer side of the published evidence — preserve it.
+- **No numeric 0–100 scores.** OpenAI Cookbook's classification-vs-numeric finding plus Anthropic research system's "pass-fail with rubric" preference. Keep the categorical schema.
+- **Mix-model-family routing deferred to a roadmap follow-up.** Same-family models agree on wrong answers 97% of the time (Goel et al. 2025); a cheap config change would help, but the Claude Code subagent SDK surface for this isn't there yet.
+
+**Technical decisions:**
+- **Self-check is a prompt-level addition, not a separate agent or pass.** Same agent, same context, ~50–100 extra tokens, drops findings via internal reasoning rather than a second invocation. Lowest-cost intervention with the largest published quality lift.
+- **Adversarial framing on `lens-staff-engineer` is composable with FB-0010 hunts.** The new `## How to read this diff` section sits at the top of the prompt; the existing silent-skip + fan-out hunts continue to operate inside the categorical Hunts list. Neither replaces the other.
+- **Security-review's identity shift preserved every operational gate.** The agent prompt is one section of the SKILL.md file; the bash orchestration around it (early-exit, FB-0008 fallback chain, fail-fast) is intentionally untouched. This isolates the behavior change to the reviewer's framing.
+- **Plan-critic's fan-out hunt addition uses the existing two-citation rule.** A fan-out contradiction is just a special case of internal incoherence where the two citations are two stale references in different files. No new category, no schema change.
+
+**Tradeoffs discussed:**
+- **All reviewers adversarial vs selectively adversarial.** Loading "find more bugs" framing onto every existing reviewer would burn the over-engineering tax across the entire pipeline. Per the published evidence (consequence-asymmetry analysis), security has the strongest case for full adversarial identity; UX, design-engineer, accessibility, push-further have weak cases (false positives in subjective categories are pure noise). Resolution: full red-team identity for security; adversarial-leaning preamble for engineer (the FB-0010 hunts are already adversarial-shaped, this just makes the stance explicit); no framing change for UX / design-engineer / accessibility / push-further.
+- **Separate skill vs 5th lens for red-team.** A 5th lens would reuse staff-review's orchestration but compromise the 4-lens ceiling discipline and mix threat-model categories with engineer/UX/design/push-further. Standalone skill is cleaner, composes with `/flow:ship` like the other domain reviewers, and preserves the documented contract in `plugins/flow/docs/workflow.md` Step 7 ("Four Explore agents review the diff in parallel from four lenses"). Standalone wins.
+- **3-PR split vs single mega-PR.** Sharpening (PR J) is prompt-only, dogfoods fast, lowest blast-radius. New skill (PR K) is testable in isolation as user-invocable. Autonomous gate (PR L) depends on PR K's skill existing. Each PR has one clean story.
+- **Auto-fix-safe vs always-stop-and-present on red-team BLOCKERs.** User explicitly chose the "act when clearly best-practice + low-risk + no competing options; otherwise stop" hybrid — saved as the durable autonomy-bar rule (FB-0011 + project memory). Encoded as the per-finding `Fix-confidence:` tag in PR L. Default-to-ESCALATE when in doubt; conservative-grow the AUTO-FIX-SAFE category list only with dogfood evidence.
+
+**Lessons learned:**
+- **Plan-critic caught 5 BLOCKERs + 2 REDIRECTs + 1 FOLLOW-UP on the draft plan**, all real misalignments — including a passive-vs-active violation (the detector was originally wired into the plan-critic *agent* rather than the orchestrating skill), a 4-lens-ceiling contradiction inside the plan's own Scope statement, missing SAFETY discipline + missing FB-0003 schema-pairing + missing FB-0008 stale-base for the new skill. Pre-plan-approval critique is load-bearing; this was a strong dogfood validation.
+- **Engineer-lens dogfood caught a factual error in the CHANGELOG mid-PR.** The sharpened engineer-lens (running on its own new prompt) caught that I'd labeled "FB-0008 stale-base preflight" as preserved-in-security-review, when actually the preflight gate proper isn't in security-review (it's in /flow:ship + /flow:staff-review + /flow:doctor). What security-review applies from FB-0008 is the `[ -z ]` fallback chain. Strong meta-validation: the prove-or-disprove discipline forced the agent to verify the FB-0008 claim against the file before accepting my CHANGELOG line.
+- **Parallel-PR collision caught at FB-0008 stale-base preflight before push.** A separate "PR I" (workflow-spawn skip prevention) merged on main during this session — collision discovered at the post-commit stale-base check. Rebased + renumbered to PR J + v1.2.5. This is the FB-0008 gate doing exactly what it was designed to do.
+- **PR-G FOLLOW-UP #5 absorbed opportunistically.** Editing `plan-critic.md` anyway; bundling the one-line fan-out hunt addition costs nothing and avoids a separate PR. PR H proper's queue gets one item shorter.
+- **Research substrate is the right project-dev investment.** The 3-research-agent parallel pass produced a 12k-word report with 50+ first-party citations that grounded every PR J/K/L decision in published evidence rather than vibes. Worth the token spend on any future architecture-shaping question.
+
 ### Flow plugin v1.2.4 — workflow-spawn skip prevention (FB-0010 workflow-step sub-class)  `SAFETY`
 **Date:** 2026-05-27
 **Branch:** `pr-i/workflow-spawn-prevention`
@@ -83,6 +154,7 @@ PR H1's review pipeline missed `/flow:security-review` + `/flow:accessibility-re
 - **Plan-critic + parallel execution + self-correction converged on the same fix.** Plan-critic returned NOT APPROVED with a BLOCKER (fan-out count contradiction); independently I'd discovered the audit/critique-plan conflict and reduced scope. Two paths to the same answer.
 - **FB-0010 self-application caught itself.** Plan-critic flagged "fan-out count contradiction inside the FB-0010 defense PR." The discipline works on its own defense PR. Catching it pre-commit validates the discipline.
 - **Discipline-PR for 1-incident class is defensible when fix is mechanical.** Threshold isn't hard; it's "is encoding cost less than expected recurrence cost?" Cheap reminders justify low threshold. Invasive orchestration changes require higher threshold.
+
 
 ### PR H1 — Upgrade docs + CHANGELOG (pre-install shore-up, docs-only at repo root, no version bump)
 **Date:** 2026-05-27
