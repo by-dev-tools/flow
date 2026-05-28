@@ -2,18 +2,67 @@
 
 ## Current Focus
 
-**PRs 1-3 + A-F all merged.** Consumer-feedback umbrella complete (PR A intake → PRs B-F implementation). Plugin at **v1.2.2** on `main` (PR F squash `b1c8e01`).
+**PRs 1-3 + A-G all merged.** Plugin at **v1.2.3** on `main` (PR G squash `0c3386b`). Consumer-feedback umbrella complete + recurring-bug-class defense (FB-0010) encoded.
 
-**PR G in flight** (`pr-g/consistency-discipline`, off `main`) — dedicated defense for the recurring bug class flow's own development has surfaced 6 times: "consistency that depends on author memory" (silent-skip on edge case + fan-out contradiction). Encoded as **FB-0010** with concrete defenses (lens-staff-engineer prompt addition, `/flow:doctor` Check 2.5, workflow.md Step 4 paragraph, project-dev general.md subsection). Bumps to **v1.2.3**.
+**PR H1 in flight** (`pr-h1/upgrade-docs-changelog`, off `main`) — shore up the update infrastructure before user installs across 2 active consumer projects (md-manager + health-tracker). Tier-1 "what's solid" → Tier-2 "workable but rough" sweep identified the consumer-side rituals as the highest-value cheap fix. Ships **`docs/upgrade.md`** (2-command ritual + verify-with-doctor + troubleshooting) + **`CHANGELOG.md`** at repo root (extracted from inline README version notes + history.md), plus README cross-links. **No version bump** — pure-docs change at the repo root, doesn't ship inside the plugin install.
 
-After PR G ships: user has a new project lined up to dogfood the full adoption path (bootstrap.sh → install → `/flow:doctor` → first PR via the loop). That dogfood becomes the next feedback intake.
+After PR H1 ships: user installs flow at v1.2.3 across md-manager + health-tracker, begins active dogfood. Findings become next feedback intake (PR H proper, with the 12 FOLLOW-UPs already routed from PR G review + whatever new signal the dual-project dogfood surfaces).
 
 ## Handoff Notes
 
-- **PR G is prepared on `pr-g/consistency-discipline`** — push + open PR + regroup with user before merging per their explicit ask ("then we will regroup to continue development").
-- **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key per md-manager PR 4 report observation. Cosmetic cleanup; doesn't block.
-- **Md-manager PR 5 (dogfood)** still pending — separate worktree after md-manager PR 4 merged. May surface additional flow rough edges.
-- **User's new project dogfood** is the next consumer-feedback trigger. Bundle findings into a `pr-h/<topic>` PR after the dogfood completes.
+- **PR G shipped** at squash `0c3386b` on 2026-05-27; v1.2.3 live.
+- **PR H1 prepared on `pr-h1/upgrade-docs-changelog`** — push + open PR after the workflow loop completes (this is the small follow-on the user explicitly requested before installing).
+- **12 PR-G-review FOLLOW-UPs queued in plan.md** for PR H proper (after dogfood signal arrives).
+- **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key. Cosmetic; doesn't block.
+- **Md-manager PR 5 (dogfood)** still pending; separate worktree.
+
+## PR H1 — Upgrade docs + CHANGELOG (in flight)
+
+**Mode:** feature (small), docs-only | **Priority: highest (pre-install shore-up)**
+**Goal:** Make the update workflow discoverable + auditable before consumer install. Two cheap fixes from the "is the update infrastructure solid?" Tier-2 audit — the rituals that prevent silent version drift between 2 active consumer projects.
+
+**Scope (in):**
+- New file: `docs/upgrade.md` — the 2-command update ritual (`/plugin marketplace update flow` → `/plugin install flow@flow` → `/flow:doctor`), when-to-run guidance, verification steps, troubleshooting (FB-0005 silent-failure mode, marketplace-key-mismatch, `/flow:doctor` Section 1 failures), optional auto-update opt-in with breaking-change warning.
+- New file: `CHANGELOG.md` at repo root — extracted version-by-version from current README + history.md. Reverse chronological, one-liner per version + 2-3 bullets, breaking-change callouts (none yet). Replaces the inline "Versions:" block at the bottom of README.
+- `README.md` — replace inline "Versions:" block with link to `CHANGELOG.md`; add cross-link to `docs/upgrade.md` in install + bootstrap sections so consumers can find it after first install.
+- `docs/bootstrap.md` — add a "Keeping flow up to date" pointer to `docs/upgrade.md` at the end (after first PR walkthrough).
+- `docs/migration.md` — same pointer (existing-project consumers also need to know).
+- `dev-docs/history.md` — decision-log entry.
+- `dev-docs/plan.md` — this block + Current Focus refresh.
+
+**Scope (out):**
+- **Version bump** — pure docs-at-root change; doesn't ship in plugin install (manifests unchanged); consumers reading on GitHub get the new docs without a re-install. Spares users a no-op upgrade ritual.
+- **`minFlowVersion` slot + `/flow:doctor` Check 6** — deferred to PR H proper; mechanical defense for silent version drift, but ships best paired with the slot-count generalization (PR-G FOLLOW-UP #2).
+- **Post-merge GitHub Actions reminder** — deferred; cheap when needed but assumes a feedback mechanism we don't have yet.
+- **CHANGELOG auto-generation from history.md** — manual extraction this time; if drift becomes a maintenance burden, add a script later.
+
+**Spec-walk:**
+- [ ] `docs/upgrade.md` exists with: what-it-is, when-to-run, 2-command ritual, verification, troubleshooting (≥3 cases), auto-update note.
+- [ ] `CHANGELOG.md` exists at repo root with v1.0.0 through v1.2.3 entries; reverse chronological; each entry has date + headline + 2-4 bullets + "breaking changes: none" or explicit list.
+- [ ] `README.md` — inline "Versions:" block removed; replaced with one-line link to CHANGELOG.md; install section cross-references upgrade.md.
+- [ ] `docs/bootstrap.md` + `docs/migration.md` — both have a one-line pointer to `docs/upgrade.md`.
+- [ ] `claude plugin validate .` clean (no manifest changes; sanity).
+- [ ] `/flow:doctor` Check 2.5 emits expected output: against flow's own tree, WARN with ~12 historical-narrative survivors in `dev-docs/history.md` + `dev-docs/feedback.md` + `dev-docs/handoffs/*` (intentional — those are accurate prose about past schema states, not stale current claims). Against a clean consumer project, PASS. Validated in both bash + zsh + sh (POSIX `set -- ; for; "$@"` pattern; an earlier `$SCAN_TARGETS` string-join silently no-op'd under zsh — yet another FB-0010 silent-skip caught at pre-commit).
+- [ ] No version bump in either manifest; no v1.2.4 references anywhere.
+- [ ] Self-fan-out grep: no contradictions introduced (CHANGELOG vs README vs history.md version notes match).
+- [ ] `dev-docs/history.md` entry written (no SAFETY marker — no manifest/error-handling changes; verified against `.claude/rules/safety.md` `paths:` list — none of PR H1's 7 files match).
+- [ ] CHANGELOG entries follow Keep-a-Changelog-style (Date + headline + bullets + "Breaking changes:" callout, no SHA/branch/tradeoffs blocks) — distinct from `dev-docs/history.md` format spec; the two intentionally diverge (CHANGELOG is consumer-facing terse, history.md is internal-tracking verbose).
+
+**Confidence verdicts:**
+
+**Assumption:** Pure docs-at-root changes don't need a version bump because they don't ship in the plugin install (consumers fetch them from GitHub, not via `/plugin install`).
+**Confidence:** HIGH
+**Why:** `docs/` is not packaged into the plugin binary — only `plugins/flow/*` ships. Consumers on v1.2.3 read the new docs from GitHub the moment we merge; no client-side action required. Spares a no-op `/plugin marketplace update`.
+**If it flips:** A consumer reports they didn't NOTICE the new docs (they're delivered either way via GitHub, but the consumer's habit is to ignore unbumped versions). Bump to v1.2.4 then as a discoverability signal (not a delivery mechanism — the docs were already there). Single-file edit.
+
+**Assumption:** CHANGELOG.md manual extraction matches the inline README version notes + history.md decisions without drift.
+**Confidence:** MEDIUM
+**Why:** Manual extraction from two sources risks scribal mismatch; FB-0010 specifically warns against this. Mitigation: I'll grep both sources after writing CHANGELOG and reconcile; the FB-0010 lens-engineer hunt + Check 2.5 will catch survivors at review.
+**If it flips:** Lens-engineer flags fan-out between CHANGELOG and README. Fix inline before merge.
+
+**Files touched:** 7 — `docs/upgrade.md` (new), `CHANGELOG.md` (new), `README.md`, `docs/bootstrap.md`, `docs/migration.md`, `dev-docs/history.md`, `dev-docs/plan.md`.
+
+---
 
 ## PR G — Consistency discipline (FB-0010, in flight)
 
@@ -89,6 +138,22 @@ PR G's review (engineer + push-further + UX-designer + design-engineer + securit
 11. **Workflow.md Step 4 placement of non-mechanical disciplines.** Step 4's lead sentence says "Mechanical gates that MUST be green." Both the existing "Failure-pattern memory" paragraph and PR G's new "Consistency sweep" paragraph are non-mechanical disciplines living inside the "mechanical gates" step. Design-engineer flagged the structural drift but the in-tree fix (sub-heading or move-to-Step-6) was deferred to avoid scope creep in PR G. Horizon: next workflow.md-touching PR.
 
 12. **"Consumer-shipped" vs "project-dev" terminology standardization.** FB entries use parenthetical labels; history.md uses "Two-layer defense" framing. Worth a style-guide note for future FB entries that span both surfaces. Horizon: dev-docs hygiene PR.
+
+13. **Release tagging + version-pinning recipe** (caught during PR H1 pre-lens self-check). PR H1's first draft of `docs/upgrade.md` included a "Pin to a prior version" recipe using `git checkout v1.2.3` — but flow doesn't tag releases at the git-tag level (only `pre-flow-plugin` tag exists). And `~/.claude/plugins/flow/` isn't a known stable path across Claude Code install shapes. Recipe was removed from upgrade.md as false-affordance per CLAUDE.md "no false affordances" rule; recipe re-introduction requires (a) backfill-tagging v1.0.0..v1.2.3 against historical merge SHAs (one-time), (b) auto-tag-on-merge for future PRs (GitHub Actions step on main push or release-please-style automation), (c) verify the actual Claude Code plugin install dir convention. Owner: docs+infra. Horizon: PR H proper or v1.2.4 if a consumer hits a regression they need to roll back from.
+
+14. **CHANGELOG drift trigger** (PR H1 push-further-lens NIT). Manual CHANGELOG maintenance assumed by PR H1 has no mechanical trigger. Add `/flow:ship` spec-walk item: "if version bumped in this PR, CHANGELOG.md has a new entry for the bumped version." Either as a `/flow:ship` Step N check, or as a pre-commit grep in the project's preflight. Until then, the first forgotten CHANGELOG update IS the test of discipline. Horizon: PR H proper or any `/flow:ship`-touching PR.
+
+15. **`/flow:upgrade` skill** (PR H1 push-further-lens FOLLOW-UP). Wraps the 2-command ritual + runs `/flow:doctor` + diffs CHANGELOG-since-last-installed-version. ~40 lines of bash; 1-2 hour build. Real ambition rightly deferred from PR H1 (which is docs-only); land alongside `minFlowVersion` slot + Doctor Check 6 (FOLLOW-UP #2). Horizon: PR H proper or v1.2.4.
+
+16. **CLAUDE.md "Product Principles" should anchor the patch-additive discipline** (PR H1 push-further-lens BLOCKER-lite, addressed in-tree by softening CHANGELOG + upgrade.md prose). The discipline ("patch bumps aim to be additive") now lives in CHANGELOG + upgrade.md but is not in CLAUDE.md, plugin.json description, or any process gate. Worth promoting to CLAUDE.md "Product Principles" as a stated discipline (not contract). Horizon: next CLAUDE.md-touching PR.
+
+17. **Historical-narrative immunity for Check 2.5** (PR H1 engineer-lens FOLLOW-UP). Check 2.5 currently flags every "N slots" mention where N != schema-actual, including legitimate historical prose like "schema bumped from 13 to 16" in `dev-docs/history.md`. The current flow tree emits WARN with 12 such survivors — all intentional narrative. Fix shape: either (a) add a `dev-docs/handoffs/` + `dev-docs/history.md` exclude-list to Check 2.5 (cheap, blunt), (b) skip lines containing context-words like `was`, `bringing`, `estimated`, `→`, `from N` (heuristic), or (c) require a sentinel `<!-- historical -->` HTML comment to mark intentional historical-narrative lines (explicit, more work for authors). Land alongside the Check 2.5 generalization to skill/lens/rule counts (FOLLOW-UP #2) so consumers don't get spurious WARNs on their own historical narrative. Horizon: PR H proper or v1.2.4.
+
+18. **`docs/README.md` index** (PR H1 UX/design-engineer FOLLOW-UP). With `docs/` now holding 4 substantive files (bootstrap, migration, first-pr, upgrade) plus CHANGELOG.md at root, the implicit user journey isn't obvious from the directory listing. A ~20-line decision-tree index ("new project → bootstrap; existing → migration; already installed → upgrade; first PR → first-pr") would be a 5-minute fix compounding across consumer projects. Horizon: PR H proper.
+
+19. **CHANGELOG framing softening** (PR H1 UX/design-engineer NIT). History.md describes CHANGELOG as "Keep-a-Changelog-style" but it lacks K-a-C's `[Unreleased]`, `Added/Changed/Fixed/Removed/Security` subhead categories, and the keepachangelog.com footer link. Honesty fix: change framing in history.md + (eventually) CHANGELOG header from "Keep-a-Changelog-style" to "flow's own consumer-changelog format (date + headline + bullets + breaking-change callout)." Cheap; ride next history.md-touching PR.
+
+20. **`/flow:security-review` + `/flow:accessibility-review` workflow-spawn discipline** (PR H1 self-audit on user prompt). PR H1's workflow loop spawned plan-critic + 4 staff-review lenses but DID NOT spawn `/flow:security-review` + `/flow:accessibility-review`. Skipped by author judgment ("they'd early-exit on docs-only anyway"). User caught: "were the ship reviews run?" — they hadn't been. **This is itself the FB-0010 silent-skip class applied to workflow discipline (not code).** The 9th FB-0010 incident, and a new sub-class (workflow-step-skip vs code-edge-skip). Per workflow.md Step 6 + FB-0008/FB-0033, the discipline is to ALWAYS spawn the reviewers — they produce a `STATUS: SKIPPED` audit-trail line that's load-bearing, NOT silent-skip the spawn itself. Make-good: ran both retroactively (security: STATUS SKIPPED no source/config in diff; a11y: STATUS SKIPPED no UI in diff). Defense: `/flow:ship` Step 1.0 already prints the workflow-step assumption surface (which lists security/a11y). Strengthen that surface to either (a) auto-spawn the reviewers if missing or (b) require an explicit author confirmation that they ran. Owner: domain. Horizon: PR H proper or next `/flow:ship`-touching PR. Promote at next /flow:ship feedback synthesis since this is now a 3rd-time-recurring discipline shape: PR F-pass-1 (gawk-only awk = portability silent-skip), PR H1 zsh-vs-bash (word-splitting silent-skip), PR H1 workflow-spawn-skip (judgment silent-skip).
 
 ---
 

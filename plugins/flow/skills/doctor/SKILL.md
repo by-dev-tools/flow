@@ -199,18 +199,17 @@ else
     # CLAUDE.md.template that consumers may not yet have renamed). docs/ covers
     # this repo's own consumer-facing guides. Only emit SKIP if NONE exist —
     # an empty scan with no docs is itself a silent-skip class FB-0010 catches.
-    SCAN_TARGETS=""
-    for t in CLAUDE.md CLAUDE.md.template README.md docs core-docs dev-docs; do
-      if [ -e "$t" ]; then
-        if [ -z "$SCAN_TARGETS" ]; then
-          SCAN_TARGETS="$t"
-        else
-          SCAN_TARGETS="$SCAN_TARGETS $t"
-        fi
-      fi
+    # Build scan-target list as positional params (POSIX-portable; works in
+    # both bash and zsh — bash word-splits unquoted vars but zsh does NOT, so
+    # an earlier "$SCAN_TARGETS" string-join silently no-op'd under zsh and
+    # reported vacuous PASS. The exact FB-0010 silent-skip class this check
+    # is supposed to catch. Positional params via "$@" are portable.)
+    set --
+    for t in CLAUDE.md CLAUDE.md.template README.md CHANGELOG.md docs core-docs dev-docs; do
+      [ -e "$t" ] && set -- "$@" "$t"
     done
-    if [ -z "$SCAN_TARGETS" ]; then
-      echo "[SKIP] no project docs found to scan for slot-count consistency (looked for CLAUDE.md, CLAUDE.md.template, README.md, docs/, core-docs/, dev-docs/)"
+    if [ $# -eq 0 ]; then
+      echo "[SKIP] no project docs found to scan for slot-count consistency (looked for CLAUDE.md, CLAUDE.md.template, README.md, CHANGELOG.md, docs/, core-docs/, dev-docs/)"
     else
       # Portable across BSD + GNU: extract the FIRST "N slots" pair on each grep
       # output line via grep -oE (works around grep-prefix line-number digits that
@@ -218,8 +217,7 @@ else
       # 3-arg match() that an even earlier awk attempt silently no-op'd on BSD —
       # both of those earlier attempts were silent-skip bugs of the exact class
       # FB-0010 catches, fixed before this PR shipped).
-      # shellcheck disable=SC2086  # SCAN_TARGETS is space-separated paths, intentional
-      STALE=$(grep -rEn '([0-9]+) slots?' $SCAN_TARGETS \
+      STALE=$(grep -rEn '([0-9]+) slots?' "$@" 2>/dev/null \
         | grep -vE ":[[:space:]]*#" \
         | while IFS= read -r line; do
             N=$(printf '%s\n' "$line" | grep -oE '[0-9]+ slots?' | head -n1 | grep -oE '^[0-9]+')
@@ -228,12 +226,12 @@ else
             fi
           done)
       if [ -z "$STALE" ]; then
-        echo "[PASS] documented slot count matches schema ($ACTUAL slots; scanned:$SCAN_TARGETS)"
+        echo "[PASS] documented slot count matches schema ($ACTUAL slots; scanned $# path(s))"
       else
         echo "[WARN] documented slot count contradicts schema (schema has $ACTUAL slots; survivors below)"
-        echo "       Survivors:"
+        echo "       Survivors (some may be intentional historical narrative — e.g., 'schema bumped from 13 to 16'):"
         printf '%s\n' "$STALE" | sed 's/^/         /'
-        echo "       Fix: update each line to '$ACTUAL slots' (grep-first-edit-second; FB-0010 discipline)"
+        echo "       Fix: update each line to '$ACTUAL slots' (grep-first-edit-second; FB-0010 discipline), OR move historical numbers behind a comment marker (# prefix) so the check ignores them."
       fi
     fi
   fi
