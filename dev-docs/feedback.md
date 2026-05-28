@@ -37,7 +37,7 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 ### FB-0011: Autonomy bar — act when clearly best-practice + low-risk + no competing options; otherwise stop and present
 **Date:** 2026-05-27
-**Source:** user direction (stated during PR I planning conversation, in response to the REDIRECT question about red-team BLOCKER auto-fix vs stop-and-present)
+**Source:** user direction (stated during PR J planning conversation, in response to the REDIRECT question about red-team BLOCKER auto-fix vs stop-and-present)
 
 **What was said:** Asked whether `/flow:ship` should auto-apply red-team BLOCKER fixes in-tree (faster, more autonomous) vs stop and present them for explicit user approval (slower, safer for one-way-door choices), the user gave a nuanced hybrid: *"If there is a solution that is clearly aligned with best practices as well as the spec/intent of the project and there is little risk in implementing it, then that should be done automatically. If the path forward is unclear, there are still significant risks, or there are competing options that are significantly different that both have merit, or there are one-way door decisions that need to be made, then the implementation should stop and wait for human review."*
 
@@ -47,13 +47,13 @@ This extends the existing **confidence-gate doctrine** ([[user-confidence-gates]
 
 **Encoded as:**
 - Per-finding `Fix-confidence:` field on `/flow:red-team` output schema (ships PR K) with values `AUTO-FIX-SAFE` (all three "act" conditions hold) vs `ESCALATE` (any "stop" condition holds). Default to `ESCALATE` when in doubt — false positives on stop-and-present cost the user a moment of attention; false positives on auto-fix could corrupt safety-critical code.
-- `/flow:ship` Detection-Point-3 routing (ships PR K): `AUTO-FIX-SAFE` findings auto-apply in-tree, re-run preflight + red-team, ship if clean (cap at 4 iterations per the research diminishing-returns curve). `ESCALATE` findings stop the ship and surface to the user with full two-citation evidence + suggested fix.
+- `/flow:ship` Detection-Point-3 routing (ships PR L): `AUTO-FIX-SAFE` findings auto-apply in-tree, re-run preflight + red-team, ship if clean (cap at 4 iterations per the research diminishing-returns curve). `ESCALATE` findings stop the ship and surface to the user with full two-citation evidence + suggested fix.
 - Conservative AUTO-FIX-SAFE category list (starts narrow; grows only with dogfood evidence). Initial examples: committed secret → delete + add to .gitignore; outbound HTTP→HTTPS upgrade; missing input validation that follows an existing in-repo pattern verbatim.
 - Project-memory entry at `~/.claude/projects/-Users-benyamron-dev-flow/memory/feedback_autonomy_bar.md` (cross-session reminder; this FB entry is the consumer-shipped canonical version).
 
 **Applies to:** workflow, autonomous gates, /flow:red-team (PR K), future Execute-stage gates, future /flow:staff-review BLOCKER triage, /flow:ship orchestration
 
-**Validation:** Stated explicitly by the user 2026-05-27 during PR I planning; saved to project memory same day; encoded into PR I's plan as the PR-K Detection-Point-3 routing rule. PR K ships the mechanical enforcement.
+**Validation:** Stated explicitly by the user 2026-05-27 during PR J planning; saved to project memory same day; encoded into PR J's plan as the PR-L Detection-Point-3 routing rule. PR L ships the mechanical enforcement. (Originally planned as PR-K Detection-Point-3 routing; renumbered to PR L after the parallel PR I collision required a PR J → PR K → PR L cascade.)
 
 ### FB-0010: Consistency discipline — silent-skip on edge case + fan-out contradiction are the two flavors that survive single-pass review
 **Date:** 2026-05-26
