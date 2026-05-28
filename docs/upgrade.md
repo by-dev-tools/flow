@@ -23,13 +23,19 @@ A future Claude Code release may collapse these into a single `/plugin upgrade` 
 
 ## When to run it
 
-| Trigger | Recommended action |
+**TL;DR cadence:** run when you want a specific new feature. Otherwise: weekly-ish hygiene is enough. Patch bumps (`1.2.x → 1.2.y`) are additive — your existing install keeps working, deferring is safe. Don't run the ritual mid-session or "just to be safe" before every task.
+
+| Trigger | Action |
 |---|---|
-| **You merged a flow PR** (you're the maintainer) | Run the ritual in every consumer project before next session. Don't trust memory across two projects. |
-| **You see a new version mentioned in CHANGELOG.md, dev-docs/history.md, or a flow PR description** | Run the ritual. |
-| **`/flow:doctor` reports `[FAIL]` checks you don't recognize** | Run the ritual — your installed plugin may be older than your `flow.config.json` expects. |
-| **A new skill is referenced in docs but not in `/help`** | Run the ritual — the skill exists in the new version but your install is behind. |
-| **Nothing has changed but you want to be sure** | Run the ritual — it's idempotent and takes <30 seconds. |
+| **Major bump (`x.0.0`)** — e.g., `1.x → 2.0` | **Run before next session.** Read `CHANGELOG.md`'s "Breaking changes:" block first. |
+| **Minor bump (`1.x.0`)** — new user-visible skills/surface | **Run before next session** in projects where you'll use the new surface. |
+| **Patch bump (`1.2.x → 1.2.y`)** | **Optional.** Batch them — flow's discipline is additive at patch level. Run when CHANGELOG mentions something you want, OR weekly as hygiene. |
+| **`/flow:doctor` reports `[FAIL]`/`[WARN]` you don't recognize** | Run — your installed plugin may be older than your `flow.config.json` expects. |
+| **A skill named in flow's docs isn't in `/help`** | Run — the skill exists in a newer version. |
+| **Mid-session** | Don't. Plugins don't change mid-session anyway. |
+| **"Just to be safe"** | Don't. Cost > benefit. Read CHANGELOG instead. |
+
+Practical heuristic for an active flow contributor (dogfooding flow on your own consumer projects): at the start of any non-trivial new feature, run `git log -5 origin/main` on the flow repo. If anything looks relevant, run the ritual. Otherwise carry on.
 
 ## Verification
 
@@ -119,15 +125,17 @@ By default, third-party Claude Code marketplaces require manual `/plugin marketp
 }
 ```
 
-**Tradeoff:** auto-update means you'll silently pick up new versions without reading the CHANGELOG. For a patch bump (`1.2.x → 1.2.y`) this is usually fine — flow's discipline is additive-only at patch level. For minor + major bumps, you may prefer to read CHANGELOG first. Leave auto-update off if you want explicit control.
+**Tradeoff:** auto-update means you'll silently pick up new versions without reading the CHANGELOG. For patch bumps (`1.2.x → 1.2.y`), flow aims to be additive-only — typically safe. For minor + major bumps, you may want to read CHANGELOG first. **Recommended for v1.2.x:** auto-update on (current discipline holds; the cost of catching breakage early is low). **Recommended starting at v2.0.0:** auto-update off until you've read the major-bump CHANGELOG. The discipline is enforced by author care + `lens-staff-engineer` + `/flow:doctor` Check 2.5 — it's not a hard guarantee, so verify each upgrade with `/flow:doctor` regardless.
 
-## Multi-project ritual
+## Multi-project: once per machine (for user-scope installs)
 
-If you run flow across multiple projects (e.g., md-manager + health-tracker), the ritual must run **in each project's Claude Code session** — `/plugin marketplace update` updates the local catalog cache, which is per-session. A single update from one project doesn't propagate to others.
+If flow is installed at **user-scope** (the default — `~/.claude/settings.json`'s `enabledPlugins` has `"flow@flow": true`), the marketplace catalog cache and the installed plugin both live at user-scope. **Run the ritual once on the machine and all your projects pick up the new version.** You don't need to repeat per-project.
 
-Practical pattern: after merging a flow PR, open a session in each consumer project and run the ritual. Or set `"autoUpdate": true` and accept the silent-upgrade tradeoff.
+Quick check that you're user-scope: `jq '.enabledPlugins' ~/.claude/settings.json` (user-scope) vs `jq '.enabledPlugins' .claude/settings.json` (project-scope). If the entry lives in the first, you're user-scope.
 
-If you have flow installed **per-project** rather than user-scope (a custom workflow), the ritual is identical but the update is scoped to whichever project you run it in. Same `marketplace update` + `install` commands; just no cross-project propagation.
+If you've installed flow at **project-scope** (custom workflow — `.claude/settings.json` inside a specific project enables flow), each project's install is independent. Run the ritual in each project where you've enabled it. Most consumers don't set this up; the default of user-scope handles multi-project for free.
+
+**Caveat:** the catalog cache vs the installed plugin version are separate pieces of state. `/plugin marketplace update flow` refreshes the catalog only; you then need `/plugin install flow@flow` to pull the new version into the install. The order matters — `install` alone reads the cached catalog. Both commands together is the canonical "actually pick up the new version" path.
 
 ## What's NOT in this doc
 
