@@ -2,26 +2,57 @@
 
 ## Current Focus
 
-**PRs 1-3 + A-I all merged.** Plugin at **v1.2.4** on `main` (PR I squash `da0b2c4`). Consumer-feedback umbrella complete + FB-0010 consistency-discipline encoded + workflow-spawn-skip prevention in place + upgrade infrastructure docs live.
+**PRs 1-3 + A-I + J all merged.** Plugin at **v1.2.5** on `main` (PR J squash `2e8ab3c`). Consumer-feedback umbrella complete + FB-0010 consistency-discipline encoded + workflow-spawn-skip prevention live + upgrade infrastructure docs shipped + **adversarial sharpening of the reviewer pipeline live**.
 
-**PR J in flight** (`claude/youthful-chaum-500268`, off `main`) — **adversarial sharpening of the reviewer pipeline**, first of a research-grounded three-PR sequence (PR J = prompt-only sharpening, PR K = `/flow:red-team` skill + agent, PR L = trust-boundary detector + autonomous gate). Sources: deep research pass across frontier-lab official docs (Anthropic Claude Code best-practices, Multi-Agent Coordination Patterns, Claude Code Security, OpenAI CriticGPT, DeepMind CodeMender), AI-native production patterns (Anthropic's Code Review plugin, Cursor Bugbot, Cognition's read-only carve-out, GitHub Copilot CR), and academic literature on multi-agent debate / LLM-as-judge / self-critique. Convergent finding: Anthropic explicitly recommends "adversarial review step" with the over-engineering warning; CriticGPT-class research shows adversarial framing raises recall 16-93% on security-sensitive tasks; debate loops amplify bias (avoid); categorical schemas beat numeric scores. Bumps to **v1.2.5**.
+**PR H2 in flight** (`pr-h2/upgrade-cadence-softening`, off `main` — rebased onto PR J's v1.2.5 squash after a parallel-PR collision) — copy-only fix for `docs/upgrade.md` after user-feedback catch ("do I need to do this after every session? every update? or just major updates?"). PR H1's prescription was too aggressive — "When to run it" table treated every trigger as equally important. New table differentiates major/minor/patch bumps, marks patch as optional + batchable. Also corrects a factual error: PR H1 said multi-project ritual must run "per-session" because the catalog cache is "per-session"; actually it's per-machine for user-scope installs. **No version bump** — docs-at-root, same precedent as PR H1.
 
-PR J scope = prompt-only edits to four reviewer surfaces (auditor, plan-critic, lens-staff-engineer, security-review) + Anthropic's verbatim over-engineering warning at top of each prompt + prove-or-disprove self-check on auditor + plan-critic. Plan-critic also absorbs **PR-G FOLLOW-UP #5** (fan-out hunt vocabulary inside Internal incoherence). PR K adds `/flow:red-team` as a user-invocable standalone skill with threat-model categories + two-citation evidence + per-finding `Fix-confidence:` field (`AUTO-FIX-SAFE` vs `ESCALATE`) encoding the user's stated autonomy bar (FB-0011). PR L wires a mechanical trust-boundary detector into three workflow detection points (plan / staff-review / ship) with fall-through detection so missed signals at one point are caught at the next.
-
-After PR J/K/L land: consumer install of v1.2.5+ across md-manager + health-tracker, begin active dogfood. Findings become PR H proper (the 11 remaining PR-G-review FOLLOW-UPs + PR-I review FOLLOW-UPs + PR-J/K/L-review FOLLOW-UPs + whatever new signal dual-project dogfood surfaces).
+After PR H2 ships: user installs flow at v1.2.5 across md-manager + health-tracker, begins active dogfood. Findings become next feedback intake (PR H proper, with **27 FOLLOW-UPs** already routed from PR G + H1 + I + H2 reviews + PR-J/K/L review queue + whatever new signal dual-project dogfood surfaces). PR K (`/flow:red-team` skill) + PR L (trust-boundary detector + autonomous gate) sequenced after H2.
 
 ## Handoff Notes
 
 - **PR I shipped** at squash `da0b2c4` on 2026-05-27; v1.2.4 workflow-spawn-skip prevention live.
 - **PR H1 shipped** at squash `1a1cc12` on 2026-05-27; docs/upgrade.md + CHANGELOG.md live.
-- **PR J prepared on `claude/youthful-chaum-500268`** — rebased on `origin/main` after collision with PR I (both bumping to v1.2.4 in parallel). Renumbered PR I → PR J + v1.2.4 → v1.2.5 + queued PR J → PR K + queued PR K → PR L. FB-0008 stale-base gate caught the collision pre-push (this is the gate doing exactly what it was designed to do).
+- **PR J shipped** at squash `2e8ab3c` on 2026-05-27; v1.2.5 adversarial sharpening of reviewer pipeline live.
+- **PR H2 in flight on `pr-h2/upgrade-cadence-softening`** (rebased onto PR J's v1.2.5 after parallel-PR collision) — docs/upgrade.md cadence softening; copy-only, no version bump.
 - **PR K + PR L queued** behind PR J. PR K = `/flow:red-team` skill (standalone, mirrors security-review structure, FB-0008 stale-base preflight, FB-0006/FB-0007 source-file early-exit). PR L = trust-boundary detector (mechanical/regex, stdlib-only) + autonomous-invocation wiring + per-finding `AUTO-FIX-SAFE`/`ESCALATE` routing per FB-0011.
 - **FB-0011 (autonomy bar) shipped in PR J** as the durable consumer-facing rule for autonomous-gate routing. Also saved to project memory at `~/.claude/projects/-Users-benyamron-dev-flow/memory/feedback_autonomy_bar.md` for cross-session reminder. Future autonomous gates default-to-ESCALATE; AUTO-FIX-SAFE category list starts conservative and grows only with dogfood evidence.
 - **PR-G review FOLLOW-UPs:** PR-G #5 (plan-critic fan-out hunt) absorbed by PR J; 11 of the original 12 remain queued for PR H proper.
 - **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key. Cosmetic; doesn't block.
 - **Md-manager PR 5 (dogfood)** still pending; separate worktree.
 
-## PR J — Adversarial sharpening of the reviewer pipeline (in flight, v1.2.4 → v1.2.5)
+## PR H2 — upgrade.md cadence softening (in flight)
+
+**Mode:** feature (small), docs-only at repo root | **Priority: highest (active consumer feedback)**
+**Goal:** Fix the over-prescription in `docs/upgrade.md` that user-tested as too aggressive. Three copy-only edits, no behavior change, no version bump.
+
+**Scope (in):**
+- `docs/upgrade.md` — three sections rewritten:
+  1. "When to run it" table — patch bumps marked optional + batchable; major/minor distinction explicit; "mid-session/just to be safe" rows added as explicit skip rows; TL;DR sentence on top with auto-update pointer.
+  2. "Multi-project ritual" → "Multi-project: once per machine (for user-scope installs)" — corrects PR H1's factual error about per-session cache; distinguishes user-scope vs project-scope install behavior; adds `jq` check (with FB-0009 fail-loud fallback) for which scope you're in.
+  3. Auto-update tradeoff section — softens "discipline is additive-only at patch level" (overpromise) to "aims to be additive-only... enforced by author care + lens-staff-engineer + /flow:doctor Check 2.5 — not a hard guarantee." Reframes version-aware recommendation as a principle ("when a major bump ships, default off until you've read the CHANGELOG") rather than naming a specific version.
+- `dev-docs/history.md` — decision-log entry.
+- `dev-docs/plan.md` — this block + Current Focus refresh.
+
+**Scope (out):**
+- Version bump (consistent with PR H1 — docs-at-root don't ship in the install bundle).
+- New install-scope detection in `/flow:doctor` (routed to numbered FOLLOW-UP #27 — combined-lens explicitly promoted this from unnumbered candidate after catching FB-0010 fan-out at history.md routing).
+- Backfilling the `per-session` error in any place it might also appear (PR H1's commit message + plan.md PR H1 block — those are historical; only the live consumer-facing doc needs correcting).
+
+**Spec-walk:**
+- [x] "When to run it" table has 7 rows with explicit major/minor/patch differentiation + mid-session "skip" rows.
+- [x] TL;DR sentence appears before the table with auto-update pointer.
+- [x] Multi-project section names the per-machine-for-user-scope reality.
+- [x] Auto-update section softens the "additive-only" promise + uses principle framing rather than named-version.
+- [x] `claude plugin validate` clean.
+- [x] No version bump in either manifest; no CHANGELOG entry (docs-only, no plugin behavior changed).
+- [x] No fan-out: search for "per-session" in `docs/upgrade.md` → no survivors.
+- [x] Review pipeline: combined lens + security + a11y all spawned (per PR I's workflow-spawn discipline). Plan-critic deferred — small enough scope, combined into the lens pass.
+
+**Files touched:** 3 — `docs/upgrade.md`, `dev-docs/history.md`, `dev-docs/plan.md`.
+
+---
+
+## PR J — Adversarial sharpening of the reviewer pipeline (merged, v1.2.4 → v1.2.5, squash `2e8ab3c`)
 
 **Mode:** feature (prompt-only) | **Priority: high (research-grounded reviewer quality lift)**
 **Goal:** Sharpen Flow's four reviewer surfaces along the dimensions deep research on adversarial review converges on, while encoding Anthropic's verbatim over-engineering warning to bound the false-positive tax. First of a three-PR sequence; PR K adds the `/flow:red-team` skill; PR L adds the autonomous gate.
@@ -84,6 +115,7 @@ After PR J/K/L land: consumer install of v1.2.5+ across md-manager + health-trac
 
 ---
 
+## PR I — Workflow-spawn prevention (merged, v1.2.3 → v1.2.4, squash `da0b2c4`)
 ## PR I — Workflow-spawn prevention (merged, v1.2.3 → v1.2.4, squash `da0b2c4`)
 
 **Mode:** feature (small) | **Priority: highest (pre-dogfood mechanical defense)**
@@ -282,6 +314,8 @@ PR G's review (engineer + push-further + UX-designer + design-engineer + securit
 25. **`.claude/rules/documentation.md` plan.md-maintenance rule vs PR-I practice** (PR I UX/design-engineer NIT #3). The rule says "Completed items move to 'Recently Completed'" but PR I marked FOLLOW-UP #20 in-place with `✅ SHIPPED in PR I (v1.2.4)` prefix because the numbered list is referenced from history.md ("FOLLOW-UP #20"); moving items would break the cross-refs. Resolution: update the documentation rule to explicitly permit in-place `✅ SHIPPED in PR X` marking for numbered traceability lists (numbered FOLLOW-UPs, FB-XXXX entries). Cheap; ride next `.claude/rules/documentation.md`-touching PR.
 
 26. **/flow:ship Step 1.0 surface is now ~25 lines** (PR I engineer-lens FOLLOW-UP F2). Originally 3 ASSUMES lines. PR I adds 7 lines of REMINDER prose. 2.3x expansion. If the user ignored 3 lines, will they read 25? Signal-to-watch at next dogfood. Not fix-now; capture for next /flow:ship-touching PR's plan.
+
+27. **`/flow:doctor` install-scope detection** (PR H2 combined-lens FOLLOW-UP; engineer-lens NIT #3 promoted to numbered entry to close the FB-0010 fan-out it surfaced — history.md PR H2 entry routed an unnumbered FOLLOW-UP, which IS the FB-0010 shape the project defends against; numbering closes the contradiction). Add a `/flow:doctor` check that detects at runtime whether flow is user-scope-enabled (`~/.claude/settings.json`'s `enabledPlugins."flow@flow"`) or project-scope-enabled (`./.claude/settings.json`'s same key). Reports scope + the cross-machine-vs-cross-project upgrade behavior implications. Would prevent recurrence of the per-session-vs-per-machine factual error PR H2 corrects. Cheap: ~15 lines in doctor SKILL.md Section 1; pairs naturally with Check 1.2 (plugin enabled). Owner: domain. Horizon: PR H proper or v1.2.5.
 
 20. ✅ **`/flow:security-review` + `/flow:accessibility-review` workflow-spawn discipline** — **SHIPPED in PR I (v1.2.4).** PR H1's workflow loop spawned plan-critic + 4 staff-review lenses but DID NOT spawn `/flow:security-review` + `/flow:accessibility-review`. Skipped by author judgment ("they'd early-exit on docs-only anyway"). User caught: "were the ship reviews run?" — they hadn't been. **This is itself the FB-0010 silent-skip class applied to workflow discipline (not code).** The 9th FB-0010 incident, and a new sub-class (workflow-step-skip vs code-edge-skip). Per workflow.md Step 10 (the "Never bypass `/flow:ship`" subsection added by PR I — formerly framed under Step 6 in pre-PR-I plan prose) + FB-0008/FB-0033, the discipline is to ALWAYS spawn the reviewers — they produce a `STATUS: SKIPPED` log line in the session transcript as evidence the discipline ran, NOT silent-skip the spawn itself. Make-good: ran both retroactively (security: STATUS SKIPPED no source/config in diff; a11y: STATUS SKIPPED no UI in diff). Defense: `/flow:ship` Step 1.0 already prints the workflow-step assumption surface (which lists security/a11y). Strengthen that surface to either (a) auto-spawn the reviewers if missing or (b) require an explicit author confirmation that they ran. Owner: domain. Horizon: PR H proper or next `/flow:ship`-touching PR. Promote at next /flow:ship feedback synthesis since this is now a 3rd-time-recurring discipline shape: PR F-pass-1 (gawk-only awk = portability silent-skip), PR H1 zsh-vs-bash (word-splitting silent-skip), PR H1 workflow-spawn-skip (judgment silent-skip).
 
