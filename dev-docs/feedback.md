@@ -67,7 +67,17 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 **Applies to:** workflow, review prompts, doctor checks, project-dev discipline, all shipped skills
 
-**Validation:** 6 incidents across 5 merged PRs + 1 in-flight PR (PR F two-pass). Pattern is real and stable enough to encode. Eval signal: the engineer-lens has now caught only 4 of the 6 occurrences first-pass; adversarial second-pass caught the other 2 (both fan-out contradictions, the harder-to-grep flavor). The fix targets close the gap.
+**Validation:** **9 incidents across 8 merged PRs** (as of PR I, v1.2.4 — kept current; if you find a 10th, update this line plus the incident count in `plan.md` + `CHANGELOG.md` + manifest descriptions in lockstep, or you've just demonstrated FB-0010 working on its own entry again). Pattern is real and stable enough to encode + extend.
+
+**Sub-classes** (named retroactively after PR I's review surfaced that the original two-flavor framing under-covered the workflow-discipline shape):
+
+1. **Code-edge silent-skip** (8 prior incidents, PRs 1, B, D, E, F-pass-1, F-pass-2, G, H1) — code that fails on an edge case without surfacing the failure. Examples cited in "What was said" above plus: PR G's `SCAN_TARGETS` shell-word-split bug (gawk-only `match()` in /flow:doctor Check 2.5 first draft, caught by smoke-test); PR H1's zsh-vs-bash word-splitting silent-skip in Check 2.5 (caught by engineer-lens cold-bash, fixed in commit 7826928).
+
+2. **Workflow-step judgment-skip** (1 incident, PR H1 → defended by PR I) — author makes a deliberate decision to skip a discipline-required action, justified after-the-fact ("would have been a no-op anyway"), missing that the discipline produces signal (here: `STATUS: SKIPPED` log lines in the session transcript) regardless of whether the body runs. **Distinct from silent-skip:** the author didn't fail to notice the skip; they chose it. Different defense shape: prompt-level reminders + workflow.md discipline statements + project-dev rules, not louder error handling. PR I's defense.
+
+3. **Fan-out contradiction** (sub-class of code-edge silent-skip when the value referenced in N files is a count/name/version — see "What was said" point 2 above). Caught itself recursively inside PR G + PR H1 + PR I (4 times across the FB-0010 defense PRs themselves). Each self-catch is a mini-confirmation that the discipline works on the discipline-PRs.
+
+Eval signal: the engineer-lens catches the silent-skip flavor reliably first-pass; the fan-out + workflow-step-judgment flavors required adversarial-second-pass review in 4 of 9 incidents. Reminder: when changing this count, run `git grep -nE '([0-9]+) incident'` across the codebase before staging.
 
 ### FB-0009: `gh` CLI dependency in shipped skills must fail-fast, not silently 127
 **Date:** 2026-05-25

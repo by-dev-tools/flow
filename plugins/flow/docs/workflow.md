@@ -230,7 +230,7 @@ User says "ship it" (or `/flow:ship`). Claude runs the ship pipeline (full spec:
 
 `/flow:ship` is not just "the thing that opens the PR" — it's the orchestrator that spawns `/flow:security-review` + `/flow:accessibility-review` (Step 1 above), synthesizes feedback into both layers, updates the project docs, and only THEN opens the PR. Running `gh pr create` directly skips all of that.
 
-Skipping doesn't feel like a skip in the moment — the diff still gets to GitHub, CI still runs, the PR still opens. What goes missing is the **STATUS: SKIPPED audit-trail signal** from the per-diff gates of security + a11y reviews. Even on a docs-only PR where both would early-exit, running them via `/flow:ship` produces a record that they ran; skipping the spawn means there's no record of the decision either way.
+Skipping doesn't feel like a skip in the moment — the diff still gets to GitHub, CI still runs, the PR still opens. What goes missing is the **explicit `STATUS: SKIPPED` log line** from the per-diff gates of security + a11y reviews — visible in the session transcript as evidence the discipline ran. Even on a docs-only PR where both would early-exit, running them via `/flow:ship` produces that log; skipping the spawn means there's no record of the decision either way. (Today the log is transcript-only; nothing programmatically consumes it. If a future doctor check or hook starts asserting on STATUS lines, that's the upgrade path — but the discipline of producing the log holds regardless.)
 
 This is the FB-0010 silent-skip class applied to workflow discipline (not code). Surfaced first as a 1-incident finding during PR H1; encoded here so the next loop doesn't repeat it. The rule:
 
