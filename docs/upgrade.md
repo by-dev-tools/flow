@@ -23,7 +23,7 @@ A future Claude Code release may collapse these into a single `/plugin upgrade` 
 
 ## When to run it
 
-**TL;DR cadence:** run when you want a specific new feature. Otherwise: weekly-ish hygiene is enough. Patch bumps (`1.2.x → 1.2.y`) are additive — your existing install keeps working, deferring is safe. Don't run the ritual mid-session or "just to be safe" before every task.
+**TL;DR cadence:** run when you want a specific new feature, OR weekly-ish as hygiene. Patch bumps (`1.2.x → 1.2.y`) are additive — your existing install keeps working between checks. Don't run mid-session, and don't run "just to be safe" before every task. (Or skip the manual ritual entirely by setting `autoUpdate: true` — see the Auto-update section below.)
 
 | Trigger | Action |
 |---|---|
@@ -32,8 +32,8 @@ A future Claude Code release may collapse these into a single `/plugin upgrade` 
 | **Patch bump (`1.2.x → 1.2.y`)** | **Optional.** Batch them — flow's discipline is additive at patch level. Run when CHANGELOG mentions something you want, OR weekly as hygiene. |
 | **`/flow:doctor` reports `[FAIL]`/`[WARN]` you don't recognize** | Run — your installed plugin may be older than your `flow.config.json` expects. |
 | **A skill named in flow's docs isn't in `/help`** | Run — the skill exists in a newer version. |
-| **Mid-session** | Don't. Plugins don't change mid-session anyway. |
-| **"Just to be safe"** | Don't. Cost > benefit. Read CHANGELOG instead. |
+| **Mid-session** | Skip — plugins don't pick up changes mid-session anyway. |
+| **"Just to be safe"** | Skip — read CHANGELOG instead. The ritual without a specific reason is sub-30s of friction with no upgrade. |
 
 Practical heuristic for an active flow contributor (dogfooding flow on your own consumer projects): at the start of any non-trivial new feature, run `git log -5 origin/main` on the flow repo. If anything looks relevant, run the ritual. Otherwise carry on.
 
@@ -125,13 +125,25 @@ By default, third-party Claude Code marketplaces require manual `/plugin marketp
 }
 ```
 
-**Tradeoff:** auto-update means you'll silently pick up new versions without reading the CHANGELOG. For patch bumps (`1.2.x → 1.2.y`), flow aims to be additive-only — typically safe. For minor + major bumps, you may want to read CHANGELOG first. **Recommended for v1.2.x:** auto-update on (current discipline holds; the cost of catching breakage early is low). **Recommended starting at v2.0.0:** auto-update off until you've read the major-bump CHANGELOG. The discipline is enforced by author care + `lens-staff-engineer` + `/flow:doctor` Check 2.5 — it's not a hard guarantee, so verify each upgrade with `/flow:doctor` regardless.
+**Tradeoff:** auto-update means you'll silently pick up new versions without reading the CHANGELOG. For patch bumps (`1.2.x → 1.2.y`), flow aims to be additive-only — typically safe. For minor + major bumps, you may want to read CHANGELOG first. **Principle:** when a major bump ships (any `x.0.0`), default to auto-update off until you've read the major-bump CHANGELOG; flip back on after you've understood the breaking changes. The discipline (patch = additive, minor = additive user-visible surface, major = breaking changes) is enforced by author care + `lens-staff-engineer` + `/flow:doctor` Check 2.5 — it's not a hard guarantee, so verify each upgrade with `/flow:doctor` regardless of cadence.
 
 ## Multi-project: once per machine (for user-scope installs)
 
 If flow is installed at **user-scope** (the default — `~/.claude/settings.json`'s `enabledPlugins` has `"flow@flow": true`), the marketplace catalog cache and the installed plugin both live at user-scope. **Run the ritual once on the machine and all your projects pick up the new version.** You don't need to repeat per-project.
 
-Quick check that you're user-scope: `jq '.enabledPlugins' ~/.claude/settings.json` (user-scope) vs `jq '.enabledPlugins' .claude/settings.json` (project-scope). If the entry lives in the first, you're user-scope.
+Quick check that you're user-scope:
+
+```sh
+# jq version (clean output):
+jq '.enabledPlugins' ~/.claude/settings.json 2>/dev/null \
+  || echo "(no user-scope settings.json — flow may be project-scope-only or not installed)"
+
+# Fallback if jq isn't installed:
+grep -A 3 enabledPlugins ~/.claude/settings.json 2>/dev/null \
+  || echo "(no user-scope settings.json — flow may be project-scope-only or not installed)"
+```
+
+If `"flow@flow": true` appears in the user-scope output, you're user-scope. If not, check `.claude/settings.json` inside your project. The presence of the entry — not its scope per se — is what tells you where the install lives.
 
 If you've installed flow at **project-scope** (custom workflow — `.claude/settings.json` inside a specific project enables flow), each project's install is independent. Run the ritual in each project where you've enabled it. Most consumers don't set this up; the default of user-scope handles multi-project for free.
 
