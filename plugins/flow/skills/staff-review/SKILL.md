@@ -240,3 +240,9 @@ Do not `gh pr merge`. Do not approve. Tell the user the work is ready for their 
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Project context |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 6 (FOLLOW-UP routing) |
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Step 6 (FOLLOW-UP / EXPLORATION routing) |
+
+## After this skill
+
+Once `/flow:staff-review` reports + you've applied the cheap BLOCKER + NIT fixes inline, the **canonical next step is `/flow:ship`** (or `/flow:ship-spike` for spike-mode PRs). Don't `gh pr create` directly — that bypasses `/flow:ship`'s Step 2 pipeline, which spawns `/flow:security-review` + `/flow:accessibility-review`, synthesizes feedback into both layers (user FB-XXXX + agent memory), updates `core-docs/*.md`, then opens the PR.
+
+Even when the diff is docs-only and you're convinced `/flow:security-review` + `/flow:accessibility-review` would just early-exit, **run `/flow:ship` anyway** — the per-diff gates emit explicit `STATUS: SKIPPED` log lines that show up in the session transcript as evidence the discipline ran. Always invoke `/flow:ship`; never `gh pr create` directly. See `plugins/flow/docs/workflow.md` § "Never bypass `/flow:ship`" for the discipline statement.

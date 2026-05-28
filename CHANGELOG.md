@@ -10,6 +10,17 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.2.4 — 2026-05-27
+
+**Workflow-spawn skip prevention (FB-0010 workflow-step sub-class).**
+
+- `/flow:staff-review` now ends with an explicit "After this skill" footer naming `/flow:ship` as the canonical next step. Reframes the existing "ends with work ready, not merged" line into actionable forward motion.
+- `/flow:ship` Step 1.0 workflow-step assumption surface gains `⚠️` visual emphasis per ASSUMES line + a REMINDER paragraph explicitly naming the "never bypass `/flow:ship` with `gh pr create`" rule.
+- `plugins/flow/docs/workflow.md` Step 10 adds a "Never bypass `/flow:ship`" subsection. Names the failure mode: skipping `/flow:ship` skips the entire Step 2 (security + a11y reviews) of the pipeline, and the `STATUS: SKIPPED` audit-trail signal is load-bearing even on docs-only PRs.
+- Defends against the 9th FB-0010 incident, surfaced during PR H1 when the author skipped spawning `/flow:security-review` + `/flow:accessibility-review` and ran `gh pr create` directly. 1 incident isn't usually enough for FB encoding, but the fix is trivially mechanizable (prompt-level reminders + workflow.md discipline statement).
+
+**Breaking changes:** none. Additive workflow guardrails — no skill behavior or contract changed.
+
 ## v1.2.3 — 2026-05-27
 
 **Consistency discipline (FB-0010 defense for the recurring bug class.)**
