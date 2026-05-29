@@ -9,7 +9,7 @@
 
 **Sequencing — orthogonal to N/O/P, not queued behind them:** N/O/P target `/flow:ship` preflight + reviewer infrastructure (Step 1c bounded-retry hardening, test-edit interception, auditor model swap). PR Q targets `/flow:ship` Step 2 final-pass review surface (alongside security-review + accessibility-review). Different files in the diff; no real content dependency. PR Q rebases onto main as N/O/P land — the rebase is mechanical. If PR Q ships before N: PR N rebases against a main that includes verify-build (cleanly — different surface). If N/O/P ship first: PR Q rebases (cleanly — different surface). Inherited locked patterns from already-shipped work (FB-0012 bounded-retry from PR M) bind verify-build's judge + budget design at Phase 4 / Phase 5.
 
-**Letter history:** an earlier scoping iteration of this work was numbered "PR M" in conversation drafts (2026-05-27 → 2026-05-28 morning); a parallel work stream landed bounded-retry as PR M (commit `0cf642e`) before the verify-build scoping commits could be pushed. Renumbered to PR Q to resolve the collision; FB-0014 resolved per K1's reserved-feedback-numbers protocol (deferred FB-0013 to PR P's planned same-model-critic entry).
+**Letter history:** an earlier scoping iteration of this work was numbered "PR M" in conversation drafts (2026-05-27 → 2026-05-28 morning); a parallel work stream landed bounded-retry as PR M (commit `0cf642e`) before the verify-build scoping commits could be pushed. Renumbered to PR Q to resolve the collision; FB-0015 resolved per K1's reserved-feedback-numbers protocol (deferred FB-0013 to PR P's planned same-model-critic entry).
 
 **Rebase strategy (Path B):** Between each phase commit, run `git fetch origin && git rebase origin/main`. Conflict surface should be near-zero — N/O/P touch `/flow:ship` Step 1c + auditor.md + new hook file; PR Q touches new files under `plugins/flow/skills/verify-build/` + `/flow:ship` Step 2. The only shared file is `dev-docs/{plan,feedback,roadmap,history}.md` cascades, which conflict cleanly (additive). Manifest version target shifts only at Phase 11 when the bump lands — current target v1.3.0 (signals new public skill surface); may go to v1.4.0 if N/O/P all minor-bump first.
 
@@ -25,7 +25,7 @@ The dominant agentic-dev failure mode is "Potemkin interface" (Replit Agent 3) /
 
 `/flow:verify-build` closes the gap by **wrapping bundled `/verify` with flow-specific orchestration**: plan-driven criteria extraction, Unknown-aware blocking gate, and feedback-loop routing. It is **not** a reimplementation of `/verify` — it is the gate-shaped wrapper, same pattern `/flow:security-review` and `/flow:accessibility-review` already follow vs their bundled equivalents.
 
-## What bundled skills already do (FB-0014 discipline — check bundled first)
+## What bundled skills already do (FB-0015 discipline — check bundled first)
 
 Per Anthropic's documentation (https://code.claude.com/docs/en/skills § "Run and verify your app"), Claude Code ships a 3-piece system, not standalone commands:
 
@@ -133,7 +133,7 @@ Three boolean checks; same Unknown-blocking semantics. Spike doesn't have a plan
   - **(a) Mechanical exit signal only.** Verify-build's `verifyBudgetCalls` cap (Step 5) loops on bundled `/verify`'s observable tool-call count, NOT on a judge-approval signal. The per-dimension judge (Step 6) runs single-pass — no retry-until-PASS loop. If a future Phase wants to add transient-failure retry around bundled `/verify` invocation, the retry MUST gate on `/verify`'s exit code (mechanically verifiable), not on judge verdict.
   - **(b) Cap + orthogonal abort.** If verify-build ever grows a retry primitive, it inherits PR M's N=3 + diff-hash oscillation pattern. v1 doesn't retry — single-pass + Unknown ⇒ block — but the architecture must not preclude inheriting M's pattern if added.
   - **(c) Explicit reward-hacking guards.** The adversarial-transformation prompt (Step 4) and judge rubric (Step 6) must explicitly forbid the implementing agent from disabling tests / suppressing warnings / patching assertions to satisfy a criterion. Inherit PR M Step 1c's verbatim guard language: *"do not modify or disable tests, do not add `@ts-ignore` / `# noqa` / `eslint-disable-next-line` or equivalent suppressors."*
-- **FB-0014 (check bundled first)** — applied to this PR's redraft (rationale for thin-wrapper shape and no platform-runner reimplementation).
+- **FB-0015 (check bundled first)** — applied to this PR's redraft (rationale for thin-wrapper shape and no platform-runner reimplementation).
 - **3-tier fallback chain** for any path resolution.
 - **Loud-warning pattern** for unset slots — never silent no-op.
 - **POSIX-portable shell** in `!` blocks (no bash arrays — dash compat).

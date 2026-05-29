@@ -170,10 +170,13 @@ fi
 
 Step 1c (above) is the load-bearing preflight gate for spikes; a spike that survives Step 1c's bounded retry and this Step 2 one-shot typecheck has passed mechanical checks. If a spike's mechanical checks would fail in a way that invalidates the research answer, document that conditionally in Step 3's history entry rather than disabling the checks.
 
-**Then invoke `/flow:verify-build --spike`** for a minimal behavioral check (does the spike's experimental code actually launch + execute its headline action without log errors). This is the same 3-check spike rubric documented at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/spike-rubric.md`:
+**Then invoke `/flow:verify-build` in spike mode** for a minimal behavioral check (does the spike's experimental code actually launch + execute its headline action without log errors). This is the same 3-check spike rubric documented at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/spike-rubric.md`. Invoke and tell the skill that you're calling from `/flow:ship-spike` so it treats Trigger 1 (caller signal) as satisfied:
 
 ```
-Skill("flow:verify-build", "--spike")
+Skill("flow:verify-build")
+# Contextual hint to verify-build: this invocation is from /flow:ship-spike;
+# enter spike mode per Step 2 Trigger 1. (The skill also auto-detects spike
+# mode via Triggers 2 and 3 if no plan or no Spec-walk block exists.)
 ```
 
 Skip behavior matches `/flow:verify-build` standalone: skip if `flow.config.json.verifyEnabled=false` or `platform=library|none`. Spike mode applies a lower verification bar (3 fixed checks vs N plan-derived) but the same Unknown-blocking gate — Unknown ⇒ exit 1 → spike ship halts. The lower bar is deliberate: spike code is throwaway, but "did this experiment actually launch and do the thing" is a load-bearing check the typecheck alone cannot answer.

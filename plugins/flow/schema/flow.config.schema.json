@@ -85,9 +85,15 @@
       "default": "",
       "examples": ["claude/", "feature/", "fix/"]
     },
+    "platform": {
+      "type": "string",
+      "enum": ["web", "ios", "android", "tauri", "cli", "library", "none"],
+      "description": "Optional project-platform hint consumed by /flow:verify-build for skip-path decisions. When set to 'library' or 'none', /flow:verify-build self-skips at Step 1.2 (no runnable target to verify). When unset (the default), bundled /run autodetects the platform via project structure (CLI / server / TUI / browser-driven / library) and /flow:verify-build accepts that autodetect. Set explicitly only when autodetect is wrong or you want the deterministic skip semantics for library/none. Other enum values (web/ios/android/tauri/cli) are informational hints rendered into findings-buffer metadata.platform_hint; they do NOT alter verify-build's launch behavior (bundled /run remains the authoritative launcher).",
+      "examples": ["web", "ios", "library"]
+    },
     "verifyEnabled": {
       "type": "boolean",
-      "description": "Project-wide opt-in/out for /flow:verify-build, the runtime behavioral-verification gate at /flow:ship Step 2. When true (default), /flow:verify-build runs as part of the final-pass reviews; when false, it self-skips with a clean message and the ship pipeline proceeds without the runtime gate. Set to false for projects where runtime verification is not meaningful (library-only projects with no runnable target — though setting platform=library is the more semantic opt-out). Default: true.",
+      "description": "Project-wide opt-in/out for /flow:verify-build, the runtime behavioral-verification gate at /flow:ship Step 2. When true (default), /flow:verify-build runs as part of the final-pass reviews; when false, it self-skips with a clean message and the ship pipeline proceeds without the runtime gate. Set to false for projects where runtime verification is not meaningful. For library-only projects, setting `platform: \"library\"` is the more semantic opt-out (verify-build then skips at the platform check rather than the project-wide gate). Default: true.",
       "default": true
     },
     "verifyFindingsPath": {

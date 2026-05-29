@@ -40,8 +40,10 @@ import sys
 from pathlib import Path
 
 # Spec-walk heading: matches lines like `**Spec-walk:**` or `**Spec-walk**:`
-# at the start of a line (after optional whitespace, ignoring leading
-# markdown list markers like `- ` from nested contexts).
+# at the start of a line (after optional whitespace). Plans in flow's own
+# dev-docs always use unindented bold-headings; if a consumer's plan nests
+# the heading under a list marker (`- **Spec-walk:**`) this regex won't
+# match — by design, since the canonical per-PR shape is unindented.
 SPEC_WALK_HEADING_RE = re.compile(
     r"^\s*\*\*Spec-walk:?\*\*:?\s*$",
     re.IGNORECASE,

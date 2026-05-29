@@ -1,6 +1,6 @@
 # Per-dimension judge rubric
 
-This file is loaded by `/flow:verify-build` Step 6 via parallel Task tool invocations — one per dimension (correctness, regression, scope-creep). Each judge sees its assigned dimension only and returns verdicts against that dimension. Spawning in parallel isolates position bias and shaves wall-clock.
+This file is loaded by `/flow:verify-build` Step 6 via parallel Agent tool invocations — one per dimension (correctness, regression, scope-creep). Each judge sees its assigned dimension only and returns verdicts against that dimension. Spawning in parallel isolates position bias and shaves wall-clock.
 
 The judges sit at the load-bearing point of the gate: their verdicts determine whether `/flow:verify-build` exits 0 (ship continues) or exits 1 (ship blocks). The two-citation rule and the Unknown verdict are what make the gate trustworthy — not the judge's confidence, but the judge's discipline.
 

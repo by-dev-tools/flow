@@ -1,6 +1,6 @@
 # Adversarial criteria transformation prompt
 
-This file is loaded by `/flow:verify-build` Step 4 via the Task tool. It is the system prompt for a fresh-context subagent that takes plan acceptance criteria as input and produces concrete edge cases the implementing agent did not author.
+This file is loaded by `/flow:verify-build` Step 4 via the Agent tool. It is the system prompt for a fresh-context subagent that takes plan acceptance criteria as input and produces concrete edge cases the implementing agent did not author.
 
 The fresh context is load-bearing: the implementing agent has seen the code and convinced itself the feature works. The adversarial subagent has seen only the plan. It cannot grade its own homework.
 

@@ -128,26 +128,32 @@ Note: when `platform` is unset, bundled `/run` will autodetect — no flow-side 
 
 Detect spike mode and short-circuit criteria extraction. Three triggers — any one enables spike mode:
 
+**Spike mode fires on any of three triggers:**
+
+1. **Caller signal.** `/flow:ship-spike` invokes this skill with the contextual instruction that spike mode applies (the agent reading both SKILL.md files treats the parent ship-spike context as the trigger; no shell-level `--spike` flag is parsed). When the calling skill is `/flow:ship-spike`, treat `SPIKE=true`.
+2. **Missing plan.** `flow.config.json.planPath` doesn't resolve to an existing file.
+3. **No Spec-walk block.** Plan file exists but lacks a `**Spec-walk:**` heading.
+
+Triggers 2 and 3 are detected mechanically:
+
 ```sh
 SPIKE=false
-
-# Trigger 1: explicit --spike argument from invocation (typically /flow:ship-spike)
-case " $* " in *" --spike "*) SPIKE=true ;; esac
-
-# Trigger 2: planPath doesn't resolve to an existing file
 PLAN_PATH=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null)
 [ -z "$PLAN_PATH" ] && PLAN_PATH="dev-docs/plan.md"
-[ ! -f "$PLAN_PATH" ] && SPIKE=true
 
-# Trigger 3: plan file exists but contains no **Spec-walk:** block
-# (Detected after Step 3's extract-criteria.py emits empty criteria with warning;
-# this Step 2 trigger is the cheap pre-check; Step 3 is the authoritative parse.)
-if [ -f "$PLAN_PATH" ] && ! grep -q '\*\*Spec-walk' "$PLAN_PATH"; then
+if [ ! -f "$PLAN_PATH" ]; then
   SPIKE=true
+  SPIKE_REASON="no plan at $PLAN_PATH"
+elif ! grep -q '\*\*Spec-walk' "$PLAN_PATH"; then
+  SPIKE=true
+  SPIKE_REASON="plan at $PLAN_PATH has no **Spec-walk:** block"
 fi
 
+# Trigger 1 (caller signal) is set by prose above when invoked from /flow:ship-spike;
+# detection there is contextual, not shell-positional.
+
 if [ "$SPIKE" = "true" ]; then
-  echo "[verify-build] spike mode active (--spike, missing plan, or no Spec-walk block)."
+  echo "[verify-build] spike mode active: ${SPIKE_REASON:-invoked by /flow:ship-spike}"
 fi
 ```
 
@@ -156,7 +162,7 @@ When `SPIKE=true`:
 - Use the fixed 3-check rubric at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/spike-rubric.md` as the verification script for Step 5's `Skill('verify')` invocation. The rubric's three checks (Launch / One happy step / No log errors) become the "criteria" passed through.
 - At Step 6, spawn ONLY the `correctness` judge (regression + scope-creep are not meaningful without a plan). The judge uses `lib/spike-rubric.md` as its system prompt instead of `lib/rubric.md`.
 - At Step 7, treat the single correctness verdict per check as the per-criterion `aggregated_verdict` directly. Same Unknown ⇒ exit 1 contract.
-- At Step 8, the findings buffer includes `metadata.spike_mode: true`; per-criterion `verdicts.regression` and `verdicts.scope-creep` are emitted as `Unknown` with notes `"spike mode — dimension not applicable"` to keep the schema shape stable for downstream consumers (Step 4a, HTML renderer).
+- At Step 8, the findings buffer includes `metadata.spike_mode: true`; per-criterion `verdicts.regression` and `verdicts.scope-creep` are emitted as `Unknown` with the canonical placeholder shape — `evidence: ["(spike mode — dimension not applicable)", "<verbatim criterion text>"]` (preserves the schema's exactly-2 evidence requirement) and `notes: "spike mode — dimension not applicable"` — to keep the schema shape stable for downstream consumers (Step 4a, HTML renderer).
 
 Spike mode applies the same evidence + Unknown discipline as full mode — Unknown ⇒ ESCALATE per FB-0011 ⇒ exit 1. The lower bar is in the *number* of checks (3 fixed vs N plan-derived), not in the verdict discipline.
 
@@ -182,7 +188,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PL
 
 ## 4. Adversarial transformation
 
-For each criterion, spawn a Task subagent with the prompt at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/adversarial.md` to generate 1–2 "what would break this" cases. The adversarial subagent runs in a fresh context — the implementing agent doesn't grade its own homework.
+For each criterion, spawn a Agent subagent (fresh-context) with the prompt at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/adversarial.md` to generate 1–2 "what would break this" cases. The adversarial subagent runs in a fresh context — the implementing agent doesn't grade its own homework.
 
 Output: augmented criteria list = original criteria + 1–2 adversarial cases per original.
 
@@ -200,7 +206,7 @@ Bundled `/verify` calls `/run` internally for launch, drives the running app per
 
 ## 6. Per-dimension parallel judging
 
-Spawn N parallel Task subagents — one per dimension — each with the rubric prompt at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/rubric.md`. Default dimensions:
+Spawn N parallel Agent subagent (fresh-context)s — one per dimension — each with the rubric prompt at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/rubric.md`. Default dimensions:
 
 - **correctness** — does each criterion's observed behavior match intent?
 - **regression** — did anything else break that wasn't a criterion?
@@ -231,7 +237,7 @@ The schema pins these properties (binding — consumers depend on them):
 - **`criteria[]`**: per-criterion entries with `text`, `adversarial_cases`, `observations[]` (each with `type` discriminator: `screenshot` | `a11y_snapshot` | `network` | `console` | `log` | `stdout` | `exit_code` | `narrative`), `verdicts.{correctness,regression,scope-creep}` (each with verdict + exactly-2 evidence quotes + notes), and per-criterion `aggregated_verdict`.
 - **`not_tested[]`**: closed-form per-platform checklist from `lib/not-tested-checklist.md` with `item` text, `tested` boolean, optional `rationale`.
 
-**Forward-compat note (PR R HTML case-study report — see `roadmap.md` § Exploration):** this shape is a superset of what an eventual HTML renderer needs. Per-criterion text + per-adversarial-case text + per-step observation captures with `type` discriminator + per-dimension verdict with evidence + top-level "not tested" checklist all support downstream rendering without schema migration. The `timestamp_offset_ms` field on observations exists specifically so the renderer can order events along a timeline. PR Q does not render HTML; PR R does, against this contract.
+**Forward-compat note (HTML case-study report — see `roadmap.md` § Exploration "Verify-build HTML case-study report"):** this shape is a superset of what an eventual HTML renderer needs. Per-criterion text + per-adversarial-case text + per-step observation captures with `type` discriminator + per-dimension verdict with evidence + top-level "not tested" checklist all support downstream rendering without schema migration. The `timestamp_offset_ms` field on observations exists specifically so the renderer can order events along a timeline. PR Q does not render HTML; a future PR will, against this contract.
 
 ### How `/flow:ship` Step 4a reads this buffer (Phase 7 integration; stub here)
 
@@ -270,7 +276,7 @@ What we did NOT test:
 
 - **Bundled `/verify` output is freeform.** No structured PASS/FAIL contract. Flow's judge has to parse Claude's response narratively — calibration matters (FB-0011: ESCALATE on uncertainty).
 - **Simulator ≠ device.** Same disclaimer XcodeBuildMCP carries; mirrored in the "not tested" stamp.
-- **Adversarial transformation must spawn in fresh context.** Otherwise the implementing agent grades its own homework. Use Task tool, not Agent inheriting parent context.
+- **Adversarial transformation must spawn in fresh context.** Otherwise the implementing agent grades its own homework. Use the Agent tool with a fresh-context subagent_type — do not let the spawned agent inherit the implementer's conversation state.
 - **Budget cap is fail-closed.** Over-budget ⇒ Unknown ⇒ block (FB-0009 fail-fast generalized to runtime cost).
 
 ## Config slots used
@@ -284,19 +290,3 @@ What we did NOT test:
 | `flow.config.json.verifyBudgetCalls` | `60` | Step 5 (budget cap) |
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Read by `/flow:ship` Step 4a (not by verify-build directly) |
 
-## Implementation status (as of 2026-05-28)
-
-This SKILL.md is the Phase 1 skeleton — frontmatter + step structure + documented contract for bundled `/verify`. Subsequent phases land:
-
-- **Phase 2:** `lib/extract-criteria.py` real implementation + 4 fixtures
-- **Phase 3:** `lib/adversarial.md` real prompt + spawning shape
-- **Phase 4:** `lib/rubric.md` real schema + Unknown-blocks fixture
-- **Phase 5:** Findings buffer JSON shape finalized + `/flow:ship` Step 4a wiring
-- **Phase 6:** `lib/spike-rubric.md` + spike-mode re-entry shape
-- **Phase 7:** `/flow:ship` Step 2 integration (or wire into PR L's Detection-Point-N pattern if landed first)
-- **Phase 8:** workflow.md + bootstrap.md + migration.md + doctor Check 5.3
-- **Phase 9:** Smoke fixture + budget-overrun fixture
-- **Phase 10:** `/flow:staff-review` dogfood
-- **Phase 11:** `/flow:ship` + manifest v1.3.0
-
-Canonical plan: `dev-docs/handoffs/pr-q-verify-build-plan.md`.
