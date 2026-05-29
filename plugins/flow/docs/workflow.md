@@ -214,7 +214,7 @@ User responds with feedback. Claude addresses it — code changes, doc updates, 
 
 User says "ship it" (or `/flow:ship`). Claude runs the ship pipeline (full spec: `plugins/flow/skills/ship/SKILL.md`):
 
-1. Final-pass `/flow:security-review` + `/flow:accessibility-review` in sequence (PR 2 — `[PR 1 LIMITATION]` placeholder in v1.0.0).
+1. Final-pass reviews in sequence: `/flow:security-review` + `/flow:accessibility-review` + `/flow:verify-build`. Each self-detects skip conditions (security: doc-only; a11y: `uiSurface=false` or non-UI diff; verify-build: `verifyEnabled=false` or `platform=library|none`). Verify-build is the runtime gate — it wraps bundled `/verify` with plan-driven criteria + Unknown-blocking judgment, catching the Potemkin-interface / hallucinated-success class no static reviewer catches. **Verify-build exit_code=1 (FAIL or Unknown verdict) halts the pipeline at this step.** Single-pass per FB-0012 — no retry loop on judge output.
 2. Apply blocker / cheap-nit fixes; re-run Preflight (`flow.config.json.typecheckCmd`) if code changed. Loud warning if the slot is unset.
 3. **Synthesize session feedback (two layers)**:
    - **User feedback** — review the conversation since the last PR for corrections, preferences, decisions, and solved challenges. New entries go in `flow.config.json.feedbackPath`.
@@ -392,7 +392,8 @@ If a `/flow:staff-review` or `/flow:ship` finding suggests a missing rule, write
 | `/flow:staff-review` | Four-lens parallel review (engineer / UX / design-engineer / push-further) | After `/simplify`, before presenting | flow PR 2 |
 | `/flow:security-review` | Diff-focused security audit | Standalone; also invoked by `/flow:ship` | flow PR 2 |
 | `/flow:accessibility-review` | Diff-focused WCAG 2.1 AA audit | Standalone; also invoked by `/flow:ship` | flow PR 2 |
-| `/flow:ship-spike` | Lightweight ship for spike-mode PRs | When the spike plan finishes | flow PR 2 |
+| `/flow:verify-build` | Plan-driven behavioral verification: extract criteria from `**Spec-walk:**` checkboxes, adversarial transform, judge bundled `/verify`'s observations per dimension, block ship on Unknown | Standalone (mid-iterate "does this work yet?"); also invoked by `/flow:ship` Step 2 + `/flow:ship-spike` Step 2 (`--spike` mode) | flow PR Q |
+| `/flow:ship-spike` | Lightweight ship for spike-mode PRs (also invokes `/flow:verify-build --spike` for a 3-check smoke gate) | When the spike plan finishes | flow PR 2 |
 | `/flow:workflow-help` | Print the loop on demand | Reference | flow PR 2 |
 | project's `/link` (or equivalent) | Start the dev server, return URL | Whenever you need a live preview | project-specific (not flow) |
 
@@ -413,8 +414,13 @@ If a `/flow:staff-review` or `/flow:ship` finding suggests a missing rule, write
 | `specPath` | `core-docs/spec.md` (consumers) / `dev-docs/spec.md` (flow's own repo) | clarify, `/flow:ship` step 4 |
 | `feedbackPath` | `core-docs/feedback.md` (consumers) / `dev-docs/feedback.md` (flow's own repo) | clarify, `/flow:ship` step 3a |
 | `referenceGlob` | `core-docs/*.md` | `/flow:critique-plan` preprocessor |
+| `verifyEnabled` | `true` | `/flow:verify-build` skip-path (project-wide opt-out) |
+| `verifyFindingsPath` | `/tmp/flow-verify-findings.json` | `/flow:verify-build` step 8 write; `/flow:ship` step 4a read |
+| `verifyBudgetCalls` | `60` | `/flow:verify-build` step 5 (tool-call cap before forced Unknown) |
 
 Why two defaults: flow's *own* dev-tracking lives at `dev-docs/` (so `core-docs/` stays free as the name consumer-template scaffolding ships at). Consumer projects typically use `core-docs/`. The defaults bake that distinction in.
+
+**`/flow:verify-build` prerequisite:** `/flow:verify-build` wraps bundled `/verify`, which in turn invokes bundled `/run`. `/run` works best with a per-project launch recipe scaffolded by Anthropic's bundled `/run-skill-generator` at `.claude/skills/run-<name>/`. Without that recipe, heuristic launch may fail on projects with env files, databases, multi-step builds, or non-standard scheme/package selection (Anthropic's docs explicitly call out this limitation). After installing flow, run `/run-skill-generator` once per project; `/flow:doctor` Check 5.3 surfaces the gap if you skip it.
 
 ---
 

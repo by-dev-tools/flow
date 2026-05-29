@@ -85,6 +85,23 @@
       "default": "",
       "examples": ["claude/", "feature/", "fix/"]
     },
+    "verifyEnabled": {
+      "type": "boolean",
+      "description": "Project-wide opt-in/out for /flow:verify-build, the runtime behavioral-verification gate at /flow:ship Step 2. When true (default), /flow:verify-build runs as part of the final-pass reviews; when false, it self-skips with a clean message and the ship pipeline proceeds without the runtime gate. Set to false for projects where runtime verification is not meaningful (library-only projects with no runnable target — though setting platform=library is the more semantic opt-out). Default: true.",
+      "default": true
+    },
+    "verifyFindingsPath": {
+      "type": "string",
+      "description": "Path where /flow:verify-build Step 8 writes its structured findings buffer. /flow:ship Step 4a reads this path to derive candidate FB-XXXX entries (via source-diversity bar). Default '/tmp/flow-verify-findings.json' so the buffer is auto-wiped at reboot. Override to a project-local path (e.g., '.flow/last-verify.json') if you want the buffer preserved across boots for inspection. Concurrent verify-build runs against the same path will clobber each other; single-run-per-ship is the v1 contract.",
+      "default": "/tmp/flow-verify-findings.json",
+      "examples": ["/tmp/flow-verify-findings.json", ".flow/last-verify.json"]
+    },
+    "verifyBudgetCalls": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Hard cap on tool-call count consumed by bundled /verify during /flow:verify-build Step 5. When exceeded, the verify pass aborts and unjudged verdicts are forced to Unknown (which gates ship per FB-0011). The cap is a fail-closed safety net against runaway verify runs that would otherwise consume the session budget. Default 60 calls — enough for a typical web app verification (~15-25 calls) with headroom; raise for iOS/Android (~30-50 calls) or projects with multi-step verification flows. Mechanical exit signal per FB-0012(a) — does not loop on judge output.",
+      "default": 60
+    },
     "rustWorkspaceDir": {
       "type": "string",
       "description": "(Tauri / Rust stacks only.) Directory containing the project's Rust workspace (Cargo.toml). Used by the tauri-rust-ts stack overlay's preflight runner to know where to run `cargo fmt`, `cargo clippy`, `cargo test`. Default: 'src-tauri' (the Tauri convention). Non-Tauri Rust projects typically set this to '.' (workspace at repo root) or to the workspace subdirectory.",

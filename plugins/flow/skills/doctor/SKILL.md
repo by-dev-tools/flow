@@ -4,7 +4,7 @@ description: >
   Verify that the flow plugin is correctly installed and configured for the
   current project. Runs a punch-list of PASS/FAIL checks: marketplace
   registered under the canonical 'flow' name, flow@flow enabled, project-root
-  flow.config.json present + parses + matches the v1.2+ schema, all 17 slots
+  flow.config.json present + parses + matches the v1.2+ schema, all 20 slots
   have sensible values, auto-loading rules visible to Claude Code, the paths
   named in slots actually exist on disk, prerequisite CLI tools (gh, jq, git)
   installed, preflight + CI optionally wired. Each FAIL prints an actionable
@@ -306,6 +306,36 @@ if [ -d .github/workflows ] && [ -n "$(ls -A .github/workflows 2>/dev/null)" ]; 
 else
   echo "[WARN] no CI workflows at .github/workflows/"
   echo "       Optional but recommended. Fix: bootstrap.sh ships a stack-specific ci.yml."
+fi
+```
+
+**Check 5.3 — project run skill (prerequisite for `/flow:verify-build`)**
+
+`/flow:verify-build` wraps bundled `/verify` + `/run`. Both work best with a per-project launch recipe scaffolded by Anthropic's bundled `/run-skill-generator` at `.claude/skills/run-<name>/`. Without it, heuristic launch may fail on non-trivial projects.
+
+```sh
+# Gate on verifyEnabled: if disabled, skip the check entirely.
+VERIFY_ENABLED="true"
+if [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
+  VERIFY_ENABLED=$(jq -r '.verifyEnabled // true' flow.config.json)
+fi
+
+if [ "$VERIFY_ENABLED" = "false" ]; then
+  echo "[SKIP] project run skill — flow.config.json.verifyEnabled=false; /flow:verify-build disabled"
+else
+  # Use shell glob expansion via nullglob-ish guard for portability.
+  RUN_SKILLS=$(ls -d .claude/skills/run-*/ 2>/dev/null)
+  if [ -n "$RUN_SKILLS" ]; then
+    FIRST=$(echo "$RUN_SKILLS" | head -n1)
+    echo "[PASS] project run skill present at $FIRST"
+    echo "       Powers /flow:verify-build via bundled /run + /verify."
+  else
+    echo "[WARN] no .claude/skills/run-*/ found — /flow:verify-build will rely on heuristic launch"
+    echo "       Fix: run /run-skill-generator (Anthropic bundled skill) to scaffold a per-project"
+    echo "       launch recipe. Required for non-trivial projects (env files, DBs, multi-step builds,"
+    echo "       non-standard scheme/package selection). Optional for simple Vite/CLI/Next-style apps."
+    echo "       Set flow.config.json.verifyEnabled=false to opt out of verify-build entirely."
+  fi
 fi
 ```
 

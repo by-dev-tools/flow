@@ -667,6 +667,26 @@ Documentation + version updates (if it ships):
 
 ---
 
+## PR Q — `/flow:verify-build` skill: plan-driven behavioral verification gate (in flight on `claude/lucid-matsumoto-730ba0`; orthogonal to N/O/P/R)
+
+**Mode:** feature (medium — full skill + 5 lib assets + 3 fixture sets + workflow + doctor + schema integration) | **Priority: high** | **Horizon:** v1.3.0
+**Branch:** `claude/lucid-matsumoto-730ba0` during execution; renamed to `pr-q/verify-build-skill` at ship time.
+**Canonical plan:** [`dev-docs/handoffs/pr-q-verify-build-plan.md`](handoffs/pr-q-verify-build-plan.md) — full Mode/Goal/Scope/Spec-walk/Confidence verdicts/Risks/Phases/Files-touched.
+
+**Goal (one-liner):** Add `/flow:verify-build` as a thin wrapper around bundled `/verify` (transitively `/run` + `/run-skill-generator`) that adds plan-driven criteria extraction (from `**Spec-walk:**` checkboxes), adversarial criteria transformation, per-dimension parallel judges with Unknown-blocking gate, and structured findings buffer routed to `/flow:ship` Step 4a. Closes the static-analysis-only gap in the loop's verification surface (Potemkin-interface / hallucinated-success class — the dominant agentic-dev failure mode no current flow step catches).
+
+**Sequencing — orthogonal, not queued:** PRs N (orchestration hardening), O (test-edit hook), P (auditor model-diversity), R (init-skill) target different surfaces. PR Q targets `/flow:ship` Step 2 final-pass review surface. Different files in the diff; no real content dependency. Rebases onto main as N/O/P/R land. Ship order = whichever finishes first. Inherited locked pattern: PR M's FB-0012 bounded-retry contract — verify-build's judge runs single-pass; any future retry primitive inherits PR M Step 1c's `(a)` mechanical exit signal + `(b)` N=3 + diff-hash + `(c)` no test-disabling guards.
+
+**Status (2026-05-28):** **Phases 1–9 complete** — SKILL.md + lib/extract-criteria.py + 4 prompt libs (adversarial / rubric / spike-rubric / not-tested-checklist) + findings-schema.json + findings-example.json + 3 eval fixtures (verify-unknown-blocks / verify-toy-web-app / verify-budget-overrun) + /flow:ship Step 2 + 4a integration + ship-spike Step 2 + workflow.md Step 10 + bootstrap.md Step 5.5 + migration.md Stage 1.5 + doctor Check 5.3 + schema slots (3 new: verifyEnabled / verifyFindingsPath / verifyBudgetCalls; total 17 → 20) + FB-0010 fan-out sweep (slot count in README + CLAUDE.md.template + bootstrap.sh + doctor). **Phase 10 (staff-review dogfood) and Phase 11 (ship + manifest bump) in progress.**
+
+**Locked patterns inherited:** FB-0008 (stale-base preflight), FB-0009 (fail-fast on missing CLIs), FB-0010 (consistency discipline; silent-skip + fan-out defenses applied), FB-0011 (autonomy bar; Unknown ⇒ ESCALATE), FB-0012 (bounded-retry contract from PR M — mechanical exit signal + N=3 + reward-hacking guards), FB-0015 (check bundled first — applied to thin-wrapper shape).
+
+**Letter / FB history (for traceability):** drafted as "PR M" in conversation (2026-05-27→28 morning); collided with bounded-retry PR M (`0cf642e`). Renumbered to PR Q after K1's protocol audit (per PR R's reserved-feedback-numbers entry which acknowledged Q as my slot). FB number cascaded: original FB-0010 → FB-0012 (PR G collision) → FB-0013 (PR M collision; PR P reserved) → FB-0014 (PR R claimed) → **FB-0015** at this rebase.
+
+**Files touched:** new under `plugins/flow/skills/verify-build/` (SKILL.md + lib/{extract-criteria.py, adversarial.md, rubric.md, spike-rubric.md, not-tested-checklist.md, findings-schema.json, findings-example.json}); new under `plugins/flow/evals/fixtures/` (verify-unknown-blocks/, verify-toy-web-app/, verify-budget-overrun/ — 14 fixture files total); modified `plugins/flow/skills/{ship,ship-spike,doctor}/SKILL.md` (SAFETY), `plugins/flow/docs/workflow.md`, `plugins/flow/schema/flow.config.schema.json`, `docs/{bootstrap,migration}.md`, README.md (slot count), `template/base/{CLAUDE.md.template,bootstrap.sh}` (slot count); plus dev-docs cascade (feedback, plan, roadmap, reserved-feedback-numbers, handoffs/pr-q-verify-build-plan.md).
+
+---
+
 ## PR G — Consistency discipline (FB-0010, SHIPPED — squash `0c3386b`)
 
 **Mode:** feature (small) | **Priority: highest**

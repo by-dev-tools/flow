@@ -1,0 +1,21 @@
+[bundled /verify output transcript — budget overrun simulation]
+
+Loaded http://localhost:5173. Page rendered. [tool call 1: navigate]
+
+Test 1: Happy-path submit
+  - Located Submit button [tool call 2: snapshot]
+  - Clicked Submit [tool call 3: click]
+  - Network: POST /api/submit → 201 Created [tool call 4: network]
+  - Toast: "Submitted successfully" [tool call 5: snapshot]
+
+Test 2: Validation (in progress)
+  - Cleared form fields [tool call 6: fill]
+  - Located Submit button [tool call 7: snapshot]
+  - Clicked Submit [tool call 8: click]
+  - Network: POST /api/submit → ... [tool call 9: network]
+  - Captured response [tool call 10: snapshot]
+
+[BUDGET LIMIT REACHED: 10/10 tool calls consumed.
+ /flow:verify-build aborting verify pass.
+ Test 2 (validation) is mid-flight — observations are partial.
+ Test 3 (logout) was not started.]

@@ -175,6 +175,27 @@ claude --print "/flow:workflow-help" | head -20
 
 The `/flow:workflow-help` output should show your `flow.config.json` slot values (resolved). If a slot prints `(default)` instead of your value, the slot isn't being read — re-check `flow.config.json` for typos.
 
+## Step 5.5 — Scaffold a project run skill (prerequisite for `/flow:verify-build`)
+
+`/flow:verify-build` (the runtime behavioral-verification gate in `/flow:ship` Step 2) wraps bundled `/verify`, which in turn invokes bundled `/run`. `/run` works best with a per-project launch recipe scaffolded by Anthropic's bundled `/run-skill-generator`:
+
+```
+/run-skill-generator
+```
+
+This is an interactive Claude Code skill — it figures out how to build + launch your app, then writes a recipe to `.claude/skills/run-<name>/`. Commit the result. From then on, `/run`, `/verify`, and `/flow:verify-build` all defer to your project-specific launch recipe.
+
+**Why this matters:** without a recipe, `/run` falls back to heuristic launch (read README + package.json + Makefile). Anthropic's docs explicitly call this "unreliable for projects that need anything beyond a standard launch: a database, an env file, a graphical session, a multi-step build." Flow's verify gate then fires on a `/verify` that can't launch, returns Unknown, and the gate becomes noise.
+
+**Skip this step only if:** your project is a library (no runnable target) or you've set `flow.config.json.verifyEnabled: false` to opt out entirely. `/flow:doctor` Check 5.3 surfaces a WARN if `.claude/skills/run-*/` is absent and `verifyEnabled` is `true`.
+
+**Optional per-platform MCP install** for richer observation capture by bundled `/verify`:
+- **Web:** Playwright MCP — accessibility tree + DOM interaction + network capture
+- **iOS:** XcodeBuildMCP — build + simulator boot + ui-automation + log capture
+- **Android:** mobile-mcp — cross-platform emulator + a11y dump + logcat
+
+These are not strictly required (bundled `/verify` will fall back to whatever it can capture), but having the right MCP installed for your stack measurably improves the depth of verification.
+
 ## Step 6 — Try one PR
 
 Smallest viable change: a typo fix in `core-docs/spec.md`.

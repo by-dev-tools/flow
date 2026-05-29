@@ -151,7 +151,7 @@ For each attempt `N` in 1..3:
 
 If Step 1c fails for a spike: the spike answered its research question conditional on a broken state. Either fix the broken state OR document the conditional explicitly in the history entry at Step 3 (`What we learned: <answer> — caveat: this assumes <broken thing> is resolved upstream`). Do NOT bypass Step 1c by deleting tests; that corrupts the spike's value.
 
-## 2. Skip the heavy reviews
+## 2. Skip the heavy reviews; run verify-build in spike mode
 
 `/simplify` and `/flow:staff-review` do not run for spikes. Reviewing throwaway code for craft is theater. Step 1c above already enforces the bounded-retry mechanical preflight; this step is a one-shot typecheck confirmation that mirrors `/flow:ship` Step 3's role (re-check after any review-applied fixes, even though spike skips reviews):
 
@@ -169,6 +169,16 @@ fi
 ```
 
 Step 1c (above) is the load-bearing preflight gate for spikes; a spike that survives Step 1c's bounded retry and this Step 2 one-shot typecheck has passed mechanical checks. If a spike's mechanical checks would fail in a way that invalidates the research answer, document that conditionally in Step 3's history entry rather than disabling the checks.
+
+**Then invoke `/flow:verify-build --spike`** for a minimal behavioral check (does the spike's experimental code actually launch + execute its headline action without log errors). This is the same 3-check spike rubric documented at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/spike-rubric.md`:
+
+```
+Skill("flow:verify-build", "--spike")
+```
+
+Skip behavior matches `/flow:verify-build` standalone: skip if `flow.config.json.verifyEnabled=false` or `platform=library|none`. Spike mode applies a lower verification bar (3 fixed checks vs N plan-derived) but the same Unknown-blocking gate — Unknown ⇒ exit 1 → spike ship halts. The lower bar is deliberate: spike code is throwaway, but "did this experiment actually launch and do the thing" is a load-bearing check the typecheck alone cannot answer.
+
+If verify-build runs in spike mode and the gate blocks, the user adjudicates: either fix the headline-action behavior + re-run, OR document the failure in Step 3's history entry as the spike's actual finding ("the experiment confirmed that approach X does not work because Y") and proceed past the gate via re-invocation with `--skip-verify` (documented but not implemented in v1). The history entry IS the deliverable for a spike — a failed verify-build is a valid spike result if captured honestly.
 
 ## 3. Write the history entry — the entry IS the deliverable
 

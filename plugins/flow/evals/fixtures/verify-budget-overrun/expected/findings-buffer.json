@@ -1,0 +1,130 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "branch": "verify-toy-feature-branch",
+    "head_sha_short": "abc1234",
+    "plugin_version": "1.3.0",
+    "platform_hint": "web",
+    "verify_budget_calls_used": 10,
+    "verify_budget_overrun": true,
+    "spike_mode": false
+  },
+  "overall_verdict": "Unknown",
+  "exit_code": 1,
+  "criteria": [
+    {
+      "text": "User can click the Submit button and see a success toast.",
+      "adversarial_cases": [],
+      "observations": [
+        {"type": "narrative", "content": "Located Submit button. Clicked Submit."},
+        {"type": "network", "content": "POST /api/submit → 201 Created"},
+        {"type": "a11y_snapshot", "content": "Toast: \"Submitted successfully\""}
+      ],
+      "verdicts": {
+        "correctness": {
+          "verdict": "PASS",
+          "evidence": [
+            "POST /api/submit → 201 Created / Toast: \"Submitted successfully\"",
+            "User can click the Submit button and see a success toast."
+          ],
+          "notes": ""
+        },
+        "regression": {
+          "verdict": "PASS",
+          "evidence": [
+            "Page rendered. (no console errors before budget overrun)",
+            "User can click the Submit button and see a success toast."
+          ],
+          "notes": ""
+        },
+        "scope-creep": {
+          "verdict": "PASS",
+          "evidence": [
+            "POST /api/submit (only endpoint called for this criterion)",
+            "Plan scope: only the Submit POST."
+          ],
+          "notes": ""
+        }
+      },
+      "aggregated_verdict": "PASS"
+    },
+    {
+      "text": "Form validation rejects empty input with an inline error.",
+      "adversarial_cases": [],
+      "observations": [
+        {"type": "narrative", "content": "Cleared form fields. Clicked Submit. (verify pass aborted mid-flight at tool call 10)"}
+      ],
+      "verdicts": {
+        "correctness": {
+          "verdict": "Unknown",
+          "evidence": [
+            "(verify pass aborted mid-flight at tool call 10)",
+            "Form validation rejects empty input with an inline error."
+          ],
+          "notes": "Budget cap (10 calls) reached before validation response was observed; verdict forced to Unknown per FB-0012(a) mechanical exit signal."
+        },
+        "regression": {
+          "verdict": "Unknown",
+          "evidence": [
+            "(verify pass aborted before regression-adjacent observations captured)",
+            "Form validation rejects empty input with an inline error."
+          ],
+          "notes": "Budget overrun; insufficient observations to judge regression."
+        },
+        "scope-creep": {
+          "verdict": "Unknown",
+          "evidence": [
+            "(verify pass aborted before validation surface fully exercised)",
+            "Form validation rejects empty input with an inline error."
+          ],
+          "notes": "Budget overrun; cannot assess whether validation behavior was in or out of scope."
+        }
+      },
+      "aggregated_verdict": "Unknown"
+    },
+    {
+      "text": "Logout button signs the user out and redirects to /login.",
+      "adversarial_cases": [],
+      "observations": [],
+      "verdicts": {
+        "correctness": {
+          "verdict": "Unknown",
+          "evidence": [
+            "(no observations — verify pass aborted before this criterion was reached)",
+            "Logout button signs the user out and redirects to /login."
+          ],
+          "notes": "Budget cap (10 calls) reached during criterion 2; criterion 3 was never exercised. Verdict forced to Unknown per FB-0012(a)."
+        },
+        "regression": {
+          "verdict": "Unknown",
+          "evidence": [
+            "(no observations)",
+            "Logout button signs the user out and redirects to /login."
+          ],
+          "notes": "Criterion never exercised due to budget overrun."
+        },
+        "scope-creep": {
+          "verdict": "Unknown",
+          "evidence": [
+            "(no observations)",
+            "Logout button signs the user out and redirects to /login."
+          ],
+          "notes": "Criterion never exercised due to budget overrun."
+        }
+      },
+      "aggregated_verdict": "Unknown"
+    }
+  ],
+  "not_tested": [
+    {"item": "Real device (used Playwright headless / dev browser)", "tested": false},
+    {"item": "Real network (used dev server)", "tested": false},
+    {"item": "Authenticated flows requiring 2FA / SSO", "tested": false},
+    {"item": "Push notifications", "tested": false},
+    {"item": "Payment flows", "tested": false},
+    {"item": ">1 viewport size (mobile / tablet)", "tested": false},
+    {"item": ">1 locale / language", "tested": false},
+    {"item": ">1 browser engine (only Chromium tested by default)", "tested": false},
+    {"item": "Criterion 2 (validation) — observation aborted at tool call 10", "tested": false, "rationale": "budget overrun"},
+    {"item": "Criterion 3 (logout) — never exercised", "tested": false, "rationale": "budget overrun"}
+  ]
+}

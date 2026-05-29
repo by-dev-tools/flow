@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "overall_verdict": "Unknown",
+  "exit_code": 1,
+  "criteria_with_verdicts": [
+    {
+      "criterion": "User can submit the form with valid input and see a success message.",
+      "per_dimension": {
+        "correctness": "PASS",
+        "regression": "PASS",
+        "scope-creep": "PASS"
+      },
+      "aggregated_verdict": "PASS"
+    },
+    {
+      "criterion": "Form validation rejects empty required fields with an inline error message.",
+      "per_dimension": {
+        "correctness": "Unknown",
+        "regression": "Unknown",
+        "scope-creep": "Unknown"
+      },
+      "aggregated_verdict": "Unknown"
+    },
+    {
+      "criterion": "Logout button signs the user out and redirects to /login.",
+      "per_dimension": {
+        "correctness": "Unknown",
+        "regression": "Unknown",
+        "scope-creep": "Unknown"
+      },
+      "aggregated_verdict": "Unknown"
+    }
+  ],
+  "aggregation_rule_applied": "Per /flow:verify-build Step 7 + FB-0011 autonomy bar: any criterion with Unknown verdict on any dimension aggregates to Unknown overall. Any FAIL aggregates to FAIL. All-PASS aggregates to PASS. Exit code: PASS=0, FAIL=1, Unknown=1.",
+  "expected_findings_buffer_path": "/tmp/flow-verify-findings.json",
+  "expected_routing": "Step 8 writes the per-criterion + per-dimension verdicts with evidence + notes to the findings buffer. /flow:ship Step 4a reads + merges into feedback.md FB-XXXX format with the Unknown criteria as primary candidates for capture."
+}

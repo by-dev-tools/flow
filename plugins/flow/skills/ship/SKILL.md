@@ -196,26 +196,30 @@ If Step 1c passes (or is skipped via unset/docs-only), proceed to Step 2. The St
 
 ## 2. Final-pass reviews
 
-Sequentially invoke `/flow:security-review` and `/flow:accessibility-review` via the Skill tool. Each reviewer cold-reads the workspace diff vs the default branch, applies BLOCKER + cheap NIT fixes in-tree, and returns FOLLOW-UP findings for step 3 routing.
+Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, and `/flow:verify-build` via the Skill tool. Each reviewer cold-reads the workspace diff vs the default branch (or runs the built artifact, for verify-build), applies BLOCKER + cheap NIT fixes in-tree, and returns FOLLOW-UP findings for step 3 routing.
 
 ```
 Skill("flow:security-review")
 Skill("flow:accessibility-review")
+Skill("flow:verify-build")
 ```
 
 Skip behavior:
 - `/flow:security-review`: skip if the diff is doc-only or trivially safe (a copy tweak). The reviewer self-detects this and exits early with a clean message.
 - `/flow:accessibility-review`: skip if `flow.config.json.uiSurface` is `false` (the reviewer self-detects this and exits early), or if the diff is non-UI (data layer, build config, doc-only).
+- `/flow:verify-build`: skip if `flow.config.json.verifyEnabled` is `false` (project-wide opt-out), or if `flow.config.json.platform` resolves to `library` or `none` (no runnable target). The skill self-detects both and exits early with a clean `[verify-build] ...skipping.` message. Unlike security + a11y, verify-build does NOT auto-skip on doc-only diffs — the user may have shipped a behavioral change in a non-code file (e.g., a config-driven feature toggle); the run-and-observe loop is cheap enough to attempt and fall through to Unknown if there's nothing to observe.
 
-Both reviewers are tuned for the in-flow ship context; the bundled Claude Code `/security-review` is fine for out-of-band deep audits but `/flow:security-review` carries the config-slot doc-path resolution this pipeline needs.
+The first two reviewers are tuned for the in-flow ship context; the bundled Claude Code `/security-review` is fine for out-of-band deep audits but `/flow:security-review` carries the config-slot doc-path resolution this pipeline needs. Verify-build is the runtime gate that catches the Potemkin-interface / hallucinated-success class no static reviewer catches; it wraps bundled `/verify` with plan-driven criteria + Unknown-blocking judgment.
 
-After both Skill calls return, emit one consolidated user-facing line so the user can see what actually ran vs skipped:
+After all three Skill calls return, emit one consolidated user-facing line so the user can see what actually ran vs skipped:
 
 ```
-Final-pass reviews: security=[ran|skipped: <reason>], accessibility=[ran|skipped: <reason>].
+Final-pass reviews: security=[ran|skipped: <reason>], accessibility=[ran|skipped: <reason>], verify-build=[ran|skipped: <reason>].
 ```
 
-Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=skipped (uiSurface:false).`
+Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=skipped (uiSurface:false), verify-build=ran (overall_verdict:PASS, all criteria PASS).`
+
+**Verify-build gate-blocking semantics:** If verify-build returns `exit_code: 1` (FAIL or Unknown verdict per FB-0011), the ship pipeline STOPS at this step. The agent should not proceed to Step 3+ until either the failing criteria are addressed (re-run verify-build) or the user explicitly overrides the gate by re-invoking `/flow:ship` with `--skip-verify` (documented in Step 1 pre-flight; not implemented in v1 but reserved). Single-pass per FB-0012 — no retry loop on verify-build's judge output.
 
 ## 3. Route follow-ups
 
@@ -254,6 +258,18 @@ Review this conversation (and any prior session since the last PR on this branch
 - Challenges solved — a non-obvious problem and how it was resolved.
 
 Add new entries to the configured feedback doc following the FB-XXXX format. Increment from the last ID. Skip anything already captured. The bar: would a future session benefit from this rule? If yes, write it down.
+
+**Read verify-build findings buffer (if verify-build ran at Step 2).** When Step 2's `Skill("flow:verify-build")` invocation completed (ran, not skipped), read the structured findings at the path resolved from `flow.config.json.verifyFindingsPath` (default `/tmp/flow-verify-findings.json`). The buffer's JSON shape is documented at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-schema.json` with a canonical example at `findings-example.json`.
+
+For each criterion in `findings.criteria[]` with `aggregated_verdict ∈ {FAIL, Unknown}`:
+
+- Treat it as a **candidate** FB-XXXX entry, not a guaranteed write. The per-dimension `evidence` quotes form the candidate's "What was said" field; the criterion text + per-dimension `notes` form the synthesized rule.
+- Apply the source-diversity bar from `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` § "Continuous improvement": verify-build findings count as ONE review source. A candidate becomes a real FB entry only when paired with a second source (recurrence in time, a second reviewer's finding, or a user correction in this session).
+- For Unknown-verdict criteria specifically: the candidate's synthesized rule should name what the verify pass could not observe (per the `notes` field) and suggest a verification mechanism for next time (e.g., "add explicit test for empty-required-field path" or "ensure spike rubric covers headline action").
+
+Single-source verify-build findings without pairing source do NOT earn an FB entry — that's the bar protecting against memory-amplification slop (FB-0010 sub-class).
+
+If verify-build was skipped at Step 2 (`verifyEnabled=false`, `platform=library|none`, or doc-only diff per the skill's self-detection), no buffer read; skip this paragraph. If verify-build ran but the buffer is absent or unreadable, emit a `⚠️ verify-build ran but findings buffer at <path> is missing/unreadable; skipping FB-XXXX synthesis from verify-build` warning and continue — don't block ship on a missing diagnostic artifact (the gate already fired at Step 2).
 
 ### 4b. Agent self-feedback → failure-pattern memory
 

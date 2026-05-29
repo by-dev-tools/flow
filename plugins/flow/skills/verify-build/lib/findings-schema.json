@@ -1,0 +1,168 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/by-dev-tools/flow/plugins/flow/skills/verify-build/lib/findings-schema.json",
+  "title": "verify-build findings buffer",
+  "description": "Schema for the structured findings buffer written by /flow:verify-build Step 8. Consumed by /flow:ship Step 4a (FB-XXXX synthesis) and by the future HTML case-study renderer (PR R candidate). Shape is a superset of what each consumer needs so neither needs a schema migration.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "metadata",
+    "overall_verdict",
+    "exit_code",
+    "criteria",
+    "not_tested"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version. Bump on breaking changes; never on additive changes."
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["branch", "head_sha_short", "plugin_version", "platform_hint"],
+      "properties": {
+        "branch": {
+          "type": "string",
+          "description": "Git branch the verify pass ran against (`git branch --show-current`)."
+        },
+        "head_sha_short": {
+          "type": "string",
+          "description": "Short SHA of HEAD at verify time (`git rev-parse --short HEAD`)."
+        },
+        "plugin_version": {
+          "type": "string",
+          "description": "Version of the flow plugin that produced this buffer (read from plugin.json)."
+        },
+        "platform_hint": {
+          "type": "string",
+          "enum": ["web", "ios", "android", "tauri", "cli", "library", "none", "unknown"],
+          "description": "Project platform as resolved by bundled /run; informs which not-tested checklist to use. 'unknown' when /run autodetect was ambiguous."
+        },
+        "verify_budget_calls_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Tool-call count consumed by bundled /verify during Step 5. Compared against flow.config.json.verifyBudgetCalls."
+        },
+        "verify_budget_overrun": {
+          "type": "boolean",
+          "description": "True if budget cap fired and all unjudged verdicts were forced to Unknown."
+        },
+        "spike_mode": {
+          "type": "boolean",
+          "description": "True if invoked with --spike or no plan was found."
+        }
+      },
+      "additionalProperties": false
+    },
+    "overall_verdict": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "Unknown"],
+      "description": "Aggregated verdict per Step 7. Any FAIL or any Unknown across dimensions/criteria aggregates here."
+    },
+    "exit_code": {
+      "type": "integer",
+      "enum": [0, 1],
+      "description": "0 for PASS; 1 for FAIL or Unknown. Pins the gate-blocking contract."
+    },
+    "criteria": {
+      "type": "array",
+      "description": "One entry per criterion extracted from the plan (or per spike-rubric check in spike mode).",
+      "items": {
+        "type": "object",
+        "required": ["text", "adversarial_cases", "observations", "verdicts", "aggregated_verdict"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Verbatim criterion text from the plan's **Spec-walk:** block (or spike-rubric check name)."
+          },
+          "adversarial_cases": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "0-2 adversarial cases per adversarial.md output. Empty array when criterion is fully covered by its text."
+          },
+          "observations": {
+            "type": "array",
+            "description": "Discrete observation captures from bundled /verify, classified by type. Empty array when criterion was not exercised.",
+            "items": {
+              "type": "object",
+              "required": ["type", "content"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["screenshot", "a11y_snapshot", "network", "console", "log", "stdout", "exit_code", "narrative"],
+                  "description": "Observation discriminator. 'narrative' captures freeform /verify prose; the others are structured captures the HTML renderer can lay out distinctly."
+                },
+                "content": {
+                  "type": "string",
+                  "description": "The captured content. For 'screenshot' this is a relative path or base64 data URI; for 'a11y_snapshot' it's the snapshot text; for 'network' it's the request/response summary; for 'console'/'log'/'stdout' it's the log line; for 'narrative' it's the prose excerpt."
+                },
+                "timestamp_offset_ms": {
+                  "type": "integer",
+                  "description": "Optional milliseconds since verify start; helps HTML renderer order observations along a timeline.",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "verdicts": {
+            "type": "object",
+            "required": ["correctness", "regression", "scope-creep"],
+            "properties": {
+              "correctness": {"$ref": "#/definitions/dimension_verdict"},
+              "regression": {"$ref": "#/definitions/dimension_verdict"},
+              "scope-creep": {"$ref": "#/definitions/dimension_verdict"}
+            },
+            "additionalProperties": false
+          },
+          "aggregated_verdict": {
+            "type": "string",
+            "enum": ["PASS", "FAIL", "Unknown"],
+            "description": "Per-criterion aggregation. PASS only if all three dimensions PASS. Any FAIL or Unknown propagates."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "not_tested": {
+      "type": "array",
+      "description": "Closed-form per-platform checklist from lib/not-tested-checklist.md. Agent flips tested=true only where it actually exercised the surface.",
+      "items": {
+        "type": "object",
+        "required": ["item", "tested"],
+        "properties": {
+          "item": {"type": "string", "description": "Verbatim checklist item (e.g. 'Real device', 'Real network')."},
+          "tested": {"type": "boolean", "description": "True only when the agent actually exercised this surface."},
+          "rationale": {"type": "string", "description": "Optional one-sentence rationale, primarily for the false case."}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "definitions": {
+    "dimension_verdict": {
+      "type": "object",
+      "required": ["verdict", "evidence", "notes"],
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": ["PASS", "FAIL", "Unknown"]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "string"},
+          "description": "Exactly two verbatim quotes per the two-citation rule. First quote is from /verify observations; second is from the criterion / adversarial case / plan rule."
+        },
+        "notes": {
+          "type": "string",
+          "description": "One-sentence rationale for FAIL or Unknown. Empty string for PASS."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

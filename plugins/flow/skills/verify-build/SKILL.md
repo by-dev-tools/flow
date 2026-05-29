@@ -1,0 +1,302 @@
+---
+name: verify-build
+description: >
+  Plan-driven behavioral verification gate at /flow:ship Step 2. Wraps
+  bundled /verify (and transitively /run + /run-skill-generator) with
+  flow-specific orchestration: extracts acceptance criteria from the
+  current PR plan's Spec-walk checkboxes, adversarially transforms each
+  criterion into "what would break this" cases the implementer didn't
+  author, drives bundled /verify against the criteria list, judges
+  observations per-dimension with an Unknown-aware rubric, and blocks
+  ship on Unknown or FAIL. Catches the Potemkin-interface /
+  hallucinated-success class no static reviewer catches. Use during
+  /flow:ship's final-pass review; invokable directly via /flow:verify-build
+  for mid-iterate behavioral checks (though bundled /verify is the
+  preferred ad-hoc tool for that — see workflow.md). Composes with
+  /flow:red-team (static adversarial code review, PR K) at different
+  layers — both fire from /flow:ship Step 2.
+allowed-tools: Read, Glob, Grep, Bash, Skill, Agent
+---
+
+# Behavior verification (verify-build)
+
+Cold-runs the built artifact against the plan's Spec-walk acceptance criteria, judges observations against intent, and blocks ship on Unknown. Invoked by `/flow:ship` Step 2 as a final-pass behavioral gate; can be invoked directly when the user wants flow's plan-criteria + Unknown gate vs bundled `/verify`'s freeform observation.
+
+## When to invoke
+
+- `/flow:ship` invokes this automatically as one of the three final-pass reviewers (security + accessibility + verify-build).
+- The user asks: "verify the build", "verify against the plan", "/flow:verify-build", "does this actually work end-to-end".
+- A feature touched behavior the static reviewers (security, accessibility, staff-review) can't catch — e.g. "button now triggers correct API call", "form validates per spec", "state transitions match plan".
+
+Skip if `flow.config.json.verifyEnabled` is `false` (project-wide opt-out) or `flow.config.json.platform` resolves to `library` / `none` (no runnable target).
+
+## Project context (resolved at invocation)
+
+- Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — using built-in defaults)"`
+- Default branch: !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
+- Plan doc: !`PLAN=$(cat flow.config.json 2>/dev/null | jq -r '.planPath // empty'); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"; [ -f "$PLAN" ] && echo "$PLAN" || echo "(no plan doc at $PLAN)"`
+- Verify enabled: !`cat flow.config.json 2>/dev/null | jq -r '.verifyEnabled // true'`
+- Project run skill: !`ls -d .claude/skills/run-*/ 2>/dev/null | head -1 || echo "(none — heuristic launch only)"`
+
+## Bundled-skill integration contract
+
+`/flow:verify-build` is a thin orchestrator. The execution layer is bundled Claude Code skills, NOT reimplemented in flow:
+
+| Layer | Owner | Behavior |
+|---|---|---|
+| Launch recipe (per-project) | `.claude/skills/run-<name>/` (scaffolded by bundled `/run-skill-generator`) | Project-specific build + launch invocation. Committed to repo. |
+| Launch dispatch | bundled `/run` | Reads recipe if present; falls back to heuristic by project type (CLI / server / TUI / browser-driven / library / Electron). |
+| Run + observe loop | bundled `/verify` | Invokes `/run` + drives the running app + reports observations. Output is freeform stdout per Anthropic's published docs. |
+| **Plan-driven gate** | **`/flow:verify-build` (this skill)** | Extracts criteria from plan, adversarializes, judges, gates ship. |
+
+### Documented contract for bundled `/verify` (as of 2026-05-28)
+
+- **Input:** invocable as `Skill('verify')`; accepts no documented structured input parameters — agents pass instructions in conversational form.
+- **Output (DOCUMENTED):** freeform stdout text describing what was launched, what was observed, what behavior matched/didn't match intent. **No structured JSON schema. No documented PASS/FAIL contract.**
+- **Output (UNKNOWN — empirical verification deferred to first real verify-build run):**
+  - Whether screenshots are included structurally in the response, or only narrated.
+  - Whether `/verify` emits a parseable success/failure marker at end of output.
+  - Whether `/verify` accepts criteria-list input (e.g. "verify these specific behaviors: ...") or only ad-hoc descriptions.
+  - Exit-code semantics if invoked outside of `Skill()` (e.g. via direct CLI).
+- **Delegation:** `/verify` invokes `/run` internally. `/run` defers to `.claude/skills/run-<name>/` if present; otherwise falls back to heuristic launch by project type. Per Anthropic docs, heuristic launch is "unreliable for projects that need anything beyond a standard launch: a database, an env file, a graphical session, a multi-step build."
+- **Project-skill requirement:** Step 1 of this skill emits a loud warning if no `.claude/skills/run-*/` exists, naming `/run-skill-generator` as the one-line fix. Does NOT block — heuristic launch may still work for simple projects.
+
+**Empirical verification TODO (Phase 1 follow-up):** at first real `/flow:verify-build` run against a known-good toy project (`evals/fixtures/verify-toy-web-app/`), capture actual `/verify` output shape and update this section with the empirical contract. If screenshots are NOT returned structurally, remove the pairwise-comparison instruction from `lib/rubric.md` (Decision 4 resolution).
+
+## 1. Pre-flight
+
+### 1.0. External-CLI / MCP dependency check (BLOCKING)
+
+Per FB-0009: fail fast at workflow entrypoint if mandatory tools are missing, with clean install hint. Does NOT block on missing `/run-skill-generator` recipe (warning only — see Step 1.1).
+
+```sh
+# POSIX-portable: space-delimited string (NOT bash array — dash compat).
+MISSING=""
+command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
+command -v git >/dev/null 2>&1 || MISSING="$MISSING git"
+if [ -n "$MISSING" ]; then
+  MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
+  echo "⚠️ BLOCKER: /flow:verify-build requires $MISSING_TRIMMED (missing on PATH)." >&2
+  echo "   Install:" >&2
+  echo "     macOS:         brew install$MISSING" >&2
+  echo "     Debian/Ubuntu: apt install$MISSING" >&2
+  exit 1
+fi
+```
+
+Per-platform MCPs (Playwright MCP for web, XcodeBuildMCP for iOS, mobile-mcp for Android) are NOT checked here — bundled `/run` and `/verify` discover and use whatever MCPs are available. If a required MCP is missing for the detected platform, `/verify` will report inability to launch and judge will return Unknown → ESCALATE per FB-0011.
+
+### 1.1. Project run skill detection (WARN-only)
+
+Per the plan-critic BLOCKER absorbed during PR Q scoping: bundled `/run` and `/verify` work best with a per-project recipe scaffolded by `/run-skill-generator`. Without it, heuristic launch may fail on projects needing env files, DBs, multi-step builds, or non-standard scheme/package selection.
+
+```sh
+RUN_SKILLS=$(ls -d .claude/skills/run-*/ 2>/dev/null)
+if [ -z "$RUN_SKILLS" ]; then
+  echo "⚠️ WARN: no .claude/skills/run-*/ found." >&2
+  echo "   /flow:verify-build relies on bundled /run + /verify, which work best" >&2
+  echo "   with a project-specific launch recipe. Run /run-skill-generator once" >&2
+  echo "   (Anthropic bundled skill) to teach /run + /verify how to launch your" >&2
+  echo "   project. Continuing with heuristic launch — may fail on complex projects." >&2
+fi
+```
+
+### 1.2. Skip-path checks
+
+Resolve `flow.config.json.verifyEnabled` and `flow.config.json.platform`:
+
+```sh
+VERIFY_ENABLED=$(jq -r '.verifyEnabled // true' flow.config.json 2>/dev/null)
+PLATFORM=$(jq -r '.platform // empty' flow.config.json 2>/dev/null)
+
+if [ "$VERIFY_ENABLED" = "false" ]; then
+  echo "[verify-build] disabled via flow.config.json.verifyEnabled=false; skipping."
+  exit 0
+fi
+
+case "$PLATFORM" in
+  library|none)
+    echo "[verify-build] platform=$PLATFORM has no runnable target; skipping."
+    exit 0
+    ;;
+esac
+```
+
+Note: when `platform` is unset, bundled `/run` will autodetect — no flow-side autodetect needed.
+
+## 2. Spike-mode branch
+
+Detect spike mode and short-circuit criteria extraction. Three triggers — any one enables spike mode:
+
+```sh
+SPIKE=false
+
+# Trigger 1: explicit --spike argument from invocation (typically /flow:ship-spike)
+case " $* " in *" --spike "*) SPIKE=true ;; esac
+
+# Trigger 2: planPath doesn't resolve to an existing file
+PLAN_PATH=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null)
+[ -z "$PLAN_PATH" ] && PLAN_PATH="dev-docs/plan.md"
+[ ! -f "$PLAN_PATH" ] && SPIKE=true
+
+# Trigger 3: plan file exists but contains no **Spec-walk:** block
+# (Detected after Step 3's extract-criteria.py emits empty criteria with warning;
+# this Step 2 trigger is the cheap pre-check; Step 3 is the authoritative parse.)
+if [ -f "$PLAN_PATH" ] && ! grep -q '\*\*Spec-walk' "$PLAN_PATH"; then
+  SPIKE=true
+fi
+
+if [ "$SPIKE" = "true" ]; then
+  echo "[verify-build] spike mode active (--spike, missing plan, or no Spec-walk block)."
+fi
+```
+
+When `SPIKE=true`:
+- Skip Step 3 (extract-criteria) and Step 4 (adversarial transformation).
+- Use the fixed 3-check rubric at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/spike-rubric.md` as the verification script for Step 5's `Skill('verify')` invocation. The rubric's three checks (Launch / One happy step / No log errors) become the "criteria" passed through.
+- At Step 6, spawn ONLY the `correctness` judge (regression + scope-creep are not meaningful without a plan). The judge uses `lib/spike-rubric.md` as its system prompt instead of `lib/rubric.md`.
+- At Step 7, treat the single correctness verdict per check as the per-criterion `aggregated_verdict` directly. Same Unknown ⇒ exit 1 contract.
+- At Step 8, the findings buffer includes `metadata.spike_mode: true`; per-criterion `verdicts.regression` and `verdicts.scope-creep` are emitted as `Unknown` with notes `"spike mode — dimension not applicable"` to keep the schema shape stable for downstream consumers (Step 4a, HTML renderer).
+
+Spike mode applies the same evidence + Unknown discipline as full mode — Unknown ⇒ ESCALATE per FB-0011 ⇒ exit 1. The lower bar is in the *number* of checks (3 fixed vs N plan-derived), not in the verdict discipline.
+
+**Why three triggers, not just `--spike`:** Trigger 1 is the explicit user choice (`/flow:ship-spike` invokes verify-build with `--spike`). Triggers 2 and 3 are the graceful-fallback path so that a project running `/flow:verify-build` directly with a missing or malformed plan gets a useful smoke check instead of a hard failure. The fallback is documented in `lib/spike-rubric.md` § "When spike mode fires."
+
+## 3. Extract criteria from plan
+
+Parse the current PR's `**Spec-walk:**` block:
+
+```sh
+PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null)
+[ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
+
+if [ ! -f "$PLAN" ]; then
+  echo "[verify-build] no plan at $PLAN — falling back to spike mode."
+  exec "$0" --spike  # PLACEHOLDER — actual re-entry shape TBD in Phase 2
+fi
+
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PLAN"
+```
+
+`extract-criteria.py` emits one criterion per `- [ ]` checkbox under `**Spec-walk:**`. If no Spec-walk block found, emits warning + falls back to spike mode.
+
+## 4. Adversarial transformation
+
+For each criterion, spawn a Task subagent with the prompt at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/adversarial.md` to generate 1–2 "what would break this" cases. The adversarial subagent runs in a fresh context — the implementing agent doesn't grade its own homework.
+
+Output: augmented criteria list = original criteria + 1–2 adversarial cases per original.
+
+## 5. Invoke bundled `/verify`
+
+Pass the augmented criteria list to bundled `/verify` as the verification script:
+
+```
+Skill("verify")
+```
+
+Bundled `/verify` calls `/run` internally for launch, drives the running app per the criteria list, and reports observations. Flow does NOT reimplement any of this.
+
+**Budget cap:** track tool-call count via `flow.config.json.verifyBudgetCalls` (default 60). If exceeded, abort the verify invocation and emit `Unknown` for all unjudged dimensions → ESCALATE per FB-0011.
+
+## 6. Per-dimension parallel judging
+
+Spawn N parallel Task subagents — one per dimension — each with the rubric prompt at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/rubric.md`. Default dimensions:
+
+- **correctness** — does each criterion's observed behavior match intent?
+- **regression** — did anything else break that wasn't a criterion?
+- **scope-creep** — did the implementation do more than the plan said?
+
+Each judge returns `PASS | FAIL | Unknown` per criterion + two-citation evidence (the observation + the plan-criterion / regression-source / scope-source). Parallel for speed + position-bias isolation.
+
+## 7. Aggregate verdict
+
+```
+Any dimension returns FAIL for any criterion    ⇒ exit 1 (gate blocks)
+Any dimension returns Unknown for any criterion ⇒ exit 1 (FB-0011: ESCALATE on uncertainty)
+All dimensions PASS for all criteria            ⇒ exit 0
+```
+
+Per FB-0011 (autonomy bar): Unknown is gate-blocking, not advisory. The judge is forced to admit ignorance; the user adjudicates.
+
+## 8. Emit findings buffer
+
+Write structured JSON to `flow.config.json.verifyFindingsPath` (default `/tmp/flow-verify-findings.json`) per the schema at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-schema.json`. A canonical example is at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-example.json` (mixed-verdict shape: one criterion PASS, one criterion Unknown — exactly the case Phase 9's smoke harness will assert against).
+
+The schema pins these properties (binding — consumers depend on them):
+
+- **`schema_version`**: `"1.0"` (bumps only on breaking changes; additive changes do not bump).
+- **`metadata`**: branch, head SHA short, plugin version, platform hint (`web`/`ios`/`android`/`tauri`/`cli`/`library`/`none`/`unknown`), verify budget used + overrun flag, spike mode flag.
+- **`overall_verdict`**: `"PASS"` / `"FAIL"` / `"Unknown"` — aggregated per Step 7.
+- **`exit_code`**: `0` (PASS) or `1` (FAIL or Unknown). Pins the gate-blocking contract.
+- **`criteria[]`**: per-criterion entries with `text`, `adversarial_cases`, `observations[]` (each with `type` discriminator: `screenshot` | `a11y_snapshot` | `network` | `console` | `log` | `stdout` | `exit_code` | `narrative`), `verdicts.{correctness,regression,scope-creep}` (each with verdict + exactly-2 evidence quotes + notes), and per-criterion `aggregated_verdict`.
+- **`not_tested[]`**: closed-form per-platform checklist from `lib/not-tested-checklist.md` with `item` text, `tested` boolean, optional `rationale`.
+
+**Forward-compat note (PR R HTML case-study report — see `roadmap.md` § Exploration):** this shape is a superset of what an eventual HTML renderer needs. Per-criterion text + per-adversarial-case text + per-step observation captures with `type` discriminator + per-dimension verdict with evidence + top-level "not tested" checklist all support downstream rendering without schema migration. The `timestamp_offset_ms` field on observations exists specifically so the renderer can order events along a timeline. PR Q does not render HTML; PR R does, against this contract.
+
+### How `/flow:ship` Step 4a reads this buffer (Phase 7 integration; stub here)
+
+When `/flow:ship` Step 2 invokes `Skill("flow:verify-build")` and verify-build exits, the buffer at `flow.config.json.verifyFindingsPath` is the structured handoff to `/flow:ship` Step 4a (synthesize session feedback). Step 4a:
+
+1. Reads the buffer (defaulting to `/tmp/flow-verify-findings.json` if `verifyFindingsPath` unset).
+2. For each criterion with `aggregated_verdict ∈ {FAIL, Unknown}`, derives a candidate FB-XXXX entry. The candidate's "What was said" field cites the criterion text + the per-dimension evidence quotes; the "Synthesized rule" field is left for the human-merge gate to author (Step 4a does not invent prose for FB entries).
+3. Routes candidates per the source-diversity bar from `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` § "Continuous improvement" (2-of-3 evidence: recurrence in time / two reviewers / one review + user correction). Verify-build findings count as one review source; pair with another source before promoting to a written FB entry.
+
+The actual `/flow:ship` Step 4a code edit is Phase 7 work. This section documents the contract Phase 7 implements.
+
+### Findings-buffer lifecycle
+
+- Verify-build creates the buffer fresh at Step 8 (overwrites any prior buffer at the path).
+- `/flow:ship` Step 4a reads the buffer immediately after its `Skill("flow:verify-build")` call returns.
+- After `/flow:ship` completes (PR opened or noop), the buffer is left in place for inspection. Cleanup is the consumer's responsibility (defaults to `/tmp/` so it gets wiped on reboot).
+- Concurrent verify-build runs against the same buffer path WILL clobber each other. If a future workflow runs verify-build in parallel (unlikely but possible), each run should override `verifyFindingsPath` to a unique path via the slot. Single-run-per-ship is the v1 contract.
+
+## 9. Render "what we did NOT test" checklist
+
+Per-platform fixed checklist from `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/not-tested-checklist.md`. Closed-form (✗ / ✓ per item); agent flips ✗ → ✓ only where it actually tested. Emitted to stdout for the PR-body author.
+
+Example (web):
+```
+What we did NOT test:
+  [✗] Real device (used Playwright headless)
+  [✗] Real network (used dev server)
+  [✗] Authenticated 2FA flow
+  [✗] Push notifications
+  [✗] Payment flows
+  [✗] >1 viewport size
+  [✗] >1 locale
+```
+
+## Gotchas
+
+- **Bundled `/verify` output is freeform.** No structured PASS/FAIL contract. Flow's judge has to parse Claude's response narratively — calibration matters (FB-0011: ESCALATE on uncertainty).
+- **Simulator ≠ device.** Same disclaimer XcodeBuildMCP carries; mirrored in the "not tested" stamp.
+- **Adversarial transformation must spawn in fresh context.** Otherwise the implementing agent grades its own homework. Use Task tool, not Agent inheriting parent context.
+- **Budget cap is fail-closed.** Over-budget ⇒ Unknown ⇒ block (FB-0009 fail-fast generalized to runtime cost).
+
+## Config slots used
+
+| Slot | Default | Used by |
+|---|---|---|
+| `flow.config.json.verifyEnabled` | `true` | Step 1.2 (skip-path) |
+| `flow.config.json.platform` | unset → bundled `/run` autodetect | Step 1.2 (skip-path for library/none) |
+| `flow.config.json.planPath` | `dev-docs/plan.md` | Step 3 (criteria extraction) |
+| `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 8 (buffer write) |
+| `flow.config.json.verifyBudgetCalls` | `60` | Step 5 (budget cap) |
+| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Read by `/flow:ship` Step 4a (not by verify-build directly) |
+
+## Implementation status (as of 2026-05-28)
+
+This SKILL.md is the Phase 1 skeleton — frontmatter + step structure + documented contract for bundled `/verify`. Subsequent phases land:
+
+- **Phase 2:** `lib/extract-criteria.py` real implementation + 4 fixtures
+- **Phase 3:** `lib/adversarial.md` real prompt + spawning shape
+- **Phase 4:** `lib/rubric.md` real schema + Unknown-blocks fixture
+- **Phase 5:** Findings buffer JSON shape finalized + `/flow:ship` Step 4a wiring
+- **Phase 6:** `lib/spike-rubric.md` + spike-mode re-entry shape
+- **Phase 7:** `/flow:ship` Step 2 integration (or wire into PR L's Detection-Point-N pattern if landed first)
+- **Phase 8:** workflow.md + bootstrap.md + migration.md + doctor Check 5.3
+- **Phase 9:** Smoke fixture + budget-overrun fixture
+- **Phase 10:** `/flow:staff-review` dogfood
+- **Phase 11:** `/flow:ship` + manifest v1.3.0
+
+Canonical plan: `dev-docs/handoffs/pr-q-verify-build-plan.md`.

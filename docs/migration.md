@@ -127,7 +127,9 @@ Open the Stage 1 PR against `main`. Don't merge — let the user merge.
   7. `/flow:staff-review` — all 4 lenses must spawn + produce findings + triage.
   8. Present.
   9. Iterate.
-  10. `/flow:ship` — runs `/flow:security-review` + `/flow:accessibility-review`, synthesizes feedback into both layers (user FB-XXXX in `core-docs/feedback.md` AND agent memory at `~/.claude/projects/<canonical>/memory/feedback_*.md`), updates `core-docs/*.md`, commits, pushes, opens PR.
+  10. `/flow:ship` — runs `/flow:security-review` + `/flow:accessibility-review` + `/flow:verify-build` (the runtime gate; wraps bundled `/verify`), synthesizes feedback into both layers (user FB-XXXX in `core-docs/feedback.md` AND agent memory at `~/.claude/projects/<canonical>/memory/feedback_*.md`), updates `core-docs/*.md`, commits, pushes, opens PR.
+
+  **Note for verify-build:** run `/run-skill-generator` once before this stage if you haven't (one-time per-project setup that scaffolds `.claude/skills/run-<name>/`). Without it, `/flow:verify-build` falls back to heuristic launch and may return Unknown verdicts, which BLOCK ship per FB-0011. `/flow:doctor` Check 5.3 surfaces this prerequisite.
   11. STOP.
 
 - **Capture every rough edge** in flow's `dev-docs/feedback.md` via a follow-up flow PR. This is the load-bearing output.

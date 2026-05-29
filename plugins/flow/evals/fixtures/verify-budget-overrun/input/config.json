@@ -1,0 +1,8 @@
+{
+  "$comment-purpose": "Low verifyBudgetCalls cap to trigger overrun in the simulated /verify pass.",
+  "planPath": "plan.md",
+  "platform": "web",
+  "verifyEnabled": true,
+  "verifyFindingsPath": "/tmp/flow-verify-budget-overrun.json",
+  "verifyBudgetCalls": 10
+}
