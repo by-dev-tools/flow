@@ -543,6 +543,121 @@ Spawned via Agent subagents emulating the planned skills per FB-0001 (plugin not
 
 ---
 
+## PR R — `/flow:init` skill (planning; queued; provisional letter)
+
+**Mode:** feature (medium)
+**Priority:** TBD pending ship-vs-defer decision. Originally noted in [`README.md`](../README.md) "Known limitations" as `/flow:init` deferred to bootstrap.sh + manual placeholder fill; line 891 of this file ("`/flow:init` auto-bootstrap skill — v2.0+ per post-extraction roadmap") confirms intentional deferral. **Question on the table:** advance now or hold the v2.0+ schedule. Plan is fully scoped so the call is informed.
+**Source:** 2026-05-27 → 2026-05-28 conversation in worktree `thirsty-napier-5a3ff4`. User direction: "it should identify what's missing, what exists but may need to be adapted/optimized for flow, and propose additions. existing documentation/files should never be deleted - any changes need to be explicitly approved by the human." Planning thread ran plan-critic 5 passes (11 substantive findings + 5 edit-discipline findings, all resolved before this section was written). FB claim: **FB-0014** (reserved in `dev-docs/reserved-feedback-numbers.md`).
+**Letter note:** "R" chosen to clear past lucid-matsumoto's pending re-letter (likely Q) and sweet-hellman's queued N/O/P. Finalize at ship time; if queue clears differently, renumber at rebase via the FB-0010 grep-first-edit-second discipline.
+
+**Goal:** Provide a single skill that lets any project adopt flow in one in-session command. The skill (1) detects repo state, (2) inventories what's missing vs what exists-but-needs-adapting, (3) proposes a complete additive change set, and (4) applies only the items the user explicitly approves. **No file is ever deleted; no file is ever overwritten without explicit per-file approval.**
+
+**Scope (in):**
+
+Three-phase skill structure, gated by approval:
+
+- **Phase A — INVENTORY (read-only).** Delegate detection to `/flow:doctor`'s check matrix (single source of truth; init does not duplicate the 17-slot logic — note: now 17 slots per v1.2.6, not 16 as planning thread assumed). Add repo-classification checks doctor doesn't: stack signal (`package.json` web vs `src-tauri/` tauri-rust-ts; `Cargo.toml`-only flagged unsupported; `*.xcodeproj`/`Package.swift` swift; ambiguous → ask), docs convention (`core-docs/` vs `dev-docs/` vs `docs/` vs none — propose `core-docs/` for new, preserve existing), prior `.claude/` content (CLAUDE.md exists? `.claude/rules/safety.md` exists? local `/staff-review` or other workflow skill conflicts with `/flow:*`?). Classify the repo into one of four states: FRESH / PARTIAL-FLOW / EXISTING-OWN-WORKFLOW / ALREADY-READY. Print inventory table with `[MISSING]` / `[PRESENT]` / `[PRESENT — adapt-candidate]` / `[CONFLICT — local skill X overlaps /flow:Y]`.
+- **Phase B — PROPOSAL (writes nothing).** For each `[MISSING]`: show file path + first ~15 lines + source template path. For each `[adapt-candidate]`: show unified diff of the proposed additive section (e.g., appending a "Workflow" section to existing CLAUDE.md; appending paths to existing safety.md frontmatter). **Never a rewrite — only additive Edit-tool sections.** For each `[CONFLICT]`: emit warning, no proposed change. For each placeholder slot: print inferred value + source. Present proposal as a numbered list; user approves with `apply all` / `apply 1,3,5` / `apply 1-7` / `skip 4` / `cancel`. Ambiguous input re-prompts rather than guessing.
+- **Phase C — EXECUTE (only approved items).** Every write uses `cp -n` semantics OR additive Edit; refuses to overwrite. After writes: run `/flow:doctor`, print its output, emit final-line verdict `[INIT COMPLETE]` / `[INIT COMPLETE — N items declined; re-run /flow:init or fix manually]` / `[INIT INCOMPLETE — see doctor output]`.
+
+Prerequisite work (Phase 1 of execution, if it ships):
+
+- **Move `template/` → `plugins/flow/template/`** so templates ship inside the user-scope plugin install (`/flow:init` reads from `${CLAUDE_PLUGIN_ROOT}/template/...` without requiring a local checkout). `git mv` preserves history. Update path references in: (a) `plugins/flow/template/base/bootstrap.sh` itself — implement **smart-fallback** so `$FLOW_DIR/template/base/` is tried first then `$FLOW_DIR/plugins/flow/template/base/`, preserving the documented `--flow-dir = path to a local flow checkout` CLI semantic; (b) `plugins/flow/skills/doctor/SKILL.md` — replace **5 hardcoded `template/base/` references at lines 113, 114, 168, 250, 251** (verified 2026-05-28 against post-PR-M HEAD via `grep -n 'template/base' plugins/flow/skills/doctor/SKILL.md`; original planning thread cited 113/114/168/183/184 against a stale base before PRs A-M shipped) with `${CLAUDE_PLUGIN_ROOT}/template/base/...` or with `/flow:init` invocation hint; (c) `README.md`; (d) `docs/bootstrap.md`; (e) `docs/migration.md`. Clean break at old root path (no deprecation stub).
+
+Init consumes `/flow:doctor`'s text output via two regex layers: (a) status lines `^\[(PASS|FAIL|WARN|SKIP)\] <label>` — all four statuses including `SKIP`, which doctor emits when a check's prerequisites haven't passed; (b) continuation lines `^( {2,})(\S.*)$` with `Fix:` as a recognized sub-shape but not the only shape (doctor emits multi-line hints like `Fix: brew install gh` + `Then: gh auth login`). Plus final-line verdict (`[READY]` / `[READY with WARN-level items]` / `[NOT READY]`). Status mapping: `PASS` → not in inventory; `FAIL` → `[MISSING]`; `WARN` → `[PRESENT — adapt-candidate]`; `SKIP` → `[DEFERRED]`. New eval fixture at `plugins/flow/evals/fixtures/doctor-format-stability/` asserts doctor's output line shape is stable across all 4 statuses + multi-line continuation. **No `--json` flag on doctor** — cross-skill scope expansion outside the user envelope, per planning-thread plan-critic ISSUE 1 resolution.
+
+Documentation + version updates (if it ships):
+
+- `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`: bump to next available version (likely v1.3.0 if it lands as the v1.3 milestone, or a v1.2.x patch if absorbed earlier).
+- `README.md`: remove `/flow:init` from "Known limitations"; promote to "Quick start" front door.
+- `plugins/flow/docs/workflow.md`: add `/flow:init` to onboarding surface.
+- `docs/bootstrap.md`: restructure to show `/flow:init` first, `bootstrap.sh` as appendix.
+- `docs/migration.md`: Stage 1 references `/flow:init` (handles "install non-breaking" with merge prompts).
+- `dev-docs/feedback.md`: add FB-0014 ("Init skill must default to additive + per-item human approval; never overwrite or delete existing files").
+- `plugins/flow/evals/init_unit/`: Python unit tests for `init_helpers.py` (matches `evals/security/test_cwd_constraint.py` subprocess-invocation pattern, NOT import-based — corrected during planning).
+
+**Scope (out):**
+
+- Auto-applying without approval. Even for FRESH repos with no conflicts, init always presents the proposal and waits.
+- Modifying or removing local workflow skills. Init flags conflicts; never resolves them. `docs/migration.md` Stage 2 is the user's call.
+- Auto-installing the plugin. Init assumes `/plugin marketplace add` + `/plugin install` already ran; if doctor's Section 1 fails, init exits early with a fix-it hint.
+- Cross-repo concerns. Init operates on `pwd`; doesn't touch `~/.claude/settings.json` or other repos.
+- A `/flow:doctor --json` flag (left as a separate decision; can be filed as a follow-up if text parsing proves brittle in dogfood).
+
+**Spec-walk:**
+
+- [ ] `plugins/flow/skills/init/SKILL.md` exists with three phases (INVENTORY / PROPOSAL / EXECUTE) clearly delimited.
+- [ ] Init delegates to `/flow:doctor` for the check matrix; no duplicated check logic.
+- [ ] Init parses doctor's text via documented contract: status `^\[(PASS|FAIL|WARN|SKIP)\] <label>` + general indented continuation; SKIP maps to `[DEFERRED]` in inventory.
+- [ ] Eval fixture at `plugins/flow/evals/fixtures/doctor-format-stability/` asserts doctor's output format stability across all 4 statuses + multi-line continuation.
+- [ ] Repo classification yields exactly one of FRESH / PARTIAL-FLOW / EXISTING-OWN-WORKFLOW / ALREADY-READY.
+- [ ] PARTIAL-FLOW vs EXISTING-OWN-WORKFLOW disambiguator documented in init/SKILL.md: presence of `flow.config.json` → PARTIAL-FLOW; project-local `.claude/skills/` without it → EXISTING-OWN-WORKFLOW; ambiguous → user-redirect.
+- [ ] Phase B output ends with the literal approval prompt; Phase C writes nothing until approval received.
+- [ ] Every write is gated by approval AND a precondition check (file doesn't exist, or change is additive via Edit not rewrite).
+- [ ] init/SKILL.md includes a table-form approval grammar spec covering: empty input, single number, comma-list, range, `apply all`, `skip <list>`, mixed apply+skip, out-of-range, negative/zero, duplicates, reversed ranges, open-ended ranges, whitespace tolerance, `cancel`.
+- [ ] `template/` moved to `plugins/flow/template/`; root deleted; bootstrap.sh smart-fallback implemented; doctor SKILL.md 5 references at lines 113/114/168/250/251 updated; 3 root docs updated; grep gate clean.
+- [ ] Eval fixtures for 4 repo states under `plugins/flow/evals/init_unit/fixtures/{fresh,partial-flow,existing-own-workflow,already-ready}/` with checksum-before/after asserts proving no deletes + no overwrites.
+- [ ] FB-0014 added to `dev-docs/feedback.md` synthesizing the "additive + per-item approval, never destructive" rule; reservation removed from `reserved-feedback-numbers.md` during /flow:ship synthesis step.
+- [ ] `claude plugin validate .` clean.
+- [ ] README "Known limitations" no longer lists `/flow:init`; v2.0+ Backlog entry at plan.md:891 removed since it ships earlier than originally roadmapped.
+
+**Confidence verdicts:** (Carried verbatim from 5-pass critic-resolved planning thread; line numbers updated to reflect post-PR-M doctor SKILL.md.)
+
+**Assumption:** `/flow:doctor`'s existing text output is regular enough that init can parse it reliably via line-shape regex, given an eval fixture that locks the format.
+**Confidence:** HIGH
+**Why:** Doctor emits ~17 checks plus a final verdict line, all in a consistent `[STATUS] label` + optional indented continuation shape. The eval fixture asserting format stability is load-bearing — any future doctor edit that changes line shape fails the test and forces coordinated update.
+**If it flips:** doctor's format proves brittle in init dogfood. File `/flow:doctor --json` as separate user-approved follow-up PR.
+
+**Assumption:** "Additive only" via Edit tool suffices for all adapt-candidate cases.
+**Confidence:** HIGH
+**Why:** Realistic adapts (append Workflow section to CLAUDE.md; append paths to safety.md frontmatter; append lines to .gitignore) don't require destructive edits.
+**If it flips:** Specific case becomes `[CONFLICT]`; surfaced with manual-merge instructions.
+
+**Assumption:** Explicit disambiguator (`flow.config.json` presence → PARTIAL-FLOW; project-local `.claude/skills/` without it → EXISTING-OWN-WORKFLOW) is sufficient for binary-signal cases; ambiguous cases escalate to user-redirect.
+**Confidence:** HIGH for disambiguated; MEDIUM for ambiguous edge cases (caught at Present-step per workflow.md MEDIUM contract).
+**Why:** `flow.config.json` presence is binary. Edge cases get explicit user resolution, not silent heuristic guess.
+
+**Assumption:** Stack auto-detection from `package.json` / `Cargo.toml` / `*.xcodeproj` covers common cases.
+**Confidence:** HIGH
+**Why:** Three supported stacks each have unique fingerprints. Multi-stack monorepos → ask user.
+
+**Risks:**
+
+- `template/` move + path updates touch ~10 files. Mitigation: single atomic Phase 1 commit; grep gates; `claude plugin validate .` clean before proceeding.
+- Init couples with `/flow:doctor`'s text format. Mitigation: format-stability eval fixture.
+- Approval-batching UX is tricky. Mitigation: numbered proposals; `apply` trigger word forces deliberateness; ambiguous input re-prompts.
+- **NEW risk caught during 2026-05-28 rebase:** Plan content was authored against base before PRs A-M shipped. Foundational assumptions (slot count, line numbers, current "letter availability") all required correction at the rebase. Mitigation already applied (line numbers fixed to 250/251; slot count noted as 17 not 16; letter R chosen past current claims). Any further rebase before execution must repeat this verification.
+- **NEW risk:** Section 4 of doctor SKILL.md may have additional `template/base/` references the grep didn't catch (Section 4 was added during PRs A-M and wasn't in the original planning sample). Mitigation: re-grep at Phase 1 execution.
+
+**Phased execution (each phase = one commit unless trivially small):**
+
+- **Phase 1 — Prerequisite: `template/` move (clean break).** `git mv template/ plugins/flow/template/` + path updates in 5 files: bootstrap.sh (smart-fallback), doctor SKILL.md (5 references at 113/114/168/250/251, **verify exhaustive via grep before edit** per FB-0010 discipline), README.md, docs/bootstrap.md, docs/migration.md. Single commit.
+- **Phase 2 — `SKILL.md` Phase A (INVENTORY) + Python helpers.** Write `plugins/flow/skills/init/SKILL.md` Phase A body + `plugins/flow/scripts/init_helpers.py` (library + thin argparse CLI). Smoke against FRESH and ALREADY-READY repo states.
+- **Phase 3 — Phase B (PROPOSAL) + approval-parse logic + grammar table.** Smoke `apply all` / `apply 1,3,5` / `skip 4` / `cancel` + edge cases per grammar table.
+- **Phase 4 — Phase C (EXECUTE) with no-overwrite enforcement.** Smoke against EXISTING-OWN-WORKFLOW state; assert no existing file modified outside approved additive edits.
+- **Phase 5 — Eval fixtures + Python unit tests.** `plugins/flow/evals/init_unit/test_init_helpers.py` invokes `init_helpers.py` via `subprocess.run` (matches existing security-test pattern). Fixtures under `plugins/flow/evals/init_unit/fixtures/{fresh,partial-flow,existing-own-workflow,already-ready}/`. Plus `plugins/flow/evals/fixtures/doctor-format-stability/` regression fixture.
+- **Phase 6 — Docs + manifest bump.** README, bootstrap.md, migration.md, workflow.md updated to lead with `/flow:init`. Version bump per current cycle.
+- **Phase 7 — Dogfood via `/flow:staff-review` + `/flow:security-review`** on PR's own diff. 4 parallel lenses canonical pattern.
+- **Phase 7.5 — Present MEDIUM-confidence verdicts to user** (per workflow.md MEDIUM contract). Specifically the EXISTING-OWN-WORKFLOW heuristic edge cases.
+- **Phase 8 — `/flow:ship` + open PR.** PR body documents Phase 7.5 resolutions.
+
+**Files touched (anticipated):**
+
+- New: `plugins/flow/skills/init/SKILL.md`
+- New: `plugins/flow/scripts/init_helpers.py` — Python helpers with library + argparse CLI (matches `extract_session.py` shape)
+- Moved: `template/` → `plugins/flow/template/` (~10 files via `git mv`); root deleted
+- Modified post-move: `plugins/flow/template/base/bootstrap.sh` (smart-fallback `--flow-dir`), `plugins/flow/skills/doctor/SKILL.md` (5 hardcoded `template/base/` references at lines 113/114/168/250/251 — verified post-PR-M HEAD), `README.md`, `docs/bootstrap.md`, `docs/migration.md`
+- Modified: `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (version bump TBD by ship cycle)
+- Modified: `plugins/flow/docs/workflow.md` (add `/flow:init` to onboarding)
+- Modified: `dev-docs/{plan,history,feedback}.md` (synthesis at ship time)
+- Modified: `dev-docs/reserved-feedback-numbers.md` (remove FB-0014 reservation at ship time per protocol)
+- Modified: `README.md` (remove from Known Limitations; promote to Quick start)
+- New: `plugins/flow/evals/init_unit/test_init_helpers.py`
+- New: `plugins/flow/evals/init_unit/fixtures/{fresh,partial-flow,existing-own-workflow,already-ready}/`
+- New: `plugins/flow/evals/fixtures/doctor-format-stability/`
+
+---
+
 ## PR G — Consistency discipline (FB-0010, SHIPPED — squash `0c3386b`)
 
 **Mode:** feature (small) | **Priority: highest**
