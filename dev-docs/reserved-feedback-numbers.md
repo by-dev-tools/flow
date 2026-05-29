@@ -24,6 +24,7 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 - **FB-0013 (suggested next claim)** — `pr-m/verify-build-skill` (lucid-matsumoto-730ba0) — "Check bundled Claude Code skills before drafting any new `/flow:*` skill." Pending re-letter and renumber sweep.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R` to clear past lucid-matsumoto's pending re-letter (likely Q) and sweet-hellman's queued N/O/P; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)"; ship-vs-defer decision pending given prior v2.0+ backlog placement at `dev-docs/plan.md:891`.
+- **FB-0015** — `pr-q/verify-build-skill` (lucid-matsumoto-730ba0) — "Check bundled Claude Code skills before drafting any new `/flow:*` skill." Cascaded through FB-0012 → FB-0013 → FB-0014 → FB-0015 as collisions surfaced (FB-0012 = bounded-retry shipped in PR M; FB-0013 reserved by PR P's same-model-critic plan; FB-0014 claimed by PR R's init-skill plan). PR letter Q preserved per PR R's reservation note. All cross-file references swept to FB-0015 at rebase time. Phases 1-9 complete on lucid-matsumoto; about to ship as v1.3.0.
 
 ## Audit trail (past collisions, kept for institutional memory)
 

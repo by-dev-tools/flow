@@ -1,0 +1,9 @@
+{
+  "$comment-purpose": "Minimal config for the verify-toy-web-app smoke fixture.",
+  "planPath": "plan/plan.md",
+  "platform": "web",
+  "verifyEnabled": true,
+  "verifyFindingsPath": "/tmp/flow-verify-toy-findings.json",
+  "verifyBudgetCalls": 30,
+  "uiSurface": true
+}

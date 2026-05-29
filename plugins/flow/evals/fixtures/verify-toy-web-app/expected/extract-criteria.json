@@ -1,0 +1,9 @@
+{
+  "criteria": [
+    "User can click the Submit button and see a \"Submitted successfully\" toast within 500ms.",
+    "Clicking the button twice within 200ms results in only one POST request and one toast."
+  ],
+  "source_path": "plan/plan.md",
+  "source_heading": "**Spec-walk:**",
+  "warnings": []
+}

@@ -667,6 +667,64 @@ Documentation + version updates (if it ships):
 
 ---
 
+## PR Q — `/flow:verify-build` skill: plan-driven behavioral verification gate (in flight on `claude/lucid-matsumoto-730ba0`; orthogonal to N/O/P/R)
+
+**Mode:** feature (medium — full skill + 5 lib assets + 3 fixture sets + workflow + doctor + schema integration) | **Priority: high** | **Horizon:** v1.3.0
+**Branch:** `claude/lucid-matsumoto-730ba0` during execution; renamed to `pr-q/verify-build-skill` at ship time.
+**Canonical plan:** [`dev-docs/handoffs/pr-q-verify-build-plan.md`](handoffs/pr-q-verify-build-plan.md) — full Mode/Goal/Scope/Spec-walk/Confidence verdicts/Risks/Phases/Files-touched.
+
+**Goal (one-liner):** Add `/flow:verify-build` as a thin wrapper around bundled `/verify` (transitively `/run` + `/run-skill-generator`) that adds plan-driven criteria extraction (from `**Spec-walk:**` checkboxes), adversarial criteria transformation, per-dimension parallel judges with Unknown-blocking gate, and structured findings buffer routed to `/flow:ship` Step 4a. Closes the static-analysis-only gap in the loop's verification surface (Potemkin-interface / hallucinated-success class — the dominant agentic-dev failure mode no current flow step catches).
+
+**Sequencing — orthogonal, not queued:** PRs N (orchestration hardening), O (test-edit hook), P (auditor model-diversity), R (init-skill) target different surfaces. PR Q targets `/flow:ship` Step 2 final-pass review surface. Different files in the diff; no real content dependency. Rebases onto main as N/O/P/R land. Ship order = whichever finishes first. Inherited locked pattern: PR M's FB-0012 bounded-retry contract — verify-build's judge runs single-pass; any future retry primitive inherits PR M Step 1c's `(a)` mechanical exit signal + `(b)` N=3 + diff-hash + `(c)` no test-disabling guards.
+
+**Status (2026-05-28):** **All 11 phases complete; PR open / ready to merge.** Phases 1–9 landed the skill + lib/ + fixtures + integration. Phase 10 (staff-review dogfood) returned 1 BLOCKER + 19 NITs + 13 FOLLOW-UPs; BLOCKER + 11 cheap NITs fixed in-tree; 18 FOLLOW-UPs routed below. Phase 11 bumped manifest v1.2.6 → v1.3.0 + added flow.config.json self-config (platform: library + uiSurface: false). Final schema slot count: 17 → 21 (added platform via staff-review NIT, on top of the 3 planned verifyEnabled/verifyFindingsPath/verifyBudgetCalls). FB number resolved as **FB-0015** (cascaded from drafted FB-0010 → FB-0012 → FB-0013 → FB-0014 → FB-0015 as collisions surfaced).
+
+**Locked patterns inherited:** FB-0008 (stale-base preflight), FB-0009 (fail-fast on missing CLIs), FB-0010 (consistency discipline; silent-skip + fan-out defenses applied), FB-0011 (autonomy bar; Unknown ⇒ ESCALATE), FB-0012 (bounded-retry contract from PR M — mechanical exit signal + N=3 + reward-hacking guards), FB-0015 (check bundled first — applied to thin-wrapper shape).
+
+**Letter / FB history (for traceability):** drafted as "PR M" in conversation (2026-05-27→28 morning); collided with bounded-retry PR M (`0cf642e`). Renumbered to PR Q after K1's protocol audit (per PR R's reserved-feedback-numbers entry which acknowledged Q as my slot). FB number cascaded: original FB-0010 → FB-0012 (PR G collision) → FB-0013 (PR M collision; PR P reserved) → FB-0014 (PR R claimed) → **FB-0015** at this rebase.
+
+**Files touched:** new under `plugins/flow/skills/verify-build/` (SKILL.md + lib/{extract-criteria.py, adversarial.md, rubric.md, spike-rubric.md, not-tested-checklist.md, findings-schema.json, findings-example.json}); new under `plugins/flow/evals/fixtures/` (verify-unknown-blocks/, verify-toy-web-app/, verify-budget-overrun/ — 14 fixture files total); modified `plugins/flow/skills/{ship,ship-spike,doctor}/SKILL.md` (SAFETY), `plugins/flow/docs/workflow.md`, `plugins/flow/schema/flow.config.schema.json` (4 new slots: `platform`, `verifyEnabled`, `verifyFindingsPath`, `verifyBudgetCalls`; total 17 → 21), `docs/{bootstrap,migration}.md`, README.md + `template/base/{CLAUDE.md.template,bootstrap.sh}` + manifest descriptions (slot count fan-out); plus dev-docs cascade (feedback, plan, roadmap, reserved-feedback-numbers, handoffs/pr-q-verify-build-plan.md).
+
+### PR Q+ FOLLOW-UPs from staff-review (2026-05-28; 4 parallel lenses)
+
+1. **Doctor Check 2.5 scan misses install-surface JSON** (engineer lens FOLLOW-UP) — Check 2.5's slot-count fan-out scan scans CLAUDE.md / README.md / docs / core-docs / dev-docs but NOT `.claude-plugin/marketplace.json` or `plugins/flow/.claude-plugin/plugin.json`. PR Q's BLOCKER was a fan-out survivor in exactly those install-surface descriptions. Generalize Check 2.5's grep to include `.claude-plugin/` and `plugins/flow/.claude-plugin/`. Horizon: next doctor-touching PR (or PR N if it generalizes the scan anyway).
+
+2. **Spike-mode pre-check vs Python parser asymmetric match rules** (engineer lens FOLLOW-UP) — SKILL.md Step 2 uses `grep -q '\*\*Spec-walk'` (looser, line-substring match); Step 3's Python regex requires line-anchored `^\s*\*\*Spec-walk:?\*\*:?\s*$` (stricter). A plan with `**Spec-walk:** see below:` passes Step 2 (not spike) but Step 3 yields zero criteria. Tighten Step 2 grep to anchor on `^[[:space:]]*\*\*Spec-walk` AND optionally trailing `:?\*\*` to mirror Python. Horizon: before first real-run dogfood; cheap one-line tighten.
+
+3. **metadata.platform_hint enum couples to bundled /run autodetect output labels** (engineer lens FOLLOW-UP) — If bundled `/run` ever changes its autodetect labels (cli/server/tui/electron/browser-driven/library), verify-build silently mis-classifies in the findings buffer. Add a smoke fixture asserting current `/run` labels at first dogfood run + a graceful fallback to `"unknown"` if a new label appears. Horizon: Phase 1 empirical /verify characterization (already on roadmap; fold in).
+
+4. **Workflow.md cheat-sheet row for verify-build is twice the width of siblings** (UX lens FOLLOW-UP) — Trim "Plan-driven behavioral verification: extract criteria from `**Spec-walk:**` checkboxes, adversarial transform, judge bundled `/verify`'s observations per dimension, block ship on Unknown" → "Plan-driven behavioral verification: runs the built artifact, judges per-dimension, blocks ship on Unknown." Horizon: next workflow.md polish PR.
+
+5. **README.md `What's installed?` block did NOT mention verify-build** (UX lens FOLLOW-UP) — Only the slot count moved. Add a one-line bullet for `/flow:verify-build` alongside the other named skills. Horizon: PR Q ship time addendum OR first README touch.
+
+6. **`verifyBudgetCalls` unit is ambiguous at user-facing layer** (UX lens FOLLOW-UP) — Schema description names "MCP tool calls" implicitly but the ship line and SKILL.md don't disambiguate (HTTP calls? Model calls? Verify-side tool calls?). Sweep the user-facing references to say "verify-side MCP tool calls." Horizon: docs cadence PR.
+
+7. **Empty-state messaging for "verify ran, all PASS, zero criteria extracted"** (UX lens FOLLOW-UP) — A plan with `**Spec-walk:**` heading but zero checkboxes silently produces PASS-via-vacuous-truth. Add a Step 3 sentinel: zero criteria + not in spike mode → emit Unknown with "no criteria to verify; check plan's Spec-walk block." Horizon: Phase-1 empirical follow-up; defer to first dogfood that exposes the empty case.
+
+8. **findings-schema.json strict-validator compatibility** (design-engineer lens FOLLOW-UP) — `additionalProperties: false` at top level + a `definitions` block may trip strict ajv-class validators that don't special-case the `definitions` keyword. The right test is "does ajv accept findings-example.json against findings-schema.json?" Defer to whichever PR wires the first real schema-validation harness.
+
+9. **Toy-app fixture HTML doesn't match its plan** (design-engineer lens FOLLOW-UP) — Plan/plan.md has a criterion about "form validation rejects empty required fields" but app/index.html has no form (one button only). Either expand the HTML to have the form, or trim the second criterion. Horizon: first real dogfood that uses the toy fixture in an executable harness.
+
+10. **No design-language.md for the future HTML renderer PR** (design-engineer lens FOLLOW-UP) — When the verify-build HTML case-study renderer PR lands, it will need a `dev-docs/design-language.md` covering report typography scale, semantic colors for PASS/FAIL/Unknown, timeline-rendering conventions. Horizon: blocks the future HTML renderer at staff-review time; create the design-language doc as part of that PR's intake.
+
+11. **`verifyDimensions` slot** (push-further roadmap-concrete) — Let consumers exclude scope-creep judging for refactor-class PRs (where scope IS "do not change behavior" by definition). Add a 4th verify slot with default `["correctness","regression","scope-creep"]`; Step 6 spawns judges only for the configured subset. Horizon: post-PR-Q after observing one refactor PR's verify behavior; ~30 LOC in SKILL.md Step 6 + a new slot + fixture variants.
+
+12. **Absolute timestamp anchor in findings-buffer metadata** (push-further future-exploration) — `timestamp_offset_ms` is relative; no absolute anchor in metadata. Renderer cannot say "this verify pass happened on 2026-05-28T14:32Z" or compare across runs. **Surfaces when:** HTML renderer work begins OR a second consumer of the findings buffer is added (CI dashboard, verify-history timeline). Direction: add `metadata.verify_started_at_iso8601` (additive; schema_version stays 1.0). Don't add preemptively in PR Q.
+
+13. **Voice/tense inconsistency across lib/*.md prompts** (UX lens FOLLOW-UP) — `rubric.md` and `spike-rubric.md` mix second-person-to-judge with third-person-passive. `not-tested-checklist.md` is third-person-descriptive. Pin second-person throughout judge prompts; third-person in docs/checklists. Horizon: next lib/-touching PR (probably the calibration fixture PR mentioned above).
+
+14. **Bootstrap Step 5.5 inverts cause-and-consequence** (UX lens FOLLOW-UP) — First sentence explains wrapper plumbing before naming the action. Reorder: open with "Run `/run-skill-generator` once per project" then drop the wrapper explanation into "Why this matters." Horizon: next bootstrap.md touch.
+
+15. **Skill description is 13 lines vs project's 5-6 line norm** (UX lens FOLLOW-UP) — Trim to ~6 lines; move composability + adversarial-transformation detail to body. Horizon: docs cadence PR.
+
+16. **Doctor 5.3 third-line "opt-out" anti-pattern** (UX lens FOLLOW-UP) — Currently teaches "you can set verifyEnabled=false to make this go away." Rewrite as a condition: "Only set verifyEnabled=false if your project has no runnable target — a pure library or docs-only repo." Horizon: next doctor touch.
+
+17. **Web "not tested" checklist conflates three categories** (UX lens FOLLOW-UP) — Mix of environment / unexercised-flows / breadth axes. Group into three sub-labels so the agent can scan independently. Horizon: docs cadence PR.
+
+18. **Consolidated review-results line buries the BLOCKED state inside `ran (...)` parens** (UX lens FOLLOW-UP) — When verify-build returns Unknown/FAIL and blocks ship, the alarm is hidden behind `verify-build=ran (overall_verdict:Unknown, gate BLOCKED)`. Promote BLOCKED to a top-level state visible at the level of `ran|skipped`. Horizon: ship.md Step 2 line format revision; small wording change with real signal value.
+
+---
+
 ## PR G — Consistency discipline (FB-0010, SHIPPED — squash `0c3386b`)
 
 **Mode:** feature (small) | **Priority: highest**

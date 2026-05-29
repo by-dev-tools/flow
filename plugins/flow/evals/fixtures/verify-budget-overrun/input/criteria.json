@@ -1,0 +1,10 @@
+{
+  "criteria": [
+    "User can click the Submit button and see a success toast.",
+    "Form validation rejects empty input with an inline error.",
+    "Logout button signs the user out and redirects to /login."
+  ],
+  "source_path": "plan.md",
+  "source_heading": "**Spec-walk:**",
+  "warnings": []
+}

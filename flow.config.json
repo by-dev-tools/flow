@@ -1,0 +1,6 @@
+{
+  "$comment-purpose": "Flow's own self-configuration. Flow is a Claude Code plugin (library / docs project) with no runtime to verify and no UI surface. Setting platform=library and uiSurface=false makes /flow:verify-build and /flow:accessibility-review skip cleanly at their respective platform/surface checks. defaultBranch is explicit to skip git symbolic-ref resolution. All other slots use schema defaults (paths under dev-docs/, no preflightCmd / typecheckCmd since flow is markdown + Python stdlib with no compile step).",
+  "platform": "library",
+  "uiSurface": false,
+  "defaultBranch": "main"
+}
