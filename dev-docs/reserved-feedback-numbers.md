@@ -23,6 +23,7 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 ⚠️ **Open arbitration:** `pr-m/verify-build-skill` (lucid-matsumoto-730ba0) drafts FB-0012 = "Check bundled Claude Code skills before drafting any new `/flow:*` skill" — but FB-0012 was claimed and shipped on 2026-05-28 by the bounded-retry preflight PR (squash `0cf642e`, #22) as "Bounded-retry agent loops…". The verify-build branch must renumber to **FB-0013** at its next rebase and run `git grep -nE 'FB-0012' -- dev-docs/ plugins/flow/` to sweep cross-references (currently lightweight: 1 textual entry + by-name handoff-doc references). The drafted "PR M" letter for the verify-build PR also collides — PR M is now taken by bounded-retry; suggest **PR N** at ship time, deferring after sweet-hellman's queued PR N/O/P if any of those advance first.
 
 - **FB-0013 (suggested next claim)** — `pr-m/verify-build-skill` (lucid-matsumoto-730ba0) — "Check bundled Claude Code skills before drafting any new `/flow:*` skill." Pending re-letter and renumber sweep.
+- **FB-0014** — `claude/dazzling-goodall-1ea214` (dazzling-goodall-1ea214) — "Negative spike result on an evolving capability is one data point — record a re-test trigger (incl. UI), don't write it off." Drafted + committed on-branch (dynamic-workflows reviewer-refutation spike ship). Claimed 0014 because 0013 is reserved above. Remove this line at merge.
 
 ## Audit trail (past collisions, kept for institutional memory)
 
