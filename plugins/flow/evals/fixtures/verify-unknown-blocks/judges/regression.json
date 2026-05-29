@@ -1,0 +1,32 @@
+{
+  "dimension": "regression",
+  "verdicts": [
+    {
+      "criterion": "User can submit the form with valid input and see a success message.",
+      "verdict": "PASS",
+      "evidence": [
+        "No console errors",
+        "User can submit the form with valid input and see a success message."
+      ],
+      "notes": ""
+    },
+    {
+      "criterion": "Form validation rejects empty required fields with an inline error message.",
+      "verdict": "Unknown",
+      "evidence": [
+        "Filled name='Alice', email='alice@example.com'. Clicked Submit. ... No console errors",
+        "Form validation rejects empty required fields with an inline error message."
+      ],
+      "notes": "Adjacent regression behavior (validation error rendering) cannot be assessed without the empty-field path being exercised."
+    },
+    {
+      "criterion": "Logout button signs the user out and redirects to /login.",
+      "verdict": "Unknown",
+      "evidence": [
+        "(not tested — verify session interrupted before reaching logout test)",
+        "Logout button signs the user out and redirects to /login."
+      ],
+      "notes": "Logout flow not exercised; no adjacent observations to assess regression."
+    }
+  ]
+}

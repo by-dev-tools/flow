@@ -1,0 +1,101 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "branch": "verify-toy-feature-branch",
+    "head_sha_short": "abc1234",
+    "plugin_version": "1.3.0",
+    "platform_hint": "web",
+    "verify_budget_calls_used": 18,
+    "verify_budget_overrun": false,
+    "spike_mode": false
+  },
+  "overall_verdict": "PASS",
+  "exit_code": 0,
+  "criteria": [
+    {
+      "text": "User can click the Submit button and see a \"Submitted successfully\" toast within 500ms.",
+      "adversarial_cases": [
+        "Click Submit when the network is slow (>500ms response); the toast should still appear once the response arrives, not before, and not at all if the response is an error."
+      ],
+      "observations": [
+        {"type": "narrative", "content": "Loaded http://localhost:5173. Page rendered with Submit button visible."},
+        {"type": "narrative", "content": "Clicked Submit button at t=1200ms."},
+        {"type": "network", "content": "POST /api/submit → 201 Created (response time: 80ms)"},
+        {"type": "a11y_snapshot", "content": "[status] Submitted successfully"}
+      ],
+      "verdicts": {
+        "correctness": {
+          "verdict": "PASS",
+          "evidence": [
+            "POST /api/submit → 201 Created (response time: 80ms) / [status] Submitted successfully",
+            "User can click the Submit button and see a \"Submitted successfully\" toast within 500ms."
+          ],
+          "notes": ""
+        },
+        "regression": {
+          "verdict": "PASS",
+          "evidence": [
+            "Page rendered with Submit button visible. (no console errors)",
+            "User can click the Submit button and see a \"Submitted successfully\" toast within 500ms."
+          ],
+          "notes": ""
+        },
+        "scope-creep": {
+          "verdict": "PASS",
+          "evidence": [
+            "POST /api/submit → 201 Created (no other endpoints called)",
+            "Plan does not include analytics or tracking; only the Submit POST."
+          ],
+          "notes": ""
+        }
+      },
+      "aggregated_verdict": "PASS"
+    },
+    {
+      "text": "Clicking the button twice within 200ms results in only one POST request and one toast.",
+      "adversarial_cases": [],
+      "observations": [
+        {"type": "narrative", "content": "Clicked Submit twice within ~100ms"},
+        {"type": "network", "content": "POST /api/submit → 201 Created (single request observed)"},
+        {"type": "a11y_snapshot", "content": "[status] Submitted successfully (single instance)"}
+      ],
+      "verdicts": {
+        "correctness": {
+          "verdict": "PASS",
+          "evidence": [
+            "POST /api/submit → 201 Created (single request observed)",
+            "Clicking the button twice within 200ms results in only one POST request and one toast."
+          ],
+          "notes": ""
+        },
+        "regression": {
+          "verdict": "PASS",
+          "evidence": [
+            "[status] Submitted successfully (single instance)",
+            "Clicking the button twice within 200ms results in only one POST request and one toast."
+          ],
+          "notes": ""
+        },
+        "scope-creep": {
+          "verdict": "PASS",
+          "evidence": [
+            "POST /api/submit → 201 Created (no other endpoints called)",
+            "Plan does not include analytics or tracking; only the Submit POST."
+          ],
+          "notes": ""
+        }
+      },
+      "aggregated_verdict": "PASS"
+    }
+  ],
+  "not_tested": [
+    {"item": "Real device (used Playwright headless / dev browser)", "tested": false},
+    {"item": "Real network (used dev server; no production CDN, no real latency)", "tested": false},
+    {"item": "Authenticated flows requiring 2FA / SSO", "tested": false, "rationale": "feature has no auth"},
+    {"item": "Push notifications", "tested": false, "rationale": "feature does not push"},
+    {"item": "Payment flows", "tested": false, "rationale": "feature has no payment"},
+    {"item": ">1 viewport size (mobile / tablet)", "tested": false},
+    {"item": ">1 locale / language", "tested": false},
+    {"item": ">1 browser engine (only Chromium tested by default)", "tested": false}
+  ]
+}

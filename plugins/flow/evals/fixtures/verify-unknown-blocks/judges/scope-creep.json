@@ -1,0 +1,32 @@
+{
+  "dimension": "scope-creep",
+  "verdicts": [
+    {
+      "criterion": "User can submit the form with valid input and see a success message.",
+      "verdict": "PASS",
+      "evidence": [
+        "Network panel shows one POST /api/submit returning 201",
+        "User can submit the form with valid input and see a success message."
+      ],
+      "notes": ""
+    },
+    {
+      "criterion": "Form validation rejects empty required fields with an inline error message.",
+      "verdict": "Unknown",
+      "evidence": [
+        "Filled name='Alice', email='alice@example.com'. Clicked Submit",
+        "Form validation rejects empty required fields with an inline error message."
+      ],
+      "notes": "Validation surfaces not exercised; cannot assess whether implementation added out-of-scope validation behavior."
+    },
+    {
+      "criterion": "Logout button signs the user out and redirects to /login.",
+      "verdict": "Unknown",
+      "evidence": [
+        "(not tested — verify session interrupted before reaching logout test)",
+        "Logout button signs the user out and redirects to /login."
+      ],
+      "notes": "Logout flow not exercised; cannot assess scope creep on this surface."
+    }
+  ]
+}

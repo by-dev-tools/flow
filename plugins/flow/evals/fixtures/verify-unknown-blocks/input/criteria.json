@@ -1,0 +1,23 @@
+{
+  "criteria": [
+    {
+      "original": "User can submit the form with valid input and see a success message.",
+      "adversarial_cases": [
+        "Submit valid input twice in rapid succession (under 200ms apart); only one record should be created server-side and the UI should show success exactly once."
+      ]
+    },
+    {
+      "original": "Form validation rejects empty required fields with an inline error message.",
+      "adversarial_cases": []
+    },
+    {
+      "original": "Logout button signs the user out and redirects to /login.",
+      "adversarial_cases": [
+        "After logout, navigating back via browser history should not restore the authenticated session."
+      ]
+    }
+  ],
+  "source_path": "dev-docs/plan.md",
+  "source_heading": "**Spec-walk:**",
+  "warnings": []
+}

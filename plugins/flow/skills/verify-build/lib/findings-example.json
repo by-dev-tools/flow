@@ -1,0 +1,118 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "branch": "claude/lucid-matsumoto-730ba0",
+    "head_sha_short": "98ffd5c",
+    "plugin_version": "1.3.0",
+    "platform_hint": "web",
+    "verify_budget_calls_used": 23,
+    "verify_budget_overrun": false,
+    "spike_mode": false
+  },
+  "overall_verdict": "Unknown",
+  "exit_code": 1,
+  "criteria": [
+    {
+      "text": "User can submit the form with valid input and see a success message.",
+      "adversarial_cases": [
+        "Submit valid input twice in rapid succession (under 200ms apart); only one record should be created server-side and the UI should show success exactly once."
+      ],
+      "observations": [
+        {
+          "type": "narrative",
+          "content": "Loaded form. Filled name='Alice', email='alice@example.com'. Clicked Submit.",
+          "timestamp_offset_ms": 1200
+        },
+        {
+          "type": "network",
+          "content": "POST /api/submit → 201 Created (response time: 180ms)",
+          "timestamp_offset_ms": 1380
+        },
+        {
+          "type": "a11y_snapshot",
+          "content": "[alert] Submitted successfully",
+          "timestamp_offset_ms": 1420
+        },
+        {
+          "type": "narrative",
+          "content": "Re-filled valid input. Clicked Submit twice within ~100ms.",
+          "timestamp_offset_ms": 3000
+        },
+        {
+          "type": "network",
+          "content": "POST /api/submit → 201 Created (single request)",
+          "timestamp_offset_ms": 3180
+        }
+      ],
+      "verdicts": {
+        "correctness": {
+          "verdict": "PASS",
+          "evidence": [
+            "POST /api/submit → 201 Created (single request)",
+            "Submit valid input twice in rapid succession (under 200ms apart); only one record should be created server-side and the UI should show success exactly once."
+          ],
+          "notes": ""
+        },
+        "regression": {
+          "verdict": "PASS",
+          "evidence": [
+            "No console errors observed during submit flow",
+            "User can submit the form with valid input and see a success message."
+          ],
+          "notes": ""
+        },
+        "scope-creep": {
+          "verdict": "PASS",
+          "evidence": [
+            "POST /api/submit → 201 Created (no other endpoints called)",
+            "Plan does not include rate-limiting, analytics, or user-tracking integrations."
+          ],
+          "notes": ""
+        }
+      },
+      "aggregated_verdict": "PASS"
+    },
+    {
+      "text": "Form validation rejects empty required fields with an inline error message.",
+      "adversarial_cases": [],
+      "observations": [],
+      "verdicts": {
+        "correctness": {
+          "verdict": "Unknown",
+          "evidence": [
+            "(Verify pass only exercised valid-input submission; empty-required-field path is not observable.)",
+            "Form validation rejects empty required fields with an inline error message."
+          ],
+          "notes": "Verify pass only exercised valid-input submission; empty-required-field path is not observable from this output."
+        },
+        "regression": {
+          "verdict": "Unknown",
+          "evidence": [
+            "(No observations adjacent to validation behavior.)",
+            "Form validation rejects empty required fields with an inline error message."
+          ],
+          "notes": "Adjacent regression behavior cannot be assessed without the empty-field path being exercised."
+        },
+        "scope-creep": {
+          "verdict": "Unknown",
+          "evidence": [
+            "(Validation surface not exercised.)",
+            "Form validation rejects empty required fields with an inline error message."
+          ],
+          "notes": "Validation surfaces not exercised; cannot assess whether implementation added out-of-scope validation behavior."
+        }
+      },
+      "aggregated_verdict": "Unknown"
+    }
+  ],
+  "not_tested": [
+    {"item": "Real device (used Playwright headless / dev browser)", "tested": false},
+    {"item": "Real network (used dev server; no production CDN, no real latency)", "tested": false},
+    {"item": "Authenticated flows requiring 2FA / SSO", "tested": false},
+    {"item": "Push notifications", "tested": false},
+    {"item": "Payment flows", "tested": false},
+    {"item": ">1 viewport size (mobile / tablet)", "tested": false},
+    {"item": ">1 locale / language", "tested": false},
+    {"item": ">1 browser engine (only Chromium tested by default)", "tested": false}
+  ]
+}

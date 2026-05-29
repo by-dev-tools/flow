@@ -553,6 +553,188 @@ Spawned via Agent subagents emulating the planned skills per FB-0001 (plugin not
 
 ---
 
+## PR R — `/flow:init` skill (planning; queued; provisional letter)
+
+**Mode:** feature (medium)
+**Priority:** TBD pending ship-vs-defer decision. Originally noted in [`README.md`](../README.md) "Known limitations" as `/flow:init` deferred to bootstrap.sh + manual placeholder fill; line 891 of this file ("`/flow:init` auto-bootstrap skill — v2.0+ per post-extraction roadmap") confirms intentional deferral. **Question on the table:** advance now or hold the v2.0+ schedule. Plan is fully scoped so the call is informed.
+**Source:** 2026-05-27 → 2026-05-28 conversation in worktree `thirsty-napier-5a3ff4`. User direction: "it should identify what's missing, what exists but may need to be adapted/optimized for flow, and propose additions. existing documentation/files should never be deleted - any changes need to be explicitly approved by the human." Planning thread ran plan-critic 5 passes (11 substantive findings + 5 edit-discipline findings, all resolved before this section was written). FB claim: **FB-0014** (reserved in `dev-docs/reserved-feedback-numbers.md`).
+**Letter note:** "R" chosen to clear past lucid-matsumoto's pending re-letter (likely Q) and sweet-hellman's queued N/O/P. Finalize at ship time; if queue clears differently, renumber at rebase via the FB-0010 grep-first-edit-second discipline.
+
+**Goal:** Provide a single skill that lets any project adopt flow in one in-session command. The skill (1) detects repo state, (2) inventories what's missing vs what exists-but-needs-adapting, (3) proposes a complete additive change set, and (4) applies only the items the user explicitly approves. **No file is ever deleted; no file is ever overwritten without explicit per-file approval.**
+
+**Scope (in):**
+
+Three-phase skill structure, gated by approval:
+
+- **Phase A — INVENTORY (read-only).** Delegate detection to `/flow:doctor`'s check matrix (single source of truth; init does not duplicate the 17-slot logic — note: now 17 slots per v1.2.6, not 16 as planning thread assumed). Add repo-classification checks doctor doesn't: stack signal (`package.json` web vs `src-tauri/` tauri-rust-ts; `Cargo.toml`-only flagged unsupported; `*.xcodeproj`/`Package.swift` swift; ambiguous → ask), docs convention (`core-docs/` vs `dev-docs/` vs `docs/` vs none — propose `core-docs/` for new, preserve existing), prior `.claude/` content (CLAUDE.md exists? `.claude/rules/safety.md` exists? local `/staff-review` or other workflow skill conflicts with `/flow:*`?). Classify the repo into one of four states: FRESH / PARTIAL-FLOW / EXISTING-OWN-WORKFLOW / ALREADY-READY. Print inventory table with `[MISSING]` / `[PRESENT]` / `[PRESENT — adapt-candidate]` / `[CONFLICT — local skill X overlaps /flow:Y]`.
+- **Phase B — PROPOSAL (writes nothing).** For each `[MISSING]`: show file path + first ~15 lines + source template path. For each `[adapt-candidate]`: show unified diff of the proposed additive section (e.g., appending a "Workflow" section to existing CLAUDE.md; appending paths to existing safety.md frontmatter). **Never a rewrite — only additive Edit-tool sections.** For each `[CONFLICT]`: emit warning, no proposed change. For each placeholder slot: print inferred value + source. Present proposal as a numbered list; user approves with `apply all` / `apply 1,3,5` / `apply 1-7` / `skip 4` / `cancel`. Ambiguous input re-prompts rather than guessing.
+- **Phase C — EXECUTE (only approved items).** Every write uses `cp -n` semantics OR additive Edit; refuses to overwrite. After writes: run `/flow:doctor`, print its output, emit final-line verdict `[INIT COMPLETE]` / `[INIT COMPLETE — N items declined; re-run /flow:init or fix manually]` / `[INIT INCOMPLETE — see doctor output]`.
+
+Prerequisite work (Phase 1 of execution, if it ships):
+
+- **Move `template/` → `plugins/flow/template/`** so templates ship inside the user-scope plugin install (`/flow:init` reads from `${CLAUDE_PLUGIN_ROOT}/template/...` without requiring a local checkout). `git mv` preserves history. Update path references in: (a) `plugins/flow/template/base/bootstrap.sh` itself — implement **smart-fallback** so `$FLOW_DIR/template/base/` is tried first then `$FLOW_DIR/plugins/flow/template/base/`, preserving the documented `--flow-dir = path to a local flow checkout` CLI semantic; (b) `plugins/flow/skills/doctor/SKILL.md` — replace **5 hardcoded `template/base/` references at lines 113, 114, 168, 250, 251** (verified 2026-05-28 against post-PR-M HEAD via `grep -n 'template/base' plugins/flow/skills/doctor/SKILL.md`; original planning thread cited 113/114/168/183/184 against a stale base before PRs A-M shipped) with `${CLAUDE_PLUGIN_ROOT}/template/base/...` or with `/flow:init` invocation hint; (c) `README.md`; (d) `docs/bootstrap.md`; (e) `docs/migration.md`. Clean break at old root path (no deprecation stub).
+
+Init consumes `/flow:doctor`'s text output via two regex layers: (a) status lines `^\[(PASS|FAIL|WARN|SKIP)\] <label>` — all four statuses including `SKIP`, which doctor emits when a check's prerequisites haven't passed; (b) continuation lines `^( {2,})(\S.*)$` with `Fix:` as a recognized sub-shape but not the only shape (doctor emits multi-line hints like `Fix: brew install gh` + `Then: gh auth login`). Plus final-line verdict (`[READY]` / `[READY with WARN-level items]` / `[NOT READY]`). Status mapping: `PASS` → not in inventory; `FAIL` → `[MISSING]`; `WARN` → `[PRESENT — adapt-candidate]`; `SKIP` → `[DEFERRED]`. New eval fixture at `plugins/flow/evals/fixtures/doctor-format-stability/` asserts doctor's output line shape is stable across all 4 statuses + multi-line continuation. **No `--json` flag on doctor** — cross-skill scope expansion outside the user envelope, per planning-thread plan-critic ISSUE 1 resolution.
+
+Documentation + version updates (if it ships):
+
+- `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`: bump to next available version (likely v1.3.0 if it lands as the v1.3 milestone, or a v1.2.x patch if absorbed earlier).
+- `README.md`: remove `/flow:init` from "Known limitations"; promote to "Quick start" front door.
+- `plugins/flow/docs/workflow.md`: add `/flow:init` to onboarding surface.
+- `docs/bootstrap.md`: restructure to show `/flow:init` first, `bootstrap.sh` as appendix.
+- `docs/migration.md`: Stage 1 references `/flow:init` (handles "install non-breaking" with merge prompts).
+- `dev-docs/feedback.md`: add FB-0014 ("Init skill must default to additive + per-item human approval; never overwrite or delete existing files").
+- `plugins/flow/evals/init_unit/`: Python unit tests for `init_helpers.py` (matches `evals/security/test_cwd_constraint.py` subprocess-invocation pattern, NOT import-based — corrected during planning).
+
+**Scope (out):**
+
+- Auto-applying without approval. Even for FRESH repos with no conflicts, init always presents the proposal and waits.
+- Modifying or removing local workflow skills. Init flags conflicts; never resolves them. `docs/migration.md` Stage 2 is the user's call.
+- Auto-installing the plugin. Init assumes `/plugin marketplace add` + `/plugin install` already ran; if doctor's Section 1 fails, init exits early with a fix-it hint.
+- Cross-repo concerns. Init operates on `pwd`; doesn't touch `~/.claude/settings.json` or other repos.
+- A `/flow:doctor --json` flag (left as a separate decision; can be filed as a follow-up if text parsing proves brittle in dogfood).
+
+**Spec-walk:**
+
+- [ ] `plugins/flow/skills/init/SKILL.md` exists with three phases (INVENTORY / PROPOSAL / EXECUTE) clearly delimited.
+- [ ] Init delegates to `/flow:doctor` for the check matrix; no duplicated check logic.
+- [ ] Init parses doctor's text via documented contract: status `^\[(PASS|FAIL|WARN|SKIP)\] <label>` + general indented continuation; SKIP maps to `[DEFERRED]` in inventory.
+- [ ] Eval fixture at `plugins/flow/evals/fixtures/doctor-format-stability/` asserts doctor's output format stability across all 4 statuses + multi-line continuation.
+- [ ] Repo classification yields exactly one of FRESH / PARTIAL-FLOW / EXISTING-OWN-WORKFLOW / ALREADY-READY.
+- [ ] PARTIAL-FLOW vs EXISTING-OWN-WORKFLOW disambiguator documented in init/SKILL.md: presence of `flow.config.json` → PARTIAL-FLOW; project-local `.claude/skills/` without it → EXISTING-OWN-WORKFLOW; ambiguous → user-redirect.
+- [ ] Phase B output ends with the literal approval prompt; Phase C writes nothing until approval received.
+- [ ] Every write is gated by approval AND a precondition check (file doesn't exist, or change is additive via Edit not rewrite).
+- [ ] init/SKILL.md includes a table-form approval grammar spec covering: empty input, single number, comma-list, range, `apply all`, `skip <list>`, mixed apply+skip, out-of-range, negative/zero, duplicates, reversed ranges, open-ended ranges, whitespace tolerance, `cancel`.
+- [ ] `template/` moved to `plugins/flow/template/`; root deleted; bootstrap.sh smart-fallback implemented; doctor SKILL.md 5 references at lines 113/114/168/250/251 updated; 3 root docs updated; grep gate clean.
+- [ ] Eval fixtures for 4 repo states under `plugins/flow/evals/init_unit/fixtures/{fresh,partial-flow,existing-own-workflow,already-ready}/` with checksum-before/after asserts proving no deletes + no overwrites.
+- [ ] FB-0014 added to `dev-docs/feedback.md` synthesizing the "additive + per-item approval, never destructive" rule; reservation removed from `reserved-feedback-numbers.md` during /flow:ship synthesis step.
+- [ ] `claude plugin validate .` clean.
+- [ ] README "Known limitations" no longer lists `/flow:init`; v2.0+ Backlog entry at plan.md:891 removed since it ships earlier than originally roadmapped.
+
+**Spec-walk additions: health-tracker dogfood inputs (2026-05-28).** Signals derived from health-tracker's flow setup handoff. Health-tracker is a native iOS / SwiftUI app with XcodeGen-managed project + non-default doc convention; it adopted flow without renaming its existing docs. Initially added 6 items from the handoff; **audited 2026-05-28 against the live schema** (`plugins/flow/schema/flow.config.schema.json`) and against the "generalizable + valuable at this stage" bar — 3 kept, 1 simplified, 1 dropped, 1 reshaped. Audit notes inline below each item.
+
+- [ ] **Swift stack detection signals extended.** `init_helpers.py` classifier recognizes `project.yml` (XcodeGen) and `Project.swift` (Tuist) in addition to `*.xcodeproj` + `Package.swift` as swift-stack indicators. Rationale: XcodeGen projects gitignore `.xcodeproj` and treat `project.yml` as source-of-truth; missing this signal would misclassify XcodeGen + Tuist projects (both industry-standard iOS tooling). **Audit verdict: KEEP** — structural fact, near-zero cost.
+- [ ] **`uiSurface: false` default for swift stack.** When stack is detected as swift (any of the 4 signals above), the inferred-slot proposal for `uiSurface` is `false`, not `true`. Documented rationale in the proposal: schema default is `true` (verified 2026-05-28 against `plugins/flow/schema/flow.config.schema.json`), so without this override every swift consumer hits noisy `/flow:accessibility-review` early-exits — flow's HTML/ARIA heuristics don't apply to SwiftUI/UIKit. (Future v1.3+: a SwiftUI-aware a11y review skill would flip this default; not in PR R scope.) **Audit verdict: KEEP** — schema-confirmed value; cost-of-no-override is real.
+- [ ] **Slot-mapping for existing docs (additive principle for slot configuration).** When init's Phase A detects existing docs at non-default paths (e.g., `HISTORY.md` at repo root, `<project>-spec.md` at root, `docs/roadmap.md`, `design-language.md` at root), Phase B proposes mapping `flow.config.json` slots to those existing paths rather than creating new files under `core-docs/`. This is the additive-only principle applied to slot configuration — not just file content. Without it, init would create duplicate-purpose files at default paths while existing docs remain orphaned (the case health-tracker would have hit). Proposal output example: "I see `HISTORY.md` at root; propose `historyPath: HISTORY.md` instead of creating `core-docs/history.md`. Approve or skip." **Audit verdict: KEEP** — structural correctness; closes a real "never destructive" gap at the slot layer.
+- [ ] **Existing `.claude/rules/safety.md` preserved.** Any existing `safety.md` is classified as `[PRESENT]`; init never proposes replacing it. If user wants flow's standard safety conventions appended, that happens via the general additive-Edit rule that already governs all adapt-candidate edits — no separate detection logic needed. **Audit verdict: SIMPLIFIED** from the originally-drafted "[PRESENT — adapt-candidate] with template-marker detection" — that mechanical detection was over-specified for N=1 evidence; the simpler "exists → leave alone unless user explicitly asks for additions" rule covers the same intent.
+- [ ] ~~**`branchPrefix` slot inferred from git branch list.**~~ **DROPPED.** Original draft proposed inferring `branchPrefix` from a `git branch --list` prefix-pattern scan. Schema verification (2026-05-28) showed the slot's default is `""` (opt-in by design — `flow doesn't add a prefix unless this is set`); cost of leaving unset is zero behavior change. Inferring it is overengineering for marginal value. If a real consumer reports friction, file as a separate FB.
+- [ ] **Composed `preflightCmd` for source-of-truth-file stacks only.** When Phase A detects a source-of-truth project file (`project.yml` for XcodeGen; `Project.swift` for Tuist), Phase B proposes a composed `preflightCmd` with the appropriate pre-build step: `xcodegen generate && xcodebuild -scheme <X> -destination <Y> test` or `tuist generate && xcodebuild ...`. For all other stacks (including plain SPM swift, web, tauri-rust-ts), follow the schema's documented `examples` field (single-command or stack-native multi-step like `npm run typecheck && npm run lint && npm test -- --bail`) rather than inventing composed forms. **Audit verdict: RESHAPED** from the originally-drafted "composed multi-step for all stacks" — that overgeneralized from N=1 (XcodeGen needs the composed form; SPM-only swift doesn't); narrowed to only those stacks where source-of-truth file presence makes the pre-build step load-bearing.
+
+**Confidence verdicts:** (Carried verbatim from 5-pass critic-resolved planning thread; line numbers updated to reflect post-PR-M doctor SKILL.md.)
+
+**Assumption:** `/flow:doctor`'s existing text output is regular enough that init can parse it reliably via line-shape regex, given an eval fixture that locks the format.
+**Confidence:** HIGH
+**Why:** Doctor emits ~17 checks plus a final verdict line, all in a consistent `[STATUS] label` + optional indented continuation shape. The eval fixture asserting format stability is load-bearing — any future doctor edit that changes line shape fails the test and forces coordinated update.
+**If it flips:** doctor's format proves brittle in init dogfood. File `/flow:doctor --json` as separate user-approved follow-up PR.
+
+**Assumption:** "Additive only" via Edit tool suffices for all adapt-candidate cases.
+**Confidence:** HIGH
+**Why:** Realistic adapts (append Workflow section to CLAUDE.md; append paths to safety.md frontmatter; append lines to .gitignore) don't require destructive edits.
+**If it flips:** Specific case becomes `[CONFLICT]`; surfaced with manual-merge instructions.
+
+**Assumption:** Explicit disambiguator (`flow.config.json` presence → PARTIAL-FLOW; project-local `.claude/skills/` without it → EXISTING-OWN-WORKFLOW) is sufficient for binary-signal cases; ambiguous cases escalate to user-redirect.
+**Confidence:** HIGH for disambiguated; MEDIUM for ambiguous edge cases (caught at Present-step per workflow.md MEDIUM contract).
+**Why:** `flow.config.json` presence is binary. Edge cases get explicit user resolution, not silent heuristic guess.
+
+**Assumption:** Stack auto-detection from `package.json` / `Cargo.toml` / `*.xcodeproj` covers common cases.
+**Confidence:** HIGH
+**Why:** Three supported stacks each have unique fingerprints. Multi-stack monorepos → ask user.
+
+**Risks:**
+
+- `template/` move + path updates touch ~10 files. Mitigation: single atomic Phase 1 commit; grep gates; `claude plugin validate .` clean before proceeding.
+- Init couples with `/flow:doctor`'s text format. Mitigation: format-stability eval fixture.
+- Approval-batching UX is tricky. Mitigation: numbered proposals; `apply` trigger word forces deliberateness; ambiguous input re-prompts.
+- **NEW risk caught during 2026-05-28 rebase:** Plan content was authored against base before PRs A-M shipped. Foundational assumptions (slot count, line numbers, current "letter availability") all required correction at the rebase. Mitigation already applied (line numbers fixed to 250/251; slot count noted as 17 not 16; letter R chosen past current claims). Any further rebase before execution must repeat this verification.
+- **NEW risk:** Section 4 of doctor SKILL.md may have additional `template/base/` references the grep didn't catch (Section 4 was added during PRs A-M and wasn't in the original planning sample). Mitigation: re-grep at Phase 1 execution.
+
+**Phased execution (each phase = one commit unless trivially small):**
+
+- **Phase 1 — Prerequisite: `template/` move (clean break).** `git mv template/ plugins/flow/template/` + path updates in 5 files: bootstrap.sh (smart-fallback), doctor SKILL.md (5 references at 113/114/168/250/251, **verify exhaustive via grep before edit** per FB-0010 discipline), README.md, docs/bootstrap.md, docs/migration.md. Single commit.
+- **Phase 2 — `SKILL.md` Phase A (INVENTORY) + Python helpers.** Write `plugins/flow/skills/init/SKILL.md` Phase A body + `plugins/flow/scripts/init_helpers.py` (library + thin argparse CLI). Smoke against FRESH and ALREADY-READY repo states.
+- **Phase 3 — Phase B (PROPOSAL) + approval-parse logic + grammar table.** Smoke `apply all` / `apply 1,3,5` / `skip 4` / `cancel` + edge cases per grammar table.
+- **Phase 4 — Phase C (EXECUTE) with no-overwrite enforcement.** Smoke against EXISTING-OWN-WORKFLOW state; assert no existing file modified outside approved additive edits.
+- **Phase 5 — Eval fixtures + Python unit tests.** `plugins/flow/evals/init_unit/test_init_helpers.py` invokes `init_helpers.py` via `subprocess.run` (matches existing security-test pattern). Fixtures under `plugins/flow/evals/init_unit/fixtures/{fresh,partial-flow,existing-own-workflow,already-ready}/`. Plus `plugins/flow/evals/fixtures/doctor-format-stability/` regression fixture.
+- **Phase 6 — Docs + manifest bump.** README, bootstrap.md, migration.md, workflow.md updated to lead with `/flow:init`. Version bump per current cycle.
+- **Phase 7 — Dogfood via `/flow:staff-review` + `/flow:security-review`** on PR's own diff. 4 parallel lenses canonical pattern.
+- **Phase 7.5 — Present MEDIUM-confidence verdicts to user** (per workflow.md MEDIUM contract). Specifically the EXISTING-OWN-WORKFLOW heuristic edge cases.
+- **Phase 8 — `/flow:ship` + open PR.** PR body documents Phase 7.5 resolutions.
+
+**Files touched (anticipated):**
+
+- New: `plugins/flow/skills/init/SKILL.md`
+- New: `plugins/flow/scripts/init_helpers.py` — Python helpers with library + argparse CLI (matches `extract_session.py` shape)
+- Moved: `template/` → `plugins/flow/template/` (~10 files via `git mv`); root deleted
+- Modified post-move: `plugins/flow/template/base/bootstrap.sh` (smart-fallback `--flow-dir`), `plugins/flow/skills/doctor/SKILL.md` (5 hardcoded `template/base/` references at lines 113/114/168/250/251 — verified post-PR-M HEAD), `README.md`, `docs/bootstrap.md`, `docs/migration.md`
+- Modified: `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (version bump TBD by ship cycle)
+- Modified: `plugins/flow/docs/workflow.md` (add `/flow:init` to onboarding)
+- Modified: `dev-docs/{plan,history,feedback}.md` (synthesis at ship time)
+- Modified: `dev-docs/reserved-feedback-numbers.md` (remove FB-0014 reservation at ship time per protocol)
+- Modified: `README.md` (remove from Known Limitations; promote to Quick start)
+- New: `plugins/flow/evals/init_unit/test_init_helpers.py`
+- New: `plugins/flow/evals/init_unit/fixtures/{fresh,partial-flow,existing-own-workflow,already-ready}/`
+- New: `plugins/flow/evals/fixtures/doctor-format-stability/`
+
+---
+
+## PR Q — `/flow:verify-build` skill: plan-driven behavioral verification gate (in flight on `claude/lucid-matsumoto-730ba0`; orthogonal to N/O/P/R)
+
+**Mode:** feature (medium — full skill + 5 lib assets + 3 fixture sets + workflow + doctor + schema integration) | **Priority: high** | **Horizon:** v1.3.0
+**Branch:** `claude/lucid-matsumoto-730ba0` during execution; renamed to `pr-q/verify-build-skill` at ship time.
+**Canonical plan:** [`dev-docs/handoffs/pr-q-verify-build-plan.md`](handoffs/pr-q-verify-build-plan.md) — full Mode/Goal/Scope/Spec-walk/Confidence verdicts/Risks/Phases/Files-touched.
+
+**Goal (one-liner):** Add `/flow:verify-build` as a thin wrapper around bundled `/verify` (transitively `/run` + `/run-skill-generator`) that adds plan-driven criteria extraction (from `**Spec-walk:**` checkboxes), adversarial criteria transformation, per-dimension parallel judges with Unknown-blocking gate, and structured findings buffer routed to `/flow:ship` Step 4a. Closes the static-analysis-only gap in the loop's verification surface (Potemkin-interface / hallucinated-success class — the dominant agentic-dev failure mode no current flow step catches).
+
+**Sequencing — orthogonal, not queued:** PRs N (orchestration hardening), O (test-edit hook), P (auditor model-diversity), R (init-skill) target different surfaces. PR Q targets `/flow:ship` Step 2 final-pass review surface. Different files in the diff; no real content dependency. Rebases onto main as N/O/P/R land. Ship order = whichever finishes first. Inherited locked pattern: PR M's FB-0012 bounded-retry contract — verify-build's judge runs single-pass; any future retry primitive inherits PR M Step 1c's `(a)` mechanical exit signal + `(b)` N=3 + diff-hash + `(c)` no test-disabling guards.
+
+**Status (2026-05-28):** **All 11 phases complete; PR open / ready to merge.** Phases 1–9 landed the skill + lib/ + fixtures + integration. Phase 10 (staff-review dogfood) returned 1 BLOCKER + 19 NITs + 13 FOLLOW-UPs; BLOCKER + 11 cheap NITs fixed in-tree; 18 FOLLOW-UPs routed below. Phase 11 bumped manifest v1.2.6 → v1.3.0 + added flow.config.json self-config (platform: library + uiSurface: false). Final schema slot count: 17 → 21 (added platform via staff-review NIT, on top of the 3 planned verifyEnabled/verifyFindingsPath/verifyBudgetCalls). FB number resolved as **FB-0015** (cascaded from drafted FB-0010 → FB-0012 → FB-0013 → FB-0014 → FB-0015 as collisions surfaced).
+
+**Locked patterns inherited:** FB-0008 (stale-base preflight), FB-0009 (fail-fast on missing CLIs), FB-0010 (consistency discipline; silent-skip + fan-out defenses applied), FB-0011 (autonomy bar; Unknown ⇒ ESCALATE), FB-0012 (bounded-retry contract from PR M — mechanical exit signal + N=3 + reward-hacking guards), FB-0015 (check bundled first — applied to thin-wrapper shape).
+
+**Letter / FB history (for traceability):** drafted as "PR M" in conversation (2026-05-27→28 morning); collided with bounded-retry PR M (`0cf642e`). Renumbered to PR Q after K1's protocol audit (per PR R's reserved-feedback-numbers entry which acknowledged Q as my slot). FB number cascaded: original FB-0010 → FB-0012 (PR G collision) → FB-0013 (PR M collision; PR P reserved) → FB-0014 (PR R claimed) → **FB-0015** at this rebase.
+
+**Files touched:** new under `plugins/flow/skills/verify-build/` (SKILL.md + lib/{extract-criteria.py, adversarial.md, rubric.md, spike-rubric.md, not-tested-checklist.md, findings-schema.json, findings-example.json}); new under `plugins/flow/evals/fixtures/` (verify-unknown-blocks/, verify-toy-web-app/, verify-budget-overrun/ — 14 fixture files total); modified `plugins/flow/skills/{ship,ship-spike,doctor}/SKILL.md` (SAFETY), `plugins/flow/docs/workflow.md`, `plugins/flow/schema/flow.config.schema.json` (4 new slots: `platform`, `verifyEnabled`, `verifyFindingsPath`, `verifyBudgetCalls`; total 17 → 21), `docs/{bootstrap,migration}.md`, README.md + `template/base/{CLAUDE.md.template,bootstrap.sh}` + manifest descriptions (slot count fan-out); plus dev-docs cascade (feedback, plan, roadmap, reserved-feedback-numbers, handoffs/pr-q-verify-build-plan.md).
+
+### PR Q+ FOLLOW-UPs from staff-review (2026-05-28; 4 parallel lenses)
+
+1. **Doctor Check 2.5 scan misses install-surface JSON** (engineer lens FOLLOW-UP) — Check 2.5's slot-count fan-out scan scans CLAUDE.md / README.md / docs / core-docs / dev-docs but NOT `.claude-plugin/marketplace.json` or `plugins/flow/.claude-plugin/plugin.json`. PR Q's BLOCKER was a fan-out survivor in exactly those install-surface descriptions. Generalize Check 2.5's grep to include `.claude-plugin/` and `plugins/flow/.claude-plugin/`. Horizon: next doctor-touching PR (or PR N if it generalizes the scan anyway).
+
+2. **Spike-mode pre-check vs Python parser asymmetric match rules** (engineer lens FOLLOW-UP) — SKILL.md Step 2 uses `grep -q '\*\*Spec-walk'` (looser, line-substring match); Step 3's Python regex requires line-anchored `^\s*\*\*Spec-walk:?\*\*:?\s*$` (stricter). A plan with `**Spec-walk:** see below:` passes Step 2 (not spike) but Step 3 yields zero criteria. Tighten Step 2 grep to anchor on `^[[:space:]]*\*\*Spec-walk` AND optionally trailing `:?\*\*` to mirror Python. Horizon: before first real-run dogfood; cheap one-line tighten.
+
+3. **metadata.platform_hint enum couples to bundled /run autodetect output labels** (engineer lens FOLLOW-UP) — If bundled `/run` ever changes its autodetect labels (cli/server/tui/electron/browser-driven/library), verify-build silently mis-classifies in the findings buffer. Add a smoke fixture asserting current `/run` labels at first dogfood run + a graceful fallback to `"unknown"` if a new label appears. Horizon: Phase 1 empirical /verify characterization (already on roadmap; fold in).
+
+4. **Workflow.md cheat-sheet row for verify-build is twice the width of siblings** (UX lens FOLLOW-UP) — Trim "Plan-driven behavioral verification: extract criteria from `**Spec-walk:**` checkboxes, adversarial transform, judge bundled `/verify`'s observations per dimension, block ship on Unknown" → "Plan-driven behavioral verification: runs the built artifact, judges per-dimension, blocks ship on Unknown." Horizon: next workflow.md polish PR.
+
+5. **README.md `What's installed?` block did NOT mention verify-build** (UX lens FOLLOW-UP) — Only the slot count moved. Add a one-line bullet for `/flow:verify-build` alongside the other named skills. Horizon: PR Q ship time addendum OR first README touch.
+
+6. **`verifyBudgetCalls` unit is ambiguous at user-facing layer** (UX lens FOLLOW-UP) — Schema description names "MCP tool calls" implicitly but the ship line and SKILL.md don't disambiguate (HTTP calls? Model calls? Verify-side tool calls?). Sweep the user-facing references to say "verify-side MCP tool calls." Horizon: docs cadence PR.
+
+7. **Empty-state messaging for "verify ran, all PASS, zero criteria extracted"** (UX lens FOLLOW-UP) — A plan with `**Spec-walk:**` heading but zero checkboxes silently produces PASS-via-vacuous-truth. Add a Step 3 sentinel: zero criteria + not in spike mode → emit Unknown with "no criteria to verify; check plan's Spec-walk block." Horizon: Phase-1 empirical follow-up; defer to first dogfood that exposes the empty case.
+
+8. **findings-schema.json strict-validator compatibility** (design-engineer lens FOLLOW-UP) — `additionalProperties: false` at top level + a `definitions` block may trip strict ajv-class validators that don't special-case the `definitions` keyword. The right test is "does ajv accept findings-example.json against findings-schema.json?" Defer to whichever PR wires the first real schema-validation harness.
+
+9. **Toy-app fixture HTML doesn't match its plan** (design-engineer lens FOLLOW-UP) — Plan/plan.md has a criterion about "form validation rejects empty required fields" but app/index.html has no form (one button only). Either expand the HTML to have the form, or trim the second criterion. Horizon: first real dogfood that uses the toy fixture in an executable harness.
+
+10. **No design-language.md for the future HTML renderer PR** (design-engineer lens FOLLOW-UP) — When the verify-build HTML case-study renderer PR lands, it will need a `dev-docs/design-language.md` covering report typography scale, semantic colors for PASS/FAIL/Unknown, timeline-rendering conventions. Horizon: blocks the future HTML renderer at staff-review time; create the design-language doc as part of that PR's intake.
+
+11. **`verifyDimensions` slot** (push-further roadmap-concrete) — Let consumers exclude scope-creep judging for refactor-class PRs (where scope IS "do not change behavior" by definition). Add a 4th verify slot with default `["correctness","regression","scope-creep"]`; Step 6 spawns judges only for the configured subset. Horizon: post-PR-Q after observing one refactor PR's verify behavior; ~30 LOC in SKILL.md Step 6 + a new slot + fixture variants.
+
+12. **Absolute timestamp anchor in findings-buffer metadata** (push-further future-exploration) — `timestamp_offset_ms` is relative; no absolute anchor in metadata. Renderer cannot say "this verify pass happened on 2026-05-28T14:32Z" or compare across runs. **Surfaces when:** HTML renderer work begins OR a second consumer of the findings buffer is added (CI dashboard, verify-history timeline). Direction: add `metadata.verify_started_at_iso8601` (additive; schema_version stays 1.0). Don't add preemptively in PR Q.
+
+13. **Voice/tense inconsistency across lib/*.md prompts** (UX lens FOLLOW-UP) — `rubric.md` and `spike-rubric.md` mix second-person-to-judge with third-person-passive. `not-tested-checklist.md` is third-person-descriptive. Pin second-person throughout judge prompts; third-person in docs/checklists. Horizon: next lib/-touching PR (probably the calibration fixture PR mentioned above).
+
+14. **Bootstrap Step 5.5 inverts cause-and-consequence** (UX lens FOLLOW-UP) — First sentence explains wrapper plumbing before naming the action. Reorder: open with "Run `/run-skill-generator` once per project" then drop the wrapper explanation into "Why this matters." Horizon: next bootstrap.md touch.
+
+15. **Skill description is 13 lines vs project's 5-6 line norm** (UX lens FOLLOW-UP) — Trim to ~6 lines; move composability + adversarial-transformation detail to body. Horizon: docs cadence PR.
+
+16. **Doctor 5.3 third-line "opt-out" anti-pattern** (UX lens FOLLOW-UP) — Currently teaches "you can set verifyEnabled=false to make this go away." Rewrite as a condition: "Only set verifyEnabled=false if your project has no runnable target — a pure library or docs-only repo." Horizon: next doctor touch.
+
+17. **Web "not tested" checklist conflates three categories** (UX lens FOLLOW-UP) — Mix of environment / unexercised-flows / breadth axes. Group into three sub-labels so the agent can scan independently. Horizon: docs cadence PR.
+
+18. **Consolidated review-results line buries the BLOCKED state inside `ran (...)` parens** (UX lens FOLLOW-UP) — When verify-build returns Unknown/FAIL and blocks ship, the alarm is hidden behind `verify-build=ran (overall_verdict:Unknown, gate BLOCKED)`. Promote BLOCKED to a top-level state visible at the level of `ran|skipped`. Horizon: ship.md Step 2 line format revision; small wording change with real signal value.
+
+---
+
 ## PR G — Consistency discipline (FB-0010, SHIPPED — squash `0c3386b`)
 
 **Mode:** feature (small) | **Priority: highest**

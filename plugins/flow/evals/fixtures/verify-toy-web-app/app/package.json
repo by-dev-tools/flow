@@ -1,0 +1,11 @@
+{
+  "$comment-purpose": "Toy app for verify-toy-web-app fixture. Minimal Vite-style structure illustrating what a real /flow:verify-build run would target.",
+  "name": "verify-toy-web-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs & vite",
+    "build": "vite build"
+  }
+}

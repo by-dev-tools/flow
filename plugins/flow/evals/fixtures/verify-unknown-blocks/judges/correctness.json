@@ -1,0 +1,32 @@
+{
+  "dimension": "correctness",
+  "verdicts": [
+    {
+      "criterion": "User can submit the form with valid input and see a success message.",
+      "verdict": "PASS",
+      "evidence": [
+        "Toast appeared reading 'Submitted successfully' within 250ms. Network panel shows one POST /api/submit returning 201",
+        "User can submit the form with valid input and see a success message."
+      ],
+      "notes": ""
+    },
+    {
+      "criterion": "Form validation rejects empty required fields with an inline error message.",
+      "verdict": "Unknown",
+      "evidence": [
+        "Filled name='Alice', email='alice@example.com'. Clicked Submit. ... Re-filled valid input. Clicked Submit twice within ~100ms.",
+        "Form validation rejects empty required fields with an inline error message."
+      ],
+      "notes": "Verify pass only exercised valid-input submission; empty-required-field path is not observable from this output."
+    },
+    {
+      "criterion": "Logout button signs the user out and redirects to /login.",
+      "verdict": "Unknown",
+      "evidence": [
+        "(not tested — verify session interrupted before reaching logout test)",
+        "Logout button signs the user out and redirects to /login."
+      ],
+      "notes": "Verify run did not exercise the logout flow."
+    }
+  ]
+}

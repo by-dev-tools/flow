@@ -1,0 +1,26 @@
+[bundled /verify output transcript — mock for fixture purposes]
+
+Loaded app at http://localhost:5173. Page rendered with form visible.
+
+Test 1: Happy-path submission
+  - Filled name='Alice', email='alice@example.com'
+  - Clicked Submit
+  - Toast appeared reading 'Submitted successfully' within 250ms
+  - Network panel shows one POST /api/submit returning 201
+  - No console errors
+
+Test 2: Double-submit
+  - Re-filled valid input
+  - Clicked Submit twice within ~100ms
+  - Two clicks fired
+  - Network panel shows ONE POST /api/submit returning 201
+  - Toast appeared once
+  - Server log shows one record created
+
+Test 3: Logout
+  - (not tested — verify session interrupted before reaching logout test)
+
+End of verify run.
+
+Summary: Form submission verified for happy path + double-submit guard.
+Logout flow not exercised this run.

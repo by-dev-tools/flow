@@ -43,7 +43,19 @@ The detailed per-PR plans live in `dev-docs/plan.md` § "Active Work Items".
 
 ## Next
 
-After the K/L (Track 1) + N/O/P (Track 2) sequences ship:
+After the K/L (Track 1) + N/O/P (Track 2) sequences ship, AND in parallel with them (different surface; mechanical rebase):
+
+- **PR Q** (in flight on `claude/lucid-matsumoto-730ba0` — orthogonal to all of K/L/N/O/P/R; not queued behind any of them) — `/flow:verify-build` skill: plan-driven behavioral verification gate at `/flow:ship` Step 2. Wraps bundled `/verify` (and transitively `/run` + `/run-skill-generator`) with flow-specific orchestration — criteria extracted from `**Spec-walk:**` checkboxes, adversarial transformation, per-dimension parallel judges with Unknown-blocking gate, structured findings buffer routed to `/flow:ship` Step 4a. Closes the static-analysis-only gap in the loop's verification surface (Potemkin-interface / hallucinated-success class). Inherits PR M's FB-0012 bounded-retry contract for any future retry primitive. Per-PR plan: [`dev-docs/handoffs/pr-q-verify-build-plan.md`](handoffs/pr-q-verify-build-plan.md). **Phases 1–9 complete (full skill + lib + fixtures + ship + ship-spike + doctor + workflow + bootstrap + migration + schema); Phase 10 staff-review dogfood in progress; Phase 11 ship + manifest v1.3.0 next.** Different files than K/L/N/O/P/R; rebases cleanly in either order. FB-0015 (check bundled first) captures the discipline lesson.
+
+### Verify-build HTML case-study report (PR R successor candidate, post-PR-Q)
+
+**Surfaces when:** consumer reports they want a richer pre-merge review artifact than the structured-buffer + PR-body checklist PR Q ships, OR PR Q's findings-buffer JSON schema gains a stable consumer-validated shape.
+
+**Direction:** PR Q's `/flow:verify-build` JSON findings buffer (per `lib/findings-schema.json`) is the structured-data layer. The vision (user, 2026-05-28) is a **rendered HTML case-study report** as the final pre-merge artifact — the file the user opens before clicking merge. Reference shape: `/Users/benyamron/dev/health-tracker/.claude/worktrees/nervous-meitner-0f88be/case-study.html` — a polished narrative page with hero + lede + TOC + numbered sections + per-section "the question / what we explored / what we learned" panes. Per-section content for verify-build: the criterion (from `**Spec-walk:**`), the adversarial cases generated, the screenshots / a11y-tree observations captured at each step, the per-dimension judge verdict (PASS / FAIL / Unknown with two-citation evidence), final "what we did NOT test" checklist. Closes the workflow loop at the human gate (Step 10 → merge) with full evidence.
+
+**Forward-compat lever in PR Q (already done):** PR Q's findings-buffer JSON shape is designed as a superset of what an HTML renderer needs — per-criterion + per-adversarial-case + per-step observations with `type` discriminator + per-dimension verdict with evidence + top-level "not tested" checklist. PR Q does NOT render HTML; this future PR does, against the JSON contract PR Q establishes.
+
+**Origin:** user vision note 2026-05-28, shared while finishing PR Q scoping intake. Not assigned a PR letter yet (PR R is taken by the init-skill plan); will be PR S+ once PR Q ships.
 
 - **27 carryover FOLLOW-UPs** routed from reviews of PR G + H1 + I + J + H2-docs + M. Most are MEDIUM-priority polish or v1.2 hygiene; bundle into a future PR H-proper consolidation after the active queue lands. Highlights: doctor Check 2.5 generalization to `template/` files (validated by PR M's BLOCKER class; folding into PR N is preferred — see Now § Cross-track dependencies); manifest description CHANGELOG.md extraction; `preflightCmd` example in `template/base/flow.config.json.example`; per-attempt log machinery enforcement.
 - **Resume umbrella retirement.** md-manager PRs 5 (dogfood) + 6 (delete duplicates + retire umbrella) per `dev-docs/handoffs/md-manager-pr4-6-spec.md`. Flow-side: standing by for PR 5's feedback intake; may surface additional rough edges worth a second follow-up bundle.
