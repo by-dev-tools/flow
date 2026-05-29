@@ -23,55 +23,13 @@ After PR H2 ships: user installs flow at v1.2.5 across md-manager + health-track
 - **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key. Cosmetic; doesn't block.
 - **Md-manager PR 5 (dogfood)** still pending; separate worktree.
 
-## SPIKE (DRAFT — needs /flow:critique-plan + human gate before execution) — Does blind independent refutation cut the reviewer false-positive tax?
+## SPIKE (DONE 2026-05-28) — Does blind independent refutation cut the reviewer false-positive tax?
 
-**Mode:** spike | **Priority: TBD by user** | **Status: DRAFT, not approved**
-**Research question:** When Flow's reviewer findings (the four `/flow:staff-review` lenses + `/flow:security-review` + `/flow:accessibility-review`) are each subjected to a **blind, independent refuter pass** before reaching the user, does the false-positive rate drop meaningfully versus today's parallel-then-merge approach — enough to justify encoding the refutation *pattern* into the **shippable** reviewer prompts?
-**Why a learning spike, not a re-base:** Plugins cannot bundle workflows (VERIFIED 2026-05-28 — components are commands/agents/skills/hooks/MCP only, no `workflows/` dir; see `dev-docs/research/dynamic-workflows-2026-05.md` §5.3). So adopting the workflow *runtime* in Flow can't reach consumers. The only output Flow can act on today is whether the blind-refutation **pattern** is worth approximating in the surfaces it *can* ship (the existing reviewer skills/agent prompts). The workflow is used here purely as the cheapest harness to measure the pattern — not as a mechanism Flow plans to adopt.
-**Disposability:** throwaway workflow script (in-session via the `workflow` keyword, never saved/bundled); the *answer* (history entry) is the deliverable. Verdict gates one decision only: **do we encode an independent-refuter framing into the reviewer prompts (`auditor.md`, `plan-critic.md`, the lens agents, `security-review`/`accessibility-review` SKILLs)?**
+**Status: COMPLETE.** Ran as a dynamic workflow over `template/base/bootstrap.sh` (3 stances → 15 findings → self-disproof vs blind-refute verification). **Verdict: do NOT encode blind refutation** — it rubber-stamped 15/15 while self-disproof refuted 5/15, because the FP bottleneck is *significance* judgment (which blindness strips), not *verification*. PR J's self-disproof stays. Full verdict + adjudication in `history.md` ("Reviewer-refutation spike — verdict").
 
-**Scope (in):**
-- A throwaway workflow script that fans out the four staff-review lenses + security + a11y as `agent()` calls with a shared findings `schema`, then runs a blind independent-refuter `parallel()` pass per finding (refuter does NOT see other refuters or the original reviewer's reasoning — blind, not debate), and returns triaged BLOCKER/NIT/FOLLOW-UP/EXPLORATION.
-- Run it against one real recent Flow diff (a prior PR's diff) AND review the same diff via the current emulated-Agent parallel-then-merge approach.
-- Compare: false-positive rate (findings a human judges spurious), finding overlap, token cost, wall-clock.
-- History entry: does blind refutation cut the FP tax enough to port the *pattern* into the shippable reviewer prompts? proceed-to-encode-pattern / abandon.
+**Not a write-off — re-test as the feature evolves.** One data point on one problem type (clean shell script). Tracked in `roadmap.md` § Exploration ("Dynamic-workflows-based review: re-test refutation across problem types, incl. UI") — re-run on UI projects, genuinely-buggy pre-review diffs, and migration-scale diffs before any general conclusion; and test the untested **informed-independent refutation** variant (fresh agent *with* context + a significance rubric).
 
-**Scope (out):**
-- **PR M's bounded-retry mechanism** — out. It already shipped (`0cf642e`); re-basing it onto a JS loop produces nothing shippable while bundling is blocked, and `ship/SKILL.md` is safety-critical. Not a question this spike should test.
-- **PR N's STATUS markers and PR J's self-disproof** — out as re-base targets for the same reason. The spike informs the *prompt-level* design of these surfaces (whether to add a refuter framing), not whether to swap their mechanism to the workflow runtime.
-- **Adopting the workflow runtime as Flow mechanism / shipping any workflow as a plugin artifact** — blocked (plugins can't bundle workflows). Roadmap item gated on the plugin-component list growing; not this spike.
-- Moving human gates into/around workflows; touching `extract_session.py`; any cross-session memory integration.
-
-**Spec-walk:**
-- [ ] Workflow script runs find→blind-refute→triage on one real diff and returns structured findings.
-- [ ] Same diff reviewed via the current emulated-Agent parallel-then-merge approach.
-- [ ] FP-rate + finding overlap + token cost + wall-clock recorded for both.
-- [ ] Human adjudication of which findings were spurious (the FP-rate ground truth — recorded, since LLM finders are non-deterministic).
-- [ ] History entry answers: encode the blind-refuter pattern into the reviewer prompts, or abandon. The verdict is about the **pattern in the shippable surface**, explicitly NOT about adopting the workflow runtime (blocked).
-
-**Confidence verdicts:**
-
-**Assumption:** A blind, independent-refuter pass reduces false positives more than today's parallel-then-merge — without the debate-loop bias risk *Judging with Many Minds* (arxiv 2505.19477) warns about.
-**Confidence:** MEDIUM
-**Why:** Refutation here is parallel + blind (the refuter sees neither other refuters nor the finder's reasoning), structurally distinct from iterative debate/consensus. Independent checking beats self-checking in the published literature. But same-model collusion (the same-model-critic-collusion concern; FB number assigned at ship time per the reserved-feedback-numbers protocol — NOT hard-coded here) is unmeasured and could blunt the effect.
-**If it flips:** Blind refutation shows no FP advantage on the test diff → abandon; keep the reviewer prompts as-is (PR J's self-disproof stands) and treat workflows as relevant only for genuinely wide tasks (migrations), not the review pipeline.
-
-**Assumption:** The pattern, if it works in the workflow harness, is faithfully approximable in a plain prompt (no runtime needed to ship it).
-**Confidence:** MEDIUM
-**Why:** The shippable approximation is "spawn a second blind Agent to refute each finding" inside the existing skills — which Flow already does for fan-out (FB-0001 emulation). The runtime adds convergence-looping and isolation, but the *blindness* (the load-bearing property) is a prompt-construction choice, not a runtime feature.
-**If it flips:** The FP reduction depends on the runtime's iterate-until-converge loop, not just blindness → the pattern isn't shippable without the runtime → defer to the (blocked) distribution roadmap item.
-
-**Assumption:** Spike cost is bounded enough to run the comparison.
-**Confidence:** MEDIUM
-**Why:** A review fan-out is small (≤~20 agents) vs the 1,000 cap; one diff + one comparison pass. Respects Anthropic's "start on a scoped task" guidance.
-**If it flips:** Cost balloons → cap at a single pass and extrapolate.
-
-**Risks:**
-- **Cost exposure** (spawns a fleet) → REQUIRES the human gate + `/flow:critique-plan` before running. Flagged per `.claude/rules/general.md` autonomous-work guardrails.
-- Research-preview API instability — the in-session Workflow tool spec may drift before GA.
-- FP-rate is human-adjudicated on a single diff → directional, not statistically robust. One diff answers "is the effect large enough to bother"; it does not size the effect precisely.
-
-**Files touched (spike):** throwaway workflow script (in-session, never committed as a plugin artifact) + `dev-docs/history.md` (verdict entry) + `dev-docs/plan.md`. No plugin-artifact changes in this spike — the verdict only authorizes a *follow-up* PR to encode the pattern if it proceeds.
+**Byproduct:** found + fixed a real BLOCKER-class crash + 2 NITs in `bootstrap.sh` (see history entry below).
 
 ---
 

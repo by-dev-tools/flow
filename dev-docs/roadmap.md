@@ -119,3 +119,18 @@ Items surfaced by `/flow:staff-review`'s push-further lens, consumer dogfood, or
 **Direction:** PR M added `test_preflight_retry.py` under `plugins/flow/evals/security/`, but the file is a contract test (asserting SKILL.md text + schema slot shapes), not a security test (asserting no command injection / no path leak). Mis-categorization compounds — the next contract test will follow the precedent. Either (a) rename `evals/security/` to `evals/` and put contract tests at top level alongside `test_cwd_constraint.py` / `test_malicious_config.py`, OR (b) create `evals/contract/` and move `test_preflight_retry.py` there. Option (b) is cleaner but affects the `run_security_evals.py` runner (which auto-discovers via glob). Defer until the third contract fixture forces the call.
 
 **Origin:** PR M push-further lens NIT (deferred for design discussion). PR N's `test_status_markers.py` will be the rule-of-three trigger.
+
+### Dynamic-workflows-based review: re-test refutation across problem types, incl. UI  *(research-driven — re-test as the feature evolves)*
+
+**Surfaces when:** (a) Anthropic ships a new dynamic-workflows version or moves it past research preview (the API/behavior changes), OR (b) Flow gains a UI-bearing consumer project to dogfood on, OR (c) any future reviewer-quality pass is run on a substantively different diff (large migration, genuinely-buggy pre-review diff, UI/a11y-heavy diff).
+
+**Direction:** The 2026-05-28 reviewer-refutation spike (`dev-docs/research/dynamic-workflows-2026-05.md`; history entry "Reviewer-refutation spike — verdict") tested *blind* independent refutation vs PR J's self-disproof on **one** diff (`bootstrap.sh`, a shell script). On that diff, blind refutation refuted 0/15 (a rubber stamp) while self-disproof refuted 5/15 — because the false positives there were **significance** misjudgments (the mechanism is real, but doesn't matter under Flow's trust model), and blindness strips the context needed to judge significance. **This is one data point on one problem type — explicitly not a write-off.** Dynamic workflows are in research preview and will evolve; the result may differ on diffs where the dominant FP class is *verification* error rather than *significance* error.
+
+Re-test specifically on:
+- **UI projects** — a11y + design-engineer + visual findings may behave differently under refutation than shell-correctness findings; the significance-vs-verification balance is likely different (a contrast-ratio or focus-trap claim is more mechanically checkable than a "is this attacker-reachable" claim). This is the highest-value re-test and needs a UI-bearing consumer (none in flow's own repo).
+- **Genuinely-buggy, pre-review diffs** — the spike reviewed an already-merged/clean file, which undersamples the "does refutation wrongly kill *real* findings" failure mode. Re-run on a diff with known-planted or known-historical bugs.
+- **Larger / migration-scale diffs** — where dynamic fan-out (scale finders to diff size) is the actual draw, not just refutation.
+
+The promising variant the spike pointed at (not yet tested): **informed-independent refutation** — a fresh agent *with* stance + project context (not blind) + a uniform significance/exploitability rubric — which would address both the rubber-stamp problem (blind) and the inconsistency problem (self-disproof gave opposite verdicts on the same issue across framings).
+
+**Origin:** Reviewer-refutation spike 2026-05-28 (`dev-docs/research/dynamic-workflows-2026-05.md`); user direction to keep the direction alive and re-test across problem types incl. UI as dynamic workflows evolve, rather than write it off on one data point.
