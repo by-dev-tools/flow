@@ -23,6 +23,16 @@ After PR H2 ships: user installs flow at v1.2.5 across md-manager + health-track
 - **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key. Cosmetic; doesn't block.
 - **Md-manager PR 5 (dogfood)** still pending; separate worktree.
 
+## SPIKE (DONE 2026-05-28) — Does blind independent refutation cut the reviewer false-positive tax?
+
+**Status: COMPLETE.** Ran as a dynamic workflow over `template/base/bootstrap.sh` (3 stances → 15 findings → self-disproof vs blind-refute verification). **Verdict: do NOT encode blind refutation** — it rubber-stamped 15/15 while self-disproof refuted 5/15, because the FP bottleneck is *significance* judgment (which blindness strips), not *verification*. PR J's self-disproof stays. Full verdict + adjudication in `history.md` ("Reviewer-refutation spike — verdict").
+
+**Not a write-off — re-test as the feature evolves.** One data point on one problem type (clean shell script). Tracked in `roadmap.md` § Exploration ("Dynamic-workflows-based review: re-test refutation across problem types, incl. UI") — re-run on UI projects, genuinely-buggy pre-review diffs, and migration-scale diffs before any general conclusion; and test the untested **informed-independent refutation** variant (fresh agent *with* context + a significance rubric).
+
+**Byproduct:** found + fixed a real BLOCKER-class crash + 2 NITs in `bootstrap.sh` (see history entry below).
+
+---
+
 ## PR H2 — upgrade.md cadence softening (in flight)
 
 **Mode:** feature (small), docs-only at repo root | **Priority: highest (active consumer feedback)**

@@ -24,12 +24,16 @@
 #     `/plugin marketplace add by-dev-tools/flow && /plugin install flow@flow` in a Claude session.
 #   - Initialize git, npm, etc. Do those per your stack's own onboarding.
 #
-# Idempotent: re-running on a project where some files exist will skip those (cp -n).
+# Idempotent: re-running on a project where some files exist will skip those
+# (via copy_n's `[ -e "$dest" ]` precheck — not `cp -n`; see Step C for why).
 # To overwrite intentionally, edit the file directly or rm first.
 
 set -eu
 # -e: exit on real errors (cp permission-denied, missing source, jq failure).
-#     cp -n returns 0 on skip, so idempotency is preserved.
+#     Idempotency comes from copy_n's `[ -e "$dest" ]` precheck (NOT `cp -n`),
+#     which skips existing files before calling plain `cp`. Real `cp -n` is
+#     avoided because BSD cp returns exit 1 on skip, which would trip set -e
+#     (see the copy_tree note in Step C).
 # -u: catch unset variables.
 TAG="[flow-bootstrap]"
 
@@ -38,11 +42,22 @@ STACK=""
 PROJECT="$(basename "$(pwd)")"
 FLOW_DIR="${FLOW_DIR:-}"
 
+# Guard a value-taking flag: without it, a trailing flag (e.g. `bootstrap.sh --stack`)
+# expands `$2` unbound under `set -u` and aborts with a raw `$2: unbound variable`
+# instead of the guided usage error every other failure path uses.
+need_val() {
+  # $1 = flag name (for the message); $2 = remaining arg count, i.e. caller's $#
+  [ "$2" -ge 2 ] && return 0
+  echo "$TAG ⚠️ $1 requires a value" >&2
+  echo "       run with --help for usage" >&2
+  exit 2
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --stack)     STACK="$2"; shift 2 ;;
-    --project)   PROJECT="$2"; shift 2 ;;
-    --flow-dir)  FLOW_DIR="$2"; shift 2 ;;
+    --stack)     need_val --stack "$#";    STACK="$2";    shift 2 ;;
+    --project)   need_val --project "$#";  PROJECT="$2";  shift 2 ;;
+    --flow-dir)  need_val --flow-dir "$#"; FLOW_DIR="$2"; shift 2 ;;
     -h|--help)
       grep -E '^# ' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -110,7 +125,7 @@ echo "         stack:         $STACK"
 echo "         flow checkout: $FLOW_DIR"
 echo ""
 
-# --- Step A: template/base/ files (with cp -n — never overwrites) -----------
+# --- Step A: template/base/ files (copy_n skips existing — never overwrites) -
 echo "$TAG Step A: copying template/base/ scaffolding..."
 mkdir -p "$PROJECT_ROOT/.claude/rules" "$PROJECT_ROOT/core-docs"
 
@@ -217,12 +232,14 @@ if [ "$STACK" = "swift" ] && [ -f "$FLOW_DIR/template/stacks/swift/.claude/rules
   SAFETY_MARKER="## Swift-stack additions"
   if grep -qF "$SAFETY_MARKER" "$PROJECT_ROOT/.claude/rules/safety.md" 2>/dev/null; then
     echo "         · skip safety.md append (already present, marker found)"
+    skipped=$((skipped+1))
   else
     {
       echo ""
       cat "$FLOW_DIR/template/stacks/swift/.claude/rules/safety.md.append"
     } >> "$PROJECT_ROOT/.claude/rules/safety.md"
     echo "         · appended safety.md (marker: $SAFETY_MARKER)"
+    copied=$((copied+1))
   fi
 fi
 
