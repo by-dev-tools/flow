@@ -8,22 +8,44 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 ## Now
 
-**Plugin at v1.2.5 on `main`** (PR J squash `2e8ab3c`). Consumer-feedback umbrella complete (PRs A-F); FB-0010 consistency-discipline shipped (PR G); upgrade infrastructure shipped (PR H1 + H2-docs); workflow-spawn-skip prevention shipped (PR I); adversarial sharpening of reviewer pipeline shipped (PR J).
+**Plugin at v1.2.6 on `main`** (PR M squash `0cf642e`). Consumer-feedback umbrella complete (PRs A-F); FB-0010 consistency-discipline shipped (PR G); upgrade infrastructure shipped (PR H1 + H2-docs); workflow-spawn-skip prevention shipped (PR I, v1.2.4); adversarial sharpening of reviewer pipeline shipped (PR J, v1.2.5); bounded-retry mechanical preflight shipped (PR M, v1.2.6).
 
-Active queue — see `dev-docs/plan.md` § "Active Work Items" for full per-PR plans:
+**This PR (PR H3)** is the roadmap refresh — docs-only, no version bump, same precedent as PR H1 / H2-docs. After it merges, the next-up sequence below applies.
 
-- **PR M** (open at [#22](https://github.com/by-dev-tools/flow/pull/22) — merge queued; bumps v1.2.5 → v1.2.6) — bounded-retry mechanical preflight at Step 1c of /flow:ship + /flow:ship-spike. Loops only on externally-verifiable preflight exit code (FB-0012). Independent of K/L scope; can land in any order. Grounded in `dev-docs/research/agent-orchestration-2026-05.md`.
-- **PR K** (queued behind PR J) — `/flow:red-team` skill: standalone reviewer mirroring security-review structure, FB-0008 stale-base preflight, FB-0006/FB-0007 source-file early-exit, FB-0011 autonomy-bar `Fix-confidence` field.
-- **PR L** (queued behind PR K) — trust-boundary detector (mechanical/regex, stdlib-only) + autonomous-invocation wiring + per-finding `AUTO-FIX-SAFE`/`ESCALATE` routing per FB-0011 autonomy bar. Detection-Point-3 routing for /flow:ship.
-- **PR N** (queued behind PR M; bumps to v1.2.7) — research-driven orchestration hardening: documentation grounding (Magentic `max_stall_count` citation in FB-0012, evaluator-optimizer archetype reference in workflow.md) + structured-result STATUS markers for `/flow:ship` Step 2 reviewers (closes PR E+ FOLLOW-UP #1 with field-validated pattern).
-- **PR O** (queued behind PR N; bumps to v1.2.8) — test-edit reward-hacking PreToolUse hook: mechanizes Step 1c's no-disable-tests guard via `Edit`/`Write` matcher against test-file glob, emits `ask` decision.
-- **PR P** (queued behind PR O; bumps to v1.2.9 or v1.3.0) — auditor model-diversity eval addressing FB-0013 same-model critic collusion. Measurement-first: build comparative eval infrastructure, swap auditor to Sonnet ONLY if ≥80% finding-overlap + comparable FP rate vs Opus on existing fixtures. Tier 2/3 (plan-critic, lens agents) stay on Opus.
+### Execution order — what's next after PR H3 lands
+
+Two parallel tracks in the active queue. Different scope, different drivers, can interleave at PR boundaries (each PR is reviewed + merged independently). **The recommended next-up PR after H3 lands is determined by which track has explicit user direction.**
+
+**Track 1 — autonomy bar enforcement (driven by PR J's FB-0011):**
+1. **PR K** — `/flow:red-team` skill: standalone reviewer mirroring security-review structure, FB-0008 stale-base preflight, FB-0006/FB-0007 source-file early-exit, FB-0011 autonomy-bar `Fix-confidence` field (per-finding `AUTO-FIX-SAFE` vs `ESCALATE`).
+2. **PR L** — trust-boundary detector (mechanical/regex, stdlib-only) + autonomous-invocation wiring + `/flow:ship` Detection-Point-3 routing applying FB-0011's auto-fix-vs-escalate rule. Depends on PR K's output schema.
+
+**Track 2 — research-driven orchestration hardening (driven by `dev-docs/research/agent-orchestration-2026-05.md`):**
+1. **PR N** (bumps to v1.2.7) — documentation grounding (Magentic `max_stall_count` citation in FB-0012, evaluator-optimizer archetype reference in workflow.md) + structured-result STATUS markers for `/flow:ship` Step 2 reviewers (closes PR E+ FOLLOW-UP #1 with field-validated production pattern). Plus generalize doctor Check 2.5 to scan `template/` files (PR M's BLOCKER class validates this — promote to PR N scope or bundle into next doctor-touching PR).
+2. **PR O** (bumps to v1.2.8) — test-edit reward-hacking PreToolUse hook: mechanizes Step 1c's no-disable-tests guard via `Edit`/`Write` matcher against test-file glob, emits `ask` decision. Adds `flow.config.json.testFilePatterns` slot (18 slots total) + opt-in hook entry.
+3. **PR P** (bumps to v1.2.9 or v1.3.0) — auditor model-diversity eval addressing FB-0013 same-model critic collusion. **Measurement-first:** build comparative eval infrastructure (Step A), swap auditor to Sonnet ONLY if ≥80% finding-overlap + comparable FP rate vs Opus on existing fixtures (Step B). Tier 2/3 (plan-critic, lens agents) stay on Opus per user direction. v1.3.0 if swap ships; v1.2.9 if Step A's eval shows structural mitigation is sufficient.
+
+### Cross-track dependencies
+
+| Item | Depends on | Reason |
+|---|---|---|
+| PR L | PR K | PR L applies the autonomy-bar routing to PR K's output schema. |
+| PR N Phase 2 (STATUS markers) | none from K/L | Independent — modifies different files (security-review/SKILL.md + accessibility-review/SKILL.md + ship/SKILL.md Step 2). |
+| PR O | PR N (preferred, not required) | PR O's hook is opt-in via `default-hooks.json`; PR N's STATUS markers extend the reviewer-output contract that PR O's hook surface is adjacent to. Bundling would risk both PRs being large; sequencing keeps them small. |
+| PR P | PR N + PR O | PR P's measurement infrastructure benefits from the structured-result contracts PR N adds (easier eval comparison). |
+| Carryover doctor Check 2.5 generalization (template/ files) | none — bundle into PR N | Validated by PR M's BLOCKER class. Lowest-cost place to land. |
+
+### Track 1 vs Track 2 — which goes next?
+
+**Recommendation:** PR N is the lowest-risk next-up (docs grounding + STATUS markers; closes acknowledged FOLLOW-UP #1 with field-validated pattern; absorbs doctor Check 2.5 generalization). If PR K is further along in user planning (the FB-0011 entry suggests K's design is in flight), K could go first — but the two tracks don't block each other at PR boundaries.
+
+The detailed per-PR plans live in `dev-docs/plan.md` § "Active Work Items".
 
 ## Next
 
-After the M/N/O/P sequence + K/L ship:
+After the K/L (Track 1) + N/O/P (Track 2) sequences ship:
 
-- **27 carryover FOLLOW-UPs** routed from reviews of PR G + H1 + I + J + H2-docs + M. Most are MEDIUM-priority polish or v1.2 hygiene; bundle into a future PR H-proper consolidation after the active queue lands. Highlights: doctor Check 2.5 generalization to `template/` files (validated by PR M's BLOCKER class); manifest description CHANGELOG.md extraction; `preflightCmd` example in `template/base/flow.config.json.example`; per-attempt log machinery enforcement.
+- **27 carryover FOLLOW-UPs** routed from reviews of PR G + H1 + I + J + H2-docs + M. Most are MEDIUM-priority polish or v1.2 hygiene; bundle into a future PR H-proper consolidation after the active queue lands. Highlights: doctor Check 2.5 generalization to `template/` files (validated by PR M's BLOCKER class; folding into PR N is preferred — see Now § Cross-track dependencies); manifest description CHANGELOG.md extraction; `preflightCmd` example in `template/base/flow.config.json.example`; per-attempt log machinery enforcement.
 - **Resume umbrella retirement.** md-manager PRs 5 (dogfood) + 6 (delete duplicates + retire umbrella) per `dev-docs/handoffs/md-manager-pr4-6-spec.md`. Flow-side: standing by for PR 5's feedback intake; may surface additional rough edges worth a second follow-up bundle.
 - **Carryover PR-2 FOLLOW-UPs not yet absorbed** (items 3-8 in `dev-docs/plan.md` § "PR 3+ follow-ups from PR 2 review"). Most are MEDIUM-priority polish or v1.2 hygiene; pick up opportunistically rather than as a focused PR.
 
