@@ -94,15 +94,72 @@ PREFIX=$(cat flow.config.json 2>/dev/null | jq -r '.branchPrefix // empty' 2>/de
 git checkout -b "${PREFIX}spike/<short-name>"
 ```
 
-## 2. Skip the heavy reviews
+### 1c. Mechanical preflight (bounded retry — N ≤ 3)
 
-`/simplify` and `/flow:staff-review` do not run for spikes. Reviewing throwaway code for craft is theater. **Do** ensure preflight is green — that's still required:
+Same contract as `/flow:ship` Step 1c — bounded-retry preflight that loops only on externally-verifiable exit codes (N=3 cap, oscillation detection via diff-hash, docs-only early-exit). **Reviewer outputs in Step 2 stay deliberately single-pass; the loop only fires on the preflight exit code, never on LLM-judgment outputs.** The consistency itself is the value: spike-mode work goes through the same mechanical gate as feature-mode work, even though spike code is disposable. A spike whose preflight is red is answering its research question conditionally on a broken state; flag that explicitly in the history entry rather than burying it.
 
 ```sh
-# Project-specific preflight runner (project ships its own; flow doesn't bundle one)
-[ -f tools/preflight/check.mjs ] && node tools/preflight/check.mjs
+# Resolve preflightCmd. Unset/whitespace-only → loud warning, proceed without retry (never silent).
+PREFLIGHT_CMD=$(jq -r '.preflightCmd // empty' flow.config.json 2>/dev/null)
+# Treat whitespace-only as unset (jq returns the literal whitespace string for "  " slot values).
+if [ -z "$(printf '%s' "$PREFLIGHT_CMD" | tr -d '[:space:]')" ]; then
+  echo "⚠️ flow.config.json.preflightCmd not set; skipping mechanical preflight. Set this slot to enable bounded-retry typecheck/lint/test on /flow:ship-spike."
+  # Continue to Step 2 without running the loop.
+else
+  # Docs-only early-exit: reuse sourceFilePatterns (PR D lineage).
+  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
+  SOURCE_PATTERN=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
+  [ -z "$SOURCE_PATTERN" ] && SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
 
-# Configured typecheck via flow.config.json.typecheckCmd
+  # Validate sourceFilePatterns regex BEFORE using it (FB-0010 silent-skip prevention).
+  echo "" | grep -qE "$SOURCE_PATTERN" 2>/dev/null
+  GREP_RC=$?
+  if [ "$GREP_RC" -gt 1 ]; then
+    echo "⚠️ [preflight] flow.config.json.sourceFilePatterns is invalid as an extended regex (grep exit $GREP_RC); falling back to default." >&2
+    SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
+  fi
+
+  # Three checks (PR D pattern): committed + uncommitted + untracked.
+  SOURCE_FILES_COMMITTED=$(git diff "origin/${DEFAULT_BRANCH}..HEAD" --name-only 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+  SOURCE_FILES_MODIFIED=$(git diff HEAD --name-only 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+  SOURCE_FILES_UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E "$SOURCE_PATTERN" || true)
+  if [ -z "$SOURCE_FILES_COMMITTED" ] && [ -z "$SOURCE_FILES_MODIFIED" ] && [ -z "$SOURCE_FILES_UNTRACKED" ]; then
+    echo "[preflight] no source files in diff (committed+uncommitted+untracked); skipping mechanical preflight (docs-only spike)."
+    # Continue to Step 2 without running the loop.
+  fi
+  # If PREFLIGHT_CMD is set AND source files exist anywhere, follow the retry contract below.
+fi
+```
+
+**Retry contract** (followed by the agent executing this skill — iteration discipline is in the prompt, not in shell):
+
+For each attempt `N` in 1..3:
+
+1. Run `sh -c "$PREFLIGHT_CMD"`. Capture exit code and stderr.
+2. If **exit 0**: log `[preflight] attempt N of 3: PASSED.` → proceed to Step 2.
+3. If **exit 127** (command not found): abort with `BLOCKER: preflightCmd resolved to a command not found on PATH ($PREFLIGHT_CMD). Fix the slot or install the script. Halting before Step 2.` → exit 1. Do NOT count this against the retry budget.
+4. If **any other non-zero exit**: log `[preflight] attempt N of 3: FAILED (exit code <N>).` Capture the diff hash via `git diff HEAD | sha256sum | cut -d' ' -f1`. Record for oscillation detection. Proceed to step 5.
+5. If `N == 3`: abort with `BLOCKER: preflight failed 3 attempts without convergence. Last error: <stderr>. All attempted fixes preserved in tree; inspect with 'git diff origin/${DEFAULT_BRANCH}..HEAD'. Halting before Step 2.` → exit 1.
+6. **Fix the failure.** Read stderr; identify the specific failure. Make the **minimal** fix:
+   - Touch only files in the failure's blast radius. Do NOT refactor adjacent code.
+   - Do NOT modify or disable tests unless the failure is a genuine test bug — and if so, name the bug explicitly in the attempt log. Disabling a test to make preflight green is reward hacking; for spike mode, this is doubly important because the spike's history entry IS the deliverable — a silently-disabled test corrupts the answer.
+   - Do NOT add `// @ts-ignore`, `# noqa`, `# type: ignore`, `eslint-disable-next-line`, `// biome-ignore`, `@SuppressWarnings`, `#[allow(...)]`, or equivalent suppressors.
+7. Compute the new diff hash. Compare against ALL prior hashes from this Step 1c run. If it matches ANY prior hash: abort with `BLOCKER: oscillation detected (attempt N+1 produced the same diff as attempt M). The fix is reverting a prior fix — a different approach is required. Last error: <stderr>. Halting before Step 2.` → exit 1.
+8. Increment `N`. Return to step 1.
+
+If Step 1c fails for a spike: the spike answered its research question conditional on a broken state. Either fix the broken state OR document the conditional explicitly in the history entry at Step 3 (`What we learned: <answer> — caveat: this assumes <broken thing> is resolved upstream`). Do NOT bypass Step 1c by deleting tests; that corrupts the spike's value.
+
+## 2. Skip the heavy reviews
+
+`/simplify` and `/flow:staff-review` do not run for spikes. Reviewing throwaway code for craft is theater. Step 1c above already enforces the bounded-retry mechanical preflight; this step is a one-shot typecheck confirmation that mirrors `/flow:ship` Step 3's role (re-check after any review-applied fixes, even though spike skips reviews):
+
+```sh
+# Configured typecheck via flow.config.json.typecheckCmd (one-shot; Step 1c already
+# ran the full preflight loop with retry). If preflightCmd already includes typecheck,
+# this is redundant but safe. If they're configured to overlap, the user owns that
+# choice — see schema description's precedence note.
 TYPECHECK=$(cat flow.config.json 2>/dev/null | jq -r '.typecheckCmd // empty')
 if [ -n "$TYPECHECK" ]; then
   sh -c "$TYPECHECK"
@@ -111,7 +168,7 @@ else
 fi
 ```
 
-If preflight is red on spike code, that's a real bug in something the spike depends on (or the spike is broken in a way that invalidates the answer). Either fix it or note explicitly in the history entry that the answer is conditional on the broken state.
+Step 1c (above) is the load-bearing preflight gate for spikes; a spike that survives Step 1c's bounded retry and this Step 2 one-shot typecheck has passed mechanical checks. If a spike's mechanical checks would fail in a way that invalidates the research answer, document that conditionally in Step 3's history entry rather than disabling the checks.
 
 ## 3. Write the history entry — the entry IS the deliverable
 
@@ -218,8 +275,10 @@ Output the PR URL and the recommendation (proceed / pivot / abandon). The user m
 
 | Slot | Default | Used in |
 |---|---|---|
-| `flow.config.json.defaultBranch` | `git symbolic-ref` → `main` | Step 1 (pre-flight), Step 7 (PR base) |
-| `flow.config.json.typecheckCmd` | unset → loud warning | Step 2 (preflight) |
+| `flow.config.json.defaultBranch` | `git symbolic-ref` → `main` | Step 1 (pre-flight), Step 1c (docs-only diff base), Step 7 (PR base) |
+| `flow.config.json.preflightCmd` | unset → loud warning | Step 1c (bounded-retry mechanical preflight, N≤3) |
+| `flow.config.json.sourceFilePatterns` | covers common source/config extensions | Step 1c (docs-only early-exit) |
+| `flow.config.json.typecheckCmd` | unset → loud warning | Step 2 (post-1c one-shot typecheck) |
 | `flow.config.json.historyPath` | `dev-docs/history.md` | Step 3 (spike entry — THE deliverable) |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 5 (move to Recently Completed) |
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4 (contradiction check; not written to) |

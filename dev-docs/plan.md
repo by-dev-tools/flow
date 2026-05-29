@@ -17,6 +17,7 @@ After PR H2 ships: user installs flow at v1.2.5 across md-manager + health-track
 - **PR K + PR L queued** behind PR J. PR K = `/flow:red-team` skill (standalone, mirrors security-review structure, FB-0008 stale-base preflight, FB-0006/FB-0007 source-file early-exit). PR L = trust-boundary detector (mechanical/regex, stdlib-only) + autonomous-invocation wiring + per-finding `AUTO-FIX-SAFE`/`ESCALATE` routing per FB-0011.
 - **FB-0011 (autonomy bar) shipped in PR J** as the durable consumer-facing rule for autonomous-gate routing. Also saved to project memory at `~/.claude/projects/-Users-benyamron-dev-flow/memory/feedback_autonomy_bar.md` for cross-session reminder. Future autonomous gates default-to-ESCALATE; AUTO-FIX-SAFE category list starts conservative and grows only with dogfood evidence.
 - **PR-G review FOLLOW-UPs:** PR-G #5 (plan-critic fan-out hunt) absorbed by PR J; 11 of the original 12 remain queued for PR H proper.
+- **PR M in flight on `pr-h2/preflight-retry-loop`** (branch name retained from pre-rename) — bounded-retry mechanical preflight at Step 1c of /flow:ship + /flow:ship-spike; FB-0012; bumps v1.2.5 → v1.2.6. Independent of PR K/L scope (red-team + Detection-Point-3 routing); can land in any order. 5-lens review pipeline completed in original PR #22; 1 BLOCKER + 11 NITs fixed inline; 11 FOLLOW-UPs + 6 EXPLORATIONs routed to plan block below. Rebased onto main 2026-05-28 with PR letter rename (was PR H2; collided with docs cadence-softening PR H2). PR N/O/P queued behind PR M (research-driven hardening + test-edit hook + auditor model-diversity eval).
 - **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key. Cosmetic; doesn't block.
 - **Md-manager PR 5 (dogfood)** still pending; separate worktree.
 
@@ -214,7 +215,333 @@ Plan-critic Finding 7 framing FOLLOW-UP: reviewer-footer is reframed above as "P
 
 ---
 
-## PR G — Consistency discipline (FB-0010, in flight)
+## PR M — Bounded-retry mechanical preflight in /flow:ship + ship-spike (in flight)
+
+**Mode:** feature (small-medium) | **Priority: medium**
+**Goal:** Add a bounded-retry mechanical preflight (new Step 1c) to `/flow:ship` and `/flow:ship-spike`. Runs the project's preflight command (a config slot the project owns); on non-zero exit, fixes and retries up to N=3 with oscillation detection via diff-hash. Loops ONLY on externally-verifiable exit codes (the preflight script's exit status) — never on reviewer judgment. Encodes the research-pass principle: the only "goal" we trust as a loop exit is a tool's exit code, not another model's approval.
+
+**Why this PR exists:** User-driven exploration of whether to add `/loop`-style iteration to the workflow. Anthropic's "Building Effective Agents" names the evaluator-optimizer pattern with mandatory "stopping conditions (such as a maximum number of iterations)"; the 2026 Agentic Coding Trends Report names "explicit success criteria" as the precondition for verification. Flow's current ship pipeline runs typecheck ONCE at Step 3 after reviewer fixes — there's no mechanical-quality preflight loop. This PR adds it, in the one slot where the exit signal is unambiguous (external tool exit code), and explicitly forbids the same shape on reviewer-judgment outputs.
+
+**Scope (in):**
+- New slot: `flow.config.json.preflightCmd` (shell command; project-owned at same trust level as `typecheckCmd`). FB-0003 pair-slot-with-consumer satisfied (consumer is the new Step 1c).
+- `plugins/flow/skills/ship/SKILL.md` — new Step 1c between 1b and 2: bounded-retry preflight with N=3 cap, diff-hash oscillation detection, docs-only early-exit (reusing `sourceFilePatterns` from the schema), loud-warning if unset, fail-fast if `preflightCmd` resolves to a missing file.
+- `plugins/flow/skills/ship-spike/SKILL.md` — same Step 1c block, mirrored verbatim (consistency IS the value per FB-0009 lineage). Existing Step 2 `typecheckCmd` block stays as-is for projects that haven't set `preflightCmd`; schema description documents precedence (both set = both run).
+- `plugins/flow/schema/flow.config.schema.json` — add `preflightCmd`; update `typecheckCmd` description to name the precedence relative to `preflightCmd`.
+- `docs/bootstrap.md` — add `preflightCmd` example alongside `typecheckCmd` in the config-population section. One-line note on N=3 retry semantics.
+- `plugins/flow/evals/security/test_preflight_retry.py` — assert-on-shape tests paralleling `test_cwd_constraint.py` / `test_malicious_config.py`. 5 cases: (a) unset slot → loud-warning text present + no retry attempted; (b) `preflightCmd` with shell metas → opaque-string pass-through (no command execution); (c) SKILL.md text grep — verify N=3 cap, oscillation language, fail-fast-on-missing-file branch all present; (d) SKILL.md text grep — verify "do NOT modify tests to make them pass" rule present; (e) schema validates against the slot.
+- `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` — v1.2.5 → v1.2.6. Update description to mention bounded-retry preflight (1 sentence).
+- `dev-docs/history.md` — decision-log entry with the research-pass citations + the loop-only-on-mechanical-exit principle.
+- `dev-docs/feedback.md` — **FB-0012** capturing the design rule: "bounded-retry contracts in agent loops require oscillation detection by diff-hash; pure iteration cap is insufficient because LLM fix-loops can drift without repeating." Self-feedback from this PR's research pass.
+
+**Scope (out):**
+- Looping the reviewers (security, accessibility, staff-review). Single-pass is load-bearing — looping LLM-judgment outputs is reward-hackable. The PR body documents this as the rejected shape.
+- A standalone `/flow:preflight` user-facing skill. The loop only fires inside `/flow:ship` / `/flow:ship-spike` so it stays under the surrounding gates (stale-base, gh+jq, something-to-ship).
+- Shell-script harness around the retry. SKILL.md is the orchestration; Claude follows the cap in natural language. If a session ignores the cap, the per-attempt log line ("Preflight attempt N of 3") makes the off-contract behavior visible.
+- A `flow.config.json.preflightMaxAttempts` slot. N=3 is hardcoded for now (FB-0003 — don't ship slots without consumers; if 3 proves wrong, add the slot then).
+- Generalizing the retry contract to a reusable doc snippet (`plugins/flow/docs/retry-contract.md`). Defer until a second bounded-retry block exists; copy-paste once is fine.
+
+**Spec-walk:**
+- [ ] `flow.config.schema.json` has `preflightCmd` slot with description, examples, precedence note. `typecheckCmd` description updated.
+- [ ] `/flow:ship` Step 1c exists between 1b and 2. Contract names: N=3 cap, diff-hash oscillation abort, docs-only early-exit via `sourceFilePatterns`, fail-fast on missing-script, loud-warning on unset.
+- [ ] `/flow:ship-spike` Step 1c exists (verbatim block).
+- [ ] `docs/bootstrap.md` documents `preflightCmd`.
+- [ ] `plugins/flow/evals/security/test_preflight_retry.py` 5 cases pass locally.
+- [ ] Both manifests at v1.2.6; descriptions mention bounded-retry preflight.
+- [ ] `claude plugin validate .` clean.
+- [ ] FB-0002 pre-commit grep clean (no new tool invocations missing from `allowed-tools`).
+- [ ] FB-0003 grep clean: `preflightCmd` appears in ≥4 surfaces (SKILL.md ×2, schema, fixture, bootstrap.md, history.md).
+- [ ] FB-0010 consistency check clean: any "16 slots" mention in docs/CLAUDE.md needs to become "17 slots" to match the new schema cardinality.
+- [ ] `dev-docs/history.md` + `dev-docs/feedback.md` updated.
+- [ ] Self-test: stage a docs-only diff; verify Step 1c early-exits without invoking `preflightCmd`. Stage a source diff with a failing test fixture; verify the bounded-retry contract is followed (Claude session reads the contract and respects N=3 even if not actually fixing).
+
+**Confidence verdicts:**
+
+**Assumption:** N=3 is the right hardcoded cap.
+**Confidence:** MEDIUM-HIGH
+**Why:** Anthropic guidance names "maximum iterations" without prescribing N. 3 is a deliberate design call — enough for fix-A-broke-B-fix-B, not enough to wander. Consistent with Magentic's separately-configurable caps + Trigger.dev's example "up to 10 iterations" — both frame iteration limits as design choices, not empirically-tested constants. Higher caps consume budget on cases that should fail loud.
+**If it flips:** Add `preflightMaxAttempts` slot. Single-file change; contract shape unchanged.
+
+**Assumption:** Diff-hash oscillation detection catches the real failure mode without unacceptable false positives.
+**Confidence:** MEDIUM
+**Why:** Pure oscillation (A↔B↔A) is exactly what hashing catches. Drift (A→B→C, each broken) it doesn't catch — N=3 catches drift by exhaustion. False-positive shape: Claude makes the same correct fix twice because the second failure was a different issue. Both diffs hash identically → spurious oscillation abort. Mitigation: attempt logs preserve the situation; user can see and decide.
+**If it flips:** Add per-attempt failure-signature comparison (same error + same diff = oscillation; different error + same diff = retry-without-progress, also abort).
+
+**Assumption:** Prompt-driven looping (Claude follows N=3 in natural language) is reliable enough to ship without shell-harness fallback.
+**Confidence:** MEDIUM
+**Why:** Flow already orchestrates 11-step workflows through prompt semantics — `/flow:ship` has 9 numbered steps held across many sessions. The cap is no harder to follow. Risk: a session that ignores the cap and keeps fixing. Mitigation: per-attempt log line makes off-contract behavior visible.
+**If it flips:** Wrap retry in a shell script under `plugins/flow/tools/preflight-retry.sh`; SKILL.md invokes that. Defer until v1 ships and we see the failure mode.
+
+**Assumption:** Step 1c belongs BEFORE reviewers (Step 2), not after.
+**Confidence:** HIGH
+**Why:** Running preflight before reviewers means reviewers see code that already typechecks — what they expect. Running it after risks reviewers + Claude fighting over the same file across iterations, which is exactly the reward-hacking failure mode the research pass identified.
+**If it flips:** Step 3's existing one-shot typecheck would need to absorb the retry behavior. Real restructure; defer.
+
+**Risks:**
+- **Reward hacking via test modification.** Claude's "fix" could be to xfail or delete a failing test. Mitigated in the prompt contract ("Make the minimal fix. Do NOT modify or disable tests unless the failure is a genuine test bug — and if so, name the bug explicitly in the attempt log"). Backstop: human merge gate at Step 7 still applies.
+- **Preflight speed.** A 5-minute test suite × 3 = 15 minutes worst case. Bootstrap doc recommends pointing `preflightCmd` at a fast subset (typecheck + lint), with CI handling the full suite.
+- **Cross-pollination with PR D's per-diff early-exit.** Step 1c reuses `sourceFilePatterns` (already in schema since PR D); docs-only diffs skip the loop entirely. No additional regex needed.
+- **Eval fixture is text-grep based, not runtime-execution.** Real Claude runs are non-deterministic; the fixture asserts the SKILL.md contract is _written_, not _executed end-to-end_. Same pattern as `test_cwd_constraint.py` / `test_malicious_config.py`. Sufficient for FB-0003 (slot has a consumer at land time); not sufficient for "does Claude actually obey the cap." That's a dogfood-time question, not a CI-time question.
+- **Manifest description length.** v1.2.5 description is already long; adding a sentence for v1.2.6 pushes it further. Acceptable cost; consumers read it once.
+
+**Files touched:**
+- `plugins/flow/schema/flow.config.schema.json` (new slot + description update)
+- `plugins/flow/skills/ship/SKILL.md` (new Step 1c)
+- `plugins/flow/skills/ship-spike/SKILL.md` (new Step 1c + Step 2 cleanup)
+- `docs/bootstrap.md` (preflightCmd example)
+- `plugins/flow/evals/security/test_preflight_retry.py` (new file)
+- `.claude-plugin/marketplace.json` (v1.2.6 + description)
+- `plugins/flow/.claude-plugin/plugin.json` (v1.2.6 + description)
+- `dev-docs/history.md` (decision-log entry)
+- `dev-docs/feedback.md` (FB-0012)
+- `dev-docs/plan.md` (this block + Current Focus refresh)
+- `template/base/CLAUDE.md.template`, `template/base/bootstrap.sh`, `plugins/flow/skills/doctor/SKILL.md`, `README.md` ×2 ("16 slots" → "17 slots" FB-0010 sweep)
+
+### Review pipeline findings (5 parallel lenses)
+
+Spawned via Agent subagents emulating the planned skills per FB-0001 (plugin not installed in dev environment). Lenses: staff-engineer, push-further, plan-critic, security, auditor.
+
+**Findings:** 1 BLOCKER + 11 NITs + 11 FOLLOW-UPs + 6 EXPLORATIONs. BLOCKER and NITs fixed in-tree; FOLLOW-UPs routed below; EXPLORATIONs added to `dev-docs/roadmap.md` § Exploration.
+
+**BLOCKER (plan-critic; FIXED inline):**
+- `template/base/CLAUDE.md.template` and `template/base/bootstrap.sh` still said "16 slots" after the FB-0010 sweep claimed completion. Exactly the fan-out class FB-0010 was written to defend. Fixed. Validates PR H+ FOLLOW-UP #2 (generalize doctor Check 2.5 to scan `template/` files too).
+
+**NITs fixed inline:**
+- (engineer) Whitespace-only `$PREFLIGHT_CMD` not treated as unset — added `printf '%s' | tr -d '[:space:]'` check in both Step 1c blocks.
+- (engineer + security converged) `sourceFilePatterns` regex not validated before use — copied PR D's GREP_RC validation pattern. Closes FB-0010 silent-skip class.
+- (engineer) Step 1c only checked committed diff — expanded to 3-source check (committed + uncommitted + untracked) matching PR D's `/flow:security-review` lineage.
+- (engineer) ship-spike Step 2 preflight now overlaps Step 1c — trimmed Step 2 to one-shot typecheck only (parallels `/flow:ship` Step 3's role).
+- (push-further) Suppressor list missing common patterns — added `# type: ignore`, `// biome-ignore`, `#[allow(...)]` to both Step 1c retry contracts.
+- (push-further) Eval `do-not-disable-tests` regex brittle ("Never disable tests" would fail it) — broadened to accept do not / don't / never / must not + modify/disable/stub/skip/silence + tests. Suppressor regex expanded to cover all 7 patterns.
+- (auditor ISSUE 1) "Empirically 3 is the elbow" overstated as literature finding — reframed as "deliberate design call consistent with non-prescriptive guidance" in history.md + plan.md Confidence verdict.
+- (auditor ISSUE 2) "6 contract assertions" miscount — clarified to "6 test functions exercising 7 load-bearing contract markers" in history.md. FB-0010 fan-out drift caught.
+
+**FOLLOW-UPs routed:**
+
+1. **(push-further FOLLOW-UP)** STATUS marker for Step 1c itself (`STATUS: PREFLIGHT_PASSED`/`SKIPPED`/`FAILED`/`ABORTED`). Natural extension of PR N's STATUS-marker work on the two reviewers. Horizon: bundle into PR N if scope permits, else PR O.
+2. **(push-further FOLLOW-UP)** Roll-forward story on abort — when Step 1c aborts after 3 attempts, the partial fixes are left in tree with no signposting. Add structured abort summary (per-attempt one-line stderr + diff-hash + files-touched) dumped to `.context/preflight-attempts-<timestamp>.log`. Horizon: post-PR-H4, only if dogfood produces an actual oscillation abort. Don't preempt FB-0003.
+3. **(push-further FOLLOW-UP)** `preflightMaxAttempts` slot defensibility — track in roadmap.md "config-slot pressure" section; defensible trigger is ≥2 real-project reports where N=3 misfires (slow integration tests where attempt 3 is plausibly close; flaky tests where a different cap would clear). Until then hardcoded is correct.
+4. **(plan-critic FOLLOW-UP)** `template/base/flow.config.json.example` doesn't include `preflightCmd` example or `$comment-preflightCmd` doc key. Consumers running bootstrap won't see the new slot at install time. Cosmetic for current dogfood; promote to BLOCKER if next consumer dogfood doesn't surface it. Horizon: PR N or H4.
+5. **(plan-critic FOLLOW-UP)** Forward-planning H3/H4/H5 blocks ended up in PR M's diff (scope creep beyond stated Scope (in)). Not BLOCKING — they live only in plan.md, no plugin artifact changes — but tighter PR atomicity for future H-series. Convention update: forward-planning lives in its own commit on the next ship.
+6. **(plan-critic FOLLOW-UP)** Confidence verdict on "Prompt-driven looping (Claude follows N=3 reliably)" is MEDIUM but the eval is text-grep only — i.e., contract-compliance is CI-untestable until dogfood. By the project's LOW-confidence-as-gate convention this is closer to LOW. The "If it flips" mitigation is sound; just call out "CI-untestable until dogfood" framing in the next plan iteration.
+7. **(plan-critic REDIRECT, validated)** Generalize doctor Check 2.5 to scan `template/` files (the BLOCKER above survives because Check 2.5 didn't see template/base/). Pairs naturally with PR G FOLLOW-UP #2 ("generalize Check 2.5 beyond slot count to also check template files"). Promote priority: this PR's BLOCKER is the second incident; tighten the check. Horizon: PR N or H4.
+8. **(security FOLLOW-UP)** PR O already covers test-edit reward-hacking hook — no separate routing needed.
+9. **(engineer FOLLOW-UP)** Per-attempt log machinery is prose-only — no enforcement that the agent surfaces attempt logs to the user. A session could silently swallow the log and only surface the final BLOCKER. Horizon: first dogfood-time evidence of contract drift.
+10. **(engineer FOLLOW-UP)** SIGINT mid-retry is undefined in the contract. Working tree left in indeterminate state; no log line records partial fix. Horizon: real consumer hits this.
+11. **(engineer FOLLOW-UP)** Initial-state-revert triggers oscillation abort (defensible but a quiet false-positive). Document as expected limitation. Horizon: first user puzzle-report.
+12. **(engineer + auditor FOLLOW-UP)** Manifest description bloat — both descriptions are ~1500 chars after the v1.2.6 sentence. Extract a CHANGELOG.md and reference from descriptions. Horizon: before v1.2.7 ships.
+
+**EXPLORATIONs (added to `dev-docs/roadmap.md` § Exploration if not already there):**
+
+- **Flaky-test failure mode** (push-further, MODERATE signal) — tests that pass 80% / fail 20% produce non-oscillating diff-hashes that exhaust N=3 wastefully. Magentic-style classification rule worth tracking: "if attempt N+1 produces identical diff to HEAD AND preflight passes, treat as flake-clear."
+- **Network/disk-full infrastructure failures** (push-further, WEAK signal) — `ECONNREFUSED|ETIMEDOUT|ENOSPC` in stderr could classify as infrastructure failure (abort without consuming retries) instead of fix-attempt.
+- **Goose `load` vs `delegate` execution-mode split** (push-further, MODERATE signal) — single thoughtful proposal at Block ([Goose #6202](https://github.com/block/goose/discussions/6202)); track for Anthropic reaction or Goose shipping.
+- **Markdown-lint preflight for docs-only PRs** (push-further, WEAK signal) — separate `docsPreflightCmd` slot. No consumer demand yet; preempting violates FB-0003.
+- **PR O hook-mechanization fan-out** (push-further, STRONG signal) — same shape applies beyond test-files: `@ts-ignore` / `# type: ignore` insertion, `eslint-disable-next-line` / `# noqa` insertion, deletion of test assertions or `expect()` calls. All detectable as PreToolUse hooks on Edit/Write with regex on `new_string`. Add to PR O scope expansion or PR O.1.
+- **Eval fixture mis-categorized under `evals/security/`** (push-further NIT, deferred for design discussion) — `test_preflight_retry.py` is a contract test, not security test. Either rename to `evals/contract/` or update parent runner's directory comment. Deferred because moving the file affects multiple references (run_security_evals.py auto-discovers via glob; renaming requires runner update). Worth doing soon before more contract tests follow the precedent.
+
+---
+
+## PR N — Research-driven orchestration hardening (queued; bumps to v1.2.7)
+
+**Mode:** feature (small-medium) | **Priority: medium**
+**Branch:** `pr-h3/research-driven-hardening` (off `main` after PR M merges)
+**Goal:** Apply the validated high-leverage findings from `dev-docs/research/agent-orchestration-2026-05.md`. Two-phase scope: documentation grounding (Magentic citation + evaluator-optimizer archetype reference) + structured-result contracts for `/flow:ship`'s skill-to-skill chain (closes PR E+ FOLLOW-UP #1 with field-validated production pattern).
+
+**Why this PR exists:** The comprehensive industry research surfaced two well-evidenced moves: (a) Anthropic's *evaluator-optimizer* archetype is the canonical name for Step 1c's pattern, and Microsoft Magentic's `max_stall_count` is the closest production analog to Flow's diff-hash detector — citing both grounds Flow's design in the field's published taxonomy; (b) the production-validated convention across MindStudio, LangGraph supervisors, Magentic managers, and shanraisshan's best-practice repo is **structured-result contracts on every step** — *"multi-step workflows break at the first unexpected state when there's no shared state object and no per-step success/error field"* ([MindStudio](https://www.mindstudio.ai/blog/what-is-orchestrator-skill-claude-code)). Flow's `/flow:ship` Step 2 currently can't programmatically distinguish ran-clean from skipped from found-issues for security + a11y reviews — PR D shipped `STATUS: SKIPPED` for the early-exit path; the symmetric markers were deferred and now warrant promotion from "v1.3+ enhancement" to current best-practice gap.
+
+**Scope (in):**
+
+*Phase 1 — Documentation grounding:*
+- `dev-docs/feedback.md` FB-0012 update: append Magentic `max_stall_count` citation block as independent-convergence evidence.
+- `dev-docs/feedback.md` **new FB-0013**: same-model critic+generator collusion as tracked design limitation. Frame honestly: *"Flow already mitigates this structurally (context isolation via extract_session.py, adversarial framing, strict output schemas, held-out eval fixtures, pushback capture). PR P will measure whether the structural mitigations are sufficient via comparative eval before any model swap."* Don't promise the swap — promise the measurement.
+- `plugins/flow/docs/workflow.md` Step 4: insert evaluator-optimizer reference after the existing preflight paragraph, citing Building Effective Agents.
+- `plugins/flow/skills/ship/SKILL.md` Step 1c preamble: one-line citation block (Anthropic + ADK + Magentic).
+- `plugins/flow/skills/ship-spike/SKILL.md` Step 1c preamble: same citation block (consistency).
+
+*Phase 2 — Structured-result contracts (scope: only the skill-to-skill chain in `/flow:ship` Step 2):*
+- `plugins/flow/skills/security-review/SKILL.md` final-line output: emit exactly one of three STATUS markers — `STATUS: SKIPPED — <reason>` (already present per PR D), `STATUS: CLEAN — <N> source files reviewed, no findings`, `STATUS: FINDINGS — <n> BLOCKERs, <n> NITs, <n> FOLLOW-UPs`.
+- `plugins/flow/skills/accessibility-review/SKILL.md` final-line output: same three-status shape, scoped to UI files.
+- `plugins/flow/skills/ship/SKILL.md` Step 2: update post-reviewer consolidation line to parse `STATUS:` markers and emit structured summary. Back-compat: if a reviewer emits no STATUS line, treat as "ran, status unknown" + print a `[WARN]` line (never silent no-op per FB-0006/0007 lineage).
+- New eval fixture `plugins/flow/evals/security/test_status_markers.py` paralleling existing fixture shape: text-grep assertions that both reviewer SKILL.md files contain all three STATUS templates.
+
+*Phase 3 — Manifest + history + plan:*
+- `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` → v1.2.7. Cumulative description sentence.
+- `dev-docs/history.md` SAFETY entry (modifies `ship/SKILL.md`).
+- `dev-docs/plan.md` updates.
+
+**Scope (out):**
+- Extending STATUS markers to `/flow:staff-review`'s 4 lens agents. Different orchestration shape (`Agent()` not `Skill()`); already has BLOCKER/NIT/FOLLOW-UP structure; modifying 4 lens prompts is broader scope. Track as roadmap candidate; revisit after dogfood signals the gap.
+- Extending STATUS markers to `/flow:critique-plan` / `/flow:audit-plan` / `/flow:audit-completion`. Standalone (not chained from another skill); already single-output schema (APPROVED / structured CRITIQUE). No orchestration gap here.
+- Test-edit reward-hacking hook (moved to PR O — lower-leverage than Phase 2's contract fix).
+- Auditor model-diversity swap (moved to PR P — requires measurement infrastructure first).
+
+**Spec-walk:**
+
+*Phase 1:*
+- [ ] FB-0012 has Magentic citation paragraph with link to docs.
+- [ ] FB-0013 captures same-model critic collusion with honest framing ("structural mitigations may be sufficient; PR P will measure").
+- [ ] `workflow.md` Step 4 names evaluator-optimizer + cites Building Effective Agents.
+- [ ] `/flow:ship` Step 1c preamble cites Anthropic + ADK + Magentic.
+- [ ] `/flow:ship-spike` Step 1c preamble identical (consistency).
+
+*Phase 2:*
+- [ ] `flow:security-review` SKILL.md template includes all three STATUS markers in its documented output shape.
+- [ ] `flow:accessibility-review` SKILL.md template includes all three STATUS markers.
+- [ ] `/flow:ship` Step 2 parses STATUS lines and emits structured consolidation.
+- [ ] `/flow:ship` Step 2 has graceful fallback for missing STATUS line (prints `[WARN]`; never silent).
+- [ ] `test_status_markers.py` 4 cases pass (STATUS templates present in both reviewers; fallback message present in ship Step 2; back-compat with PR D's `STATUS: SKIPPED`).
+- [ ] `claude plugin validate .` clean.
+
+*Phase 3:*
+- [ ] Both manifests at v1.2.7; descriptions name Phase 1 + Phase 2 changes.
+- [ ] FB-0010 fan-out check: schema slot count unchanged (still 17); no doc-count drift.
+- [ ] `dev-docs/history.md` SAFETY entry.
+- [ ] `dev-docs/plan.md` reflects PR N ship state.
+
+**Confidence verdicts:**
+
+**Assumption:** Three STATUS values (SKIPPED / CLEAN / FINDINGS) are sufficient for the two reviewers.
+**Confidence:** MEDIUM-HIGH
+**Why:** These three cover the documented paths (PR D's early-exit + two substantive outcomes). An ERROR case (reviewer crashes mid-execution) is conceivable but unobserved in dogfood. Don't ship vaporware (FB-0003).
+**If it flips:** Add ERROR / INDETERMINATE in a follow-up PR when a real case demands it. Schema change is one-line.
+
+**Assumption:** Citing Magentic + evaluator-optimizer in the contract preamble materially improves consumer trust in Flow's design.
+**Confidence:** HIGH
+**Why:** Engineering teams routinely scrutinize unattributed design choices; grounding the contract in peer-reviewed (Anthropic) + production-validated (Magentic ships exactly this primitive) lineage answers "why this number / why this rule" without prompting the question.
+
+**Assumption:** Capturing FB-0013 without immediate mitigation is honest documentation, not abdication.
+**Confidence:** HIGH
+**Why:** Same pattern as FB-0012 — documenting a design limitation before having the fix is consistent with "evidence or silence" discipline. The honest framing ("structural mitigations may be sufficient; PR P will measure") is more truthful than "we will fix this."
+
+**Risks:**
+- **Reviewer skills are safety-critical** per `.claude/rules/safety.md`. Phase 2 modifies both review SKILLs + ship SKILL.md. SAFETY marker in commit + history entry mandatory.
+- **PR D's existing `STATUS: SKIPPED` shape** must be preserved unchanged for back-compat. Phase 2 EXTENDS, doesn't replace.
+- **`/flow:ship` Step 2 parsing** must fail-gracefully on missing STATUS line — print `[WARN]`, never silent (FB-0006/0007 lineage).
+- **Manifest description length** grows again. Acceptable cost; future PR could deduplicate via CHANGELOG.md.
+
+**Files touched:**
+- `dev-docs/feedback.md` (FB-0012 update + new FB-0013)
+- `plugins/flow/docs/workflow.md` (Step 4 evaluator-optimizer reference)
+- `plugins/flow/skills/ship/SKILL.md` (Step 1c preamble + Step 2 STATUS parsing)
+- `plugins/flow/skills/ship-spike/SKILL.md` (Step 1c preamble)
+- `plugins/flow/skills/security-review/SKILL.md` (STATUS markers in output template)
+- `plugins/flow/skills/accessibility-review/SKILL.md` (STATUS markers in output template)
+- `plugins/flow/evals/security/test_status_markers.py` (new file)
+- `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` (v1.2.7)
+- `dev-docs/history.md` + `dev-docs/plan.md`
+
+---
+
+## PR O — Test-edit reward-hacking hook (queued; bumps to v1.2.8)
+
+**Mode:** feature (small-medium) | **Priority: medium**
+**Branch:** `pr-h4/test-edit-guard` (off `main` after PR N merges)
+**Goal:** Mechanize the no-disable-tests reward-hacking guard from `/flow:ship` Step 1c via a PreToolUse hook. Prompt-level guards in the SKILL.md are probabilistic; a hook on `Edit`/`Write` against test-file patterns is the production-validated tool-level interrupt analogous to OpenAI's `needsApproval` and Anthropic hooks' `ask` decision.
+
+**Why this PR exists:** PR M shipped prompt-level reward-hacking guards in Step 1c (*"do not modify or disable tests... do not add `@ts-ignore`/`# noqa`/`eslint-disable-next-line`"*). These rely on Claude's semantic compliance with the contract. The field's stronger pattern is mechanical interrupts at the tool-call layer — emit `ask` when Claude tries to edit a test file during preflight retry, requiring user confirmation. Lower-leverage than PR N's structured-result contracts (the orchestration gap is more widely-cited in the field) but still real value for the test-disabling specific failure mode.
+
+**Scope (in):**
+- New `flow.config.json.testFilePatterns` slot in schema (mirrors `sourceFilePatterns` / `uiFilePatterns` shape). Defaults cover common test naming: `**/*test*.{ts,tsx,js,jsx,py,rs,go,rb}`, `**/__tests__/**`, `**/*_test.go`, `**/test_*.py`, `**/*.test.{ts,tsx,js,jsx}`, `**/*.spec.{ts,tsx,js,jsx}`. Invalid-regex fallback emits loud warning (caught via grep -E exit-2 detection).
+- New entry in `plugins/flow/hooks/default-hooks.json`: PreToolUse hook matching `Edit` and `Write` tool calls against test-file glob; emits `ask` decision with prompt: *"This edit modifies a test file. If you're fixing a code bug, switch to fixing the code instead. If you're fixing a genuine test bug, confirm with reason."*
+- Hook is **opt-in** per the documented `default-hooks.json` baseline convention; consumers who don't want it leave it disabled.
+- Schema grows 17 → 18 slots. FB-0010 fan-out sweep: README ×2, doctor SKILL.md, plugin.json + marketplace.json descriptions.
+- New eval fixture `plugins/flow/evals/security/test_test_edit_guard.py`. Cases: (a) hook config validates against the hooks schema; (b) test-file pattern match logic correct on common naming conventions; (c) non-test-file edits not flagged; (d) malicious `testFilePatterns` regex doesn't execute (parallels `test_malicious_config.py`).
+- New FB entry capturing the rule: *"reward-hacking guards in prompt contracts must be paired with mechanical interrupts where the tool surface allows; PreToolUse hook on test-file edits is the canonical pattern for the no-disable-tests rule."*
+- Manifest bump v1.2.7 → v1.2.8 + cumulative description sentence.
+
+**Scope (out):**
+- Generalizing the hook to other reward-hacking patterns (`@ts-ignore` additions, `eslint-disable-next-line` insertions). These are content-pattern checks not file-path checks — different hook shape, defer until PR O dogfood shows test-file guard alone is insufficient.
+- Making the hook always-on (not opt-in). Consumer choice via `default-hooks.json` is the established pattern.
+- Scoping the hook to "only during Step 1c" — hooks fire on every tool call, not scoped to specific skill steps. The hook applies to all `Edit`/`Write` on test files; consumers can disable if friction outweighs benefit.
+
+**Confidence verdicts:**
+
+**Assumption:** The default `testFilePatterns` covers the majority of real-world test layouts without false positives during regular development.
+**Confidence:** MEDIUM
+**Why:** Defaults cover ~95% of TypeScript / Python / Rust / Go / Ruby test conventions. Edge cases exist (integration tests outside `__tests__/`, custom naming, monorepos with non-standard layouts). Slot lets consumers override; `ask` decision (not `deny`) lets the user dismiss false-positives.
+**If it flips:** False positives cause friction during dev. Mitigation: hook is opt-in; consumers can disable in `default-hooks.json`. Worst case: dogfood proves the defaults wrong and we tune them.
+
+**Assumption:** `ask` decision (user confirms) is the right gate strength, not `deny` (block outright).
+**Confidence:** HIGH
+**Why:** Genuine test bugs exist; blocking outright would create more friction than reward hacking it prevents. `ask` is the Magentic plan-signoff intuition — human in the loop only when it matters.
+
+**Files touched:**
+- `plugins/flow/schema/flow.config.schema.json` (new `testFilePatterns` slot)
+- `plugins/flow/hooks/default-hooks.json` (new PreToolUse hook)
+- `plugins/flow/evals/security/test_test_edit_guard.py` (new file)
+- Live "17 slots" → "18 slots" updates (FB-0010 sweep)
+- `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` (v1.2.8)
+- `dev-docs/feedback.md` (new FB entry on hook-mechanization pattern)
+- `dev-docs/history.md` (SAFETY entry — modifies hook surface)
+- `dev-docs/plan.md`
+
+---
+
+## PR P — Auditor model-diversity evaluation (queued; bumps to v1.2.9 or v1.3.0 depending on outcome)
+
+**Mode:** feature (medium — eval infrastructure + possible swap) | **Priority: low-medium**
+**Branch:** `pr-h5/auditor-model-eval` (off `main` after PR O merges)
+**Goal:** Address FB-0013 (same-model critic collusion) via a **measurement-first** approach. Build comparative eval infrastructure to measure whether downgrading the `auditor` from Opus to Sonnet preserves finding quality. Ship the model swap ONLY IF the eval clears a quantitative bar; otherwise close FB-0013 as "structural mitigations sufficient; model diversity not warranted."
+
+**Why this PR exists:** The skill-chaining research surfaced critic-generator collusion as a documented failure mode in same-model setups. Flow's structural mitigations (context isolation via `extract_session.py`, adversarial framing in `auditor.md`, strict output schemas, held-out eval fixtures, pushback capture via `log-disagreement`) likely address most of the risk — but this is a hypothesis, not a measurement. Running the auditor on Sonnet vs Opus against the same fixture set will give us data. Opus is materially better at subjective judgment and creative synthesis; routing critique-heavy roles to Sonnet sacrifices real capability. The swap is defensible only if data shows comparable finding quality.
+
+**Two-step structure:**
+
+*Step A — Build comparative eval infrastructure:*
+- Extend `plugins/flow/evals/run_evals.py` (or new `evals/run_model_comparison.py`) to invoke auditor against each `evals/fixtures/*.jsonl` once with `model: opus` and once with `model: sonnet`. Capture findings for each.
+- Compute overlap metrics: finding-count delta, false-positive rate (compare to `ground_truth.yaml`), finding relevance overlap.
+- Document the **≥80% finding-overlap with comparable FP rate** bar as the swap gate.
+
+*Step B — Decide based on data:*
+- Run the comparison on all fixtures.
+- **If Sonnet clears the bar:** swap auditor to `model: sonnet` in `plugins/flow/agents/auditor.md` frontmatter. Update FB-0013 to "structural + diversity mitigation in place." Bump to v1.3.0 (model swap is a behavior change worth signaling).
+- **If Sonnet doesn't clear the bar:** keep auditor on Opus. Update FB-0013 to "structural mitigations sufficient; model diversity not warranted per measured FP/overlap." Bump to v1.2.9 (eval infrastructure only).
+
+**Scope (in):**
+- Comparative eval infrastructure (the model-comparison runner). This is the load-bearing deliverable regardless of swap decision.
+- Sonnet-vs-Opus run on `auditor` against the existing 5 fixtures + the eval's ground_truth.yaml.
+- Decision documented in FB-0013 update + `dev-docs/history.md`.
+- If swap: only `auditor` model frontmatter changes. NOT `plan-critic`, lens agents, or any other role — Tier 1 only.
+
+**Scope (out):**
+- **Tier 2/3 model swaps** (plan-critic, lens agents). These require their own eval pass with the same ≥80% bar before any swap. Track as roadmap candidates; do not bundle.
+- **Cross-vendor diversity** (Claude + non-Anthropic model). Out of scope for a Claude Code plugin.
+- **Dynamic model routing** (different model per call based on complexity heuristics). Premature optimization; ship static-frontmatter swap first if at all.
+- **Removing FB-0013 from feedback.md.** Even if swap ships, the FB entry stays — it captures the design limitation and the evidence-based mitigation that addressed it.
+
+**Confidence verdicts:**
+
+**Assumption:** Comparative eval infrastructure is the right shape (run auditor twice, compare findings, score against ground truth).
+**Confidence:** HIGH
+**Why:** Matches the existing eval harness shape; reuses fixture machinery; standard A/B testing pattern.
+
+**Assumption:** ≥80% finding-overlap + comparable FP rate is the right swap gate.
+**Confidence:** MEDIUM
+**Why:** 80% is a defensible threshold (substantial agreement, not perfection) but specific number is somewhat arbitrary. If Sonnet hits 75% on 5 fixtures, the call is harder. Document the threshold; revisit if dogfood signals it's wrong.
+**If it flips:** Adjust threshold based on what the data shows. Threshold choice is itself a tradeoff — stricter bar means fewer swaps + more capability preservation; looser bar means more cost savings + more diversity.
+
+**Assumption:** The 5 existing fixtures cover the range of auditor scenarios well enough to make a swap decision.
+**Confidence:** MEDIUM
+**Why:** 5 fixtures is small. The decision should note this — *"swap decision based on 5 fixtures; revisit if Sonnet auditor produces user-reported regressions in dogfood."*
+
+**Risks:**
+- **Confirmation bias in eval design.** Designing the eval to favor an expected outcome. Mitigation: define the threshold + comparison metrics BEFORE running the comparison; document them in PR plan; user reviews before swap is committed.
+- **Sonnet might miss nuanced findings that don't surface in current fixtures.** Real risk — the fixtures were authored against Opus's finding patterns. A new fixture authored specifically to stress-test the auditor on Sonnet-known-weakness patterns (subtle evidence-chain reasoning) would strengthen the eval. Consider adding one as part of Step A.
+- **Model alias resolution.** `model: sonnet` in the sub-agent frontmatter resolves to whatever Sonnet is current at invocation time. This is good for forward-compat but means the eval data ages — a future Sonnet might behave differently. Acceptable: the eval can be re-run when concerned.
+
+**Files touched (Step A — always):**
+- `plugins/flow/evals/run_model_comparison.py` OR extension to `run_evals.py` (new comparative runner)
+- New fixture targeting subtle reasoning (optional but recommended)
+- `dev-docs/feedback.md` FB-0013 update with measurement methodology
+- `dev-docs/history.md` (data-driven decision entry)
+- `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` (v1.2.9 if no swap, v1.3.0 if swap)
+
+**Files touched (Step B — only if swap ships):**
+- `plugins/flow/agents/auditor.md` (add `model: sonnet` frontmatter)
+
+---
+
+## PR G — Consistency discipline (FB-0010, SHIPPED — squash `0c3386b`)
 
 **Mode:** feature (small) | **Priority: highest**
 **Goal:** Defend against the most-recurring bug class (FB-0010, 6 incidents): silent-skip on edge case + fan-out contradiction. Encode as explicit lens prompts + a mechanical doctor check + a workflow.md preflight note + a project-dev rule.
@@ -225,8 +552,8 @@ Plan-critic Finding 7 framing FOLLOW-UP: reviewer-footer is reframed above as "P
 - `plugins/flow/skills/doctor/SKILL.md` — Check 2.5 comparing `jq '.properties | keys | length'` on the schema against "N slots" claims in CLAUDE.md/README.md/docs/.
 - `plugins/flow/docs/workflow.md` Step 4 — "consistency sweep" paragraph (FB-0010 reference).
 - `.claude/rules/general.md` — Consistency discipline subsection (project-dev rule, auto-loads on every edit).
-- `README.md` — v1.2.3 version note.
-- `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` — v1.2.2 → v1.2.3, descriptions refreshed.
+- `README.md` — v1.2.5 version note.
+- `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` — v1.2.2 → v1.2.5, descriptions refreshed.
 - `dev-docs/history.md` — decision-log entry.
 - `dev-docs/plan.md` — this block + Current Focus refresh.
 
@@ -242,7 +569,7 @@ Plan-critic Finding 7 framing FOLLOW-UP: reviewer-footer is reframed above as "P
 - [ ] `/flow:doctor` Check 2.5 added; smoke against current flow repo emits PASS (all "16 slots" mentions match schema).
 - [ ] `workflow.md` Step 4 mentions the consistency sweep.
 - [ ] `.claude/rules/general.md` has the new subsection BEFORE "Autonomous work guardrails".
-- [ ] README v1.2.3 line added.
+- [ ] README v1.2.5 line added.
 - [ ] Both manifests bumped + descriptions refreshed; `claude plugin validate .` clean.
 - [ ] `dev-docs/history.md` entry written.
 - [ ] Self-test: grep for any remaining "14 slots" / "15 slots" / etc. across the tree returns nothing; no v1.2.2-only version strings in any new file.
@@ -252,7 +579,7 @@ Plan-critic Finding 7 framing FOLLOW-UP: reviewer-footer is reframed above as "P
 **Assumption:** The lens-staff-engineer prompt addition will improve catch rate on the next consistency-class incident.
 **Confidence:** MEDIUM
 **Why:** Prompt-level vocabulary additions improve LLM behavior probabilistically. The shape is concrete enough (grep, then flag survivors) that the lens has a clear action to take. Adversarial review still serves as backstop.
-**If it flips:** Promote to mechanical pre-commit check (rejected for v1.2.3 but reachable in v1.3+).
+**If it flips:** Promote to mechanical pre-commit check (rejected for v1.2.5 but reachable in v1.3+).
 
 **Assumption:** Doctor Check 2.5's awk-filtered grep won't produce false positives on the current flow tree.
 **Confidence:** HIGH
@@ -267,15 +594,15 @@ PR G's review (engineer + push-further + UX-designer + design-engineer + securit
 
 1. **FB-0010 Defense #4 — silent-skip skill-code pairing across existing shipped skills.** PR G covers defenses #1-3 (lens prompt + doctor check + project-dev rule); defense #4 (skill code: "pair every `2>/dev/null || true` / `// empty` / `|| ""` with explicit positive assertion or `[WARN]` branch") was not applied to existing skill bodies. Scope-deferred because the pattern requires a sweep of all 11 shipped skills + 5 scripts + 1 tool; bigger than PR G's small-feature charter. Owner: domain agent. Horizon: PR H (consumer-feedback round 2 after the new-project dogfood).
 
-2. **Generalize Check 2.5 beyond slot count.** FB-0010 names 4 fan-out targets (counts, names, slots, version strings); Check 2.5 mechanizes only slot count. Symmetric pairs worth mechanizing: skill count (`ls plugins/flow/skills/ | wc -l` vs documented "N user-visible skills"), lens count (`ls plugins/flow/agents/lens-*.md` vs "four-lens"), rule count (`ls plugins/flow/rules/*.md` vs "four portable rules"). Each is ~5 lines of `ls | wc -l` + grep. Defer to v1.2.4 alongside next consumer dogfood. Owner: domain agent. Horizon: PR H.
+2. **Generalize Check 2.5 beyond slot count.** FB-0010 names 4 fan-out targets (counts, names, slots, version strings); Check 2.5 mechanizes only slot count. Symmetric pairs worth mechanizing: skill count (`ls plugins/flow/skills/ | wc -l` vs documented "N user-visible skills"), lens count (`ls plugins/flow/agents/lens-*.md` vs "four-lens"), rule count (`ls plugins/flow/rules/*.md` vs "four portable rules"). Each is ~5 lines of `ls | wc -l` + grep. Defer to v1.2.6 alongside next consumer dogfood. Owner: domain agent. Horizon: PR H.
 
-3. **Consumer-shipped consistency rule (`plugins/flow/rules/general.md`).** PR G added the rule to project-dev `.claude/rules/general.md` only. The shipped portable rule (`plugins/flow/rules/general.md`) has no equivalent — consumers don't inherit the discipline at the rule-level. Lens-engineer catches it at staff-review time; a rule would catch it during execution. Cheap to land. Owner: docs agent. Horizon: PR H or v1.2.4.
+3. **Consumer-shipped consistency rule (`plugins/flow/rules/general.md`).** PR G added the rule to project-dev `.claude/rules/general.md` only. The shipped portable rule (`plugins/flow/rules/general.md`) has no equivalent — consumers don't inherit the discipline at the rule-level. Lens-engineer catches it at staff-review time; a rule would catch it during execution. Cheap to land. Owner: docs agent. Horizon: PR H or v1.2.6.
 
 4. **CLAUDE.md.template consumer-facing mention.** Consumers reading `template/base/CLAUDE.md.template` have no pointer to the consistency discipline (only `plugins/flow/docs/workflow.md` Step 4 surfaces it consumer-side). A one-line bullet would let consumers self-discover. Pairs naturally with #3. Horizon: PR H.
 
 5. **`plugins/flow/agents/plan-critic.md` fan-out hunt addition.** Plan-critic's "Internal incoherence" category covers "plan steps that contradict each other" but lacks explicit fan-out vocabulary the way `lens-staff-engineer` now has. A plan listing "16 slots" in one section and "14 slots" in another is the in-plan analog of the same bug class. One-line bullet under Internal incoherence: "count/name/slot/version referenced multiple times in the plan — values must agree." Horizon: PR H.
 
-6. **Schema-path fallback hardening in Check 2.5 (security).** When `CLAUDE_PLUGIN_ROOT` is unset, Check 2.5 falls back to `plugins/flow/schema/flow.config.schema.json` (project-relative). A malicious project shipping a same-named file under that path would have doctor report against the WRONG source-of-truth. No RCE, but "fails closed in wrong direction." Fix: require an explicit sentinel like `[ -f .claude-plugin/marketplace.json ]` before trusting the fallback path. Horizon: PR H or v1.2.4.
+6. **Schema-path fallback hardening in Check 2.5 (security).** When `CLAUDE_PLUGIN_ROOT` is unset, Check 2.5 falls back to `plugins/flow/schema/flow.config.schema.json` (project-relative). A malicious project shipping a same-named file under that path would have doctor report against the WRONG source-of-truth. No RCE, but "fails closed in wrong direction." Fix: require an explicit sentinel like `[ -f .claude-plugin/marketplace.json ]` before trusting the fallback path. Horizon: PR H or v1.2.6.
 
 7. **Symlink-following grep hardening in Check 2.5 (security).** `grep -rEn` follows symlinks on BSD/macOS by default. A `docs/` symlinked to `/etc` would surface `/etc/*.md` "N slots" lines to doctor output (information disclosure, no exec). Defensive fix: `find … -type f -name '*.md' -print0 | xargs -0 grep …`. Horizon: PR H.
 
@@ -289,15 +616,15 @@ PR G's review (engineer + push-further + UX-designer + design-engineer + securit
 
 12. **"Consumer-shipped" vs "project-dev" terminology standardization.** FB entries use parenthetical labels; history.md uses "Two-layer defense" framing. Worth a style-guide note for future FB entries that span both surfaces. Horizon: dev-docs hygiene PR.
 
-13. **Release tagging + version-pinning recipe** (caught during PR H1 pre-lens self-check). PR H1's first draft of `docs/upgrade.md` included a "Pin to a prior version" recipe using `git checkout v1.2.3` — but flow doesn't tag releases at the git-tag level (only `pre-flow-plugin` tag exists). And `~/.claude/plugins/flow/` isn't a known stable path across Claude Code install shapes. Recipe was removed from upgrade.md as false-affordance per CLAUDE.md "no false affordances" rule; recipe re-introduction requires (a) backfill-tagging v1.0.0..v1.2.3 against historical merge SHAs (one-time), (b) auto-tag-on-merge for future PRs (GitHub Actions step on main push or release-please-style automation), (c) verify the actual Claude Code plugin install dir convention. Owner: docs+infra. Horizon: PR H proper or v1.2.4 if a consumer hits a regression they need to roll back from.
+13. **Release tagging + version-pinning recipe** (caught during PR H1 pre-lens self-check). PR H1's first draft of `docs/upgrade.md` included a "Pin to a prior version" recipe using `git checkout v1.2.5` — but flow doesn't tag releases at the git-tag level (only `pre-flow-plugin` tag exists). And `~/.claude/plugins/flow/` isn't a known stable path across Claude Code install shapes. Recipe was removed from upgrade.md as false-affordance per CLAUDE.md "no false affordances" rule; recipe re-introduction requires (a) backfill-tagging v1.0.0..v1.2.5 against historical merge SHAs (one-time), (b) auto-tag-on-merge for future PRs (GitHub Actions step on main push or release-please-style automation), (c) verify the actual Claude Code plugin install dir convention. Owner: docs+infra. Horizon: PR H proper or v1.2.6 if a consumer hits a regression they need to roll back from.
 
 14. **CHANGELOG drift trigger** (PR H1 push-further-lens NIT). Manual CHANGELOG maintenance assumed by PR H1 has no mechanical trigger. Add `/flow:ship` spec-walk item: "if version bumped in this PR, CHANGELOG.md has a new entry for the bumped version." Either as a `/flow:ship` Step N check, or as a pre-commit grep in the project's preflight. Until then, the first forgotten CHANGELOG update IS the test of discipline. Horizon: PR H proper or any `/flow:ship`-touching PR.
 
-15. **`/flow:upgrade` skill** (PR H1 push-further-lens FOLLOW-UP). Wraps the 2-command ritual + runs `/flow:doctor` + diffs CHANGELOG-since-last-installed-version. ~40 lines of bash; 1-2 hour build. Real ambition rightly deferred from PR H1 (which is docs-only); land alongside `minFlowVersion` slot + Doctor Check 6 (FOLLOW-UP #2). Horizon: PR H proper or v1.2.4.
+15. **`/flow:upgrade` skill** (PR H1 push-further-lens FOLLOW-UP). Wraps the 2-command ritual + runs `/flow:doctor` + diffs CHANGELOG-since-last-installed-version. ~40 lines of bash; 1-2 hour build. Real ambition rightly deferred from PR H1 (which is docs-only); land alongside `minFlowVersion` slot + Doctor Check 6 (FOLLOW-UP #2). Horizon: PR H proper or v1.2.6.
 
 16. **CLAUDE.md "Product Principles" should anchor the patch-additive discipline** (PR H1 push-further-lens BLOCKER-lite, addressed in-tree by softening CHANGELOG + upgrade.md prose). The discipline ("patch bumps aim to be additive") now lives in CHANGELOG + upgrade.md but is not in CLAUDE.md, plugin.json description, or any process gate. Worth promoting to CLAUDE.md "Product Principles" as a stated discipline (not contract). Horizon: next CLAUDE.md-touching PR.
 
-17. **Historical-narrative immunity for Check 2.5** (PR H1 engineer-lens FOLLOW-UP). Check 2.5 currently flags every "N slots" mention where N != schema-actual, including legitimate historical prose like "schema bumped from 13 to 16" in `dev-docs/history.md`. The current flow tree emits WARN with 12 such survivors — all intentional narrative. Fix shape: either (a) add a `dev-docs/handoffs/` + `dev-docs/history.md` exclude-list to Check 2.5 (cheap, blunt), (b) skip lines containing context-words like `was`, `bringing`, `estimated`, `→`, `from N` (heuristic), or (c) require a sentinel `<!-- historical -->` HTML comment to mark intentional historical-narrative lines (explicit, more work for authors). Land alongside the Check 2.5 generalization to skill/lens/rule counts (FOLLOW-UP #2) so consumers don't get spurious WARNs on their own historical narrative. Horizon: PR H proper or v1.2.4.
+17. **Historical-narrative immunity for Check 2.5** (PR H1 engineer-lens FOLLOW-UP). Check 2.5 currently flags every "N slots" mention where N != schema-actual, including legitimate historical prose like "schema bumped from 13 to 16" in `dev-docs/history.md`. The current flow tree emits WARN with 12 such survivors — all intentional narrative. Fix shape: either (a) add a `dev-docs/handoffs/` + `dev-docs/history.md` exclude-list to Check 2.5 (cheap, blunt), (b) skip lines containing context-words like `was`, `bringing`, `estimated`, `→`, `from N` (heuristic), or (c) require a sentinel `<!-- historical -->` HTML comment to mark intentional historical-narrative lines (explicit, more work for authors). Land alongside the Check 2.5 generalization to skill/lens/rule counts (FOLLOW-UP #2) so consumers don't get spurious WARNs on their own historical narrative. Horizon: PR H proper or v1.2.6.
 
 18. **`docs/README.md` index** (PR H1 UX/design-engineer FOLLOW-UP). With `docs/` now holding 4 substantive files (bootstrap, migration, first-pr, upgrade) plus CHANGELOG.md at root, the implicit user journey isn't obvious from the directory listing. A ~20-line decision-tree index ("new project → bootstrap; existing → migration; already installed → upgrade; first PR → first-pr") would be a 5-minute fix compounding across consumer projects. Horizon: PR H proper.
 
@@ -305,19 +632,19 @@ PR G's review (engineer + push-further + UX-designer + design-engineer + securit
 
 21. **`PreToolUse` hook on `Bash` matching `gh pr create`** (PR I push-further-lens FOLLOW-UP F2). Currently PR I ships 3 prompt-level reminders to use `/flow:ship` instead of `gh pr create`. Three of the four defenses (Step 1.0 surface, staff-review footer, workflow.md Step 10) only render if the author opens `/flow:ship` or `/flow:staff-review` — the author who skips both still skips silently. A PreToolUse hook in `.claude/settings.json` matching `gh pr create` could print "use /flow:ship; remove this hook from .claude/settings.json if intentional." ~10 lines of settings.json + 1 doc paragraph. Higher signal-to-friction than another prompt reminder. Horizon: triggered by 2nd workflow-spawn-skip incident OR ride next `.claude/settings.json`-touching PR.
 
-22. **Consumer-shipped workflow rule (`plugins/flow/rules/workflow.md`)** (PR I push-further-lens FOLLOW-UP F3). PR I adds the workflow discipline to `.claude/rules/general.md` (project-dev only). Push-further correctly noted my "fan-out avoidance" reasoning was backwards — rules auto-load on every edit, workflow.md auto-loads on zero edits; the rule is the load-bearing surface and the doc is the reference. Consumer projects need the same defense. Cheap to add — copy the `.claude/rules/general.md` Workflow discipline subsection into a new `plugins/flow/rules/workflow.md` with `paths: ['**/*']` frontmatter. Horizon: PR H proper or v1.2.5.
+22. **Consumer-shipped workflow rule (`plugins/flow/rules/workflow.md`)** (PR I push-further-lens FOLLOW-UP F3). PR I adds the workflow discipline to `.claude/rules/general.md` (project-dev only). Push-further correctly noted my "fan-out avoidance" reasoning was backwards — rules auto-load on every edit, workflow.md auto-loads on zero edits; the rule is the load-bearing surface and the doc is the reference. Consumer projects need the same defense. Cheap to add — copy the `.claude/rules/general.md` Workflow discipline subsection into a new `plugins/flow/rules/workflow.md` with `paths: ['**/*']` frontmatter. Horizon: PR H proper or v1.2.7.
 
 23. **Encode-after-1-incident threshold as a written rule** (PR I push-further-lens FOLLOW-UP F1). PR I's history.md "Lessons learned" names the principle: *"threshold isn't hard; it's 'is encoding cost less than expected recurrence cost?'"* Should be promoted out of one PR's history entry into `.claude/rules/general.md` (or `dev-docs/feedback.md` as a meta-rule). Otherwise the next 1-incident "but the fix is cheap" judgment call has no precedent to lean on. Cheap; ride next feedback-touching PR.
 
 24. **Make STATUS: SKIPPED actually load-bearing** (PR I push-further-lens FOLLOW-UP B1's path-2 deferral). PR I softened the language ("explicit log line in the session transcript" — true) from "load-bearing audit trail" (false; nothing programmatically consumes the STATUS lines). The real fix: either append STATUS lines to a per-PR record under `~/.claude/plugins/data/flow/` OR add a `/flow:doctor` Check that scans the most recent session transcripts for the STATUS lines. Real scope; defer until the discipline surface needs the upgrade. Horizon: when audit-trail consumption becomes a concrete need.
 
-25. **`.claude/rules/documentation.md` plan.md-maintenance rule vs PR-I practice** (PR I UX/design-engineer NIT #3). The rule says "Completed items move to 'Recently Completed'" but PR I marked FOLLOW-UP #20 in-place with `✅ SHIPPED in PR I (v1.2.4)` prefix because the numbered list is referenced from history.md ("FOLLOW-UP #20"); moving items would break the cross-refs. Resolution: update the documentation rule to explicitly permit in-place `✅ SHIPPED in PR X` marking for numbered traceability lists (numbered FOLLOW-UPs, FB-XXXX entries). Cheap; ride next `.claude/rules/documentation.md`-touching PR.
+25. **`.claude/rules/documentation.md` plan.md-maintenance rule vs PR-I practice** (PR I UX/design-engineer NIT #3). The rule says "Completed items move to 'Recently Completed'" but PR I marked FOLLOW-UP #20 in-place with `✅ SHIPPED in PR I (v1.2.6)` prefix because the numbered list is referenced from history.md ("FOLLOW-UP #20"); moving items would break the cross-refs. Resolution: update the documentation rule to explicitly permit in-place `✅ SHIPPED in PR X` marking for numbered traceability lists (numbered FOLLOW-UPs, FB-XXXX entries). Cheap; ride next `.claude/rules/documentation.md`-touching PR.
 
 26. **/flow:ship Step 1.0 surface is now ~25 lines** (PR I engineer-lens FOLLOW-UP F2). Originally 3 ASSUMES lines. PR I adds 7 lines of REMINDER prose. 2.3x expansion. If the user ignored 3 lines, will they read 25? Signal-to-watch at next dogfood. Not fix-now; capture for next /flow:ship-touching PR's plan.
 
-27. **`/flow:doctor` install-scope detection** (PR H2 combined-lens FOLLOW-UP; engineer-lens NIT #3 promoted to numbered entry to close the FB-0010 fan-out it surfaced — history.md PR H2 entry routed an unnumbered FOLLOW-UP, which IS the FB-0010 shape the project defends against; numbering closes the contradiction). Add a `/flow:doctor` check that detects at runtime whether flow is user-scope-enabled (`~/.claude/settings.json`'s `enabledPlugins."flow@flow"`) or project-scope-enabled (`./.claude/settings.json`'s same key). Reports scope + the cross-machine-vs-cross-project upgrade behavior implications. Would prevent recurrence of the per-session-vs-per-machine factual error PR H2 corrects. Cheap: ~15 lines in doctor SKILL.md Section 1; pairs naturally with Check 1.2 (plugin enabled). Owner: domain. Horizon: PR H proper or v1.2.5.
+27. **`/flow:doctor` install-scope detection** (PR M combined-lens FOLLOW-UP; engineer-lens NIT #3 promoted to numbered entry to close the FB-0010 fan-out it surfaced — history.md PR M entry routed an unnumbered FOLLOW-UP, which IS the FB-0010 shape the project defends against; numbering closes the contradiction). Add a `/flow:doctor` check that detects at runtime whether flow is user-scope-enabled (`~/.claude/settings.json`'s `enabledPlugins."flow@flow"`) or project-scope-enabled (`./.claude/settings.json`'s same key). Reports scope + the cross-machine-vs-cross-project upgrade behavior implications. Would prevent recurrence of the per-session-vs-per-machine factual error PR M corrects. Cheap: ~15 lines in doctor SKILL.md Section 1; pairs naturally with Check 1.2 (plugin enabled). Owner: domain. Horizon: PR H proper or v1.2.7.
 
-20. ✅ **`/flow:security-review` + `/flow:accessibility-review` workflow-spawn discipline** — **SHIPPED in PR I (v1.2.4).** PR H1's workflow loop spawned plan-critic + 4 staff-review lenses but DID NOT spawn `/flow:security-review` + `/flow:accessibility-review`. Skipped by author judgment ("they'd early-exit on docs-only anyway"). User caught: "were the ship reviews run?" — they hadn't been. **This is itself the FB-0010 silent-skip class applied to workflow discipline (not code).** The 9th FB-0010 incident, and a new sub-class (workflow-step-skip vs code-edge-skip). Per workflow.md Step 10 (the "Never bypass `/flow:ship`" subsection added by PR I — formerly framed under Step 6 in pre-PR-I plan prose) + FB-0008/FB-0033, the discipline is to ALWAYS spawn the reviewers — they produce a `STATUS: SKIPPED` log line in the session transcript as evidence the discipline ran, NOT silent-skip the spawn itself. Make-good: ran both retroactively (security: STATUS SKIPPED no source/config in diff; a11y: STATUS SKIPPED no UI in diff). Defense: `/flow:ship` Step 1.0 already prints the workflow-step assumption surface (which lists security/a11y). Strengthen that surface to either (a) auto-spawn the reviewers if missing or (b) require an explicit author confirmation that they ran. Owner: domain. Horizon: PR H proper or next `/flow:ship`-touching PR. Promote at next /flow:ship feedback synthesis since this is now a 3rd-time-recurring discipline shape: PR F-pass-1 (gawk-only awk = portability silent-skip), PR H1 zsh-vs-bash (word-splitting silent-skip), PR H1 workflow-spawn-skip (judgment silent-skip).
+20. ✅ **`/flow:security-review` + `/flow:accessibility-review` workflow-spawn discipline** — **SHIPPED in PR I (v1.2.6).** PR H1's workflow loop spawned plan-critic + 4 staff-review lenses but DID NOT spawn `/flow:security-review` + `/flow:accessibility-review`. Skipped by author judgment ("they'd early-exit on docs-only anyway"). User caught: "were the ship reviews run?" — they hadn't been. **This is itself the FB-0010 silent-skip class applied to workflow discipline (not code).** The 9th FB-0010 incident, and a new sub-class (workflow-step-skip vs code-edge-skip). Per workflow.md Step 10 (the "Never bypass `/flow:ship`" subsection added by PR I — formerly framed under Step 6 in pre-PR-I plan prose) + FB-0008/FB-0033, the discipline is to ALWAYS spawn the reviewers — they produce a `STATUS: SKIPPED` log line in the session transcript as evidence the discipline ran, NOT silent-skip the spawn itself. Make-good: ran both retroactively (security: STATUS SKIPPED no source/config in diff; a11y: STATUS SKIPPED no UI in diff). Defense: `/flow:ship` Step 1.0 already prints the workflow-step assumption surface (which lists security/a11y). Strengthen that surface to either (a) auto-spawn the reviewers if missing or (b) require an explicit author confirmation that they ran. Owner: domain. Horizon: PR H proper or next `/flow:ship`-touching PR. Promote at next /flow:ship feedback synthesis since this is now a 3rd-time-recurring discipline shape: PR F-pass-1 (gawk-only awk = portability silent-skip), PR H1 zsh-vs-bash (word-splitting silent-skip), PR H1 workflow-spawn-skip (judgment silent-skip).
 
 ---
 

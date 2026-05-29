@@ -153,6 +153,7 @@ Open `CLAUDE.md`, `README.md`, `flow.config.json`, `.claude/rules/safety.md` and
 
 In `flow.config.json`: remove the `$comment-*` keys (they're docs for the bootstrap reader) and verify each slot value matches your project's reality:
 - `typecheckCmd` matches your `package.json` `scripts.typecheck` (or `tsc --noEmit` if no script). **Trust model:** this slot is shell-executed by `/flow:ship` and `/flow:staff-review` (via `sh -c`), at the same trust level as `package.json` `scripts` or pre-commit hooks. Treat your committed `flow.config.json` with the same care.
+- `preflightCmd` (optional but recommended) names a composite check — typecheck + lint + fast tests — that `/flow:ship` runs at Step 1c BEFORE invoking reviewers. On non-zero exit, the skill enters a bounded-retry loop (N≤3 total invocations, with diff-hash oscillation detection) to fix the failure and re-run. The loop only fires on this externally-verifiable exit signal; reviewer outputs at Step 2 are deliberately single-pass. Same trust model as `typecheckCmd`. Examples: `npm run preflight`, `npm run typecheck && npm run lint && npm test -- --bail`. Tip: point this at a FAST subset (typecheck + lint + critical tests); leave the full suite to CI. A 5-minute preflight × 3 retries = 15 minutes worst case.
 - `defaultBranch` matches your repo's primary branch.
 - Doc paths point to where you actually put `core-docs/`.
 - `uiSurface: false` if your project has no UI (set explicitly so `/flow:accessibility-review` skips early).
