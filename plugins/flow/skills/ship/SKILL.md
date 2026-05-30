@@ -8,7 +8,20 @@ description: >
   roadmap, spec, feedback) with the rationale, commits, pushes, and opens
   a PR. Never merges. Trigger phrases: "ship it", "ship this", "/flow:ship",
   "push and open the PR", "wrap this up".
-disable-model-invocation: true
+  AUTO-INVOCATION (autonomous-loop trigger): you MAY invoke this yourself at
+  the end of the loop ONLY when the ship-readiness predicate holds — every
+  spec-walk checkbox in the approved plan is checked; /simplify and
+  /flow:staff-review left no open BLOCKER; no load-bearing assumption is
+  unresolved at MEDIUM or LOW confidence; and a behavioral gate exists and is
+  green (i.e. /flow:verify-build would return overall_verdict PASS — NOT merely
+  "didn't fail"). If ANY of FB-0011's escalation triggers hold — unclear path,
+  significant risk, competing options of comparable merit, or a one-way-door
+  decision — do NOT auto-invoke: present findings and wait (workflow.md Step 8).
+  NEVER auto-invoke when verify-build is skipped (platform library/none, or a
+  doc-only diff) — there is no behavioral gate, so those require an explicit
+  "ship it" from the user. The plan and merge gates are untouched: this never
+  starts before an approved plan and never merges.
+disable-model-invocation: false
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Agent, Skill
 ---
 

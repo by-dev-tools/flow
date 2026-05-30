@@ -24,6 +24,61 @@ After PR H2 ships: user installs flow at v1.2.5 across md-manager + health-track
 - **PR K1 (this PR) — `dev-docs/reserved-feedback-numbers.md`** — claim-time defense for the FB-collision class. Tiny docs-only PR; no code change; doesn't ship in plugin install (`dev-docs/` is project-dev only). Mechanical enforcement (`/flow:doctor` Check 6 FB-collision check vs origin/main + `lens-staff-engineer.md` FB-cross-file hunt addition) folds into PR K.
 - **User-scope `~/.claude/settings.json` still has stale `extraKnownMarketplaces.llm-auditor`** key. Cosmetic; doesn't block.
 - **Md-manager PR 5 (dogfood)** still pending; separate worktree.
+- **PR S (this PR) — Autonomous ship-readiness trigger** in flight on `claude/auto-ship-readiness-trigger` (off `origin/main` @ `efd31c4`). Delivers the **autonomous-invocation-wiring half** of the originally-sketched PR L, decoupled from PR L's red-team/trust-boundary half (which depends on PR K). Only dependency — `/flow:verify-build` — already shipped (v1.3.0), so it sequences ahead of PR K/L. Parallel to a docs/config-correction PR on `claude/nice-lamarr-3c30c0` (README skill-order + auto/manual table + workflow.md version sweep + 14→21 example config); that PR ships independently via `/flow:ship`.
+
+## PR S — Autonomous ship-readiness trigger (in flight)
+
+**Mode:** feature | **Priority: high** (load-bearing for the autonomous-loop direction)
+**Branch:** `claude/auto-ship-readiness-trigger` (off `origin/main` @ `efd31c4`)
+**Goal:** Let the agent invoke `/flow:ship` on its own when a change is mechanically confirmed ready and low-risk, so the loop runs unattended between the two human gates (plan approval, merge) instead of requiring the user to type "ship it" at Step 8 Present. Ship still never merges — the merge gate is untouched.
+
+**Why this PR exists:** The two load-bearing gates are plan + merge (`workflow.md`; `dynamic-workflows-2026-05.md:100` "a human at both ends"). `ship` carries `disable-model-invocation: true` set in PR 1 (v1.0.0) as a blanket conservative default and never revisited toward the stated autonomy direction (FB-0011 memory: "direction is 'toward' full autonomy ... staged is correct"). Auto-invoking `ship` does NOT violate the merge gate (ship opens a PR, never merges). The mechanical readiness signal already exists: `/flow:verify-build` emits `overall_verdict` + `exit_code` (Unknown ⇒ exit 1 ⇒ ESCALATE per FB-0011), and `ship` Step 2 already halts the pipeline on `exit_code: 1`. What's missing is the *trigger* that decides "ready + low-risk → fire ship" vs "escalate → pause at Present." This is the "explicit success criteria + mechanical stopping condition" the research (`agent-orchestration-2026-05.md`) names as the precondition for autonomous coding.
+
+**Scope (in):**
+- **Readiness predicate** (deterministic, evaluated at end of Step 7/8): all spec-walk checkboxes checked; no open BLOCKERs from `/simplify` + `/flow:staff-review`; no unresolved MEDIUM/LOW-confidence load-bearing assumptions; preflight green.
+- **Risk gate** applying FB-0011 1:1: auto-advance only when aligned-with-spec + low-risk; **ESCALATE to Present** on any of {unclear path, significant risk, competing comparable options, one-way-door}.
+- **Loop wiring:** Step 8 "Present" becomes *conditional* — auto-advance into `/flow:ship` when predicate + risk gate pass; else pause and present (current behavior).
+- Flip `disable-model-invocation: true → false` on `ship`, **paired** with the trigger discipline (a portable rule encoding the predicate) so the model can't fire ship arbitrarily. Decide same for `ship-spike`.
+- Ship's existing mechanical gates remain the safety net (stale-base, Step 1c bounded-retry preflight, Step 2 verify-build Unknown/FAIL-blocking). A falsely-confident auto-advance is caught by verify-build `exit_code: 1` → halt → present, pre-PR.
+- Doc/contract updates: `workflow.md` Step 8 rewrite + Confidence-gates cross-ref; README auto/manual table (`ship` row MANUAL → conditional-AUTO); FB-0010 fan-out sweep on the `ship` invocation contract.
+
+**Scope (out):**
+- PR K `/flow:red-team` + trust-boundary detector + AUTO-FIX-SAFE routing for security findings — the *other* autonomous gate; stays PR L, independent.
+- Any change to the plan gate or merge gate (both stay hard human gates).
+- Hard Stop-hook enforcing the predicate (enforcement stays "soft"; hook deferred per `plan.md` v1.x autonomous-routines line).
+- **Auto-ship when `verify-build` is skipped** (`verifyEnabled=false`, `platform=library|none`, or doc-only diff): **stays MANUAL in v1** (user decision 2026-05-29). No behavioral gate ⇒ default-to-ESCALATE per FB-0011. Auto-ship kicks in only on a real behavioral PASS.
+
+**Spec-walk:**
+- [ ] Readiness predicate documented in `workflow.md` Step 8, each condition independently checkable. (verify: read rewritten step)
+- [ ] Risk gate maps 1:1 to FB-0011's four ESCALATE triggers. (verify: cross-check `feedback.md` FB-0011 + `feedback_autonomy_bar.md`)
+- [ ] Skipped-verify-build path explicitly stays MANUAL. (verify: predicate requires `overall_verdict: PASS`, not merely "verify-build didn't fail")
+- [ ] `ship` frontmatter `disable-model-invocation: false`; ship appears in the model's invocable skill set. (verify: grep + skill-list)
+- [ ] A portable rule encodes the predicate + escalation so it's enforced as guidance. (verify: rule file present + auto-load glob)
+- [ ] README auto/manual table + `workflow.md` consistent on the `ship` invocation contract (no survivors of "ship = MANUAL"). (verify: `git grep` sweep)
+- [ ] Dogfood: low-risk change auto-ships without "ship it" typed; risky change (injected MEDIUM assumption) escalates to Present; verify-build Unknown halts pre-PR even after auto-advance.
+
+**Confidence verdicts:**
+- **Assumption:** The readiness predicate need not be perfect because verify-build is the load-bearing gate; the predicate only decides whether to *enter* ship, which re-confirms. **Confidence:** HIGH. **Why:** verify-build already provides the hard mechanical gate. **If it flips:** if predicate quality were the gate this would be unsafe — but it isn't (ship Step 2 catches it).
+- **Assumption:** Flipping the flag + soft rule guidance suffices without a Stop-hook. **Confidence:** MEDIUM — flagged at Step 8 Present per the loop. **Why:** consistent with current soft-enforcement posture; model could over-eagerly advance. **If it flips:** add the deferred Stop-hook as a follow-up; doesn't change this PR's shape.
+
+**Risks / open questions:**
+- **One-way-door:** flipping `disable-model-invocation` is a real autonomy increase. Mitigated by verify-build hard gate + merge staying human; reversible (flip back).
+- **Reward-hacking the predicate** (model marks checkboxes done without real work — the Potemkin class). Architecture leans on verify-build's adversarial behavioral check, not self-report.
+
+**Files touched (anticipated):**
+- `plugins/flow/skills/ship/SKILL.md` (frontmatter flag; readiness preamble)
+- `plugins/flow/skills/ship-spike/SKILL.md` (decision pending in-PR)
+- `plugins/flow/docs/workflow.md` (Step 8 rewrite + Confidence-gates cross-ref)
+- `plugins/flow/rules/*.md` (new readiness-predicate rule)
+- `README.md` (auto/manual table: `ship` row)
+- `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` (version bump — confirm at ship)
+- `dev-docs/{plan.md,history.md,feedback.md}` at ship time
+
+**Staff-review FOLLOW-UPs (PR S, 2026-05-30 — captured, not fixed in-PR):**
+- **Stale `Co-Authored-By: Claude Opus 4.7` in `plugins/flow/skills/ship/SKILL.md` commit template** (~line 342). Pre-existing; newly relevant because the auto-ship path will stamp it on unattended commits. One-line hygiene fix, next ship-pipeline touch.
+- **No dogfood / eval coverage for the auto-advance / escalate / verify-build-Unknown-halt behaviors.** Evals confirm nothing *broke*, not that the new escalate path *works*. The verify-build hard gate makes the predicate non-load-bearing for safety, so this is a confidence item, not a blocker. Owner: testing, next iteration.
+- **Invocation-mode label fragments across surfaces** (`AUTO·when-ready` / "auto-invocable" / "conditional gate" / "auto-advance"). Core predicate/gate vocabulary is consistent; only the mode *noun* drifts. Pin one canonical term with a glossary line in `workflow.md`, docs hygiene pass.
+- Two push-further items routed to `roadmap.md` (Next: ship Step 2 auto-entry assertion; § Exploration: Stop-hook enforcement).
 
 ## SPIKE (DONE 2026-05-28) — Does blind independent refutation cut the reviewer false-positive tax?
 
