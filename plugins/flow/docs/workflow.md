@@ -4,7 +4,7 @@ How features get built and shipped under flow's managed-autonomy loop. **Project
 
 This is the long-form narrative. Each invoked skill carries its own short-form instructions; this doc is the reference for *why* the loop has the shape it has and *how* the gates compose.
 
-## Shipped surface (flow v1.3.0)
+## Shipped surface (flow v1.4.0)
 
 Everything described in the loop below is shipped and installable today. The full user-visible surface:
 
@@ -209,7 +209,7 @@ Auto-advance into `/flow:ship` **only when ALL hold**:
 1. **Every spec-walk checkbox in the approved plan is checked** — the plan is fully satisfied, not partially.
 2. **No open BLOCKER** from `/simplify` (Step 6) or `/flow:staff-review` (Step 7).
 3. **No load-bearing assumption is unresolved at MEDIUM or LOW confidence** (see § "Confidence gates").
-4. **A behavioral gate exists and is green** — `/flow:verify-build` would return `overall_verdict: PASS`. Note: "verify-build didn't FAIL" is **not** sufficient. If verify-build is *skipped* (`verifyEnabled=false`, `platform=library|none`, or a doc-only diff), there is **no** behavioral gate, so the predicate is **not** satisfied — those changes stop and present, requiring an explicit "ship it".
+4. **A behavioral gate exists and returns PASS.** `/flow:verify-build` would return `overall_verdict: PASS` — a *positive* behavioral pass. **"verify-build didn't FAIL" is NOT sufficient, and skipped ≠ ready.** If verify-build is skipped (`verifyEnabled=false`, `platform=library|none`, or a doc-only diff) there is **no** behavioral gate, so the predicate is **not** satisfied — those changes stop and present, requiring an explicit "ship it". (This is FB-0018: the readiness signal must be a positive PASS, never absence-of-failure.)
 
 ### Risk gate (FB-0011)
 
@@ -237,7 +237,7 @@ User responds with feedback. Claude addresses it — code changes, doc updates, 
 
 ## 10. /flow:ship
 
-User says "ship it" (or `/flow:ship`). Claude runs the ship pipeline (full spec: `plugins/flow/skills/ship/SKILL.md`):
+Claude **auto-advances here from Step 8** when the ship-readiness predicate holds and the FB-0011 risk gate is clear (see § "8. Present (conditional gate)"), **or** the user says "ship it" (or `/flow:ship`). Either way, Claude runs the ship pipeline (full spec: `plugins/flow/skills/ship/SKILL.md`):
 
 1. Final-pass reviews in sequence: `/flow:security-review` + `/flow:accessibility-review` + `/flow:verify-build`. Each self-detects skip conditions (security: doc-only; a11y: `uiSurface=false` or non-UI diff; verify-build: `verifyEnabled=false` or `platform=library|none`). Verify-build is the runtime gate — it wraps bundled `/verify` with plan-driven criteria + Unknown-blocking judgment, catching the Potemkin-interface / hallucinated-success class no static reviewer catches. **Verify-build exit_code=1 (FAIL or Unknown verdict) halts the pipeline at this step.** Single-pass per FB-0012 — no retry loop on judge output.
 2. Apply blocker / cheap-nit fixes; re-run Preflight (`flow.config.json.typecheckCmd`) if code changed. Loud warning if the slot is unset.
@@ -417,7 +417,7 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / MANUAL (you type it; c
 | `/simplify` | Cold-read changed code for reuse, clarity, efficiency; fix in-tree | After commit, before staff-review | — | bundled (Claude Code) |
 | `/flow:staff-review` | Four-lens parallel review (engineer / UX / design-engineer / push-further) | After `/simplify`, before presenting | BOTH | flow |
 | `/flow:audit-completion` | Audit "done / fixed / ready" claims for false-verification proxies | After Claude declares completion, before trusting it | MANUAL | flow |
-| `/flow:ship` | Final-pass reviews (security + a11y + verify-build) + doc updates + commit + push + PR (no merge) | When the user says "ship it" | MANUAL | flow |
+| `/flow:ship` | Final-pass reviews (security + a11y + verify-build) + doc updates + commit + push + PR (no merge) | Auto-advances from Step 8 when the readiness predicate holds; else user says "ship it" | AUTO·when-ready | flow |
 | `/flow:security-review` | Diff-focused security audit | Inside `/flow:ship`; also standalone | BOTH | flow |
 | `/flow:accessibility-review` | Diff-focused WCAG 2.1 AA audit | Inside `/flow:ship`; also standalone | BOTH | flow |
 | `/flow:verify-build` | Plan-driven behavioral verification: extract criteria from `**Spec-walk:**` checkboxes, adversarial transform, judge bundled `/verify`'s observations per dimension, block ship on Unknown | Inside `/flow:ship` Step 2 + `/flow:ship-spike` Step 2; also standalone mid-iterate | BOTH | flow |

@@ -74,6 +74,12 @@ After PR H2 ships: user installs flow at v1.2.5 across md-manager + health-track
 - `.claude-plugin/marketplace.json` + `plugins/flow/.claude-plugin/plugin.json` (version bump — confirm at ship)
 - `dev-docs/{plan.md,history.md,feedback.md}` at ship time
 
+**Staff-review FOLLOW-UPs (PR S, 2026-05-30 — captured, not fixed in-PR):**
+- **Stale `Co-Authored-By: Claude Opus 4.7` in `plugins/flow/skills/ship/SKILL.md` commit template** (~line 342). Pre-existing; newly relevant because the auto-ship path will stamp it on unattended commits. One-line hygiene fix, next ship-pipeline touch.
+- **No dogfood / eval coverage for the auto-advance / escalate / verify-build-Unknown-halt behaviors.** Evals confirm nothing *broke*, not that the new escalate path *works*. The verify-build hard gate makes the predicate non-load-bearing for safety, so this is a confidence item, not a blocker. Owner: testing, next iteration.
+- **Invocation-mode label fragments across surfaces** (`AUTO·when-ready` / "auto-invocable" / "conditional gate" / "auto-advance"). Core predicate/gate vocabulary is consistent; only the mode *noun* drifts. Pin one canonical term with a glossary line in `workflow.md`, docs hygiene pass.
+- Two push-further items routed to `roadmap.md` (Next: ship Step 2 auto-entry assertion; § Exploration: Stop-hook enforcement).
+
 ## SPIKE (DONE 2026-05-28) — Does blind independent refutation cut the reviewer false-positive tax?
 
 **Status: COMPLETE.** Ran as a dynamic workflow over `template/base/bootstrap.sh` (3 stances → 15 findings → self-disproof vs blind-refute verification). **Verdict: do NOT encode blind refutation** — it rubber-stamped 15/15 while self-disproof refuted 5/15, because the FP bottleneck is *significance* judgment (which blindness strips), not *verification*. PR J's self-disproof stays. Full verdict + adjudication in `history.md` ("Reviewer-refutation spike — verdict").

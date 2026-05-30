@@ -47,6 +47,12 @@ After the K/L (Track 1) + N/O/P (Track 2) sequences ship, AND in parallel with t
 
 - **PR Q** (in flight on `claude/lucid-matsumoto-730ba0` — orthogonal to all of K/L/N/O/P/R; not queued behind any of them) — `/flow:verify-build` skill: plan-driven behavioral verification gate at `/flow:ship` Step 2. Wraps bundled `/verify` (and transitively `/run` + `/run-skill-generator`) with flow-specific orchestration — criteria extracted from `**Spec-walk:**` checkboxes, adversarial transformation, per-dimension parallel judges with Unknown-blocking gate, structured findings buffer routed to `/flow:ship` Step 4a. Closes the static-analysis-only gap in the loop's verification surface (Potemkin-interface / hallucinated-success class). Inherits PR M's FB-0012 bounded-retry contract for any future retry primitive. Per-PR plan: [`dev-docs/handoffs/pr-q-verify-build-plan.md`](handoffs/pr-q-verify-build-plan.md). **Phases 1–9 complete (full skill + lib + fixtures + ship + ship-spike + doctor + workflow + bootstrap + migration + schema); Phase 10 staff-review dogfood in progress; Phase 11 ship + manifest v1.3.0 next.** Different files than K/L/N/O/P/R; rebases cleanly in either order. FB-0015 (check bundled first) captures the discipline lesson.
 
+### Make `/flow:ship` Step 2 auto-entry-aware so the verify-build precondition becomes a mechanical assertion (post-PR-S, push-further roadmap-concrete)
+
+**Surfaces when:** `plugins/flow/skills/ship/SKILL.md`'s auto-invocation contract is touched again, OR a consumer reports an auto-ship that opened a PR on a `platform=library|none` / `verifyEnabled=false` project where the Step 8 predicate should have stopped it.
+
+PR S's auto-ship relies on ship Step 2's verify-build (`exit_code:1` on FAIL/Unknown) as the mechanical net, but Step 2 behaves identically whether ship was auto-entered or typed — it can't *assert* the Step 8 predicate's "verify-build PASS / not-skipped" precondition actually held. For code diffs the net is real (Unknown blocks); the thin spot is the genuinely-skipped case (`verifyEnabled=false` / `platform=library|none`), where Step 2 skips verify-build entirely, so a mis-judged auto-advance there would open a PR with no behavioral gate. Direction: write a one-line auto-entry breadcrumb at Step 8 (a `--auto` arg or a `/tmp` flag) and have ship Step 2 hard-fail-to-present when `auto-entered AND verify-build skipped`. Cost ~ one flag write + one conditional + one eval fixture. Out of scope for the PR-S flag-flip (adds a control-flow contract); the right shape once auto-ship has dogfood miles.
+
 ### Verify-build HTML case-study report (PR R successor candidate, post-PR-Q)
 
 **Surfaces when:** consumer reports they want a richer pre-merge review artifact than the structured-buffer + PR-body checklist PR Q ships, OR PR Q's findings-buffer JSON schema gains a stable consumer-validated shape.
@@ -73,6 +79,12 @@ After the K/L (Track 1) + N/O/P (Track 2) sequences ship, AND in parallel with t
 ## § Exploration
 
 Items surfaced by `/flow:staff-review`'s push-further lens, consumer dogfood, or research passes. These don't have a concrete shape yet — they describe a direction worth investigating when relevant code is touched. Each entry includes a **`Surfaces when:`** trigger naming the file paths or area that should re-surface the item, so the auto-loading `exploration` rule can grep this section for trigger matches.
+
+### Stop-hook enforcement for the Step 8 ship-readiness predicate (post-PR-S, push-further exploration)
+
+**Surfaces when:** `plugins/flow/skills/ship/SKILL.md`'s auto-invocation contract is widened to a currently-skipped platform (per FB-0018's "applies to"), OR a consumer reports an auto-ship that fired when the predicate should have stopped it, OR `plugins/flow/hooks/default-hooks.json` gains a Stop hook for any other reason.
+
+PR S deliberately keeps the Step 8 predicate as *guidance* (rule + skill description), with verify-build as the only mechanical backstop — correct ceiling for a flag-flip PR. A Stop-hook is the lever that would make the predicate genuinely non-bypassable (the model can't talk past a hook), but it's a different surface and out of scope. This entry records that the soft-enforcement model was a deliberate choice, not an oversight, so a future widening session doesn't reinvent the question.
 
 ### Rule-of-three: `flow:close-out` skill abstraction for umbrella tracker hygiene
 
