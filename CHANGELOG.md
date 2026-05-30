@@ -10,6 +10,19 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.4.0 — 2026-05-30
+
+**`/flow:ship` is now auto-invocable — the autonomous-loop trigger (human gates stay at plan + merge).**
+
+- `/flow:ship` frontmatter `disable-model-invocation` flipped `true → false`. The agent auto-advances from Step 8 into the ship pipeline when the **ship-readiness predicate** holds — every spec-walk checkbox checked, no open BLOCKER from `/simplify` or `/flow:staff-review`, no unresolved MEDIUM/LOW-confidence assumption, and `/flow:verify-build` would return PASS (not merely "didn't fail") — AND the FB-0011 risk gate is clear (no unclear path / significant risk / competing comparable options / one-way-door). Otherwise it stops and presents.
+- `plugins/flow/docs/workflow.md` Step 8 rewritten as a **conditional gate**; `plugins/flow/rules/general.md` adds a workflow-discipline bullet encoding the trigger.
+- **Stays manual:** when `/flow:verify-build` is skipped (`platform` `library`/`none`, or a doc-only diff) there is no behavioral gate, so those still require an explicit "ship it"; `/flow:ship-spike` keeps `disable-model-invocation: true` (spikes are user-initiated by nature).
+- The two load-bearing human gates — **plan approval (Step 2)** and **merge (Step 11)** — are untouched. Ship still never merges.
+
+**Breaking changes:** none. Additive — typing `/flow:ship` / saying "ship it" works exactly as before; the new path is autonomous advance only once a driven loop reaches Step 8 with a green predicate. It never starts from a cold request. Reviewer/skill output schemas unchanged.
+
+> **Note:** v1.2.6 (bounded-retry mechanical preflight) and v1.3.0 (`/flow:verify-build`) shipped without CHANGELOG entries — backfill tracked as a follow-up.
+
 ## v1.2.5 — 2026-05-27
 
 **Adversarial sharpening of the reviewer pipeline (PR J; research-grounded — see Anthropic's "adversarial review step" best-practice + CriticGPT recall results).**

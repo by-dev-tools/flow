@@ -27,7 +27,7 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 
 **The loop itself:** [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md) — canonical 11 steps with rationale, gate semantics, spike/tiny modes, config-slot reference.
 
-## What v1.3.0 ships
+## What v1.4.0 ships
 
 ### Workflow surface (12 user-visible skills)
 
@@ -36,8 +36,9 @@ Listed in **loop order** — top to bottom is the sequence you move through. The
 - **AUTO** — fires by itself when its trigger condition is met; you never type it.
 - **MANUAL** — never fires on its own; you type it. (These carry `disable-model-invocation: true`, so Claude can't self-invoke them either — only you can.)
 - **BOTH** — you can type it, *and* it runs when `/flow:ship` calls it or a matching phrase + a diff-to-review triggers it. Won't cold-start on a bare "build me X".
+- **AUTO·when-ready** — `/flow:ship` only (new in v1.4.0). Auto-advances from Step 8 *at the end of a driven loop* when the ship-readiness predicate holds (every spec-walk box checked, no open BLOCKER, no unresolved MEDIUM/LOW assumption, `/flow:verify-build` would return PASS) and the FB-0011 risk gate is clear; otherwise you type it / say "ship it". Never auto-advances when verify-build is skipped (library/none platform, doc-only diff), and never on a cold start.
 
-> **⚠️ Cold-start reality — read this if you won't be typing commands.** Install flow, open a session, and just say "build me X" with no slash commands, and **only the auto-loading rules attach** — workflow-discipline *guidance* in Claude's context that nudges it to plan-before-coding and wait for your approval. That nudge is the entire automatic footprint. **No audit, plan critique, staff/security/a11y review, verify-build, or ship pipeline runs until you (or a phrase trigger) invoke it**, and the plugin registers no hooks by default. The two highest-value safety layers — `/flow:critique-plan` at the plan gate and the whole `/flow:ship` pipeline at the end — are MANUAL by design and will not start themselves. Enforcement is *soft* (see [Known limitations](#known-limitations-tune-points-not-blockers)). Flow is a typed-command toolkit with a thin auto-loaded guidance layer, not a loop that drives itself.
+> **⚠️ Cold-start reality — read this if you won't be typing commands.** Install flow, open a session, and just say "build me X" with no slash commands, and **only the auto-loading rules attach** — workflow-discipline *guidance* in Claude's context that nudges it to plan-before-coding and wait for your approval. That nudge is the entire automatic footprint. **No audit, plan critique, staff/security/a11y review, verify-build, or ship pipeline runs from a cold "build me X" until you (or a phrase trigger) invoke it**, and the plugin registers no hooks by default. `/flow:critique-plan` at the plan gate is MANUAL by design. As of v1.4.0, `/flow:ship` *does* auto-advance — but only after the loop has been driven all the way to Step 8 with a green readiness predicate; it still won't start itself from a cold request. The human gates that never move are **plan approval** (Step 2) and **merge** (Step 11). Enforcement is otherwise *soft* (see [Known limitations](#known-limitations-tune-points-not-blockers)).
 
 | Step | Skill | Fires | What it does |
 |---|---|---|---|
@@ -47,7 +48,7 @@ Listed in **loop order** — top to bottom is the sequence you move through. The
 | 2 · plan gate | **`/flow:audit-plan`** | MANUAL | Evidence-auditor: unverified assumptions + unverified recall in the most recent plan. Complements critique-plan; run both at the gate. |
 | 7 · review | **`/flow:staff-review`** | BOTH | Four parallel lenses (engineer / UX-designer / design-engineer / push-further), each a plugin-shipped agent. Triages BLOCKER / NIT / FOLLOW-UP / EXPLORATION; fixes inline. |
 | ~8 · present | **`/flow:audit-completion`** | MANUAL | Evidence-auditor: false-verification proxies (build passed ≠ behavior verified) on a "done / fixed / ready" claim. |
-| 10 · ship | **`/flow:ship`** | MANUAL | The pipeline: final-pass reviews → BLOCKER/NIT fixes → synthesize feedback (user + agent-memory layers) → update docs → commit → push → open PR. **Never merges.** Type it or say "ship it". |
+| 10 · ship | **`/flow:ship`** | AUTO·when-ready | The pipeline: final-pass reviews → BLOCKER/NIT fixes → synthesize feedback (user + agent-memory layers) → update docs → commit → push → open PR. **Never merges.** Auto-advances from Step 8 when the readiness predicate holds (v1.4.0); else type it / say "ship it". |
 | 10 · nested | **`/flow:security-review`** | BOTH | Diff-focused security audit (XSS, secrets, unsafe URL handling, path traversal, dependency risk, persistence leakage). Runs inside `/flow:ship`; early-exits on doc-only diffs. |
 | 10 · nested | **`/flow:accessibility-review`** | BOTH | Diff-focused WCAG 2.1 AA audit. Runs inside `/flow:ship`; early-exits on `uiSurface=false` or non-UI diffs. |
 | 10 · nested | **`/flow:verify-build`** | BOTH | Plan-driven behavioral gate: extracts spec-walk criteria, adversarially tests the built artifact via bundled `/verify`, **blocks ship on a FAIL/Unknown verdict**. Runs inside `/flow:ship`; needs `verifyEnabled` + `platform` set. |
@@ -84,12 +85,12 @@ Listed in **loop order** — top to bottom is the sequence you move through. The
 | 5 | **Commit** — explain "why", per phase | Claude | — |
 | 6 | **`/simplify`** — cold-read for reuse / clarity / efficiency (bundled with Claude Code, not a flow skill) | Claude | — |
 | 7 | **`/flow:staff-review`** — four-lens review; fix blockers + cheap nits inline | Claude | — |
-| 8 | **Present** — reviewer notes + branch state, **no PR yet**; MEDIUM-confidence assumptions surfaced | Claude | **you decide** — say "ship it", or give feedback (→ Step 9) |
+| 8 | **Present (conditional gate)** — reviewer notes + branch state, **no PR yet**; MEDIUM-confidence assumptions surfaced | Claude | **auto-advances into `/flow:ship`** when the readiness predicate holds + risk gate clear; **else stops** — you redirect, resolve, or say "ship it" |
 | 9 | **Iterate** — apply your feedback (sub-loop of 1–7) | Claude | starts only when you give feedback |
-| 10 | **`/flow:ship`** — runs `/flow:security-review` + `/flow:accessibility-review` + `/flow:verify-build`, synthesizes feedback, updates docs, commits, pushes, opens the PR | you type it / "ship it" | verify-build FAIL/Unknown halts the pipeline (mechanical) |
+| 10 | **`/flow:ship`** — runs `/flow:security-review` + `/flow:accessibility-review` + `/flow:verify-build`, synthesizes feedback, updates docs, commits, pushes, opens the PR | auto-invoked from Step 8 when ready, or you type it | verify-build FAIL/Unknown halts the pipeline (mechanical) |
 | 11 | **STOP** — Claude never runs `gh pr merge` | you | **GATE 2 — you merge.** |
 
-Once you approve the plan, Steps 3–8 run as one continuous Claude-driven stretch — the only stop inside it is a red Preflight. Then it waits at Present (Step 8). `/flow:ship` runs its whole pipeline autonomously once you invoke it, then stops at the open PR. So the human touchpoints are exactly: **approve the plan → react at Present → merge the PR.**
+Once you approve the plan, Steps 3–8 run as one continuous Claude-driven stretch — the only stop inside it is a red Preflight. At Step 8, if the ship-readiness predicate holds and the risk gate is clear, it **auto-advances into `/flow:ship`** (v1.4.0); otherwise it stops and presents for you to redirect or say "ship it". `/flow:ship` runs its whole pipeline autonomously, then stops at the open PR. So in the autonomous path the human touchpoints shrink to exactly the two load-bearing gates: **approve the plan → merge the PR.**
 
 Long-form with rationale for every step, gate semantics, spike/tiny mode escapes, and config-slot defaults: [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md).
 
