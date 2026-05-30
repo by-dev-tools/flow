@@ -48,9 +48,10 @@ The user's request kicks the loop off (input, not a Claude step). From there:
                      designer / design engineer / push-further); fix
                      BLOCKER + cheap NIT in-tree; FOLLOW-UP → roadmap /
                      plan; EXPLORATION → roadmap.md § Exploration; commit
- 8. Present          reviewer notes + dev URL (project's dev-server skill,
-                     not flow-provided) + branch state; NO PR yet; flag
-                     MEDIUM-confidence assumptions for user redirect
+ 8. Present          CONDITIONAL GATE: auto-advance into /flow:ship when the
+        (gate)       ship-readiness predicate holds + FB-0011 risk gate clear;
+                     else stop, present reviewer notes + dev URL + branch state
+                     (NO PR yet) + why it stopped, flag MEDIUM assumptions
  9. Iterate          apply user feedback (sub-loop of 1–7)
 10. /flow:ship       security + a11y + verify-build final pass → feedback synthesis
                      → doc updates → commit → push → open PR
@@ -197,15 +198,38 @@ Findings triaged:
 
 **Don't skip a lens** because a human gave a visual opinion or because another lens already ran. AI review and human opinion catch different things; the four lenses cover distinct surfaces. The only legitimate skip is when a lens genuinely doesn't apply (e.g., a backend-only change has nothing for the design-engineer or push-further lens) — in that case say so explicitly rather than running an empty review.
 
-## 8. Present
+## 8. Present (conditional gate)
 
-Claude returns:
+Step 8 is where the loop decides between two paths: **auto-advance into `/flow:ship`** (autonomous) or **stop and present** (human-in-the-loop). The decision is a predicate, not a vibe.
+
+### Ship-readiness predicate
+
+Auto-advance into `/flow:ship` **only when ALL hold**:
+
+1. **Every spec-walk checkbox in the approved plan is checked** — the plan is fully satisfied, not partially.
+2. **No open BLOCKER** from `/simplify` (Step 6) or `/flow:staff-review` (Step 7).
+3. **No load-bearing assumption is unresolved at MEDIUM or LOW confidence** (see § "Confidence gates").
+4. **A behavioral gate exists and is green** — `/flow:verify-build` would return `overall_verdict: PASS`. Note: "verify-build didn't FAIL" is **not** sufficient. If verify-build is *skipped* (`verifyEnabled=false`, `platform=library|none`, or a doc-only diff), there is **no** behavioral gate, so the predicate is **not** satisfied — those changes stop and present, requiring an explicit "ship it".
+
+### Risk gate (FB-0011)
+
+Even when the predicate holds, **stop and present** if any of FB-0011's escalation triggers apply: the path forward is unclear, significant risk remains, competing options of comparable merit exist, or the decision is one-way-door. Default to ESCALATE when in doubt — a false stop costs the user a moment of attention; a false auto-advance can open a PR built on a wrong call. (`/flow:ship` never merges, so the cost is bounded — but the merge gate is not a license to auto-advance carelessly.)
+
+### Auto-advance path
+
+When the predicate holds and the risk gate is clear, Claude invokes `/flow:ship` directly (Step 10) without waiting for "ship it". This is the autonomous-loop trigger — the loop runs unattended between the two load-bearing human gates (plan approval at Step 2, merge at Step 11). `/flow:ship`'s own mechanical gates (stale-base, Step 1c preflight, Step 2 verify-build Unknown/FAIL-blocking) remain the safety net: a falsely-confident auto-advance is caught there and halts pre-PR.
+
+### Stop-and-present path
+
+When the predicate fails or the risk gate trips, Claude returns:
 - Reviewer notes (findings, what was fixed, what was deferred and where).
 - The dev server URL — flow does not bundle a dev-server skill; invoke your project's equivalent (e.g., a `/link`-style skill) if one exists.
 - The branch and commit state. **No PR exists yet** — that's `/flow:ship`'s job.
-- **Any MEDIUM-confidence assumptions from the plan that turned out to be load-bearing** — surface them now (this is the step-8 redirect window) so the user can redirect before `/flow:ship` locks the PR.
+- **Why it stopped** — which predicate condition failed, or which FB-0011 trigger applied. **Any MEDIUM-confidence assumptions that turned out to be load-bearing** surface here (the step-8 redirect window) so the user can redirect before `/flow:ship` locks the PR.
 
-**Never merged.** The whole point of review is the human hand-off.
+The user then redirects, resolves the open item, or says "ship it" to proceed.
+
+**Never merged, either path.** The whole point is the human hand-off at merge.
 
 ## 9. Iterate
 
@@ -320,7 +344,7 @@ Every plan must declare confidence per load-bearing assumption. The trigger for 
 | Level | Meaning | Effect on the loop |
 |---|---|---|
 | **HIGH** | The assumption is well-supported by docs, prior decisions, or unambiguous user direction. Proceed normally. | Plan can be approved; Execute proceeds on user OK. |
-| **MEDIUM** | Reasonable assumption but a different choice was defensible. The plan works either way; the specific solution might not. | Plan can be approved; **the assumption is flagged in step 8 (Present)** so the user can redirect before `/flow:ship` locks the PR. |
+| **MEDIUM** | Reasonable assumption but a different choice was defensible. The plan works either way; the specific solution might not. | Plan can be approved; **an unresolved MEDIUM assumption blocks Step 8 auto-advance** — the loop stops and presents it for redirect rather than auto-invoking `/flow:ship` (see § "8. Present (conditional gate)"). |
 | **LOW** | A load-bearing assumption could flip the entire approach. Examples: ambiguous user intent, unresolved spec, conflicting prior decisions, unknown user preference on a one-way-door choice. | **Automatic human gate. The plan cannot proceed.** Surface the question to the user in step 2 and wait for an explicit answer that resolves the assumption (which then becomes HIGH or MEDIUM). `/flow:critique-plan` should treat LOW-confidence plans as REDIRECT findings; the human gate is the actual enforcement. |
 
 ### How to write a confidence verdict
