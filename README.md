@@ -27,23 +27,32 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 
 **The loop itself:** [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md) — canonical 11 steps with rationale, gate semantics, spike/tiny modes, config-slot reference.
 
-## What v1.2.5 ships
+## What v1.3.0 ships
 
-### Workflow surface (11 user-visible skills)
+### Workflow surface (12 user-visible skills)
 
-| Skill | What it does |
-|---|---|
-| **`/flow:ship`** | Final-pass pipeline: workflow-step assumption surface → stale-base preflight → gh+jq fail-fast → security-review → accessibility-review → BLOCKER/NIT fixes → synthesize feedback (user + agent-memory layers) → update docs → commit → push → open PR. Never merges. |
-| **`/flow:ship-spike`** | Lightweight pipeline for spike-mode PRs. Same pre-flight gates as `/flow:ship`; skips heavy reviews; writes history.md entry (the deliverable); opens `spike`-labeled PR. |
-| **`/flow:staff-review`** | Four parallel lenses (engineer / UX-designer / design-engineer / push-further), each a separate plugin-shipped agent. Triages BLOCKER / NIT / FOLLOW-UP / EXPLORATION; fixes inline; routes follow-ups. |
-| **`/flow:security-review`** | Diff-focused security audit (XSS, secrets, unsafe URL handling, path traversal, dependency risk, persistence leakage). Per-diff early-exit on doc-only PRs via `flow.config.json.sourceFilePatterns`. |
-| **`/flow:accessibility-review`** | Diff-focused WCAG 2.1 AA audit. Two early-exit gates: project-wide `uiSurface=false`, and per-diff via `flow.config.json.uiFilePatterns`. |
-| **`/flow:workflow-help`** | Prints the 11-step loop + your project's resolved `flow.config.json` slots + skill catalog. Onboarding front door. |
-| **`/flow:doctor`** | Verification punch-list for a project's flow setup. Use after bootstrap or any time something feels off. |
-| **`/flow:critique-plan`** | Plan-critic: scope drift / spec violation / internal incoherence against the user's request and reference docs. |
-| **`/flow:audit-plan`** | Evidence-auditor: unverified assumptions + unverified recall in the most recent plan. |
-| **`/flow:audit-completion`** | Evidence-auditor: false-verification proxies (build passed ≠ behavior verified) on completion claims. |
-| **`/flow:log-disagreement`** | Auto-invoked when the user pushes back on a finding; captures the dispute for prompt-tuning input. |
+Listed in **loop order** — top to bottom is the sequence you move through. The **Fires** column is the part most newcomers miss: it says what runs on its own vs what you have to type.
+
+- **AUTO** — fires by itself when its trigger condition is met; you never type it.
+- **MANUAL** — never fires on its own; you type it. (These carry `disable-model-invocation: true`, so Claude can't self-invoke them either — only you can.)
+- **BOTH** — you can type it, *and* it runs when `/flow:ship` calls it or a matching phrase + a diff-to-review triggers it. Won't cold-start on a bare "build me X".
+
+> **⚠️ Cold-start reality — read this if you won't be typing commands.** Install flow, open a session, and just say "build me X" with no slash commands, and **only the auto-loading rules attach** — workflow-discipline *guidance* in Claude's context that nudges it to plan-before-coding and wait for your approval. That nudge is the entire automatic footprint. **No audit, plan critique, staff/security/a11y review, verify-build, or ship pipeline runs until you (or a phrase trigger) invoke it**, and the plugin registers no hooks by default. The two highest-value safety layers — `/flow:critique-plan` at the plan gate and the whole `/flow:ship` pipeline at the end — are MANUAL by design and will not start themselves. Enforcement is *soft* (see [Known limitations](#known-limitations-tune-points-not-blockers)). Flow is a typed-command toolkit with a thin auto-loaded guidance layer, not a loop that drives itself.
+
+| Step | Skill | Fires | What it does |
+|---|---|---|---|
+| pre-loop | **`/flow:workflow-help`** | BOTH | Prints the 11-step loop + your resolved `flow.config.json` slots + skill catalog. Auto-fires on "what's the workflow?". Onboarding front door. |
+| pre-loop | **`/flow:doctor`** | BOTH | Setup PASS/FAIL/WARN punch-list ending in a `[READY]` verdict. Auto-fires on "is flow set up right?" / "skills not showing up". Run after bootstrap. |
+| 2 · plan gate | **`/flow:critique-plan`** | MANUAL | Plan-critic: scope drift / spec violation / internal incoherence vs your request + reference docs. Type it at the plan gate. |
+| 2 · plan gate | **`/flow:audit-plan`** | MANUAL | Evidence-auditor: unverified assumptions + unverified recall in the most recent plan. Complements critique-plan; run both at the gate. |
+| 7 · review | **`/flow:staff-review`** | BOTH | Four parallel lenses (engineer / UX-designer / design-engineer / push-further), each a plugin-shipped agent. Triages BLOCKER / NIT / FOLLOW-UP / EXPLORATION; fixes inline. |
+| ~8 · present | **`/flow:audit-completion`** | MANUAL | Evidence-auditor: false-verification proxies (build passed ≠ behavior verified) on a "done / fixed / ready" claim. |
+| 10 · ship | **`/flow:ship`** | MANUAL | The pipeline: final-pass reviews → BLOCKER/NIT fixes → synthesize feedback (user + agent-memory layers) → update docs → commit → push → open PR. **Never merges.** Type it or say "ship it". |
+| 10 · nested | **`/flow:security-review`** | BOTH | Diff-focused security audit (XSS, secrets, unsafe URL handling, path traversal, dependency risk, persistence leakage). Runs inside `/flow:ship`; early-exits on doc-only diffs. |
+| 10 · nested | **`/flow:accessibility-review`** | BOTH | Diff-focused WCAG 2.1 AA audit. Runs inside `/flow:ship`; early-exits on `uiSurface=false` or non-UI diffs. |
+| 10 · nested | **`/flow:verify-build`** | BOTH | Plan-driven behavioral gate: extracts spec-walk criteria, adversarially tests the built artifact via bundled `/verify`, **blocks ship on a FAIL/Unknown verdict**. Runs inside `/flow:ship`; needs `verifyEnabled` + `platform` set. |
+| 10 · spike | **`/flow:ship-spike`** | MANUAL | Lightweight ship for `mode: spike` PRs. Same pre-flight gates; skips heavy reviews; writes the `history.md` entry (the deliverable); opens a `spike`-labeled PR. |
+| cross-cutting | **`/flow:log-disagreement`** | AUTO | The one self-firing skill: when you dispute a finding from an audit/critique in plain language, it captures the pushback for prompt-tuning. Needs a prior finding in the conversation to dispute. |
 
 ### Supporting surface
 
@@ -64,9 +73,23 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 
 ## The loop
 
-11 steps, 2 human gates:
+11 steps. It **pauses for you in three places** (two load-bearing human gates + one conditional gate); everything in between flows on its own once you approve.
 
-> **Clarify → Plan (gate) → Execute → Preflight → Commit → `/simplify` → `/flow:staff-review` → Present → Iterate → `/flow:ship` → User merges (gate)**
+| # | Step | Who drives | Pause for you? |
+|---|---|---|---|
+| 1 | **Clarify** — read source-of-truth docs; ask 2–4 questions (or list assumptions) | Claude | — |
+| 2 | **Plan** — spec-walk checkboxes + confidence verdict; you type `/flow:critique-plan` + `/flow:audit-plan` | Claude + you (reviewers are MANUAL) | **GATE 1 — you approve the plan.** **GATE 3** halts even earlier on any LOW-confidence assumption until you answer it. |
+| 3 | **Execute** — implement against the checkboxes | Claude | — |
+| 4 | **Preflight** — typecheck / build / test must be green | Claude | pauses if red (mechanical, not a human gate) |
+| 5 | **Commit** — explain "why", per phase | Claude | — |
+| 6 | **`/simplify`** — cold-read for reuse / clarity / efficiency (bundled with Claude Code, not a flow skill) | Claude | — |
+| 7 | **`/flow:staff-review`** — four-lens review; fix blockers + cheap nits inline | Claude | — |
+| 8 | **Present** — reviewer notes + branch state, **no PR yet**; MEDIUM-confidence assumptions surfaced | Claude | **you decide** — say "ship it", or give feedback (→ Step 9) |
+| 9 | **Iterate** — apply your feedback (sub-loop of 1–7) | Claude | starts only when you give feedback |
+| 10 | **`/flow:ship`** — runs `/flow:security-review` + `/flow:accessibility-review` + `/flow:verify-build`, synthesizes feedback, updates docs, commits, pushes, opens the PR | you type it / "ship it" | verify-build FAIL/Unknown halts the pipeline (mechanical) |
+| 11 | **STOP** — Claude never runs `gh pr merge` | you | **GATE 2 — you merge.** |
+
+Once you approve the plan, Steps 3–8 run as one continuous Claude-driven stretch — the only stop inside it is a red Preflight. Then it waits at Present (Step 8). `/flow:ship` runs its whole pipeline autonomously once you invoke it, then stops at the open PR. So the human touchpoints are exactly: **approve the plan → react at Present → merge the PR.**
 
 Long-form with rationale for every step, gate semantics, spike/tiny mode escapes, and config-slot defaults: [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md).
 

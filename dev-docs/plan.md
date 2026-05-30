@@ -2,7 +2,9 @@
 
 ## Current Focus
 
-**PRs 1-3 + A-I + J all merged.** Plugin at **v1.2.5** on `main` (PR J squash `2e8ab3c`). Consumer-feedback umbrella complete + FB-0010 consistency-discipline encoded + workflow-spawn-skip prevention live + upgrade infrastructure docs shipped + **adversarial sharpening of the reviewer pipeline live**.
+**Plugin at v1.3.0 on `main`** (verify-build behavioral gate shipped; v1.2.6 bounded-retry preflight before it). Consumer-feedback umbrella complete + FB-0010 consistency-discipline encoded + workflow-spawn-skip prevention live + upgrade infrastructure docs shipped + adversarial reviewer sharpening live + runtime behavioral verification live.
+
+**Docs/config correction PR in flight** (`claude/nice-lamarr-3c30c0`, off `main`) — README skill catalog reordered into loop order + auto/manual `Fires` column + cold-start honesty note + `/flow:verify-build` row + v1.2.5→v1.3.0 header; `workflow.md` de-staled (`Bootstrap status v1.0.0` → `Shipped surface v1.3.0`, all PR-2/PR-3 markers stripped); `flow.config.json.example` expanded 14→21 slots. No version bump (docs/config at root). **Stacked sibling: `claude/auto-ship-readiness-trigger`** (PR S — auto-ship trigger) rebases onto this once merged.
 
 **PR H2 in flight** (`pr-h2/upgrade-cadence-softening`, off `main` — rebased onto PR J's v1.2.5 squash after a parallel-PR collision) — copy-only fix for `docs/upgrade.md` after user-feedback catch ("do I need to do this after every session? every update? or just major updates?"). PR H1's prescription was too aggressive — "When to run it" table treated every trigger as equally important. New table differentiates major/minor/patch bumps, marks patch as optional + batchable. Also corrects a factual error: PR H1 said multi-project ritual must run "per-session" because the catalog cache is "per-session"; actually it's per-machine for user-scope installs. **No version bump** — docs-at-root, same precedent as PR H1.
 

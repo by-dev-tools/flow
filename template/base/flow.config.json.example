@@ -7,6 +7,9 @@
   "$comment-typecheckCmd": "Shell command to run as the project's typecheck (after review fixes land). Run via sh -c, not eval. UNSET → /flow:ship prints a loud ⚠️ warning rather than silently skipping.",
   "typecheckCmd": "npm run typecheck",
 
+  "$comment-preflightCmd": "Shell command for the project's mechanical preflight (typecheck + lint + fast tests; project owns the composition). Run via sh -c at /flow:ship Step 1c + /flow:ship-spike Step 1c with bounded fix-and-retry (N≤3). UNSET → loud ⚠️ warning, pipeline proceeds. Typical convention: node tools/preflight/check.mjs.",
+  "preflightCmd": "node tools/preflight/check.mjs",
+
   "$comment-paths": "Doc paths used by /flow:ship for synthesis and by the reviewers for grounding. Defaults below are the consumer convention (core-docs/). Flow's own repo overrides to dev-docs/.",
   "historyPath": "core-docs/history.md",
   "planPath": "core-docs/plan.md",
@@ -21,6 +24,10 @@
   "$comment-uiSurface": "Whether this project ships a UI. If false, /flow:accessibility-review exits early instead of running an empty audit. Backend / CLI / library projects: set to false.",
   "uiSurface": true,
 
+  "$comment-diff-patterns": "Extended-regex (grep -E) patterns for per-diff early-exit. sourceFilePatterns: /flow:security-review skips a diff with no source files (docs-only PR). uiFilePatterns: /flow:accessibility-review skips a diff with no UI files. Both ship sensible cross-language defaults in the schema — set ONLY to override for an unusual project. Shown here so you know they exist.",
+  "sourceFilePatterns": "\\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\\.|$)",
+  "uiFilePatterns": "\\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$",
+
   "$comment-reviewLenses": "Which /flow:staff-review lenses spawn in parallel. Removing a lens means it won't run — document why in your plan doc.",
   "reviewLenses": ["staff-engineer", "ux-designer", "design-engineer", "push-further"],
 
@@ -29,6 +36,12 @@
 
   "$comment-branchPrefix": "Conventional prefix for feature branches created by /flow:ship and /flow:ship-spike. Common: 'claude/', 'feature/', 'fix/'. Empty disables.",
   "branchPrefix": "claude/",
+
+  "$comment-verify-build": "Controls /flow:verify-build, the runtime behavioral-verification gate at /flow:ship Step 2 (v1.3.0). platform: hint for skip-path decisions — 'library'/'none' self-skips (no runnable target); web/ios/android/tauri/cli run the verify pass; UNSET → bundled /run autodetects. verifyEnabled: project-wide on/off. verifyBudgetCalls: tool-call cap before unjudged verdicts are forced to Unknown (which gates ship). NOTE: requires a /run launch recipe — run /run-skill-generator once per project (doctor Check 5.3 surfaces the gap).",
+  "platform": "web",
+  "verifyEnabled": true,
+  "verifyFindingsPath": "/tmp/flow-verify-findings.json",
+  "verifyBudgetCalls": 60,
 
   "$comment-rustWorkspaceDir": "(Tauri / Rust stacks only — omit on pure web / swift / non-Rust projects.) Directory holding your Cargo workspace. Default 'src-tauri' is the Tauri convention; non-Tauri Rust projects set '.' (workspace at root) or the subdir name.",
   "rustWorkspaceDir": "src-tauri"
