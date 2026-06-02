@@ -39,6 +39,34 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### `extract_session.py` session-discovery fix — reviewers were context-starved from worktree / dotted-path cwds (v1.4.2) SAFETY
+**Date:** 2026-06-02
+**Branch:** `fix/extract-session-cwd-slug` (off `main` @ `4f5fba6` v1.4.0; rebased onto `9117c3a` v1.4.1 at ship — version bumped 1.4.1→1.4.2 after the parallel PR #32 took 1.4.1)
+**Commit:** `fix/extract-session-cwd-slug` (squash SHA filled at merge)
+
+**What was done:**
+Fixed `find_session_file` / `slugify_cwd` in `plugins/flow/scripts/extract_session.py` so the audit/critique reviewers actually locate the current session transcript. Two changes: (1) the cwd→`~/.claude/projects/<dir>` encoding now replaces **every** non-ASCII-alphanumeric character with `-` (matching Claude Code), not just `/`; (2) discovery first tries an exact match via the `CLAUDE_CODE_SESSION_ID` env var (validated to `[A-Za-z0-9_-]+` before it reaches the glob), falling back to the corrected cwd-slug, then to graceful `None`. Bumped v1.4.1 → v1.4.2 (plugin.json + marketplace.json ×2), CHANGELOG v1.4.2 entry, README + workflow.md "shipped surface" headers, and a new regression fixture `plugins/flow/evals/security/test_session_discovery.py`.
+
+**Why:**
+Discovered while verifying PR T / Facet 5 (reviewer skills made auto-invocable). Model-invoking `/flow:audit-plan` forked correctly but the forked auditor returned *"session file not found for this working directory"* and audited nothing. Root cause: `slugify_cwd` replaced only `/`, but Claude Code names its project dir by replacing `/` **and** `.` (and `_`, spaces) with `-`. So `/Users/.../flow/.claude/worktrees/<wt>` → CC writes `...flow--claude-worktrees...` while the script looked for `...flow-.claude-...` → directory miss → silent context starvation. This fires for **every** `.claude/worktrees/` dev session (i.e. all of flow's own dogfooding) and any consumer project under a dotted path. It is invocation-mode-independent (hand-typed slash command hit it identically), so it predates and is orthogonal to Facet 5 — but it would have made the newly auto-invocable reviewers hollow exactly where they're first exercised.
+
+**Design decisions:**
+- **Prefer `CLAUDE_CODE_SESSION_ID` over slug reconstruction.** Empirically the env var is exported into the skill `!`-backtick substitution subprocess (verified live: with the slug deliberately broken, the model-invoked auditor still returned grounded context — only the session-id path could have resolved it). It pinpoints the *exact* current session rather than newest-by-mtime in the cwd's dir, eliminating a latent wrong-session-audit risk in shared-cwd cases. Kept as best-effort primary (exactly-one-match or fall through) so it never degrades the slug path.
+- **Corrected slug stays as deterministic fallback.** The env var is undocumented; the slug fallback (now matching CC's full encoding, unit-proven against the real dir name) guarantees correctness even if the var ever disappears.
+
+**Technical decisions:**
+- Encoding implemented as `re.sub(r"[^0-9A-Za-z]", "-", cwd).lstrip("-")`. Verified it reproduces the real on-disk dir name exactly, plus dotted/`_`/space cases. Confirmed against CC behavior via empirical project-dir inspection + claude-code-guide (replaces all non-alphanumerics; preserves hyphens; no dash collapsing).
+- `_find_session_by_id` validates `session_id` to `[A-Za-z0-9_-]+` (fullmatch) before globbing `~/.claude/projects/*/<id>.jsonl`, and returns the file only on a unique match.
+
+**Tradeoffs discussed:**
+- **Scope: fold into Facet 5 vs. separate PR.** Chose a standalone bug-fix PR (user decision) — the bug is pre-existing, invocation-mode-independent, and benefits all reviewer usage, so it deserves its own focused review + fixture rather than riding inside Facet 5's flag-flip. Facet 5 then ships onto a verified-working reviewer path.
+- **session-id-only vs. layered.** Rejected session-id-only (undocumented var ⇒ no guarantee) and slug-only (leaves the wrong-session-in-shared-cwd risk). Layered primary+fallback gets exactness when available and determinism always.
+
+**SAFETY:** `extract_session.py` is on the safety-critical paths list (silent failure starves reviewers without surfacing an error). Preserved: malformed-JSONL skip, empty-session / no-turns / no-plan `emit_cannot_audit` fallbacks, and the explicit-`--session-file` override path (eval harness) — all unchanged. The change only *adds* a more-correct primary lookup and *widens* the encoding the fallback understands; the graceful-`None` terminal behavior is intact. Safety-history pre-check (`git log -5 -- extract_session.py`) showed no prior crash/fallback commits on the file. New fixture asserts the graceful-`None` case so a future refactor can't silently drop it. **Security-review (red-team lens) caught a glob-injection BLOCKER** in the new `_find_session_by_id`: `session_id` was interpolated straight into `Path.glob(f"*/{session_id}.jsonl")`, so a tampered/malformed `CLAUDE_CODE_SESSION_ID` (e.g. `*`, `[a-z]*`, `../…`) could wildcard-match or traverse to other transcripts. External exploitability is low (the env var isn't attacker-reachable without prior code execution), but the value flows into a filesystem glob and this file already takes a defense-in-depth stance (the `gather_reference_docs` cwd constraint), so it was fixed: `session_id` is now validated to `[A-Za-z0-9_-]+` (UUIDs pass; any path/glob metacharacter → `None` → cwd-slug fallback). A Case-4 injection fixture asserts five metachar/traversal payloads all resolve to `None`; a Case-5 fixture asserts the ambiguous `>1 match` guard returns `None`.
+
+**Lessons learned:**
+- "Reload the plugin in a fresh session" was insufficient to verify Facet 5: a session loads the *installed cache*, not the worktree source — and the cache slug bug then masked the real fork-path behavior. Verifying preprocessing scripts live requires patching the cache copy (scripts run per-invocation, so no restart needed) and exercising the actual skill `!`-substitution context, not just `--session-file`.
+
 ### Flow-run PR descriptions — per-step `## Flow run` table replaces `## Reviews` (v1.4.1)
 **Date:** 2026-06-01
 **Branch:** `claude/epic-northcutt-2d5e88` (commit at push time; off `origin/main` @ `4f5fba6`)

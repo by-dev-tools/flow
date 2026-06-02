@@ -4,7 +4,7 @@ How features get built and shipped under flow's managed-autonomy loop. **Project
 
 This is the long-form narrative. Each invoked skill carries its own short-form instructions; this doc is the reference for *why* the loop has the shape it has and *how* the gates compose.
 
-## Shipped surface (flow v1.4.1)
+## Shipped surface (flow v1.4.2)
 
 Everything described in the loop below is shipped and installable today. The full user-visible surface:
 
