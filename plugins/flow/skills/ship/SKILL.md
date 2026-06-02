@@ -365,8 +365,8 @@ The PR base branch is resolved via this fallback chain:
 
   ## Flow run
   Each loop step — ran or skipped (mode-dependent) — and any significant
-  decision or finding it produced. Leave the note "—" when routine; don't
-  force it.
+  decision or finding it produced. `✓` = ran, `—` = nothing notable; resolve
+  every `<...>` placeholder (pick one side of an `a / b`) before publishing.
 
   | Step | Status | Notable |
   |---|---|---|
@@ -374,11 +374,11 @@ The PR base branch is resolved via this fallback chain:
   | Plan + /flow:critique-plan | ✓ | <critic findings that changed the plan / —> |
   | Execute | ✓ | <load-bearing impl decisions / —> |
   | Preflight | ✓ | green / <what ran> |
-  | /simplify | ✓ · skipped (spike/tiny) | <what collapsed / —> |
-  | /flow:staff-review | ✓ · skipped (spike/tiny) | <BLOCKERs fixed, real findings / —> |
-  | /flow:security-review | ✓ · skipped (<reason>) | <result / —> |
-  | /flow:accessibility-review | ✓ · skipped (<reason>) | <result / —> |
-  | /flow:verify-build | ✓ · skipped (<reason>) | <overall_verdict / —> |
+  | /simplify | <✓ / skipped (spike·tiny)> | <what collapsed / —> |
+  | /flow:staff-review | <✓ / skipped (spike·tiny)> | <BLOCKERs fixed, real findings / —> |
+  | /flow:security-review | <✓ / skipped (reason)> | <result / —> |
+  | /flow:accessibility-review | <✓ / skipped (reason)> | <result / —> |
+  | /flow:verify-build | <✓ / skipped (reason)> | <overall_verdict / —> |
   | Doc synthesis | ✓ | <docs updated> |
 
   Deferred follow-ups: see the configured roadmap and plan docs.

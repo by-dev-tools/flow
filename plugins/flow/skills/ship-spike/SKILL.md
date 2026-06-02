@@ -264,7 +264,8 @@ proceed | pivot | abandon — <one-line reasoning>
 
 ## Flow run
 Spike mode runs a trimmed loop. Each step — ran or skipped — with any signal it
-produced; "—" when routine. (Full per-step guidance: `/flow:ship` §7.)
+produced; `—` when routine. Resolve every `<...>` placeholder before publishing.
+(Full per-step guidance: `/flow:ship` §7.)
 
 | Step | Status | Notable |
 |---|---|---|
@@ -274,7 +275,7 @@ produced; "—" when routine. (Full per-step guidance: `/flow:ship` §7.)
 | Preflight | ✓ | green / <what ran> |
 | /simplify | skipped (spike) | — |
 | /flow:staff-review | skipped (spike) | — |
-| /flow:verify-build | ✓ · skipped (<reason>) | <3-check spike-rubric result / —> |
+| /flow:verify-build | <✓ / skipped (reason)> | <3-check spike-rubric result / —> |
 
 ## Full writeup
 See the history doc entry "Spike: <title>".

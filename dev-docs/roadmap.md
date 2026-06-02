@@ -73,12 +73,19 @@ PR S's auto-ship relies on ship Step 2's verify-build (`exit_code:1` on FAIL/Unk
 - **End-to-end `/flow:ship` regression coverage.** Currently zero fixtures for the workflow skills; verification is dogfood-only. A small fixture project under `evals/` that exercises one ship pipeline in CI would catch the runtime-permission class (FB-0002) before it ships.
 - **CHANGELOG.md extraction from manifest descriptions** — both plugin + marketplace descriptions are at ~1500 chars after each version cumulative sentence; extracting to CHANGELOG.md reference would relieve the bloat. Worth doing before v1.2.7 to stop the trend (engineer + auditor lens convergence on PR M).
 - **Doctor Check 2.5 generalization** — currently scans `CLAUDE.md / README.md / docs / core-docs / dev-docs` for stale `N slots` references; PR M's BLOCKER (template/ files missed) validates extending to scan `template/` too. Also worth generalizing beyond slot count to skill count / lens count / rule count / version strings (per PR G FOLLOW-UP #2). Bundle into PR N or the next doctor-touching PR.
+- **`## Flow run` skip-vocabulary consistency check** (PR T staff-review FOLLOW-UP) — the skip-reason vocabulary (`skipped (spike)` / `skipped (tiny)` / `uiSurface:false` / `verifyEnabled:false` / `platform library|none`) + the `<✓ / skipped (reason)>` Status-cell shape now live in `/flow:ship` §7, `/flow:ship-spike` §7, and (by reference) the dev-side `.claude/skills/ship`. PR T guards drift with a one-PR spec-walk grep; the durable fix is a `/flow:doctor` check that diffs the skip-reason token set + Status-cell convention across those surfaces. Net-new check; fold into the Check 2.5 generalization above. **Surfaces when:** the `## Flow run` table wording is edited in any ship skill.
 
 ---
 
 ## § Exploration
 
 Items surfaced by `/flow:staff-review`'s push-further lens, consumer dogfood, or research passes. These don't have a concrete shape yet — they describe a direction worth investigating when relevant code is touched. Each entry includes a **`Surfaces when:`** trigger naming the file paths or area that should re-surface the item, so the auto-loading `exploration` rule can grep this section for trigger matches.
+
+### Cross-run aggregation of `## Flow run` tables — the loop reflecting on itself (PR T, push-further exploration)
+
+**Surfaces when:** `plugins/flow/skills/ship/SKILL.md` §7 (`## Flow run`) is touched again, OR any future loop-telemetry / `/flow:doctor` cross-PR-analysis work begins.
+
+PR T (v1.4.1) makes each ship emit structured per-step self-documentation on its PR — but every table is born and dies with one PR; nothing ever reads them back. The latent value the structure creates: noticing patterns across runs ("`/simplify` has shown `—` on the last 8 PRs — is it earning its step?"; "verify-build skipped 6 runs straight — is `verifyEnabled` mis-set?"). Open question: is there a low-cost way to make the tables aggregatable (e.g. `/flow:doctor` scanning the project's own merged-PR bodies via `gh`) **without** introducing the per-session machine-readable loop-history artifact PR T deliberately declined (FB-0015 over-build check / FB-0019 "in-session context only")? Touches retention/parsing/privacy questions with no clear shape yet. Do NOT pull into a PR until the shape clarifies — the in-session-only decision is correct for current scope.
 
 ### Stop-hook enforcement for the Step 8 ship-readiness predicate (post-PR-S, push-further exploration)
 

@@ -255,6 +255,23 @@ Claude **auto-advances here from Step 8** when the ship-readiness predicate hold
 
 The PR body has three sections: `## Summary`, `## Test plan`, and `## Flow run`. The `## Flow run` table is the loop's self-documentation — one row per loop step (Clarify → Plan+critique → Execute → Preflight → /simplify → /flow:staff-review → security/a11y/verify-build → Doc synthesis), each marked `✓` (ran) or `skipped (<reason>)`, with a **Notable** cell carrying genuine signal (a plan-critic catch that changed the plan, a load-bearing decision, a fixed BLOCKER, a real review finding) or `—` when routine. The ship agent fills it from the session's loop history; it is instructed **not to manufacture notes** — an honest `—` beats invented filler. Skips are mode- and config-dependent and the reason is always named, so a reader can tell a legitimate skip from a missed step (the canonical per-step skip-reason list lives in `/flow:ship` §7). The table only *points at* deferred follow-ups — those stay canonical in the roadmap/plan docs (it never becomes their home; see Step 7 + the anti-pattern below). `/flow:ship-spike` writes a trimmed version of the same table (fewer rows; /simplify + /flow:staff-review pre-marked `skipped (spike)`).
 
+A filled `## Flow run` for a docs-only change on a library project (no UI surface, no runnable target) looks like:
+
+| Step | Status | Notable |
+|---|---|---|
+| Clarify | ✓ | — |
+| Plan + /flow:critique-plan | ✓ | critic flagged a stale spec cross-ref; fixed in-plan |
+| Execute | ✓ | — |
+| Preflight | ✓ | green |
+| /simplify | ✓ | collapsed two near-duplicate helper sections |
+| /flow:staff-review | ✓ | 1 NIT fixed inline; 1 FOLLOW-UP → roadmap |
+| /flow:security-review | skipped (doc-only) | — |
+| /flow:accessibility-review | skipped (uiSurface:false) | — |
+| /flow:verify-build | skipped (platform library) | — |
+| Doc synthesis | ✓ | history + plan + CHANGELOG |
+
+Note the bottom three rows: each names *why* it skipped, so the reader sees a legitimate config/mode skip rather than wondering whether a gate was missed.
+
 ### Never bypass `/flow:ship` with `gh pr create` directly (FB-0010 workflow-step sub-class)
 
 `/flow:ship` is not just "the thing that opens the PR" — it's the orchestrator that spawns `/flow:security-review` + `/flow:accessibility-review` (Step 1 above), synthesizes feedback into both layers, updates the project docs, and only THEN opens the PR. Running `gh pr create` directly skips all of that.
