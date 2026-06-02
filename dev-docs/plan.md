@@ -12,6 +12,7 @@ After PR H2 ships: user installs flow at v1.2.5 across md-manager + health-track
 
 ## Handoff Notes
 
+- **PR T (Flow-run PR descriptions) in flight** on `claude/epic-northcutt-2d5e88` (off `origin/main` @ `4f5fba6`) — [PR #32](https://github.com/by-dev-tools/flow/pull/32), v1.4.0→v1.4.1, NOT merged (awaiting human merge gate). Full loop dogfooded: critique-plan (1 REDIRECT resolved) → simplify → staff-review (1 BLOCKER + 1 triangulated NIT fixed; 3 FOLLOW-UPs routed to roadmap). Two roadmap follow-ups added (doctor skip-vocab check → Later; cross-run table aggregation → § Exploration). NOTE: `gh pr edit` errors on this repo (projects-classic GraphQL deprecation) — used `gh api -X PATCH .../pulls/N -f body=...` to set the PR body.
 - **PR I shipped** at squash `da0b2c4` on 2026-05-27; v1.2.4 workflow-spawn-skip prevention live.
 - **PR H1 shipped** at squash `1a1cc12` on 2026-05-27; docs/upgrade.md + CHANGELOG.md live.
 - **PR J shipped** at squash `2e8ab3c` on 2026-05-27; v1.2.5 adversarial sharpening of reviewer pipeline live.
@@ -48,19 +49,19 @@ After PR H2 ships: user installs flow at v1.2.5 across md-manager + health-track
 - Any change to which steps run / gate semantics. This PR is descriptive only.
 
 **Spec-walk:**
-- [ ] `/flow:ship` §7 has a `## Flow run` table replacing `## Reviews`; Summary + Test plan retained. (verify: read §7)
-- [ ] Instruction text encodes all mode/config skip rules: spike (skips /simplify + staff-review), tiny (skips spec-walk + /simplify + staff-review), a11y skip on `uiSurface:false` or non-UI diff, security skip on doc-only, verify-build skip on `verifyEnabled:false`/`platform library|none`. (verify: grep §7 for each)
-- [ ] **Plan-critic REDIRECT resolved:** the "not-yet-shipped" wording is NOT the primary skip reason for security/a11y/verify-build — in v1.4.x all three ship and run (`ship/SKILL.md:215-217`), so their real skip reasons are the runtime-config states above. "not yet shipped" appears ONLY as a clearly-conditional generic fallback for a step genuinely absent from the *reader's installed flow version*. Writing "skipped — not yet shipped" for a step that actually ran would be the inverse of the user's honesty intent. (verify: read §7 — the not-yet-shipped clause is conditional, not applied to v1.4.x reviewers)
-- [ ] Instruction explicitly says Notable = genuine signal only, routine → `—`, and "do not manufacture notes". (verify: read)
-- [ ] Instruction preserves doctrine: follow-ups canonical in roadmap/plan; PR never merged by Claude. (verify: read)
+- [x] `/flow:ship` §7 has a `## Flow run` table replacing `## Reviews`; Summary + Test plan retained. (verify: read §7)
+- [x] Instruction text encodes all mode/config skip rules: spike (skips /simplify + staff-review), tiny (skips spec-walk + /simplify + staff-review), a11y skip on `uiSurface:false` or non-UI diff, security skip on doc-only, verify-build skip on `verifyEnabled:false`/`platform library|none`. (verify: grep §7 for each)
+- [x] **Plan-critic REDIRECT resolved:** the "not-yet-shipped" wording is NOT the primary skip reason for security/a11y/verify-build — in v1.4.x all three ship and run (`ship/SKILL.md:215-217`), so their real skip reasons are the runtime-config states above. "not yet shipped" appears ONLY as a clearly-conditional generic fallback for a step genuinely absent from the *reader's installed flow version*. Writing "skipped — not yet shipped" for a step that actually ran would be the inverse of the user's honesty intent. (verify: read §7 — the not-yet-shipped clause is conditional, not applied to v1.4.x reviewers)
+- [x] Instruction explicitly says Notable = genuine signal only, routine → `—`, and "do not manufacture notes". (verify: read)
+- [x] Instruction preserves doctrine: follow-ups canonical in roadmap/plan; PR never merged by Claude. (verify: read)
 - [x] `.claude/skills/ship/SKILL.md` Step 4 carries the `## Flow run` convention. **REVISED after staff-review BLOCKER:** the dev-side `/ship` is a distinct 6-step push+PR+**merge** command that orchestrates none of the loop's review steps — embedding the full table there produced a structurally-un-fillable artifact (the FB-0019 sub-rule (a) failure mode). Resolution: replaced the embedded table with a *conditional reference* to `/flow:ship` §7 ("if this PR came out of a driven loop, add a `## Flow run` table — see §7") + a note that the table documents the session's loop, not this skill's steps. Honors CLAUDE.md's distinct-surfaces convention (the user's "reconcile per CLAUDE.md" escape hatch). (verify: read .claude/skills/ship/SKILL.md Step 4)
-- [ ] `/flow:ship-spike` Step 7 has the trimmed `## Flow run` table with /simplify + staff-review pre-marked `skipped (spike)`. (verify: read)
-- [ ] `plugins/flow/docs/workflow.md` §10 + spike section narrate the `## Flow run` PR shape. (verify: read)
-- [ ] Version bumped to 1.4.1 in both manifests (3 version fields) + README header + CHANGELOG v1.4.1 entry; no `1.4.0`→`1.4.1` fan-out survivors that should have changed. (verify: `git grep -nE '1\.4\.0'` — surviving hits are historical references only)
+- [x] `/flow:ship-spike` Step 7 has the trimmed `## Flow run` table with /simplify + staff-review pre-marked `skipped (spike)`. (verify: read)
+- [x] `plugins/flow/docs/workflow.md` §10 + spike section narrate the `## Flow run` PR shape. (verify: read)
+- [x] Version bumped to 1.4.1 in both manifests (3 version fields) + README header + CHANGELOG v1.4.1 entry; no `1.4.0`→`1.4.1` fan-out survivors that should have changed. (verify: `git grep -nE '1\.4\.0'` — surviving hits are historical references only)
 - [x] **FB-0010 skip-vocabulary fan-out (plan-critic FOLLOW-UP):** after the simplify trim + staff-review BLOCKER fix, the authoritative skip-reason vocabulary lives in only TWO copies — `ship/SKILL.md` §7 and `ship-spike/SKILL.md` §7 (workflow.md §10 was trimmed to a pointer; the dev-side `/ship` now references §7 rather than copying). Ran the grep sweep — strings consistent across both authoritative copies. Durable `/flow:doctor` check routed to roadmap § Later. (verify: `git grep` sweep — done)
 - [x] **Staff-review (4 lenses) ran:** 1 BLOCKER (dev-side un-fillable table — FIXED, see above), 1 NIT triangulated by engineer+UX+design-engineer (`✓ · skipped` Status cell read as "both" — FIXED: switched to `<✓ / skipped (reason)>` placeholder matching the Notable column + glyph-binding lead-in), 3 FOLLOW-UPs (worked filled example — DONE inline in workflow.md §10; doctor skip-vocab check → roadmap Later; cross-run aggregation → roadmap § Exploration). Push-further verdict: "surface at ceiling for its scope" + one exploration entry.
-- [ ] `claude plugin validate .` clean.
-- [ ] FB-0019 claimed in `reserved-feedback-numbers.md` before drafting; entry written; `dev-docs/history.md` entry written.
+- [x] `claude plugin validate .` clean.
+- [x] FB-0019 claimed in `reserved-feedback-numbers.md` before drafting; entry written; `dev-docs/history.md` entry written.
 
 **Confidence verdicts:**
 - **Assumption:** The ship agent has THIS session's full loop history in context at ship time, so it can populate the table without a new machine-readable artifact. **Confidence:** HIGH. **Why:** the agent already writes Summary + Test plan from in-session context; the loop steps happened in the same session/branch. **If it flips:** the table degrades to best-effort (some `—` where signal existed) — non-fatal, never wrong, just less rich; a structured loop-log artifact becomes a follow-up.
