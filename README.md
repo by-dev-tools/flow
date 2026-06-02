@@ -27,7 +27,7 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 
 **The loop itself:** [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md) — canonical 11 steps with rationale, gate semantics, spike/tiny modes, config-slot reference.
 
-## What v1.4.0 ships
+## What v1.4.1 ships
 
 ### Workflow surface (12 user-visible skills)
 
@@ -48,7 +48,7 @@ Listed in **loop order** — top to bottom is the sequence you move through. The
 | 2 · plan gate | **`/flow:audit-plan`** | MANUAL | Evidence-auditor: unverified assumptions + unverified recall in the most recent plan. Complements critique-plan; run both at the gate. |
 | 7 · review | **`/flow:staff-review`** | BOTH | Four parallel lenses (engineer / UX-designer / design-engineer / push-further), each a plugin-shipped agent. Triages BLOCKER / NIT / FOLLOW-UP / EXPLORATION; fixes inline. |
 | ~8 · present | **`/flow:audit-completion`** | MANUAL | Evidence-auditor: false-verification proxies (build passed ≠ behavior verified) on a "done / fixed / ready" claim. |
-| 10 · ship | **`/flow:ship`** | AUTO·when-ready | The pipeline: final-pass reviews → BLOCKER/NIT fixes → synthesize feedback (user + agent-memory layers) → update docs → commit → push → open PR. **Never merges.** Auto-advances from Step 8 when the readiness predicate holds (v1.4.0); else — or if the risk gate trips or verify-build was skipped — you type it / say "ship it" (see legend). |
+| 10 · ship | **`/flow:ship`** | AUTO·when-ready | The pipeline: final-pass reviews → BLOCKER/NIT fixes → synthesize feedback (user + agent-memory layers) → update docs → commit → push → open PR with a per-step `## Flow run` body documenting the whole loop (v1.4.1). **Never merges.** Auto-advances from Step 8 when the readiness predicate holds (v1.4.0); else — or if the risk gate trips or verify-build was skipped — you type it / say "ship it" (see legend). |
 | 10 · nested | **`/flow:security-review`** | BOTH | Diff-focused security audit (XSS, secrets, unsafe URL handling, path traversal, dependency risk, persistence leakage). Runs inside `/flow:ship`; early-exits on doc-only diffs. |
 | 10 · nested | **`/flow:accessibility-review`** | BOTH | Diff-focused WCAG 2.1 AA audit. Runs inside `/flow:ship`; early-exits on `uiSurface=false` or non-UI diffs. |
 | 10 · nested | **`/flow:verify-build`** | BOTH | Plan-driven behavioral gate: extracts spec-walk criteria, adversarially tests the built artifact via bundled `/verify`, **blocks ship on a FAIL/Unknown verdict**. Runs inside `/flow:ship`; needs `verifyEnabled` + `platform` set. |

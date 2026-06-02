@@ -363,11 +363,62 @@ The PR base branch is resolved via this fallback chain:
   ## Test plan
   - [ ] <how to verify>
 
-  ## Reviews
-  Security and accessibility reviews ran in ship (or were skipped — note explicitly which); staff-review ran during feature work. Deferred follow-ups: see the configured roadmap and plan docs.
+  ## Flow run
+  Each loop step — ran or skipped (mode-dependent) — and any significant
+  decision or finding it produced. `✓` = ran, `—` = nothing notable; resolve
+  every `<...>` placeholder (pick one side of an `a / b`) before publishing.
+
+  | Step | Status | Notable |
+  |---|---|---|
+  | Clarify | ✓ | — |
+  | Plan + /flow:critique-plan | ✓ | <critic findings that changed the plan / —> |
+  | Execute | ✓ | <load-bearing impl decisions / —> |
+  | Preflight | ✓ | green / <what ran> |
+  | /simplify | <✓ / skipped (spike·tiny)> | <what collapsed / —> |
+  | /flow:staff-review | <✓ / skipped (spike·tiny)> | <BLOCKERs fixed, real findings / —> |
+  | /flow:security-review | <✓ / skipped (reason)> | <result / —> |
+  | /flow:accessibility-review | <✓ / skipped (reason)> | <result / —> |
+  | /flow:verify-build | <✓ / skipped (reason)> | <overall_verdict / —> |
+  | Doc synthesis | ✓ | <docs updated> |
+
+  Deferred follow-ups: see the configured roadmap and plan docs.
 
   🤖 Generated with [Claude Code](https://claude.com/claude-code)
   ```
+
+  **Populate the `## Flow run` table from THIS session's loop history** — you
+  have that context at ship time (the same context you used to write the
+  Summary and Test plan). For each row:
+
+  - **Status** — `✓` if the step ran; `skipped (<reason>)` if it didn't, and
+    always name the reason. The reasons are mode- and config-dependent:
+    - **spike mode** skips `/simplify` and `/flow:staff-review` → `skipped (spike)`.
+    - **tiny mode** skips the spec-walk, `/simplify`, and `/flow:staff-review` → `skipped (tiny)`.
+    - `/flow:security-review` skips on a doc-only / trivially-safe diff → `skipped (doc-only)`.
+    - `/flow:accessibility-review` skips when `flow.config.json.uiSurface` is
+      `false`, or when the diff touches no UI files → `skipped (uiSurface:false)` / `skipped (no UI in diff)`.
+    - `/flow:verify-build` skips when `flow.config.json.verifyEnabled` is `false`
+      or `platform` is `library`/`none` → `skipped (verifyEnabled:false)` / `skipped (platform library|none)`.
+  - **Notable** — genuine signal only: a plan-critic catch that changed the
+    plan, a load-bearing design/impl decision, a `/flow:staff-review` BLOCKER you
+    fixed, a real security/a11y/verify-build finding, the docs you updated. A
+    routine step with nothing to report gets `—`. **Do not manufacture notes** —
+    an invented "improved error handling" line is worse than an honest `—`.
+
+  Honesty rules for Status, in priority order:
+  1. Never imply a step ran when it didn't, and never imply it was skipped when
+     it ran. In flow v1.4.x, `/flow:security-review`, `/flow:accessibility-review`,
+     and `/flow:verify-build` all ship and run from Step 2 — so their Status is
+     `✓` unless one of the *runtime-config* skip reasons above actually applied
+     this run. Do NOT write "not yet shipped" for them.
+  2. `skipped — not yet shipped` is reserved for the genuinely-absent case: a step
+     that does not exist in the flow version this project is running (e.g. a
+     reviewer gated behind a later release). Use it only when true; otherwise
+     drop the row entirely rather than marking it `✓`.
+
+  Follow-ups stay canonical in the roadmap/plan docs (Steps 3 + 5 above); the
+  table's closing line only points at them. The PR is still never merged by
+  Claude (Step 8).
 
 **PR-OPEN**: push the new commits. Update the PR body if the summary/test plan needs to reflect the latest scope; otherwise leave it.
 
