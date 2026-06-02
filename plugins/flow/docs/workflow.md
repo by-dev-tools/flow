@@ -4,7 +4,7 @@ How features get built and shipped under flow's managed-autonomy loop. **Project
 
 This is the long-form narrative. Each invoked skill carries its own short-form instructions; this doc is the reference for *why* the loop has the shape it has and *how* the gates compose.
 
-## Shipped surface (flow v1.4.0)
+## Shipped surface (flow v1.4.1)
 
 Everything described in the loop below is shipped and installable today. The full user-visible surface:
 
@@ -251,6 +251,10 @@ Claude **auto-advances here from Step 8** when the ship-readiness predicate hold
 
 **Still never merged.** The user merges.
 
+### The PR body documents the full flow run
+
+The PR body has three sections: `## Summary`, `## Test plan`, and `## Flow run`. The `## Flow run` table is the loop's self-documentation — one row per loop step (Clarify → Plan+critique → Execute → Preflight → /simplify → /flow:staff-review → security/a11y/verify-build → Doc synthesis), each marked `✓` (ran) or `skipped (<reason>)`, with a **Notable** cell carrying genuine signal (a plan-critic catch that changed the plan, a load-bearing decision, a fixed BLOCKER, a real review finding) or `—` when routine. The ship agent fills it from the session's loop history; it is instructed **not to manufacture notes** — an honest `—` beats invented filler. Skips are mode- and config-dependent (spike skips /simplify + /flow:staff-review; tiny also skips spec-walk; a11y skips on `uiSurface:false` or a non-UI diff; security on doc-only; verify-build on `verifyEnabled:false` or `platform` library|none) and the reason is always named, so a reader can tell a legitimate skip from a missed step. The table only *points at* deferred follow-ups — those stay canonical in the roadmap/plan docs (it never becomes their home; see Step 7 + the anti-pattern below). `/flow:ship-spike` writes a trimmed version of the same table (fewer rows; /simplify + /flow:staff-review pre-marked `skipped (spike)`).
+
 ### Never bypass `/flow:ship` with `gh pr create` directly (FB-0010 workflow-step sub-class)
 
 `/flow:ship` is not just "the thing that opens the PR" — it's the orchestrator that spawns `/flow:security-review` + `/flow:accessibility-review` (Step 1 above), synthesizes feedback into both layers, updates the project docs, and only THEN opens the PR. Running `gh pr create` directly skips all of that.
@@ -322,7 +326,7 @@ Lightweight terminal pipeline:
 1. Write the history entry — the entry IS the deliverable. Must include: research question, what was built, what was learned, recommendation (proceed / pivot / abandon).
 2. Commit doc + code.
 3. Push.
-4. Open PR with `spike` label. PR body must include the research question + the answer. The user merges or closes — Claude does not.
+4. Open PR with `spike` label. PR body must include the research question + the answer, plus a **trimmed `## Flow run` table** (fewer rows than `/flow:ship`; /simplify + /flow:staff-review pre-marked `skipped (spike)`). The user merges or closes — Claude does not.
 
 ### Spike-mode abuse prevention
 

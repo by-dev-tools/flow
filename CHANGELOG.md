@@ -10,6 +10,17 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.4.1 — 2026-06-01
+
+**PR descriptions now document the full flow-loop run — a per-step `## Flow run` table replaces the generic `## Reviews` blurb.**
+
+- `/flow:ship` §7 PR body gains a `## Flow run` table: one row per loop step (Clarify → Plan+critique → Execute → Preflight → /simplify → /flow:staff-review → security/a11y/verify-build → Doc synthesis), each marked `✓` (ran) or `skipped (<reason>)`, with a **Notable** cell for genuine signal (a plan-critic catch, a load-bearing decision, a fixed BLOCKER, a real review finding) or `—` when routine. The ship agent fills it from the session's loop history and is **instructed not to manufacture notes**.
+- Skip reasons are mode- and config-dependent and always named: spike skips `/simplify` + `/flow:staff-review`; tiny also skips the spec-walk; `/flow:accessibility-review` skips on `uiSurface:false` or a non-UI diff; `/flow:security-review` on a doc-only diff; `/flow:verify-build` on `verifyEnabled:false` or `platform` `library`/`none`. (`skipped — not yet shipped` is reserved for a step genuinely absent from the running flow version — never written for a step that actually ran.)
+- `/flow:ship-spike` writes a trimmed version of the same table (fewer rows; `/simplify` + `/flow:staff-review` pre-marked `skipped (spike)`).
+- `plugins/flow/docs/workflow.md` §10 + the spike section narrate the new PR-body shape; the dogfood dev-side `/ship` mirrors it. Follow-ups remain canonical in the roadmap/plan docs — the table only points at them; the PR is still never merged.
+
+**Breaking changes:** none. Additive — Summary + Test plan are unchanged; only the trailing review blurb is replaced by the richer table.
+
 ## v1.4.0 — 2026-05-30
 
 **`/flow:ship` is now auto-invocable — the autonomous-loop trigger (human gates stay at plan + merge).**

@@ -262,6 +262,20 @@ proceed | pivot | abandon — <one-line reasoning>
 ## Disposability
 <what happens to the code: deleted, flagged, gates next PR>
 
+## Flow run
+Spike mode runs a trimmed loop. Each step — ran or skipped — with any signal it
+produced; "—" when routine. (Full per-step guidance: `/flow:ship` §7.)
+
+| Step | Status | Notable |
+|---|---|---|
+| Clarify | ✓ | — |
+| Plan (research question) | ✓ | <approach / —> |
+| Execute | ✓ | <smallest thing that answered the question / —> |
+| Preflight | ✓ | green / <what ran> |
+| /simplify | skipped (spike) | — |
+| /flow:staff-review | skipped (spike) | — |
+| /flow:verify-build | ✓ · skipped (<reason>) | <3-check spike-rubric result / —> |
+
 ## Full writeup
 See the history doc entry "Spike: <title>".
 
@@ -269,6 +283,12 @@ See the history doc entry "Spike: <title>".
 EOF
 )"
 ```
+
+`/simplify` and `/flow:staff-review` are pre-marked `skipped (spike)` — spike mode
+always skips them (workflow.md § Spike mode). Fill `/flow:verify-build` from the
+Step 2 spike-mode invocation: `✓` with the 3-check rubric result if it ran, or
+`skipped (verifyEnabled:false)` / `skipped (platform library|none)` if it didn't.
+**Notable** is genuine signal only — don't manufacture notes for a spike.
 
 The PR title MUST start with `spike:` and the PR MUST have the `spike` label. Both are spike-mode-abuse guards: a feature accidentally shipped through `/flow:ship-spike` should be visually obvious and easy to reject.
 

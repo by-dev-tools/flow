@@ -38,7 +38,42 @@ If the user gave feedback during this session that isn't already captured:
 - Push with `-u` flag
 - Create a PR using `gh pr create` with:
   - Short title (under 70 characters)
-  - Body with `## Summary` (1-3 bullets) and `## Test plan` (checklist)
+  - Body with `## Summary` (1-3 bullets), `## Test plan` (checklist), and a `## Flow run` table (below)
+
+The `## Flow run` table documents the full loop run — every step that ran, what
+was skipped and why, and any significant decision or finding. (Same shape as the
+published `/flow:ship` §7; this dogfood skill mirrors it for consistency.)
+
+```markdown
+## Flow run
+Each loop step — ran or skipped (mode-dependent) — and any significant decision
+or finding it produced. Leave the note "—" when routine; don't force it.
+
+| Step | Status | Notable |
+|---|---|---|
+| Clarify | ✓ | — |
+| Plan + /flow:critique-plan | ✓ | <critic findings that changed the plan / —> |
+| Execute | ✓ | <load-bearing impl decisions / —> |
+| Preflight | ✓ | green / <what ran> |
+| /simplify | ✓ · skipped (spike/tiny) | <what collapsed / —> |
+| /flow:staff-review | ✓ · skipped (spike/tiny) | <BLOCKERs fixed, real findings / —> |
+| /flow:security-review | ✓ · skipped (<reason>) | <result / —> |
+| /flow:accessibility-review | ✓ · skipped (<reason>) | <result / —> |
+| /flow:verify-build | ✓ · skipped (<reason>) | <overall_verdict / —> |
+| Doc synthesis | ✓ | <docs updated> |
+
+Deferred follow-ups: see the roadmap and plan docs.
+```
+
+Populate it from THIS session's loop history. **Status:** `✓` if the step ran,
+`skipped (<reason>)` otherwise — always name the reason (spike skips /simplify +
+/flow:staff-review; tiny also skips spec-walk; a11y skips on `uiSurface:false` or
+no UI in diff; security skips on a doc-only diff; verify-build skips on
+`verifyEnabled:false` or `platform` library|none). **Notable:** genuine signal
+only — a plan-critic catch, a load-bearing decision, a fixed BLOCKER, a real
+review finding, the docs updated; routine steps get `—`. **Do not manufacture
+notes.** Follow-ups stay canonical in the roadmap/plan docs; the table only
+points at them.
 
 ## 5. Handle conflicts (if any)
 

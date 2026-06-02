@@ -26,6 +26,49 @@ After PR H2 ships: user installs flow at v1.2.5 across md-manager + health-track
 - **Md-manager PR 5 (dogfood)** still pending; separate worktree.
 - **PR S (this PR) — Autonomous ship-readiness trigger** in flight on `claude/auto-ship-readiness-trigger` (off `origin/main` @ `efd31c4`). Delivers the **autonomous-invocation-wiring half** of the originally-sketched PR L, decoupled from PR L's red-team/trust-boundary half (which depends on PR K). Only dependency — `/flow:verify-build` — already shipped (v1.3.0), so it sequences ahead of PR K/L. Parallel to a docs/config-correction PR on `claude/nice-lamarr-3c30c0` (README skill-order + auto/manual table + workflow.md version sweep + 14→21 example config); that PR ships independently via `/flow:ship`.
 
+## PR T — Flow-run PR descriptions (in flight)
+
+**Mode:** feature (small), prompt/docs change to shipped artifacts | **Priority: medium (dogfood-driven UX)**
+**Branch:** `claude/epic-northcutt-2d5e88` (off `origin/main` @ `4f5fba6`)
+**Goal:** Make `/flow:ship` (and `/flow:ship-spike`) write PR descriptions that document the **full flow-loop run** — every step that ran, which steps were skipped and *why* (mode-dependent: spike/tiny; no UI surface; not-yet-shipped), and any significant decision or finding each step produced. A routine step shows `—`; the agent is explicitly told not to manufacture filler. Replaces the generic `## Reviews` blurb in the PR body with a per-step `## Flow run` table.
+
+**Why this PR exists:** Prompted by dogfooding flow on another project where richer per-step PR descriptions were wanted. The current PR body (`## Reviews` one-liner) under-documents what the loop actually did — a reviewer can't see at a glance which gates ran, which were skipped (and whether the skip was legitimate), or what each step surfaced. A per-step table makes the loop's execution legible on the PR page itself, while keeping follow-ups canonical in the roadmap/plan docs.
+
+**Scope (in):**
+- `plugins/flow/skills/ship/SKILL.md` §7 — replace the `## Reviews` body block with a `## Flow run` per-step table + an instruction paragraph telling the ship agent how to populate it from THIS session's loop history (✓ ran / `skipped (<reason>)`; mode-dependent skips encoded; Notable = genuine signal or `—`; no manufactured notes).
+- `.claude/skills/ship/SKILL.md` (flow's dogfood dev-side `/ship`) Step 4 — apply the same `## Flow run` body change for consistency. **Note:** this is NOT literally a copy of `/flow:ship` (CLAUDE.md treats them as distinct surfaces and documents no sync convention; the dev-side `/ship` is the older, simpler push+PR+merge skill). Only the PR-body section is reconciled; its merge behavior and step numbering are left as-is (out of scope).
+- `plugins/flow/skills/ship-spike/SKILL.md` Step 7 — add a **trimmed** `## Flow run` table reflecting spike's fewer steps (/simplify + /flow:staff-review pre-marked `skipped (spike)`).
+- `plugins/flow/docs/workflow.md` §10 (+ spike section) — narrate the new PR-body shape so the doc stays consistent.
+- Version bump `1.4.0 → 1.4.1` (shipped plugin artifacts changed): `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (metadata + per-plugin), README `## What v1.4.0 ships` header, new `CHANGELOG.md` v1.4.1 entry. Cumulative description sentence appended.
+- `dev-docs/{history.md,feedback.md,plan.md}` — decision-log entry, **FB-0019** (the dogfood-driven preference), this block.
+
+**Scope (out):**
+- Changing the dev-side `/ship`'s merge behavior or aligning it to `/flow:ship` (separate hygiene concern; this PR only touches its PR-body section).
+- Adding a machine-readable loop-history artifact the agent reads from (the agent populates the table from in-session context, same as it already writes Summary/Test plan). A structured findings buffer exists only for verify-build; generalizing it is out of scope.
+- Any change to which steps run / gate semantics. This PR is descriptive only.
+
+**Spec-walk:**
+- [ ] `/flow:ship` §7 has a `## Flow run` table replacing `## Reviews`; Summary + Test plan retained. (verify: read §7)
+- [ ] Instruction text encodes all mode/config skip rules: spike (skips /simplify + staff-review), tiny (skips spec-walk + /simplify + staff-review), a11y skip on `uiSurface:false` or non-UI diff, security skip on doc-only, verify-build skip on `verifyEnabled:false`/`platform library|none`. (verify: grep §7 for each)
+- [ ] **Plan-critic REDIRECT resolved:** the "not-yet-shipped" wording is NOT the primary skip reason for security/a11y/verify-build — in v1.4.x all three ship and run (`ship/SKILL.md:215-217`), so their real skip reasons are the runtime-config states above. "not yet shipped" appears ONLY as a clearly-conditional generic fallback for a step genuinely absent from the *reader's installed flow version*. Writing "skipped — not yet shipped" for a step that actually ran would be the inverse of the user's honesty intent. (verify: read §7 — the not-yet-shipped clause is conditional, not applied to v1.4.x reviewers)
+- [ ] Instruction explicitly says Notable = genuine signal only, routine → `—`, and "do not manufacture notes". (verify: read)
+- [ ] Instruction preserves doctrine: follow-ups canonical in roadmap/plan; PR never merged by Claude. (verify: read)
+- [ ] `.claude/skills/ship/SKILL.md` Step 4 carries the same `## Flow run` block (generic cross-refs, no `/flow:ship`-specific step numbers). (verify: read)
+- [ ] `/flow:ship-spike` Step 7 has the trimmed `## Flow run` table with /simplify + staff-review pre-marked `skipped (spike)`. (verify: read)
+- [ ] `plugins/flow/docs/workflow.md` §10 + spike section narrate the `## Flow run` PR shape. (verify: read)
+- [ ] Version bumped to 1.4.1 in both manifests (3 version fields) + README header + CHANGELOG v1.4.1 entry; no `1.4.0`→`1.4.1` fan-out survivors that should have changed. (verify: `git grep -nE '1\.4\.0'` — surviving hits are historical references only)
+- [ ] **FB-0010 skip-vocabulary fan-out (plan-critic FOLLOW-UP):** the `## Flow run` skip-reason vocabulary is duplicated across 4 surfaces (`ship/SKILL.md` §7, `.claude/skills/ship/SKILL.md` Step 4, `ship-spike/SKILL.md` Step 7, `workflow.md` §10). After editing, grep the skip strings (`skipped (spike)`, `skipped (tiny)`, `uiSurface`, `verifyEnabled`, `platform`) across all four so the table wording can't drift between copies. (verify: `git grep` sweep)
+- [ ] `claude plugin validate .` clean.
+- [ ] FB-0019 claimed in `reserved-feedback-numbers.md` before drafting; entry written; `dev-docs/history.md` entry written.
+
+**Confidence verdicts:**
+- **Assumption:** The ship agent has THIS session's full loop history in context at ship time, so it can populate the table without a new machine-readable artifact. **Confidence:** HIGH. **Why:** the agent already writes Summary + Test plan from in-session context; the loop steps happened in the same session/branch. **If it flips:** the table degrades to best-effort (some `—` where signal existed) — non-fatal, never wrong, just less rich; a structured loop-log artifact becomes a follow-up.
+- **Assumption:** A version bump (1.4.1) is warranted because shipped plugin artifacts (ship/ship-spike skills + workflow.md) changed. **Confidence:** MEDIUM. **Why:** consistent with PR J precedent (prompt-only change → version bump); the alternative (no bump, like docs-at-root PRs H1/H2) doesn't apply since these files ship in the install bundle. **If it flips:** user prefers no bump → revert the manifest/CHANGELOG/README edits; single sweep, reversible. Surfaced here for the merge gate.
+
+**Files touched (anticipated):** `plugins/flow/skills/ship/SKILL.md`, `.claude/skills/ship/SKILL.md`, `plugins/flow/skills/ship-spike/SKILL.md`, `plugins/flow/docs/workflow.md`, `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `README.md`, `CHANGELOG.md`, `dev-docs/reserved-feedback-numbers.md`, `dev-docs/feedback.md`, `dev-docs/history.md`, `dev-docs/plan.md`.
+
+---
+
 ## PR S — Autonomous ship-readiness trigger (in flight)
 
 **Mode:** feature | **Priority: high** (load-bearing for the autonomous-loop direction)

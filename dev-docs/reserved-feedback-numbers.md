@@ -22,6 +22,7 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
+- **FB-0019** — `claude/epic-northcutt-2d5e88` (epic-northcutt-2d5e88) — "PR descriptions should document the full per-step flow-loop run (ran/skipped-with-reason + notable signal), not a generic Reviews line." **PR T** — flow-run PR descriptions. Plan landed 2026-06-01 in `dev-docs/plan.md` § "PR T — Flow-run PR descriptions (in flight)".
 
 ## Audit trail (past collisions, kept for institutional memory)
 
