@@ -18,11 +18,14 @@ This file is the **claim-time defense** (catches collisions before either branch
 
 If you find this file with no `Currently reserved` lines, no in-flight branch is racing for a number. Still add your reservation before drafting the entry — another branch may start between your check and your commit.
 
-## Currently reserved (as of 2026-05-29)
+## Currently reserved (as of 2026-05-30)
 
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
 - **FB-0019** — `claude/epic-northcutt-2d5e88` (epic-northcutt-2d5e88) — "PR descriptions should document the full per-step flow-loop run (ran/skipped-with-reason + notable signal), not a generic Reviews line." **PR T** — flow-run PR descriptions. Plan landed 2026-06-01 in `dev-docs/plan.md` § "PR T — Flow-run PR descriptions (in flight)".
+- **FB-0034** — `infallible-mclaren-c2bd23` (**PR U**) — "Ship-time blockers resolve by resolution-confidence: auto-fixable→in-tree, decision-required→draft-PR + NOT-READY manifest." Being written in PR U (v1.5.0); remove at merge. **NB:** claimed above the cross-session high-water (FB-0033) flagged in the #33 handoff; main visibly ends at FB-0019, so the 0020–0033 gap is expected from in-flight branches. If a colliding entry surfaces at merge, renumber.
+- **FB-0035** — `infallible-mclaren-c2bd23` (**PR U**) — "verify-build discovery at the readiness boundary; ship-time verify-build is a confirmation re-run." Being written in PR U; remove at merge.
+- **FB-0036** — `infallible-mclaren-c2bd23` (**PR U**) — "All flow reviewer skills + ship-spike are model-invocable; only two human gates (plan, merge); no skill is itself a gate." Being written in PR U; remove at merge. (Supersedes the abandoned Facet-5 reservation FB-0022.)
 
 ## Audit trail (past collisions, kept for institutional memory)
 

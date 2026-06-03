@@ -128,10 +128,14 @@ Single `Agent` call with `subagent_type: Explore`. Cap at ~1000 words. Prompt sc
 > 8. **Zoom & responsive** — Layout holds at 200% browser zoom and at a narrow window (< 600px). No overflow that hides interactive elements.
 > 9. **Form & input** — Inputs have associated `<label>` (visible or `aria-labelledby`). Placeholders are not labels. Error states are announced to AT, not just visually colored.
 >
+> **Tag every BLOCKER with a resolution-confidence axis** (orthogonal to severity) — it decides whether the agent fixes in-tree or routes the finding to a draft PR for the human:
+> - `[auto-fixable]` — single clear fix, mechanically verifiable afterward (e.g. add the missing `aria-label`, swap `<div onClick>` for `<button>`).
+> - `[decision-required]` — more than one valid fix (a design/markup-structure choice — e.g. reordering the DOM to fix tab order when several orderings are valid), needs a visual/design judgment call, or can't be auto-fixed with confidence (e.g. a contrast failure whose fix is a palette decision). **Default to `[decision-required]` when unsure** — over-escalating is safe.
+>
 > **Output format**, grouped by severity:
 > ```
 > ## BLOCKER
-> - <description> — `path:line` — WCAG criterion if applicable — suggested fix
+> - [auto-fixable|decision-required] <description> — `path:line` — WCAG criterion if applicable — suggested fix. For [decision-required]: candidate fixes + what human/design input is needed.
 >
 > ## NIT
 > - <description> — `path:line` — suggested fix
@@ -146,7 +150,8 @@ Single `Agent` call with `subagent_type: Explore`. Cap at ~1000 words. Prompt sc
 
 When invoked standalone (not via `/flow:ship`):
 
-- **BLOCKER** — fix in workspace. Re-run typecheck via `flow.config.json.typecheckCmd` (loud-warning fallback if unset). Manually verify keyboard nav for the fix where applicable.
+- **BLOCKER `[auto-fixable]`** — fix in workspace. Re-run typecheck via `flow.config.json.typecheckCmd` (loud-warning fallback if unset). Manually verify keyboard nav for the fix where applicable.
+- **BLOCKER `[decision-required]`** — do **not** best-effort it; surface candidate fixes + the design/human input needed. (Via `/flow:ship`, this routes to the draft-PR manifest — accumulated at Step 2, consumed at Step 7.)
 - **NIT** — fix if cheap.
 - **FOLLOW-UP** — capture to `flow.config.json.{roadmapPath,planPath}` (defaults `dev-docs/*`; consumer projects typically `core-docs/*`). **Never only in the PR body.**
 

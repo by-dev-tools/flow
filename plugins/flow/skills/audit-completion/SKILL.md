@@ -1,7 +1,7 @@
 ---
 name: audit-completion
 description: Audit the most recent completion claim for unverified diagnoses, unverified completions, and unverified recall. Use after Claude declares work done, fixed, ready, or implemented — before trusting the claim.
-disable-model-invocation: true
+disable-model-invocation: false
 context: fork
 agent: auditor
 ---

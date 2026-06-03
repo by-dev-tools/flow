@@ -10,6 +10,18 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.5.0 — 2026-06-02
+
+**Ship-time gate semantics: unresolved blockers route to a draft PR + NOT-READY manifest, never a silent proceed or a hard mid-loop halt. SAFETY.**
+
+- **Resolution-confidence axis** on `/flow:security-review` + `/flow:accessibility-review`: every BLOCKER is tagged `[auto-fixable]` (one clear, mechanically-verifiable fix) or `[decision-required]` (multiple valid fixes / out-of-repo action like rotating a leaked secret / un-auto-fixable). Default to `[decision-required]` when unsure (FB-0011 ESCALATE-by-default).
+- **`/flow:ship` routing:** `[auto-fixable]` BLOCKERs are fixed in-tree; `[decision-required]` BLOCKERs are added to a **draft manifest**. If the manifest is non-empty, the PR opens as a **draft** with a `🚫 NOT READY TO MERGE` block pinned at the top — so an unresolved blocker reaches you at the merge gate instead of halting the loop or producing a merge-ready-looking PR. The manifest integrates with the `## Flow run` PR body (v1.4.1).
+- **`/flow:verify-build` at ship is now a confirmation re-run, not discovery.** Behavioral + visual dialing-in happens at the Step 8/9 readiness boundary; ship re-runs verify-build to catch a regression. A non-converging FAIL/Unknown (after the FB-0012 bounded mechanical fix) routes to the draft manifest rather than hard-halting. Visual sign-off folds into the merge gate.
+- **Reviewer + ship-spike skills are now model-invocable** (`disable-model-invocation: false` on `/flow:audit-plan`, `/flow:audit-completion`, `/flow:critique-plan`, `/flow:ship-spike`) — the only two human gates are plan approval + PR merge; no skill is itself a gate. The `context: fork` reviewers rely on the v1.4.2 session-discovery fix to resolve transcripts from worktree cwds. Docs (README + workflow.md) updated to label them accurately (BOTH, never cold-start; ship-spike judgment-gated).
+- **The v1.4.0 auto-advance predicate is unchanged** — auto-advancing *into* ship still requires a verify-build PASS (FB-0018 invariant). Only ship-*internal* failure handling changed. **Invariant: no merge-ready PR is ever produced on a non-PASS build.**
+- `/flow:ship-spike` keeps its verify-build hard-halt (separate scope; follow-up tracks adopting draft-routing there).
+- **Breaking changes:** none. New schema slots: none.
+
 ## v1.4.2 — 2026-06-02
 
 **Reviewers no longer silently run context-starved from worktree / dotted-path sessions (`extract_session.py` session-discovery fix). SAFETY.**

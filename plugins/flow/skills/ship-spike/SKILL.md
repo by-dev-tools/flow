@@ -8,7 +8,7 @@ description: >
   IS the deliverable for a spike — commits, pushes, and opens a PR labeled
   `spike`. Never merges. Only invoke when the plan declared `mode: spike`.
   Trigger phrases: "ship the spike", "/flow:ship-spike", "wrap up the spike".
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Agent
 ---
 

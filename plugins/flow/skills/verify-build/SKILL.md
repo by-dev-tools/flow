@@ -20,7 +20,7 @@ allowed-tools: Read, Glob, Grep, Bash, Skill, Agent
 
 # Behavior verification (verify-build)
 
-Cold-runs the built artifact against the plan's Spec-walk acceptance criteria, judges observations against intent, and blocks ship on Unknown. Invoked by `/flow:ship` Step 2 as a final-pass behavioral gate; can be invoked directly when the user wants flow's plan-criteria + Unknown gate vs bundled `/verify`'s freeform observation.
+Cold-runs the built artifact against the plan's Spec-walk acceptance criteria and judges observations against intent, returning a PASS / FAIL / Unknown verdict (exit 1 on FAIL/Unknown). Two callers consume that verdict differently: at the **Step 8/9 readiness boundary** it's the *discovery* gate (the readiness predicate requires a positive PASS to auto-advance — FB-0018); inside **`/flow:ship` Step 2** it's a *confirmation* re-run — a non-converging FAIL/Unknown regression routes to a draft PR + manifest rather than hard-halting (`/flow:ship-spike` still halts — spike scope). Invocable directly when the user wants flow's plan-criteria verdict vs bundled `/verify`'s freeform observation.
 
 ## When to invoke
 
