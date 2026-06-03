@@ -27,14 +27,14 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 
 **The loop itself:** [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md) — canonical 11 steps with rationale, gate semantics, spike/tiny modes, config-slot reference.
 
-## What v1.4.2 ships
+## What v1.5.0 ships
 
 ### Workflow surface (12 user-visible skills)
 
 Listed in **loop order** — top to bottom is the sequence you move through. The **Fires** column is the part most newcomers miss: it says what runs on its own vs what you have to type.
 
 - **AUTO** — fires by itself when its trigger condition is met; you never type it.
-- **MANUAL** — never fires on its own; you type it. (These carry `disable-model-invocation: true`, so Claude can't self-invoke them either — only you can.)
+- **MANUAL** — never fires on its own; you'd type it. *As of v1.5.0 no flow skill is MANUAL-only* — every skill is at least model-invocable (the reviewers + `ship-spike` flipped to `disable-model-invocation: false`). The label is kept for reference; the only things that require a human are the two gates (plan approval, PR merge), not any skill.
 - **BOTH** — you can type it, *and* it runs when `/flow:ship` calls it or a matching phrase + a diff-to-review triggers it. Won't cold-start on a bare "build me X".
 - **AUTO·when-ready** — `/flow:ship` only (new in v1.4.0). Auto-advances from Step 8 *at the end of a driven loop* when the ship-readiness predicate holds (every spec-walk box checked, no open BLOCKER, no unresolved MEDIUM/LOW assumption, `/flow:verify-build` would return PASS) and the FB-0011 risk gate is clear; otherwise you type it / say "ship it". Never auto-advances when verify-build is skipped (library/none platform, doc-only diff), and never on a cold start.
 
