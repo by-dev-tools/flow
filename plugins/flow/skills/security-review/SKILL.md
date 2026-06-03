@@ -123,10 +123,14 @@ Single `Agent` call with `subagent_type: Explore`. Cap at ~1000 words. Prompt sc
 >
 > **Before emitting each BLOCKER/NIT, attempt to disprove it.** Trace the dangerous sink back to the input source: if the input source is not user-controllable in any realistic execution path, drop the finding. If you cannot construct a concrete attacker scenario in one sentence, the finding is speculative — drop it. A finding that survives this disproof is publishable; a finding that depends on an unstated assumption ("if an attacker could somehow…") is not.
 >
+> **Tag every BLOCKER with a resolution-confidence axis** (orthogonal to severity), because it decides whether the agent fixes in-tree or routes the finding to a draft PR for the human:
+> - `[auto-fixable]` — there is a single clear fix, and it is mechanically verifiable afterward (a typecheck/test/build would confirm it). Example: an unescaped value with one correct sanitizer call.
+> - `[decision-required]` — any of: more than one valid fix (a design choice), the fix requires an out-of-repo human action (rotate a leaked secret, vet a dependency), or it is not auto-fixable at all (dep-reputation risk). **Default to `[decision-required]` whenever you are unsure** — over-escalating is safe (it routes to a human); auto-fixing something that needed a decision is not.
+>
 > **Output format**, grouped by severity:
 > ```
 > ## BLOCKER
-> - <one-line description> — `path:line` — why it's exploitable (the attacker scenario in one sentence) — suggested fix
+> - [auto-fixable|decision-required] <one-line description> — `path:line` — why it's exploitable (the attacker scenario in one sentence) — suggested fix. For [decision-required]: list the candidate fixes + exactly what human input/action is needed.
 >
 > ## NIT
 > - <one-line description> — `path:line` — suggested fix
@@ -141,7 +145,8 @@ Single `Agent` call with `subagent_type: Explore`. Cap at ~1000 words. Prompt sc
 
 When invoked standalone (not via `/flow:ship` — which handles triage itself):
 
-- **BLOCKER** — fix in workspace. Re-run the project's typecheck (`flow.config.json.typecheckCmd` via `sh -c "$TYPECHECK"` with the standard loud-warning fallback if unset).
+- **BLOCKER `[auto-fixable]`** — fix in workspace. Re-run the project's typecheck (`flow.config.json.typecheckCmd` via `sh -c "$TYPECHECK"` with the standard loud-warning fallback if unset).
+- **BLOCKER `[decision-required]`** — do **not** best-effort a fix. Surface it to the user with the candidate fixes + the human action needed. (When invoked via `/flow:ship`, this routes to the draft-PR manifest — accumulated at Step 2, consumed at Step 7; ship never silently proceeds past it and never hard-halts the loop.)
 - **NIT** — fix if cheap (single-file, <5 min).
 - **FOLLOW-UP** — capture to the project's roadmap or plan (via `flow.config.json.{roadmapPath,planPath}` slots; defaults `dev-docs/roadmap.md` / `dev-docs/plan.md` for flow's own repo; consumer projects typically `core-docs/*`). **Never only in the PR body** — the doc entry is canonical.
 

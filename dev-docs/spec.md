@@ -39,10 +39,12 @@ Users typically catch these errors after acting on them, which is the expensive 
 
 ## Solution
 
-Two slash commands the user invokes manually:
+Two slash commands, auto-invocable by the model as part of the autonomous loop (and still directly user-invocable):
 
-- `/audit-plan` -- run after Claude produces a plan, before execution.
-- `/audit-completion` -- run after Claude declares work done/fixed/ready, before trusting the claim.
+- `/audit-plan` -- runs after Claude produces a plan, before execution.
+- `/audit-completion` -- runs after Claude declares work done/fixed/ready, before trusting the claim.
+
+These are review passes, not human gates — the only two human gates in the loop are final plan approval and PR merge. Making the reviewers auto-invocable lets the loop reach those gates without an artificial stop to hand-type a slash command.
 
 Each command runs a Python preprocessor (`scripts/extract_session.py`) that loads the session JSONL, bounds the relevant window, extracts and summarizes tool calls, and identifies artifact paths Claude referenced. The preprocessor output is injected into a forked auditor subagent (`agents/auditor.md`) that applies a fixed audit schema and produces a plain-text report: either a single `ISSUE` block, an `AUDIT SUMMARY` with multiple issues, or `No issues flagged.`
 

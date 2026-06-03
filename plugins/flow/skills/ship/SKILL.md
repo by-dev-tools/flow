@@ -209,7 +209,14 @@ If Step 1c passes (or is skipped via unset/docs-only), proceed to Step 2. The St
 
 ## 2. Final-pass reviews
 
-Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, and `/flow:verify-build` via the Skill tool. Each reviewer cold-reads the workspace diff vs the default branch (or runs the built artifact, for verify-build), applies BLOCKER + cheap NIT fixes in-tree, and returns FOLLOW-UP findings for step 3 routing.
+Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, and `/flow:verify-build` via the Skill tool. Each reviewer cold-reads the workspace diff vs the default branch (or runs the built artifact, for verify-build), and returns findings for routing.
+
+**Findings resolve into exactly one of three outcomes — never a silent proceed, never a hard mid-loop halt:**
+- **`[auto-fixable]` BLOCKER + cheap NIT** → fix in-tree, continue (today's happy path).
+- **`[decision-required]` BLOCKER** (security/a11y tag the axis; see their output contracts) → do NOT best-effort it. Add it to the **draft manifest** (an in-memory list this run accumulates) for Step 7. The loop keeps going — the human resolves it at the merge gate, not mid-flight.
+- **FOLLOW-UP** → Step 3 routing.
+
+The draft manifest starts empty. Anything added to it makes the eventual PR a **draft** (Step 7). This is how an unresolved blocker reaches the human at the merge gate they were hitting anyway, instead of halting the loop or shipping a merge-ready-looking PR that isn't ready.
 
 ```
 Skill("flow:security-review")
@@ -222,7 +229,7 @@ Skip behavior:
 - `/flow:accessibility-review`: skip if `flow.config.json.uiSurface` is `false` (the reviewer self-detects this and exits early), or if the diff is non-UI (data layer, build config, doc-only).
 - `/flow:verify-build`: skip if `flow.config.json.verifyEnabled` is `false` (project-wide opt-out), or if `flow.config.json.platform` resolves to `library` or `none` (no runnable target). The skill self-detects both and exits early with a clean `[verify-build] ...skipping.` message. Unlike security + a11y, verify-build does NOT auto-skip on doc-only diffs — the user may have shipped a behavioral change in a non-code file (e.g., a config-driven feature toggle); the run-and-observe loop is cheap enough to attempt and fall through to Unknown if there's nothing to observe.
 
-The first two reviewers are tuned for the in-flow ship context; the bundled Claude Code `/security-review` is fine for out-of-band deep audits but `/flow:security-review` carries the config-slot doc-path resolution this pipeline needs. Verify-build is the runtime gate that catches the Potemkin-interface / hallucinated-success class no static reviewer catches; it wraps bundled `/verify` with plan-driven criteria + Unknown-blocking judgment.
+The first two reviewers are tuned for the in-flow ship context; the bundled Claude Code `/security-review` is fine for out-of-band deep audits but `/flow:security-review` carries the config-slot doc-path resolution this pipeline needs. Verify-build catches the Potemkin-interface / hallucinated-success class no static reviewer catches; it wraps bundled `/verify` with plan-driven criteria. At ship it's a confirmation re-run (discovery happened at the Step 8/9 readiness boundary); a non-converging FAIL/Unknown regression routes to the draft manifest, not a hard halt.
 
 After all three Skill calls return, emit one consolidated user-facing line so the user can see what actually ran vs skipped:
 
@@ -232,7 +239,14 @@ Final-pass reviews: security=[ran|skipped: <reason>], accessibility=[ran|skipped
 
 Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=skipped (uiSurface:false), verify-build=ran (overall_verdict:PASS, all criteria PASS).`
 
-**Verify-build gate-blocking semantics:** If verify-build returns `exit_code: 1` (FAIL or Unknown verdict per FB-0011), the ship pipeline STOPS at this step. The agent should not proceed to Step 3+ until either the failing criteria are addressed (re-run verify-build) or the user explicitly overrides the gate by re-invoking `/flow:ship` with `--skip-verify` (documented in Step 1 pre-flight; not implemented in v1 but reserved). Single-pass per FB-0012 — no retry loop on verify-build's judge output.
+**Verify-build at ship time is a CONFIRMATION re-run, not discovery.** The behavioral discovery/iteration loop happens earlier, at the Present/Iterate boundary (loop steps 8–9; see `docs/workflow.md`). By the time ship runs, verify-build should already be PASS — ship re-runs it to confirm nothing regressed between the readiness check and now (a bad rebase, a doc/config edit that broke a path).
+
+**On `exit_code: 1` (FAIL or Unknown per FB-0011) at ship time** — this means a *regression since readiness*. Handle it, do NOT hard-halt the loop:
+1. Attempt the FB-0012 bounded mechanical fix (≤3, oscillation-checked, same contract as Step 1c — loop only on the verify-build exit code, never on judge prose). Re-run verify-build.
+2. If it converges to PASS → continue.
+3. If it does NOT converge → add a `[decision-required]` entry to the **draft manifest** ("verify-build FAIL/Unknown unresolved: <criterion + evidence>") and continue to Step 3. The PR opens as a **draft** (Step 7) — never a merge-ready PR on a non-PASS build.
+
+**Reconciliation with the merged PR S auto-advance predicate (do not weaken it):** PR S lets the agent auto-advance *into* `/flow:ship` only when the readiness predicate holds — which *requires* `verify-build` would return PASS (FB-0018: auto-ship needs a positive behavioral PASS, not absence-of-failure). That gate is UNCHANGED. This step only changes what ship does with a *ship-internal* failure: route to draft instead of hard-halt. The two are distinct decision points, and the safety invariant is preserved (in fact strengthened): **no merge-ready PR is ever produced on a non-PASS build** — a draft is mechanically NOT-READY and the human sees the manifest at the merge gate. (The reserved `--skip-verify` override remains a documented Step-1 escape hatch, not implemented in v1.)
 
 ## 3. Route follow-ups
 
@@ -282,7 +296,7 @@ For each criterion in `findings.criteria[]` with `aggregated_verdict ∈ {FAIL, 
 
 Single-source verify-build findings without pairing source do NOT earn an FB entry — that's the bar protecting against memory-amplification slop (FB-0010 sub-class).
 
-If verify-build was skipped at Step 2 (`verifyEnabled=false`, `platform=library|none`, or doc-only diff per the skill's self-detection), no buffer read; skip this paragraph. If verify-build ran but the buffer is absent or unreadable, emit a `⚠️ verify-build ran but findings buffer at <path> is missing/unreadable; skipping FB-XXXX synthesis from verify-build` warning and continue — don't block ship on a missing diagnostic artifact (the gate already fired at Step 2).
+If verify-build was skipped at Step 2 (`verifyEnabled=false`, `platform=library|none`, or doc-only diff per the skill's self-detection), no buffer read; skip this paragraph. If verify-build ran but the buffer is absent or unreadable, emit a `⚠️ verify-build ran but findings buffer at <path> is missing/unreadable; skipping FB-XXXX synthesis from verify-build` warning and continue — don't block ship on a missing diagnostic artifact (verify-build's verdict was already resolved at Step 2 — a non-converging regression would already be in the draft manifest).
 
 ### 4b. Agent self-feedback → failure-pattern memory
 
@@ -353,9 +367,19 @@ The PR base branch is resolved via this fallback chain:
 2. `flow.config.json.defaultBranch`
 3. literal `main`
 
-**LOCAL-ONLY**: `gh pr create --base $BASE_BRANCH` with:
+**Draft decision (mechanical):** if the **draft manifest** accumulated in Step 2 is non-empty, create the PR as a **draft** (`gh pr create --draft`) and pin the manifest block at the TOP of the body. An empty manifest → a normal (ready) PR. Draft status is the mechanical signal the human merge gate trusts; the manifest is the human-readable one. A not-ready PR can never *look* ready.
+
+**LOCAL-ONLY**: `gh pr create --base $BASE_BRANCH` (add `--draft` iff the manifest is non-empty) with:
 - Short title (under 70 chars).
-- Body:
+- Body — if the draft manifest is non-empty, prepend this block before `## Summary`:
+  ```markdown
+  ## 🚫 NOT READY TO MERGE — unresolved blockers
+  <!-- flow:not-ready-manifest -->
+  - [<security|a11y|verify-build>] <finding> — needs: <secret rotation | design decision | dep vetting | regression fix> — candidate resolutions: <...>
+  <!-- /flow:not-ready-manifest -->
+  > Resolve every item above, then re-run `/flow:ship` — it removes this block and marks the PR ready (`gh pr ready`) once the manifest is empty. Do not merge while this block is present.
+  ```
+- Then:
   ```markdown
   ## Summary
   - <1-3 bullets on why this exists>
@@ -376,12 +400,12 @@ The PR base branch is resolved via this fallback chain:
   | Preflight | ✓ | green / <what ran> |
   | /simplify | <✓ / skipped (spike·tiny)> | <what collapsed / —> |
   | /flow:staff-review | <✓ / skipped (spike·tiny)> | <BLOCKERs fixed, real findings / —> |
-  | /flow:security-review | <✓ / skipped (reason)> | <result / —> |
-  | /flow:accessibility-review | <✓ / skipped (reason)> | <result / —> |
-  | /flow:verify-build | <✓ / skipped (reason)> | <overall_verdict / —> |
+  | /flow:security-review | <✓ / skipped (reason)> | <result, incl. any [decision-required] blocker / —> |
+  | /flow:accessibility-review | <✓ / skipped (reason)> | <result, incl. any [decision-required] blocker / —> |
+  | /flow:verify-build | <✓ / skipped (reason)> | <overall_verdict; a non-converging regression → draft / —> |
   | Doc synthesis | ✓ | <docs updated> |
 
-  Deferred follow-ups: see the configured roadmap and plan docs.
+  If the `🚫 NOT READY TO MERGE` manifest above is present, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here. Deferred follow-ups: see the configured roadmap and plan docs.
 
   🤖 Generated with [Claude Code](https://claude.com/claude-code)
   ```
@@ -420,7 +444,7 @@ The PR base branch is resolved via this fallback chain:
   table's closing line only points at them. The PR is still never merged by
   Claude (Step 8).
 
-**PR-OPEN**: push the new commits. Update the PR body if the summary/test plan needs to reflect the latest scope; otherwise leave it.
+**PR-OPEN**: push the new commits. If the draft manifest is non-empty, ensure the PR is a draft (`gh pr ready --undo <num>` if it was marked ready) and refresh the `🚫 NOT READY TO MERGE` block; if the manifest is now empty (blockers since resolved), remove the block and `gh pr ready <num>` to mark it ready. Otherwise update the body only if the summary/test plan/Flow-run table needs to reflect the latest scope.
 
 ## 8. Hand off
 

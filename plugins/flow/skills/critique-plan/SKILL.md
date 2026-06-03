@@ -1,7 +1,7 @@
 ---
 name: critique-plan
 description: Critique the most recent plan for scope drift, spec violation, and internal incoherence against the user's stated request and reference documents. Use after Claude produces a plan, before accepting or executing it.
-disable-model-invocation: true
+disable-model-invocation: false
 context: fork
 agent: plan-critic
 ---

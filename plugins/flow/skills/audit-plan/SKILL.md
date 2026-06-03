@@ -1,7 +1,7 @@
 ---
 name: audit-plan
 description: Audit the most recent plan for unverified assumptions and unverified recall. Use after Claude produces a plan, before accepting or executing it.
-disable-model-invocation: true
+disable-model-invocation: false
 context: fork
 agent: auditor
 ---

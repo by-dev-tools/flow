@@ -35,6 +35,53 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0036: All flow reviewer skills + ship-spike are model-invocable; the only two human gates are plan approval and PR merge — no skill is itself a gate
+**Date:** 2026-06-01
+**Source:** user direction (managed-autonomy confidence conversation)
+
+**What was said:** "all skills should be auto invocable — the only human gates are final plan review and PR merge (so the skills/stages shouldn't handle these specifically, but they should be able to get up to that point autonomously)."
+
+**Synthesized rule:** Flip `disable-model-invocation: false` on `audit-plan`, `audit-completion`, `critique-plan`, and `ship-spike` (`/flow:ship` already done in PR S / FB-0018). Reviewers are review *passes*; `ship-spike` opens a PR but never merges — none is a gate, so forcing a human to hand-type them was an artificial stop. Three durable sub-rules:
+
+```
+(a) Docs must stay in LOCKSTEP with the flag (FB-0010 fan-out): after any
+    flip, zero "MANUAL"/"user-invocable"/"hand-typed" survivors for these
+    four in README/workflow.md. The flag and the label are one contract.
+(b) Model-invocable ≠ cold-start. The three reviewers fire WITHIN a driven
+    loop (at the plan/present gates), not on a cold "build me X". Preserve
+    that cold-start-honesty in the docs — label them BOTH (auto + typeable),
+    not a bare AUTO that implies they self-start.
+(c) ship-spike auto-advance is JUDGMENT-gated, not predicate-gated. Unlike
+    /flow:ship (which auto-advances on a mechanical verify-build PASS), a
+    spike's "done?" is a judgment. That's acceptable (spike code is
+    disposable, never merges, human-reviewed) — do NOT invent a fake
+    mechanical predicate to make it look symmetric with ship.
+```
+
+**Load-bearing dependency:** the three `context: fork` reviewers only work if `extract_session.py` can find the session transcript from a worktree (dotted-path) cwd — broken until #33 (v1.4.2) fixed slugify + added a `CLAUDE_CODE_SESSION_ID` primary. Without #33 in the base they auto-invoke but audit nothing. (Fork-path parity verified PASS once #33 is present.)
+
+**Applies to:** the four skills' frontmatter, README + workflow.md invocation labels, FB-0010 fan-out discipline, the two-gate model, FB-0018 reconciliation
+
+### FB-0035: verify-build discovery belongs at the readiness boundary; ship-time verify-build is a confirmation re-run (refines FB-0018(b))
+**Date:** 2026-06-01
+**Source:** user direction (managed-autonomy confidence conversation)
+
+**What was said:** "do we want verify-build before ship? if any iterating needs to be done based on visual review, that should probably be treated as something to dial in before we decide it's ready to ship." The "ship it" decision should mean "I've seen it work," not "go find out if it works."
+
+**Synthesized rule:** Behavioral + visual *discovery* runs at the Step 8/9 readiness boundary, before the ship decision (the auto-advance predicate already requires a verify-build PASS there). At `/flow:ship` Step 2, verify-build is a **confirmation re-run** — a non-converging FAIL/Unknown means a *regression since readiness* → FB-0012 bounded mechanical fix, else route to the draft manifest (FB-0034). This **refines FB-0018(b)**: ship's gate no longer "halts pre-PR on FAIL/Unknown" — it routes to a draft pre-PR, preserving (and strengthening) the invariant *no merge-ready PR on a non-PASS build*. **Visual sign-off folds into the merge gate** (agent dials in pre-PR against plan-declared visual criteria; the authoritative human look is the PR preview) — never a third human gate. General rule: anything that can produce *iteration* runs before the ship decision; anything inside ship is a pass/fail *confirmation*, never a loop.
+
+**Applies to:** `/flow:verify-build`, `/flow:ship` Step 2, `workflow.md` Step 8/10, FB-0018 reconciliation, UI-project visual workflow
+
+### FB-0034: Ship-time blockers resolve to {auto-fix in-tree | draft-PR + NOT-READY manifest} by resolution-confidence — escalation routes INTO the merge gate, never a silent proceed or a hard mid-loop halt
+**Date:** 2026-06-01
+**Source:** user direction (managed-autonomy confidence conversation)
+
+**What was said:** JTBD — the loop should run autonomously and "shouldn't stop arbitrarily unless it's for a good reason that we outlined in the workflow." On the risk: "are there cases (like security issues discovered in ship flow) where there is reasonable uncertainty about which way to proceed, that could result in a best-effort open PR that isn't ready to merge?" — yes; and an unresolved blocker should surface *at* a designed gate, not halt the loop or ship a not-ready-looking PR.
+
+**Synthesized rule:** Every ship-time reviewer BLOCKER carries a **resolution-confidence** tag orthogonal to severity: `[auto-fixable]` (one clear, mechanically-verifiable fix) or `[decision-required]` (multiple valid fixes / out-of-repo action / un-auto-fixable). **Default to `[decision-required]` when unsure** (FB-0011 ESCALATE-by-default). `/flow:ship` routes auto-fixable → fix in-tree; decision-required (and non-converging verify-build regressions) → a **draft PR + pinned `🚫 NOT READY TO MERGE` manifest**. Three outcomes only — auto-fix, draft-route, or follow-up — **never a silent proceed and never a hard mid-loop halt.** The draft is the mechanical NOT-READY signal the human merge gate trusts; the manifest is the human-readable one. The escalation routes *into* an existing gate (merge), not a new one — this is the operational form of the two-gate thesis (the only human gates are plan approval + merge; automatic escalations route into them).
+
+**Applies to:** `/flow:security-review`, `/flow:accessibility-review`, `/flow:verify-build`, `/flow:ship` Step 2/7, future reviewers, autonomous-gate design, the two-gate model
+
 ### FB-0019: PR descriptions should document the full per-step flow-loop run, not a generic Reviews line — and the per-step honesty rule cuts both ways (never imply a step ran that didn't; never imply one was skipped that ran)
 **Date:** 2026-06-01
 **Source:** user direction (stated while dogfooding flow on another project)

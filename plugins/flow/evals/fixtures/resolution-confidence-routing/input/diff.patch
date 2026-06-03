@@ -1,0 +1,28 @@
+diff --git a/src/api/client.ts b/src/api/client.ts
+index 1111111..2222222 100644
+--- a/src/api/client.ts
++++ b/src/api/client.ts
+@@ -1,4 +1,7 @@
+ import { httpGet } from "./http";
+
++// FIXME committed during a debugging session — stands in for a real
++// production API credential (fixture uses an obviously-fake value so it
++// can't trip secret scanners / push protection while still exercising the
++// reviewer's secret-in-source detection).
++const PROD_API_SECRET = "FIXTURE-FAKE-prod-credential-DO-NOT-SCAN";
++
+ export function client() {
+-  return httpGet("/status");
++  return httpGet("/status", { auth: PROD_API_SECRET });
+ }
+diff --git a/src/ui/Link.tsx b/src/ui/Link.tsx
+index 3333333..4444444 100644
+--- a/src/ui/Link.tsx
++++ b/src/ui/Link.tsx
+@@ -1,5 +1,9 @@
+ import React from "react";
+
++// renders a user-supplied URL with no protocol guard
++export function Link({ userUrl, label }: { userUrl: string; label: string }) {
++  return <a href={userUrl}>{label}</a>;
++}
