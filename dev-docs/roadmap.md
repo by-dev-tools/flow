@@ -169,6 +169,26 @@ PR S deliberately keeps the Step 8 predicate as *guidance* (rule + skill descrip
 
 **Origin:** PR M push-further lens NIT (deferred for design discussion). PR N's `test_status_markers.py` will be the rule-of-three trigger.
 
+### Dynamic-workflows adoption: segment-bounded fan-out between gates  *(alignment umbrella — direction-setting, not yet a PR)*
+
+**Surfaces when:** (a) Anthropic moves dynamic workflows past research preview or changes the API/limits (currently: 16 concurrent / 1,000 total agents, no mid-run input, no script-side filesystem, `claude -p`/SDK auto-launch); OR (b) `/flow:staff-review` or `/flow:verify-build` orchestration is next touched; OR (c) a consumer hits review-context bloat on a large diff, or wants migration-scale (per-file) review coverage; OR (d) `ultracode` / `/effort` interaction with the loop is raised.
+
+**The thesis (full report: [`dev-docs/research/dynamic-workflows-alignment-2026-06.md`](research/dynamic-workflows-alignment-2026-06.md)):** dynamic workflows are an *execution substrate*; Flow's doctrine (two human gates, four review lenses, loop-only-on-mechanical-exit, evidence-or-silence) is a set of *constraints on how that substrate is used*. The adoption shape is **segment-bounded: a workflow owns the fan-out BETWEEN two human gates and never spans a gate** (workflows forbid mid-run input — *"for sign-off between stages, run each stage as its own workflow"*). The loop's three workflow-able segments: **A** Clarify→Plan→critique (→ plan-approval gate), **B** Execute→preflight→simplify→staff-review→Present (→ Present gate), **C** ship pipeline (→ merge gate).
+
+**Direction (prioritized; each its own future PR, not a monolith):**
+- **O1 — port `/flow:staff-review` + `/flow:verify-build` to saved workflow scripts** (`.claude/workflows/`). Buys clean main context (only the triaged verdict returns), rerunnability, `args` by diff base; moves the deterministic aggregation rule from SKILL.md prose into the script (resolves the markdown↔JS fan-out risk for these two). **Preserve all four lenses as distinct phases (FB-0037).**
+- **O2 — scale fan-out per-file/per-criterion** — keep the lenses as the role taxonomy, fan out per changed file, converge in the script. **Only when diff size earns the token cost (FB-0038).**
+- **O3 — the real "voting": informed-independent refutation at scale** — NOT generic claim-voting. See the empirical entry below: blind refutation rubber-stamps and debate loops amplify bias; the untested promising variant (fresh agent + context + significance rubric) is what the workflow substrate enables, on UI diffs especially. Respect FB-0012 (single-pass convergence, never iterate-to-approval). Pairs with PR P.
+- **O4 — reframe `workflow.md` around the three gate-bounded segments** (the doctrine update that makes O1–O3 safe).
+- **O5 — `ultracode` interaction policy** — a workflow may own a segment but must terminate at a gate and surface its result; consider scoping `disableWorkflows` for segment C. Closes the gate-bypass risk; operationalizes FB-0038's no-blanket-ultracode rule.
+- **O6 — parallelize the ship triad** (security ∥ a11y ∥ verify-build) once C is a workflow.
+- **O7 — K1 reserved-numbers becomes a prerequisite** for any fan-out feedback synthesis (workflows have no file-locking; parallel FB-number writes race) — FB-0039.
+- **O8 — preserve the human-review + self-learning artifacts (FB-0039):** Flow-run PR table (enrich with the saved-script path + per-phase token/agent summary), the companion HTML case-study (see the entry above — its natural data source is the verify-build JSON buffer), and the core-docs/FB/memory pipeline (a synthesis agent writes them; the script can't).
+
+**Why not now:** research preview + this repo has no UI-bearing consumer to validate the design-lens fan-out (O2/O3) against. Direction-setting only; each O-item graduates to a lettered PR when its `Surfaces when` trigger fires. Do NOT pull the umbrella into one PR — it spans shipped-artifact, doctrine, and config surfaces that must ship and review independently (three-surface boundary + small-PR discipline).
+
+**Origin:** user direction 2026-06-03 (dynamic-workflows alignment conversation); FB-0037/0038/0039 capture the three load-bearing preservation constraints.
+
 ### Dynamic-workflows-based review: re-test refutation across problem types, incl. UI  *(research-driven — re-test as the feature evolves)*
 
 **Surfaces when:** (a) Anthropic ships a new dynamic-workflows version or moves it past research preview (the API/behavior changes), OR (b) Flow gains a UI-bearing consumer project to dogfood on, OR (c) any future reviewer-quality pass is run on a substantively different diff (large migration, genuinely-buggy pre-review diff, UI/a11y-heavy diff).
