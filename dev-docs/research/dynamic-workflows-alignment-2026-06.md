@@ -129,12 +129,14 @@ If feedback synthesis ever fans out, claim-time FB reservation is required (4.4)
 
 ### O8 — Preserve & strengthen the human-review + self-learning artifacts (FB-0039)
 - **Flow-run PR table (FB-0019):** fold the workflow's saved-script path + per-phase agent/token summary (from `/workflows`) into the table — strengthens the audit trail with the native artifact.
-- **Companion HTML case-study report:** already on the roadmap ("Verify-build HTML case-study report", post-PR-Q) — the rendered page a human opens before clicking merge, carrying per-criterion question/explored/learned + screenshots + per-dimension verdicts. This is *exactly* the visual-change review surface to preserve; a workflow's JSON findings buffer is its natural data source. Visual sign-off folds into the merge gate (FB-0035), never a third gate.
+- **Companion HTML case-study report + visual history — ASPIRATIONAL, NOT YET SHIPPED.** This is a roadmap *vision* ("Verify-build HTML case-study report", PR-R-successor), not a current surface. What *is* shipped: `/flow:verify-build` (PR Q, v1.3.0), behavioral verification that captures some screenshot/a11y-tree observation; its JSON findings buffer is the intended data source for the future rendered page (per-criterion question/explored/learned + screenshots + per-dimension verdicts). So this is a *target the workflow direction should enable*, not an existing artifact to preserve. Visual sign-off folds into the merge gate (FB-0035), never a third gate.
 - **Core-docs + FB-entities + memory:** the compounding self-learning pipeline. Workflows can't write these directly (script ≠ filesystem) — a synthesis agent must, and under fan-out the FB-number race (O7) is live.
 
 ---
 
 ## 7. Bottom line for human-guided autonomous coding
+
+**North star (FB-0040):** maximize the value of human review — ground decisions in user needs, make assumptions explicit, raise *subjective* questions for human input, carry rationale for everything; then automate implementation from clear intent and catalogue feedback + decisions to improve the process. Human attention is best spent on intent/assumptions/judgment/rationale, not mechanical implementation. Because a workflow takes no mid-run input, all of that surfacing must happen **at the gate preceding a segment** — never deferred into the fan-out interior or silently guessed. Maximizing human-review value is therefore *richer gate decisions*, not *more gates*.
 
 Don't make the whole loop a workflow — its value is its gates, and the engine forbids gates mid-run. Instead: **the human owns the gates (plan approval, the Present decision, merge); the workflow engine owns the fan-out and convergence between them.** Designer perspectives stay first-class phases inside that fan-out (FB-0037). Workflows are adopted where scale earns the tokens, not by default (FB-0038). The PR/HTML/core-docs/feedback artifacts that make review legible and learning compounding are preserved as the workflow's *outputs* (FB-0039). That division is the most powerful expression of human-guided autonomous coding available — and Flow is one doctrine update (O4) plus two skill-ports (O1) away from it.
 

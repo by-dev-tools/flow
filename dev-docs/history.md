@@ -65,6 +65,8 @@ The user wants Flow to take full advantage of dynamic workflows — especially t
 **Lessons learned:**
 - Flow's own constraints (FB-0012 mechanical-loop-only; PR J debate-loop scope-out; FB-0016 refutation spike) sharpen the native-feature recommendations rather than block them — the prior-art read is what kept the "voting" recommendation honest.
 
+**Follow-up (same session):** User clarified that the visual-history / visual-verification artifacts are partly aspirational, and restated the actual goal — a human-review *value model*. Added **FB-0040** (north star: ground in user needs, make assumptions explicit, raise subjective questions, rationale for everything, then automate from clear intent + catalogue feedback/decisions — the principle FB-0037/38/39 serve), and marked the companion-HTML / visual-history artifacts explicitly ASPIRATIONAL/NOT-YET-SHIPPED in FB-0039 + the report (shipped baseline = `/flow:verify-build` behavioral check, v1.3.0; the rich visual report is a roadmap vision, not a surface to preserve). Key consequence captured: because workflows take no mid-run input, assumptions + subjective questions must surface at the *gate* preceding a segment, never in the fan-out interior — maximizing human-review value means *richer gate decisions, not more gates*.
+
 
 ### PR U — ship-time gate semantics + reviewer/ship-spike auto-invocability (v1.5.0) SAFETY
 **Date:** 2026-06-02
