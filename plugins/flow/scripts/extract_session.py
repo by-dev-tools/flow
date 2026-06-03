@@ -67,14 +67,62 @@ COMPLETION_PHRASES = ("all set", "working now", "should now work", "now works")
 
 
 def slugify_cwd(cwd: str) -> str:
-    """Replace `/` with `-`, strip leading `-`, matching Claude Code convention."""
-    return cwd.replace("/", "-").lstrip("-")
+    """Encode a working-directory path the way Claude Code names its
+    ``~/.claude/projects/<dir>`` transcript directory.
+
+    Claude Code replaces *every* character that is not ASCII-alphanumeric with
+    ``-`` -- so ``/``, ``.``, ``_`` and spaces all become ``-`` -- preserves
+    existing hyphens, and does NOT collapse consecutive separators. The leading
+    ``-`` (from the leading ``/``) is stripped here and re-added by the caller.
+
+    This previously replaced only ``/``, which silently mismatched for any path
+    containing a ``.`` (e.g. ``.../.claude/worktrees/...``: CC writes
+    ``...flow--claude-worktrees...`` but this produced ``...flow-.claude-...``).
+    The reviewers then reported "session file not found" from every worktree /
+    dotted-path session and ran context-starved. See history 2026-06-02.
+    """
+    return re.sub(r"[^0-9A-Za-z]", "-", cwd).lstrip("-")
+
+
+_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def _find_session_by_id(session_id: str) -> Path | None:
+    """Locate a transcript by exact Claude Code session id, independent of cwd
+    encoding. Returns the file only when exactly one match exists (0 or >1 ->
+    None, so the caller falls back to cwd-slug resolution rather than guessing).
+
+    `session_id` is interpolated into a filesystem glob, so it is validated to a
+    plain id token first: anything containing a path separator or glob
+    metacharacter (`/`, `.`, `*`, `?`, `[`, ...) is rejected -> None. This keeps
+    a malformed or tampered CLAUDE_CODE_SESSION_ID from wildcard-matching or
+    traversing to other transcripts (defense-in-depth, mirroring the cwd
+    constraint in gather_reference_docs). Genuine session ids are UUIDs, which
+    pass cleanly."""
+    if not _SESSION_ID_RE.fullmatch(session_id):
+        return None
+    projects = Path.home() / ".claude" / "projects"
+    if not projects.is_dir():
+        return None
+    matches = [p for p in projects.glob(f"*/{session_id}.jsonl") if p.is_file()]
+    return matches[0] if len(matches) == 1 else None
 
 
 def find_session_file(explicit: str | None = None) -> Path | None:
     if explicit:
         p = Path(explicit).expanduser().resolve()
         return p if p.is_file() else None
+    # Primary: exact match via the session id Claude Code exports to the
+    # subprocesses it spawns (including a SKILL.md `!`...`` substitution).
+    # cwd-independent, so it is immune to the worktree / dotted-path encoding
+    # mismatch the slug fallback below also now handles. Best-effort: if the
+    # var is absent or doesn't resolve to exactly one file, fall through.
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "").strip()
+    if session_id:
+        by_id = _find_session_by_id(session_id)
+        if by_id is not None:
+            return by_id
+    # Fallback: reconstruct the project dir name from cwd using CC's encoding.
     cwd = os.getcwd()
     slug = slugify_cwd(cwd)
     projects_dir = Path.home() / ".claude" / "projects" / f"-{slug}"

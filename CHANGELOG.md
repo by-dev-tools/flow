@@ -10,6 +10,16 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.4.2 — 2026-06-02
+
+**Reviewers no longer silently run context-starved from worktree / dotted-path sessions (`extract_session.py` session-discovery fix). SAFETY.**
+
+- `find_session_file` (the session-transcript locator behind `/flow:audit-plan`, `/flow:audit-completion`, `/flow:critique-plan`) reconstructed the `~/.claude/projects/<dir>` name by replacing only `/` with `-`. Claude Code replaces **every** non-alphanumeric character (so `.`, `_`, spaces too). Any working directory containing a `.` — e.g. every `.claude/worktrees/...` session — mismatched, and the reviewers reported "session file not found" and audited nothing. Encoding now mirrors Claude Code exactly.
+- Discovery now **prefers an exact match via `CLAUDE_CODE_SESSION_ID`** (which Claude Code exports into spawned subprocesses, including a skill's `!`-backtick substitution), independent of cwd encoding; the corrected cwd-slug is the deterministic fallback, and an unresolved lookup still returns `None` gracefully (no crash). The session-id is validated to `[A-Za-z0-9_-]+` before it reaches the filesystem glob, so a tampered/malformed value can't wildcard-match or traverse to other transcripts.
+- New regression fixture `plugins/flow/evals/security/test_session_discovery.py` covers the encoding (dotted / `_` / space paths), the session-id primary, the slug fallback, the graceful-`None` case, glob-injection payloads, and the ambiguous-id guard.
+
+**Breaking changes:** none. Pure correctness fix to session preprocessing; reviewer output schemas, slot counts, and all other surfaces unchanged. Consumers running from a normal (dot-free) project root were unaffected; the fix additionally hardens worktree / dotted-path usage.
+
 ## v1.4.1 — 2026-06-01
 
 **PR descriptions now document the full flow-loop run — a per-step `## Flow run` table replaces the generic `## Reviews` blurb.**
