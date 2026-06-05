@@ -30,6 +30,65 @@ After PR H2 ships: user installs flow at v1.2.5 across md-manager + health-track
 - **PR S — Autonomous ship-readiness trigger — MERGED #30 (v1.4.0, `4f5fba6`)** — flipped `ship` to auto-invocable behind a ship-readiness predicate + FB-0011 risk gate; `ship-spike` left MANUAL at that time. Delivered the autonomous-invocation-wiring half of the originally-sketched PR L. (Plan section below retained as the shipped record; "in flight" wording in it is historical.)
 - **Managed-autonomy confidence (umbrella)** — `infallible-mclaren-c2bd23`. PR-letter dropped (the merged #32 took "PR T"); the umbrella is a tracker whose facets ship as their own PRs. Status: **Facets 2 + 3 + 5 MERGED via PR U** ([#31](https://github.com/by-dev-tools/flow/pull/31), v1.5.0, squash `ef75472`) — resolution-confidence + draft-routing (Facet 2), verify-build readiness-placement (Facet 3), reviewer/ship-spike auto-invocability (Facet 5, absorbed from the old "Track A"). FB-0034/0035/0036 written. **Remaining:** Facet 1 (doctor/init unify + CLAUDE.md sentinel; FB-TBD) + Facet 4 (plan-declared comprehensive success criteria enforced by plan-critic) — both still planned, not started.
 
+## PR V1 — Structured visual acceptance criteria (planning; Deliverable-quality track)
+
+**Restated request:** Give the plan a place to *declare* visual/UX success criteria the way it already declares behavioral ones (Spec-walk), so the agent can self-iterate against a visual bar and the human can see that bar at the approval gate. First (cheapest) link in the Deliverable-quality track (roadmap.md § "Deliverable-quality track"; FB-0041). It is the load-bearing *input* for V2 (rendered capture) and V3 (HTML walkthrough).
+
+**Relationship to managed-autonomy Facet 4** (Handoff Notes, line ~30 — "plan-declared comprehensive success criteria enforced by plan-critic"): V1 is the **visual slice** of Facet 4, **declaration-only**. Facet 4's *plan-critic enforcement* half is deliberately deferred here (see Confidence verdict #2). V1 ships the field; a later increment (V1.1 or folded into V2/Facet 4) adds the critic rule. Naming them together so the two don't fan out into conflicting designs.
+
+**Mode:** feature (small) | **Priority: high** (unblocks V2/V3; user-directed goal-state track)
+
+**Goal:** Add a `Visual-walk:` block to flow's plan contract — a list of checkable visual/UX assertions a plan declares when the change has a UI surface. Purely *declarative* in V1: the field's consumers are the human (plan-approval + merge gates) and the agent's existing Step 8/9 visual dial-in. No mechanical verification of the criteria yet — that's V2.
+
+**Why this PR exists / what it closes:** `workflow.md` Step 8 already instructs the agent to "dial in visual quality against the plan's **declared visual criteria**" (line ~214), but no plan field declares them — a dangling reference. V1 gives that instruction a home. Pairs with the existing `uiSurface` config slot (same gate `/flow:accessibility-review` uses): `Visual-walk` is required when `uiSurface=true` and the diff has UI, skipped otherwise — so non-UI projects/changes are unaffected.
+
+**Design decision — distinct `Visual-walk:` block vs. folding visual checkboxes into `Spec-walk`:** distinct block. Rationale: V2's verify-build needs to *extract visual criteria separately* (different judge dimension, different capture path) the way it already parses `**Spec-walk:**`. A separately-addressable block makes V2/V3 extraction a labeled grep, not a heuristic classification of which spec-walk lines are "visual." Cost is one more template field; benefit is a clean machine-readable boundary for the rest of the track.
+
+**BLOCKER fixes from `/flow:critique-plan` (resolved in-plan before the gate):**
+- **B1 — field-count fan-out (FB-0010).** Adding an 8th required field would strand any "7 fields" count reference. Resolution: (a) **append `Visual-walk` as a new field (item 8), not insert "4.5"** — appending avoids renumbering; (b) **no magic count phrase** — the contract surfaces enumerate fields but never assert a total count, so a future Nth field can't strand a "N fields" phrase. *(Note: the list stays numbered, NOT de-numbered — B2 below depends on the `(4)`/`(5)` numbers staying valid; B1 is satisfied by removing count *phrases*, not the enumeration.)*; (c) **sweep the count** — `git grep -nE '(seven|[0-9]+)[ -]+(required )?(plan )?fields?'` fixed the two survivors in `dev-docs/plan.md` + `dev-docs/roadmap.md` (now number-agnostic); the shipped contract surfaces carry no count phrase.
+- **B2 — spike/tiny mode interaction.** `plan-discipline.md` keys mode overrides to field *numbers* (`spike` replaces (4)+(5); `tiny` skips (4)+(5)). Resolution: `Visual-walk` is **appended (not wedged mid-list), and is N/A under `spike`/`tiny`** — stated explicitly the same way (4)/(5) are skipped — so the existing number-keyed overrides stay valid and untouched.
+
+**Scope (in):**
+- `plugins/flow/rules/plan-discipline.md` — **append** required field `Visual-walk` to the "Required plan fields" list (UI changes only; gated on `uiSurface`), with the "each assertion names a user-perceptible visual state + how it's checked" shape, mirroring the Spec-walk discipline; reference `designLanguagePath` as the source-of-truth. **Add a mode-interaction line:** `Visual-walk` is N/A under `spike`/`tiny` (alongside the existing (4)/(5) override sentence). **Keep the list numbered** (B2 needs the `(4)`/`(5)` mode refs valid); satisfy B1 by carrying no "N fields" count *phrase*, NOT by de-numbering.
+- `plugins/flow/agents/planner.md` — add the `Visual-walk:` block to the canonical plan template (UI-only, with a one-line "omit for non-UI / spike / tiny" note).
+- `plugins/flow/docs/workflow.md` §2 *Required fields* — narrate the new field + the spike/tiny N/A; carry no count *phrase* consistently with plan-discipline.md (B1; §2 is a bullet list, not numbered); **update §8 (line ~214) so "declared visual criteria" names the `Visual-walk` block** (closes the dangling reference — FB-0010 fan-out: the term must point at a real field).
+- Version bump `1.5.0 → 1.5.1` (shipped artifacts changed: rules/ + agents/ + docs/): `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` (both fields), README `## What v1.5.0 ships` header, `CHANGELOG.md` v1.5.1 entry.
+- `dev-docs/{history.md, plan.md}` — decision-log entry + mark this item; `reserved-feedback-numbers.md` FB-0041 line cleared at ship (per protocol).
+
+**Scope (out) — deliberately deferred to keep V1 the cheap unblocker:**
+- **Any mechanical verification of visual criteria** (rendered capture, screenshot/baseline, VLM judging, verify-build extraction) → **V2**.
+- **HTML walkthrough rendering** → **V3**.
+- **The plan-critic enforcement half of Facet 4** (flag UI plan missing `Visual-walk`) → V1.1 / V2 (see Confidence #2).
+- **A PreToolUse/Stop hook enforcing the field's presence** → not in the track; the field is contract-enforced like the plan's other required fields (prose + plan-critic), not hook-enforced.
+- **`/flow:plan` authoring skill** → the optional/off-critical-path item noted in the track, separate PR.
+
+**Spec-walk:**
+- [x] `plan-discipline.md` lists `Visual-walk` as a required field for UI changes, gated on `uiSurface`, with the per-assertion shape (user-perceptible state + check method) + `designLanguagePath` reference. (verified: item 8 added at plan-discipline.md:33)
+- [x] `planner.md` template includes the `Visual-walk:` block with the UI-only / omit-for-non-UI note. (verified: planner.md:56 + mode notes at :68/:70)
+- [x] `workflow.md` §2 narrates the field AND §8's "declared visual criteria" phrase is updated to name the `Visual-walk` block — no dangling reference survives. (verified: workflow.md:118 §2 + :215 §8 names the block)
+- [x] Field is consistently UI-gated across all three surfaces (no surface implies it's required for backend-only changes). (verified: `git grep -n 'Visual-walk'` — every mention carries the uiSurface/UI-only qualifier)
+- [x] **(B2)** `Visual-walk`'s spike/tiny interaction is stated explicitly in `plan-discipline.md` + `planner.md` + `workflow.md` §2 (N/A under spike/tiny), and the existing number-keyed `(4)`/`(5)` mode-override sentence is left valid/untouched. (verified: append-not-insert; mode sentences updated in all three surfaces)
+- [x] **(B1)** Field-count fan-out swept: contract surfaces (plan-discipline.md, workflow.md) carry no "N fields" magic-count phrase (enumeration kept so B2's `(4)`/`(5)` mode refs stay valid), and `git grep -nE '(seven|[0-9]+)[ -]+(required )?(plan )?fields?'` returns no stale survivors in shipped artifacts (only plan.md's own B1 explanation). (verified: grep clean on plugins/)
+- [x] Version bumped 1.5.0→1.5.1 in both manifests (metadata + per-plugin) + README header + CHANGELOG entry; no `1.5.0` version-field survivors. (verified: all 3 version fields = 1.5.1; metadata-version fan-out caught + fixed at preflight)
+- [x] `claude plugin validate .` clean. (verified: ✔ Validation passed)
+- [x] Run `/flow:critique-plan` on this plan before approval (advisory; resolve BLOCKER/REDIRECT in-plan). (done: 2 BLOCKERs fixed in-plan; REDIRECT + FOLLOW-UP surfaced at the gate; user approved declaration-only + `Visual-walk` name)
+- [x] Run `/flow:staff-review` after implementation. (done: 3 lenses — engineer/ux/push-further; design-engineer N/A no visual surface. 0 BLOCKER; 5 NITs fixed inline — expanded examples to cover interaction/loading/a11y states across both contract surfaces, moved planner template block to item-8 position for cross-surface consistency, propagated the per-diff UI qualifier to all 3 surfaces, fixed stale "de-number" Scope-in wording, removed a stray blank line; 5 FOLLOW-UPs routed to roadmap § Deliverable-quality V1.)
+- [x] Ship to open the PR. (Shipped via the dev-side `/ship` because the dogfood install is flow 1.3.0 — predates the 1.4.0 auto-ship flag, so `/flow:ship` couldn't be model-invoked. Gates run manually for the audit trail: security-review CLEAN (.json manifests in diff → ran, no findings); a11y-review SKIPPED (uiSurface:false); verify-build SKIPPED (platform=library). history.md V1 entry written. Never merged — merge stays the human gate.)
+
+**Confidence verdict per load-bearing assumption:**
+
+- **Assumption:** A distinct `Visual-walk:` block (vs. folding visual checkboxes into `Spec-walk`) is the right shape, because V2 will extract visual criteria separately. **Confidence:** MEDIUM. **Why:** V2 isn't built, so the extraction need is projected, not observed; but it directly mirrors how verify-build already parses `**Spec-walk:**` separately. **If it flips:** if V2 ends up wanting them folded, collapse the block into spec-walk with a `[visual]` tag — a single-surface rename, reversible. *Surfaced for the approval gate.*
+- **Assumption:** V1 should NOT touch `plan-critic.md` (no new "flag UI plan missing Visual-walk" rule), keeping it a pure template/contract change with no eval fixture required. **Confidence:** MEDIUM. **Why:** adding a critic rule triggers the quality bar's "no new rule without a fixture" requirement, enlarging V1; deferring keeps it the cheap unblocker, and the human still sees a missing visual bar at the approval gate. **If it flips:** you want the critic to mechanically flag UI plans with no `Visual-walk` (= Facet 4's enforcement half) → add a one-line `Internal incoherence` clause + one fixture in a fast follow (V1.1) or fold into V2. *This is the main decision I want your call on at the gate.*
+- **Assumption:** A version bump (1.5.1) is warranted because shipped plugin artifacts (rules/agents/docs) change. **Confidence:** HIGH. **Why:** consistent with PR J/T precedent (prompt/docs artifacts that ship in the install bundle → bump). **If it flips:** you prefer no bump → revert manifest/README/CHANGELOG edits; single reversible sweep.
+
+**Risks / open questions:**
+- **Field could become decorative** if nothing consumes it before V2 ships. Mitigation: it has two live consumers on day one (human at both gates; the Step 8/9 dial-in instruction that currently references criteria with no home). The risk is real only if V2 stalls indefinitely — acceptable for the cheapest link.
+- **Naming:** `Visual-walk` parallels `Spec-walk` cleanly; open to `UX-walk` / `Visual-spec` if you prefer. Cosmetic, set now to avoid a later rename fan-out.
+
+**Files touched (anticipated):** `plugins/flow/rules/plan-discipline.md`, `plugins/flow/agents/planner.md`, `plugins/flow/docs/workflow.md`, `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `README.md`, `CHANGELOG.md`, `dev-docs/history.md`, `dev-docs/plan.md`, `dev-docs/reserved-feedback-numbers.md`.
+
+---
+
 ## PR T — Flow-run PR descriptions (in flight)
 
 **Mode:** feature (small), prompt/docs change to shipped artifacts | **Priority: medium (dogfood-driven UX)**

@@ -60,11 +60,16 @@ Update or create a single work item in the plan doc under **Active Work Items**,
 - [Anything that might block or surprise]
 
 **Files touched:** [anticipated paths]
+
+**Visual-walk** *(UI changes only — when `flow.config.json.uiSurface` is true AND the diff touches UI; omit for non-UI changes, and for spike/tiny modes):*
+- [ ] [state: empty / loading / error renders correctly — not a blank panel]
+- [ ] [token / motion: uses design-language tokens, not hardcoded values; enter motion ≤ Y ms]
+- [ ] [interaction / a11y: focus moves into overlays + Esc closes them, keyboard reaches every control — against `flow.config.json.designLanguagePath`]
 ```
 
-For `mode: spike`: replace "Spec-walk checkboxes" with a single "Research question" line and replace "Confidence verdict" with "Disposability." See `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` § "Spike mode" for the full shape.
+For `mode: spike`: replace "Spec-walk checkboxes" with a single "Research question" line and replace "Confidence verdict" with "Disposability"; omit "Visual-walk." See `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` § "Spike mode" for the full shape.
 
-For `mode: tiny`: skip "Spec-walk checkboxes" + "Confidence verdict" entirely but still name the file + the one-line change.
+For `mode: tiny`: skip "Spec-walk checkboxes" + "Confidence verdict" + "Visual-walk" entirely but still name the file + the one-line change.
 
 ## Bar
 
