@@ -22,6 +22,10 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
+- **FB-0037** — `claude/flow-dynamic-workflows-alignment-oJWKN` — "Designer perspectives are load-bearing; the ux-designer / design-engineer / push-further lenses must survive dynamic-workflows adoption, not collapse into a generic reviewer." Claimed above the 0020–0033 cross-session band (PR-U precedent). Docs-only research/roadmap PR.
+- **FB-0038** — `claude/flow-dynamic-workflows-alignment-oJWKN` — "Adopt dynamic workflows to their fullest where fan-out scale earns it, but never force a workflow when a single subagent pass suffices — token/cost is a first-class constraint; no blanket ultracode."
+- **FB-0039** — `claude/flow-dynamic-workflows-alignment-oJWKN` — "The human-review + self-learning artifacts (Flow-run PR table, companion HTML case-study, core-docs + FB-entities + memory) are load-bearing outputs that must survive workflow adoption; parallel writes make K1's reserved-numbers protocol load-bearing under fan-out."
+- **FB-0040** — `claude/flow-dynamic-workflows-alignment-oJWKN` — "Human-review value model (north star): ground in user needs, make assumptions explicit, raise subjective questions, rationale for everything, THEN automate implementation from clear intent, cataloguing feedback + decisions to improve the process. The principle FB-0037/38/39 serve."
 
 ## Audit trail (past collisions, kept for institutional memory)
 

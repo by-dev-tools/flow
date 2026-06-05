@@ -35,6 +35,98 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0040: Human-review value model (north star) — surface intent / assumptions / subjective questions / rationale FOR the human; automate implementation from clear intent; catalogue feedback + decisions to improve the process
+**Date:** 2026-06-03
+**Source:** user direction (dynamic-workflows alignment conversation — stated as the goal the other constraints serve)
+
+**What was said:** "we're working towards maximizing the value of human review (grounding decisions in user needs, making assumptions clear, raising subjective questions for the human to give input on, and having rationale for everything, then automating the implementation based on clear intent and cataloguing feedback and decisions for future reference to improve the process)."
+
+**Synthesized rule:** This is the **north star** that FB-0037 (designer lenses), FB-0038 (cost-aware workflow use), and FB-0039 (preserve review/learning artifacts) all serve — and the lens through which every dynamic-workflows adoption decision should be judged. Human review is most valuable when spent on **intent, assumptions, subjective judgment, and rationale** — not on mechanical implementation. So the loop's job is to:
+
+```
+(a) Ground decisions in user needs (cite the need/spec/intent).
+(b) Make assumptions explicit and confidence-rated (existing: confidence
+    verdicts; LOW auto-gates, MEDIUM surfaces at Present).
+(c) Raise SUBJECTIVE questions for human input — the things a machine
+    shouldn't unilaterally decide (taste, priority, one-way doors). Use
+    AskUserQuestion-style surfacing at a gate, not a guess.
+(d) Carry rationale for everything (existing: history.md "why" + tradeoffs,
+    plan confidence verdicts, two-citation reviewer evidence).
+(e) THEN automate implementation from clear intent (the autonomous interior
+    between gates).
+(f) Catalogue feedback + decisions for future reference to improve the
+    process (existing: feedback.md FB-entities, memory pipeline, history.md).
+```
+
+**Load-bearing consequence for dynamic workflows:** because a workflow takes **no mid-run input**, every assumption and subjective question a segment depends on must be surfaced and resolved **at the gate that precedes it** — never deferred into the fan-out interior (which can't pause to ask) and never silently guessed. This is the operational tie between this value model and the segment-bounded adoption shape (O4/O5): gates are where (a)–(d) happen; the workflow interior is where (e) happens; (f) is the workflow's durable output (FB-0039). Maximizing human-review value is therefore NOT "more gates" — it's making the two existing gates carry richer, better-grounded, assumption-explicit, subjectively-informed decisions.
+
+**Applies to:** the whole managed-autonomy loop, dynamic-workflows adoption (esp. O4 segment doctrine + O5 ultracode policy), confidence-gate doctrine, plan/Present gates, AskUserQuestion usage, history.md + feedback.md + memory cataloguing, FB-0037/0038/0039 (this is their shared root)
+
+### FB-0039: The human-review + self-learning artifacts are load-bearing outputs that must survive dynamic-workflows adoption — Flow-run PR table, companion HTML case-study, and the core-docs + FB-entity + memory pipeline
+**Date:** 2026-06-03
+**Source:** user direction (dynamic-workflows alignment conversation)
+
+**What was said:** "the format of human review and self learning from feedback (pr structure and companion html files showing visual changes, as well as flow's core docs system and feedback entities) is very important, and I want to preserve that as we adopt dynamic workflows."
+
+**Synthesized rule:** When porting any Flow stage to a native dynamic workflow, the *artifacts* the stage produces are part of its contract, not incidental output. Three must survive untouched (or be strengthened):
+
+```
+(a) The per-step `## Flow run` PR table (FB-0019) — the loop's execution made
+    legible on the PR page. A workflow can ENRICH it (fold in the saved-script
+    path + per-phase agent/token summary from /workflows) but never replace it
+    with a turn-by-turn transcript or a bare "ran a workflow" line.
+(b) Companion HTML case-study reports + visual history showing visual/
+    behavioral changes — the rendered page a human opens before the merge gate.
+    ASPIRATIONAL, NOT YET SHIPPED: this is a roadmap VISION ("Verify-build HTML
+    case-study report", PR-R-successor candidate), not a baseline to build on.
+    What IS shipped: /flow:verify-build (PR Q, v1.3.0) — behavioral verification
+    that captures some screenshot / a11y-tree observation; its JSON findings
+    buffer is the intended data source for the future HTML report. Visual
+    sign-off folds into the merge gate (FB-0035), never a third human gate.
+    Treat the rich visual artifacts as a target the workflow direction should
+    enable, not as an existing surface to preserve.
+(c) The core-docs (history/plan/roadmap/spec) + FB-entities + memory self-
+    learning pipeline. A workflow script CANNOT write files directly (script ≠
+    filesystem); a synthesis agent must. Under fan-out, multiple agents writing
+    feedback race on FB numbers — so PR K1's reserved-numbers protocol becomes
+    LOAD-BEARING, not optional, the moment feedback synthesis fans out.
+```
+
+The general principle: dynamic workflows isolate intermediate results in script variables and return only a final answer — which is a context win, but means the durable human-facing + self-learning surfaces must be explicitly produced as the workflow's outputs, or they silently disappear.
+
+**Applies to:** dynamic-workflows adoption, `/flow:ship` PR-body + feedback synthesis, verify-build HTML report, core-docs discipline, FB-collision protocol (K1), memory pipeline
+
+### FB-0038: Adopt dynamic workflows to their fullest where fan-out scale earns it — but never force a workflow when a single subagent pass suffices; token/cost is a first-class constraint
+**Date:** 2026-06-03
+**Source:** user direction (dynamic-workflows alignment conversation)
+
+**What was said:** "I want the flow process to be able to use dynamic workflows to the fullest extent, but I don't necessarily want to force it off [if] it's not necessary. I want to keep token efficiency and cost in mind."
+
+**Synthesized rule:** A dynamic workflow spawns many agents and costs meaningfully more tokens than the same task in conversation. Treat "should this be a workflow?" as a **workflow-worthiness predicate**, analogous to the Step-8 ship-readiness predicate — not a default. A workflow earns its cost when fan-out scale adds real value (large/migration-scale diffs, codebase-wide audits, per-file or per-criterion coverage, cross-checked research). For a small diff or a focused task, a single subagent pass (the current primitive) is the cheaper, correct choice. Two durable sub-rules:
+
+```
+(a) No blanket ultracode. Do not set /effort ultracode as a standing default
+    for this repo's work — it turns every substantive task into a workflow,
+    multiplying cost AND risking the gate-bypass in FB-TBD/ultracode policy.
+    Reach for a workflow per-task when scale warrants it.
+(b) Keep the existing cost gates. Flow's per-diff skip-paths (FB-0006/0007),
+    stale-base preflight (FB-0008), and verifyBudgetCalls cap are the cost-
+    consciousness model; a workflow port inherits them, it doesn't discard them.
+    Gauge spend on a small slice before a large run (docs guidance).
+```
+
+**Applies to:** dynamic-workflows adoption strategy, ultracode policy, `/flow:staff-review` + `/flow:verify-build` ports, cost-of-review discipline, FB-0006/0007/0008 lineage
+
+### FB-0037: Designer perspectives are load-bearing in the loop — the ux-designer / design-engineer / push-further lenses must survive dynamic-workflows adoption, not collapse into a generic reviewer
+**Date:** 2026-06-03
+**Source:** user direction (dynamic-workflows alignment conversation)
+
+**What was said:** "flow's structure intentionally centers designer perspectives, which I want to preserve even as we fully adopt workflows."
+
+**Synthesized rule:** Flow's review surface deliberately carries three design-oriented lenses (`lens-ux-designer`, `lens-design-engineer`, `lens-push-further`) alongside the engineering lens, plus the `designLanguagePath` doc they read from. When `/flow:staff-review` (or any review stage) is ported to a native dynamic workflow, these remain **distinct, named phases** — the workflow fans out *more* coverage per lens (e.g. per-file), it does not merge the four lenses into one general-purpose reviewer to save agents. The `reviewLenses` config slot is the opt-out mechanism (with a documented reason in the plan), not a default-collapse. Design and UX review catch a different class of issue than engineering review; the four-lens triangulation is the value, and it is exactly what fan-out should amplify, never flatten.
+
+**Applies to:** `/flow:staff-review` workflow port, `lens-*` agent definitions, `designLanguagePath`, `reviewLenses` slot, dynamic-workflows adoption
+
 ### FB-0036: All flow reviewer skills + ship-spike are model-invocable; the only two human gates are plan approval and PR merge — no skill is itself a gate
 **Date:** 2026-06-01
 **Source:** user direction (managed-autonomy confidence conversation)
