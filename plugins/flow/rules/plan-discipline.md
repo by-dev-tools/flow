@@ -30,8 +30,9 @@ Every plan written to the plan doc must include:
 5. **Confidence verdict per load-bearing assumption** — see below.
 6. **Risks / open questions**.
 7. **Files touched** — anticipated paths.
+8. **Visual-walk** *(UI changes only — when `flow.config.json.uiSurface` is true and the diff has a UI surface)* — declared visual/UX acceptance criteria, parallel to Spec-walk. Each is a checkable assertion naming a user-perceptible visual state and how it's checked. Cover more than the happy-path look — span static state, token/motion, AND interaction/a11y: e.g. "empty/loading/error state renders correctly, not a blank panel"; "primary button uses the accent token, not a hardcoded hex"; "enter motion ≤ 200ms"; "opening the dialog moves focus into it and Esc closes it"; "the submit control shows a loading state and is disabled while the request is in flight". Write them against the design-language doc (`flow.config.json.designLanguagePath`). These are the criteria the agent dials in against at Step 8/9 (`${CLAUDE_PLUGIN_ROOT}/docs/workflow.md`) and the human signs off on at the merge gate. **Declaration only** — the criteria are not yet mechanically verified (that's a later link in the Deliverable-quality roadmap track); today's consumers are the agent's visual dial-in and the human at both gates.
 
-`spike` mode replaces (4) with a single "Research question" line and (5) with a "Disposability" line. `tiny` mode skips (4) and (5) entirely but still names the file + the one-line change.
+`spike` mode replaces (4) with a single "Research question" line and (5) with a "Disposability" line. `tiny` mode skips (4) and (5) entirely but still names the file + the one-line change. `Visual-walk` (8) is appended, not inserted — it applies only to UI changes and is **N/A under `spike`/`tiny`** (the same way (4)/(5) are skipped). The (4)/(5) mode-override references above are unaffected by its addition.
 
 ## Confidence verdict
 

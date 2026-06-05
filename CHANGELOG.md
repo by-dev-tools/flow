@@ -10,6 +10,16 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.5.1 — 2026-06-05
+
+**Adds a `Visual-walk` plan field — declared visual/UX acceptance criteria for UI changes. First (cheapest) link in the Deliverable-quality roadmap track toward an autonomous high-quality deliverable.**
+
+- **New plan field `Visual-walk`** (UI changes only; gated on the existing `uiSurface` config slot; N/A under spike/tiny). A plan declares checkable visual/UX assertions — e.g. "empty state renders the zero-data illustration"; "primary button uses the accent token, not a hardcoded hex"; "enter motion ≤ 200ms" — written against the design-language doc (`designLanguagePath`), parallel to the existing `Spec-walk`.
+- **Closes a dangling reference:** `workflow.md` Step 8 already told the agent to "dial in visual quality against the plan's declared visual criteria," but no plan field declared them. `Visual-walk` is now that home; Step 8 names the field.
+- **Declaration-only.** The criteria are not yet mechanically verified — today's consumers are the agent's Step 8/9 visual dial-in and the human at the plan-approval + merge gates. Rendered capture + verification land in a later roadmap link (V2).
+- Touches plan contract surfaces only (`plan-discipline.md`, `planner.md`, `workflow.md`); no new skill, no new schema slot (reuses `uiSurface`). Skill count (12) and slot count (21) unchanged.
+- **Breaking changes:** none.
+
 ## v1.5.0 — 2026-06-02
 
 **Ship-time gate semantics: unresolved blockers route to a draft PR + NOT-READY manifest, never a silent proceed or a hard mid-loop halt. SAFETY.**

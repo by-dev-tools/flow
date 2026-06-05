@@ -35,6 +35,16 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0041: The goal state is an autonomous high-quality deliverable — agent self-iterates against behavioral *and* visual success criteria, then presents a PR + HTML walkthrough; human gives little/no low-level feedback over time
+**Date:** 2026-06-05
+**Source:** user direction (goal-state / roadmap conversation)
+
+**What was said:** Articulated the target the managed-autonomy loop is converging toward: human + agent collaborate on a plan → agent gets first-gate approval → agent builds and self-iterates autonomously against the plan's success criteria (functional AND visual) → when confident the plan is fully addressed and the visuals are good, the agent runs the ship flow, auto-fixes issues that surface, and opens a PR with a clear human-readable description + the `## Flow run` per-step table → **and presents, alongside the PR, an HTML file that is a concise visual walkthrough of what was built** (highlighting changed visuals/interactions/features, complementing the PR with more detail + visuals). Human reviews those deliverables at the merge gate and merges or gives feedback (mostly visual/UX). The feedback loop (agents during review + humans, **human precedence on disagreement**) should let the agent proactively check its work against past logged errors so most issues are fixed *before* the human reviews — trending over time toward "ready to merge with little/no feedback." Explicit preference: **no third gate before ship** — the agent self-iterates and polishes low-level issues itself so the human only sees high-quality output.
+
+**Synthesized rule:** Treat the autonomous high-quality deliverable as the north star for the loop. Investment priority is the chain that makes it safe to keep the human out of the pre-ship loop: (1) structured *visual* acceptance criteria in the plan, (2) rendered capture + baseline so visual confidence is a real PASS not an Unknown, (3) the HTML walkthrough deliverable, (4) the consumer-side proactive-error loop. Preserve exactly two human gates (plan approval, merge); never add a third pre-ship gate — close the quality gap by strengthening the behavioral+visual gate, not by re-inserting the human. Human feedback outranks agent feedback on disagreement.
+
+**Applies to:** workflow, architecture, ux, roadmap (the Deliverable-quality track in `roadmap.md`), verify-build, staff-review (design-engineer lens), `/flow:ship`.
+
 ### FB-0040: Human-review value model (north star) — surface intent / assumptions / subjective questions / rationale FOR the human; automate implementation from clear intent; catalogue feedback + decisions to improve the process
 **Date:** 2026-06-03
 **Source:** user direction (dynamic-workflows alignment conversation — stated as the goal the other constraints serve)

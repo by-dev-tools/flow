@@ -41,6 +41,41 @@ Two parallel tracks in the active queue. Different scope, different drivers, can
 
 The detailed per-PR plans live in `dev-docs/plan.md` § "Active Work Items".
 
+## Deliverable-quality track — toward the autonomous high-quality deliverable
+
+**Goal state (user direction, 2026-06-05; FB-0041):** human + agent collaborate on a plan → agent gets first-gate approval → agent builds and **self-iterates against the plan's success criteria — behavioral *and* visual** — autonomously → when confident the plan is fully addressed and the visuals are good, the agent ships (auto-fixing what it can, draft-routing what it can't), opens a PR with the `## Flow run` table, **and presents an HTML visual walkthrough** of what was built. The human reviews those two deliverables at the merge gate and merges or gives feedback. Over time the feedback loop drives the deliverable toward "ready to merge with little/no human feedback." **No third gate** — the two load-bearing gates (plan approval, merge) are preserved; everything between trends autonomous. Close the quality gap by strengthening the behavioral+visual gate, never by re-inserting the human pre-ship.
+
+**Where we are (2026-06-05 gap audit):** the *spine* ships in v1.5.0 — two-gate structure, Step 8 ship-readiness predicate + auto-advance (PR S), verify-build behavioral gate (PR Q), bounded mechanical auto-fix loops (PR M), `/flow:ship` draft-routing (PR U), the `## Flow run` PR table (PR T), and the two-layer feedback synthesis. The gaps cluster on **visual-verification depth** (the design lens reads the *diff*, not pixels; verify-build's screenshot capture is honestly uncertain per `verify-build/lib/rubric.md:68`, so visual claims often resolve to Unknown), the **HTML walkthrough deliverable** (not built; PR Q's findings-buffer JSON is the forward-compat data layer), and the **consumer-side proactive-error loop** (strong for flow's own dev; thinner consumer-side). This track sequences the four fixes as a dependency chain — each unblocks the next. Interleaves with Track 1 (K/L) + Track 2 (N/O/P) at PR boundaries.
+
+### V1 — Structured visual acceptance criteria (cheapest; the input everything needs)
+**Surfaces when:** the plan template / `plan-discipline.md` / `workflow.md` Step 2 required-fields are next touched, OR a consumer reports the agent shipped a UI change with no declared visual bar.
+
+Extend the plan's spec-walk so visual/UX criteria are *declared* the way behavioral ones already are — a `Visual-walk:` (or equivalent) block of checkable visual assertions ("matches token X; empty/loading/error states present; motion ≤ Y ms; honors design-language doc rule Z"). Without declared visual criteria there is nothing to verify or render against — this is the load-bearing input for V2 and V3. Lowest cost (prose/template change + plan-critic awareness of the new field). **Do first.** *(V1's declaration-only field shipped in v1.5.1 — the items below are its deferred follow-ups.)*
+
+**V1 staff-review follow-ups (2026-06-05; deferred by design — captured so V1.1/V2 inherit the named shape, not re-derived):**
+- **plan-critic enforcement** — flag a `uiSurface:true` plan that omits `Visual-walk` (Facet 4's gate half) + an eval fixture. Owner: V1.1 or fold into V2. (Surfaced + approved-deferred at V1's plan gate, Confidence #2.)
+- **`designLanguagePath` fallback** — `Visual-walk` says "write against the design-language doc," but the slot is Optional; a `uiSurface:true` project may lack one. Add a one-line "if no design-language doc, assert against observed/intended states" clause. Owner: V1.1.
+- **Spec-walk vs Visual-walk boundary** — both say "user-perceptible"; the behavioral/visual split is undefined, so authors may duplicate or guess — which undermines V2's separate-extraction premise. Add a one-line boundary rule. Owner: fold into V2 (where extraction becomes testable).
+- **`Not checked:` sub-line** — `Visual-walk` declares what WILL be checked but not its negative space (reduced-motion, dark mode, RTL, narrow viewport, high-contrast). A declared "not checked" list is the data source V3's "what we did NOT test" pane renders + the confidence-boundary the merge-gate human needs (FB-0035). Owner: V1.1 or sequence against V3.
+- **Worked example** — no end-to-end populated `Visual-walk` block exists yet; naturally lives with the `/flow:plan` skill or V3's renderer. Owner: docs.
+
+### V2 — Rendered capture + baseline (the gate that makes visual autonomy safe)
+**Surfaces when:** `verify-build/lib/rubric.md:68`'s open empirical question is resolved, OR a consumer reports visual claims resolving to Unknown on every run.
+
+Resolve whether bundled `/verify` returns screenshots structurally or only narrates them (the rubric flags this as unknown and earmarks the VLM section for removal if narration-only). If narration-only, add a rendered-capture step so verify-build's judges *and* `lens-design-engineer` get actual frames + a baseline for the pairwise VLM comparison the rubric already prefers over absolute scoring. Converts today's "visual = Unknown → block" into a real PASS/FAIL the Step 8 predicate can consume. **Highest-leverage PR for the autonomy goal** — it's what lets the agent honestly say "visuals are good" without a human babysitting. Depends on V1's declared criteria.
+
+### V3 — HTML visual walkthrough renderer (the deliverable the human opens before merge)
+= the existing **"Verify-build HTML case-study report"** item in § Next — this entry now sequences it as **V3 of this track**. PR Q's findings-buffer JSON (`lib/findings-schema.json`) is the forward-compat data layer; build the renderer against it — hero + per-criterion "the question / what we explored / what we learned" + the **screenshots from V2** + per-dimension verdict + a "what we did NOT test" checklist. Complements the `## Flow run` PR table with visual detail. **Sequence after V2** so it renders *verified* visuals, not a pretty page with nothing behind it.
+
+### V4 — Consumer-side proactive-error loop (the compounding flywheel)
+**Surfaces when:** the memory→preflight promotion path (`workflow.md` § Continuous improvement) is next touched, OR dogfood shows the agent repeating a visual/UX mistake a prior session already logged.
+
+Strengthen the consumer-side memory→preflight loop so the agent checks its work against past logged visual/UX corrections *before* presenting — driving "most issues fixed before the human reviews" toward the goal state's "little/no feedback." The mechanism exists for flow's own dev; this hardens it consumer-side and compounds with V1–V3 (more structured criteria → more checkable past-error patterns). **Do last** — it needs V1's criteria + V2's gate to have something concrete to check against.
+
+**Smaller / optional (not on the critical path):** a `/flow:plan` skill + mechanical first-gate assertion. Plan-*write* is prose-enforced today (no `/flow:plan` command, no mechanical "all required fields present" check, and even the `planner` agent returns text for the main thread to apply rather than writing the file). Hygiene; low urgency vs. V1–V4.
+
+**Sequencing rationale:** V1 is the input, V2 is the gate that makes autonomy safe, V3 is the deliverable, V4 is the flywheel. V3-before-V2 produces an unverified-but-pretty walkthrough; V4-before-V1 gives the loop nothing structured to check against.
+
 ## Next
 
 After the K/L (Track 1) + N/O/P (Track 2) sequences ship, AND in parallel with them (different surface; mechanical rebase):
@@ -72,6 +107,8 @@ PR U ships the *producer* of a machine-checkable sentinel (`<!-- flow:not-ready-
 PR U's resolution-confidence axis (`[auto-fixable]`/`[decision-required]`, default-to-escalate) is a reusable reviewer primitive, but it lives only on the two ship-time reviewers (security + a11y). `/flow:staff-review`'s four-lens BLOCKERs have no such tag, so a staff-review BLOCKER the agent can't confidently resolve has nowhere structured to route — it gets best-effort-fixed (the exact failure mode PR U eliminated for security/a11y) or surfaced as prose. Direction: add the axis to all four lens output contracts and wire a staff-review `[decision-required]` BLOCKER into the same draft-manifest routing ship Step 2 accumulates; the manifest entry-prefix enum already anticipates source-tagging (`[<security|a11y|verify-build>]`) — add `staff-review`. Cost ~ four lens-prompt edits + one manifest-enum line + one fixture. Correctly scoped OUT of PR U (Facets 2+3 only); recorded so the next staff-review touch picks up the named shape rather than re-deriving it. Routed from PR U (2026-06-01).
 
 ### Verify-build HTML case-study report (PR R successor candidate, post-PR-Q)
+
+**Now sequenced as V3 of the Deliverable-quality track** (see § "Deliverable-quality track" above) — gated behind V2 (rendered capture) so it renders verified visuals.
 
 **Surfaces when:** consumer reports they want a richer pre-merge review artifact than the structured-buffer + PR-body checklist PR Q ships, OR PR Q's findings-buffer JSON schema gains a stable consumer-validated shape.
 
