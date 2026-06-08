@@ -10,6 +10,17 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.5.2 — 2026-06-05
+
+**Makes doc-currency automatic: every `/flow:ship` reconciles the forward-looking roadmap + plan, and a mechanical gate blocks any ship that would leave them stale. Also corrects the upgrade docs. SAFETY (ship pipeline + manifests).**
+
+- **`/flow:ship` Step 5a — doc-currency reconciliation (every ship):** refresh roadmap "Now" (current version, Recently-shipped, ▶ Next-up pointer), sweep shipped plan items → Recently Completed, and clear shipped `FB-XXXX` reservations.
+- **`/flow:ship` Step 5b — automatic currency gate:** mechanically asserts the manifest version appears in roadmap "Now" + plan "Current Focus"; blocks the ship and requires reconciliation on drift. Enforced **in the pipeline**, not via the manual `/flow:doctor`.
+- **`/flow:doctor` Check 2.6 (secondary):** a manual mirror of the gate for spotting drift between ships — explicitly not the enforcement.
+- **`docs/upgrade.md` corrected:** `/plugin marketplace update <name>` updates the installed plugin in one step (not catalog-only); the doc now leads with `autoUpdate` (the no-command path) and fixes the stale "2-command ritual" + the autoUpdate config-example shape.
+- Dogfooded: this release fixes the live staleness (roadmap "Now" had read "v1.2.6"; plan "Current Focus" "v1.3.0"), and the new gate self-verifies on this very PR.
+- **Breaking changes:** none.
+
 ## v1.5.1 — 2026-06-05
 
 **Adds a `Visual-walk` plan field — declared visual/UX acceptance criteria for UI changes. First (cheapest) link in the Deliverable-quality roadmap track toward an autonomous high-quality deliverable.**

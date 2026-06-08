@@ -4,22 +4,34 @@ How to pick up new flow versions in a project where flow is already installed.
 
 **Per-version what-changed:** [`CHANGELOG.md`](../CHANGELOG.md) at repo root.
 
-## TL;DR — the 2-command ritual
+## TL;DR — keep flow current automatically
 
-```sh
-# In a Claude Code session in your project root:
-/plugin marketplace update flow      # Refresh the marketplace catalog
-/plugin install flow@flow            # Pick up the new version
-/flow:doctor                         # Verify the upgrade landed
+The simplest path is **auto-update**: set it once and flow updates itself at each session start — no commands, no reinstall, ever.
+
+```jsonc
+// ~/.claude/settings.json — on your flow marketplace entry
+{
+  "extraKnownMarketplaces": {
+    "flow": {
+      "source": { "source": "github", "repo": "by-dev-tools/flow" },
+      "autoUpdate": true          // ← refreshes the catalog AND updates the installed plugin, at session start
+    }
+  }
+}
 ```
 
-Run this after any flow PR merges to main, or weekly, or before starting non-trivial work — whichever fits your habit. Both commands are idempotent; running them when there's nothing to update is a no-op.
+Prefer to update manually? **One command:**
 
-## Why two commands
+```sh
+/plugin marketplace update flow      # refreshes the catalog AND updates the installed plugin
+/flow:doctor                         # optional: verify the upgrade landed
+```
 
-`/plugin install flow@flow` reads from the marketplace catalog **cached locally**. Without `/plugin marketplace update flow` first, the install command sees the stale catalog and reports "already installed" even when a newer version exists upstream. Re-running `install` alone is the most common silent-failure mode for flow upgrades.
+## One command, not two
 
-A future Claude Code release may collapse these into a single `/plugin upgrade` command; until then, the two-step ritual is the canonical path.
+`/plugin marketplace update flow` is **not** catalog-only — it bumps the installed plugin to the latest version in the same step (per current Claude Code: `code.claude.com` discover-plugins + plugin-marketplaces docs). You do **not** need a separate `/plugin install flow@flow` afterward. `autoUpdate: true` performs exactly this — catalog refresh + installed-version bump — automatically at each session start.
+
+**The one caveat:** auto-update fires at **session start**, not continuously. If a new flow version ships while you're mid-session, run `/plugin marketplace update flow` to pull it immediately; otherwise you pick it up next session.
 
 ## When to run it
 
@@ -118,7 +130,7 @@ By default, third-party Claude Code marketplaces require manual `/plugin marketp
 {
   "extraKnownMarketplaces": {
     "flow": {
-      "url": "https://github.com/by-dev-tools/flow",
+      "source": { "source": "github", "repo": "by-dev-tools/flow" },
       "autoUpdate": true        // ← opt-in
     }
   }
@@ -147,7 +159,7 @@ If `"flow@flow": true` appears in the user-scope output, you're user-scope. If n
 
 If you've installed flow at **project-scope** (custom workflow — `.claude/settings.json` inside a specific project enables flow), each project's install is independent. Run the ritual in each project where you've enabled it. Most consumers don't set this up; the default of user-scope handles multi-project for free.
 
-**Caveat:** the catalog cache vs the installed plugin version are separate pieces of state. `/plugin marketplace update flow` refreshes the catalog only; you then need `/plugin install flow@flow` to pull the new version into the install. The order matters — `install` alone reads the cached catalog. Both commands together is the canonical "actually pick up the new version" path.
+**Note:** `/plugin marketplace update flow` refreshes the catalog **and** bumps the installed plugin in the same step — it is not catalog-only (per current Claude Code docs). One command per project picks up the new version; no separate `/plugin install` is required. (A fresh first-time install still uses `/plugin install flow@flow` — that's installation, not updating.)
 
 ## What's NOT in this doc
 

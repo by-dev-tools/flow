@@ -341,11 +341,68 @@ If exit 1 (audit due), spawn an Agent (subagent_type: Explore) with the memory d
 For each meaningful change in the diff, update via the config slots (all default to `dev-docs/<name>.md`; consumer projects typically set them to `core-docs/<name>.md`):
 
 - **`flow.config.json.historyPath`** (default `dev-docs/history.md`) — add an entry (newest first) with: title, date, branch, what was done, why, design decisions, technical decisions, tradeoffs, lessons learned. Flag with `SAFETY` if it touches persistence, error handling, or fallback behavior.
-- **`flow.config.json.planPath`** (default `dev-docs/plan.md`) — move shipped items from "Current Focus" → "Recently Completed". Update "Current Focus" to reflect what's next. Clear stale "Handoff Notes" if the work is done.
-- **`flow.config.json.roadmapPath`** (default `dev-docs/roadmap.md`) — log any deferred follow-ups from review under the relevant horizon. Update workstream status if a workstream completed.
 - **`flow.config.json.specPath`** (default `dev-docs/spec.md`) — if features changed status (planned → shipped) or new features were added, update the features table. If the product surface area changed materially, update the relevant section.
 
 Do **not** add entries that already exist. Skip silently.
+
+### 5a. Doc-currency reconciliation (forward-looking docs — run on EVERY ship)
+
+The history entry above is backward-looking. The roadmap "Now" and plan "Current Focus" are **forward-looking** — they're what a cold reader (a new contributor, or the autonomous loop, which is a cold agent on each run) reads to decide what to do next. They rot silently if not reconciled at ship; stale direction is the FB-0010 fan-out class applied to *what to work on*. Reconcile **every ship**, not just when it feels needed:
+
+- **`flow.config.json.roadmapPath`** (default `dev-docs/roadmap.md`) "Now" section:
+  - Set the current-version **headline line** — a line of the form `**Plugin at vX.Y.Z ...**` — from the source of truth (the plugin manifest `version`, or the project's `package.json` version); never leave a prior version labeled "current". (Step 5b asserts the version on THIS line specifically, so the "Recently shipped" list below can't mask a stale headline.)
+  - Move the item this PR shipped into a **"Recently shipped"** line; trim the oldest if it exceeds ~5.
+  - Refresh the **▶ Next up** pointer so the single highest-priority next step is unambiguous to a cold reader.
+  - Strip "in flight" from any workstream that merged; log deferred follow-ups under the relevant horizon.
+- **`flow.config.json.planPath`** (default `dev-docs/plan.md`):
+  - Update "Current Focus" to the real current version + state.
+  - Move shipped items from "Active Work Items" → "Recently Completed" (keep last 3–5); clear stale "Handoff Notes".
+- **Reservations:** remove this PR's now-shipped `FB-XXXX` line(s) from `reserved-feedback-numbers.md` (this is the step the dev-side `/ship` historically forgot — do it here so reservations never go stale).
+
+### 5b. Doc-currency gate (mechanical — fail-and-reconcile; runs HERE, not only in manual `/flow:doctor`)
+
+After 5a, **verify** the reconciliation landed. This is the automatic backstop: it fires in the pipeline on every ship, so "stale docs never happen" doesn't depend on anyone remembering to run `/flow:doctor`. It asserts only the **version token** (the cheap, unambiguous signal); narrative correctness stays the judgment of 5a.
+
+```sh
+# Resolve the version source of truth: plugin manifest, else root package.json, else N/A.
+VSRC=""
+for cand in plugins/flow/.claude-plugin/plugin.json .claude-plugin/plugin.json package.json; do
+  [ -f "$cand" ] && { VSRC="$cand"; break; }
+done
+if [ -z "$VSRC" ]; then
+  echo "[doc-currency] no versioned manifest found — mechanical version check N/A; 5a reconciliation still applies."
+else
+  VER=$(jq -r '.version // empty' "$VSRC" 2>/dev/null)
+  [ -z "$VER" ] && { echo "⚠️ BLOCKER: doc-currency — $VSRC has no .version; cannot verify currency." >&2; exit 1; }
+  ROADMAP=$(jq -r '.roadmapPath // "dev-docs/roadmap.md"' flow.config.json 2>/dev/null); [ -z "$ROADMAP" ] && ROADMAP=dev-docs/roadmap.md
+  PLAN=$(jq -r '.planPath // "dev-docs/plan.md"' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN=dev-docs/plan.md
+  # Scope to the current-status section if its heading exists, else the doc's top 40 lines.
+  sect() { awk -v H="$1" 'index($0,H){f=1;next} f&&/^## /{exit} f' "$2"; }
+  # Assert the version on the current-version HEADLINE line ("**Plugin at vX.Y.Z ...**", written by
+  # 5a) — NOT merely anywhere in the section. Otherwise the 5a "Recently shipped" enumeration (which
+  # also names the version) satisfies the gate while the headline stays stale — the exact drift this
+  # gate exists to catch. Fall back to the whole section when no such headline line exists (consumer
+  # projects that don't use the "Plugin at vX" convention keep the lenient section check).
+  has_ver() {  # $1 = section text
+    line=$(printf '%s\n' "$1" | grep -E '^\*\*Plugin at ')
+    if [ -n "$line" ]; then printf '%s' "$line" | grep -qF "$VER"
+    else printf '%s' "$1" | grep -qF "$VER"; fi
+  }
+  MISS=""
+  scope=$(sect "## Now" "$ROADMAP");          [ -z "$scope" ] && scope=$(head -40 "$ROADMAP" 2>/dev/null)
+  has_ver "$scope" || MISS="$MISS ${ROADMAP}(Now)"
+  scope=$(sect "## Current Focus" "$PLAN");    [ -z "$scope" ] && scope=$(head -40 "$PLAN" 2>/dev/null)
+  has_ver "$scope" || MISS="$MISS ${PLAN}(Current Focus)"
+  if [ -n "$MISS" ]; then
+    echo "⚠️ BLOCKER: doc-currency — current version $VER ($VSRC) is not referenced in:$MISS" >&2
+    echo "   Those forward-looking docs are stale. Reconcile per Step 5a (set 'Now'/'Current Focus' to $VER), then re-run. Do NOT edit this gate to pass." >&2
+    exit 1
+  fi
+  echo "[doc-currency] PASS — $VER referenced in roadmap Now + plan Current Focus."
+fi
+```
+
+On BLOCKER, fix the docs (5a) — never route around the gate. A stale-docs ship is the exact failure this prevents (it shipped real drift: `roadmap.md` once read "v1.2.6" while the plugin was v1.5.1). Per the autonomy bar, this gate loops only on its own mechanical signal (version-string presence), never on judgment.
 
 ## 6. Commit
 
