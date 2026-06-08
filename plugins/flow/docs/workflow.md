@@ -247,7 +247,7 @@ Claude **auto-advances here from Step 8** when the ship-readiness predicate hold
 3. **Synthesize session feedback (two layers)**:
    - **User feedback** — review the conversation since the last PR for corrections, preferences, decisions, and solved challenges. New entries go in `flow.config.json.feedbackPath`.
    - **Agent self-feedback (pattern capture)** — review the session for recurring failure patterns and write memory entries per the source-diversity bar (§ "Continuous improvement").
-4. **Update project docs** (paths via config slots: `historyPath`, `planPath`, `roadmapPath`, `specPath`).
+4. **Update project docs** (paths via config slots: `historyPath`, `planPath`, `roadmapPath`, `specPath`). This includes **doc-currency reconciliation** (ship Step 5a): the forward-looking roadmap "Now" + plan "Current Focus" are refreshed to the current version + ▶ next-up, shipped items swept to Recently-Completed, and shipped FB reservations cleared — then an **automatic mechanical gate** (ship Step 5b) blocks the ship if those docs don't reference the current version. Currency is enforced *in the pipeline*, not via manual `/flow:doctor` (which carries only a secondary mirror, Check 2.6). Stale direction docs are the FB-0010 fan-out class applied to *what to work on* — a cold reader (incl. the autonomous loop) relies on them.
 5. Commit doc updates.
 6. Push and open the PR with base branch via fallback chain (`git symbolic-ref` → `flow.config.json.defaultBranch` → literal `main`).
 7. Output the PR URL.

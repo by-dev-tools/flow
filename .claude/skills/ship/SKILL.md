@@ -24,6 +24,7 @@ Read `dev-docs/history.md` and `dev-docs/plan.md`.
 For each meaningful change on this branch:
 - Add an entry to `dev-docs/history.md` following the existing format (what, why, decisions, tradeoffs). Use today's date. Skip if an entry already exists.
 - Update `dev-docs/plan.md` -- mark completed items, update "Current focus" if needed.
+- **Doc-currency (mirror of `/flow:ship` Step 5a/5b — keeps these docs from going stale):** refresh `dev-docs/roadmap.md` "Now" (current version from `plugins/flow/.claude-plugin/plugin.json`, Recently-shipped line, ▶ Next-up pointer), sweep shipped items in `plan.md` → "Recently Completed", and **clear this PR's now-shipped `FB-XXXX` line(s) from `dev-docs/reserved-feedback-numbers.md`** (the step this dev-side `/ship` historically forgot — do it here). Then verify the `plugin.json` version token appears in roadmap "Now" + plan "Current Focus"; if not, reconcile before committing.
 
 If the user gave feedback during this session that isn't already captured:
 - Add a synthesized entry to `dev-docs/feedback.md`

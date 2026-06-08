@@ -238,6 +238,38 @@ else
 fi
 ```
 
+**Check 2.6 — roadmap/plan "current version" matches the manifest (doc-currency; SECONDARY to the ship gate)**
+
+A manual mirror of the **automatic** doc-currency gate `/flow:ship` runs at Step 5b on every ship. The ship gate is the enforcement; this check only lets a human spot drift *between* ships — you do not rely on running doctor for currency. A FAIL means the forward-looking docs went stale.
+
+```sh
+VSRC=""
+for cand in plugins/flow/.claude-plugin/plugin.json .claude-plugin/plugin.json package.json; do
+  [ -f "$cand" ] && { VSRC="$cand"; break; }
+done
+if [ -z "$VSRC" ]; then
+  echo "[Check 2.6] N/A — no versioned manifest in this project (doc-currency is version-agnostic here)."
+else
+  VER=$(jq -r '.version // empty' "$VSRC" 2>/dev/null)
+  if [ -z "$VER" ]; then
+    echo "[Check 2.6] N/A — could not read .version from $VSRC (jq missing, or no version field)."
+  else
+    ROADMAP=$(jq -r '.roadmapPath // "dev-docs/roadmap.md"' flow.config.json 2>/dev/null); [ -z "$ROADMAP" ] && ROADMAP=dev-docs/roadmap.md
+    PLAN=$(jq -r '.planPath // "dev-docs/plan.md"' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN=dev-docs/plan.md
+    sect() { awk -v H="$1" 'index($0,H){f=1;next} f&&/^## /{exit} f' "$2"; }
+    # Anchor on the "**Plugin at vX**" headline (mirror of ship Step 5b) so the Recently-shipped
+    # enumeration can't mask a stale headline; fall back to the section when no such line exists.
+    has_ver() { line=$(printf '%s\n' "$1" | grep -E '^\*\*Plugin at '); if [ -n "$line" ]; then printf '%s' "$line" | grep -qF "$VER"; else printf '%s' "$1" | grep -qF "$VER"; fi; }
+    FAIL=""
+    s=$(sect "## Now" "$ROADMAP"); [ -z "$s" ] && s=$(head -40 "$ROADMAP" 2>/dev/null); has_ver "$s" || FAIL="$FAIL roadmap(Now)"
+    s=$(sect "## Current Focus" "$PLAN"); [ -z "$s" ] && s=$(head -40 "$PLAN" 2>/dev/null); has_ver "$s" || FAIL="$FAIL plan(CurrentFocus)"
+    if [ -n "$FAIL" ]; then echo "[Check 2.6] FAIL — current version $VER ($VSRC) not on the 'Plugin at vX' line in:$FAIL. Fix: reconcile per /flow:ship Step 5a."; else echo "[Check 2.6] PASS — docs reference current version $VER."; fi
+  fi
+fi
+```
+
+**Fix on FAIL:** reconcile the docs (Step 5a). Normally this never fails standalone, because the ship gate (5b) blocks any ship that would leave them stale — doctor just surfaces drift early if it somehow occurred (e.g. a hand-edit outside the pipeline).
+
 ### Section 3: auto-loading rules (the load-bearing enforcement mechanism)
 
 **Check 3.1 — project-side rules present**

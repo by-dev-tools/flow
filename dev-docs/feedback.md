@@ -35,6 +35,16 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0043: Doc-currency must be automatic *in the ship pipeline*, never reliant on manual `/flow:doctor` — proactively keep roadmap + plan current every ship; stale docs should never happen
+**Date:** 2026-06-05
+**Source:** user direction (workflow-improvement conversation)
+
+**What was said:** "We should be proactively improving our workflow all the time — make the pipeline account for keeping the plan and roadmap fully up to date as part of the pipeline; this stale-docs issue should never happen." Then, on a draft that put the mechanical check in `/flow:doctor`: "is the doctor addition secondary, or will we rely on it? isn't doctor only run manually? I don't want to have to invoke this manually — it should be handled automatically; but if it fits in that skill anyway then we can keep it."
+
+**Synthesized rule:** Forward-looking docs (roadmap "Now", plan "Current Focus") are part of the ship contract, not optional hygiene — a cold reader (incl. the autonomous loop, which is a cold agent each run) relies on them to know what to do next, so stale direction is the FB-0010 fan-out class applied to *what to work on*. Enforcement must be **automatic and in-pipeline** (a `/flow:ship` gate that fires every ship), never dependent on a human remembering to run a manual skill. A manual skill (`/flow:doctor`) may carry a *secondary* mirror if it fits naturally, but is explicitly NOT the enforcement. And: proactively harden the pipeline itself as part of doing the work — when a process gap surfaces (e.g. the dev-side `/ship` forgetting to clear shipped FB reservations), fix the pipeline so it can't recur, don't just patch the instance.
+
+**Applies to:** `/flow:ship` Step 5 (5a reconciliation + 5b gate), dev-side `/ship`, `/flow:doctor` (Check 2.6, secondary), `workflow.md`, the doc-currency discipline; the meta-principle of proactively hardening the pipeline.
+
 ### FB-0042: The durable visual record is a single curated `visual-history.html` — the picture companion to the existing history core doc; lean committed screenshot assets (CSS/SVG reconstruction as the honest fallback), reverse-chronological, decision-centric, no italic headings
 **Date:** 2026-06-04 (reconciled 2026-06-05 against merged health-tracker #10 + flow #37)
 **Source:** user direction (reversed a "skip it" recommendation; then reconciled to the merged reference implementation)
