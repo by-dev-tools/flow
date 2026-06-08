@@ -14,7 +14,7 @@
 - **Open hygiene:** user-scope `~/.claude/settings.json` still has a stale `extraKnownMarketplaces.llm-auditor` key (cosmetic — points at `flow.git` under the pre-rename name); remove when convenient. Md-manager PR 5 (dogfood) still pending in a separate worktree.
 - **Op tip:** `gh pr edit` errors on this repo (projects-classic GraphQL deprecation) — use `gh api -X PATCH .../pulls/N -f body=...` to set a PR body.
 
-## PR DC — Doc-currency in the ship pipeline (planning)
+## PR DC — Doc-currency in the ship pipeline (MERGED #39, v1.5.2 — see history.md)
 
 **Restated request:** We should proactively improve the workflow so stale docs never happen. Make the ship pipeline *itself* keep `roadmap.md` "Now" and `plan.md` "Current Focus" current on every ship — and back it with a mechanical currency check that fires **automatically in the pipeline**, NOT one we have to remember to run via `/flow:doctor`.
 
@@ -76,7 +76,7 @@
 
 ---
 
-## PR V1 — Structured visual acceptance criteria (planning; Deliverable-quality track)
+## PR V1 — Structured visual acceptance criteria (MERGED #37, v1.5.1; Deliverable-quality track — see history.md)
 
 **Restated request:** Give the plan a place to *declare* visual/UX success criteria the way it already declares behavioral ones (Spec-walk), so the agent can self-iterate against a visual bar and the human can see that bar at the approval gate. First (cheapest) link in the Deliverable-quality track (roadmap.md § "Deliverable-quality track"; FB-0041). It is the load-bearing *input* for V2 (rendered capture) and V3 (HTML walkthrough).
 
@@ -135,7 +135,7 @@
 
 ---
 
-## PR T — Flow-run PR descriptions (in flight)
+## PR T — Flow-run PR descriptions (MERGED #32, v1.4.1)
 
 **Mode:** feature (small), prompt/docs change to shipped artifacts | **Priority: medium (dogfood-driven UX)**
 **Branch:** `claude/epic-northcutt-2d5e88` (off `origin/main` @ `4f5fba6`)
@@ -179,7 +179,7 @@
 
 ---
 
-## PR S — Autonomous ship-readiness trigger (in flight)
+## PR S — Autonomous ship-readiness trigger (MERGED #30, v1.4.0)
 
 **Mode:** feature | **Priority: high** (load-bearing for the autonomous-loop direction)
 **Branch:** `claude/auto-ship-readiness-trigger` (off `origin/main` @ `efd31c4`)
@@ -243,7 +243,7 @@
 
 ---
 
-## PR H2 — upgrade.md cadence softening (in flight)
+## PR H2 — upgrade.md cadence softening (MERGED, docs-only)
 
 **Mode:** feature (small), docs-only at repo root | **Priority: highest (active consumer feedback)**
 **Goal:** Fix the over-prescription in `docs/upgrade.md` that user-tested as too aggressive. Three copy-only edits, no behavior change, no version bump.
@@ -389,7 +389,7 @@ Plan-critic Finding 7 framing FOLLOW-UP: reviewer-footer is reframed above as "P
 
 ---
 
-## PR H1 — Upgrade docs + CHANGELOG (in flight)
+## PR H1 — Upgrade docs + CHANGELOG (MERGED, docs)
 
 **Mode:** feature (small), docs-only | **Priority: highest (pre-install shore-up)**
 **Goal:** Make the update workflow discoverable + auditable before consumer install. Two cheap fixes from the "is the update infrastructure solid?" Tier-2 audit — the rituals that prevent silent version drift between 2 active consumer projects.
@@ -437,7 +437,7 @@ Plan-critic Finding 7 framing FOLLOW-UP: reviewer-footer is reframed above as "P
 
 ---
 
-## PR M — Bounded-retry mechanical preflight in /flow:ship + ship-spike (in flight)
+## PR M — Bounded-retry mechanical preflight in /flow:ship + ship-spike (MERGED #22, v1.2.6)
 
 **Mode:** feature (small-medium) | **Priority: medium**
 **Goal:** Add a bounded-retry mechanical preflight (new Step 1c) to `/flow:ship` and `/flow:ship-spike`. Runs the project's preflight command (a config slot the project owns); on non-zero exit, fixes and retries up to N=3 with oscillation detection via diff-hash. Loops ONLY on externally-verifiable exit codes (the preflight script's exit status) — never on reviewer judgment. Encodes the research-pass principle: the only "goal" we trust as a loop exit is a tool's exit code, not another model's approval.
@@ -1049,7 +1049,7 @@ User direction (2026-05-30): *"all skills should be auto invocable — the only 
 
 ---
 
-## PR Q — `/flow:verify-build` skill: plan-driven behavioral verification gate (in flight on `claude/lucid-matsumoto-730ba0`; orthogonal to N/O/P/R)
+## PR Q — `/flow:verify-build` skill: plan-driven behavioral verification gate (MERGED #26, v1.3.0)
 
 **Mode:** feature (medium — full skill + 5 lib assets + 3 fixture sets + workflow + doctor + schema integration) | **Priority: high** | **Horizon:** v1.3.0
 **Branch:** `claude/lucid-matsumoto-730ba0` during execution; renamed to `pr-q/verify-build-skill` at ship time.
@@ -1688,7 +1688,13 @@ Status: all spec-walk checkboxes complete; PR opened at [by-dev-tools/flow#5](ht
 
 ## Recently Completed
 
-- **v0.3.0 — auto-invoked disagreement loop** (PR #3, 2026-04-XX) — see `dev-docs/history.md` (post-rename) for full entry.
+_Last few shipped; full detail in `dev-docs/history.md`. (Merged PR blocks above are kept as historical records — a deeper archive-prune is a tracked follow-up.)_
+
+- **PR DC — doc-currency in the ship pipeline** (#39, v1.5.2, 2026-06-05) — `/flow:ship` Step 5a reconciliation + 5b mechanical gate; a stale-docs ship is now blocked automatically.
+- **V1 — `Visual-walk` plan field** (#37, v1.5.1, 2026-06-05) — declared visual/UX acceptance criteria; first link of the Deliverable-quality track.
+- **PR U — ship-time gate semantics** (#31, v1.5.0) — resolution-confidence + draft-routing + verify-build placement.
+- **PR S — autonomous ship-readiness trigger** (#30, v1.4.0).
+- **PR Q — `/flow:verify-build` behavioral gate** (#26, v1.3.0).
 
 ## Backlog
 
