@@ -8,13 +8,11 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 ## Now
 
-**Plugin at v1.2.6 on `main`** (PR M squash `0cf642e`). Consumer-feedback umbrella complete (PRs A-F); FB-0010 consistency-discipline shipped (PR G); upgrade infrastructure shipped (PR H1 + H2-docs); workflow-spawn-skip prevention shipped (PR I, v1.2.4); adversarial sharpening of reviewer pipeline shipped (PR J, v1.2.5); bounded-retry mechanical preflight shipped (PR M, v1.2.6).
+**Plugin at v1.5.1 on `main`.** Since the v1.2.6 consumer-feedback era (PRs A–M), the loop has filled out: `/flow:verify-build` behavioral gate (PR Q, v1.3.0); auto-invocable `/flow:ship` at the Step 8 readiness predicate (PR S, v1.4.0); the `## Flow run` PR-body table (v1.4.1); reviewer session-discovery fix (v1.4.2); ship-time gate semantics + reviewer/ship-spike auto-invocability (PR U, v1.5.0); the dynamic-workflows alignment direction (#35); and the **Deliverable-quality track V1** — the `Visual-walk` plan field (#37, v1.5.1) — plus its visual-verification blueprint + O8 spec (#36, docs).
 
-**This PR (PR H3)** is the roadmap refresh — docs-only, no version bump, same precedent as PR H1 / H2-docs. After it merges, the next-up sequence below applies.
+### Execution order — the live forward queue
 
-### Execution order — what's next after PR H3 lands
-
-Two parallel tracks in the active queue. Different scope, different drivers, can interleave at PR boundaries (each PR is reviewed + merged independently). **The recommended next-up PR after H3 lands is determined by which track has explicit user direction.**
+Three streams are open and interleave at PR boundaries (each PR is reviewed + merged independently): **Track 1** (autonomy-bar enforcement, K/L), **Track 2** (research-driven hardening, N/O/P), and the **Deliverable-quality track** (V2→V3→V4; see its § below). The two legacy tracks below remain queued; the Deliverable-quality track is the one with the most recent explicit user direction.
 
 **Track 1 — autonomy bar enforcement (driven by PR J's FB-0011):**
 1. **PR K** — `/flow:red-team` skill: standalone reviewer mirroring security-review structure, FB-0008 stale-base preflight, FB-0006/FB-0007 source-file early-exit, FB-0011 autonomy-bar `Fix-confidence` field (per-finding `AUTO-FIX-SAFE` vs `ESCALATE`).
@@ -80,7 +78,7 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 After the K/L (Track 1) + N/O/P (Track 2) sequences ship, AND in parallel with them (different surface; mechanical rebase):
 
-- **PR Q** (in flight on `claude/lucid-matsumoto-730ba0` — orthogonal to all of K/L/N/O/P/R; not queued behind any of them) — `/flow:verify-build` skill: plan-driven behavioral verification gate at `/flow:ship` Step 2. Wraps bundled `/verify` (and transitively `/run` + `/run-skill-generator`) with flow-specific orchestration — criteria extracted from `**Spec-walk:**` checkboxes, adversarial transformation, per-dimension parallel judges with Unknown-blocking gate, structured findings buffer routed to `/flow:ship` Step 4a. Closes the static-analysis-only gap in the loop's verification surface (Potemkin-interface / hallucinated-success class). Inherits PR M's FB-0012 bounded-retry contract for any future retry primitive. Per-PR plan: [`dev-docs/handoffs/pr-q-verify-build-plan.md`](handoffs/pr-q-verify-build-plan.md). **Phases 1–9 complete (full skill + lib + fixtures + ship + ship-spike + doctor + workflow + bootstrap + migration + schema); Phase 10 staff-review dogfood in progress; Phase 11 ship + manifest v1.3.0 next.** Different files than K/L/N/O/P/R; rebases cleanly in either order. FB-0015 (check bundled first) captures the discipline lesson.
+- **PR Q — SHIPPED (v1.3.0, #26, `aeadcb7`).** `/flow:verify-build` — plan-driven behavioral verification gate at `/flow:ship` Step 2. Wraps bundled `/verify` (and transitively `/run` + `/run-skill-generator`) with flow-specific orchestration — criteria extracted from `**Spec-walk:**` checkboxes, adversarial transformation, per-dimension parallel judges with Unknown-blocking gate, structured findings buffer routed to `/flow:ship` Step 4a. Closed the static-analysis-only gap in the loop's verification surface (Potemkin-interface / hallucinated-success class). FB-0015 (check bundled first) captured the discipline lesson. **Its findings buffer is the data layer the Deliverable-quality track's V2/V3 build on** (see that § + the O8 entry below).
 
 ### Make `/flow:ship` Step 2 auto-entry-aware so the verify-build precondition becomes a mechanical assertion (post-PR-S, push-further roadmap-concrete)
 
@@ -127,16 +125,16 @@ PR U's resolution-confidence axis (`[auto-fixable]`/`[decision-required]`, defau
 
 4. **GATE — folds into the merge gate, no third gate (FB-0035/FB-0034).** Discovery + iteration happen at Present (Step 8/9) before the ship decision; a `this-iteration` "this is wrong" re-enters Execute and re-renders the report; the report is the file opened at the existing merge gate. A non-converging regression at ship's confirmation re-run routes to a draft PR + manifest (FB-0034) — escalation lands *in* a gate, never as a new one.
 
-**Sequencing + acceptance criteria (implementation-ready; two PRs under the track):**
+**Sequencing + acceptance criteria (implementation-ready).** Mapped to the track stages: **V2** (capture) + **V3a** (ephemeral renderer) land as **one PR** — FB-0003 couples the new schema fields to a producer (capture) *and* a consumer (renderer) in the same PR — then **V3b** (durable record) is a second PR. (V1 shipped in v1.5.1; V4 is later.)
 
-**V2/V3a — capture-depth + the two buffer fields + the ephemeral renderer.** Acceptance:
+**PR-1 — track V2 (capture) + V3a (renderer): capture-depth + the two buffer fields + the ephemeral renderer.** Acceptance:
 - [ ] `criteria[].grounding` + top-level `open_questions[]` land in `findings-schema.json` (additive; `schema_version` stays `1.0`) **with a producer writing them and a consumer reading them in the same PR** (FB-0003) — `findings-example.json` updated; an eval fixture asserts the shape.
 - [ ] verify-build (via bundled `/verify`/`/run`) **exercises every declared `Visual-walk` state** (V1) and writes an `observations[]` entry per state; a declared state with no observation → `Unknown` + a `not_tested[]` line (no silent gap).
 - [ ] `verifyReportPath` slot + stdlib renderer emit the § "RENDER" structure; **coverage assertion**: every declared `Visual-walk` state appears in the report as evidence-or-"not captured".
 - [ ] `open_questions[routing=this-iteration]` present ⇒ Step 8 auto-advance blocks (§ GATE); fixture pins it.
 - [ ] Landed against a real UI surface first (health-tracker is the available fixture) before the shape is called stable (FB-0016).
 
-**V3b — the durable record + the distill bridge.** Acceptance:
+**PR-2 — track V3b: the durable record + the distill bridge.** Acceptance:
 - [ ] `visualHistoryPath` slot + a `template/base/core-docs/visual-history.html` scaffold (uiSurface-gated; no separate `.md`); `visual-history-assets/` convention documented; renderer/author uses lean asset refs or labelled CSS/SVG reconstruction (FB-0042).
 - [ ] `/flow:ship` **distill step**: from that run's ephemeral report, the load-bearing visual decisions (`grounding` that changed the user's read + `this-iteration` questions the human resolved) become **one** curated, reverse-chronological, no-italic-heading entry; then the ephemeral report is discarded.
 - [ ] CLAUDE.md sync-table row + the doc-update path wire it as a core living doc; an eval/fixture covers the gated scaffold + the distill output shape.
