@@ -4,7 +4,7 @@
 
 **Plugin at v1.5.2 on `main`.** The managed-autonomy spine is shipped (two-gate loop, `/flow:verify-build` behavioral gate, autonomous ship-readiness trigger, draft-routing, `## Flow run` PR table). **Active focus: the Deliverable-quality track** toward an autonomous high-quality deliverable (`roadmap.md` § Now + § Deliverable-quality track). **V1** (`Visual-walk` plan field) shipped v1.5.1; **PR DC** (doc-currency in the ship pipeline — this PR) ships v1.5.2.
 
-**▶ Next up: V2 — rendered capture + baseline** (spike-first; see roadmap ▶ Next up). In flight in parallel: **#36** (visual-history durable record / V3-flavored, FB-0042).
+**▶ Next up: V2 — rendered capture + baseline** (feature PR). The **SV2 spike is DONE** (2026-06-08, this PR — `history.md` "SV2-spike"): bundled `/verify` is narration-only to verify-build's judges → **V2 = branch (B)**, an explicit capture-and-persist step (path refs into the findings buffer; keep+rewrite the rubric VLM section around path-referenced frames + a baseline; read text from the a11y tree). In flight in parallel: **#36** (visual-history durable record / V3-flavored, FB-0042).
 
 ## Handoff Notes
 
@@ -13,6 +13,62 @@
 - **In-flight parallel branch:** #36 — visual-history durable record (V3-flavored HTML companion; FB-0042).
 - **Open hygiene:** user-scope `~/.claude/settings.json` still has a stale `extraKnownMarketplaces.llm-auditor` key (cosmetic — points at `flow.git` under the pre-rename name); remove when convenient. Md-manager PR 5 (dogfood) still pending in a separate worktree.
 - **Op tip:** `gh pr edit` errors on this repo (projects-classic GraphQL deprecation) — use `gh api -X PATCH .../pulls/N -f body=...` to set a PR body.
+
+## SV2-spike — Does bundled `/verify` return screenshots structurally, or only narrate them? (Deliverable-quality track V2 prerequisite)
+
+**Restated request:** Before scoping V2 (rendered capture + baseline), resolve the open empirical question flagged at `verify-build/lib/rubric.md:68` + `verify-build/SKILL.md:56-64`: does bundled `/verify` return screenshots **structurally** (image data a downstream consumer — verify-build's per-dimension judge and the future HTML renderer — can use as pixels or as path-referenced files), or does it only **narrate** observations in freeform prose? The whole shape of V2 depends on the answer. Run cheaply as a spike; the history.md entry is the deliverable; don't over-build.
+
+**Mode:** `spike` | **Priority: high** (unblocks the V2 feature PR — the load-bearing next link in the Deliverable-quality track; turns "visual = Unknown → blocks" into a real PASS the Step 8 predicate can trust).
+
+**Research question (the one the spike must answer):**
+1. **Primary:** Does bundled `/verify` return screenshots *structurally* or *narrate* them?
+2. **Decision sub-question (the one that actually forks V2):** Do any structured frames `/verify` captures *reach a fresh-context judge subagent* (verify-build Step 6), or do they stay only in the invoking context? The judges are spawned fresh and read `/verify`'s **text**; the schema already path-references screenshots (`observations[].content` = relative path). So even "structured at the MCP layer" may still be "narration to the judge" — and that distinction, not the raw capability, decides V2.
+
+**Why it forks V2:**
+- **Branch (A) — structured *and reaches the judge*:** V2 wires the existing frames into a baseline + the pairwise-VLM comparison `rubric.md` already prefers over absolute scoring. Smaller PR.
+- **Branch (B) — narration-only to the judge:** V2 must add an explicit **capture-and-persist-to-disk** step (path-referenced per the schema), reusing `/run`'s browser-MCP screenshot tools, supplying the baseline; the rubric's pairwise-VLM section is rewritten around path-referenced frames rather than removed; absolute-scoring stays discouraged.
+
+**Method — primary (live):**
+1. Stand up a runnable toy web app in a **disposable scratch dir** (`.context/scratch/` or `/tmp`), NOT the committed fixture (its README says "not meant to be executed"; `server.mjs` serves no static files and `vite` isn't installed). A pure-node, zero-dep static server serving `index.html` + the existing `POST /api/submit` → 201 handler (reuse the fixture's `index.html` + `main.js` + server logic).
+2. Invoke bundled `Skill("verify")` in **this session** against that app + the toy plan's two Spec-walk criteria. Observe the returned artifact: (a) prose-only, or image content blocks? (b) does `/verify` write any screenshot files to disk on its own, and where?
+3. **Probe the Skill→judge boundary:** spawn a fresh-context `Agent` (the `rubric.md` judge shape) and check whether it can see any frame `/verify` produced **without being handed a path**. Confirms/refutes structured propagation across the subagent boundary.
+4. Record which screenshot-capable MCP `/verify`/`/run` actually used (Chrome / Preview / computer-use) and that tool's return contract (image block vs. file path).
+
+**Method — fallback (documentary, if no browser MCP is connected or the live run exceeds a small budget):** characterize from `/verify`'s Anthropic-documented freeform-stdout contract (already partially captured in `SKILL.md:52-64`) + the screenshot-MCP return contracts + the fresh-context-subagent boundary. Record the conclusion **with its named limitation** (no live confirmation) per FB-0016, and a re-test trigger.
+
+**Hypothesis (to confirm/refute — NOT assumed):** leans **branch (B)-with-nuance** — structured frames exist at the MCP layer but don't auto-propagate to fresh-context judges (which read text); the schema already path-references screenshots; so V2 adds a capture-and-persist step reusing `/run`'s screenshot tools + supplies the baseline; the pairwise-VLM section survives (rewritten around path-referenced frames). The live run exists to confirm or overturn this, not to rubber-stamp it.
+
+**Disposability:** the scratch app is uncommitted (`.context/scratch/` or `/tmp`); the `/verify` run is read-only against a toy. The **only durable artifacts** are `dev-docs/history.md` (the spike deliverable: the answer + the V2 shape recommendation + its limitation) and a one-line `roadmap.md` ▶ Next-up refinement recording the resolved answer so V2's feature plan inherits it. **No `plugins/flow/*` edits, no schema change, no version bump.** Resolving the `rubric.md:68` / `SKILL.md:64` markers (annotate / rewrite / remove the VLM section) is **V2 feature-PR work** — it's part of real implementation and touches shipped safety-critical artifacts — explicitly OUT of spike scope.
+
+**Coordination (#36 / FB-0042):** #36 owns the **durable** record (`visual-history.html`). This spike characterizes capture only — no renderer, no durable-record work. The V2 feature PR that follows = **capture + ephemeral render (V3a)**, coupled per FB-0003 (new schema field needs a producer AND a consumer in the same PR); it must not duplicate #36's durable record.
+
+**Confidence verdicts per load-bearing assumption:**
+- **Assumption:** a single live `/verify` invocation against a web toy is sufficient to characterize output shape for the V2 decision. **Confidence:** MEDIUM. **Why:** one run on one platform (web) answers the web branch, which is V2's immediate target; but it's one data point (FB-0016). iOS/Android capture shape is out of V2's near-term scope, so web-only is acceptable. **If it flips:** name the limitation + add a re-test trigger for other platforms.
+- **Assumption:** the judge boundary holds — a fresh-context `Agent` can't see a sibling skill's image blocks without a path. **Confidence:** HIGH (architectural: subagents receive only their prompt). **If it flips** (images DO propagate): V2 shifts toward the simpler branch (A).
+- **Assumption:** keeping `rubric.md` / `SKILL.md` edits OUT of the spike is correct scope. **Confidence:** HIGH. **Why:** the spike deliverable is the history entry; the marker itself ties removal to "first real verify-build run" as part of V2 implementation; touching shipped safety-critical artifacts for a research finding over-builds the spike + forces a version bump. **If it flips** (user wants the breadcrumb now): add one-line "RESOLVED (spike, see history): <answer>" annotations to both markers — low-risk, no behavior change. *Surface at the gate.*
+
+**Risks / open questions:**
+- **Browser MCP may not be connected** (Chrome extension) → live run blocked. Mitigation: documentary fallback + named limitation. Can confirm MCP availability first if the user prefers.
+- **`/verify`→`/run` heuristic launch may fail on the toy** (no `run-*` recipe). Mitigation: the scratch app is a trivial zero-dep node server I can start myself and point `/verify` at; if `/run` insists on its own launch path, I observe that too — it's data about `/verify`'s behavior either way.
+- **Cost / permanence:** local-only, zero paid services, scratch dir — low on all three. No deletion/overwrite of committed files.
+- **FB:** the spike likely needs **no new FB-XXXX** (a research finding routes to `history.md`, not a behavioral rule). If a durable rule emerges, reserve a number in `reserved-feedback-numbers.md` FIRST (next free ≈ **FB-0044**; FB-0042 still in-flight on #36) and push the reservation early per the collision protocol.
+
+**Files (anticipated):** `dev-docs/history.md` (spike deliverable), `dev-docs/roadmap.md` (▶ Next-up one-line refinement), `dev-docs/plan.md` (this block + handoff). Scratch app: uncommitted. **NO `plugins/flow/*` edits.**
+
+**Spike-ship:** via `/flow:ship-spike` (labeled `spike`; never merges). GATE 2 (merge) preserved.
+
+**Spike-walk (mechanical checks before ship):**
+- [x] Research question 1 + 2 answered with evidence. (LIVE Chrome-MCP run: screenshots = image blocks to the invoking context + a narration string in text; `save_to_disk:true` surfaced no path + no file on disk; judges are fresh-context Agents reading text → narration-only → Unknown. See `history.md` "SV2-spike".)
+- [x] V2 branch (A vs B) named, with the concrete capture shape. (**Branch B** — explicit capture-and-persist; path refs into `observations[].content`; keep+rewrite the rubric VLM section around path-referenced frames + baseline; a11y tree for text.)
+- [x] `history.md` SAFETY-free spike entry written. (No shipped-artifact / error-handling / persistence change → no SAFETY marker.)
+- [x] `roadmap.md` ▶ Next-up + V2 § refined with the resolved answer so V2's feature plan inherits it.
+- [x] Scratch app left uncommitted; `git status` shows no `plugins/flow/*` or app files staged. (Only `.context/scratch/` — gitignored; verified.)
+- [x] **(critique-plan REDIRECT resolution)** Doc-currency gate is a non-issue: verified `/flow:ship-spike` does **not** run the `/flow:ship` Step 5a/5b currency machinery (its Step 5 only sweeps to Recently Completed), AND no version bump leaves `plugin.json` = `1.5.2` with `roadmap.md:11` + `plan.md:5` already `**Plugin at v1.5.2**`. The ▶ Next-up edit touches only the bullet, never the `**Plugin at vX.Y.Z**` headline line → token stays current either way.
+- [x] Run `/flow:critique-plan` before approval. (done: 1 REDIRECT — ship-spike doc-currency-gate coherence; resolved in-plan as above. 0 BLOCKER. No scope drift, #36 boundary + FB-collision protocol confirmed clean.)
+
+**Outcome:** answered (branch B). Deliverable = `history.md` "SV2-spike" entry + roadmap refinement. No new `FB-XXXX` needed (research finding). Next: draft the **V2 feature plan** (capture + ephemeral render, FB-0003-coupled; coordinate with #36's V3b).
+
+---
 
 ## PR DC — Doc-currency in the ship pipeline (MERGED #39, v1.5.2 — see history.md)
 
@@ -1690,6 +1746,7 @@ Status: all spec-walk checkboxes complete; PR opened at [by-dev-tools/flow#5](ht
 
 _Last few shipped; full detail in `dev-docs/history.md`. (Merged PR blocks above are kept as historical records — a deeper archive-prune is a tracked follow-up.)_
 
+- **SV2-spike — `/verify` screenshot-structure question** (spike PR, 2026-06-08) — **proceed.** Resolved `rubric.md:68`: bundled `/verify` is narration-only to verify-build's fresh-context judges (frames stay image-blocks in the orchestrator's context; no path even with `save_to_disk`). **V2 = branch (B)**, an explicit capture-and-persist step. Deliverable = `history.md` "SV2-spike".
 - **PR DC — doc-currency in the ship pipeline** (#39, v1.5.2, 2026-06-05) — `/flow:ship` Step 5a reconciliation + 5b mechanical gate; a stale-docs ship is now blocked automatically.
 - **V1 — `Visual-walk` plan field** (#37, v1.5.1, 2026-06-05) — declared visual/UX acceptance criteria; first link of the Deliverable-quality track.
 - **PR U — ship-time gate semantics** (#31, v1.5.0) — resolution-confidence + draft-routing + verify-build placement.
