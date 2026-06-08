@@ -226,7 +226,7 @@ If the user approves, this blueprint folds into existing surfaces as follows. **
 ### Tightened for implementation (2026-06-05)
 - **Ephemeral review pinned co-equal** to the durable record — its human-feedback purpose ("open questions for you" = decisions/tradeoffs needing input) is stated in § 3 + § 4's contract-pair table + FB-0042(a).
 - **Capture depth is now an explicit V1→V2 contract** (§ 2, § 3, roadmap V2): the ephemeral report must cover the full declared `Visual-walk` state set; an uncaptured declared state is a finding (`Unknown` + "not tested"), never a silent gap.
-- **Per-PR acceptance criteria** added to the roadmap (V2/V3a + V3b) so the track is build-ready.
+- **Per-PR acceptance criteria** added to the roadmap — **PR-1** = track V2 (capture) + V3a (renderer), coupled by FB-0003; **PR-2** = track V3b (durable record) — so the track is build-ready.
 
 ### Still open
 - **Capture additive fields (`grounding`, `open_questions`) now or after a UI-bearing dogfood?** FB-0016: prove on a UI surface (health-tracker is the available fixture) before declaring the shape stable.
