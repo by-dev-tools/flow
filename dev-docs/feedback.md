@@ -35,6 +35,44 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0046: Experience and craft-ambition are first-class plan-gate quality gates — a product-designer / experience lens + a push-further-on-quality (not scope) lens, alongside the auditor + plan-critic
+**Date:** 2026-06-09
+**Source:** user direction (incl. a correction of a prior dismissal)
+
+**What was said:** On a proposed staff-review-of-the-plan, the user gave two steers. (1) **Push-further at the plan stage must not grow scope/functionality** — frame it as "could the *quality* be higher," not "could we add more"; in most cases raise the craft bar, not the feature set. (2) The user **disagreed** that a UX-designer lens adds no value before pixels exist: "the value is not in pixels but in experience, which is the most important thing… Maybe it's more of a product designer (or even design-minded product manager) than a strict UX designer, but experience is the most important thing here and should be a quality gate for plans." This corrects an earlier (wrong) framing that dismissed a plan-stage experience lens as needing pixels to be useful.
+
+**Synthesized rule:** The plan gate's two existing reviewers (auditor, plan-critic) are **conformance** checks — *is the plan honest and aligned?* Add a **quality/ambition layer** of two lenses that run alongside them (skippable only when they genuinely don't apply, e.g. a backend-only plan, the same way diff-stage lenses skip):
+- **Experience lens (product-designer / design-minded PM).** Is this the *right experience*, and is its ambition high enough? The journey, the edge states, the friction, how it should *feel*, whether the plan solves the experience problem or just satisfies the literal request. This is pre-pixels and is the **highest-value plan-stage question** — experience is the most important thing.
+- **Push-further (quality, not scope).** Could the *craft/quality of the declared scope* be higher? Inherits the existing push-further lens's "uncommon care" framing (limited scope to an extraordinarily high bar; "nothing to push" is a valid, often-correct output), with a **loud anti-scope-creep guard** because the plan stage is where "push further" is most tempted to add features: raise the bar of the declared scope; propose new functionality only when it is load-bearing for the stated goal.
+
+These set the success-criteria + craft bar the autonomous iteration loop (FB-0044) converges toward — a weak plan ceilings the deliverable. (A staff-engineer "is the approach sound before we build it" lens is a defensible secondary; held unless requested.) Best substrate is a workflow that fans the plan reviewers out and returns one triaged verdict — exactly the canonical "draft/judge a plan from several angles" workflow use case (dynamic-workflows O1 applied to the plan gate / segment A).
+
+**Applies to:** plan gate (auditor + plan-critic surface), `plan-critic.md`, `plan-discipline.md`, `planner.md`, Visual-walk / declared success criteria, FB-0037 (designer perspectives load-bearing), dynamic-workflows O1, Deliverable-quality track.
+
+### FB-0045: Craft-iteration is a permitted judgment-loop *under four guards* — refining FB-0012's correctness-only prohibition on iterating to a reviewer's approval
+**Date:** 2026-06-09
+**Source:** user direction (doctrine reconciliation)
+
+**What was said:** The iterate-don't-stop direction (FB-0044) requires the agent to loop against a craft/experience bar — which is *judgment*. FB-0012 ("bounded-retry loops may loop only on mechanically-verifiable exit codes, never LLM-judgment outputs") could be over-read to forbid exactly the agentic craft iteration the autonomy goal (FB-0041) depends on. The two are reconcilable: FB-0012's prohibition targets iterating to a reviewer's *approval for correctness*, where a false pass hides a bug and a transcript-only judge is gameable. Craft-iteration is a different risk profile.
+
+**Synthesized rule:** Iterating against *judgment* is **permitted for craft/quality** (distinct from FB-0012's prohibition on iterating to a *correctness* reviewer's approval) **if and only if all four guards hold**: (1) the judge is **independent** — fresh context, ungameable by persuasion; (2) it evaluates against **declared criteria** (the plan's Spec-walk / Visual-walk / craft bar), not open-ended taste; (3) it sees **real artifacts** (V2's captured frames, the a11y tree, tool output), never the worker's narration — this is the guard V2 unlocks and the one most often missing today; (4) the loop is **budget-bounded** with the **human merge gate** as the final backstop. Absent any guard, fall back to FB-0012 (loop only on a mechanical exit code). In practice the control-flow driver keys on the **verify-build verdict** — itself an exit-code summary of guarded judgment — so the iteration stays FB-0012-shaped at the loop layer even though craft quality is judged underneath. This also governs any future workflow "voting" (O3) and the verify-build judges themselves, not just the iterate loop.
+
+**Applies to:** workflow (Execute/Present iteration), `verify-build` judges, FB-0012, FB-0044, FB-0041, dynamic-workflows O3 ("voting"), Deliverable-quality track (V2 is guard #3's precondition).
+
+### FB-0044: Low confidence during Execute is a signal to *iterate*, not to stop — the agent iterates against the plan's success criteria + craft bar until the design is genuinely good, then ships; only a genuine *preference fork* escalates
+**Date:** 2026-06-09
+**Source:** user direction
+
+**What was said:** When the agent executes and isn't fully confident, it must NOT just stop. The user wants consistent agentic iteration to make the design genuinely good *before* opening the PR — grounded in strong success criteria + a craft bar established in the plan ("agentic iteration is critical here, based on the strong success criteria and craft bar that need to be established in the plan"). This refines (and corrects) an earlier framing that an uncertain agent should ship a draft early: design uncertainty is something the agent should iterate *through*, not hand off prematurely.
+
+**Synthesized rule:** When the agent is not fully confident at Execute/Present, the **default is to iterate** against the plan's declared success criteria + craft/experience bar — never a premature stop, never a premature draft. Split FB-0011's escalation on a clean line:
+- **Quality gap** ("not good *enough* yet") → **iterate.** The agent closes this itself; iteration is the dominant behavior, and its ceiling is set by how strong the plan's criteria + craft bar are.
+- **Preference fork** ("not sure which *way* you want it" — a one-way-door, or two comparable directions only the human's taste resolves) → **escalate.** No amount of craft resolves a preference; only the human does.
+
+Reserve **stop-before-PR** for genuine one-way-door decisions where even a draft would prejudice the human's choice; otherwise escalation routes INTO a draft PR + NOT-READY manifest (FB-0034), so the human always enters at the PR, never mid-loop. **Safety precondition:** craft-iteration loops on *judgment*, which is honest — not reward-hacked (cf. FB-0012's prohibition on iterating to a *correctness* reviewer's approval) — only when the judge sees **real captured artifacts (V2)**, not the worker's narration, against **declared criteria**, under a **bounded budget**, with the **human merge gate** as the final backstop. So safe autonomous craft-iteration is **V2-gated**; the loop driver should key on the verify-build verdict (a Stop-hook or `/goal` anchored to a mechanically-demonstrable PASS), never on open-ended taste.
+
+**Applies to:** workflow (Step 8/9 loop), autonomy bar (FB-0011), Deliverable-quality track (V2 is the precondition; FB-0041 the umbrella), draft-routing (FB-0034).
+
 ### FB-0043: Doc-currency must be automatic *in the ship pipeline*, never reliant on manual `/flow:doctor` — proactively keep roadmap + plan current every ship; stale docs should never happen
 **Date:** 2026-06-05
 **Source:** user direction (workflow-improvement conversation)
