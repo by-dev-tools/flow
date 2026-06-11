@@ -56,16 +56,14 @@ For each verdict, ask:
 
 If any answer is "no" or "uncertain," return Unknown for that criterion.
 
-## VLM pairwise instruction (relevant when observations include screenshots)
+## VLM pairwise instruction (judging `screenshot` observations)
 
-If `/verify`'s output includes screenshots structurally, judging visual correctness via absolute scoring is unreliable — VLM uncertainty intervals span ~70% of the scale on text-heavy screenshots (research: arxiv 2604.25235 "VLM Judges Can Rank but Cannot Score").
+Visual observations reach you as **path-referenced `screenshot` frames** persisted by the capture-and-persist step (`SKILL.md` §5a) — bundled `/verify` only *narrates* screenshots, so flow captures and persists them itself, and the judge prompt includes the captured frame (and, when one exists, a **baseline** frame for the same state) directly. Judge visual claims as follows:
 
-When you must judge visual claims:
-- Prefer **pairwise comparison** ("is screenshot A or B closer to the criterion's expected state?") over absolute scoring ("rate this 1–10").
-- If no baseline screenshot is available for comparison, the criterion's visual claim is **Unknown** rather than absolute-scored.
-- Text content visible in screenshots (button labels, error messages, form values) is typically below VLM legibility threshold — read text from the DOM/a11y tree if available; if not, return Unknown for text-visual claims.
-
-**Phase 1 follow-up:** the empirical characterization of bundled `/verify` may show it does NOT return screenshots structurally (only narrates them). If so, this section becomes dead weight and will be removed at first real `/flow:verify-build` run.
+- **Pairwise over absolute.** Compare the captured frame against the baseline for that state ("is the current frame closer to, or further from, the criterion's expected state than the baseline?"). Do NOT assign absolute scores ("rate this 1–10") — VLM uncertainty intervals span ~70% of the scale on text-heavy screenshots (research: arxiv 2604.25235 "VLM Judges Can Rank but Cannot Score").
+- **No baseline ⇒ Unknown.** A state's first run has no baseline to compare against → its visual-*layout* claim is **Unknown** (the captured frame seeds the baseline for next time). Do not absolute-score to manufacture a PASS.
+- **Read text from the a11y tree, not pixels.** Button labels, error copy, form values — and even network status — are unreliable from a single visual channel (SV2-spike: a Chrome network panel reported `503` for a request that actually returned `201`). Cite the `a11y_snapshot` observation for any text/status claim; if the a11y tree did not capture it, return Unknown for that text-visual claim rather than reading it off the screenshot.
+- **A declared `Visual-walk` state with no `screenshot` observation** is **Unknown** for its visual claim (it also appears in `not_tested[]`) — never inferred from narrative prose.
 
 ## Output schema
 
