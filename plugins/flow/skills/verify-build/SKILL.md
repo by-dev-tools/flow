@@ -35,7 +35,7 @@ Skip if `flow.config.json.verifyEnabled` is `false` (project-wide opt-out) or `f
 - Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — using built-in defaults)"`
 - Default branch: !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
 - Plan doc: !`PLAN=$(cat flow.config.json 2>/dev/null | jq -r '.planPath // empty'); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"; [ -f "$PLAN" ] && echo "$PLAN" || echo "(no plan doc at $PLAN)"`
-- Verify enabled: !`cat flow.config.json 2>/dev/null | jq -r '.verifyEnabled // true'`
+- Verify enabled: !`cat flow.config.json 2>/dev/null | jq -r 'if .verifyEnabled == false then "false" else "true" end'`
 - Project run skill: !`ls -d .claude/skills/run-*/ 2>/dev/null | head -1 || echo "(none — heuristic launch only)"`
 
 ## Bundled-skill integration contract
@@ -106,7 +106,10 @@ fi
 Resolve `flow.config.json.verifyEnabled` and `flow.config.json.platform`:
 
 ```sh
-VERIFY_ENABLED=$(jq -r '.verifyEnabled // true' flow.config.json 2>/dev/null)
+# NOT `.verifyEnabled // true` — jq's `//` treats boolean false as empty, so an explicit
+# `verifyEnabled: false` would resolve to true and the skip-gate below would never fire,
+# running the behavioral gate on a project that opted out.
+VERIFY_ENABLED=$(jq -r 'if .verifyEnabled == false then "false" else "true" end' flow.config.json 2>/dev/null)
 PLATFORM=$(jq -r '.platform // empty' flow.config.json 2>/dev/null)
 
 if [ "$VERIFY_ENABLED" = "false" ]; then

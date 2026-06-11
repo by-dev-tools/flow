@@ -35,6 +35,16 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0047: jq `// <default>` silently breaks for boolean config slots that can legitimately be false
+**Date:** 2026-06-11
+**Source:** review feedback (consumer dogfood — valletta flow-migration; surfaced via `/flow:doctor` on a project with `verifyEnabled: false`)
+
+**What was said:** A consumer project set `verifyEnabled: false` and ran `/flow:doctor`, which still WARNed "no run skill — /flow:verify-build will rely on heuristic launch" instead of `[SKIP]`. Root cause: `VERIFY_ENABLED=$(jq -r '.verifyEnabled // true' flow.config.json)`. jq's `//` (alternative) operator treats both `null` **and `false`** as "empty", so `false // true` evaluates to `true` — the explicit opt-out resolves to enabled. The same `'.verifyEnabled // true'` pattern was present in three sites: `doctor/SKILL.md` Check 5.3 (WARN instead of SKIP — cosmetic) and `verify-build/SKILL.md` ×2 (the skip-gate at Step 1.2 + the preprocessed "Verify enabled:" display line — the gate one is load-bearing: a project that opted out would have the behavioral gate run anyway).
+
+**Synthesized rule:** Never use `jq '.X // <default>'` to read a **boolean** config slot whose legitimate value can be `false` — `//` collapses `false` into the default and silently inverts the opt-out. Use `jq -r 'if .X == false then "false" else "true" end'` (or `jq -r '.X != false'`) so absent/null → default-on while explicit `false` is honored. `//` is only safe for slots where the falsy values (`null`, `false`) should genuinely take the default — i.e. string/path slots (`.planPath // "dev-docs/plan.md"`), never booleans. When adding a boolean slot to the schema, grep the skills for `.<slot> // ` before shipping. (Note for future: `uiSurface` is the other boolean slot — its reads were checked and currently route through correct `== false` / explicit-compare forms, but apply the same rule there.)
+
+**Applies to:** code (shell/jq in skills), `doctor`, `verify-build`, any future boolean `flow.config.json` slot, schema-addition checklist
+
 ### FB-0046: Experience and craft-ambition are first-class plan-gate quality gates — a product-designer / experience lens + a push-further-on-quality (not scope) lens, alongside the auditor + plan-critic
 **Date:** 2026-06-09
 **Source:** user direction (incl. a correction of a prior dismissal)
