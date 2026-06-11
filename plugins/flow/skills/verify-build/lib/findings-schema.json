@@ -120,6 +120,26 @@
             "type": "string",
             "enum": ["PASS", "FAIL", "Unknown"],
             "description": "Per-criterion aggregation. PASS only if all three dimensions PASS. Any FAIL or Unknown propagates."
+          },
+          "grounding": {
+            "type": "object",
+            "description": "Optional. Why this surface looks/behaves as it does — the rationale column the HTML report renders (operationalizes FB-0040 'rationale carried' + FB-0037 designer-lens). Absent when no rationale was captured. Additive in schema_version 1.0; existing consumers ignore it.",
+            "required": ["type", "statement"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["need", "design-language", "craft-commitment", "open-question"],
+                "description": "Exactly one rationale type. 'need' = traced to a user job (cite it in citations); 'design-language' = follows a named system rule; 'craft-commitment' = a stated design stance; 'open-question' = no cohesive rationale yet (bridges to top-level open_questions). The anti-pattern is manufacturing a 'need' to launder a styling call."
+              },
+              "statement": {"type": "string", "description": "One-line rationale."},
+              "citations": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Citations resolved from config (specPath / designLanguagePath) or the plan's Spec-walk — never hardcoded project doc names."
+              },
+              "decision_test": {"type": "string", "description": "Optional — a named decision test run in-annotation, with its result."}
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
@@ -135,6 +155,26 @@
           "item": {"type": "string", "description": "Verbatim checklist item (e.g. 'Real device', 'Real network')."},
           "tested": {"type": "boolean", "description": "True only when the agent actually exercised this surface."},
           "rationale": {"type": "string", "description": "Optional one-sentence rationale, primarily for the false case."}
+        },
+        "additionalProperties": false
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "description": "Optional. Subjective, human-facing questions surfaced for the merge gate — DISTINCT from an epistemic 'Unknown' verdict. 'Unknown' = 'I couldn't exercise this path'; an open_question = 'this is a taste/priority call only you should make'. Rendered as the report's standalone 'Open questions for you' block. A routing='this-iteration' entry blocks Step 8 auto-advance (mirrors an unresolved MEDIUM assumption); 'future-planning' routes to the roadmap. Additive in schema_version 1.0.",
+      "items": {
+        "type": "object",
+        "required": ["question", "routing"],
+        "properties": {
+          "question": {"type": "string", "description": "Specific, answerable, with options."},
+          "rationale": {"type": "string", "description": "Our view + why (strongly recommended; the report renders it)."},
+          "recommended_default": {"type": "string", "description": "What keeps the loop moving if the human only half-glances (strongly recommended)."},
+          "user_need_lens": {"type": "string", "description": "Which job/persona the question is about."},
+          "routing": {
+            "type": "string",
+            "enum": ["this-iteration", "future-planning"],
+            "description": "'this-iteration' blocks Step 8 auto-advance until the human answers (a 'this is wrong' re-enters Execute); 'future-planning' routes to the roadmap, non-blocking."
+          }
         },
         "additionalProperties": false
       }
