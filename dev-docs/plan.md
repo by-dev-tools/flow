@@ -51,7 +51,7 @@
 **Scope (out):** V3b durable `visual-history.html` + distill bridge → **PR-2**. iOS/XcodeBuildMCP capture seam → **fast-follow PR**. Real-device testing → out (simulator/headless only). plan-critic enforcement of `Visual-walk` presence (Facet 4 / V1.1) → separate. Android/mobile-mcp → out.
 
 **Spec-walk:**
-- [ ] **Phase 0**: characterize XcodeBuildMCP's screenshot-return contract against health-tracker's iOS simulator; the a→b→c ladder yields addressable frame data (native path expected); all-three-fail → scoped stop-and-re-plan, not a draft. (verify: a persisted frame exists at the assets path OR a base64 data URI lands in `observations[].content`)
+- [x] **Phase 0 — RESOLVED (2026-06-11, live).** XcodeBuildMCP `screenshot(returnFormat:"path")` returns a **native file path** to an **already-optimized** frame (368×800 JPEG, 24KB — no capture-side resize needed on iOS); `snapshot_ui` returns the a11y tree (semantic targets + text) — the SV2 text source. Branch (a) confirmed; base64 fallback moot. Full chain proven: built+ran HealthTracker on the iPhone 17 sim (~21s), captured a real frame, persisted it (file copy), rendered → 41KB self-contained HTML with the real frame base64-inlined + a11y text + grounding + a this-iteration question. The Chrome-MCP "no path" problem does NOT apply to iOS.
 - [ ] `criteria[].grounding` + `open_questions[]` in `findings-schema.json` (additive; `schema_version` still `"1.0"`); `findings-example.json` updated; schema-shape eval validates both. (verify: run the eval)
 - [ ] Capture driven by declared `Visual-walk` states: per state a persisted screenshot obs + an a11y_snapshot obs; uncaptured state → Unknown + not_tested line. (verify: health-tracker run buffer has one obs-pair per declared state)
 - [ ] Rubric VLM section rewritten around referenced frames + baseline pairwise; absolute scoring discouraged; text from a11y tree; no "may be removed" marker survives. (verify: read `rubric.md`)
@@ -59,7 +59,7 @@
 - [ ] Stdlib renderer emits the §3 structure to a self-contained HTML file; coverage assertion present; screenshots resized + base64-inlined. (verify: render the example buffer; open the HTML)
 - [ ] Report design-language doc exists (neutral theme, zero brand tokens). (verify: read; grep brand tokens → none)
 - [ ] `open_questions[this-iteration]` blocks Step 8 auto-advance; `workflow.md` Step 8 + predicate updated; fixture pins it. (verify: run the gate fixture)
-- [ ] Validated on health-tracker (iOS simulator via XcodeBuildMCP): real report with real frames; visual criteria resolve PASS/FAIL not all-Unknown. (verify: attach the rendered report path + verdict summary)
+- [~] Validated on health-tracker (iOS simulator via XcodeBuildMCP): **mechanism-level DONE** — real frame captured → persisted → rendered into a real report (`/tmp/flow-v2-validate/report.html`), a11y text + grounding + open-question all render. **Remaining for full FB-0016:** (1) link local flow into health-tracker + run the actual `/flow:verify-build` skill end-to-end (not the hand-built buffer); (2) a baseline second-run so a visual-layout claim resolves to PASS (first run is legitimately Unknown — no baseline yet).
 - [ ] Version bumped 1.5.2→1.6.0 (both manifests + README + CHANGELOG); no stale `1.5.2` survivors that should change. (verify: `git grep '"version"'`)
 - [ ] `claude plugin validate .` clean.
 - [ ] Run `/flow:critique-plan` before approval.
