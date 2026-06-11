@@ -4,7 +4,7 @@
     "branch": "claude/lucid-matsumoto-730ba0",
     "head_sha_short": "98ffd5c",
     "plugin_version": "1.3.0",
-    "platform_hint": "web",
+    "platform_hint": "ios",
     "verify_budget_calls_used": 23,
     "verify_budget_overrun": false,
     "spike_mode": false
@@ -32,6 +32,11 @@
           "type": "a11y_snapshot",
           "content": "[alert] Submitted successfully",
           "timestamp_offset_ms": 1420
+        },
+        {
+          "type": "screenshot",
+          "content": "assets/submit-success.png",
+          "timestamp_offset_ms": 1450
         },
         {
           "type": "narrative",
@@ -70,7 +75,13 @@
           "notes": ""
         }
       },
-      "aggregated_verdict": "PASS"
+      "aggregated_verdict": "PASS",
+      "grounding": {
+        "type": "need",
+        "statement": "Immediate success confirmation closes the loop on the user's core 'did it save?' anxiety.",
+        "citations": ["specPath#submit-flow", "designLanguagePath#feedback-affordances"],
+        "decision_test": "Success affordance visible within 250ms of the 201 response — met (toast at +1420ms vs request at +1380ms)."
+      }
     },
     {
       "text": "Form validation rejects empty required fields with an inline error message.",
@@ -106,13 +117,29 @@
     }
   ],
   "not_tested": [
-    {"item": "Real device (used Playwright headless / dev browser)", "tested": false},
+    {"item": "Real device (used iOS Simulator)", "tested": false},
     {"item": "Real network (used dev server; no production CDN, no real latency)", "tested": false},
     {"item": "Authenticated flows requiring 2FA / SSO", "tested": false},
     {"item": "Push notifications", "tested": false},
     {"item": "Payment flows", "tested": false},
     {"item": ">1 viewport size (mobile / tablet)", "tested": false},
     {"item": ">1 locale / language", "tested": false},
-    {"item": ">1 browser engine (only Chromium tested by default)", "tested": false}
+    {"item": ">1 device class / OS version (only one simulator tested)", "tested": false}
+  ],
+  "open_questions": [
+    {
+      "question": "The success toast auto-dismisses at 2s — keep 2s, or hold until the next interaction?",
+      "rationale": "2s matches the design-language default, but submit is a trust-sensitive moment where a lingering confirmation may reassure more.",
+      "recommended_default": "Keep 2s (design-language default) unless a usability signal says otherwise.",
+      "user_need_lens": "First-time user verifying their data actually saved.",
+      "routing": "this-iteration"
+    },
+    {
+      "question": "Should empty-field validation copy be tone-matched to the brand voice guide, or stay terse?",
+      "rationale": "Out of this iteration's scope; flagged so it is not lost.",
+      "recommended_default": "Defer to a dedicated copy pass.",
+      "user_need_lens": "Returning user who mis-submits.",
+      "routing": "future-planning"
+    }
   ]
 }
