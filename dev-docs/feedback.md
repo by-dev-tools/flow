@@ -35,6 +35,16 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0058: jq `// <default>` silently breaks for boolean config slots that can legitimately be false
+**Date:** 2026-06-11 (brought current + merged 2026-06-26; renumbered from the originally-drafted FB-0047, which collided with main's shipped FB-0047 "non-forgeable Test plan")
+**Source:** review feedback (consumer dogfood — valletta flow-migration; surfaced via `/flow:doctor` on a project with `verifyEnabled: false`)
+
+**What was said:** A consumer project set `verifyEnabled: false` and ran `/flow:doctor`, which still WARNed "no run skill — /flow:verify-build will rely on heuristic launch" instead of `[SKIP]`. Root cause: `VERIFY_ENABLED=$(jq -r '.verifyEnabled // true' flow.config.json)`. jq's `//` (alternative) operator treats both `null` **and `false`** as "empty", so `false // true` evaluates to `true` — the explicit opt-out resolves to enabled. The pattern was present in three `verifyEnabled` sites: `doctor/SKILL.md` Check 5.3 (WARN instead of SKIP — cosmetic) and `verify-build/SKILL.md` ×2 (the skip-gate at Step 1.2 + the preprocessed "Verify enabled:" display line — the gate one is load-bearing: a project that opted out would have the behavioral gate run anyway). **By the time this PR was brought current, a fourth instance had regressed in** `ship/SKILL.md` §5c (`UIS=$(jq -r '.uiSurface // true' …)`, added in v1.8.0's visual-history distill) — exactly the propagation this rule predicts — so the fix now covers all four sites across both boolean slots.
+
+**Synthesized rule:** Never use `jq '.X // <default>'` to read a **boolean** config slot whose legitimate value can be `false` — `//` collapses `false` into the default and silently inverts the opt-out. Use `jq -r 'if .X == false then "false" else "true" end'` (or `jq -r '.X != false'`) so absent/null → default-on while explicit `false` is honored. `//` is only safe for slots whose falsy values (`null`, `false`) should genuinely take the default — i.e. string/path slots (`.planPath // "dev-docs/plan.md"`), never booleans. **When adding a boolean slot to the schema — or a new read of an existing one — grep the skills for `.<slot> // ` before shipping.** The two boolean slots are `verifyEnabled` and `uiSurface`; `accessibility-review` already reads `uiSurface` with the safe `== false` form, but `ship` §5c regressed it — which is why the grep-on-new-read discipline (not a one-time audit) is the durable defense.
+
+**Applies to:** code (shell/jq in skills), `doctor`, `verify-build`, `ship` (§5c uiSurface gate), any future boolean `flow.config.json` slot, schema-addition checklist
+
 ### FB-0057: The public README is a portfolio artifact — direct, no-fluff copy; lead with value; gates are load-bearing even in a skills-forward telling
 **Date:** 2026-06-26
 **Source:** user preference + user direction

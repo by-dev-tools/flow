@@ -398,7 +398,9 @@ fi
 # Gate on verifyEnabled: if disabled, skip the check entirely.
 VERIFY_ENABLED="true"
 if [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
-  VERIFY_ENABLED=$(jq -r '.verifyEnabled // true' flow.config.json)
+  # NOT `.verifyEnabled // true` — jq's `//` treats boolean false as empty, so an
+  # explicit `verifyEnabled: false` would resolve to true and the skip below never fires.
+  VERIFY_ENABLED=$(jq -r 'if .verifyEnabled == false then "false" else "true" end' flow.config.json)
 fi
 
 if [ "$VERIFY_ENABLED" = "false" ]; then

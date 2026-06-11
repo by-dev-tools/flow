@@ -10,6 +10,16 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.10.2 — 2026-06-26
+
+**Fixes a jq boolean-slot footgun that silently inverted `verifyEnabled: false` / `uiSurface: false` opt-outs. SAFETY (skip-gate / fallback behavior).**
+
+- `jq -r '.X // true'` treats boolean `false` (not just `null`) as "empty", so `false // true` → `true` — an explicit opt-out resolved to *enabled*. The load-bearing case: a project with `verifyEnabled: false` had `/flow:verify-build`'s Step 1.2 skip-gate fail to fire, running the behavioral gate despite the opt-out.
+- Fixed all **four** affected sites with `jq -r 'if .X == false then "false" else "true" end'` (absent/null → default-on; explicit `false` honored): `doctor` Check 5.3, `verify-build` Step 1.2 skip-gate + the preprocessed display line, and `ship` §5c's `uiSurface` visual-history gate (the 4th instance, which regressed in v1.8.0 — caught while bringing the fix current).
+- **FB-0058** names the durable discipline: never read a boolean slot with `// <default>`; grep skills for `.<slot> //` when adding a boolean slot or a new read. (Originally drafted as FB-0047 on PR #44; renumbered on merge to avoid colliding with main's shipped FB-0047.)
+- Surfaced by a consumer dogfood (valletta iOS flow-migration, `verifyEnabled: false`).
+- Breaking changes: none.
+
 ## v1.10.1 — 2026-06-24
 
 **Docs-only follow-up to v1.10.0: `gh` Projects-classic PR-write resilience. SAFETY (PR-write fallback behavior in the ship pipeline).**
