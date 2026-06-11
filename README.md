@@ -204,6 +204,7 @@ dev-docs/                           # plugin's own dev-tracking (not shipped to 
 - Eval harness reads pre-recorded `.expected.txt` files for the auditor + plan-critic; regression-only, not live correctness validation
 - Workflow enforcement is "soft" today (auto-loading rules + skill-trigger descriptions + `/flow:ship` Step 1.0 surface). Hard enforcement via Stop hook + Edit|Write scope check lands in v1.x post-extraction work
 - `/flow:init` (auto-create scaffolding with detection + prompting) deferred; today's path is `bootstrap.sh` (deterministic cp-ladder) plus manual placeholder fill
+- The PR `## Test plan` is rendered from the verify-build findings buffer, so a checked box attests **behavioral/text** verification by an adversarial judge — *not* visual correctness (bundled `/verify` narrates screenshots to the fresh-context judge rather than handing it pixels; rendered-visual judging lands in the Deliverable-quality track's V2). The rendered attestation also only covers criteria the plan **declared** in its `**Spec-walk:**` block: a behavior the agent changed but never wrote a criterion for is not gated (closing this under-declaration hole is a queued follow-up — wire `/flow:audit-completion` coverage into the readiness chain)
 
 ## History
 

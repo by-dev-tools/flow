@@ -39,6 +39,33 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### PR TP — PR `## Test plan` rendered from the verify-build findings buffer (non-forgeable) — `SAFETY`
+**Date:** 2026-06-11
+**Branch:** claude/lucid-driscoll-20ef29 (v1.5.3; SHA at commit time)
+**FB:** FB-0047 (this PR). Staged follow-up: FB-0048 (PR-2, under-declaration coverage).
+
+**What was done:** Replaced the hand-authored `## Test plan` placeholder (`- [ ] <how to verify>`) in the `/flow:ship` PR body with a mechanical render from the `/flow:verify-build` findings buffer. New `plugins/flow/skills/ship/lib/render-test-plan.py` (stdlib) reads the buffer JSON and emits the section: a one-line headline verdict (`✅ N/N declared criteria passed — confirm and merge` / `⚠️ M/N passed; K unresolved`), one line per criterion whose **checkbox state is the buffer's `aggregated_verdict`** (PASS→`[x]` + evidence; FAIL/Unknown→`[ ]` + the judge's reason), and the `not_tested[]` residue as plain bullets. Ship Step 7 runs it and pastes stdout verbatim. Honest fallback for skip / no-buffer / **stale** (buffer branch+sha ≠ HEAD) / malformed → `⚠️ no behavioral gate ran (<reason>); manual verification required`. Eval harness `evals/run_render_evals.py` (12 cases) + 6 fixtures. v1.5.2→v1.5.3 (manifests + CHANGELOG); fan-out swept (`workflow.md`, README, dogfood `.claude/skills/ship`).
+
+**Why:** The unchecked `- [ ]` boxes arriving at the merge gate were either no-signal (empty) or, if hand-checked, self-report — the Potemkin class verify-build exists to kill (FB-0047). For "human confirms testing was done, then quick-merges" to hold, the green signal must be a mechanical function of an adversarial judge's verdict, not agent narration.
+
+**Design decisions:**
+- **Deterministic script, not agent prose** — makes the section a pure function of the machine buffer (the agent can't selectively check boxes) and golden-testable; matches flow's Python-for-mechanism pattern. (Alternative: format spec in Step-7 prose — lighter, weaker enforcement; rejected.)
+- **Scope staged** at Gate-1 (user decision): PR-1 = render (unforgeable + visible); **PR-2 (FB-0048)** = close under-declaration (an agent omitting a Spec-walk criterion for a behavior it changed) by wiring `/flow:audit-completion` coverage into the readiness chain. Render alone makes *declared* verification unforgeable; it does not guarantee completeness — named as a known limitation in README + CHANGELOG.
+- **Checkboxes reserved exclusively for machine verdicts** — `not_tested` renders as plain bullets (staff-review + push-further), so a `[ ]` always means exactly one thing: an unverified criterion. (`not_tested.tested` is agent-self-reported, so it must not look like a verdict box.)
+- **Distinct from the V3 HTML case-study renderer** (roadmap § Exploration): that's standalone HTML + screenshots sequenced after V2; this renders PR-body markdown from verdict+evidence+not_tested text available today.
+
+**Technical decisions / SAFETY:**
+- Ship Step 4a's existing FAIL/Unknown buffer read (FB-synthesis) left **untouched** — the renderer is an additive, separate read (lower-risk than extending Step 4a).
+- **Freshness guard (net-new):** a buffer whose `metadata.branch`/`head_sha_short` ≠ current HEAD → fallback, never rendered as current. If the buffer carries an identity but the current branch/sha can't be established (empty git context), fall back rather than silently render a possibly-stale buffer (staff-review: the invariant must not invert).
+- **Fail-to-fallback, never crash:** every read/parse/shape error and any exception inside `rendered_block` routes to the fallback with a named stderr reason (FB-0010 silent-skip defense). The caller pastes stdout verbatim, so a crash (empty stdout) would silently break the non-forgeability contract — staff-review BLOCKER, fixed with a try/except + a `malformed.json` eval.
+- **Markdown-escape machine-extracted strings** (criterion text, judge notes, not_tested items) so app-under-test content the judge narrates can't inject a link / emphasis / hidden HTML comment into the PR body (security-review BLOCKER `[auto-fixable]`, fixed in-tree + `malicious-content.json` eval). Evidence already used a backtick code-span.
+
+**Tradeoffs discussed:**
+- Flow's own repo is `platform: library`, so verify-build self-skips on flow's own ship → **this PR cannot dogfood-behaviorally-verify itself**; its own `## Test plan` renders the fallback, and the eval fixtures/golden assertions ARE the verification. Surfaced up front (verdict F) so the skipped verify-build reads as expected, not a gap. The "behavioral/text" honesty claim describes the *consumer* path, not flow's self-ship (critique-plan incoherence finding, reconciled).
+- Attestation is **behavioral/text only**, not visual (bundled `/verify` narrates screenshots to the fresh-context judge rather than handing it pixels; SV2 spike) — rendered-visual judging is Deliverable-quality V2. Stated in README + the rendered attribution so a green Test plan isn't over-trusted.
+
+**Loop:** plan → `/flow:critique-plan` + `/flow:audit-plan` (4 findings, all absorbed) → Gate-1 (scope approved: staged) → execute → `/simplify` (1 cleanup) → `/flow:staff-review` (1 BLOCKER + cheap NITs fixed inline: malformed-crash, freshness-inversion, not_tested-checkbox-collision, headline, empty-criteria/no-notes honesty, backtick-safe evidence) → `/flow:ship` (security-review caught + fixed the markdown-injection BLOCKER; a11y + verify-build self-skipped).
+
 ### Direction capture — agentic-iteration doctrine + plan-gate quality lenses (FB-0044/0045/0046)
 **Date:** 2026-06-09
 **Branch:** claude/happy-gates-b3cf0c

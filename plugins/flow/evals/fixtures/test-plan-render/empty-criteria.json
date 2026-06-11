@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "metadata": {"branch": "test-branch", "head_sha_short": "abc1234", "plugin_version": "1.6.0", "platform_hint": "web", "spike_mode": false},
+  "overall_verdict": "Unknown",
+  "exit_code": 1,
+  "criteria": [],
+  "not_tested": [{"item": "Real network (used dev server)", "tested": false}]
+}

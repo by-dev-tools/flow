@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "branch": "test-branch",
+    "head_sha_short": "abc1234",
+    "plugin_version": "1.6.0",
+    "platform_hint": "web",
+    "verify_budget_calls_used": 14,
+    "verify_budget_overrun": false,
+    "spike_mode": false
+  },
+  "overall_verdict": "PASS",
+  "exit_code": 0,
+  "criteria": [
+    {
+      "text": "Launches and renders the dashboard within 2s.",
+      "adversarial_cases": ["Cold cache load still renders within 2s."],
+      "observations": [
+        {"type": "narrative", "content": "Loaded /dashboard; first paint at 900ms."}
+      ],
+      "verdicts": {
+        "correctness": {"verdict": "PASS", "evidence": ["first paint at 900ms", "Launches and renders the dashboard within 2s."], "notes": ""},
+        "regression": {"verdict": "PASS", "evidence": ["no console errors on load", "Launches and renders the dashboard within 2s."], "notes": ""},
+        "scope-creep": {"verdict": "PASS", "evidence": ["only /dashboard route hit", "Plan does not add new routes."], "notes": ""}
+      },
+      "aggregated_verdict": "PASS"
+    },
+    {
+      "text": "Submits the form and shows a success toast.",
+      "adversarial_cases": [],
+      "observations": [
+        {"type": "network", "content": "POST /api/submit → 201"}
+      ],
+      "verdicts": {
+        "correctness": {"verdict": "PASS", "evidence": ["POST /api/submit → 201", "Submits the form and shows a success toast."], "notes": ""},
+        "regression": {"verdict": "PASS", "evidence": ["no errors after submit", "Submits the form and shows a success toast."], "notes": ""},
+        "scope-creep": {"verdict": "PASS", "evidence": ["no extra endpoints", "Plan scope is submit-only."], "notes": ""}
+      },
+      "aggregated_verdict": "PASS"
+    }
+  ],
+  "not_tested": [
+    {"item": "Real device (used Playwright headless / dev browser)", "tested": false},
+    {"item": "Payment flows", "tested": false}
+  ]
+}

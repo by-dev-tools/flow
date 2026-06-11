@@ -10,6 +10,19 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.5.3 — 2026-06-11
+
+**The PR `## Test plan` is now rendered from the verify-build findings buffer — a non-forgeable record of behavioral verification, not a hand-authored checklist. The human verifies testing was done and merges, instead of re-verifying. SAFETY (ship pipeline).**
+
+- **`/flow:ship` Step 7 renders `## Test plan` via `skills/ship/lib/render-test-plan.py`:** one checkbox per `**Spec-walk:**` criterion whose state IS the buffer's machine `aggregated_verdict` — `PASS → [x]` (with the adversarial fresh-context judge's evidence quote), `FAIL`/`Unknown → [ ]` (with the judge's reason). The agent can no longer hand-check a box: a green box means a real judge returned PASS. Closes the gap where the Test plan was empty `- [ ]` placeholders disconnected from the verification that actually ran.
+- **`not_tested[]` checklist now surfaces in the PR body** (previously only on verify-build's stdout), so the explicit "what we did NOT test" gaps reach the merge gate.
+- **Honest fallback, never a forged or stale render:** when verify-build skipped (`verifyEnabled=false`, `platform=library|none`), produced no buffer, or the buffer is stale (its branch/sha ≠ current HEAD) or malformed, the section renders `⚠️ No behavioral gate ran (<reason>); manual verification required` with an unchecked manual line. A `platform: library` repo — including flow's own — always takes this fallback (expected, not a gap).
+- **Scope:** attests **behavioral/text** verification only (not visual — that's the Deliverable-quality track's V2), and only over criteria the plan **declared**. A behavior changed without a declared Spec-walk criterion is not yet gated — closing that under-declaration hole (wire `/flow:audit-completion` coverage into the readiness chain) is a queued follow-up. Renderer behavior pinned by `evals/run_render_evals.py`.
+
+**Breaking changes:** none. Additive — Summary + Flow-run table unchanged; the `## Test plan` is now script-rendered rather than hand-authored, and degrades to the manual fallback wherever no buffer exists (i.e. every pre-v1.5.3 case).
+
+---
+
 ## v1.5.2 — 2026-06-05
 
 **Makes doc-currency automatic: every `/flow:ship` reconciles the forward-looking roadmap + plan, and a mechanical gate blocks any ship that would leave them stale. Also corrects the upgrade docs. SAFETY (ship pipeline + manifests).**
