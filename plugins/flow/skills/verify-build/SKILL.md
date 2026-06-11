@@ -204,6 +204,21 @@ Bundled `/verify` calls `/run` internally for launch, drives the running app per
 
 **Budget cap:** track tool-call count via `flow.config.json.verifyBudgetCalls` (default 60). If exceeded, abort the verify invocation and emit `Unknown` for all unjudged dimensions → ESCALATE per FB-0011.
 
+## 5a. Capture-and-persist visual frames (V2)
+
+**Only when the plan declares a `Visual-walk` block** (UI change on a `uiSurface:true` project). Non-UI / no `Visual-walk` → skip 5a entirely; visual capture is N/A.
+
+Bundled `/verify` drives the app but **narrates** screenshots to the orchestrator — it does NOT hand structured frames to the fresh-context judges (SV2-spike finding). So **flow owns capture-and-persist**: for each declared `Visual-walk` state (empty / loading / error / interaction / a11y / the happy-path look — not just one frame), the orchestrator captures and persists the evidence itself.
+
+For each declared `Visual-walk` state:
+
+1. **Capture a frame** by driving the running platform's screenshot MCP — **whichever is connected for the detected platform**: a browser MCP (e.g. Chrome/Playwright) for `web`, **XcodeBuildMCP `screenshot`** for `ios`, mobile-mcp for `android`. Do NOT hardcode a platform — use the screenshot tool available for the platform `/run` launched.
+2. **Persist the frame** to an assets dir alongside `flow.config.json.verifyReportPath` (`<dirname(verifyReportPath)>/assets/<state-slug>.png`). Most native simulator/device screenshot tools (XcodeBuildMCP included) return a file path directly — copy/move it into the assets dir. If the tool returns only image data (some browser MCPs), write the bytes to the assets path yourself. **Resize to ~460–620px wide at capture** — the renderer does NOT resize (stdlib-only), and raw retina frames bloat the report. Never paste base64 frame data into the working context.
+3. **Write observations** into the criterion the state belongs to: a `screenshot` observation with `content` = the path **relative to the assets dir** (e.g. `assets/<state-slug>.png`), AND an `a11y_snapshot` observation capturing labels / copy / status **from the a11y tree, not from screenshot pixels** (SV2 bonus finding: text — including network status — is unreliable from a single visual channel; read it from the a11y tree or an explicit assertion).
+4. **A declared `Visual-walk` state with no captured frame** → that state's visual claim resolves `Unknown` (Step 7) AND gets a `not_tested[]` entry. Never a silent gap; coverage is asserted by the renderer against the declared set (Step 10).
+
+**Baseline (for the pairwise rubric, Step 6).** If a prior baseline frame for a state exists in the assets dir (from an earlier run), pass it to the judges alongside the new frame for pairwise comparison (`rubric.md` § VLM). **First run = no baseline:** the captured frame *seeds* the baseline, and visual-*layout* claims resolve `Unknown` until a baseline exists to compare against (acceptable — text/state claims still resolve from the a11y tree). Absolute single-frame scoring stays discouraged.
+
 ## 6. Per-dimension parallel judging
 
 Spawn N parallel Agent subagent (fresh-context)s — one per dimension — each with the rubric prompt at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/rubric.md`. Default dimensions:
@@ -236,8 +251,10 @@ The schema pins these properties (binding — consumers depend on them):
 - **`exit_code`**: `0` (PASS) or `1` (FAIL or Unknown). Pins the gate-blocking contract.
 - **`criteria[]`**: per-criterion entries with `text`, `adversarial_cases`, `observations[]` (each with `type` discriminator: `screenshot` | `a11y_snapshot` | `network` | `console` | `log` | `stdout` | `exit_code` | `narrative`), `verdicts.{correctness,regression,scope-creep}` (each with verdict + exactly-2 evidence quotes + notes), and per-criterion `aggregated_verdict`.
 - **`not_tested[]`**: closed-form per-platform checklist from `lib/not-tested-checklist.md` with `item` text, `tested` boolean, optional `rationale`.
+- **`criteria[].grounding`** *(optional; V2)*: why the surface looks/behaves as it does — `{type: need|design-language|craft-commitment|open-question, statement, citations[], decision_test?}`. Citations resolve from `flow.config.json.{specPath,designLanguagePath}` or the plan's Spec-walk — **never hardcoded doc names**. Captured for criteria with a visual/UX dimension; the renderer (Step 10) shows it as the rationale callout. Operationalizes FB-0040 (rationale carried).
+- **`open_questions[]`** *(optional, top-level; V2)*: subjective human-facing calls — `{question, rationale, recommended_default, user_need_lens, routing: this-iteration|future-planning}`. **DISTINCT from `Unknown`** (epistemic). An `open_questions` entry with `routing: this-iteration` is the mechanical signal that **blocks Step 8 auto-advance** in the loop (mirrors an unresolved MEDIUM assumption — see `docs/workflow.md` Step 8); `future-planning` routes to the roadmap. The renderer surfaces these as the standalone "Open questions for you" block.
 
-**Forward-compat note (HTML case-study report — see `roadmap.md` § Exploration "Verify-build HTML case-study report"):** this shape is a superset of what an eventual HTML renderer needs. Per-criterion text + per-adversarial-case text + per-step observation captures with `type` discriminator + per-dimension verdict with evidence + top-level "not tested" checklist all support downstream rendering without schema migration. The `timestamp_offset_ms` field on observations exists specifically so the renderer can order events along a timeline. PR Q does not render HTML; a future PR will, against this contract.
+**Renderer (V3a):** this buffer is the input to `lib/render-report.py`, which emits the ephemeral HTML walkthrough at `flow.config.json.verifyReportPath` (Step 10). The shape is a superset of what the renderer needs — `timestamp_offset_ms` orders the evidence timeline; the `type` discriminator lets each observation lay out distinctly; `grounding` + `open_questions` (V2) fill the rationale + human-question layers. The durable visual record (`visual-history.html`) is a separate, curated artifact (V3b, a later PR).
 
 ### How `/flow:ship` Step 4a reads this buffer (Phase 7 integration; stub here)
 
@@ -272,6 +289,24 @@ What we did NOT test:
   [✗] >1 locale
 ```
 
+## 10. Render the ephemeral HTML walkthrough (V3a)
+
+After the buffer is written (Step 8), render it to a single self-contained HTML file — the artifact the human opens at the merge gate:
+
+```sh
+REPORT=$(jq -r '.verifyReportPath // "/tmp/flow-verify-report.html"' flow.config.json 2>/dev/null)
+[ -z "$REPORT" ] && REPORT="/tmp/flow-verify-report.html"
+FINDINGS=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null)
+[ -z "$FINDINGS" ] && FINDINGS="/tmp/flow-verify-findings.json"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/render-report.py" "$FINDINGS" --out "$REPORT"
+```
+
+`render-report.py` is **stdlib-only** (no new dependency) and reads relative `screenshot` observation paths from the assets dir alongside `verifyReportPath`. It base64-inlines frames (so the HTML is self-contained), surfaces the `grounding` rationale callouts, the per-dimension verdict cards with verbatim two-citation evidence, the standalone **"Open questions for you"** block, and the "what we did NOT test" checklist.
+
+**Coverage requirement:** the report must render the **full declared `Visual-walk` state set** — every declared state appears as an evidence item OR an explicit "not captured" line (which traces back to a Step-5a uncaptured state → `Unknown`). So "exhaustive" is *verifiable* from the report, not assumed.
+
+**Ephemeral, not committed.** `verifyReportPath` defaults to a temp path; the report is regenerated every iteration and discarded after merge. The durable, curated visual record (`visual-history.html`) is a separate artifact distilled at `/flow:ship` (V3b — a later PR). Output the report path so the caller (Present step / `/flow:ship`) can open it.
+
 ## Gotchas
 
 - **Bundled `/verify` output is freeform.** No structured PASS/FAIL contract. Flow's judge has to parse Claude's response narratively — calibration matters (FB-0011: ESCALATE on uncertainty).
@@ -287,6 +322,7 @@ What we did NOT test:
 | `flow.config.json.platform` | unset → bundled `/run` autodetect | Step 1.2 (skip-path for library/none) |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 3 (criteria extraction) |
 | `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 8 (buffer write) |
+| `flow.config.json.verifyReportPath` | `/tmp/flow-verify-report.html` | Step 5a (assets dir alongside it), Step 10 (HTML render) |
 | `flow.config.json.verifyBudgetCalls` | `60` | Step 5 (budget cap) |
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Read by `/flow:ship` Step 4a (not by verify-build directly) |
 
