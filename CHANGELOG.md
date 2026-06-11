@@ -10,6 +10,18 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.6.0 — 2026-06-11
+
+**Rendered visual capture + an ephemeral HTML walkthrough for `/flow:verify-build` — visual claims become real PASS/FAIL the autonomy loop can trust, and the human opens a real report at the merge gate (Deliverable-quality track V2/V3a). SAFETY (verify-build gate + findings schema + frame persistence).**
+
+- **Capture-and-persist (SKILL §5a):** for each declared `Visual-walk` state, flow drives the running platform's screenshot MCP itself (XcodeBuildMCP on iOS returns a native frame path; bundled `/verify` only narrates frames to the fresh-context judges — SV2-spike), persists the frame to an assets dir, and writes a path-referenced `screenshot` observation + an `a11y_snapshot` (text/status from the a11y tree, not pixels). An uncaptured declared state → `Unknown` + a `not_tested` line.
+- **Two additive findings-buffer fields** (`schema_version` stays `1.0`): `criteria[].grounding` (rationale: need / design-language / craft-commitment / open-question) and top-level `open_questions[]` (subjective human calls, distinct from epistemic `Unknown`).
+- **Rubric re-grounded:** visual claims judged **pairwise-vs-baseline** (no baseline ⇒ Unknown; first run seeds it), not absolute scoring.
+- **Stdlib HTML renderer (`lib/render-report.py`):** buffer → one self-contained ephemeral report (`verifyReportPath` slot) with grounding callouts, per-dimension verdict cards, a standalone "Open questions for you" block, and a "what we did NOT test" checklist.
+- **Loop gate:** an `open_questions[routing=this-iteration]` entry blocks Step 8 auto-advance (mirrors an unresolved MEDIUM assumption).
+- New `verifyReportPath` slot (22 slots total). Phase-0 validated live on iOS (XcodeBuildMCP); full skill-driven cold run is the tracked follow-up.
+- **Breaking changes:** none.
+
 ## v1.5.2 — 2026-06-05
 
 **Makes doc-currency automatic: every `/flow:ship` reconciles the forward-looking roadmap + plan, and a mechanical gate blocks any ship that would leave them stale. Also corrects the upgrade docs. SAFETY (ship pipeline + manifests).**
