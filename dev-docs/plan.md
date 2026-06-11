@@ -82,6 +82,15 @@
 
 ---
 
+**Staff-review FOLLOW-UPs (2026-06-11, four lenses; BLOCKER + cheap NITs fixed inline — deferred items captured here, not lost):**
+- **Renderer: hero criterion tally** (UX) — show "N PASS / N FAIL / N Unknown" in the hero so the human can triage where to spend attention. Small schema-read addition; pairs with the open-questions ordering. Owner: renderer, next iteration.
+- **Open-questions answer affordance** (push-further, roadmap-concrete) — the report collects questions but the answer happens off-surface; render a copy-ready answer stub per question (the `this-iteration` → Execute vs resolved grammar the Step-8 gate already implies). ~1 renderer fn + an answer-grammar contract. Owner: renderer + Step-8 gate.
+- **Dark-mode token table in `design-language.md`** (design-eng) — the renderer ships ~7 dark hexes with no source-of-truth table; the NITs fixed this round (routing tag, meta-row labels not inverting) existed *because* there's no dark-token table forcing coverage. Add the table + audit the CSS against it. Owner: DL doc, next report-polish pass.
+- **`platform_hint` vs `not-tested-checklist` coverage** (staff-eng) — enum has tauri/cli/android but the checklist + capture model web/ios; widen when V2 fast-follows Android. Owner: Android/mobile-mcp fast-follow.
+- **Report a11y at 200% zoom / 320px** (UX) — layout should reflow (flex-wrap + auto-fit grid) but unverified; `/flow:accessibility-review` skips it (flow is `uiSurface:false`, but the *report* is a UI artifact). Owner: a dedicated report-a11y pass.
+- **Step-8 `open_questions[this-iteration]` behavioral test** (staff-eng) — the eval greps the gate *language*, not the predicate's behavior (no executable predicate exists yet; FB-0018-adjacent). The plan/eval should say "pins the documented contract," not "pins the behavior." Owner: whoever mechanizes the Step-8 predicate.
+- **Surface-elevation scale** (design-eng, § Exploration) — `#fafafa` callout tint + routing fills are ad-hoc; a named page→card→inset elevation scale in the DL would prevent future ad-hoc tints when V3b lands.
+
 ## SV2-spike — Does bundled `/verify` return screenshots structurally, or only narrate them? (Deliverable-quality track V2 prerequisite)
 
 **Restated request:** Before scoping V2 (rendered capture + baseline), resolve the open empirical question flagged at `verify-build/lib/rubric.md:68` + `verify-build/SKILL.md:56-64`: does bundled `/verify` return screenshots **structurally** (image data a downstream consumer — verify-build's per-dimension judge and the future HTML renderer — can use as pixels or as path-referenced files), or does it only **narrate** observations in freeform prose? The whole shape of V2 depends on the answer. Run cheaply as a spike; the history.md entry is the deliverable; don't over-build.

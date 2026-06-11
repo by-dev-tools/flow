@@ -74,13 +74,13 @@ nav.toc ol { margin: 6px 0 0; padding-left: 20px; }
 nav.toc li { margin: 3px 0; }
 section.criterion { scroll-margin-top: 16px; }
 h2 { font-size: 20px; margin: 30px 0 8px; }
-.grounding { border-left: 4px solid #ccc; padding: 8px 14px; margin: 12px 0; background: #fafafa; border-radius: 0 8px 8px 0; }
+.grounding { border-left: 4px solid #e3e3e6; padding: 8px 14px; margin: 12px 0; background: #f6f6f7; border-radius: 0 8px 8px 0; }
 .grounding .gtype { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .grounding .cites { font-size: 12px; color: #6b6b70; margin-top: 4px; }
 .timeline { list-style: none; margin: 10px 0; padding: 0; }
 .obs { border: 1px solid #e3e3e6; border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
 .obs .meta { font-size: 11px; color: #6b6b70; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
-.obs img { max-width: 600px; width: 100%; height: auto; border: 1px solid #ddd; border-radius: 6px; display: block; }
+.obs img { max-width: 600px; width: 100%; height: auto; border: 1px solid #e3e3e6; border-radius: 6px; display: block; }
 .obs pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12.5px/1.5 ui-monospace, Menlo, monospace; }
 .missing { color: #b3261e; font-style: italic; font-size: 13px; }
 .adversarial { font-size: 13.5px; }
@@ -88,7 +88,7 @@ h2 { font-size: 20px; margin: 30px 0 8px; }
 .verdicts { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 12px; }
 .vcard { border: 1px solid #e3e3e6; border-radius: 8px; padding: 10px 12px; }
 .vcard .vhead { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 6px; }
-.vcard blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid #ddd; font-size: 12.5px; color: #46464b; }
+.vcard blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid #e3e3e6; font-size: 12.5px; color: #46464b; }
 .vcard .notes { font-size: 12.5px; color: #6b6b70; margin-top: 4px; }
 .oq { counter-reset: oq; }
 .oq .q { border: 1px solid #e3e3e6; border-radius: 10px; padding: 14px 16px; margin: 0 0 12px; }
@@ -100,15 +100,17 @@ h2 { font-size: 20px; margin: 30px 0 8px; }
 .routing.this-iteration { background: #fde7c7; color: #7a4d00; }
 .routing.future-planning { background: #e4e4e7; color: #46464b; }
 table.nt { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-table.nt td { padding: 5px 8px; border-bottom: 1px solid #eee; }
+table.nt td { padding: 5px 8px; border-bottom: 1px solid #e3e3e6; }
 table.nt td.mark { width: 28px; text-align: center; }
 footer { margin-top: 40px; font-size: 12.5px; color: #6b6b70; border-top: 1px solid #e3e3e6; padding-top: 14px; }
 @media (prefers-color-scheme: dark) {
   body { color: #e6e6ea; background: #161618; }
   .card, .vcard, .obs, .oq .q { background: #1f1f22; border-color: #34343a; }
   .grounding { background: #232327; }
-  .lede, .vcard blockquote { color: #b7b7bd; }
+  .lede, .vcard blockquote, .oq .meta-row b { color: #b7b7bd; }
   .pill { background: #2b2b30; color: #e6e6ea; }
+  .routing.this-iteration { background: #4a3a1a; color: #f0d9a8; }
+  .routing.future-planning { background: #2b2b30; color: #b7b7bd; }
 }
 """
 
@@ -121,7 +123,7 @@ def verdict_dot(v):
     return f'<span class="dot" style="background:{VERDICT_COLOR.get(v, "#888")}"></span>'
 
 
-def render_hero(meta, overall, exit_code):
+def render_hero(meta, overall, exit_code, baseline_seeding=False):
     eyebrow = " · ".join(
         x for x in [meta.get("branch"), meta.get("head_sha_short"),
                     meta.get("platform_hint"), f'flow {meta.get("plugin_version", "?")}'] if x
@@ -129,7 +131,7 @@ def render_hero(meta, overall, exit_code):
     budget = meta.get("verify_budget_calls_used")
     pills = [
         f'<span class="pill">{verdict_dot(overall)}Overall: {esc(overall)}</span>',
-        f'<span class="pill">exit {esc(exit_code)}</span>',
+        f'<span class="pill">verify exit code: {esc(exit_code)}</span>',
     ]
     if budget is not None:
         over = " (overrun)" if meta.get("verify_budget_overrun") else ""
@@ -138,6 +140,9 @@ def render_hero(meta, overall, exit_code):
         pills.append('<span class="pill">spike mode</span>')
     lede = ("What the running app actually did, judged against the plan's acceptance criteria — "
             "and the decisions that still need your call.")
+    if baseline_seeding:
+        lede += (" This is a baseline-seeding run — visual-layout verdicts are Unknown by design until "
+                 "the next run compares against the frames captured here; that is expected, not a failure.")
     return (f'<p class="eyebrow">{esc(eyebrow)}</p>'
             f'<h1>Verify-build walkthrough</h1>'
             f'<p class="lede">{esc(lede)}</p>'
@@ -182,23 +187,31 @@ def render_grounding(g):
             f'<div>{esc(g.get("statement", ""))}</div>{cite_html}{dtest}</div>')
 
 
-def render_observation(obs, assets_dir, warnings):
+def render_observation(obs, assets_dir, warnings, label):
     otype = obs.get("type", "narrative")
     content = obs.get("content", "")
     off = obs.get("timestamp_offset_ms")
     meta = otype + (f" · +{off}ms" if off is not None else "")
     if otype == "screenshot":
-        body = render_screenshot(content, assets_dir, warnings)
+        body = render_screenshot(content, assets_dir, warnings, label)
     else:
         body = f"<pre>{esc(content)}</pre>"
     return f'<li class="obs"><div class="meta">{esc(meta)}</div>{body}</li>'
 
 
-def render_screenshot(content, assets_dir, warnings):
-    # content is a relative path OR a data: URI already.
+def render_screenshot(content, assets_dir, warnings, label):
+    # `label` (the criterion text) is the alt text — a filename tells a screen-reader nothing.
+    alt = esc(f"Captured frame: {label}")
     if isinstance(content, str) and content.startswith("data:"):
-        return f'<img src="{esc(content)}" alt="captured frame" />'
-    path = content if os.path.isabs(content) else os.path.join(assets_dir, content)
+        return f'<img src="{esc(content)}" alt="{alt}" />'
+    # Resolve relative to assets_dir and reject absolute paths or any path that escapes it
+    # (the buffer is self-authored, but the renderer should not read arbitrary files).
+    if not isinstance(content, str) or os.path.isabs(content):
+        return f'<p class="missing">Screenshot not captured (absolute or invalid path rejected: {esc(content)})</p>'
+    base = os.path.realpath(assets_dir)
+    path = os.path.realpath(os.path.join(base, content))
+    if path != base and not path.startswith(base + os.sep):
+        return f'<p class="missing">Screenshot not captured (path escapes the assets dir: {esc(content)})</p>'
     if not os.path.isfile(path):
         return f'<p class="missing">Screenshot not captured (no file at {esc(content)})</p>'
     try:
@@ -209,13 +222,13 @@ def render_screenshot(content, assets_dir, warnings):
         warnings.append(f"{content} is {len(raw)//1024}KB — capture should resize frames (~460-620px) before persisting.")
     mime = mimetypes.guess_type(path)[0] or "image/png"
     b64 = base64.b64encode(raw).decode("ascii")
-    return f'<img src="data:{mime};base64,{b64}" alt="{esc(os.path.basename(path))}" />'
+    return f'<img src="data:{mime};base64,{b64}" alt="{alt}" />'
 
 
-def render_observations(obs_list, assets_dir, warnings):
+def render_observations(obs_list, assets_dir, warnings, label):
     if not obs_list:
-        return '<p class="missing">No observations captured for this criterion — it was not exercised (see "what we did NOT test").</p>'
-    items = "".join(render_observation(o, assets_dir, warnings) for o in obs_list)
+        return '<p class="missing">No observations captured for this criterion — it was not exercised (see the coverage checklist below).</p>'
+    items = "".join(render_observation(o, assets_dir, warnings, label) for o in obs_list)
     return f'<ul class="timeline">{items}</ul>'
 
 
@@ -249,7 +262,7 @@ def render_criterion(i, c, assets_dir, warnings):
         f'<section class="criterion" id="{slug(i)}">'
         f'<h2>{verdict_dot(c.get("aggregated_verdict", "Unknown"))} {esc(c.get("text", "(untitled)"))}</h2>'
         f'{render_grounding(c.get("grounding"))}'
-        f'{render_observations(c.get("observations"), assets_dir, warnings)}'
+        f'{render_observations(c.get("observations"), assets_dir, warnings, c.get("text", "this criterion"))}'
         f'{render_adversarial(c.get("adversarial_cases"))}'
         f'{render_verdict_cards(c.get("verdicts"))}'
         f'</section>'
@@ -260,6 +273,8 @@ def render_open_questions(questions):
     if not questions:
         return ('<section><h2>Open questions for you</h2>'
                 '<p class="lede">None raised — the agent had no subjective/taste calls needing your input this run.</p></section>')
+    # Blocking (this-iteration) questions first — those are what the human must act on to proceed.
+    questions = sorted(questions, key=lambda q: 0 if q.get("routing") == "this-iteration" else 1)
     blocks = []
     for q in questions:
         routing = q.get("routing", "future-planning")
@@ -289,15 +304,22 @@ def render_not_tested(items):
         f'{(" — " + esc(it["rationale"])) if it.get("rationale") else ""}</td></tr>'
         for it in items
     )
-    return f'<section><h2>What we did NOT test</h2><div class="card"><table class="nt"><tbody>{rows}</tbody></table></div></section>'
+    return f'<section><h2>Coverage — what we did and did not test</h2><div class="card"><table class="nt"><tbody>{rows}</tbody></table></div></section>'
 
 
 def render(buffer, assets_dir):
     warnings = []
     meta = buffer.get("metadata", {})
     criteria = buffer.get("criteria", []) or []
+    not_tested = buffer.get("not_tested") or []
+    overall = buffer.get("overall_verdict", "Unknown")
+    # Hospitality (FB-0040): if the only reason for an Unknown is "no baseline yet", say so up front
+    # so the first glance isn't a quiet alarm for the expected baseline-seeding run.
+    baseline_seeding = overall == "Unknown" and any(
+        "baseline" in it.get("item", "").lower() and not it.get("tested") for it in not_tested
+    )
     body = (
-        render_hero(meta, buffer.get("overall_verdict", "Unknown"), buffer.get("exit_code", 1))
+        render_hero(meta, overall, buffer.get("exit_code", 1), baseline_seeding)
         + render_legend()
         + render_toc(criteria)
         + "".join(render_criterion(i, c, assets_dir, warnings) for i, c in enumerate(criteria))

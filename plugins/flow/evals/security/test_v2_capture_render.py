@@ -105,7 +105,7 @@ def test_renderer_emits_full_report() -> None:
         "Relates to a need",                 # grounding callout
         "Open questions for you",            # standalone question block
         "this iteration",                    # routing label
-        "What we did NOT test",              # not-tested
+        "Coverage — what we did and did not test",  # coverage/not-tested section
         "Screenshot not captured",           # graceful missing-frame (example path doesn't exist)
     ]
     for needle in required:

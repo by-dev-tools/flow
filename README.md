@@ -60,7 +60,7 @@ Listed in **loop order** — top to bottom is the sequence you move through. The
 - **8 agents:** `auditor`, `plan-critic`, `planner`, `docs`, plus 4 staff-review lens agents (`lens-staff-engineer`, `lens-ux-designer`, `lens-design-engineer`, `lens-push-further`).
 - **4 auto-loading portable rules:** `general.md` (on `**/*` — workflow discipline), `plan-discipline.md` (on `**/plan.md` — required fields + LOW=gate), `documentation.md` (on `**/{history,feedback,plan,roadmap,spec}.md` — format rules), `exploration.md` (on `src/**`, `app/**`, `lib/**`, `packages/**` — § Exploration triggers).
 - **Memory tool:** `plugins/flow/tools/memory/check.mjs` — failure-pattern corpus cap + audit-due check.
-- **Schema:** `plugins/flow/schema/flow.config.schema.json` — 21 slots documented with defaults + examples.
+- **Schema:** `plugins/flow/schema/flow.config.schema.json` — 22 slots documented with defaults + examples.
 - **Hooks:** `plugins/flow/hooks/default-hooks.json` — 2 opt-in PreToolUse hooks (sensitive-file write blocker + path-validation warn).
 - **CI workflow:** `.github/workflows/ci.yml` — `evals` + `security` jobs on pull_request + merge_group.
 
@@ -166,7 +166,7 @@ plugins/flow/
                                     #   exploration.md (auto-load on path matches)
   scripts/                          # extract_session.py, bounding_logic.py, log_disagreement.py
   tools/memory/                     # check.mjs (corpus cap + audit-due)
-  schema/                           # flow.config.schema.json (21 slots)
+  schema/                           # flow.config.schema.json (22 slots)
   hooks/                            # default-hooks.json (opt-in baseline)
   evals/                            # ground_truth.yaml, run_evals.py, run_security_evals.py,
                                     #   fixtures/, security/ (cwd-constraint + malicious-config tests)
