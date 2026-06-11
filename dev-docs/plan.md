@@ -16,6 +16,70 @@
 - **Open hygiene:** user-scope `~/.claude/settings.json` still has a stale `extraKnownMarketplaces.llm-auditor` key (cosmetic — points at `flow.git` under the pre-rename name); remove when convenient. Md-manager PR 5 (dogfood) still pending in a separate worktree.
 - **Op tip:** `gh pr edit` errors on this repo (projects-classic GraphQL deprecation) — use `gh api -X PATCH .../pulls/N -f body=...` to set a PR body.
 
+## PR V2 + V3a — Rendered capture + ephemeral HTML walkthrough (Deliverable-quality track — ACTIVE, planning)
+
+**Restated request:** Build the **V2 (rendered capture + baseline)** + **V3a (ephemeral HTML walkthrough renderer)** link of the Deliverable-quality track, so `/flow:verify-build` turns visual claims from Unknown into a real PASS/FAIL the Step 8 predicate can trust, and produces the HTML walkthrough the human opens at the merge gate. User direction 2026-06-09: "move forward on the roadmap, I want that V2 and V3 functionality."
+
+**Mode:** feature (large) | **Priority: high** (load-bearing for FB-0041 autonomous deliverable; the precondition that makes craft-iteration honest per FB-0045).
+
+**Decisions locked (Gate-1 clarification, 2026-06-09):**
+- **Validation surface: health-tracker (web/Chrome, local at `/Users/benyamron/dev/health-tracker`).** The schema fields / renderer / gate / rubric are platform-agnostic; only the screenshot-drive seam is platform-specific. **iOS (XcodeBuildMCP) capture is an explicit fast-follow PR** (re-characterize per the SV2 iOS re-test trigger — XcodeBuild may return paths natively → cheaper).
+- **Scope: PR-1 = V2 capture + V3a ephemeral renderer** (FB-0003-coupled: schema fields land with a producer AND a consumer). **V3b durable `visual-history.html` + distill bridge = PR-2** (coordinate with #36's merged blueprint/FB-0042; don't duplicate).
+
+**Goal:** A `/flow:verify-build` run on a UI surface captures a frame + an a11y snapshot per declared `Visual-walk` state, persists them, writes referenced `observations[]` + the two new buffer fields, judges visual claims pairwise-vs-baseline (not absolute), and a stdlib Python renderer emits one self-contained **ephemeral** HTML report (the merge-gate artifact). An unanswered `this-iteration` open question blocks Step 8 auto-advance.
+
+**Why this PR exists:** SV2 proved visual claims reach the fresh-context judges as *narration* → resolve to Unknown → block (today). FB-0041's autonomous deliverable needs a real visual PASS; FB-0045 needs the judge to see *real artifacts* (not narration) for craft-iteration to be honest. V2 is that link; V3a is the human-feedback artifact (blueprint §3).
+
+**⚠ KEY TECHNICAL RISK — the frame-persist mechanism is not fully resolved, and it gates the rest.** SV2 established the *problem* (Chrome MCP returns an image content block + an ID string; `save_to_disk:true` produced no usable path + no discoverable file in that build) but did NOT establish a *working* persist path. **Phase 0 (first execution step) characterizes + documents a working capture-persist mechanism against health-tracker**, trying in order: (a) a screenshot MCP that writes a file natively (Playwright MCP if connectable — the verify-build SKILL.md already names it for web); (b) a bundled-`/run`-driven screenshot-to-path; (c) **fallback** — resize-then-base64 the frame directly into `observations[].content` as a data URI (schema + renderer already support this; accepts the base64-weight cost under the blueprint's resize-before-encode discipline). The rest of the PR is gated on (a)/(b)/(c) yielding *addressable frame data*. If none does → **stop-and-present** (the capture approach needs rethinking). *Phase 0 could instead be a ~1-hour precursor spike if you prefer SV2→V2 symmetry — flagged at the gate.*
+
+**Scope (in):**
+1. **Schema (additive; `schema_version` stays `1.0`).** Add `criteria[].grounding` (`{type: need|design-language|craft-commitment|open-question, statement, citations[], decision_test?}`) + top-level `open_questions[]` (`{question, rationale, recommended_default, user_need_lens, routing: this-iteration|future-planning}`). Update `findings-schema.json` + `findings-example.json` + an eval fixture (FB-0003: producer writes them, renderer + Step-8 gate read them, same PR).
+2. **Capture-and-persist** (verify-build SKILL.md Steps 5/8), driven by the declared `Visual-walk` state set: per state, a `screenshot` observation (persisted per Phase 0) + an `a11y_snapshot` observation (label/copy/status from the a11y tree, NOT pixels — SV2 bonus finding). A declared state with no observation → `Unknown` + a `not_tested[]` line (no silent gap). Flow owns capture+persist; bundled `/verify` only narrates.
+3. **Baseline + rubric rewrite** (`rubric.md:59-68`): re-ground the VLM section on referenced frames + a baseline; pairwise (A vs baseline) over absolute scoring; text from the a11y tree. Define baseline lifecycle: first run (no baseline) seeds it → visual-layout claim is `Unknown` until baselined (acceptable); later runs compare. Keep the section, don't remove it (SV2 branch B).
+4. **`verifyReportPath` slot + assets-dir convention**: new config slot (default temp, e.g. `/tmp/flow-verify-report.html`) + an assets dir alongside it for persisted frames. Update `flow.config.schema.json` + the slot tables (verify-build SKILL.md, workflow.md, ship SKILL.md if it reads it). Loud-warning on unset where load-bearing.
+5. **Stdlib Python renderer (V3a)**: buffer JSON → one self-contained ephemeral HTML file, blueprint §3 structure (hero + verdict pills → legend → TOC → per-criterion [text → grounding callout → evidence/timeline → adversarial pane → per-dimension verdict cards] → standalone "Open questions for you" → "what we did NOT test" → footer). **Coverage assertion**: every declared `Visual-walk` state appears as evidence-or-"not captured". Screenshots resized (~460–620px) + base64-inlined. Neutral default theme, zero brand tokens. No new dependency.
+6. **Report design-language doc** (`dev-docs/design-language.md` for the *report itself* — typography, PASS/FAIL/Unknown semantic colors, timeline conventions). Also flips flow's own `flow.config.json.uiSurface`? NO — flow stays a library; this DL doc governs the renderer's output, not a flow UI surface.
+7. **Renderer invocation**: verify-build renders the report after the buffer write (new Step ~9) + outputs `verifyReportPath`; ship Step 2's confirmation re-run re-renders.
+8. **Step-8 gate**: `open_questions[routing=this-iteration]` present ⇒ blocks Step 8 auto-advance (mirrors an unresolved MEDIUM assumption). Update `workflow.md` Step 8 + the readiness predicate; eval fixture pins it.
+9. **Eval fixtures (stdlib, no deps)**: (a) schema-shape (grounding + open_questions valid; example validates); (b) renderer coverage (every declared state rendered as evidence-or-not-captured); (c) open-questions-blocks-Step-8.
+10. **Validation (FB-0016)**: run `/flow:verify-build` against local health-tracker with a `Visual-walk`-bearing plan; confirm real frames persisted + a real report rendered + visual criteria resolve PASS/FAIL (not all-Unknown). Shape not called stable until this passes on the real surface.
+11. **Version bump 1.5.2 → 1.6.0** (new capability): both manifests + README + CHANGELOG.
+12. **Docs**: history.md (**SAFETY** — verify-build gate + schema + frame persistence-to-disk), plan.md (this block; swept at ship), roadmap.md (mark V2/V3a built; V3b + iOS-seam remain), feedback.md (likely no new FB — references FB-0041/0042/0045; add one only if a durable rule emerges, reserve the number first).
+
+**Scope (out):** V3b durable `visual-history.html` + distill bridge → **PR-2**. iOS/XcodeBuildMCP capture seam → **fast-follow PR**. Real-device testing → out (simulator/headless only). plan-critic enforcement of `Visual-walk` presence (Facet 4 / V1.1) → separate. Android/mobile-mcp → out.
+
+**Spec-walk:**
+- [ ] **Phase 0**: a working frame-persist mechanism characterized + documented against health-tracker (one of a/b/c yields addressable frame data). (verify: a persisted frame exists at the assets path OR a base64 data URI lands in `observations[].content`)
+- [ ] `criteria[].grounding` + `open_questions[]` in `findings-schema.json` (additive; `schema_version` still `"1.0"`); `findings-example.json` updated; schema-shape eval validates both. (verify: run the eval)
+- [ ] Capture driven by declared `Visual-walk` states: per state a persisted screenshot obs + an a11y_snapshot obs; uncaptured state → Unknown + not_tested line. (verify: health-tracker run buffer has one obs-pair per declared state)
+- [ ] Rubric VLM section rewritten around referenced frames + baseline pairwise; absolute scoring discouraged; text from a11y tree; no "may be removed" marker survives. (verify: read `rubric.md`)
+- [ ] `verifyReportPath` slot + assets dir in `flow.config.schema.json` + slot tables; loud-warning on unset. (verify: grep slot across surfaces)
+- [ ] Stdlib renderer emits the §3 structure to a self-contained HTML file; coverage assertion present; screenshots resized + base64-inlined. (verify: render the example buffer; open the HTML)
+- [ ] Report design-language doc exists (neutral theme, zero brand tokens). (verify: read; grep brand tokens → none)
+- [ ] `open_questions[this-iteration]` blocks Step 8 auto-advance; `workflow.md` Step 8 + predicate updated; fixture pins it. (verify: run the gate fixture)
+- [ ] Validated on health-tracker: real report with real frames; visual criteria resolve PASS/FAIL not all-Unknown. (verify: attach the rendered report path + verdict summary)
+- [ ] Version bumped 1.5.2→1.6.0 (both manifests + README + CHANGELOG); no stale `1.5.2` survivors that should change. (verify: `git grep '"version"'`)
+- [ ] `claude plugin validate .` clean.
+- [ ] Run `/flow:critique-plan` before approval.
+- [ ] Run `/simplify` + `/flow:staff-review` after implementation.
+
+**Confidence verdicts per load-bearing assumption:**
+- **Assumption:** a working frame-persist path exists on web (one of a/b/c). **Confidence: MEDIUM.** **Why:** SV2 showed Chrome MCP doesn't write files, but Playwright-MCP / node-script / base64-fallback are plausible; not yet proven. **If it flips** (none works): capture approach needs a rethink → stop-and-present. *(This is why Phase 0 gates the rest.)*
+- **Assumption:** the two schema fields are additive (no migration). **Confidence: HIGH.** **Why:** blueprint §2 + the schema's own additive rule; existing consumers ignore unknown fields.
+- **Assumption:** web-first validates the platform-agnostic shape sufficiently for FB-0016. **Confidence: HIGH.** **Why:** schema/renderer/gate/rubric are platform-independent; only the capture-drive seam is platform-specific (explicitly fast-followed).
+- **Assumption:** pairwise-vs-baseline is judgeable from the frames we persist. **Confidence: MEDIUM.** **Why:** depends on frame fidelity + baseline availability; first run has no baseline (→ visual-layout Unknown until seeded, acceptable). **If it flips:** lean on a11y-tree assertions for text, keep visual-layout claims Unknown until baselined.
+
+**Risks / open questions:**
+- **Frame-persist mechanism (the big one)** — Phase 0 gates; stop-and-present if a/b/c all fail.
+- **Renderer scope creep** — keep stdlib, one file, neutral theme; resist theming features.
+- **Base64 weight** if fallback (c) — resize-before-encode; never paste base64 into the working context (blueprint).
+- **Baseline storage/versioning** — where the baseline lives across runs (assets dir; first-run seeds). Keep minimal in PR-1; durable baseline lineage is V3b-adjacent.
+- **Large PR** — Phase 0 + schema + capture + rubric + renderer + gate + evals + validation; the natural fault line if it bloats is Phase 0 as a precursor spike (offered at the gate).
+
+**Files touched (anticipated):** `plugins/flow/skills/verify-build/SKILL.md`, `.../lib/rubric.md`, `.../lib/findings-schema.json`, `.../lib/findings-example.json`, `.../lib/not-tested-checklist.md` (maybe), a new `.../lib/render-report.py`, `plugins/flow/schema/flow.config.schema.json`, `plugins/flow/docs/workflow.md`, `plugins/flow/skills/ship/SKILL.md` (if it reads `verifyReportPath`), `dev-docs/design-language.md` (new — report DL), `plugins/flow/evals/fixtures/*` (3), `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `README.md`, `CHANGELOG.md`, `dev-docs/{history.md,plan.md,roadmap.md}`.
+
+---
+
 ## SV2-spike — Does bundled `/verify` return screenshots structurally, or only narrate them? (Deliverable-quality track V2 prerequisite)
 
 **Restated request:** Before scoping V2 (rendered capture + baseline), resolve the open empirical question flagged at `verify-build/lib/rubric.md:68` + `verify-build/SKILL.md:56-64`: does bundled `/verify` return screenshots **structurally** (image data a downstream consumer — verify-build's per-dimension judge and the future HTML renderer — can use as pixels or as path-referenced files), or does it only **narrate** observations in freeform prose? The whole shape of V2 depends on the answer. Run cheaply as a spike; the history.md entry is the deliverable; don't over-build.
