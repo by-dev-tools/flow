@@ -113,6 +113,39 @@ def test_renderer_emits_full_report() -> None:
     assert "{esc(" not in html, "template leak in output (f-string not interpolated)"
 
 
+def test_data_uri_allowlist() -> None:
+    """A data:image/svg+xml screenshot content must NOT reach an <img src>; raster data URIs may (FB-0004)."""
+    buf = {
+        "schema_version": "1.0",
+        "metadata": {"branch": "b", "head_sha_short": "s", "plugin_version": "1.6.0", "platform_hint": "ios"},
+        "overall_verdict": "Unknown", "exit_code": 1,
+        "criteria": [{
+            "text": "c", "adversarial_cases": [],
+            "observations": [
+                {"type": "screenshot", "content": "data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+"},
+                {"type": "screenshot", "content": "data:image/png;base64,iVBORw0KGgo="},
+            ],
+            "verdicts": {
+                "correctness": {"verdict": "Unknown", "evidence": ["a", "b"], "notes": "x"},
+                "regression": {"verdict": "Unknown", "evidence": ["a", "b"], "notes": "x"},
+                "scope-creep": {"verdict": "Unknown", "evidence": ["a", "b"], "notes": "x"},
+            },
+            "aggregated_verdict": "Unknown",
+        }],
+        "not_tested": [],
+    }
+    with tempfile.TemporaryDirectory() as td:
+        bp = Path(td) / "b.json"
+        bp.write_text(json.dumps(buf))
+        out = Path(td) / "r.html"
+        r = subprocess.run([sys.executable, str(RENDERER), str(bp), "--out", str(out)], capture_output=True, text=True)
+        assert r.returncode == 0, f"renderer exited {r.returncode}: {r.stderr}"
+        html = out.read_text()
+    assert '<img src="data:image/svg' not in html, "svg+xml data URI reached an <img src> (the leak)"
+    assert "not in the raster-image allowlist" in html, "svg data URI was not rejected by the allowlist"
+    assert '<img src="data:image/png;base64,iVBORw0KGgo=' in html, "legit raster data URI should still inline as an img"
+
+
 def test_skill_and_rubric_and_workflow_contract() -> None:
     skill = SKILL.read_text()
     assert "## 5a. Capture-and-persist" in skill, "SKILL.md missing the §5a capture-and-persist step"
@@ -146,6 +179,7 @@ def main() -> int:
         test_example_validates,
         test_config_declares_report_slot,
         test_renderer_emits_full_report,
+        test_data_uri_allowlist,
         test_skill_and_rubric_and_workflow_contract,
     ):
         try:

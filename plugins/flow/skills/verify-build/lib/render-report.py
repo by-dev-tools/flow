@@ -203,6 +203,13 @@ def render_screenshot(content, assets_dir, warnings, label):
     # `label` (the criterion text) is the alt text — a filename tells a screen-reader nothing.
     alt = esc(f"Captured frame: {label}")
     if isinstance(content, str) and content.startswith("data:"):
+        # Allowlist raster image data URIs only. Reject data:image/svg+xml (SVG can carry
+        # markup/handlers) and any non-image payload. SVG-in-<img> is already non-scripting
+        # in browsers, but this is cheap defense-in-depth + aligns with "no base64 in context".
+        mediatype = content[5:].split(",", 1)[0].split(";", 1)[0].lower().strip()
+        if mediatype not in ("image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"):
+            return (f'<p class="missing">Screenshot not inlined — data URI media type '
+                    f'{esc(mediatype) or "(none)"} is not in the raster-image allowlist.</p>')
         return f'<img src="{esc(content)}" alt="{alt}" />'
     # Resolve relative to assets_dir and reject absolute paths or any path that escapes it
     # (the buffer is self-authored, but the renderer should not read arbitrary files).
