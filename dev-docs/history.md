@@ -39,6 +39,31 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### PR V2 + V3a — Rendered visual capture + ephemeral HTML walkthrough (v1.6.0) — SAFETY
+**Date:** 2026-06-11
+**Branch:** `claude/v2-rendered-capture`
+**Commit:** [this PR — opened as a DRAFT; behavioral gate pending]
+
+**What was done:**
+Built the V2 (rendered capture) + V3a (ephemeral HTML walkthrough) link of the Deliverable-quality track for `/flow:verify-build`. `criteria[].grounding` + top-level `open_questions[]` added to the findings schema (additive; `schema_version` stays `1.0`; top-level `required` unchanged). SKILL §5a: flow now **owns capture-and-persist** — drives the platform's screenshot MCP per declared `Visual-walk` state, persists the frame, writes a path-referenced `screenshot` observation + an `a11y_snapshot` (text/status from the a11y tree, not pixels). SKILL §10 + a new stdlib `render-report.py`: the buffer renders to one self-contained ephemeral HTML report (`verifyReportPath` slot) — hero, legend, per-criterion evidence/grounding/verdict cards, a standalone "Open questions for you" block, and a coverage checklist. Rubric re-grounded on pairwise-vs-baseline (no baseline ⇒ Unknown). `open_questions[this-iteration]` blocks Step 8 auto-advance. Version 1.5.2 → 1.6.0; slot count 21 → 22.
+
+**Why (SAFETY):** modifies the verify-build *gate* (a load-bearing safety surface), the findings *schema* (a consumed contract), and adds *frame persistence to disk* (file I/O + base64 inlining of buffer-referenced files) — all three are SAFETY-marked per `.claude/rules/documentation.md`.
+
+**Design decisions:**
+- **iOS-first, not web (mid-flight correction).** The roadmap/SV2 carried a "web-first against health-tracker" framing; health-tracker is an **iOS/SwiftUI app**, and the renderer's HTML is an *output format*, not the capture platform. Pivoted to capture-via-XcodeBuildMCP; the schema/renderer/gate/rubric stayed platform-agnostic (only the screenshot-drive seam is platform-specific). The Chrome-MCP "no path" persist risk (SV2) **dissolved** — XcodeBuildMCP returns a native, pre-optimized frame path.
+- **Branch B (capture-and-persist owned by flow), per SV2.** Bundled `/verify` narrates frames to the judges; flow drives + persists them itself.
+- **Stdlib renderer, honest-by-passthrough.** No new dependency; resize is the capture step's job; coverage is established by §5a's `not_tested` writes, not enforced by the renderer (corrected an overclaim at staff-review).
+
+**Technical decisions:**
+- Additive schema (no migration); `verifyReportPath` slot (default ephemeral temp path).
+- Path-traversal hardening + raster-data-URI allowlist in the renderer (security-review).
+- 6-assert contract eval fixture pins schema↔example↔renderer↔SKILL↔rubric↔workflow + the data-URI allowlist.
+
+**Tradeoffs discussed (the load-bearing one — FB-0047):**
+- **Validation depth: ship now vs do the flow-true behavioral gate.** Phase 0 + the capture→render chain were validated **live on iOS** (built+ran HealthTracker on the sim, real frame → real 41KB report). But the user's question — *"which is more true to flow's intention?"* — established that the rigorous gate is the **skill-driven** `/flow:verify-build` run (ideally cold), not static contract tests + hand-driven mechanism (which is the Potemkin self-validation verify-build exists to catch). That cold run is **session-bound to a health-tracker context**, so per FB-0034 this PR **opens as a DRAFT** with the behavioral gate in the NOT-READY manifest — discovery-before-merge preserved, no merge-ready PR on an unconfirmed gate.
+
+**Lessons learned:** FB-0047 (a verification tool isn't validated until it RUNS against a real surface; don't conflate output-format with capture-platform). Staff-review caught a slot-count fan-out BLOCKER (flow's own doctor Check 2.5 would have flagged it) — grep-first discipline (FB-0010) applies to every count change.
+
 ### Direction capture — agentic-iteration doctrine + plan-gate quality lenses (FB-0044/0045/0046)
 **Date:** 2026-06-09
 **Branch:** claude/happy-gates-b3cf0c

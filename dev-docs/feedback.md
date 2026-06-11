@@ -35,6 +35,19 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0047: A verification/quality tool is not validated until it RUNS against a real surface — static contract tests + hand-driven mechanism checks are Potemkin self-validation; and never conflate output-format with capture-platform
+**Date:** 2026-06-11
+**Source:** user direction (a pointed question that corrected an in-progress shortcut)
+
+**What was said:** Finishing V2 (the verify-build rendered-capture + HTML-walkthrough feature), Claude proposed shipping PR-1 on the strength of (a) passing static contract eval fixtures (greps that the SKILL prose + schema are present) and (b) Claude hand-driving the screenshot MCP + the renderer itself to prove the mechanism. The user asked: *"which one is more true to the intention of the flow workflow?"* — surfacing that neither proves the **skill drives the mechanism**, only that the parts work. Earlier in the same session the user also corrected a conflation: the renderer's HTML is an **output format**, not the **capture platform** (the app is iOS, captured via XcodeBuildMCP; "web-first" was a render-vs-capture muddle).
+
+**Synthesized rule:**
+1. **A verification or quality tool is not validated until it RUNS against a real surface — skill-driven, ideally cold (author-bias-free).** Passing static contract tests + hand-driving the underlying mechanism proves the *parts* work, not that the *tool drives them*. That gap IS the Potemkin / hallucinated-success class verify-build exists to catch — and shipping verify-build's own PR on static+hand-driven evidence would fail it by its own standard. This sharpens FB-0016 ("real surface") and FB-0012 ("static ≠ behavioral"): for a verification tool, "real surface" means *the skill executing end-to-end*, not the mechanism poked by hand.
+2. **If the behavioral gate is genuinely unavailable in this session** (session-bound, e.g. the cold run needs a consumer-project context), the flow-true move is a **DRAFT PR with the behavioral gate in the NOT-READY manifest** (FB-0034) — never a merge-ready PR, and never "ship now, validate later" (which defers discovery past the Step-8 gate the loop forbids).
+3. **Distinguish output-format from capture-platform.** "Renders to HTML/web" describes the artifact's output, not what's being captured/verified. Don't let an output format leak into platform assumptions.
+
+**Applies to:** `/flow:verify-build` + any verification/quality tooling, the Step-8 readiness predicate, FB-0016 (real-surface validation), FB-0034 (draft-routing), FB-0012 (static ≠ behavioral), dogfooding flow on itself.
+
 ### FB-0046: Experience and craft-ambition are first-class plan-gate quality gates — a product-designer / experience lens + a push-further-on-quality (not scope) lens, alongside the auditor + plan-critic
 **Date:** 2026-06-09
 **Source:** user direction (incl. a correction of a prior dismissal)
