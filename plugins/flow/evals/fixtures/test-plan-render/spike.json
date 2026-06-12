@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "branch": "spike-branch",
+    "head_sha_short": "5p1ke00",
+    "plugin_version": "1.6.0",
+    "platform_hint": "cli",
+    "verify_budget_calls_used": 6,
+    "verify_budget_overrun": false,
+    "spike_mode": true
+  },
+  "overall_verdict": "PASS",
+  "exit_code": 0,
+  "criteria": [
+    {
+      "text": "Launch: the built artifact starts without crashing.",
+      "adversarial_cases": [],
+      "observations": [
+        {"type": "stdout", "content": "server listening on :3000"}
+      ],
+      "verdicts": {
+        "correctness": {"verdict": "PASS", "evidence": ["server listening on :3000", "Launch: the built artifact starts without crashing."], "notes": ""},
+        "regression": {"verdict": "Unknown", "evidence": ["(spike mode — dimension not applicable)", "Launch: the built artifact starts without crashing."], "notes": "spike mode — dimension not applicable"},
+        "scope-creep": {"verdict": "Unknown", "evidence": ["(spike mode — dimension not applicable)", "Launch: the built artifact starts without crashing."], "notes": "spike mode — dimension not applicable"}
+      },
+      "aggregated_verdict": "PASS"
+    }
+  ],
+  "not_tested": [
+    {"item": "Real terminal (TUI subtleties may differ from captured stdout)", "tested": false}
+  ]
+}

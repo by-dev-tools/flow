@@ -35,7 +35,15 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
-### FB-0046: Experience and craft-ambition are first-class plan-gate quality gates — a product-designer / experience lens + a push-further-on-quality (not scope) lens, alongside the auditor + plan-critic
+### FB-0047: A near-autonomous loop must *enforce* that testing was done before the human, not self-attest it — the PR Test plan is a non-forgeable projection of machine verdicts, never a hand-checked box
+**Date:** 2026-06-11
+**Source:** user direction
+
+**What was said:** The user asked why the `## Test plan` checkboxes in flow PRs arrive unchecked, and pushed past the first proposal (have the agent check boxes it verified): for the "human quickly verifies testing was done, then merges" workflow to work, the workflow must *enforce* that the work was actually done correctly — an agent self-checking a box is the Potemkin/self-report class `/flow:verify-build` exists to kill. As much testing/validation as possible should complete *before* the human sees the PR; the human's job collapses to confirm-and-merge. The user also set the autonomy bar for this work explicitly: "as long as the plan has passed audit and critique gates, you should proceed" (full implementation + ship without further check-ins, once both gates were clean).
+
+**Synthesized rule:** A human-facing "it was tested" signal must be a mechanical function of machine evidence, never agent narration. The PR `## Test plan` is rendered (by `skills/ship/lib/render-test-plan.py`, ship Step 7) from the `/flow:verify-build` findings buffer: checkbox state = the per-criterion `aggregated_verdict` (PASS→`[x]`; FAIL/Unknown→`[ ]` + the judge's reason), with evidence + a one-line headline verdict so the human confirms-and-merges. Reserve `[ ]`/`[x]` exclusively for machine verdicts (the `not_tested` residue renders as plain bullets, never checkboxes). When no current buffer exists (verify-build skipped / no buffer / stale buffer whose branch+sha ≠ HEAD / malformed), render an honest "no behavioral gate ran — manual verification required" fallback; **never** a forged green or a stale render. General principle: enforcement > attestation; surface a green only when an adversarial fresh-context judge produced it. Two honest limits to carry: the attestation is **behavioral/text only** (not visual — Deliverable-quality V2) and covers only **declared** Spec-walk criteria (closing under-declaration is the staged PR-2, FB-0048). When rendering machine-extracted strings of unknown provenance into a human-facing artifact (Markdown/HTML), escape the metacharacters — buffer text can carry content an app-under-test emitted and the judge narrated (security + design-engineer review, two reviewers, same session).
+
+**Applies to:** workflow, ship pipeline, `render-test-plan.py`, verify-build buffer consumers, autonomy bar, security (output escaping)
 **Date:** 2026-06-09
 **Source:** user direction (incl. a correction of a prior dismissal)
 

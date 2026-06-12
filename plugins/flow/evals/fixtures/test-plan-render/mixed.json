@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "branch": "test-branch",
+    "head_sha_short": "abc1234",
+    "plugin_version": "1.6.0",
+    "platform_hint": "web",
+    "verify_budget_calls_used": 23,
+    "verify_budget_overrun": false,
+    "spike_mode": false
+  },
+  "overall_verdict": "Unknown",
+  "exit_code": 1,
+  "criteria": [
+    {
+      "text": "User can submit the form with valid input and see a success message.",
+      "adversarial_cases": ["Double-submit creates exactly one record."],
+      "observations": [
+        {"type": "network", "content": "POST /api/submit → 201 Created (single request)"}
+      ],
+      "verdicts": {
+        "correctness": {"verdict": "PASS", "evidence": ["POST /api/submit → 201 Created (single request)", "Double-submit creates exactly one record."], "notes": ""},
+        "regression": {"verdict": "PASS", "evidence": ["No console errors observed during submit flow", "User can submit the form with valid input and see a success message."], "notes": ""},
+        "scope-creep": {"verdict": "PASS", "evidence": ["No other endpoints called", "Plan does not include analytics."], "notes": ""}
+      },
+      "aggregated_verdict": "PASS"
+    },
+    {
+      "text": "Form validation rejects empty required fields with an inline error message.",
+      "adversarial_cases": [],
+      "observations": [],
+      "verdicts": {
+        "correctness": {"verdict": "Unknown", "evidence": ["(empty-required-field path not observable)", "Form validation rejects empty required fields with an inline error message."], "notes": "Verify pass only exercised valid-input submission; empty-required-field path is not observable from this output."},
+        "regression": {"verdict": "Unknown", "evidence": ["(no observations adjacent to validation)", "Form validation rejects empty required fields with an inline error message."], "notes": "Adjacent regression behavior cannot be assessed without the empty-field path being exercised."},
+        "scope-creep": {"verdict": "Unknown", "evidence": ["(validation surface not exercised)", "Form validation rejects empty required fields with an inline error message."], "notes": "Validation surfaces not exercised; cannot assess out-of-scope behavior."}
+      },
+      "aggregated_verdict": "Unknown"
+    }
+  ],
+  "not_tested": [
+    {"item": "Real device (used Playwright headless / dev browser)", "tested": false},
+    {"item": ">1 browser engine (only Chromium tested by default)", "tested": false}
+  ]
+}

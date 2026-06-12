@@ -442,7 +442,7 @@ The PR base branch is resolved via this fallback chain:
   - <1-3 bullets on why this exists>
 
   ## Test plan
-  - [ ] <how to verify>
+  {{rendered by lib/render-test-plan.py — see "Render the Test plan" below; paste its stdout here verbatim, replacing this line}}
 
   ## Flow run
   Each loop step — ran or skipped (mode-dependent) — and any significant
@@ -467,9 +467,41 @@ The PR base branch is resolved via this fallback chain:
   🤖 Generated with [Claude Code](https://claude.com/claude-code)
   ```
 
+  **Render the `## Test plan` — do NOT hand-author it.** The Test plan is a
+  non-forgeable projection of the `/flow:verify-build` findings buffer:
+  checkbox state = the buffer's per-criterion `aggregated_verdict`, never your
+  own say-so. A criterion renders `[x]` only when an adversarial fresh-context
+  judge already returned PASS (verify-build Step 6/7). This is the enforcement
+  half of "the human verifies testing was done, then merges" — you cannot show
+  a criterion green without a real PASS in the buffer.
+
+  Run the renderer and paste its stdout verbatim as the `## Test plan` section:
+
+  ```sh
+  BUF=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$BUF" ] && BUF=/tmp/flow-verify-findings.json
+  # If verify-build SKIPPED at Step 2 (verifyEnabled=false, platform=library|none — see the
+  # Step 2 consolidated line), pass --skipped "<reason>" so the renderer emits the honest
+  # manual-verification fallback instead of reading a stale/absent buffer:
+  #   python3 "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/render-test-plan.py" "$BUF" --skipped "platform library"
+  # Otherwise (verify-build RAN), let it read the buffer; it self-detects no-buffer + stale
+  # (buffer branch/sha ≠ current HEAD → manual fallback, never a stale render):
+  python3 "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/render-test-plan.py" "$BUF"
+  ```
+
+  The script always emits a complete, self-describing `## Test plan` block and
+  always exits 0 — paste it as-is. On the fallback path (skip / no buffer /
+  stale / malformed) it renders a `⚠️ No behavioral gate ran (<reason>); manual
+  verification required` block with an unchecked `- [ ] <how to verify>` line —
+  fill that one line in per the change. Do not re-check boxes by hand: an
+  unchecked box is a real, unresolved verification gap. **Flow's own repo is
+  `platform: library`, so verify-build self-skips and this PR takes the
+  fallback path — that is expected, not a coverage gap** (the renderer's own
+  behavior is pinned by `evals/run_render_evals.py`, the consumer-side
+  verification for this surface).
+
   **Populate the `## Flow run` table from THIS session's loop history** — you
   have that context at ship time (the same context you used to write the
-  Summary and Test plan). For each row:
+  Summary). For each row:
 
   - **Status** — `✓` if the step ran; `skipped (<reason>)` if it didn't, and
     always name the reason. The reasons are mode- and config-dependent:
@@ -501,7 +533,7 @@ The PR base branch is resolved via this fallback chain:
   table's closing line only points at them. The PR is still never merged by
   Claude (Step 8).
 
-**PR-OPEN**: push the new commits. If the draft manifest is non-empty, ensure the PR is a draft (`gh pr ready --undo <num>` if it was marked ready) and refresh the `🚫 NOT READY TO MERGE` block; if the manifest is now empty (blockers since resolved), remove the block and `gh pr ready <num>` to mark it ready. Otherwise update the body only if the summary/test plan/Flow-run table needs to reflect the latest scope.
+**PR-OPEN**: push the new commits. If the draft manifest is non-empty, ensure the PR is a draft (`gh pr ready --undo <num>` if it was marked ready) and refresh the `🚫 NOT READY TO MERGE` block; if the manifest is now empty (blockers since resolved), remove the block and `gh pr ready <num>` to mark it ready. Otherwise update the body only if the summary/test plan/Flow-run table needs to reflect the latest scope — and **re-render the `## Test plan` via `lib/render-test-plan.py`** (above), don't hand-edit it, so a re-ship after new commits reflects the fresh buffer (or correctly falls back if HEAD moved past the last verify-build run).
 
 ## 8. Hand off
 
@@ -532,5 +564,6 @@ If your project has a dev-server skill (e.g., a `/link`-style skill), invoke it 
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Steps 3, 5 |
 | `flow.config.json.specPath` | `dev-docs/spec.md` | Step 5 |
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4a |
+| `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 7 (`lib/render-test-plan.py` reads it to render the `## Test plan`) |
 
 Consumer projects typically override the `*Path` slots to `core-docs/<name>.md` since they keep their own project docs under `core-docs/`. Flow's own dev-tracking lives under `dev-docs/` to leave `core-docs/` free as a name that consumer-template-shipped scaffolding uses.

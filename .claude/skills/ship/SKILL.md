@@ -39,7 +39,12 @@ If the user gave feedback during this session that isn't already captured:
 - Push with `-u` flag
 - Create a PR using `gh pr create` with:
   - Short title (under 70 characters)
-  - Body with `## Summary` (1-3 bullets) and `## Test plan` (checklist)
+  - Body with `## Summary` (1-3 bullets) and `## Test plan`. The published
+    `/flow:ship` renders `## Test plan` mechanically from the verify-build
+    findings buffer (`skills/ship/lib/render-test-plan.py`); this dev-side
+    `/ship` does not, and flow's own repo is `platform: library` so verify-build
+    never produces a buffer here — write the manual `- [ ] <how to verify>`
+    fallback the renderer would emit. Prefer `/flow:ship` (next note).
   - **If this PR came out of a driven flow loop** (you ran `/flow:critique-plan`,
     `/simplify`, `/flow:staff-review`, etc. earlier in the session), also add a
     `## Flow run` table documenting the loop — see `/flow:ship` §7 for the table

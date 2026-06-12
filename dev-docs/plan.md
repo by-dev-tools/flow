@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-**Plugin at v1.5.2 on `main`.** The managed-autonomy spine is shipped (two-gate loop, `/flow:verify-build` behavioral gate, autonomous ship-readiness trigger, draft-routing, `## Flow run` PR table). **Active focus: the Deliverable-quality track** toward an autonomous high-quality deliverable (`roadmap.md` § Now + § Deliverable-quality track). **V1** (`Visual-walk` plan field) shipped v1.5.1; **PR DC** (doc-currency in the ship pipeline — this PR) ships v1.5.2.
+**Plugin at v1.5.3 on `main`.** The managed-autonomy spine is shipped (two-gate loop, `/flow:verify-build` behavioral gate, autonomous ship-readiness trigger, draft-routing, `## Flow run` PR table). **Active focus: the Deliverable-quality track** toward an autonomous high-quality deliverable (`roadmap.md` § Now + § Deliverable-quality track). **V1** (`Visual-walk` plan field) shipped v1.5.1; **PR DC** (doc-currency in the ship pipeline) shipped v1.5.2; **PR TP** (PR Test plan rendered non-forgeably from the verify-build buffer — this PR) ships v1.5.3, with **PR-2 (FB-0048, under-declaration coverage)** staged next on that thread.
 
 **▶ Next up: V2 — rendered capture + baseline** (feature PR). The **SV2 spike is DONE** (2026-06-08, this PR — `history.md` "SV2-spike"): bundled `/verify` is narration-only to verify-build's judges → **V2 = branch (B)**, an explicit capture-and-persist step (path refs into the findings buffer; keep+rewrite the rubric VLM section around path-referenced frames + a baseline; read text from the a11y tree). In flight in parallel: **#36** (visual-history durable record / V3-flavored, FB-0042).
 
@@ -13,8 +13,66 @@
 - **New direction captured (2026-06-09, docs-only PR):** FB-0044 (low-confidence ⇒ iterate-not-stop; quality-gap→iterate vs preference-fork→escalate), FB-0045 (craft-iteration is a permitted judgment-loop under four guards — refines FB-0012), FB-0046 (experience + push-further-on-quality as first-class plan-gate lenses). Roadmap: "Agentic-iteration doctrine" (Deliverable-quality track, after V2) + "Plan-gate quality lenses" (§ Next, V-track-independent). These shape how the autonomous loop iterates toward the deliverable — read before drafting V2.
 - **Managed-autonomy umbrella — remaining facets:** Facet 1 (doctor/init unify + CLAUDE.md sentinel) + Facet 4 (plan-declared comprehensive success criteria enforced by plan-critic — the V1.1 `Visual-walk` enforcement half). Both planned, not started.
 - **In-flight parallel branch:** #36 — visual-history durable record (V3-flavored HTML companion; FB-0042).
+- **New plan queued (2026-06-11, Gate-1 scope approved):** **PR TP** — render the PR `## Test plan` from the verify-build findings buffer (non-forgeable, machine-attested; FB-0047). Staged: PR-2 closes under-declaration (FB-0048). See the "PR TP" section below; adversarial-reviewed at plan time. Parallel to V2 — independent at PR boundaries.
 - **Open hygiene:** user-scope `~/.claude/settings.json` still has a stale `extraKnownMarketplaces.llm-auditor` key (cosmetic — points at `flow.git` under the pre-rename name); remove when convenient. Md-manager PR 5 (dogfood) still pending in a separate worktree.
 - **Op tip:** `gh pr edit` errors on this repo (projects-classic GraphQL deprecation) — use `gh api -X PATCH .../pulls/N -f body=...` to set a PR body.
+
+## PR TP — Render the PR `## Test plan` from the verify-build findings buffer (SHIPPED v1.5.3 — see history.md "PR TP")
+
+**Status:** SHIPPED v1.5.3 (this PR; FB-0047 written). Render half complete; **under-declaration coverage = PR-2 (FB-0048), queued.** Loop: plan → critique+audit (4 findings absorbed) → Gate-1 (staged) → execute → /simplify → /flow:staff-review (1 BLOCKER + cheap NITs fixed) → /flow:ship (security-review fixed a markdown-injection BLOCKER; a11y + verify-build self-skipped). 12-case eval harness (`evals/run_render_evals.py`) pins crit 1–5 + the staff/security fixes. Detail in `history.md`. Original planning record below for provenance.
+
+**Source:** user direction 2026-06-11 — a near-autonomous loop should complete as much testing/validation as possible *before* the human sees the PR; the human confirms it was done + green, then quick-merges; and the workflow must **enforce** that, not let the agent self-attest. → claim **FB-0047** at ship.
+
+**Restated request:** Empty `- [ ]` Test-plan boxes are the wrong merge-gate signal: either unforgeably-empty (no info) or, if the agent hand-checks them, forgeable self-report — the Potemkin class `/flow:verify-build` exists to kill. The human needs to *see* that every required behavioral check ran and passed, with evidence, so review collapses to "confirm + merge."
+
+**Mode:** full feature PR. **SAFETY** — `ship/SKILL.md` is safety-critical (`.claude/rules/safety.md`); preserve every existing buffer-read/skip path through the edit; `SAFETY` marker in commit + history.
+
+**Core thesis:** Make the PR `## Test plan` a **non-forgeable projection of the verify-build findings buffer**, not hand-authored markdown. Checkbox state = the buffer's machine `aggregated_verdict`; each line cites the buffer's two-quote evidence; `not_tested[]` renders verbatim as the explicit human-residue; the no-behavioral-surface path renders an honest "manual verification required (reason)" and keeps the PR in the human-decides lane. The ship agent cannot show a criterion green unless an adversarial fresh-context judge already returned PASS for it.
+
+**What already exists (this *surfaces* existing enforcement — except the staleness check, which is net-new — audit ISSUE 2):**
+- The buffer + `findings-schema.json`: per-criterion `aggregated_verdict` + 2-quote evidence, `not_tested[]`, `metadata` (branch, `head_sha_short`, `spike_mode`).
+- `ship/SKILL.md:291` Step 4a already reads the buffer **but only for `aggregated_verdict ∈ {FAIL, Unknown}`** (FB-candidate synthesis). PASS criteria, the evidence, and `not_tested[]` never reach the PR body. We extend the read to *all* criteria and route the result to the body.
+- Hard enforcement is already upstream: verify-build exits 1 on any FAIL/Unknown; readiness predicate requires a positive PASS (FB-0018); ship-internal regression → draft (FB-0034/0035). **This PR does not weaken, duplicate, or replace any of it.** Caveat (audit ISSUE 2): the crit-4 stale-buffer check (SHA/branch match) is *net-new* logic — Step 4a today guards only ran/skipped + present/missing, never freshness.
+
+**Key design decision — deterministic script vs agent-prose render:** **script** (`plugins/flow/skills/ship/lib/render-test-plan.py`, stdlib-only) reads the buffer JSON → emits the `## Test plan` markdown block; the ship agent pastes stdout verbatim. Rationale: the user's requirement is *enforcement*, so the section must be a pure function of the machine buffer (agent can't selectively check boxes) + golden-testable; matches flow's Python-for-mechanism pattern (`extract-criteria.py`). This is the enforcement teeth (verdict B).
+
+**Spec-walk:**
+- [ ] **1. All criteria render** (PASS *and* FAIL/Unknown), one line each, citing the per-dimension evidence quote. *Pin:* fixture buffer (2 PASS + 1 Unknown) → rendered markdown contains all 3. Note (audit ISSUE 1): today's `## Test plan` is a *single* `- [ ] <how to verify>` line (`ship/SKILL.md:444-445`) — this is a structural **expansion** to N criteria-lines + not_tested + fallback, not a re-render of existing boxes.
+- [ ] **2. Verdict drives checkbox, unforgeably:** `PASS → [x]`; `FAIL`/`Unknown → [ ]` + verdict + `notes` reason inline; state read from the buffer field, never agent-decided. *Pin:* fixture.
+- [ ] **3. `not_tested[]` renders into the PR body** as a verbatim "What we did NOT test" block (today it hits only verify-build stdout). *Pin:* fixture.
+- [ ] **4. Skip / no-buffer / stale-buffer path is honest:** verify-build skipped, OR no buffer, OR buffer `head_sha_short`/`branch` ≠ current HEAD/branch → `- [ ] <how to verify> — ⚠️ no behavioral gate ran (<reason>); manual verification required`; never render a stale buffer as current. *Pin:* fixture mismatched-SHA → stale message, not criteria. **(net-new logic — audit ISSUE 2.)**
+- [ ] **5. Spike-mode buffer renders correctly:** `metadata.spike_mode: true` → render only `correctness`; don't render placeholder Unknown `regression`/`scope-creep` as real gaps (`verify-build/SKILL.md:165`). *Pin:* spike fixture.
+- [ ] **6. FB-0010 fan-out sweep:** every "Test plan" description (ship Step 7 template + narration, `workflow.md` § PR-body, `ship-spike`, any `.claude/skills/ship`) updated to the rendered model + fallback. *Pin:* `git grep -n "Test plan"`.
+- [ ] **7. Honest-limitation docs** (README/workflow "Bootstrap status"): attestation reflects behavioral/**text** verification only, not visual (until V2); under-declaration not closed here. **The "behavioral/text" claim describes the consumer path — see self-ship reconciliation below.** *Pin:* read sections.
+- [ ] **8. Eval fixture(s) + golden output** under `plugins/flow/evals/fixtures/` (quality bar: no new behavior without a fixture). *Pin:* eval run.
+
+**Non-goals (scope fence):**
+1. **Not** the V3 HTML case-study renderer (`roadmap.md:75`/`:122`) — standalone HTML + screenshots, sequenced after V2. This PR renders *PR-body markdown* from verdict+evidence+not_tested text, available today, no V2 dependency (verdict C).
+2. **Not** closing under-declaration → **PR-2** (FB-0048).
+3. **Not** a new `human-required` criterion state (human-eyes criteria surface as Unknown → correctly block/draft).
+4. **No change** to the readiness predicate, draft-routing, exit-code gate, or verify-build.
+
+**This PR's own ship (critique ISSUE 2 reconciliation):** flow is `platform: library` → verify-build self-skips on flow's own ship (verdict F, confirmed `verify-build/SKILL.md` skip-path). So this PR's *own* `## Test plan` renders the crit-4 **fallback** ("no behavioral gate ran — platform library; manual verification required"). The crit-7 "behavioral/text verification only" honesty claim describes the **consumer** path, not flow's self-ship. **Verification of this PR = the eval fixtures + golden outputs (verdict F), NOT a dogfood behavioral run** — expected, not a coverage gap.
+
+**Confidence verdicts (load-bearing):**
+- **A — buffer present at ship Step 7 when verify-build ran:** HIGH. Step 8 writes it; Step 4a already depends on it. *If flips:* the no-buffer fallback (crit. 4) handles absence — non-fatal.
+- **B — deterministic script is the right enforcement shape:** HIGH. Enforcement-not-attestation + golden-testable + matches flow's pattern. *If flips* (lighter agent-prose preferred): move format into Step 7 prose — smaller diff, weaker enforcement; reversible.
+- **C — distinct from V3 HTML renderer:** HIGH, verified `roadmap.md:74-75,:122-148` (different output/inputs/sequencing). *If flips:* this markdown renderer becomes the reusable core V3 later wraps — additive.
+- **D — under-declaration deferrable to PR-2:** **resolved at Gate-1 → staged** (was MEDIUM; user chose stage 2026-06-11). PR-1 makes *declared* verification unforgeable + visible; PR-2 closes the under-declaration hole. PR-1 ships first; PR-2 committed, not optional.
+- **E — script under `ship/lib/`:** MEDIUM/LOW. Buffer is verify-build's contract (argues `verify-build/lib/`) but consumer is ship. *If flips:* trivial move.
+- **F — flow can't dogfood-behaviorally-verify this** (`platform: library`): HIGH, verified. Fixtures carry the verification; this PR's ship shows `verify-build skipped (platform library)` — expected.
+
+**PR-2 — close under-declaration (queued; FB-0048):** wire `/flow:audit-completion`'s unverified-completion category into the readiness chain as an adversarial coverage check — every behavior-changing requirement must map to a declared Spec-walk criterion, else block. The second half of "enforce that the work was done correctly." Fresh plan → Gate-1 cycle after PR-1 ships.
+
+**Adversarial review (plan-time, 2026-06-11):**
+- `/flow:critique-plan` → 2: (1) **scope drift** — plan delivers projection, not completeness-enforcement; under-declaration is the load-bearing half. *Resolved:* staged scope (user Gate-1 decision). (2) **incoherence** — crit-7 "behavioral/text" vs verdict-F "no behavioral gate on this PR." *Resolved:* self-ship reconciliation above.
+- `/flow:audit-plan` → 2 LOW (every load-bearing factual premise else CONFIRMED against artifacts): (1) **recall precision** — today's Test plan is a single line, not a multi-box checklist → absorbed into crit. 1 as an expansion. (2) **honesty** — stale-buffer check is net-new, not a projection of an upstream guard → "what already exists" framing corrected.
+
+**Files (anticipated):** `plugins/flow/skills/ship/lib/render-test-plan.py` (NEW, stdlib), `plugins/flow/skills/ship/SKILL.md` (SAFETY — Step 4a/7), `plugins/flow/docs/workflow.md` (§ PR-body), `plugins/flow/skills/ship-spike/SKILL.md` (if it carries a Test plan), `README.md` + workflow "Bootstrap status", `plugins/flow/evals/fixtures/**` (golden), `.claude/skills/ship*` (fan-out sweep), `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` (version bump), dev-docs cascade (history/plan/roadmap/feedback/reserved).
+
+**Ship:** `/flow:ship` (verify-build will self-skip — platform library; security/a11y self-skip or run per diff; the gate's audit-trail `SKIPPED` signal is load-bearing). GATE 2 (merge) preserved.
+
+---
 
 ## SV2-spike — Does bundled `/verify` return screenshots structurally, or only narrate them? (Deliverable-quality track V2 prerequisite)
 
