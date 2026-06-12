@@ -35,6 +35,19 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0048: Visual capture for verification must be a11y-state-GATED — snapshot the a11y tree and assert the intended state BEFORE the screenshot, never screenshot-then-assume; and a "drive to each state" step must name a drive ladder, never assume drivability the MCP may not expose
+**Date:** 2026-06-11
+**Source:** review feedback (a cold `/flow:verify-build` behavioral-gate run that tripped the defect)
+
+**What was said:** The flow-true behavioral gate for V2 (a cold, author-bias-free `/flow:verify-build` run against a real iOS app) caught a real defect that static tests + the author's hand-driving missed. SKILL §5a told the agent to "capture a frame" and to "write a `screenshot` observation AND an `a11y_snapshot` observation" as **two independent captures**, never ordering them. The agent screenshotted a state without first asserting it via the a11y tree; the frame had silently drifted to a different state; the fresh-context pairwise judge **correctly returned FAIL** and cited the exact pixel difference. Re-capturing a11y-gated (snapshot → assert state → screenshot) then resolved to PASS. The same run surfaced that §5a's "drive the app to each state" assumes a UI-drive primitive the MCP config may not expose (this XcodeBuildMCP config had only screenshot + a11y, no tap/type).
+
+**Synthesized rule:**
+1. **Capture must be a11y-state-gated, in order: snapshot the a11y tree → assert the intended state is present → THEN screenshot.** Never screenshot-then-assume — an un-gated capture persists wrong-state frames that look plausible. This is the SV2 "trust the a11y tree, not the pixels" principle applied to *capture ordering*, not just text-reading. A state that cannot be a11y-asserted is `Unknown` + `not_tested`, never a captured guess.
+2. **A "drive the app to each state" step must name a drive ladder** (platform UI-automation tool → a documented launch-arg/env state hook → can't-reach ⇒ `Unknown`) and must never assume drivability a given MCP config provides. Many configs expose capture + a11y but no drive primitive; then only the launch state is reachable and the rest are honestly `Unknown`.
+3. **General:** the cold-run lesson reinforces FB-0047 — a verification tool's prose is only proven when a fresh agent follows it literally against a real surface; "two independent captures" read fine to the author and broke on contact.
+
+**Applies to:** `/flow:verify-build` §5a capture, any screenshot-based verification, the SV2 a11y-trust principle, FB-0016, FB-0047.
+
 ### FB-0047: A verification/quality tool is not validated until it RUNS against a real surface — static contract tests + hand-driven mechanism checks are Potemkin self-validation; and never conflate output-format with capture-platform
 **Date:** 2026-06-11
 **Source:** user direction (a pointed question that corrected an in-progress shortcut)
