@@ -10,17 +10,45 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
-## v1.6.0 — 2026-06-11
+## v1.6.1 — 2026-06-11
 
 **Rendered visual capture + an ephemeral HTML walkthrough for `/flow:verify-build` — visual claims become real PASS/FAIL the autonomy loop can trust, and the human opens a real report at the merge gate (Deliverable-quality track V2/V3a). SAFETY (verify-build gate + findings schema + frame persistence).**
 
-- **Capture-and-persist (SKILL §5a):** for each declared `Visual-walk` state, flow drives the running platform's screenshot MCP itself (XcodeBuildMCP on iOS returns a native frame path; bundled `/verify` only narrates frames to the fresh-context judges — SV2-spike), persists the frame to an assets dir, and writes a path-referenced `screenshot` observation + an `a11y_snapshot` (text/status from the a11y tree, not pixels). An uncaptured declared state → `Unknown` + a `not_tested` line.
-- **Two additive findings-buffer fields** (`schema_version` stays `1.0`): `criteria[].grounding` (rationale: need / design-language / craft-commitment / open-question) and top-level `open_questions[]` (subjective human calls, distinct from epistemic `Unknown`).
-- **Rubric re-grounded:** visual claims judged **pairwise-vs-baseline** (no baseline ⇒ Unknown; first run seeds it), not absolute scoring.
-- **Stdlib HTML renderer (`lib/render-report.py`):** buffer → one self-contained ephemeral report (`verifyReportPath` slot) with grounding callouts, per-dimension verdict cards, a standalone "Open questions for you" block, and a "what we did NOT test" checklist.
-- **Loop gate:** an `open_questions[routing=this-iteration]` entry blocks Step 8 auto-advance (mirrors an unresolved MEDIUM assumption).
-- New `verifyReportPath` slot (22 slots total). Phase-0 validated live on iOS (XcodeBuildMCP); full skill-driven cold run is the tracked follow-up.
+- **Capture-and-persist (SKILL §5a), a11y-gated:** for each declared `Visual-walk` state, flow drives the platform's screenshot MCP itself (XcodeBuildMCP on iOS returns a native frame path; bundled `/verify` only narrates frames to the fresh-context judges — SV2), **in order: snapshot the a11y tree → assert the intended state → screenshot** (never screenshot-then-assume), with a named drive ladder (UI-automation → launch/env hook → can't-reach ⇒ `Unknown` + `not_tested`). Persists a path-referenced `screenshot` + an `a11y_snapshot` (text/status from the a11y tree, not pixels).
+- **Two additive findings-buffer fields** (`schema_version` stays `1.0`): `criteria[].grounding` (need / design-language / craft-commitment / open-question) + top-level `open_questions[]` (subjective human calls, distinct from epistemic `Unknown`).
+- **Rubric re-grounded:** visual claims judged **pairwise-vs-baseline** (no baseline ⇒ Unknown; first run seeds it), text from the a11y tree.
+- **Stdlib HTML renderer (`lib/render-report.py`):** buffer → one self-contained ephemeral report (`verifyReportPath` slot) with grounding callouts, per-dimension verdict cards, a standalone "Open questions for you" block, and a coverage checklist. Raster-data-URI allowlist (security hardening).
+- **Loop gate:** an `open_questions[routing=this-iteration]` entry blocks Step 8 auto-advance.
+- New `verifyReportPath` slot (22 slots). **Validated by a cold skill-driven `/flow:verify-build` run on a real iOS surface** — round 1 caught 3 `§5a` prose gaps (fixed + FB-0050), round 2 green (FB-0049).
 - **Breaking changes:** none.
+
+---
+
+## v1.6.0 — 2026-06-11
+
+**New `/flow:audit-coverage` reviewer closes the under-declaration hole: it flags behavior changes in the diff that no declared `**Spec-walk:**` criterion covers — a behavior verify-build never tested, so the v1.5.3 Test plan would be honestly all-green while the change ships unverified. SAFETY (auditor agent + ship pipeline).**
+
+- **`/flow:audit-coverage` — coverage auditor (13th user-visible skill):** compares the workspace diff against the plan's declared `**Spec-walk:**` criteria and flags each **user-perceptible behavior change no criterion covers**. The complement to verify-build: verify-build checks the declared criteria *pass*; audit-coverage checks the declared set is *complete*. Reuses the `auditor` agent via a new **"Undeclared change"** category (coverage mode) + the existing `extract-criteria.py` parser — no new agent, no duplicated discipline.
+- **Routes to the draft manifest, never a hard halt:** each gap is a `[decision-required]` finding → the PR opens as a **draft** until the criterion is declared + verified (re-run verify-build) or the human waives it at the merge gate. The agent must **not** auto-add the missing criterion (grading its own homework). Wired in as the fourth `/flow:ship` Step 2 final-pass reviewer and at the Step 8 readiness boundary.
+- **Runs on all platforms** (under-declaration isn't platform-specific — unlike verify-build it does **not** skip on `platform: library|none`); self-skips on doc/test/refactor-only diffs or a plan with no `**Spec-walk:**` block.
+- **Honest limitation:** best-effort LLM judgment — it raises the completeness bar, it does **not** deterministically guarantee it (a subtle undeclared behavior can still slip past as a false negative). Not a substitute for the human read at the merge gate. Signal + low-false-positive behavior pinned by `evals/` fixtures (catches a genuine under-declaration; stays silent on a fully-covered diff).
+
+**Breaking changes:** none. Additive — a new reviewer + one new auditor category (coverage mode only); the existing four auditor categories and all other skills are unchanged.
+
+---
+
+## v1.5.3 — 2026-06-11
+
+**The PR `## Test plan` is now rendered from the verify-build findings buffer — a non-forgeable record of behavioral verification, not a hand-authored checklist. The human verifies testing was done and merges, instead of re-verifying. SAFETY (ship pipeline).**
+
+- **`/flow:ship` Step 7 renders `## Test plan` via `skills/ship/lib/render-test-plan.py`:** one checkbox per `**Spec-walk:**` criterion whose state IS the buffer's machine `aggregated_verdict` — `PASS → [x]` (with the adversarial fresh-context judge's evidence quote), `FAIL`/`Unknown → [ ]` (with the judge's reason). The agent can no longer hand-check a box: a green box means a real judge returned PASS. Closes the gap where the Test plan was empty `- [ ]` placeholders disconnected from the verification that actually ran.
+- **`not_tested[]` checklist now surfaces in the PR body** (previously only on verify-build's stdout), so the explicit "what we did NOT test" gaps reach the merge gate.
+- **Honest fallback, never a forged or stale render:** when verify-build skipped (`verifyEnabled=false`, `platform=library|none`), produced no buffer, or the buffer is stale (its branch/sha ≠ current HEAD) or malformed, the section renders `⚠️ No behavioral gate ran (<reason>); manual verification required` with an unchecked manual line. A `platform: library` repo — including flow's own — always takes this fallback (expected, not a gap).
+- **Scope:** attests **behavioral/text** verification only (not visual — that's the Deliverable-quality track's V2), and only over criteria the plan **declared**. A behavior changed without a declared Spec-walk criterion is not yet gated — closing that under-declaration hole (wire `/flow:audit-completion` coverage into the readiness chain) is a queued follow-up. Renderer behavior pinned by `evals/run_render_evals.py`.
+
+**Breaking changes:** none. Additive — Summary + Flow-run table unchanged; the `## Test plan` is now script-rendered rather than hand-authored, and degrades to the manual fallback wherever no buffer exists (i.e. every pre-v1.5.3 case).
+
+---
 
 ## v1.5.2 — 2026-06-05
 

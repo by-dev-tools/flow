@@ -35,7 +35,7 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
-### FB-0048: Visual capture for verification must be a11y-state-GATED — snapshot the a11y tree and assert the intended state BEFORE the screenshot, never screenshot-then-assume; and a "drive to each state" step must name a drive ladder, never assume drivability the MCP may not expose
+### FB-0050: Visual capture for verification must be a11y-state-GATED — snapshot the a11y tree and assert the intended state BEFORE the screenshot, never screenshot-then-assume; and a "drive to each state" step must name a drive ladder, never assume drivability the MCP may not expose
 **Date:** 2026-06-11
 **Source:** review feedback (a cold `/flow:verify-build` behavioral-gate run that tripped the defect)
 
@@ -44,11 +44,11 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 **Synthesized rule:**
 1. **Capture must be a11y-state-gated, in order: snapshot the a11y tree → assert the intended state is present → THEN screenshot.** Never screenshot-then-assume — an un-gated capture persists wrong-state frames that look plausible. This is the SV2 "trust the a11y tree, not the pixels" principle applied to *capture ordering*, not just text-reading. A state that cannot be a11y-asserted is `Unknown` + `not_tested`, never a captured guess.
 2. **A "drive the app to each state" step must name a drive ladder** (platform UI-automation tool → a documented launch-arg/env state hook → can't-reach ⇒ `Unknown`) and must never assume drivability a given MCP config provides. Many configs expose capture + a11y but no drive primitive; then only the launch state is reachable and the rest are honestly `Unknown`.
-3. **General:** the cold-run lesson reinforces FB-0047 — a verification tool's prose is only proven when a fresh agent follows it literally against a real surface; "two independent captures" read fine to the author and broke on contact.
+3. **General:** the cold-run lesson reinforces FB-0049 — a verification tool's prose is only proven when a fresh agent follows it literally against a real surface; "two independent captures" read fine to the author and broke on contact.
 
-**Applies to:** `/flow:verify-build` §5a capture, any screenshot-based verification, the SV2 a11y-trust principle, FB-0016, FB-0047.
+**Applies to:** `/flow:verify-build` §5a capture, any screenshot-based verification, the SV2 a11y-trust principle, FB-0016, FB-0049.
 
-### FB-0047: A verification/quality tool is not validated until it RUNS against a real surface — static contract tests + hand-driven mechanism checks are Potemkin self-validation; and never conflate output-format with capture-platform
+### FB-0049: A verification/quality tool is not validated until it RUNS against a real surface — static contract tests + hand-driven mechanism checks are Potemkin self-validation; and never conflate output-format with capture-platform
 **Date:** 2026-06-11
 **Source:** user direction (a pointed question that corrected an in-progress shortcut)
 
@@ -60,6 +60,39 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 3. **Distinguish output-format from capture-platform.** "Renders to HTML/web" describes the artifact's output, not what's being captured/verified. Don't let an output format leak into platform assumptions.
 
 **Applies to:** `/flow:verify-build` + any verification/quality tooling, the Step-8 readiness predicate, FB-0016 (real-surface validation), FB-0034 (draft-routing), FB-0012 (static ≠ behavioral), dogfooding flow on itself.
+
+
+### FB-0048: Under-declaration is the load-bearing half of "enforce that the work was done correctly" — a coverage audit flags diff behavior no declared criterion covers, routed to draft; best-effort, not a deterministic guarantee
+**Date:** 2026-06-11
+**Source:** user direction (continuation of FB-0047; "proceed with PR 2")
+
+**What was said:** After FB-0047's Test-plan render shipped (v1.5.3), the user directed PR-2 to close the staged second half: under-declaration. The render makes *declared* verification unforgeable, but a behavior the agent changed without declaring a Spec-walk criterion is never tested — the Test plan is honestly all-green while the change ships unverified. The user's standing autonomy bar held: "as long as the plan has passed audit and critique gates, you should proceed."
+
+**Synthesized rule:** Enforcing "the work was done correctly" has two halves — *declared criteria are verified* (verify-build → rendered Test plan, FB-0047) AND *the declared set is complete* (no undeclared behavior). The completeness half is inherently LLM-judgment (you can't deterministically enumerate "what behaviors did this diff change"), so it is a **reviewer routed to draft**, not a mechanical hard gate (FB-0012: never hard-gate / iterate on LLM judgment). `/flow:audit-coverage` (v1.6.0) compares the source diff against the declared `**Spec-walk:**` criteria and flags behavior no criterion covers → `[decision-required]` → draft manifest → resolve by declaring + verifying, or human-waive. Reuse over rebuild: a new "Undeclared change" category on the existing `auditor` agent (the mode-selected-subset pattern), `extract-criteria.py` for declared criteria, the existing draft-routing. **Honest limit:** best-effort — it raises the completeness bar, it does not deterministically guarantee it (false negatives possible), and it does not catch *vacuous* criteria (criterion-quality is verify-build's axis — roadmap follow-up). State the limit where it's read (README + the reviewer output), so a clean `coverage=ran` isn't over-trusted. General lesson reinforced: **dogfood the actual mechanism** — the coverage bash looked correct but a live smoke test caught that zsh doesn't word-split `$FILES`, so `git diff -- $FILES` silently saw an empty diff; a static review would have shipped a no-op reviewer.
+
+**Applies to:** workflow, ship pipeline, `audit-coverage`, `auditor.md`, autonomy bar, FB-0010 (dogfood-the-mechanism + fan-out for a new skill)
+
+### FB-0047: A near-autonomous loop must *enforce* that testing was done before the human, not self-attest it — the PR Test plan is a non-forgeable projection of machine verdicts, never a hand-checked box
+**Date:** 2026-06-11
+**Source:** user direction
+
+**What was said:** The user asked why the `## Test plan` checkboxes in flow PRs arrive unchecked, and pushed past the first proposal (have the agent check boxes it verified): for the "human quickly verifies testing was done, then merges" workflow to work, the workflow must *enforce* that the work was actually done correctly — an agent self-checking a box is the Potemkin/self-report class `/flow:verify-build` exists to kill. As much testing/validation as possible should complete *before* the human sees the PR; the human's job collapses to confirm-and-merge. The user also set the autonomy bar for this work explicitly: "as long as the plan has passed audit and critique gates, you should proceed" (full implementation + ship without further check-ins, once both gates were clean).
+
+**Synthesized rule:** A human-facing "it was tested" signal must be a mechanical function of machine evidence, never agent narration. The PR `## Test plan` is rendered (by `skills/ship/lib/render-test-plan.py`, ship Step 7) from the `/flow:verify-build` findings buffer: checkbox state = the per-criterion `aggregated_verdict` (PASS→`[x]`; FAIL/Unknown→`[ ]` + the judge's reason), with evidence + a one-line headline verdict so the human confirms-and-merges. Reserve `[ ]`/`[x]` exclusively for machine verdicts (the `not_tested` residue renders as plain bullets, never checkboxes). When no current buffer exists (verify-build skipped / no buffer / stale buffer whose branch+sha ≠ HEAD / malformed), render an honest "no behavioral gate ran — manual verification required" fallback; **never** a forged green or a stale render. General principle: enforcement > attestation; surface a green only when an adversarial fresh-context judge produced it. Two honest limits to carry: the attestation is **behavioral/text only** (not visual — Deliverable-quality V2) and covers only **declared** Spec-walk criteria (closing under-declaration is the staged PR-2, FB-0048). When rendering machine-extracted strings of unknown provenance into a human-facing artifact (Markdown/HTML), escape the metacharacters — buffer text can carry content an app-under-test emitted and the judge narrated (security + design-engineer review, two reviewers, same session).
+
+**Applies to:** workflow, ship pipeline, `render-test-plan.py`, verify-build buffer consumers, autonomy bar, security (output escaping)
+**Date:** 2026-06-09
+**Source:** user direction (incl. a correction of a prior dismissal)
+
+**What was said:** On a proposed staff-review-of-the-plan, the user gave two steers. (1) **Push-further at the plan stage must not grow scope/functionality** — frame it as "could the *quality* be higher," not "could we add more"; in most cases raise the craft bar, not the feature set. (2) The user **disagreed** that a UX-designer lens adds no value before pixels exist: "the value is not in pixels but in experience, which is the most important thing… Maybe it's more of a product designer (or even design-minded product manager) than a strict UX designer, but experience is the most important thing here and should be a quality gate for plans." This corrects an earlier (wrong) framing that dismissed a plan-stage experience lens as needing pixels to be useful.
+
+**Synthesized rule:** The plan gate's two existing reviewers (auditor, plan-critic) are **conformance** checks — *is the plan honest and aligned?* Add a **quality/ambition layer** of two lenses that run alongside them (skippable only when they genuinely don't apply, e.g. a backend-only plan, the same way diff-stage lenses skip):
+- **Experience lens (product-designer / design-minded PM).** Is this the *right experience*, and is its ambition high enough? The journey, the edge states, the friction, how it should *feel*, whether the plan solves the experience problem or just satisfies the literal request. This is pre-pixels and is the **highest-value plan-stage question** — experience is the most important thing.
+- **Push-further (quality, not scope).** Could the *craft/quality of the declared scope* be higher? Inherits the existing push-further lens's "uncommon care" framing (limited scope to an extraordinarily high bar; "nothing to push" is a valid, often-correct output), with a **loud anti-scope-creep guard** because the plan stage is where "push further" is most tempted to add features: raise the bar of the declared scope; propose new functionality only when it is load-bearing for the stated goal.
+
+These set the success-criteria + craft bar the autonomous iteration loop (FB-0044) converges toward — a weak plan ceilings the deliverable. (A staff-engineer "is the approach sound before we build it" lens is a defensible secondary; held unless requested.) Best substrate is a workflow that fans the plan reviewers out and returns one triaged verdict — exactly the canonical "draft/judge a plan from several angles" workflow use case (dynamic-workflows O1 applied to the plan gate / segment A).
+
+**Applies to:** plan gate (auditor + plan-critic surface), `plan-critic.md`, `plan-discipline.md`, `planner.md`, Visual-walk / declared success criteria, FB-0037 (designer perspectives load-bearing), dynamic-workflows O1, Deliverable-quality track.
 
 ### FB-0046: Experience and craft-ambition are first-class plan-gate quality gates — a product-designer / experience lens + a push-further-on-quality (not scope) lens, alongside the auditor + plan-critic
 **Date:** 2026-06-09

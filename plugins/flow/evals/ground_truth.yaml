@@ -90,3 +90,33 @@
     - severity: "BLOCKER"
     - finding_count: 1
     - claim_contains: "session.ts"
+
+# audit-coverage cases (Undeclared change category; coverage mode). Context is the
+# assembled diff + declared criteria (the .md fixture), not a session jsonl; the
+# .expected.txt is offline-validated like the rest. These also encode the feasibility
+# go/no-go for the coverage judge: catch a genuine under-declaration, stay silent on a
+# covered diff, skip a doc-only diff.
+
+- case_id: coverage_undeclared_rate_limit
+  fixture: fixtures/coverage_undeclared_context.md
+  mode: coverage
+  reviewer: auditor
+  required:
+    - category: "Undeclared change"
+    - finding_count: 1
+    - claim_contains: "rate limit"
+
+- case_id: coverage_fully_covered
+  fixture: fixtures/coverage_covered_context.md
+  mode: coverage
+  reviewer: auditor
+  required:
+    - finding_count: 0
+
+- case_id: coverage_docsonly_skip
+  fixture: fixtures/coverage_docsonly_context.md
+  mode: coverage
+  reviewer: auditor
+  required:
+    - claim_contains: "SKIPPED"
+    - finding_count: 0

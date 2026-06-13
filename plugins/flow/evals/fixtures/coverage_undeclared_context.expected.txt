@@ -1,0 +1,12 @@
+ISSUE · Undeclared change
+
+Claim:
+> Declared criteria: "User can submit the contact form and see a success toast."
+
+Hunk: src/contact.js — adds client-side rate limiting that, after 3 submits in 60s, blocks the submission and shows a "Too many requests — try again later" banner instead of sending.
+Why uncovered: the only declared criterion exercises the success-toast path; none covers the rate-limited / blocked-submission path or its banner. No declared criterion would cause anyone to test the rate-limit behavior, so /flow:verify-build never would.
+
+Suggested: Declare a Spec-walk criterion for the rate-limit behavior (e.g. "After 3 submits in 60s, submission is blocked and a 'Too many requests' banner shows") and let /flow:verify-build verify it, or waive it at the merge gate.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "metadata": {"branch": "test-branch", "head_sha_short": "abc1234", "plugin_version": "1.6.0", "platform_hint": "web", "spike_mode": false},
+  "overall_verdict": "PASS",
+  "exit_code": 0,
+  "criteria": [
+    {"text": "Structurally broken criterion.", "aggregated_verdict": "PASS", "adversarial_cases": [], "observations": [], "verdicts": "this-should-be-an-object-not-a-string"}
+  ],
+  "not_tested": []
+}

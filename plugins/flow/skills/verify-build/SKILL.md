@@ -24,7 +24,7 @@ Cold-runs the built artifact against the plan's Spec-walk acceptance criteria an
 
 ## When to invoke
 
-- `/flow:ship` invokes this automatically as one of the three final-pass reviewers (security + accessibility + verify-build).
+- `/flow:ship` invokes this automatically as one of the four final-pass reviewers (security + accessibility + verify-build + audit-coverage).
 - The user asks: "verify the build", "verify against the plan", "/flow:verify-build", "does this actually work end-to-end".
 - A feature touched behavior the static reviewers (security, accessibility, staff-review) can't catch — e.g. "button now triggers correct API call", "form validates per spec", "state transitions match plan".
 

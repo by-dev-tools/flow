@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "metadata": {"branch": "test-branch", "head_sha_short": "abc1234", "plugin_version": "1.6.0", "platform_hint": "web", "spike_mode": false},
+  "overall_verdict": "FAIL",
+  "exit_code": 1,
+  "criteria": [
+    {"text": "Thing works end to end.", "aggregated_verdict": "FAIL", "adversarial_cases": [], "observations": [],
+     "verdicts": {
+       "correctness": {"verdict": "FAIL", "evidence": ["a", "b"], "notes": ""},
+       "regression": {"verdict": "PASS", "evidence": ["a", "b"], "notes": ""},
+       "scope-creep": {"verdict": "PASS", "evidence": ["a", "b"], "notes": ""}
+     }}
+  ],
+  "not_tested": []
+}

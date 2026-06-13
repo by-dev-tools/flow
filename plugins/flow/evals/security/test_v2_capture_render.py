@@ -155,10 +155,10 @@ def test_skill_and_rubric_and_workflow_contract() -> None:
     assert "## 10. Render" in skill, "SKILL.md missing the §10 render step"
     assert "render-report.py" in skill, "SKILL.md does not invoke the renderer"
     assert "this-iteration" in skill, "SKILL.md does not document the open_questions this-iteration gate signal"
-    # Cold-gate hardening (FB-0048): capture must be a11y-state-gated BEFORE the screenshot, and the
+    # Cold-gate hardening (FB-0050): capture must be a11y-state-gated BEFORE the screenshot, and the
     # "reach each state" step must name a drive ladder rather than assume drivability.
-    assert "a11y tree BEFORE" in skill, "§5a must gate the screenshot on an a11y state-assertion (FB-0048)"
-    assert "drive ladder" in skill, "§5a must name the drive ladder (UI-automation → launch/env → can't-reach⇒Unknown) (FB-0048)"
+    assert "a11y tree BEFORE" in skill, "§5a must gate the screenshot on an a11y state-assertion (FB-0050)"
+    assert "drive ladder" in skill, "§5a must name the drive ladder (UI-automation → launch/env → can't-reach⇒Unknown) (FB-0050)"
     assert "--assets-dir" in skill, "§10 must pass --assets-dir so screenshot content paths resolve (gap 5)"
     # No hardcoded single platform in the capture step — must name the per-platform MCPs generically.
     assert "XcodeBuildMCP" in skill and "browser mcp" in skill.lower() and "mobile-mcp" in skill, (

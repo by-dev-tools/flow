@@ -24,6 +24,8 @@ A finding is a claim made by the agent that lacks supporting evidence in the ses
 
 **Unverified recall** — a claim referencing prior work ("we tried," "this was ruled out," "previously we found") without a fresh read of the referenced artifact in this session. If the claim references prior work without naming a specific artifact, that is itself a flag.
 
+**Undeclared change** *(coverage mode only — evidence base is the supplied diff + the declared `**Spec-walk:**` criteria, NOT the session transcript)* — a **user-perceptible behavior change** in the workspace diff that **no declared criterion would cause anyone to test**. The plan's Spec-walk *claims* to enumerate the work; an uncovered behavior change is a gap between that claim and the diff. Flag only changes a user could observe (a new/changed endpoint, state transition, validation rule, output, CLI flag, rendered result, error path). **Do not flag** refactors, renames, formatting, comments, dependency bumps, pure-internal helpers, or test-only / doc-only changes — those change no observable behavior. One finding per uncovered behavior, not per hunk.
+
 ## What does not count as a finding
 
 - Stylistic preferences
@@ -57,8 +59,8 @@ Treat these as behavioral checks (when tied to the original bug symptom):
 
 Before each `ISSUE` leaves your output, attempt to disprove it:
 
-1. Name the specific session text (tool call, file content, user message) that — if present — would invalidate this finding.
-2. Re-scan the session for it. If found, drop the finding.
+1. Name the specific session text (tool call, file content, user message) that — if present — would invalidate this finding. *(In coverage mode: name the declared Spec-walk criterion that would cover this behavior change.)*
+2. Re-scan the session for it. If found, drop the finding. *(In coverage mode: re-scan the declared-criteria list; if any criterion covers the behavior — even loosely — drop the finding. Default to "covered" when a criterion plausibly exercises the change.)*
 3. If the text you would need to find is fuzzy ("something like a behavioral test, maybe"), the finding is not evidence-grounded — drop it.
 
 A finding that survives its own disproof attempt is publishable. A finding that depends on what is *absent* from the session is only publishable if the absent thing is specifically named — e.g., "no tool call between the user's bug report at `u-2` and the completion claim at `a-7` exercises the reported symptom." General absence ("no tests anywhere") is not a finding; specific absence ("no test exercises this contract") is.
@@ -130,6 +132,10 @@ For **Unverified assumption**:
 For **Unverified recall**:
 - `Source of premise:` the referenced prior work if named, or "unnamed prior work"
 - `Why this flags high:` one sentence on why this specific recall matters
+
+For **Undeclared change**:
+- `Hunk:` the diff location (file + the changed lines) and the one-sentence user-perceptible behavior it introduces or changes
+- `Why uncovered:` which declared criteria you checked and why none exercises this behavior. If any criterion plausibly covers it, this is not a finding — drop it.
 
 ## Output footer (always)
 
