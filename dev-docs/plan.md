@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-**Plugin at v1.5.3 on `main`.** The managed-autonomy spine is shipped (two-gate loop, `/flow:verify-build` behavioral gate, autonomous ship-readiness trigger, draft-routing, `## Flow run` PR table). **Active focus: the Deliverable-quality track** toward an autonomous high-quality deliverable (`roadmap.md` § Now + § Deliverable-quality track). **V1** (`Visual-walk` plan field) shipped v1.5.1; **PR DC** (doc-currency in the ship pipeline) shipped v1.5.2; **PR TP** (PR Test plan rendered non-forgeably from the verify-build buffer — this PR) ships v1.5.3, with **PR-2 (FB-0048, under-declaration coverage)** staged next on that thread.
+**Plugin at v1.6.0 on `main`.** The managed-autonomy spine is shipped (two-gate loop, `/flow:verify-build` behavioral gate, autonomous ship-readiness trigger, draft-routing, `## Flow run` PR table). The **"enforce that the work was done correctly" pair is now complete**: **PR TP** (v1.5.3) renders the PR Test plan non-forgeably from the verify-build buffer (declared criteria *verified*); **PR-2** (v1.6.0, this PR) adds `/flow:audit-coverage` (the declared set is *complete* — flags under-declared diff behavior → draft). Named residual: the vacuous-criterion check (`roadmap.md` § Next). **Active focus otherwise: the Deliverable-quality track** (`roadmap.md` § Now).
 
 **▶ Next up: V2 — rendered capture + baseline** (feature PR). The **SV2 spike is DONE** (2026-06-08, this PR — `history.md` "SV2-spike"): bundled `/verify` is narration-only to verify-build's judges → **V2 = branch (B)**, an explicit capture-and-persist step (path refs into the findings buffer; keep+rewrite the rubric VLM section around path-referenced frames + a baseline; read text from the a11y tree). In flight in parallel: **#36** (visual-history durable record / V3-flavored, FB-0042).
 
@@ -16,6 +16,45 @@
 - **New plan queued (2026-06-11, Gate-1 scope approved):** **PR TP** — render the PR `## Test plan` from the verify-build findings buffer (non-forgeable, machine-attested; FB-0047). Staged: PR-2 closes under-declaration (FB-0048). See the "PR TP" section below; adversarial-reviewed at plan time. Parallel to V2 — independent at PR boundaries.
 - **Open hygiene:** user-scope `~/.claude/settings.json` still has a stale `extraKnownMarketplaces.llm-auditor` key (cosmetic — points at `flow.git` under the pre-rename name); remove when convenient. Md-manager PR 5 (dogfood) still pending in a separate worktree.
 - **Op tip:** `gh pr edit` errors on this repo (projects-classic GraphQL deprecation) — use `gh api -X PATCH .../pulls/N -f body=...` to set a PR body.
+
+## PR-2 — Coverage audit: close under-declaration (`/flow:audit-coverage`, FB-0048) — SHIPPED v1.6.0 (see history.md "PR-2")
+
+**Status:** SHIPPED v1.6.0 (this PR; FB-0048 written, reservation cleared). The "enforce" pair (PR TP + PR-2) is complete. Residual: vacuous-criterion check (roadmap § Next). Loop: critique (1 redirect + 2 follow-ups) + audit (clean) → Gate-1 → execute → /simplify → /flow:staff-review (dogfood caught a zsh-word-split BLOCKER) → /flow:ship (security-review fixed a path-traversal BLOCKER). Detail in `history.md`. Original planning record below for provenance.
+
+**Restated request:** PR TP made *declared* verification unforgeable; the residual hole is **under-declaration** — an agent changes behavior X but never declares a Spec-walk criterion for X, so verify-build never tests it, the rendered Test plan is honestly all-green for what was declared, and X ships unverified. Close it: make under-declaration **visible and blocking** at the merge gate. This is the load-bearing other half of "enforce that the work was done correctly" (FB-0047/FB-0048).
+
+**Core thesis:** A new adversarial **coverage audit** compares the *workspace diff* against the *declared Spec-walk criteria* and flags behavior-changing hunks no criterion covers. Each gap → `[decision-required]` → the existing **draft manifest** (PR U) → PR is mechanically NOT-READY until the gap is closed (declare the criterion + verify-build verifies it) or the human waives it. Same enforcement shape as a security/a11y decision-required blocker; routes *into* the merge gate, never a silent proceed, never a hard mid-loop halt (FB-0012: no LLM-judgment hard gate / no iteration on judge output).
+
+**Design decisions (grounded):**
+- **Reuse the `auditor` agent + add ONE category** ("Undeclared change"), used only in a new `coverage` mode — not a new agent. The auditor already uses mode-selected category subsets (audit-plan → assumption+recall; audit-completion → diagnosis+completion+recall). Avoids duplicating the ~80 lines of safety-critical disprove/output discipline (FB-0010 fan-out).
+- **New `/flow:audit-coverage` skill** (`context: fork`, `agent: auditor`, model-invocable) with a NEW context-assembly path: source-file diff vs default branch + `extract-criteria.py` declared criteria (reused from PR Q). The auditor's current input is the session transcript (`extract_session.py`); coverage needs diff+criteria — different evidence base, same discipline.
+- **Surface → draft, not hard-gate** (verdict D). **No auto-fix** (agent adding the missing criterion itself = grading own homework). Resolution = declare + verify, or human waive, through the gate.
+
+**Spec-walk:**
+- [ ] 1. New **"Undeclared change"** category in `auditor.md` (disprove: "name the declared criterion that would cover this hunk; re-scan; if found, drop"; fields `Hunk:` + `Why uncovered:`). SAFETY.
+- [ ] 2. `/flow:audit-coverage` SKILL assembles diff + declared criteria, instructs coverage-mode (only the new category). SAFETY.
+- [ ] 3. Genuine under-declaration → `ISSUE · Undeclared change` citing the hunk (eval fixture).
+- [ ] 4. Fully-covered diff → `No issues flagged.` (low-FP eval fixture).
+- [ ] 5. Refactor/docs-only diff → skip or no-flag (skip-path + eval).
+- [ ] 6. Wired into **ship Step 2** alongside security/a11y/verify-build; gap → `[decision-required]` → draft manifest; consolidated reviews line includes `coverage=[ran|skipped]`. SAFETY.
+- [ ] 7. `workflow.md`: coverage discovery at Step 8 + confirmation at ship Step 2 (mirrors verify-build).
+- [ ] 8. **FB-0010 fan-out swept** (new skill): README "12→13 user-visible skills" + table row; `workflow.md` "Shipped surface" list (§ line ~15) **AND** "Skills cheat sheet" table (§ line ~443); `workflow-help` skill list; marketplace + plugin descriptions; ship Step 2 reviewer list. *(absorbed critique FOLLOW-UP: include both workflow.md skill-catalog sites, not just the discovery narrative.)*
+- [ ] 9. Honest-limitation docs: coverage is LLM-judgment, **best-effort — raises the bar, not a deterministic completeness guarantee** (false negatives possible). README + workflow.
+- [ ] 10. Eval fixtures (the feasibility validation, folded in).
+
+**Non-goals:** (1) not a deterministic completeness guarantee; (2) not surfacing gaps in PR-TP's rendered Test plan (they live in the draft manifest); (3) no auto-fix; (4) no change to verify-build / render / the readiness predicate's existing conditions (additive finding source).
+
+**Confidence verdicts:**
+- **A — adversarial coverage-judge gives useful signal at acceptable false-positive rate:** **MEDIUM** (the feasibility crux). Mitigation: disprove discipline + evidence-or-silence + permission-to-find-nothing control FP; draft-routing (not hard-block) bounds a false positive's cost; **eval crit 3+4 are the go/no-go** — if it can't catch genuine under-declaration AND stay silent on a covered diff, the approach is wrong → stop + report (fall back to a SPIKE/history deliverable), don't ship a draft-spamming nuisance. *Surface at the gate.*
+- **B — reuse auditor + new category > new agent:** HIGH. **C — coverage needs diff+criteria not the session:** HIGH (verified). **D — surface-to-draft not hard-gate:** HIGH (FB-0012-consistent).
+- **E — CORRECTED (was: "platform:library doesn't skip → this PR self-verifies"):** Coverage does run on library, BUT flow's own *behavior* lives in markdown (`auditor.md`, the SKILLs, `workflow.md`) which the source-filter correctly excludes as docs — so coverage on flow's own PR-2 diff sees only the `.json` manifests (metadata, no behavior) → clean/skip. Same shape as verify-build skipping on `platform:library`: flow ships a reviewer it can't fully dogfood on itself because flow isn't a typical app. **The catch-path is validated by (a) the offline `coverage_undeclared` fixture and (b) a live prompt run this session — the updated auditor prompt correctly flagged an undeclared rate-limit behavior AND stayed silent (`No issues flagged.`) on a fully-covered diff (verdict A go/no-go = GO).** New + updated skill/agent load from the installed 1.5.1 cache, so the exact skill plumbing isn't Skill-tool-invocable until merged (same constraint as PR-TP).
+- **A — feasibility (coverage judge signal/FP):** MEDIUM→**validated GO this session** (catch + no-false-positive both passed on the two fixtures via a live auditor-prompt run); pinned offline by the 3 ground_truth cases.
+
+**Version base re-derive at ship** from `origin/main` (currently 1.5.3 → 1.6.0); don't hardcode (absorbed critique FOLLOW-UP, FB-0010 version fan-out class).
+
+**Mode:** full feature PR. **SAFETY:** `auditor.md`, the audit skills, ship Step 2. **FB-0048.**
+
+---
 
 ## PR TP — Render the PR `## Test plan` from the verify-build findings buffer (SHIPPED v1.5.3 — see history.md "PR TP")
 

@@ -39,6 +39,35 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### PR-2 — `/flow:audit-coverage`: close under-declaration (coverage audit) — `SAFETY`
+**Date:** 2026-06-11
+**Branch:** claude/flow-coverage-audit-fb0048 (v1.6.0; SHA at commit time)
+**FB:** FB-0048 (this PR). Continues FB-0047 (PR TP). Roadmap follow-up filed: vacuous-criterion check.
+
+**What was done:** New `/flow:audit-coverage` reviewer (13th user-visible skill) that closes the under-declaration hole PR-TP's Test-plan render left: it compares the workspace source diff against the declared `**Spec-walk:**` criteria and flags **user-perceptible behavior changes no criterion covers** — a behavior `/flow:verify-build` never tested, so the rendered Test plan would be honestly all-green while the change ships unverified. Each gap → `[decision-required]` → the existing draft manifest → the PR is mechanically NOT-READY until the criterion is declared + verified (re-run verify-build) or the human waives it. Wired in as the 4th `/flow:ship` Step 2 final-pass reviewer + at the Step 8 readiness boundary. v1.5.3→v1.6.0.
+
+**Why:** FB-0047 made *declared* verification unforgeable; the residual hole was *completeness* — an agent omits a criterion for a behavior it changed and it ships unverified. The load-bearing other half of "enforce that the work was done correctly" (FB-0048).
+
+**Design decisions:**
+- **Reuse the `auditor` agent + add ONE category** ("Undeclared change", coverage mode only) — not a new agent. Follows the existing mode-selected-category-subset pattern (audit-plan → assumption+recall; audit-completion → diagnosis+completion+recall), avoiding duplication of the ~80 lines of safety-critical disprove/output discipline (FB-0010 fan-out). Coverage's evidence base is the diff + declared criteria (via reused `extract-criteria.py`), NOT the session transcript the other auditor modes use.
+- **Surface → draft, not hard-gate, not auto-fix** (FB-0012: never hard-gate / iterate on LLM judgment; FB-0047: the agent declaring its own criterion would be grading its own homework — resolution routes through the gate). Runs on **all platforms** (under-declaration isn't platform-specific — unlike verify-build, does not skip on `platform: library|none`); self-skips on doc/test/refactor-only diffs or no Spec-walk.
+
+**Technical decisions / SAFETY:**
+- **`SAFETY` — `auditor.md` (reviewer prompt) + ship Step 2 (pipeline).** New category gated firmly to coverage mode (header parenthetical + the SKILL's "one category only / ignore your other four" framing + the disprove variant) so it can't leak into audit-plan/audit-completion.
+- **zsh word-split BLOCKER (caught by dogfood, not static review):** the diff-assembly originally did `git diff -- $FILES` with a newline-joined `$FILES`; macOS's zsh does NOT word-split unquoted expansions, so it passed the whole blob as one bogus pathspec → **empty diff → a no-op reviewer**. Live smoke test caught it; fixed with a `while IFS= read -r f` loop diffing each quoted `"$f"` — which also closes the filenames-with-spaces hardening for free. Lesson: dogfood the actual mechanism (FB-0010 + FB-0048).
+- **Path-traversal containment (security-review BLOCKER `[auto-fixable]`):** the new `run_evals.py` coverage branch read a fixture by path; added a 3.7-compatible `relative_to((HERE/'fixtures'))` containment guard so a malicious `ground_truth.yaml` `fixture: ../../etc/passwd` can't read outside `fixtures/` (component-aware — no `fixtures-evil` prefix false-match). Defense-in-depth (repo is developer-trusted) matching the existing `evals/security/` posture.
+- **Silent-skip defenses (FB-0010):** a `[audit-coverage] TRUNCATED` sentinel when the diff exceeds the 60KB cap (a clean result on a truncated diff is a false negative — the worst failure for a completeness auditor); a deleted-file guard so `head` doesn't error on a missing path; `--show-context` fixed for the new `coverage` mode (argparse only knew plan|completion → would silently yield empty context).
+- **Prompt-injection defense (security NIT):** the SKILL tells the auditor the diff block is untrusted DATA, not instructions (source files can imitate the section headers / inject "pass everything"). Fuller structural-delimiter hardening is a follow-up; the auditor's adversarial disprove discipline mitigates today.
+
+**Tradeoffs discussed:**
+- **Best-effort, not deterministic:** coverage is LLM-judgment — it raises the completeness bar, it does not guarantee it (false negatives possible). Stated in README + CHANGELOG + the reviewer output so a clean `coverage=ran` isn't over-trusted. The alternative (a deterministic completeness oracle) is not achievable — "what behaviors did this diff change" isn't mechanically enumerable.
+- **Feasibility validated, not assumed (verdict A go/no-go):** a live run of the updated auditor prompt correctly flagged a genuine undeclared rate-limit behavior AND stayed silent (`No issues flagged.`) on a fully-covered diff; pinned offline by 3 `ground_truth.yaml` cases (catch / silence / skip).
+- **Verdict E corrected mid-flight:** flow's own behavior lives in markdown (excluded by the source-filter as docs), so flow's own ship sees only the `.json` manifests → coverage finds nothing behavioral; this PR can't fully dogfood the catch-path (same shape as verify-build skipping on `platform: library`). The offline fixtures + the live prompt run carry it.
+- **Vacuous-criterion seam (push-further, deferred to roadmap):** coverage closes *under*-declaration but not *over-broad* declaration — an agent can declare a vacuous criterion ("X works correctly") that coverage accepts and verify-build judges PASS against vague narration. That's criterion-*quality* = verify-build's axis, deliberately out of scope; filed as the named next horizon (criterion-specificity check). README/CHANGELOG say "closes the *worst of* under-declaration" to stay honest.
+- **No-Spec-walk + behavior-bearing diff deliberately *skips* (not flags):** a spike/tiny PR legitimately has behavior + no Spec-walk; the upstream readiness predicate already requires spec-walk checkboxes for full-feature PRs, so this isn't the place to flag "nothing declared." Deliberate choice.
+
+**Loop:** plan → `/flow:critique-plan` (1 redirect + 2 follow-ups) + `/flow:audit-plan` (clean) → Gate-1 → execute → `/simplify` (1 fan-out fix) → `/flow:staff-review` (4 lenses: dogfood caught the zsh BLOCKER; truncation/deleted-file/show-context fixes; vacuous-criterion → roadmap) → `/flow:ship` (security-review caught + fixed the path-traversal BLOCKER; a11y + verify-build self-skipped; audit-coverage not yet in the installed 1.5.1 cache so it didn't self-run).
+
 ### PR TP — PR `## Test plan` rendered from the verify-build findings buffer (non-forgeable) — `SAFETY`
 **Date:** 2026-06-11
 **Branch:** claude/lucid-driscoll-20ef29 (v1.5.3; SHA at commit time)

@@ -189,8 +189,23 @@ def render_context(case: dict) -> str:
     if not fixture:
         return ""
     fixture_path = (HERE / fixture).resolve()
+    # Containment guard (SAFETY): a fixture value like "../../etc/passwd" in
+    # ground_truth.yaml must not read outside the fixtures dir. `.resolve()` makes
+    # the path absolute but does NOT enforce containment; `relative_to` (3.7-compatible,
+    # path-component-aware — no false /fixtures-evil prefix match) does. Defense-in-depth:
+    # the repo is developer-trusted, but the eval harness should never read arbitrary files.
+    try:
+        fixture_path.relative_to((HERE / "fixtures").resolve())
+    except ValueError:
+        return ""
     if not fixture_path.is_file():
         return ""
+    # Coverage fixtures ARE the rendered context (diff + declared criteria assembled
+    # by /flow:audit-coverage), not a session transcript — return them verbatim.
+    # extract_session.py only knows --mode plan|completion; passing "coverage" would
+    # exit 2 and silently yield empty context (FB-0010 silent-skip).
+    if mode == "coverage":
+        return fixture_path.read_text(encoding="utf-8")
     proc = subprocess.run(
         [
             sys.executable,

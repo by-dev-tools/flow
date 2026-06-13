@@ -10,6 +10,19 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.6.0 — 2026-06-11
+
+**New `/flow:audit-coverage` reviewer closes the under-declaration hole: it flags behavior changes in the diff that no declared `**Spec-walk:**` criterion covers — a behavior verify-build never tested, so the v1.5.3 Test plan would be honestly all-green while the change ships unverified. SAFETY (auditor agent + ship pipeline).**
+
+- **`/flow:audit-coverage` — coverage auditor (13th user-visible skill):** compares the workspace diff against the plan's declared `**Spec-walk:**` criteria and flags each **user-perceptible behavior change no criterion covers**. The complement to verify-build: verify-build checks the declared criteria *pass*; audit-coverage checks the declared set is *complete*. Reuses the `auditor` agent via a new **"Undeclared change"** category (coverage mode) + the existing `extract-criteria.py` parser — no new agent, no duplicated discipline.
+- **Routes to the draft manifest, never a hard halt:** each gap is a `[decision-required]` finding → the PR opens as a **draft** until the criterion is declared + verified (re-run verify-build) or the human waives it at the merge gate. The agent must **not** auto-add the missing criterion (grading its own homework). Wired in as the fourth `/flow:ship` Step 2 final-pass reviewer and at the Step 8 readiness boundary.
+- **Runs on all platforms** (under-declaration isn't platform-specific — unlike verify-build it does **not** skip on `platform: library|none`); self-skips on doc/test/refactor-only diffs or a plan with no `**Spec-walk:**` block.
+- **Honest limitation:** best-effort LLM judgment — it raises the completeness bar, it does **not** deterministically guarantee it (a subtle undeclared behavior can still slip past as a false negative). Not a substitute for the human read at the merge gate. Signal + low-false-positive behavior pinned by `evals/` fixtures (catches a genuine under-declaration; stays silent on a fully-covered diff).
+
+**Breaking changes:** none. Additive — a new reviewer + one new auditor category (coverage mode only); the existing four auditor categories and all other skills are unchanged.
+
+---
+
 ## v1.5.3 — 2026-06-11
 
 **The PR `## Test plan` is now rendered from the verify-build findings buffer — a non-forgeable record of behavioral verification, not a hand-authored checklist. The human verifies testing was done and merges, instead of re-verifying. SAFETY (ship pipeline).**
