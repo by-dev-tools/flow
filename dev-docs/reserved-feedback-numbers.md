@@ -20,7 +20,6 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 ## Currently reserved (as of 2026-06-11)
 
-- **FB-0048** — `claude/lucid-driscoll-20ef29` (**PR-2**, plan-level — queued, no branch yet) — "Close under-declaration: wire `/flow:audit-completion` coverage into the readiness chain so every behavior-changing requirement maps to a declared Spec-walk criterion, else block." The second half of TP's "enforce that the work was done correctly." Add a worktree slug when PR-2 starts.
 - **FB-0042** — `claude/flow-visual-verification-blueprint-DBWxo` (**PR #36**) — "Durable visual record = single curated `visual-history.html` companion to the history core doc; lean committed screenshot assets + CSS/SVG reconstruction fallback; reverse-chrono, decision-centric, no italic headings." Drafted 2026-06-04 as FB-0041; **renumbered → FB-0042 to resolve a collision with #37's FB-0041** (both branched around #35). FB-0042 is the durable-record half of the track's V3 and serves #37's now-merged FB-0041 umbrella.
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".

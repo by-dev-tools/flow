@@ -27,9 +27,9 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 
 **The loop itself:** [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md) — canonical 11 steps with rationale, gate semantics, spike/tiny modes, config-slot reference.
 
-## What v1.5.2 ships
+## What v1.6.0 ships
 
-### Workflow surface (12 user-visible skills)
+### Workflow surface (13 user-visible skills)
 
 Listed in **loop order** — top to bottom is the sequence you move through. The **Fires** column is the part most newcomers miss: it says what runs on its own vs what you have to type.
 
@@ -52,6 +52,7 @@ Listed in **loop order** — top to bottom is the sequence you move through. The
 | 10 · nested | **`/flow:security-review`** | BOTH | Diff-focused security audit (XSS, secrets, unsafe URL handling, path traversal, dependency risk, persistence leakage). Runs inside `/flow:ship`; early-exits on doc-only diffs. |
 | 10 · nested | **`/flow:accessibility-review`** | BOTH | Diff-focused WCAG 2.1 AA audit. Runs inside `/flow:ship`; early-exits on `uiSurface=false` or non-UI diffs. |
 | 10 · nested | **`/flow:verify-build`** | BOTH | Plan-driven behavioral gate: extracts spec-walk criteria, adversarially tests the built artifact via bundled `/verify`. Discovery runs at the Step 8/9 readiness boundary; inside `/flow:ship` it's a *confirmation* re-run — a FAIL/Unknown regression routes to a **draft PR + a pinned `🚫 NOT READY TO MERGE` manifest**, never a merge-ready PR. Needs `verifyEnabled` + `platform` set. |
+| 10 · nested | **`/flow:audit-coverage`** | BOTH | Coverage auditor: flags behavior changes in the diff that **no declared `**Spec-walk:**` criterion covers** (under-declaration — a behavior verify-build never tested). A gap routes to the **draft manifest** (decision-required). Complements verify-build: verify-build checks the declared criteria *pass*; audit-coverage checks the declared set is *complete*. Best-effort LLM judgment (raises the bar, not a deterministic guarantee); runs on all platforms; self-skips on doc/test/refactor-only diffs. |
 | 10 · spike | **`/flow:ship-spike`** | BOTH | Lightweight ship for `mode: spike` PRs. Same pre-flight gates; skips heavy reviews; writes the `history.md` entry (the deliverable); opens a `spike`-labeled PR. Model-invocable at the end of a spike loop or typed — but its auto-advance is **judgment-gated** (a spike has no mechanical readiness predicate, unlike `/flow:ship`'s verify-build PASS); never cold-start. Never merges. |
 | cross-cutting | **`/flow:log-disagreement`** | AUTO | The one self-firing skill: when you dispute a finding from an audit/critique in plain language, it captures the pushback for prompt-tuning. Needs a prior finding in the conversation to dispute. |
 
@@ -204,7 +205,7 @@ dev-docs/                           # plugin's own dev-tracking (not shipped to 
 - Eval harness reads pre-recorded `.expected.txt` files for the auditor + plan-critic; regression-only, not live correctness validation
 - Workflow enforcement is "soft" today (auto-loading rules + skill-trigger descriptions + `/flow:ship` Step 1.0 surface). Hard enforcement via Stop hook + Edit|Write scope check lands in v1.x post-extraction work
 - `/flow:init` (auto-create scaffolding with detection + prompting) deferred; today's path is `bootstrap.sh` (deterministic cp-ladder) plus manual placeholder fill
-- The PR `## Test plan` is rendered from the verify-build findings buffer, so a checked box attests **behavioral/text** verification by an adversarial judge — *not* visual correctness (bundled `/verify` narrates screenshots to the fresh-context judge rather than handing it pixels; rendered-visual judging lands in the Deliverable-quality track's V2). The rendered attestation also only covers criteria the plan **declared** in its `**Spec-walk:**` block: a behavior the agent changed but never wrote a criterion for is not gated (closing this under-declaration hole is a queued follow-up — wire `/flow:audit-completion` coverage into the readiness chain)
+- The PR `## Test plan` is rendered from the verify-build findings buffer, so a checked box attests **behavioral/text** verification by an adversarial judge — *not* visual correctness (bundled `/verify` narrates screenshots to the fresh-context judge rather than handing it pixels; rendered-visual judging lands in the Deliverable-quality track's V2). The rendered attestation also only covers criteria the plan **declared** in its `**Spec-walk:**` block. `/flow:audit-coverage` (v1.6.0) closes the worst of that under-declaration hole — it flags behavior changes in the diff that no declared criterion covers and routes each to the draft manifest — but it is **best-effort LLM judgment**: it raises the completeness bar, it does not deterministically guarantee it (a sufficiently subtle undeclared behavior can still slip past, a false negative). It is not a substitute for the human read at the merge gate
 
 ## History
 

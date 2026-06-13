@@ -1,0 +1,4 @@
+[audit-coverage] SKIPPED — no behavior-bearing source files in the diff (doc/test/refactor-only vs origin/main).
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

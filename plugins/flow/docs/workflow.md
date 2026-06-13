@@ -10,7 +10,7 @@ Everything described in the loop below is shipped and installable today. The ful
 
 - **`/flow:ship`** / **`/flow:ship-spike`** — final-pass pipeline (security + a11y + verify-build reviews) → feedback synthesis → doc updates → commit → push → open PR. Never merges.
 - **`/flow:staff-review`** — four-lens parallel review (engineer / UX-designer / design-engineer / push-further).
-- **`/flow:security-review`** / **`/flow:accessibility-review`** / **`/flow:verify-build`** — the three final-pass reviewers, each also invocable standalone.
+- **`/flow:security-review`** / **`/flow:accessibility-review`** / **`/flow:verify-build`** / **`/flow:audit-coverage`** — the four final-pass reviewers, each also invocable standalone. (`/flow:audit-coverage` flags diff behavior no declared `**Spec-walk:**` criterion covers — the under-declaration complement to verify-build.)
 - **`/flow:critique-plan`** — plan-critic pass over the most recent plan (scope drift, spec violation, internal incoherence).
 - **`/flow:audit-plan`** / **`/flow:audit-completion`** — auditor passes (unverified assumptions + recall; false-verification proxies).
 - **`/flow:log-disagreement`** — auto-invoked feedback channel that captures user pushback on a finding for prompt-tuning input.
@@ -242,7 +242,7 @@ User responds with feedback. Claude addresses it — code changes, doc updates, 
 
 Claude **auto-advances here from Step 8** when the ship-readiness predicate holds and the FB-0011 risk gate is clear (see § "8. Present (conditional gate)"), **or** the user says "ship it" (or `/flow:ship`). Either way, Claude runs the ship pipeline (full spec: `plugins/flow/skills/ship/SKILL.md`):
 
-1. Final-pass reviews in sequence: `/flow:security-review` + `/flow:accessibility-review` + `/flow:verify-build`. Each self-detects skip conditions (security: doc-only; a11y: `uiSurface=false` or non-UI diff; verify-build: `verifyEnabled=false` or `platform=library|none`). Verify-build here is a **confirmation re-run** — behavioral *discovery* already happened at the Step 8/9 readiness boundary; ship re-runs it to catch a regression since readiness. Every finding resolves to one of three outcomes, **never a silent proceed and never a hard mid-loop halt**: `[auto-fixable]` BLOCKER + cheap NIT → fixed in-tree; `[decision-required]` BLOCKER (security/a11y tag this axis) or a non-converging verify-build regression → added to the **draft manifest** so the PR opens as a draft + `🚫 NOT READY TO MERGE` block (the human resolves it at the merge gate); FOLLOW-UP → plan/roadmap. A verify-build regression first gets the FB-0012 bounded mechanical fix (loop only on the exit code, never judge prose); only a non-converging one routes to draft. **Invariant: no merge-ready PR is ever produced on a non-PASS build.**
+1. Final-pass reviews in sequence: `/flow:security-review` + `/flow:accessibility-review` + `/flow:verify-build` + `/flow:audit-coverage`. Each self-detects skip conditions (security: doc-only; a11y: `uiSurface=false` or non-UI diff; verify-build: `verifyEnabled=false` or `platform=library|none`; audit-coverage: doc/test/refactor-only diff or no `**Spec-walk:**` block — runs on all platforms). Verify-build here is a **confirmation re-run** — behavioral *discovery* already happened at the Step 8/9 readiness boundary; ship re-runs it to catch a regression since readiness. **Audit-coverage** flags behavior in the diff that no declared criterion covers (the under-declaration complement: verify-build checks the declared criteria *pass*; audit-coverage checks the declared set is *complete*) — an uncovered behavior is a `[decision-required]` finding routed to the draft manifest (the resolution is to declare the criterion + let verify-build verify it, or the human waives; never auto-add the criterion). It is best-effort LLM judgment, so it routes to draft, never a hard halt. Every finding resolves to one of three outcomes, **never a silent proceed and never a hard mid-loop halt**: `[auto-fixable]` BLOCKER + cheap NIT → fixed in-tree; `[decision-required]` BLOCKER (security/a11y tag this axis) or a non-converging verify-build regression → added to the **draft manifest** so the PR opens as a draft + `🚫 NOT READY TO MERGE` block (the human resolves it at the merge gate); FOLLOW-UP → plan/roadmap. A verify-build regression first gets the FB-0012 bounded mechanical fix (loop only on the exit code, never judge prose); only a non-converging one routes to draft. **Invariant: no merge-ready PR is ever produced on a non-PASS build.**
 2. Apply blocker / cheap-nit fixes; re-run Preflight (`flow.config.json.typecheckCmd`) if code changed. Loud warning if the slot is unset.
 3. **Synthesize session feedback (two layers)**:
    - **User feedback** — review the conversation since the last PR for corrections, preferences, decisions, and solved challenges. New entries go in `flow.config.json.feedbackPath`.
@@ -271,9 +271,10 @@ A filled `## Flow run` for a docs-only change on a library project (no UI surfac
 | /flow:security-review | skipped (doc-only) | — |
 | /flow:accessibility-review | skipped (uiSurface:false) | — |
 | /flow:verify-build | skipped (platform library) | — |
+| /flow:audit-coverage | skipped (no behavior in diff) | — |
 | Doc synthesis | ✓ | history + plan + CHANGELOG |
 
-Note the bottom three rows: each names *why* it skipped, so the reader sees a legitimate config/mode skip rather than wondering whether a gate was missed.
+Note the bottom four rows: each names *why* it skipped, so the reader sees a legitimate config/mode skip rather than wondering whether a gate was missed.
 
 ### Never bypass `/flow:ship` with `gh pr create` directly (FB-0010 workflow-step sub-class)
 
@@ -445,6 +446,7 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / MANUAL (you type it; c
 | `/flow:security-review` | Diff-focused security audit | Inside `/flow:ship`; also standalone | BOTH | flow |
 | `/flow:accessibility-review` | Diff-focused WCAG 2.1 AA audit | Inside `/flow:ship`; also standalone | BOTH | flow |
 | `/flow:verify-build` | Plan-driven behavioral verification: extract criteria from `**Spec-walk:**` checkboxes, adversarial transform, judge bundled `/verify`'s observations per dimension. Discovery at the Step 8/9 readiness boundary; a *confirmation* re-run inside ship (a regression routes to draft, not a hard halt) | Step 8/9 readiness + `/flow:ship` Step 2 confirm + `/flow:ship-spike` Step 2; also standalone mid-iterate | BOTH | flow |
+| `/flow:audit-coverage` | Coverage auditor: flags diff behavior changes no declared `**Spec-walk:**` criterion covers (under-declaration). A gap → draft manifest (decision-required). Best-effort LLM judgment; runs all platforms; self-skips on doc/test/refactor-only diffs or no Spec-walk | Step 8/9 readiness + `/flow:ship` Step 2; also standalone | BOTH | flow |
 | `/flow:ship-spike` | Lightweight ship for spike-mode PRs (also invokes `/flow:verify-build --spike` for a 3-check smoke gate) | At spike-loop end (auto-advance is **judgment-gated** — no mechanical predicate, unlike `/flow:ship`; never cold-start); also typeable | BOTH | flow |
 | `/flow:log-disagreement` | Capture user pushback on a finding for prompt tuning | After a reviewer issues a finding the user disputes in plain language | AUTO | flow |
 | project's `/link` (or equivalent) | Start the dev server, return URL | Whenever you need a live preview | — | project-specific (not flow) |

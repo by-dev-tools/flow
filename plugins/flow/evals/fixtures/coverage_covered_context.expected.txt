@@ -1,0 +1,5 @@
+No issues flagged.
+Note: passive audit only checks stated evidence; absence of flags doesn't mean absence of problems.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

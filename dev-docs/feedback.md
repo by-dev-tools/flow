@@ -35,6 +35,16 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0048: Under-declaration is the load-bearing half of "enforce that the work was done correctly" — a coverage audit flags diff behavior no declared criterion covers, routed to draft; best-effort, not a deterministic guarantee
+**Date:** 2026-06-11
+**Source:** user direction (continuation of FB-0047; "proceed with PR 2")
+
+**What was said:** After FB-0047's Test-plan render shipped (v1.5.3), the user directed PR-2 to close the staged second half: under-declaration. The render makes *declared* verification unforgeable, but a behavior the agent changed without declaring a Spec-walk criterion is never tested — the Test plan is honestly all-green while the change ships unverified. The user's standing autonomy bar held: "as long as the plan has passed audit and critique gates, you should proceed."
+
+**Synthesized rule:** Enforcing "the work was done correctly" has two halves — *declared criteria are verified* (verify-build → rendered Test plan, FB-0047) AND *the declared set is complete* (no undeclared behavior). The completeness half is inherently LLM-judgment (you can't deterministically enumerate "what behaviors did this diff change"), so it is a **reviewer routed to draft**, not a mechanical hard gate (FB-0012: never hard-gate / iterate on LLM judgment). `/flow:audit-coverage` (v1.6.0) compares the source diff against the declared `**Spec-walk:**` criteria and flags behavior no criterion covers → `[decision-required]` → draft manifest → resolve by declaring + verifying, or human-waive. Reuse over rebuild: a new "Undeclared change" category on the existing `auditor` agent (the mode-selected-subset pattern), `extract-criteria.py` for declared criteria, the existing draft-routing. **Honest limit:** best-effort — it raises the completeness bar, it does not deterministically guarantee it (false negatives possible), and it does not catch *vacuous* criteria (criterion-quality is verify-build's axis — roadmap follow-up). State the limit where it's read (README + the reviewer output), so a clean `coverage=ran` isn't over-trusted. General lesson reinforced: **dogfood the actual mechanism** — the coverage bash looked correct but a live smoke test caught that zsh doesn't word-split `$FILES`, so `git diff -- $FILES` silently saw an empty diff; a static review would have shipped a no-op reviewer.
+
+**Applies to:** workflow, ship pipeline, `audit-coverage`, `auditor.md`, autonomy bar, FB-0010 (dogfood-the-mechanism + fan-out for a new skill)
+
 ### FB-0047: A near-autonomous loop must *enforce* that testing was done before the human, not self-attest it — the PR Test plan is a non-forgeable projection of machine verdicts, never a hand-checked box
 **Date:** 2026-06-11
 **Source:** user direction

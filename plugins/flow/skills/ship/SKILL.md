@@ -209,11 +209,12 @@ If Step 1c passes (or is skipped via unset/docs-only), proceed to Step 2. The St
 
 ## 2. Final-pass reviews
 
-Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, and `/flow:verify-build` via the Skill tool. Each reviewer cold-reads the workspace diff vs the default branch (or runs the built artifact, for verify-build), and returns findings for routing.
+Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, `/flow:verify-build`, and `/flow:audit-coverage` via the Skill tool. Each reviewer cold-reads the workspace diff vs the default branch (or runs the built artifact, for verify-build), and returns findings for routing.
 
 **Findings resolve into exactly one of three outcomes — never a silent proceed, never a hard mid-loop halt:**
 - **`[auto-fixable]` BLOCKER + cheap NIT** → fix in-tree, continue (today's happy path).
 - **`[decision-required]` BLOCKER** (security/a11y tag the axis; see their output contracts) → do NOT best-effort it. Add it to the **draft manifest** (an in-memory list this run accumulates) for Step 7. The loop keeps going — the human resolves it at the merge gate, not mid-flight.
+- **`/flow:audit-coverage` `ISSUE · Undeclared change`** → each uncovered behavior is a **`[decision-required]`** entry on the draft manifest (`needs: declare + verify the criterion, or human waive`). Do NOT auto-add the criterion yourself — that is the agent grading its own homework; the resolution is to declare the criterion in the plan's `**Spec-walk:**` block and let `/flow:verify-build` verify it (or the human waives it at the merge gate). A clean `No issues flagged.` adds nothing.
 - **FOLLOW-UP** → Step 3 routing.
 
 The draft manifest starts empty. Anything added to it makes the eventual PR a **draft** (Step 7). This is how an unresolved blocker reaches the human at the merge gate they were hitting anyway, instead of halting the loop or shipping a merge-ready-looking PR that isn't ready.
@@ -222,22 +223,24 @@ The draft manifest starts empty. Anything added to it makes the eventual PR a **
 Skill("flow:security-review")
 Skill("flow:accessibility-review")
 Skill("flow:verify-build")
+Skill("flow:audit-coverage")
 ```
 
 Skip behavior:
 - `/flow:security-review`: skip if the diff is doc-only or trivially safe (a copy tweak). The reviewer self-detects this and exits early with a clean message.
 - `/flow:accessibility-review`: skip if `flow.config.json.uiSurface` is `false` (the reviewer self-detects this and exits early), or if the diff is non-UI (data layer, build config, doc-only).
 - `/flow:verify-build`: skip if `flow.config.json.verifyEnabled` is `false` (project-wide opt-out), or if `flow.config.json.platform` resolves to `library` or `none` (no runnable target). The skill self-detects both and exits early with a clean `[verify-build] ...skipping.` message. Unlike security + a11y, verify-build does NOT auto-skip on doc-only diffs — the user may have shipped a behavioral change in a non-code file (e.g., a config-driven feature toggle); the run-and-observe loop is cheap enough to attempt and fall through to Unknown if there's nothing to observe.
+- `/flow:audit-coverage`: self-skips (prints `[audit-coverage] SKIPPED — ...`) when the diff has no behavior-bearing source files (doc/test/refactor-only) or the plan has no `**Spec-walk:**` block (spike/tiny/no plan) — there's nothing to compare. Runs on **all platforms** (under-declaration is not platform-specific — unlike verify-build, it does NOT skip on `platform: library|none`).
 
-The first two reviewers are tuned for the in-flow ship context; the bundled Claude Code `/security-review` is fine for out-of-band deep audits but `/flow:security-review` carries the config-slot doc-path resolution this pipeline needs. Verify-build catches the Potemkin-interface / hallucinated-success class no static reviewer catches; it wraps bundled `/verify` with plan-driven criteria. At ship it's a confirmation re-run (discovery happened at the Step 8/9 readiness boundary); a non-converging FAIL/Unknown regression routes to the draft manifest, not a hard halt.
+The first two reviewers are tuned for the in-flow ship context; the bundled Claude Code `/security-review` is fine for out-of-band deep audits but `/flow:security-review` carries the config-slot doc-path resolution this pipeline needs. Verify-build catches the Potemkin-interface / hallucinated-success class no static reviewer catches; it wraps bundled `/verify` with plan-driven criteria. At ship it's a confirmation re-run (discovery happened at the Step 8/9 readiness boundary); a non-converging FAIL/Unknown regression routes to the draft manifest, not a hard halt. **Audit-coverage** closes the complementary gap verify-build can't: verify-build tests the criteria that were *declared*; audit-coverage checks the diff for behavior that was *never declared* (so verify-build never tested it). Together: declared criteria are verified (verify-build → rendered Test plan) AND the declared set is complete (audit-coverage). It is best-effort LLM judgment — it raises the completeness bar, it does not deterministically guarantee it (false negatives possible); a flagged gap routes to draft, never a hard halt.
 
-After all three Skill calls return, emit one consolidated user-facing line so the user can see what actually ran vs skipped:
+After all four Skill calls return, emit one consolidated user-facing line so the user can see what actually ran vs skipped:
 
 ```
-Final-pass reviews: security=[ran|skipped: <reason>], accessibility=[ran|skipped: <reason>], verify-build=[ran|skipped: <reason>].
+Final-pass reviews: security=[ran|skipped: <reason>], accessibility=[ran|skipped: <reason>], verify-build=[ran|skipped: <reason>], coverage=[ran|skipped: <reason>].
 ```
 
-Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=skipped (uiSurface:false), verify-build=ran (overall_verdict:PASS, all criteria PASS).`
+Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=skipped (uiSurface:false), verify-build=ran (overall_verdict:PASS, all criteria PASS), coverage=ran (no undeclared changes).`
 
 **Verify-build at ship time is a CONFIRMATION re-run, not discovery.** The behavioral discovery/iteration loop happens earlier, at the Present/Iterate boundary (loop steps 8–9; see `docs/workflow.md`). By the time ship runs, verify-build should already be PASS — ship re-runs it to confirm nothing regressed between the readiness check and now (a bad rebase, a doc/config edit that broke a path).
 
@@ -460,6 +463,7 @@ The PR base branch is resolved via this fallback chain:
   | /flow:security-review | <✓ / skipped (reason)> | <result, incl. any [decision-required] blocker / —> |
   | /flow:accessibility-review | <✓ / skipped (reason)> | <result, incl. any [decision-required] blocker / —> |
   | /flow:verify-build | <✓ / skipped (reason)> | <overall_verdict; a non-converging regression → draft / —> |
+  | /flow:audit-coverage | <✓ / skipped (reason)> | <undeclared changes → draft / "no undeclared changes" / —> |
   | Doc synthesis | ✓ | <docs updated> |
 
   If the `🚫 NOT READY TO MERGE` manifest above is present, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here. Deferred follow-ups: see the configured roadmap and plan docs.
@@ -512,6 +516,8 @@ The PR base branch is resolved via this fallback chain:
       `false`, or when the diff touches no UI files → `skipped (uiSurface:false)` / `skipped (no UI in diff)`.
     - `/flow:verify-build` skips when `flow.config.json.verifyEnabled` is `false`
       or `platform` is `library`/`none` → `skipped (verifyEnabled:false)` / `skipped (platform library|none)`.
+    - `/flow:audit-coverage` skips on a doc/test/refactor-only diff or a plan with no
+      `**Spec-walk:**` block → `skipped (no behavior in diff)` / `skipped (no Spec-walk)`. Runs on all platforms.
   - **Notable** — genuine signal only: a plan-critic catch that changed the
     plan, a load-bearing design/impl decision, a `/flow:staff-review` BLOCKER you
     fixed, a real security/a11y/verify-build finding, the docs you updated. A
