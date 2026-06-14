@@ -108,6 +108,12 @@
       "description": "Hard cap on tool-call count consumed by bundled /verify during /flow:verify-build Step 5. When exceeded, the verify pass aborts and unjudged verdicts are forced to Unknown (which gates ship per FB-0011). The cap is a fail-closed safety net against runaway verify runs that would otherwise consume the session budget. Default 60 calls — enough for a typical web app verification (~15-25 calls) with headroom; raise for iOS/Android (~30-50 calls) or projects with multi-step verification flows. Mechanical exit signal per FB-0012(a) — does not loop on judge output.",
       "default": 60
     },
+    "verifyReportPath": {
+      "type": "string",
+      "description": "Path where /flow:verify-build renders its EPHEMERAL HTML walkthrough (the artifact the human opens at the merge gate) from the findings buffer, via lib/render-report.py. Default '/tmp/flow-verify-report.html' so it is auto-wiped at reboot and never committed (it is image-heavy and per-run; the durable visual record is a separate, curated artifact). Persisted screenshot frames are written to an 'assets/' dir alongside this path. Override to a project-local path only if you want the report preserved across boots for inspection. Regenerated every iteration; discarded after merge.",
+      "default": "/tmp/flow-verify-report.html",
+      "examples": ["/tmp/flow-verify-report.html", ".flow/last-verify-report.html"]
+    },
     "rustWorkspaceDir": {
       "type": "string",
       "description": "(Tauri / Rust stacks only.) Directory containing the project's Rust workspace (Cargo.toml). Used by the tauri-rust-ts stack overlay's preflight runner to know where to run `cargo fmt`, `cargo clippy`, `cargo test`. Default: 'src-tauri' (the Tauri convention). Non-Tauri Rust projects typically set this to '.' (workspace at repo root) or to the workspace subdirectory.",

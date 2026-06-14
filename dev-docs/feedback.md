@@ -35,6 +35,33 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0050: Visual capture for verification must be a11y-state-GATED — snapshot the a11y tree and assert the intended state BEFORE the screenshot, never screenshot-then-assume; and a "drive to each state" step must name a drive ladder, never assume drivability the MCP may not expose
+**Date:** 2026-06-11
+**Source:** review feedback (a cold `/flow:verify-build` behavioral-gate run that tripped the defect)
+
+**What was said:** The flow-true behavioral gate for V2 (a cold, author-bias-free `/flow:verify-build` run against a real iOS app) caught a real defect that static tests + the author's hand-driving missed. SKILL §5a told the agent to "capture a frame" and to "write a `screenshot` observation AND an `a11y_snapshot` observation" as **two independent captures**, never ordering them. The agent screenshotted a state without first asserting it via the a11y tree; the frame had silently drifted to a different state; the fresh-context pairwise judge **correctly returned FAIL** and cited the exact pixel difference. Re-capturing a11y-gated (snapshot → assert state → screenshot) then resolved to PASS. The same run surfaced that §5a's "drive the app to each state" assumes a UI-drive primitive the MCP config may not expose (this XcodeBuildMCP config had only screenshot + a11y, no tap/type).
+
+**Synthesized rule:**
+1. **Capture must be a11y-state-gated, in order: snapshot the a11y tree → assert the intended state is present → THEN screenshot.** Never screenshot-then-assume — an un-gated capture persists wrong-state frames that look plausible. This is the SV2 "trust the a11y tree, not the pixels" principle applied to *capture ordering*, not just text-reading. A state that cannot be a11y-asserted is `Unknown` + `not_tested`, never a captured guess.
+2. **A "drive the app to each state" step must name a drive ladder** (platform UI-automation tool → a documented launch-arg/env state hook → can't-reach ⇒ `Unknown`) and must never assume drivability a given MCP config provides. Many configs expose capture + a11y but no drive primitive; then only the launch state is reachable and the rest are honestly `Unknown`.
+3. **General:** the cold-run lesson reinforces FB-0049 — a verification tool's prose is only proven when a fresh agent follows it literally against a real surface; "two independent captures" read fine to the author and broke on contact.
+
+**Applies to:** `/flow:verify-build` §5a capture, any screenshot-based verification, the SV2 a11y-trust principle, FB-0016, FB-0049.
+
+### FB-0049: A verification/quality tool is not validated until it RUNS against a real surface — static contract tests + hand-driven mechanism checks are Potemkin self-validation; and never conflate output-format with capture-platform
+**Date:** 2026-06-11
+**Source:** user direction (a pointed question that corrected an in-progress shortcut)
+
+**What was said:** Finishing V2 (the verify-build rendered-capture + HTML-walkthrough feature), Claude proposed shipping PR-1 on the strength of (a) passing static contract eval fixtures (greps that the SKILL prose + schema are present) and (b) Claude hand-driving the screenshot MCP + the renderer itself to prove the mechanism. The user asked: *"which one is more true to the intention of the flow workflow?"* — surfacing that neither proves the **skill drives the mechanism**, only that the parts work. Earlier in the same session the user also corrected a conflation: the renderer's HTML is an **output format**, not the **capture platform** (the app is iOS, captured via XcodeBuildMCP; "web-first" was a render-vs-capture muddle).
+
+**Synthesized rule:**
+1. **A verification or quality tool is not validated until it RUNS against a real surface — skill-driven, ideally cold (author-bias-free).** Passing static contract tests + hand-driving the underlying mechanism proves the *parts* work, not that the *tool drives them*. That gap IS the Potemkin / hallucinated-success class verify-build exists to catch — and shipping verify-build's own PR on static+hand-driven evidence would fail it by its own standard. This sharpens FB-0016 ("real surface") and FB-0012 ("static ≠ behavioral"): for a verification tool, "real surface" means *the skill executing end-to-end*, not the mechanism poked by hand.
+2. **If the behavioral gate is genuinely unavailable in this session** (session-bound, e.g. the cold run needs a consumer-project context), the flow-true move is a **DRAFT PR with the behavioral gate in the NOT-READY manifest** (FB-0034) — never a merge-ready PR, and never "ship now, validate later" (which defers discovery past the Step-8 gate the loop forbids).
+3. **Distinguish output-format from capture-platform.** "Renders to HTML/web" describes the artifact's output, not what's being captured/verified. Don't let an output format leak into platform assumptions.
+
+**Applies to:** `/flow:verify-build` + any verification/quality tooling, the Step-8 readiness predicate, FB-0016 (real-surface validation), FB-0034 (draft-routing), FB-0012 (static ≠ behavioral), dogfooding flow on itself.
+
+
 ### FB-0048: Under-declaration is the load-bearing half of "enforce that the work was done correctly" — a coverage audit flags diff behavior no declared criterion covers, routed to draft; best-effort, not a deterministic guarantee
 **Date:** 2026-06-11
 **Source:** user direction (continuation of FB-0047; "proceed with PR 2")
@@ -54,6 +81,20 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 **Synthesized rule:** A human-facing "it was tested" signal must be a mechanical function of machine evidence, never agent narration. The PR `## Test plan` is rendered (by `skills/ship/lib/render-test-plan.py`, ship Step 7) from the `/flow:verify-build` findings buffer: checkbox state = the per-criterion `aggregated_verdict` (PASS→`[x]`; FAIL/Unknown→`[ ]` + the judge's reason), with evidence + a one-line headline verdict so the human confirms-and-merges. Reserve `[ ]`/`[x]` exclusively for machine verdicts (the `not_tested` residue renders as plain bullets, never checkboxes). When no current buffer exists (verify-build skipped / no buffer / stale buffer whose branch+sha ≠ HEAD / malformed), render an honest "no behavioral gate ran — manual verification required" fallback; **never** a forged green or a stale render. General principle: enforcement > attestation; surface a green only when an adversarial fresh-context judge produced it. Two honest limits to carry: the attestation is **behavioral/text only** (not visual — Deliverable-quality V2) and covers only **declared** Spec-walk criteria (closing under-declaration is the staged PR-2, FB-0048). When rendering machine-extracted strings of unknown provenance into a human-facing artifact (Markdown/HTML), escape the metacharacters — buffer text can carry content an app-under-test emitted and the judge narrated (security + design-engineer review, two reviewers, same session).
 
 **Applies to:** workflow, ship pipeline, `render-test-plan.py`, verify-build buffer consumers, autonomy bar, security (output escaping)
+**Date:** 2026-06-09
+**Source:** user direction (incl. a correction of a prior dismissal)
+
+**What was said:** On a proposed staff-review-of-the-plan, the user gave two steers. (1) **Push-further at the plan stage must not grow scope/functionality** — frame it as "could the *quality* be higher," not "could we add more"; in most cases raise the craft bar, not the feature set. (2) The user **disagreed** that a UX-designer lens adds no value before pixels exist: "the value is not in pixels but in experience, which is the most important thing… Maybe it's more of a product designer (or even design-minded product manager) than a strict UX designer, but experience is the most important thing here and should be a quality gate for plans." This corrects an earlier (wrong) framing that dismissed a plan-stage experience lens as needing pixels to be useful.
+
+**Synthesized rule:** The plan gate's two existing reviewers (auditor, plan-critic) are **conformance** checks — *is the plan honest and aligned?* Add a **quality/ambition layer** of two lenses that run alongside them (skippable only when they genuinely don't apply, e.g. a backend-only plan, the same way diff-stage lenses skip):
+- **Experience lens (product-designer / design-minded PM).** Is this the *right experience*, and is its ambition high enough? The journey, the edge states, the friction, how it should *feel*, whether the plan solves the experience problem or just satisfies the literal request. This is pre-pixels and is the **highest-value plan-stage question** — experience is the most important thing.
+- **Push-further (quality, not scope).** Could the *craft/quality of the declared scope* be higher? Inherits the existing push-further lens's "uncommon care" framing (limited scope to an extraordinarily high bar; "nothing to push" is a valid, often-correct output), with a **loud anti-scope-creep guard** because the plan stage is where "push further" is most tempted to add features: raise the bar of the declared scope; propose new functionality only when it is load-bearing for the stated goal.
+
+These set the success-criteria + craft bar the autonomous iteration loop (FB-0044) converges toward — a weak plan ceilings the deliverable. (A staff-engineer "is the approach sound before we build it" lens is a defensible secondary; held unless requested.) Best substrate is a workflow that fans the plan reviewers out and returns one triaged verdict — exactly the canonical "draft/judge a plan from several angles" workflow use case (dynamic-workflows O1 applied to the plan gate / segment A).
+
+**Applies to:** plan gate (auditor + plan-critic surface), `plan-critic.md`, `plan-discipline.md`, `planner.md`, Visual-walk / declared success criteria, FB-0037 (designer perspectives load-bearing), dynamic-workflows O1, Deliverable-quality track.
+
+### FB-0046: Experience and craft-ambition are first-class plan-gate quality gates — a product-designer / experience lens + a push-further-on-quality (not scope) lens, alongside the auditor + plan-critic
 **Date:** 2026-06-09
 **Source:** user direction (incl. a correction of a prior dismissal)
 

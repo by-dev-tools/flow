@@ -4,7 +4,7 @@ description: >
   Verify that the flow plugin is correctly installed and configured for the
   current project. Runs a punch-list of PASS/FAIL checks: marketplace
   registered under the canonical 'flow' name, flow@flow enabled, project-root
-  flow.config.json present + parses + matches the v1.2+ schema, all 21 slots
+  flow.config.json present + parses + matches the v1.2+ schema, all 22 slots
   have sensible values, auto-loading rules visible to Claude Code, the paths
   named in slots actually exist on disk, prerequisite CLI tools (gh, jq, git)
   installed, preflight + CI optionally wired. Each FAIL prints an actionable

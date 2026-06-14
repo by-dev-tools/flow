@@ -10,6 +10,20 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.6.1 — 2026-06-11
+
+**Rendered visual capture + an ephemeral HTML walkthrough for `/flow:verify-build` — visual claims become real PASS/FAIL the autonomy loop can trust, and the human opens a real report at the merge gate (Deliverable-quality track V2/V3a). SAFETY (verify-build gate + findings schema + frame persistence).**
+
+- **Capture-and-persist (SKILL §5a), a11y-gated:** for each declared `Visual-walk` state, flow drives the platform's screenshot MCP itself (XcodeBuildMCP on iOS returns a native frame path; bundled `/verify` only narrates frames to the fresh-context judges — SV2), **in order: snapshot the a11y tree → assert the intended state → screenshot** (never screenshot-then-assume), with a named drive ladder (UI-automation → launch/env hook → can't-reach ⇒ `Unknown` + `not_tested`). Persists a path-referenced `screenshot` + an `a11y_snapshot` (text/status from the a11y tree, not pixels).
+- **Two additive findings-buffer fields** (`schema_version` stays `1.0`): `criteria[].grounding` (need / design-language / craft-commitment / open-question) + top-level `open_questions[]` (subjective human calls, distinct from epistemic `Unknown`).
+- **Rubric re-grounded:** visual claims judged **pairwise-vs-baseline** (no baseline ⇒ Unknown; first run seeds it), text from the a11y tree.
+- **Stdlib HTML renderer (`lib/render-report.py`):** buffer → one self-contained ephemeral report (`verifyReportPath` slot) with grounding callouts, per-dimension verdict cards, a standalone "Open questions for you" block, and a coverage checklist. Raster-data-URI allowlist (security hardening).
+- **Loop gate:** an `open_questions[routing=this-iteration]` entry blocks Step 8 auto-advance.
+- New `verifyReportPath` slot (22 slots). **Validated by a cold skill-driven `/flow:verify-build` run on a real iOS surface** — round 1 caught 3 `§5a` prose gaps (fixed + FB-0050), round 2 green (FB-0049).
+- **Breaking changes:** none.
+
+---
+
 ## v1.6.0 — 2026-06-11
 
 **New `/flow:audit-coverage` reviewer closes the under-declaration hole: it flags behavior changes in the diff that no declared `**Spec-walk:**` criterion covers — a behavior verify-build never tested, so the v1.5.3 Test plan would be honestly all-green while the change ships unverified. SAFETY (auditor agent + ship pipeline).**

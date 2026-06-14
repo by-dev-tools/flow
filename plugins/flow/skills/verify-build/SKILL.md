@@ -204,6 +204,25 @@ Bundled `/verify` calls `/run` internally for launch, drives the running app per
 
 **Budget cap:** track tool-call count via `flow.config.json.verifyBudgetCalls` (default 60). If exceeded, abort the verify invocation and emit `Unknown` for all unjudged dimensions → ESCALATE per FB-0011.
 
+## 5a. Capture-and-persist visual frames (V2)
+
+**Activation (all must hold, else §5a is N/A — say so explicitly):** (a) **not** spike mode (spike skips Steps 3–4, so it never reaches §5a); (b) the plan's `**Spec-walk:**` criteria extracted cleanly — a malformed Spec-walk heading yields 0 criteria → spike fallback → §5a silently skipped, so a plan with a `Visual-walk` block but a non-canonical Spec-walk heading captures nothing (a known routing fragility; see roadmap follow-up); (c) the plan declares a `Visual-walk` block on a `uiSurface:true` project. Non-UI / no `Visual-walk` → skip; visual capture is N/A.
+
+**Deriving the capture state-set.** The `Visual-walk` block (V1) is a list of checkable visual *assertions* ("empty state renders", "primary button uses the accent token", "enter motion ≤200ms"), **not** an enumerated state list. §5a captures one frame per distinct *app state* those assertions name or imply (empty / loading / error / interaction / a11y / happy-path), deduplicated. This derivation is **prompt-driven** — there is no `extract-visual-states.py` parser yet (a routed follow-up) — so **list the state-set you derived** in the run, and treat any state you cannot tie to a declared assertion as out of scope. If the block is only an inline `(Visual-walk)` parenthetical with no enumerable states, capture the **primary/launch state only** and mark the rest `not_tested` — never invent a rich state-set from prose the plan didn't declare.
+
+Bundled `/verify` **narrates** screenshots to the orchestrator — it does NOT hand structured frames to the fresh-context judges (SV2-spike). So **flow owns capture-and-persist.** For each derived state, **in this exact order**:
+
+1. **Reach the state — the drive ladder.** Try in order: (a) the platform's **UI-automation** tool (tap/gesture/type — XcodeBuildMCP `tap`/`type_text`, Playwright click, etc.) *if the MCP config exposes one*; (b) a documented **launch-arg / env hook** the app provides for state injection (e.g. a debug/mock toggle); (c) **if neither can reach the state, STOP — mark it `Unknown` + a `not_tested[]` line and move on.** Do NOT screenshot whatever happens to be on screen. Many MCP configs expose only `screenshot` + the a11y tree and *no* drive primitive — then only the launch state is reachable and every other state is honestly `Unknown`. Naming a drive prerequisite is the consumer's job, not §5a's to assume.
+2. **Assert the state via the a11y tree BEFORE the screenshot (load-bearing).** Call the a11y-snapshot tool (`snapshot_ui` / equivalent) and **confirm it shows the intended state** (expected labels/markers). Only on a match do you proceed to capture. **Never screenshot-then-assume** — an un-gated capture silently persists wrong-state frames (this is flow's own "read state from the a11y tree, not pixels" SV2 principle applied to *capture ordering*; a cold run that skipped this persisted a drifted frame that the pairwise judge then correctly FAILed). If the a11y snapshot doesn't show the intended state, treat it as not-reached (→ 1c).
+3. **Capture the frame** via the platform's screenshot MCP — browser MCP for `web`, **XcodeBuildMCP `screenshot`** for `ios`, mobile-mcp for `android`; never hardcode a platform. Most native simulator/device tools return a **file path** (XcodeBuildMCP returns a path to a pre-optimized frame) — copy it into the assets dir; if a tool returns only image data, write the bytes yourself. Resize to ~460–620px if the tool didn't (the renderer does not resize); never paste base64 frame data into the working context.
+4. **Persist + reference.** Persist to `<dirname(verifyReportPath)>/assets/<state-slug>.<ext>`. Write the `screenshot` observation's `content` as the path **relative to the report directory** — i.e. `assets/<state-slug>.<ext>` — because Step 10 invokes the renderer with `--assets-dir <dirname(verifyReportPath)>`, so it resolves `content` against the report dir. (Do NOT make `content` relative to the assets dir itself — `assets/x.png` is relative to the report dir, the assets dir's *parent*.) Also write the `a11y_snapshot` observation from step 2 (labels / copy / status — text, incl. network status, is unreliable from pixels).
+
+**A derived state with no captured frame** (un-reachable per step 1, or a11y-assertion failed per step 2) → `Unknown` (Step 7) + a `not_tested[]` line. Never a silent gap; the renderer makes it visible (Step 10).
+
+**Baseline (for the pairwise rubric, Step 6).** A state's baseline lives at `<state-slug>.baseline.<ext>` in the assets dir (a distinct name from the current `<state-slug>.<ext>` — keep current / baseline frames separable, never one ambiguous flat name). If a baseline exists (from an earlier accepted run), pass it to the judges alongside the new frame for pairwise comparison (`rubric.md` § VLM). **First run = no baseline:** seed it (copy `<state-slug>.<ext>` → `<state-slug>.baseline.<ext>`); visual-*layout* claims resolve `Unknown` until a baseline exists (acceptable — text/state claims still resolve from the a11y tree). Absolute single-frame scoring stays discouraged.
+
+**Budget.** In a capture-owning run, count flow's own capture/drive/a11y tool-calls toward `metadata.verify_budget_calls_used` (bundled `/verify` is no longer the only caller); the cap still forces `Unknown` on overrun.
+
 ## 6. Per-dimension parallel judging
 
 Spawn N parallel Agent subagent (fresh-context)s — one per dimension — each with the rubric prompt at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/rubric.md`. Default dimensions:
@@ -236,8 +255,10 @@ The schema pins these properties (binding — consumers depend on them):
 - **`exit_code`**: `0` (PASS) or `1` (FAIL or Unknown). Pins the gate-blocking contract.
 - **`criteria[]`**: per-criterion entries with `text`, `adversarial_cases`, `observations[]` (each with `type` discriminator: `screenshot` | `a11y_snapshot` | `network` | `console` | `log` | `stdout` | `exit_code` | `narrative`), `verdicts.{correctness,regression,scope-creep}` (each with verdict + exactly-2 evidence quotes + notes), and per-criterion `aggregated_verdict`.
 - **`not_tested[]`**: closed-form per-platform checklist from `lib/not-tested-checklist.md` with `item` text, `tested` boolean, optional `rationale`.
+- **`criteria[].grounding`** *(optional; V2)*: why the surface looks/behaves as it does — `{type: need|design-language|craft-commitment|open-question, statement, citations[], decision_test?}`. Citations resolve from `flow.config.json.{specPath,designLanguagePath}` or the plan's Spec-walk — **never hardcoded doc names**. Captured for criteria with a visual/UX dimension; the renderer (Step 10) shows it as the rationale callout. Operationalizes FB-0040 (rationale carried).
+- **`open_questions[]`** *(optional, top-level; V2)*: subjective human-facing calls — `{question, rationale, recommended_default, user_need_lens, routing: this-iteration|future-planning}`. **DISTINCT from `Unknown`** (epistemic). An `open_questions` entry with `routing: this-iteration` is the mechanical signal that **blocks Step 8 auto-advance** in the loop (mirrors an unresolved MEDIUM assumption — see `docs/workflow.md` Step 8); `future-planning` routes to the roadmap. The renderer surfaces these as the standalone "Open questions for you" block.
 
-**Forward-compat note (HTML case-study report — see `roadmap.md` § Exploration "Verify-build HTML case-study report"):** this shape is a superset of what an eventual HTML renderer needs. Per-criterion text + per-adversarial-case text + per-step observation captures with `type` discriminator + per-dimension verdict with evidence + top-level "not tested" checklist all support downstream rendering without schema migration. The `timestamp_offset_ms` field on observations exists specifically so the renderer can order events along a timeline. PR Q does not render HTML; a future PR will, against this contract.
+**Renderer (V3a):** this buffer is the input to `lib/render-report.py`, which emits the ephemeral HTML walkthrough at `flow.config.json.verifyReportPath` (Step 10). The shape is a superset of what the renderer needs — `timestamp_offset_ms` orders the evidence timeline; the `type` discriminator lets each observation lay out distinctly; `grounding` + `open_questions` (V2) fill the rationale + human-question layers. The durable visual record (`visual-history.html`) is a separate, curated artifact (V3b, a later PR).
 
 ### How `/flow:ship` Step 4a reads this buffer (Phase 7 integration; stub here)
 
@@ -272,6 +293,26 @@ What we did NOT test:
   [✗] >1 locale
 ```
 
+## 10. Render the ephemeral HTML walkthrough (V3a)
+
+After the buffer is written (Step 8), render it to a single self-contained HTML file — the artifact the human opens at the merge gate:
+
+```sh
+REPORT=$(jq -r '.verifyReportPath // "/tmp/flow-verify-report.html"' flow.config.json 2>/dev/null)
+[ -z "$REPORT" ] && REPORT="/tmp/flow-verify-report.html"
+FINDINGS=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null)
+[ -z "$FINDINGS" ] && FINDINGS="/tmp/flow-verify-findings.json"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/render-report.py" "$FINDINGS" --out "$REPORT" --assets-dir "$(dirname "$REPORT")"
+```
+
+The explicit `--assets-dir <report dir>` matches §5a's persist path (`<dirname(verifyReportPath)>/assets/`), so a `screenshot` `content` of `assets/<slug>.<ext>` resolves whether or not the buffer and report share a directory.
+
+`render-report.py` is **stdlib-only** (no new dependency) and reads relative `screenshot` observation paths from the assets dir alongside `verifyReportPath`. It base64-inlines frames (so the HTML is self-contained), surfaces the `grounding` rationale callouts, the per-dimension verdict cards with verbatim two-citation evidence, the standalone **"Open questions for you"** block, and the "what we did NOT test" checklist.
+
+**Coverage is established by capture (§5a), not by the renderer.** The renderer is *honest-by-passthrough* — it renders exactly what the buffer carries (every `observations[]` item + the full `not_tested[]` checklist) and does not itself know the declared `Visual-walk` state set. Exhaustiveness therefore depends on §5a writing a `not_tested[]` line for every state it could not capture: with that, every declared state surfaces in the report as either an evidence item or an explicit "not captured" line. A state that §5a silently dropped (no observation AND no `not_tested[]` line) would simply not appear — so §5a's per-state `not_tested[]` write (step 4 above) is the load-bearing coverage guarantee, and the report makes it *visible*, not *enforced*.
+
+**Ephemeral, not committed.** `verifyReportPath` defaults to a temp path; the report is regenerated every iteration and discarded after merge. The durable, curated visual record (`visual-history.html`) is a separate artifact distilled at `/flow:ship` (V3b — a later PR). Output the report path so the caller (Present step / `/flow:ship`) can open it.
+
 ## Gotchas
 
 - **Bundled `/verify` output is freeform.** No structured PASS/FAIL contract. Flow's judge has to parse Claude's response narratively — calibration matters (FB-0011: ESCALATE on uncertainty).
@@ -287,6 +328,7 @@ What we did NOT test:
 | `flow.config.json.platform` | unset → bundled `/run` autodetect | Step 1.2 (skip-path for library/none) |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 3 (criteria extraction) |
 | `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 8 (buffer write) |
+| `flow.config.json.verifyReportPath` | `/tmp/flow-verify-report.html` | Step 5a (assets dir alongside it), Step 10 (HTML render) |
 | `flow.config.json.verifyBudgetCalls` | `60` | Step 5 (budget cap) |
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Read by `/flow:ship` Step 4a (not by verify-build directly) |
 
