@@ -125,7 +125,9 @@ def load_annotation_layer(warnings):
     try:
         with open(ANNOTATION_LAYER, encoding="utf-8") as f:
             return f.read()
-    except OSError as e:
+    except (OSError, ValueError) as e:
+        # OSError = missing/unreadable; ValueError covers UnicodeDecodeError (a corrupt,
+        # non-UTF-8 layer file) — either way render read-only, never crash the report.
         warnings.append(f"annotation layer not injected (could not read {ANNOTATION_LAYER}: {e}); "
                         "report renders read-only.")
         return ""

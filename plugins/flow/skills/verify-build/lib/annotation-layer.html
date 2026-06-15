@@ -35,9 +35,10 @@
 <div id="annot-bar">
   <strong>Annotate</strong>
   <span id="annot-count" aria-live="polite" role="status">0 notes</span>
+  <span id="annot-flash" aria-live="polite" role="status"></span>
   <button id="annot-copy" type="button">Copy notes</button>
   <button id="annot-clear" type="button">Clear</button>
-  <span class="annot-hint">click any screen to drop a pin · click a pin to edit</span>
+  <span class="annot-hint">click a screenshot to drop a pin · click a pin to edit</span>
 </div>
 
 <div id="annot-editor" hidden>
@@ -62,6 +63,7 @@
     padding:5px 12px; border-radius:7px; cursor:pointer; }
   #annot-bar button:hover { background:var(--annot-bar-btn-bg-hover, #434b54); }
   #annot-count { background:var(--annot-bar-btn-bg, #343a42); padding:3px 9px; border-radius:999px; font-variant-numeric:tabular-nums; }
+  #annot-flash:not(:empty) { background:var(--annot-bar-btn-bg, #343a42); padding:3px 9px; border-radius:999px; }
   .annot-hint { color:var(--annot-bar-fg, #e8e8e8); opacity:.7; margin-left:auto; }
   body { padding-top:46px; }
   /* The host is sized to the image's rendered width in JS (syncHost), so pins
@@ -73,26 +75,26 @@
   .annot-host { position:relative; display:block; line-height:0; }
   .annot-host > img { display:block; }
   .annot-pin { position:absolute; width:24px; height:24px; margin:-12px 0 0 -12px;
-    border-radius:50%; background:var(--annot-accent, #2f6fed); color:#fff; border:2px solid #fff;
+    border-radius:50%; background:var(--annot-accent, #0a5fb0); color:#fff; border:2px solid #fff;
     font:700 12px/20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; text-align:center; cursor:pointer;
     box-shadow:0 1px 4px rgba(0,0,0,.4); z-index:5; }
-  .annot-pin:focus-visible { outline:2px solid var(--annot-accent, #2f6fed); outline-offset:2px; }
+  .annot-pin:focus-visible { outline:2px solid var(--annot-accent, #0a5fb0); outline-offset:2px; }
   @media (prefers-reduced-motion: no-preference) {
     .annot-pin { transition:transform .12s ease; }
     .annot-pin:hover { transform:scale(1.12); }
   }
-  #annot-editor { position:fixed; z-index:10000; width:340px; max-width:90vw;
-    background:var(--annot-editor-bg, #fff); border:1px solid var(--annot-editor-line, #d7dbe0); border-radius:12px; padding:14px;
+  #annot-editor { position:fixed; z-index:10000; width:340px; max-width:90vw; max-height:90vh; overflow:auto;
+    background:var(--annot-editor-bg, #fff); border:1px solid var(--annot-editor-line, #e3e3e6); border-radius:12px; padding:14px;
     box-shadow:0 12px 40px rgba(0,0,0,.3); }
   #annot-editor-meta { font:12px ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--annot-editor-fg, #41464d); opacity:.85; margin-bottom:8px; line-height:1.5; white-space:pre-line; }
   #annot-editor-text { width:100%; height:84px; resize:vertical; font:14px inherit;
-    border:1px solid var(--annot-editor-line, #d7dbe0); border-radius:8px; padding:8px; box-sizing:border-box; }
+    border:1px solid var(--annot-editor-line, #e3e3e6); border-radius:8px; padding:8px; box-sizing:border-box; }
   .annot-editor-row { display:flex; justify-content:space-between; align-items:center; margin-top:10px; }
   #annot-editor button { font:13px inherit; border:0; padding:6px 13px; border-radius:7px; cursor:pointer;
     background:var(--annot-editor-btn-bg, #eceef1); color:var(--annot-editor-fg, #1f2328); }
-  #annot-editor button.primary { background:var(--annot-accent, #2f6fed); color:#fff; }
-  #annot-editor #annot-editor-del { background:none; color:var(--annot-danger, #c0392b); }
-  #annot-editor button:focus-visible, #annot-editor-text:focus-visible { outline:2px solid var(--annot-accent, #2f6fed); outline-offset:2px; }
+  #annot-editor button.primary { background:var(--annot-accent, #0a5fb0); color:#fff; }
+  #annot-editor #annot-editor-del { background:none; color:var(--annot-danger, #b3261e); }
+  #annot-editor button:focus-visible, #annot-editor-text:focus-visible { outline:2px solid var(--annot-accent, #0a5fb0); outline-offset:2px; }
   /* Dark mode — harmonize the editor with render-report.py's dark palette
      (the bar is already dark and reads in both schemes). Overridable via the vars above. */
   @media (prefers-color-scheme: dark) {
@@ -358,9 +360,12 @@
     catch (e) { prompt("Copy these notes:", text); }
     ta.remove();
   }
+  // Transient toast in its own aria-live region — never overwrite #annot-count
+  // (which must always show the true count, and re-announce only when it changes).
   function flash(msg) {
-    document.getElementById("annot-count").textContent = msg;
-    setTimeout(function () { render(); }, 1800);
+    var f = document.getElementById("annot-flash");
+    f.textContent = msg;
+    setTimeout(function () { f.textContent = ""; }, 1800);
   }
 
   // Re-render on load + resize: pins are percent-positioned, but the host width is
