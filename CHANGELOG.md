@@ -10,6 +10,16 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.7.0 — 2026-06-15
+
+**The `/flow:verify-build` ephemeral HTML report is now a TWO-WAY review surface — the human leaves *located* feedback at the merge gate instead of prose the agent must guess at. Completes V3a (the renderer shipped read-only in v1.6.0). SAFETY (changes the rendered report's output + injection behavior).**
+
+- **Click-to-pin annotation overlay (`verify-build/lib/annotation-layer.html`):** a self-contained, dependency-free vanilla-JS layer that `render-report.py` injects before `</body>` **when the buffer carries at least one captured frame**. The reviewer clicks a screenshot to drop a numbered pin, types a note, and clicks **Copy notes** to get a structured, per-screen, reading-order block (`#3 · <criterion> at x=46% y=31%: …`) to paste back — so a `[this iteration]`-class visual flag re-enters Execute with exact coordinates, mirroring an `open_questions[this-iteration]`.
+- **Graceful + scoped:** a frameless (text-only / pre-capture) report stays read-only — no toolbar when there's nothing to annotate; an unreadable layer file renders read-only with a warning, never a crash. Pins persist in `localStorage` (keyed per branch via the report title), harmonize with the report's light/dark palette, and are keyboard-operable.
+- **No new slot, no new skill, no new dependency:** the layer rides on the existing `verifyReportPath` report and `render-report.py` (stdlib-only). Captured frames gain a `class="annot-shot"` hook; #45's raster-data-URI allowlist + path-traversal guards are untouched (security-reviewed clean).
+- **Honest limitation:** pins bind to the screenshot region in the report's DOM, not the live app's view tree — no CSS-selector / component resolution in the running product.
+- Breaking changes: none.
+
 ## v1.6.1 — 2026-06-11
 
 **Rendered visual capture + an ephemeral HTML walkthrough for `/flow:verify-build` — visual claims become real PASS/FAIL the autonomy loop can trust, and the human opens a real report at the merge gate (Deliverable-quality track V2/V3a). SAFETY (verify-build gate + findings schema + frame persistence).**
