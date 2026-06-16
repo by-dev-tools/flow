@@ -35,6 +35,16 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0051: When the stale-base gate reveals a parallel branch shipped most of the feature you're building, re-scope to the genuinely-additive delta — never ship a duplicate/competing renderer, skill, or slot
+**Date:** 2026-06-15
+**Source:** user direction + review feedback (the `/flow:ship` stale-base gate)
+
+**What was said:** A full PR built this session (a standalone `/flow:walkthrough` skill + its own annotation layer + a new `verifyReportPath` slot + slot/skill-count fan-out + ship Step-6b wiring) was ~70% pre-empted by **PR #45** ("V2/V3a") merging to main mid-session — #45 independently shipped the V2/V3a rendered-capture renderer (`render-report.py`, read-only), the `verifyReportPath` slot (same name), the `grounding`/`open_questions` buffer fields, and the Step-8 gate. The `/flow:ship` stale-base gate surfaced the collision; the user directed re-scoping to **only the genuinely-additive delta** (the two-way click-to-pin annotation layer, layered onto #45's renderer) rather than shipping the duplicate. This is the 6th+ parallel-work collision the reserved-feedback-numbers log records — recurrence-backed, not a one-off.
+
+**Synthesized rule:** When the stale-base gate (or a rebase) reveals a parallel branch has shipped most of a roadmapped feature you are building, **STOP and re-scope to the genuinely-additive delta** — reset to main, discard what already shipped (even if it was built + staff-reviewed this session), and contribute only the net-new part layered onto the merged work. Do **NOT** ship a duplicate / competing renderer, skill, or slot: it conflicts at merge, duplicates capability, and violates the anti-duplication bar (FB-0010 fan-out / FB-0015 "check what exists first"). The cheapest insurance against wasted parallel work is to check the roadmap item's status + open branches **before** building; the stale-base gate is the backstop that catches it at ship — treat its signal as a re-scope trigger, not an obstacle to route around.
+
+**Applies to:** `/flow:ship` stale-base gate, roadmap-driven feature work, the reserved-feedback-numbers collision protocol, FB-0010 (fan-out / duplication class), FB-0015 (check existing surfaces before drafting).
+
 ### FB-0050: Visual capture for verification must be a11y-state-GATED — snapshot the a11y tree and assert the intended state BEFORE the screenshot, never screenshot-then-assume; and a "drive to each state" step must name a drive ladder, never assume drivability the MCP may not expose
 **Date:** 2026-06-11
 **Source:** review feedback (a cold `/flow:verify-build` behavioral-gate run that tripped the defect)

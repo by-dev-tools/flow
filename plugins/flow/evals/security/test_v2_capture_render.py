@@ -141,9 +141,55 @@ def test_data_uri_allowlist() -> None:
         r = subprocess.run([sys.executable, str(RENDERER), str(bp), "--out", str(out)], capture_output=True, text=True)
         assert r.returncode == 0, f"renderer exited {r.returncode}: {r.stderr}"
         html = out.read_text()
-    assert '<img src="data:image/svg' not in html, "svg+xml data URI reached an <img src> (the leak)"
+    assert "data:image/svg" not in html, "svg+xml data URI reached the output (the leak)"
     assert "not in the raster-image allowlist" in html, "svg data URI was not rejected by the allowlist"
-    assert '<img src="data:image/png;base64,iVBORw0KGgo=' in html, "legit raster data URI should still inline as an img"
+    assert '<img class="annot-shot" src="data:image/png;base64,iVBORw0KGgo=' in html, (
+        "legit raster data URI should still inline as an annotatable img"
+    )
+
+
+def test_annotation_layer_injection() -> None:
+    """The captured-frame report is TWO-WAY: render-report.py injects the self-contained
+    click-to-pin annotation layer when (and only when) an annotatable frame rendered, so the
+    human leaves located feedback. A frameless report stays read-only (no toolbar noise)."""
+    def render_buffer(buf):
+        with tempfile.TemporaryDirectory() as td:
+            bp = Path(td) / "b.json"
+            bp.write_text(json.dumps(buf))
+            out = Path(td) / "r.html"
+            r = subprocess.run([sys.executable, str(RENDERER), str(bp), "--out", str(out)],
+                               capture_output=True, text=True)
+            assert r.returncode == 0, f"renderer exited {r.returncode}: {r.stderr}"
+            return out.read_text()
+
+    base = {
+        "schema_version": "1.0",
+        "metadata": {"branch": "b", "head_sha_short": "s", "plugin_version": "1.6.0", "platform_hint": "ios"},
+        "overall_verdict": "Unknown", "exit_code": 1,
+        "criteria": [{
+            "text": "c", "adversarial_cases": [], "observations": [],
+            "verdicts": {d: {"verdict": "Unknown", "evidence": ["a", "b"], "notes": "x"}
+                         for d in ("correctness", "regression", "scope-creep")},
+            "aggregated_verdict": "Unknown",
+        }],
+        "not_tested": [],
+    }
+
+    # (a) WITH a raster frame → layer injected, frame is annotatable.
+    with_frame = json.loads(json.dumps(base))
+    with_frame["criteria"][0]["observations"] = [
+        {"type": "screenshot", "content": "data:image/png;base64,iVBORw0KGgo="}
+    ]
+    html = render_buffer(with_frame)
+    assert 'class="annot-shot"' in html, "captured frame should carry the annot-shot class"
+    assert 'id="annot-bar"' in html, "annotation layer (toolbar) not injected into a report with a frame"
+    assert "flow-annot:" in html, "annotation layer script not injected"
+    assert "Copy notes" in html, "annotation layer copy-notes control missing"
+
+    # (b) NO frame (a text-only / pre-capture report) → NO layer (no toolbar to annotate nothing).
+    html2 = render_buffer(base)
+    assert 'class="annot-shot"' not in html2, "no frame should mean no annotatable image"
+    assert 'id="annot-bar"' not in html2, "annotation layer must NOT inject when there is no frame"
 
 
 def test_skill_and_rubric_and_workflow_contract() -> None:
@@ -185,6 +231,7 @@ def main() -> int:
         test_config_declares_report_slot,
         test_renderer_emits_full_report,
         test_data_uri_allowlist,
+        test_annotation_layer_injection,
         test_skill_and_rubric_and_workflow_contract,
     ):
         try:

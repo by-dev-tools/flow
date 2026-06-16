@@ -115,6 +115,24 @@ footer { margin-top: 40px; font-size: 12.5px; color: #6b6b70; border-top: 1px so
 """
 
 
+ANNOTATION_LAYER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "annotation-layer.html")
+
+
+def load_annotation_layer(warnings):
+    """The self-contained click-to-pin overlay (annotation-layer.html) that turns the
+    read-only report into a two-way review surface. Returns the markup to inject before
+    </body>, or "" (graceful — the report stays read-only) if the file can't be read."""
+    try:
+        with open(ANNOTATION_LAYER, encoding="utf-8") as f:
+            return f.read()
+    except (OSError, ValueError) as e:
+        # OSError = missing/unreadable; ValueError covers UnicodeDecodeError (a corrupt,
+        # non-UTF-8 layer file) — either way render read-only, never crash the report.
+        warnings.append(f"annotation layer not injected (could not read {ANNOTATION_LAYER}: {e}); "
+                        "report renders read-only.")
+        return ""
+
+
 def esc(s):
     return html.escape("" if s is None else str(s))
 
@@ -210,7 +228,7 @@ def render_screenshot(content, assets_dir, warnings, label):
         if mediatype not in ("image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"):
             return (f'<p class="missing">Screenshot not inlined — data URI media type '
                     f'{esc(mediatype) or "(none)"} is not in the raster-image allowlist.</p>')
-        return f'<img src="{esc(content)}" alt="{alt}" />'
+        return f'<img class="annot-shot" src="{esc(content)}" alt="{alt}" />'
     # Resolve relative to assets_dir and reject absolute paths or any path that escapes it
     # (the buffer is self-authored, but the renderer should not read arbitrary files).
     if not isinstance(content, str) or os.path.isabs(content):
@@ -229,7 +247,7 @@ def render_screenshot(content, assets_dir, warnings, label):
         warnings.append(f"{content} is {len(raw)//1024}KB — capture should resize frames (~460-620px) before persisting.")
     mime = mimetypes.guess_type(path)[0] or "image/png"
     b64 = base64.b64encode(raw).decode("ascii")
-    return f'<img src="data:{mime};base64,{b64}" alt="{alt}" />'
+    return f'<img class="annot-shot" src="data:{mime};base64,{b64}" alt="{alt}" />'
 
 
 def render_observations(obs_list, assets_dir, warnings, label):
@@ -336,10 +354,15 @@ def render(buffer, assets_dir):
           f'@ {esc(meta.get("head_sha_short", "?"))}. Not committed — regenerated every iteration. '
           f'The durable record lives in the project history.</footer>'
     )
+    # Inject the click-to-pin annotation layer only when the report actually rendered
+    # a captured frame — a text-only report (pre-capture / Unknown) has nothing to
+    # annotate, so the toolbar would be noise. The layer makes the report two-way:
+    # the human pins a screenshot, and "Copy notes" returns located feedback.
+    layer = load_annotation_layer(warnings) if 'class="annot-shot"' in body else ""
     doc = (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
            f'<title>Verify-build walkthrough · {esc(meta.get("branch", ""))}</title>'
-           f'<style>{CSS}</style></head><body><main>{body}</main></body></html>')
+           f'<style>{CSS}</style></head><body><main>{body}</main>{layer}</body></html>')
     return doc, warnings
 
 
