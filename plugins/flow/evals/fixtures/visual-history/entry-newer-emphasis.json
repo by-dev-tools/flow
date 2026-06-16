@@ -1,0 +1,9 @@
+{
+  "title": "Tightened *the* card spacing",
+  "date": "2026-06-16",
+  "pr": "#51",
+  "grounding": {
+    "type": "craft-commitment",
+    "statement": "Cards felt cramped at the 12px gutter once a third metric row landed."
+  }
+}

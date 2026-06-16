@@ -114,6 +114,12 @@
       "default": "/tmp/flow-verify-report.html",
       "examples": ["/tmp/flow-verify-report.html", ".flow/last-verify-report.html"]
     },
+    "visualHistoryPath": {
+      "type": "string",
+      "description": "Path (relative to repo root) to the project's DURABLE visual record — the committed `visual-history.html` that is the picture companion to `historyPath`. Distinct from `verifyReportPath` (the ephemeral per-run report): this file is curated, decision-centric, reverse-chronological, and grows over the project's life. Written by /flow:ship's distill step (§ 5c): when `uiSurface` is true AND that run's verify-build buffer carried a load-bearing visual decision (a `grounding` entry that changed the user's read, or a resolved this-iteration `open_question`), the step authors ONE curated entry, copies the cited frames into a sibling `visual-history-assets/` dir, and inserts it via lib/insert-visual-history.py. CREATED ON FIRST WRITE from the bundled skeleton (skills/ship/lib/visual-history-skeleton.html) — NOT scaffolded by bootstrap.sh, so non-UI projects (`uiSurface:false`) never get an empty doc. The distill step self-skips (with an explicit reason) when `uiSurface` is false, verify-build was skipped, or no visual decision was load-bearing this run. Default: core-docs/visual-history.html (the consumer-side convention; flow's own repo is uiSurface:false and never writes it).",
+      "default": "core-docs/visual-history.html",
+      "examples": ["core-docs/visual-history.html", "docs/visual-history.html"]
+    },
     "rustWorkspaceDir": {
       "type": "string",
       "description": "(Tauri / Rust stacks only.) Directory containing the project's Rust workspace (Cargo.toml). Used by the tauri-rust-ts stack overlay's preflight runner to know where to run `cargo fmt`, `cargo clippy`, `cargo test`. Default: 'src-tauri' (the Tauri convention). Non-Tauri Rust projects typically set this to '.' (workspace at repo root) or to the workspace subdirectory.",

@@ -10,6 +10,18 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.8.0 — 2026-06-16
+
+**The durable visual record (`visual-history.html`) + the distill bridge — Deliverable-quality track V3b. The ephemeral per-run verify-build report now *feeds* a committed, curated record of the visual decisions that changed how the product looks; nothing is read back from `/tmp` and lost. SAFETY (new committed-asset persistence path + create-on-first-write fallback).**
+
+- **New `visualHistoryPath` slot (23 slots total)** — the path to a single, curated, reverse-chronological `visual-history.html`, the *picture* companion to the history doc. Default `core-docs/visual-history.html`; `uiSurface`-gated.
+- **`/flow:ship` Step 5c — the distill bridge.** On UI projects, after a verify-build run, the load-bearing visual decisions in that run's findings buffer (the `grounding` entries that changed the user's read + any resolved this-iteration `open_questions`) are distilled into **one** curated entry; the ephemeral report stays ephemeral (distill-then-discard). Heavily gated — self-skips with an explicit reason on `uiSurface:false`, a skipped verify-build, or a run with no load-bearing visual decision (the record is curated, **not** a per-PR dump).
+- **`lib/insert-visual-history.py` (stdlib) + `lib/visual-history-skeleton.html`.** The agent curates *which* decision is load-bearing and authors its content; the helper enforces *structure* — seeds the file from the bundled skeleton on first write (no `bootstrap.sh` scaffold, so non-UI projects never get an empty doc), prepends the entry (reverse-chronological), regenerates the anchor-link TOC, and strips heading emphasis (no italic headings). Lean committed asset refs in `visual-history-assets/`; an inline CSS/SVG reconstruction is the honest, labelled fallback when capture isn't available. Malformed target / invalid entry → loud fail, no partial write.
+- **`/flow:ship` Step 4a** now also derives a candidate `FB-XXXX` from a this-iteration `open_question` the human answered with a correction (the canonical user-correction FB source).
+- **Mechanism note (FB-0053, reverses FB-0042(e)):** created-on-first-write, not a bootstrap scaffold — `bootstrap.sh` runs before `flow.config.json` exists, so it can't gate on `uiSurface`; create-on-first-write keeps the doc out of non-UI repos. Pinned by `evals/run_visual_history_evals.py`.
+- **Validation:** the entry shape is **provisional** pending a UI-surface cold-run (flow's own repo is `uiSurface:false`, so its ship always self-skips this step). The first real curated entry comes from the tracked health-tracker (iOS) follow-up.
+- Breaking changes: none.
+
 ## v1.7.1 — 2026-06-15
 
 **Plain-language copy pass on the `/flow:verify-build` HTML report so a human reading it to make the merge decision understands it at a glance (from FB-0052). Copy-only — no behavior, schema, or logic change.**
