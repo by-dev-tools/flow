@@ -10,6 +10,16 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.7.1 — 2026-06-15
+
+**Plain-language copy pass on the `/flow:verify-build` HTML report so a human reading it to make the merge decision understands it at a glance (from FB-0052). Copy-only — no behavior, schema, or logic change.**
+
+- Plainer lede; the legend header `How a verdict / a choice earns its place` → **"Legend"** + a one-line gloss explaining the grounding tags.
+- Dropped the redundant jargon `verify exit code: N` pill (the `Overall` pill already encodes pass/fail); `N verify calls` → `N verification steps`.
+- Observation labels humanized: `a11y_snapshot` → "Accessibility tree"; `timestamp_offset_ms` shown as **"1.2s in"** instead of `+1200ms`.
+- Did **not** rename the grounding vocabulary (need / design-language / craft-commitment / open-question — the established FB-0040 tags); glossed it. Renderer's graceful-degradation + security guards untouched.
+- Breaking changes: none.
+
 ## v1.7.0 — 2026-06-15
 
 **The `/flow:verify-build` ephemeral HTML report is now a TWO-WAY review surface — the human leaves *located* feedback at the merge gate instead of prose the agent must guess at. Completes V3a (the renderer shipped read-only in v1.6.0). SAFETY (changes the rendered report's output + injection behavior).**
