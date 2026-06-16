@@ -50,6 +50,11 @@ GROUNDING_COLOR = {
     "open-question": "#9a6700",
 }
 ROUTING_LABEL = {"this-iteration": "this iteration", "future-planning": "future planning"}
+# Plain-language labels for the evidence types (the raw buffer values read as jargon).
+OBS_LABEL = {
+    "screenshot": "Screenshot", "a11y_snapshot": "Accessibility tree", "network": "Network",
+    "console": "Console", "log": "Log", "stdout": "Output", "exit_code": "Exit code", "narrative": "Note",
+}
 LARGE_IMAGE_WARN_BYTES = 500_000
 
 CSS = """
@@ -141,23 +146,24 @@ def verdict_dot(v):
     return f'<span class="dot" style="background:{VERDICT_COLOR.get(v, "#888")}"></span>'
 
 
-def render_hero(meta, overall, exit_code, baseline_seeding=False):
+def render_hero(meta, overall, baseline_seeding=False):
     eyebrow = " · ".join(
         x for x in [meta.get("branch"), meta.get("head_sha_short"),
                     meta.get("platform_hint"), f'flow {meta.get("plugin_version", "?")}'] if x
     )
     budget = meta.get("verify_budget_calls_used")
+    # The Overall pill already encodes pass/fail (it's the gate signal) — no separate
+    # "exit code" pill, which read as jargon with no extra information for a human.
     pills = [
         f'<span class="pill">{verdict_dot(overall)}Overall: {esc(overall)}</span>',
-        f'<span class="pill">verify exit code: {esc(exit_code)}</span>',
     ]
     if budget is not None:
-        over = " (overrun)" if meta.get("verify_budget_overrun") else ""
-        pills.append(f'<span class="pill">{esc(budget)} verify calls{over}</span>')
+        over = " (budget exceeded)" if meta.get("verify_budget_overrun") else ""
+        pills.append(f'<span class="pill">{esc(budget)} verification steps{over}</span>')
     if meta.get("spike_mode"):
         pills.append('<span class="pill">spike mode</span>')
-    lede = ("What the running app actually did, judged against the plan's acceptance criteria — "
-            "and the decisions that still need your call.")
+    lede = ("This is what the app actually did when we ran it — checked against what the plan "
+            "asked for — plus the decisions that still need your call.")
     if baseline_seeding:
         lede += (" This is a baseline-seeding run — visual-layout verdicts are Unknown by design until "
                  "the next run compares against the frames captured here; that is expected, not a failure.")
@@ -175,7 +181,9 @@ def render_legend():
         f'<span class="item"><span class="chip" style="background:{GROUNDING_COLOR[k]}">{esc(GROUNDING_LABEL[k])}</span></span>'
         for k in GROUNDING_LABEL
     )
-    return (f'<div class="card legend"><strong style="width:100%">How a verdict / a choice earns its place</strong>'
+    return (f'<div class="card legend"><strong style="width:100%">Legend</strong>'
+            f'<div style="width:100%;color:#6b6b70;margin:-2px 0 2px">Each criterion below gets a '
+            f'verdict, and each screen a tag for <em>why</em> it looks the way it does:</div>'
             f'{verdict_items}{grounding_items}</div>')
 
 
@@ -209,7 +217,10 @@ def render_observation(obs, assets_dir, warnings, label):
     otype = obs.get("type", "narrative")
     content = obs.get("content", "")
     off = obs.get("timestamp_offset_ms")
-    meta = otype + (f" · +{off}ms" if off is not None else "")
+    when = ""
+    if off is not None:
+        when = f" · {off / 1000:.1f}s in" if off >= 1000 else f" · {off}ms in"
+    meta = OBS_LABEL.get(otype, otype) + when
     if otype == "screenshot":
         body = render_screenshot(content, assets_dir, warnings, label)
     else:
@@ -344,7 +355,7 @@ def render(buffer, assets_dir):
         "baseline" in it.get("item", "").lower() and not it.get("tested") for it in not_tested
     )
     body = (
-        render_hero(meta, overall, buffer.get("exit_code", 1), baseline_seeding)
+        render_hero(meta, overall, baseline_seeding)
         + render_legend()
         + render_toc(criteria)
         + "".join(render_criterion(i, c, assets_dir, warnings) for i, c in enumerate(criteria))

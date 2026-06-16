@@ -35,6 +35,14 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0052: A human-facing artifact must be understandable on its own — plain-language copy, and a *realistic* demo (never synthetic placeholders, and never force a domain-specific demo onto a repo that has no instances of that domain)
+
+- **Date:** 2026-06-15
+- **Source type:** user correction
+- **What was said:** To let the user exercise the new two-way verify-build report, the agent generated a demo on a non-visual repo (flow itself, `platform:library`) using synthetic colored-rectangle "screenshots." The user: *"this isn't really a visual PR, the html file is incredibly vague and I have no idea what I'm looking at … even still, the copy isn't clear or really understandable."* Two distinct misses: (a) demoing a screenshot-annotation feature on a repo with no real screenshots — fake frames obscure the mechanism instead of showing it; (b) the report's own chrome copy was jargon (`verify exit code: 0`, `18 verify calls`, `+1200ms`, `a11y_snapshot`, "How a verdict / a choice earns its place") — a reviewer shouldn't have to decode it.
+- **Synthesized rule:** (1) When showing a feature to the user, use a *realistic* example, not synthetic placeholder content; and do **not** force a demo of a domain-specific feature (a visual-review tool) onto a project that has no instances of that domain (a non-visual library) — it confuses more than it demonstrates. If there's nothing real to point at, say so instead of fabricating one. (2) Human-facing output copy (the report a person reads to make the merge decision) must be plain-language and self-explanatory at a glance (the FB-0040 thesis) — keep internal jargon (exit codes, tool-call counts, raw ms offsets, enum-y type names, cryptic section headers) out of the chrome; gloss any tag/label the reader can't infer.
+- **Applies to:** `/flow:verify-build` report (`render-report.py`) + any human-facing rendered artifact; agent ↔ user demos/walkthroughs; the FB-0040 "thinking, not approving" review thesis.
+
 ### FB-0051: When the stale-base gate reveals a parallel branch shipped most of the feature you're building, re-scope to the genuinely-additive delta — never ship a duplicate/competing renderer, skill, or slot
 **Date:** 2026-06-15
 **Source:** user direction + review feedback (the `/flow:ship` stale-base gate)

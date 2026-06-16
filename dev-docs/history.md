@@ -68,6 +68,17 @@ This work began as a *standalone* feature: a new `/flow:walkthrough` skill, its 
 
 **Lessons learned:** FB-0051 — when the stale-base gate (or a rebase) reveals a parallel branch shipped most of a roadmapped feature you're building, STOP and re-scope to the genuinely-additive delta; do not ship a duplicate renderer/skill/slot. CSS sizing for an injected overlay must be validated in a real browser (the 320px→2px collapse was invisible to static review and to the prose contract); pin-alignment is a measured-width JS problem, not a CSS shrink-wrap problem.
 
+### Verify-build report copy-clarity pass (render-report.py) — plain language for the human reader
+**Date:** 2026-06-15
+**Branch / SHA:** `claude/verify-report-copy-clarity` / c0252a4, rebased onto `main` after #49 merged (v1.7.0); shipped as **v1.7.1**
+
+**What:** A small, copy-only pass on the verify-build HTML report (`render-report.py`) so a human reading it to make the merge decision understands it at a glance. Lede plainer ("This is what the app actually did when we ran it — checked against what the plan asked for — plus the decisions that still need your call."); legend header "How a verdict / a choice earns its place" → "**Legend**" + a one-line gloss explaining the grounding tags; dropped the redundant jargon `verify exit code: N` pill (the Overall pill already encodes pass/fail) and its now-unused `exit_code` param; "N verify calls" → "N verification steps"; observation labels humanized via an `OBS_LABEL` map (`a11y_snapshot` → "Accessibility tree") and `timestamp_offset_ms` rendered as "1.2s in" instead of "+1200ms".
+
+**Why:** User feedback (FB-0052) on the v1.7.0 two-way report demo — *"the copy isn't clear or really understandable."* Most of the unclear copy is the report *shell* (#45's renderer), not the annotation layer; this is the separate, focused follow-up the user chose over bundling it into the annotation PR (#49).
+
+**Design/technical decisions:** (1) **Copy-only, no behavior change** — no buffer-shape, no schema, no logic touched; the renderer's graceful-degradation + security guards are untouched. (2) **Shipped as v1.7.1** — a patch on top of #49's merged v1.7.0; the PR was authored version-neutral *while #49 was still open* (two open PRs both bumping is the exact fan-out collision FB-0051 is about), then bumped at rebase once #49 merged. (3) Did **not** rename the grounding vocabulary (need / design-language / craft-commitment / open-question) — those are the established FB-0040 conceptual tags; glossed them instead of renaming. (4) Updated the one eval assertion (`test_v2_capture_render.py`) that pinned the old legend string.
+
+**Tradeoffs:** Editing another author's just-merged renderer (#45) risks churn, so the pass is deliberately minimal — the genuinely-cryptic chrome only, not a redesign. Left `## Test plan`-style metrics (budget) in but de-jargoned rather than removing, to preserve the evidence trail.
 
 ### PR V2 + V3a — Rendered visual capture + ephemeral HTML walkthrough (v1.6.1) — SAFETY
 **Date:** 2026-06-11

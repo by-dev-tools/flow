@@ -100,7 +100,8 @@ def test_renderer_emits_full_report() -> None:
     required = [
         "<!doctype html>",
         "Verify-build walkthrough",          # hero
-        "How a verdict / a choice earns its place",  # legend
+        "Legend",                            # legend header (plain-language)
+        "why</em> it looks the way it does",  # legend gloss explaining the grounding tags
         'id="criterion-0"',                  # per-criterion anchor
         "Relates to a need",                 # grounding callout
         "Open questions for you",            # standalone question block
