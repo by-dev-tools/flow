@@ -1,0 +1,17 @@
+{
+  "title": "Empty-state for the activity feed",
+  "date": "2026-06-14",
+  "pr": "#48",
+  "branch": "claude/feed-empty-state",
+  "grounding": {
+    "type": "need",
+    "statement": "A first-run user with no logged activity saw a blank panel and assumed the app had failed to load.",
+    "decision_test": "A brand-new user reads the screen as 'nothing here yet', not 'something broke'.",
+    "citations": ["spec §3.1 first-run", "design-language: empty states"]
+  },
+  "before_after": [
+    {"label": "Before", "src": "visual-history-assets/feed-empty-before.png", "alt": "blank gray panel"},
+    {"label": "After", "html": "<svg width=\"100%\" height=\"60\" role=\"img\" aria-label=\"illustrated empty state\"><rect width=\"100%\" height=\"60\" rx=\"8\" fill=\"#eef\"/></svg>", "recon": true}
+  ],
+  "questions_carried": ["Should the empty state offer a sample-data CTA, or stay purely informational?"]
+}

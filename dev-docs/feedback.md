@@ -35,6 +35,14 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0053: The durable visual record is CREATED ON FIRST WRITE by the ship distill step, not bootstrap-scaffolded — reverses FB-0042(e)'s scaffold *mechanism* while preserving its intent
+
+- **Date:** 2026-06-16
+- **Source type:** user direction (approved fork at the V3b plan gate)
+- **What was said:** FB-0042(e) and the roadmap acceptance (line 165) literally said "scaffold `visual-history.html` into `template/base/core-docs/` (uiSurface-gated)." Building V3b surfaced that the mechanism can't work as written: `bootstrap.sh` *creates* `flow.config.json` and copies `template/base/core-docs/*.md` — it runs *before* config is meaningful and globs only `.md`, so it can neither read `uiSurface` to gate nor pick up an `.html`. An unconditional copy would seed an **empty** `visual-history.html` into every consumer, including non-UI ones (violating FB-0007 "non-UI consumers don't get an empty doc"). Asked at the plan gate, the user approved reversing the mechanism to create-on-first-write, with the spec sources updated same-PR.
+- **Synthesized rule:** The durable visual record is **created on first write** by `/flow:ship`'s Step 5c distill step — it seeds from a bundled lib skeleton (`skills/ship/lib/visual-history-skeleton.html`) into `visualHistoryPath` the first time a UI project ships a load-bearing visual decision — **not** scaffolded by `bootstrap.sh`. This preserves FB-0042(e)'s *intent* (uiSurface-gated, opt-in, no empty doc for non-UI consumers) by moving the gate to where `uiSurface` is actually known (ship time), instead of the one place it can't be (bootstrap, pre-config). General lesson: when a spec mandates scaffolding at install/bootstrap time but the gate depends on config that doesn't exist yet, prefer create-on-first-write at the first qualifying pipeline step — and when you reverse a governing FB's *mechanism*, update that FB + every cross-reference in the SAME PR (FB-0010 fan-out), recording the reversal as a new FB rather than silently editing the old one.
+- **Applies to:** `flow.config.json` `visualHistoryPath` slot, `/flow:ship` Step 5c, `skills/ship/lib/insert-visual-history.py` + `visual-history-skeleton.html`, `bootstrap.sh` (what it must NOT do), FB-0042(e), the roadmap V3b acceptance.
+
 ### FB-0052: A human-facing artifact must be understandable on its own — plain-language copy, and a *realistic* demo (never synthetic placeholders, and never force a domain-specific demo onto a repo that has no instances of that domain)
 
 - **Date:** 2026-06-15
@@ -209,9 +217,16 @@ Reserve **stop-before-PR** for genuine one-way-door decisions where even a draft
     before/after, and questions carried forward. NO italics in headings
     (health-tracker FB-0006 — applies to authored artifacts, not just app UI).
 
-(e) uiSurface-gated, opt-in. Scaffolds only when flow.config.json
-    uiSurface=true — non-UI consumers (FB-0007) don't get an empty doc.
-    Visual-scoped, not generalized to ADR-style decision-history.
+(e) uiSurface-gated, opt-in. Created only for uiSurface=true projects —
+    non-UI consumers (FB-0007) don't get an empty doc. Visual-scoped, not
+    generalized to ADR-style decision-history.
+    [MECHANISM UPDATED by FB-0053, v1.8.0]: the original "scaffold into
+    template/base/core-docs via bootstrap" wording was reversed to
+    CREATED-ON-FIRST-WRITE by the /flow:ship Step 5c distill step (seeded
+    from a lib skeleton). bootstrap.sh runs before flow.config.json exists,
+    so it can't gate on uiSurface; create-on-first-write moves the gate to
+    where uiSurface is known. Intent (uiSurface-gated, no empty doc)
+    unchanged.
 ```
 
 Citations resolve from `specPath` / `designLanguagePath` slots — never hardcoded project doc names (project-agnostic quality bar). New slot: `visualHistoryPath` (the `.html` companion to `historyPath`). The grounding + "open questions" disciplines this record distills are the same ones #10 keeps as prose in its `visual-walkthroughs.md` and that #36's blueprint encodes as the verify-build buffer's `grounding` + `open_questions` fields.

@@ -299,6 +299,8 @@ For each criterion in `findings.criteria[]` with `aggregated_verdict ∈ {FAIL, 
 
 Single-source verify-build findings without pairing source do NOT earn an FB entry — that's the bar protecting against memory-amplification slop (FB-0010 sub-class).
 
+**Also derive candidates from resolved open questions.** For each `open_questions[]` entry with `routing = this-iteration` that the human **answered with a correction** during Present (Step 8/9) — i.e. they overruled the `recommended_default` — treat it as a candidate FB: that *is* a user correction, the canonical FB source (blueprint § 4). The question + the human's answer form the candidate's "What was said"; the synthesized rule is the corrected direction. This pairs the visual-decision loop with the feedback pipeline (the same answered questions feed the durable record's "questions carried forward" at Step 5c). The source-diversity bar still applies — a human correction is itself one strong source; pair it as usual before writing.
+
 If verify-build was skipped at Step 2 (`verifyEnabled=false`, `platform=library|none`, or doc-only diff per the skill's self-detection), no buffer read; skip this paragraph. If verify-build ran but the buffer is absent or unreadable, emit a `⚠️ verify-build ran but findings buffer at <path> is missing/unreadable; skipping FB-XXXX synthesis from verify-build` warning and continue — don't block ship on a missing diagnostic artifact (verify-build's verdict was already resolved at Step 2 — a non-converging regression would already be in the draft manifest).
 
 ### 4b. Agent self-feedback → failure-pattern memory
@@ -407,6 +409,60 @@ fi
 
 On BLOCKER, fix the docs (5a) — never route around the gate. A stale-docs ship is the exact failure this prevents (it shipped real drift: `roadmap.md` once read "v1.2.6" while the plugin was v1.5.1). Per the autonomy bar, this gate loops only on its own mechanical signal (version-string presence), never on judgment.
 
+### 5c. Distill the durable visual record (`visual-history.html`) — the picture companion to the history doc
+
+The history entry (Step 5) is the *written* timeline. **`visual-history.html`** is its **picture companion** (`flow.config.json.visualHistoryPath`): a single, curated, reverse-chronological record of the visual/UX decisions that changed how the product looks or feels (FB-0042). The per-run verify-build report (`verifyReportPath`) is **ephemeral** — regenerated each iteration, discarded after merge; without this durable target, the *decision-making* in each report dies. This step is the **distill bridge**: it converts the load-bearing visual decisions from this run's verify-build buffer into **one** curated entry.
+
+**It is heavily gated — most ships skip it.** Run the mechanical gate first; emit an explicit one-line reason on every skip (never a silent no-op):
+
+```sh
+UIS=$(jq -r '.uiSurface // true' flow.config.json 2>/dev/null)
+VHPATH=$(jq -r '.visualHistoryPath // "core-docs/visual-history.html"' flow.config.json 2>/dev/null); [ -z "$VHPATH" ] && VHPATH="core-docs/visual-history.html"
+FINDINGS=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS="/tmp/flow-verify-findings.json"
+REPORT=$(jq -r '.verifyReportPath // "/tmp/flow-verify-report.html"' flow.config.json 2>/dev/null); [ -z "$REPORT" ] && REPORT="/tmp/flow-verify-report.html"
+ASSETS_SRC="$(dirname "$REPORT")/assets"
+
+if [ "$UIS" != "true" ]; then
+  echo "[visual-history] skipped (uiSurface:false) — non-UI project, no visual record."
+elif [ ! -f "$FINDINGS" ]; then
+  echo "[visual-history] skipped (no verify-build buffer at $FINDINGS) — verify-build skipped or didn't run this loop."
+else
+  echo "[visual-history] gate open — inspect the buffer for a load-bearing visual decision (next paragraph)."
+fi
+```
+
+If the gate printed a `skipped` line, **stop here — do not author an entry.** Otherwise proceed:
+
+1. **Read the buffer** at `$FINDINGS` (the same structured findings buffer Step 4a reads — shape at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-schema.json`). The distill source is the buffer's structured fields, **not** the rendered HTML.
+2. **Decide whether a visual decision is load-bearing this run.** A decision earns a durable entry only when it **changed the user's read of a surface** — judge against:
+   - a `criteria[].grounding` entry whose rationale explains a visible/experiential choice this PR made or changed. The grounding `type` enum is the full schema set — `need | design-language | craft-commitment | open-question` — but the **load-bearing trigger is a *decided* rationale: the first three.** An `open-question`-typed grounding is by definition unresolved, so on its own it does **not** earn a durable entry (it belongs in `questions_carried`, not as the entry's grounding); **and**
+   - optionally a resolved `open_questions[routing=this-iteration]` the human answered (the answer becomes "questions carried forward" or part of the grounding).
+
+   **Hard skip (mechanical floor against the per-PR-dump failure mode):** if the buffer carries **no** `grounding` of type `need`/`design-language`/`craft-commitment` tied to a visible change this run — a behavioral-only change, a no-visual-delta refactor, or only `Unknown`/`not_tested` visual criteria — **skip with a reason**: `echo "[visual-history] skipped (no load-bearing visual decision in this run's buffer)"`. This is the common case even on UI projects; the record is **curated, not a per-PR dump** (FB-0042). Do **not** manufacture an entry to fill the doc. **If multiple legitimate decided groundings are present, author ONE entry for the single most load-bearing one** (the decision that most changed the user's read) — do not log several, and do not spread them across runs.
+
+3. **Author ONE curated entry** (the curation is your judgment — the helper enforces structure, not selection). Build an `entry.json` (shape documented at the top of `lib/insert-visual-history.py`):
+   - `title` — the decision, not the PR (e.g. "Empty-state for the activity feed"), **no italic/emphasis** (the helper strips it, but author it clean).
+   - `date` (`YYYY-MM-DD`), optional `pr` / `branch`.
+   - `grounding` — `type` + `statement` (the user-need or design-language/craft rationale that changed the read) + optional `decision_test` + `citations` resolved from `flow.config.json.specPath` / `designLanguagePath` (**never** hardcoded doc names — project-agnostic).
+   - `before_after` — **lean asset refs** preferred. Copy the cited persisted frames out of the ephemeral report's assets dir into a committed, sibling `visual-history-assets/` dir next to `$VHPATH`, then reference them by relative path:
+     ```sh
+     VHDIR="$(dirname "$VHPATH")"; mkdir -p "$VHDIR/visual-history-assets"
+     # for each keeper frame named in the buffer's observations[].content (relative to $ASSETS_SRC):
+     #   cp "$ASSETS_SRC/<frame>" "$VHDIR/visual-history-assets/<lean-name>"   # resized keepers only, not raw retina
+     # then set the entry item: {"label":"After","src":"visual-history-assets/<lean-name>","alt":"..."}
+     ```
+     When no real capture is available (e.g. a no-simulator container), supply an **inline CSS/SVG reconstruction** instead (`{"label":"After","html":"<svg…>","recon":true}`) — the honest, labelled fallback (FB-0042(c)). Never base64-embed (that is the ephemeral report's mechanism; the durable record references assets so git stays healthy).
+   - optional `questions_carried` — open questions the decision leaves for a future session.
+
+4. **Insert** (creates the file from the bundled skeleton on first write — no bootstrap scaffold, so non-UI projects never get an empty doc):
+   ```sh
+   printf '%s' "$ENTRY_JSON" | python3 "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/insert-visual-history.py" --target "$VHPATH"
+   ```
+   The helper prepends the entry (reverse-chronological), regenerates the anchor-link TOC, and strips any heading emphasis. On a malformed target or invalid entry it fails loudly and writes nothing (your existing record is never corrupted) — fix the input, don't route around it.
+5. **Stage** `$VHPATH` + the copied `visual-history-assets/` frames with the rest of the commit (Step 6). The ephemeral `verifyReportPath` stays **un-committed** (distill-then-discard).
+
+> **Validation status (FB-0016):** the durable-record entry shape is **provisional pending a UI-surface dogfood.** flow's own repo is `uiSurface:false` → this step always self-skips here, so the shape is pinned by evals over a synthetic buffer, not yet by a live curated entry. The first real curated entry comes from the tracked health-tracker (iOS) cold-run follow-up (`roadmap.md` § Deliverable-quality track V3b). Treat the rendered entry as structurally-correct-but-editorially-unvalidated until then.
+
 ## 6. Commit
 
 Stage code changes + doc updates together (or in two commits if cleaner). Never stage `.env`, secrets, or credentials.
@@ -465,6 +521,7 @@ The PR base branch is resolved via this fallback chain:
   | /flow:verify-build | <✓ / skipped (reason)> | <overall_verdict; a non-converging regression → draft / —> |
   | /flow:audit-coverage | <✓ / skipped (reason)> | <undeclared changes → draft / "no undeclared changes" / —> |
   | Doc synthesis | ✓ | <docs updated> |
+  | Visual history (§5c) | <✓ / skipped (reason)> | <curated entry: "<decision>" / skipped (uiSurface:false · no load-bearing visual decision) / —> |
 
   If the `🚫 NOT READY TO MERGE` manifest above is present, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here. Deferred follow-ups: see the configured roadmap and plan docs.
 
@@ -570,6 +627,7 @@ If your project has a dev-server skill (e.g., a `/link`-style skill), invoke it 
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Steps 3, 5 |
 | `flow.config.json.specPath` | `dev-docs/spec.md` | Step 5 |
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4a |
-| `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 7 (`lib/render-test-plan.py` reads it to render the `## Test plan`) |
+| `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 4a (FB candidates) + Step 5c (distill source) + Step 7 (`lib/render-test-plan.py` renders the `## Test plan`) |
+| `flow.config.json.visualHistoryPath` | `core-docs/visual-history.html` | Step 5c (durable visual record; created-on-first-write; gated on `uiSurface` + a load-bearing visual decision) |
 
 Consumer projects typically override the `*Path` slots to `core-docs/<name>.md` since they keep their own project docs under `core-docs/`. Flow's own dev-tracking lives under `dev-docs/` to leave `core-docs/` free as a name that consumer-template-shipped scaffolding uses.

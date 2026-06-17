@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<!--
+  flow durable visual record — the picture companion to the project's history doc.
+  CREATED ON FIRST WRITE by /flow:ship's distill step (§ 5c) from this skeleton;
+  thereafter grown one curated entry at a time by lib/insert-visual-history.py.
+
+  Conventions (FB-0042): curated + decision-centric (one entry per decision that
+  changed the user's read of a surface — NOT a per-PR dump), REVERSE-CHRONOLOGICAL
+  (newest entry prepended at the top of #vh-entries), no italic headings, lean
+  committed asset refs under visual-history-assets/ (CSS/SVG reconstruction is the
+  honest fallback when capture isn't available). Self-contained: no external CSS/JS.
+
+  The insert helper keys on the vh:toc / vh:entries marker comments below — do not
+  remove or rename them. It does string-surgery between the markers (stdlib-only).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visual history</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1c1c1e; background: #f6f6f7;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 20px 96px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: #5b5b61; margin: 0 0 28px; max-width: 60ch; }
+  nav.toc {
+    background: #fff; border: 1px solid #e3e3e6; border-radius: 12px;
+    padding: 14px 18px; margin: 0 0 32px;
+  }
+  nav.toc h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: #6b6b71; margin: 0 0 8px; }
+  nav.toc ul { list-style: none; margin: 0; padding: 0; }
+  nav.toc li { margin: 3px 0; }
+  nav.toc a { color: #0a5fb0; text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  nav.toc a:focus-visible { outline: 2px solid #0a5fb0; outline-offset: 2px; border-radius: 3px; }
+  nav.toc .empty { color: #6b6b71; font-size: 13px; }
+  article.vh-entry {
+    background: #fff; border: 1px solid #e3e3e6; border-radius: 12px;
+    padding: 22px 24px; margin: 0 0 22px;
+  }
+  article.vh-entry h2 { font-size: 19px; margin: 0 0 4px; letter-spacing: -0.01em;
+    scroll-margin-top: 16px; }
+  .meta { font-size: 13px; color: #6b6b71; margin: 0 0 14px; }
+  .meta .sep { opacity: 0.5; padding: 0 6px; }
+  .grounding {
+    border-left: 4px solid #0a5fb0; padding: 10px 16px; margin: 14px 0;
+    background: #f6f6f7; border-radius: 0 8px 8px 0;
+  }
+  .grounding .gtype { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    font-weight: 700; color: #0a5fb0; }
+  .grounding p { margin: 4px 0 0; }
+  .grounding .test { font-size: 13px; color: #5b5b61; margin-top: 6px; }
+  .grounding .cites { font-size: 12px; color: #6b6b71; margin-top: 6px; }
+  .ba { display: flex; flex-wrap: wrap; gap: 16px; margin: 16px 0 4px; }
+  .ba figure { margin: 0; flex: 1 1 280px; min-width: 0; }
+  .ba figcaption { font-size: 12px; font-weight: 600; color: #6b6b71; margin: 0 0 6px; }
+  .ba img { max-width: 100%; width: 100%; height: auto;
+    border: 1px solid #e3e3e6; border-radius: 8px; display: block; }
+  .ba .recon { border: 1px dashed #c9c9cf; border-radius: 8px; padding: 12px;
+    background: #fafafb; }
+  .ba .recon-note { font-size: 11px; color: #7a4d00; margin-top: 6px; }
+  .carried { margin: 14px 0 0; padding: 10px 16px; background: #fbf3df; border-radius: 8px; }
+  .carried .clabel { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    font-weight: 700; color: #7a4d00; }
+  .carried ul { margin: 6px 0 0; padding-left: 18px; }
+  footer { margin-top: 40px; font-size: 12px; color: #6b6b71; text-align: center; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6e6ea; background: #161618; }
+    .lede { color: #a0a0a8; }
+    nav.toc, article.vh-entry { background: #1f1f22; border-color: #34343a; }
+    .grounding { background: #232327; }
+    .ba img { border-color: #34343a; }
+    .ba .recon { background: #1a1a1d; border-color: #45454d; }
+    .carried { background: #3a2f14; }
+    .carried .clabel { color: #f0d9a8; }
+    .ba .recon-note { color: #e0b86a; }
+    .grounding .gtype { color: #5b9fe0; }
+    .meta, nav.toc h2, .ba figcaption, .grounding .cites, .grounding .test { color: #a0a0a8; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Visual history</h1>
+  <p class="lede">A curated, reverse-chronological record of the visual and UX decisions that
+    changed how this product looks or feels — the picture companion to the written history doc.
+    Newest decision first. Each entry distils one merge-gate review into its load-bearing
+    grounding, a key before/after, and any questions carried forward.</p>
+
+  <nav class="toc">
+    <h2>Decisions</h2>
+    <!-- vh:toc-start -->
+    <ul><li class="empty">No entries yet — the first distilled decision will appear here.</li></ul>
+    <!-- vh:toc-end -->
+  </nav>
+
+  <section aria-label="Visual decisions">
+  <!-- vh:entries-start -->
+  <!-- vh:entries-end -->
+  </section>
+
+  <footer>Maintained by flow — <code>/flow:ship</code> distill step. One curated entry per visual decision.</footer>
+</main>
+</body>
+</html>
