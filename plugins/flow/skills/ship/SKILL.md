@@ -420,7 +420,10 @@ UIS=$(jq -r '.uiSurface // true' flow.config.json 2>/dev/null)
 VHPATH=$(jq -r '.visualHistoryPath // "core-docs/visual-history.html"' flow.config.json 2>/dev/null); [ -z "$VHPATH" ] && VHPATH="core-docs/visual-history.html"
 FINDINGS=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS="/tmp/flow-verify-findings.json"
 REPORT=$(jq -r '.verifyReportPath // "/tmp/flow-verify-report.html"' flow.config.json 2>/dev/null); [ -z "$REPORT" ] && REPORT="/tmp/flow-verify-report.html"
-ASSETS_SRC="$(dirname "$REPORT")/assets"
+# The buffer's observations[].content paths are RELATIVE TO THE REPORT DIR (e.g. "assets/<slug>.jpg"),
+# the same convention §5a writes and render-report.py reads via --assets-dir. Resolve frame sources
+# against $REPORT_DIR — do NOT build a separate ".../assets" prefix (see the copy block in step 3).
+REPORT_DIR="$(dirname "$REPORT")"
 
 if [ "$UIS" != "true" ]; then
   echo "[visual-history] skipped (uiSurface:false) — non-UI project, no visual record."
@@ -436,7 +439,7 @@ If the gate printed a `skipped` line, **stop here — do not author an entry.** 
 1. **Read the buffer** at `$FINDINGS` (the same structured findings buffer Step 4a reads — shape at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-schema.json`). The distill source is the buffer's structured fields, **not** the rendered HTML.
 2. **Decide whether a visual decision is load-bearing this run.** A decision earns a durable entry only when it **changed the user's read of a surface** — judge against:
    - a `criteria[].grounding` entry whose rationale explains a visible/experiential choice this PR made or changed. The grounding `type` enum is the full schema set — `need | design-language | craft-commitment | open-question` — but the **load-bearing trigger is a *decided* rationale: the first three.** An `open-question`-typed grounding is by definition unresolved, so on its own it does **not** earn a durable entry (it belongs in `questions_carried`, not as the entry's grounding); **and**
-   - optionally a resolved `open_questions[routing=this-iteration]` the human answered (the answer becomes "questions carried forward" or part of the grounding).
+   - optionally a **resolved** open question the human settled during Present, carried as `questions_carried` or folded into the grounding. Two routings, distinct meanings: a `this-iteration` question the human **answered with a decision** (e.g. "ship D-1f-A as planned") is a distill source once answered; a `future-planning` question is a forward call to revisit later (e.g. a declared design-language deviation routed to the roadmap) — also worth carrying, and the correct routing when the question is genuinely "later," not "fix before shipping." **Schema gap (see `roadmap.md` § Next "Resolved-this-iteration open questions"):** the buffer has no explicit *resolved* flag, and the Step 8 gate blocks while any unanswered `this-iteration` question is present — so distill a `this-iteration` question only after it has genuinely been answered, and do **not** relabel a still-open `this-iteration` blocker as `future-planning` just to clear the gate (that erases the "decided this iteration" signal). Routing a genuinely-forward question to `future-planning` is correct; relabeling to dodge the gate is not.
 
    **Hard skip (mechanical floor against the per-PR-dump failure mode):** if the buffer carries **no** `grounding` of type `need`/`design-language`/`craft-commitment` tied to a visible change this run — a behavioral-only change, a no-visual-delta refactor, or only `Unknown`/`not_tested` visual criteria — **skip with a reason**: `echo "[visual-history] skipped (no load-bearing visual decision in this run's buffer)"`. This is the common case even on UI projects; the record is **curated, not a per-PR dump** (FB-0042). Do **not** manufacture an entry to fill the doc. **If multiple legitimate decided groundings are present, author ONE entry for the single most load-bearing one** (the decision that most changed the user's read) — do not log several, and do not spread them across runs.
 
@@ -447,9 +450,15 @@ If the gate printed a `skipped` line, **stop here — do not author an entry.** 
    - `before_after` — **lean asset refs** preferred. Copy the cited persisted frames out of the ephemeral report's assets dir into a committed, sibling `visual-history-assets/` dir next to `$VHPATH`, then reference them by relative path:
      ```sh
      VHDIR="$(dirname "$VHPATH")"; mkdir -p "$VHDIR/visual-history-assets"
-     # for each keeper frame named in the buffer's observations[].content (relative to $ASSETS_SRC):
-     #   cp "$ASSETS_SRC/<frame>" "$VHDIR/visual-history-assets/<lean-name>"   # resized keepers only, not raw retina
-     # then set the entry item: {"label":"After","src":"visual-history-assets/<lean-name>","alt":"..."}
+     # Each cited frame's buffer observations[].content is RELATIVE TO THE REPORT DIR ($REPORT_DIR) —
+     # e.g. "assets/<slug>.jpg" — so the SOURCE is "$REPORT_DIR/<content>". Copy by basename into the
+     # committed assets dir. Do NOT prefix an extra "assets/" (e.g. "$REPORT_DIR/assets/<content>"):
+     # <content> already includes it, so that doubles the path to .../assets/assets/<slug> and the
+     # rendered <img> ref points at a missing file (the dogfound image-load bug, fixed v1.8.1):
+     #   for content in <cited observations[].content>; do
+     #     cp "$REPORT_DIR/$content" "$VHDIR/visual-history-assets/$(basename "$content")"   # resized keepers, not raw retina
+     #   done
+     # then set the entry item: {"label":"After","src":"visual-history-assets/<basename>","alt":"..."}
      ```
      When no real capture is available (e.g. a no-simulator container), supply an **inline CSS/SVG reconstruction** instead (`{"label":"After","html":"<svg…>","recon":true}`) — the honest, labelled fallback (FB-0042(c)). Never base64-embed (that is the ephemeral report's mechanism; the durable record references assets so git stays healthy).
    - optional `questions_carried` — open questions the decision leaves for a future session.

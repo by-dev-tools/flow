@@ -10,6 +10,15 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.8.1 — 2026-06-16
+
+**Fixes a dogfound image-load bug in V3b's `/flow:ship` Step 5c distill, caught by the first real cold-run on a UI surface. SAFETY (asset-persistence path correctness).**
+
+- **Asset-path doubling fix.** §5c set `ASSETS_SRC="$(dirname REPORT)/assets"` and copied `"$ASSETS_SRC/<content>"`, but each frame's `observations[].content` already begins `assets/…` (the §5a convention) → the source path doubled to `.../assets/assets/<frame>`, so the copy missed and the durable record's `<img>` refs pointed at missing files. §5c now resolves frame sources against the **report dir** (`$REPORT_DIR/<content>`) and copies by **basename**, aligning §5a's and §5c's "relative to what" wording. A new `run_visual_history_evals.py` guard pins it (no `ASSETS_SRC`, uses `$REPORT_DIR` + `basename`, keeps the explicit `assets/assets` trap note).
+- **Resolved-this-iteration open-question routing clarified.** §5c now distinguishes a `this-iteration` question the human *answered with a decision* (a distill source) from a genuinely-forward `future-planning` question (route to roadmap), and warns against relabeling a still-open blocker as `future-planning` just to clear the Step 8 gate. The proper schema `resolved` flag is roadmapped (§ Next).
+- **Validated:** the FB-0016 health-tracker (iOS) cold-run confirmed §5c fires, the curated entry is editorially sound, and screenshots load — and surfaced this bug + two roadmap follow-ups (Spec-walk-block aggregation; the `resolved` open-question flag).
+- Breaking changes: none.
+
 ## v1.8.0 — 2026-06-16
 
 **The durable visual record (`visual-history.html`) + the distill bridge — Deliverable-quality track V3b. The ephemeral per-run verify-build report now *feeds* a committed, curated record of the visual decisions that changed how the product looks; nothing is read back from `/tmp` and lost. SAFETY (new committed-asset persistence path + create-on-first-write fallback).**
