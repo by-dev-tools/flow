@@ -23,6 +23,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python3 plugins/flow/evals/run_evals.py
+      - run: python3 plugins/flow/evals/run_status_docs_evals.py
 
   security:
     name: security

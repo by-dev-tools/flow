@@ -120,6 +120,28 @@
       "default": "core-docs/visual-history.html",
       "examples": ["core-docs/visual-history.html", "docs/visual-history.html"]
     },
+    "statusDocs": {
+      "type": "array",
+      "description": "Additional project-declared status-bearing surfaces that /flow:ship reconciles every ship — beyond the built-in `planPath` (Current Focus) + `roadmapPath` (Now). Each entry declares a file and the marker that fences the region to reconcile; flow updates ONLY the region between the HTML-comment fences `<!-- {marker} -->` … `<!-- /{marker} -->` (a narrow, mechanical edit — never a restructure of the file, so projects that gate broad CLAUDE.md edits behind a human stay safe). Use this for forward-looking status that a cold agent reads — e.g. a CLAUDE.md or README phase/status line that goes stale after a sub-PR merges. /flow:ship Step 5a rewrites each region to the just-shipped reality; Step 5b BLOCKS the ship (version-manifest-independent) if the ship moved plan/roadmap status forward but left a declared region untouched, or if a declared marker is absent. /flow:doctor Check 2.7 verifies each path exists and is fenced. Default: [] (no extra surfaces — identical behavior to projects that don't opt in).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path (relative to repo root) to the status-bearing file, e.g. 'CLAUDE.md', 'README.md', 'docs/STATUS.md'."
+          },
+          "marker": {
+            "type": "string",
+            "description": "Marker name fencing the reconcilable region: flow edits between `<!-- {marker} -->` and `<!-- /{marker} -->`. Optional; defaults to 'flow:status'.",
+            "default": "flow:status"
+          }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "default": [],
+      "examples": [[], [{ "path": "CLAUDE.md", "marker": "flow:status" }, { "path": "README.md", "marker": "flow:status" }]]
+    },
     "rustWorkspaceDir": {
       "type": "string",
       "description": "(Tauri / Rust stacks only.) Directory containing the project's Rust workspace (Cargo.toml). Used by the tauri-rust-ts stack overlay's preflight runner to know where to run `cargo fmt`, `cargo clippy`, `cargo test`. Default: 'src-tauri' (the Tauri convention). Non-Tauri Rust projects typically set this to '.' (workspace at repo root) or to the workspace subdirectory.",

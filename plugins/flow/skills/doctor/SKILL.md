@@ -4,8 +4,9 @@ description: >
   Verify that the flow plugin is correctly installed and configured for the
   current project. Runs a punch-list of PASS/FAIL checks: marketplace
   registered under the canonical 'flow' name, flow@flow enabled, project-root
-  flow.config.json present + parses + matches the v1.2+ schema, all 23 slots
-  have sensible values, auto-loading rules visible to Claude Code, the paths
+  flow.config.json present + parses + matches the v1.2+ schema, all 24 slots
+  have sensible values, any declared `statusDocs` status surfaces exist + are
+  fenced, auto-loading rules visible to Claude Code, the paths
   named in slots actually exist on disk, prerequisite CLI tools (gh, jq, git)
   installed, preflight + CI optionally wired. Each FAIL prints an actionable
   fix command. Emits a final-line verdict ([READY] / [READY with WARN] /
@@ -269,6 +270,54 @@ fi
 ```
 
 **Fix on FAIL:** reconcile the docs (Step 5a). Normally this never fails standalone, because the ship gate (5b) blocks any ship that would leave them stale — doctor just surfaces drift early if it somehow occurred (e.g. a hand-edit outside the pipeline).
+
+**Check 2.7 — declared status surfaces (`statusDocs`) exist and are fenced**
+
+If the project declares `flow.config.json.statusDocs` (extra forward-looking status surfaces — e.g. a `CLAUDE.md` / `README.md` status line — reconciled every ship by `/flow:ship` Step 5a/5b), each declared path must exist and contain its marker fence pair `<!-- {marker} -->` … `<!-- /{marker} -->`. A declared-but-unfenced or missing surface is caught here at setup instead of as a hard BLOCKER at the next ship's Step 5b. This is a **bespoke** check — `statusDocs` is an array of `{path, marker}` objects, NOT a scalar path slot, so it is not part of the Check 2.4 path-existence loop.
+
+```sh
+# Resolve the shared helper (plugin-shipped under CLAUDE_PLUGIN_ROOT, or local in the flow repo).
+SDHELP=""
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/status-docs.py" ]; then
+  SDHELP="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/status-docs.py"
+elif [ -f "plugins/flow/skills/ship/lib/status-docs.py" ]; then
+  SDHELP="plugins/flow/skills/ship/lib/status-docs.py"
+fi
+
+if [ ! -f flow.config.json ] || ! jq -e . flow.config.json >/dev/null 2>&1; then
+  : # Checks 2.1/2.2 already reported the missing/malformed config; nothing to add here.
+elif [ -z "$SDHELP" ]; then
+  echo "[SKIP] statusDocs check — status-docs.py helper not reachable (install the flow plugin or run from the flow repo root)"
+else
+  # `entries` exits non-zero + prints to stderr on a malformed statusDocs array.
+  SD_ENTRIES=$(python3 "$SDHELP" entries flow.config.json 2>/tmp/flow-doctor-sd-err)
+  if [ $? -ne 0 ]; then
+    echo "[FAIL] statusDocs is malformed in flow.config.json"
+    echo "       $(cat /tmp/flow-doctor-sd-err 2>/dev/null)"
+    echo "       Fix: each statusDocs entry needs a string 'path' (and optional 'marker', default flow:status)."
+  elif [ -z "$SD_ENTRIES" ]; then
+    echo "[PASS] statusDocs: none declared (optional — plan/roadmap currency still enforced by the ship gate)"
+  else
+    # `check` prints one line per entry and exits 1 if any file is missing or unfenced.
+    SD_OUT=$(python3 "$SDHELP" check flow.config.json 2>&1)
+    if [ $? -eq 0 ]; then
+      echo "[PASS] statusDocs: all declared surfaces exist and are fenced"
+      printf '%s\n' "$SD_OUT" | sed 's/^/         /'
+    else
+      echo "[FAIL] statusDocs: a declared status surface is missing or unfenced"
+      printf '%s\n' "$SD_OUT" | sed 's/^/         /'
+      echo "       Fix: wrap the file's status region in the marker fences, e.g.:"
+      echo "           <!-- flow:status -->"
+      echo "           Phase 2 — HealthKit integration in progress."
+      echo "           <!-- /flow:status -->"
+      echo "       (Keep your existing status text between the fences — flow edits only that region.)"
+      echo "       OR remove the entry from flow.config.json.statusDocs."
+      echo "       (An unfenced declared surface is a hard BLOCKER at /flow:ship Step 5b.)"
+    fi
+  fi
+  rm -f /tmp/flow-doctor-sd-err
+fi
+```
 
 ### Section 3: auto-loading rules (the load-bearing enforcement mechanism)
 

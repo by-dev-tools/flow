@@ -363,10 +363,34 @@ The history entry above is backward-looking. The roadmap "Now" and plan "Current
   - Update "Current Focus" to the real current version + state.
   - Move shipped items from "Active Work Items" → "Recently Completed" (keep last 3–5); clear stale "Handoff Notes".
 - **Reservations:** remove this PR's now-shipped `FB-XXXX` line(s) from `reserved-feedback-numbers.md` (this is the step the dev-side `/ship` historically forgot — do it here so reservations never go stale).
+- **Project-declared status surfaces (`flow.config.json.statusDocs`):** the two docs above are the surfaces flow knows about by name. A project may declare *additional* forward-looking status surfaces — e.g. a `CLAUDE.md` or `README.md` phase/status line that auto-loads into every session and silently rots after a sub-PR merges. Reconcile each one's fenced region to the just-shipped reality (you have that context — same as for "Current Focus"):
+
+  ```sh
+  HELPER="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/status-docs.py"
+  # `entries` prints "<marker>\t<path>" per declared surface; empty/absent statusDocs → no output.
+  # Capture (don't pipe) so a malformed statusDocs (non-array, missing path, bad JSON) surfaces
+  # HERE — a `... | while` would discard the non-zero exit and silently no-op the reconcile step.
+  SD_ENTRIES=$(python3 "$HELPER" entries flow.config.json 2>/tmp/flow-sd-5a-err)
+  if [ $? -ne 0 ]; then
+    echo "⚠️ [status-docs] statusDocs is malformed — cannot reconcile: $(cat /tmp/flow-sd-5a-err 2>/dev/null). Fix the array (each entry needs a string 'path'); Step 5b will BLOCK until it parses." >&2
+  fi
+  printf '%s\n' "$SD_ENTRIES" | while IFS="$(printf '\t')" read -r MARKER PATH_; do
+    [ -z "$PATH_" ] && continue
+    if ! python3 "$HELPER" region "$MARKER" "$PATH_" >/dev/null 2>&1; then
+      echo "⚠️ [status-docs] declared surface $PATH_ has no <!-- $MARKER --> … <!-- /$MARKER --> region; cannot reconcile. Add the fence, or remove it from statusDocs." >&2
+    fi
+  done
+  rm -f /tmp/flow-sd-5a-err
+  ```
+
+  For each surface whose region exists, **edit ONLY the text between the `<!-- {marker} -->` and `<!-- /{marker} -->` fences** so the narrative status matches what just shipped (the phase/sub-PR state, the real "next" action). This is a narrow, mechanical region update — **never** restructure the file around it (a consumer's CLAUDE.md may gate broad edits behind a human; the fenced region is the only part flow touches). A declared-but-unfenced surface is a loud `⚠️` here and a hard BLOCKER at Step 5b — fence it, don't skip it.
 
 ### 5b. Doc-currency gate (mechanical — fail-and-reconcile; runs HERE, not only in manual `/flow:doctor`)
 
-After 5a, **verify** the reconciliation landed. This is the automatic backstop: it fires in the pipeline on every ship, so "stale docs never happen" doesn't depend on anyone remembering to run `/flow:doctor`. It asserts only the **version token** (the cheap, unambiguous signal); narrative correctness stays the judgment of 5a.
+After 5a, **verify** the reconciliation landed. This is the automatic backstop: it fires in the pipeline on every ship, so "stale docs never happen" doesn't depend on anyone remembering to run `/flow:doctor`. Two assertions run here:
+
+1. **Version-token assertion (versioned projects only).** Asserts the current version (from the plugin/package manifest) appears on the plan/roadmap headline. Cheap + unambiguous, but **silently N/A on projects with no manifest** — so it is NOT the whole gate.
+2. **Marker-coverage assertion (`statusDocs` — runs with or WITHOUT a version manifest).** For each declared status surface: the marker region must exist, and — when this ship *moved forward-looking status* (the plan "## Current Focus" or roadmap "## Now" section changed vs the base) — that region must have changed too. This is the version-manifest-independent backstop that catches the dogfood failure (a `CLAUDE.md` status line left stale while plan/roadmap moved). Narrative correctness stays the judgment of 5a; this only asserts the region was *touched* when status moved.
 
 ```sh
 # Resolve the version source of truth: plugin manifest, else root package.json, else N/A.
@@ -404,6 +428,74 @@ else
     exit 1
   fi
   echo "[doc-currency] PASS — $VER referenced in roadmap Now + plan Current Focus."
+fi
+```
+
+**Marker-coverage assertion (`statusDocs`)** — runs **independent of the version block above**, so a project with no `plugin.json`/`package.json` still gets real doc-currency enforcement. Empty/absent `statusDocs` ⇒ clean skip (byte-identical to today). When the ship moved forward-looking status but a declared region was left untouched, this BLOCKS:
+
+```sh
+HELPER="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/status-docs.py"
+ENTRIES=$(python3 "$HELPER" entries flow.config.json 2>/tmp/flow-statusdocs-err)
+if [ $? -ne 0 ]; then
+  echo "⚠️ BLOCKER: doc-currency — statusDocs is malformed: $(cat /tmp/flow-statusdocs-err 2>/dev/null)" >&2
+  echo "   Fix the statusDocs array in flow.config.json (each entry needs a string 'path'), then re-run." >&2
+  exit 1
+fi
+if [ -z "$ENTRIES" ]; then
+  echo "[doc-currency] statusDocs: none declared — marker-coverage check skipped (no extra status surfaces)."
+else
+  # Re-resolve DEFAULT_BRANCH (not in scope from earlier Bash calls) via the 3-tier chain.
+  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
+  PLAN=$(jq -r '.planPath // "dev-docs/plan.md"' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN=dev-docs/plan.md
+  ROADMAP=$(jq -r '.roadmapPath // "dev-docs/roadmap.md"' flow.config.json 2>/dev/null); [ -z "$ROADMAP" ] && ROADMAP=dev-docs/roadmap.md
+
+  # "Did this ship move forward-looking status?" — compare the plan "## Current Focus"
+  # + roadmap "## Now" sections between the base revision and the working tree, via the
+  # helper's `section` subcommand (same tested text path as the marker regions — no inline
+  # awk). Scoped to those two sections (not whole-file) to hold false positives down. A new
+  # file (no base) reads empty → counts as moved (conservative).
+  STATUS_MOVED=0
+  for pair in "## Current Focus|$PLAN" "## Now|$ROADMAP"; do
+    H=${pair%%|*}; F=${pair#*|}
+    # A missing working file means planPath/roadmapPath is misconfigured — warn rather than
+    # swallow it (doctor Check 2.4 also flags bad path slots; don't let the section-diff
+    # silently read empty and under-count STATUS_MOVED).
+    [ -f "$F" ] || echo "⚠️ [status-docs] $F (from planPath/roadmapPath) not found — status-moved detection for '$H' may be incomplete; check the config slot." >&2
+    WORK=$(python3 "$HELPER" section "$H" "$F" 2>/dev/null)
+    BASE=$(git show "origin/${DEFAULT_BRANCH}:${F}" 2>/dev/null | python3 "$HELPER" section "$H" - 2>/dev/null)
+    [ "$WORK" != "$BASE" ] && STATUS_MOVED=1
+  done
+
+  # Accumulate blockers in a temp file (the `entries | while read` pipe runs in a subshell;
+  # a shell var wouldn't propagate, a file does).
+  BLK=$(mktemp)
+  printf '%s\n' "$ENTRIES" | while IFS="$(printf '\t')" read -r MARKER P; do
+    [ -z "$P" ] && continue
+    if ! python3 "$HELPER" region "$MARKER" "$P" >/tmp/flow-sd-region 2>/dev/null; then
+      echo "  - $P: declared <!-- $MARKER --> … <!-- /$MARKER --> region is missing (fence the status region, or remove it from statusDocs)" >> "$BLK"
+      continue
+    fi
+    if [ "$STATUS_MOVED" -eq 1 ]; then
+      WORK_REGION=$(cat /tmp/flow-sd-region)
+      BASE_REGION=$(git show "origin/${DEFAULT_BRANCH}:${P}" 2>/dev/null | python3 "$HELPER" region "$MARKER" - 2>/dev/null)
+      if [ "$WORK_REGION" = "$BASE_REGION" ]; then
+        echo "  - $P: plan/roadmap status moved this ship but the <!-- $MARKER --> region is unchanged (reconcile it per Step 5a)" >> "$BLK"
+      fi
+    fi
+  done
+  rm -f /tmp/flow-sd-region
+  if [ -s "$BLK" ]; then
+    echo "⚠️ BLOCKER: doc-currency (statusDocs) — declared status surface(s) not reconciled:" >&2
+    cat "$BLK" >&2
+    echo "   Reconcile the region(s) per Step 5a, then re-run. Do NOT delete the statusDocs entry to pass the gate." >&2
+    echo "   (Known over-fire: if the plan/roadmap change was genuinely NON-status — a reorder, a typo, a follow-up note — and the region is already current, this is the documented false positive. Record that reason and proceed past the gate; do NOT make a cosmetic edit to the region just to silence it — a hollow touch defeats the signal the gate exists to carry.)" >&2
+    rm -f "$BLK"
+    exit 1
+  fi
+  rm -f "$BLK"
+  echo "[doc-currency] statusDocs PASS — declared status surface(s) fenced$([ "$STATUS_MOVED" -eq 1 ] && echo ' + reconciled (status moved this ship)' || echo ' (status unchanged this ship)')."
 fi
 ```
 
@@ -638,5 +730,6 @@ If your project has a dev-server skill (e.g., a `/link`-style skill), invoke it 
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4a |
 | `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 4a (FB candidates) + Step 5c (distill source) + Step 7 (`lib/render-test-plan.py` renders the `## Test plan`) |
 | `flow.config.json.visualHistoryPath` | `core-docs/visual-history.html` | Step 5c (durable visual record; created-on-first-write; gated on `uiSurface` + a load-bearing visual decision) |
+| `flow.config.json.statusDocs` | `[]` | Step 5a (reconcile each declared marker region) + Step 5b (marker-coverage gate, manifest-independent) |
 
 Consumer projects typically override the `*Path` slots to `core-docs/<name>.md` since they keep their own project docs under `core-docs/`. Flow's own dev-tracking lives under `dev-docs/` to leave `core-docs/` free as a name that consumer-template-shipped scaffolding uses.

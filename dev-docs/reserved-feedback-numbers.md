@@ -18,13 +18,14 @@ This file is the **claim-time defense** (catches collisions before either branch
 
 If you find this file with no `Currently reserved` lines, no in-flight branch is racing for a number. Still add your reservation before drafting the entry — another branch may start between your check and your commit.
 
-## Currently reserved (as of 2026-06-16)
+## Currently reserved (as of 2026-06-19)
 
-- **FB-0053** — `claude/v3b-visual-history` (**V3b — durable visual record**) — "The durable `visual-history.html` is CREATED ON FIRST WRITE by the /flow:ship Step 5c distill step, not bootstrap-scaffolded — `bootstrap.sh` runs before `flow.config.json` exists so it can't gate on `uiSurface`; create-on-first-write keeps the doc out of non-UI repos (reverses FB-0042(e)'s scaffold *mechanism*, preserves its intent)." Next free after #50's FB-0052. Clear when this PR ships.
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
 
 ## Audit trail (past collisions, kept for institutional memory)
+
+- **2026-06-18** — statusDocs PR (`claude/friendly-wiles-fe18d5`). Claimed **FB-0054** (project-declared status-doc reconciliation); next free after the now-shipped FB-0053. **Swept FB-0053** (V3b durable visual record) — shipped in **#51** (v1.8.0, `9713c88`); its reservation lingered (the documented dev-side non-auto-clear gap), retired here. Net reserved after cleanup: **FB-0054** (this PR) + **FB-0013** (PR P) + **FB-0014** (PR R).
 
 - **2026-06-16** — V3b ship + cleanup. Claimed **FB-0053** (`claude/v3b-visual-history`, durable visual record — the create-on-first-write mechanism reversal of FB-0042(e)); next free after #50's FB-0052. Swept two shipped reservations (the documented dev-side `/ship` non-auto-clear gap): **FB-0051** (two-way annotation layer) shipped in **#49** (v1.7.0); **FB-0042** (durable-record contract) — its *entry* shipped in **#36** (v1.6.0 docs) and is now *implemented* by this V3b PR, so the reservation is retired. FB-0053 is the implementation's one new entry (FB-0042 governs the rest). Net reserved after cleanup: **FB-0053** (this PR) + **FB-0013** (PR P) + **FB-0014** (PR R).
 
