@@ -144,6 +144,19 @@ def main() -> int:
     for k, ok in gate.items():
         check(f"gate-1-{k}", ok)
 
+    # --- gate 2: §5c asset-copy resolves against the report dir, no doubled "assets/" ---
+    # The dogfound v1.8.0 bug: §5c set ASSETS_SRC="$(dirname REPORT)/assets" then copied
+    # "$ASSETS_SRC/<content>" where <content> already began "assets/" → /tmp/assets/assets/...
+    # → broken <img> refs. Pin the fix so a future edit can't reintroduce the doubling.
+    asset = {
+        "uses-report-dir": "$REPORT_DIR" in skill or "REPORT_DIR=" in skill,
+        "copies-by-basename": 'basename "$content"' in skill or "basename" in skill,
+        "no-doubling-var": "ASSETS_SRC" not in skill,           # the doubling source is gone
+        "warns-on-doubling": "assets/assets" in skill,           # the explicit trap note survives
+    }
+    for k, ok in asset.items():
+        check(f"gate-2-asset-{k}", ok)
+
     # --- contrast 1: skeleton text colors meet WCAG AA (4.5:1) ----------------
     # Both the UX and design-engineer lenses caught contrast failures that were
     # only visible in a real browser (the #49 annotation-layer lesson; roadmap V3a
