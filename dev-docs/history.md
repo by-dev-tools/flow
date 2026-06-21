@@ -65,6 +65,8 @@ The silent-skip is the FB-0010 "silent-skip on edge case" class — the most exp
 **Lessons learned:**
 - The two cold-runs are doing exactly what FB-0016 intended — each real run on a UI surface surfaces a routing assumption the synthetic evals couldn't. The fragility "bit immediately" on the first health-tracker plan because real plans don't use the canonical heading the evals assumed.
 
+**Review pass (this session):** `/preship` PASS (docs/feedback/quality-bar all green). `/simplify` (4 lenses) applied: factored the duplicated CLI boilerplate into a shared `walk_extract.cli_main` (~90 lines deduped) + tidied `_CATEGORY_RE`. Rejected two simplify findings as false positives — (a) removing the `?` from `_MALFORMED_CB_RE` would stop matching `- []` (no-space) and reintroduce a silent-skip for the exact malformed case it must catch; (b) the over-permissive bold heading branch is theoretical and tightening it risks the real `**Visual-walk** *(…)*:` form. `/flow:security-review` (run as the bundled `/security-review` — `origin/HEAD` had to be set in this fresh clone first): clean, no findings (stdlib parsers over owner-authored plan files, JSON-escaped output, no exec/shell/network sink). `/flow:accessibility-review` + `/flow:verify-build` self-skip (`uiSurface:false` / `platform:library`). Shipped via the dev-side `/ship` since the `flow` plugin isn't installed as invocable skills in this remote session.
+
 ### Fix V3b §5c asset-path doubling (image-load bug) + clarify open-question routing (v1.8.1) — SAFETY
 **Date:** 2026-06-16
 **Branch:** claude/v3b-asset-path-fix
