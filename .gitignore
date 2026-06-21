@@ -1,3 +1,7 @@
 .claude/settings.local.json
 .claude/forge/
 .DS_Store
+
+# Python bytecode
+__pycache__/
+*.pyc
