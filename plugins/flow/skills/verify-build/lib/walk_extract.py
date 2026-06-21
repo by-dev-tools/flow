@@ -39,7 +39,10 @@ Stdlib only. Python 3.7+.
 
 from __future__ import annotations
 
+import json
 import re
+import sys
+from pathlib import Path
 
 # Checkbox line: `- [ ] <text>` or `- [x] <text>` (also `*`/`+` bullet markers).
 # Accept both unchecked (` `) and checked (`x`/`X`) — checkboxes get ticked off
@@ -155,3 +158,95 @@ def extract_block(text: str, label: str) -> dict:
         "first_heading": first_heading,
         "warnings": warnings,
     }
+
+
+def cli_main(
+    argv: list[str],
+    *,
+    label: str,
+    items_key: str,
+    transform_item=None,
+    empty_warning: str = "",
+) -> int:
+    """
+    Shared CLI entry point for the `*-walk` extractors.
+
+    Owns arg parsing, file existence / read-error handling (each emitting the
+    standard JSON error shape to stderr), the `extract_block` call, and the JSON
+    output — so `extract-criteria.py` and `extract-visual-states.py` cannot drift
+    on the contract (FB-0010 fan-out defense). Callers supply only what differs:
+
+    - `label`         — `"Spec-walk"` / `"Visual-walk"`.
+    - `items_key`     — output key for the extracted list (`"criteria"` /
+                        `"assertions"`).
+    - `transform_item`— maps each raw checkbox string to its output shape
+                        (default: identity — emit the string as-is).
+    - `empty_warning` — appended when no items were extracted (the
+                        spike-fallback / capture-primary-only nudge).
+
+    Exit codes: 0 ok, 1 fatal file error, 2 malformed args.
+    """
+    prog = Path(argv[0]).name if argv else "extract"
+
+    if len(argv) != 2:
+        print(
+            json.dumps(
+                {"error": f"usage: {prog} <plan-path>", items_key: [], "warnings": []}
+            ),
+            file=sys.stderr,
+        )
+        return 2
+
+    plan_path = Path(argv[1])
+
+    if not plan_path.exists():
+        print(
+            json.dumps(
+                {
+                    "error": f"plan file not found: {plan_path}",
+                    items_key: [],
+                    "warnings": [f"plan file not found: {plan_path}"],
+                    "source_path": str(plan_path),
+                }
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        text = plan_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(
+            json.dumps(
+                {
+                    "error": f"could not read plan file {plan_path}: {exc}",
+                    items_key: [],
+                    "warnings": [f"read error: {exc}"],
+                    "source_path": str(plan_path),
+                }
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+    block = extract_block(text, label)
+    transform = transform_item or (lambda s: s)
+    items = [transform(s) for s in block["items"]]
+    warnings = list(block["warnings"])
+
+    if not items and empty_warning:
+        warnings.append(empty_warning)
+
+    print(
+        json.dumps(
+            {
+                items_key: items,
+                "source_path": str(plan_path),
+                "source_heading": block["first_heading"],
+                "block_count": block["block_count"],
+                "warnings": warnings,
+            },
+            indent=2,
+        )
+    )
+    return 0

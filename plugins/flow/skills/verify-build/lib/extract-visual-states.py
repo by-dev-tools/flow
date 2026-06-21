@@ -55,98 +55,42 @@ Stdlib only. Python 3.7+.
 
 from __future__ import annotations
 
-import json
 import re
 import sys
-from pathlib import Path
 
 # Sibling import: lib dir is sys.path[0] when run as a script.
-from walk_extract import extract_block
+from walk_extract import cli_main
 
 LABEL = "Visual-walk"
 
 # Optional leading category tag inside an assertion, e.g.
 # `[state: empty / loading / error renders]` or `[interaction / a11y: …]`.
-# Captures the part before the first colon as the category hint.
-_CATEGORY_RE = re.compile(r"^\[(?P<cat>[^\]:]+):\s*(?P<rest>.*)\]?\s*$")
+# Captures the part before the first colon as the category hint. Only `cat` is
+# consumed; the rest of the bracket is left in the verbatim `text`.
+_CATEGORY_RE = re.compile(r"^\[(?P<cat>[^\]:]+):")
+
+EMPTY_WARNING = (
+    "no Visual-walk assertions extracted — plan may lack a `**Visual-walk:**` "
+    "block (non-UI change, or UI plan that omitted it). §5a should capture the "
+    "primary/launch state only and mark the rest not_tested; never invent a "
+    "richer state set."
+)
 
 
 def parse_assertion(text: str) -> dict:
     """Split an optional leading `[category: …]` tag off an assertion line."""
     m = _CATEGORY_RE.match(text)
-    if m:
-        return {"text": text, "category": m.group("cat").strip().lower()}
-    return {"text": text, "category": None}
-
-
-def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print(
-            json.dumps(
-                {
-                    "error": "usage: extract-visual-states.py <plan-path>",
-                    "assertions": [],
-                    "warnings": [],
-                }
-            ),
-            file=sys.stderr,
-        )
-        return 2
-
-    plan_path = Path(argv[1])
-
-    if not plan_path.exists():
-        print(
-            json.dumps(
-                {
-                    "error": f"plan file not found: {plan_path}",
-                    "assertions": [],
-                    "warnings": [f"plan file not found: {plan_path}"],
-                    "source_path": str(plan_path),
-                }
-            ),
-            file=sys.stderr,
-        )
-        return 1
-
-    try:
-        text = plan_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        print(
-            json.dumps(
-                {
-                    "error": f"could not read plan file {plan_path}: {exc}",
-                    "assertions": [],
-                    "warnings": [f"read error: {exc}"],
-                    "source_path": str(plan_path),
-                }
-            ),
-            file=sys.stderr,
-        )
-        return 1
-
-    block = extract_block(text, LABEL)
-    assertions = [parse_assertion(item) for item in block["items"]]
-    warnings = list(block["warnings"])
-
-    if not assertions:
-        warnings.append(
-            "no Visual-walk assertions extracted — plan may lack a "
-            "`**Visual-walk:**` block (non-UI change, or UI plan that omitted "
-            "it). §5a should capture the primary/launch state only and mark the "
-            "rest not_tested; never invent a richer state set."
-        )
-
-    output = {
-        "assertions": assertions,
-        "source_path": str(plan_path),
-        "source_heading": block["first_heading"],
-        "block_count": block["block_count"],
-        "warnings": warnings,
-    }
-    print(json.dumps(output, indent=2))
-    return 0
+    category = m.group("cat").strip().lower() if m else None
+    return {"text": text, "category": category}
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(
+        cli_main(
+            sys.argv,
+            label=LABEL,
+            items_key="assertions",
+            transform_item=parse_assertion,
+            empty_warning=EMPTY_WARNING,
+        )
+    )
