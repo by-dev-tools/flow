@@ -16,7 +16,7 @@ Everything described in the loop below is shipped and installable today. The ful
 - **`/flow:log-disagreement`** — auto-invoked feedback channel that captures user pushback on a finding for prompt-tuning input.
 - **`/flow:workflow-help`** / **`/flow:doctor`** — onboarding (print the loop + resolved config) and setup verification.
 
-Plus the two reviewer subagents (`auditor`, `plan-critic`) and the four staff-review lens agents, the `planner` and `docs` context-isolation agents, the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (23 slots), default hooks, and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow does **not** wrap it.
+Plus the two reviewer subagents (`auditor`, `plan-critic`) and the four staff-review lens agents, the `planner` and `docs` context-isolation agents, the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (24 slots), default hooks, and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow does **not** wrap it.
 
 ## What this workflow is (and isn't)
 
@@ -249,6 +249,8 @@ Claude **auto-advances here from Step 8** when the ship-readiness predicate hold
    - **User feedback** — review the conversation since the last PR for corrections, preferences, decisions, and solved challenges. New entries go in `flow.config.json.feedbackPath`.
    - **Agent self-feedback (pattern capture)** — review the session for recurring failure patterns and write memory entries per the source-diversity bar (§ "Continuous improvement").
 4. **Update project docs** (paths via config slots: `historyPath`, `planPath`, `roadmapPath`, `specPath`). This includes **doc-currency reconciliation** (ship Step 5a): the forward-looking roadmap "Now" + plan "Current Focus" are refreshed to the current version + ▶ next-up, shipped items swept to Recently-Completed, and shipped FB reservations cleared — then an **automatic mechanical gate** (ship Step 5b) blocks the ship if those docs don't reference the current version. Currency is enforced *in the pipeline*, not via manual `/flow:doctor` (which carries only a secondary mirror, Check 2.6). Stale direction docs are the FB-0010 fan-out class applied to *what to work on* — a cold reader (incl. the autonomous loop) relies on them.
+
+   **Project-declared status surfaces (`statusDocs`).** The roadmap "Now" + plan "Current Focus" are the surfaces flow reconciles by name. A project that keeps *other* forward-looking status — e.g. a `CLAUDE.md` or `README.md` phase/status line that auto-loads into every session and rots after a sub-PR merges — declares them in `flow.config.json.statusDocs`: an array of `{ "path", "marker" }`. Flow reconciles **only** the region between the HTML-comment fences `<!-- {marker} -->` … `<!-- /{marker} -->` (a narrow, mechanical edit — never a restructure, so a consumer's broad-CLAUDE.md-edit gate is respected). Step 5a rewrites each region to the just-shipped reality; **Step 5b adds a version-manifest-INDEPENDENT marker-coverage gate** — if the ship moved plan/roadmap status forward but a declared region was left untouched (or its marker is missing), the ship BLOCKS. This gives non-versioned projects real doc-currency enforcement (the version-token check N/A's out for them). `/flow:doctor` Check 2.7 verifies each declared surface exists + is fenced. Default `[]` ⇒ no extra surfaces, identical behavior to today. *(Trade-off: the "status moved" trigger is scoped to the plan "## Current Focus" + roadmap "## Now" sections; if either changes for a non-status reason while a declared region legitimately needs no edit, the gate over-fires — the fix is a one-region touch, an accepted cost for catching the stale-status class.)*
 5. Commit doc updates.
 6. Push and open the PR with base branch via fallback chain (`git symbolic-ref` → `flow.config.json.defaultBranch` → literal `main`).
 7. Output the PR URL.
@@ -468,6 +470,7 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / MANUAL (you type it; c
 | `roadmapPath` | `core-docs/roadmap.md` (consumers) / `dev-docs/roadmap.md` (flow's own repo) | `/flow:ship` steps 2 + 4; `/flow:staff-review` follow-ups |
 | `specPath` | `core-docs/spec.md` (consumers) / `dev-docs/spec.md` (flow's own repo) | clarify, `/flow:ship` step 4 |
 | `feedbackPath` | `core-docs/feedback.md` (consumers) / `dev-docs/feedback.md` (flow's own repo) | clarify, `/flow:ship` step 3a |
+| `statusDocs` | `[]` | `/flow:ship` Step 5a/5b (reconcile + marker-coverage gate declared status surfaces); `/flow:doctor` Check 2.7 |
 | `referenceGlob` | `core-docs/*.md` | `/flow:critique-plan` preprocessor |
 | `verifyEnabled` | `true` | `/flow:verify-build` skip-path (project-wide opt-out) |
 | `verifyFindingsPath` | `/tmp/flow-verify-findings.json` | `/flow:verify-build` step 8 write; `/flow:ship` step 4a read |

@@ -18,6 +18,9 @@
   "feedbackPath": "core-docs/feedback.md",
   "designLanguagePath": "core-docs/design-language.md",
 
+  "$comment-statusDocs": "OPT-IN. Extra forward-looking status surfaces /flow:ship reconciles every ship beyond plan 'Current Focus' + roadmap 'Now' — e.g. a CLAUDE.md / README status line a cold agent reads. Each entry: {path, marker}. Flow edits ONLY the region between <!-- {marker} --> and <!-- /{marker} --> (a narrow, mechanical update — fence the status region in the file first). Step 5b BLOCKS a ship that moved plan/roadmap status forward but left a declared region untouched (works with NO version manifest); /flow:doctor Check 2.7 checks each is fenced. Default []. Example: [{\"path\":\"CLAUDE.md\",\"marker\":\"flow:status\"},{\"path\":\"README.md\",\"marker\":\"flow:status\"}]",
+  "statusDocs": [],
+
   "$comment-referenceGlob": "Glob /flow:critique-plan uses to load reference docs. Excludes history/plan/roadmap automatically (those churn too often to be reliable spec sources).",
   "referenceGlob": "core-docs/*.md",
 

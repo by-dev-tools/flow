@@ -10,6 +10,18 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.9.0 — 2026-06-19
+
+**Doc-currency reconciliation now covers project-declared status surfaces, not just the built-in plan/roadmap pair. A new `statusDocs` slot lets a project name forward-looking status docs (e.g. a `CLAUDE.md` / `README` status line a cold agent reads) that `/flow:ship` reconciles every ship — and the mechanical gate fires with NO version manifest, closing the dogfood hole where a sub-PR left a phase status stale. SAFETY (new ship-time BLOCKER path).**
+
+- **New `statusDocs` slot (24 slots total)** — an array (default `[]`) of `{ "path": "CLAUDE.md", "marker": "flow:status" }` entries. Flow reconciles **only** the region between the HTML-comment fences `<!-- {marker} -->` … `<!-- /{marker} -->` — a narrow, mechanical update, never a restructure (so projects that gate broad `CLAUDE.md` edits behind a human stay safe). `marker` defaults to `flow:status`. Empty/absent ⇒ identical behavior to today.
+- **`/flow:ship` Step 5a** reconciles each declared region to the just-shipped reality (after the built-in plan "Current Focus" + roadmap "Now"). A declared-but-unfenced surface is a loud `⚠️` warning, never a silent skip.
+- **`/flow:ship` Step 5b** gains a **version-manifest-INDEPENDENT** marker-coverage gate: if the ship moved forward-looking status (plan "## Current Focus" or roadmap "## Now" changed vs the base) but a declared region was left untouched — or a declared marker is missing — the ship **BLOCKS**. The existing version-token assertion is preserved for versioned projects; this adds real enforcement for projects with no `plugin.json`/`package.json`.
+- **`/flow:doctor` Check 2.7** verifies every declared `statusDocs` path exists and is fenced, so misconfiguration surfaces at setup instead of at the next ship's BLOCKER.
+- **`lib/status-docs.py` (stdlib) + `evals/run_status_docs_evals.py`.** A shared pure-text helper (parse entries, extract region/section, check fences) consumed by Step 5b + doctor — one implementation, not three copies of awk (FB-0010). Wired into CI.
+- **Backward compatible (FB-0054):** projects that don't declare `statusDocs` see no behavior change on any step; flow's own repo declares none, so this PR's own ship exercises the empty-skip path.
+- Breaking changes: none.
+
 ## v1.8.1 — 2026-06-16
 
 **Fixes a dogfound image-load bug in V3b's `/flow:ship` Step 5c distill, caught by the first real cold-run on a UI surface. SAFETY (asset-persistence path correctness).**
