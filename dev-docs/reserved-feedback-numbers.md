@@ -20,6 +20,7 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 ## Currently reserved (as of 2026-06-19)
 
+- **FB-0055** — `claude/pr-visual-summaries-workflow-wrvj3a` (**V2.1 — visual-capture routing fix + states parser**) — "Loosening a plan-extraction parser's heading match and scoping it to the active (first) block are co-dependent; and an independent capture path (visual) must never be gated behind a sibling extraction's (behavioral) success — decouple so one failure can't silently drop the other." FB-0054 shipped in #54 (statusDocs); this claims the next free number. Clear when this PR ships.
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
 

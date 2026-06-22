@@ -34,6 +34,8 @@ Every plan written to the plan doc must include:
 
 `spike` mode replaces (4) with a single "Research question" line and (5) with a "Disposability" line. `tiny` mode skips (4) and (5) entirely but still names the file + the one-line change. `Visual-walk` (8) is appended, not inserted — it applies only to UI changes and is **N/A under `spike`/`tiny`** (the same way (4)/(5) are skipped). The (4)/(5) mode-override references above are unaffected by its addition.
 
+**Active-block placement (load-bearing for `/flow:verify-build`).** `/flow:verify-build` parses the **Spec-walk** and **Visual-walk** blocks mechanically (`extract-criteria.py` / `extract-visual-states.py`), and each parser extracts only the **first** block of its kind in the plan doc. So when a plan doc retains shipped PRs' blocks, **author the active PR's plan at the top** — the active Spec-walk/Visual-walk must precede any retained ones. Retained blocks below are simply ignored; they need no heading qualification. (If the active block isn't first, the parser warns loudly and extracts the wrong block — don't rely on the warning, place it correctly.)
+
 ## Confidence verdict
 
 The trigger for a "load-bearing assumption": **would I plan a different feature if this assumption flipped?**

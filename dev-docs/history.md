@@ -39,6 +39,36 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### V2.1 hardening — visual-capture routing decoupled from Spec-walk + `extract-visual-states.py` parser — SAFETY
+**Date:** 2026-06-21
+**Branch:** claude/pr-visual-summaries-workflow-wrvj3a
+**Commit:** [this PR]
+
+**What was done:**
+Closed the two cold-gate routing follow-ups the FB-0016 health-tracker cold-runs surfaced (plan.md "Cold-gate FOLLOW-UPs", 2026-06-11/06-16). (1) `/flow:verify-build`'s visual capture (§5a) was gated behind successful behavioral-criteria extraction, so a non-canonical `**Spec-walk:**` heading → 0 criteria → spike fallback → **§5a silently skipped**, dropping the entire HTML visual summary even when the plan declared a `Visual-walk` block. §5a now gates on its OWN predicate (`uiSurface:true` AND a `Visual-walk` block present), decoupled from Spec-walk and from spike mode. (2) Added `extract-visual-states.py` — a deterministic parser of the `Visual-walk` block (1:1 per declared assertion) so two cold agents no longer enumerate the capture state-set differently. (3) Made both parsers' heading match robust (canonical `**Spec-walk:**`, qualified `**Spec-walk (PR 1c — shipped):**`, markdown `### Spec-walk`, and the `**Visual-walk** *(…)*:` italic-tail form) and scoped extraction to the **first (active) block** with a loud multi-block warning. Factored the shared logic into `walk_extract.py` so the two parsers can't drift. Pinned by `run_walk_extract_evals.py` (47 checks), wired into CI.
+
+**Why:**
+The silent-skip is the FB-0010 "silent-skip on edge case" class — the most expensive bug type flow tracks — landing on the exact deliverable this track exists to produce (the verified HTML visual summary). The two cold-runs proved it bites on real plans (health-tracker's non-canonical heading; flow's own multi-PR plan.md aggregates 25 Spec-walk blocks under the old matcher). The state-set non-determinism (no parser, prompt-derived) was the other named residual.
+
+**Design decisions:**
+- **Decouple, don't just loosen.** The minimal fix for the silent-skip is to stop coupling two independent declared blocks (behavioral Spec-walk vs visual Visual-walk). §5a runs visual capture iff its own predicate holds, so a behavioral-extraction failure can no longer drop the visual summary (FB-0055.3).
+- **Robust match + active-block scoping are co-dependent.** Under the old strict regex, retained/historical blocks self-excluded *because* their qualified `(…)` headings failed to match. Loosening the match to catch non-canonical *active* headings would re-include every retained block → aggregation explosion. So scoping-to-first-block had to land in the same change as the looser match — they cannot be separated (FB-0055.2). This is *why* the user's "most robust fix" instinct (Option 2) was not just heavier but actually required.
+- **Active-block-at-top convention replaces qualify-your-headings.** The durable structural fix (extract the first block) removes the author-memory dependence the interim "retained blocks MUST qualify their heading" convention carried — the FB-0010 author-memory smell. Documented in `plan-discipline.md`; the parser warns loudly if >1 block matches so a misplacement is visible, not silent (FB-0055.1).
+- **Per-assertion, not new declared syntax (user fork).** `extract-visual-states.py` emits one capture-target per existing `Visual-walk` `- [ ]` line (with an optional category from the `[state: …]` tag) rather than introducing an explicit `States:` declaration syntax. Determinism comes from a single parse, not new author burden — no fan-out into the V1 field's three declaration surfaces.
+- **Shared helper, not duplicated regex.** `walk_extract.py` owns heading-match + first-block + checkbox logic; both CLI parsers import it (lib dir is `sys.path[0]` when run as a script). Defends the FB-0010 fan-out class — a future heading-form change updates one place.
+
+**Tradeoffs discussed:**
+- **First-block heuristic vs a richer "active block" signal.** Considered keying "active" off unchecked-vs-checked boxes (shipped PRs are all `[x]`) or proximity to a "Current Focus" marker; both are project-specific or fail at ship time (the active PR's boxes get checked too). First-block-in-document-order + a loud multi-block warning + the documented top-placement convention is deterministic and project-agnostic. Residual: if an author puts the active block second, the parser extracts the wrong one — surfaced by the warning, not silent.
+- **Backward-compat.** `extract-criteria.py`'s output gained `block_count` (additive); `criteria`/`source_heading`/`warnings` keys are unchanged, so `/flow:audit-coverage` and §3 consumers are unaffected (pinned by a compat-keys eval check). The toy fixture's reference `expected/extract-criteria.json` updated for the additive key.
+- **Version v1.9.1.** #54 (statusDocs) took v1.9.0 while this PR was open; this is a SAFETY routing fix + internal parser (no new user-facing slot/skill/command), so it lands as the patch v1.9.1 on top of it.
+
+**Lessons learned:**
+- The two cold-runs are doing exactly what FB-0016 intended — each real run on a UI surface surfaces a routing assumption the synthetic evals couldn't. The fragility "bit immediately" on the first health-tracker plan because real plans don't use the canonical heading the evals assumed.
+
+**Review pass (this session):** `/preship` PASS (docs/feedback/quality-bar all green). `/simplify` (4 lenses) applied: factored the duplicated CLI boilerplate into a shared `walk_extract.cli_main` (~90 lines deduped) + tidied `_CATEGORY_RE`. Rejected two simplify findings as false positives — (a) removing the `?` from `_MALFORMED_CB_RE` would stop matching `- []` (no-space) and reintroduce a silent-skip for the exact malformed case it must catch; (b) the over-permissive bold heading branch is theoretical and tightening it risks the real `**Visual-walk** *(…)*:` form. `/flow:security-review` (run as the bundled `/security-review` — `origin/HEAD` had to be set in this fresh clone first): clean, no findings (stdlib parsers over owner-authored plan files, JSON-escaped output, no exec/shell/network sink). `/flow:accessibility-review` + `/flow:verify-build` self-skip (`uiSurface:false` / `platform:library`). Shipped via the dev-side `/ship` since the `flow` plugin isn't installed as invocable skills in this remote session.
+
+**Post-merge note:** #54 (statusDocs, v1.9.0) merged while this PR was open, so PR #55 was rebased by merging `origin/main` in; version assigned **v1.9.1** (the v1.9.0 slot was taken). The two PRs conflicted only on the high-fan-out doc files + `ci.yml` (both append an eval `- run:` line — kept both) — the FB-0008 stale-base / FB-0010 fan-out class; resolved keep-both with no behavior overlap.
+
 ### `statusDocs` — reconcile project-declared status surfaces every ship + a version-manifest-independent doc-currency gate (v1.9.0) — SAFETY
 
 - **Date:** 2026-06-19

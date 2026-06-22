@@ -10,6 +10,15 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.9.1 — 2026-06-21
+
+**`/flow:verify-build`'s rendered visual summary is no longer silently dropped when a plan's `**Spec-walk:**` heading is non-canonical. The visual-capture step (§5a) now gates on its own condition, independent of behavioral-criteria extraction, and a new parser makes the capture state-set deterministic. Deliverable-quality track V2.1. SAFETY (verify-build routing/fallback behavior).**
+
+- **Silent-skip fix.** §5a (visual capture → the HTML walkthrough) was gated behind successful `**Spec-walk:**` extraction, so a non-canonical heading → 0 criteria → spike fallback → §5a skipped with no warning, dropping the visual summary even when a `Visual-walk` block was declared. §5a now activates on `uiSurface:true` + a `Visual-walk` block present (via the new parser), decoupled from Spec-walk and spike mode.
+- **New `extract-visual-states.py`** — deterministic 1:1 parse of the `Visual-walk` block (one capture-target per declared assertion + optional `[category:]`), so two runs no longer enumerate the capture state-set differently.
+- **Robust heading match + active-block scoping (both parsers).** Recognizes canonical `**Spec-walk:**`, qualified `**Spec-walk (…):**`, markdown `### Spec-walk`, and the `**Visual-walk** *(…)*:` form; extracts only the first (active) block with a loud multi-block warning. Convention: author the active PR's plan at the top — retained blocks are ignored and need no heading qualification (retires the prior author-memory convention). Shared logic in `lib/walk_extract.py`; `extract-criteria.py` stays backward-compatible (additive `block_count`). Pinned by `evals/run_walk_extract_evals.py` (FB-0055).
+- Breaking changes: none.
+
 ## v1.9.0 — 2026-06-19
 
 **Doc-currency reconciliation now covers project-declared status surfaces, not just the built-in plan/roadmap pair. A new `statusDocs` slot lets a project name forward-looking status docs (e.g. a `CLAUDE.md` / `README` status line a cold agent reads) that `/flow:ship` reconciles every ship — and the mechanical gate fires with NO version manifest, closing the dogfood hole where a sub-PR left a phase status stale. SAFETY (new ship-time BLOCKER path).**

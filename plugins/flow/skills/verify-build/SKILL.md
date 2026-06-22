@@ -159,6 +159,7 @@ fi
 
 When `SPIKE=true`:
 - Skip Step 3 (extract-criteria) and Step 4 (adversarial transformation).
+- **Visual capture (§5a) is NOT skipped by spike mode (V2.1 routing fix).** §5a now gates on its own predicate — `uiSurface:true` AND a `Visual-walk` block present (via `extract-visual-states.py`) — independent of Spec-walk extraction. So a plan whose behavioral side fell to spike (missing/malformed `**Spec-walk:**`) but which still declares a `Visual-walk` block on a UI surface STILL captures frames + renders the HTML walkthrough. The old coupling silently dropped the visual summary in exactly that case (the cold-run routing fragility); it is gone.
 - Use the fixed 3-check rubric at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/spike-rubric.md` as the verification script for Step 5's `Skill('verify')` invocation. The rubric's three checks (Launch / One happy step / No log errors) become the "criteria" passed through.
 - At Step 6, spawn ONLY the `correctness` judge (regression + scope-creep are not meaningful without a plan). The judge uses `lib/spike-rubric.md` as its system prompt instead of `lib/rubric.md`.
 - At Step 7, treat the single correctness verdict per check as the per-criterion `aggregated_verdict` directly. Same Unknown ⇒ exit 1 contract.
@@ -184,7 +185,7 @@ fi
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PLAN"
 ```
 
-`extract-criteria.py` emits one criterion per `- [ ]` checkbox under `**Spec-walk:**`. If no Spec-walk block found, emits warning + falls back to spike mode.
+`extract-criteria.py` emits one criterion per `- [ ]` checkbox under the **active** `**Spec-walk:**` heading. Heading match is robust (V2.1): it recognizes the canonical `**Spec-walk:**`, a qualified `**Spec-walk (PR 1c — shipped):**`, and a markdown `### Spec-walk` — the old strict matcher silently missed non-canonical active headings. When a plan carries several Spec-walk blocks (flow's own multi-PR plan.md; a consumer retaining shipped blocks), **only the first (active) block is extracted**, and a loud warning names the others. Convention: **author the active PR's plan at the top**; retained blocks below are ignored and need no heading qualification (this replaces the old author-memory "qualify retained headings" convention). If no Spec-walk block is found at all, it emits a warning + falls back to spike mode for *behavioral* judging — note this no longer disables visual capture (§5a is decoupled).
 
 ## 4. Adversarial transformation
 
@@ -206,9 +207,14 @@ Bundled `/verify` calls `/run` internally for launch, drives the running app per
 
 ## 5a. Capture-and-persist visual frames (V2)
 
-**Activation (all must hold, else §5a is N/A — say so explicitly):** (a) **not** spike mode (spike skips Steps 3–4, so it never reaches §5a); (b) the plan's `**Spec-walk:**` criteria extracted cleanly — a malformed Spec-walk heading yields 0 criteria → spike fallback → §5a silently skipped, so a plan with a `Visual-walk` block but a non-canonical Spec-walk heading captures nothing (a known routing fragility; see roadmap follow-up); (c) the plan declares a `Visual-walk` block on a `uiSurface:true` project. Non-UI / no `Visual-walk` → skip; visual capture is N/A.
+**Activation (V2.1 — §5a gates on its OWN predicate, decoupled from Spec-walk).** Run `extract-visual-states.py` against the plan, then activate §5a iff **both**: (a) `flow.config.json.uiSurface` is `true`; (b) a `Visual-walk` block is present (`block_count ≥ 1`). The block's assertion count then drives the state-set (≥1 → one capture-target per assertion; 0 assertions in a present block → capture the primary/launch state only). Note what changed: §5a no longer depends on spike mode or on clean Spec-walk extraction — a malformed `**Spec-walk:**` heading sends *behavioral* judging to spike but no longer silently drops visual capture (the cold-run routing fragility). Non-UI / no `Visual-walk` block → skip, and **say so explicitly** (`[§5a] skipped: uiSurface=false` / `[§5a] skipped: no Visual-walk block in plan`), never a silent gap.
 
-**Deriving the capture state-set.** The `Visual-walk` block (V1) is a list of checkable visual *assertions* ("empty state renders", "primary button uses the accent token", "enter motion ≤200ms"), **not** an enumerated state list. §5a captures one frame per distinct *app state* those assertions name or imply (empty / loading / error / interaction / a11y / happy-path), deduplicated. This derivation is **prompt-driven** — there is no `extract-visual-states.py` parser yet (a routed follow-up) — so **list the state-set you derived** in the run, and treat any state you cannot tie to a declared assertion as out of scope. If the block is only an inline `(Visual-walk)` parenthetical with no enumerable states, capture the **primary/launch state only** and mark the rest `not_tested` — never invent a rich state-set from prose the plan didn't declare.
+```sh
+PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-visual-states.py" "$PLAN"
+```
+
+**Deriving the capture state-set (now parser-driven).** `extract-visual-states.py` emits the declared `Visual-walk` assertions as a deterministic, **1:1** list (one entry per `- [ ]` line, with an optional `category` from the `[state: …]` / `[token / motion: …]` / `[interaction / a11y: …]` tag) — so two cold agents start from the *same* enumerated input instead of each re-deriving the list from prose (the non-determinism this closes). Heading match + first-block scoping are identical to `extract-criteria.py`. Map each assertion to the distinct *app state* it names or implies (empty / loading / error / interaction / a11y / happy-path) and **deduplicate by app state** — several assertions may target one state (capture it once). **List the state-set you derived** from the parser output in the run; treat any state you cannot tie to a returned assertion as out of scope. If the parser returns 0 assertions (block absent), capture the **primary/launch state only** and mark the rest `not_tested` — never invent a rich state-set from prose the plan didn't declare.
 
 Bundled `/verify` **narrates** screenshots to the orchestrator — it does NOT hand structured frames to the fresh-context judges (SV2-spike). So **flow owns capture-and-persist.** For each derived state, **in this exact order**:
 
