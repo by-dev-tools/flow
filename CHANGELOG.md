@@ -10,6 +10,27 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.9.1 — 2026-06-21
+
+**`/flow:verify-build`'s rendered visual summary is no longer silently dropped when a plan's `**Spec-walk:**` heading is non-canonical. The visual-capture step (§5a) now gates on its own condition, independent of behavioral-criteria extraction, and a new parser makes the capture state-set deterministic. Deliverable-quality track V2.1. SAFETY (verify-build routing/fallback behavior).**
+
+- **Silent-skip fix.** §5a (visual capture → the HTML walkthrough) was gated behind successful `**Spec-walk:**` extraction, so a non-canonical heading → 0 criteria → spike fallback → §5a skipped with no warning, dropping the visual summary even when a `Visual-walk` block was declared. §5a now activates on `uiSurface:true` + a `Visual-walk` block present (via the new parser), decoupled from Spec-walk and spike mode.
+- **New `extract-visual-states.py`** — deterministic 1:1 parse of the `Visual-walk` block (one capture-target per declared assertion + optional `[category:]`), so two runs no longer enumerate the capture state-set differently.
+- **Robust heading match + active-block scoping (both parsers).** Recognizes canonical `**Spec-walk:**`, qualified `**Spec-walk (…):**`, markdown `### Spec-walk`, and the `**Visual-walk** *(…)*:` form; extracts only the first (active) block with a loud multi-block warning. Convention: author the active PR's plan at the top — retained blocks are ignored and need no heading qualification (retires the prior author-memory convention). Shared logic in `lib/walk_extract.py`; `extract-criteria.py` stays backward-compatible (additive `block_count`). Pinned by `evals/run_walk_extract_evals.py` (FB-0055).
+- Breaking changes: none.
+
+## v1.9.0 — 2026-06-19
+
+**Doc-currency reconciliation now covers project-declared status surfaces, not just the built-in plan/roadmap pair. A new `statusDocs` slot lets a project name forward-looking status docs (e.g. a `CLAUDE.md` / `README` status line a cold agent reads) that `/flow:ship` reconciles every ship — and the mechanical gate fires with NO version manifest, closing the dogfood hole where a sub-PR left a phase status stale. SAFETY (new ship-time BLOCKER path).**
+
+- **New `statusDocs` slot (24 slots total)** — an array (default `[]`) of `{ "path": "CLAUDE.md", "marker": "flow:status" }` entries. Flow reconciles **only** the region between the HTML-comment fences `<!-- {marker} -->` … `<!-- /{marker} -->` — a narrow, mechanical update, never a restructure (so projects that gate broad `CLAUDE.md` edits behind a human stay safe). `marker` defaults to `flow:status`. Empty/absent ⇒ identical behavior to today.
+- **`/flow:ship` Step 5a** reconciles each declared region to the just-shipped reality (after the built-in plan "Current Focus" + roadmap "Now"). A declared-but-unfenced surface is a loud `⚠️` warning, never a silent skip.
+- **`/flow:ship` Step 5b** gains a **version-manifest-INDEPENDENT** marker-coverage gate: if the ship moved forward-looking status (plan "## Current Focus" or roadmap "## Now" changed vs the base) but a declared region was left untouched — or a declared marker is missing — the ship **BLOCKS**. The existing version-token assertion is preserved for versioned projects; this adds real enforcement for projects with no `plugin.json`/`package.json`.
+- **`/flow:doctor` Check 2.7** verifies every declared `statusDocs` path exists and is fenced, so misconfiguration surfaces at setup instead of at the next ship's BLOCKER.
+- **`lib/status-docs.py` (stdlib) + `evals/run_status_docs_evals.py`.** A shared pure-text helper (parse entries, extract region/section, check fences) consumed by Step 5b + doctor — one implementation, not three copies of awk (FB-0010). Wired into CI.
+- **Backward compatible (FB-0054):** projects that don't declare `statusDocs` see no behavior change on any step; flow's own repo declares none, so this PR's own ship exercises the empty-skip path.
+- Breaking changes: none.
+
 ## v1.8.1 — 2026-06-16
 
 **Fixes a dogfound image-load bug in V3b's `/flow:ship` Step 5c distill, caught by the first real cold-run on a UI surface. SAFETY (asset-persistence path correctness).**
