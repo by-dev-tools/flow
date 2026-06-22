@@ -4,7 +4,7 @@
   "overall_verdict": "FAIL",
   "exit_code": 1,
   "criteria": [
-    {"text": "Thing works end to end.", "aggregated_verdict": "FAIL", "adversarial_cases": [], "observations": [],
+    {"text": "Thing works end to end.", "provenance": "adversarial-judged", "aggregated_verdict": "FAIL", "adversarial_cases": [], "observations": [],
      "verdicts": {
        "correctness": {"verdict": "FAIL", "evidence": ["a", "b"], "notes": ""},
        "regression": {"verdict": "PASS", "evidence": ["a", "b"], "notes": ""},

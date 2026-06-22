@@ -67,6 +67,47 @@ Emit (verbatim, single block — do NOT customize per project; the consistency I
   got short-circuited, whether or not subsequent gates allow ship to complete.
 ```
 
+### 1.0a. Rigor-gate evidence check (mechanical — source-touching diffs route to draft on missing evidence)
+
+The Step 1.0 block above is informational; THIS is the gate. For a **source-touching** diff
+that is NOT an explicit spike/tiny-mode ship (where `/simplify` + `/flow:staff-review` are
+legitimately skipped), confirm there is **mechanical evidence** those steps actually ran on
+the current source — FB-0047 "enforce, don't attest." `/flow:staff-review` writes a
+commit-invariant marker (its Step 5a) after its lenses + fixes land; this reads it. A missing
+or stale marker is a **`[decision-required]`** finding for the draft manifest (Step 2/7) — NOT
+a hard halt: the human resolves it at the merge gate (re-run the reviews, or waive). Docs-only,
+spike, and tiny-mode ships skip this check (those modes don't expect staff-review).
+
+```sh
+# Source-touching? (reuse the Step 1c three-way sourceFilePatterns check.)
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
+SOURCE_PATTERN=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
+[ -z "$SOURCE_PATTERN" ] && SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
+SRC=$( { git diff "origin/${DEFAULT_BRANCH}..HEAD" --name-only 2>/dev/null; git diff HEAD --name-only 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | grep -E "$SOURCE_PATTERN" || true)
+
+RIGOR=ok
+if [ -n "$SRC" ]; then
+  BRANCH=$(git branch --show-current)
+  SRC_SHA=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/rigor-marker.py" source-sha --source-pattern "$SOURCE_PATTERN")
+  RIGOR=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/rigor-marker.py" check --branch "$BRANCH" --source-sha "$SRC_SHA")
+  if [ "$RIGOR" != "ok" ]; then
+    echo "⚠️ [rigor-gate] no fresh /flow:staff-review marker for this source (reason: $RIGOR)." >&2
+    echo "   /simplify + /flow:staff-review have no mechanical evidence of running on the current source." >&2
+    echo "   → add a [decision-required] entry to the Step-2 draft manifest: re-run them, or human-waive." >&2
+  else
+    echo "[rigor-gate] ok — /flow:staff-review marker matches the current source."
+  fi
+fi
+```
+
+If `$RIGOR` was not `ok` on a source-touching, non-spike/tiny ship, **add to the draft manifest**
+(Step 2): `[decision-required] no evidence /simplify + /flow:staff-review ran on this source
+(<reason>) — re-run them, or human-waive`. This is the gating half of the Step 1.0 assumption
+block — a source-touching diff can no longer reach a *ready* PR via the "exploratory / no plan"
+path without either the reviews running or an explicit human waiver.
+
 ### 1.5. External CLI dependency check (BLOCKING)
 
 Verify `gh` CLI is installed before any operation that needs it. `/flow:ship` Step 7 (PR creation via `gh pr create`) and Step 1b (`gh pr list` for PR-OPEN detection) both fail with `exit 127` and no diagnostic if `gh` is missing — surfaces only at the invocation site, by which point the user has done substantial pre-flight work that wasted. Per FB-0009 (md-manager PR 4 dogfood discovery): fail-fast at the workflow entrypoint with a clean install hint instead.
@@ -215,6 +256,7 @@ Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, `/flo
 - **`[auto-fixable]` BLOCKER + cheap NIT** → fix in-tree, continue (today's happy path).
 - **`[decision-required]` BLOCKER** (security/a11y tag the axis; see their output contracts) → do NOT best-effort it. Add it to the **draft manifest** (an in-memory list this run accumulates) for Step 7. The loop keeps going — the human resolves it at the merge gate, not mid-flight.
 - **`/flow:audit-coverage` `ISSUE · Undeclared change`** → each uncovered behavior is a **`[decision-required]`** entry on the draft manifest (`needs: declare + verify the criterion, or human waive`). Do NOT auto-add the criterion yourself — that is the agent grading its own homework; the resolution is to declare the criterion in the plan's `**Spec-walk:**` block and let `/flow:verify-build` verify it (or the human waives it at the merge gate). A clean `No issues flagged.` adds nothing.
+- **`/flow:verify-build` `metadata.no_plan_fallback: true` on a source-touching diff** → a **`[decision-required]`** draft-manifest entry (`verify-build ran without a governing plan (no **Spec-walk:** block) — declare the criteria + re-verify, or human-waive`). The verdicts may be real (the §2b judged path produces genuine `adversarial-judged` PASSes over diff-derived criteria), but a plan was *expected* and absent: a production diff shouldn't reach a ready PR via the no-plan path. Resolve by declaring the criteria in the plan's `**Spec-walk:**` block (so the next run is full mode) or waiving at the merge gate. A docs-only no-plan run (smoke path) does not route here.
 - **FOLLOW-UP** → Step 3 routing.
 
 The draft manifest starts empty. Anything added to it makes the eventual PR a **draft** (Step 7). This is how an unresolved blocker reaches the human at the merge gate they were hitting anyway, instead of halting the loop or shipping a merge-ready-looking PR that isn't ready.

@@ -50,7 +50,11 @@
         },
         "spike_mode": {
           "type": "boolean",
-          "description": "True if invoked with --spike or no plan was found."
+          "description": "True ONLY for an explicit spike declaration (invoked via /flow:ship-spike — trigger 1). NO LONGER set for a missing/Spec-walk-less plan; that is `no_plan_fallback`. Spike's reduced rigor (3-check rubric) requires the explicit declaration, never merely an absent plan."
+        },
+        "no_plan_fallback": {
+          "type": "boolean",
+          "description": "True when verify-build ran WITHOUT a governing plan because none was found (missing planPath — trigger 2 — or no **Spec-walk:** block — trigger 3), DISTINCT from an explicit spike. On a source-touching diff this path still spawns the fresh-context adversarial judges over diff-derived criteria (provenance stays `adversarial-judged`); /flow:ship routes a source-touching no_plan_fallback to the draft manifest (declare criteria + re-verify, or human-waive). Absent/false ⇒ a plan governed this run."
         }
       },
       "additionalProperties": false
@@ -75,6 +79,11 @@
           "text": {
             "type": "string",
             "description": "Verbatim criterion text from the plan's **Spec-walk:** block (or spike-rubric check name)."
+          },
+          "provenance": {
+            "type": "string",
+            "enum": ["adversarial-judged", "spike-rubric", "hand-authored"],
+            "description": "HOW this criterion's verdict was produced — the non-forgeability signal the Test-plan + report renderers key on. `adversarial-judged`: the Step-6 fresh-context judges ran (full mode, or the no-plan source-touching path). `spike-rubric`: an explicit-spike fresh-context correctness judge ran the 3-check rubric. `hand-authored`: the implementing agent wrote the verdict with NO fresh-context judge. LOAD-BEARING CONTRACT: this value is set by the JUDGING step, never the implementer — and a consumer MUST treat an ABSENT or unrecognized provenance as `hand-authored` (the untrusting default; an un-stamped buffer reads as un-judged / self-reported, never machine-judged). `adversarial-judged` and `spike-rubric` are 'machine-judged' (a fresh-context judge produced the verdict); `hand-authored`/absent is 'self-reported'. HONEST LIMITATION: this is a cooperative-agent contract, not a cryptographic one — the renderers trust a `adversarial-judged`/`spike-rubric` value verbatim and do not (yet) cross-verify it against judge evidence, so a non-cooperative author could write the trusted value. The mechanically ENFORCED guarantee is the inverse asymmetry: an absent/unrecognized stamp can NEVER produce a machine `[x]` (omission is defended; commission is roadmapped — 'second-source the provenance stamp'). Additive in schema_version 1.0; older consumers ignore it."
           },
           "adversarial_cases": {
             "type": "array",

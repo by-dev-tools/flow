@@ -6,6 +6,7 @@
   "criteria": [
     {
       "text": "Renders [admin](https://evil.example) and *bold* text.",
+      "provenance": "adversarial-judged",
       "adversarial_cases": [],
       "observations": [],
       "verdicts": {

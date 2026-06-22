@@ -14,6 +14,7 @@
   "criteria": [
     {
       "text": "Launches and renders the dashboard within 2s.",
+      "provenance": "adversarial-judged",
       "adversarial_cases": ["Cold cache load still renders within 2s."],
       "observations": [
         {"type": "narrative", "content": "Loaded /dashboard; first paint at 900ms."}
@@ -27,6 +28,7 @@
     },
     {
       "text": "Submits the form and shows a success toast.",
+      "provenance": "adversarial-judged",
       "adversarial_cases": [],
       "observations": [
         {"type": "network", "content": "POST /api/submit → 201"}

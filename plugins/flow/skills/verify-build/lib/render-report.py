@@ -57,6 +57,21 @@ OBS_LABEL = {
 }
 LARGE_IMAGE_WARN_BYTES = 500_000
 
+# Provenance values that mean a fresh-context judge produced the verdict. Anything else
+# — including absent/unrecognized (the untrusting default) — is implementer self-report.
+_MACHINE_JUDGED = {"adversarial-judged", "spike-rubric"}
+
+
+def provenance(crit):
+    """Normalize a criterion's provenance; absent/unknown ⇒ 'hand-authored' (the
+    load-bearing untrusting default — an un-stamped verdict reads as un-judged)."""
+    p = str((crit or {}).get("provenance", "") or "").strip()
+    return p if p in _MACHINE_JUDGED or p == "hand-authored" else "hand-authored"
+
+
+def is_self_reported(crit):
+    return provenance(crit) not in _MACHINE_JUDGED
+
 CSS = """
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -88,6 +103,15 @@ h2 { font-size: 20px; margin: 30px 0 8px; }
 .obs img { max-width: 600px; width: 100%; height: auto; border: 1px solid #e3e3e6; border-radius: 6px; display: block; }
 .obs pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12.5px/1.5 ui-monospace, Menlo, monospace; }
 .missing { color: #b3261e; font-style: italic; font-size: 13px; }
+.selfreport-banner { background: #fdeecd; border: 1px solid #e0b65c; border-left: 4px solid #b3261e;
+  border-radius: 12px; padding: 14px 18px; margin: 0 0 24px; color: #5c3b00; }
+.selfreport-banner strong { color: #8a1c12; }
+.selfreport-banner code { font-family: ui-monospace, Menlo, monospace; font-size: .92em; }
+/* Self-report chip uses the banner's deep-brick accent (#8a1c12), NOT the FAIL verdict
+   red (#b3261e): the chip sits inline next to a verdict dot, so reusing the FAIL hue would
+   read as "this verdict is FAIL" when it means "this PASS is unverified" (design-engineer
+   finding). Tied to the provenance-warning surface, not a verdict token. */
+.chip.selfreport { background: #8a1c12; }
 .adversarial { font-size: 13.5px; }
 .adversarial ul { margin: 4px 0 0; padding-left: 20px; }
 .verdicts { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 12px; }
@@ -116,6 +140,9 @@ footer { margin-top: 40px; font-size: 12.5px; color: #6b6b70; border-top: 1px so
   .pill { background: #2b2b30; color: #e6e6ea; }
   .routing.this-iteration { background: #4a3a1a; color: #f0d9a8; }
   .routing.future-planning { background: #2b2b30; color: #b7b7bd; }
+  .selfreport-banner { background: #3a2a14; color: #f0d9a8; border-color: #7a5a1a; }
+  .selfreport-banner strong { color: #f3b0a6; }
+  .chip.selfreport { background: #c4533f; }  /* lifted from #8a1c12 for object-contrast on the dark page */
 }
 """
 
@@ -142,11 +169,21 @@ def esc(s):
     return html.escape("" if s is None else str(s))
 
 
-def verdict_dot(v):
-    return f'<span class="dot" style="background:{VERDICT_COLOR.get(v, "#888")}"></span>'
+def verdict_dot(v, self_reported=False):
+    # SECURITY: `color` MUST come only from the hardcoded VERDICT_COLOR dict (or the
+    # literal fallback) — it is interpolated raw into a style attribute. Never source it
+    # from buffer/metadata fields (that would be a CSS-injection sink). (security-review)
+    color = VERDICT_COLOR.get(v, "#888")
+    if self_reported:
+        # A self-reported verdict is not an independent result — render a HOLLOW ring
+        # (no fill) so a glance at the heading / TOC / Overall pill doesn't read a solid
+        # green "pass" while only the small chip dissents (UX-designer finding). Inset
+        # box-shadow keeps the 9px box size unchanged.
+        return f'<span class="dot" style="background:transparent;box-shadow:inset 0 0 0 2px {color}"></span>'
+    return f'<span class="dot" style="background:{color}"></span>'
 
 
-def render_hero(meta, overall, baseline_seeding=False):
+def render_hero(meta, overall, baseline_seeding=False, any_self_reported=False):
     eyebrow = " · ".join(
         x for x in [meta.get("branch"), meta.get("head_sha_short"),
                     meta.get("platform_hint"), f'flow {meta.get("plugin_version", "?")}'] if x
@@ -155,7 +192,7 @@ def render_hero(meta, overall, baseline_seeding=False):
     # The Overall pill already encodes pass/fail (it's the gate signal) — no separate
     # "exit code" pill, which read as jargon with no extra information for a human.
     pills = [
-        f'<span class="pill">{verdict_dot(overall)}Overall: {esc(overall)}</span>',
+        f'<span class="pill">{verdict_dot(overall, any_self_reported)}Overall: {esc(overall)}</span>',
     ]
     if budget is not None:
         over = " (budget exceeded)" if meta.get("verify_budget_overrun") else ""
@@ -193,7 +230,7 @@ def slug(i):
 
 def render_toc(criteria):
     items = "".join(
-        f'<li><a href="#{slug(i)}">{verdict_dot(c.get("aggregated_verdict", "Unknown"))} {esc(c.get("text", "(untitled)"))}</a></li>'
+        f'<li><a href="#{slug(i)}">{verdict_dot(c.get("aggregated_verdict", "Unknown"), is_self_reported(c))} {esc(c.get("text", "(untitled)"))}</a></li>'
         for i, c in enumerate(criteria)
     )
     return f'<nav class="toc card"><strong>Criteria</strong><ol>{items}</ol></nav>'
@@ -293,10 +330,28 @@ def render_verdict_cards(verdicts):
     return f'<div class="verdicts">{"".join(cards)}</div>' if cards else ""
 
 
+def render_self_report_banner(any_self_reported):
+    """A prominent top-of-report warning when ANY criterion's verdict is implementer
+    self-report (provenance not machine-judged) — the forgery-defense banner mirroring
+    render-test-plan.py's. Empty string when every verdict was judged."""
+    if not any_self_reported:
+        return ""
+    return (
+        '<div class="selfreport-banner"><strong>⚠️ Some verdicts below are implementer '
+        'self-report — not adversarially judged.</strong> A criterion tagged '
+        '<span class="chip selfreport">self-reported</span> was marked PASS/FAIL by the '
+        'implementing agent itself, NOT by a fresh-context judge that actually ran the app. '
+        'Treat those verdicts as unverified claims, not confirmed results — re-run '
+        '<code>/flow:verify-build</code> against a plan, or verify manually, before merging.</div>'
+    )
+
+
 def render_criterion(i, c, assets_dir, warnings):
+    chip = ('<span class="chip selfreport">self-reported</span> '
+            if is_self_reported(c) else "")
     return (
         f'<section class="criterion" id="{slug(i)}">'
-        f'<h2>{verdict_dot(c.get("aggregated_verdict", "Unknown"))} {esc(c.get("text", "(untitled)"))}</h2>'
+        f'<h2>{verdict_dot(c.get("aggregated_verdict", "Unknown"), is_self_reported(c))} {esc(c.get("text", "(untitled)"))} {chip}</h2>'
         f'{render_grounding(c.get("grounding"))}'
         f'{render_observations(c.get("observations"), assets_dir, warnings, c.get("text", "this criterion"))}'
         f'{render_adversarial(c.get("adversarial_cases"))}'
@@ -354,8 +409,10 @@ def render(buffer, assets_dir):
     baseline_seeding = overall == "Unknown" and any(
         "baseline" in it.get("item", "").lower() and not it.get("tested") for it in not_tested
     )
+    any_self_reported = any(is_self_reported(c) for c in criteria)
     body = (
-        render_hero(meta, overall, baseline_seeding)
+        render_hero(meta, overall, baseline_seeding, any_self_reported)
+        + render_self_report_banner(any_self_reported)
         + render_legend()
         + render_toc(criteria)
         + "".join(render_criterion(i, c, assets_dir, warnings) for i, c in enumerate(criteria))

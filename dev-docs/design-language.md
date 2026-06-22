@@ -21,6 +21,8 @@ The report's job (FB-0040): make the human's merge-gate task *thinking*, not rub
 
 **Routing tags** (open questions): `this iteration` = amber fill (it blocks auto-advance) · `future planning` = neutral grey.
 
+**Provenance warning** (a verdict the implementer self-reported rather than a judge producing it — distinct from any verdict token): banner fill `#fdeecd` (light) / `#3a2a14` (dark), warning rail `#b3261e` left-border, chip `#8a1c12` (light) / `#c4533f` (dark). The chip deliberately does NOT reuse the FAIL verdict red (`#b3261e`) — it sits inline beside a verdict dot, so a FAIL-hue chip would read as a verdict. A self-reported criterion's verdict dot also renders hollow (ring, no fill) so the skim surfaces (heading / TOC / Overall pill) don't read a solid green pass.
+
 **Neutrals:** text `#1c1c1e`, muted `#6b6b70`, surface `#fff`, page `#f6f6f7`, hairline `#e3e3e6`. Radius 8–12px; one card idiom.
 
 **Type:** system stack; H1 30px, H2 20px, body 15px/1.55, meta 11–13px. Monospace (`ui-monospace`) only for observation content (log/network/stdout) and verbatim evidence quotes.
