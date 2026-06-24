@@ -45,7 +45,22 @@ CASES = [
     case("all-pass-headline", "2", "all-pass",
          ["[x] Launches and renders", "[x] Submits the form",
           "2/2 declared criteria passed", "confirm and merge"],
-         ["No behavioral gate ran", "unresolved", "[ ] Launches"],
+         # a fully adversarial-judged buffer keeps the machine attribution and NEVER
+         # shows the hand-authored banner or the [~] self-report state (the inverse of
+         # the provenance fix — guards against a regression that flags judged buffers).
+         ["No behavioral gate ran", "unresolved", "[ ] Launches",
+          "Self-reported", "[~]", "(self-reported)"],
+         sha="abc1234"),
+    # provenance forgery defense: a hand-authored buffer (one criterion stamped
+    # `hand-authored`, one with provenance ABSENT — the untrusting default) can NEVER
+    # render `[x]` or claim a machine verdict. Both PASS criteria render `[~]`, the
+    # headline withholds "confirm and merge", and the banner names the self-report state.
+    case("hand-authored-no-machine-verdict", "P", "hand-authored",
+         ["[~] Home page renders", "[~] Tapping a card",
+          "Self-reported — not independently judged", "(self-reported)",
+          "marked passing by the implementer alone"],
+         ["[x] Home page", "[x] Tapping a card", "Checkbox state is the machine verdict",
+          "confirm and merge", "2/2 declared criteria passed"],
          sha="abc1234"),
     case("mixed-renders-all", "1", "mixed",
          ["[x] User can submit", "[ ] Form validation rejects", "**Unknown** (not verified)",

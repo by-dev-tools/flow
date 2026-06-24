@@ -14,6 +14,7 @@
   "criteria": [
     {
       "text": "Launch: the built artifact starts without crashing.",
+      "provenance": "spike-rubric",
       "adversarial_cases": [],
       "observations": [
         {"type": "stdout", "content": "server listening on :3000"}

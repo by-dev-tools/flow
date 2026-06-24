@@ -174,6 +174,27 @@ fi
 
 If a test suite or build also runs cheaply, run them too (project-specific).
 
+### 5a. Write the rigor-gate marker (mechanical evidence this review ran on THIS source)
+
+After the fixes are applied (so the marker fingerprints the post-fix tree), record the
+rigor-gate marker. This is the mechanical evidence `/flow:ship` Step 1.0 keys on to confirm
+that `/simplify` + `/flow:staff-review` actually ran on this source — FB-0047 "enforce, don't
+attest." A source-touching ship with no/stale marker routes to the draft manifest. Graceful:
+a write failure warns, never aborts the review.
+
+```sh
+BRANCH=$(git branch --show-current)
+SRC_SHA=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/rigor-marker.py" source-sha \
+  --source-pattern "$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)")
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/rigor-marker.py" write \
+  --branch "$BRANCH" --source-sha "$SRC_SHA" \
+  || echo "⚠️ [staff-review] could not write the rigor-gate marker; /flow:ship may flag this branch as un-reviewed." >&2
+```
+
+The marker is commit-invariant (it fingerprints `origin/<default>` vs the working tree, not
+`..HEAD`), so committing these fixes before `/flow:ship` does NOT invalidate it — only an
+actual source change after this point does, which correctly re-flags for re-review.
+
 ## 6. Capture follow-ups + exploration findings so they aren't lost
 
 **Never only in the PR body.** Route them via `flow.config.json` slots:

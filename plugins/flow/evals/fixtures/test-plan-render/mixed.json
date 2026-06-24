@@ -14,6 +14,7 @@
   "criteria": [
     {
       "text": "User can submit the form with valid input and see a success message.",
+      "provenance": "adversarial-judged",
       "adversarial_cases": ["Double-submit creates exactly one record."],
       "observations": [
         {"type": "network", "content": "POST /api/submit → 201 Created (single request)"}
@@ -27,6 +28,7 @@
     },
     {
       "text": "Form validation rejects empty required fields with an inline error message.",
+      "provenance": "adversarial-judged",
       "adversarial_cases": [],
       "observations": [],
       "verdicts": {

@@ -10,12 +10,16 @@ The rubric structure mirrors `lib/rubric.md` (PASS / FAIL / Unknown, two-citatio
 
 You judge whether bundled `/verify`'s observations demonstrate three fixed launch-and-smoke checks on a feature that has no plan. You are spawned in `correctness` dimension only — spike mode is too coarse for `regression` or `scope-creep` judgment (the latter two are not meaningful without a plan to define what's in vs out of scope).
 
-## When spike mode fires
+## When this rubric fires
 
-- `/flow:verify-build` was invoked with `--spike` argument (typically by `/flow:ship-spike`).
-- OR the plan path resolved from `flow.config.json.planPath` does not exist or contains no `**Spec-walk:**` block (graceful fallback to spike mode rather than blocking on missing plan).
+This 3-check smoke rubric is used by exactly two Step-2 paths (see `SKILL.md` § 2):
 
-The implementing agent / user has explicitly chosen a lower verification bar by invoking the spike workflow. Don't apply full-rubric strictness; do apply the same evidence + Unknown discipline.
+1. **Explicit spike** (`MODE=spike`) — invoked by `/flow:ship-spike`. The user/agent has explicitly chosen the lower bar. The orchestrator stamps `metadata.spike_mode=true` and every criterion `provenance: "spike-rubric"`.
+2. **Docs-only no-plan fallback** (`MODE=no-plan` + `NO_PLAN_SCOPE=docs-only`) — the plan path is missing or has no `**Spec-walk:**` block AND the diff touches no source files, so there is little runtime behavior to verify. The orchestrator stamps `metadata.no_plan_fallback=true` and `provenance: "spike-rubric"`.
+
+**This rubric does NOT fire for a *source-touching* no-plan diff.** That case takes the robust judged path (`SKILL.md` § 2b: diff-derived criteria + the full Step-4 adversarial transform + Step-6 judges, provenance `adversarial-judged`) — production code that merely lacks a plan artifact gets a real judged verification, not a 3-check smoke test.
+
+Don't apply full-rubric strictness; do apply the same evidence + Unknown discipline. Your verdict is still machine-produced (you run in fresh context), so it earns `spike-rubric` provenance — never `hand-authored`.
 
 ## The three checks (fixed)
 

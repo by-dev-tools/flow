@@ -18,13 +18,14 @@ This file is the **claim-time defense** (catches collisions before either branch
 
 If you find this file with no `Currently reserved` lines, no in-flight branch is racing for a number. Still add your reservation before drafting the entry — another branch may start between your check and your commit.
 
-## Currently reserved (as of 2026-06-19)
+## Currently reserved (as of 2026-06-22)
 
-- **FB-0055** — `claude/pr-visual-summaries-workflow-wrvj3a` (**V2.1 — visual-capture routing fix + states parser**) — "Loosening a plan-extraction parser's heading match and scoping it to the active (first) block are co-dependent; and an independent capture path (visual) must never be gated behind a sibling extraction's (behavioral) success — decouple so one failure can't silently drop the other." FB-0054 shipped in #54 (statusDocs); this claims the next free number. Clear when this PR ships.
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
 
 ## Audit trail (past collisions, kept for institutional memory)
+
+- **2026-06-22** — provenance + no-plan-rigor PR (`claude/quirky-jones-9932cd`, v1.10.0). Claimed **FB-0056** (the new entry — written directly, single-session non-parallel ship, so no pre-reservation race to defend). **Swept the stale FB-0055 reservation** — its entry shipped in **#55** (v1.9.1, V2.1 hardening) but the reservation lingered (the documented dev-side `/ship` non-auto-clear gap). Net reserved after cleanup: **FB-0013** (PR P) + **FB-0014** (PR R).
 
 - **2026-06-18** — statusDocs PR (`claude/friendly-wiles-fe18d5`). Claimed **FB-0054** (project-declared status-doc reconciliation); next free after the now-shipped FB-0053. **Swept FB-0053** (V3b durable visual record) — shipped in **#51** (v1.8.0, `9713c88`); its reservation lingered (the documented dev-side non-auto-clear gap), retired here. Net reserved after cleanup: **FB-0054** (this PR) + **FB-0013** (PR P) + **FB-0014** (PR R).
 

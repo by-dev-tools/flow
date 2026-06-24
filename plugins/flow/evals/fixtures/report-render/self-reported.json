@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "branch": "test-branch",
+    "head_sha_short": "abc1234",
+    "plugin_version": "1.9.1",
+    "platform_hint": "ios",
+    "verify_budget_calls_used": 0,
+    "verify_budget_overrun": false,
+    "spike_mode": false,
+    "no_plan_fallback": true
+  },
+  "overall_verdict": "PASS",
+  "exit_code": 0,
+  "criteria": [
+    {
+      "text": "Home page renders the reworked hero layout.",
+      "provenance": "hand-authored",
+      "adversarial_cases": [],
+      "observations": [
+        {"type": "narrative", "content": "Implementer states the hero renders correctly."}
+      ],
+      "verdicts": {
+        "correctness": {"verdict": "PASS", "evidence": ["Implementer states the hero renders correctly.", "Home page renders the reworked hero layout."], "notes": ""},
+        "regression": {"verdict": "PASS", "evidence": ["No regressions noticed.", "Home page renders the reworked hero layout."], "notes": ""},
+        "scope-creep": {"verdict": "PASS", "evidence": ["Only the hero changed.", "Plan scope is the hero rework."], "notes": ""}
+      },
+      "aggregated_verdict": "PASS"
+    },
+    {
+      "text": "Settings toggle persists across launches.",
+      "provenance": "adversarial-judged",
+      "adversarial_cases": [],
+      "observations": [
+        {"type": "a11y_snapshot", "content": "[switch] Dark mode, on"}
+      ],
+      "verdicts": {
+        "correctness": {"verdict": "PASS", "evidence": ["[switch] Dark mode, on after relaunch", "Settings toggle persists across launches."], "notes": ""},
+        "regression": {"verdict": "PASS", "evidence": ["No state loss on relaunch", "Settings toggle persists across launches."], "notes": ""},
+        "scope-creep": {"verdict": "PASS", "evidence": ["Only the toggle persisted", "Plan scope is the settings toggle."], "notes": ""}
+      },
+      "aggregated_verdict": "PASS"
+    }
+  ],
+  "not_tested": [
+    {"item": "Real device", "tested": false}
+  ]
+}

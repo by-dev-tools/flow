@@ -7,13 +7,15 @@
     "platform_hint": "ios",
     "verify_budget_calls_used": 23,
     "verify_budget_overrun": false,
-    "spike_mode": false
+    "spike_mode": false,
+    "no_plan_fallback": false
   },
   "overall_verdict": "Unknown",
   "exit_code": 1,
   "criteria": [
     {
       "text": "User can submit the form with valid input and see a success message.",
+      "provenance": "adversarial-judged",
       "adversarial_cases": [
         "Submit valid input twice in rapid succession (under 200ms apart); only one record should be created server-side and the UI should show success exactly once."
       ],
@@ -85,6 +87,7 @@
     },
     {
       "text": "Form validation rejects empty required fields with an inline error message.",
+      "provenance": "adversarial-judged",
       "adversarial_cases": [],
       "observations": [],
       "verdicts": {

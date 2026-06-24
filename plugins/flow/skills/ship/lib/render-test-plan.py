@@ -4,13 +4,18 @@ Render the PR `## Test plan` section from the /flow:verify-build findings buffer
 
 The Test plan is a NON-FORGEABLE projection of the machine buffer, not
 hand-authored prose: checkbox state = the buffer's per-criterion
-`aggregated_verdict`, never the ship agent's say-so. A criterion can only
-render `[x]` when an adversarial fresh-context judge returned PASS for it
-(verify-build Step 6/7). This is the enforcement half of "the human verifies
-testing was done, then quick-merges" — the agent cannot show green without a
-real PASS in the buffer. Checkboxes are reserved EXCLUSIVELY for machine
-verdicts; the "what we did NOT test" list renders as plain bullets so a `[ ]`
-always means exactly one thing (an unverified criterion).
+`aggregated_verdict` AND its `provenance`, never the ship agent's say-so. A
+criterion renders `[x]` only when it BOTH passed AND a fresh-context judge
+produced that verdict (provenance `adversarial-judged` / `spike-rubric` —
+verify-build Step 6/7). A criterion the implementing agent wrote by hand
+(provenance `hand-authored`, or absent — the untrusting default) renders `[~]`
+(a distinct self-report state) plus a visible "not adversarially judged" banner,
+NEVER `[x]`: the renderer cannot be tricked into stamping a hand-authored buffer
+as a machine verdict (the dogfound forgery hole). This is the enforcement half of
+"the human verifies testing was done, then quick-merges" — the agent cannot show
+a real green without a real PASS from a real judge. `[x]`/`[~]`/`[ ]` are reserved
+EXCLUSIVELY for criterion states; the "what we did NOT test" list renders as plain
+bullets so a box always means exactly one thing.
 
 Used by `/flow:ship` Step 7: the agent runs this script and pastes stdout
 verbatim as the PR body's `## Test plan` section.
@@ -62,6 +67,28 @@ RENDERED_MARKER = (
     "checkbox state = machine verdict, not self-report. Do not hand-edit "
     "criterion checkboxes. -->"
 )
+SELF_REPORT_MARKER = (
+    "<!-- Test plan rendered from the /flow:verify-build findings buffer; one or "
+    "more criteria are HAND-AUTHORED (provenance != adversarial-judged/spike-rubric) "
+    "and render [~] = implementer self-report, NOT a machine verdict. Do not hand-edit "
+    "criterion checkboxes. -->"
+)
+
+# Provenance values that mean "a fresh-context judge produced this verdict" — the only
+# states that earn a machine `[x]`. Everything else (including absent/unknown — the
+# untrusting default) is implementer self-report and renders `[~]`.
+_MACHINE_JUDGED = {"adversarial-judged", "spike-rubric"}
+
+
+def _provenance(crit: dict) -> str:
+    """Normalize a criterion's provenance. Absent/unrecognized ⇒ `hand-authored`
+    (the load-bearing untrusting default — an un-stamped buffer reads as un-judged)."""
+    p = str(crit.get("provenance", "") or "").strip()
+    return p if p in _MACHINE_JUDGED or p == "hand-authored" else "hand-authored"
+
+
+def _is_self_reported(prov: str) -> bool:
+    return prov not in _MACHINE_JUDGED
 FALLBACK_MARKER = (
     "<!-- verify-build produced no current buffer; Test plan is manual. "
     "checkbox stays unchecked until a human verifies. -->"
@@ -90,10 +117,14 @@ def _verdict_badge(verdict: str) -> str:
     }.get(verdict, f"**{verdict}**")
 
 
-def _checkbox(aggregated_verdict: str) -> str:
-    # Only a positive PASS earns a checked box. FAIL / Unknown / anything else
-    # stays unchecked — absence-of-failure is NOT a pass (FB-0018).
-    return "[x]" if aggregated_verdict == "PASS" else "[ ]"
+def _checkbox(aggregated_verdict: str, provenance: str) -> str:
+    # A machine `[x]` requires BOTH a positive PASS AND a fresh-context-judge provenance.
+    # FAIL / Unknown / anything else → `[ ]` (absence-of-failure is NOT a pass — FB-0018).
+    # A hand-authored PASS → `[~]`: it passed by the implementer's own say-so, never judged,
+    # so it must NOT masquerade as a machine verdict (the dogfound forgery hole).
+    if aggregated_verdict != "PASS":
+        return "[ ]"
+    return "[x]" if provenance in _MACHINE_JUDGED else "[~]"
 
 
 # Markdown metacharacters that let buffer text break out into a link, emphasis,
@@ -137,16 +168,29 @@ def render_criterion(crit: dict, spike: bool) -> str:
     """One Test-plan line (plus an evidence/why sub-line) for a criterion."""
     text = _md_escape(str(crit.get("text", "(missing criterion text)")).strip())
     agg = str(crit.get("aggregated_verdict", "Unknown"))
+    prov = _provenance(crit)
     verdicts = crit.get("verdicts") or {}
 
-    line = f"- {_checkbox(agg)} {text} — {_verdict_badge(agg)}"
+    badge = _verdict_badge(agg)
+    if agg == "PASS" and _is_self_reported(prov):
+        badge = "**PASS** (self-reported)"
+    line = f"- {_checkbox(agg, prov)} {text} — {badge}"
 
     sub = ""
     if agg == "PASS":
-        # Surface the observation that backs the pass (correctness evidence #1).
-        ev = _first_evidence(verdicts.get("correctness") or {})
-        if ev:
-            sub = f"\n  ↳ evidence: {_code_span(ev)}"
+        if _is_self_reported(prov):
+            # A hand-authored green: name it loudly, then show the implementer's stated
+            # evidence (labelled as a CLAIM, not a judged observation) if present.
+            sub = ("\n  ↳ ⚠️ self-reported — marked by the implementing agent, "
+                   "not checked by an independent judge that ran the app")
+            ev = _first_evidence(verdicts.get("correctness") or {})
+            if ev:
+                sub += f"\n  ↳ stated evidence (unverified): {_code_span(ev)}"
+        else:
+            # Surface the observation that backs the pass (correctness evidence #1).
+            ev = _first_evidence(verdicts.get("correctness") or {})
+            if ev:
+                sub = f"\n  ↳ evidence: {_code_span(ev)}"
     else:
         # Not green: surface WHY, per non-PASS dimension. In spike mode only
         # `correctness` is meaningful (regression/scope-creep are placeholder
@@ -196,11 +240,26 @@ def render_not_tested(not_tested: list) -> str:
     return "\n".join(lines)
 
 
-def _headline(n_pass: int, n: int, spike: bool) -> str:
+def _headline(n_pass: int, n: int, spike: bool, n_self_pass: int) -> str:
     """One-line scannable verdict so the human can confirm-and-merge at a glance
     (push-further finding). A pure count over the criteria — no new trust
-    surface, just a faster read of the verdicts already rendered below."""
+    surface, just a faster read of the verdicts already rendered below.
+
+    `n_self_pass` = criteria that PASSED but on the implementer's own say-so
+    (provenance not machine-judged → rendered `[~]`). When any are present the
+    headline NEVER offers "confirm and merge" — a self-reported pass is an
+    unverified claim. A self-reported FAIL/Unknown renders `[ ]` like any other
+    unresolved criterion, so it's counted only in the `unresolved` tail."""
     noun = "smoke checks" if spike else "declared criteria"
+    if n_self_pass:
+        unresolved = n - n_pass
+        tail = f"; the remaining {unresolved} failed or are unverified" if unresolved else ""
+        return (
+            f"> ⚠️ {n_self_pass}/{n} {noun} are marked passing by the implementer alone "
+            f"(`[~]` — not checked by an independent judge that ran the app){tail}. "
+            "Do NOT treat as confirmed — re-run `/flow:verify-build` against a plan, "
+            "or verify manually, before merging."
+        )
     if n_pass == n:
         return f"> ✅ {n}/{n} {noun} passed — confirm and merge."
     return (
@@ -254,17 +313,36 @@ def rendered_block(findings: dict, branch: str, sha: str) -> str:
 
     n = len(criteria)
     n_pass = sum(1 for c in criteria if str(c.get("aggregated_verdict")) == "PASS")
+    n_self_pass = sum(
+        1 for c in criteria
+        if _is_self_reported(_provenance(c)) and str(c.get("aggregated_verdict")) == "PASS"
+    )
+    any_self_reported = any(_is_self_reported(_provenance(c)) for c in criteria)
 
     label = "Spike smoke check" if spike else "Behavioral verification"
-    attribution = (
-        f"{label} by `/flow:verify-build` — `{branch}` @ `{sha}`. Checkbox state "
-        "is the machine verdict from an adversarial fresh-context judge, not "
-        "self-report."
-    )
+    context = f"`/flow:verify-build` — `{branch}` @ `{sha}`."
+    if any_self_reported:
+        # The forgery-defense banner: a hand-authored buffer can never claim "machine
+        # verdict, not self-report." Name the [~] state so the reviewer reads it right.
+        # Human-facing noun is "self-reported" everywhere (HTML report matches);
+        # "hand-authored" stays an internal provenance token only.
+        attribution = (
+            f"⚠️ **Self-reported — not independently judged.** {context} One or more "
+            "verdicts below were marked by the implementing agent itself, NOT by a "
+            "fresh-context judge that actually ran the app and tried to break the claim. "
+            "A self-reported criterion renders `[~]` (never `[x]`); treat it as an "
+            "unverified claim, not a confirmed pass. "
+            "`[x]` = independently-verified PASS · `[~]` = self-reported · `[ ]` = unverified/failed."
+        )
+    else:
+        attribution = (
+            f"{label} by {context} Checkbox state is the machine verdict from a "
+            "fresh-context judge, not self-report."
+        )
 
     body = [render_criterion(c, spike) for c in criteria]
 
-    parts = ["## Test plan", "", _headline(n_pass, n, spike), "", attribution, "", "\n".join(body)]
+    parts = ["## Test plan", "", _headline(n_pass, n, spike, n_self_pass), "", attribution, "", "\n".join(body)]
 
     nt = render_not_tested(findings.get("not_tested") or [])
     if nt:
@@ -278,7 +356,7 @@ def rendered_block(findings: dict, branch: str, sha: str) -> str:
         )
 
     parts.append("")
-    parts.append(RENDERED_MARKER)
+    parts.append(SELF_REPORT_MARKER if any_self_reported else RENDERED_MARKER)
     return "\n".join(parts)
 
 

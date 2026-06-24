@@ -124,50 +124,76 @@ esac
 
 Note: when `platform` is unset, bundled `/run` will autodetect — no flow-side autodetect needed.
 
-## 2. Spike-mode branch
+## 2. Mode detection — explicit spike vs no-plan fallback
 
-Detect spike mode and short-circuit criteria extraction. Three triggers — any one enables spike mode:
+Verify-build runs in one of three modes. **Spike's reduced rigor (3 generic smoke checks) requires an EXPLICIT spike declaration — a missing or Spec-walk-less plan NO LONGER grants it.** This is the dogfound fix: "production code that simply lacks a plan artifact" and "disposable spike" have opposite risk profiles and must not be treated identically.
 
-**Spike mode fires on any of three triggers:**
-
-1. **Caller signal.** `/flow:ship-spike` invokes this skill with the contextual instruction that spike mode applies (the agent reading both SKILL.md files treats the parent ship-spike context as the trigger; no shell-level `--spike` flag is parsed). When the calling skill is `/flow:ship-spike`, treat `SPIKE=true`.
-2. **Missing plan.** `flow.config.json.planPath` doesn't resolve to an existing file.
-3. **No Spec-walk block.** Plan file exists but lacks a `**Spec-walk:**` heading.
-
-Triggers 2 and 3 are detected mechanically:
+| Mode | Trigger | Rigor |
+|---|---|---|
+| **spike** | Trigger 1 ONLY — invoked by `/flow:ship-spike` (caller signals spike context; no shell flag is parsed) | 3-check spike rubric; `metadata.spike_mode=true`; provenance `spike-rubric` |
+| **no-plan fallback** | Trigger 2 (missing plan) or Trigger 3 (no `**Spec-walk:**` block), and NOT an explicit spike | **source-touching ⇒ FULL judged path over diff-derived criteria** (provenance `adversarial-judged`); docs-only ⇒ lightweight smoke checks (provenance `spike-rubric`). `metadata.no_plan_fallback=true` |
+| **full** | A plan with a `**Spec-walk:**` block exists | Plan-criteria judged path (provenance `adversarial-judged`) |
 
 ```sh
-SPIKE=false
+# PRECEDENCE: trigger 1 (explicit spike) is a CALLER signal, not shell-detectable. When
+# invoked from /flow:ship-spike, set MODE=spike HERE, BEFORE the classification below — an
+# explicit spike must NOT be reclassified to no-plan just because the throwaway plan lacks a
+# Spec-walk block. The classification is guarded on `[ "$MODE" != "spike" ]` so setting it
+# first wins (don't rely on author memory to re-override afterward — FB-0010).
+MODE=full
+# [ "$SHIP_SPIKE_CALLER" = "true" ] && MODE=spike   # set by the agent when the parent is /flow:ship-spike
 PLAN_PATH=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null)
 [ -z "$PLAN_PATH" ] && PLAN_PATH="dev-docs/plan.md"
 
-if [ ! -f "$PLAN_PATH" ]; then
-  SPIKE=true
-  SPIKE_REASON="no plan at $PLAN_PATH"
-elif ! grep -q '\*\*Spec-walk' "$PLAN_PATH"; then
-  SPIKE=true
-  SPIKE_REASON="plan at $PLAN_PATH has no **Spec-walk:** block"
+# Absent an explicit spike, a missing/Spec-walk-less plan is NO-PLAN, never spike.
+if [ "$MODE" != "spike" ]; then
+  if [ ! -f "$PLAN_PATH" ]; then
+    MODE=no-plan
+    NO_PLAN_REASON="no plan at $PLAN_PATH"
+  elif ! grep -q '\*\*Spec-walk' "$PLAN_PATH"; then
+    MODE=no-plan
+    NO_PLAN_REASON="plan at $PLAN_PATH has no **Spec-walk:** block"
+  fi
 fi
 
-# Trigger 1 (caller signal) is set by prose above when invoked from /flow:ship-spike;
-# detection there is contextual, not shell-positional.
-
-if [ "$SPIKE" = "true" ]; then
-  echo "[verify-build] spike mode active: ${SPIKE_REASON:-invoked by /flow:ship-spike}"
+# When MODE=no-plan, classify the diff (reuse ship Step 1c's sourceFilePatterns three-way
+# check — committed + uncommitted + untracked — so source-touching is detected identically).
+if [ "$MODE" = "no-plan" ]; then
+  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
+  SOURCE_PATTERN=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
+  [ -z "$SOURCE_PATTERN" ] && SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
+  SRC=$( { git diff "origin/${DEFAULT_BRANCH}..HEAD" --name-only 2>/dev/null; git diff HEAD --name-only 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | grep -E "$SOURCE_PATTERN" || true)
+  if [ -n "$SRC" ]; then NO_PLAN_SCOPE=source-touching; else NO_PLAN_SCOPE=docs-only; fi
+  echo "⚠️ [verify-build] WARN: no plan governs this run ($NO_PLAN_REASON); scope=$NO_PLAN_SCOPE." >&2
+  echo "   This is the NO-PLAN FALLBACK, NOT spike — spike's reduced rigor requires /flow:ship-spike." >&2
+  echo "   /flow:ship will route a source-touching no-plan run to the draft manifest (declare criteria + re-verify, or human-waive)." >&2
+elif [ "$MODE" = "spike" ]; then
+  echo "[verify-build] spike mode (explicit /flow:ship-spike)."
 fi
 ```
 
-When `SPIKE=true`:
+### 2a. `MODE=spike` (explicit) — OR `MODE=no-plan` + `NO_PLAN_SCOPE=docs-only`
+
+Both run the **spike-rubric smoke path** (a missing-plan docs-only diff has little runtime behavior to verify; the smoke check is the honest lower bar):
 - Skip Step 3 (extract-criteria) and Step 4 (adversarial transformation).
-- **Visual capture (§5a) is NOT skipped by spike mode (V2.1 routing fix).** §5a now gates on its own predicate — `uiSurface:true` AND a `Visual-walk` block present (via `extract-visual-states.py`) — independent of Spec-walk extraction. So a plan whose behavioral side fell to spike (missing/malformed `**Spec-walk:**`) but which still declares a `Visual-walk` block on a UI surface STILL captures frames + renders the HTML walkthrough. The old coupling silently dropped the visual summary in exactly that case (the cold-run routing fragility); it is gone.
-- Use the fixed 3-check rubric at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/spike-rubric.md` as the verification script for Step 5's `Skill('verify')` invocation. The rubric's three checks (Launch / One happy step / No log errors) become the "criteria" passed through.
-- At Step 6, spawn ONLY the `correctness` judge (regression + scope-creep are not meaningful without a plan). The judge uses `lib/spike-rubric.md` as its system prompt instead of `lib/rubric.md`.
-- At Step 7, treat the single correctness verdict per check as the per-criterion `aggregated_verdict` directly. Same Unknown ⇒ exit 1 contract.
-- At Step 8, the findings buffer includes `metadata.spike_mode: true`; per-criterion `verdicts.regression` and `verdicts.scope-creep` are emitted as `Unknown` with the canonical placeholder shape — `evidence: ["(spike mode — dimension not applicable)", "<verbatim criterion text>"]` (preserves the schema's exactly-2 evidence requirement) and `notes: "spike mode — dimension not applicable"` — to keep the schema shape stable for downstream consumers (Step 4a, HTML renderer).
+- **Visual capture (§5a) is NOT skipped (V2.1 routing fix).** §5a gates on its own predicate — `uiSurface:true` AND a `Visual-walk` block present (via `extract-visual-states.py`) — independent of Spec-walk extraction. So a plan whose behavioral side fell back but which still declares a `Visual-walk` block on a UI surface STILL captures frames + renders the HTML walkthrough.
+- Use the fixed 3-check rubric at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/spike-rubric.md` as the Step-5 `Skill('verify')` script (Launch / One happy step / No log errors become the "criteria").
+- At Step 6, spawn ONLY the `correctness` judge (regression + scope-creep aren't meaningful without a plan), using `lib/spike-rubric.md` as its system prompt. It runs in **fresh context** — so the verdict is still machine-judged, hence provenance **`spike-rubric`**, NOT hand-authored.
+- At Step 7, the single correctness verdict per check IS the per-criterion `aggregated_verdict`. Same Unknown ⇒ exit 1 contract.
+- At Step 8: `metadata.spike_mode=true` (explicit spike only) or `metadata.no_plan_fallback=true` (docs-only no-plan); every criterion `provenance: "spike-rubric"`; `verdicts.regression` + `verdicts.scope-creep` emitted as the canonical Unknown placeholder — `evidence: ["(spike mode — dimension not applicable)", "<verbatim criterion text>"]` and `notes: "spike mode — dimension not applicable"` — to keep the schema shape stable.
 
-Spike mode applies the same evidence + Unknown discipline as full mode — Unknown ⇒ ESCALATE per FB-0011 ⇒ exit 1. The lower bar is in the *number* of checks (3 fixed vs N plan-derived), not in the verdict discipline.
+### 2b. `MODE=no-plan` + `NO_PLAN_SCOPE=source-touching` — the robust judged path (Gap A "keep it judged")
 
-**Why three triggers, not just `--spike`:** Trigger 1 is the explicit user choice (`/flow:ship-spike` invokes verify-build with `--spike`). Triggers 2 and 3 are the graceful-fallback path so that a project running `/flow:verify-build` directly with a missing or malformed plan gets a useful smoke check instead of a hard failure. The fallback is documented in `lib/spike-rubric.md` § "When spike mode fires."
+A production diff that simply lacks a plan artifact gets a **real judged verification**, not a 3-check smoke test — so the integrity model holds even without a plan:
+- **Derive acceptance criteria from the changed behavior.** Read the diff (committed + uncommitted + untracked source files) and enumerate the behaviors it changes — one criterion each, the same kind of criterion `extract-criteria.py` would emit, just diff-derived rather than plan-declared.
+- Run **Step 4 (adversarial transformation) + Step 6 (per-dimension fresh-context judges)** over them exactly as full mode, EXCEPT `scope-creep` is undefined without a plan to bound scope → emit it as the canonical Unknown placeholder (same shape spike uses). Judge `correctness` (and `regression` where a baseline exists).
+- Stamp every derived criterion **`provenance: "adversarial-judged"`** — a green here is still a real fresh-context-judge PASS, never the implementer's say-so.
+- At Step 8: `metadata.no_plan_fallback=true`, `metadata.spike_mode=false`.
+- This routes to the draft manifest at `/flow:ship` Step 2 (a plan was *expected* but absent): the verdicts are real, but the human must declare the criteria in a `**Spec-walk:**` block (so the next run is full mode) or waive at the merge gate.
+
+Every mode applies the same evidence + Unknown discipline (Unknown ⇒ ESCALATE per FB-0011 ⇒ exit 1). **The implementing agent never hand-authors verdicts** — if neither a judged nor a smoke-rubric path can run, the criterion's verdict is `Unknown` (provenance stays the un-judged default `hand-authored`, which the renderers surface as `[~]` self-report — see Step 8), never a fabricated PASS.
 
 ## 3. Extract criteria from plan
 
@@ -178,14 +204,15 @@ PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null)
 [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
 
 if [ ! -f "$PLAN" ]; then
-  echo "[verify-build] no plan at $PLAN — falling back to spike mode."
-  exec "$0" --spike  # PLACEHOLDER — actual re-entry shape TBD in Phase 2
+  # No plan → the NO-PLAN FALLBACK from Step 2 (NOT spike). Step 2 already classified
+  # source-touching (→ §2b judged path) vs docs-only (→ §2a smoke path) and warned loudly.
+  echo "[verify-build] no plan at $PLAN — no-plan fallback (see Step 2; mode already set)." >&2
 fi
 
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PLAN"
 ```
 
-`extract-criteria.py` emits one criterion per `- [ ]` checkbox under the **active** `**Spec-walk:**` heading. Heading match is robust (V2.1): it recognizes the canonical `**Spec-walk:**`, a qualified `**Spec-walk (PR 1c — shipped):**`, and a markdown `### Spec-walk` — the old strict matcher silently missed non-canonical active headings. When a plan carries several Spec-walk blocks (flow's own multi-PR plan.md; a consumer retaining shipped blocks), **only the first (active) block is extracted**, and a loud warning names the others. Convention: **author the active PR's plan at the top**; retained blocks below are ignored and need no heading qualification (this replaces the old author-memory "qualify retained headings" convention). If no Spec-walk block is found at all, it emits a warning + falls back to spike mode for *behavioral* judging — note this no longer disables visual capture (§5a is decoupled).
+`extract-criteria.py` emits one criterion per `- [ ]` checkbox under the **active** `**Spec-walk:**` heading. Heading match is robust (V2.1): it recognizes the canonical `**Spec-walk:**`, a qualified `**Spec-walk (PR 1c — shipped):**`, and a markdown `### Spec-walk` — the old strict matcher silently missed non-canonical active headings. When a plan carries several Spec-walk blocks (flow's own multi-PR plan.md; a consumer retaining shipped blocks), **only the first (active) block is extracted**, and a loud warning names the others. Convention: **author the active PR's plan at the top**; retained blocks below are ignored and need no heading qualification (this replaces the old author-memory "qualify retained headings" convention). If no Spec-walk block is found at all, it emits a warning + the run takes the **no-plan fallback** (Step 2: source-touching → §2b judged path over diff-derived criteria; docs-only → §2a smoke path) — note this no longer disables visual capture (§5a is decoupled).
 
 ## 4. Adversarial transformation
 
@@ -207,7 +234,7 @@ Bundled `/verify` calls `/run` internally for launch, drives the running app per
 
 ## 5a. Capture-and-persist visual frames (V2)
 
-**Activation (V2.1 — §5a gates on its OWN predicate, decoupled from Spec-walk).** Run `extract-visual-states.py` against the plan, then activate §5a iff **both**: (a) `flow.config.json.uiSurface` is `true`; (b) a `Visual-walk` block is present (`block_count ≥ 1`). The block's assertion count then drives the state-set (≥1 → one capture-target per assertion; 0 assertions in a present block → capture the primary/launch state only). Note what changed: §5a no longer depends on spike mode or on clean Spec-walk extraction — a malformed `**Spec-walk:**` heading sends *behavioral* judging to spike but no longer silently drops visual capture (the cold-run routing fragility). Non-UI / no `Visual-walk` block → skip, and **say so explicitly** (`[§5a] skipped: uiSurface=false` / `[§5a] skipped: no Visual-walk block in plan`), never a silent gap.
+**Activation (V2.1 — §5a gates on its OWN predicate, decoupled from Spec-walk).** Run `extract-visual-states.py` against the plan, then activate §5a iff **both**: (a) `flow.config.json.uiSurface` is `true`; (b) a `Visual-walk` block is present (`block_count ≥ 1`). The block's assertion count then drives the state-set (≥1 → one capture-target per assertion; 0 assertions in a present block → capture the primary/launch state only). Note what changed: §5a no longer depends on mode or on clean Spec-walk extraction — a malformed `**Spec-walk:**` heading sends *behavioral* judging to the no-plan fallback but no longer silently drops visual capture (the cold-run routing fragility). Non-UI / no `Visual-walk` block → skip, and **say so explicitly** (`[§5a] skipped: uiSurface=false` / `[§5a] skipped: no Visual-walk block in plan`), never a silent gap.
 
 ```sh
 PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
@@ -256,10 +283,11 @@ Write structured JSON to `flow.config.json.verifyFindingsPath` (default `/tmp/fl
 The schema pins these properties (binding — consumers depend on them):
 
 - **`schema_version`**: `"1.0"` (bumps only on breaking changes; additive changes do not bump).
-- **`metadata`**: branch, head SHA short, plugin version, platform hint (`web`/`ios`/`android`/`tauri`/`cli`/`library`/`none`/`unknown`), verify budget used + overrun flag, spike mode flag.
+- **`metadata`**: branch, head SHA short, plugin version, platform hint (`web`/`ios`/`android`/`tauri`/`cli`/`library`/`none`/`unknown`), verify budget used + overrun flag, **`spike_mode`** (explicit `/flow:ship-spike` ONLY), **`no_plan_fallback`** (Step 2 triggers 2/3 — no governing plan).
 - **`overall_verdict`**: `"PASS"` / `"FAIL"` / `"Unknown"` — aggregated per Step 7.
 - **`exit_code`**: `0` (PASS) or `1` (FAIL or Unknown). Pins the gate-blocking contract.
-- **`criteria[]`**: per-criterion entries with `text`, `adversarial_cases`, `observations[]` (each with `type` discriminator: `screenshot` | `a11y_snapshot` | `network` | `console` | `log` | `stdout` | `exit_code` | `narrative`), `verdicts.{correctness,regression,scope-creep}` (each with verdict + exactly-2 evidence quotes + notes), and per-criterion `aggregated_verdict`.
+- **`criteria[]`**: per-criterion entries with `text`, **`provenance`** (see next bullet), `adversarial_cases`, `observations[]` (each with `type` discriminator: `screenshot` | `a11y_snapshot` | `network` | `console` | `log` | `stdout` | `exit_code` | `narrative`), `verdicts.{correctness,regression,scope-creep}` (each with verdict + exactly-2 evidence quotes + notes), and per-criterion `aggregated_verdict`.
+- **`criteria[].provenance`** *(non-forgeability signal — set by the JUDGING step, NEVER the implementer)*: `adversarial-judged` (Step 6 fresh-context judges ran — full mode + the §2b no-plan source-touching path) | `spike-rubric` (a fresh-context correctness judge ran the 3-check rubric — explicit spike + §2a docs-only no-plan) | `hand-authored` (no fresh-context judge produced the verdict). **LOAD-BEARING CONTRACT: a consumer MUST treat an absent/unrecognized provenance as `hand-authored`** (the untrusting default). The renderers (`render-test-plan.py`, `render-report.py`) render a machine `[x]` ONLY for `adversarial-judged`/`spike-rubric` PASSes; a `hand-authored`/absent PASS renders `[~]` + a "not adversarially judged — implementer self-report" banner, so a buffer the implementer wrote by hand can never masquerade as a machine verdict. If you cannot judge a criterion, its verdict is `Unknown` — never a hand-authored PASS.
 - **`not_tested[]`**: closed-form per-platform checklist from `lib/not-tested-checklist.md` with `item` text, `tested` boolean, optional `rationale`.
 - **`criteria[].grounding`** *(optional; V2)*: why the surface looks/behaves as it does — `{type: need|design-language|craft-commitment|open-question, statement, citations[], decision_test?}`. Citations resolve from `flow.config.json.{specPath,designLanguagePath}` or the plan's Spec-walk — **never hardcoded doc names**. Captured for criteria with a visual/UX dimension; the renderer (Step 10) shows it as the rationale callout. Operationalizes FB-0040 (rationale carried).
 - **`open_questions[]`** *(optional, top-level; V2)*: subjective human-facing calls — `{question, rationale, recommended_default, user_need_lens, routing: this-iteration|future-planning}`. **DISTINCT from `Unknown`** (epistemic). An `open_questions` entry with `routing: this-iteration` is the mechanical signal that **blocks Step 8 auto-advance** in the loop (mirrors an unresolved MEDIUM assumption — see `docs/workflow.md` Step 8); `future-planning` routes to the roadmap. The renderer surfaces these as the standalone "Open questions for you" block.
