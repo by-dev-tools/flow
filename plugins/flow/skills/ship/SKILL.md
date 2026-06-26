@@ -741,6 +741,19 @@ The PR base branch is resolved via this fallback chain:
 
 **PR-OPEN**: push the new commits. If the draft manifest is non-empty, ensure the PR is a draft (`gh pr ready --undo <num>` if it was marked ready) and refresh the `🚫 NOT READY TO MERGE` block; if the manifest is now empty (blockers since resolved), remove the block and `gh pr ready <num>` to mark it ready. Otherwise update the body only if the summary/test plan/Flow-run table needs to reflect the latest scope — and **re-render the `## Test plan` via `lib/render-test-plan.py`** (above), don't hand-edit it, so a re-ship after new commits reflects the fresh buffer (or correctly falls back if HEAD moved past the last verify-build run).
 
+  Write the updated body via the **REST PATCH** form, never `gh pr edit --body` — `gh pr edit` resolves `projectCards` through the deprecated Projects-classic GraphQL path and exits 1 WITHOUT updating the body on many repos (dogfound FB-0057); the REST endpoint has no such dependency. Write to a temp file, PATCH, then read back — never suppress stderr, never assume the write landed. (Mirrors /flow:staff-review Step 7's PR-OPEN body write — keep both in sync if you change one.)
+
+  ```sh
+  BODY_FILE=$(mktemp); printf '%s\n' "$NEW_BODY" > "$BODY_FILE"   # $NEW_BODY = the re-rendered body
+  if gh api -X PATCH "repos/{owner}/{repo}/pulls/<number>" -F "body=@$BODY_FILE" >/dev/null; then
+    gh api "repos/{owner}/{repo}/pulls/<number>" --jq '.body' | grep -qF 'Flow run' \
+      || echo "[WARN] PR <number> body PATCH returned OK but read-back lacks the '## Flow run' table — the body may be empty/truncated; re-run the write or edit the PR on GitHub."
+  else
+    echo "[WARN] PR <number> body update FAILED (gh api PATCH exit $?) — body NOT updated; check gh auth/network."
+  fi
+  rm -f "$BODY_FILE"
+  ```
+
 ## 8. Hand off
 
 Output the PR URL and a one-line summary of what shipped.

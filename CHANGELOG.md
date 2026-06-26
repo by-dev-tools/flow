@@ -10,6 +10,25 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.10.1 — 2026-06-24
+
+**A PR's description could silently fail to update on some repos — now fixed. SAFETY (PR-body write fallback).**
+
+- **REST PR-body writes.** `/flow:staff-review` (reviewer-notes) and `/flow:ship` Step 7 (re-ship body re-render) updated an existing PR's body via `gh pr edit --body`. On many repos that resolves the deprecated Projects-classic GraphQL path (`repository.pullRequest.projectCards`) and exits 1 *without writing*, leaving a stale PR description that misrepresents what shipped. Both now use the REST `gh api -X PATCH repos/{owner}/{repo}/pulls/{n} -F body=@file` form, which has no `projectCards` dependency. The write is followed by a read-back check and a `[WARN]` on both the failure-exit and empty-body cases (stderr is never suppressed). `gh pr create` at PR-open time was never affected — the bug is specific to `gh pr edit`.
+- Also closes the same exposure in `/flow:ship-spike`'s re-ship branch.
+- Caught by a health-tracker iOS consumer's `/flow:ship` cold-run.
+- Breaking changes: none.
+
+## v1.10.0 — 2026-06-22
+
+**Two dogfound verify-build/ship integrity holes closed: a "this was verified" signal can no longer be forged, and reduced verification rigor must be explicitly declared. SAFETY (verification-trust + rigor-gating).**
+
+- **Provenance-stamped Test plan.** A per-criterion `provenance` field (`adversarial-judged | spike-rubric | hand-authored`; absent ⇒ `hand-authored`) is set by the judging step, never the implementer. The PR `## Test plan` (`render-test-plan.py`) + HTML report (`render-report.py`) now render a hand-authored pass as a distinct `[~]` self-report state + a "not adversarially judged" banner instead of a forgeable machine `[x]`.
+- **Explicit-only spike rigor.** `/flow:verify-build` Step 2 grants spike's reduced 3-check rigor ONLY to an explicit `/flow:ship-spike`. A missing/Spec-walk-less plan is the no-plan fallback — source-touching → the full judged path over diff-derived criteria + `no_plan_fallback` draft-routing; docs-only → smoke — never a silent spike downgrade.
+- **Rigor-marker gate.** `/flow:ship` Step 1.0a gates source-touching diffs on a commit-invariant `/flow:staff-review` marker (stdlib `lib/rigor-marker.py`, written by staff-review, read by ship) as mechanical evidence `/simplify` + staff-review ran.
+- New `run_report_render_evals.py` + `run_rigor_marker_evals.py` + a hand-authored render fixture, all wired into CI alongside the previously-orphaned `run_visual_history_evals.py` (FB-0056).
+- Breaking changes: none.
+
 ## v1.9.1 — 2026-06-21
 
 **`/flow:verify-build`'s rendered visual summary is no longer silently dropped when a plan's `**Spec-walk:**` heading is non-canonical. The visual-capture step (§5a) now gates on its own condition, independent of behavioral-criteria extraction, and a new parser makes the capture state-set deterministic. Deliverable-quality track V2.1. SAFETY (verify-build routing/fallback behavior).**

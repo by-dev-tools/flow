@@ -39,6 +39,38 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### SAFETY: REST PR-body writes — close the `gh pr edit --body` Projects-classic silent-failure (FB-0057, PR 1 of 3)
+**Date:** 2026-06-24
+**Branch:** claude/vigilant-galileo-1d3593
+**Commit:** `2b74402` (on branch; final SHA in the PR after any review fixes)
+
+**What was done:**
+Switched both of flow's PR-body *update* sites from `gh pr edit --body` to the REST `gh api -X PATCH repos/{owner}/{repo}/pulls/<n> -F body=@file` form, each wrapped with a temp-file body, a read-back sentinel assertion, and a `[WARN]` on both the non-zero-exit and missing-content cases (stderr never suppressed):
+- `plugins/flow/skills/staff-review/SKILL.md` Step 7 PR-OPEN (reviewer-notes write) — the one live `gh pr edit --body` instruction.
+- `plugins/flow/skills/ship/SKILL.md` Step 7 PR-OPEN (body re-render on re-ship) — previously said "update the body" with no command, so the agent would naturally reach for `gh pr edit --body`; now specifies the REST form.
+- `plugins/flow/skills/ship-spike/SKILL.md` Step 7 — its PR-OPEN re-ship path had **no** body-update command (Step 1b said "note the number for body updates" but Step 7 only created a new PR), so an agent re-shipping a spike would reach for `gh pr edit`. Added a PR-OPEN branch cross-referencing the REST form. **Surfaced by the staff-review fan-out lens during this PR** — the original fix missed it (FB-0010: grep first, fix every survivor).
+- Updated the stale `staff-review/SKILL.md` §82 gh-safety parenthetical that referenced "the Step 7 `gh pr edit` invocation" to "the Step 7 `gh api` PR-body PATCH" (FB-0010 fan-out — same contract referenced in N places).
+
+Also recorded the full six-item triage in FB-0057: FLOW-3 (audit-coverage zsh crash) verified non-reproducing, FLOW-4 (Spec-walk heading match) closed by FB-0055, FLOW-6 (VH-number collision) N/A for flow; FLOW-1/5a/5b routed to PRs 2 and 3.
+
+**Why:**
+A health-tracker iOS consumer's `/flow:ship` run hit `gh pr edit … --body-file` returning exit 1 with `GraphQL: Projects (classic) is being deprecated … (repository.pullRequest.projectCards)` — the body never updated, so the PR description silently went stale and misrepresented what shipped. `gh pr edit` pulls `projectCards` through the deprecated Projects-classic GraphQL path; the REST `pulls` PATCH endpoint has no such dependency.
+
+**Design decisions:**
+- **REST over wrapping `gh pr edit` with a retry.** The reporter offered both. REST is the root fix — it removes the failing dependency entirely rather than detecting-and-reporting a failure we can't avoid. The read-back + WARN are kept anyway (defense-in-depth: a 200 can still race, and auth/network can fail) so a write that doesn't land is loud, never silent (FB-0010).
+- **Fix both sites, not just the reported one.** The reporter saw it in `/flow:ship`, but the only literal `gh pr edit --body` in the codebase was in `staff-review`; `ship` Step 7 PR-OPEN said "update the body" with no command. Both are PR-body *updates*, both would route through the exposed path — so both got the REST form + an explicit "mirrors the other, keep in sync" note.
+
+**Technical decisions:**
+- **Temp-file body (`-F body=@file`)** rather than inline `--field body=…`: sidesteps shell quoting + arg-length limits on long bodies, and matches the reporter's verified-working form.
+- **Sentinel read-back** asserts a stable substring present in each body (`Reviewer notes` for staff-review, `Flow run` for ship) rather than a full-body diff — cheap, and catches the "PATCH returned 200 but wrote an empty body" case. **Honest limit (staff-review finding):** on a *re-ship* the section header is already in the prior body, so the sentinel can't distinguish "my write landed" from "the header was already there" — i.e. it catches empty-body, not stale-body. A per-write freshness token (assert a `<!-- flow:body-rev … -->` marker unique to this render) closes that; routed to the roadmap rather than pulled into this scoped PR (needs a renderer change + eval fixture, and PR 2's `/flow:land` will touch these write sites).
+- Snippets parse + run clean under both `sh` and `zsh` (verified with `-n` parse + stubbed-`gh` success/failure runs) — these run via the skill harness's shell.
+
+**Tradeoffs discussed:**
+- **Shared helper vs. mirrored inline snippets.** Considered a single shared `lib/update-pr-body.sh` consumed by both skills (FB-0054b "share the primitive"). Rejected for now: there's no cross-skill shared-lib convention in the repo (each skill owns its `lib/`), the two sites are two short prose snippets, and introducing a shared-lib mechanism is scope creep for a 2-site fix. Mitigated the fan-out risk with an explicit "mirrors the other — keep in sync" comment in each + this history note. If a third PR-body-write site appears, that's the rule-of-three trigger to extract the helper.
+
+**Lessons learned:**
+- Triage dogfood feedback against current HEAD first: 3 of 6 reported gaps were already closed or N/A on `main`. Reproducing each claim (ran the snippet, read the matcher, read the helper) before editing kept this PR to the one genuinely-open, genuinely-flow-side bug.
+
 ### Verify-build provenance + no-plan rigor — close two dogfound integrity holes (v1.10.0) — SAFETY
 **Date:** 2026-06-22
 **Branch:** `claude/quirky-jones-9932cd` (PR pending; squash SHA at merge)

@@ -245,7 +245,9 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ## 7. Push and open PR
 
-Push with `-u` if needed. PR base from the resolved default branch:
+**PR-OPEN (re-ship into an existing spike PR):** push the new commits; if the body needs refreshing, update it via the **REST** form — `gh api -X PATCH repos/{owner}/{repo}/pulls/<n> -F body=@file` with a read-back + `[WARN]`, never `gh pr edit --body` (which silently exits 1 on the deprecated Projects-classic GraphQL path and never writes — FB-0057). See `/flow:ship` Step 7 PR-OPEN for the full snippet + rationale.
+
+**LOCAL-ONLY (new spike PR):** push with `-u` if needed. PR base from the resolved default branch:
 
 ```sh
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main")

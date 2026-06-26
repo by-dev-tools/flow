@@ -35,6 +35,21 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0057: PR-body writes must use the REST PATCH endpoint with read-back, never `gh pr edit --body`; and triage dogfood feedback against current HEAD before fixing
+
+**Date:** 2026-06-24
+**Source:** review feedback (a health-tracker iOS consumer ran flow's full `/flow:ship` loop on v1.8.0 and reported six "FLOW-N" gaps; this is PR 1 of a 3-PR response)
+
+**What was said:** Six gaps, highest-value first: (1) no post-merge doc-currency step — a merged PR's status never flips to `merged (#N)`; (2) `gh pr edit --body` silently fails on the Projects-classic GraphQL deprecation (`repository.pullRequest.projectCards`), so the PR body never updates; (3) `/flow:audit-coverage` crashes on its own zsh-eval'd snippet; (4) `extract-criteria.py` only matched a bold `**Spec-walk:**` heading and silently grabbed a different PR's criteria; (5a) `visualHistoryPath` can't adopt a hand-curated/markerless `visual-history.html`; (5b) §5c can't fire when the visual pass is blocked-at-ship but completes later; (6) VH-number collision with no reservation parity with FB. Triaging against current `main` (v1.10.0): **(3)** does not reproduce (reran the Phase-0 block under `zsh -c` and `zsh eval` → clean exit; fixed by PR #47's `while IFS= read`/`tr '\n' ' '` rewrite). **(4)** is closed (logic moved to `walk_extract.py`: matches `#{1,6}` headings + bold, active-block scoping, loud `empty_warning` — FB-0055). **(6)** is N/A for flow: `insert-visual-history.py` derives auto-deduped *slugs*, not `VH-####` numbers; the collision was the consumer's own hand-curated numbering scheme. **(1)/(5a)/(5b)** are genuinely open and already roadmap-flagged (lines 13, 88) — routed to PRs 2 (`/flow:land` post-merge step, closes 1+5b) and 3 (markerless visual-history adoption, 5a). This PR fixes **(2)**.
+
+**Synthesized rule:** Two:
+
+1. **Any flow skill that updates an EXISTING PR's body must use `gh api -X PATCH repos/{owner}/{repo}/pulls/<n> -F body=@file` (REST), never `gh pr edit --body`.** `gh pr edit` resolves `repository.pullRequest.projectCards` through the deprecated Projects-classic GraphQL path and exits 1 *without updating the body* on many repos — a silent failure (FB-0010) at an outward-facing surface, where the stale PR description then misrepresents what shipped. REST has no `projectCards` dependency. Pair the write with a temp-file body (sidesteps quoting + arg-length limits), a read-back assertion on a sentinel string, and a `[WARN]` on BOTH the non-zero exit and the missing-content case; never suppress stderr. (`gh pr create --body[-file]` at creation time is unaffected — the `projectCards` path is specific to `edit`; that's why `/flow:ship`'s LOCAL-ONLY create branch was never exposed, only the PR-OPEN body-*update* sites: `staff-review`, `ship`, and `ship-spike`.) The read-back catches an empty-body write but not a *stale* one (on a re-ship the sentinel header is already present) — the durable form is a per-write freshness token, routed to the roadmap.
+
+2. **Triage consumer/dogfood feedback against current HEAD before fixing — a gap reported on version X may already be closed on `main`.** Half of these six were already-fixed (3, 4) or N/A (6); fixing from the report rather than the code would have re-touched closed surfaces and chased a numbering scheme flow doesn't use. Verify-then-fix: reproduce the claim against current code (run the snippet, grep the matcher, read the helper) before writing a line.
+
+**Applies to:** `staff-review/SKILL.md` Step 7 + the §82 gh-safety note, `ship/SKILL.md` Step 7 PR-OPEN, `ship-spike/SKILL.md` Step 7 re-ship branch (a third site the original fix missed — caught by the staff-review fan-out lens, FB-0010); the FLOW-1/5a/5b roadmap follow-ups (post-merge `/flow:land` + markerless visual-history adoption), routed as separate PRs.
+
 ### FB-0056: A "this was verified" signal must be mechanically enforced with an untrusting default; and reduced rigor must require an EXPLICIT declaration, never be the silent fallback when the rigorous path can't run
 
 **Date:** 2026-06-22
