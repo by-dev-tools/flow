@@ -39,6 +39,36 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### SAFETY: `/flow:land` — post-merge doc-currency skill (v1.11.0, FB-0058, PR 2 of 3)
+**Date:** 2026-06-26
+**Branch:** claude/vigilant-galileo-1d3593
+**Commit:** `ecd8048` (on branch; final SHA in the PR)
+
+**What was done:**
+New human-invoked skill `plugins/flow/skills/land/SKILL.md` (`/flow:land <PR#>`) that runs AFTER a human merges a PR and reconciles the forward docs to the merged reality — closing FLOW-1 ("at PR → merged never reconciles") and FLOW-5b (late visual-history distill) from the v1.8.0 health-tracker dogfood. Eight steps: CLI check → **verify the PR is actually MERGED (BLOCKING, fail-loud, edits nothing)** → discover the active-slot item (gh + doc-scan on `#N` + branch name) → flip it to "merged (#N)" + move to Recently shipped (narrative, agent judgment, like ship Step 5a) → CHANGELOG-currency check → late §5c visual-history distill (reuses `insert-visual-history.py`, not a fork) → clear reserved FB/VH numbers → open a `docs: land #N` PR (REST body form, FB-0057). Never merges; `disable-model-invocation: true`.
+- **`skills/land/lib/land-helpers.py`** (new, stdlib) — the two deterministic operations: `changelog-check` (anchored `## v<ver>` presence, exit 0/1/2) + `clear-reservation` (word-boundary FB/VH-id strike, idempotent).
+- **`evals/run_land_evals.py`** (new, 16 checks) — pins the helper + the SKILL contract prose (merged-gate, no-match WARN, §5c reuse, never-merge, REST body) + the two staff-review BLOCKER fixes; wired into `.github/workflows/ci.yml`.
+- **Registration fan-out (FB-0010):** plugin.json + marketplace.json skill lists + descriptions; README skill table + count (13→14) + "What v1.11.0 ships"; workflow.md surface bullet + cheat-sheet row + the Step 11 post-merge paragraph + the stale "Shipped surface (v1.7.0→v1.11.0)" header; workflow-help table. Version bumped v1.10.1 → v1.11.0 (new skill = minor).
+
+**Why:**
+`/flow:ship` reconciles forward docs at PR-*open* time; nothing reconciles after the human merges, so `main` sits stale until a manual "docs: post-merge currency" PR (a recurring patch the reporter observed). Since Claude can't merge, the post-merge step can't live inside `/flow:ship` — it needs a separate, human-invoked skill.
+
+**Design decisions:**
+- **Narrative status-flip stays agent judgment, not a regex helper** (push-further concurred). The "at PR (#N)" phrasings are an open set (`, ready)`, `in flight`, `(#N) (ready)`, …); a regex over an open set silently misses the variant it wasn't taught — the FB-0010 silent-skip class. The agent reads each grep-matched line and rewrites it in context, with a loud WARN on no-match. Mirrors ship Step 5a (also agent-driven, no helper). The helper owns ONLY the two genuinely-deterministic ops.
+- **Opens a reconciliation PR, doesn't push to main.** Claude doesn't push to `main`; `/flow:land` commits the reconciliation on a `land-<N>` branch and opens a small PR the human merges — one command replacing the hand-edit.
+- **Reuse §5c, don't fork the distill** — one record format. The late-distill path points at the canonical `insert-visual-history.py` via the §5c steps.
+
+**Technical decisions:**
+- `changelog-check` anchors with a `(?![\d.])` lookahead so a check for `v1.10` is NOT satisfied by `## v1.10.1` (a `\b` wrongly matches the 0→. transition — caught in helper smoke-test).
+- `clear-reservation` is idempotent (absent id / absent file → clean no-op) and refuses an unconstrained id (only `(FB|VH)-\d{1,6}`), so it can't strike arbitrary lines.
+
+**Tradeoffs discussed:**
+- **Skill vs GitHub-Action-on-merge.** The reporter offered both. A skill is the portable, no-CI-required path and keeps the human in the loop (they invoke + merge the small PR); the Action is noted as the alternative in workflow.md Step 11 for projects that prefer it.
+- **No shared shell helper for the gh PR-body write** — `/flow:land` opens a NEW PR (`gh pr create --body-file`, unaffected by FB-0057), so it doesn't hit the body-*update* bug and didn't need the REST-PATCH snippet inline.
+
+**Lessons learned:**
+- **Staff-review earned its keep again (2 BLOCKERs).** (1) Step 2's discovery grep interpolated an unset `$HEADREF`, collapsing `#N\b|$HEADREF` to `#N\b|` — an empty alternative that matches every line, making the no-match WARN dead code and the branch-fallback never run (the exact FB-0010 silent-skip the step was meant to *defend* against). (2) Step 1b's `git checkout -b` wasn't idempotent, contradicting the skill's own "Idempotent by design" Gotcha. Both fixed + pinned by new eval guards (skill 6/7). The lesson: **a prose-driven skill's shell snippets need at least a static eval guard** — substring greps over prose let a shell bug ship green (the BLOCKER did, until the guard was added).
+
 ### SAFETY: REST PR-body writes — close the `gh pr edit --body` Projects-classic silent-failure (FB-0057, PR 1 of 3)
 **Date:** 2026-06-24
 **Branch:** claude/vigilant-galileo-1d3593

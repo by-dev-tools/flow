@@ -29,6 +29,7 @@ jobs:
       - run: python3 plugins/flow/evals/run_render_evals.py
       - run: python3 plugins/flow/evals/run_report_render_evals.py
       - run: python3 plugins/flow/evals/run_rigor_marker_evals.py
+      - run: python3 plugins/flow/evals/run_land_evals.py
 
   security:
     name: security

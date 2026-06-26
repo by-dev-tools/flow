@@ -35,6 +35,21 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0058: The merge boundary needs a dedicated human-invoked reconciliation step; and a prose-driven skill's shell snippets need a static eval guard
+
+**Date:** 2026-06-26
+**Source:** review feedback (v1.8.0 health-tracker dogfood FLOW-1 + FLOW-5b; PR 2 of 3) + this PR's own staff-review
+
+**What was said:** FLOW-1: `/flow:ship` reconciles forward docs at PR-*open* time, but nothing flips the item to "merged (#N)" once the human merges — `main` sits stale until a manual "docs: post-merge currency" PR (a recurring patch). FLOW-5b: `/flow:ship` §5c self-skips when a visual pass is blocked at ship and completes only later, so the durable entry never gets written. Both live at the merge boundary, which `/flow:ship` structurally can't cross (Claude can't merge). Resolved by a new human-invoked `/flow:land <PR#>` skill. During its own build, staff-review caught two BLOCKERs in the skill's shell that the prose-substring eval did not: an unset `$HEADREF` interpolated into a grep alternation (`#N\b|$HEADREF` → `#N\b|`, an empty alternative matching every line, making the no-match WARN dead code) and a non-idempotent `git checkout -b`.
+
+**Synthesized rule:** Two:
+
+1. **The merge boundary needs its own human-invoked reconciliation step — `/flow:ship` can't cross it.** Anything that must happen *after* a human merges (flip status to "merged (#N)", move the item to Recently shipped, a late visual-history distill, clear reservations, CHANGELOG-currency) belongs in a separate `disable-model-invocation: true` skill the human runs post-merge, NOT in the ship pipeline (which runs pre-merge and which Claude can auto-advance into). Keep the deterministic core in a tiny tested helper; leave the free-form narrative flips as agent judgment (the "at PR (#N)" phrasings are an open set — a regex over them is the FB-0010 silent-skip trap). Mirror ship Step 5a's prose-driven shape.
+
+2. **A prose-driven skill's shell snippets need at least a STATIC eval guard.** Substring-greps over SKILL.md prose (the cheap regression guard for skills with no runnable target) verify *wording*, not *behavior* — so a real shell bug (an unset var in an alternation, a non-idempotent command) ships green. When a skill's contract depends on a shell snippet behaving a specific way, add a static eval assertion that pins the load-bearing idiom (e.g. assert the guarded-pattern form `[ -n "$VAR" ] && PAT=…` exists, assert the idempotency guard `git show-ref --verify` exists) so the bug class can't regress. Better still, shell-parse-test (`sh -n`/`zsh -n`) + run-test the snippet against a fixture during the build.
+
+**Applies to:** `skills/land/SKILL.md` + `skills/land/lib/land-helpers.py` + `evals/run_land_evals.py`; `/flow:ship` §5a (sibling prose reconciliation) + §5c (shared distill); FB-0010 (silent-skip / empty-alternative); the workflow.md Step 11 merge section; FLOW-5a (markerless visual-history adoption) remains the separate PR-3 follow-up.
+
 ### FB-0057: PR-body writes must use the REST PATCH endpoint with read-back, never `gh pr edit --body`; and triage dogfood feedback against current HEAD before fixing
 
 **Date:** 2026-06-24

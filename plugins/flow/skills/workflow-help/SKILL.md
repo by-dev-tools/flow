@@ -93,6 +93,7 @@ To customize: edit `flow.config.json` at the project root. The schema lives at `
 | `/flow:audit-coverage` | Coverage auditor: flags diff behavior no declared `**Spec-walk:**` criterion covers (under-declaration) |
 | `/flow:ship` | Final-pass reviews → synthesize feedback → update docs → push → open PR |
 | `/flow:ship-spike` | Lightweight ship pipeline for `mode: spike` PRs |
+| `/flow:land` | (Post-merge, human-only) reconcile forward docs to "merged (#N)" after a human merges; late visual-history distill; opens a `docs: land #N` PR |
 | `/flow:workflow-help` | (This skill) print the loop and project config |
 | `/flow:doctor` | Verify flow is installed + configured (PASS/FAIL/WARN punch-list) |
 
