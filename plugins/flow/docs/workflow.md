@@ -4,11 +4,12 @@ How features get built and shipped under flow's managed-autonomy loop. **Project
 
 This is the long-form narrative. Each invoked skill carries its own short-form instructions; this doc is the reference for *why* the loop has the shape it has and *how* the gates compose.
 
-## Shipped surface (flow v1.7.0)
+## Shipped surface (flow v1.11.0)
 
 Everything described in the loop below is shipped and installable today. The full user-visible surface:
 
 - **`/flow:ship`** / **`/flow:ship-spike`** — final-pass pipeline (security + a11y + verify-build reviews) → feedback synthesis → doc updates → commit → push → open PR. Never merges.
+- **`/flow:land`** — post-merge, human-invoked: after *you* merge a PR, reconciles the forward docs to "merged (#N)" (the slot the open-PR ship couldn't), re-runs the visual-history distill if a blocked visual pass since completed, and opens a small `docs: land #N` PR. Closes the "at PR → merged never reconciles" gap. Never merges.
 - **`/flow:staff-review`** — four-lens parallel review (engineer / UX-designer / design-engineer / push-further).
 - **`/flow:security-review`** / **`/flow:accessibility-review`** / **`/flow:verify-build`** / **`/flow:audit-coverage`** — the four final-pass reviewers, each also invocable standalone. (`/flow:audit-coverage` flags diff behavior no declared `**Spec-walk:**` criterion covers — the under-declaration complement to verify-build.)
 - **`/flow:critique-plan`** — plan-critic pass over the most recent plan (scope drift, spec violation, internal incoherence).
@@ -312,6 +313,16 @@ The temptation is to update the history doc as soon as a decision is made. **Res
 
 Claude does not merge. Ever. `gh pr merge` is not a Claude action. The user merges.
 
+**After you merge — `/flow:land <PR#>` (optional but recommended).** `/flow:ship`
+reconciled the forward docs at *PR-open* time (Step 5a), but it runs before the
+merge — so nothing flips the item from "at PR (#N)" to "merged (#N)" once you
+merge, and `main`'s roadmap/plan sit stale until someone hand-patches them. Run
+`/flow:land <PR#>` to do that reconciliation in one command (it also re-runs the
+visual-history distill if a visual pass was blocked at ship and has since
+completed). It's human-invoked — Claude can't merge, so this can't live inside
+`/flow:ship` — and it opens a small `docs: land #N` PR you merge. Skip it only if
+your project reconciles post-merge another way (e.g. a GitHub-Action-on-merge).
+
 ---
 
 ## Spike mode (`/flow:ship-spike`)
@@ -460,6 +471,7 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / MANUAL (you type it; c
 | `/flow:verify-build` | Plan-driven behavioral verification: extract criteria from `**Spec-walk:**` checkboxes, adversarial transform, judge bundled `/verify`'s observations per dimension. Discovery at the Step 8/9 readiness boundary; a *confirmation* re-run inside ship (a regression routes to draft, not a hard halt) | Step 8/9 readiness + `/flow:ship` Step 2 confirm + `/flow:ship-spike` Step 2; also standalone mid-iterate | BOTH | flow |
 | `/flow:audit-coverage` | Coverage auditor: flags diff behavior changes no declared `**Spec-walk:**` criterion covers (under-declaration). A gap → draft manifest (decision-required). Best-effort LLM judgment; runs all platforms; self-skips on doc/test/refactor-only diffs or no Spec-walk | Step 8/9 readiness + `/flow:ship` Step 2; also standalone | BOTH | flow |
 | `/flow:ship-spike` | Lightweight ship for spike-mode PRs (also invokes `/flow:verify-build --spike` for a 3-check smoke gate) | At spike-loop end (auto-advance is **judgment-gated** — no mechanical predicate, unlike `/flow:ship`; never cold-start); also typeable | BOTH | flow |
+| `/flow:land` | Post-merge doc-currency: flips the merged PR's item to "merged (#N)", moves it to Recently shipped, late visual-history distill, clears reserved numbers, opens a `docs: land #N` PR. Never merges | After **you** merge a PR (Step 11) — `disable-model-invocation: true`, human-only, never auto-fires | HUMAN | flow |
 | `/flow:log-disagreement` | Capture user pushback on a finding for prompt tuning | After a reviewer issues a finding the user disputes in plain language | AUTO | flow |
 | project's `/link` (or equivalent) | Start the dev server, return URL | Whenever you need a live preview | — | project-specific (not flow) |
 

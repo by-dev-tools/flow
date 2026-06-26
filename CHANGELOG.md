@@ -10,6 +10,16 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.11.0 — 2026-06-26
+
+**New skill `/flow:land <PR#>` — post-merge doc-currency. Closes the "at PR → merged never reconciles" gap.**
+
+- **What it does.** `/flow:ship` reconciles your forward docs at *PR-open* time, but it runs before the merge — so once *you* merge, nothing flips the item from "at PR (#N)" to "merged (#N)", and `main`'s roadmap/plan sit stale until someone hand-patches them. `/flow:land <PR#>` is the one command that does that reconciliation: it verifies the PR is actually merged (fails loudly otherwise, edits nothing), flips the item to "merged (#N)" across roadmap/plan/history, moves it to "Recently shipped", and opens a small `docs: land #N` PR. **Never merges.**
+- **Human-only.** `disable-model-invocation: true` — Claude can't merge, so this can't live inside `/flow:ship` and never auto-fires; you run it after merging.
+- **Also handles** the late visual-history distill (if a visual pass was blocked at ship and has since completed, it re-runs the `/flow:ship` §5c distill — one shared implementation, not a fork), a CHANGELOG-currency check, and clearing any feedback-ID reservations the PR claimed. Idempotent: a re-run after a partial land reuses the land branch and treats already-done steps as no-ops.
+- Backed by the stdlib `skills/land/lib/land-helpers.py` (changelog-check + clear-reservation) and `evals/run_land_evals.py`, wired into CI.
+- Breaking changes: none.
+
 ## v1.10.1 — 2026-06-24
 
 **A PR's description could silently fail to update on some repos — now fixed. SAFETY (PR-body write fallback).**

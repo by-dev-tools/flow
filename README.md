@@ -27,9 +27,9 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 
 **The loop itself:** [`plugins/flow/docs/workflow.md`](plugins/flow/docs/workflow.md) — canonical 11 steps with rationale, gate semantics, spike/tiny modes, config-slot reference.
 
-## What v1.9.1 ships
+## What v1.11.0 ships
 
-### Workflow surface (13 user-visible skills)
+### Workflow surface (14 user-visible skills)
 
 Listed in **loop order** — top to bottom is the sequence you move through. The **Fires** column is the part most newcomers miss: it says what runs on its own vs what you have to type.
 
@@ -54,6 +54,7 @@ Listed in **loop order** — top to bottom is the sequence you move through. The
 | 10 · nested | **`/flow:verify-build`** | BOTH | Plan-driven behavioral gate: extracts spec-walk criteria, adversarially tests the built artifact via bundled `/verify`. Discovery runs at the Step 8/9 readiness boundary; inside `/flow:ship` it's a *confirmation* re-run — a FAIL/Unknown regression routes to a **draft PR + a pinned `🚫 NOT READY TO MERGE` manifest**, never a merge-ready PR. Needs `verifyEnabled` + `platform` set. |
 | 10 · nested | **`/flow:audit-coverage`** | BOTH | Coverage auditor: flags behavior changes in the diff that **no declared `**Spec-walk:**` criterion covers** (under-declaration — a behavior verify-build never tested). A gap routes to the **draft manifest** (decision-required). Complements verify-build: verify-build checks the declared criteria *pass*; audit-coverage checks the declared set is *complete*. Best-effort LLM judgment (raises the bar, not a deterministic guarantee); runs on all platforms; self-skips on doc/test/refactor-only diffs. |
 | 10 · spike | **`/flow:ship-spike`** | BOTH | Lightweight ship for `mode: spike` PRs. Same pre-flight gates; skips heavy reviews; writes the `history.md` entry (the deliverable); opens a `spike`-labeled PR. Model-invocable at the end of a spike loop or typed — but its auto-advance is **judgment-gated** (a spike has no mechanical readiness predicate, unlike `/flow:ship`'s verify-build PASS); never cold-start. Never merges. |
+| 11 · post-merge | **`/flow:land`** | HUMAN | After **you** merge a PR: reconciles the forward docs to "merged (#N)" (the slot `/flow:ship` couldn't, since it runs before the merge), moves the item to Recently shipped, re-runs the visual-history distill if a visual pass was blocked at ship and has since completed, clears any feedback-ID reservations the PR claimed (a no-op if your project doesn't reserve numbers), then opens a small `docs: land #N` PR. `disable-model-invocation: true` — human-only, never auto-fires (Claude can't merge). **Never merges.** |
 | cross-cutting | **`/flow:log-disagreement`** | AUTO | The one self-firing skill: when you dispute a finding from an audit/critique in plain language, it captures the pushback for prompt-tuning. Needs a prior finding in the conversation to dispute. |
 
 ### Supporting surface
