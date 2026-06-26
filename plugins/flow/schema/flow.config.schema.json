@@ -159,6 +159,30 @@
       "description": "Extended-regex pattern (passed to grep -E) matching UI file paths in the diff. Used by /flow:accessibility-review at Step 1 to early-exit when a diff contains no UI files (e.g., docs-only PR in a uiSurface=true project). Default covers TSX/JSX/Vue/Svelte/Astro/MDX/CSS/SCSS/Sass/Less/HTML + njk/hbs/ejs templates (extension-only — the original path-prefix branch was redundant since any file matching the prefix-form also matched the extension-only form). Override to constrain to specific path roots (e.g., '^(apps/web|packages/ui)/.+\\.(tsx|css)$') or add non-standard extensions. Invalid regex falls back to default + emits loud warning (caught via grep -E exit-2 detection).",
       "default": "\\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$",
       "examples": ["\\.(tsx|css)$", "^(apps/web|packages/ui)/.+\\.(tsx|css)$"]
+    },
+    "flowRepoPath": {
+      "type": "string",
+      "description": "Absolute path to the local flow plugin checkout — the repo /flow:contribute opens contribution PRs against (FB-0059). The lesson-harvest loop runs in any project (/flow:ship Step 4c enqueues flow-generalizable lessons to user-scope storage); the drain (/flow:contribute) must run FROM this checkout because the contribution edits + PR target the flow repo, not the project being shipped. /flow:contribute refuses to run unless `pwd` resolves to this path (a clean one-line message, never a partial run). Unset disables the contribute drain (harvest still enqueues; nothing drains until you set this and run from the checkout). Set this on the machine where you maintain flow, to the repo root that contains `.claude-plugin/marketplace.json`.",
+      "examples": ["/Users/you/dev/flow", "/home/you/src/flow"]
+    },
+    "contributionsQueuePath": {
+      "type": "string",
+      "description": "Storage root for the cross-project lesson-contribution queue (FB-0059). /flow:ship Step 4c enqueues flow-generalizable lessons here; /flow:contribute drains them. User-scope and cross-project by design (a lesson harvested in project A must be visible to a contribute run rooted in the flow checkout), so the default lives under ~/.claude — NOT in any project tree. Override only to relocate the queue (e.g. onto synced storage). The scripts also honor the FLOW_CONTRIB_DIR environment variable, which takes precedence and is used by the eval harness to redirect storage to a tempdir. Default: ~/.claude/plugins/data/flow/contributions.",
+      "default": "~/.claude/plugins/data/flow/contributions",
+      "examples": ["~/.claude/plugins/data/flow/contributions"]
+    },
+    "lastHarvestedPath": {
+      "type": "string",
+      "description": "Path to the lesson-harvest watermark file (FB-0059) — a JSON map of session-id → record-count already harvested, so /flow:ship Step 4c only analyzes transcript turns added since the last harvest and re-shipping a branch never re-enqueues old lessons. User-scope (sits beside the queue). Default: ~/.claude/plugins/data/flow/contributions/last_harvested.json.",
+      "default": "~/.claude/plugins/data/flow/contributions/last_harvested.json",
+      "examples": ["~/.claude/plugins/data/flow/contributions/last_harvested.json"]
+    },
+    "contributionThreshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Confidence cutoff (0–1) for AUTO-INCLUDING a harvested lesson in the /flow:contribute draft PR without human pre-review (FB-0059). The deterministic confidence score (contribution_store.py) combines source weight (taste/decision > correction > error > feedback), evidence strength (direct-quote > paraphrase > inferred), cross-session recurrence, and a sanitization penalty. Lessons at or above this bar AND sanitization-clean enter the draft PR; everything below is HELD under the PR's 'needs human attention' list (never dropped). v1 still gates every PR on human merge — this only governs what lands in the draft vs what waits. A future auto-merge rung (deferred) hangs its predicate off the same score. Default: 0.6.",
+      "default": 0.6
     }
   }
 }

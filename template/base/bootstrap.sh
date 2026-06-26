@@ -163,7 +163,7 @@ else
   jq 'with_entries(select(.key | startswith("$comment") | not))' \
     "$FLOW_DIR/template/base/flow.config.json.example" \
     > "$PROJECT_ROOT/flow.config.json"
-  echo "         · created:       flow.config.json (clean JSON, 24 slots)"
+  echo "         · created:       flow.config.json (clean JSON, 28 slots)"
   copied=$((copied+1))
 fi
 

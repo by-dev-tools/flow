@@ -4,7 +4,7 @@ description: >
   Verify that the flow plugin is correctly installed and configured for the
   current project. Runs a punch-list of PASS/FAIL checks: marketplace
   registered under the canonical 'flow' name, flow@flow enabled, project-root
-  flow.config.json present + parses + matches the v1.2+ schema, all 24 slots
+  flow.config.json present + parses + matches the v1.2+ schema, all 28 slots
   have sensible values, any declared `statusDocs` status surfaces exist + are
   fenced, auto-loading rules visible to Claude Code, the paths
   named in slots actually exist on disk, prerequisite CLI tools (gh, jq, git)
@@ -316,6 +316,43 @@ else
     fi
   fi
   rm -f /tmp/flow-doctor-sd-err
+fi
+```
+
+**Check 2.8 — lesson-contribution slots (`flowRepoPath` etc.) are coherent (FB-0059)**
+
+The lesson-harvest loop (`/flow:ship` Step 4c enqueues flow-generalizable lessons; `/flow:contribute` drains them into a draft PR against the flow repo). Harvest works with no config (it falls back to user-scope defaults), but the **drain** needs `flowRepoPath` set to a real flow checkout. This check verifies the slots are coherent so a misconfigured drain fails at setup, not mid-run.
+
+```sh
+if [ ! -f flow.config.json ] || ! jq -e . flow.config.json >/dev/null 2>&1; then
+  : # 2.1/2.2 already reported config problems.
+else
+  FRP=$(jq -r '.flowRepoPath // empty' flow.config.json)
+  if [ -z "$FRP" ]; then
+    echo "[PASS] flowRepoPath: unset — /flow:contribute disabled (harvest still enqueues to user-scope storage)"
+  else
+    FRP_EXP=$(echo "$FRP" | sed "s#^~#$HOME#")
+    if [ -d "$FRP_EXP" ] && [ -f "$FRP_EXP/.claude-plugin/marketplace.json" ]; then
+      echo "[PASS] flowRepoPath: $FRP is a flow checkout (.claude-plugin/marketplace.json present)"
+    else
+      echo "[FAIL] flowRepoPath: $FRP is not a flow checkout (no .claude-plugin/marketplace.json)"
+      echo "       Fix: point flowRepoPath at your local flow repo root, or unset it to disable /flow:contribute."
+    fi
+  fi
+  # Queue parent must be writable (defaults to ~/.claude/...; honored by the scripts + FLOW_CONTRIB_DIR env).
+  QRP=$(jq -r '.contributionsQueuePath // empty' flow.config.json | sed "s#^~#$HOME#")
+  [ -z "$QRP" ] && QRP="$HOME/.claude/plugins/data/flow/contributions"
+  QPARENT=$(dirname "$QRP")
+  if mkdir -p "$QRP" 2>/dev/null; then
+    echo "[PASS] contributionsQueuePath: $QRP is writable"
+  else
+    echo "[WARN] contributionsQueuePath: cannot create $QRP — harvest enqueue will fail. Fix: ensure $QPARENT is writable."
+  fi
+  # Threshold sane (0–1) if set.
+  TH=$(jq -r '.contributionThreshold // empty' flow.config.json)
+  if [ -n "$TH" ] && ! awk -v th="$TH" 'BEGIN{exit !(th>=0 && th<=1)}' 2>/dev/null; then
+    echo "[FAIL] contributionThreshold: $TH out of range (must be 0–1). Fix: set a value like 0.6."
+  fi
 fi
 ```
 

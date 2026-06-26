@@ -10,6 +10,16 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "Q=\"$HOME/.claude/plugins/data/flow/contributions/queue\"; if [ -f .claude-plugin/marketplace.json ] && [ -d \"$Q\" ]; then N=$(grep -l '\"status\": \"queued\"' \"$Q\"/*.json 2>/dev/null | grep -c .); if [ \"$N\" -gt 0 ]; then echo \"[flow] $N queued lesson-contribution(s) in the harvest queue — run /flow:contribute to drain them into a draft PR.\"; fi; fi; exit 0"
+          }
+        ]
+      }
     ]
   }
 }
