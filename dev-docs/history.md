@@ -39,6 +39,41 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### Lesson-harvest + contribute-back-to-flow loop (`/flow:contribute`, ship Step 4c) — v1.11.0 — SAFETY
+**Date:** 2026-06-25
+**Branch:** claude/kind-almeida-d160e0
+**Commit:** [this PR]
+
+**What was done:**
+Closed the missing self-improvement loop: flow now learns generalizable lessons from its own use and contributes them back as a PR. Two surfaces, queue + drain (mirrors the existing disagreement model):
+- **Harvest (ship Step 4c, automatic).** A new `harvest_lesson.py prescan` runs FIRST as a ~free deterministic cost gate (correction/symptom/overrule/endorsed-reviewer markers in the transcript since a per-session watermark); on a clean PR it short-circuits with zero LLM spend. When it trips, the ship agent classifies each Step-4 candidate PROJECT-LOCAL vs FLOW-GENERALIZABLE vs BOTH, drops noise, and enqueues the generalizable ones via `harvest_lesson.py enqueue` to a user-scope cross-project queue (`contribution_store.py`).
+- **Contribute (`/flow:contribute`, the drain).** New user-facing skill, run from the flow checkout (`flowRepoPath`). Drains the queue AND the previously-manual `/flow:log-disagreement` store, dedups, **sanitizes out personal-project tokens fail-closed** (`sanitize_tokens.py`), scores, opens a single rolling **draft** PR with the high-confidence clean lessons (sub-threshold/dirty held + listed), and calibrates from prior PR outcomes. Never merges.
+- New scripts: `contribution_store.py` (queue/dedup/deterministic-confidence/calibrate), `harvest_lesson.py` (prescan/enqueue/mark), `sanitize_tokens.py` (scrub/scan). Additive `harvest_dialogue`/`render_harvest_window` helpers in `extract_session.py` (existing `--mode plan|completion` CLI byte-identical). New `run_contribution_evals.py` (35 checks) wired into CI. 4 new schema slots (`flowRepoPath`, `contributionsQueuePath`, `lastHarvestedPath`, `contributionThreshold`) → 28 total. Flow-repo SessionStart hook (primary auto-trigger) in `.claude/settings.json`. doctor Check 2.8 + slot-count bump.
+
+**Why:**
+`log-disagreement`, ship Step 4 synthesis, and failure-memory all improved the *project* or sat waiting for manual maintainer review — none carried a lesson back into the flow plugin. The most expensive errors (a reviewer that keeps false-positiving, a gate that misfires) recur across every project until flow itself changes. This loop is the drain end of capture machinery flow already had a capture end for.
+
+**Design decisions:**
+- **Queue + drain, not inline cross-repo.** Harvest runs in any project; the drain must run from the flow checkout (the PR targets flow). User-scope storage (`~/.claude/plugins/data/flow/contributions/`) bridges the two, exactly like the disagreements store.
+- **Automatic, human-gates-merge-only.** Per FB-0058: harvest is in ship; the drain self-triggers (local SessionStart hook primary; optional local OS job; NOT a cloud `/schedule` routine — a cloud agent can't see the local queue/checkout). v1 opens a draft PR; the merge is the one human action. Auto-merge (rung 2) deferred — the deterministic confidence score + `feedback_signals.json` are built so it's a later predicate flip (one-way-door, FB-0011).
+- **Two-destination router with one noise/confidence gate** (the user's mid-design refinement): the analyzer routes project-local vs flow-generalizable vs both, promoting only above-threshold non-noise findings.
+- **Reuse over rebuild.** Reused `extract_session.find_session_file/load_session/normalize_turns` + `bounding_logic.SYMPTOM_WORDS`; borrowed the forge/noticed proposal/dismissal/calibration model, reimplemented lean in flow's stdlib style.
+
+**Technical decisions:**
+- **Confidence is deterministic** (`compute_confidence`: source weight × evidence strength + capped recurrence − sanitization penalty, clamped [0,1]) — never an LLM number, so the future auto-merge gate is a pure predicate (enforce-don't-attest, FB-0056).
+- **Sanitizer ships no brand literals.** `sanitize_tokens.py` matches structural shapes (home/abs paths, URLs, emails, design-token shape `--x-y`) + per-project tokens passed at runtime from `known_tokens.json`; the CLAUDE.md:126 example list is used only as eval *fixture data*, never as code constants — the scrubber is itself a project-agnostic plugin artifact. The critique-plan pass on the design flagged the original (literal-token) approach.
+- **`extract_session.py` change is purely additive** (new helpers; no edit to `find_bounding_message`, the reviewer CLI, or the malformed-JSONL skip). An eval pins that `--mode harvest` is rejected, proving the auditor/critic contract is untouched.
+
+**Tradeoffs discussed:**
+- **Routing/noise = LLM judgment, not a pinned contract.** The critique-plan pass caught an over-claim; resolved by drawing a hard determinism boundary (only score + pre-scan mechanical; routing is reviewer-grade, human-gated). Evals pin the score math + prose contracts, not classification accuracy.
+- **Per-ship cost vs proactivity.** Reading the transcript every ship could waste tokens when nothing's there. Resolved with the pre-scan gate (null case ~free) + dialogue-only extraction + the watermark (only new turns). Expected ~$0.05–0.25/ship; `feedback_signals` reveals the real hit rate to tune cadence later.
+- **Project-local authoring deferred.** v1 routes project-local findings only to existing surfaces (4a/4b/roadmap), not net-new `.claude/rules`/`CLAUDE.md` authoring (scope-drift flag from critique-plan).
+
+**Lessons learned:**
+- Dogfooded the design through `/flow:critique-plan` + `/flow:audit-plan` before building: caught the hardcoded-brand-literals spec violation, the determinism over-claim, a scope-drift, and (audit) a missed `workflow.md` survivor in the slot-count fan-out. Grep-first then found **7** live "24 slots" files (the plan estimated 5 — it missed the two `template/` files); all bumped to 28.
+- A space inside a string literal got written as a NUL byte during file creation; caught immediately by a parse smoke-test before wiring anything together. Smoke-test scripts the moment they're written.
+- **Shipped on a stale base (caught at staff-review).** origin/main advanced two PRs (#56 v1.10.1, #58 README rewrite) during the build; the design-engineer lens flagged a phantom version-revert, confirming the stale base. Rebased + re-resolved the version/changelog/manifest fan-out and renumbered FB-0057→FB-0058 (main had claimed FB-0057). The reserved-numbers protocol + a staff-review base check are what surfaced it.
+
 ### README readability overhaul + `docs/automation-boundaries.md` (docs-only, no version bump)
 **Date:** 2026-06-26
 **Branch:** `claude/great-kepler-920b8c` (PR pending; squash SHA at merge)

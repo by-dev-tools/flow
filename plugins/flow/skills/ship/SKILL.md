@@ -383,6 +383,62 @@ node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs --audit-due
 
 If exit 1 (audit due), spawn an Agent (subagent_type: Explore) with the memory directory as input. The audit reads ONLY the memory entries (no PR diff, no other context) and answers: which entries' fire logs show no activity in 60+ days (archive candidates)? which entries contradict each other (resolve)? which entries look like over-fitting on a single past incident (revise or delete)? This is the cure for memory ossification.
 
+### 4c. Harvest flow-generalizable lessons → contribution queue (FB-0058)
+
+4a/4b route lessons to **this project's** surfaces. Step 4c routes the *other* destination: lessons about **flow itself** (the workflow, the reviewers, the gates, transferable taste) that should become a PR back to the flow plugin. This is a **two-destination router gated by a noise/confidence filter** — same evidence Step 4 already gathered, one more routing decision on top. No cross-repo action here; it only enqueues to user-scope storage that `/flow:contribute` later drains.
+
+**Determinism boundary:** the routing + noise judgment below are *best-effort LLM work* (like the auditor/critic), backstopped by the human at the `/flow:contribute` draft-PR gate — NOT a deterministic contract. Only the `confidence` score and the prescan gate are mechanical.
+
+```sh
+# Resolve scripts (installed plugin root, else this checkout) + the storage slots.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then S="${CLAUDE_PLUGIN_ROOT}/scripts"; else S="plugins/flow/scripts"; fi
+# Honor contributionsQueuePath by EXPORTING FLOW_CONTRIB_DIR — the scripts read that env
+# var (else the user-scope default). Without this export the slot is a no-op (the queue
+# always lands in the default dir, diverging from a configured path).
+QUEUE_ROOT="$(jq -r '.contributionsQueuePath // empty' flow.config.json 2>/dev/null | sed "s#^~#$HOME#")"
+[ -n "$QUEUE_ROOT" ] && export FLOW_CONTRIB_DIR="$QUEUE_ROOT"
+MARKER="$(jq -r '.lastHarvestedPath // empty' flow.config.json 2>/dev/null | sed "s#^~#$HOME#")"
+[ -z "$MARKER" ] && MARKER="${FLOW_CONTRIB_DIR:-$HOME/.claude/plugins/data/flow/contributions}/last_harvested.json"
+```
+
+**Step 4c.i — Pre-scan cost gate (run FIRST; makes clean PRs ~free).**
+
+```sh
+python3 "$S/harvest_lesson.py" prescan --marker-file "$MARKER"   # exit 0 = signal; exit 1 = none
+```
+
+If the pre-scan exits 1 (no correction / symptom / human-overrule / endorsed-reviewer signal in the transcript since the last harvest), **STOP Step 4c here** — do not spend tokens on the analysis. Print `[analyze] pre-scan: no candidate signal — skipped` and continue to Step 5. Also skip 4c entirely on a docs-only/trivial diff (reuse the Step 1c source-file detection). Only run the analysis below when the pre-scan trips.
+
+**Step 4c.ii — Analyze + route (only if the pre-scan tripped).**
+
+Over the same Step-4 candidate set (corrections / preferences / direction / overruled defaults — do NOT re-read the transcript), apply, in order:
+
+1. **Noise filter (drop first).** Drop generic "just how coding works" patterns and vague observations with no actionable rule. Apply flow's single-source protection (FB-0010/FB-0056): a lone weak signal with no recurrence does not promote. Count what you drop.
+2. **Destination test (per surviving finding).** *Rewrite the lesson with every project-specific noun removed. If it still states an actionable rule about how flow should review/gate/plan → **FLOW-GENERALIZABLE**. If it collapses to project trivia → **PROJECT-LOCAL** (already handled by 4a/4b — no further action). If it does both → **BOTH**.*
+3. **Source type** (feeds the confidence weight): a symptom/bug the human corrected → `error`/`correction`; **no symptom but the human overruled an agent proposal or stated a preference → `decision`/`taste`** (the highest-value harvest — the point of this feature; 4a already treats an overruled `recommended_default` as canonical). Endorsed reviewer finding → `feedback`.
+
+For each FLOW-GENERALIZABLE / BOTH finding, enqueue it (the script captures the dialogue evidence window, records the origin project token, and dedups/recurrence-counts automatically):
+
+```sh
+python3 "$S/harvest_lesson.py" enqueue --marker-file "$MARKER" \
+  --pr "<this PR url or branch>" --branch "$(git rev-parse --abbrev-ref HEAD)" \
+  --source-type "taste|decision|correction|error|feedback" \
+  --artifact-kind "rule-edit|reviewer-prompt|eval-fixture|new-check|fb-entry" \
+  --summary "<one line>" --rule "<the synthesized, project-agnostic rule>" \
+  --target-hint "<flow file/section it would touch>" \
+  --evidence-strength "direct-quote|paraphrase|inferred"
+```
+
+**Step 4c.iii — Advance the watermark + report (always, even on the skip path).**
+
+```sh
+python3 "$S/harvest_lesson.py" mark --marker-file "$MARKER"
+```
+
+Print one line — `[analyze] N findings: P project-local, F flow-generalizable, D dropped (noise/low-confidence)` (or the pre-scan skip line). Never silent.
+
+**Flow-repo nudge.** If `pwd` is the flow checkout (`flow.config.json.flowRepoPath`) and the queue is non-empty, also print `[contribute] N queued contribution(s) — run /flow:contribute to open the draft PR`.
+
 ## 5. Update project docs
 
 For each meaningful change in the diff, update via the config slots (all default to `dev-docs/<name>.md`; consumer projects typically set them to `core-docs/<name>.md`):
@@ -787,5 +843,9 @@ If your project has a dev-server skill (e.g., a `/link`-style skill), invoke it 
 | `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 4a (FB candidates) + Step 5c (distill source) + Step 7 (`lib/render-test-plan.py` renders the `## Test plan`) |
 | `flow.config.json.visualHistoryPath` | `core-docs/visual-history.html` | Step 5c (durable visual record; created-on-first-write; gated on `uiSurface` + a load-bearing visual decision) |
 | `flow.config.json.statusDocs` | `[]` | Step 5a (reconcile each declared marker region) + Step 5b (marker-coverage gate, manifest-independent) |
+| `flow.config.json.lastHarvestedPath` | `~/.claude/plugins/data/flow/contributions/last_harvested.json` | Step 4c (lesson-harvest watermark; only new transcript since last harvest is analyzed) |
+| `flow.config.json.contributionsQueuePath` | `~/.claude/plugins/data/flow/contributions` | Step 4c (enqueue target) + `/flow:contribute` (drain source) |
+| `flow.config.json.flowRepoPath` | unset → `/flow:contribute` disabled | Step 4c (flow-repo nudge) + `/flow:contribute` (run-from guard + PR target) |
+| `flow.config.json.contributionThreshold` | `0.6` | `/flow:contribute` (auto-include vs hold cutoff) |
 
 Consumer projects typically override the `*Path` slots to `core-docs/<name>.md` since they keep their own project docs under `core-docs/`. Flow's own dev-tracking lives under `dev-docs/` to leave `core-docs/` free as a name that consumer-template-shipped scaffolding uses.

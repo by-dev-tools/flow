@@ -18,12 +18,14 @@ This file is the **claim-time defense** (catches collisions before either branch
 
 If you find this file with no `Currently reserved` lines, no in-flight branch is racing for a number. Still add your reservation before drafting the entry — another branch may start between your check and your commit.
 
-## Currently reserved (as of 2026-06-22)
+## Currently reserved (as of 2026-06-25)
 
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
 
 ## Audit trail (past collisions, kept for institutional memory)
+
+- **2026-06-25** — lesson-harvest + `/flow:contribute` loop (`claude/kind-almeida-d160e0`, v1.11.0). Branch was built on a stale base (`a8a0794`); during `/flow:staff-review` the design-engineer lens flagged a phantom version-revert, confirming `origin/main` had advanced two PRs (#56 v1.10.1, #58 README rewrite). Rebased onto `main`; the rebase surfaced that **#58 had already claimed FB-0057** (README-portfolio) — so this PR's drafted **FB-0057 was renumbered to FB-0058** and all cross-file references swept (feedback, history, plan, roadmap, schema, scripts, skills, CLAUDE.md, marketplace/plugin descriptions). Reservation cleared here at ship (entry now in `feedback.md`). The reserved-numbers protocol + the staff-review stale-base check are exactly what caught it.
 
 - **2026-06-22** — provenance + no-plan-rigor PR (`claude/quirky-jones-9932cd`, v1.10.0). Claimed **FB-0056** (the new entry — written directly, single-session non-parallel ship, so no pre-reservation race to defend). **Swept the stale FB-0055 reservation** — its entry shipped in **#55** (v1.9.1, V2.1 hardening) but the reservation lingered (the documented dev-side `/ship` non-auto-clear gap). Net reserved after cleanup: **FB-0013** (PR P) + **FB-0014** (PR R).
 
