@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":"add a helper that returns the sum of two numbers and a test for it"}}
+{"type":"assistant","message":{"role":"assistant","content":"Added the sum helper and a unit test covering positive and negative inputs."}}
+{"type":"user","message":{"role":"user","content":"thanks, ship it"}}

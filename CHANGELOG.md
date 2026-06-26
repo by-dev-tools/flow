@@ -10,6 +10,16 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.11.0 — 2026-06-25
+
+**Flow now learns from its own use and contributes the lessons back. `/flow:ship` Step 4c harvests *flow-generalizable* lessons (a reviewer false-positive, a gate misfire, a taste call you overruled) behind a ~free pre-scan; the new `/flow:contribute` skill drains them into a DRAFT PR back to the flow plugin. Runs itself; you only gate the merge. SAFETY (new ship step + session-parsing helpers + install-surface manifests).**
+
+- **Harvest (automatic, in `/flow:ship` Step 4c).** A deterministic pre-scan makes clean PRs cost zero tokens. When the transcript carries a correction / symptom / overrule / endorsed-reviewer signal, the analyzer routes each finding PROJECT-LOCAL (existing 4a/4b surfaces) vs FLOW-GENERALIZABLE vs BOTH, drops noise/low-confidence, and enqueues the generalizable ones to a user-scope cross-project queue. Routing/noise are best-effort LLM judgment; only the confidence score + pre-scan are mechanical.
+- **`/flow:contribute` (the drain).** Run from your flow checkout (`flowRepoPath`), it drains the queue **and** the previously-manual `/flow:log-disagreement` store, sanitizes out personal-project tokens (fail-closed — a residual leak is held for you, never shipped), scores, and opens a single rolling **draft** PR with the high-confidence clean lessons (everything else held + listed). Never merges; calibrates from each PR's merge/close/edit outcome.
+- **Self-triggering.** A flow-repo `SessionStart` hook fires the drain whenever you open the flow checkout with a non-empty queue (primary); an optional local OS job covers the rest. No cloud routine (the queue + checkout are local).
+- **4 new slots → 28 total:** `flowRepoPath`, `contributionsQueuePath`, `lastHarvestedPath`, `contributionThreshold`. New scripts (`contribution_store.py`, `harvest_lesson.py`, `sanitize_tokens.py`) + `run_contribution_evals.py` wired into CI. Auto-merge of high-confidence contributions is designed-for but **deferred** (v1 always gates the merge on you). FB-0058.
+- Breaking changes: none.
+
 ## v1.10.1 — 2026-06-24
 
 **Docs-only follow-up to v1.10.0: `gh` Projects-classic PR-write resilience. SAFETY (PR-write fallback behavior in the ship pipeline).**

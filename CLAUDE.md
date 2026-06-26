@@ -26,10 +26,14 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/audit-completion/SKILL.md` | `/flow:audit-completion` slash command |
 | `plugins/flow/skills/critique-plan/SKILL.md` | `/flow:critique-plan` slash command |
 | `plugins/flow/skills/log-disagreement/SKILL.md` | Auto-invoked disagreement-capture skill |
-| `plugins/flow/skills/ship/SKILL.md` | `/flow:ship` final-pass pipeline (PR-2-placeholdered for security + a11y + memory) |
-| `plugins/flow/scripts/extract_session.py` | Session preprocessing for the reviewers |
+| `plugins/flow/skills/contribute/SKILL.md` | `/flow:contribute` — drains the lesson-harvest queue + disagreement store into a draft PR back to flow (FB-0058) |
+| `plugins/flow/skills/ship/SKILL.md` | `/flow:ship` final-pass pipeline (Step 4c harvests flow-generalizable lessons) |
+| `plugins/flow/scripts/extract_session.py` | Session preprocessing for the reviewers (+ harvest dialogue helper) |
 | `plugins/flow/scripts/bounding_logic.py` | User-message windowing |
 | `plugins/flow/scripts/log_disagreement.py` | Writes pushback records to user-scope storage |
+| `plugins/flow/scripts/contribution_store.py` | Lesson-contribution queue/dedup/confidence engine (FB-0058) |
+| `plugins/flow/scripts/harvest_lesson.py` | Ship Step 4c harvest: pre-scan cost gate + enqueue + watermark (FB-0058) |
+| `plugins/flow/scripts/sanitize_tokens.py` | Fail-closed scrub/scan of personal-project tokens before a contribution PR (FB-0058) |
 | `plugins/flow/docs/workflow.md` | Canonical 11-step loop reference (long-form) |
 | `plugins/flow/evals/` | Regression fixtures + harness for the reviewers |
 | `plugins/flow/DISAGREE.md` | Free-form feedback log for the reviewer side |

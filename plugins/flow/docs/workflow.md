@@ -4,7 +4,7 @@ How features get built and shipped under flow's managed-autonomy loop. **Project
 
 This is the long-form narrative. Each invoked skill carries its own short-form instructions; this doc is the reference for *why* the loop has the shape it has and *how* the gates compose.
 
-## Shipped surface (flow v1.7.0)
+## Shipped surface (flow v1.11.0)
 
 Everything described in the loop below is shipped and installable today. The full user-visible surface:
 
@@ -14,9 +14,10 @@ Everything described in the loop below is shipped and installable today. The ful
 - **`/flow:critique-plan`** — plan-critic pass over the most recent plan (scope drift, spec violation, internal incoherence).
 - **`/flow:audit-plan`** / **`/flow:audit-completion`** — auditor passes (unverified assumptions + recall; false-verification proxies).
 - **`/flow:log-disagreement`** — auto-invoked feedback channel that captures user pushback on a finding for prompt-tuning input.
+- **`/flow:contribute`** — drains the lesson-harvest queue (and the `log-disagreement` store) into a **draft** PR back to the flow plugin. The drain end of the self-improvement loop; run from the flow checkout, self-triggered, never merges (v1.11.0; see § "Contributing lessons back to flow").
 - **`/flow:workflow-help`** / **`/flow:doctor`** — onboarding (print the loop + resolved config) and setup verification.
 
-Plus the two reviewer subagents (`auditor`, `plan-critic`) and the four staff-review lens agents, the `planner` and `docs` context-isolation agents, the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (24 slots), default hooks, and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow does **not** wrap it.
+Plus the two reviewer subagents (`auditor`, `plan-critic`) and the four staff-review lens agents, the `planner` and `docs` context-isolation agents, the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (28 slots), default hooks, and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow does **not** wrap it.
 
 ## What this workflow is (and isn't)
 
@@ -248,6 +249,7 @@ Claude **auto-advances here from Step 8** when the ship-readiness predicate hold
 3. **Synthesize session feedback (two layers)**:
    - **User feedback** — review the conversation since the last PR for corrections, preferences, decisions, and solved challenges. New entries go in `flow.config.json.feedbackPath`.
    - **Agent self-feedback (pattern capture)** — review the session for recurring failure patterns and write memory entries per the source-diversity bar (§ "Continuous improvement").
+   - **Flow-generalizable lessons (Step 4c)** — a third routing branch over the same evidence: a ~free deterministic pre-scan (`harvest_lesson.py prescan`) gates whether to spend any tokens; if it trips, the analyzer classifies each finding as PROJECT-LOCAL (handled by the two layers above) vs FLOW-GENERALIZABLE (a reviewer false-positive, a gate misfire, a transferable taste call) vs BOTH, drops noise/low-confidence, and enqueues the generalizable ones to a user-scope cross-project queue. No cross-repo action here — `/flow:contribute` drains the queue later (see § "Contributing lessons back to flow").
 4. **Update project docs** (paths via config slots: `historyPath`, `planPath`, `roadmapPath`, `specPath`). This includes **doc-currency reconciliation** (ship Step 5a): the forward-looking roadmap "Now" + plan "Current Focus" are refreshed to the current version + ▶ next-up, shipped items swept to Recently-Completed, and shipped FB reservations cleared — then an **automatic mechanical gate** (ship Step 5b) blocks the ship if those docs don't reference the current version. Currency is enforced *in the pipeline*, not via manual `/flow:doctor` (which carries only a secondary mirror, Check 2.6). Stale direction docs are the FB-0010 fan-out class applied to *what to work on* — a cold reader (incl. the autonomous loop) relies on them.
 
    **Project-declared status surfaces (`statusDocs`).** The roadmap "Now" + plan "Current Focus" are the surfaces flow reconciles by name. A project that keeps *other* forward-looking status — e.g. a `CLAUDE.md` or `README.md` phase/status line that auto-loads into every session and rots after a sub-PR merges — declares them in `flow.config.json.statusDocs`: an array of `{ "path", "marker" }`. Flow reconciles **only** the region between the HTML-comment fences `<!-- {marker} -->` … `<!-- /{marker} -->` (a narrow, mechanical edit — never a restructure, so a consumer's broad-CLAUDE.md-edit gate is respected). Step 5a rewrites each region to the just-shipped reality; **Step 5b adds a version-manifest-INDEPENDENT marker-coverage gate** — if the ship moved plan/roadmap status forward but a declared region was left untouched (or its marker is missing), the ship BLOCKS. This gives non-versioned projects real doc-currency enforcement (the version-token check N/A's out for them). `/flow:doctor` Check 2.7 verifies each declared surface exists + is fenced. Default `[]` ⇒ no extra surfaces, identical behavior to today. *(Trade-off: the "status moved" trigger is scoped to the plan "## Current Focus" + roadmap "## Now" sections; if either changes for a non-status reason while a declared region legitimately needs no edit, the gate over-fires — the fix is a one-region touch, an accepted cost for catching the stale-status class.)*
@@ -300,6 +302,17 @@ The PR is **deliberately the last artifact created**, not the first:
 3. **CI doesn't help earlier.** Local gates (Preflight) already cover what CI would tell us.
 
 **When this calculus changes:** a second human reviewer joins, deploy previews land, or CI starts running checks the laptop can't. Until then, end-of-pipeline PR creation is correct.
+
+### Contributing lessons back to flow (FB-0058)
+
+The feedback machinery above improves **this project**. Flow also learns about **itself**: a reviewer that false-positives, a gate that misfires, a taste call you overruled is a lesson about the *workflow*, not the project — and it should make the flow plugin better for every project that uses it. That loop has two ends:
+
+- **Harvest (automatic, every ship).** Step 4c (above) runs a ~free deterministic pre-scan; on a clean PR it spends nothing. When the transcript carries a correction / symptom / overrule / endorsed-reviewer signal, the analyzer routes flow-generalizable lessons — with a deterministic confidence score (source weight × evidence strength + cross-session recurrence − sanitization penalty) — into a user-scope cross-project queue (`contributionsQueuePath`). The score, routing, and noise-filter are best-effort LLM judgment backstopped by the draft-PR gate; only the score math and pre-scan are mechanical.
+- **Contribute (the drain).** `/flow:contribute`, run **from the flow checkout** (`flowRepoPath`), drains the queue **and** the previously-manual `/flow:log-disagreement` store (each disputed reviewer finding → a `reviewer-prompt` candidate, reusing its captured session window as the eval-fixture skeleton). It dedups, **sanitizes out personal-project tokens (fail-closed — a residual leak holds the item for human attention, never ships it)**, scores, and opens a **single rolling draft PR** with the high-confidence clean lessons (everything else held + listed). It **never merges** — the draft PR review *is* the human gate, and the next run calibrates from that PR's merge/close/edit outcome.
+
+**It runs itself.** You never have to remember to harvest or drain. Harvest is in `/flow:ship`; the drain self-triggers from a **flow-repo SessionStart hook** (primary — fires whenever you open the flow checkout with a non-empty queue) and, optionally, a **local OS job** (`launchd`/cron running `claude -p "/flow:contribute"` in `flowRepoPath`, for firing even when you haven't opened flow — opt-in, since a PR-opening timer is an outward action). A *cloud* `/schedule` routine is **not** used in v1: the queue + checkout are local, and a cloud agent can't see them. The single human action left is reviewing a draft PR that appears on its own.
+
+**Deferred (rung 2):** auto-marking the draft ready / auto-merging when confidence + calibration history clear a bar. The `confidence` score and `feedback_signals.json` are built for this, but contributing to a public repo is a one-way door (FB-0011) — v1 always gates the merge on the human. Tracked in the roadmap.
 
 ### Why doc updates centralize at /flow:ship
 
