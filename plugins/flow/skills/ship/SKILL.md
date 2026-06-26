@@ -621,6 +621,20 @@ If safety-critical code changed, include `SAFETY` in the commit subject.
 
 Push with `-u` if the branch isn't tracking yet.
 
+> **`gh` resilience — Projects-classic GraphQL deprecation (canonical fallback; staff-review references this).** On repos with classic projects + affected `gh` versions, `gh pr edit`, `gh pr ready`, `gh pr view --json`, and the PR-OPEN body-update path fail with `GraphQL: Projects (classic) is being deprecated … projectCards` — they query `projectCards` even when you only want to touch the body or draft state. `gh pr create` is unaffected. When a PR-write `gh pr <edit|ready|view>` fails with a `projectCards` / Projects-classic error, fall back to the API directly (these endpoints don't query `projectCards`):
+> ```sh
+> R=$(gh repo view --json nameWithOwner -q .nameWithOwner)   # owner/repo
+> # Set the PR body (replaces `gh pr edit --body`): pass the body via a file to avoid quoting issues.
+> gh api -X PATCH "repos/$R/pulls/<num>" -F body=@/tmp/flow-pr-body.md >/dev/null
+> # Resolve the PR's node id once for the draft-toggle mutations.
+> PR_ID=$(gh api "repos/$R/pulls/<num>" -q .node_id)
+> # Mark ready (replaces `gh pr ready <num>`):
+> gh api graphql -f query='mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id}){pullRequest{isDraft}}}' -F id="$PR_ID" >/dev/null
+> # Convert to draft (replaces `gh pr ready --undo <num>`):
+> gh api graphql -f query='mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){pullRequest{isDraft}}}' -F id="$PR_ID" >/dev/null
+> ```
+> Only use the fallback when the standard `gh pr` command actually errors with the projectCards signal — don't pre-emptively route around `gh pr` on healthy repos.
+
 The PR base branch is resolved via this fallback chain:
 1. `git symbolic-ref refs/remotes/origin/HEAD` (the repo's actual default branch)
 2. `flow.config.json.defaultBranch`
