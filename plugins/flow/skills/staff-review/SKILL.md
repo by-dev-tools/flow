@@ -79,7 +79,7 @@ if [ -n "$MISSING" ]; then
 fi
 ```
 
-(Why warn-only here vs BLOCKING in /flow:ship + /flow:ship-spike: those skills MUST `gh pr create` at Step 7 / Step 6; /flow:staff-review's only mandatory `gh` use is the optional artefact-classification at Step 1b. The Step 7 `gh pr edit` invocation on the reviewer-notes template IS unsafe if gh is missing — but safe in practice because Step 1b's PR-OPEN detection silently fails to LOCAL-ONLY when gh is missing, so the Step 7 PR-OPEN branch is unreachable in the gh-missing case. jq is the same shape — slot reads degrade gracefully, so warn-only.)
+(Why warn-only here vs BLOCKING in /flow:ship + /flow:ship-spike: those skills MUST `gh pr create` at Step 7 / Step 6; /flow:staff-review's only mandatory `gh` use is the optional artefact-classification at Step 1b. The Step 7 `gh api` PR-body PATCH on the reviewer-notes template IS unsafe if gh is missing — but safe in practice because Step 1b's PR-OPEN detection silently fails to LOCAL-ONLY when gh is missing, so the Step 7 PR-OPEN branch is unreachable in the gh-missing case. jq is the same shape — slot reads degrade gracefully, so warn-only.)
 
 ### 1a. Stale-base check (BLOCKING)
 
@@ -207,7 +207,24 @@ Can also mention in the PR body for reviewer awareness, but the doc entry is can
 
 ## 7. Communicate reviewer notes
 
-- **PR-OPEN**: `gh pr edit <number> --body "..."` — prepend/append the Reviewer notes section using the template below.
+- **PR-OPEN**: write the Reviewer notes section (template below) into the PR body using the **REST PATCH** form, never `gh pr edit --body`:
+
+  ```sh
+  # `gh pr edit --body` resolves `projectCards` through the deprecated Projects-classic
+  # GraphQL path and exits 1 WITHOUT updating the body on many repos (dogfound FB-0057).
+  # The REST endpoint has no `projectCards` dependency. Write to a temp file (sidesteps
+  # quoting + arg-length limits), PATCH, then read back — never suppress stderr, never
+  # assume the write landed. (Mirrors /flow:ship Step 7's PR-OPEN body write — keep both
+  # in sync if you change one.)
+  BODY_FILE=$(mktemp); printf '%s\n' "$NEW_BODY" > "$BODY_FILE"  # $NEW_BODY = existing body + Reviewer notes
+  if gh api -X PATCH "repos/{owner}/{repo}/pulls/<number>" -F "body=@$BODY_FILE" >/dev/null; then
+    gh api "repos/{owner}/{repo}/pulls/<number>" --jq '.body' | grep -qF 'Reviewer notes' \
+      || echo "[WARN] PR <number> body PATCH returned OK but read-back lacks 'Reviewer notes' — the body may be empty/truncated; re-run the write or edit the PR on GitHub."
+  else
+    echo "[WARN] PR <number> body update FAILED (gh api PATCH exit $?) — body NOT updated; check gh auth/network."
+  fi
+  rm -f "$BODY_FILE"
+  ```
 - **LOCAL-ONLY**: send the same content as the final user-facing message of this skill. Also include the dev server URL (if the project ships a `/link`-style skill — start it first) so the user can verify in-browser.
 
 ### Reviewer notes template
