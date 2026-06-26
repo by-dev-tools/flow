@@ -35,6 +35,16 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0057: The public README is a portfolio artifact — direct, no-fluff copy; lead with value; gates are load-bearing even in a skills-forward telling
+**Date:** 2026-06-26
+**Source:** user preference + user direction
+
+**What was said:** The user wants flow's public README to double as a portfolio piece that demonstrates product thinking and taste to hiring managers/engineers/designers — without ever saying so. Three concrete corrections during the rewrite: (1) a sample hero line ("Flow turns Claude Code into a disciplined teammate, not an eager intern") was rejected as "performative, corny, and AI generated" — copy must be direct and concrete, no metaphors, no "not-X-but-Y", no rule-of-three drumbeats. (2) Structure must be inverted-pyramid: value and the skill sequence up top, technical detail and auxiliary skills (doctor, workflow-help) below. (3) The user proposed presenting "just the order of skills as the phases." Pushed back: ~half the loop's load-bearing steps (both human gates, Execute) are NOT skills, so a skills-only list would delete the two-gate thesis that IS the product. The real fix was collapsing two redundant tables (11-step phases + skills-in-order) into ONE skill-forward table that keeps the gates and Execute as the non-skill anchor rows.
+
+**Synthesized rule:** For flow's public-facing docs (README, marketplace copy): write plain and concrete — state what it does, cut performative/AI-sounding flourishes (see also the harness-memory entry `feedback_direct_no_fluff_copy`). Lead with value and the skill progression; push version stamps, FB-IDs, and defensive caveats out of the hero (a stale `v1.9.1` header while the plugin was at `v1.10.0` is the fan-out cost of version-stamping prose). When presenting the loop, lead with skills (the user's mental model) but never drop the gates/Execute — they're the thesis, not packaging. Preserve cut detail in a linked accessible doc (`docs/automation-boundaries.md`), don't delete it.
+
+**Applies to:** documentation, README, public-facing copy, marketing surface
+
 ### FB-0056: A "this was verified" signal must be mechanically enforced with an untrusting default; and reduced rigor must require an EXPLICIT declaration, never be the silent fallback when the rigorous path can't run
 
 **Date:** 2026-06-22
