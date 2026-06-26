@@ -10,6 +10,24 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.10.1 — 2026-06-24
+
+**Docs-only follow-up to v1.10.0: `gh` Projects-classic PR-write resilience. SAFETY (PR-write fallback behavior in the ship pipeline).**
+
+- `/flow:ship` Step 7 + `/flow:staff-review` Step 7 now document a fallback for the `gh` Projects-classic GraphQL deprecation: on classic-projects repos with affected `gh` versions, `gh pr edit` / `gh pr ready` / `gh pr view --json` fail with `GraphQL: Projects (classic) … projectCards`. The fallback sets the PR body via REST (`gh api -X PATCH .../pulls/N -F body=@file`) and toggles draft state via the `markPullRequestReadyForReview` / `convertPullRequestToDraft` GraphQL mutations (which don't query `projectCards`).
+- The secondary item from the same FB-0056 dogfood report that produced v1.10.0; no behavior change to renderers or gates.
+- Breaking changes: none.
+
+## v1.10.0 — 2026-06-23
+
+**Two dogfood-discovered integrity gaps in `/flow:verify-build` + `/flow:ship` are closed (#57). SAFETY (verify/ship verdict + gating behavior).**
+
+- **Provenance / anti-forgery.** A per-criterion `metadata`/criterion `provenance` field (`adversarial-judged` | `spike-rubric` | `hand-authored`; **absent ⇒ hand-authored**) lets the renderers tell a judged buffer from a self-reported one. A hand-authored buffer renders a distinct `[~]` self-report state + banner in the PR Test plan and HTML report, never a forgeable machine `[x]`.
+- **Spike ≠ no-plan.** Spike's reduced rigor now requires an explicit `/flow:ship-spike`; a no-plan source-touching diff runs the full judged path over diff-derived criteria + draft-routes (`no_plan_fallback`); docs-only → smoke.
+- **Rigor gate.** A new commit-invariant `lib/rigor-marker.py`: `/flow:staff-review` writes it, `/flow:ship` Step 1.0a reads it for source-touching diffs → draft if missing/stale.
+- New report-render + rigor-marker eval harnesses + a hand-authored fixture, wired into CI (with the previously-orphaned visual-history harness). FB-0056.
+- Breaking changes: none.
+
 ## v1.9.1 — 2026-06-21
 
 **`/flow:verify-build`'s rendered visual summary is no longer silently dropped when a plan's `**Spec-walk:**` heading is non-canonical. The visual-capture step (§5a) now gates on its own condition, independent of behavioral-criteria extraction, and a new parser makes the capture state-set deterministic. Deliverable-quality track V2.1. SAFETY (verify-build routing/fallback behavior).**

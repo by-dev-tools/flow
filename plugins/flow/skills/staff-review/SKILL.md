@@ -207,7 +207,7 @@ Can also mention in the PR body for reviewer awareness, but the doc entry is can
 
 ## 7. Communicate reviewer notes
 
-- **PR-OPEN**: `gh pr edit <number> --body "..."` — prepend/append the Reviewer notes section using the template below.
+- **PR-OPEN**: `gh pr edit <number> --body "..."` — prepend/append the Reviewer notes section using the template below. If `gh pr edit` fails with a `GraphQL: Projects (classic) … projectCards` error (classic-projects repos on affected `gh` versions), fall back to the REST body-update: `gh api -X PATCH "repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/pulls/<number>" -F body=@<bodyfile>` — see `/flow:ship` Step 7 § "gh resilience" for the canonical fallback block (REST PATCH for body, `markPullRequestReadyForReview` / `convertPullRequestToDraft` GraphQL mutations for draft toggling).
 - **LOCAL-ONLY**: send the same content as the final user-facing message of this skill. Also include the dev server URL (if the project ships a `/link`-style skill — start it first) so the user can verify in-browser.
 
 ### Reviewer notes template
