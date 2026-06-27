@@ -550,7 +550,10 @@ The history entry (Step 5) is the *written* timeline. **`visual-history.html`** 
 **It is heavily gated — most ships skip it.** Run the mechanical gate first; emit an explicit one-line reason on every skip (never a silent no-op):
 
 ```sh
-UIS=$(jq -r '.uiSurface // true' flow.config.json 2>/dev/null)
+# NOT `.uiSurface // true` — jq's `//` treats boolean false as empty, so an explicit
+# `uiSurface: false` would resolve to true and the §5c skip below would never fire,
+# running the visual-history distill on a non-UI project (FB-0058 boolean-slot footgun).
+UIS=$(jq -r 'if .uiSurface == false then "false" else "true" end' flow.config.json 2>/dev/null)
 VHPATH=$(jq -r '.visualHistoryPath // "core-docs/visual-history.html"' flow.config.json 2>/dev/null); [ -z "$VHPATH" ] && VHPATH="core-docs/visual-history.html"
 FINDINGS=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS="/tmp/flow-verify-findings.json"
 REPORT=$(jq -r '.verifyReportPath // "/tmp/flow-verify-report.html"' flow.config.json 2>/dev/null); [ -z "$REPORT" ] && REPORT="/tmp/flow-verify-report.html"
