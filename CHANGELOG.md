@@ -10,6 +10,13 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.11.1 — 2026-06-27
+
+**`/flow:ship-spike` re-ship now gets the same `gh` Projects-classic resilience as `/flow:ship` + `/flow:staff-review`. SAFETY (PR-body write fallback).**
+
+- **Fan-out fix.** v1.10.1 added a canonical `gh`-resilience fallback (REST body PATCH + draft-toggle mutations) for the Projects-classic `projectCards` GraphQL deprecation and wired it into `/flow:ship` Step 7 + `/flow:staff-review` Step 7 — but **`/flow:ship-spike`'s PR-OPEN re-ship path was missed** (the third PR-write site). On affected repos a spike re-ship's body update would still fail silently. `/flow:ship-spike` Step 7 now references the canonical fallback, and the stale `/flow:staff-review` §1.5 note is de-staled (FB-0010 fan-out completion, FB-0060).
+- Docs-only; no renderer or gate behavior changes. Breaking changes: none.
+
 ## v1.11.0 — 2026-06-25
 
 **Flow now learns from its own use and contributes the lessons back. `/flow:ship` Step 4c harvests *flow-generalizable* lessons (a reviewer false-positive, a gate misfire, a taste call you overruled) behind a ~free pre-scan; the new `/flow:contribute` skill drains them into a DRAFT PR back to the flow plugin. Runs itself; you only gate the merge. SAFETY (new ship step + session-parsing helpers + install-surface manifests).**

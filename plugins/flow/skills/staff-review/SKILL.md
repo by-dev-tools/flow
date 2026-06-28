@@ -79,7 +79,7 @@ if [ -n "$MISSING" ]; then
 fi
 ```
 
-(Why warn-only here vs BLOCKING in /flow:ship + /flow:ship-spike: those skills MUST `gh pr create` at Step 7 / Step 6; /flow:staff-review's only mandatory `gh` use is the optional artefact-classification at Step 1b. The Step 7 `gh pr edit` invocation on the reviewer-notes template IS unsafe if gh is missing — but safe in practice because Step 1b's PR-OPEN detection silently fails to LOCAL-ONLY when gh is missing, so the Step 7 PR-OPEN branch is unreachable in the gh-missing case. jq is the same shape — slot reads degrade gracefully, so warn-only.)
+(Why warn-only here vs BLOCKING in /flow:ship + /flow:ship-spike: those skills MUST `gh pr create` at Step 7 / Step 6; /flow:staff-review's only mandatory `gh` use is the optional artefact-classification at Step 1b. The Step 7 PR-body write (`gh pr edit`, or its `gh api` projectCards fallback) on the reviewer-notes template IS unsafe if gh is missing — but safe in practice because Step 1b's PR-OPEN detection silently fails to LOCAL-ONLY when gh is missing, so the Step 7 PR-OPEN branch is unreachable in the gh-missing case. jq is the same shape — slot reads degrade gracefully, so warn-only.)
 
 ### 1a. Stale-base check (BLOCKING)
 
