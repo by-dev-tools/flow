@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":"the plan-critic flagged my config rename as a scope drift, but that's wrong — a mechanical rename touching every call site IS the request, not drift"}}
+{"type":"assistant","message":{"role":"assistant","content":"You're right, that's a false positive in the plan-critic heuristic. I'll proceed with the rename."}}
+{"type":"user","message":{"role":"user","content":"actually let's go with the leaner approach instead — the reviewer shouldn't treat rename fan-out as new scope"}}

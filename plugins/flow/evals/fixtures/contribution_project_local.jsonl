@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":"no, we use vitest not jest in this repo — don't add a jest config, that's wrong for our setup"}}
+{"type":"assistant","message":{"role":"assistant","content":"Understood, switching the test runner config to vitest."}}

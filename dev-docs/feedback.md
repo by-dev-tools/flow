@@ -35,6 +35,17 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0059: Learning must be proactive and automatic — every ship harvests generalizable lessons and routes them to the right place; the contribute-back loop self-triggers; the human only gates the merge
+
+**Date:** 2026-06-25
+**Source:** user direction (feature design conversation — the lesson-harvest + `/flow:contribute` loop)
+
+**What was said:** Flow already had capture-side feedback machinery (`log-disagreement`, ship Step 4 feedback synthesis, failure-memory) but none of it closed the loop back to the flow plugin — a lesson learned while using flow in a personal project died there. The user asked for a loop that, on each ship, reads the transcript for generalizable lessons (corrections, errors, feedback, *taste/decision-making* — from human and agent), determines whether each improvement is project-local or flow-generalizable (or both), filters noise, promotes only high-confidence findings, and contributes the flow-generalizable ones back as a PR. Three load-bearing directions surfaced during design: (1) the analyzer must be a two-destination router with a shared noise/confidence gate, not just a flow-feeder; (2) it must be **automatic** — the human should never have to proactively run harvest or drain (auto-merge is the eventual goal, gated initially); (3) borrow liberally from the forge/noticed plugin's proposal/dismissal/calibration model and reuse flow's own session-reading infra rather than rebuilding.
+
+**Synthesized rule:** Self-improvement is a first-class, automatic surface of the loop, not a manual afterthought. Concretely: (a) harvest folds into `/flow:ship` (Step 4c) behind a ~free deterministic pre-scan so clean PRs cost nothing; (b) routing/noise judgment is best-effort LLM work backstopped by a human gate — only the confidence *score* and pre-scan are mechanical (enforce-don't-attest, per [[FB-0047]]/FB-0056); (c) the contribution score is a deterministic function of recorded sub-signals so a future auto-merge rung is a pure predicate, never an LLM free-hand number; (d) anything that lands in the PUBLIC flow repo passes a fail-closed sanitizer that ships NO project-specific brand literals (structural patterns + per-project tokens only — the CLAUDE.md:126 project-agnostic invariant applies to the scrubber itself); (e) contributing to a public repo is a one-way door (FB-0011) — v1 gates the merge on the human, draft-PR only; (f) reuse the capture machinery that already exists (`log-disagreement` store, failure-memory fire logs) as drain inputs — don't build a parallel learner.
+
+**Applies to:** workflow, ship pipeline (Step 4c), `/flow:contribute`, contribution_store/harvest_lesson/sanitize_tokens scripts, autonomy bar, schema (4 new slots), self-improvement loop.
+
 ### FB-0058: jq `// <default>` silently breaks for boolean config slots that can legitimately be false
 **Date:** 2026-06-11 (brought current + merged 2026-06-26; renumbered from the originally-drafted FB-0047, which collided with main's shipped FB-0047 "non-forgeable Test plan")
 **Source:** review feedback (consumer dogfood — valletta flow-migration; surfaced via `/flow:doctor` on a project with `verifyEnabled: false`)

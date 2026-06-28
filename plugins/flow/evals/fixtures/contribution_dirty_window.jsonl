@@ -1,0 +1,2 @@
+{"role":"user","content":"the bug is in /Users/me/pattaya/src/app.ts and the --sand-fg token; see https://github.com/me/pattaya/pull/9 — ping me@example.com"}
+{"role":"assistant","content":"Fixed in pattaya; the --sand-fg design token was the culprit."}

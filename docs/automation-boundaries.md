@@ -6,7 +6,7 @@ The README describes the happy path: drive the loop and it advances on its own b
 
 Each skill has an invocation mode:
 
-- **AUTO** — fires by itself when its trigger condition is met. You never type it. Only `/flow:log-disagreement` is AUTO: it captures pushback when you dispute a finding in plain language.
+- **AUTO** — fires by itself when its trigger condition is met. You never type it. Two skills are AUTO: `/flow:log-disagreement` captures pushback when you dispute a finding in plain language; `/flow:contribute` (v1.11.0) drains the lesson-harvest queue into a draft PR back to the flow plugin, self-triggered by a flow-repo `SessionStart` hook (and an optional local job) so harvested lessons flow upstream without you running anything. `/flow:contribute` still never merges — you gate that.
 - **BOTH** — you can type it, *and* it runs when `/flow:ship` calls it or when a matching phrase plus a diff-to-review triggers it. It won't cold-start on a bare "build me X".
 - **AUTO·when-ready** — `/flow:ship` only. Auto-advances from Step 8 *at the end of a driven loop* when the ship-readiness predicate holds (every spec-walk box checked, no open BLOCKER, no unresolved MEDIUM/LOW assumption, `/flow:verify-build` would return PASS) and the risk gate is clear. Otherwise you type it or say "ship it." Never auto-advances when verify-build is skipped (library/none platform, or a doc-only diff), and never on a cold start.
 

@@ -203,6 +203,37 @@ def normalize_turns(records: list[dict]) -> list[Turn]:
     return turns
 
 
+# ---------------------------------------------------------------- harvest window
+#
+# ADDITIVE (FB-0059): the lesson-harvest loop (harvest_lesson.py, ship Step 4c)
+# needs the whole DIALOGUE since the last harvest, not the single most-recent
+# request window the auditor/critic modes use. These helpers are import-only —
+# they do NOT touch find_bounding_message, the --mode plan|completion CLI, or
+# any existing reviewer path (those stay byte-identical). Dialogue-only (tool
+# I/O bodies dropped) is deliberate: lessons live in human↔agent text, and it
+# is the main cost lever that keeps Step 4c cheap.
+
+
+def harvest_dialogue(records: list[dict], start_record_idx: int = 0) -> list[Turn]:
+    """Dialogue turns (role, text) from start_record_idx forward, tool output
+    bodies excluded. Reuses normalize_turns so the skip rules (sidechain,
+    tool_result-only user records) stay consistent with the reviewer path."""
+    if start_record_idx < 0:
+        start_record_idx = 0
+    return normalize_turns(records[start_record_idx:])
+
+
+def render_harvest_window(turns: list[Turn]) -> str:
+    """Compact human↔agent transcript for the harvest analyzer / prescan."""
+    lines = []
+    for t in turns:
+        text = (t.content or "").strip()
+        if not text:
+            continue
+        lines.append(f"{t.role.upper()}: {text}")
+    return "\n\n".join(lines)
+
+
 # ---------------------------------------------------------------- tool calls
 
 
