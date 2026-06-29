@@ -15,6 +15,7 @@ Everything described in the loop below is shipped and installable today. The ful
 - **`/flow:audit-plan`** / **`/flow:audit-completion`** — auditor passes (unverified assumptions + recall; false-verification proxies).
 - **`/flow:log-disagreement`** — auto-invoked feedback channel that captures user pushback on a finding for prompt-tuning input.
 - **`/flow:contribute`** — drains the lesson-harvest queue (and the `log-disagreement` store) into a **draft** PR back to the flow plugin. The drain end of the self-improvement loop; run from the flow checkout, self-triggered, never merges (v1.11.0; see § "Contributing lessons back to flow").
+- **`/flow:land`** — post-merge, human-invoked: after *you* merge a PR, reconciles the forward docs to "merged (#N)" (the slot the open-PR ship couldn't), re-runs the visual-history distill if a blocked visual pass since completed, and opens a small `docs: land #N` PR. Closes the "at PR → merged never reconciles" gap. Never merges (v1.12.0).
 - **`/flow:workflow-help`** / **`/flow:doctor`** — onboarding (print the loop + resolved config) and setup verification.
 
 Plus the two reviewer subagents (`auditor`, `plan-critic`) and the four staff-review lens agents, the `planner` and `docs` context-isolation agents, the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (28 slots), default hooks, and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow does **not** wrap it.
@@ -325,6 +326,8 @@ The temptation is to update the history doc as soon as a decision is made. **Res
 
 Claude does not merge. Ever. `gh pr merge` is not a Claude action. The user merges.
 
+**After you merge — `/flow:land <PR#>` (recommended).** `/flow:ship` reconciled the forward docs at *PR-open* time, but it runs before the merge — so nothing flips the item from "at PR (#N)" to "merged (#N)" once you merge, and `main`'s roadmap/plan sit stale until hand-patched. `/flow:land <PR#>` does that reconciliation in one command (+ re-runs the visual-history distill if a visual pass was blocked at ship and has since completed) and opens a small `docs: land #N` PR you merge. Human-invoked — Claude can't merge, so it can't live in `/flow:ship`. Skip only if your project reconciles post-merge another way (e.g. a GitHub-Action-on-merge).
+
 ---
 
 ## Spike mode (`/flow:ship-spike`)
@@ -474,6 +477,7 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / MANUAL (you type it; c
 | `/flow:audit-coverage` | Coverage auditor: flags diff behavior changes no declared `**Spec-walk:**` criterion covers (under-declaration). A gap → draft manifest (decision-required). Best-effort LLM judgment; runs all platforms; self-skips on doc/test/refactor-only diffs or no Spec-walk | Step 8/9 readiness + `/flow:ship` Step 2; also standalone | BOTH | flow |
 | `/flow:ship-spike` | Lightweight ship for spike-mode PRs (also invokes `/flow:verify-build --spike` for a 3-check smoke gate) | At spike-loop end (auto-advance is **judgment-gated** — no mechanical predicate, unlike `/flow:ship`; never cold-start); also typeable | BOTH | flow |
 | `/flow:log-disagreement` | Capture user pushback on a finding for prompt tuning | After a reviewer issues a finding the user disputes in plain language | AUTO | flow |
+| `/flow:land` | Post-merge doc-currency: flips the merged PR's item to "merged (#N)", moves it to Recently shipped, late visual-history distill, opens a `docs: land #N` PR. Never merges | After **you** merge a PR (Step 11) — `disable-model-invocation: true`, human-only | HUMAN | flow |
 | project's `/link` (or equivalent) | Start the dev server, return URL | Whenever you need a live preview | — | project-specific (not flow) |
 
 ---
