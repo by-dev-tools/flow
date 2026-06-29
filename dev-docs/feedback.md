@@ -35,6 +35,18 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0063: A human-invoked skill lowers a step's cost and error rate but not its forget-rate — closing the forget-rate for a step gated on an event the agent can't observe needs an event-driven trigger
+
+**Date:** 2026-06-29
+**Source:** user direction (dogfound on `/flow:land`'s own merge, #60)
+
+**What was said:** `/flow:land` was built to fix FLOW-1 — the recurring *forgotten* post-merge doc reconciliation. But on its first real opportunity (its own merge, #60) it wasn't run; `main` only stayed current because #62's unrelated ship reconciliation happened to move v1.12.0 forward. The user asked whether that signals a problem with the solution. It does: FLOW-1's defining symptom was *forgetting*, and a human-invoked skill replaces "manual hand-edit you forget" with "manual command you forget" — it lowers cost + error but leaves the forget-rate untouched.
+
+**Synthesized rule:** When a step's *defining* failure mode is that it gets forgotten, a skill that makes the step cheaper/safer is necessary but not sufficient — the trigger is the load-bearing part. If the step is gated on an event the agent (or a local session) can't observe — a human merging on GitHub — then no in-session mechanism (a SessionStart hook, model-invocation) reliably fires it; the durable fix is an **event-driven trigger at the source** (a merge-event GitHub Action / webhook). Build the mechanism and the trigger together; if you ship only the mechanism, say so and roadmap the trigger as the rung that actually closes the loop (mirrors `/flow:contribute` deferring its auto-merge rung). Cheaper interim: make the *un-acted* state honest rather than misleading (ship-time wording "shipped, PR #N open — run X after merge" instead of "this branch"). Same family as FB-0062 (a stage's verdict is trusted only if its canonical artifact exists) — applied to the trigger rather than the verdict.
+
+**Applies to:** `skills/land/` + the merge-event auto-trigger roadmap item; `/flow:ship` Step 5a just-shipped wording; FLOW-1; FB-0059 (`/flow:contribute`'s self-trigger precedent + deferred auto-merge rung); FB-0062 (failure-open / trust-only-if-artifact-exists, the sibling lesson).
+
+
 ### FB-0062: Failure-open is the enemy — a gate must fire HARDEST on the change that most needs it; a stage's verdict is trusted only if its canonical artifact EXISTS and matches HEAD
 **Date:** 2026-06-28
 **Source:** user direction
