@@ -23,6 +23,7 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
 - **FB-0058** — `fix/verifyenabled-jq-false-default` (PR #44, brought current) — "jq `// default` silently breaks for boolean config slots that can legitimately be false — use `if .X == false` not `.X // true`." Consumer dogfood discovery (valletta flow-migration). **Renumbered from the originally-drafted FB-0047**, which collided with main's shipped FB-0047 ("non-forgeable Test plan", #46/PR TP) — the exact collision class this file defends; entry now written in `feedback.md`. Clears at merge.
+- **FB-0062** — `claude/pensive-visvesvaraya-9ee710` (pensive-visvesvaraya-9ee710) — "Failure-open is the enemy; a stage's verdict is trusted only if its canonical artifact exists + matches HEAD." Visual-deliverable gate + `/flow:audit-skips` (v1.13.0). Entry written in `feedback.md`; clears at ship. (Renumbered from FB-0061 after #60 took it for `/flow:land`.)
 
 ## Audit trail (past collisions, kept for institutional memory)
 

@@ -279,10 +279,12 @@ The first two reviewers are tuned for the in-flow ship context; the bundled Clau
 After all four Skill calls return, emit one consolidated user-facing line so the user can see what actually ran vs skipped:
 
 ```
-Final-pass reviews: security=[ran|skipped: <reason>], accessibility=[ran|skipped: <reason>], verify-build=[ran|skipped: <reason>], coverage=[ran|skipped: <reason>].
+Final-pass reviews: security=[ran|skipped: <reason>], accessibility=[ran|skipped: <reason>], verify-build=[ran|skipped: <reason>], coverage=[ran|skipped: <reason>], skip-audit=[all-legitimate|N should-re-run].
 ```
 
-Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=skipped (uiSurface:false), verify-build=ran (overall_verdict:PASS, all criteria PASS), coverage=ran (no undeclared changes).`
+Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=skipped (uiSurface:false), verify-build=ran (overall_verdict:PASS, all criteria PASS), coverage=ran (no undeclared changes), skip-audit=all-legitimate.`
+
+(The `skip-audit=` field is filled by **Step 2a** below — `/flow:audit-skips` runs AFTER the four reviewers report and BEFORE Step 3.)
 
 **Verify-build at ship time is a CONFIRMATION re-run, not discovery.** The behavioral discovery/iteration loop happens earlier, at the Present/Iterate boundary (loop steps 8–9; see `docs/workflow.md`). By the time ship runs, verify-build should already be PASS — ship re-runs it to confirm nothing regressed between the readiness check and now (a bad rebase, a doc/config edit that broke a path).
 
@@ -292,6 +294,45 @@ Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=
 3. If it does NOT converge → add a `[decision-required]` entry to the **draft manifest** ("verify-build FAIL/Unknown unresolved: <criterion + evidence>") and continue to Step 3. The PR opens as a **draft** (Step 7) — never a merge-ready PR on a non-PASS build.
 
 **Reconciliation with the merged PR S auto-advance predicate (do not weaken it):** PR S lets the agent auto-advance *into* `/flow:ship` only when the readiness predicate holds — which *requires* `verify-build` would return PASS (FB-0018: auto-ship needs a positive behavioral PASS, not absence-of-failure). That gate is UNCHANGED. This step only changes what ship does with a *ship-internal* failure: route to draft instead of hard-halt. The two are distinct decision points, and the safety invariant is preserved (in fact strengthened): **no merge-ready PR is ever produced on a non-PASS build** — a draft is mechanically NOT-READY and the human sees the manifest at the merge gate. (The reserved `--skip-verify` override remains a documented Step-1 escape hatch, not implemented in v1.)
+
+### 2a. Skip-legitimacy audit (`/flow:audit-skips`) — runs AFTER the four reviewers, BEFORE Step 3
+
+No stage skip is accepted on its own say-so, and **"the agent did it manually" never substitutes for a stage's real pipeline output.** After the four reviewers above report, audit every stage's skip (and every "ran" claim) against ground truth. The load-bearing rule: **a stage's claimed verdict is trusted only if its canonical artifact EXISTS and matches HEAD** — a verify-build PASS with no fresh findings buffer is the "confirmed manually + self-certified" failure, and the missing buffer is the tell.
+
+1. **Write the per-stage report** (you have every stage's status from this loop run) to the handoff file the skill reads:
+
+   ```sh
+   cat > /tmp/flow-skip-audit-stages.json <<'EOF'
+   {"stages": [
+     {"name": "simplify",            "status": "<ran|skipped>", "skip_reason": "<spike|tiny|doc-only|null>"},
+     {"name": "staff-review",        "status": "<ran|skipped>", "skip_reason": "<spike|tiny|doc-only|null>"},
+     {"name": "security",            "status": "<ran|skipped>", "skip_reason": "<doc-only|null>"},
+     {"name": "accessibility",       "status": "<ran|skipped>", "skip_reason": "<uiSurface:false|no UI in diff|null>"},
+     {"name": "verify-build",        "status": "<ran|skipped>", "verdict": "<PASS|FAIL|Unknown|null>", "skip_reason": "<platform library|verifyEnabled:false|null>"},
+     {"name": "audit-coverage",      "status": "<ran|skipped>", "skip_reason": "<no Spec-walk|no behavior in diff|null>"},
+     {"name": "visual-verification", "status": "<ran|skipped>", "skip_reason": "<null>"}
+   ]}
+   EOF
+   ```
+
+   Fill every `<…>` from what actually happened this run — do NOT leave placeholders. `verify-build`'s `verdict` is its `overall_verdict`; `visual-verification` is the Present-step visual sign-off (ran iff you captured + reviewed frames this run).
+
+2. **Invoke the audit** (fresh-context, read-only — it classifies, it never fixes):
+
+   ```
+   Skill("flow:audit-skips")
+   ```
+
+   It returns a `SKIP-AUDIT SUMMARY` with one line per stage — `LEGITIMATE` or `SHOULD-RE-RUN` (with `auto-resolvable: re-run` or `decision-required`). The mechanical engine (`lib/skip-audit-checks.py`) backs every verdict; trust it.
+
+3. **Resolve — mirror audit-coverage's routing; never a hard mid-loop halt:**
+   - **`SHOULD-RE-RUN · auto-resolvable`** → re-invoke that stage's Skill **now** (e.g. a stale/absent verify-build buffer → re-run `Skill("flow:verify-build")`; a contradicted security/a11y skip → run the reviewer), then **re-run `Skill("flow:audit-skips")` ONCE** over the refreshed report. Loop only this one re-audit cycle — do not iterate LLM judgment (reward-hackable; same discipline as Step 2's single-pass reviewers).
+   - **`SHOULD-RE-RUN · decision-required`** (cannot be auto-resolved — e.g. a missing visual-history entry, a visual-deliverable gap on a no-sim host) → add a **`[decision-required]`** entry to the **draft manifest** (`[skip-audit] <stage>: <reason> — needs: <re-run | declare | human-waive>`). The PR opens as a draft (Step 7).
+   - **All `LEGITIMATE`** → emit a one-line confirmation (`skip-audit: all N stage skips legitimate`) and proceed.
+
+4. **Record the consolidated result** in the Step-2 `Final-pass reviews:` line (`skip-audit=all-legitimate` / `skip-audit=N should-re-run`) and in the PR `## Flow run` table (the `/flow:audit-skips` row).
+
+A docs-only or backend-only PR must rule clean here: those stage skips ARE legitimate (the diff/config back them), so the audit confirms them without noise — no false positives. The audit validates the skip; it does not ban skipping. Skips stay honest, not impossible.
 
 ## 3. Route follow-ups
 
@@ -618,8 +659,27 @@ REPORT=$(jq -r '.verifyReportPath // "/tmp/flow-verify-report.html"' flow.config
 # against $REPORT_DIR — do NOT build a separate ".../assets" prefix (see the copy block in step 3).
 REPORT_DIR="$(dirname "$REPORT")"
 
+# Feature 1c — the ONE authoritative visual-significance verdict. Prefer the value
+# verify-build stamped into the buffer metadata (do NOT re-derive); fall back to the
+# shared helper only when there is no buffer (verify-build skipped/short-circuited).
+if [ -f "$FINDINGS" ]; then
+  VISSIG=$(jq -r '.metadata.visual_significant // empty' "$FINDINGS" 2>/dev/null)
+fi
+if [ -z "$VISSIG" ]; then
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then VS="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/visual-significance.py"; else VS="plugins/flow/skills/verify-build/lib/visual-significance.py"; fi
+  PLAN_P=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN_P" ] && PLAN_P="dev-docs/plan.md"
+  PLAN_A=""; [ -f "$PLAN_P" ] && PLAN_A="--plan $PLAN_P"
+  VISSIG=$(python3 "$VS" --config flow.config.json $PLAN_A 2>/dev/null | jq -r '.visual_significant // false')
+fi
+
 if [ "$UIS" != "true" ]; then
   echo "[visual-history] skipped (uiSurface:false) — non-UI project, no visual record."
+elif [ "$VISSIG" = "true" ]; then
+  # FAILURE-OPEN FIX (Feature 1c): a visually-significant change ALWAYS gets a durable
+  # entry — even with no buffer or no machine grounding. This is exactly the change that
+  # most needs the record, so the old "skip when short-circuited / no grounding" path is
+  # removed here. A hand-authored entry (the FB-0025 workaround) becomes the REQUIRED path.
+  echo "[visual-history] REQUIRED (visual_significant=true) — author ONE curated entry (hand-author if the buffer lacks grounding/frames). See the REQUIRED-path note below."
 elif [ ! -f "$FINDINGS" ]; then
   echo "[visual-history] skipped (no verify-build buffer at $FINDINGS) — verify-build skipped or didn't run this loop."
 else
@@ -627,14 +687,19 @@ else
 fi
 ```
 
-If the gate printed a `skipped` line, **stop here — do not author an entry.** Otherwise proceed:
+If the gate printed a `skipped` line, **stop here — do not author an entry.** If it printed the **`REQUIRED (visual_significant=true)`** line, you MUST author exactly one entry — jump to step 3 and hand-author it per the **REQUIRED-path note** below (do not take the hard-skip in step 2). Otherwise (the plain `gate open` line) proceed normally:
 
 1. **Read the buffer** at `$FINDINGS` (the same structured findings buffer Step 4a reads — shape at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-schema.json`). The distill source is the buffer's structured fields, **not** the rendered HTML.
 2. **Decide whether a visual decision is load-bearing this run.** A decision earns a durable entry only when it **changed the user's read of a surface** — judge against:
    - a `criteria[].grounding` entry whose rationale explains a visible/experiential choice this PR made or changed. The grounding `type` enum is the full schema set — `need | design-language | craft-commitment | open-question` — but the **load-bearing trigger is a *decided* rationale: the first three.** An `open-question`-typed grounding is by definition unresolved, so on its own it does **not** earn a durable entry (it belongs in `questions_carried`, not as the entry's grounding); **and**
    - optionally a **resolved** open question the human settled during Present, carried as `questions_carried` or folded into the grounding. Two routings, distinct meanings: a `this-iteration` question the human **answered with a decision** (e.g. "ship D-1f-A as planned") is a distill source once answered; a `future-planning` question is a forward call to revisit later (e.g. a declared design-language deviation routed to the roadmap) — also worth carrying, and the correct routing when the question is genuinely "later," not "fix before shipping." **Schema gap (see `roadmap.md` § Next "Resolved-this-iteration open questions"):** the buffer has no explicit *resolved* flag, and the Step 8 gate blocks while any unanswered `this-iteration` question is present — so distill a `this-iteration` question only after it has genuinely been answered, and do **not** relabel a still-open `this-iteration` blocker as `future-planning` just to clear the gate (that erases the "decided this iteration" signal). Routing a genuinely-forward question to `future-planning` is correct; relabeling to dodge the gate is not.
 
-   **Hard skip (mechanical floor against the per-PR-dump failure mode):** if the buffer carries **no** `grounding` of type `need`/`design-language`/`craft-commitment` tied to a visible change this run — a behavioral-only change, a no-visual-delta refactor, or only `Unknown`/`not_tested` visual criteria — **skip with a reason**: `echo "[visual-history] skipped (no load-bearing visual decision in this run's buffer)"`. This is the common case even on UI projects; the record is **curated, not a per-PR dump** (FB-0042). Do **not** manufacture an entry to fill the doc. **If multiple legitimate decided groundings are present, author ONE entry for the single most load-bearing one** (the decision that most changed the user's read) — do not log several, and do not spread them across runs.
+   **Hard skip (mechanical floor against the per-PR-dump failure mode) — applies ONLY when `visual_significant` is false:** if the buffer carries **no** `grounding` of type `need`/`design-language`/`craft-commitment` tied to a visible change this run — a behavioral-only change, a no-visual-delta refactor, or only `Unknown`/`not_tested` visual criteria — **skip with a reason**: `echo "[visual-history] skipped (no load-bearing visual decision in this run's buffer)"`. This is the common case even on UI projects; the record is **curated, not a per-PR dump** (FB-0042). Do **not** manufacture an entry to fill the doc. **If multiple legitimate decided groundings are present, author ONE entry for the single most load-bearing one** (the decision that most changed the user's read) — do not log several, and do not spread them across runs.
+
+   **REQUIRED-path note (Feature 1c — `visual_significant` is true): the hard skip above does NOT apply.** A visually-significant change always earns exactly one durable entry, because that is precisely the change whose decision-making must not die with the ephemeral report. The old failure-open — §5c skipped when the buffer lacked grounding or when verify-build was spike/short-circuited (FB-0025) — is removed for this case: it skipped most on the changes that need it most. So:
+   - If the buffer carries a decided `grounding`, distill from it as usual (step 3).
+   - If it does **not** (no buffer, a short-circuited verify-build, or only `Unknown`/`not_tested` visual criteria), **hand-author** the entry (the FB-0025 workaround is now the REQUIRED path): supply real `before_after` frames (copy the captured frames per step 3's copy block; if NONE exist because frames were uncapturable, use the labelled CSS/SVG reconstruction fallback) and a `grounding` `statement` you write from the change itself. Set `entry.json`'s `branch` to the current branch (Step 7's dual-deliverable gate looks for a visual-history entry referencing THIS branch). Note in the ship log `[visual-history] hand-authored (visual_significant=true, no machine grounding)` so the provenance is honest.
+   - Keep the **one-entry** discipline regardless of path: ONE entry for the single most load-bearing decision, never a per-PR dump.
 
 3. **Author ONE curated entry** (the curation is your judgment — the helper enforces structure, not selection). Build an `entry.json` (shape documented at the top of `lib/insert-visual-history.py`):
    - `title` — the decision, not the PR (e.g. "Empty-state for the activity feed"), **no italic/emphasis** (the helper strips it, but author it clean).
@@ -699,7 +764,54 @@ The PR base branch is resolved via this fallback chain:
 2. `flow.config.json.defaultBranch`
 3. literal `main`
 
-**Draft decision (mechanical):** if the **draft manifest** accumulated in Step 2 is non-empty, create the PR as a **draft** (`gh pr create --draft`) and pin the manifest block at the TOP of the body. An empty manifest → a normal (ready) PR. Draft status is the mechanical signal the human merge gate trusts; the manifest is the human-readable one. A not-ready PR can never *look* ready.
+### 7a. Visual-deliverable gate (Feature 1d — assert BOTH artifacts before marking ready)
+
+Before the draft decision, on a **visually-significant** change (`metadata.visual_significant=true` — the §2c verdict, the same authoritative value §5c reads), assert that **BOTH** visual deliverables exist for THIS run. If either is missing, add a `[visual-deliverable]` entry to the draft manifest so the PR opens as a draft naming the missing artifact — never a silent ready PR with no visual walkthrough.
+
+```sh
+FINDINGS=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS="/tmp/flow-verify-findings.json"
+REPORT=$(jq -r '.verifyReportPath // "/tmp/flow-verify-report.html"' flow.config.json 2>/dev/null); [ -z "$REPORT" ] && REPORT="/tmp/flow-verify-report.html"
+VHPATH=$(jq -r '.visualHistoryPath // "core-docs/visual-history.html"' flow.config.json 2>/dev/null); [ -z "$VHPATH" ] && VHPATH="core-docs/visual-history.html"
+BRANCH=$(git branch --show-current)
+HEAD_SHA=$(git rev-parse --short HEAD)
+
+VISSIG=""
+[ -f "$FINDINGS" ] && VISSIG=$(jq -r '.metadata.visual_significant // empty' "$FINDINGS" 2>/dev/null)
+if [ -z "$VISSIG" ]; then
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then VS="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/visual-significance.py"; else VS="plugins/flow/skills/verify-build/lib/visual-significance.py"; fi
+  PLAN_P=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN_P" ] && PLAN_P="dev-docs/plan.md"
+  PLAN_A=""; [ -f "$PLAN_P" ] && PLAN_A="--plan $PLAN_P"
+  VISSIG=$(python3 "$VS" --config flow.config.json $PLAN_A 2>/dev/null | jq -r '.visual_significant // false')
+fi
+
+if [ "$VISSIG" = "true" ]; then
+  MISSING=""
+  # (1) The ephemeral walkthrough rendered THIS run: buffer fresh (branch+sha match HEAD)
+  #     AND ≥1 captured screenshot frame.
+  BUF_OK=no
+  if [ -f "$FINDINGS" ]; then
+    BB=$(jq -r '.metadata.branch // ""' "$FINDINGS" 2>/dev/null)
+    BS=$(jq -r '.metadata.head_sha_short // ""' "$FINDINGS" 2>/dev/null)
+    FRAMES=$(jq '[.criteria[]?.observations[]? | select(.type=="screenshot")] | length' "$FINDINGS" 2>/dev/null)
+    if [ "$BB" = "$BRANCH" ] && [ "$BS" = "$HEAD_SHA" ] && [ "${FRAMES:-0}" -ge 1 ]; then BUF_OK=yes; fi
+  fi
+  [ "$BUF_OK" = yes ] || MISSING="$MISSING the rendered walkthrough (a fresh verify-build report for ${BRANCH}@${HEAD_SHA} with ≥1 captured frame at $REPORT);"
+  # (2) A NEW visual-history entry referencing this branch/PR.
+  if ! { [ -f "$VHPATH" ] && grep -qF "$BRANCH" "$VHPATH"; }; then
+    MISSING="$MISSING a visual-history entry referencing $BRANCH in $VHPATH (author it per Step 5c);"
+  fi
+  if [ -n "$MISSING" ]; then
+    echo "⚠️ [visual-deliverable] visually-significant change missing:$MISSING" >&2
+    echo "   → add a [visual-deliverable] entry to the draft manifest; the PR opens as a draft." >&2
+  else
+    echo "[visual-deliverable] OK — fresh walkthrough ($REPORT) + visual-history entry both present."
+  fi
+fi
+```
+
+If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable] visually-significant change is missing <named artifact(s)> — needs: re-run /flow:verify-build to capture frames, or hand-author the visual-history entry (Step 5c), or human-waive`. Because the walkthrough is **ephemeral/local (not committed)**, also record its local path in the PR-body handoff (the `## Flow run` table's visual row + the closing line) so the human can open it at the merge gate: `Walkthrough (local, uncommitted): <verifyReportPath>`.
+
+**Draft decision (mechanical):** if the **draft manifest** accumulated in Step 2 (and Step 7a) is non-empty, create the PR as a **draft** (`gh pr create --draft`) and pin the manifest block at the TOP of the body. An empty manifest → a normal (ready) PR. Draft status is the mechanical signal the human merge gate trusts; the manifest is the human-readable one. A not-ready PR can never *look* ready.
 
 **LOCAL-ONLY**: `gh pr create --base $BASE_BRANCH` (add `--draft` iff the manifest is non-empty) with:
 - Short title (under 70 chars).
@@ -707,7 +819,7 @@ The PR base branch is resolved via this fallback chain:
   ```markdown
   ## 🚫 NOT READY TO MERGE — unresolved blockers
   <!-- flow:not-ready-manifest -->
-  - [<security|a11y|verify-build>] <finding> — needs: <secret rotation | design decision | dep vetting | regression fix> — candidate resolutions: <...>
+  - [<security|a11y|verify-build|skip-audit|visual-deliverable>] <finding> — needs: <secret rotation | design decision | dep vetting | regression fix | re-run | hand-author | human-waive> — candidate resolutions: <...>
   <!-- /flow:not-ready-manifest -->
   > Resolve every item above, then re-run `/flow:ship` — it removes this block and marks the PR ready (`gh pr ready`) once the manifest is empty. Do not merge while this block is present.
   ```
@@ -736,10 +848,12 @@ The PR base branch is resolved via this fallback chain:
   | /flow:accessibility-review | <✓ / skipped (reason)> | <result, incl. any [decision-required] blocker / —> |
   | /flow:verify-build | <✓ / skipped (reason)> | <overall_verdict; a non-converging regression → draft / —> |
   | /flow:audit-coverage | <✓ / skipped (reason)> | <undeclared changes → draft / "no undeclared changes" / —> |
+  | /flow:audit-skips | ✓ | <all N stage skips legitimate / N should-re-run → re-ran M, K → draft> |
+  | Visual deliverable (§7a) | <✓ / n/a (not visually significant)> | <both present / draft: missing <walkthrough · visual-history entry>; Walkthrough (local, uncommitted): <verifyReportPath> / —> |
   | Doc synthesis | ✓ | <docs updated> |
-  | Visual history (§5c) | <✓ / skipped (reason)> | <curated entry: "<decision>" / skipped (uiSurface:false · no load-bearing visual decision) / —> |
+  | Visual history (§5c) | <✓ / skipped (reason)> | <curated entry: "<decision>" / hand-authored (visual_significant) / skipped (uiSurface:false · no load-bearing visual decision) / —> |
 
-  If the `🚫 NOT READY TO MERGE` manifest above is present, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here. Deferred follow-ups: see the configured roadmap and plan docs.
+  If the `🚫 NOT READY TO MERGE` manifest above is present, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here. For a `[visual-deliverable]` draft, the ephemeral walkthrough is **local + uncommitted** — open it at the path named in the Visual-deliverable row before reviewing. Deferred follow-ups: see the configured roadmap and plan docs.
 
   🤖 Generated with [Claude Code](https://claude.com/claude-code)
   ```
@@ -791,6 +905,12 @@ The PR base branch is resolved via this fallback chain:
       or `platform` is `library`/`none` → `skipped (verifyEnabled:false)` / `skipped (platform library|none)`.
     - `/flow:audit-coverage` skips on a doc/test/refactor-only diff or a plan with no
       `**Spec-walk:**` block → `skipped (no behavior in diff)` / `skipped (no Spec-walk)`. Runs on all platforms.
+    - `/flow:audit-skips` always runs at Step 2a (it audits the OTHER stages' skips) →
+      `✓`; its Notable cell carries the consolidated verdict (`all N legitimate` / `N
+      should-re-run → re-ran M, K → draft`).
+    - **Visual deliverable (§7a)** is `n/a (not visually significant)` unless the §2c
+      verdict is true; when true, `✓` (both deliverables present) or the draft note
+      naming the missing artifact + the local walkthrough path.
   - **Notable** — genuine signal only: a plan-critic catch that changed the
     plan, a load-bearing design/impl decision, a `/flow:staff-review` BLOCKER you
     fixed, a real security/a11y/verify-build finding, the docs you updated. A
