@@ -85,12 +85,19 @@ def _git(args):
 
 
 def resolve_base(explicit):
-    if explicit:
-        return explicit
-    ref = _git(["symbolic-ref", "refs/remotes/origin/HEAD"]).strip()
-    if ref.startswith("refs/remotes/origin/"):
-        return ref[len("refs/remotes/origin/"):]
-    return "main"
+    """Prefer the remote-tracking `origin/<branch>` ref — a local `<branch>` can be
+    stale/absent in a worktree or CI checkout, which would diff against the wrong
+    base and FAIL OPEN (FB-0010 silent-skip). Fall back to local `<branch>`."""
+    branch = explicit
+    if not branch:
+        ref = _git(["symbolic-ref", "refs/remotes/origin/HEAD"]).strip()
+        branch = ref[len("refs/remotes/origin/"):] if ref.startswith("refs/remotes/origin/") else "main"
+    if branch.startswith("origin/"):
+        return branch
+    for cand in (f"origin/{branch}", branch):
+        if _git(["rev-parse", "--verify", "--quiet", cand]).strip():
+            return cand
+    return f"origin/{branch}"
 
 
 def load_json(path, default):
@@ -158,6 +165,10 @@ def read_buffer(path, branch, head_sha):
     facts["overall_verdict"] = data.get("overall_verdict")
     facts["visual_significant"] = meta.get("visual_significant")
     frames = 0
+    # Coupling note: a captured frame is an observation with type=="screenshot"
+    # (verify-build §5a stamps exactly that type). If that discriminator ever
+    # changes, this count would silently zero → every visually-significant PASS
+    # would route to SHOULD-RE-RUN. Keep in sync with the schema's observation enum.
     for crit in (data.get("criteria") or []):
         for obs in (crit.get("observations") or []):
             if isinstance(obs, dict) and obs.get("type") == "screenshot":
@@ -203,6 +214,14 @@ def _reason_has(skip_reason, *needles):
     return any(n in s for n in needles)
 
 
+def _doc_only_verdict(diff_is_clean, label, auto):
+    """Shared resolution for a 'doc-only / no <label>' skip claim: LEGITIMATE when
+    the diff really touches no files of that class, else SHOULD-RE-RUN."""
+    if diff_is_clean:
+        return "LEGITIMATE", f"diff touches no {label}", auto
+    return "SHOULD-RE-RUN", f"skip claims doc-only but the diff touches {label}", auto
+
+
 def classify(stage, ctx):
     """Return (mechanical, reason, auto_resolvable) for one stage."""
     name = stage.get("name", "?")
@@ -245,9 +264,7 @@ def classify(stage, ctx):
     if name == "security":
         if status == "skipped":
             if _reason_has(skip, "doc-only", "docs-only", "trivially safe", "no source"):
-                if not diff["touches_source"]:
-                    return "LEGITIMATE", "diff touches no source/config files", auto
-                return "SHOULD-RE-RUN", "skip claims doc-only but the diff touches source files", auto
+                return _doc_only_verdict(not diff["touches_source"], "source/config files", auto)
             return "NEEDS-JUDGMENT", f"unrecognized security skip reason: {skip!r}", auto
         return "LEGITIMATE", "ran (no machine artifact to cross-check)", auto
 
@@ -283,9 +300,7 @@ def classify(stage, ctx):
     if name in ("simplify", "staff-review"):
         if status == "skipped":
             if _reason_has(skip, "doc-only", "docs-only", "no source"):
-                if not diff["touches_source"]:
-                    return "LEGITIMATE", "diff touches no source files", auto
-                return "SHOULD-RE-RUN", "skip claims doc-only but the diff touches source files", auto
+                return _doc_only_verdict(not diff["touches_source"], "source files", auto)
             # spike / tiny mode is a plan declaration — not mechanically decidable.
             return "NEEDS-JUDGMENT", f"skip reason {skip!r} is mode-declared (spike/tiny) — confirm against the plan", auto
         # ran: staff-review writes the rigor marker; a missing/stale marker on a

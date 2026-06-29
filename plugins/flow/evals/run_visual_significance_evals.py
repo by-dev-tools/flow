@@ -151,6 +151,46 @@ def main() -> int:
         ok = proc.returncode == 0 and '"visual_significant": true' in proc.stdout and "WARN" in proc.stdout
         check("malformed-config-degrades", ok, f"rc={proc.returncode} out={proc.stdout[:200]!r}")
 
+    # 12. GIT MODE (no --files-from): seed a temp repo with an origin/main ref so the
+    #     real `git diff origin/main...HEAD` path runs — covers the failure-open class
+    #     where a stale/absent LOCAL main would diff against the wrong base (staff-review
+    #     finding). A new .tsx on a feature branch must read visually significant.
+    import os
+    def git(args, cwd):
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        return subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True)
+    with tempfile.TemporaryDirectory() as repo:
+        git(["init", "-q", "-b", "main"], repo)
+        (Path(repo) / "flow.config.json").write_text('{"uiSurface": true}', encoding="utf-8")
+        (Path(repo) / "README.md").write_text("base\n", encoding="utf-8")
+        git(["add", "-A"], repo); git(["commit", "-qm", "base"], repo)
+        base_sha = git(["rev-parse", "HEAD"], repo).stdout.strip()
+        # Synthesize the remote-tracking refs the helper prefers (origin/main + HEAD).
+        git(["update-ref", "refs/remotes/origin/main", base_sha], repo)
+        git(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"], repo)
+        git(["checkout", "-q", "-b", "feature"], repo)
+        (Path(repo) / "Button.tsx").write_text("export const B = () => <button/>;\n", encoding="utf-8")
+        git(["add", "-A"], repo); git(["commit", "-qm", "ui"], repo)
+        proc = subprocess.run([sys.executable, str(SCRIPT), "--config", "flow.config.json"],
+                              cwd=repo, capture_output=True, text=True)
+        try:
+            o = json.loads(proc.stdout)
+        except ValueError:
+            o = {"_err": proc.stdout, "_stderr": proc.stderr}
+        check("git-mode-significant", o.get("visual_significant") is True,
+              f"new .tsx on feature branch should be significant in git mode: {o}")
+        # A docs-only commit on top must NOT be significant (no false positive in git mode).
+        (Path(repo) / "GUIDE.md").write_text("docs\n", encoding="utf-8")
+        git(["add", "-A"], repo); git(["commit", "-qm", "docs"], repo)
+        git(["update-ref", "refs/remotes/origin/main", git(["rev-parse", "HEAD~1"], repo).stdout.strip()], repo)
+        # Re-point origin/main to the UI commit so the only delta vs base is the docs file.
+        proc2 = subprocess.run([sys.executable, str(SCRIPT), "--config", "flow.config.json"],
+                               cwd=repo, capture_output=True, text=True)
+        o2 = json.loads(proc2.stdout) if proc2.stdout.strip().startswith("{") else {}
+        check("git-mode-docs-only", o2.get("visual_significant") is False,
+              f"docs-only delta vs base should not be significant: {o2}")
+
     print(f"\n{total - fails}/{total} checks passed.")
     return 1 if fails else 0
 

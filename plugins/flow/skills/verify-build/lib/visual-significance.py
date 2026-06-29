@@ -87,12 +87,22 @@ def _git(args):
 
 
 def resolve_base(explicit):
-    if explicit:
-        return explicit
-    ref = _git(["symbolic-ref", "refs/remotes/origin/HEAD"]).strip()
-    if ref.startswith("refs/remotes/origin/"):
-        return ref[len("refs/remotes/origin/"):]
-    return "main"
+    """Return the ref to diff against. Prefer the remote-tracking `origin/<branch>`:
+    a local `<branch>` can be stale or absent in a worktree / CI checkout, and
+    diffing against it would silently pick the wrong base and FAIL OPEN
+    (visual_significant=false on exactly the change the gate exists to catch —
+    the FB-0010 silent-skip class this PR closes). Fall back to local `<branch>`
+    only if the remote ref doesn't resolve."""
+    branch = explicit
+    if not branch:
+        ref = _git(["symbolic-ref", "refs/remotes/origin/HEAD"]).strip()
+        branch = ref[len("refs/remotes/origin/"):] if ref.startswith("refs/remotes/origin/") else "main"
+    if branch.startswith("origin/"):
+        return branch
+    for cand in (f"origin/{branch}", branch):
+        if _git(["rev-parse", "--verify", "--quiet", cand]).strip():
+            return cand
+    return f"origin/{branch}"
 
 
 def load_config(path):
