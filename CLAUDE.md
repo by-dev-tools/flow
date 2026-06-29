@@ -22,11 +22,14 @@ These files are published when the plugin is installed.
 | `plugins/flow/.claude-plugin/plugin.json` | Plugin manifest |
 | `plugins/flow/agents/auditor.md` | Auditor subagent system prompt |
 | `plugins/flow/agents/plan-critic.md` | Plan-critic subagent system prompt |
+| `plugins/flow/agents/skip-auditor.md` | Skip-legitimacy auditor subagent system prompt (FB-0062) |
 | `plugins/flow/skills/audit-plan/SKILL.md` | `/flow:audit-plan` slash command |
 | `plugins/flow/skills/audit-completion/SKILL.md` | `/flow:audit-completion` slash command |
 | `plugins/flow/skills/critique-plan/SKILL.md` | `/flow:critique-plan` slash command |
 | `plugins/flow/skills/log-disagreement/SKILL.md` | Auto-invoked disagreement-capture skill |
 | `plugins/flow/skills/contribute/SKILL.md` | `/flow:contribute` — drains the lesson-harvest queue + disagreement store into a draft PR back to flow (FB-0059) |
+| `plugins/flow/skills/audit-skips/SKILL.md` | `/flow:audit-skips` — skip-legitimacy audit at ship Step 2a; deterministic engine in `lib/skip-audit-checks.py` (FB-0062) |
+| `plugins/flow/skills/verify-build/lib/visual-significance.py` | Shared visual-significance predicate, reused by verify-build + ship (FB-0062) |
 | `plugins/flow/skills/ship/SKILL.md` | `/flow:ship` final-pass pipeline (Step 4c harvests flow-generalizable lessons) |
 | `plugins/flow/scripts/extract_session.py` | Session preprocessing for the reviewers (+ harvest dialogue helper) |
 | `plugins/flow/scripts/bounding_logic.py` | User-message windowing |

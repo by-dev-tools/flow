@@ -10,6 +10,16 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.13.0 — 2026-06-28
+
+**Two failure-open gaps in the ship pipeline closed: visually-significant changes now REQUIRE both visual deliverables, and every stage skip is audited for legitimacy. SAFETY (gate behavior).**
+
+- **Visual-deliverable gate (Feature 1).** A new shared predicate (`skills/verify-build/lib/visual-significance.py`, reused by verify-build + ship — one source of truth) decides whether a change is visually significant: `uiSurface != false`, the diff touches UI/asset files (or a plan `Visual-walk` block / agent flag forces it), and it isn't a pure no-render-delta refactor. The verdict is stamped into the findings buffer (`metadata.visual_significant` / `visual_signals`) so downstream steps read ONE value. When true: `/flow:verify-build` makes frame capture **mandatory** — zero captured frames aggregates to `Unknown`, never `PASS` (a `not_tested[]` line carries the rationale); ship Step 5c's visual-history distill **no longer fails open** on a short-circuited or grounding-less buffer (a hand-authored entry becomes the required path); and ship Step 7a asserts **both** deliverables exist (a fresh walkthrough with ≥1 frame + a new `visual-history.html` entry referencing the branch) before marking the PR ready — either missing routes it to a **draft** naming the gap, with the ephemeral walkthrough's local path in the body handoff.
+- **Skip-legitimacy audit (Feature 2).** New `/flow:audit-skips` skill (ship Step 2a, after the four reviewers) audits every stage's skip + every "ran" claim against ground truth, backed by the deterministic `skills/audit-skips/lib/skip-audit-checks.py`. The load-bearing rule: **a stage's verdict is trusted only if its canonical artifact EXISTS and matches HEAD** — a verify-build PASS with no fresh findings buffer is the "confirmed manually + self-certified" short-circuit, and the missing buffer is the tell. SHOULD-RE-RUN with a cheap re-run → re-run + re-audit once; otherwise a `[decision-required]` draft entry. Docs-only / backend-only PRs rule clean (no false positives).
+- New `run_visual_significance_evals.py` + `run_skip_audit_evals.py` (the five acceptance cases) wired into CI. No new config slots. The two human gates (plan approval, merge) are unchanged; both new gates route to the draft manifest the human already sees at the merge gate, never a hard halt. Breaking changes: none.
+
+---
+
 ## v1.12.0 — 2026-06-28
 
 **New skill `/flow:land <PR#>` — post-merge doc-currency. Closes the "at PR → merged never reconciles" gap.**

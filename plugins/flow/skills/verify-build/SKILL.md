@@ -198,6 +198,25 @@ A production diff that simply lacks a plan artifact gets a **real judged verific
 
 Every mode applies the same evidence + Unknown discipline (Unknown ⇒ ESCALATE per FB-0011 ⇒ exit 1). **The implementing agent never hand-authors verdicts** — if neither a judged nor a smoke-rubric path can run, the criterion's verdict is `Unknown` (provenance stays the un-judged default `hand-authored`, which the renderers surface as `[~]` self-report — see Step 8), never a fabricated PASS.
 
+### 2c. Visual-significance verdict (Feature 1a — the ONE authoritative value)
+
+Compute the visual-significance verdict **once, here**, via the shared helper — then stamp it into the findings buffer metadata at Step 8 so every downstream step (`/flow:ship` Step 5c distill + Step 7 dual-deliverable gate, `/flow:audit-skips`) reads ONE authoritative value instead of re-deriving it (FB-0010 fan-out defense). This is the SAME helper `/flow:ship` falls back to when there is no buffer to read.
+
+```sh
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then VS="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/visual-significance.py"; else VS="plugins/flow/skills/verify-build/lib/visual-significance.py"; fi
+PLAN_PATH=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN_PATH" ] && PLAN_PATH="dev-docs/plan.md"
+PLAN_ARG=""; [ -f "$PLAN_PATH" ] && PLAN_ARG="--plan $PLAN_PATH"
+# Add --flag-significant --flag-reason "<why>" ONLY if you (the agent) judge the change
+# visually significant beyond what the file-pattern heuristic catches (e.g. a canvas/WebGL
+# render path with no .css/.tsx edit). The helper records the flag + reason as evidence.
+python3 "$VS" --config flow.config.json $PLAN_ARG > /tmp/flow-visual-significance.json
+cat /tmp/flow-visual-significance.json
+```
+
+A change is visually significant when ALL of: `uiSurface != false`; the diff (committed + uncommitted + untracked) touches `uiFilePatterns` files OR adds/modifies image/font/asset files; and it is NOT a pure no-render-delta refactor (rename-only / comment-only / whitespace-only). A plan `Visual-walk` block or your explicit `--flag-significant` forces `visual_significant = true` (but `uiSurface:false` always wins — a project with no UI surface is never significant; an override there is recorded as suppressed). Carry the helper's `visual_significant` + `visual_signals` forward to Step 8.
+
+**When `visual_significant` is true, the capture→buffer→render path (Steps 5a / 8 / 10) is MANDATORY, not best-effort** — see the bolded gate in each of those steps. A visually-significant change with ZERO captured frames is `Unknown`, never `PASS`.
+
 ## 3. Extract criteria from plan
 
 Parse the current PR's `**Spec-walk:**` block:
@@ -255,6 +274,10 @@ Bundled `/verify` **narrates** screenshots to the orchestrator — it does NOT h
 
 **A derived state with no captured frame** (un-reachable per step 1, or a11y-assertion failed per step 2) → `Unknown` (Step 7) + a `not_tested[]` line. Never a silent gap; the renderer makes it visible (Step 10).
 
+**MANDATORY-capture gate (Feature 1b — when `metadata.visual_significant` is true).** On a visually-significant change (the §2c verdict), capture is NOT best-effort. If frames cannot be captured at all — no UI-automation drive primitive, no launch-arg/env hook, no simulator/device (the no-sim host) — do **NOT** silently proceed to a PASS:
+- Write an explicit `not_tested[]` line naming the missing prerequisite (e.g. `item: "Visual frames (no simulator / no drive primitive on this host)", tested: false, rationale: "..."`).
+- Force the run to **`Unknown`** per the Step 7 aggregation rule below. A visually-significant change with **zero captured frames** is `Unknown`, never `PASS` — the absence of a single captured frame is itself the gate-blocking signal (FB-0011: ESCALATE on the thing you could not observe). This is the case-5 path: frames uncapturable ⇒ verify-build `Unknown` (not PASS) ⇒ `/flow:ship` opens a draft with the `not_tested` rationale.
+
 **Baseline (for the pairwise rubric, Step 6).** A state's baseline lives at `<state-slug>.baseline.<ext>` in the assets dir (a distinct name from the current `<state-slug>.<ext>` — keep current / baseline frames separable, never one ambiguous flat name). If a baseline exists (from an earlier accepted run), pass it to the judges alongside the new frame for pairwise comparison (`rubric.md` § VLM). **First run = no baseline:** seed it (copy `<state-slug>.<ext>` → `<state-slug>.baseline.<ext>`); visual-*layout* claims resolve `Unknown` until a baseline exists (acceptable — text/state claims still resolve from the a11y tree). Absolute single-frame scoring stays discouraged.
 
 **Budget.** In a capture-owning run, count flow's own capture/drive/a11y tool-calls toward `metadata.verify_budget_calls_used` (bundled `/verify` is no longer the only caller); the cap still forces `Unknown` on overrun.
@@ -274,10 +297,13 @@ Each judge returns `PASS | FAIL | Unknown` per criterion + two-citation evidence
 ```
 Any dimension returns FAIL for any criterion    ⇒ exit 1 (gate blocks)
 Any dimension returns Unknown for any criterion ⇒ exit 1 (FB-0011: ESCALATE on uncertainty)
+visual_significant=true AND zero captured frames ⇒ overall_verdict Unknown, exit 1 (Feature 1b)
 All dimensions PASS for all criteria            ⇒ exit 0
 ```
 
 Per FB-0011 (autonomy bar): Unknown is gate-blocking, not advisory. The judge is forced to admit ignorance; the user adjudicates.
+
+**The Feature-1b visual rule is independent of the per-dimension verdicts.** Even if every behavioral dimension PASSes, a visually-significant change (`metadata.visual_significant=true` from §2c) that captured **zero** `screenshot` observations across all criteria aggregates to `overall_verdict: "Unknown"` (exit 1). You cannot certify a visual surface you never saw. The `not_tested[]` line written at §5a carries the rationale; the renderer (Step 10) makes the gap visible; `/flow:ship` routes the Unknown to a draft.
 
 ## 8. Emit findings buffer
 
@@ -286,7 +312,7 @@ Write structured JSON to `flow.config.json.verifyFindingsPath` (default `/tmp/fl
 The schema pins these properties (binding — consumers depend on them):
 
 - **`schema_version`**: `"1.0"` (bumps only on breaking changes; additive changes do not bump).
-- **`metadata`**: branch, head SHA short, plugin version, platform hint (`web`/`ios`/`android`/`tauri`/`cli`/`library`/`none`/`unknown`), verify budget used + overrun flag, **`spike_mode`** (explicit `/flow:ship-spike` ONLY), **`no_plan_fallback`** (Step 2 triggers 2/3 — no governing plan).
+- **`metadata`**: branch, head SHA short, plugin version, platform hint (`web`/`ios`/`android`/`tauri`/`cli`/`library`/`none`/`unknown`), verify budget used + overrun flag, **`spike_mode`** (explicit `/flow:ship-spike` ONLY), **`no_plan_fallback`** (Step 2 triggers 2/3 — no governing plan), **`visual_significant`** (the §2c verdict — the ONE authoritative value downstream steps read) + **`visual_signals`** (the evidence lines behind it). Stamp both from `/tmp/flow-visual-significance.json` (written at §2c).
 - **`overall_verdict`**: `"PASS"` / `"FAIL"` / `"Unknown"` — aggregated per Step 7.
 - **`exit_code`**: `0` (PASS) or `1` (FAIL or Unknown). Pins the gate-blocking contract.
 - **`criteria[]`**: per-criterion entries with `text`, **`provenance`** (see next bullet), `adversarial_cases`, `observations[]` (each with `type` discriminator: `screenshot` | `a11y_snapshot` | `network` | `console` | `log` | `stdout` | `exit_code` | `narrative`), `verdicts.{correctness,regression,scope-creep}` (each with verdict + exactly-2 evidence quotes + notes), and per-criterion `aggregated_verdict`.
@@ -332,7 +358,7 @@ What we did NOT test:
 
 ## 10. Render the ephemeral HTML walkthrough (V3a)
 
-After the buffer is written (Step 8), render it to a single self-contained HTML file — the artifact the human opens at the merge gate:
+After the buffer is written (Step 8), render it to a single self-contained HTML file — the artifact the human opens at the merge gate. **This render is MANDATORY whenever a buffer exists (Feature 1b)** — it is not gated on `visual_significant` or on frame count: even a frameless / Unknown buffer renders (the report then shows the `not_tested[]` gaps). The only no-render case is no buffer at all (verify-build skipped at Step 1.2):
 
 ```sh
 REPORT=$(jq -r '.verifyReportPath // "/tmp/flow-verify-report.html"' flow.config.json 2>/dev/null)
@@ -350,7 +376,9 @@ The explicit `--assets-dir <report dir>` matches §5a's persist path (`<dirname(
 
 **Coverage is established by capture (§5a), not by the renderer.** The renderer is *honest-by-passthrough* — it renders exactly what the buffer carries (every `observations[]` item + the full `not_tested[]` checklist) and does not itself know the declared `Visual-walk` state set. Exhaustiveness therefore depends on §5a writing a `not_tested[]` line for every state it could not capture: with that, every declared state surfaces in the report as either an evidence item or an explicit "not captured" line. A state that §5a silently dropped (no observation AND no `not_tested[]` line) would simply not appear — so §5a's per-state `not_tested[]` write (step 4 above) is the load-bearing coverage guarantee, and the report makes it *visible*, not *enforced*.
 
-**Ephemeral, not committed.** `verifyReportPath` defaults to a temp path; the report is regenerated every iteration and discarded after merge. The durable, curated visual record (`visual-history.html`) is a separate artifact distilled from the findings buffer at `/flow:ship` Step 5c (V3b — `flow.config.json.visualHistoryPath`). Output the report path so the caller (Present step / `/flow:ship`) can open it.
+**Ephemeral, not committed.** `verifyReportPath` defaults to a temp path; the report is regenerated every iteration and discarded after merge. The durable, curated visual record (`visual-history.html`) is a separate artifact distilled from the findings buffer at `/flow:ship` Step 5c (V3b — `flow.config.json.visualHistoryPath`).
+
+**Return the report path in the skill's output (Feature 1b).** End the skill with a machine-readable line `[verify-build] report: <verifyReportPath>` (and `[verify-build] findings: <verifyFindingsPath>`) so `/flow:ship` can reference the ephemeral walkthrough's local path in its Step 7 dual-deliverable gate + the PR-body handoff. If no buffer was written (verify-build skipped at Step 1.2), say so instead: `[verify-build] report: (none — skipped)`.
 
 ## Gotchas
 
@@ -369,5 +397,7 @@ The explicit `--assets-dir <report dir>` matches §5a's persist path (`<dirname(
 | `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 8 (buffer write) |
 | `flow.config.json.verifyReportPath` | `/tmp/flow-verify-report.html` | Step 5a (assets dir alongside it), Step 10 (HTML render) |
 | `flow.config.json.verifyBudgetCalls` | `60` | Step 5 (budget cap) |
+| `flow.config.json.uiSurface` | `true` | Step 2c (visual-significance gate 1, via `lib/visual-significance.py`) |
+| `flow.config.json.uiFilePatterns` | UI extensions (shared with a11y review) | Step 2c (visual-significance heuristic) |
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Read by `/flow:ship` Step 4a (not by verify-build directly) |
 

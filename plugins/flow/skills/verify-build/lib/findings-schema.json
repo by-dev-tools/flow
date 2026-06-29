@@ -55,6 +55,15 @@
         "no_plan_fallback": {
           "type": "boolean",
           "description": "True when verify-build ran WITHOUT a governing plan because none was found (missing planPath — trigger 2 — or no **Spec-walk:** block — trigger 3), DISTINCT from an explicit spike. On a source-touching diff this path still spawns the fresh-context adversarial judges over diff-derived criteria (provenance stays `adversarial-judged`); /flow:ship routes a source-touching no_plan_fallback to the draft manifest (declare criteria + re-verify, or human-waive). Absent/false ⇒ a plan governed this run."
+        },
+        "visual_significant": {
+          "type": "boolean",
+          "description": "The ONE authoritative visual-significance verdict (Feature 1a), computed by lib/visual-significance.py and stamped here so downstream steps (ship Step 5c distill + Step 7 dual-deliverable gate) read ONE value instead of re-deriving it (FB-0010 fan-out defense). True ⇒ this change touches a UI/asset surface (or a Visual-walk block / agent flag forced it) on a uiSurface!=false project, and is not a pure no-render-delta refactor. When true, the capture→buffer→render path (verify-build Steps 5a/8/10) is MANDATORY: a visually-significant change with ZERO captured frames is Unknown, never PASS. Absent/false ⇒ no visual deliverables are required by the ship gate. Additive in schema_version 1.0."
+        },
+        "visual_signals": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Human-readable evidence lines behind `visual_significant` (the WHY: which UI/asset files matched, whether an override fired, whether a refactor was excluded). Surfaced in the ship log + the skip-audit. Additive in schema_version 1.0."
         }
       },
       "additionalProperties": false
