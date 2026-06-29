@@ -283,7 +283,7 @@ A filled `## Flow run` for a docs-only change on a library project (no UI surfac
 | /flow:accessibility-review | skipped (uiSurface:false) | — |
 | /flow:verify-build | skipped (platform library) | — |
 | /flow:audit-coverage | skipped (no behavior in diff) | — |
-| /flow:audit-skips | ✓ | all 6 stage skips legitimate |
+| /flow:audit-skips | ✓ | all 7 stages legitimate (5 skipped, 2 ran) |
 | Visual deliverable (§7a) | n/a (not visually significant) | — |
 | Doc synthesis | ✓ | history + plan + CHANGELOG |
 

@@ -261,6 +261,13 @@ def classify(stage, ctx):
         return "LEGITIMATE", f"ran; fresh buffer present (verdict {verdict})", auto
 
     # ---- security ----
+    # ASYMMETRY (intentional): the "verdict-without-artifact == skip" rule can only
+    # fire for stages that emit a canonical per-HEAD artifact — verify-build (findings
+    # buffer) and staff-review (rigor marker). security / a11y / audit-coverage emit
+    # NO machine artifact, so a bare "ran" claim has nothing to cross-check and is
+    # trusted as LEGITIMATE. Closing that residual self-certification surface (drop a
+    # freshness breadcrumb from every reviewer) is a roadmap § Next exploration, not a
+    # silent gap — documented in audit-skips/SKILL.md.
     if name == "security":
         if status == "skipped":
             if _reason_has(skip, "doc-only", "docs-only", "trivially safe", "no source"):

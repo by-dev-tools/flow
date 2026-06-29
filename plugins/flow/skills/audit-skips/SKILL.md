@@ -86,6 +86,14 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   visual-history entry, a visual-deliverable gap) means it must route to the draft
   manifest as `[decision-required]` — name it so.
 
+**Known asymmetry (intentional, not a gap).** The "verdict-without-artifact == skip"
+rule only fires for stages that emit a canonical per-HEAD artifact — verify-build (the
+findings buffer) and staff-review (the rigor marker). `security` / `accessibility` /
+`audit-coverage` emit **no** machine artifact, so a bare "ran" claim from them has
+nothing to cross-check and is trusted as `LEGITIMATE`. Giving every reviewer a freshness
+breadcrumb so its "ran" claim becomes mechanically checkable is a tracked roadmap § Next
+exploration — until then, this asymmetry is by design, not a silent hole.
+
 A result where every stage is LEGITIMATE is the correct, common outcome on a clean
 PR. Do not invent findings to appear thorough.
 
