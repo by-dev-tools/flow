@@ -524,6 +524,55 @@ The history entry above is backward-looking. The roadmap "Now" and plan "Current
 
   For each surface whose region exists, **edit ONLY the text between the `<!-- {marker} -->` and `<!-- /{marker} -->` fences** so the narrative status matches what just shipped (the phase/sub-PR state, the real "next" action). This is a narrow, mechanical region update — **never** restructure the file around it (a consumer's CLAUDE.md may gate broad edits behind a human; the fenced region is the only part flow touches). A declared-but-unfenced surface is a loud `⚠️` here and a hard BLOCKER at Step 5b — fence it, don't skip it.
 
+### 5a.5. Undeclared status-surface drift detection (discovery — routes to draft, never a hard halt)
+
+Steps 5a/5b handle the **declared** (Tier 2) surfaces — the ones a project opted into via `statusDocs`. But the orientation doc a fresh agent reads *first* (`CLAUDE.md`, `AGENTS.md`, `README.md`, …) commonly carries a forward-looking status line that **nobody declared** — so it is invisible to the whole pipeline: 5a touches nothing, 5b prints "none declared", doctor 2.7 has nothing to check. It then silently rots after a merge (the dogfood: a merged sub-PR left `CLAUDE.md` reading "3c is next (not started)" — describing just-shipped work as upcoming; a separate hand PR was needed to fix it). This step closes that adoption gap with **best-effort discovery + drift detection** in the same shape as `/flow:audit-coverage`: LLM judgment, backstopped by the human at the merge gate, routed to the draft manifest — **never** a hard mid-loop halt, **never** a silent auto-edit of an un-fenced human doc.
+
+**Gate: run ONLY when this ship moved forward-looking status.** If neither the plan `## Current Focus` nor the roadmap `## Now` section changed vs the base, there is nothing that could have gone stale — skip explicitly. This is the **same STATUS_MOVED signal** Step 5b computes for its declared-region gate; it is recomputed here (shell blocks don't share scope) via the same tested `status-docs.py section` text path, not a re-implementation of section extraction.
+
+```sh
+SSCAN="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/status-surface-scan.py"
+SDHELP="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/status-docs.py"
+# Re-resolve (separate shell block — not in scope from 5a/5b).
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
+PLAN=$(jq -r '.planPath // "dev-docs/plan.md"' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN=dev-docs/plan.md
+ROADMAP=$(jq -r '.roadmapPath // "dev-docs/roadmap.md"' flow.config.json 2>/dev/null); [ -z "$ROADMAP" ] && ROADMAP=dev-docs/roadmap.md
+
+# STATUS_MOVED — identical signal to Step 5b (plan Current Focus / roadmap Now
+# section changed vs base), via the shared helper. New file (no base) reads
+# empty → counts as moved (conservative).
+STATUS_MOVED=0
+for pair in "## Current Focus|$PLAN" "## Now|$ROADMAP"; do
+  H=${pair%%|*}; F=${pair#*|}
+  WORK=$(python3 "$SDHELP" section "$H" "$F" 2>/dev/null)
+  BASE=$(git show "origin/${DEFAULT_BRANCH}:${F}" 2>/dev/null | python3 "$SDHELP" section "$H" - 2>/dev/null)
+  [ "$WORK" != "$BASE" ] && STATUS_MOVED=1
+done
+
+if [ "$STATUS_MOVED" -eq 0 ]; then
+  echo "[status-surface] status unchanged this ship — undeclared-candidate scan skipped."
+else
+  # Emits a header naming the N undeclared candidates present + a bounded,
+  # line-numbered status-bearing slice per candidate for the judge below.
+  python3 "$SSCAN" scan flow.config.json 2>/tmp/flow-sss-err
+  [ -s /tmp/flow-sss-err ] && echo "⚠️ [status-surface] scan reported: $(cat /tmp/flow-sss-err)" >&2
+  rm -f /tmp/flow-sss-err
+fi
+```
+
+**Judge each emitted candidate (best-effort, fresh reasoning — same tier as `/flow:audit-coverage`).** For each `----- status-surface candidate: <path> -----` block the scan printed, decide: does this doc name — as "next / upcoming / in progress / not started / TODO" — something the just-reconciled plan/roadmap now marks **shipped/done**, OR point at a PR/phase *older than the current frontier* as the active edge?
+
+**False-positive discipline — flag ONLY with a verbatim drift quote as evidence.** Mere keyword presence is NOT drift: a doc that says "Phase 3c" or "the 3c work" with no stale forward-looking claim is fine. You must be able to quote the exact stale sentence (e.g. `"3c is next (not started)"`). **If you can't quote the stale claim, don't flag it.** When in doubt, don't flag — the declared-surface gate (5b) and the human at the merge gate are the backstops; a false positive that wedged a ship would be worse than a missed nudge (doctor Check 2.9 catches the durable case at setup).
+
+- **A flagged surface → a `[decision-required]` draft-manifest entry** (the same in-memory manifest Step 2 accumulates; it makes the PR a draft at Step 7). Format:
+  `[status-surface] <path> carries stale forward-looking status ("<verbatim quote>") — needs: reconcile it to the just-shipped reality now, OR declare it in statusDocs + fence the region (<!-- flow:status --> … <!-- /flow:status -->) so it auto-reconciles every ship, OR human-waive`
+  Do **not** silently rewrite the un-fenced doc — the draft item **is** the "propose before editing" proposal (many CLAUDE.mds forbid silent edits; the fix is the human's call, or an opt-in to Tier 2). If the human resolves it in-session by fencing + declaring the surface, it becomes Tier 2 and 5a reconciles it on the next ship.
+- **No candidate drifted (or the scan found 0 undeclared candidates)** → emit the explicit skip line (never a silent pass): `[status-surface] N candidates scanned, none drifted` (take N from the scan header).
+
+This is Tier 1 (discovery → draft). A **declared + fenced** doc is Tier 2 — auto-reconciled by 5a, never a draft item here (the scan excludes declared paths, so it never double-counts).
+
 ### 5b. Doc-currency gate (mechanical — fail-and-reconcile; runs HERE, not only in manual `/flow:doctor`)
 
 After 5a, **verify** the reconciliation landed. This is the automatic backstop: it fires in the pipeline on every ship, so "stale docs never happen" doesn't depend on anyone remembering to run `/flow:doctor`. Two assertions run here:
@@ -819,7 +868,7 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
   ```markdown
   ## 🚫 NOT READY TO MERGE — unresolved blockers
   <!-- flow:not-ready-manifest -->
-  - [<security|a11y|verify-build|skip-audit|visual-deliverable>] <finding> — needs: <secret rotation | design decision | dep vetting | regression fix | re-run | hand-author | human-waive> — candidate resolutions: <...>
+  - [<security|a11y|verify-build|skip-audit|visual-deliverable|status-surface>] <finding> — needs: <secret rotation | design decision | dep vetting | regression fix | re-run | reconcile | declare + fence | hand-author | human-waive> — candidate resolutions: <...>
   <!-- /flow:not-ready-manifest -->
   > Resolve every item above, then re-run `/flow:ship` — it removes this block and marks the PR ready (`gh pr ready`) once the manifest is empty. Do not merge while this block is present.
   ```
@@ -851,6 +900,7 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
   | /flow:audit-skips | ✓ | <all N stage skips legitimate / N should-re-run → re-ran M, K → draft> |
   | Visual deliverable (§7a) | <✓ / n/a (not visually significant)> | <both present / draft: missing <walkthrough · visual-history entry>; Walkthrough (local, uncommitted): <verifyReportPath> / —> |
   | Doc synthesis | ✓ | <docs updated> |
+  | Status surface (§5a.5) | <✓ / skipped (status unchanged)> | <N candidates scanned, none drifted / draft: <path> stale ("<quote>") / —> |
   | Visual history (§5c) | <✓ / skipped (reason)> | <curated entry: "<decision>" / hand-authored (visual_significant) / skipped (uiSurface:false · no load-bearing visual decision) / —> |
 
   If the `🚫 NOT READY TO MERGE` manifest above is present, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here. For a `[visual-deliverable]` draft, the ephemeral walkthrough is **local + uncommitted** — open it at the path named in the Visual-deliverable row before reviewing. Deferred follow-ups: see the configured roadmap and plan docs.
@@ -966,6 +1016,7 @@ If your project has a dev-server skill (e.g., a `/link`-style skill), invoke it 
 | `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 4a (FB candidates) + Step 5c (distill source) + Step 7 (`lib/render-test-plan.py` renders the `## Test plan`) |
 | `flow.config.json.visualHistoryPath` | `core-docs/visual-history.html` | Step 5c (durable visual record; created-on-first-write; gated on `uiSurface` + a load-bearing visual decision) |
 | `flow.config.json.statusDocs` | `[]` | Step 5a (reconcile each declared marker region) + Step 5b (marker-coverage gate, manifest-independent) |
+| `flow.config.json.statusSurfaceCandidates` | `[CLAUDE.md, AGENTS.md, README.md, GEMINI.md, .cursorrules, .github/copilot-instructions.md]` | Step 5a.5 (discover UNDECLARED orientation docs that drifted → draft manifest) |
 | `flow.config.json.lastHarvestedPath` | `~/.claude/plugins/data/flow/contributions/last_harvested.json` | Step 4c (lesson-harvest watermark; only new transcript since last harvest is analyzed) |
 | `flow.config.json.contributionsQueuePath` | `~/.claude/plugins/data/flow/contributions` | Step 4c (enqueue target) + `/flow:contribute` (drain source) |
 | `flow.config.json.flowRepoPath` | unset → `/flow:contribute` disabled | Step 4c (flow-repo nudge) + `/flow:contribute` (run-from guard + PR target) |

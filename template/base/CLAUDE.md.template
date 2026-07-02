@@ -6,11 +6,19 @@
 
 {{STACK}}
 
+## Current status
+
+<!-- flow:status -->
+Pre-v1: scaffolding the first feature. ▶ Next: {{FIRST_WORK_ITEM}}.
+<!-- /flow:status -->
+
+> This block auto-loads into every session — it's the forward-looking map a fresh agent reads first. `/flow:ship` Step 5a keeps it current (it's declared in [`flow.config.json`](./flow.config.json) `statusDocs`), so edit only the text between the `flow:status` fences and never remove the fence comments. If you delete the `statusDocs` entry, `/flow:ship` Step 5a.5 will still nag when this line drifts after a merge.
+
 ## Workflow — this project follows the `flow` plugin's 11-step loop
 
 Canonical loop reference: the [flow plugin's `docs/workflow.md`](https://github.com/by-dev-tools/flow/blob/main/plugins/flow/docs/workflow.md). In-session reminder: `/flow:workflow-help`. Setup verification: `/flow:doctor`.
 
-Project-specific configuration: [`flow.config.json`](./flow.config.json) at repo root. 28 slots; defaults documented in the [flow plugin's `schema/flow.config.schema.json`](https://github.com/by-dev-tools/flow/blob/main/plugins/flow/schema/flow.config.schema.json).
+Project-specific configuration: [`flow.config.json`](./flow.config.json) at repo root. 29 slots; defaults documented in the [flow plugin's `schema/flow.config.schema.json`](https://github.com/by-dev-tools/flow/blob/main/plugins/flow/schema/flow.config.schema.json).
 
 > **About `${CLAUDE_PLUGIN_ROOT}` references below:** that env var resolves at skill-invocation time inside the plugin (to the plugin's installed root). When you see it in this doc, it's the symbolic path the plugin uses internally. The corresponding browsable URLs are linked above and throughout. You don't need to set the env var yourself — it's plugin-side machinery.
 

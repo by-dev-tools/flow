@@ -35,6 +35,18 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0064: A gate that only fires on OPTED-IN surfaces has a 100% adoption/discovery gap — the surface flow itself mandates reading (CLAUDE.md) must not have opt-in currency; discover what SHOULD be declared, best-effort, and route to the human
+
+**Date:** 2026-07-01
+**Source:** user direction (dogfound: a merged sub-PR left an undeclared CLAUDE.md status line stale; a separate hand PR #53 was needed)
+
+**What was said:** flow's doc-currency machinery (`/flow:ship` Step 5a/5b, doctor 2.7, the `statusDocs` slot) works — but only for surfaces a project explicitly declared AND fenced. `statusDocs` defaults to `[]`, so an UNDECLARED orientation doc is invisible to the whole pipeline: 5a touches nothing, 5b prints "none declared" and passes clean, 2.7 has nothing to check. The orientation doc a fresh agent reads first (CLAUDE.md) then silently rots after a merge — exactly the FB-0010 "stale forward-looking direction" class, now applied to *what to work on*. Requiring a project to both declare the doc and wrap its status region in fences is a manual setup step everyone forgets; the currency of the doc flow mandates reading every session should not be opt-in.
+
+**Synthesized rule:** When a gate protects a class of surface but only fires on surfaces a human remembered to enroll, the gap is 100% adoption/discovery, not mechanism. Close it with a **discovery tier**: ship a conservative default list of the well-known surfaces (so zero-config is covered), and *discover* the ones that SHOULD be enrolled rather than waiting for enrollment. The discovery judgment is **best-effort LLM** (mirror `/flow:audit-coverage`): it raises the completeness bar, it is not a deterministic guarantee. Guard it exactly like audit-coverage — (1) **route to the draft manifest, never a hard mid-loop halt** (a false positive must not wedge a ship — draft-routing is the ceiling); (2) **never silently auto-edit an un-fenced human doc** — the draft item IS the propose-before-editing proposal, and auto-reconcile stays gated behind the opt-in fence (keep the two tiers clean: declared+fenced = auto; undeclared+drifted = draft); (3) **false-positive discipline via required evidence** — flag ONLY with a verbatim drift quote; mere keyword presence is not drift; no quote ⇒ no flag; (4) only fire when the precondition that could cause drift actually happened (reuse the existing `STATUS_MOVED` signal — don't scan on a ship that moved no status); (5) keep the candidate list conservative (known auto-loading orientation files) — the *judgment*, not the list, carries the precision. Pair with a **setup-time warn-only nudge** (doctor) so the durable fix (opt into Tier 2) lands once, not every ship. Same family as FB-0062 (failure-open: a gate must fire on the change that most needs it) and FB-0010 (fan-out of stale forward-looking direction) — this closes the fan-out for the surface flow itself mandates.
+
+**Applies to:** `skills/ship/SKILL.md` Step 5a.5 + `skills/ship/lib/status-surface-scan.py`; `statusSurfaceCandidates` slot; `skills/doctor/SKILL.md` Check 2.9; the bootstrap CLAUDE.md scaffold; the `statusDocs` two-tier model; FB-0054 (statusDocs mechanism this extends), FB-0062 (failure-open sibling), FB-0010 (stale forward-looking direction), FB-0048 (`/flow:audit-coverage`'s best-effort-route-to-draft shape this mirrors).
+
+
 ### FB-0063: A human-invoked skill lowers a step's cost and error rate but not its forget-rate — closing the forget-rate for a step gated on an event the agent can't observe needs an event-driven trigger
 
 **Date:** 2026-06-29

@@ -150,6 +150,7 @@ Open `CLAUDE.md`, `README.md`, `flow.config.json`, `.claude/rules/safety.md` and
 | `{{LIFECYCLE_STATUS}}` | `pre-alpha` / `beta` / `production` |
 | `{{SAFETY_PATH_1}}`, `{{SAFETY_PATH_2}}`, ... | One YAML list item per glob in `.claude/rules/safety.md` — add/remove as needed. Example items: `"src/lib/persistence.ts"`, `"tools/migrate/*.mjs"`. |
 | `{{INSTALL_STEPS}}` | `npm install && npm run dev` |
+| `{{FIRST_WORK_ITEM}}` | The first thing you'll build, in the `<!-- flow:status -->` block of `CLAUDE.md`. Example: `wire the settings panel`. `/flow:ship` keeps this line current after that. |
 
 In `flow.config.json`: remove the `$comment-*` keys (they're docs for the bootstrap reader) and verify each slot value matches your project's reality:
 - `typecheckCmd` matches your `package.json` `scripts.typecheck` (or `tsc --noEmit` if no script). **Trust model:** this slot is shell-executed by `/flow:ship` and `/flow:staff-review` (via `sh -c`), at the same trust level as `package.json` `scripts` or pre-commit hooks. Treat your committed `flow.config.json` with the same care.

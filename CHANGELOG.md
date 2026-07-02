@@ -10,6 +10,20 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.14.0 — 2026-07-01
+
+**Orientation-doc-staleness gap closed: `/flow:ship` now discovers UNDECLARED status surfaces (the CLAUDE.md a fresh agent reads first) that drifted after a merge, and routes them to the draft manifest.**
+
+- **The gap.** The doc-currency machinery (`/flow:ship` Step 5a/5b, doctor Check 2.7) only reconciles surfaces a project explicitly declared in `statusDocs`. An UNDECLARED orientation doc is invisible to the whole pipeline: Step 5a touches nothing, Step 5b prints "none declared", doctor 2.7 has nothing to check. So it silently rots after a merge — the dogfood: a merged sub-PR "3c₁" left `CLAUDE.md`'s status paragraphs reading "3c is next (not started)", describing just-shipped work as upcoming; a separate hand PR was needed to fix it.
+- **New `statusSurfaceCandidates` slot (schema, default ships).** An array of repo-root paths of well-known auto-loading orientation docs. Defaults to `CLAUDE.md, AGENTS.md, README.md, GEMINI.md, .cursorrules, .github/copilot-instructions.md` so **zero-config projects are covered**; override to extend/narrow, or `[]` to opt out of discovery. The drift judgment — not the file list — is what holds false positives down.
+- **New ship Step 5a.5 (discovery + best-effort drift detection).** ONLY when this ship moved forward-looking status (the existing `STATUS_MOVED` signal), the stdlib `skills/ship/lib/status-surface-scan.py` helper emits each candidate that exists and is **not** already declared, plus a bounded status-bearing slice. The agent best-effort-judges each (same tier as `/flow:audit-coverage`) for a stale "next/upcoming/not-started" claim about work the just-reconciled plan/roadmap now marks shipped. **False-positive discipline:** flag ONLY with a **verbatim** drift quote — mere keyword presence ("Phase 3c") is not drift; no quote ⇒ no flag. A flagged surface → a `[decision-required]` draft-manifest entry (reconcile now, OR declare + fence it for Tier 2 auto-reconcile, OR human-waive). **Never a hard halt; never a silent rewrite of an un-fenced human doc** — the draft item IS the propose-before-editing proposal. Clean, undeclared-but-not-drifted → an explicit skip line.
+- **Two clean tiers.** Declared + fenced = Tier 2 (auto-reconciled by 5a, never a draft item). Undeclared but drifted = Tier 1 (discovered by 5a.5 → draft). The scan excludes declared paths, so it never double-counts.
+- **doctor Check 2.9 (setup-time opt-in nudge).** Warn-only: an undeclared candidate that carries status content gets a one-time nudge to fence it + declare it (Tier 2), so a project opts in before the next ship's 5a.5 keeps nagging.
+- **Bootstrap.** The scaffolded `CLAUDE.md` now ships with a `<!-- flow:status -->` fenced status region + a seeded `statusDocs` entry, so **new consumers get Tier 2 auto-reconcile by default**.
+- New `run_status_surface_evals.py` (positive dogfood / negative declared-fenced / false-positive fixtures + helper unit coverage) wired into CI. Schema now 29 slots. Breaking changes: none.
+
+---
+
 ## v1.13.0 — 2026-06-28
 
 **Two failure-open gaps in the ship pipeline closed: visually-significant changes now REQUIRE both visual deliverables, and every stage skip is audited for legitimacy. SAFETY (gate behavior).**

@@ -142,6 +142,13 @@
       "default": [],
       "examples": [[], [{ "path": "CLAUDE.md", "marker": "flow:status" }, { "path": "README.md", "marker": "flow:status" }]]
     },
+    "statusSurfaceCandidates": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Repo-root paths of well-known auto-loading agent-orientation docs that commonly carry forward-looking status. Used by /flow:ship Step 5a.5 + /flow:doctor to DISCOVER surfaces that SHOULD be declared in `statusDocs` but aren't — closing the adoption gap where an UNDECLARED orientation doc (the file a fresh agent reads first) silently goes stale after a merge, invisible to the whole doc-currency pipeline (Step 5a/5b + doctor Check 2.7 only see DECLARED surfaces). When a ship moves forward-looking status (plan Current Focus / roadmap Now changed vs base), Step 5a.5 scans each candidate that EXISTS and is NOT already declared, best-effort-judges whether it carries a stale 'next/upcoming/not-started/TODO' claim about work the just-reconciled plan/roadmap now marks shipped, and routes a flagged surface to the draft manifest (reconcile now, OR declare it in statusDocs + fence it, OR human-waive). It never silently rewrites an un-fenced human doc — discovery + draft-routing only; auto-reconcile stays gated behind the opt-in `statusDocs` fence (Tier 2). /flow:doctor warns (setup-time) about an undeclared candidate that carries status-looking content. The drift judgment — not the file list — is what holds false positives down, so keep this to conservative, genuinely auto-orienting files. Default: the six well-known orientation files below (so zero-config projects are covered); override to extend or narrow, or set to [] to opt out of discovery entirely.",
+      "default": ["CLAUDE.md", "AGENTS.md", "README.md", "GEMINI.md", ".cursorrules", ".github/copilot-instructions.md"],
+      "examples": [["CLAUDE.md", "AGENTS.md", "README.md", "GEMINI.md", ".cursorrules", ".github/copilot-instructions.md"], ["CLAUDE.md", "docs/AGENT.md"], []]
+    },
     "rustWorkspaceDir": {
       "type": "string",
       "description": "(Tauri / Rust stacks only.) Directory containing the project's Rust workspace (Cargo.toml). Used by the tauri-rust-ts stack overlay's preflight runner to know where to run `cargo fmt`, `cargo clippy`, `cargo test`. Default: 'src-tauri' (the Tauri convention). Non-Tauri Rust projects typically set this to '.' (workspace at repo root) or to the workspace subdirectory.",

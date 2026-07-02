@@ -4,9 +4,10 @@ description: >
   Verify that the flow plugin is correctly installed and configured for the
   current project. Runs a punch-list of PASS/FAIL checks: marketplace
   registered under the canonical 'flow' name, flow@flow enabled, project-root
-  flow.config.json present + parses + matches the v1.2+ schema, all 28 slots
+  flow.config.json present + parses + matches the v1.2+ schema, all 29 slots
   have sensible values, any declared `statusDocs` status surfaces exist + are
-  fenced, auto-loading rules visible to Claude Code, the paths
+  fenced, any undeclared `statusSurfaceCandidates` that carry status content are
+  flagged for opt-in, auto-loading rules visible to Claude Code, the paths
   named in slots actually exist on disk, prerequisite CLI tools (gh, jq, git)
   installed, preflight + CI optionally wired. Each FAIL prints an actionable
   fix command. Emits a final-line verdict ([READY] / [READY with WARN] /
@@ -353,6 +354,61 @@ else
   if [ -n "$TH" ] && ! awk -v th="$TH" 'BEGIN{exit !(th>=0 && th<=1)}' 2>/dev/null; then
     echo "[FAIL] contributionThreshold: $TH out of range (must be 0–1). Fix: set a value like 0.6."
   fi
+fi
+```
+
+**Check 2.9 — undeclared status surfaces (`statusSurfaceCandidates`) that carry status content (setup-time opt-in nudge)**
+
+The `statusDocs` gate (Check 2.7 + `/flow:ship` Step 5a/5b) only sees surfaces a project **declared**. But the orientation doc a fresh agent reads first (`CLAUDE.md`, `AGENTS.md`, `README.md`, …) commonly carries a forward-looking status line **nobody declared** — so it silently rots after a merge, invisible to the pipeline. `/flow:ship` Step 5a.5 catches drift at ship time via best-effort LLM judgment; this check catches the durable case **once, at setup**, so a project opts into Tier 2 auto-reconcile before the next ship's Step 5a.5 keeps nagging. **Warn-only** (consistent with doctor's other soft checks) — an undeclared candidate carrying status content is a suggestion, not a failure; the drift judgment lives in the ship pipeline, not here.
+
+```sh
+SSCAN=""
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/status-surface-scan.py" ]; then
+  SSCAN="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/status-surface-scan.py"
+elif [ -f "plugins/flow/skills/ship/lib/status-surface-scan.py" ]; then
+  SSCAN="plugins/flow/skills/ship/lib/status-surface-scan.py"
+fi
+
+if [ ! -f flow.config.json ] || ! jq -e . flow.config.json >/dev/null 2>&1; then
+  : # 2.1/2.2 already reported config problems.
+elif [ -z "$SSCAN" ]; then
+  echo "[SKIP] statusSurfaceCandidates check — status-surface-scan.py helper not reachable (install the flow plugin or run from the flow repo root)"
+else
+  # `candidates` prints undeclared candidate files that EXIST (exit 1 loud on a malformed config).
+  CANDS=$(python3 "$SSCAN" candidates flow.config.json 2>/tmp/flow-doctor-sss-err)
+  if [ $? -ne 0 ]; then
+    echo "[FAIL] statusSurfaceCandidates is malformed in flow.config.json"
+    echo "       $(cat /tmp/flow-doctor-sss-err 2>/dev/null)"
+    echo "       Fix: statusSurfaceCandidates must be an array of non-empty path strings (or omit it for the default list)."
+  elif [ -z "$CANDS" ]; then
+    echo "[PASS] statusSurfaceCandidates: no undeclared orientation docs present (or all are already declared in statusDocs)"
+  else
+    # Of the undeclared candidates present, flag those whose slice is non-empty (carry status-looking content).
+    # while-read (NOT `for c in $CANDS`): zsh does not word-split an unquoted var, so the `for` form
+    # silently iterates once over the whole blob under zsh — the exact FB-0010 silent-skip class.
+    WITH_STATUS=""
+    while IFS= read -r c; do
+      [ -z "$c" ] && continue
+      if [ -n "$(python3 "$SSCAN" slice "$c" 2>/dev/null)" ]; then
+        WITH_STATUS="$WITH_STATUS $c"
+      fi
+    done <<EOF
+$CANDS
+EOF
+    if [ -z "$WITH_STATUS" ]; then
+      echo "[PASS] statusSurfaceCandidates: undeclared docs present ($(printf '%s' "$CANDS" | tr '\n' ' ')) but none carry status-looking content"
+    else
+      echo "[WARN] undeclared orientation doc(s) carry status content:$WITH_STATUS"
+      echo "       These auto-load into every session and will go stale after a merge (Step 5a.5 nags on drift, but only reconciles DECLARED surfaces)."
+      echo "       Fix (opt into Tier 2 auto-reconcile): wrap the status region in the marker fences and declare the file, e.g.:"
+      echo "           <!-- flow:status -->"
+      echo "           Phase 2 — HealthKit integration in progress. ▶ Next: notifications."
+      echo "           <!-- /flow:status -->"
+      echo "       then add {\"path\":\"<file>\",\"marker\":\"flow:status\"} to flow.config.json.statusDocs."
+      echo "       (Warn-only — leaving it undeclared is fine; Step 5a.5 still catches drift and routes it to a draft.)"
+    fi
+  fi
+  rm -f /tmp/flow-doctor-sss-err
 fi
 ```
 
