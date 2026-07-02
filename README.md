@@ -6,6 +6,8 @@ It exists to catch the mistakes that are cheap to fix early and expensive to fix
 
 Install once and every project on your machine can use it.
 
+> In a hurry? [How Flow works](docs/how-it-works.md) is the one-minute version.
+
 ## The loop
 
 The workflow is a progression of skills held together by two human gates. The skills (indented `↳`) fire in order on their own; the plain rows are the steps they attach to — including the two gates, which are the whole point and are not skills. Once you approve the plan, everything runs to the open PR without you.
