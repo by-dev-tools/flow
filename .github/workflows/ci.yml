@@ -25,6 +25,7 @@ jobs:
       - run: python3 plugins/flow/evals/run_evals.py
       - run: python3 plugins/flow/evals/run_walk_extract_evals.py
       - run: python3 plugins/flow/evals/run_status_docs_evals.py
+      - run: python3 plugins/flow/evals/run_status_surface_evals.py
       - run: python3 plugins/flow/evals/run_visual_history_evals.py
       - run: python3 plugins/flow/evals/run_render_evals.py
       - run: python3 plugins/flow/evals/run_report_render_evals.py
