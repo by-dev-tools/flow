@@ -185,6 +185,30 @@ The PR body's first section was a bare list of "why this exists" bullets — no 
 
 **Lessons learned:**
 - The worktree lost this session's uncommitted edits mid-session and the branch was 1 commit behind `origin/main`; re-verified file state with `git status` + `grep` before trusting "edits applied," rebased to clear the stale-base gate, and re-applied against current file contents. The stale-base gate (FB-0008) and a `git status` sanity check caught what an assume-my-edits-persisted flow would have shipped as an empty diff.
+### Nudge a `Visual-walk` block for visual spikes (so verify-build renders the walkthrough)
+**Date:** 2026-07-05
+**Branch:** claude/distracted-blackburn-176b6b
+**Commit:** _(rebased onto v1.19.0 main; see PR #67)_
+
+**What was done:**
+Added a short nudge to `/flow:ship-spike` Step 2 (the `/flow:verify-build` invocation) telling the agent that a **visual/interaction** spike must declare a `Visual-walk` block in its plan so verify-build §5a captures frames + renders the ephemeral HTML walkthrough at `verifyReportPath` — and to actually invoke `/flow:verify-build` rather than driving the sim / `simctl` directly (which skips the Step-10 render). Reconciled the FB-0010 fan-out across the four *live* contract surfaces that each declared Visual-walk simply "N/A under spike/tiny": `docs/workflow.md` (the plan-field checklist line + a new "Visual/interaction spikes" subsection under § Spike mode), `rules/plan-discipline.md` (the mode-override sentence), and `agents/planner.md` (the template's Visual-walk gloss + the `mode: spike` instruction). Each now carves out "N/A under tiny / non-visual spike, but KEEP for a visual spike." The v1.5.1 changelog blurbs embedded in `plugin.json` / `marketplace.json`, the `CHANGELOG.md` v1.5.1 line, and the v1.5.1 history/plan entries were left as-is — they're timestamped records that accurately describe what v1.5.1 shipped, not the live contract. Non-visual spikes are unaffected — no `Visual-walk` block, no capture, still fast.
+
+**Why:**
+Two failure modes bit a real session. (1) verify-build's frame-capture (§5a) activates only on `uiSurface:true` **AND** a `Visual-walk` block present (`extract-visual-states.py`) — a spike plan authored with only a spike/Spec-walk body and no `Visual-walk` block silently no-ops §5a and produces a frameless report; `/flow:ship-spike` never prompted for the block. (2) It's easy to "shortcut" the behavioral check by driving `simctl`/the sim directly instead of invoking `/flow:verify-build`, which skips Step 10 (the HTML render) entirely. For a *visual* spike the walkthrough IS a large part of what the spike hands back, so a frameless report defeats the purpose.
+
+**Design decisions:**
+- **Nudge, not a gate.** §5a's activation predicate is unchanged (`uiSurface:true` AND a `Visual-walk` block). The fix is advisory prose at the point of invocation, so non-visual spikes stay fast (no `Visual-walk`, no capture, no new blocking check). A hard gate on spikes would tax the common non-visual case for a minority visual one.
+- **Reconcile the fan-out, don't just patch one file.** "N/A under spike/tiny" was fanned out across four live surfaces (`workflow.md` ×2, `plan-discipline.md`, `planner.md` ×2) — patching only `ship-spike/SKILL.md` would have left a colleague grepping `Visual-walk` + `spike` to find four contradictions (FB-0010 fan-out class). Grepped `N/A under .?spike` first, fixed every live survivor, and deliberately left the timestamped v1.5.1 changelog/history records (which correctly describe the past scope).
+
+**Technical decisions:**
+- Placed the nudge as a blockquote callout between the verify-build invocation block and the "Skip behavior" paragraph in `ship-spike/SKILL.md` Step 2 — adjacent to the invocation it modifies, not buried in the config table. No change to `verify-build/SKILL.md` or `extract-visual-states.py`: §5a already does the right thing when the block is present; the gap was purely that spike plans weren't being nudged to declare it.
+
+**Tradeoffs discussed:**
+- **Nudge vs. plan-critic gate.** A stronger fix would flag a spike plan that touches a UI surface but omits `Visual-walk` (the Facet-4 enforcement half already roadmapped for feature mode). Deferred: spike mode deliberately skips the heavy reviews, and a spike author who wants no frames shouldn't be forced to declare a block. The nudge raises the odds the block is declared without mandating it.
+- **Merges docs-only at the current v1.19.0 — no version bump.** The change adds *advisory guidance about an existing field* (`Visual-walk`), not a new field/mechanism/behavior, so it rides the current release the way PR #65 (`docs/how-it-works.md`) merged at the then-current v1.14.0 — unlike v1.5.1, which bumped because it *added* the `Visual-walk` field to the plan contract. Not bumping also sidesteps the version-collision churn that repeatedly bit this branch: over the session `main` advanced through v1.15.0 (#68), v1.16.0 (#71), v1.17.0 (#70), v1.18.0 (#73), and v1.19.0 (#72), each forcing an FB/version renumber on rebase. The doc-currency gate (ship Step 5b) passes on the v1.19.0 the rebase carries.
+
+**Lessons learned:**
+- A capture step gated on a plan block the author may not know to write is a silent-skip waiting to happen (FB-0010 silent-skip class). When a step no-ops on a missing declaration, nudge for the declaration at the point the author is deciding — don't rely on them remembering the predicate. Captured as **FB-0069** (renumbered from an initial FB-0065 across four rebases as #68/#71/#70/#73 claimed FB-0065/FB-0066/FB-0067/FB-0068 upstream in turn — the FB-0060 "recheck IDs vs origin before finalizing" recurrence, four times over on an unusually active main). The full-pipeline-every-PR correction from the same session is **FB-0070**.
 
 ### Fix staff-review lens `subagent_type` names — add the required `flow:` prefix
 **Date:** 2026-07-05

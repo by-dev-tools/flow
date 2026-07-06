@@ -35,6 +35,26 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0070: A "contribution" / lightweight PR is NOT exempt from the full `/flow:ship` pipeline — size or "it's just a proposal the human gates" is not a reason to shortcut review stages
+**Date:** 2026-07-06
+**Source:** user correction (this session: I opened a `flow-contribution` PR via a hand-rolled `gh pr create` draft and skipped the ship pipeline, reasoning it was a small docs-only proposal)
+
+**What was said:** "Why wouldn't you run the full pipeline for a contribution feature? Run everything so the quality stays high." The user rejected the size/kind-based shortcut outright.
+
+**Synthesized rule:** The quality bar is size- and kind-independent. Run the full `/flow:ship` pipeline for **every** PR — docs-only, lightweight, and `flow-contribution` proposals included — and let each stage self-skip on its OWN documented predicate (doc-only, `uiSurface:false`, `platform:library`) rather than pre-deciding a whole-pipeline skip. "It's just a proposal the human gates at merge" is not a reason to skip review: the stages are cheap on a small diff (they early-exit), and the `STATUS: SKIPPED` audit trail is itself load-bearing. This is the concrete recurrence of the existing workflow-discipline rule ("always invoke `/flow:ship`, never `gh pr create`") applied to the contribution case, and of FB-0033 ("don't skip `/critique-plan` or `/simplify` even on docs-only"). Also captured agent-side as the `feedback_full_pipeline_every_pr` memory.
+
+**Applies to:** `.claude/rules/general.md` § Workflow discipline; `/flow:ship` auto-invocation discipline; `/flow:contribute` (a contribution is still shipped through the full pipeline); FB-0033 (don't-skip-on-docs-only sibling), FB-0010 (workflow-step silent-skip class).
+
+### FB-0069: A capture step gated on a plan block the author may not know to write is a silent-skip — nudge for the declaration at the point of authoring, don't rely on remembering the predicate
+**Date:** 2026-07-05
+**Source:** user direction (dogfound: a visual spike's ephemeral HTML walkthrough silently didn't render)
+
+**What was said:** verify-build's frame-capture (§5a) activates only on `uiSurface:true` **AND** a `Visual-walk` block in the plan. A spike authored as a *visual/interaction* prototype but with only a spike/Spec-walk body (no `Visual-walk` block) silently no-ops §5a → a frameless report, and `/flow:ship-spike` never prompted for the block. A second, adjacent failure: driving `simctl`/the sim directly instead of invoking `/flow:verify-build` shortcuts the behavioral check and skips the Step-10 HTML render entirely. Both defeat the point of a visual spike, whose walkthrough IS the deliverable.
+
+**Synthesized rule:** When a step no-ops on a missing *declaration* the author may not know to write, the fix is a **nudge at the point of authoring/invocation**, not a silent skip and not a hard gate. Surface the predicate ("declare X so step Y fires") where the author is deciding, so the common path that legitimately omits X stays fast (here: non-visual spikes need no `Visual-walk` block and shouldn't be taxed) while the path that needs X gets reminded. Pair it with a "use the real pipeline entrypoint, don't shortcut it" reminder when a manual workaround (driving the sim directly) skips a load-bearing downstream step (the render). And **reconcile the fan-out**: a nudge that contradicts an existing doc claim ("Visual-walk is N/A under spike") isn't done until the contradicting claim is fixed too (FB-0010 fan-out). Same silent-skip family as FB-0010; the softer sibling of FB-0062 (there the high-risk case is REQUIRED → draft; here the minority case is NUDGED, because forcing it would tax the fast common case).
+
+**Applies to:** `skills/ship-spike/SKILL.md` Step 2; `docs/workflow.md` (§ plan Visual-walk field + § Spike mode); `rules/plan-discipline.md` + `agents/planner.md` (the mode-override / template surfaces reconciled in the same fan-out); the `Visual-walk`/§5a capture predicate (`skills/verify-build/lib/extract-visual-states.py`); FB-0010 (silent-skip + fan-out), FB-0062 (failure-open sibling — REQUIRE-vs-NUDGE boundary), the roadmapped Facet-4 plan-critic `Visual-walk` enforcement (the harder gate this stops short of).
+
 ### FB-0068: The plan reviewers could not target a plan document on disk, and no mechanical check caught Spec-walk checkboxes that name no verification — both surfaced by prompt-referenced dogfooding in a workspace without the plugin installed
 **Date:** 2026-07-12
 **Source type:** user direction (dogfooding a consumer project → build the missing capability upstream)
