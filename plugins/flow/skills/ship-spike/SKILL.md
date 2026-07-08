@@ -255,8 +255,10 @@ gh pr create --base "$BASE" --label spike --title "spike: <answer>" --body "$(ca
 ## Summary
 **Scope:** spike (exploratory — code is disposable)
 
-<1 plain-language sentence: what this spike explored and what it concluded.
-Readable without opening the diff; no internal codenames or jargon.>
+<1 plain-language, non-technical sentence: what this spike explored and what it
+concluded, understandable at a glance without opening the diff; no internal
+codenames or jargon. Additive opener — the Research question / Answer /
+Recommendation detail below is kept in full, not replaced.>
 
 ## Research question
 <the question>

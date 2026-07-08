@@ -877,10 +877,12 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
   ## Summary
   **Scope:** <docs-only | new feature | bugfix | refactor | test | chore | mixed>
 
-  <1-2 plain-language sentences: what changed, readable by someone who has not
-  seen the diff. No internal codenames (FB-XXXX, PR letters), no jargon.>
+  <1-2 plain-language, non-technical sentences: what changed, understandable at a
+  glance by someone who has not seen the diff. No internal codenames (FB-XXXX, PR
+  letters), no jargon. This is an ADDITIVE opener — it does not replace the detail below.>
 
-  - <1-3 bullets on why this exists>
+  - <why this exists + the specifics a reviewer needs — KEEP these; the plain-language
+    line is a new top layer, not a substitute. Never trim detail just because the opener exists.>
 
   ## Test plan
   {{rendered by lib/render-test-plan.py — see "Render the Test plan" below; paste its stdout here verbatim, replacing this line}}
@@ -945,16 +947,23 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
   behavior is pinned by `evals/run_render_evals.py`, the consumer-side
   verification for this surface).
 
-  **Write the `## Summary` for a reader at the merge gate**, top-down:
+  **Write the `## Summary` for a reader at the merge gate**, top-down. The Scope
+  label + plain-language line are an **additive** top layer — a glanceable first
+  read — **not** a replacement for detail. Adding the easy opener must never
+  reduce what the PR body would otherwise carry: keep every why-bullet and all
+  the specifics a reviewer needs.
   - **Scope** — the primary category of the change, so a reviewer knows what
     kind of review it needs: `docs-only`, `new feature`, `bugfix`, `refactor`,
     `test`, `chore` (build/tooling/deps), or `mixed`. Pick the one that
     dominates; use `mixed` only when two genuinely co-lead, and name the parts.
-  - **The plain-language line** — what changed, in one or two sentences a reader
-    can follow without opening the diff. No internal codenames (FB-XXXX, PR
-    letters), no jargon — this is the first thing the human reads at the gate.
-  - **The bullets** — why the change exists (context, motivation), not a restated
-    what. Drop them if the plain-language line already carries the why.
+  - **The plain-language line** — what changed, in one or two non-technical
+    sentences a reader can understand at a glance without opening the diff. No
+    internal codenames (FB-XXXX, PR letters), no jargon — this is the first thing
+    the human reads at the gate.
+  - **The why-bullets (retained)** — the existing context/motivation + the
+    specifics. Keep them in full; they carry the detail the plain-language line
+    intentionally omits for readability. Never drop or thin a bullet just because
+    the opener exists — the opener is *in addition to* the detail, not instead of it.
 
   **Populate the `## Flow run` table from THIS session's loop history** — you
   have that context at ship time (the same context you used to write the
