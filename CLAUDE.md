@@ -30,6 +30,8 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/contribute/SKILL.md` | `/flow:contribute` — drains the lesson-harvest queue + disagreement store into a draft PR back to flow (FB-0059) |
 | `plugins/flow/skills/audit-skips/SKILL.md` | `/flow:audit-skips` — skip-legitimacy audit at ship Step 2a; deterministic engine in `lib/skip-audit-checks.py` (FB-0062) |
 | `plugins/flow/skills/verify-build/lib/visual-significance.py` | Shared visual-significance predicate, reused by verify-build + ship (FB-0062) |
+| `plugins/flow/skills/ship/lib/pr-coherence.py` | Deterministic PR body↔draft coherence + read-back engine, reused by ship/doctor/land (FB-0066) |
+| `plugins/flow/skills/ship/lib/verify-pr-body.sh` | Sourced gh read-back helper: re-fetches a PR after any body/draft write + asserts it took (FB-0066) |
 | `plugins/flow/skills/ship/SKILL.md` | `/flow:ship` final-pass pipeline (Step 4c harvests flow-generalizable lessons) |
 | `plugins/flow/scripts/extract_session.py` | Session preprocessing for the reviewers (+ harvest dialogue helper) |
 | `plugins/flow/scripts/bounding_logic.py` | User-message windowing |

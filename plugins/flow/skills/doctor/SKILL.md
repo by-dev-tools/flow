@@ -7,9 +7,10 @@ description: >
   flow.config.json present + parses + matches the v1.2+ schema, all 29 slots
   have sensible values, any declared `statusDocs` status surfaces exist + are
   fenced, any undeclared `statusSurfaceCandidates` that carry status content are
-  flagged for opt-in, auto-loading rules visible to Claude Code, the paths
-  named in slots actually exist on disk, prerequisite CLI tools (gh, jq, git)
-  installed, preflight + CI optionally wired. Each FAIL prints an actionable
+  flagged for opt-in, any open PR for HEAD is body↔draft coherent (no stale
+  `NOT READY TO MERGE` manifest on a ready PR), auto-loading rules visible to
+  Claude Code, the paths named in slots actually exist on disk, prerequisite CLI
+  tools (gh, jq, git) installed, preflight + CI optionally wired. Each FAIL prints an actionable
   fix command. Emits a final-line verdict ([READY] / [READY with WARN] /
   [NOT READY]) so the bottom line is scannable. Use after `bash bootstrap.sh`
   to confirm the scaffold took, OR any time something feels off ("is flow set
@@ -409,6 +410,48 @@ EOF
     fi
   fi
   rm -f /tmp/flow-doctor-sss-err
+fi
+```
+
+**Check 2.10 — live PR body↔draft coherence for HEAD (FB-0066)**
+
+If an **open** PR exists for the current branch, assert the coherence invariant `/flow:ship` Step 7b enforces: **a PR that is NOT a draft must not carry the `🚫 NOT READY TO MERGE` manifest.** A PR that drifted into that state between ship and merge (a blocker cleared out-of-band + a hand-edited body that silently failed) is the recurring FB-0066 bug — this check catches it at the merge gate. FAIL is actionable: reconcile the body via the ship reconcile fast-path, never a hand-edit.
+
+```sh
+# gh is required; Check 4.1 reports it missing. Guard here so this check SKIPs cleanly.
+if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] live-PR coherence — gh/jq not on PATH (see Check 4.1)"
+else
+  BR=$(git branch --show-current 2>/dev/null)
+  PC=""
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/pr-coherence.py" ]; then
+    PC="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/pr-coherence.py"
+  elif [ -f "plugins/flow/skills/ship/lib/pr-coherence.py" ]; then
+    PC="plugins/flow/skills/ship/lib/pr-coherence.py"
+  fi
+  if [ -z "$BR" ]; then
+    echo "[SKIP] live-PR coherence — not on a branch (detached HEAD)"
+  elif [ -z "$PC" ]; then
+    echo "[SKIP] live-PR coherence — pr-coherence.py helper not reachable (install the flow plugin or run from the flow repo root)"
+  else
+    # Only OPEN PRs (a merged/closed PR's body is immutable history, not a merge-gate concern).
+    PR_JSON=$(gh pr list --head "$BR" --state open --json number,isDraft,body --limit 1 2>/dev/null)
+    NUM=$(printf '%s' "$PR_JSON" | jq -r '.[0].number // empty' 2>/dev/null)
+    if [ -z "$NUM" ]; then
+      echo "[PASS] live-PR coherence — no open PR for '$BR' (nothing to check)"
+    else
+      ISDRAFT=$(printf '%s' "$PR_JSON" | jq -r 'if .[0].isDraft then "true" else "false" end')
+      printf '%s' "$PR_JSON" | jq -r '.[0].body // ""' > /tmp/flow-doctor-prbody.md
+      if python3 "$PC" coherence --body-file /tmp/flow-doctor-prbody.md --is-draft "$ISDRAFT" >/dev/null 2>&1; then
+        echo "[PASS] live-PR coherence — PR #$NUM (isDraft=$ISDRAFT) body↔draft state coherent"
+      else
+        echo "[FAIL] live-PR coherence — PR #$NUM is NOT a draft but its body still carries '🚫 NOT READY TO MERGE'"
+        echo "       This PR would merge looking not-ready. Do NOT hand-edit the body (that is the silent-write path that caused this)."
+        echo "       Fix: run the /flow:ship reconcile fast-path (Step 7c) to re-render the body + reconcile draft state from the current gate."
+      fi
+      rm -f /tmp/flow-doctor-prbody.md
+    fi
+  fi
 fi
 ```
 

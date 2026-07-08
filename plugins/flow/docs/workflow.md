@@ -293,6 +293,19 @@ A filled `## Flow run` for a docs-only change on a library project (no UI surfac
 
 Note the skipped rows: each names *why* it skipped, so the reader sees a legitimate config/mode skip rather than wondering whether a gate was missed — and `/flow:audit-skips` is the gate that *confirms* those skips are legitimate rather than self-certified. (`/flow:audit-skips` always runs — it audits the OTHERS' skips, so it never skips itself; on this docs-only library PR it rules every skip legitimate without noise.)
 
+### The draft manifest is coherent with draft state, and every PR-body write is read-back-verified (FB-0066)
+
+The `🚫 NOT READY TO MERGE` manifest and the PR's draft flag are two encodings of one fact: *there is an unresolved blocker.* They must never diverge. Flow enforces a single invariant everywhere a PR body or draft state is touched:
+
+> **A PR that is NOT a draft must not carry the `🚫 NOT READY TO MERGE` manifest** (contrapositive: a non-empty manifest ⇒ the PR is a draft).
+
+Two mechanisms keep it true:
+
+- **Read-back after every write.** A `gh` write can silently no-op — a masked exit code (`gh pr edit … | tail -1 && …` reports the pipe's `0`, not gh's failure), a `projectCards` GraphQL error swallowed downstream, an API hiccup — and leave the stale body in place while the pipeline reports success. That is how a ready PR ends up still carrying the manifest. So after *any* `gh pr edit --body-file` / `gh api PATCH …/pulls/N` / `gh pr ready[/--undo]`, flow re-fetches the live PR and asserts the write took (`skills/ship/lib/verify-pr-body.sh` → `lib/pr-coherence.py`): the intended substrings are present, the forbidden ones (the manifest, on a ready PR) are absent, and the draft state matches intent. A gh write is its own checked statement — never piped into a filter that masks its exit code.
+- **A coherence gate at three points.** `/flow:ship` Step 7b asserts the invariant as the last thing it does (fix-in-place or halt loud on violation); `/flow:doctor` Check 2.10 asserts it against any open PR for HEAD (catching a PR that drifted between ship and merge); `/flow:land` blocks if the PR it is asked to reconcile merged while still carrying the manifest (an escape worth a human's eyes before the forward docs record it as cleanly shipped). The predicate is pinned by `evals/run_pr_coherence_evals.py`.
+
+When a blocker is cleared *out-of-band* (e.g. the operator drives the sim to clear the last Unknown, outside a full ship re-run), the honest way to make the body match is the **ship reconcile fast-path** (Step 7c): re-render the body + reconcile draft state from the current findings buffer, no reviewers or doc synthesis. Hand-editing the PR body — the write that silently fails — is never the path.
+
 ### Never bypass `/flow:ship` with `gh pr create` directly (FB-0010 workflow-step sub-class)
 
 `/flow:ship` is not just "the thing that opens the PR" — it's the orchestrator that spawns `/flow:security-review` + `/flow:accessibility-review` (Step 1 above), synthesizes feedback into both layers, updates the project docs, and only THEN opens the PR. Running `gh pr create` directly skips all of that.

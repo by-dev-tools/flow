@@ -66,7 +66,7 @@ closed-unmerged PR would write a lie. Verify first; fail loudly, edit nothing:
 
 ```sh
 N="<PR#>"   # the argument
-STATE_JSON=$(gh pr view "$N" --json state,mergedAt,title,headRefName,mergeCommit,url 2>/dev/null)
+STATE_JSON=$(gh pr view "$N" --json state,mergedAt,title,headRefName,mergeCommit,url,body 2>/dev/null)
 if [ -z "$STATE_JSON" ]; then
   echo "⚠️ BLOCKER: gh could not read PR #$N (wrong number, wrong repo, or no auth). Nothing changed." >&2
   exit 1
@@ -84,6 +84,39 @@ echo "[land] branch=$(printf '%s' "$STATE_JSON" | jq -r '.headRefName')  mergeCo
 
 Carry `title`, `headRefName`, and the short `mergeCommit` forward — Step 2 matches
 on the PR number AND the branch name.
+
+### 1a-coherence. Assert the merged PR did NOT carry the NOT-READY manifest (FB-0066 — BLOCKING)
+
+A merged PR is (by definition) not a draft. If its body still carries the
+`🚫 NOT READY TO MERGE` manifest, it merged in a **not-ready state** — the exact
+FB-0066 escape (a blocker cleared out-of-band, a stale manifest that `/flow:ship`'s
+read-back would have caught but a hand-edit didn't). Reconciling the forward docs to
+celebrate that as cleanly shipped would paper over a process failure, so **stop and
+surface it** before editing anything — the human decides whether the merge was
+legitimate:
+
+```sh
+PC=""
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/pr-coherence.py" ]; then
+  PC="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/pr-coherence.py"
+elif [ -f "plugins/flow/skills/ship/lib/pr-coherence.py" ]; then
+  PC="plugins/flow/skills/ship/lib/pr-coherence.py"
+fi
+if [ -n "$PC" ]; then
+  printf '%s' "$STATE_JSON" | jq -r '.body // ""' > /tmp/flow-land-prbody.md
+  # A merged PR is never a draft → --is-draft false. A manifest present ⇒ coherence FAIL.
+  if ! python3 "$PC" coherence --body-file /tmp/flow-land-prbody.md --is-draft false >/dev/null 2>&1; then
+    echo "⚠️ BLOCKER: PR #$N merged while still carrying the '🚫 NOT READY TO MERGE' manifest." >&2
+    echo "   It merged in a not-ready state (an FB-0066 escape). Nothing has been reconciled." >&2
+    echo "   → Confirm with a human that the merge was intended before landing; the forward docs" >&2
+    echo "     should not record a not-ready merge as cleanly shipped without that acknowledgment." >&2
+    rm -f /tmp/flow-land-prbody.md
+    exit 1
+  fi
+  rm -f /tmp/flow-land-prbody.md
+  echo "[land] coherence OK — merged PR body carries no NOT-READY manifest."
+fi
+```
 
 ### 1b. Sync `main` so the reconciliation lands on top of the merge
 

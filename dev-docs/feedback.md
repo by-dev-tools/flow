@@ -35,6 +35,21 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0067: A flow-authored artifact whose scrub is coupled to a full pipeline re-run WILL go stale when the trigger is cleared out-of-band; and no write to an external surface is "done" until a read-back confirms it landed
+
+**Date:** 2026-07-08
+**Source:** user correction
+
+**What was said:** A PR came out `isDraft:false, mergeable:MERGEABLE, CLEAN` but its body still opened with the `🚫 NOT READY TO MERGE` draft manifest — the PR contradicting its own state. This recurred; it is a class, not a one-off. Root cause is three converging gaps, all in flow (not the consumer repo): (1) the manifest scrub only runs on a full `/flow:ship` re-run, so a blocker cleared out-of-band (operator drives the sim to clear the last Unknown, flips the PR ready, hand-edits the body) never triggers removal; (2) no PR-body write is read back to confirm it took — a masked `gh` write (`gh pr edit … | tail -1 && gh pr ready`, where the pipe reports tail's exit 0 not gh's non-zero) silently no-ops and reports success; (3) no body↔draft coherence invariant is asserted anywhere. The stopgap consumer-doc note ("resolve a ship blocker by re-running `/flow:ship`, never by hand-editing") papers over the flow gap and must not substitute for the fix.
+
+**Synthesized rule:**
+- **Read-back every write to an external surface.** After any `gh pr edit` / `gh api PATCH` / `gh pr ready[/--undo]`, re-fetch the live PR and assert the intended body substrings are present, the forbidden ones (the manifest, on a ready PR) absent, and the draft state matches intent. Never trust a write's own exit status. **Never mask a write's exit code by piping it into a filter** — `gh pr edit … | tail -1 && …` is forbidden; a write is its own checked statement, then read back. (Shared engine: `skills/ship/lib/pr-coherence.py`; sourced wrapper: `skills/ship/lib/verify-pr-body.sh`.)
+- **A flow-authored artifact needs a coherence invariant, not just a happy-path lifecycle.** The manifest↔draft invariant (`NOT isDraft ⇒ body carries no manifest`) is now enforced at `/flow:ship` Step 7b (final pre-handoff gate), surfaced by `/flow:doctor` Check 2.10 (any open PR for HEAD), and blocked by `/flow:land` (a PR that merged carrying the manifest). Pin the invariant with a deterministic helper + eval (`run_pr_coherence_evals.py`) — mirror the `skip-audit-checks.py` pattern.
+- **Provide a cheap out-of-band reconcile path** so the failure-prone hand-edit is never the way a blocker gets cleared: `/flow:ship` Step 7c re-renders the body + reconciles draft state from the current findings buffer, no reviewers/doc-synthesis.
+- This is the FB-0010 silent-skip class applied to an *external* surface, and the FB-0062 failure-open lesson applied to *writes*: a write's success is trusted only when a read-back confirms it.
+
+**Applies to:** workflow, code (ship/ship-spike/staff-review/doctor/land skills), safety-critical (PR-state mutation)
+
 ### FB-0066: Capturing frames is worthless if the obvious defect they show is missed — an implementer must not read its own screenshots for sign-off, and "obvious" defects need a fixed checker no declared criterion gates
 
 **Date:** 2026-07-07

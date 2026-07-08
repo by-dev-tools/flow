@@ -39,6 +39,27 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### SAFETY: PR body↔draft coherence + read-back-verify — a ready PR can no longer keep the NOT-READY manifest (v1.17.0, FB-0067)
+**Date:** 2026-07-08
+**Branch:** `claude/flamboyant-stonebraker-36ef32` (final SHA in the PR)
+
+**What shipped.** A dogfooded PR came out `isDraft:false, mergeable:MERGEABLE, mergeStateStatus:CLEAN` but its body still opened with the `🚫 NOT READY TO MERGE` draft manifest — a genuinely-ready PR contradicting its own state. This had recurred; it's a class, not a one-off. The manifest is a flow-authored artifact whose scrub was coupled to a full `/flow:ship` re-run, so it went stale whenever a blocker was cleared out-of-band. Three converging fixes, all in flow (not the consumer repo):
+
+1. **Mandatory read-back after every PR-body / draft-state write.** New `skills/ship/lib/verify-pr-body.sh` (a sourced POSIX-sh helper) wraps `skills/ship/lib/pr-coherence.py` (deterministic engine): after any `gh pr edit --body-file` / `gh api PATCH …/pulls/N` / `gh pr ready[/--undo]`, it re-fetches the live PR (`gh pr view --json body,isDraft`, with the same Projects-classic `projectCards`→REST fallback the pipeline already documents) and asserts the write took — intended substrings present, the manifest absent on a ready PR, `isDraft` matching intent. Wired into `/flow:ship` Step 7 (both PR-CREATE and PR-OPEN paths), `/flow:ship-spike`, and `/flow:staff-review` PR-write sites.
+2. **Body↔draft coherence invariant.** `NOT isDraft ⇒ body carries no manifest` (contrapositive: a non-empty manifest ⇒ the PR is a draft). Enforced at `/flow:ship` Step 7b as the final pre-handoff gate (fix-in-place or halt loud on violation), surfaced by `/flow:doctor` Check 2.10 against any open PR for HEAD, and blocked by `/flow:land` when a merged PR still carried the manifest. Pinned by `evals/run_pr_coherence_evals.py` (manifest-on-ready ⇒ FAIL; manifest-absent-on-ready ⇒ PASS; manifest-on-draft ⇒ PASS; plus read-back cases), wired into CI.
+3. **Reconcile-only ship fast-path (Step 7c).** Re-renders the body + reconciles draft state from the current findings buffer — no reviewers, no doc synthesis — so a blocker cleared out-of-band has a one-command, side-effect-free way to make the body honest. Hand-editing the PR body (the write that silently fails) is never the path.
+
+**Why (SAFETY).** This touches PR-state mutation and error handling: the failure mode was a silent write success (a masked `gh` exit code — `gh pr edit … | tail -1 && gh pr ready` reports the pipe's `0`, not gh's non-zero) plus the absence of any coherence assertion. The FB-0010 silent-skip class applied to an *external* surface, and the FB-0062 failure-open lesson applied to *writes*.
+
+**Design decisions.**
+- **Deterministic engine + shell wrapper, mirroring `skip-audit-checks.py`.** The coherence/read-back logic is pure (body text + isDraft → verdict), so it lives in `pr-coherence.py` and is eval-pinned; the shell helper only does the `gh` fetch. This keeps the invariant testable without a live `gh`.
+- **Manifest detection recognizes the marker comment OR the emoji heading** (`<!-- flow:not-ready-manifest -->` / `🚫 NOT READY TO MERGE`) — a hand-edit that stripped one but not the other still trips the check.
+- **`/flow:land` treats a merged-with-manifest PR as a hard BLOCKER, not a WARN.** It merged in a not-ready state (an FB-0067 escape); reconciling the forward docs to celebrate it as cleanly shipped would paper over a process failure, so the human decides before landing.
+
+**Tradeoffs.**
+- Read-back adds one `gh` round-trip per PR-body write; negligible next to the write itself, and the alternative (trusting an unverified write) is exactly the bug.
+- Fanned out across five skills + two manifests + workflow.md + CHANGELOG (FB-0010 discipline). **Renumbered twice** during this ship: originally drafted as FB-0065/v1.15.0, then FB-0066/v1.16.0 after `#68`'s "PR-body plain-language summary" shipped both numbers to `main` first; then again to **FB-0067/v1.17.0** after a second concurrent branch (`#71`, the frame-integrity gate) *also* independently claimed FB-0066/v1.16.0 and merged first. Two stale-base rebases in one ship run, both caught by the reserved-numbers + stale-base gates (FB-0008/FB-0010) rather than silently colliding on main.
+
 ### SAFETY: Frame-integrity gate — a must-pass visual checklist on every captured frame (v1.16.0, FB-0066)
 **Date:** 2026-07-07
 **Branch:** claude/optimistic-easley-c37004 (commit: pending ship)
