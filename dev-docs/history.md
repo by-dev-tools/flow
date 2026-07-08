@@ -42,7 +42,7 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 ### PR description opens with a plain-language summary + Scope label (v1.15.0, FB-0065)
 **Date:** 2026-07-07
 **Branch:** claude/relaxed-elbakyan-55dac6
-**Commit:** _(on branch; final SHA in the PR)_
+**Commit:** merged #68 @ c80a1e9
 
 **What was done:**
 Restructured the `/flow:ship` and `/flow:ship-spike` PR-body template so `## Summary` now opens, top-down, with (1) a **Scope:** label — `docs-only | new feature | bugfix | refactor | test | chore | mixed` (`spike` for `/flow:ship-spike`) — and (2) a one-or-two-sentence plain-language description of what changed that a reader can follow without opening the diff, above the existing why-bullets. Added the authoring instruction that governs it (write the scope + plain-language line for a reader at the merge gate; no internal codenames or jargon). Updated `plugins/flow/docs/workflow.md` § "The PR body documents the full flow run" to describe the new `## Summary` shape, and the `resolution-confidence-routing` eval fixture's expected PR body to show the `**Scope:**` opener.
