@@ -10,6 +10,17 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.15.0 — 2026-07-08
+
+**The `/flow:ship` + `/flow:ship-spike` PR body now opens with a plain-language summary + a Scope label, so the first thing a reviewer reads at the merge gate is what kind of change this is and what it does — without opening the diff.**
+
+- **`## Summary` leads top-down: scope → what → why.** A `**Scope:**` label (`docs-only | new feature | bugfix | refactor | test | chore | mixed`; `spike` for `/flow:ship-spike`) followed by a one-or-two-sentence, non-technical description of what changed, above the existing why-bullets.
+- **Additive, never subtractive.** The plain-language opener is a new top layer — it does not replace or trim the why-bullets or any reviewer-facing detail. The authoring instruction explicitly forbids dropping detail to make room for the summary.
+- **Plain language means plain.** The what-changed line bars internal codenames (FB-XXXX, PR letters) and jargon, so a teammate skimming the PR list understands it at a glance.
+- **Docs/prompt-only.** The mechanical `## Test plan` renderer and the `## Flow run` table are untouched. Template fan-out kept in sync across `skills/ship`, `skills/ship-spike`, `docs/workflow.md`, and the `resolution-confidence-routing` eval fixture. Breaking changes: none.
+
+---
+
 ## v1.14.0 — 2026-07-01
 
 **Orientation-doc-staleness gap closed: `/flow:ship` now discovers UNDECLARED status surfaces (the CLAUDE.md a fresh agent reads first) that drifted after a merge, and routes them to the draft manifest.**
