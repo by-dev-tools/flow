@@ -252,6 +252,14 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```sh
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main")
 gh pr create --base "$BASE" --label spike --title "spike: <answer>" --body "$(cat <<'EOF'
+## Summary
+**Scope:** spike (exploratory — code is disposable)
+
+<1 plain-language, non-technical sentence: what this spike explored and what it
+concluded, understandable at a glance without opening the diff; no internal
+codenames or jargon. Additive opener — the Research question / Answer /
+Recommendation detail below is kept in full, not replaced.>
+
 ## Research question
 <the question>
 

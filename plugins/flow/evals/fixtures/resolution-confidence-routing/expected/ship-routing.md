@@ -35,6 +35,9 @@ PR body begins with the pinned block:
 <!-- /flow:not-ready-manifest -->
 
 ## Summary
+**Scope:** ...
+
+...
 - ...
 ```
 

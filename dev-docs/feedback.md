@@ -35,6 +35,17 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0065: A PR description must open with a plain-language what-changed + scope label — the merge-gate reader shouldn't have to reconstruct "what kind of change is this" from the diff
+
+**Date:** 2026-07-07
+**Source:** user direction
+
+**What was said:** The user asked that the `/flow:ship` PR body, "in addition to what's currently there," open with "a concise, plain-language summary of what changed (and the scope of change: docs only, new feature, refactor, etc.)." The prior `## Summary` was a bare list of why-this-exists bullets — no at-a-glance statement of the change's *kind* or a jargon-free *what*.
+
+**Synthesized rule:** The first thing a human reads at the merge gate should be (1) a **Scope** label from a fixed small vocabulary (`docs-only | new feature | bugfix | refactor | test | chore | mixed`; `spike` for `/flow:ship-spike`) so they can triage what kind of review the change needs in one token, and (2) a one-or-two-sentence plain-language description a reader can follow *without opening the diff* — no internal codenames (FB-XXXX, PR letters), no jargon (consistent with the `feedback_direct_no_fluff_copy` preference). Fold it into the existing `## Summary` (scope → what → why) rather than adding a competing heading. **Critically, the summary is an ADDITIVE top layer — it must not reduce necessary detail.** The plain-language opener sits *above* the existing why-bullets and all the specifics a reviewer needs; those are kept in full, never trimmed or thinned to make room for the glanceable summary (the user's explicit follow-up: "make sure this format doesn't reduce necessary detail, just that it includes a plain-language summary at the top"). This is orthogonal to — and does not touch — the mechanical `## Test plan` render or the `## Flow run` table. When editing a PR-body contract, remember it fans out across `skills/ship`, `skills/ship-spike`, `docs/workflow.md`, and the eval fixtures (FB-0010).
+
+**Applies to:** `skills/ship/SKILL.md` + `skills/ship-spike/SKILL.md` PR-body template; `plugins/flow/docs/workflow.md` § "The PR body documents the full flow run"; `evals/fixtures/resolution-confidence-routing`; FB-0010 (fan-out discipline), `feedback_direct_no_fluff_copy` (plain public-facing copy).
+
 ### FB-0064: A gate that only fires on OPTED-IN surfaces has a 100% adoption/discovery gap — the surface flow itself mandates reading (CLAUDE.md) must not have opt-in currency; discover what SHOULD be declared, best-effort, and route to the human
 
 **Date:** 2026-07-01
