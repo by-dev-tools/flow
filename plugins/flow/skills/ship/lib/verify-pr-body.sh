@@ -62,11 +62,9 @@ flow_fetch_pr_state() {
     FLOW_PR_ISDRAFT="$(printf '%s' "$_json" | jq -r 'if .isDraft then "true" else "false" end')"
     return 0
   fi
-  # Fallback: Projects-classic projectCards deprecation (or any gh pr view failure)
-  # — the REST endpoint doesn't query projectCards.
-  if grep -qi 'projectCards\|Projects (classic)' /tmp/flow-pr-fetch-err 2>/dev/null; then
-    :  # fall through to REST
-  fi
+  # Fallback: try REST unconditionally on any gh pr view failure — the projectCards
+  # deprecation is the common cause, but the REST endpoint is a safe fallback for any
+  # failure reason (it doesn't query projectCards either way).
   _repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)"
   if [ -n "$_repo" ]; then
     _rest="$(gh api "repos/$_repo/pulls/$_num" 2>/tmp/flow-pr-fetch-err)"
