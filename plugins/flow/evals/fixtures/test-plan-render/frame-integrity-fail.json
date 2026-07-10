@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "branch": "test-branch",
+    "head_sha_short": "abc1234",
+    "plugin_version": "1.16.0",
+    "platform_hint": "ios",
+    "verify_budget_calls_used": 14,
+    "verify_budget_overrun": false,
+    "spike_mode": false
+  },
+  "overall_verdict": "FAIL",
+  "exit_code": 1,
+  "criteria": [
+    {
+      "text": "Launches and renders the dashboard within 2s.",
+      "provenance": "adversarial-judged",
+      "adversarial_cases": ["Cold cache load still renders within 2s."],
+      "observations": [
+        {"type": "narrative", "content": "Loaded /dashboard; first paint at 900ms."}
+      ],
+      "verdicts": {
+        "correctness": {"verdict": "PASS", "evidence": ["first paint at 900ms", "Launches and renders the dashboard within 2s."], "notes": ""},
+        "regression": {"verdict": "PASS", "evidence": ["no console errors on load", "Launches and renders the dashboard within 2s."], "notes": ""},
+        "scope-creep": {"verdict": "PASS", "evidence": ["only /dashboard route hit", "Plan does not add new routes."], "notes": ""}
+      },
+      "aggregated_verdict": "PASS"
+    },
+    {
+      "text": "Submits the form and shows a success toast.",
+      "provenance": "adversarial-judged",
+      "adversarial_cases": [],
+      "observations": [
+        {"type": "network", "content": "POST /api/submit → 201"}
+      ],
+      "verdicts": {
+        "correctness": {"verdict": "PASS", "evidence": ["POST /api/submit → 201", "Submits the form and shows a success toast."], "notes": ""},
+        "regression": {"verdict": "PASS", "evidence": ["no errors after submit", "Submits the form and shows a success toast."], "notes": ""},
+        "scope-creep": {"verdict": "PASS", "evidence": ["no extra endpoints", "Plan scope is submit-only."], "notes": ""}
+      },
+      "aggregated_verdict": "PASS"
+    }
+  ],
+  "not_tested": [
+    {"item": "Real device (used simulator)", "tested": false}
+  ],
+  "frame_integrity": [
+    {
+      "state": "Home page (pager index 0)",
+      "frame": "assets/home.png",
+      "edges": {
+        "top": "Gradient band in the notch strip, but the content area below is flat white.",
+        "bottom": "Gradient band in the home-indicator strip; content above is flat white.",
+        "left": "Flat white to the edge.",
+        "right": "Flat white to the edge."
+      },
+      "corners": "All four corners rounded consistently.",
+      "background_continuity": "NOT continuous: gradient only in the safe-area strips, flat white in between.",
+      "verdict": "FAIL",
+      "failing_items": [
+        "Edge-to-edge background: the background is continuous to all four safe-area edges.",
+        "No seam: no visible seam or discontinuity where content meets a fixed background."
+      ],
+      "notes": "The ambient gradient survives only in the safe-area strips; the content area is an opaque white band."
+    }
+  ]
+}

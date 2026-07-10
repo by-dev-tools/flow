@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "metadata": {"branch": "test-branch", "head_sha_short": "abc1234", "plugin_version": "1.16.0", "platform_hint": "ios", "spike_mode": false, "no_plan_fallback": true},
+  "overall_verdict": "FAIL",
+  "exit_code": 1,
+  "criteria": [],
+  "not_tested": [{"item": "Real device (used simulator)", "tested": false}],
+  "frame_integrity": [
+    {
+      "state": "Settings pager page",
+      "frame": "assets/settings.png",
+      "edges": {"top": "band", "bottom": "band", "left": "x", "right": "x"},
+      "corners": "x",
+      "background_continuity": "gradient only in the safe-area strips",
+      "verdict": "FAIL",
+      "failing_items": ["Edge-to-edge background: the background is continuous to all four safe-area edges."],
+      "notes": "background broken at top/bottom"
+    }
+  ]
+}

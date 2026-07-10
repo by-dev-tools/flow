@@ -240,7 +240,38 @@ def render_not_tested(not_tested: list) -> str:
     return "\n".join(lines)
 
 
-def _headline(n_pass: int, n: int, spike: bool, n_self_pass: int) -> str:
+def render_frame_integrity_failures(frame_integrity: list) -> str:
+    """Plain-bullet surface for FB-0066 frame-integrity FAILs — never a checkbox
+    (checkbox state is exclusively per-criterion machine verdict; see module
+    docstring). Frame-integrity is criterion-independent (a property of the
+    frame, not a declared assertion — SKILL.md), so it has no natural home in
+    `render_criterion` and needs its own short section instead of silently
+    living only in the ephemeral HTML report the human might not open."""
+    fails = [f for f in frame_integrity if isinstance(f, dict) and str(f.get("verdict")) == "FAIL"]
+    if not fails:
+        return ""
+    lines = [
+        "",
+        "**🚫 Frame integrity FAILED** (must-pass checklist on captured screenshots, "
+        "independent of the declared criteria above — see the verify-build report for "
+        "full edge-by-edge evidence):",
+    ]
+    for f in fails:
+        label = str(f.get("state") or f.get("frame") or "captured frame").strip()
+        items = [str(i).strip() for i in (f.get("failing_items") or []) if str(i).strip()]
+        detail = f" — {_md_escape('; '.join(items))}" if items else ""
+        lines.append(f"- {_md_escape(label)}{detail}")
+        # Surface one line of the judge's own described evidence inline (not just the
+        # checklist-item names) so the committed PR body is legible on its own, without
+        # requiring the human to open the separate ephemeral HTML report to see WHY
+        # (ux-designer finding: the checklist-item names alone don't explain the defect).
+        evidence = str(f.get("background_continuity") or "").strip()
+        if evidence:
+            lines.append(f"  ↳ {_md_escape(evidence)}")
+    return "\n".join(lines)
+
+
+def _headline(n_pass: int, n: int, spike: bool, n_self_pass: int, frame_fail: bool = False) -> str:
     """One-line scannable verdict so the human can confirm-and-merge at a glance
     (push-further finding). A pure count over the criteria — no new trust
     surface, just a faster read of the verdicts already rendered below.
@@ -249,8 +280,29 @@ def _headline(n_pass: int, n: int, spike: bool, n_self_pass: int) -> str:
     (provenance not machine-judged → rendered `[~]`). When any are present the
     headline NEVER offers "confirm and merge" — a self-reported pass is an
     unverified claim. A self-reported FAIL/Unknown renders `[ ]` like any other
-    unresolved criterion, so it's counted only in the `unresolved` tail."""
+    unresolved criterion, so it's counted only in the `unresolved` tail.
+
+    `frame_fail` = the buffer's `frame_integrity[]` carries a FAIL (FB-0066).
+    This is checked FIRST and unconditionally overrides "confirm and merge" —
+    frame-integrity is independent of the per-criterion verdicts (SKILL.md Step
+    7: any frame_integrity FAIL forces overall_verdict FAIL regardless of
+    criteria), so an all-criteria-PASS run must not headline green when a
+    captured screenshot failed the must-pass visual checklist. Without this,
+    render-test-plan.py — the one surface explicitly built to be non-forgeable —
+    would print '✅ N/N passed — confirm and merge' next to a FAIL verdict
+    elsewhere in the same PR body (the exact Potemkin-success class the plugin
+    exists to prevent)."""
     noun = "smoke checks" if spike else "declared criteria"
+    if frame_fail:
+        crit_summary = (
+            f"{n_pass}/{n} {noun} passed" if n_pass == n
+            else f"{n_pass}/{n} {noun} passed, {n - n_pass} unresolved"
+        )
+        return (
+            f"> 🚫 {crit_summary}, but a captured screenshot **FAILED the frame-integrity "
+            'check** (see "Frame integrity" below). Do NOT merge — resolve the visual '
+            "defect, then re-run `/flow:verify-build`."
+        )
     if n_self_pass:
         unresolved = n - n_pass
         tail = f"; the remaining {unresolved} failed or are unverified" if unresolved else ""
@@ -285,16 +337,30 @@ def fallback_block(reason: str) -> str:
     )
 
 
-def empty_criteria_block(not_tested: list) -> str:
+def empty_criteria_block(not_tested: list, frame_integrity: list | None = None) -> str:
+    # A no-criteria run can still have captured + judged frames (§5a's capture gate is
+    # decoupled from Spec-walk extraction — a Visual-walk block with no/malformed
+    # Spec-walk still captures). A frame-integrity FAIL must not be silently dropped
+    # just because there were no criteria to attach it to (staff-engineer finding).
+    fi = render_frame_integrity_failures(frame_integrity or [])
+    warn = (
+        "> 🚫 verify-build extracted **no `**Spec-walk:**` criteria**, AND a captured "
+        "screenshot **FAILED the frame-integrity check** (see below). Do NOT merge — "
+        "resolve the visual defect, then re-run `/flow:verify-build`."
+        if fi else
+        "> ⚠️ verify-build ran but extracted **no `**Spec-walk:**` criteria** to "
+        "verify — nothing was behaviorally gated. Declare acceptance criteria in "
+        "the plan's `**Spec-walk:**` block, or verify manually before merging."
+    )
     parts = [
         "## Test plan",
         "",
-        "> ⚠️ verify-build ran but extracted **no `**Spec-walk:**` criteria** to "
-        "verify — nothing was behaviorally gated. Declare acceptance criteria in "
-        "the plan's `**Spec-walk:**` block, or verify manually before merging.",
+        warn,
         "",
         "- [ ] <no declared criteria — verify manually per the change>",
     ]
+    if fi:
+        parts.append(fi)
     nt = render_not_tested(not_tested)
     if nt:
         parts.append(nt)
@@ -309,7 +375,7 @@ def rendered_block(findings: dict, branch: str, sha: str) -> str:
     criteria = [c for c in (findings.get("criteria") or []) if isinstance(c, dict)]
 
     if not criteria:
-        return empty_criteria_block(findings.get("not_tested") or [])
+        return empty_criteria_block(findings.get("not_tested") or [], findings.get("frame_integrity"))
 
     n = len(criteria)
     n_pass = sum(1 for c in criteria if str(c.get("aggregated_verdict")) == "PASS")
@@ -318,6 +384,8 @@ def rendered_block(findings: dict, branch: str, sha: str) -> str:
         if _is_self_reported(_provenance(c)) and str(c.get("aggregated_verdict")) == "PASS"
     )
     any_self_reported = any(_is_self_reported(_provenance(c)) for c in criteria)
+    frame_integrity = [f for f in (findings.get("frame_integrity") or []) if isinstance(f, dict)]
+    frame_fail = any(str(f.get("verdict")) == "FAIL" for f in frame_integrity)
 
     label = "Spike smoke check" if spike else "Behavioral verification"
     context = f"`/flow:verify-build` — `{branch}` @ `{sha}`."
@@ -342,7 +410,11 @@ def rendered_block(findings: dict, branch: str, sha: str) -> str:
 
     body = [render_criterion(c, spike) for c in criteria]
 
-    parts = ["## Test plan", "", _headline(n_pass, n, spike, n_self_pass), "", attribution, "", "\n".join(body)]
+    parts = ["## Test plan", "", _headline(n_pass, n, spike, n_self_pass, frame_fail), "", attribution, "", "\n".join(body)]
+
+    fi = render_frame_integrity_failures(frame_integrity)
+    if fi:
+        parts.append(fi)
 
     nt = render_not_tested(findings.get("not_tested") or [])
     if nt:

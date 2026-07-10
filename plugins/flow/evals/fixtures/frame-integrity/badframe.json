@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "branch": "claude/pulldown-pager",
+    "head_sha_short": "deadbee",
+    "plugin_version": "1.16.0",
+    "platform_hint": "ios"
+  },
+  "overall_verdict": "FAIL",
+  "exit_code": 1,
+  "criteria": [],
+  "not_tested": [],
+  "frame_integrity": [
+    {
+      "state": "Home page (pager index 0)",
+      "frame": "assets/home.png",
+      "edges": {
+        "top": "A gradient band fills the notch strip, but immediately below it the surface turns flat white — the gradient does NOT continue into the content area.",
+        "bottom": "A gradient band fills the home-indicator strip; the content above it is flat white, so the gradient reads as a detached stripe.",
+        "left": "Flat white to the edge in the content area.",
+        "right": "Flat white to the edge in the content area."
+      },
+      "corners": "All four corners rounded consistently; the top corners show the gradient/white boundary.",
+      "background_continuity": "NOT continuous: a gradient is visible only in the top notch strip and the bottom home-indicator strip, with a flat-white content area between them — a clear seam where the nested scroll view's opaque background paints over the shared gradient.",
+      "verdict": "FAIL",
+      "failing_items": [
+        "Edge-to-edge background: the background is continuous to all four safe-area edges — no white/black/wrong-gradient band at the top notch, the bottom home-indicator, or either side.",
+        "No seam: no visible seam or discontinuity where scrolling or paged content meets a fixed background."
+      ],
+      "notes": "The ambient gradient survives only in the safe-area strips; the content area is an opaque white band, so the background is broken at the notch and home-indicator with a mid-frame seam."
+    }
+  ]
+}
