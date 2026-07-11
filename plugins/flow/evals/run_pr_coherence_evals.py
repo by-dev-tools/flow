@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Eval harness for pr-coherence.py — the deterministic body↔draft coherence +
-read-back engine behind FB-0066 (stale NOT-READY manifest on a ready PR).
+read-back engine behind FB-0067 (stale NOT-READY manifest on a ready PR).
 
 Pins the coherence invariant the acceptance criteria name:
 
@@ -74,7 +74,7 @@ def expect(name, got_rc, want_rc, out):
 
 
 def main() -> int:
-    print("pr-coherence evals (FB-0066)")
+    print("pr-coherence evals (FB-0067)")
 
     # --- coherence: the three acceptance cases ---------------------------------
     rc, out = run("coherence", READY_WITH_MANIFEST, ["--is-draft", "false"])

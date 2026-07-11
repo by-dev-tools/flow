@@ -1,5 +1,5 @@
 # shellcheck shell=sh
-# verify-pr-body.sh — mandatory read-back after every PR-body / draft-state write (FB-0066).
+# verify-pr-body.sh — mandatory read-back after every PR-body / draft-state write (FB-0067).
 #
 # Source this from any flow skill that mutates a PR body or draft state:
 #     . "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"   # plugin-installed

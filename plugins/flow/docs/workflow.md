@@ -293,7 +293,7 @@ A filled `## Flow run` for a docs-only change on a library project (no UI surfac
 
 Note the skipped rows: each names *why* it skipped, so the reader sees a legitimate config/mode skip rather than wondering whether a gate was missed — and `/flow:audit-skips` is the gate that *confirms* those skips are legitimate rather than self-certified. (`/flow:audit-skips` always runs — it audits the OTHERS' skips, so it never skips itself; on this docs-only library PR it rules every skip legitimate without noise.)
 
-### The draft manifest is coherent with draft state, and every PR-body write is read-back-verified (FB-0066)
+### The draft manifest is coherent with draft state, and every PR-body write is read-back-verified (FB-0067)
 
 The `🚫 NOT READY TO MERGE` manifest and the PR's draft flag are two encodings of one fact: *there is an unresolved blocker.* They must never diverge. Flow enforces a single invariant everywhere a PR body or draft state is touched:
 

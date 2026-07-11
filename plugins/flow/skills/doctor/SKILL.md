@@ -413,9 +413,9 @@ EOF
 fi
 ```
 
-**Check 2.10 — live PR body↔draft coherence for HEAD (FB-0066)**
+**Check 2.10 — live PR body↔draft coherence for HEAD (FB-0067)**
 
-If an **open** PR exists for the current branch, assert the coherence invariant `/flow:ship` Step 7b enforces: **a PR that is NOT a draft must not carry the `🚫 NOT READY TO MERGE` manifest.** A PR that drifted into that state between ship and merge (a blocker cleared out-of-band + a hand-edited body that silently failed) is the recurring FB-0066 bug — this check catches it at the merge gate. FAIL is actionable: reconcile the body via the ship reconcile fast-path, never a hand-edit.
+If an **open** PR exists for the current branch, assert the coherence invariant `/flow:ship` Step 7b enforces: **a PR that is NOT a draft must not carry the `🚫 NOT READY TO MERGE` manifest.** A PR that drifted into that state between ship and merge (a blocker cleared out-of-band + a hand-edited body that silently failed) is the recurring FB-0067 bug — this check catches it at the merge gate. FAIL is actionable: reconcile the body via the ship reconcile fast-path, never a hand-edit.
 
 ```sh
 # gh is required; Check 4.1 reports it missing. Guard here so this check SKIPs cleanly.

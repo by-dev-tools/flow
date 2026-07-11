@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic PR body↔draft-state coherence + read-back engine (FB-0066).
+"""Deterministic PR body↔draft-state coherence + read-back engine (FB-0067).
 
 The `🚫 NOT READY TO MERGE` manifest is a flow-authored artifact: `/flow:ship`
 writes it into a PR body when the draft manifest is non-empty (a decision-required

@@ -808,7 +808,7 @@ Push with `-u` if the branch isn't tracking yet.
 > ```
 > Only use the fallback when the standard `gh pr` command actually errors with the projectCards signal — don't pre-emptively route around `gh pr` on healthy repos.
 
-> **Mandatory read-back after EVERY PR-body / draft-state write (FB-0066).** A `gh` write can silently no-op — a masked exit code, a projectCards error swallowed downstream, an API hiccup — and leave the STALE body in place while the pipeline reports success. That is exactly how a ready PR ends up still carrying the `🚫 NOT READY TO MERGE` manifest. So after *any* `gh pr edit --body-file`, `gh api -X PATCH …/pulls/N -F body=@file`, `gh pr ready`, or `gh pr ready --undo`, **re-fetch the live PR and assert the write took** — never trust the write's own exit status alone. Source the shared helper and call `flow_verify_pr_write` immediately after the write:
+> **Mandatory read-back after EVERY PR-body / draft-state write (FB-0067).** A `gh` write can silently no-op — a masked exit code, a projectCards error swallowed downstream, an API hiccup — and leave the STALE body in place while the pipeline reports success. That is exactly how a ready PR ends up still carrying the `🚫 NOT READY TO MERGE` manifest. So after *any* `gh pr edit --body-file`, `gh api -X PATCH …/pulls/N -F body=@file`, `gh pr ready`, or `gh pr ready --undo`, **re-fetch the live PR and assert the write took** — never trust the write's own exit status alone. Source the shared helper and call `flow_verify_pr_write` immediately after the write:
 > ```sh
 > if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then . "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"; else . "plugins/flow/skills/ship/lib/verify-pr-body.sh"; fi
 > # ... do the write as its OWN checked statement (see the HARD RULE below) ...
@@ -875,7 +875,7 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
 
 **LOCAL-ONLY**: `gh pr create --base $BASE_BRANCH` (add `--draft` iff the manifest is non-empty) with:
 
-> **After the create, read-back-verify (FB-0066).** `gh pr create` is unaffected by the projectCards deprecation, but a create can still land a body you didn't intend (a truncated `--body-file`, a race). Re-fetch and assert before handing off: source the helper and call `flow_verify_pr_write "$N"` — with `--forbid "🚫 NOT READY TO MERGE" --want-draft false` on a **ready** PR (empty manifest), or `--expect "🚫 NOT READY TO MERGE" --want-draft true` on a **draft** PR (non-empty manifest). A mismatch means the body↔draft state on GitHub contradicts the manifest decision — fix it before Step 8, don't hand off a PR you never confirmed.
+> **After the create, read-back-verify (FB-0067).** `gh pr create` is unaffected by the projectCards deprecation, but a create can still land a body you didn't intend (a truncated `--body-file`, a race). Re-fetch and assert before handing off: source the helper and call `flow_verify_pr_write "$N"` — with `--forbid "🚫 NOT READY TO MERGE" --want-draft false` on a **ready** PR (empty manifest), or `--expect "🚫 NOT READY TO MERGE" --want-draft true` on a **draft** PR (non-empty manifest). A mismatch means the body↔draft state on GitHub contradicts the manifest decision — fix it before Step 8, don't hand off a PR you never confirmed.
 
 - Short title (under 70 chars).
 - Body — if the draft manifest is non-empty, prepend this block before `## Summary`:
@@ -1023,12 +1023,12 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
 
 **PR-OPEN**: push the new commits. If the draft manifest is non-empty, ensure the PR is a draft (`gh pr ready --undo <num>` if it was marked ready) and refresh the `🚫 NOT READY TO MERGE` block; if the manifest is now empty (blockers since resolved), remove the block and `gh pr ready <num>` to mark it ready. Otherwise update the body only if the summary/test plan/Flow-run table needs to reflect the latest scope — and **re-render the `## Test plan` via `lib/render-test-plan.py`** (above), don't hand-edit it, so a re-ship after new commits reflects the fresh buffer (or correctly falls back if HEAD moved past the last verify-build run).
 
-**Every body/draft write on the PR-OPEN path is read-back-verified (FB-0066).** This path is where the recurring bug bit: the manifest scrub + `gh pr ready` is coupled to a full re-ship, and a masked write left a ready PR carrying the manifest. So each write is its own checked statement, followed by `flow_verify_pr_write` (source the helper per the § "gh resilience" read-back block above):
+**Every body/draft write on the PR-OPEN path is read-back-verified (FB-0067).** This path is where the recurring bug bit: the manifest scrub + `gh pr ready` is coupled to a full re-ship, and a masked write left a ready PR carrying the manifest. So each write is its own checked statement, followed by `flow_verify_pr_write` (source the helper per the § "gh resilience" read-back block above):
 - **Manifest now empty → scrub + ready:** write the manifest-free body, run `gh pr ready <num>` (with the projectCards→`markPullRequestReadyForReview` fallback if it errors), then `flow_verify_pr_write "$N" --forbid "🚫 NOT READY TO MERGE" --want-draft false`. The `--forbid` + `--want-draft false` is the exact assertion that would have caught the original silent failure.
 - **Manifest still non-empty → refresh + draft:** write the refreshed block, ensure draft, then `flow_verify_pr_write "$N" --expect "🚫 NOT READY TO MERGE" --want-draft true`.
 - **Body-only refresh (manifest unchanged):** after the edit, `flow_verify_pr_write "$N" --expect "<a stable substring you just wrote>"` so a no-op write can't pass silently.
 
-### 7b. Body↔draft coherence invariant (FB-0066 — the final gate before hand-off)
+### 7b. Body↔draft coherence invariant (FB-0067 — the final gate before hand-off)
 
 After the body + draft state are settled (either path above), assert the invariant that a ready PR can never carry the NOT-READY manifest:
 
