@@ -813,9 +813,9 @@ Push with `-u` if the branch isn't tracking yet.
 > if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then . "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"; else . "plugins/flow/skills/ship/lib/verify-pr-body.sh"; fi
 > # ... do the write as its OWN checked statement (see the HARD RULE below) ...
 > flow_verify_pr_write "$N" --expect "## Summary" --forbid "🚫 NOT READY TO MERGE" --want-draft false \
->   || { echo "read-back failed — the PR body on GitHub is NOT what you wrote; re-apply + re-verify, do not proceed" >&2; }
+>   || { echo "read-back failed — the PR body on GitHub is NOT what you wrote; re-apply + re-verify, do not proceed" >&2; exit 1; }
 > ```
-> `flow_verify_pr_write` re-fetches (with the same projectCards→REST fallback above) and asserts, via `lib/pr-coherence.py`, that every `--expect` substring is present, every `--forbid` substring is absent, the draft state matches `--want-draft`, AND the body↔draft coherence invariant holds. On mismatch it fails loud — **do not report success on an unverified write.**
+> `flow_verify_pr_write` re-fetches (with the same projectCards→REST fallback above) and asserts, via `lib/pr-coherence.py`, that every `--expect` substring is present, every `--forbid` substring is absent, the draft state matches `--want-draft`, AND the body↔draft coherence invariant holds. On mismatch it fails loud — **do not report success on an unverified write.** The `exit 1` is load-bearing, not decorative: a bare `|| { echo ...; }` with no exit lets the compound command return 0 regardless of the check's outcome, so the pipeline sails through to hand-off having "reported" the failure without actually stopping for it — the exact silent-no-op class this fix exists to close, one abstraction level up. Every `flow_verify_pr_write` / `flow_assert_pr_coherent` call in this skill must end its failure block in `exit 1` (or a retry-then-`exit 1`), never a log-only echo.
 >
 > **HARD RULE — a gh write is its own checked statement; never pipe it into a filter.** `gh pr edit "$N" --body-file f | tail -1 && gh pr ready "$N"` is forbidden: the pipe makes the pipeline's exit status `tail`'s `0`, masking gh's non-zero, so a failed body write looks like it succeeded and the stale manifest survives (the original silent failure). Run the write, then read back — do not fold the two into one masked pipeline.
 
@@ -1038,11 +1038,11 @@ N="<pr-number>"   # LOCAL-ONLY: the number gh pr create just returned; PR-OPEN: 
 flow_assert_pr_coherent "$N" || {
   echo "⚠️ [coherence] PR #$N violates the body↔draft invariant (NOT a draft, but its body still carries 🚫 NOT READY TO MERGE)." >&2
   echo "   → Fix in place: if the draft manifest is EMPTY, scrub the block from the body and confirm; if it is NON-EMPTY, re-draft (gh pr ready --undo). Then re-run flow_assert_pr_coherent." >&2
-  echo "   If it cannot be reconciled, HALT and surface it — do NOT hand off an incoherent PR." >&2
+  exit 1
 }
 ```
 
-`flow_assert_pr_coherent` re-fetches the live PR and runs `lib/pr-coherence.py coherence`. The invariant: **`NOT isDraft ⇒ body does NOT contain "🚫 NOT READY TO MERGE"`** (and its contrapositive — a non-empty manifest ⇒ the PR is a draft). A violation is fix-in-place then re-verify; if it genuinely can't be reconciled, halt loud rather than hand off. This is the last thing Step 7 does — a ready-but-manifest-carrying PR is impossible to leave in that state through `/flow:ship`.
+`flow_assert_pr_coherent` re-fetches the live PR and runs `lib/pr-coherence.py coherence`. The invariant: **`NOT isDraft ⇒ body does NOT contain "🚫 NOT READY TO MERGE"`** (and its contrapositive — a non-empty manifest ⇒ the PR is a draft). **The `exit 1` above is load-bearing, not decorative** — a bare `|| { echo ...; }` with no exit lets the compound command return 0 regardless of whether the check failed, so the pipeline would silently fall through to Step 8 hand-off with an incoherent PR: exactly the class of bug this PR fixes, reproduced one abstraction level up in its own gate. On violation: apply the fix-in-place guidance above, re-run `flow_assert_pr_coherent "$N"` once, and only proceed to Step 8 once it exits 0. If it still fails after the fix attempt, the block above's `exit 1` halts the skill — do not hand off a PR you have not confirmed is coherent. This is the last thing Step 7 does — a ready-but-manifest-carrying PR is impossible to leave in that state through `/flow:ship`.
 
 ### 7c. Reconcile-only fast-path (when a blocker was cleared out-of-band)
 

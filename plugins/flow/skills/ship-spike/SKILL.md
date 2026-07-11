@@ -295,6 +295,8 @@ EOF
 )"
 ```
 
+**After the create, read-back-verify (FB-0067):** same rule as the PR-OPEN path above — `gh pr create` can still land a truncated or unintended body. Note the PR number `gh pr create` returns, then source `${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh` and call `flow_verify_pr_write "$N" --expect "<a stable substring from the body just written>"` before handing off. A spike PR isn't gated by the NOT-READY manifest, so no `--want-draft`/`--forbid` assertion is needed here — the read-back exists purely to confirm the create wasn't silently truncated.
+
 `/simplify` and `/flow:staff-review` are pre-marked `skipped (spike)` — spike mode
 always skips them (workflow.md § Spike mode). Fill `/flow:verify-build` from the
 Step 2 spike-mode invocation: `✓` with the 3-check rubric result if it ran, or

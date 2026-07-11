@@ -49,17 +49,37 @@ _flow_pr_coherence_py() {
 }
 
 flow_fetch_pr_state() {
+  local _num _json _rc _repo _rest _errfile
   _num="$1"
   if [ -z "$_num" ]; then
     echo "⚠️ [verify-pr-body] flow_fetch_pr_state: no PR number given." >&2
     return 2
   fi
-  FLOW_PR_BODY_FILE="$(mktemp 2>/dev/null || echo /tmp/flow-pr-readback-$$.md)"
-  # Primary path.
-  _json="$(gh pr view "$_num" --json body,isDraft 2>/tmp/flow-pr-fetch-err)"
-  if [ -n "$_json" ]; then
+  # Both scratch files MUST come from mktemp — never a fixed/predictable /tmp path.
+  # A fixed path (or a PID-guessable fallback) lets a local attacker pre-plant a
+  # symlink there; the redirect/write then follows the link and clobbers whatever
+  # it points at (CWE-377/CWE-59). If mktemp itself fails, abort rather than fall
+  # back to a guessable name — a predictable name defeats the whole point.
+  FLOW_PR_BODY_FILE="$(mktemp 2>/dev/null)" || {
+    echo "⚠️ [verify-pr-body] mktemp failed — refusing to fall back to a predictable temp path (symlink-attack surface). Cannot fetch PR #$_num." >&2
+    return 2
+  }
+  _errfile="$(mktemp 2>/dev/null)" || {
+    echo "⚠️ [verify-pr-body] mktemp failed for the error-capture file — cannot fetch PR #$_num." >&2
+    rm -f "$FLOW_PR_BODY_FILE"
+    return 2
+  }
+  # No EXIT trap here: this file is `.`-sourced into the caller's shell, not run in a
+  # subshell, so a trap set here would overwrite (not compose with) any EXIT trap the
+  # caller already has. Every path below cleans up its own temp files explicitly instead.
+  # Primary path. Trust gh's own exit code, not "stdout happened to be non-empty" —
+  # an empty-but-successful body (unlikely but possible) must not be misread as failure.
+  _json="$(gh pr view "$_num" --json body,isDraft 2>"$_errfile")"
+  _rc=$?
+  if [ "$_rc" -eq 0 ]; then
     printf '%s' "$_json" | jq -r '.body // ""' > "$FLOW_PR_BODY_FILE"
     FLOW_PR_ISDRAFT="$(printf '%s' "$_json" | jq -r 'if .isDraft then "true" else "false" end')"
+    rm -f "$_errfile"
     return 0
   fi
   # Fallback: try REST unconditionally on any gh pr view failure — the projectCards
@@ -67,20 +87,24 @@ flow_fetch_pr_state() {
   # failure reason (it doesn't query projectCards either way).
   _repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)"
   if [ -n "$_repo" ]; then
-    _rest="$(gh api "repos/$_repo/pulls/$_num" 2>/tmp/flow-pr-fetch-err)"
-    if [ -n "$_rest" ]; then
+    _rest="$(gh api "repos/$_repo/pulls/$_num" 2>"$_errfile")"
+    _rc=$?
+    if [ "$_rc" -eq 0 ]; then
       printf '%s' "$_rest" | jq -r '.body // ""' > "$FLOW_PR_BODY_FILE"
       FLOW_PR_ISDRAFT="$(printf '%s' "$_rest" | jq -r 'if .draft then "true" else "false" end')"
+      rm -f "$_errfile"
       return 0
     fi
   fi
   echo "⚠️ [verify-pr-body] could not re-fetch PR #$_num (gh pr view AND REST both failed):" >&2
-  sed 's/^/    /' /tmp/flow-pr-fetch-err 2>/dev/null >&2
+  sed 's/^/    /' "$_errfile" 2>/dev/null >&2
   echo "    → cannot confirm the write took. Do NOT proceed as if the PR body is correct." >&2
+  rm -f "$FLOW_PR_BODY_FILE" "$_errfile"
   return 2
 }
 
 flow_verify_pr_write() {
+  local _num _py _rc
   _num="$1"; shift
   _py="$(_flow_pr_coherence_py)" || {
     echo "⚠️ [verify-pr-body] pr-coherence.py not reachable — cannot read-back-verify PR #$_num." >&2
@@ -95,10 +119,12 @@ flow_verify_pr_write() {
     echo "    The PR body on GitHub does not match what you wrote. Re-apply the write and re-verify;" >&2
     echo "    never report success on an unverified write." >&2
   fi
+  rm -f "$FLOW_PR_BODY_FILE"
   return "$_rc"
 }
 
 flow_assert_pr_coherent() {
+  local _num _py _rc
   _num="$1"
   _py="$(_flow_pr_coherence_py)" || {
     echo "⚠️ [verify-pr-body] pr-coherence.py not reachable — cannot assert coherence for PR #$_num." >&2
@@ -106,4 +132,7 @@ flow_assert_pr_coherent() {
   }
   flow_fetch_pr_state "$_num" || return 2
   python3 "$_py" coherence --body-file "$FLOW_PR_BODY_FILE" --is-draft "$FLOW_PR_ISDRAFT"
+  _rc=$?
+  rm -f "$FLOW_PR_BODY_FILE"
+  return "$_rc"
 }

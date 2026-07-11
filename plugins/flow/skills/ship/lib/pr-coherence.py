@@ -83,8 +83,8 @@ def _coherence_violation(body: str, is_draft: bool) -> str | None:
         return (
             "PR is NOT a draft but its body still carries the "
             f'"{MANIFEST_HEADING}" manifest — a ready PR that contradicts its own '
-            "state. Scrub the manifest and re-verify (reconcile fast-path), or "
-            "re-draft the PR."
+            "state. Scrub the manifest from the body and re-verify (see /flow:ship "
+            "§7c for the no-reviewer reconcile path), or convert the PR back to a draft."
         )
     return None
 

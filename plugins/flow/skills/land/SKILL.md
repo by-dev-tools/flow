@@ -96,25 +96,40 @@ surface it** before editing anything — the human decides whether the merge was
 legitimate:
 
 ```sh
-PC=""
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/pr-coherence.py" ]; then
-  PC="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/pr-coherence.py"
-elif [ -f "plugins/flow/skills/ship/lib/pr-coherence.py" ]; then
-  PC="plugins/flow/skills/ship/lib/pr-coherence.py"
+# Source the shared helper for path resolution to pr-coherence.py (single source of
+# truth — the exact fan-out contradiction FB-0010 warns against otherwise). We reuse
+# the ALREADY-FETCHED $STATE_JSON from Step 1a rather than the helper's own re-fetch —
+# a merged PR's body is immutable, so there's nothing new a re-fetch would learn, and
+# it saves a redundant API call.
+VPB=""
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh" ]; then
+  VPB="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"
+elif [ -f "plugins/flow/skills/ship/lib/verify-pr-body.sh" ]; then
+  VPB="plugins/flow/skills/ship/lib/verify-pr-body.sh"
 fi
-if [ -n "$PC" ]; then
-  printf '%s' "$STATE_JSON" | jq -r '.body // ""' > /tmp/flow-land-prbody.md
-  # A merged PR is never a draft → --is-draft false. A manifest present ⇒ coherence FAIL.
-  if ! python3 "$PC" coherence --body-file /tmp/flow-land-prbody.md --is-draft false >/dev/null 2>&1; then
-    echo "⚠️ BLOCKER: PR #$N merged while still carrying the '🚫 NOT READY TO MERGE' manifest." >&2
-    echo "   It merged in a not-ready state (an FB-0067 escape). Nothing has been reconciled." >&2
-    echo "   → Confirm with a human that the merge was intended before landing; the forward docs" >&2
-    echo "     should not record a not-ready merge as cleanly shipped without that acknowledgment." >&2
-    rm -f /tmp/flow-land-prbody.md
-    exit 1
+if [ -z "$VPB" ]; then
+  echo "⚠️ WARN: verify-pr-body.sh helper not reachable — cannot assert the merged-PR coherence invariant (this check is BLOCKING when reachable)." >&2
+  echo "   Install the flow plugin or run from the flow repo root; until then this gate is silently unenforced for this land run." >&2
+else
+  . "$VPB"
+  PC="$(_flow_pr_coherence_py)"
+  BODYFILE="$(mktemp 2>/dev/null || { echo "⚠️ WARN: mktemp failed — skipping coherence check rather than using a predictable temp path." >&2; true; })"
+  if [ -n "$PC" ] && [ -n "$BODYFILE" ]; then
+    printf '%s' "$STATE_JSON" | jq -r '.body // ""' > "$BODYFILE"
+    # A merged PR is never a draft → --is-draft false. A manifest present ⇒ coherence FAIL.
+    if ! python3 "$PC" coherence --body-file "$BODYFILE" --is-draft false >/dev/null 2>&1; then
+      echo "⚠️ BLOCKER: PR #$N merged while still carrying the '🚫 NOT READY TO MERGE' manifest." >&2
+      echo "   It merged in a not-ready state (an FB-0067 escape). Nothing has been reconciled." >&2
+      echo "   → Confirm with a human that the merge was intended before landing; the forward docs" >&2
+      echo "     should not record a not-ready merge as cleanly shipped without that acknowledgment." >&2
+      rm -f "$BODYFILE"
+      exit 1
+    fi
+    rm -f "$BODYFILE"
+    echo "[land] coherence OK — merged PR body carries no NOT-READY manifest."
+  elif [ -z "$PC" ]; then
+    echo "⚠️ WARN: pr-coherence.py not reachable via the sourced helper — coherence check skipped for this land run." >&2
   fi
-  rm -f /tmp/flow-land-prbody.md
-  echo "[land] coherence OK — merged PR body carries no NOT-READY manifest."
 fi
 ```
 
