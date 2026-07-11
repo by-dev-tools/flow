@@ -12,6 +12,8 @@ load-bearing behaviors from plan § "PR TP" Spec-walk + the staff-review fixes:
   crit 4 — skip / no-buffer / stale-buffer / unconfirmable-freshness / malformed
            → honest fallback, never a stale or crashed render.
   crit 5 — spike-mode renders only `correctness`; no placeholder regression/scope-creep gaps.
+  crit 6 — a frame_integrity[] FAIL (FB-0066) overrides "confirm and merge" even when every
+           criterion PASSes (the two gates are independent); absent frame_integrity is a no-op.
   + scannable one-line headline verdict; empty-criteria + no-notes-FAIL honesty.
 
 Assertion-based (substring must/​must-not), not golden-diff: robust to cosmetic
@@ -103,6 +105,36 @@ CASES = [
     case("no-notes-fail-actionable", "1", "no-notes",
          ["[ ] Thing works end to end", "**FAIL**", "no reason recorded in the buffer"],
          ["✅"],
+         sha="abc1234"),
+    # FB-0066: a frame-integrity FAIL must override "confirm and merge" even when
+    # every declared criterion PASSes — the two gates are independent (SKILL.md
+    # Step 7). Without this, the one surface built to be non-forgeable would print
+    # a false-green headline next to a FAIL verdict elsewhere in the buffer.
+    case("frame-integrity-fail-overrides-headline", "6", "frame-integrity-fail",
+         ["[x] Launches and renders", "[x] Submits the form",
+          "FAILED the frame-integrity check", "Do NOT merge",
+          "Frame integrity FAILED", "Home page (pager index 0)",
+          "Edge-to-edge background",
+          # the judge's own described evidence (background_continuity), not just
+          # the checklist-item names (staff-review/ux-designer finding):
+          "gradient only in the safe-area strips"],
+         ["confirm and merge", "✅"],
+         sha="abc1234"),
+    # Inverse: a buffer with NO frame_integrity key at all (pre-FB-0066 shape,
+    # or a non-visual run) renders byte-for-byte as before — additive, never
+    # a behavior change when the field is absent.
+    case("no-frame-integrity-key-unaffected", "6", "all-pass",
+         ["2/2 declared criteria passed", "confirm and merge"],
+         ["Frame integrity FAILED", "FAILED the frame-integrity check"],
+         sha="abc1234"),
+    # staff-engineer finding: a no-criteria run (no-plan fallback / docs-only smoke
+    # path) can STILL have captured + judged frames — §5a's capture gate is decoupled
+    # from Spec-walk extraction. A frame-integrity FAIL must not be silently dropped
+    # just because there were no criteria to attach it to.
+    case("empty-criteria-frame-fail-not-dropped", "6", "empty-criteria-frame-fail",
+         ["no `**Spec-walk:**` criteria", "FAILED the frame-integrity check", "Do NOT merge",
+          "Frame integrity FAILED", "Settings pager page", "gradient only in the safe-area strips"],
+         ["✅", "confirm and merge"],
          sha="abc1234"),
     # security: buffer strings (criterion text, judge notes, not_tested items) are
     # Markdown-escaped so app-under-test content the judge narrates can't inject a

@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "branch": "claude/pulldown-pager",
+    "head_sha_short": "cafef00",
+    "plugin_version": "1.16.0",
+    "platform_hint": "ios"
+  },
+  "overall_verdict": "PASS",
+  "exit_code": 0,
+  "criteria": [],
+  "not_tested": [],
+  "frame_integrity": [
+    {
+      "state": "Settings pager page",
+      "frame": "assets/settings.png",
+      "edges": {
+        "top": "The ambient gradient fills behind the status bar and continues unbroken into the content.",
+        "bottom": "The gradient continues to and behind the home indicator; no band, no seam.",
+        "left": "Gradient continuous to the left edge.",
+        "right": "Gradient continuous to the right edge."
+      },
+      "corners": "All four corners rounded consistently; list content inset within the safe area, nothing clipped.",
+      "background_continuity": "One continuous gradient from top to bottom behind the settings list; no seam where the scroll content meets the background.",
+      "verdict": "PASS",
+      "failing_items": [],
+      "notes": ""
+    }
+  ]
+}

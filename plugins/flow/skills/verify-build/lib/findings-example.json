@@ -144,5 +144,22 @@
       "user_need_lens": "Returning user who mis-submits.",
       "routing": "future-planning"
     }
+  ],
+  "frame_integrity": [
+    {
+      "state": "User can submit the form with valid input and see a success message.",
+      "frame": "assets/submit-success.png",
+      "edges": {
+        "top": "The form surface continues behind the status bar to the top edge; no band.",
+        "bottom": "The surface continues to and behind the home indicator; no band, no seam.",
+        "left": "Surface continuous to the left edge.",
+        "right": "Surface continuous to the right edge."
+      },
+      "corners": "All four corners rounded consistently; the success toast is inset within the safe area, nothing clipped.",
+      "background_continuity": "One continuous surface from top to bottom behind the form and toast; no seam where content meets the background.",
+      "verdict": "PASS",
+      "failing_items": [],
+      "notes": ""
+    }
   ]
 }

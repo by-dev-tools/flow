@@ -2,6 +2,8 @@
 
 This file is loaded by `/flow:verify-build` Step 6 via parallel Agent tool invocations — one per dimension (correctness, regression, scope-creep). Each judge sees its assigned dimension only and returns verdicts against that dimension. Spawning in parallel isolates position bias and shaves wall-clock.
 
+A **fourth** pass — `frame-integrity` — is spawned alongside these three whenever the buffer carries captured frames, but it is **frame-scoped, not criterion-scoped**, and uses its own must-pass prompt at `lib/frame-integrity-checklist.md` (not this rubric). It runs against every persisted `screenshot` observation to catch obvious visual defects no `Visual-walk` assertion happened to name — a broken safe-area background, a seam, clipped text. See the "Frame-integrity pre-pass" note in the VLM section below.
+
 The judges sit at the load-bearing point of the gate: their verdicts determine whether `/flow:verify-build` exits 0 (ship continues) or exits 1 (ship blocks). The two-citation rule and the Unknown verdict are what make the gate trustworthy — not the judge's confidence, but the judge's discipline.
 
 ---
@@ -59,6 +61,8 @@ If any answer is "no" or "uncertain," return Unknown for that criterion.
 ## VLM pairwise instruction (judging `screenshot` observations)
 
 Visual observations reach you as **path-referenced `screenshot` frames** persisted by the capture-and-persist step (`SKILL.md` §5a) — bundled `/verify` only *narrates* screenshots, so flow captures and persists them itself, and the judge prompt includes the captured frame (and, when one exists, a **baseline** frame for the same state) directly. Judge visual claims as follows:
+
+**Frame-integrity pre-pass runs FIRST, and it is not pairwise.** Before any per-criterion visual claim, the `frame-integrity` judge (prompt: `lib/frame-integrity-checklist.md`) audits each captured frame against a fixed, must-pass checklist — edge-to-edge background, no seam, no clipped text, no collisions, palette fidelity, safe-area respect. It is required to **emit a literal per-edge (top/bottom/left/right) and per-corner description plus a top-to-bottom background-continuity description as its evidence *before* returning PASS/FAIL** — a bare "looks fine" is structurally impossible (this is the SV2 "read state from structure, not a glance" principle applied to full-frame integrity). Its verdict rule differs from the pairwise rule below: because these are **single-frame absolute** properties (a white band at the notch is visible with or without a baseline), **any failing item ⇒ FAIL, never Unknown** — absence of a baseline is no excuse. A frame-integrity FAIL is gate-blocking on its own (Step 7).
 
 - **Pairwise over absolute.** Compare the captured frame against the baseline for that state ("is the current frame closer to, or further from, the criterion's expected state than the baseline?"). Do NOT assign absolute scores ("rate this 1–10") — VLM uncertainty intervals span ~70% of the scale on text-heavy screenshots (research: arxiv 2604.25235 "VLM Judges Can Rank but Cannot Score").
 - **No baseline ⇒ Unknown.** A state's first run has no baseline to compare against → its visual-*layout* claim is **Unknown** (the captured frame seeds the baseline for next time). Do not absolute-score to manufacture a PASS.

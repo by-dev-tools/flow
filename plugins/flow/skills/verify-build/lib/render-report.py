@@ -119,6 +119,10 @@ h2 { font-size: 20px; margin: 30px 0 8px; }
 .vcard .vhead { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 6px; }
 .vcard blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid #e3e3e6; font-size: 12.5px; color: #46464b; }
 .vcard .notes { font-size: 12.5px; color: #6b6b70; margin-top: 4px; }
+.fi-edges { font-size: 12.5px; color: #46464b; margin-top: 6px; }
+.fi-edge { margin: 2px 0; }
+.fi-fails { color: #b3261e; font-size: 13px; margin: 4px 0; }
+.fi-fails ul { margin: 2px 0 0; padding-left: 18px; }
 .oq { counter-reset: oq; }
 .oq .q { border: 1px solid #e3e3e6; border-radius: 10px; padding: 14px 16px; margin: 0 0 12px; }
 .oq .q h3 { margin: 0 0 6px; font-size: 16px; }
@@ -136,7 +140,7 @@ footer { margin-top: 40px; font-size: 12.5px; color: #6b6b70; border-top: 1px so
   body { color: #e6e6ea; background: #161618; }
   .card, .vcard, .obs, .oq .q { background: #1f1f22; border-color: #34343a; }
   .grounding { background: #232327; }
-  .lede, .vcard blockquote, .oq .meta-row b { color: #b7b7bd; }
+  .lede, .vcard blockquote, .fi-edges, .oq .meta-row b { color: #b7b7bd; }
   .pill { background: #2b2b30; color: #e6e6ea; }
   .routing.this-iteration { background: #4a3a1a; color: #f0d9a8; }
   .routing.future-planning { background: #2b2b30; color: #b7b7bd; }
@@ -228,12 +232,20 @@ def slug(i):
     return f"criterion-{i}"
 
 
-def render_toc(criteria):
+def render_toc(criteria, frame_integrity_fail=False):
+    # A frame-integrity FAIL is the reason the whole run failed (Step 7) but lives in
+    # its own section above the criteria — link it first so a human navigating the TOC
+    # lands on the actual failure, not just the (possibly all-green) criteria (ux-designer
+    # finding: the TOC had no way to reach the one section that failed the run).
+    fi_item = (
+        f'<li><a href="#frame-integrity">{verdict_dot("FAIL")} Frame integrity</a></li>'
+        if frame_integrity_fail else ""
+    )
     items = "".join(
         f'<li><a href="#{slug(i)}">{verdict_dot(c.get("aggregated_verdict", "Unknown"), is_self_reported(c))} {esc(c.get("text", "(untitled)"))}</a></li>'
         for i, c in enumerate(criteria)
     )
-    return f'<nav class="toc card"><strong>Criteria</strong><ol>{items}</ol></nav>'
+    return f'<nav class="toc card"><strong>Criteria</strong><ol>{fi_item}{items}</ol></nav>'
 
 
 def render_grounding(g):
@@ -312,6 +324,22 @@ def render_adversarial(cases):
     return f'<div class="adversarial card"><strong>Adversarial cases probed</strong><ul>{items}</ul></div>'
 
 
+def render_vcard(verdict, label, body_html):
+    """The shared `.vcard` shell (verdict dot + colored verdict text + label,
+    followed by caller-supplied body) — factored out of render_verdict_cards()
+    and render_frame_integrity(), which built the identical header markup
+    independently before this pass. `label` is escaped HERE, not by the
+    caller — the escaping contract lives with the function that emits the
+    HTML, not with each call site's memory to pre-escape (staff-review /
+    design-engineer finding: two callers agreed by accident, not by contract).
+    `body_html` is pre-built markup and is NOT escaped again."""
+    return (
+        f'<div class="vcard"><div class="vhead">{verdict_dot(verdict)}'
+        f'<span style="color:{VERDICT_COLOR.get(verdict, "#888")}">{esc(verdict)}</span>'
+        f'<span style="color:#6b6b70;font-weight:400">· {esc(label)}</span></div>{body_html}</div>'
+    )
+
+
 def render_verdict_cards(verdicts):
     cards = []
     for dim in ("correctness", "regression", "scope-creep"):
@@ -322,11 +350,7 @@ def render_verdict_cards(verdicts):
         ev = v.get("evidence") or []
         quotes = "".join(f"<blockquote>{esc(q)}</blockquote>" for q in ev)
         notes = f'<div class="notes">{esc(v["notes"])}</div>' if v.get("notes") else ""
-        cards.append(
-            f'<div class="vcard"><div class="vhead">{verdict_dot(verdict)}'
-            f'<span style="color:{VERDICT_COLOR.get(verdict, "#888")}">{esc(verdict)}</span>'
-            f'<span style="color:#6b6b70;font-weight:400">· {dim}</span></div>{quotes}{notes}</div>'
-        )
+        cards.append(render_vcard(verdict, dim, quotes + notes))
     return f'<div class="verdicts">{"".join(cards)}</div>' if cards else ""
 
 
@@ -358,6 +382,43 @@ def render_criterion(i, c, assets_dir, warnings):
         f'{render_verdict_cards(c.get("verdicts"))}'
         f'</section>'
     )
+
+
+def render_frame_integrity(items):
+    """The FB-0066 must-pass frame-integrity section — one card per captured frame,
+    audited against the fixed checklist independent of the plan's declared criteria.
+    A FAIL is gate-blocking (Step 7); the renderer surfaces the failing items + the
+    described edge/corner evidence so the human sees WHY. Empty ⇒ nothing rendered
+    (non-visual / frameless reports are unaffected)."""
+    if not items:
+        return ""
+    cards = []
+    for it in items:
+        verdict = it.get("verdict", "FAIL")
+        label = it.get("state") or it.get("frame") or "captured frame"
+        edges = it.get("edges") or {}
+        desc_rows = []
+        for edge in ("top", "bottom", "left", "right"):
+            if edges.get(edge):
+                desc_rows.append(f'<div class="fi-edge"><b>{esc(edge)}:</b> {esc(edges[edge])}</div>')
+        if it.get("corners"):
+            desc_rows.append(f'<div class="fi-edge"><b>corners:</b> {esc(it["corners"])}</div>')
+        if it.get("background_continuity"):
+            desc_rows.append(f'<div class="fi-edge"><b>background:</b> {esc(it["background_continuity"])}</div>')
+        fails = it.get("failing_items") or []
+        fail_html = ""
+        if fails:
+            lis = "".join(f"<li>{esc(f)}</li>" for f in fails)
+            fail_html = f'<div class="fi-fails"><strong>Failing checks:</strong><ul>{lis}</ul></div>'
+        notes = f'<div class="notes">{esc(it["notes"])}</div>' if it.get("notes") else ""
+        body = f'{fail_html}<div class="fi-edges">{"".join(desc_rows)}</div>{notes}'
+        cards.append(render_vcard(verdict, label, body))
+    intro = ("Every captured frame is audited against a fixed, must-pass checklist — edge-to-edge "
+             "background, no seam, no clipped text, no collisions, palette fidelity, safe-area respect — "
+             "independent of what the plan declared. A FAIL here blocks the gate on its own.")
+    return (f'<section id="frame-integrity"><h2>Frame integrity</h2>'
+            f'<p class="lede">{intro}</p>'
+            f'<div class="verdicts">{"".join(cards)}</div></section>')
 
 
 def render_open_questions(questions):
@@ -410,11 +471,14 @@ def render(buffer, assets_dir):
         "baseline" in it.get("item", "").lower() and not it.get("tested") for it in not_tested
     )
     any_self_reported = any(is_self_reported(c) for c in criteria)
+    frame_integrity = buffer.get("frame_integrity") or []
+    frame_integrity_fail = any(str(f.get("verdict")) == "FAIL" for f in frame_integrity if isinstance(f, dict))
     body = (
         render_hero(meta, overall, baseline_seeding, any_self_reported)
         + render_self_report_banner(any_self_reported)
         + render_legend()
-        + render_toc(criteria)
+        + render_toc(criteria, frame_integrity_fail)
+        + render_frame_integrity(frame_integrity)
         + "".join(render_criterion(i, c, assets_dir, warnings) for i, c in enumerate(criteria))
         + render_open_questions(buffer.get("open_questions"))
         + render_not_tested(buffer.get("not_tested"))

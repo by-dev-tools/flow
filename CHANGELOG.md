@@ -10,6 +10,20 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.16.0 — 2026-07-08
+
+**Frame-integrity gate: `/flow:verify-build` now audits every captured screenshot against a fixed, must-pass checklist — so an obvious visual defect no criterion named (a broken safe-area background, a seam, clipped text) FAILs the gate instead of slipping through.**
+
+- **The gap (dogfood).** On a UI change, screenshots *were* captured, but the frames plainly showed the ambient background broken at the safe-area edges (white bands at the notch + home-indicator, a seam between pages) — and the change was still declared "verified." Two-layer root cause: (1) the frames were read by the *implementing* agent during Execute, not by `/flow:verify-build` §5a's fresh-context judge (the exact conflict of interest §5a exists to remove); (2) even the §6 judges are criterion-scoped, so a defect no `Visual-walk` assertion named had **no checker** — the closest dimension (`regression`) resolved `Unknown` with no baseline rather than `FAIL`.
+- **New must-pass frame-integrity pass.** A fourth Step-6 judge (`lib/frame-integrity-checklist.md`) runs in fresh context against **every** persisted screenshot, **independent of the plan's declared criteria** — a closed checklist: edge-to-edge background (no white/black/wrong-gradient band at any safe-area edge), no seam, no clipped text, no collisions, palette fidelity, safe-area respect. It must emit a **literal per-edge / per-corner / background-continuity description before any verdict** (a bare "looks fine" is structurally impossible), and **any failing item ⇒ FAIL, never Unknown** — these are single-frame absolute properties, so absence of a baseline is no excuse.
+- **Gate-blocking + visible.** Output is a new top-level `frame_integrity[]` findings-buffer field (additive — `schema_version` stays 1.0), rendered as a prominent "Frame integrity" section in the HTML report. A single `FAIL` forces `overall_verdict: FAIL` (Step 7), independent of the per-criterion verdicts.
+- **Operator discipline.** `docs/workflow.md` (Step 8/9) now forbids self-certifying a UI change from screenshots the implementing agent took and read itself: ad-hoc Execute screenshots are for iterating, never sign-off — a visually-significant change routes through `/flow:verify-build` §5a (a11y-gated capture → fresh-context judge → frame-integrity checklist) for any visual verdict. Extends the MANDATORY-capture gate's spirit: implementer-eyeballed frames ⇒ not a verdict.
+- Pinned by `run_frame_integrity_evals.py` (wired into CI): a known-bad frame renders a visible `FAIL` with its failing checklist items + described edge evidence; a clean frame renders `PASS`.
+
+**Breaking changes:** none. `frame_integrity[]` is additive; a buffer without it renders exactly as before.
+
+---
+
 ## v1.15.0 — 2026-07-08
 
 **The `/flow:ship` + `/flow:ship-spike` PR body now opens with a plain-language summary + a Scope label, so the first thing a reviewer reads at the merge gate is what kind of change this is and what it does — without opening the diff.**

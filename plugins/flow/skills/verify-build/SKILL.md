@@ -274,6 +274,8 @@ Bundled `/verify` **narrates** screenshots to the orchestrator — it does NOT h
 
 **A derived state with no captured frame** (un-reachable per step 1, or a11y-assertion failed per step 2) → `Unknown` (Step 7) + a `not_tested[]` line. Never a silent gap; the renderer makes it visible (Step 10).
 
+**Every persisted frame is audited by the frame-integrity pass (§6, FB-0066)** — the fixed must-pass checklist runs on each captured `screenshot` regardless of which `Visual-walk` assertions (if any) named it, so an obvious defect the plan never declared a criterion for (a broken safe-area background, a seam, clipped text) still has a checker.
+
 **MANDATORY-capture gate (Feature 1b — when `metadata.visual_significant` is true).** On a visually-significant change (the §2c verdict), capture is NOT best-effort. If frames cannot be captured at all — no UI-automation drive primitive, no launch-arg/env hook, no simulator/device (the no-sim host) — do **NOT** silently proceed to a PASS:
 - Write an explicit `not_tested[]` line naming the missing prerequisite (e.g. `item: "Visual frames (no simulator / no drive primitive on this host)", tested: false, rationale: "..."`).
 - Force the run to **`Unknown`** per the Step 7 aggregation rule below. A visually-significant change with **zero captured frames** is `Unknown`, never `PASS` — the absence of a single captured frame is itself the gate-blocking signal (FB-0011: ESCALATE on the thing you could not observe). This is the case-5 path: frames uncapturable ⇒ verify-build `Unknown` (not PASS) ⇒ `/flow:ship` opens a draft with the `not_tested` rationale.
@@ -292,18 +294,31 @@ Spawn N parallel Agent subagent (fresh-context)s — one per dimension — each 
 
 Each judge returns `PASS | FAIL | Unknown` per criterion + two-citation evidence (the observation + the plan-criterion / regression-source / scope-source). Parallel for speed + position-bias isolation.
 
+### The `frame-integrity` pass (fourth judge — frame-scoped, must-pass)
+
+Whenever §5a persisted at least one `screenshot` observation, spawn a **fourth** fresh-context judge with the prompt at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/frame-integrity-checklist.md`, given **every persisted `screenshot` frame** across all criteria. Unlike the three dimensions above, this pass is **criterion-independent** — it audits each frame against a *fixed, must-pass* checklist (edge-to-edge background / no seam / no clipped text / no collisions / palette fidelity / safe-area respect) that runs regardless of what the plan's `Visual-walk` block declared. This is the checker for the class of obvious defect no assertion happened to name — a broken safe-area background, a seam, clipped text — the exact thing frames are captured to catch.
+
+Two properties make it load-bearing (both enforced by the checklist prompt):
+- **Describe-before-verdict.** The judge must emit a literal per-edge (top/bottom/left/right) + per-corner + background-continuity description as its evidence *before* returning a verdict — a bare "looks like the app" is structurally impossible.
+- **FAIL, not Unknown.** These are single-frame absolute properties (a white band at the notch needs no baseline to see), so **any failing item ⇒ `FAIL`** — the absence-of-baseline `Unknown` escape the pairwise-layout judging correctly uses does NOT apply here.
+
+Its output is the top-level `frame_integrity[]` array (Step 8), one entry per captured frame — NOT part of the per-criterion `verdicts.{correctness,regression,scope-creep}` object (a frame can serve several criteria; frame-integrity is a property of the frame). A frame-integrity `FAIL` is gate-blocking on its own (Step 7).
+
 ## 7. Aggregate verdict
 
 ```
 Any dimension returns FAIL for any criterion    ⇒ exit 1 (gate blocks)
 Any dimension returns Unknown for any criterion ⇒ exit 1 (FB-0011: ESCALATE on uncertainty)
+Any frame_integrity[] entry returns FAIL         ⇒ overall_verdict FAIL, exit 1 (FB-0066)
 visual_significant=true AND zero captured frames ⇒ overall_verdict Unknown, exit 1 (Feature 1b)
-All dimensions PASS for all criteria            ⇒ exit 0
+All dimensions PASS + all frames PASS integrity  ⇒ exit 0
 ```
 
 Per FB-0011 (autonomy bar): Unknown is gate-blocking, not advisory. The judge is forced to admit ignorance; the user adjudicates.
 
 **The Feature-1b visual rule is independent of the per-dimension verdicts.** Even if every behavioral dimension PASSes, a visually-significant change (`metadata.visual_significant=true` from §2c) that captured **zero** `screenshot` observations across all criteria aggregates to `overall_verdict: "Unknown"` (exit 1). You cannot certify a visual surface you never saw. The `not_tested[]` line written at §5a carries the rationale; the renderer (Step 10) makes the gap visible; `/flow:ship` routes the Unknown to a draft.
+
+**The FB-0066 frame-integrity rule is likewise independent of the per-dimension verdicts.** A frame that PASSes every declared criterion can still FAIL the fixed frame-integrity checklist — a broken safe-area background is not something any `Visual-walk` assertion named, so no `correctness`/`regression`/`scope-creep` verdict catches it. Any `frame_integrity[]` entry with `verdict: "FAIL"` forces `overall_verdict: "FAIL"` (exit 1) regardless of the three dimensions. This is the checker that would have caught the pull-down-pager white-background regression an implementer glance waved through.
 
 ## 8. Emit findings buffer
 
@@ -318,6 +333,7 @@ The schema pins these properties (binding — consumers depend on them):
 - **`criteria[]`**: per-criterion entries with `text`, **`provenance`** (see next bullet), `adversarial_cases`, `observations[]` (each with `type` discriminator: `screenshot` | `a11y_snapshot` | `network` | `console` | `log` | `stdout` | `exit_code` | `narrative`), `verdicts.{correctness,regression,scope-creep}` (each with verdict + exactly-2 evidence quotes + notes), and per-criterion `aggregated_verdict`.
 - **`criteria[].provenance`** *(non-forgeability signal — set by the JUDGING step, NEVER the implementer)*: `adversarial-judged` (Step 6 fresh-context judges ran — full mode + the §2b no-plan source-touching path) | `spike-rubric` (a fresh-context correctness judge ran the 3-check rubric — explicit spike + §2a docs-only no-plan) | `hand-authored` (no fresh-context judge produced the verdict). **LOAD-BEARING CONTRACT: a consumer MUST treat an absent/unrecognized provenance as `hand-authored`** (the untrusting default). The renderers (`render-test-plan.py`, `render-report.py`) render a machine `[x]` ONLY for `adversarial-judged`/`spike-rubric` PASSes; a `hand-authored`/absent PASS renders `[~]` + a "not adversarially judged — implementer self-report" banner, so a buffer the implementer wrote by hand can never masquerade as a machine verdict. If you cannot judge a criterion, its verdict is `Unknown` — never a hand-authored PASS.
 - **`not_tested[]`**: closed-form per-platform checklist from `lib/not-tested-checklist.md` with `item` text, `tested` boolean, optional `rationale`.
+- **`frame_integrity[]`** *(optional, top-level; FB-0066)*: one entry per captured `screenshot`, written by the Step-6 frame-integrity pass (`lib/frame-integrity-checklist.md`). Each entry: `frame` (relative path), the required `edges.{top,bottom,left,right}` + `corners` + `background_continuity` literal descriptions (the described evidence that makes a bare "looks fine" impossible), `verdict` (`PASS`/`FAIL` — never Unknown for a readable frame), `failing_items[]` (non-empty iff FAIL), optional `state` + `notes`. **A single `FAIL` here forces `overall_verdict: "FAIL"` (Step 7)** — the must-pass frame-integrity gate, independent of the per-criterion verdicts. Absent when no frames were captured. Additive in `schema_version` 1.0; older consumers ignore it.
 - **`criteria[].grounding`** *(optional; V2)*: why the surface looks/behaves as it does — `{type: need|design-language|craft-commitment|open-question, statement, citations[], decision_test?}`. Citations resolve from `flow.config.json.{specPath,designLanguagePath}` or the plan's Spec-walk — **never hardcoded doc names**. Captured for criteria with a visual/UX dimension; the renderer (Step 10) shows it as the rationale callout. Operationalizes FB-0040 (rationale carried).
 - **`open_questions[]`** *(optional, top-level; V2)*: subjective human-facing calls — `{question, rationale, recommended_default, user_need_lens, routing: this-iteration|future-planning}`. **DISTINCT from `Unknown`** (epistemic). An `open_questions` entry with `routing: this-iteration` is the mechanical signal that **blocks Step 8 auto-advance** in the loop (mirrors an unresolved MEDIUM assumption — see `docs/workflow.md` Step 8); `future-planning` routes to the roadmap. The renderer surfaces these as the standalone "Open questions for you" block.
 

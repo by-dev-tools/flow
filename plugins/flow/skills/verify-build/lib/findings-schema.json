@@ -196,6 +196,44 @@
         },
         "additionalProperties": false
       }
+    },
+    "frame_integrity": {
+      "type": "array",
+      "description": "Optional. One entry per captured `screenshot` observation, produced by /flow:verify-build Step 6's frame-integrity pass (lib/frame-integrity-checklist.md) — a FIXED, must-pass checklist run against every frame REGARDLESS of the plan's Visual-walk assertions (FB-0066). Catches the obvious-defect class no declared criterion names (broken safe-area background, seam, clipped text). DISTINCT from the per-criterion `verdicts` object: frame-integrity is a property of the FRAME (one frame can serve several criteria), so it lives top-level, not inside criteria[]. A single FAIL here forces overall_verdict FAIL (Step 7) independent of the per-dimension verdicts. Absent when no frames were captured. Additive in schema_version 1.0; older consumers ignore it.",
+      "items": {
+        "type": "object",
+        "required": ["frame", "edges", "corners", "background_continuity", "verdict"],
+        "properties": {
+          "state": {"type": "string", "description": "The state / criterion this frame served, verbatim if given."},
+          "frame": {"type": "string", "description": "The frame's relative path (e.g. 'assets/home.png') matching the screenshot observation's content."},
+          "edges": {
+            "type": "object",
+            "required": ["top", "bottom", "left", "right"],
+            "description": "Literal per-edge safe-area descriptions — the described evidence emitted BEFORE the verdict (anti-glance discipline). All four required and non-empty.",
+            "properties": {
+              "top": {"type": "string", "description": "What fills the top safe-area edge (notch / status bar)."},
+              "bottom": {"type": "string", "description": "What fills the bottom safe-area edge (home indicator)."},
+              "left": {"type": "string", "description": "What fills the left edge."},
+              "right": {"type": "string", "description": "What fills the right edge."}
+            },
+            "additionalProperties": false
+          },
+          "corners": {"type": "string", "description": "Literal description of the four corners (rounding consistency, clipped content)."},
+          "background_continuity": {"type": "string", "description": "Literal top-to-bottom description of background continuity (one continuous surface vs a seam / band)."},
+          "verdict": {
+            "type": "string",
+            "enum": ["PASS", "FAIL"],
+            "description": "PASS or FAIL ONLY — never Unknown for a readable frame. Frame-integrity items are single-frame absolute properties (a white notch band needs no baseline), so any failing item ⇒ FAIL; absence of a baseline is not an Unknown escape. An unreadable frame is a capture failure (not_tested[]), not a frame-integrity Unknown."
+          },
+          "failing_items": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Verbatim checklist item text for each failure. Non-empty iff verdict is FAIL; empty array for PASS."
+          },
+          "notes": {"type": "string", "description": "One sentence naming the defect for FAIL; empty string for PASS."}
+        },
+        "additionalProperties": false
+      }
     }
   },
   "definitions": {
