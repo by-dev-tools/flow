@@ -10,6 +10,18 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.17.0 — 2026-07-08
+
+**A PR marked ready can no longer keep the `🚫 NOT READY TO MERGE` manifest at the top of its body. Every PR-body / draft-state write is now read-back-verified, and a body↔draft coherence invariant is enforced at ship and surfaced by doctor + land (FB-0067, SAFETY).**
+
+- **The bug.** A ready PR (`isDraft:false`, mergeable, clean) whose body still opened with the draft manifest — the PR contradicting its own state. Root cause was three converging gaps, all in flow: the manifest scrub was coupled to a full `/flow:ship` re-run (so a blocker cleared *out-of-band* never triggered removal); no PR-body write was read back to confirm it landed (a masked `gh` write like `gh pr edit … | tail -1 && gh pr ready` reports the pipe's exit 0, not gh's failure); and nothing ever asserted the body↔draft contradiction anywhere.
+- **Mandatory read-back after every write.** New `skills/ship/lib/verify-pr-body.sh` (→ deterministic `skills/ship/lib/pr-coherence.py`) re-fetches the live PR after any `gh pr edit` / `gh api PATCH` / `gh pr ready[/--undo]` and asserts the write took: intended substrings present, the manifest absent on a ready PR, draft state as intended. A `gh` write is its own checked statement — never piped into a filter that masks its exit code. Wired into `/flow:ship` Step 7 (both PR-CREATE and PR-OPEN paths), `/flow:ship-spike`, and `/flow:staff-review`.
+- **Coherence invariant, enforced + surfaced.** `NOT isDraft ⇒ body carries no 🚫 NOT READY TO MERGE manifest`. `/flow:ship` Step 7b asserts it as the last thing it does (fix-in-place or halt loud); `/flow:doctor` Check 2.10 asserts it against any open PR for HEAD; `/flow:land` blocks if the PR it is reconciling merged while still carrying the manifest. Pinned by `evals/run_pr_coherence_evals.py` (manifest-on-ready ⇒ FAIL; manifest-absent-on-ready ⇒ PASS; manifest-on-draft ⇒ PASS), wired into CI.
+- **Reconcile-only fast-path.** `/flow:ship` Step 7c re-renders the body + reconciles draft state from the current findings buffer — no reviewers, no doc synthesis — so when a blocker is cleared out-of-band there is a one-command, side-effect-free way to make the body honest.
+- **Breaking changes:** none.
+
+---
+
 ## v1.16.0 — 2026-07-08
 
 **Frame-integrity gate: `/flow:verify-build` now audits every captured screenshot against a fixed, must-pass checklist — so an obvious visual defect no criterion named (a broken safe-area background, a seam, clipped text) FAILs the gate instead of slipping through.**

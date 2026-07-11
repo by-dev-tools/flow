@@ -808,6 +808,17 @@ Push with `-u` if the branch isn't tracking yet.
 > ```
 > Only use the fallback when the standard `gh pr` command actually errors with the projectCards signal — don't pre-emptively route around `gh pr` on healthy repos.
 
+> **Mandatory read-back after EVERY PR-body / draft-state write (FB-0067).** A `gh` write can silently no-op — a masked exit code, a projectCards error swallowed downstream, an API hiccup — and leave the STALE body in place while the pipeline reports success. That is exactly how a ready PR ends up still carrying the `🚫 NOT READY TO MERGE` manifest. So after *any* `gh pr edit --body-file`, `gh api -X PATCH …/pulls/N -F body=@file`, `gh pr ready`, or `gh pr ready --undo`, **re-fetch the live PR and assert the write took** — never trust the write's own exit status alone. Source the shared helper and call `flow_verify_pr_write` immediately after the write:
+> ```sh
+> if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then . "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"; else . "plugins/flow/skills/ship/lib/verify-pr-body.sh"; fi
+> # ... do the write as its OWN checked statement (see the HARD RULE below) ...
+> flow_verify_pr_write "$N" --expect "## Summary" --forbid "🚫 NOT READY TO MERGE" --want-draft false \
+>   || { echo "read-back failed — the PR body on GitHub is NOT what you wrote; re-apply + re-verify, do not proceed" >&2; exit 1; }
+> ```
+> `flow_verify_pr_write` re-fetches (with the same projectCards→REST fallback above) and asserts, via `lib/pr-coherence.py`, that every `--expect` substring is present, every `--forbid` substring is absent, the draft state matches `--want-draft`, AND the body↔draft coherence invariant holds. On mismatch it fails loud — **do not report success on an unverified write.** The `exit 1` is load-bearing, not decorative: a bare `|| { echo ...; }` with no exit lets the compound command return 0 regardless of the check's outcome, so the pipeline sails through to hand-off having "reported" the failure without actually stopping for it — the exact silent-no-op class this fix exists to close, one abstraction level up. Every `flow_verify_pr_write` / `flow_assert_pr_coherent` call in this skill must end its failure block in `exit 1` (or a retry-then-`exit 1`), never a log-only echo.
+>
+> **HARD RULE — a gh write is its own checked statement; never pipe it into a filter.** `gh pr edit "$N" --body-file f | tail -1 && gh pr ready "$N"` is forbidden: the pipe makes the pipeline's exit status `tail`'s `0`, masking gh's non-zero, so a failed body write looks like it succeeded and the stale manifest survives (the original silent failure). Run the write, then read back — do not fold the two into one masked pipeline.
+
 The PR base branch is resolved via this fallback chain:
 1. `git symbolic-ref refs/remotes/origin/HEAD` (the repo's actual default branch)
 2. `flow.config.json.defaultBranch`
@@ -863,6 +874,9 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
 **Draft decision (mechanical):** if the **draft manifest** accumulated in Step 2 (and Step 7a) is non-empty, create the PR as a **draft** (`gh pr create --draft`) and pin the manifest block at the TOP of the body. An empty manifest → a normal (ready) PR. Draft status is the mechanical signal the human merge gate trusts; the manifest is the human-readable one. A not-ready PR can never *look* ready.
 
 **LOCAL-ONLY**: `gh pr create --base $BASE_BRANCH` (add `--draft` iff the manifest is non-empty) with:
+
+> **After the create, read-back-verify (FB-0067).** `gh pr create` is unaffected by the projectCards deprecation, but a create can still land a body you didn't intend (a truncated `--body-file`, a race). Re-fetch and assert before handing off: source the helper and call `flow_verify_pr_write "$N"` — with `--forbid "🚫 NOT READY TO MERGE" --want-draft false` on a **ready** PR (empty manifest), or `--expect "🚫 NOT READY TO MERGE" --want-draft true` on a **draft** PR (non-empty manifest). A mismatch means the body↔draft state on GitHub contradicts the manifest decision — fix it before Step 8, don't hand off a PR you never confirmed.
+
 - Short title (under 70 chars).
 - Body — if the draft manifest is non-empty, prepend this block before `## Summary`:
   ```markdown
@@ -1008,6 +1022,38 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
   Claude (Step 8).
 
 **PR-OPEN**: push the new commits. If the draft manifest is non-empty, ensure the PR is a draft (`gh pr ready --undo <num>` if it was marked ready) and refresh the `🚫 NOT READY TO MERGE` block; if the manifest is now empty (blockers since resolved), remove the block and `gh pr ready <num>` to mark it ready. Otherwise update the body only if the summary/test plan/Flow-run table needs to reflect the latest scope — and **re-render the `## Test plan` via `lib/render-test-plan.py`** (above), don't hand-edit it, so a re-ship after new commits reflects the fresh buffer (or correctly falls back if HEAD moved past the last verify-build run).
+
+**Every body/draft write on the PR-OPEN path is read-back-verified (FB-0067).** This path is where the recurring bug bit: the manifest scrub + `gh pr ready` is coupled to a full re-ship, and a masked write left a ready PR carrying the manifest. So each write is its own checked statement, followed by `flow_verify_pr_write` (source the helper per the § "gh resilience" read-back block above):
+- **Manifest now empty → scrub + ready:** write the manifest-free body, run `gh pr ready <num>` (with the projectCards→`markPullRequestReadyForReview` fallback if it errors), then `flow_verify_pr_write "$N" --forbid "🚫 NOT READY TO MERGE" --want-draft false`. The `--forbid` + `--want-draft false` is the exact assertion that would have caught the original silent failure.
+- **Manifest still non-empty → refresh + draft:** write the refreshed block, ensure draft, then `flow_verify_pr_write "$N" --expect "🚫 NOT READY TO MERGE" --want-draft true`.
+- **Body-only refresh (manifest unchanged):** after the edit, `flow_verify_pr_write "$N" --expect "<a stable substring you just wrote>"` so a no-op write can't pass silently.
+
+### 7b. Body↔draft coherence invariant (FB-0067 — the final gate before hand-off)
+
+After the body + draft state are settled (either path above), assert the invariant that a ready PR can never carry the NOT-READY manifest:
+
+```sh
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then . "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"; else . "plugins/flow/skills/ship/lib/verify-pr-body.sh"; fi
+N="<pr-number>"   # LOCAL-ONLY: the number gh pr create just returned; PR-OPEN: the existing number
+flow_assert_pr_coherent "$N" || {
+  echo "⚠️ [coherence] PR #$N violates the body↔draft invariant (NOT a draft, but its body still carries 🚫 NOT READY TO MERGE)." >&2
+  echo "   → Fix in place: if the draft manifest is EMPTY, scrub the block from the body and confirm; if it is NON-EMPTY, re-draft (gh pr ready --undo). Then re-run flow_assert_pr_coherent." >&2
+  exit 1
+}
+```
+
+`flow_assert_pr_coherent` re-fetches the live PR and runs `lib/pr-coherence.py coherence`. The invariant: **`NOT isDraft ⇒ body does NOT contain "🚫 NOT READY TO MERGE"`** (and its contrapositive — a non-empty manifest ⇒ the PR is a draft). **The `exit 1` above is load-bearing, not decorative** — a bare `|| { echo ...; }` with no exit lets the compound command return 0 regardless of whether the check failed, so the pipeline would silently fall through to Step 8 hand-off with an incoherent PR: exactly the class of bug this PR fixes, reproduced one abstraction level up in its own gate. On violation: apply the fix-in-place guidance above, re-run `flow_assert_pr_coherent "$N"` once, and only proceed to Step 8 once it exits 0. If it still fails after the fix attempt, the block above's `exit 1` halts the skill — do not hand off a PR you have not confirmed is coherent. This is the last thing Step 7 does — a ready-but-manifest-carrying PR is impossible to leave in that state through `/flow:ship`.
+
+### 7c. Reconcile-only fast-path (when a blocker was cleared out-of-band)
+
+The manifest lifecycle above is correct only when `/flow:ship` re-runs end-to-end. But a blocker is often cleared *outside* a ship re-run — e.g. the operator drives the sim to clear the last Unknown criterion, then wants the PR to read honestly without a full pipeline pass. **Hand-editing the PR body is the wrong path** (it is exactly the write that silently failed and produced this bug). Instead there is a side-effect-free reconcile that only re-renders the body + reconciles draft state from the *current* findings buffer — no reviewers, no `/simplify`, no doc synthesis:
+
+1. Recompute the draft manifest from the current gate state (re-read the `verifyFindingsPath` buffer, the security/a11y/skip-audit findings, and §7a's visual-deliverable check) — the same accounting Step 2 + Step 7a do, nothing more.
+2. Re-render the body (`## Test plan` via `lib/render-test-plan.py`, the `## Flow run` table from this session) and write it as a checked statement.
+3. Reconcile draft state: empty manifest → scrub + `gh pr ready`; non-empty → refresh + ensure draft.
+4. Read-back-verify (`flow_verify_pr_write`) and run the §7b coherence assert.
+
+Invoke it as a scoped `/flow:ship` (state "reconcile the PR body to current gate state — no reviewers/doc-synthesis") or fold it into `/flow:land`'s pre-merge check (below). Either way the reconcile is one command and never a hand-edit, so the silent-write path is never the way a blocker gets cleared.
 
 ## 8. Hand off
 

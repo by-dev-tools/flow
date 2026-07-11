@@ -245,7 +245,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ## 7. Push and open PR
 
-**PR-OPEN (re-ship into an existing spike PR):** push the new commits to the existing PR. If you update its body and `gh pr edit`/`gh pr ready` fails with a `GraphQL: Projects (classic) … projectCards` error (classic-projects repos on affected `gh` versions), use the **canonical `gh`-resilience fallback** — see `/flow:ship` Step 7 § "gh resilience" (REST `gh api -X PATCH …/pulls/N -F body=@file` for the body; `markPullRequestReadyForReview` / `convertPullRequestToDraft` mutations for draft state). Don't route around `gh pr` pre-emptively — only on the explicit `projectCards` error.
+**PR-OPEN (re-ship into an existing spike PR):** push the new commits to the existing PR. If you update its body and `gh pr edit`/`gh pr ready` fails with a `GraphQL: Projects (classic) … projectCards` error (classic-projects repos on affected `gh` versions), use the **canonical `gh`-resilience fallback** — see `/flow:ship` Step 7 § "gh resilience" (REST `gh api -X PATCH …/pulls/N -F body=@file` for the body; `markPullRequestReadyForReview` / `convertPullRequestToDraft` mutations for draft state). Don't route around `gh pr` pre-emptively — only on the explicit `projectCards` error. **After any body/draft write, read-back-verify (FB-0067):** source `${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh` and call `flow_verify_pr_write "$N" --expect "<a substring you just wrote>"` (run the write as its own checked statement first — never pipe it into a filter). A spike PR is not gated by the NOT-READY manifest, but the read-back still catches a silent write that never landed.
 
 **LOCAL-ONLY (new spike PR):** push with `-u` if needed. PR base from the resolved default branch:
 
@@ -294,6 +294,8 @@ See the history doc entry "Spike: <title>".
 EOF
 )"
 ```
+
+**After the create, read-back-verify (FB-0067):** same rule as the PR-OPEN path above — `gh pr create` can still land a truncated or unintended body. Note the PR number `gh pr create` returns, then source `${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh` and call `flow_verify_pr_write "$N" --expect "<a stable substring from the body just written>"` before handing off. A spike PR isn't gated by the NOT-READY manifest, so no `--want-draft`/`--forbid` assertion is needed here — the read-back exists purely to confirm the create wasn't silently truncated.
 
 `/simplify` and `/flow:staff-review` are pre-marked `skipped (spike)` — spike mode
 always skips them (workflow.md § Spike mode). Fill `/flow:verify-build` from the
