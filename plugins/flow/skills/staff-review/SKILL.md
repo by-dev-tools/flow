@@ -53,7 +53,7 @@ Skip if:
 
 Four lenses catch different classes of issue. Three ask "is this good" (engineer, UX-designer, design-engineer); the fourth asks "could this be pushed further." Running them sequentially lets each prime the next; running them in parallel keeps each independent so the findings actually triangulate. **Do not skip a lens** because a human gave a visual opinion or because another lens already ran — AI review and human opinion catch different things, and the four lenses cover distinct surfaces. The only legitimate skip is when a lens genuinely doesn't apply (e.g., backend-only change → no design-engineer surface); in that case say so explicitly rather than running an empty review.
 
-The lens prompts live in separate plugin-shipped agent files at `${CLAUDE_PLUGIN_ROOT}/agents/lens-{staff-engineer,ux-designer,design-engineer,push-further}.md`. They are invoked via the `Agent` tool with `subagent_type` matching each agent's name.
+The lens prompts live in separate plugin-shipped agent files at `${CLAUDE_PLUGIN_ROOT}/agents/lens-{staff-engineer,ux-designer,design-engineer,push-further}.md`. They are invoked via the `Agent` tool with `subagent_type` set to each agent's **plugin-namespaced** name — the `flow:` prefix is required (e.g. `flow:lens-staff-engineer`), since that's how the Agent registry lists them. The unprefixed frontmatter `name:` alone is rejected.
 
 ## 1. Detect what artefact exists
 
@@ -133,10 +133,10 @@ A single tool message with four `Agent` calls. Each call uses `subagent_type` to
 
 | Lens | `subagent_type` value | Agent file |
 |---|---|---|
-| Staff engineer | `lens-staff-engineer` | `${CLAUDE_PLUGIN_ROOT}/agents/lens-staff-engineer.md` |
-| Staff UX designer | `lens-ux-designer` | `${CLAUDE_PLUGIN_ROOT}/agents/lens-ux-designer.md` |
-| Staff design engineer | `lens-design-engineer` | `${CLAUDE_PLUGIN_ROOT}/agents/lens-design-engineer.md` |
-| Push-further | `lens-push-further` | `${CLAUDE_PLUGIN_ROOT}/agents/lens-push-further.md` |
+| Staff engineer | `flow:lens-staff-engineer` | `${CLAUDE_PLUGIN_ROOT}/agents/lens-staff-engineer.md` |
+| Staff UX designer | `flow:lens-ux-designer` | `${CLAUDE_PLUGIN_ROOT}/agents/lens-ux-designer.md` |
+| Staff design engineer | `flow:lens-design-engineer` | `${CLAUDE_PLUGIN_ROOT}/agents/lens-design-engineer.md` |
+| Push-further | `flow:lens-push-further` | `${CLAUDE_PLUGIN_ROOT}/agents/lens-push-further.md` |
 
 If `flow.config.json.reviewLenses` excludes any lens, skip its `Agent` call and note the exclusion in the reviewer notes (Section 7 below).
 
