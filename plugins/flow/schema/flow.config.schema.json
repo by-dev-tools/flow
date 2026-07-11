@@ -169,18 +169,18 @@
     },
     "flowRepoPath": {
       "type": "string",
-      "description": "Absolute path to the local flow plugin checkout — the repo /flow:contribute opens contribution PRs against (FB-0059). The lesson-harvest loop runs in any project (/flow:ship Step 4c enqueues flow-generalizable lessons to user-scope storage); the drain (/flow:contribute) must run FROM this checkout because the contribution edits + PR target the flow repo, not the project being shipped. /flow:contribute refuses to run unless `pwd` resolves to this path (a clean one-line message, never a partial run). Unset disables the contribute drain (harvest still enqueues; nothing drains until you set this and run from the checkout). Set this on the machine where you maintain flow, to the repo root that contains `.claude-plugin/marketplace.json`.",
+      "description": "Absolute path to the local flow plugin checkout — the repo /flow:contribute opens contribution PRs against (FB-0059). The lesson-harvest loop runs in any project (/flow:ship + /flow:ship-spike Step 4c enqueues flow-generalizable lessons to user-scope storage); the drain (/flow:contribute) must run FROM this checkout because the contribution edits + PR target the flow repo, not the project being shipped. /flow:contribute refuses to run unless `pwd` resolves to this path (a clean one-line message, never a partial run). Unset disables the contribute drain (harvest still enqueues; nothing drains until you set this and run from the checkout). Set this on the machine where you maintain flow, to the repo root that contains `.claude-plugin/marketplace.json`.",
       "examples": ["/Users/you/dev/flow", "/home/you/src/flow"]
     },
     "contributionsQueuePath": {
       "type": "string",
-      "description": "Storage root for the cross-project lesson-contribution queue (FB-0059). /flow:ship Step 4c enqueues flow-generalizable lessons here; /flow:contribute drains them. User-scope and cross-project by design (a lesson harvested in project A must be visible to a contribute run rooted in the flow checkout), so the default lives under ~/.claude — NOT in any project tree. Override only to relocate the queue (e.g. onto synced storage). The scripts also honor the FLOW_CONTRIB_DIR environment variable, which takes precedence and is used by the eval harness to redirect storage to a tempdir. Default: ~/.claude/plugins/data/flow/contributions.",
+      "description": "Storage root for the cross-project lesson-contribution queue (FB-0059). /flow:ship + /flow:ship-spike Step 4c enqueues flow-generalizable lessons here; /flow:contribute drains them. User-scope and cross-project by design (a lesson harvested in project A must be visible to a contribute run rooted in the flow checkout), so the default lives under ~/.claude — NOT in any project tree. Override only to relocate the queue (e.g. onto synced storage). The scripts also honor the FLOW_CONTRIB_DIR environment variable, which takes precedence and is used by the eval harness to redirect storage to a tempdir. Default: ~/.claude/plugins/data/flow/contributions.",
       "default": "~/.claude/plugins/data/flow/contributions",
       "examples": ["~/.claude/plugins/data/flow/contributions"]
     },
     "lastHarvestedPath": {
       "type": "string",
-      "description": "Path to the lesson-harvest watermark file (FB-0059) — a JSON map of session-id → record-count already harvested, so /flow:ship Step 4c only analyzes transcript turns added since the last harvest and re-shipping a branch never re-enqueues old lessons. User-scope (sits beside the queue). Default: ~/.claude/plugins/data/flow/contributions/last_harvested.json.",
+      "description": "Path to the lesson-harvest watermark file (FB-0059) — a JSON map of session-id → record-count already harvested, so /flow:ship + /flow:ship-spike Step 4c only analyzes transcript turns added since the last harvest and re-shipping a branch never re-enqueues old lessons. User-scope (sits beside the queue). Default: ~/.claude/plugins/data/flow/contributions/last_harvested.json.",
       "default": "~/.claude/plugins/data/flow/contributions/last_harvested.json",
       "examples": ["~/.claude/plugins/data/flow/contributions/last_harvested.json"]
     },

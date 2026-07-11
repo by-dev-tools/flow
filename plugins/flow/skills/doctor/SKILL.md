@@ -323,7 +323,7 @@ fi
 
 **Check 2.8 — lesson-contribution slots (`flowRepoPath` etc.) are coherent (FB-0059)**
 
-The lesson-harvest loop (`/flow:ship` Step 4c enqueues flow-generalizable lessons; `/flow:contribute` drains them into a draft PR against the flow repo). Harvest works with no config (it falls back to user-scope defaults), but the **drain** needs `flowRepoPath` set to a real flow checkout. This check verifies the slots are coherent so a misconfigured drain fails at setup, not mid-run.
+The lesson-harvest loop (`/flow:ship` + `/flow:ship-spike` Step 4c enqueues flow-generalizable lessons; `/flow:contribute` drains them into a draft PR against the flow repo). Harvest works with no config (it falls back to user-scope defaults), but the **drain** needs `flowRepoPath` set to a real flow checkout. This check verifies the slots are coherent so a misconfigured drain fails at setup, not mid-run.
 
 ```sh
 if [ ! -f flow.config.json ] || ! jq -e . flow.config.json >/dev/null 2>&1; then

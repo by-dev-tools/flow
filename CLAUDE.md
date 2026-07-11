@@ -37,7 +37,7 @@ These files are published when the plugin is installed.
 | `plugins/flow/scripts/bounding_logic.py` | User-message windowing |
 | `plugins/flow/scripts/log_disagreement.py` | Writes pushback records to user-scope storage |
 | `plugins/flow/scripts/contribution_store.py` | Lesson-contribution queue/dedup/confidence engine (FB-0059) |
-| `plugins/flow/scripts/harvest_lesson.py` | Ship Step 4c harvest: pre-scan cost gate + enqueue + watermark (FB-0059) |
+| `plugins/flow/scripts/harvest_lesson.py` | Ship + ship-spike Step 4c harvest: pre-scan cost gate + enqueue + watermark (FB-0059) |
 | `plugins/flow/scripts/sanitize_tokens.py` | Fail-closed scrub/scan of personal-project tokens before a contribution PR (FB-0059) |
 | `plugins/flow/docs/workflow.md` | Canonical 11-step loop reference (long-form) |
 | `plugins/flow/evals/` | Regression fixtures + harness for the reviewers |
