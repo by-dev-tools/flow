@@ -1,7 +1,7 @@
 ---
 name: contribute
 description: |
-  Drain the cross-project lesson-contribution queue into a draft PR against the flow plugin repo. This is the DRAIN end of the lesson-harvest loop (FB-0059): /flow:ship Step 4c enqueues flow-generalizable lessons (reviewer false-positives, gate misfires, taste calls the human overruled) to user-scope storage as you work in any project; this skill — run FROM the flow checkout — synthesizes them into proposed flow edits, sanitizes out personal-project tokens, and opens a draft PR. Never merges (human gates the merge in v1).
+  Drain the cross-project lesson-contribution queue into a draft PR against the flow plugin repo. This is the DRAIN end of the lesson-harvest loop (FB-0059): /flow:ship + /flow:ship-spike Step 4c enqueues flow-generalizable lessons (reviewer false-positives, gate misfires, taste calls the human overruled) to user-scope storage as you work in any project; this skill — run FROM the flow checkout — synthesizes them into proposed flow edits, sanitizes out personal-project tokens, and opens a draft PR. Never merges (human gates the merge in v1).
   Runs UNATTENDED by design (a flow-repo SessionStart hook and/or a local OS job invoke it; see workflow.md). You may also invoke it manually as an override. Trigger phrases: "/flow:contribute", "drain the contribution queue", "contribute lessons back to flow", "harvest lessons into a flow PR".
   Also drains the existing /flow:log-disagreement store (disputed reviewer findings → reviewer-prompt + eval-fixture proposals) — closing a loop those records were always meant for but nothing automated.
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Agent, Skill

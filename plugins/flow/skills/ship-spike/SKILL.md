@@ -225,6 +225,62 @@ The bar is identical. Spike mode is **lighter on review** (skips /simplify + /fl
 
 Do NOT synthesize user feedback to the feedback doc for spikes — the conversation density is different (less direction, more exploration). Spike-derived user preferences should wait until the follow-up feature PR confirms them.
 
+### 4c. Harvest flow-generalizable lessons → contribution queue (FB-0059)
+
+Step 4 (above) routes lessons to **this project's** surfaces (memory). Step 4c routes the *other* destination: lessons about **flow itself** (the workflow, the reviewers, the gates, transferable taste) that should become a PR back to the flow plugin. **This mirrors `/flow:ship` § 4c — same scripts, slots, and shell blocks; the consistency itself is the value** (the prose adapts for spike context, see 4c.ii). Spikes are *higher-yield* for this harvest than feature work: the agent runs with less guardrail, so gate misfires, reviewer false-positives, and taste calls the human overruled surface more often. This step is **always-run** (not gated on spike-ness — the value is workflow-type-independent); it's cheap because it reuses the same session evidence Step 4 already surfaced and only enqueues to user-scope storage that `/flow:contribute` later drains — no cross-repo action here. (Unlike the project feedback doc — which Step 4 deliberately skips for spikes because a spike's user-direction is too sparse to distill as immediate local truth — enqueuing here is safe regardless: nothing reaches flow until the human `/flow:contribute` draft-PR gate, and the queue's recurrence-counting backstops any single-source spike signal.)
+
+**Determinism boundary:** the routing + noise judgment below are *best-effort LLM work* (like the auditor/critic), backstopped by the human at the `/flow:contribute` draft-PR gate — NOT a deterministic contract. Only the `confidence` score and the prescan gate are mechanical.
+
+```sh
+# Resolve scripts (installed plugin root, else this checkout) + the storage slots.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then S="${CLAUDE_PLUGIN_ROOT}/scripts"; else S="plugins/flow/scripts"; fi
+# Honor contributionsQueuePath by EXPORTING FLOW_CONTRIB_DIR — the scripts read that env
+# var (else the user-scope default). Without this export the slot is a no-op (the queue
+# always lands in the default dir, diverging from a configured path).
+QUEUE_ROOT="$(jq -r '.contributionsQueuePath // empty' flow.config.json 2>/dev/null | sed "s#^~#$HOME#")"
+[ -n "$QUEUE_ROOT" ] && export FLOW_CONTRIB_DIR="$QUEUE_ROOT"
+MARKER="$(jq -r '.lastHarvestedPath // empty' flow.config.json 2>/dev/null | sed "s#^~#$HOME#")"
+[ -z "$MARKER" ] && MARKER="${FLOW_CONTRIB_DIR:-$HOME/.claude/plugins/data/flow/contributions}/last_harvested.json"
+```
+
+**Step 4c.i — Pre-scan cost gate (run FIRST; makes clean spikes ~free).**
+
+```sh
+python3 "$S/harvest_lesson.py" prescan --marker-file "$MARKER"   # exit 0 = signal; exit 1 = none
+```
+
+If the pre-scan exits 1 (no correction / symptom / human-overrule / endorsed-reviewer signal in the transcript since the last harvest), **STOP Step 4c here** — do not spend tokens on the analysis. Print `[analyze] pre-scan: no candidate signal — skipped` and continue to Step 5. Also skip 4c entirely on a docs-only/trivial diff (reuse the Step 1c source-file detection). Only run the analysis below when the pre-scan trips.
+
+**Step 4c.ii — Analyze + route (only if the pre-scan tripped).**
+
+Over the correction / overrule / preference signals present in your session context since the last harvest (the 4c.i pre-scan already confirmed at least one is there) — spike Step 4 is memory-only, so (unlike `/flow:ship`) there is no earlier 4a user-feedback candidate list to reuse; draw from session context directly and do NOT re-read the transcript — apply, in order:
+
+1. **Noise filter (drop first).** Drop generic "just how coding works" patterns and vague observations with no actionable rule. Apply flow's single-source protection (FB-0010/FB-0056): a lone weak signal with no recurrence does not promote. Count what you drop.
+2. **Destination test (per surviving finding).** *Rewrite the lesson with every project-specific noun removed. If it still states an actionable rule about how flow should review/gate/plan → **FLOW-GENERALIZABLE**. If it collapses to project trivia → **PROJECT-LOCAL** (already handled by Step 4 — no further action). If it does both → **BOTH**.*
+3. **Source type** (feeds the confidence weight): a symptom/bug the human corrected → `error`/`correction`; **no symptom but the human overruled an agent proposal or stated a preference → `decision`/`taste`** (the highest-value harvest — the point of this feature). Endorsed reviewer finding → `feedback`.
+
+For each FLOW-GENERALIZABLE / BOTH finding, enqueue it (the script captures the dialogue evidence window, records the origin project token, and dedups/recurrence-counts automatically):
+
+```sh
+python3 "$S/harvest_lesson.py" enqueue --marker-file "$MARKER" \
+  --pr "<this PR url or branch>" --branch "$(git rev-parse --abbrev-ref HEAD)" \
+  --source-type "taste|decision|correction|error|feedback" \
+  --artifact-kind "rule-edit|reviewer-prompt|eval-fixture|new-check|fb-entry" \
+  --summary "<one line>" --rule "<the synthesized, project-agnostic rule>" \
+  --target-hint "<flow file/section it would touch>" \
+  --evidence-strength "direct-quote|paraphrase|inferred"
+```
+
+**Step 4c.iii — Advance the watermark + report (always, even on the skip path).**
+
+```sh
+python3 "$S/harvest_lesson.py" mark --marker-file "$MARKER"
+```
+
+Print one line — `[analyze] N findings: P project-local, F flow-generalizable, D dropped (noise/low-confidence)` (or the pre-scan skip line). Never silent.
+
+**Flow-repo nudge.** If `pwd` is the flow checkout (`flow.config.json.flowRepoPath`) and the queue is non-empty, also print `[contribute] N queued contribution(s) — run /flow:contribute to open the draft PR`.
+
 ## 5. Update the project's plan doc
 
 Move the spike from "Active Work Items" to "Recently Completed" with a one-line summary including the recommendation (proceed / pivot / abandon).
@@ -329,3 +385,6 @@ Output the PR URL and the recommendation (proceed / pivot / abandon). The user m
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 5 (move to Recently Completed) |
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4 (contradiction check; not written to) |
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Step 5 (next-PR scope if proceed) |
+| `flow.config.json.lastHarvestedPath` | `~/.claude/plugins/data/flow/contributions/last_harvested.json` | Step 4c (lesson-harvest watermark; only new transcript since last harvest is analyzed) |
+| `flow.config.json.contributionsQueuePath` | `~/.claude/plugins/data/flow/contributions` | Step 4c (enqueue target) + `/flow:contribute` (drain source) |
+| `flow.config.json.flowRepoPath` | unset → `/flow:contribute` disabled | Step 4c (flow-repo nudge) + `/flow:contribute` (run-from guard + PR target) |

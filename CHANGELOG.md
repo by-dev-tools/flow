@@ -10,6 +10,17 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.19.0 — 2026-07-12
+
+**`/flow:ship-spike` now harvests flow-generalizable lessons too — the Step 4c contribution router that `/flow:ship` has had since v1.11.0 finally reaches its sibling skill.**
+
+- **The gap.** `/flow:ship-spike`'s Step 4 ran only the memory self-feedback sub-steps — it had **no** Step 4c, so a spike ship never routed lessons about *flow itself* (gate misfires, reviewer false-positives, taste calls you overruled) to the cross-project contribution queue. Spikes are the *highest-yield* source for those lessons, because the agent runs with less guardrail and surfaces more of them — so the omission dropped exactly the signal worth keeping.
+- **The fix.** Added Step 4c to `/flow:ship-spike`, a faithful mirror of `/flow:ship` § 4c: the same pre-scan cost gate (`harvest_lesson.py prescan` — a clean spike stays ~free), the same noise/destination/source-type router, the same `enqueue` to `contributionsQueuePath`, the same watermark advance. `/flow:contribute` drains the queue into a draft PR later, unchanged.
+- **Always-run, by design.** The harvest is not gated on spike-ness — the value is workflow-type-independent, and the pre-scan keeps it cheap when there's nothing to harvest.
+- **No new surface.** No new config slots (reuses the three v1.11.0 harvest slots), no script changes, no schema change — a prompt-doc addition to one skill, kept contract-consistent (identical scripts, slots, and shell blocks) with its `/flow:ship` sibling per the FB-0010 fan-out discipline.
+
+**Breaking changes:** none.
+
 ## v1.18.0 — 2026-07-12
 
 **The plan reviewers can now review a plan _document_ on disk, and a deterministic lint flags Spec-walk checkboxes that name no verification (FB-0068).**
