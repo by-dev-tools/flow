@@ -10,6 +10,19 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.18.0 — 2026-07-12
+
+**The plan reviewers can now review a plan _document_ on disk, and a deterministic lint flags Spec-walk checkboxes that name no verification (FB-0068).**
+
+- **`/flow:critique-plan <path>` / `/flow:audit-plan <path>`.** Pass a path to review a queued plan document (e.g. a `plans/*.md` file) instead of the session's most recent plan. Without an argument, behavior is unchanged. Under the hood, `extract_session.py` gains `--plan-file`: plan-mode only, a cwd-scoped path guard (rejected outside cwd unless `--allow-external-paths`, mirroring reference docs), fatal on a missing/empty plan (the plan is the review subject, not optional context). Session context becomes best-effort — with no transcript, the render carries a loud standalone-review note and artifact read-status shows **UNKNOWN, never UNREAD**, so a merely-absent transcript can't produce false unverified-recall findings.
+- **Pinning lint.** `/flow:critique-plan` now appends a deterministic report (`skills/critique-plan/lib/walk-pin-lint.py`, reusing the shared `walk_extract` parser) of Spec-walk checkboxes that name no test or verification artifact. It is **advisory** — the plan-critic assigns severity only where a reference doc requires a pinning test, and the two-citation rule still binds. Absent such a rule, the lint is informational.
+- **Why.** Both gaps surfaced while dogfooding a large set of queued plan documents in a consumer project where the plugin was not installed; the reviewer prompts were applied by reference, not dispatched. The `--plan-file` gap is invocation-independent (the preprocessing had no plan-file input regardless of install state); the pinning gap was the single largest class of thin plans the review found.
+- New `run_plan_file_evals.py` + `run_pin_lint_evals.py`, wired into CI.
+
+Breaking changes: none.
+
+---
+
 ## v1.17.0 — 2026-07-08
 
 **A PR marked ready can no longer keep the `🚫 NOT READY TO MERGE` manifest at the top of its body. Every PR-body / draft-state write is now read-back-verified, and a body↔draft coherence invariant is enforced at ship and surfaced by doctor + land (FB-0067, SAFETY).**

@@ -1,6 +1,6 @@
 ---
 name: audit-plan
-description: Audit the most recent plan for unverified assumptions and unverified recall. Use after Claude produces a plan, before accepting or executing it.
+description: Audit the most recent plan for unverified assumptions and unverified recall. Use after Claude produces a plan, before accepting or executing it. Optionally pass a plan-file path argument (e.g. /flow:audit-plan path/to/plan.md) to audit a queued plan document instead of the session's most recent plan.
 disable-model-invocation: false
 context: fork
 agent: auditor
@@ -10,7 +10,11 @@ agent: auditor
 
 ## Session context (preprocessed)
 
-!`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan`
+!`if [ -n "$ARGUMENTS" ]; then python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file "$ARGUMENTS"; else python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan; fi`
+
+## Plan source
+
+Invoked with an argument (`/flow:audit-plan <path>`), the context above reviews that plan **document** (headed `## Plan under review (from file: <path>)`) and session context is best-effort. If the `## Session context` note says no transcript was found, artifact read-status is UNKNOWN — do not flag unverified recall solely from the absence of session evidence; a standalone plan-document review legitimately has none.
 
 ## What to check
 

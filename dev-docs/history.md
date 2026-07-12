@@ -39,6 +39,37 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### SAFETY: Plan reviewers can review a plan document on disk (`--plan-file`) + a deterministic Spec-walk pinning lint (v1.18.0, FB-0068)
+**Date:** 2026-07-12
+**Branch:** `claude/health-tracker-roadmap-plans-oo9nog` (final SHA in the PR)
+
+**What was done.** Two additive capabilities for the plan reviewers, both surfaced by dogfooding:
+
+1. **`--plan-file` for `extract_session.py`** — `/flow:critique-plan <path>` and `/flow:audit-plan <path>` now accept an optional plan-document path; the reviewer critiques/audits that file instead of "the most recent plan" extracted from the session transcript. Plan-mode only (a loud usage error under `--mode completion`); the path resolves under cwd unless `--allow-external-paths` (the exact reference-doc trust boundary); a missing/empty plan file is fatal (nonzero), unlike a missing reference doc which is skip-and-continue — the plan file is the review *subject*. When no session transcript is discoverable, the render degrades to a standalone review: a loud `⚠️` stderr warning + an in-context note, the session-dependent sections rendered as explicit unavailability, and artifact read-status rendered `UNKNOWN` (never `UNREAD`).
+2. **Deterministic Spec-walk pinning lint** — `skills/critique-plan/lib/walk-pin-lint.py` reports Spec-walk checkboxes that name no pinning test (`testFoo` / backticked) or verification artifact (a `→`/`pinned by`/`verify:` marker followed by grep/frame/on-sim/screenshot/doc-diff/report/…). Wired into the `/flow:critique-plan` preamble as a `## Pinning lint (deterministic)` section; the SKILL instructs the critic to treat an `UNPINNED` line as a candidate Internal-incoherence finding **only where a reference doc requires a pinning test**, two-citation rule intact.
+
+New `run_plan_file_evals.py` (21 checks) + `run_pin_lint_evals.py` (24 checks), both wired into CI.
+
+**Why.** Dogfooding a consumer project produced a directory of ~8 queued plan documents that needed the plan reviewers, but the reviewers can only see "the most recent plan" in the live session transcript — there was no way to point them at a plan *file*. Separately, the largest defect class in those plans was Spec-walk checkboxes naming no verification ("X works correctly" — verified by what?), which none of the plan-critic's three categories mechanically catches.
+
+**Provenance (important, and reflected in the PR + FB-0068).** This dogfooding happened in a **cloud workspace where the flow plugin was NOT installed** — the `auditor` / `plan-critic` prompts were applied *by reference* (read from the repo, run via generic subagents), not dispatched through `/flow:*`. That does not weaken the `--plan-file` finding: the limitation is **invocation-independent** — the preprocessing has no plan-file input even with the plugin installed. No claim anywhere in this change implies the skills themselves were run or misbehaved.
+
+**Design decisions.**
+- **`UNKNOWN` vs `UNREAD` for artifact status on a transcript-less review.** The auditor's "unverified recall" category keys off whether a referenced artifact was read this session. With no transcript, "was it read?" is unanswerable, not "no." Rendering `UNKNOWN` (plus an explicit note that absence-of-transcript is a property of the invocation, not a finding) prevents the auditor from minting false unverified-recall flags on every artifact a standalone plan references. This is the one genuinely safety-relevant choice — it's why the entry carries `SAFETY`.
+- **Lint is advisory, not a new reviewer category.** Flow's "narrow scope beats wide scope" principle caps the plan-critic at three categories. A deterministic engine feeding the critic (the established `skip-audit-checks.py` / `pr-coherence.py` pattern) mechanizes the pinning check without widening the subjective category set; the critic still owns severity, gated on the project's own documented rule.
+- **Reuse `walk_extract`, don't re-parse.** The lint imports `heading_re` / `CHECKBOX_RE` / `is_terminator` from `skills/verify-build/lib/walk_extract.py` so "what counts as a Spec-walk block" has one source of truth (cross-skill lib reuse precedent: `visual-significance.py`, `pr-coherence.py`). One deliberate divergence: `walk_extract.extract_block` scopes to the *first* block (the active-PR convention in a living `plan.md`); the lint walks *all* blocks, because a standalone plan document may legitimately carry several — and says so.
+
+**Technical decisions.**
+- **`$ARGUMENTS` passthrough** in both SKILL.md preambles follows the established Claude Code substitution; an empty argument takes the exact prior code path (byte-equivalent), so the no-arg behavior is untouched.
+- **Fail-open lint guard.** The critique-plan preamble degrades to a loud `⚠️ Pinning lint unavailable … treat pinning as UNCHECKED, not clean` if `python3` or the lib is missing — never a silent skip (FB-0010 discipline).
+- **`_user_turn_record_index` extracted verbatim** from `run()` so the `--plan-file` path reuses the transcript-to-record mapping without duplicating it; the extraction is behavior-identical (the old inline block was deleted, the call substituted).
+
+**Tradeoffs.**
+- **Lint heuristics vs. a parser.** The pin detector is regex heuristics (test-id shapes + marker→artifact), which can false-negative (an unusual pin phrasing reads as unpinned) or false-positive (the word "report" in prose). Chosen deliberately: the lint is advisory and the critic re-reads with judgment, so a heuristic that's cheap and deterministic beats a brittle grammar. The alternative (an LLM "is this pinned?" pass) would reintroduce the subjectivity the deterministic-engine pattern exists to avoid.
+- **Standalone review is genuinely weaker.** Without a transcript, the auditor loses the user-request and tool-call evidence its categories lean on. Rather than block that path, the render makes the degradation loud and explicit — a reviewed queued plan is better than an un-reviewed one, and the plan-approval gate is still the enforcement.
+
+**Lessons learned.** A capability gap can be invocation-independent even when it's discovered through an unusual invocation path — the honest framing (prompts applied by reference, plugin not installed) matters for the feedback record but doesn't change that `--plan-file` was missing regardless. And: a plan can be strong on governance (decision flags, verdicts) yet thin on execution specificity; the pinning lint mechanizes the one check that most reliably catches the latter.
+
 ### SAFETY: PR body↔draft coherence + read-back-verify — a ready PR can no longer keep the NOT-READY manifest (v1.17.0, FB-0067)
 **Date:** 2026-07-08
 **Branch:** `claude/flamboyant-stonebraker-36ef32` (final SHA in the PR)
