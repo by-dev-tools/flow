@@ -61,13 +61,13 @@ Update or create a single work item in the plan doc under **Active Work Items**,
 
 **Files touched:** [anticipated paths]
 
-**Visual-walk** *(UI changes only — when `flow.config.json.uiSurface` is true AND the diff touches UI; omit for non-UI changes, and for spike/tiny modes):*
+**Visual-walk** *(UI changes only — when `flow.config.json.uiSurface` is true AND the diff touches UI; omit for non-UI changes and for `tiny` mode. Omit for a non-visual `spike`, but KEEP for a visual/interaction `spike` so `/flow:verify-build` §5a captures frames + renders the walkthrough — see § "Spike mode"):*
 - [ ] [state: empty / loading / error renders correctly — not a blank panel]
 - [ ] [token / motion: uses design-language tokens, not hardcoded values; enter motion ≤ Y ms]
 - [ ] [interaction / a11y: focus moves into overlays + Esc closes them, keyboard reaches every control — against `flow.config.json.designLanguagePath`]
 ```
 
-For `mode: spike`: replace "Spec-walk checkboxes" with a single "Research question" line and replace "Confidence verdict" with "Disposability"; omit "Visual-walk." See `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` § "Spike mode" for the full shape.
+For `mode: spike`: replace "Spec-walk checkboxes" with a single "Research question" line and replace "Confidence verdict" with "Disposability". Omit "Visual-walk" for a non-visual spike — but a **visual/interaction spike** should KEEP it, so `/flow:verify-build` §5a captures frames + renders the ephemeral walkthrough (a visual spike without one gives §5a no declared states to capture, so the walkthrough isn't produced). See `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` § "Spike mode" for the full shape.
 
 For `mode: tiny`: skip "Spec-walk checkboxes" + "Confidence verdict" + "Visual-walk" entirely but still name the file + the one-line change.
 

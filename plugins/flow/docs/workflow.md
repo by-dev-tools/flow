@@ -118,7 +118,7 @@ Write the plan to the configured plan doc under "Active Work Items". The plan **
 - **Confidence verdict per load-bearing assumption** — see § "Confidence gates" below.
 - **Risks / open questions** — failure modes, files at risk, tradeoffs being made.
 - **Files touched** — anticipated paths.
-- **Visual-walk** *(UI changes only — gated on `flow.config.json.uiSurface` AND the diff actually touching UI; N/A under spike/tiny)* — declared visual/UX acceptance criteria, parallel to Spec-walk: each a checkable assertion naming a user-perceptible visual state and how it's checked. Cover static state, token/motion, AND interaction/a11y, not just the happy-path look (e.g. "empty/loading/error state renders correctly"; "primary button uses the accent token, not a hardcoded hex"; "enter motion ≤ 200ms"; "opening the dialog moves focus into it and Esc closes it"; "the submit control shows a loading state and is disabled while the request is in flight"), written against the design-language doc (`flow.config.json.designLanguagePath`). These are the **declared visual criteria** the agent dials in against at Step 8/9 and the human signs off on at the merge gate. Declaration only today — mechanical verification is a later link in the Deliverable-quality roadmap track.
+- **Visual-walk** *(UI changes only — gated on `flow.config.json.uiSurface` AND the diff actually touching UI; N/A under tiny and non-visual spikes, but a **visual/interaction spike** should declare one so `/flow:verify-build` §5a captures frames + renders the walkthrough — see § "Spike mode")* — declared visual/UX acceptance criteria, parallel to Spec-walk: each a checkable assertion naming a user-perceptible visual state and how it's checked. Cover static state, token/motion, AND interaction/a11y, not just the happy-path look (e.g. "empty/loading/error state renders correctly"; "primary button uses the accent token, not a hardcoded hex"; "enter motion ≤ 200ms"; "opening the dialog moves focus into it and Esc closes it"; "the submit control shows a loading state and is disabled while the request is in flight"), written against the design-language doc (`flow.config.json.designLanguagePath`). These are the **declared visual criteria** the agent dials in against at Step 8/9 and the human signs off on at the merge gate. Declaration only today — mechanical verification is a later link in the Deliverable-quality roadmap track.
 
 ### After drafting, run `/flow:critique-plan`
 
@@ -391,6 +391,10 @@ Lightweight terminal pipeline:
 2. Commit doc + code.
 3. Push.
 4. Open PR with `spike` label. PR body must include the research question + the answer, plus a **trimmed `## Flow run` table** (fewer rows than `/flow:ship`; /simplify + /flow:staff-review pre-marked `skipped (spike)`). The user merges or closes — Claude does not.
+
+### Visual/interaction spikes — declare a `Visual-walk` block
+
+A spike that prototypes a *visual or interaction* surface should declare a **`Visual-walk`** block in its plan (the states to capture), even though spike mode skips the heavy reviews. `/flow:verify-build` §5a activates on `flow.config.json.uiSurface:true` **AND** a `Visual-walk` block — independent of spike mode — so a spike plan with only a spike/Spec-walk body (no `Visual-walk`) gives §5a no declared states to capture, and the visual walkthrough isn't produced. With the block present, the spike-mode run captures frames + renders the ephemeral HTML walkthrough at `verifyReportPath`, which is the deliverable a visual spike hands back. And **invoke `/flow:verify-build`** (per `/flow:ship-spike` Step 2) — don't shortcut the behavioral check by driving the sim / `simctl` directly, which skips the Step-10 render. Non-visual spikes declare no `Visual-walk` block and stay fast — no capture.
 
 ### Spike-mode abuse prevention
 
