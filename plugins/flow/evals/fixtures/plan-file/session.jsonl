@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":"Please write a plan for adding exponential backoff to the sync retry queue, and make sure every requirement is pinned by a named test."}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Here's the plan:\n1. Add a BackoffPolicy type.\n2. Wire it into the dequeue loop.\n3. Surface a retry status line."}]}}

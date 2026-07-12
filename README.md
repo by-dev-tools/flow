@@ -15,8 +15,8 @@ The workflow is a progression of skills held together by two human gates. The sk
 | Step | What it does |
 |---|---|
 | **Clarify & plan** | Claude reads your source-of-truth docs, asks 2–4 questions, and writes a plan: a checkbox per requirement, a confidence rating per assumption. |
-| ↳ `/flow:critique-plan` | Checks the plan for scope drift, spec violations, and internal incoherence against your request and reference docs. |
-| ↳ `/flow:audit-plan` | Checks the plan for unverified assumptions and recall ("we ruled this out" with no fresh read). |
+| ↳ `/flow:critique-plan` | Checks the plan for scope drift, spec violations, and internal incoherence against your request and reference docs. A deterministic pinning lint also flags any Spec-walk checkbox that names no test or verification artifact. Pass a path (`/flow:critique-plan path/to/plan.md`) to review a queued plan **document** instead of the session's most recent plan. |
+| ↳ `/flow:audit-plan` | Checks the plan for unverified assumptions and recall ("we ruled this out" with no fresh read). Takes the same optional plan-file path argument. |
 | **Gate 1 · you approve the plan** | Nothing is built until you do. A low-confidence assumption forces a question here first. |
 | **Execute** | Claude builds against the checkboxes, runs preflight (typecheck / build / test), and commits per phase. Pauses only if preflight is red. |
 | ↳ `/simplify` | Cold-reads the diff for duplication, dead code, and footguns; fixes in place. *(Built into Claude Code.)* |

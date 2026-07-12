@@ -4,6 +4,11 @@
 Invoked from a SKILL.md via:
     !`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan`
     !`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode completion`
+    !`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file <path>`
+
+`--plan-file` (plan mode only) reviews an explicit plan DOCUMENT (e.g. a queued
+plan under a consumer's plans directory) instead of extracting the most recent
+plan from the session transcript; session context then becomes best-effort.
 
 stdout is substituted into the SKILL.md body before dispatch to the
 auditor subagent. Output must be plain-text labeled sections matching the
@@ -470,6 +475,70 @@ def render_reference_section(docs: list[tuple[str, str]]) -> str:
     return "\n".join(parts) + "\n"
 
 
+# ---------------------------------------------------------------- plan file
+
+
+def load_plan_file(plan_file: str, allow_external_paths: bool = False) -> tuple[str, str]:
+    """Resolve and read an explicit plan document for --plan-file mode.
+
+    Path safety mirrors gather_reference_docs exactly (same trust boundary: a
+    skill argument is caller-influenced input): the resolved path MUST be under
+    CWD unless allow_external_paths is set. Unlike reference docs — optional
+    context, where a bad path is skip-and-continue — the plan file is the
+    review SUBJECT, so every failure here is a loud stderr error + nonzero
+    exit, never a silent skip or an empty render.
+
+    Returns (display_path, text).
+    """
+    cwd = Path.cwd().resolve()
+    raw = Path(plan_file).expanduser()
+    candidate = raw if raw.is_absolute() else (cwd / raw)
+    try:
+        resolved = candidate.resolve()
+    except (OSError, RuntimeError) as e:
+        sys.stderr.write(
+            f"extract_session: ⚠️ cannot resolve --plan-file {plan_file!r}: {e}\n"
+        )
+        raise SystemExit(1)
+    if not allow_external_paths:
+        try:
+            resolved.relative_to(cwd)
+        except ValueError:
+            sys.stderr.write(
+                f"extract_session: ⚠️ rejecting --plan-file outside cwd: {resolved}\n"
+                f"  cwd={cwd}\n"
+                f"  pass --allow-external-paths if this is intentional.\n"
+            )
+            raise SystemExit(1)
+    if not resolved.is_file():
+        sys.stderr.write(f"extract_session: ⚠️ --plan-file not found: {resolved}\n")
+        raise SystemExit(1)
+    try:
+        text = resolved.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        sys.stderr.write(
+            f"extract_session: ⚠️ could not read --plan-file {resolved}: {e}\n"
+        )
+        raise SystemExit(1)
+    if not text.strip():
+        sys.stderr.write(f"extract_session: ⚠️ --plan-file is empty: {resolved}\n")
+        raise SystemExit(1)
+    try:
+        display = str(resolved.relative_to(cwd))
+    except ValueError:
+        display = str(resolved)
+    return display, text
+
+
+NO_SESSION_NOTE = (
+    "⚠️ No session transcript was found for this working directory. This is a "
+    "standalone plan-document review: the plan file (and any reference documents "
+    "above) are the only evidence available. Session-dependent sections — user "
+    "request, tool-call history, artifact read-status — are unavailable; their "
+    "absence is a property of the invocation, not a finding."
+)
+
+
 # ---------------------------------------------------------------- mode detect
 
 
@@ -532,6 +601,64 @@ def render_plan_context(plan_text: str, user_request: str,
     )
 
 
+def render_plan_file_context(
+    display_path: str,
+    plan_text: str,
+    user_request: str,
+    tool_calls: list[dict],
+    artifact_paths: list[str],
+    session_note: str | None,
+) -> str:
+    """Rendered context when the plan comes from --plan-file.
+
+    Keeps the section shape the plan reviewers expect (plan / user request /
+    tool calls / artifacts), with the plan heading labeled with its source
+    file. When no session transcript was found (session_note set), the
+    session-dependent sections degrade to explicit unavailability notes rather
+    than disappearing — and artifact read-status is rendered UNKNOWN instead
+    of UNREAD, so the auditor doesn't mint false unverified-recall findings
+    from a merely-absent transcript.
+    """
+    parts = [
+        f"## Plan under review (from file: {display_path})",
+        plan_text.strip(),
+        "",
+    ]
+    if session_note is None:
+        parts += [
+            "## User request",
+            user_request.strip() or "(no user request found in session)",
+            "",
+            "## Tool call history",
+            render_tool_call_history(tool_calls),
+            "",
+            "## Referenced artifacts",
+            render_artifacts(artifact_paths, tool_calls),
+        ]
+    else:
+        artifact_lines = (
+            "\n".join(
+                f"- {p} - UNKNOWN (no session transcript)" for p in artifact_paths
+            )
+            if artifact_paths
+            else "- (none detected)"
+        )
+        parts += [
+            "## Session context",
+            session_note,
+            "",
+            "## User request",
+            "(unavailable — no session transcript found; standalone plan review)",
+            "",
+            "## Tool call history",
+            "- (unavailable — no session transcript found)",
+            "",
+            "## Referenced artifacts",
+            artifact_lines,
+        ]
+    return "\n".join(parts) + "\n"
+
+
 def render_completion_context(completion_text: str, user_request: str,
                               tool_calls: list[dict], artifact_paths: list[str]) -> str:
     return (
@@ -549,13 +676,112 @@ def render_completion_context(completion_text: str, user_request: str,
 # ---------------------------------------------------------------- main
 
 
+def _user_turn_record_index(records: list[dict], turns: list[Turn],
+                            bounding_idx: int) -> int:
+    """Map a bounding turn index (in normalized turns) back to its raw record
+    index so tool-call extraction starts at the right record. Extracted
+    verbatim from run() (behavior-identical) so the --plan-file path reuses it;
+    mirrors the normalize_turns skip rules (sidechain and tool_result-only user
+    records don't count)."""
+    bounding_record_idx = 0
+    seen_users = 0
+    target_users = sum(1 for t in turns[:bounding_idx + 1] if t.role == "user")
+    if target_users:
+        for ridx, r in enumerate(records):
+            if r.get("type") == "user" and not r.get("isSidechain"):
+                msg = r.get("message") or {}
+                inner = msg.get("content")
+                if isinstance(inner, list) and all(
+                    isinstance(b, dict) and b.get("type") == "tool_result"
+                    for b in inner
+                ):
+                    continue
+                seen_users += 1
+                if seen_users == target_users:
+                    bounding_record_idx = ridx
+                    break
+    return bounding_record_idx
+
+
+def _run_with_plan_file(
+    plan_file: str,
+    session_file: str | None,
+    reference_paths: list[str] | None,
+    reference_globs: list[str] | None,
+    allow_external_paths: bool,
+) -> str:
+    """--plan-file variant of run(): the plan under review comes from an
+    explicit document, so session-transcript extraction is BEST-EFFORT — a
+    missing transcript downgrades to a loud stderr warning + an explicit
+    in-context note (a standalone review of a queued plan document is a
+    legitimate invocation), instead of the emit_cannot_audit hard stop the
+    transcript-extraction path correctly keeps. A missing/unreadable plan
+    file, by contrast, is fatal (load_plan_file exits nonzero)."""
+    display, plan_text = load_plan_file(plan_file, allow_external_paths)
+
+    user_request = ""
+    tool_calls: list[dict] = []
+    session_note: str | None = None
+    session_path = find_session_file(session_file)
+    if session_path is None:
+        session_note = NO_SESSION_NOTE
+        sys.stderr.write(
+            "extract_session: ⚠️ no session transcript found; rendering a "
+            "standalone plan review (plan file + reference docs only).\n"
+        )
+    else:
+        records = load_session(session_path)
+        turns = normalize_turns(records)
+        if not turns:
+            session_note = NO_SESSION_NOTE
+            sys.stderr.write(
+                f"extract_session: ⚠️ session transcript at {session_path} has "
+                "no usable turns; rendering a standalone plan review.\n"
+            )
+        else:
+            bounding_idx = find_bounding_message(turns)
+            user_request = turns[bounding_idx].content or ""
+            bounding_record_idx = _user_turn_record_index(records, turns, bounding_idx)
+            tool_calls = extract_tool_calls(records, bounding_record_idx)
+
+    ref_docs: list[tuple[str, str]] = []
+    if reference_paths or reference_globs:
+        ref_docs = gather_reference_docs(
+            reference_paths or [],
+            reference_globs or [],
+            DEFAULT_REFERENCE_SKIP_NAMES,
+            allow_external_paths=allow_external_paths,
+        )
+    ref_section = render_reference_section(ref_docs)
+
+    artifacts = find_referenced_artifacts(plan_text)
+    body = render_plan_file_context(
+        display, plan_text, user_request, tool_calls, artifacts, session_note
+    )
+    return ref_section + body
+
+
 def run(
     mode: str,
     session_file: str | None = None,
     reference_paths: list[str] | None = None,
     reference_globs: list[str] | None = None,
     allow_external_paths: bool = False,
+    plan_file: str | None = None,
 ) -> str:
+    if plan_file:
+        # main() already rejects --plan-file outside plan mode with a clearer
+        # message; this re-assertion keeps importers from bypassing the gate.
+        if mode != "plan":
+            sys.stderr.write(
+                "extract_session: ⚠️ plan_file is only valid in plan mode.\n"
+            )
+            raise SystemExit(2)
+        return _run_with_plan_file(
+            plan_file, session_file, reference_paths, reference_globs,
+            allow_external_paths,
+        )
+
     session_path = find_session_file(session_file)
     if session_path is None:
         if session_file:
@@ -620,23 +846,7 @@ def run(
     bounding_idx = find_bounding_message(turns[:last_assistant_idx])
     user_request = turns[bounding_idx].content if turns else ""
 
-    bounding_record_idx = 0
-    seen_users = 0
-    target_users = sum(1 for t in turns[:bounding_idx + 1] if t.role == "user")
-    if target_users:
-        for ridx, r in enumerate(records):
-            if r.get("type") == "user" and not r.get("isSidechain"):
-                msg = r.get("message") or {}
-                inner = msg.get("content")
-                if isinstance(inner, list) and all(
-                    isinstance(b, dict) and b.get("type") == "tool_result"
-                    for b in inner
-                ):
-                    continue
-                seen_users += 1
-                if seen_users == target_users:
-                    bounding_record_idx = ridx
-                    break
+    bounding_record_idx = _user_turn_record_index(records, turns, bounding_idx)
 
     tool_calls = extract_tool_calls(records, bounding_record_idx)
 
@@ -684,7 +894,21 @@ def main() -> int:
         "Use only when the caller explicitly owns the trust boundary (e.g., eval harness loading "
         "fixtures outside the working tree).",
     )
+    ap.add_argument(
+        "--plan-file",
+        default=None,
+        help="path to a plan DOCUMENT to review instead of extracting the most recent "
+        "plan from the session transcript (plan mode only). Must resolve under cwd "
+        "unless --allow-external-paths. Session context becomes best-effort.",
+    )
     args = ap.parse_args()
+    if args.plan_file and args.mode != "plan":
+        sys.stderr.write(
+            "extract_session: ⚠️ --plan-file is only valid with --mode plan — a "
+            "completion audit reviews the session's completion claim, not a plan "
+            "document. Did you mean --mode plan?\n"
+        )
+        return 2
     ref_paths = [p.strip() for p in args.reference_paths.split(",") if p.strip()]
     sys.stdout.write(run(
         args.mode,
@@ -692,6 +916,7 @@ def main() -> int:
         ref_paths,
         args.reference_glob,
         allow_external_paths=args.allow_external_paths,
+        plan_file=args.plan_file,
     ))
     return 0
 
