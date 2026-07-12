@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -113,13 +114,31 @@ def test_usage_error() -> None:
 
 
 def test_missing_file() -> None:
+    # A path UNDER cwd that doesn't exist hits the read-error branch (nonzero).
     proc = subprocess.run(
-        [sys.executable, str(LINT), "/nonexistent/plan.md"],
+        [sys.executable, str(LINT), "no-such-plan-xyz.md"],
         capture_output=True,
         text=True,
     )
     check("missing-exit", proc.returncode == 1, f"exit {proc.returncode}")
-    check("missing-loud", "⚠️" in proc.stderr, proc.stderr)
+    check("missing-loud", "⚠️" in proc.stderr and "cannot read" in proc.stderr, proc.stderr)
+
+
+def test_external_path_rejected() -> None:
+    # An out-of-cwd path is rejected by the containment guard (mirrors
+    # load_plan_file), since the lint report feeds the reviewer prompt.
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
+        fh.write("**Spec-walk:**\n- [ ] unpinned\n")
+        outside = fh.name  # /tmp/... — outside the repo cwd
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(LINT), outside],
+            capture_output=True, text=True, cwd=str(HERE.parent.parent.parent),
+        )
+        check("external-exit", proc.returncode == 1, f"exit {proc.returncode}")
+        check("external-loud", "rejecting plan file outside cwd" in proc.stderr, proc.stderr)
+    finally:
+        Path(outside).unlink(missing_ok=True)
 
 
 def main() -> int:
@@ -131,6 +150,7 @@ def main() -> int:
         test_multi_blocks,
         test_usage_error,
         test_missing_file,
+        test_external_path_rejected,
     ]:
         fn()
 

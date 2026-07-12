@@ -10,7 +10,10 @@ engine feeding the plan-critic, not a new reviewer category: the lint reports,
 the critic assigns severity (and only where the project's own reference docs
 require pinning — see the skill instructions).
 
-Input: plan text on stdin, or a file path as the single argument.
+Input: plan text on stdin, or a file path as the single argument. A path
+argument is cwd-containment-guarded (out-of-cwd reads rejected, mirroring
+extract_session.load_plan_file — the report feeds the reviewer prompt); stdin is
+unguarded by design (the caller owns that trust boundary).
 
 Block parsing REUSES the shared parser primitives in
 `skills/verify-build/lib/walk_extract.py` (heading_re / CHECKBOX_RE /
@@ -110,6 +113,38 @@ def collect_spec_walk_blocks(text: str) -> list[tuple[str, list[str]]]:
     return blocks
 
 
+def _read_plan_arg(path_str: str) -> str:
+    """Read a plan file named as the CLI argument, with the same cwd-containment
+    guard load_plan_file (extract_session.py) enforces — the lint's report feeds
+    the reviewer subagent's prompt, so an out-of-cwd path is a host-file read into
+    that context. `resolve()` canonicalizes symlinks + `..` BEFORE the
+    relative_to check, so a symlink under cwd pointing outside is still rejected.
+    Out-of-cwd → loud stderr + nonzero exit, never read. (stdin is intentionally
+    unguarded: the caller — e.g. extract_session, itself guarded — owns that
+    trust boundary; pipe text in for a deliberate out-of-tree lint.)"""
+    cwd = Path.cwd().resolve()
+    raw = Path(path_str).expanduser()
+    candidate = raw if raw.is_absolute() else (cwd / raw)
+    try:
+        resolved = candidate.resolve()
+    except (OSError, RuntimeError) as e:
+        sys.stderr.write(f"walk-pin-lint: ⚠️ cannot resolve plan file {path_str!r}: {e}\n")
+        raise SystemExit(1)
+    try:
+        resolved.relative_to(cwd)
+    except ValueError:
+        sys.stderr.write(
+            f"walk-pin-lint: ⚠️ rejecting plan file outside cwd: {resolved}\n"
+            f"  (pipe the text on stdin if an out-of-tree lint is intentional.)\n"
+        )
+        raise SystemExit(1)
+    try:
+        return resolved.read_text(encoding="utf-8")
+    except OSError as e:
+        sys.stderr.write(f"walk-pin-lint: ⚠️ cannot read plan file {resolved}: {e}\n")
+        raise SystemExit(1)
+
+
 def main(argv: list[str]) -> int:
     if len(argv) > 2:
         sys.stderr.write(
@@ -117,11 +152,7 @@ def main(argv: list[str]) -> int:
         )
         return 2
     if len(argv) == 2:
-        try:
-            text = Path(argv[1]).read_text(encoding="utf-8")
-        except OSError as e:
-            sys.stderr.write(f"walk-pin-lint: ⚠️ cannot read plan file {argv[1]}: {e}\n")
-            return 1
+        text = _read_plan_arg(argv[1])
     else:
         text = sys.stdin.read()
 
