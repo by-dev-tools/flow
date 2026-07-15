@@ -51,7 +51,7 @@ if [ -z "$FILES" ]; then
 else
   echo "Behavior-bearing files changed: $(printf '%s' "$FILES" | tr '\n' ' ')"
   echo "----- diff -----"
-  # Iterate one path per line via while-read (NOT \`git diff -- $FILES\`): an unquoted
+  # Iterate one path per line via while-read (NOT "git diff -- $FILES"): an unquoted
   # newline-joined var does NOT word-split under zsh, so the multi-path form silently
   # diffs nothing there — and quoting "$f" also handles paths with spaces. Capture
   # first so we can detect truncation rather than silently swallowing behavior past
