@@ -10,6 +10,18 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.20.0 — 2026-07-15
+
+**The verify-build walkthrough's annotation layer now pins a note to _any_ element on the page — not just a captured screenshot (FB-0071).**
+
+- **Pin anything.** The click-to-pin overlay (v1.7.0) could only anchor to a screenshot, keyed to an `x%/y%` coordinate inside one `<img>`. Now you press **Pin**, hover to pick the exact element under the cursor (a DevTools-style outline snaps to it), and press **↑/↓** to widen to the parent or narrow back to a child — then click or **↵** to drop the pin and type a note. A paragraph, a table cell, a verdict card, or an "open question for you" are all annotatable.
+- **Pins survive regeneration.** The report is regenerated every iteration, so pins are keyed to a **stable element identity** (an author `data-pin-id`, else nearest heading + tag + role + a short text sample) — never DOM position — and re-anchor on reload. A note whose element genuinely vanished isn't lost: it stays as a dashed "unanchored" pin and is still exported, flagged.
+- **Located, legible export.** "Copy notes" now emits a **location descriptor** per note (`## <section>` → `at <element> "<text>"`) instead of raw coordinates, grouped by section in reading order — so the agent gets "the totals row's Protein cell" rather than "x=46% y=31%".
+- **Reusable, not welded to one renderer.** The layer is one self-contained, dependency-free partial with a documented injection contract (paste before `</body>`; opt in to `data-pin-id`) — any flow skill/subagent emitting a reviewable HTML page can inject it. `render-report.py` now injects it on every rendered report, text-only ones included.
+- **Kept everything that worked on `file://`.** No native `confirm/alert/prompt` (two-step inline Clear, flash toasts), no async Clipboard API (hidden-textarea + `execCommand`), localStorage persistence, numbered pins, inline editor, bulk "Copy notes". Existing image-region pins are migrated automatically.
+
+**Breaking changes:** none.
+
 ## v1.19.0 — 2026-07-12
 
 **`/flow:ship-spike` now harvests flow-generalizable lessons too — the Step 4c contribution router that `/flow:ship` has had since v1.11.0 finally reaches its sibling skill.**
