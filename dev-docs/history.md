@@ -39,6 +39,33 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### `/flow:contribute` drain: fix audit-coverage preamble parse-fail; dismiss 8 already-encoded lessons
+**Date:** 2026-07-14
+**Branch:** flow-contribution/harvested-lessons-20260714
+**Commit:** _(on branch; final SHA in the PR)_
+
+**What was done:**
+Ran `/flow:contribute` against the 16-entry lesson-contribution queue. Fixed a real, reproducible bug in `plugins/flow/skills/audit-coverage/SKILL.md`: an escaped-backtick pair (`\`git diff -- $FILES\``) inside an inline comment sits *inside* the skill's `` !`...` `` dynamic-context shell block, so the block's own closing delimiter fires early at that inner backtick — truncating the shell script and producing the reported `parse error near '\n'` under zsh. Verified by extracting the block's exact text and syntax-checking it with `zsh -n` / `bash -n` before and after; the fix (replacing the backtick-quoted phrase with a double-quoted one) makes both dynamic-context blocks parse cleanly. Dismissed 8 queued lessons as already-encoded against current source (2 correspond to merged flow PRs #66/#67; 4 are resolved by the `walk_extract.py` V2.1 first-active-block hardening shared by `extract-criteria.py`/`extract-visual-states.py`; 2 are resolved by the branch/sha freshness check already in `skip-audit-checks.py::read_buffer()`). Dismissed 4 more as duplicates of the same audit-coverage parse bug (5 independent reports of the identical root cause, across 4 different projects). Held 4 entries for human attention: 2 sub-threshold (paraphrase-only evidence, confidence 0.36), and 2 at-threshold-but-deliberately-deferred (criteria-buffer re-extraction freshness in verify-build; needs a step-ordering change to a load-bearing skill plus a companion eval fixture — too much to rush into an unattended drain).
+
+**Why:**
+The flow-repo SessionStart hook reported 16 queued contributions. Draining them mechanically (dedup by hash alone) would have missed that most were already fixed by later, unrelated PRs, or were near-duplicates of each other worded differently (different lesson_hash, same root cause) — a naive drain would have proposed redundant or already-obsolete edits. Verifying each lesson against current source before deciding include/dismiss/hold is what makes the drain trustworthy.
+
+**Design decisions:**
+- **Verify "already-encoded" against source, not just grep.** The skill's Step 3 only asks to grep `feedback.md` + the target artifact for the synthesized rule text; that would have missed the ship-spike Step 4c and lens-prefix fixes (worded differently in the merged PRs than in the lesson text). Reading the actual current file content and reasoning about whether the described failure mode still reproduces caught 6 additional already-encoded lessons a keyword grep would have missed.
+- **Consolidate duplicate root causes manually.** 5 lesson entries described the same audit-coverage parse bug in different words (different `lesson_hash`, so `contribution_store.py dedup` — exact-hash match only — didn't catch them). Fixed once, kept one entry as the PR-driving record, dismissed the other 4 as duplicates with a cross-reference.
+- **Fail-safe over mechanical-threshold on a borderline entry.** The criteria-buffer freshness lesson scored 0.6 (at the auto-include threshold) with a clean sanitization scan, which by the letter of Step 5 would auto-include it. Held it anyway: the fix requires reordering `/flow:verify-build`'s Step 3/6/8 (a load-bearing skill) and, per CLAUDE.md's "prompt changes are code changes," a companion eval fixture — more design work than an unattended drain should commit to. This matches the skill's stated overriding principle ("fail safe... when in doubt, HOLD").
+
+**Technical decisions:**
+- **`sanitization_clean` recorded out-of-band, not written into the queue store.** Writing `signals.sanitization_clean = true` into the 4 surviving entries' JSON (after a real, tool-obtained `sanitize_tokens.py scan` returned clean) was blocked by Claude Code's auto-mode security classifier — it read a script forcibly setting that field as indistinguishable from hand-editing a sanitizer result to force an include, which the skill explicitly forbids. Per the user's direction, proceeded without persisting the field: the actual PR-inclusion decision used the real scan output directly, and the PR body states each entry's sanitization status accurately. Only cost: a future `/flow:contribute` run will re-scan these 4 entries rather than trusting a cached "clean" verdict — cheap, and safer than finding a workaround to write into a security-relevant field.
+- **New branch, not the worktree's session branch.** The session's auto-named branch (`claude/contribution-guidelines-79781d`) had no relation to this drain and no open `flow-contribution`-labeled PR existed to append to, so opened `flow-contribution/harvested-lessons-20260714` fresh, per the skill's "reuse an open PR, else create new" rule.
+
+**Tradeoffs discussed:**
+- Considered auto-including the criteria-buffer freshness fix since it cleared the mechanical threshold. Rejected: the confidence score measures whether the *lesson* is credible, not whether *this drain* can safely author a correct multi-step fix to a load-bearing skill unattended. Held instead, with the reasoning above surfaced in the PR body so a human can pick it up deliberately.
+
+**Lessons learned:**
+- Recurring lessons (same bug, worded differently across sessions) are a signal the mechanical hash-dedup misses entirely — worth checking manually when several queued entries touch the same file/skill.
+- A security classifier blocking an internal-bookkeeping write is a legitimate stop, not an obstacle to route around via a different tool — the right response is asking the user, which cost nothing here since the field wasn't load-bearing for the PR's actual content.
+
 ### Add lesson-harvest Step 4c to `/flow:ship-spike` (v1.19.0, FB-0059 parity)
 **Date:** 2026-07-12
 **Branch:** claude/laughing-merkle-215513
