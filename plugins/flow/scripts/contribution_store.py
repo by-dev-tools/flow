@@ -291,8 +291,11 @@ def cmd_dedup(args) -> int:
     for rec in _load_dismissed()["dismissed"]:
         if rec.get("lesson_hash") == lhash:
             sys.stderr.write(
+                # Both stored fields go through !r: they are read back from
+                # dismissed.json and printed to a terminal the agent is told to
+                # read, so an embedded newline or ESC could forge stderr lines.
                 f"recurrence: previously dismissed on {rec.get('dismissed_utc','?')} "
-                f"as {rec.get('reason','?')!r} (by {rec.get('by','?')}) — a repeat "
+                f"as {rec.get('reason','?')!r} (by {rec.get('by','?')!r}) — a repeat "
                 f"report is evidence that dismissal was wrong; re-examine from "
                 f"scratch and reproduce the symptom before dismissing again\n"
             )
