@@ -236,15 +236,19 @@ def main(argv):
             # diff whose own plan block declares none (block_count alone can't
             # tell the two apart).
             blk = extract_block(plan_text, "Visual-walk", anchor_label="Spec-walk")
-            if blk.get("block_count", 0) >= 1 and blk.get("co_located") is not False:
-                override = "visual-walk-block"
-                override_signal = "plan declares a Visual-walk block"
-            elif blk.get("co_located") is False:
+            if blk.get("co_located") is False:
                 signals.append(
                     "[WARN] a Visual-walk block exists but belongs to a retained "
                     "PR section, not the active one — NOT treating it as an "
-                    "override (see plan warnings)"
+                    "override"
                 )
+                # Carry the parser's warnings through: they hold the line numbers
+                # and the move-it-here remedy. Dropping them would leave the
+                # operator with a refusal and no way to act on it.
+                signals.extend(f"[WARN] {w}" for w in blk.get("warnings", []))
+            elif blk.get("block_count", 0) >= 1:
+                override = "visual-walk-block"
+                override_signal = "plan declares a Visual-walk block"
 
     def emit(significant, reason):
         out = {

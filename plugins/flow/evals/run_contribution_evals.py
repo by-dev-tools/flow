@@ -128,14 +128,32 @@ def main() -> int:
         check("set-status-1-drops-from-drain", json.loads(out) == [],
               "a proposed entry must not appear in the drain list")
 
-        # --- dedup: dismissed hash → exit 3; novel → exit 0 ----------------
+        # --- dedup: recurrence-of-dismissed → exit 4; queued → 3; novel → 0 --
+        # The 3/4 split is load-bearing: a recurrence of a DISMISSED lesson is
+        # evidence the dismissal was wrong and must not be dropped like a benign
+        # already-queued duplicate. Collapsing them made the drain silently drop
+        # the highest-value signal (see contribution_store.cmd_dedup docstring).
         env3 = d / "e3"
         lh = store.lesson_hash("x", "some rule", "fb-entry")
         run(STORE, ["dismiss", "--lesson-hash", lh, "--reason", "already-encoded"], env3)
         rc, _, err = run(STORE, ["dedup", "--lesson-hash", lh], env3)
-        check("dedup-1-dismissed", rc == 3 and "dismissed" in err, f"rc={rc} err={err!r}")
+        check("dedup-1-recurrence-of-dismissed",
+              rc == 4 and "recurrence" in err and "already-encoded" in err,
+              f"rc={rc} err={err!r}")
+        check("dedup-1b-recurrence-not-conflated-with-queued", rc != 3,
+              "a recurrence must be distinguishable from an already-queued duplicate")
         rc, out, _ = run(STORE, ["dedup", "--lesson-hash", "sha256:nope"], env3)
         check("dedup-2-novel", rc == 0 and "novel" in out)
+
+        # An already-QUEUED (not dismissed) hash stays exit 3 — the benign case.
+        env3b = d / "e3b"
+        run(STORE, ["enqueue", "--pr", "p", "--branch", "b", "--source-type", "error",
+                    "--artifact-kind", "fb-entry", "--summary", "queued-dup",
+                    "--rule", "queued rule", "--evidence-strength", "paraphrase"], env3b)
+        qh = store.lesson_hash("queued-dup", "queued rule", "fb-entry")
+        rc, _, err = run(STORE, ["dedup", "--lesson-hash", qh], env3b)
+        check("dedup-3-already-queued-stays-3", rc == 3 and "queued" in err,
+              f"rc={rc} err={err!r}")
 
         # --- calibrate: appends an event the auto-merge gate trains on -----
         env4 = d / "e4"

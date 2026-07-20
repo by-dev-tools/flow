@@ -340,6 +340,79 @@ def test_anchor_co_location_regression_guards() -> None:
     check("coloc-no-anchor-none", no_anchor["co_located"] is None, f"got {no_anchor['co_located']}")
 
 
+# KNOWN LIMITATIONS, pinned deliberately. Anchoring closes ONE of three
+# degenerate shapes; these two defeat the "second anchor heading" proxy and still
+# adopt a retained block silently. Both are pre-existing — anchoring did not
+# introduce either and strictly improves the feature-mode shape that was actually
+# reported. These tests assert the CURRENT behavior so the gaps stay visible; when
+# a universal per-PR boundary marker lands, both should flip to items == [].
+#
+# Shape 1: the ACTIVE PR contributes no anchor (`tiny` omits Spec-walk; a
+# non-visual `spike` replaces it), so anchor_idxs[0] lands in the first RETAINED
+# section and a retained Visual-walk between anchors 0 and 1 reads as active.
+TINY_ACTIVE_NO_SPEC = """# Plan
+
+## PR D — active, tiny mode (no Spec-walk per plan-discipline.md)
+
+**Mode:** tiny
+**Goal:** bump the retry constant from 3 to 5.
+
+## PR C — retained (shipped visual work)
+
+**Spec-walk:**
+- [ ] STALE: settings sheet lists all toggles
+
+**Visual-walk:**
+- [ ] [state: empty] STALE: empty settings sheet renders placeholder
+
+## PR B — retained (older)
+
+**Spec-walk:**
+- [ ] STALE-B: older criterion
+"""
+
+
+# Shape 2: a RETAINED section authored Visual-walk-above-Spec-walk. That block
+# precedes its own section's anchor (anchor_idxs[1]) so it falls inside the
+# computed region. Indistinguishable by order alone from the legitimate active
+# case VISUAL_BEFORE_SPEC pins above — which is precisely why the proxy fails.
+RETAINED_VISUAL_FIRST = """# Plan
+
+## PR B — active, backend only, NO Visual-walk
+
+**Spec-walk:**
+- [ ] ACTIVE: token refresh retries 3x on 401
+
+## PR C — retained, authored visual-first
+
+**Visual-walk:**
+- [ ] [state: empty] STALE: settings sheet placeholder
+
+**Spec-walk:**
+- [ ] STALE: settings sheet lists toggles
+"""
+
+
+def test_anchor_known_limitation_tiny_mode() -> None:
+    blk = extract_block(TINY_ACTIVE_NO_SPEC, "Visual-walk", anchor_label="Spec-walk")
+    # Documents the gap: the active tiny PR has no anchor, so a retained block
+    # still reads as co-located. Flip both assertions when the gap is closed.
+    check("coloc-tiny-known-gap", len(blk["items"]) == 1,
+          f"behavior changed — if this now returns [], the limitation is FIXED: "
+          f"update this test + the walk_extract docstring. got {blk['items']}")
+    check("coloc-tiny-known-gap-flag", blk["co_located"] is True,
+          f"got {blk['co_located']}")
+
+
+def test_anchor_known_limitation_retained_visual_first() -> None:
+    blk = extract_block(RETAINED_VISUAL_FIRST, "Visual-walk", anchor_label="Spec-walk")
+    check("coloc-retained-visual-first-gap", len(blk["items"]) == 1,
+          f"behavior changed — if this now returns [], the limitation is FIXED: "
+          f"update this test + the walk_extract docstring. got {blk['items']}")
+    check("coloc-retained-visual-first-flag", blk["co_located"] is True,
+          f"got {blk['co_located']}")
+
+
 def test_anchor_co_location_cli() -> None:
     # The shipped CLI anchors by default — end-to-end, not just the unit.
     rc, out = run_cli(VISUAL, ACTIVE_WITHOUT_VISUAL)
@@ -366,6 +439,8 @@ def main() -> int:
         test_cli_backward_compat_keys,
         test_anchor_co_location,
         test_anchor_co_location_regression_guards,
+        test_anchor_known_limitation_tiny_mode,
+        test_anchor_known_limitation_retained_visual_first,
         test_anchor_co_location_cli,
     ]:
         fn()

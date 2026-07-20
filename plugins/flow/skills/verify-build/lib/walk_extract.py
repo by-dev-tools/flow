@@ -50,6 +50,30 @@ follow-ups):
   exactly as before (`co_located` is then `True` / `None`), and a Visual-walk
   authored *above* its sibling Spec-walk in the same section still counts.
 
+  **KNOWN LIMITATIONS — anchoring closes ONE of three degenerate shapes.** The
+  region boundary is "the second anchor heading," which is only a proxy for
+  "where the active PR's section ends." Two shapes defeat that proxy and still
+  adopt a retained block silently (`co_located` reads `True`, no warning):
+
+  1. **The active PR has no anchor.** `tiny` omits Spec-walk entirely and a
+     non-visual `spike` replaces it with a Research-question line
+     (`rules/plan-discipline.md` § Required plan fields). `anchor_idxs[0]` then
+     lands in the first *retained* section, so a retained Visual-walk between
+     anchors 0 and 1 reads as active.
+  2. **A retained section is authored Visual-walk-above-Spec-walk.** That block
+     sits before the retained section's own anchor — i.e. before
+     `anchor_idxs[1]` — so it falls inside the computed region. Note this is the
+     same authoring order the parser deliberately *supports* for the active
+     section (a Visual-walk above its sibling Spec-walk still counts), so the
+     two cannot be told apart by order alone.
+
+  Both are **pre-existing, not introduced here** — before anchoring, both leaked
+  identically — and anchoring is a strict improvement for the `feature`-mode
+  shape that was actually reported. Closing them needs a genuinely universal
+  per-PR boundary marker, which is a decision about the plan format rather than
+  a parser tweak; tracked in the roadmap. `test_anchor_known_limitation_*` pin
+  the current behavior of both so neither is rediscovered as a fresh bug.
+
 Stdlib only. Python 3.7+.
 """
 
@@ -104,7 +128,13 @@ def is_terminator(line: str) -> bool:
     return bool(_MD_HEADING_RE.match(line) or _BOLD_LABEL_RE.match(line))
 
 
-def extract_block(text: str, label: str, anchor_label: str = None) -> dict:
+def _heading_indices(lines: list[str], label: str) -> list[int]:
+    """Line indices of every `<label>` walk heading. One compile, one pass."""
+    hre = heading_re(label)
+    return [i for i, ln in enumerate(lines) if hre.match(ln)]
+
+
+def extract_block(text: str, label: str, anchor_label: str | None = None) -> dict:
     """
     Extract the FIRST (active) `<label>` block's checkbox items from `text`.
 
@@ -128,11 +158,10 @@ def extract_block(text: str, label: str, anchor_label: str = None) -> dict:
     `co_located` is `None` when co-location is undefined (no `anchor_label`
     passed, no anchor heading present, or no block of `label` at all).
     """
-    hre = heading_re(label)
     lines = text.splitlines()
     warnings: list[str] = []
 
-    heading_idxs = [i for i, ln in enumerate(lines) if hre.match(ln)]
+    heading_idxs = _heading_indices(lines, label)
     if not heading_idxs:
         return {
             "items": [],
@@ -161,31 +190,33 @@ def extract_block(text: str, label: str, anchor_label: str = None) -> dict:
     # confuse, so the match is trivially active.
     co_located = None
     if anchor_label:
-        anchor_idxs = [i for i, ln in enumerate(lines)
-                       if heading_re(anchor_label).match(ln)]
+        anchor_idxs = _heading_indices(lines, anchor_label)
         if anchor_idxs:
             region_end = anchor_idxs[1] if len(anchor_idxs) > 1 else len(lines)
             co_located = first < region_end
             if not co_located:
+                # Name the anchor the block actually sits under (the nearest one
+                # ABOVE it), not anchor_idxs[1] — in a 4-PR plan those differ, and
+                # pointing at the wrong section reads as a broken tool.
+                owning = max(i for i in anchor_idxs if i < first)
                 warnings.append(
-                    f"the only {label} block (line {first + 1}: {first_heading!r}) "
-                    f"sits BELOW the active PR's section — it belongs to a "
-                    f"retained {anchor_label} block starting line "
-                    f"{anchor_idxs[1] + 1}. Treating the active PR as declaring "
-                    f"NO {label} block rather than inheriting a stale one. If "
-                    f"this PR really does declare {label} items, move them above "
-                    f"line {anchor_idxs[1] + 1}."
+                    f"the first {label} block (line {first + 1}: {first_heading!r}) "
+                    f"sits BELOW the active PR's section — it belongs to the "
+                    f"retained {anchor_label} block at line {owning + 1}. Treating "
+                    f"the active PR as declaring NO {label} block rather than "
+                    f"inheriting a stale one. If this PR really does declare "
+                    f"{label} items, move them into the active PR's section at the "
+                    f"top of the plan (above the {anchor_label} at line "
+                    f"{anchor_idxs[1] + 1})."
                 )
-                return {
-                    "items": [],
-                    "block_count": len(heading_idxs),
-                    "first_heading": first_heading,
-                    "co_located": False,
-                    "warnings": warnings,
-                }
+
+    # A non-co-located block collects nothing. Bound the scan instead of returning
+    # early, so the result contract is written in exactly one place (FB-0010: a
+    # duplicated return shape is a fan-out contradiction waiting to happen).
+    scan_end = len(lines) if co_located is not False else first + 1
 
     items: list[str] = []
-    for j in range(first + 1, len(lines)):
+    for j in range(first + 1, scan_end):
         line = lines[j]
 
         cb = CHECKBOX_RE.match(line)
@@ -224,7 +255,7 @@ def cli_main(
     items_key: str,
     transform_item=None,
     empty_warning: str = "",
-    anchor_label: str = None,
+    anchor_label: str | None = None,
 ) -> int:
     """
     Shared CLI entry point for the `*-walk` extractors.

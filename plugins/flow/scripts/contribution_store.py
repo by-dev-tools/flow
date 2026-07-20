@@ -274,13 +274,29 @@ def cmd_list(args) -> int:
 
 
 def cmd_dedup(args) -> int:
-    """Exit 0 if the lesson hash is novel; exit 3 if it is already dismissed or
-    already queued (with a stderr note saying which)."""
+    """Exit 0 if the lesson hash is novel; exit 3 if it is already queued; exit 4
+    if it was PREVIOUSLY DISMISSED and is now recurring.
+
+    The 3/4 split is load-bearing. "Already queued" is benign (the lesson is in
+    flight — drop it). "Previously dismissed but reported again" is the opposite:
+    a recurrence is evidence the earlier dismissal was WRONG, and it is the
+    highest-value signal in the pipeline. Collapsing both into one exit code made
+    the drain's default response to a recurrence a silent drop, guarded only by a
+    prose instruction to read stderr — the same shape as the silent-fallback bugs
+    flow exists to catch. Dogfood: a Visual-walk cross-PR grab was dismissed as
+    already-encoded, then re-reported from a second project; only the re-report's
+    arrival in the queue surfaced it. See contribute/SKILL.md Step 3.
+    """
     lhash = args.lesson_hash
     for rec in _load_dismissed()["dismissed"]:
         if rec.get("lesson_hash") == lhash:
-            sys.stderr.write(f"duplicate: dismissed ({rec.get('reason','')})\n")
-            return 3
+            sys.stderr.write(
+                f"recurrence: previously dismissed on {rec.get('dismissed_utc','?')} "
+                f"as {rec.get('reason','?')!r} (by {rec.get('by','?')}) — a repeat "
+                f"report is evidence that dismissal was wrong; re-examine from "
+                f"scratch and reproduce the symptom before dismissing again\n"
+            )
+            return 4
     for _, entry in _iter_queue():
         if (entry.get("evidence") or {}).get("lesson_hash") == lhash:
             sys.stderr.write("duplicate: already queued\n")
