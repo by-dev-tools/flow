@@ -36,6 +36,8 @@ Every plan written to the plan doc must include:
 
 **Active-block placement (load-bearing for `/flow:verify-build`).** `/flow:verify-build` parses the **Spec-walk** and **Visual-walk** blocks mechanically (`extract-criteria.py` / `extract-visual-states.py`), and each parser extracts only the **first** block of its kind in the plan doc. So when a plan doc retains shipped PRs' blocks, **author the active PR's plan at the top** — the active Spec-walk/Visual-walk must precede any retained ones. Retained blocks below are simply ignored; they need no heading qualification. (If the active block isn't first, the parser warns loudly and extracts the wrong block — don't rely on the warning, place it correctly.)
 
+One case placement alone can't fix: an active PR that declares a **Spec-walk** but deliberately **no Visual-walk** (a backend-only change), while a retained PR below declares one. There is no active Visual-walk to put at the top, and since only one Visual-walk block exists in the file the "multiple blocks" warning can't fire either. `extract-visual-states.py` therefore also requires the block to be **co-located with the active section** (anything above the *second* Spec-walk heading): a Visual-walk found only inside a retained section yields zero assertions plus a loud warning, rather than silently handing the active PR another PR's capture state-set. A `Visual-walk` written above its sibling `Spec-walk` in the same section still counts.
+
 ## Confidence verdict
 
 The trigger for a "load-bearing assumption": **would I plan a different feature if this assumption flipped?**

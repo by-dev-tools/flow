@@ -90,6 +90,10 @@ if __name__ == "__main__":
             sys.argv,
             label=LABEL,
             items_key="assertions",
+            # Scope to the active PR's section: a shared multi-PR plan whose
+            # ACTIVE block declares no Visual-walk must not silently inherit a
+            # retained PR's block (block_count==1 ⇒ no multi-block WARN fires).
+            anchor_label="Spec-walk",
             transform_item=parse_assertion,
             empty_warning=EMPTY_WARNING,
         )

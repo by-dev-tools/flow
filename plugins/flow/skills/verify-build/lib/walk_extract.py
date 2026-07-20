@@ -34,6 +34,22 @@ follow-ups):
   naming every match line + the selected heading, so the silent wrong-block
   grab the cold-run hit becomes visible rather than a guess.
 
+- **Anchor co-location (`anchor_label`).** First-block scoping is per-label and
+  therefore *independent* across labels — which opens a silent cross-PR hole the
+  multi-block WARN cannot see. In a shared multi-PR plan where the ACTIVE PR
+  declares a `Spec-walk` but NO `Visual-walk`, and a retained PR below declares
+  both, the Visual-walk parser matches the retained block: `block_count == 1`, so
+  no multi-block warning fires and the active PR silently inherits another PR's
+  capture state-set (and a forced `visual_significant`). Passing
+  `anchor_label="Spec-walk"` scopes the match to the **active region** — every
+  line before the SECOND anchor heading, per the "active PR at the top"
+  convention (`rules/plan-discipline.md`). A block outside that region yields
+  `items == []` + a loud warning instead of stale items, so "this PR declared
+  none" degrades honestly rather than silently borrowing. Deliberately inert on
+  the common shapes: a plan with <2 anchor headings, or none at all, behaves
+  exactly as before (`co_located` is then `True` / `None`), and a Visual-walk
+  authored *above* its sibling Spec-walk in the same section still counts.
+
 Stdlib only. Python 3.7+.
 """
 
@@ -88,7 +104,7 @@ def is_terminator(line: str) -> bool:
     return bool(_MD_HEADING_RE.match(line) or _BOLD_LABEL_RE.match(line))
 
 
-def extract_block(text: str, label: str) -> dict:
+def extract_block(text: str, label: str, anchor_label: str = None) -> dict:
     """
     Extract the FIRST (active) `<label>` block's checkbox items from `text`.
 
@@ -97,11 +113,20 @@ def extract_block(text: str, label: str) -> dict:
         "items":         [<checkbox text>, ...],   # first block only
         "block_count":   <int>,                    # how many label blocks exist
         "first_heading": "<heading line>" | None,  # the selected heading
+        "co_located":    True | False | None,      # vs anchor_label's active region
         "warnings":      ["..."],
       }
 
     `block_count == 0` means no label block at all (caller falls back / skips
     with an explicit reason — never a silent gap).
+
+    When `anchor_label` is given, the matched block must fall inside the ACTIVE
+    region — every line before the SECOND `anchor_label` heading — or it is
+    treated as belonging to a retained PR: `items` is emptied and a loud warning
+    is emitted (`co_located=False`). This closes the silent cross-PR grab that
+    per-label first-block scoping cannot see; see the module docstring.
+    `co_located` is `None` when co-location is undefined (no `anchor_label`
+    passed, no anchor heading present, or no block of `label` at all).
     """
     hre = heading_re(label)
     lines = text.splitlines()
@@ -113,6 +138,7 @@ def extract_block(text: str, label: str) -> dict:
             "items": [],
             "block_count": 0,
             "first_heading": None,
+            "co_located": None,
             "warnings": warnings,
         }
 
@@ -127,6 +153,36 @@ def extract_block(text: str, label: str) -> dict:
             f"are ignored. If the active block is not first, move it to the top "
             f"of the plan (retained blocks need no heading qualification)."
         )
+
+    # Anchor co-location. The active region is everything before the SECOND
+    # anchor heading ("active PR at the top" convention), so a `label` block
+    # authored either side of its sibling anchor within that leading section
+    # still counts. Fewer than 2 anchor headings ⇒ no retained section exists to
+    # confuse, so the match is trivially active.
+    co_located = None
+    if anchor_label:
+        anchor_idxs = [i for i, ln in enumerate(lines)
+                       if heading_re(anchor_label).match(ln)]
+        if anchor_idxs:
+            region_end = anchor_idxs[1] if len(anchor_idxs) > 1 else len(lines)
+            co_located = first < region_end
+            if not co_located:
+                warnings.append(
+                    f"the only {label} block (line {first + 1}: {first_heading!r}) "
+                    f"sits BELOW the active PR's section — it belongs to a "
+                    f"retained {anchor_label} block starting line "
+                    f"{anchor_idxs[1] + 1}. Treating the active PR as declaring "
+                    f"NO {label} block rather than inheriting a stale one. If "
+                    f"this PR really does declare {label} items, move them above "
+                    f"line {anchor_idxs[1] + 1}."
+                )
+                return {
+                    "items": [],
+                    "block_count": len(heading_idxs),
+                    "first_heading": first_heading,
+                    "co_located": False,
+                    "warnings": warnings,
+                }
 
     items: list[str] = []
     for j in range(first + 1, len(lines)):
@@ -156,6 +212,7 @@ def extract_block(text: str, label: str) -> dict:
         "items": items,
         "block_count": len(heading_idxs),
         "first_heading": first_heading,
+        "co_located": co_located,
         "warnings": warnings,
     }
 
@@ -167,6 +224,7 @@ def cli_main(
     items_key: str,
     transform_item=None,
     empty_warning: str = "",
+    anchor_label: str = None,
 ) -> int:
     """
     Shared CLI entry point for the `*-walk` extractors.
@@ -183,6 +241,9 @@ def cli_main(
                         (default: identity — emit the string as-is).
     - `empty_warning` — appended when no items were extracted (the
                         spike-fallback / capture-primary-only nudge).
+    - `anchor_label`  — sibling label whose active region scopes this match
+                        (`"Spec-walk"` for the Visual-walk parser); see
+                        `extract_block`. Omitted ⇒ today's unscoped behavior.
 
     Exit codes: 0 ok, 1 fatal file error, 2 malformed args.
     """
@@ -229,7 +290,7 @@ def cli_main(
         )
         return 1
 
-    block = extract_block(text, label)
+    block = extract_block(text, label, anchor_label=anchor_label)
     transform = transform_item or (lambda s: s)
     items = [transform(s) for s in block["items"]]
     warnings = list(block["warnings"])
@@ -244,6 +305,7 @@ def cli_main(
                 "source_path": str(plan_path),
                 "source_heading": block["first_heading"],
                 "block_count": block["block_count"],
+                "co_located": block["co_located"],
                 "warnings": warnings,
             },
             indent=2,
