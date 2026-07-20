@@ -39,6 +39,34 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### SAFETY: Scope `Visual-walk` extraction to the active PR's section (anchor co-location)
+**Date:** 2026-07-16
+**Branch:** flow-contribution/visual-walk-co-location
+**Commit:** _(on branch; final SHA in the PR)_
+
+**What was done:**
+`walk_extract.extract_block()` gains an optional `anchor_label`. When passed, the matched block must fall inside the **active region** — every line before the *second* anchor heading — or it returns `items: []`, `co_located: false`, and a loud warning instead of the block's contents. `extract-visual-states.py` now passes `anchor_label="Spec-walk"`, and `visual-significance.py`'s Visual-walk override requires `co_located is not False` before forcing `visual_significant`. Output gains a `co_located` key (additive). Added 16 eval checks to the CI-wired `run_walk_extract_evals.py` (47 → 63) covering the bug, the CLI end-to-end path, and three regression shapes. Doc contract updated in `rules/plan-discipline.md` + `verify-build/SKILL.md`.
+
+**Why:**
+First-block scoping is *per-label*, so the two parsers select independently. In a shared multi-PR plan where the ACTIVE PR declares a `Spec-walk` but deliberately **no** `Visual-walk` (a backend-only change), and a retained PR below declares both, the Visual-walk parser matched the retained block. Because only one `Visual-walk` block exists in the file, `block_count == 1` — so the loud multi-block WARN never fired. The active PR silently inherited another PR's capture state-set *and* a forced `visual_significant=true` on a diff with zero UI. Reproduced before fixing: a backend-only token-refresh PR was handed "empty settings sheet renders placeholder" as its capture target, with `warnings: []`. That is the FB-0010 silent-skip class in its purest form — a fallback that fails without surfacing.
+
+**Design decisions:**
+- **Active region = "before the SECOND anchor heading", not "after the anchor heading."** The naive rule (Visual-walk must follow the active Spec-walk) breaks the legitimate shape where an author writes `**Visual-walk:**` *above* its sibling `**Spec-walk:**` in the same section — that block is active and must still count. Anchoring to the second occurrence encodes the existing "active PR at the top" convention (`rules/plan-discipline.md`) rather than inventing a second, competing placement rule.
+- **Opt-in via a parameter, not a behavior change to every caller.** `extract-criteria.py` is left unanchored — Spec-walk is itself the anchor, and anchoring it to itself is meaningless. An unanchored `extract_block` call behaves exactly as before (`co_located: None`), so nothing outside the Visual-walk path shifts.
+- **Empty + warn, not "use it anyway + warn."** The prior failure was *silent adoption*; a warning alone would still leave the wrong state-set in play and depend on someone reading it (the same "don't rely on the warning" caveat the rule doc already carries). Returning zero assertions routes into §5a's existing documented 0-assertion behavior — capture the primary/launch state, mark the rest `not_tested` — which is the honest degradation.
+- **Inert on the common shapes by construction.** Plans with fewer than two `Spec-walk` headings (i.e. nearly all consumer plans) get `co_located: True` and byte-identical behavior. The change can only bite in the exact multi-PR shape that produced the bug.
+
+**Technical decisions:**
+- Fixtures were validated against the **pre-fix** module, not just the post-fix one: the old `extract_block` rejects the `anchor_label` kwarg outright (TypeError) and its unscoped call returns the stale assertion with `block_count: 1`, `warnings: []`. A fixture that passes before and after is not regression protection; these fail before and pass after.
+- Extended the existing CI-wired `run_walk_extract_evals.py` rather than adding a new harness — CI enumerates harnesses explicitly, so a new file would need wiring; extending a wired one gets protection immediately.
+
+**Tradeoffs discussed:**
+- Considered *only* warning loudly on non-co-location (the lesson offered both options). Rejected: the whole failure mode is that nothing surfaced, and the rule doc already tells authors not to depend on the parser's warning. A warning that must be read to prevent a wrong capture set reproduces the original class of bug.
+- Considered scoping by markdown section (`##` boundaries) instead of by anchor-label occurrence. Rejected: plans in the wild mix bold-label and ATX-heading section styles, so section detection is less reliable than the anchor the parser already matches robustly.
+
+**Lessons learned:**
+- **This bug was reported once before and I wrongly dismissed it as already-encoded** during the previous `/flow:contribute` drain (#74), reasoning that `extract-visual-states.py` and `extract-criteria.py` "share `walk_extract.py` first-active-block scoping." That shared scoping is precisely the *cause* — per-label selection means the two can land in different PRs' sections. The recurrence (a second, independent project, correction-sourced) is what caught it. Concrete takeaway for the drain: "shares the hardened helper" is an argument about *mechanism*, not about *the failure mode*; an already-encoded dismissal should reproduce the reported symptom and confirm it no longer occurs, not reason from the fix's existence.
+
 ### SAFETY: Generalize the walkthrough annotation layer from image-region pins to any DOM element (v1.20.0, FB-0071)
 
 **Date:** 2026-07-15

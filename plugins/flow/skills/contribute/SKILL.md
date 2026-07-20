@@ -83,6 +83,8 @@ python3 "$SCRIPTS/contribution_store.py" dedup --lesson-hash "<hash>"   # exit 3
 
 Also drop **already-encoded** lessons: grep `dev-docs/feedback.md` and the candidate's target artifact for the synthesized rule; on a match, `dismiss` it with reason `already-encoded` and skip.
 
+**An `already-encoded` dismissal must reproduce the symptom, not reason from the fix.** A grep hit — or an argument that the target "already shares the hardened helper / was covered by PR #N" — establishes that *some* fix exists, not that *this* failure mode is gone. Before dismissing, construct the smallest input that would exhibit the reported symptom and confirm it no longer occurs; if you cannot cheaply construct one, HOLD rather than dismiss. (Dogfood: a `Visual-walk` cross-PR grab was dismissed as already-encoded because both walk parsers share `walk_extract.py`'s first-block scoping — that shared scoping was the *cause*, since selection is per-label and the two can land in different PRs' sections. A 12-line repro plan would have caught it; instead it took an independent recurrence from a second project.) A **recurrence of a previously-dismissed lesson is strong evidence the dismissal was wrong** — re-examine it from scratch rather than re-applying the earlier reasoning.
+
 ## Step 4 — sanitize (FAIL-CLOSED — runs before anything reaches the PR)
 
 The flow repo is **public** and must stay project-agnostic. Scrub every candidate's lesson text + evidence window before it can land in a commit.
