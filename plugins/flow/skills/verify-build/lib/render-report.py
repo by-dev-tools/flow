@@ -486,11 +486,13 @@ def render(buffer, assets_dir):
           f'@ {esc(meta.get("head_sha_short", "?"))}. Not committed — regenerated every iteration. '
           f'The durable record lives in the project history.</footer>'
     )
-    # Inject the click-to-pin annotation layer only when the report actually rendered
-    # a captured frame — a text-only report (pre-capture / Unknown) has nothing to
-    # annotate, so the toolbar would be noise. The layer makes the report two-way:
-    # the human pins a screenshot, and "Copy notes" returns located feedback.
-    layer = load_annotation_layer(warnings) if 'class="annot-shot"' in body else ""
+    # Inject the click-to-pin annotation layer into every rendered report. Since FB-0071
+    # the layer anchors a pin to ANY DOM element (hover-picked), not just a captured frame,
+    # so a text-only report (open questions, criteria, coverage) is a valid annotation
+    # surface too — hence unconditional, gated only on the layer file being readable.
+    # The layer makes the report two-way: the human pins an element, and "Copy notes"
+    # returns located, descriptor-based feedback.
+    layer = load_annotation_layer(warnings)
     doc = (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
            f'<meta name="viewport" content="width=device-width, initial-scale=1">'
            f'<title>Verify-build walkthrough · {esc(meta.get("branch", ""))}</title>'

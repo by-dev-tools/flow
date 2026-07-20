@@ -35,6 +35,16 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0071: A review-annotation layer must anchor to any DOM element, not a coordinate inside one element type — and it ships as a reusable partial, not welded to one renderer
+**Date:** 2026-07-15
+**Source:** user direction (this session: upstream health-tracker's DOM-general click-to-comment layer into flow, generalizing the FB-0051 image-only overlay)
+
+**What was said:** The v1.7.0 annotation layer (FB-0051) anchors a pin to `{frame, x%, y%}` — a fractional coordinate inside one `<img>` — and binds the click handler only to screenshot wrappers, so a reviewer can never pin a note to a paragraph, a table cell, or an open-question item. Generalize it: a DevTools-style hover-inspect picker over ANY element, keyboard parent/child traversal, a stable content-derived anchor that survives report regeneration, a location-descriptor export (not raw coordinates), shipped as a reusable partial any flow HTML-emitting skill/subagent can inject. Keep the embedded-browser-hardened patterns (no native modals, execCommand clipboard, localStorage, two-step Clear).
+
+**Synthesized rule:** A human-in-the-loop review surface should let the human point at *the thing they mean* — the element — not at a coordinate that only resolves inside one element type. Anchor identity (author `data-pin-id`, else nearest-heading + tag + role + text-sample) is separate from the targeting interaction and must never key off DOM tree position/index, because the artifact is regenerated every iteration. And a review affordance that is generically useful (any reviewable HTML page) ships as a self-contained, dependency-free partial with a documented injection contract — not welded into the one renderer that first needed it (the same "shared lib reused by path" pattern as `visual-significance.py` / `pr-coherence.py`). Preserve embedded-browser constraints as hard requirements, not niceties: the in-app browser silently suppresses `window.confirm/alert/prompt` and blocks the async Clipboard API on `file://`. Superseding the FB-0051 note that pins bind to a screenshot region.
+
+**Applies to:** `plugins/flow/skills/verify-build/lib/annotation-layer.html` (the partial); `render-report.py` injection (now unconditional — any rendered report is annotatable); reusable across any flow skill/subagent emitting reviewable HTML; FB-0051 (image-only predecessor it generalizes), FB-0053 (durable visual record — complementary), the visual-verification blueprint § 3 (agent-authored grounding/open_questions — complementary, not overlapping).
+
 ### FB-0070: A "contribution" / lightweight PR is NOT exempt from the full `/flow:ship` pipeline — size or "it's just a proposal the human gates" is not a reason to shortcut review stages
 **Date:** 2026-07-06
 **Source:** user correction (this session: I opened a `flow-contribution` PR via a hand-rolled `gh pr create` draft and skipped the ship pipeline, reasoning it was a small docs-only proposal)

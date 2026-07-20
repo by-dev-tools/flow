@@ -2,48 +2,84 @@
   ===== Flow annotation layer (self-contained, no deps, works on file://) =====
 
   A vanilla-JS overlay injected before </body> by render-report.py into the
-  ephemeral verify-build HTML walkthrough. It turns the read-only report into a
-  TWO-WAY review surface: the human opens the file (file://, no server, no
-  build), clicks a captured screenshot to drop a numbered pin, types a note, and
-  clicks "Copy notes" to get a structured, *located* block to paste back to the
-  agent — so a merge-gate visual flag re-enters Execute as "#3 · <criterion> at
-  x=46% y=31%: the delta crowds the marker", not as prose the agent must guess at.
+  ephemeral verify-build HTML walkthrough — and reusable by ANY flow skill/subagent
+  that emits a reviewable HTML page (it is one self-contained copy-paste block: this
+  comment + the <div>s + the <style> + the <script>). It turns a read-only report
+  into a TWO-WAY review surface: the human opens the file (file://, no server, no
+  build), enters "Pin" mode, hovers to pick the exact DOM element a note attaches to
+  (a DevTools "inspect element" outline snaps to whatever is under the cursor), clicks
+  or presses Enter to drop a numbered pin, types a note, and clicks "Copy notes" to
+  get a structured, *located* block to paste back to the agent — so a merge-gate flag
+  re-enters Execute as "#3 · Totals section › td \"Protein\": the delta crowds the
+  marker", not as prose the agent must guess at.
 
-  CONTRACT (render-report.py controls the DOM, so these are knowable):
-    • Annotatable images carry class `annot-shot` (render-report.py tags captured
-      screenshot <img> tags with it). Change SHOT_SELECTOR below only if hand-authoring.
-    • The screen label for a pin is its section heading — render-report.py renders
-      each criterion as <section class="criterion"><h2>…</h2>…<img>, so the layer
-      scopes to the smallest enclosing section and resolves that <h2>.
-    • Device-point mapping rides on a per-image `data-device="WxH"` attribute when a
-      capture declares logical device points; no attribute → no device mapping (the
-      verify-build buffer carries no per-frame device dims today, so this is normally
-      absent and the "(≈ device …)" clause is omitted — that is correct, not a gap).
+  GENERALIZED (FB-0071): the anchor is now ANY element, not just a captured screenshot.
+  The prior image-only layer (FB-0051) keyed pins to {frame, x%, y%} inside one <img>;
+  this keys them to a stable ELEMENT IDENTITY so a paragraph, a table cell, an
+  open-question item, or a screenshot are all equally pinnable.
+
+  HOW TO INJECT (any HTML renderer):
+    • Paste this whole block immediately before </body>. That is the entire contract —
+      the layer needs no build step, no external file, no class on your content.
+    • OPTIONAL stability opt-in: put a stable `data-pin-id="…"` on elements you
+      regenerate every iteration; a pin bound to one re-anchors exactly on re-render.
+      Without it the layer falls back to a content-derived key (nearest heading + tag +
+      role + a short text sample), which survives ordinary DOM/whitespace shifts.
+    • The layer NEVER targets its own chrome (anything inside #annot-bar / #annot-editor
+      / #annot-highlight / #annot-pins is skipped by the picker), so it is safe to inject
+      into a page it does not otherwise know.
+    • REUSE CAVEAT: pins position from getBoundingClientRect() + page scroll offset, so a
+      `position:sticky` header or a `transform` on an ancestor of pinned content can seat
+      pins a frame late / slightly off. verify-build's own report has neither; a reuse
+      author on a transformed surface should account for it.
+    • THEME MIRROR: the --annot-* fallback colors are hand-mirrored from render-report.py's
+      CSS palette (accent, danger, borders, dark tones). If that renderer re-tunes its
+      palette, update these fallbacks in lockstep (they cannot import — this is a partial).
+
+  ANCHOR STABILITY ACROSS REGENERATION: verify-build's report is "regenerated every
+  iteration." Pins are keyed off element identity (data-pin-id, else content-derived),
+  never DOM tree position/index — so a re-render of the same logical content re-places
+  the pins. A note whose element genuinely vanished is not lost: it is retained, shown
+  as a dashed "unanchored" pin, and still included in the export, flagged.
+
+  EMBEDDED-BROWSER CONSTRAINTS (why this looks the way it does):
+    • NO window.prompt / window.confirm / window.alert — the embedded browser silently
+      suppresses native modals. "Clear" is a two-step inline confirm; transient messages
+      are a flash toast.
+    • NO async Clipboard API — file:// blocks it in some browsers. "Copy notes" uses a
+      hidden-textarea + execCommand('copy'); on the rare failure it leaves a visible,
+      pre-selected textarea to ⌘/Ctrl+C from (never a blocking native prompt).
     • Pins persist in localStorage keyed to this document (title + path). The report
       titles itself "Verify-build walkthrough · <branch>", so branches don't collide.
-    • Theming: the overlay harmonizes with render-report.py's neutral light/dark
-      palette out of the box. Optional CSS custom properties (set on :root) override:
-        --annot-bar-bg, --annot-bar-fg, --annot-bar-btn-bg, --annot-bar-btn-bg-hover,
-        --annot-accent (pins + primary button + focus ring), --annot-editor-bg,
-        --annot-editor-fg, --annot-editor-line, --annot-editor-btn-bg, --annot-danger
+    • Theming harmonizes with render-report.py's neutral light/dark palette. Optional CSS
+      custom properties (on :root) override: --annot-bar-bg, --annot-bar-fg,
+      --annot-bar-btn-bg, --annot-bar-btn-bg-hover, --annot-accent (pins + primary button
+      + outline), --annot-editor-bg, --annot-editor-fg, --annot-editor-line,
+      --annot-editor-btn-bg, --annot-danger.
 
-  HONEST LIMITATION: pins bind to the screenshot region in THIS document's DOM,
-  not to the live app's view tree. "Which screen + where on it + the note" is
-  unambiguous; resolving a CSS selector / component instance in the running app
-  is out of scope (no DOM for native UIs; static capture for web).
+  HONEST LIMITATION (a11y): dropping a NEW pin still starts from the pointer (hover to
+  pick, arrows to refine, click/Enter to commit) — full keyboard-only DISCOVERY of an
+  arbitrary non-focusable element is out of scope. EXISTING pins are keyboard-operable
+  (Tab to a pin, Enter/Space to edit). And a static capture is not the live app's view
+  tree: "which element on this page + the note" is unambiguous; resolving a running
+  component instance is out of scope.
 -->
 <div id="annot-bar">
   <strong>Annotate</strong>
+  <button id="annot-pick" type="button" aria-pressed="false">Pin</button>
   <span id="annot-count" aria-live="polite" role="status">0 notes</span>
   <span id="annot-flash" aria-live="polite" role="status"></span>
   <button id="annot-copy" type="button">Copy notes</button>
   <button id="annot-clear" type="button">Clear</button>
-  <span class="annot-hint">click a screenshot to drop a pin · click a pin to edit</span>
+  <span class="annot-hint">Pin → hover to pick an element (↑/↓ to widen/narrow) → click or ↵ · click a pin to edit</span>
 </div>
+
+<div id="annot-highlight" aria-hidden="true"></div>
+<div id="annot-pins"></div>
 
 <div id="annot-editor" hidden>
   <div id="annot-editor-meta"></div>
-  <textarea id="annot-editor-text" placeholder="What about this spot? (Esc cancels · ⌘↵ saves)"></textarea>
+  <textarea id="annot-editor-text" placeholder="What about this element? (Esc cancels · ⌘/Ctrl+↵ saves)"></textarea>
   <div class="annot-editor-row">
     <button id="annot-editor-del" type="button">Delete</button>
     <span>
@@ -54,54 +90,80 @@
 </div>
 
 <style>
-  #annot-bar { position:fixed; top:0; left:0; right:0; z-index:9999;
+  #annot-bar { position:fixed; top:0; left:0; right:0; z-index:10001;
     display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:10px 18px;
     background:var(--annot-bar-bg, #1f2328); color:var(--annot-bar-fg, #e8e8e8); font-size:13px;
-    box-shadow:0 2px 10px rgba(0,0,0,.25); }
+    /* subtle bottom edge keeps the chrome/content boundary crisp on the DARK report,
+       where the drop shadow all but vanishes; invisible against a light page below. */
+    border-bottom:1px solid rgba(255,255,255,.08); box-shadow:0 2px 10px rgba(0,0,0,.25); }
   #annot-bar strong { font-size:13px; letter-spacing:.04em; text-transform:uppercase; }
   #annot-bar button { font:13px inherit; background:var(--annot-bar-btn-bg, #343a42); color:var(--annot-bar-fg, #e8e8e8); border:0;
     padding:5px 12px; border-radius:7px; cursor:pointer; }
   #annot-bar button:hover { background:var(--annot-bar-btn-bg-hover, #434b54); }
+  /* Primary controls (Pin is the tool's entry point) get the same focus ring as the
+     pins + editor buttons — a UA default ring on the dark bar reads low-contrast. */
+  #annot-bar button:focus-visible, #annot-copybox button:focus-visible { outline:2px solid var(--annot-accent, #0a5fb0); outline-offset:2px; }
+  #annot-pick[aria-pressed="true"] { background:var(--annot-accent, #0a5fb0); color:#fff; }
+  #annot-clear.armed { background:var(--annot-danger, #b3261e); color:#fff; }
   #annot-count { background:var(--annot-bar-btn-bg, #343a42); padding:3px 9px; border-radius:999px; font-variant-numeric:tabular-nums; }
   #annot-flash:not(:empty) { background:var(--annot-bar-btn-bg, #343a42); padding:3px 9px; border-radius:999px; }
   .annot-hint { color:var(--annot-bar-fg, #e8e8e8); opacity:.7; margin-left:auto; }
   body { padding-top:46px; }
-  /* The host is sized to the image's rendered width in JS (syncHost), so pins
-     positioned in % of the host line up with the image even when the host's container
-     is wider than the capped frame (render-report.py caps frames at max-width:600px in
-     a wider .obs box). Image SIZING is deliberately left to the host document's own
-     rule (render-report's `.obs img`); the layer only sets display:block so the host
-     wraps it tightly — overriding width/max-width here would clobber that cap. */
-  .annot-host { position:relative; display:block; line-height:0; }
-  .annot-host > img { display:block; }
+
+  /* Picker outline — a fixed overlay snapped to the resolved element's viewport rect.
+     pointer-events:none so it never intercepts the pick; elementFromPoint stays honest. */
+  #annot-highlight { position:fixed; z-index:9998; pointer-events:none; display:none;
+    border:2px solid var(--annot-accent, #0a5fb0); background:rgba(10,95,176,.10); border-radius:3px;
+    box-shadow:0 0 0 1px rgba(255,255,255,.55) inset; }
+  /* !important: override every element's own cursor during a pick (links/buttons set their own);
+     scoped to .annot-picking and torn down on exitPick, so it never leaks past pick mode. */
+  body.annot-picking, body.annot-picking * { cursor:crosshair !important; }
+  body.annot-picking #annot-pins { pointer-events:none; } /* don't let a pin swallow a pick-click */
+
+  /* Pins live in one document-level overlay, absolutely positioned in PAGE coordinates
+     (rect + scroll offset) so they scroll with the content and sit on any element —
+     tables/paragraphs/images alike, no per-element wrapper to clobber layout. */
+  #annot-pins { position:absolute; top:0; left:0; width:0; height:0; z-index:9997; }
   .annot-pin { position:absolute; width:24px; height:24px; margin:-12px 0 0 -12px;
     border-radius:50%; background:var(--annot-accent, #0a5fb0); color:#fff; border:2px solid #fff;
     font:700 12px/20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; text-align:center; cursor:pointer;
-    box-shadow:0 1px 4px rgba(0,0,0,.4); z-index:5; }
+    box-shadow:0 1px 4px rgba(0,0,0,.4); pointer-events:auto; }
   .annot-pin:focus-visible { outline:2px solid var(--annot-accent, #0a5fb0); outline-offset:2px; }
+  /* Unanchored (element vanished on regeneration) is an EXPECTED, benign state — the note is
+     kept + still exported — so it uses an informational amber, NOT the destructive-clear red. */
+  .annot-pin.annot-lost { position:fixed; background:var(--annot-warn, #b45309); border-style:dashed; }
   @media (prefers-reduced-motion: no-preference) {
     .annot-pin { transition:transform .12s ease; }
     .annot-pin:hover { transform:scale(1.12); }
   }
-  #annot-editor { position:fixed; z-index:10000; width:340px; max-width:90vw; max-height:90vh; overflow:auto;
+
+  #annot-editor { position:fixed; z-index:10002; width:340px; max-width:90vw; max-height:90vh; overflow:auto;
     background:var(--annot-editor-bg, #fff); border:1px solid var(--annot-editor-line, #e3e3e6); border-radius:12px; padding:14px;
     box-shadow:0 12px 40px rgba(0,0,0,.3); }
-  #annot-editor-meta { font:12px ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--annot-editor-fg, #41464d); opacity:.85; margin-bottom:8px; line-height:1.5; white-space:pre-line; }
+  #annot-editor-meta { font:12px ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--annot-editor-fg, #46464b); opacity:.85; margin-bottom:8px; line-height:1.5; white-space:pre-line; }
   #annot-editor-text { width:100%; height:84px; resize:vertical; font:14px inherit;
     border:1px solid var(--annot-editor-line, #e3e3e6); border-radius:8px; padding:8px; box-sizing:border-box; }
   .annot-editor-row { display:flex; justify-content:space-between; align-items:center; margin-top:10px; }
   #annot-editor button { font:13px inherit; border:0; padding:6px 13px; border-radius:7px; cursor:pointer;
-    background:var(--annot-editor-btn-bg, #eceef1); color:var(--annot-editor-fg, #1f2328); }
+    background:var(--annot-editor-btn-bg, #eceef1); color:var(--annot-editor-fg, #1c1c1e); }
   #annot-editor button.primary { background:var(--annot-accent, #0a5fb0); color:#fff; }
   #annot-editor #annot-editor-del { background:none; color:var(--annot-danger, #b3261e); }
   #annot-editor button:focus-visible, #annot-editor-text:focus-visible { outline:2px solid var(--annot-accent, #0a5fb0); outline-offset:2px; }
-  /* Dark mode — harmonize the editor with render-report.py's dark palette
-     (the bar is already dark and reads in both schemes). Overridable via the vars above. */
+
+  /* The failure-mode copy box (execCommand refused): a visible, pre-selected textarea. */
+  #annot-copybox { position:fixed; z-index:10003; top:54px; left:50%; transform:translateX(-50%);
+    width:min(560px,92vw); background:var(--annot-editor-bg, #fff); border:1px solid var(--annot-editor-line, #e3e3e6);
+    border-radius:12px; padding:12px; box-shadow:0 12px 40px rgba(0,0,0,.35); }
+  #annot-copybox textarea { width:100%; height:180px; font:12px ui-monospace,SFMono-Regular,Menlo,monospace;
+    border:1px solid var(--annot-editor-line, #e3e3e6); border-radius:8px; padding:8px; box-sizing:border-box; }
+  #annot-copybox button { margin-top:8px; font:13px inherit; border:0; padding:6px 13px; border-radius:7px; cursor:pointer;
+    background:var(--annot-editor-btn-bg, #eceef1); color:var(--annot-editor-fg, #1f2328); }
+
   @media (prefers-color-scheme: dark) {
-    #annot-editor { background:var(--annot-editor-bg, #1f1f22); border-color:var(--annot-editor-line, #34343a); }
-    #annot-editor-text { background:#161618; color:var(--annot-editor-fg, #e6e6ea); border-color:var(--annot-editor-line, #34343a); }
+    #annot-editor, #annot-copybox { background:var(--annot-editor-bg, #1f1f22); border-color:var(--annot-editor-line, #34343a); }
+    #annot-editor-text, #annot-copybox textarea { background:#161618; color:var(--annot-editor-fg, #e6e6ea); border-color:var(--annot-editor-line, #34343a); }
     #annot-editor-meta { color:var(--annot-editor-fg, #b7b7bd); }
-    #annot-editor button { background:var(--annot-editor-btn-bg, #2b2b30); color:var(--annot-editor-fg, #e6e6ea); }
+    #annot-editor button, #annot-copybox button { background:var(--annot-editor-btn-bg, #2b2b30); color:var(--annot-editor-fg, #e6e6ea); }
   }
 </style>
 
@@ -109,273 +171,418 @@
 (function () {
   "use strict";
 
-  // Annotatable-image selector. render-report.py emits `annot-shot` on captured
-  // screenshots; change this only if hand-authoring with a different class.
-  var SHOT_SELECTOR = "img.annot-shot";
+  // Smallest pickable box (px). Below this in EITHER dimension the walk-up skips the
+  // element — so a 1px span or a hairline rule is never the pin target; its parent is.
+  var MIN_SIZE = 8;
+  // Tags that carry no visual box worth pinning; the walk-up steps past them.
+  var SKIP_TAGS = { SCRIPT:1, STYLE:1, NOSCRIPT:1, HEAD:1, META:1, LINK:1, BASE:1, TITLE:1, BR:1, WBR:1, TEMPLATE:1, HTML:1, BODY:1 };
+  var HSEL = "h1,h2,h3,h4";
+  var CHROME_SEL = "#annot-bar,#annot-editor,#annot-highlight,#annot-pins,#annot-copybox";
 
-  // localStorage key derived from this document's title + path (not a project
-  // name), so a refresh doesn't lose work. The report titles itself per branch
-  // ("Verify-build walkthrough · <branch>"), so two branches don't share a key.
+  // localStorage key derived from this document's title + path (not a project name), so
+  // a refresh doesn't lose work. Kept byte-identical to the FB-0051 layer's key so pins
+  // from a prior (image-only) load are found and MIGRATED (see migrate()) rather than orphaned.
   var KEY = "flow-annot:" + (document.title || "") + ":" + location.pathname;
 
   var notes = [];
-  try { notes = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { notes = []; }
+  try { notes = JSON.parse(localStorage.getItem(KEY) || "[]").map(migrate); } catch (e) { notes = []; }
 
+  var bar = document.getElementById("annot-bar");
+  var pickBtn = document.getElementById("annot-pick");
+  var clearBtn = document.getElementById("annot-clear");
+  var highlight = document.getElementById("annot-highlight");
+  var pinBox = document.getElementById("annot-pins");
   var editor = document.getElementById("annot-editor");
   var editText = document.getElementById("annot-editor-text");
   var editMeta = document.getElementById("annot-editor-meta");
-  var active = null; // id being edited
 
-  function save() { localStorage.setItem(KEY, JSON.stringify(notes)); render(); }
+  var active = null;                 // id of the note being edited
+  var editorReturnFocus = null;      // pin to return focus to when the editor closes (keyboard editing)
+  var picking = false;               // picker active?
+  var pickCurrent = null;            // element currently outlined
+  var upStack = [];                  // descent path: elements we walked UP from (ArrowDown reverses)
+  var placements = [];               // {note, el, pin} for repositioning
+
+  // Default cosmetic pin position within an element (center-x, near the top edge) —
+  // used when a note carries no explicit click-offset. Placement only, never anchored.
+  var DEFAULT_OFF = { x: 0.5, y: 0.06 };
+
+  // Persist + re-render. A localStorage failure (quota / private mode) is surfaced, not
+  // swallowed (FB-0010 silent-skip): the notes still live for the session, but the reviewer
+  // must know a refresh will lose them.
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(notes)); }
+    catch (e) { flash("Couldn't save to this browser — notes kept for this session only."); }
+    render();
+  }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function isChrome(el) { return !!(el && el.closest && el.closest(CHROME_SEL)); }
+  function cssesc(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, "\\$&"); }
 
-  // Per-image device-point mapping from data-device="WxH" (W and H positive
-  // numbers; 'x' or '×' separator). No/invalid attribute → null → no mapping.
-  function deviceDims(img) {
-    var d = img.getAttribute("data-device");
-    if (!d) return null;
-    var m = /^\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*$/i.exec(d);
-    if (!m) return null;
-    var w = parseFloat(m[1]), h = parseFloat(m[2]);
-    if (!(w > 0 && h > 0)) return null;
-    return { w: w, h: h };
+  // A FB-0051 image-note ({file, screen, xPct, yPct, alt}) → the FB-0071 shape.
+  function migrate(n) {
+    if (n && n.anchor) return n;
+    if (n && (n.xPct != null || n.screen != null)) {
+      return { id: n.id || uid(),
+        anchor: { pinId: null, heading: n.screen || "(page)", tag: "img", role: "", text: n.alt || "" },
+        off: { x: n.xPct != null ? n.xPct : DEFAULT_OFF.x, y: n.yPct != null ? n.yPct : DEFAULT_OFF.y },
+        note: n.note || "", ts: n.ts || new Date().toISOString() };
+    }
+    return n;
   }
 
-  // The human label of the section this image sits in (h1–h4). Structural, no
-  // project-specific container selector. Handles both heading-before-image and
-  // image-after-heading (render-report.py renders <section><h2>…</h2>…<img>).
-  // Strategy: scope to the smallest ancestor that contains a heading (the
-  // section), prefer the last heading that precedes the image, else the section's
-  // first heading. Falls back to nearest preceding heading in the document, then "(page)".
-  var HSEL = "h1,h2,h3,h4";
-  function lastPreceding(list, img) {
+  // ---- targeting: element under the cursor, walked up to a sane pick ---------------
+  // Adapts agentation's elementFromPoint + pickTarget() shape (ported to vanilla): from
+  // the raw point, step past non-visual tags, our own chrome, and sub-threshold boxes.
+  function pickTarget(el) {
+    while (el && el.nodeType === 1) {
+      if (isChrome(el)) { el = el.parentElement; continue; }
+      if (SKIP_TAGS[el.tagName]) { el = el.parentElement; continue; }
+      var r = el.getBoundingClientRect();
+      if (r.width < MIN_SIZE || r.height < MIN_SIZE) { el = el.parentElement; continue; }
+      return el;
+    }
+    return null;
+  }
+
+  // ---- anchoring: a stable identity for the committed element ----------------------
+  function headingText(h) { return (h.innerText || h.textContent || "").replace(/\s+/g, " ").trim(); }
+  function lastPreceding(list, el) {
     var best = null;
     for (var i = 0; i < list.length; i++) {
-      if (img.compareDocumentPosition(list[i]) & Node.DOCUMENT_POSITION_PRECEDING) best = list[i];
+      if (el.compareDocumentPosition(list[i]) & Node.DOCUMENT_POSITION_PRECEDING) best = list[i];
     }
     return best;
   }
-  function nearestHeading(img) {
-    var node = img.parentNode, scope = null;
+  // The human label of the section this element sits in. Structural, no project-specific
+  // container selector: the element's own heading if it is/contains one, else the last
+  // heading preceding it within the smallest heading-bearing ancestor, else the nearest
+  // preceding heading in the document, else "(page)".
+  function nearestHeading(el) {
+    if (el.matches && el.matches(HSEL)) return headingText(el);
+    if (el.querySelector) { var own = el.querySelector(HSEL); if (own) return headingText(own); }
+    var node = el.parentNode, scope = null;
     while (node && node.nodeType === 1) {
       if (node.querySelector && node.querySelector(HSEL)) { scope = node; break; }
       node = node.parentNode;
     }
     if (scope) {
       var within = scope.querySelectorAll(HSEL);
-      var chosen = lastPreceding(within, img) || within[0]; // else first heading in the section
-      if (chosen) return chosen.innerText.trim();
+      var chosen = lastPreceding(within, el) || within[0];
+      if (chosen) return headingText(chosen);
     }
-    var doc = lastPreceding(document.querySelectorAll(HSEL), img);
-    return doc ? doc.innerText.trim() : "(page)";
+    var doc = lastPreceding(document.querySelectorAll(HSEL), el);
+    return doc ? headingText(doc) : "(page)";
   }
+  function shortText(el) {
+    var t = el.getAttribute && (el.getAttribute("aria-label") || el.getAttribute("alt"));
+    if (!t) t = (el.innerText || el.textContent || "");
+    t = (t || "").replace(/\s+/g, " ").trim();
+    return t.length > 60 ? t.slice(0, 57) + "…" : t;
+  }
+  function anchorFor(el) {
+    return {
+      pinId: (el.getAttribute && el.getAttribute("data-pin-id")) || null,
+      heading: nearestHeading(el),
+      tag: el.tagName.toLowerCase(),
+      role: (el.getAttribute && el.getAttribute("role")) || "",
+      text: shortText(el)
+    };
+  }
+  // Resolve an anchor back to a live element — position-independent, never by index.
+  // data-pin-id wins; else score candidates by role + nearest-heading + text sample and
+  // accept only a meaningful match (score > 1), so a vanished element resolves to null.
+  function resolve(a) {
+    if (a.pinId) {
+      try { var byId = document.querySelector('[data-pin-id="' + cssesc(a.pinId) + '"]'); if (byId) return byId; } catch (e) {}
+    }
+    var nodes = document.querySelectorAll(a.tag || "*"), best = null, bestScore = 1;
+    for (var i = 0; i < nodes.length; i++) {
+      var c = nodes[i];
+      if (isChrome(c)) continue;
+      var s = 0;
+      if (((c.getAttribute && c.getAttribute("role")) || "") === a.role) s += 1;
+      if (nearestHeading(c) === a.heading) s += 2;
+      var ct = shortText(c);
+      if (a.text && ct === a.text) s += 3;
+      else if (a.text && ct && ct.indexOf(a.text.slice(0, 18)) === 0) s += 1;
+      if (s > bestScore) { bestScore = s; best = c; }
+    }
+    return best;
+  }
+  // The part of the descriptor after the section (tag[role] "text") — the element itself.
+  function elDesc(a) {
+    var d = a.tag || "element";
+    if (a.role) d += "[role=" + a.role + "]";
+    if (a.text) d += ' "' + a.text + '"';
+    return d;
+  }
+  function descriptor(a) { return (a.heading || "(page)") + " › " + elDesc(a); }
 
-  function hostFor(img) {
-    if (img.parentNode.classList && img.parentNode.classList.contains("annot-host")) return img.parentNode;
-    var host = document.createElement("span");
-    host.className = "annot-host";
-    img.parentNode.insertBefore(host, img);
-    host.appendChild(img);
-    host.addEventListener("click", function (e) {
-      if (e.target !== img) return; // pin clicks handled separately
-      var r = img.getBoundingClientRect();
-      var xPct = (e.clientX - r.left) / r.width;
-      var yPct = (e.clientY - r.top) / r.height;
-      var dev = deviceDims(img);
-      var n = {
-        id: uid(),
-        file: shotKey(img),
-        screen: nearestHeading(img),
-        alt: img.getAttribute("alt") || "",
-        xPct: +xPct.toFixed(4), yPct: +yPct.toFixed(4),
-        devX: dev ? Math.round(xPct * dev.w) : null,
-        devY: dev ? Math.round(yPct * dev.h) : null,
-        note: "", ts: new Date().toISOString()
-      };
-      notes.push(n); save(); openEditor(n.id, e.clientX, e.clientY);
-    });
-    return host;
+  // ---- picker lifecycle ------------------------------------------------------------
+  function enterPick() {
+    picking = true; upStack = []; pickCurrent = null;
+    document.body.classList.add("annot-picking");
+    pickBtn.setAttribute("aria-pressed", "true");
+    flash("Pick an element — ↑ widens, ↓ narrows, click or ↵ commits, Esc cancels.");
   }
+  function exitPick() {
+    picking = false; pickCurrent = null; upStack = [];
+    document.body.classList.remove("annot-picking");
+    pickBtn.setAttribute("aria-pressed", "false");
+    highlight.style.display = "none";
+  }
+  function drawHighlight(el) {
+    if (!el) { highlight.style.display = "none"; return; }
+    var r = el.getBoundingClientRect();
+    highlight.style.display = "block";
+    highlight.style.left = r.left + "px";
+    highlight.style.top = r.top + "px";
+    highlight.style.width = r.width + "px";
+    highlight.style.height = r.height + "px";
+  }
+  function setTarget(el) { pickCurrent = el; drawHighlight(el); }
 
-  // A captured frame's src is a base64 data URI (render-report.py inlines frames),
-  // so it makes a poor pin key. Key on the image's alt ("Captured frame: <criterion>")
-  // plus its DOM index — readable, and the index disambiguates two frames that share
-  // a criterion (so they're never conflated, and the key is stable across re-renders
-  // because the report's image set never changes).
-  function shotIndex(img) {
-    return Array.prototype.indexOf.call(document.querySelectorAll(SHOT_SELECTOR), img);
+  function onMove(e) {
+    if (!picking) return;
+    var el = pickTarget(document.elementFromPoint(e.clientX, e.clientY));
+    // A fresh mouse move resets the descent path; re-outline only if the target changed.
+    if (el) { if (el !== pickCurrent) setTarget(el); upStack = []; }
   }
-  function shotKey(img) {
-    var alt = (img.getAttribute("alt") || "").trim();
-    return (alt || "shot") + "#" + shotIndex(img);
+  // Commit the currently-outlined element. `pt` is the pixel point to seed the cosmetic
+  // click-offset (the click position, or the element's top-center on a keyboard commit).
+  function commitPick(pt) {
+    if (!pickCurrent) { exitPick(); return; }
+    var el = pickCurrent, r = el.getBoundingClientRect();
+    var ox = r.width ? (pt.x - r.left) / r.width : DEFAULT_OFF.x;
+    var oy = r.height ? (pt.y - r.top) / r.height : DEFAULT_OFF.y;
+    var n = {
+      id: uid(),
+      anchor: anchorFor(el),
+      off: { x: clamp01(ox), y: clamp01(oy) },   // COSMETIC placement only — not in the anchor, not exported
+      note: "", ts: new Date().toISOString()
+    };
+    exitPick();
+    notes.push(n); save();
+    editorReturnFocus = null; // a fresh commit didn't come from a pin — no focus to return to
+    openEditor(n.id, r.left + n.off.x * r.width, r.top + n.off.y * r.height);
   }
+  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
-  // Pin coordinates are % of the host; size the host to the image's RENDERED box so
-  // they align even when the host's block container is wider than the capped image.
-  // (CSS shrink-wrap can't do this without a cycle when the image width is %-based.)
-  function syncHost(host, img) {
-    host.style.width = "";
-    var w = img.getBoundingClientRect().width;
-    if (w) host.style.width = w + "px";
+  // ---- pins ------------------------------------------------------------------------
+  function pinPoint(el, off) {
+    var r = el.getBoundingClientRect();
+    var ox = off ? off.x : DEFAULT_OFF.x, oy = off ? off.y : DEFAULT_OFF.y;
+    return { x: r.left + window.scrollX + ox * r.width, y: r.top + window.scrollY + oy * r.height };
   }
-
   function render() {
-    document.querySelectorAll(".annot-pin").forEach(function (p) { p.remove(); });
-    var byKey = {};
-    notes.forEach(function (n, i) { (byKey[n.file] = byKey[n.file] || []).push({ n: n, num: i + 1 }); });
-    document.querySelectorAll(SHOT_SELECTOR).forEach(function (img) {
-      var host = hostFor(img);
-      syncHost(host, img);
-      var key = shotKey(img);
-      (byKey[key] || []).forEach(function (rec) {
-        var pin = document.createElement("span");
-        pin.className = "annot-pin";
-        pin.textContent = rec.num;
-        pin.style.left = (rec.n.xPct * 100) + "%";
-        pin.style.top = (rec.n.yPct * 100) + "%";
-        pin.title = rec.n.note || "Click to add a note";
-        // Existing pins are keyboard-operable (Enter/Space opens the editor).
-        // Dropping a NEW pin still needs a click — see the honest-limitation note.
-        pin.setAttribute("tabindex", "0");
-        pin.setAttribute("role", "button");
-        pin.setAttribute("aria-label", "Note " + rec.num + " on " + rec.n.screen + ": " + (rec.n.note || "(empty)"));
-        pin.addEventListener("click", function (e) {
-          e.stopPropagation();
-          openEditor(rec.n.id, e.clientX, e.clientY);
-        });
-        pin.addEventListener("keydown", function (e) {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault(); e.stopPropagation();
-            var r = pin.getBoundingClientRect();
-            openEditor(rec.n.id, r.left, r.top);
-          }
-        });
-        host.appendChild(pin);
+    pinBox.innerHTML = "";
+    placements = [];
+    var lost = 0;
+    notes.forEach(function (n, i) {
+      var el = resolve(n.anchor);
+      var pin = document.createElement("span");
+      pin.className = "annot-pin" + (el ? "" : " annot-lost");
+      pin.textContent = i + 1;
+      pin.title = n.note || (el ? "Click to add a note" : "Element not found in this report — click to edit");
+      pin.setAttribute("tabindex", "0");
+      pin.setAttribute("role", "button");
+      pin.setAttribute("aria-label", "Note " + (i + 1) + " on " + descriptor(n.anchor) + ": " + (n.note || "(empty)"));
+      if (el) {
+        var p = pinPoint(el, n.off);
+        pin.style.left = p.x + "px"; pin.style.top = p.y + "px";
+      } else {
+        pin.style.left = "8px"; pin.style.top = (52 + lost * 28) + "px"; lost++;
+      }
+      pin.addEventListener("click", function (e) { e.stopPropagation(); editorReturnFocus = n.id; openEditor(n.id, e.clientX, e.clientY); });
+      pin.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault(); e.stopPropagation();
+          editorReturnFocus = n.id; // return focus to this note's pin when the editor closes (keyboard editing)
+          var pr = pin.getBoundingClientRect(); openEditor(n.id, pr.left, pr.top);
+        }
       });
+      pinBox.appendChild(pin);
+      placements.push({ note: n, el: el, pin: pin });
     });
     var c = document.getElementById("annot-count");
-    c.textContent = notes.length + (notes.length === 1 ? " note" : " notes");
+    c.textContent = notes.length + (notes.length === 1 ? " note" : " notes") + (lost ? " · " + lost + " unanchored" : "");
+  }
+  // Reposition matched pins from their element's current rect (layout/scroll changes);
+  // lost pins are fixed. Cheap — recomputes rects only.
+  function reposition() {
+    placements.forEach(function (pl) {
+      if (!pl.el) return;
+      var p = pinPoint(pl.el, pl.note.off);
+      pl.pin.style.left = p.x + "px"; pl.pin.style.top = p.y + "px";
+    });
+    if (picking && pickCurrent) drawHighlight(pickCurrent);
   }
 
+  // ---- editor ----------------------------------------------------------------------
   function openEditor(id, clientX, clientY) {
     active = id;
     var n = notes.find(function (x) { return x.id === id; });
     if (!n) return;
     var num = notes.indexOf(n) + 1;
-    var dev = (n.devX != null) ? "  ≈ device " + n.devX + "×" + n.devY + "pt" : "";
-    editMeta.textContent = "#" + num + " · " + n.screen + "\n" +
-      "x=" + Math.round(n.xPct * 100) + "% y=" + Math.round(n.yPct * 100) + "%" + dev;
+    var lost = resolve(n.anchor) ? "" : "\n(element not found in current report)";
+    editMeta.textContent = "#" + num + " · " + descriptor(n.anchor) + lost;
     editText.value = n.note || "";
     editor.hidden = false;
     var ew = 340, eh = 200, pad = 12;
-    var x = Math.min(clientX + 14, window.innerWidth - ew - pad);
-    var y = Math.min(Math.max(clientY - 20, 52), window.innerHeight - eh - pad);
+    var x = Math.min((clientX || 0) + 14, window.innerWidth - ew - pad);
+    var y = Math.min(Math.max((clientY || 0) - 20, 52), window.innerHeight - eh - pad);
     editor.style.left = Math.max(pad, x) + "px";
     editor.style.top = y + "px";
     editText.focus();
   }
-  function closeEditor() { editor.hidden = true; active = null; }
-  function commit() {
-    var n = notes.find(function (x) { return x.id === active; });
-    if (n) { n.note = editText.value.trim(); }
-    // a pin with no note typed is discarded so stray clicks don't litter
-    if (n && !n.note) notes = notes.filter(function (x) { return x.id !== n.id; });
-    save(); closeEditor();
+  function closeEditor() {
+    editor.hidden = true; active = null;
+    // Return focus to the edited note's CURRENT pin (looked up by id, since render()
+    // rebuilds pin elements on save) — so keyboard editing doesn't dump focus on <body>.
+    var rid = editorReturnFocus; editorReturnFocus = null;
+    if (rid) {
+      for (var i = 0; i < placements.length; i++) {
+        if (placements[i].note.id === rid && document.contains(placements[i].pin)) { placements[i].pin.focus(); break; }
+      }
+    }
   }
-  function del() { notes = notes.filter(function (x) { return x.id !== active; }); save(); closeEditor(); }
-
-  document.getElementById("annot-editor-save").addEventListener("click", commit);
-  document.getElementById("annot-editor-cancel").addEventListener("click", function () {
+  function discardIfEmpty() {
     var n = notes.find(function (x) { return x.id === active; });
     if (n && !n.note) { notes = notes.filter(function (x) { return x.id !== n.id; }); save(); }
-    closeEditor();
-  });
-  document.getElementById("annot-editor-del").addEventListener("click", del);
-  editText.addEventListener("keydown", function (e) {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { commit(); }
-  });
-  // Esc cancels from anywhere in the open editor (not only while the textarea
-  // has focus — the reviewer may have tabbed to the Save/Delete buttons).
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && !editor.hidden) { document.getElementById("annot-editor-cancel").click(); }
-  });
-
-  document.getElementById("annot-clear").addEventListener("click", function () {
-    if (notes.length && confirm("Delete all " + notes.length + " notes?")) { notes = []; save(); }
-  });
-
-  // Map each annotatable image's key to its DOM order, so the export is emitted in
-  // reading order (top-to-bottom, image by image) rather than pin-creation order —
-  // the consuming agent gets notes already batched per surface.
-  function imageOrder() {
-    var order = {}, i = 0;
-    document.querySelectorAll(SHOT_SELECTOR).forEach(function (img) {
-      var k = shotKey(img);
-      if (!(k in order)) order[k] = i++;
-    });
-    return order;
   }
+  function commitNote() {
+    var n = notes.find(function (x) { return x.id === active; });
+    if (n) n.note = editText.value.trim();
+    if (n && !n.note) notes = notes.filter(function (x) { return x.id !== n.id; }); // a stray pin with no text is discarded
+    save(); closeEditor();
+  }
+  function delNote() { notes = notes.filter(function (x) { return x.id !== active; }); save(); closeEditor(); }
 
+  document.getElementById("annot-editor-save").addEventListener("click", commitNote);
+  document.getElementById("annot-editor-cancel").addEventListener("click", function () { discardIfEmpty(); closeEditor(); });
+  document.getElementById("annot-editor-del").addEventListener("click", delNote);
+  editText.addEventListener("keydown", function (e) { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commitNote(); });
+
+  // ---- toolbar: pick toggle, two-step clear ----------------------------------------
+  pickBtn.addEventListener("click", function () { picking ? exitPick() : enterPick(); });
+
+  var armed = false, armTimer = null;
+  function disarm() { armed = false; clearBtn.textContent = "Clear"; clearBtn.classList.remove("armed"); if (armTimer) clearTimeout(armTimer); }
+  clearBtn.addEventListener("click", function () {
+    if (!notes.length) { flash("No notes to clear."); return; }
+    if (!armed) { armed = true; clearBtn.textContent = "Confirm clear (" + notes.length + ")"; clearBtn.classList.add("armed"); armTimer = setTimeout(disarm, 4000); return; }
+    notes = []; save(); disarm();
+  });
+
+  // ---- global keys: Escape (picker → editor), arrows/Enter while picking -----------
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      if (picking) { exitPick(); return; }
+      if (!editor.hidden) { discardIfEmpty(); closeEditor(); return; }
+      if (armed) { disarm(); return; }
+    }
+    if (!picking) return;
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      var par = pickCurrent && pickCurrent.parentElement;
+      if (par && par.nodeType === 1 && !isChrome(par) && !SKIP_TAGS[par.tagName]) { upStack.push(pickCurrent); setTarget(par); }
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (upStack.length) setTarget(upStack.pop());
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (pickCurrent) { var r = pickCurrent.getBoundingClientRect(); commitPick({ x: r.left + r.width / 2, y: r.top + Math.min(18, r.height * 0.1) }); }
+    }
+  });
+  // Commit on click while picking. Capture phase + preventDefault so a click on a link
+  // or button picks the element instead of following/activating it.
+  document.addEventListener("click", function (e) {
+    if (!picking) return;
+    if (isChrome(e.target)) return;           // clicks on our own toolbar/pins are not picks
+    e.preventDefault(); e.stopPropagation();
+    commitPick({ x: e.clientX, y: e.clientY });
+  }, true);
+  document.addEventListener("mousemove", onMove, true);
+
+  // ---- export: located, descriptor-based, grouped by section, reading order --------
+  function domOrder(a, b) {
+    if (a.el && b.el) {
+      var p = a.el.compareDocumentPosition(b.el);
+      if (p & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+      if (p & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      return 0;
+    }
+    return a.el ? -1 : b.el ? 1 : 0; // unanchored notes sink to the end
+  }
   document.getElementById("annot-copy").addEventListener("click", function () {
-    if (!notes.length) { alert("No notes yet — click a screen to drop a pin."); return; }
-    var order = imageOrder();
-    // Sort by image DOM order, then top-to-bottom within an image. Pin NUMBERS
-    // stay creation-order (they label the on-page pins) — only the export order
-    // and per-screen grouping change.
-    var sorted = notes.slice().sort(function (a, b) {
-      var oa = (a.file in order) ? order[a.file] : 9999;
-      var ob = (b.file in order) ? order[b.file] : 9999;
-      if (oa !== ob) return oa - ob;
-      return a.yPct - b.yPct;
-    });
-    var lines = [], curScreen = null;
-    sorted.forEach(function (n) {
-      if (n.screen !== curScreen) { curScreen = n.screen; lines.push("## " + curScreen); }
-      var num = notes.indexOf(n) + 1;
-      var dev = (n.devX != null) ? "  (≈ device " + n.devX + "×" + n.devY + "pt)" : "";
-      lines.push("#" + num + "\n" +
-        "   at x=" + Math.round(n.xPct * 100) + "% y=" + Math.round(n.yPct * 100) + "%" + dev + "\n" +
-        "   note: " + (n.note || "(none)"));
+    if (!notes.length) { flash("No notes yet — click Pin, then an element."); return; }
+    var rows = notes.map(function (n) { return { n: n, num: notes.indexOf(n) + 1, el: resolve(n.anchor) }; });
+    rows.sort(domOrder);
+    var lines = [], curHeading = null, sawLost = false;
+    rows.forEach(function (r) {
+      var head = r.el ? (r.n.anchor.heading || "(page)") : "(unanchored — element not found in current report)";
+      if (head !== curHeading) { curHeading = head; sawLost = sawLost || !r.el; lines.push("## " + head); }
+      lines.push("#" + r.num + "\n   at " + elDesc(r.n.anchor) + "\n   note: " + (r.n.note || "(none)"));
     });
     var header = (document.title || "Visual review") + " — " + notes.length + " annotation(s)\n" +
-      "(grouped by screen, top-to-bottom; numbers match the on-page pins;\n" +
-      " coordinates are % within each screenshot; device-point values, where shown,\n" +
-      " use each image's declared data-device basis)\n\n";
-    var text = header + lines.join("\n\n");
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(
-        function () { flash("Copied " + notes.length + " note(s) — paste them to me."); },
-        function () { fallbackCopy(text, notes.length); });
-    } else { fallbackCopy(text, notes.length); }
+      "(grouped by section, in reading order; numbers match the on-page pins;\n" +
+      " each line names the section and the element the note is attached to" +
+      (sawLost ? ";\n an \"unanchored\" note's element was not found in the current report" : "") + ")\n\n";
+    copyText(header + lines.join("\n\n"), notes.length);
   });
 
-  // file:// blocks the async clipboard API in some browsers → three-level fallback.
-  // SAFETY: `text` is user-typed notes + numbers + the report title, and every sink
-  // here is plain-text (textarea .value, execCommand copy, prompt()) — no HTML parsing.
-  // If you replace prompt() with a custom dialog, render the text as textContent, never innerHTML.
-  function fallbackCopy(text, count) {
+  // file:// blocks the async Clipboard API in some browsers → hidden-textarea + execCommand.
+  // SAFETY: `text` is user-typed notes + numbers + descriptors + the report title, and every
+  // sink here is plain-text (textarea .value, execCommand copy) — no HTML parsing, no innerHTML.
+  // On refusal we surface a visible, pre-selected textarea to ⌘/Ctrl+C from — never a native modal.
+  function copyText(text, count) {
     var ta = document.createElement("textarea");
-    ta.value = text; document.body.appendChild(ta); ta.select();
-    try { document.execCommand("copy"); flash("Copied " + count + " note(s) — paste them to me."); }
-    catch (e) { prompt("Copy these notes:", text); }
+    ta.value = text; ta.setAttribute("readonly", "");
+    ta.style.position = "fixed"; ta.style.top = "-1000px"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try { ta.setSelectionRange(0, text.length); } catch (e) {}
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
     ta.remove();
+    if (ok) { flash("Copied " + count + " note(s) — paste them to me."); return; }
+    showCopyBox(text);
   }
-  // Transient toast in its own aria-live region — never overwrite #annot-count
-  // (which must always show the true count, and re-announce only when it changes).
+  function showCopyBox(text) {
+    var old = document.getElementById("annot-copybox"); if (old) old.remove();
+    var box = document.createElement("div"); box.id = "annot-copybox";
+    var ta = document.createElement("textarea"); ta.readOnly = true; ta.value = text;
+    var btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Close";
+    btn.addEventListener("click", function () { box.remove(); });
+    var p = document.createElement("div"); p.textContent = "Copy blocked — select all and press ⌘/Ctrl+C:";
+    p.style.cssText = "font:12px inherit;margin-bottom:6px;";
+    box.appendChild(p); box.appendChild(ta); box.appendChild(btn);
+    document.body.appendChild(box);
+    ta.focus(); ta.select();
+  }
+
+  // Transient toast in its own aria-live region — never overwrite #annot-count (which
+  // must always show the true count, re-announced only when it changes).
   function flash(msg) {
     var f = document.getElementById("annot-flash");
     f.textContent = msg;
-    setTimeout(function () { f.textContent = ""; }, 1800);
+    setTimeout(function () { if (f.textContent === msg) f.textContent = ""; }, 2400);
   }
 
-  // Re-render on load + resize: pins are percent-positioned, but the host width is
-  // synced to the image (which changes on resize), so re-run to keep them aligned.
-  // Images may also finish decoding after first paint — re-sync once they load.
-  window.addEventListener("load", render);
-  window.addEventListener("resize", render);
-  document.querySelectorAll(SHOT_SELECTOR).forEach(function (img) {
-    if (!img.complete) img.addEventListener("load", render);
-  });
-  render();
+  // Offset the report below the FIXED bar by the bar's true height — it wraps to 2–3 rows
+  // at narrow widths / high zoom, and a hardcoded single-row pad would let the extra rows
+  // occlude the top of the report (WCAG 1.4.10 reflow). The CSS 46px is the pre-JS fallback.
+  function syncBarPad() { document.body.style.paddingTop = bar.offsetHeight + "px"; }
+
+  // Reposition on scroll/resize/late image decode; a full render() only when notes change.
+  var repoTick = false;
+  function scheduleReposition() {
+    if (repoTick) return; repoTick = true;
+    (window.requestAnimationFrame || setTimeout)(function () { repoTick = false; reposition(); }, 16);
+  }
+  window.addEventListener("scroll", scheduleReposition, true);
+  window.addEventListener("resize", function () { syncBarPad(); scheduleReposition(); });
+  window.addEventListener("load", function () { syncBarPad(); render(); });
+  syncBarPad(); render();
 })();
 </script>
