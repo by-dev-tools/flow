@@ -231,8 +231,22 @@ def main(argv):
             plan_text = ""
             signals.append(f"[WARN] could not read plan {args.plan} for Visual-walk override")
         if plan_text and extract_block is not None:
-            blk = extract_block(plan_text, "Visual-walk")
-            if blk.get("block_count", 0) >= 1:
+            # anchor_label scopes the match to the ACTIVE PR's section — a
+            # retained PR's Visual-walk block must not force significance on a
+            # diff whose own plan block declares none (block_count alone can't
+            # tell the two apart).
+            blk = extract_block(plan_text, "Visual-walk", anchor_label="Spec-walk")
+            if blk.get("co_located") is False:
+                signals.append(
+                    "[WARN] a Visual-walk block exists but belongs to a retained "
+                    "PR section, not the active one — NOT treating it as an "
+                    "override"
+                )
+                # Carry the parser's warnings through: they hold the line numbers
+                # and the move-it-here remedy. Dropping them would leave the
+                # operator with a refusal and no way to act on it.
+                signals.extend(f"[WARN] {w}" for w in blk.get("warnings", []))
+            elif blk.get("block_count", 0) >= 1:
                 override = "visual-walk-block"
                 override_signal = "plan declares a Visual-walk block"
 

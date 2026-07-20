@@ -30,7 +30,28 @@
 - **Open hygiene:** user-scope `~/.claude/settings.json` still has a stale `extraKnownMarketplaces.llm-auditor` key (cosmetic — points at `flow.git` under the pre-rename name); remove when convenient. Md-manager PR 5 (dogfood) still pending in a separate worktree.
 - **Op tip:** `gh pr edit` errors on this repo (projects-classic GraphQL deprecation) — use `gh api -X PATCH .../pulls/N -f body=...` to set a PR body.
 
-## PR — Generalize the walkthrough annotation layer to any DOM element (v1.20.0, this branch, FB-0071)
+## PR — Scope `Visual-walk` extraction to the active PR's section (this branch, from a `/flow:contribute` drain)
+
+**Restated request:** drain the lesson-contribution queue. The top-scoring lesson (0.8, correction-sourced, reported from two independent projects) says `extract-visual-states.py` grabs the first `Visual-walk` block in a shared multi-PR plan, so an active PR that declares none silently inherits a retained PR's capture state-set and a forced `visual_significant`. A near-identical earlier report was wrongly dismissed as `already-encoded` in the previous drain (#74) — the recurrence is what caught it.
+
+**Mode:** feature. **Status:** implementation-complete; final-pass review run. Flow's own repo is `platform: library` + `uiSurface: false`, so `/flow:verify-build` and `/flow:accessibility-review` self-skip — the eval harness + the before/after reproductions are the behavioral gate here.
+
+**Spec-walk:**
+- [x] A retained-section `Visual-walk` is no longer adopted when the active PR declares none: `assertions: []`, `co_located: false`, loud warning naming the owning section + the remedy. (verify: `test_anchor_co_location` + `test_anchor_co_location_cli` in `run_walk_extract_evals.py`; reproduced by hand on a 2-PR plan before/after.)
+- [x] The `visual-significance` override no longer fires on a non-co-located block, and propagates the parser's warnings so the operator gets the line numbers. (verify: `run_visual_significance_evals.py` 13/13; hand-run against the repro plan shows `override: null` + both WARN signals.)
+- [x] Inert on the shapes that aren't the bug — <2 anchor headings, no anchor at all, `Visual-walk` authored above its sibling `Spec-walk`, and any unanchored `extract_block` call keep byte-identical behavior. (verify: `test_anchor_co_location_regression_guards` + `test_cli_backward_compat_keys`.)
+- [x] The two shapes the anchor proxy does NOT cover (active PR with no `Spec-walk`; retained section authored visual-first) are documented where authors read and pinned so neither reads as a fresh bug. (verify: `test_anchor_known_limitation_tiny_mode` + `test_anchor_known_limitation_retained_visual_first`; prose in `walk_extract.py` docstring, `rules/plan-discipline.md`, `verify-build/SKILL.md`, roadmap.)
+- [x] A recurrence of a previously-dismissed lesson is surfaced mechanically, not by prose alone: `dedup` exits 4 (distinct from 3 = already-queued) with the prior reason/date. (verify: `dedup-1-recurrence-of-dismissed`, `dedup-1b-recurrence-not-conflated-with-queued`, `dedup-3-already-queued-stays-3` in `run_contribution_evals.py`.)
+- [x] No regression across the suite. (verify: all 17 eval harnesses green; `run_walk_extract_evals.py` 47 → 67 checks.)
+
+**Confidence verdicts (load-bearing assumptions):**
+- HIGH — the reported bug reproduces and the fix closes it: verified by running the pre-fix module (from `git show HEAD:`) and the post-fix module against the same plan fixtures.
+- HIGH — the fix is a strict improvement, not a regression: both known-limitation shapes leak *identically* on the pre-fix module, confirmed by direct measurement.
+- MEDIUM — "before the second anchor heading" is the right region proxy. It is correct for `feature`-mode plans and wrong for two shapes; a genuinely universal per-PR boundary marker is a plan-format decision, routed to `roadmap.md` rather than guessed at here.
+
+**Files touched:** `skills/verify-build/lib/{walk_extract,extract-visual-states,visual-significance}.py`, `scripts/contribution_store.py`, `evals/run_{walk_extract,contribution}_evals.py`, `rules/plan-discipline.md`, `skills/{verify-build,contribute}/SKILL.md`, `dev-docs/{history,roadmap,plan}.md`.
+
+## PR — Generalize the walkthrough annotation layer to any DOM element (v1.20.0, shipped #75, FB-0071)
 
 **Restated request:** health-tracker hand-built a DOM-general click-to-comment layer (its FB-0011) that was always meant to be upstreamed into flow but never was. Generalize flow's image-only FB-0051 annotation overlay so a reviewer can pin a note to ANY element on a rendered report: a DevTools-style hover-inspect picker (adapt agentation's `elementFromPoint`+`pickTarget` shape, vanilla/dependency-free), keyboard parent/child traversal (new), a stable content-derived anchor that survives per-iteration regeneration, a location-descriptor export (not raw coordinates), shipped as a reusable partial any flow HTML-emitting skill/subagent can inject. Keep the working `file://` properties (no native modals, `execCommand` clipboard, localStorage, numbered pins, inline editor, two-step Clear, Copy-notes). Stdlib/vanilla only, project-agnostic. Land alongside or after the V3 renderer; don't block on it.
 
