@@ -190,6 +190,12 @@
       "maximum": 1,
       "description": "Confidence cutoff (0–1) for AUTO-INCLUDING a harvested lesson in the /flow:contribute draft PR without human pre-review (FB-0059). The deterministic confidence score (contribution_store.py) combines source weight (taste/decision > correction > error > feedback), evidence strength (direct-quote > paraphrase > inferred), cross-session recurrence, and a sanitization penalty. Lessons at or above this bar AND sanitization-clean enter the draft PR; everything below is HELD under the PR's 'needs human attention' list (never dropped). v1 still gates every PR on human merge — this only governs what lands in the draft vs what waits. A future auto-merge rung (deferred) hangs its predicate off the same score. Default: 0.6.",
       "default": 0.6
+    },
+    "postMergeWaitSeconds": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How long /flow:post-merge's merge-detect gate (FB-0072) polls a still-OPEN PR before giving up gracefully. On a merge-queue / auto-merge repo there is a 1–2 min delay between clicking merge and the PR actually merging, so an immediate MERGED-or-fail check would false-fail every time. The gate is three-state: MERGED → proceed; CLOSED-unmerged → fail loud (terminal — running cleanup here would be wrong); OPEN → poll up to this many seconds, then a calm 'still queued, re-run once it lands' exit (never the terminal fail). A non-queue repo merges instantly, so the PR is already MERGED on the first check and the poll never engages — this slot only matters on queue/auto-merge repos. Set 0 for fail-fast (do not poll; an OPEN PR immediately yields the graceful 'not merged yet' exit). Default: 150.",
+      "default": 150
     }
   }
 }

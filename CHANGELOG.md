@@ -10,6 +10,18 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.21.0 — 2026-07-24
+
+**New `/flow:post-merge` skill — the "merged — anything left, or safe to archive?" close-out, run after you merge a PR.**
+
+- **What it does.** One human-invoked command for the moment right after a merge: (1) confirms the PR actually merged, (2) reconciles the forward docs by **calling `/flow:land`**, (3) captures the feedback you gave at the merge gate (your review→iterate→merge comments), (4) deletes the merged branch, and (5) tells you whether the workspace is `✅ safe to archive` or `🚫 not safe` (with reasons). Never merges.
+- **Merge-queue safe.** The merge check is three-state, not "merged-or-fail": `MERGED` → proceed; `CLOSED` without merging → fail loud; still `OPEN` → poll up to `postMergeWaitSeconds` (default 150; `0` = fail-fast), then a calm "still queued, re-run once it lands." So on a merge-queue / auto-merge repo — where there's a 1–2 min gap between clicking merge and the PR landing — running it immediately no longer false-fails.
+- **Composes with `/flow:land`, doesn't replace it.** `/flow:post-merge` *calls* `/flow:land` for doc-currency rather than reimplementing it; `/flow:land` stays independently invocable (run it alone after a GitHub-web merge with no local workspace) and auto-fireable (the FB-0063 merge-event trigger).
+- **Feedback capture on the right side of the merge gate.** `/flow:ship` synthesizes feedback from the window that *closes when the PR opens* — so your richest design-taste comments at the merge gate leaked. `/flow:post-merge` synthesizes that delta window into user-scope agent memory + the `/flow:contribute` queue (content-match dedup; **no** repo-doc `feedbackPath` write in v1 — the transcript watermark + FB-inbox are deferred to v1b).
+- New `postMergeWaitSeconds` config slot (schema now **30 slots**). Deterministic core (`skills/post-merge/lib/merge-status.py`: three-state classify + poll policy + archive-safety check) pinned by `run_merge_status_evals.py`, wired into CI.
+
+**Breaking changes:** none. New skill + additive slot; existing behavior unchanged.
+
 ## v1.20.0 — 2026-07-15
 
 **The verify-build walkthrough's annotation layer now pins a note to _any_ element on the page — not just a captured screenshot (FB-0071).**

@@ -35,6 +35,17 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0072: A gate that verifies an event must distinguish "hasn't happened YET" from "will never happen" — and skills that share a trigger moment should compose (call each other), not merge into one
+
+**Date:** 2026-07-24
+**Source:** user direction + user correction (the merge-queue timing concern) — building `/flow:post-merge` (part B of the #78/#79 capture)
+
+**What was said:** Two design points the user raised while building the post-merge close-out. (1) On merge-queue / auto-merge repos there is a 1–2 min delay between clicking merge and the PR actually merging, so a skill that verifies "is it merged?" the instant it runs would fail *every time* even though nothing went wrong — "I don't want that to happen every single time if nothing actually went wrong." (2) Asked whether `/flow:post-merge` and `/flow:land` should be combined; the resolved answer was compose-not-combine.
+
+**Synthesized rule:** **(a) A gate that checks whether an external event happened must be three-state, not two: DONE (proceed) / TERMINAL-not-done (fail loud) / TRANSIENT-not-yet (wait, then give up *gracefully* — never the failure path).** Conflating "not yet" with "never" produces false failures on any system with a delay (merge queues, async CI, eventual-consistency APIs). The unknown/ambiguous case defaults to TRANSIENT, never TERMINAL — you never treat "can't tell yet" as "will never happen." Make the poll cap configurable (a slot), default it to absorb the common delay, and let the no-delay case short-circuit so the poll costs nothing there. This is the same "distinguish transient from terminal before you fail" principle as FB-0012 (loop only on a mechanical retry signal) and the flaky-test "no-progress vs not-yet" split. **(b) When two skills share a trigger moment + a precondition, compose (one calls the other) rather than merge into one skill** — preserve single-responsibility, independent invocability, and divergent automation futures. Combine only when the subordinate has *no* standalone value; here `/flow:land` does (a GitHub-web merge with no local workspace still wants doc-currency), so it stays a called component, not absorbed.
+
+**Applies to:** `skills/post-merge/SKILL.md` + `skills/post-merge/lib/merge-status.py` (the three-state `classify`/`poll-verdict`); the `postMergeWaitSeconds` slot; `/flow:land` (composed-with, unchanged); FB-0012 (transient-vs-terminal sibling), FB-0061/FB-0063 (`/flow:land` + its merge-event trigger), FB-0010 (the compose-not-combine avoids a doc-reconciliation fan-out). Note for v1b: `/flow:land`'s own standalone §1a merge gate is still two-state — converge it onto the shared three-state helper so a bare `/flow:land` right after a queue-merge doesn't false-fail either.
+
 ### FB-0071: A review-annotation layer must anchor to any DOM element, not a coordinate inside one element type — and it ships as a reusable partial, not welded to one renderer
 **Date:** 2026-07-15
 **Source:** user direction (this session: upstream health-tracker's DOM-general click-to-comment layer into flow, generalizing the FB-0051 image-only overlay)
