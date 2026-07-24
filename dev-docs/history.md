@@ -39,6 +39,32 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### docs: capture Anthropic's context-engineering guidance as a five-finding research block (unshipped analysis)
+**Date:** 2026-07-24
+**Branch:** claude/twitter-x-flow-research-28ghls (commit: this)
+
+**What was done:**
+Added a `## RESEARCH — Anthropic's context-engineering guidance vs flow's artifact surface` block to `plan.md`, plus a handoff note. Captures an analysis of Anthropic's context-engineering article (central claim: **>80% of Claude Code's system prompt removed for Opus 5 / Fable 5 with no measurable eval loss**; six then→now inversions; a native `/doctor` that rightsizes skills + CLAUDE.md) against flow's actual artifacts. Three items where flow is already aligned (rubrics + verifier lens agents, `visual-history.html` as a rich reference, auditor's output-format contracts) and five findings: (1) `/flow:doctor` now name-collides with native `/doctor` — amends Facet 1; (2) `ship/SKILL.md` at 1096 lines splits no prose while `verify-build` splits four files; (3) this repo's `CLAUDE.md` is 41/136 lines of path tables, against the article's explicit guidance, and propagates via PR 3's `template/`; (4) possible ship-§4b duplication with native auto-memory (unverified); (5) flow's `evals/` make the 80% deletion claim *testable* here rather than a judgement call. **No plugin artifact, script, or prompt was modified.**
+
+**Why:**
+The analysis existed only in a session transcript, in a container that is reclaimed on inactivity, and the user was about to switch cloud environments (to get `claude.com` off the egress denylist) — which starts a fresh session and loses the conversation. This is precisely the leak `/flow:post-merge` exists to fix: a decision that never reaches a durable doc. Committing it makes the next session resume from the branch instead of re-pasting the article.
+
+**Design decisions:**
+- **Filed as `RESEARCH —`, not `PR —`.** Nothing is scoped, versioned, or ready to build; using the PR shape would imply a claimed slot and a version bump that do not exist. Follows the "docs: capture the `/flow:post-merge` skill design into the roadmap" precedent for capturing design work ahead of execution.
+- **Recorded the verification status explicitly** (what was measured in-session vs taken from the article vs not checked at all). A repo whose product audits unverified claims should not commit a research block that reads as uniformly evidence-backed when Finding 4 is a flag and native `/doctor`'s behavior is second-hand.
+- **Wrote the sequencing recommendation into the block** (eval experiment → CLAUDE.md → ship split → doctor rename) so a fresh session inherits the ordering rationale, not just the findings.
+
+**Technical decisions:**
+- Findings are grounded in measurements taken in-session (`wc -l` over plugin markdown, the skill inventory, a `lib/` reference grep, `grep -cE '^\| `' CLAUDE.md`) rather than impressions, so a later session can re-run them and detect drift.
+- Cross-referenced Facet 1 by name rather than duplicating its content — the doctor/init unification already exists in the plan and now inherits a third consideration (the native-command collision) instead of spawning a competing entry.
+
+**Tradeoffs discussed:**
+- **Apply the article's "delete constraints" advice to ship's shell hardening vs explicitly exempt it.** Ship's bulk is partly FB-0010's earned defensive comments (six documented silent-skip incidents: jq `//` boolean swallowing, dash-vs-bash arrays, empty-stdout pipes). The article targets *model guidance*, not deterministic scripts. Exempted them in writing so a future session reading "rightsize ship" cannot mistake the mandate and strip hardening that regressions paid for. The finding was reframed from "shorten ship" to "separate mechanics from judgement prose" as a result.
+- **Commit to the branch vs open a PR.** Branch-only: the block is analysis, not a change to review, and the user has made no call on which findings to pursue.
+
+**Lessons learned:**
+- The environment's `Trusted network access` policy blocks all non-package-registry egress (`403 Host not in allowlist`), including `claude.com` and `anthropic.com`. Research sessions that need to read Anthropic's own published guidance require a **Custom** egress allowlist. Worth knowing before planning any research-shaped work in a cloud session.
+
 ### docs: refine the `/flow:post-merge` roadmap entry — merge-queue-safe gate + compose-with-land
 **Date:** 2026-07-20
 **Branch:** claude/post-merge-design-refinements (commit: pending ship)
