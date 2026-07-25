@@ -35,6 +35,16 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0072: Weight research by model recency — guidance tuned against older models can be actively wrong for newer ones, including flow's own accumulated corpus
+**Date:** 2026-07-25
+**Source:** user direction (this session: after reviewing Anthropic's context-engineering article, which documents six prompting best practices that *inverted* for the Claude 5 generation)
+
+**What was said:** Prioritize research on more recent models; older research does not necessarily apply to newer ones.
+
+**Synthesized rule:** Model-era is a first-class quality signal on any prompting/context-engineering source — treat undated or older-model guidance as **suspect by default**, not merely as lower-priority. The Claude 5 generation inverted six previously-canonical practices at once ("give Claude rules" → let it use judgement; "give Claude examples" → design expressive interfaces; "repeat yourself" → simple tool descriptions; "put it all upfront" → progressive disclosure; "memory in CLAUDE.md" → auto-memory; "simple specs" → rich references incl. HTML artifacts, test suites, code, rubrics), so guidance that was *correct* against an earlier model is now *wrong* rather than merely stale. Two consequences for flow specifically: **(1)** when researching, prefer primary Anthropic sources dated to the current model generation over third-party write-ups of any age, and record the model era a claim was made about alongside the claim; **(2)** apply this inward — flow's own **feedback corpus (71 prior FB entries) and eval fixtures** were largely tuned against pre-Claude-5 models and are load-bearing (FB entries shape prompts, fixtures pin behavior). A fixture encoding an obsolete constraint is worse than dead weight: it will fail a prompt-simplification experiment and be *misread as proof the constraint is load-bearing*. Audit the fixture corpus for model-era assumptions **before** trusting any strip-and-measure result. This does not license deleting rules on vibes — the existing bar still holds, inverted: no deletion without a fixture proving it safe.
+
+**Applies to:** research method (all future source-gathering); `dev-docs/plan.md` § RESEARCH block (Findings 5 + 8); `plugins/flow/evals/fixtures/` (the model-era audit); `plugins/flow/agents/{auditor,plan-critic}.md` (the prompts a strip-and-measure experiment would touch); `dev-docs/feedback.md` itself (prior entries are in scope for the same suspicion); CLAUDE.md § Quality Bar.
+
 ### FB-0071: A review-annotation layer must anchor to any DOM element, not a coordinate inside one element type — and it ships as a reusable partial, not welded to one renderer
 **Date:** 2026-07-15
 **Source:** user direction (this session: upstream health-tracker's DOM-general click-to-comment layer into flow, generalizing the FB-0051 image-only overlay)

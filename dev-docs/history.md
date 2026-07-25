@@ -39,6 +39,31 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### docs: extend the context-engineering research block — real citations, the Fable field guide, a spec-limit violation, and a model-recency discipline (FB-0072)
+**Date:** 2026-07-25
+**Branch:** claude/twitter-x-flow-research-28ghls (commit: this)
+
+**What was done:**
+Second pass on the `## RESEARCH` block in `plan.md`, after web search recovered what direct fetch could not, plus **FB-0072**. Four changes: **(1) Real citations.** The pasted article is "The new rules of context engineering for Claude 5 generation models"; the block previously said "unfetched, pasted." Sources are now split into `[A]` (read in full) and `[B]` (the Fable field guide — **not read**, recovered second-hand), with per-finding provenance so weaker sourcing cannot be laundered into apparent fact. **(2) Finding 6** — `[A]` ("cut scaffolding") and `[B]` ("your unknowns cap quality") pull opposite ways; resolution is *cut instruction scaffolding, protect unknown-surfacing machinery*, and flow already has three such mechanisms (LOW-confidence gate, verify-build Unknown-blocks + `open_questions`, plan-critic). **(3) Finding 7** — measured all 16 skill descriptions against the documented 1,024-char limit: `ship` 1463, `doctor` 1173, `contribute` 1066 over; `staff-review` 1007 and `log-disagreement` 986 at the edge. **(4) Finding 8 + FB-0072** — model-era is a first-class quality signal on research sources, applied inward to flow's own 71 FB entries and eval fixtures. Sequencing updated: the fixture audit now **precedes** the strip-and-measure experiment. Still analysis only — no plugin artifact, script, or prompt modified.
+
+**Why:**
+The user directed that research be weighted by model recency. That is not just a sourcing preference: `[A]` documents six prompting practices that *inverted* for the Claude 5 generation, so guidance tuned against an earlier model is wrong rather than merely stale — and flow's own corpus was largely tuned that way.
+
+**Design decisions:**
+- **Split sources into `[A]` read / `[B]` unread and tagged each finding's provenance.** The first pass recorded verification status in one trailing paragraph; once a finding rested on an article nobody had read, per-finding attribution became necessary. A repo whose product audits unverified claims cannot ship a research block where second-hand synthesis reads identically to a primary source.
+- **Coupled Finding 8 to Finding 5 rather than filing it separately.** The insight is not "some fixtures are old" — it is that a stale fixture *inverts the experiment's meaning*, failing on a removed constraint and reading as proof the constraint was load-bearing. Filed apart, the ordering dependency would have been lost.
+- **Wrote FB-0072's rule to apply to `feedback.md` itself.** A model-recency discipline that exempts the document recording it is self-undermining; prior FB entries are explicitly in scope for the same suspicion.
+
+**Technical decisions:**
+- Description lengths measured by extracting each YAML `description` block and counting characters. Recorded as approximate — the extraction counts raw YAML including wrapping, while the limit applies to the parsed string — and **whether the limit is load-time-enforced or advisory is explicitly marked unverified**, because a compliance claim asserted beyond the evidence is the exact failure the auditor exists to catch.
+
+**Tradeoffs discussed:**
+- **Report Finding 7 as a violation vs as an approximate signal.** Exact figures would need a YAML parse of the parsed string. Chose to report measured-but-approximate with the method and its imprecision stated: three skills exceed the limit by margins (39–430 chars) far larger than any wrapping artifact, so the conclusion survives the imprecision even though the numbers are not exact.
+- **Fold `[B]`'s findings in at all, given it is unread.** Excluding it would have lost the sharpest strategic read available (that Anthropic's newest guidance independently validates flow's core thesis); including it unmarked would have been a false-verification proxy. Included with provenance marked and a "re-read the source before acting" gate.
+
+**Lessons learned:**
+- Web search recovered both canonical URLs, the docs surface, and enough of `[B]` to be useful, on an environment where **every** direct fetch 403s. Search is a materially weaker but non-zero research channel — and its output must be labeled as such, since the same search backend earlier asserted `[B]` was an X post with no matching link.
+
 ### docs: capture Anthropic's context-engineering guidance as a five-finding research block (unshipped analysis)
 **Date:** 2026-07-24
 **Branch:** claude/twitter-x-flow-research-28ghls (commit: this)
