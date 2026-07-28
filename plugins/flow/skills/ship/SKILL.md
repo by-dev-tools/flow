@@ -67,16 +67,24 @@ Emit (verbatim, single block — do NOT customize per project; the consistency I
   got short-circuited, whether or not subsequent gates allow ship to complete.
 ```
 
-### 1.0a. Rigor-gate evidence check (mechanical — source-touching diffs route to draft on missing evidence)
+### 1.0a. Rigor-gate evidence check (mechanical — re-run staff-review on stale evidence; draft only if unresolvable)
 
 The Step 1.0 block above is informational; THIS is the gate. For a **source-touching** diff
 that is NOT an explicit spike/tiny-mode ship (where `/simplify` + `/flow:staff-review` are
 legitimately skipped), confirm there is **mechanical evidence** those steps actually ran on
 the current source — FB-0047 "enforce, don't attest." `/flow:staff-review` writes a
 commit-invariant marker (its Step 5a) after its lenses + fixes land; this reads it. A missing
-or stale marker is a **`[decision-required]`** finding for the draft manifest (Step 2/7) — NOT
-a hard halt: the human resolves it at the merge gate (re-run the reviews, or waive). Docs-only,
-spike, and tiny-mode ships skip this check (those modes don't expect staff-review).
+or stale marker is **auto-resolvable by default** — re-run `/flow:staff-review` now on the
+final tree (it re-reviews the post-fix source and refreshes the marker), exactly as Step 2a
+re-runs a stage classified `SHOULD-RE-RUN · auto-resolvable`. It becomes a
+**`[decision-required]`** draft-manifest finding *only* when the re-run can't happen in this
+context, or the re-run itself surfaces an unresolved `[decision-required]`. **Do not route a
+merely-stale marker to a draft PR** — a draft is reserved for genuine open decisions, not a
+re-runnable step. (The common stale case is exactly this: staff-review ran, then its own
+prescribed fixes — or a later `/flow:accessibility-review`'s fixes — landed *after* the marker,
+moving the source; the correct resolution is to re-run staff-review on the final tree, not to
+hand the user a draft to clear by hand.) Docs-only, spike, and tiny-mode ships skip this check
+(those modes don't expect staff-review).
 
 ```sh
 # Source-touching? (reuse the Step 1c three-way sourceFilePatterns check.)
@@ -95,18 +103,24 @@ if [ -n "$SRC" ]; then
   if [ "$RIGOR" != "ok" ]; then
     echo "⚠️ [rigor-gate] no fresh /flow:staff-review marker for this source (reason: $RIGOR)." >&2
     echo "   /simplify + /flow:staff-review have no mechanical evidence of running on the current source." >&2
-    echo "   → add a [decision-required] entry to the Step-2 draft manifest: re-run them, or human-waive." >&2
+    echo "   → auto-resolve: re-run /flow:staff-review now on the final tree (refreshes the marker), then re-check." >&2
+    echo "     Route a [decision-required] draft-manifest entry ONLY if it can't be re-run here or the re-run surfaces one." >&2
   else
     echo "[rigor-gate] ok — /flow:staff-review marker matches the current source."
   fi
 fi
 ```
 
-If `$RIGOR` was not `ok` on a source-touching, non-spike/tiny ship, **add to the draft manifest**
-(Step 2): `[decision-required] no evidence /simplify + /flow:staff-review ran on this source
-(<reason>) — re-run them, or human-waive`. This is the gating half of the Step 1.0 assumption
-block — a source-touching diff can no longer reach a *ready* PR via the "exploratory / no plan"
-path without either the reviews running or an explicit human waiver.
+If `$RIGOR` was not `ok` on a source-touching, non-spike/tiny ship, **first re-run
+`/flow:staff-review`** on the final tree and re-read the marker (auto-resolvable — the same
+discipline as Step 2a's `SHOULD-RE-RUN · auto-resolvable`; re-run once, don't loop). Only if the
+re-run is impossible in this context — or itself yields an unresolved `[decision-required]` —
+**add to the draft manifest** (Step 2): `[decision-required] /simplify + /flow:staff-review
+evidence unresolvable for this source (<reason>) — human-waive or resolve`. This keeps the gating
+half of the Step 1.0 assumption block intact — a source-touching diff can't reach a *ready* PR
+without the reviews genuinely running — while keeping the resolution auto-resolvable, so a
+merely-stale marker never forces a draft PR the human must clear by hand (a draft is reserved for
+genuine open decisions, not a re-runnable step).
 
 ### 1.5. External CLI dependency check (BLOCKING)
 
