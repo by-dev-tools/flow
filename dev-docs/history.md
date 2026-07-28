@@ -37,7 +37,34 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 ## Entries
 
-<!-- Add new entries below this line, newest first. -->
+
+### docs: read six Anthropic blog posts in full — seven new findings incl. two native-overlap risks and a net-new product gap
+**Date:** 2026-07-25
+**Branch:** claude/twitter-x-flow-research-28ghls (commit: this)
+
+**What was done:**
+Egress allowlist opened for `claude.com` / `docs.claude.com` / `platform.claude.com`, so the `## RESEARCH` block moved off second-hand sourcing. Enumerated **42 posts** across `/blog` + two category indexes; read six in full: `[B]` Fable field guide (upgraded from second-hand), `[C]` building verification loops, `[D]` steering Claude Code, `[E]` loop engineering, `[F]` multi-agent coordination patterns (`[A]` already read). Added **Findings 9–15** and revised the head of the sequencing queue. Analysis only — no plugin artifact, script, or prompt modified.
+Highest-consequence additions: **F10** — a native `/verify` skill exists and `[C]` recommends trying it first; native analogues now also exist for staff-review (Code Review preview), spec validation, and rubric grading, so flow's load-bearing `verify-build` gate has a live rule-5 question. **F11** — CLAUDE.md rule 5 says "never wrap a bundled skill" while `[C]` explicitly recommends "build a custom wrapper skill that invokes the original"; intents are compatible but the vocabulary is inverted. **F12** — flow has no pre-plan unknown-discovery step, the largest product gap found. **F9** — measured that flow is not installed in cloud sessions, making this repo's own `/flow:ship` rule unfollowable here. **F15** — `general.md` ships `paths: ["**/*"]` (always-on in every consumer session).
+
+**Why:**
+The user asked for the blog to be read and synthesized for how flow can better exploit what Claude offers. The prior block rested on one pasted article plus search summaries; six primary sources replace that.
+
+**Design decisions:**
+- **Ordered the revised queue by unblocking-power, not by finding value.** F11 (reword rule 5) is a single paragraph and ranks first because Findings 1/10 are native-overlap decisions that would otherwise be argued on inverted vocabulary. F10 ranks above F2 because splitting `ship` is wasted work if `verify-build` should compose with native `/verify` instead.
+- **Recorded F11 as a terminology collision, not a contradiction.** Rule 5 forbids re-implementing; `[C]`'s wrapping means invoke-the-original-then-add. Both are correct; only the word collides. Overstating it as a contradiction would have invited deleting a rule that is doing real work.
+- **Kept F14's validation and its cost in one finding.** `[F]` names flow's thesis as the industry's most common failure ("the illusion of quality control without the substance") *and* documents the orchestrator bottleneck that `staff-review`'s 4–5 lens fan-out inherits. Splitting them would have let the flattering half travel without the caveat.
+- **Added an FB-0072 meta-caution to the block.** F10/F13 describe native features from posts dated Jun–Jul 2026; the block records what those posts claim, not verified live product state.
+
+**Technical decisions:**
+- `WebFetch` 403s in this environment regardless of the egress allowlist (different network path — it failed on Hacker News before any allowlist existed). Working path is `curl` + a stdlib regex HTML-to-text extractor. Recorded in the block as a method note so the next session doesn't re-derive it.
+- Enumerated posts by grepping `"/blog/<slug>"` out of the three index pages rather than trusting search, which had previously mis-attributed `[B]` to X.
+
+**Tradeoffs discussed:**
+- **Read six posts deeply vs all 42 shallowly.** Chose depth on the posts touching flow's surface; the remaining Tier-2 slugs are listed by name in the block so the next session can continue without re-enumerating. Flagged to the user rather than silently truncating.
+- **File F12 as a finding vs a queued PR.** It is a net-new skill shape (pre-plan unknown discovery), not a correction to an existing one, and sizing it is a planning decision the user gates. Left as a finding with the technique list from `[B]` attached.
+
+**Lessons learned:**
+- Anthropic has been shipping natively into flow's exact space — `/doctor`, `/verify`, Code Review, spec validation, rubric grading, `/goal`. The recurring question for flow is now **compose or duplicate**, and answering it correctly depends on rule 5 saying what it means (F11). Expect more of these, and re-check before building.
 
 ### docs: extend the context-engineering research block — real citations, the Fable field guide, a spec-limit violation, and a model-recency discipline (FB-0072)
 **Date:** 2026-07-25
