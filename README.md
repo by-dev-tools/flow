@@ -97,6 +97,7 @@ The canonical reference — every step with its rationale, gate semantics, spike
 | `/flow:workflow-help` | "What's the workflow?" — prints the loop + your config |
 | `/flow:doctor` | After bootstrap, or when something feels off |
 | `/flow:ship-spike` | Throwaway exploratory PRs — skips the heavy reviews |
+| `/flow:post-merge` | After you merge — "anything left, or safe to archive?" Confirms the merge (queue-safe), reconciles the docs, captures your merge-gate feedback, cleans up the branch, gives a safe-to-archive verdict |
 | `/flow:log-disagreement` | Fires on its own when you dispute a finding |
 
 ## Boundaries & limitations
