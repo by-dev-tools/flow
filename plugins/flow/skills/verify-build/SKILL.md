@@ -213,6 +213,10 @@ PLAN_ARG=""; [ -f "$PLAN_PATH" ] && PLAN_ARG="--plan $PLAN_PATH"
 FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 [ -n "$FLOW_ROOT" ] && FLOW_SCRATCH="$FLOW_ROOT/.flow" || FLOW_SCRATCH="${TMPDIR:-/tmp}/flow-detached"
 mkdir -p "$FLOW_SCRATCH"
+# Self-ignore so flow never dirties the consumer's git status. Written HERE, not only
+# in flow_scratch.py: the shell sites do their own mkdir and never call the Python
+# helper, so a gitignore created only there would never exist in production.
+[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
 python3 "$VS" --config flow.config.json $PLAN_ARG > "$FLOW_SCRATCH/visual-significance.json"
 cat "$FLOW_SCRATCH/visual-significance.json"
 ```

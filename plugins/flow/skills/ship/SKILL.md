@@ -325,6 +325,8 @@ No stage skip is accepted on its own say-so, and **"the agent did it manually" n
      echo "⚠️ BLOCKER: not inside a git repository — cannot write a handoff a forked skill can read. The skip-legitimacy gate CANNOT run; do not record it as legitimate." >&2
    fi
    FLOW_SCRATCH="$FLOW_ROOT/.flow"; mkdir -p "$FLOW_SCRATCH"
+   # Self-ignore so flow never dirties the consumer's git status.
+   [ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
    STAGES="$FLOW_SCRATCH/skip-audit-stages.json"
    FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
 

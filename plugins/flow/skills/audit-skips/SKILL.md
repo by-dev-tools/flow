@@ -88,10 +88,23 @@ else
   SCRATCH_PY="plugins/flow/scripts/flow_scratch.py"
 fi
 STAMP_STATUS=""; STAMP_REASON=""
-if [ -f "$STAGES" ] && [ -f "$SCRATCH_PY" ]; then
-  STAMP_JSON=$(python3 "$SCRATCH_PY" check "$STAGES" 2>/dev/null)
-  STAMP_STATUS=$(printf '%s' "$STAMP_JSON" | jq -r '.status // empty' 2>/dev/null)
-  STAMP_REASON=$(printf '%s' "$STAMP_JSON" | jq -r '.reason // empty' 2>/dev/null)
+if [ -f "$STAGES" ]; then
+  if [ ! -f "$SCRATCH_PY" ]; then
+    # The gate CANNOT fail open. If the checker is unreachable we cannot prove the
+    # handoff is ours, and "cannot prove" must never read as "verified" -- that is
+    # the exact failure this whole branch exists to remove.
+    STAMP_STATUS="unverifiable"
+    STAMP_REASON="stamp checker not reachable at $SCRATCH_PY -- cannot prove this handoff belongs to this workspace"
+  else
+    STAMP_JSON=$(python3 "$SCRATCH_PY" check "$STAGES" 2>/dev/null)
+    STAMP_STATUS=$(printf '%s' "$STAMP_JSON" | jq -r '.status // empty' 2>/dev/null)
+    STAMP_REASON=$(printf '%s' "$STAMP_JSON" | jq -r '.reason // empty' 2>/dev/null)
+    # An empty status means python3/jq failed, not that the stamp passed.
+    if [ -z "$STAMP_STATUS" ]; then
+      STAMP_STATUS="unverifiable"
+      STAMP_REASON="stamp check produced no verdict (python3 or jq unavailable) -- cannot prove this handoff belongs to this workspace"
+    fi
+  fi
 fi
 if [ -f "$STAGES" ] && [ "$STAMP_STATUS" != "ok" ] && [ -n "$STAMP_STATUS" ]; then
   # Present but NOT ours. Never audit it, never call it a clean standalone no-op.

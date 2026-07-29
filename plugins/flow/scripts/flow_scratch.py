@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Repo-local scratch resolution + handoff stamping for flow (FB-0075).
+Handoff stamping for flow (FB-0075).
 
 Two failures this exists to close, which turned out to share one cause and one fix:
 
@@ -18,6 +18,14 @@ Two failures this exists to close, which turned out to share one cause and one f
 
 So the scratch root is `<repo-root>/.flow` (already the schema's documented
 project-local convention for `verifyFindingsPath` / `verifyReportPath`).
+
+SCOPE: this module owns STAMPING only, not scratch-path resolution. Resolution lives
+in shell, duplicated at each site, because `CLAUDE_PLUGIN_ROOT` is unset in Bash-tool
+fenced blocks and a helper is therefore unreachable there -- the same justified
+duplication as the FB-0008 base-resolution idiom. A parallel Python implementation
+would be both unreached and, worse, a tempting test target that passes while the
+shipped shell path goes unexercised. The shell idiom is pinned instead, by extracting
+and EXECUTING it in `evals/run_scratch_isolation_evals.py`.
 
 Namespacing alone is not sufficient, because two worktrees of ONE repo still collide,
 and a stale file from an earlier branch in the SAME worktree still reads as current.
@@ -38,14 +46,11 @@ Shell counterpart (the canonical idiom -- keep these in sync; pinned by
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 
+# The scratch dir name the shell idiom builds; kept here so the two agree.
 SCRATCH_DIRNAME = ".flow"
-# Used only when cwd is not inside a git repo. Deliberately NOT a stable shared name:
-# a detached run has no repo identity, so it gets no cross-run continuity either.
-DETACHED_PREFIX = "flow-detached"
 
 
 def _git(args, cwd=None):
@@ -70,71 +75,21 @@ def repo_root(cwd=None):
     return _git(["rev-parse", "--show-toplevel"], cwd=cwd)
 
 
-def scratch_dir(cwd=None, create=True):
-    """Resolve the repo-local scratch dir. Falls back to a temp dir when detached.
-
-    Returns (path, is_repo_local). `is_repo_local` False means the caller is not in
-    a git repo, so the path is NOT shared with a forked skill -- callers that depend
-    on the handoff crossing that boundary must treat it as a hard failure, not a
-    silent degrade (that silent degrade is the bug this module exists to remove).
-    """
-    root = repo_root(cwd=cwd)
-    if root:
-        path = Path(root) / SCRATCH_DIRNAME
-        repo_local = True
-    else:
-        import tempfile
-
-        path = Path(os.environ.get("TMPDIR") or tempfile.gettempdir()) / DETACHED_PREFIX
-        repo_local = False
-    if create:
-        try:
-            path.mkdir(parents=True, exist_ok=True)
-            if repo_local:
-                _ensure_ignored(path)
-        except OSError:
-            pass
-    return str(path), repo_local
-
-
-def scratch_path(name, cwd=None, create=True):
-    """Path for one named scratch artifact inside the scratch dir."""
-    d, _ = scratch_dir(cwd=cwd, create=create)
-    return str(Path(d) / name)
-
-
-def _ensure_ignored(scratch):
-    """Self-ignore so flow never dirties a consumer's `git status`.
-
-    A `.gitignore` INSIDE `.flow/` ignoring `*` keeps the whole thing out of the
-    index without touching the project's own `.gitignore` -- flow must not edit a
-    file the project owns just to hold its scratch.
-    """
-    marker = Path(scratch) / ".gitignore"
-    if marker.exists():
-        return
-    try:
-        marker.write_text("# Created by flow. Ephemeral scratch; never committed.\n*\n", encoding="utf-8")
-    except OSError:
-        pass
-
-
 def current_stamp(cwd=None):
-    """The identity a handoff is stamped with / checked against."""
+    """The identity a handoff is stamped with / checked against.
+
+    Two git calls, not three: `rev-parse` returns toplevel and short HEAD together.
+    (Folding the branch in as well does not work -- `--abbrev-ref` is sticky and makes
+    the following `--short HEAD` re-emit the branch.) This runs synchronously inside a
+    forked skill's context block while the user waits, so the call count is worth
+    keeping down.
+    """
+    lines = _git(["rev-parse", "--show-toplevel", "--short", "HEAD"], cwd=cwd).splitlines()
     return {
-        "repo": repo_root(cwd=cwd),
+        "repo": lines[0].strip() if len(lines) > 0 else "",
+        "head": lines[1].strip() if len(lines) > 1 else "",
         "branch": _git(["branch", "--show-current"], cwd=cwd),
-        "head": _git(["rev-parse", "--short", "HEAD"], cwd=cwd),
     }
-
-
-def stamp_payload(payload, cwd=None):
-    """Return `payload` with a `flow_stamp` attached (dict payloads only)."""
-    if not isinstance(payload, dict):
-        return payload
-    out = dict(payload)
-    out["flow_stamp"] = current_stamp(cwd=cwd)
-    return out
 
 
 def check_stamp(payload, cwd=None, expect=None):
@@ -189,28 +144,16 @@ def read_stamped(path, cwd=None):
 
 
 def main(argv):
-    """CLI so shell callers can resolve paths without re-implementing the logic."""
+    """CLI so a skill's `!`-block can stamp-check a handoff (where CLAUDE_PLUGIN_ROOT IS set)."""
     import argparse
 
-    ap = argparse.ArgumentParser(description="flow repo-local scratch resolution")
+    ap = argparse.ArgumentParser(description="flow handoff stamping")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    d = sub.add_parser("dir", help="print the scratch dir")
-    d.add_argument("--no-create", action="store_true")
-    p = sub.add_parser("path", help="print the path for one named artifact")
-    p.add_argument("name")
-    p.add_argument("--no-create", action="store_true")
     sub.add_parser("stamp", help="print the current repo/branch/head stamp as JSON")
     c = sub.add_parser("check", help="stamp-check a JSON handoff; exit 0 only when usable")
     c.add_argument("path")
 
     args = ap.parse_args(argv[1:])
-    if args.cmd == "dir":
-        path, repo_local = scratch_dir(create=not args.no_create)
-        print(path)
-        return 0 if repo_local else 3
-    if args.cmd == "path":
-        print(scratch_path(args.name, create=not args.no_create))
-        return 0
     if args.cmd == "stamp":
         print(json.dumps(current_stamp()))
         return 0

@@ -126,6 +126,10 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 [ -n "$FLOW_ROOT" ] && FLOW_SCRATCH="$FLOW_ROOT/.flow" || FLOW_SCRATCH="${TMPDIR:-/tmp}/flow-detached"
 mkdir -p "$FLOW_SCRATCH"
+# Self-ignore so flow never dirties the consumer's git status. Written HERE, not only
+# in flow_scratch.py: the shell sites do their own mkdir and never call the Python
+# helper, so a gitignore created only there would never exist in production.
+[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
 FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
 # Provenance header: leading non-diff lines are ignored by every reader of a patch, but a
 # lens that finds itself reviewing unfamiliar code can confirm WHOSE diff it has.

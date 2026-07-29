@@ -12,8 +12,11 @@ Two bugs shipped undetected because nothing here exercised them:
     another project's diff).
 
 Cases:
-  scratch-*   flow_scratch.py resolution: repo-local, per-worktree, detached fallback,
-              self-ignoring, and the concurrent-two-repos isolation property.
+  scratch-*   the SHIPPED shell idiom, extracted and EXECUTED: repo-local, per-worktree,
+              detached fallback, self-ignoring, concurrent-two-repos isolation. Tested
+              via shell, not a Python twin -- an earlier draft tested a parallel Python
+              resolver and passed while the shell path production runs was missing the
+              self-ignore entirely.
   stamp-*     stamp/check semantics, incl. the four DISTINCT statuses (ok/absent/
               invalid/stale) and fail-closed on an absent stamp.
   block-*     the real audit-skips SKILL.md `!`-block, EXTRACTED AND EXECUTED against
@@ -43,6 +46,7 @@ SHIP_SKILL = FLOW / "skills" / "ship" / "SKILL.md"
 STAFF_SKILL = FLOW / "skills" / "staff-review" / "SKILL.md"
 SEC_SKILL = FLOW / "skills" / "security-review" / "SKILL.md"
 A11Y_SKILL = FLOW / "skills" / "accessibility-review" / "SKILL.md"
+VERIFY_SKILL = FLOW / "skills" / "verify-build" / "SKILL.md"
 SCHEMA = FLOW / "schema" / "flow.config.schema.json"
 CI = FLOW.parent.parent / ".github" / "workflows" / "ci.yml"
 
@@ -89,35 +93,55 @@ def extract_blocks(skill_path):
 
 
 # --------------------------------------------------------------------------- scratch
+SHELL_IDIOM = (
+    'FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)\n'
+    '[ -n "$FLOW_ROOT" ] && FLOW_SCRATCH="$FLOW_ROOT/.flow" || FLOW_SCRATCH="${TMPDIR:-/tmp}/flow-detached"\n'
+    'mkdir -p "$FLOW_SCRATCH"\n'
+    '[ -f "$FLOW_SCRATCH/.gitignore" ] || printf \'# Created by flow. Ephemeral scratch; never committed.\\n*\\n\' > "$FLOW_SCRATCH/.gitignore"\n'
+    'printf %s "$FLOW_SCRATCH"\n'
+)
+
+
+def resolve_via_shell(cwd):
+    """Run the SHIPPED shell idiom, not a Python re-implementation.
+
+    This distinction is load-bearing. An earlier version of this harness tested a
+    parallel `flow_scratch.py` resolver, which passed while the shell path that
+    production actually runs went unexercised -- and that path was missing the
+    self-ignore entirely. Test the thing that ships.
+    """
+    r = subprocess.run(["bash", "-c", SHELL_IDIOM], capture_output=True, text=True,
+                       cwd=str(cwd), check=False)
+    return r.stdout.strip()
+
+
 def test_scratch():
     with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
         seed_repo(a)
         seed_repo(b)
 
-        pa = run_py(["dir"], a).stdout.strip()
-        pb = run_py(["dir"], b).stdout.strip()
-        check("scratch-repo-local", pa.startswith(str(Path(a).resolve())) or pa.startswith(a),
-              f"expected scratch under {a}, got {pa}")
-        check("scratch-name", pa.endswith("/.flow"), pa)
+        pa = resolve_via_shell(a)
+        pb = resolve_via_shell(b)
+        check("scratch-repo-local", pa.endswith("/.flow") and str(Path(a).name) in pa,
+              f"expected a repo-local .flow under {a}, got {pa}")
 
         # THE concurrent-session property: two projects, two scratch dirs, no sharing.
         check("scratch-two-repos-isolated", pa != pb, f"both repos resolved to {pa}")
 
-        # Self-ignoring, so flow never dirties a consumer's git status.
+        # Self-ignoring, so flow never dirties a consumer's git status. Asserted against
+        # the SHELL path because that is the one every skill actually runs.
         check("scratch-self-ignores", (Path(pa) / ".gitignore").is_file(),
-              "scratch dir must contain its own .gitignore")
+              "the shell idiom must create .flow/.gitignore")
         st = subprocess.run(["git", "-C", a, "status", "--porcelain"],
                             capture_output=True, text=True).stdout
         check("scratch-clean-status", ".flow" not in st,
               f"scratch dir must not appear in git status, got: {st!r}")
 
-        # Detached (no repo) must NOT silently produce a repo-shaped shared path.
+        # Detached (no repo) must not silently produce a repo-shaped shared path.
         with tempfile.TemporaryDirectory() as nonrepo:
-            r = run_py(["dir"], nonrepo)
-            check("scratch-detached-signals", r.returncode == 3,
-                  f"detached run must exit 3 (not repo-local), got {r.returncode}")
-            check("scratch-detached-not-dot-flow", not r.stdout.strip().endswith("/.flow"),
-                  r.stdout.strip())
+            pn = resolve_via_shell(nonrepo)
+            check("scratch-detached-distinct", not pn.endswith("/.flow") and "flow-detached" in pn,
+                  f"detached run must fall back to a flow-detached path, got {pn}")
 
 
 # ---------------------------------------------------------------------------- stamp
@@ -225,10 +249,44 @@ def test_audit_skips_block():
 # ------------------------------------------------------------------------- contract
 def test_contracts():
     idiom = "git rev-parse --show-toplevel"
-    for name, path in [("staff", STAFF_SKILL), ("sec", SEC_SKILL), ("a11y", A11Y_SKILL)]:
+
+    # EVERY copy of the shell idiom, not just the reviewer trio. The idiom is
+    # deliberately duplicated (a sourced helper is unreachable in Bash-tool fenced
+    # blocks, where CLAUDE_PLUGIN_ROOT is unset), which is the same justified
+    # duplication as the FB-0008 BASE-resolution block. Duplication is only safe
+    # while something pins every copy — a guard covering 3 of 6 sites is the exact
+    # fan-out-contradiction class this harness exists to prevent.
+    idiom_sites = [("staff", STAFF_SKILL), ("sec", SEC_SKILL), ("a11y", A11Y_SKILL),
+                   ("ship", SHIP_SKILL), ("verify", VERIFY_SKILL)]
+    for name, path in idiom_sites:
         t = path.read_text(encoding="utf-8")
         check(f"contract-{name}-idiom", idiom in t and '"$FLOW_SCRATCH/' in t,
-              f"{path.name} must resolve a repo-local scratch dir")
+              f"{path.name} must resolve a repo-local scratch dir via the canonical idiom")
+
+    # The detached-fallback literal must agree across every shell copy AND the Python
+    # module, or the two halves of the contract silently diverge.
+    detached = "${TMPDIR:-/tmp}/flow-detached"
+    py = SCRATCH_PY.read_text(encoding="utf-8")
+    check("contract-detached-python", "flow-detached" in py,
+          "flow_scratch.py must document the shell idiom's 'flow-detached' fallback")
+    for name, path in idiom_sites:
+        t = path.read_text(encoding="utf-8")
+        if "flow-detached" in t:
+            check(f"contract-{name}-detached-literal", detached in t,
+                  f"{path.name} detached fallback must read exactly {detached}")
+
+    # SHELL_IDIOM above is this harness's own copy, so drift between it and the SKILLs
+    # would otherwise pass green — the same false-confidence shape this PR exists to
+    # remove. Pin the one line that copy asserts behaviourally (the self-ignore) at
+    # every site, so a SKILL that drops it fails here.
+    for name, path in idiom_sites:
+        t = path.read_text(encoding="utf-8")
+        check(f"contract-{name}-self-ignores", '"$FLOW_SCRATCH/.gitignore"' in t,
+              f"{path.name} must create .flow/.gitignore itself — the Python helper is "
+              f"never called from these blocks, so a self-ignore only there never runs")
+
+    for name, path in [("staff", STAFF_SKILL), ("sec", SEC_SKILL), ("a11y", A11Y_SKILL)]:
+        t = path.read_text(encoding="utf-8")
         check(f"contract-{name}-no-tmp-write", f"> /tmp/flow-{name}-diff.patch" not in t,
               f"{path.name} must not write its diff to /tmp")
         check(f"contract-{name}-provenance", "flow-review-context" in t,
