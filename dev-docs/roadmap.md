@@ -405,6 +405,16 @@ In the FB-0075 measurement, 2 of ~6 items were a single `uiFilePatterns` misconf
 
 Items surfaced by `/flow:staff-review`'s push-further lens, consumer dogfood, or research passes. These don't have a concrete shape yet — they describe a direction worth investigating when relevant code is touched. Each entry includes a **`Surfaces when:`** trigger naming the file paths or area that should re-surface the item, so the auto-loading `exploration` rule can grep this section for trigger matches.
 
+### Keyboard reach for the annotation layer — 1.6% of commentable elements (FB-0074 a11y review, WCAG 2.1.1 Level A)
+
+**Surfaces when:** `annotation-layer.html`'s keyboard handling is next touched, OR before the layer is offered to anyone who cannot use a pointer.
+
+Measured on a real verify-build report: **129 elements are commentable with a mouse; 2 are reachable by Tab** — both `<a>` in the criteria TOC. Everything else is prose (`p`, `div`, `h2`, `li`), which is not natively focusable. The `focusin` handler added in this PR sets a pick target from whatever receives focus, which reads like a keyboard path but is really a path to those two links. `ArrowUp` is additionally gated on `targetFromPointer`, so a keyboard user cannot even widen from a focused link to its paragraph — that gate exists because letting focus-derived targets capture the arrows broke page scrolling, which is a genuine tension between two correct requirements.
+
+**The shape of a real fix** (deliberately not attempted inline — it is a feature addition, not a mechanical repair): an explicit keyboard pick mode, entered from the dock or a chord, in which ↑/↓ walk annotatable elements in document order and ←/→ move out of / into the tree, with the existing outline showing the current target and `↵` committing. That reaches 100% of what the mouse reaches without putting every paragraph into the host page's tab order, and it removes the arrow-key tension by scoping traversal to an explicit mode. Roughly 40 lines against the existing `pickTarget` / `setTarget` / `drawHL` machinery.
+
+**Interim honesty:** `verify-build/SKILL.md` already documents "an arbitrary non-focusable element still needs the pointer" as a limitation. That statement is accurate but undersells it — 1.6% is closer to "keyboard users cannot use this tool" than to "one edge case remains." Update the wording when the fix lands, or sooner.
+
 ### Reviewed-page text reaches the agent through the annotation export (FB-0074 security review)
 
 **Surfaces when:** the annotation layer is injected by any consumer OTHER than `/flow:verify-build` — i.e. the first time the "reusable partial" claim in `verify-build/SKILL.md` is actually taken up.

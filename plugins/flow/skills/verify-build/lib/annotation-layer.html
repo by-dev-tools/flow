@@ -33,6 +33,7 @@
        lightens in dark mode, where white-on-accent falls to 2.68:1. */
     --an-on-accent: #ffffff; --an-on-danger: #ffffff;
     --an-track: #8e8e93;                 /* switch OFF track — 3.26:1 on bg (1.4.11 needs 3:1) */
+    --an-field-line: #8a8a90;            /* INPUT boundary — --an-line is 1.28:1, below 1.4.11 */
     --an-shadow: 0 16px 40px -16px rgba(0,0,0,.45);
     --an-shadow-pin: 0 2px 10px rgba(0,0,0,.35);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -45,6 +46,7 @@
       /* the accent lightens here, so the ON-accent foreground must darken to match */
       --an-on-accent: #10243a; --an-on-danger: #3a120c;
       --an-track: #6c6c74;   /* 3.27:1 on the dark surface */
+      --an-field-line: #6c6c74;   /* 3.27:1 — --an-line is only 1.36:1 here */
       --an-shadow: 0 16px 40px -16px rgba(0,0,0,.7);
       --an-shadow-pin: 0 2px 10px rgba(0,0,0,.6);
     }
@@ -69,7 +71,8 @@
   #an-fab:not(.on):hover { border-color: var(--an-muted); }
   #an-fab.on:hover { background: color-mix(in srgb, var(--an-accent) 88%, var(--an-ink)); }
   #an-fab:active { transform: scale(.96); }
-  #an-fab:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 2px; }
+  #an-fab:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 0;
+    box-shadow: 0 0 0 4px var(--an-bg), 0 0 0 6px var(--an-ink); }
   /* one glyph: the count when there are comments, the add-mark when there are none */
   #an-fab-label { display: block; }
 
@@ -99,7 +102,10 @@
     cursor: pointer; box-shadow: var(--an-shadow-pin);
     transform: translate(0, -100%);   /* tail corner is bottom-LEFT, so anchor from the left edge */
   }
-  .an-pin:focus-visible { outline: 2px solid var(--an-ink); outline-offset: 2px; }
+  /* Pins sit over someone ELSE's markup, so the ring's backdrop is host content, not
+     --an-bg. A single colour can vanish; the two-tone ring survives any backdrop. */
+  .an-pin:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 0;
+    box-shadow: 0 0 0 4px var(--an-bg), 0 0 0 6px var(--an-ink); }
   .an-pin.lost { background: var(--an-muted); }
 
   /* ---- panel ---- */
@@ -226,7 +232,7 @@
   #an-text {
     width: 100%; min-height: 74px; resize: vertical;
     background: transparent; color: var(--an-ink);
-    border: 1px solid var(--an-line); border-radius: 8px; padding: 8px 10px;
+    border: 1px solid var(--an-field-line); border-radius: 8px; padding: 8px 10px;
     font-size: 14px; line-height: 1.45;
   }
   #an-text:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 1px; }
@@ -263,7 +269,7 @@
   #an-copybox p { margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: var(--an-muted); }
   #an-copybox textarea {
     width: 100%; height: 220px; resize: vertical; background: transparent; color: var(--an-ink);
-    border: 1px solid var(--an-line); border-radius: 9px; padding: 10px 12px;
+    border: 1px solid var(--an-field-line); border-radius: 9px; padding: 10px 12px;
     font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   #an-copybox button {
@@ -282,7 +288,7 @@
 <div id="an-dock">
   <!-- The minimized comment container. It is the whole floating surface: it reports
        whether commenting is live, how many comments exist, and expands to the panel. -->
-  <button id="an-fab" type="button" aria-expanded="false">
+  <button id="an-fab" type="button" aria-expanded="false" aria-controls="an-panel">
     <span id="an-fab-label" aria-hidden="true">✛</span>
   </button>
 </div>
@@ -296,7 +302,8 @@
       <b>Commenting</b>
       <span id="an-mode-hint">Click any element to comment</span>
     </div>
-    <button id="an-mode" type="button" role="switch" aria-checked="true" aria-label="Commenting"></button>
+    <button id="an-mode" type="button" role="switch" aria-checked="true" aria-label="Commenting"
+            aria-describedby="an-mode-hint"></button>
   </div>
 
   <div id="an-phead">
@@ -326,7 +333,8 @@
 
 <div id="an-pop" hidden role="dialog" aria-label="Edit comment">
   <div id="an-meta"></div>
-  <textarea id="an-text" placeholder="What about this element?"></textarea>
+  <textarea id="an-text" placeholder="What about this element?"
+            aria-label="Comment" aria-describedby="an-meta an-hint"></textarea>
   <div id="an-hint">↵ saves · ⇧↵ new line · Esc cancels · dictation works here</div>
   <div id="an-prow">
     <button id="an-del" type="button">Delete</button>
@@ -634,6 +642,14 @@
 
   // ---- render ---------------------------------------------------------------------
   function render() {
+    // A reflow-driven rebuild must not cost the user their place. Record what was focused
+    // (by note id + which control), restore it after the rebuild.
+    var ae = document.activeElement, keepId = null, keepKind = null;
+    if (ae && ae.closest) {
+      var row = ae.closest(".an-item"), pinEl = ae.closest(".an-pin");
+      if (row && row._noteId) { keepId = row._noteId; keepKind = ae.className || "row"; }
+      else if (pinEl && pinEl._noteId) { keepId = pinEl._noteId; keepKind = "pin"; }
+    }
     // Resolve every anchor ONCE — both loops below need it and each resolve() forces
     // layout. render() is ResizeObserver-driven, so resolving twice doubles a reflow storm.
     var hits = notes.map(function (n) { return resolve(n.anchor); });
@@ -655,10 +671,27 @@
       } else {
         pin.style.display = "none"; // unanchored: no place to draw it, still listed in the panel
       }
+      pin._noteId = n.id;
       pin.addEventListener("click", function (ev) { ev.stopPropagation(); openEditor(n.id); });
       wrap.appendChild(pin);
     });
 
+    // restore focus after the wholesale rebuild (see the capture at the top of render())
+    if (keepId) {
+      var back = null, i2;
+      if (keepKind === "pin") {
+        var pins = $("an-pins").querySelectorAll(".an-pin");
+        for (i2 = 0; i2 < pins.length; i2++) if (pins[i2]._noteId === keepId) { back = pins[i2]; break; }
+      } else {
+        var rows2 = $("an-list").querySelectorAll(".an-item");
+        for (i2 = 0; i2 < rows2.length; i2++) if (rows2[i2]._noteId === keepId) {
+          back = keepKind && keepKind.indexOf("an-") === 0 ? rows2[i2].querySelector("." + keepKind.split(" ").pop()) : rows2[i2];
+          back = back || rows2[i2];
+          break;
+        }
+      }
+      if (back && document.contains(back)) { try { back.focus(); } catch (e) {} }
+    }
     $("an-fab-label").textContent = notes.length ? String(notes.length) : "✛";
     $("an-ptitle").textContent = notes.length === 0 ? "No comments"
       : notes.length === 1 ? "1 comment" : notes.length + " comments";
@@ -728,6 +761,7 @@
         try { (next || $("an-fab")).focus(); } catch (e) {}
       });
 
+      item._noteId = n.id;
       item.appendChild(num); item.appendChild(body); item.appendChild(cp); item.appendChild(del);
       item.addEventListener("click", function () { scrollToNote(n, true); openEditor(n.id); });
       item.addEventListener("keydown", function (ev) {
@@ -794,6 +828,7 @@
       if (!n.note) notes = notes.filter(function (x) { return x.id !== n.id; });
     }
     save(); render(); closeEditor();
+    if (n) announce("Comment " + (notes.indexOf(n) + 1) + " saved");
   }
   function dropEmpty() {
     var n = notes.find(function (x) { return x.id === active; });
@@ -895,8 +930,9 @@
       " each line names the section and the element the note is attached to" +
       (lost ? ";\n an \"unanchored\" comment's element was not found in this version of the page" : "") + ")\n\n";
     if (writeClipboard(header + lines.join("\n\n"))) {
+      // The button's own label change IS the announcement for AT (it is the focused
+      // element); a second live-region message would double-speak.
       transientLabel($("an-copy"), notes.length === 1 ? "Copied 1" : "Copied " + notes.length);
-      announce("Copied " + notes.length + (notes.length === 1 ? " comment" : " comments") + " to the clipboard");
     }
   });
 
@@ -941,6 +977,7 @@
   }
   function showCopyBox(text) {
     var old = $("an-copybox"); if (old) old.remove();
+    var sheetReturn = document.activeElement;
     var box = document.createElement("div"); box.id = "an-copybox";
     box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true");
     box.setAttribute("aria-label", "Copy your comments");
@@ -949,25 +986,35 @@
     h.textContent = "Copy your comments";   // not an <h3>: never pollute the host page outline
     var p = document.createElement("p"); p.textContent = "The browser blocked the automatic copy. The text is selected — press ⌘C (or Ctrl+C), then paste it back.";
     var ta = document.createElement("textarea"); ta.readOnly = true; ta.value = text;
+    // ONE dismissal path for all three exits, so focus restoration can't be forgotten on
+    // any of them (WCAG 2.4.3 — the sheet used to drop focus to <body>).
+    function dismiss() {
+      box.remove();
+      if (sheetReturn && document.contains(sheetReturn)) { try { sheetReturn.focus(); return; } catch (e) {} }
+      try { $("an-fab").focus(); } catch (e) {}
+    }
     var btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Done";
-    btn.addEventListener("click", function () { box.remove(); });
+    btn.addEventListener("click", dismiss);
     sheet.appendChild(h); sheet.appendChild(p); sheet.appendChild(ta); sheet.appendChild(btn);
+    box._dismiss = dismiss;                 // so the global Esc handler restores focus too
     box.appendChild(sheet); document.body.appendChild(box);
     ta.focus(); ta.select();
-    box.addEventListener("click", function (e) { if (e.target === box) box.remove(); });
+    box.addEventListener("click", function (e) { if (e.target === box) dismiss(); });
   }
 
   // ---- keys -----------------------------------------------------------------------
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") {
       if (!$("an-pop").hidden) { dropEmpty(); closeEditor(); return; }
-      var cb = $("an-copybox"); if (cb) { cb.remove(); return; }
+      var cb = $("an-copybox"); if (cb) { cb._dismiss ? cb._dismiss() : cb.remove(); return; }
       if ($("an-panel").classList.contains("open")) {
         $("an-panel").classList.remove("open");
         updateFab();
         return;
       }
-      if (commenting) setCommenting(false);         // last resort: hand the page back
+      // Only when the key wasn't meant for the host page — Esc inside a page's own input
+      // must not silently switch commenting off.
+      if (commenting && eventIsOurs(e)) setCommenting(false);
       return;
     }
     if (!commenting || !$("an-pop").hidden) return;
