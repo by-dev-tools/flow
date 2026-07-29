@@ -6,7 +6,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ## 2026-07-29 — Annotation-layer v2: commenting as a mode (v1.22.0, FB-0074)
 
-**Branch:** `claude/flow-design-workflow-3a9392` · **SHA:** _(set at commit)_
+**Branch:** `claude/flow-design-workflow-3a9392` · **SHA:** `e4d6f51`
 
 **What was done (user-facing).** The `/flow:verify-build` annotation overlay was redesigned. Commenting is now a persistent mode, on by default: click an element, write or dictate, `↵`, click the next one — no re-arming between comments. Chrome collapsed from a full-width page header + two dock buttons to ONE circular floating control (the minimized comment container; filled = live, carries the count) that expands to a panel holding a labelled Commenting switch, hover-outlining and hide-pins toggles, per-row copy/delete, Copy all, and a two-tap Delete all. Toasts were removed entirely. Anchors, the located-descriptor export, and the `file://` hardening are unchanged.
 

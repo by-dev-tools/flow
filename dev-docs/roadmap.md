@@ -405,6 +405,28 @@ In the FB-0075 measurement, 2 of ~6 items were a single `uiFilePatterns` misconf
 
 Items surfaced by `/flow:staff-review`'s push-further lens, consumer dogfood, or research passes. These don't have a concrete shape yet — they describe a direction worth investigating when relevant code is touched. Each entry includes a **`Surfaces when:`** trigger naming the file paths or area that should re-surface the item, so the auto-loading `exploration` rule can grep this section for trigger matches.
 
+### Annotation-layer follow-ups from the FB-0074 four-lens review
+
+**Surfaces when:** `plugins/flow/skills/verify-build/lib/annotation-layer.html` is next touched.
+
+Real findings from the staff-engineer / UX / design-engineer / push-further pass that were deliberately NOT fixed in the shipping change, with the reason:
+
+- **Per-note view context.** The export carries `copied at <w>×<h>, <light|dark>` sampled at copy time, not per comment — so a reviewer who resizes or flips theme mid-review exports conditions no individual note was written under. The honest fix stores `{w,h,scheme}` on each note at `commit()`, which is a stored-shape change plus a migration for existing localStorage entries. Too wide for the shipping pass; the current string is labelled accurately rather than overclaiming.
+- **Pointer jitter can revert an ↑/↓ refinement.** `mousemove` clears `upStack` whenever `elementFromPoint` differs from `current`, which is always true right after ArrowUp (the cursor still sits over the child). One pixel of trackpad drift silently undoes the widen. Needs a movement threshold — a small state addition plus manual verification.
+- **Only `click` is intercepted.** The host page still receives `mousedown`/`mouseup`/`pointerdown` while commenting is on, so a drag- or mousedown-driven prototype fires under the picker even without a modifier. Either extend the intercept set or document it as an honest limitation.
+- **`resolve()` remains O(notes × same-tag candidates)** with an `innerText` read per candidate. Now memoized to one pass per render (was two), which is enough for a verify-build report; the layer is advertised as a reusable partial for any page, where an indexed candidate pass will eventually be needed.
+- **Commenting on/off is signalled by fill colour alone** on the floating control once a count is present — `dev-docs/design-language.md` § "Never color-alone" applies, and the layer's own header promises a swapped icon as one of its state channels (as `#an-eye` / `#an-snap` already do). A slashed glyph when commenting is off would close it.
+- **`.an-pin` is 22×22**, two pixels under the 24×24 the row actions already meet.
+- **`designLanguagePath` has no entry pointing at this surface.** The doc governs the report renderer; the annotation layer now adds motion, an interactive control vocabulary, and an accent that collides with the report's `need` chip — none of it covered. Extend the doc, or the next change here is ungrounded again.
+
+### The note-field placeholder still asks for a correction, not the reasoning (FB-0074 push-further exploration)
+
+**Surfaces when:** `annotation-layer.html`'s editor popover, `#an-hint` / `#an-text` copy, or the export format is touched again — OR once there are real harvested notes to compare against.
+
+`placeholder="What about this element?"` was written for the era when every comment cost a re-arming click, so terse notes were the norm. That friction is now gone (commenting is a persistent mode) and dictation makes a 90-second note as cheap to produce as a four-word one — but the one string that shapes what a reviewer writes is unchanged. The point of this surface is that spoken feedback yields *reasoning*, not just corrections: "too heavy" is a blocklist entry, whereas why it feels heavy is an axiom that applies to surfaces the agent hasn't built yet (see `dev-docs/research/voice-annotation-pipeline-2026-07.md` § 9 and FB-0074).
+
+Deliberately NOT changed inline: whether a prompt shift actually changes what people write — without tipping into coaching, or making a legitimately short note feel discouraged — is empirical, and a wrong prompt is worse than the current neutral one. The cheapest test is the one this redesign already used: annotate the layer with itself under two placeholder variants and compare the output. Bar stays plain and concrete; anything that reads as coaching fails on sight.
+
 ### `/flow:audit-coverage`'s diff cap can be spent entirely on one metadata blob *(dogfooded on the FB-0074 ship)*
 **Surfaces when:** `plugins/flow/skills/audit-coverage/SKILL.md`'s `CAP=60000` block is next touched, OR a coverage run reports `TRUNCATED` on a PR whose code diff is small.
 
