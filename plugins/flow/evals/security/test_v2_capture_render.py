@@ -183,16 +183,16 @@ def test_annotation_layer_injection() -> None:
     ]
     html = render_buffer(with_frame)
     assert 'class="annot-shot"' in html, "captured frame should carry the annot-shot class"
-    assert 'id="annot-bar"' in html, "annotation layer (toolbar) not injected into a report with a frame"
-    assert "flow-annot:" in html, "annotation layer script not injected"
-    assert "Copy notes" in html, "annotation layer copy-notes control missing"
+    assert 'id="an-dock"' in html, "annotation layer (dock) not injected into a report with a frame"
+    assert "flow-annotations-v2:" in html, "annotation layer script not injected"
+    assert "Copy all" in html, "annotation layer batch-copy control missing"
 
     # (b) NO frame (a text-only / pre-capture report) → still annotatable since FB-0071:
     # the picker anchors a pin to ANY DOM element (e.g. an open-question item or a criterion
     # heading), so the layer injects on every rendered report — there is just no captured frame.
     html2 = render_buffer(base)
     assert 'class="annot-shot"' not in html2, "no frame should mean no annotatable image"
-    assert 'id="annot-bar"' in html2, "annotation layer must inject on any rendered report (FB-0071 DOM-general)"
+    assert 'id="an-dock"' in html2, "annotation layer must inject on any rendered report (FB-0071 DOM-general)"
 
 
 def test_skill_and_rubric_and_workflow_contract() -> None:

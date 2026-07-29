@@ -1,251 +1,399 @@
-<!--
-  ===== Flow annotation layer (self-contained, no deps, works on file://) =====
+<!-- ═══════════════════════════════════════════════════════════════════════════
+  FLOW ANNOTATION LAYER — a self-contained, dependency-free review overlay.
 
-  A vanilla-JS overlay injected before </body> by render-report.py into the
-  ephemeral verify-build HTML walkthrough — and reusable by ANY flow skill/subagent
-  that emits a reviewable HTML page (it is one self-contained copy-paste block: this
-  comment + the <div>s + the <style> + the <script>). It turns a read-only report
-  into a TWO-WAY review surface: the human opens the file (file://, no server, no
-  build), enters "Pin" mode, hovers to pick the exact DOM element a note attaches to
-  (a DevTools "inspect element" outline snaps to whatever is under the cursor), clicks
-  or presses Enter to drop a numbered pin, types a note, and clicks "Copy notes" to
-  get a structured, *located* block to paste back to the agent — so a merge-gate flag
-  re-enters Execute as "#3 · Totals section › td \"Protein\": the delta crowds the
-  marker", not as prose the agent must guess at.
+  Injected before </body> into any reviewable HTML page. The reader clicks an
+  element, writes a comment pinned to it, and copies every comment back as a
+  located block the agent can act on directly.
 
-  GENERALIZED (FB-0071): the anchor is now ANY element, not just a captured screenshot.
-  The prior image-only layer (FB-0051) keyed pins to {frame, x%, y%} inside one <img>;
-  this keys them to a stable ELEMENT IDENTITY so a paragraph, a table cell, an
-  open-question item, or a screenshot are all equally pinnable.
+  Design notes worth keeping:
+    · Commenting is a persistent MODE, not a per-comment action — you click,
+      write, and click the next thing without re-arming. Modifier-click passes
+      a click through to the page, so links and interactive prototypes still
+      work; selecting text never creates a comment.
+    · ONE floating control: the minimized comment container. It reports whether
+      commenting is live and how many comments exist, and expands to the panel
+      holding every toggle and batch action. Only pins float over the design.
+    · Anchors are content-derived (an author data-pin-id, else nearest heading
+      + tag + role + text sample), never a DOM index — so pins survive the page
+      being regenerated. An anchor that stops resolving is kept and exported,
+      flagged, rather than silently dropped.
+    · No toasts. Each control states its own condition — pressed/unpressed, a
+      swapped icon, or a transient label on the button just pressed. A floating
+      message would cover the controls it describes. A visually-hidden live
+      region carries the same information for screen readers.
 
-  HOW TO INJECT (any HTML renderer):
-    • Paste this whole block immediately before </body>. That is the entire contract —
-      the layer needs no build step, no external file, no class on your content.
-    • OPTIONAL stability opt-in: put a stable `data-pin-id="…"` on elements you
-      regenerate every iteration; a pin bound to one re-anchors exactly on re-render.
-      Without it the layer falls back to a content-derived key (nearest heading + tag +
-      role + a short text sample), which survives ordinary DOM/whitespace shifts.
-    • The layer NEVER targets its own chrome (anything inside #annot-bar / #annot-editor
-      / #annot-highlight / #annot-pins is skipped by the picker), so it is safe to inject
-      into a page it does not otherwise know.
-    • REUSE CAVEAT: pins position from getBoundingClientRect() + page scroll offset, so a
-      `position:sticky` header or a `transform` on an ancestor of pinned content can seat
-      pins a frame late / slightly off. verify-build's own report has neither; a reuse
-      author on a transformed surface should account for it.
-    • THEME MIRROR: the --annot-* fallback colors are hand-mirrored from render-report.py's
-      CSS palette (accent, danger, borders, dark tones). If that renderer re-tunes its
-      palette, update these fallbacks in lockstep (they cannot import — this is a partial).
+  file:// safe: no native confirm/alert/prompt, execCommand clipboard with a
+  visible select-and-copy fallback, localStorage persistence, no network.
+═══════════════════════════════════════════════════════════════════════════ -->
+<style>
+  #an-dock, #an-panel, #an-pop, #an-hl, #an-pins, #an-copybox {
+    --an-ink: #1c1c1e; --an-bg: #ffffff; --an-line: #e3e3e6;
+    --an-muted: #6b6b70; --an-accent: #0a5fb0; --an-danger: #b3261e;
+    /* Foreground ON the accent/danger fills. Themed, NOT a hardcoded #fff: the accent
+       lightens in dark mode, where white-on-accent falls to 2.68:1. */
+    --an-on-accent: #ffffff; --an-on-danger: #ffffff;
+    --an-track: #c7c7cc;                 /* switch OFF track — --an-line is 1.28:1 on bg */
+    --an-shadow: 0 16px 40px -16px rgba(0,0,0,.45);
+    --an-shadow-pin: 0 2px 10px rgba(0,0,0,.35);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    box-sizing: border-box;
+  }
+  @media (prefers-color-scheme: dark) {
+    #an-dock, #an-panel, #an-pop, #an-hl, #an-pins, #an-copybox {
+      --an-ink: #ececf0; --an-bg: #1c1c1f; --an-line: #33333a;
+      --an-muted: #9a9aa2; --an-accent: #5aa3e8; --an-danger: #e5715f;
+      /* the accent lightens here, so the ON-accent foreground must darken to match */
+      --an-on-accent: #10243a; --an-on-danger: #3a120c;
+      --an-track: #4a4a52;
+      --an-shadow: 0 16px 40px -16px rgba(0,0,0,.7);
+      --an-shadow-pin: 0 2px 10px rgba(0,0,0,.6);
+    }
+  }
+  #an-dock *, #an-panel *, #an-pop *, #an-copybox * { box-sizing: border-box; }
 
-  ANCHOR STABILITY ACROSS REGENERATION: verify-build's report is "regenerated every
-  iteration." Pins are keyed off element identity (data-pin-id, else content-derived),
-  never DOM tree position/index — so a re-render of the same logical content re-places
-  the pins. A note whose element genuinely vanished is not lost: it is retained, shown
-  as a dashed "unanchored" pin, and still included in the export, flagged.
+  /* ---- dock: the only persistent chrome ---- */
+  #an-dock { position: fixed; right: 20px; bottom: 20px; z-index: 2147483000; }
+  #an-fab {
+    width: 52px; height: 52px; padding: 0; border-radius: 50%;
+    border: 1px solid var(--an-line); background: var(--an-bg); color: var(--an-muted);
+    cursor: pointer; font-weight: 600; font-size: 16px; line-height: 1; font-variant-numeric: tabular-nums;
+    box-shadow: var(--an-shadow); display: grid; place-items: center;
+    transition: background .15s, color .15s, border-color .15s;
+  }
+  /* the two states the minimized container reports: commenting live, or paused */
+  #an-fab.on { background: var(--an-accent); border-color: var(--an-accent); color: var(--an-on-accent); }
+  #an-fab:not(.on):hover { border-color: var(--an-muted); }
+  #an-fab.on:hover { background: color-mix(in srgb, var(--an-accent) 88%, var(--an-ink)); }
+  #an-fab:active { transform: scale(.96); }
+  #an-fab:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 2px; }
+  /* one glyph: the count when there are comments, the add-mark when there are none */
+  #an-fab-label { display: block; }
 
-  EMBEDDED-BROWSER CONSTRAINTS (why this looks the way it does):
-    • NO window.prompt / window.confirm / window.alert — the embedded browser silently
-      suppresses native modals. "Clear" is a two-step inline confirm; transient messages
-      are a flash toast.
-    • NO async Clipboard API — file:// blocks it in some browsers. "Copy notes" uses a
-      hidden-textarea + execCommand('copy'); on the rare failure it leaves a visible,
-      pre-selected textarea to ⌘/Ctrl+C from (never a blocking native prompt).
-    • Pins persist in localStorage keyed to this document (title + path). The report
-      titles itself "Verify-build walkthrough · <branch>", so branches don't collide.
-    • Theming harmonizes with render-report.py's neutral light/dark palette. Optional CSS
-      custom properties (on :root) override: --annot-bar-bg, --annot-bar-fg,
-      --annot-bar-btn-bg, --annot-bar-btn-bg-hover, --annot-accent (pins + primary button
-      + outline), --annot-editor-bg, --annot-editor-fg, --annot-editor-line,
-      --annot-editor-btn-bg, --annot-danger.
+  /* ---- picking ---- */
+  html.an-picking, html.an-picking * { cursor: crosshair !important; }
+  html.an-picking #an-dock *, html.an-picking #an-panel *,
+  html.an-picking #an-pop *, html.an-picking #an-copybox * { cursor: auto !important; }
+  html.an-picking #an-dock button, html.an-picking #an-panel button,
+  html.an-picking #an-pop button, html.an-picking #an-copybox button,
+  html.an-picking .an-pin { cursor: pointer !important; }
+  html.an-picking #an-text, html.an-picking #an-copybox textarea { cursor: text !important; }
+  #an-hl {
+    position: fixed; z-index: 2147482000; pointer-events: none; display: none;
+    border: 2px solid var(--an-accent); border-radius: 3px;
+    background: color-mix(in srgb, var(--an-accent) 10%, transparent);
+  }
 
-  HONEST LIMITATION (a11y): dropping a NEW pin still starts from the pointer (hover to
-  pick, arrows to refine, click/Enter to commit) — full keyboard-only DISCOVERY of an
-  arbitrary non-focusable element is out of scope. EXISTING pins are keyboard-operable
-  (Tab to a pin, Enter/Space to edit). And a static capture is not the live app's view
-  tree: "which element on this page + the note" is unambiguous; resolving a running
-  component instance is out of scope.
--->
-<div id="annot-bar">
-  <strong>Annotate</strong>
-  <button id="annot-pick" type="button" aria-pressed="false">Pin</button>
-  <span id="annot-count" aria-live="polite" role="status">0 notes</span>
-  <span id="annot-flash" aria-live="polite" role="status"></span>
-  <button id="annot-copy" type="button">Copy notes</button>
-  <button id="annot-clear" type="button">Clear</button>
-  <span class="annot-hint">Pin → hover to pick an element (↑/↓ to widen/narrow) → click or ↵ · click a pin to edit</span>
+  /* ---- pins ---- */
+  #an-pins { position: absolute; top: 0; left: 0; width: 0; height: 0; z-index: 2147482500; }
+  #an-pins.hidden { display: none; }
+  .an-pin {
+    position: absolute; width: 22px; height: 22px; padding: 0; border: 0;
+    border-radius: 50% 50% 50% 4px; background: var(--an-accent); color: var(--an-on-accent);
+    font: 700 11px/22px -apple-system, system-ui, sans-serif; text-align: center;
+    cursor: pointer; box-shadow: var(--an-shadow-pin);
+    transform: translate(0, -100%);   /* tail corner is bottom-LEFT, so anchor from the left edge */
+  }
+  .an-pin:focus-visible { outline: 2px solid var(--an-ink); outline-offset: 2px; }
+  .an-pin.lost { background: var(--an-muted); }
+
+  /* ---- panel ---- */
+  #an-panel {
+    position: fixed; right: 20px; bottom: calc(20px + 52px + 8px); z-index: 2147483000;
+    width: 340px; max-width: calc(100vw - 40px); max-height: 60vh;
+    display: none; flex-direction: column; overflow: hidden;
+    background: var(--an-bg); color: var(--an-ink);
+    border: 1px solid var(--an-line); border-radius: 14px; box-shadow: var(--an-shadow);
+  }
+  #an-panel.open { display: flex; }
+  #an-phead {
+    display: flex; align-items: center; gap: 2px; padding: 9px 8px 9px 14px;
+    border-bottom: 1px solid var(--an-line); flex-shrink: 0;
+  }
+  /* An eyebrow, deliberately a step below the "Commenting" title above it — the count
+     labels a list, it is not a peer of the control that decides what a click does. */
+  #an-phead b {
+    font-weight: 600; font-size: 10.5px; line-height: 1; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--an-muted); margin-right: auto; white-space: nowrap;
+  }
+  #an-phead button {
+    border: 1px solid transparent; background: none; color: var(--an-muted);
+    border-radius: 7px; cursor: pointer; padding: 5px; display: grid; place-items: center;
+    width: 28px; height: 28px; flex-shrink: 0;
+  }
+  #an-phead button:hover { color: var(--an-ink); border-color: var(--an-line); }
+  #an-phead button:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 1px; }
+  #an-phead svg { width: 16px; height: 16px; display: block; }
+  /* Accent marks a NON-default state, so a quiet header stays quiet: pins hidden,
+     or hover-outlining switched off. Both are things you'd want a reminder about. */
+  #an-phead #an-eye[aria-pressed="true"], #an-phead #an-snap[aria-pressed="false"] { color: var(--an-accent); }
+  #an-close { font-size: 15px; line-height: 1; }
+
+  /* ---- the commenting switch: the one control that changes what a click DOES ---- */
+  #an-moderow {
+    display: flex; align-items: center; gap: 12px; padding: 11px 14px;
+    border-bottom: 1px solid var(--an-line); flex-shrink: 0;
+  }
+  #an-moderow .an-mr-text { margin-right: auto; min-width: 0; }
+  #an-moderow b { display: block; font-weight: 600; font-size: 14.5px; line-height: 1.25; color: var(--an-ink); letter-spacing: -.005em; }
+  #an-moderow span { display: block; font-size: 11.5px; line-height: 1.35; color: var(--an-muted); margin-top: 2px; }
+  #an-mode {
+    flex-shrink: 0; width: 38px; height: 22px; padding: 0; border-radius: 999px;
+    border: 1px solid var(--an-track); background: var(--an-track); cursor: pointer;
+    position: relative; transition: background .16s, border-color .16s;
+  }
+  #an-mode::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+    border-radius: 50%; background: var(--an-bg); box-shadow: 0 1px 3px rgba(0,0,0,.35);
+    transition: transform .16s;
+  }
+  #an-mode[aria-checked="true"] { background: var(--an-accent); border-color: var(--an-accent); }
+  #an-mode[aria-checked="true"]::after { transform: translateX(16px); }
+  #an-mode:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { #an-mode, #an-mode::after { transition: none; } }
+
+  /* the snap outline flashes on commit when live outlining is off, so you still
+     see what got captured without an outline chasing the cursor the whole time */
+  #an-hl.an-flash { transition: opacity .18s ease; opacity: 1; }
+  #an-hl.an-fade { opacity: 0; }
+
+  /* batch actions live in a footer, away from close, with room for real labels */
+  #an-pfoot {
+    display: flex; gap: 8px; padding: 9px 12px; flex-shrink: 0;
+    border-top: 1px solid var(--an-line);
+  }
+  #an-pfoot button {
+    flex: 1; border: 1px solid var(--an-line); background: transparent; color: var(--an-ink);
+    border-radius: 8px; padding: 7px 10px; font-weight: 600; font-size: 12.5px; line-height: 1; cursor: pointer;
+  }
+  #an-pfoot button:hover { border-color: var(--an-muted); }
+  #an-pfoot button:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 1px; }
+  #an-wipe { color: var(--an-muted); flex: 0 0 auto; }
+  #an-wipe:hover { color: var(--an-danger); border-color: var(--an-danger); }
+  #an-wipe.arm { background: var(--an-danger); border-color: var(--an-danger); color: var(--an-on-danger); }
+  #an-list { overflow-y: auto; padding: 4px 0; flex: 1; }
+  .an-item {
+    display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px 10px 14px;
+    cursor: pointer; border-left: 2px solid transparent;
+  }
+  .an-item + .an-item { border-top: 1px solid var(--an-line); }
+  .an-item:hover { border-left-color: var(--an-accent); }
+  .an-item:focus-visible { outline: 2px solid var(--an-accent); outline-offset: -2px; border-left-color: var(--an-accent); }
+  .an-item .an-n {
+    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; margin-top: 1px;
+    background: var(--an-accent); color: var(--an-on-accent); font-weight: 700; font-size: 10px; line-height: 18px; text-align: center;
+  }
+  .an-item.lost .an-n { background: var(--an-muted); }
+  .an-item .an-body { min-width: 0; flex: 1; }
+  .an-item .an-meta {
+    font-size: 11px; line-height: 1.4; color: var(--an-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .an-item .an-text { font-size: 13.5px; line-height: 1.45; margin-top: 2px; overflow-wrap: anywhere; }
+  .an-item .an-row-act {
+    flex-shrink: 0; border: 0; background: none; color: var(--an-muted);
+    cursor: pointer; padding: 4px; min-width: 24px; min-height: 24px; opacity: 0;
+    display: grid; place-items: center; transition: opacity .12s;
+  }
+  .an-item:hover .an-row-act, .an-item .an-row-act:focus-visible { opacity: 1; }
+  .an-item .an-copy1 svg { width: 13px; height: 13px; display: block; }
+  .an-item .an-copy1:hover { color: var(--an-accent); }
+  .an-item .an-copy1.done { opacity: 1; color: var(--an-accent); }
+  .an-item .an-del { font-size: 15px; line-height: 1; }
+  .an-item .an-del:hover { color: var(--an-danger); }
+  @media (hover: none) { .an-item .an-row-act { opacity: 1; } }
+  #an-empty { padding: 16px 14px; font-size: 13px; line-height: 1.5; color: var(--an-muted); }
+
+  /* ---- editor popover ---- */
+  #an-pop {
+    position: fixed; z-index: 2147483100; width: min(320px, calc(100vw - 28px));
+    max-height: calc(100vh - 28px); overflow-y: auto;
+    background: var(--an-bg); color: var(--an-ink);
+    border: 1px solid var(--an-line); border-radius: 12px; padding: 12px;
+    box-shadow: var(--an-shadow);
+  }
+  #an-pop[hidden] { display: none; }
+  #an-meta {
+    font-size: 11px; line-height: 1.4; color: var(--an-muted); margin-bottom: 8px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #an-text {
+    width: 100%; min-height: 74px; resize: vertical;
+    background: transparent; color: var(--an-ink);
+    border: 1px solid var(--an-line); border-radius: 8px; padding: 8px 10px;
+    font-size: 14px; line-height: 1.45;
+  }
+  #an-text:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 1px; }
+  #an-hint { font-size: 11px; line-height: 1.4; color: var(--an-muted); margin-top: 6px; }
+  #an-prow { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  #an-prow button {
+    border: 1px solid var(--an-line); background: transparent; color: var(--an-ink);
+    border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 12.5px; line-height: 1; cursor: pointer;
+  }
+  #an-prow button:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 1px; }
+  #an-prow button:hover { border-color: var(--an-muted); }
+  #an-prow button:active, #an-pfoot button:active { background: var(--an-line); }
+  #an-save:hover { background: color-mix(in srgb, var(--an-accent) 88%, var(--an-ink)); border-color: transparent; }
+  #an-save { background: var(--an-accent); border-color: var(--an-accent); color: var(--an-on-accent); }
+  #an-del { margin-right: auto; color: var(--an-muted); }
+  #an-del:hover { color: var(--an-danger); border-color: var(--an-danger); }
+
+  @media (prefers-reduced-motion: reduce) { #an-fab { transition: none; } }
+
+  /* ---- copy fallback ---- */
+  #an-copybox {
+    position: fixed; inset: 0; z-index: 2147483400; display: grid; place-items: center;
+    background: rgba(0,0,0,.45); padding: 20px;
+  }
+  #an-copybox .an-sheet {
+    width: min(620px, 100%); background: var(--an-bg); color: var(--an-ink);
+    border: 1px solid var(--an-line); border-radius: 14px; padding: 16px; box-shadow: var(--an-shadow);
+  }
+  #an-copybox .an-sheet-title { margin: 0 0 4px; font-weight: 600; font-size: 15px; line-height: 1.3; }
+  #an-copybox p { margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: var(--an-muted); }
+  #an-copybox textarea {
+    width: 100%; height: 220px; resize: vertical; background: transparent; color: var(--an-ink);
+    border: 1px solid var(--an-line); border-radius: 9px; padding: 10px 12px;
+    font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  #an-copybox button {
+    margin-top: 10px; border: 1px solid var(--an-line); background: transparent;
+    color: var(--an-ink); border-radius: 8px; padding: 7px 14px; font-weight: 600; font-size: 12.5px; line-height: 1; cursor: pointer;
+  }
+</style>
+
+<div id="an-status" role="status" aria-live="polite"
+     style="position:fixed;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+            clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0"></div>
+
+<div id="an-dock">
+  <!-- The minimized comment container. It is the whole floating surface: it reports
+       whether commenting is live, how many comments exist, and expands to the panel. -->
+  <button id="an-fab" type="button" aria-expanded="false">
+    <span id="an-fab-label" aria-hidden="true">✛</span>
+  </button>
 </div>
 
-<div id="annot-highlight" aria-hidden="true"></div>
-<div id="annot-pins"></div>
+<div id="an-panel" role="dialog" aria-label="Comments">
+  <!-- Commenting decides whether a click on the page becomes a comment or reaches the
+       page — the most consequential control here, so it sits FIRST and reads as the
+       primary thing. The list below is secondary: its count is an eyebrow, not a peer. -->
+  <div id="an-moderow">
+    <div class="an-mr-text">
+      <b>Commenting</b>
+      <span id="an-mode-hint">Click any element to comment</span>
+    </div>
+    <button id="an-mode" type="button" role="switch" aria-checked="true" aria-label="Commenting"></button>
+  </div>
 
-<div id="annot-editor" hidden>
-  <div id="annot-editor-meta"></div>
-  <textarea id="annot-editor-text" placeholder="What about this element? (Esc cancels · ⌘/Ctrl+↵ saves)"></textarea>
-  <div class="annot-editor-row">
-    <button id="annot-editor-del" type="button">Delete</button>
-    <span>
-      <button id="annot-editor-cancel" type="button">Cancel</button>
-      <button id="annot-editor-save" type="button" class="primary">Save</button>
-    </span>
+  <div id="an-phead">
+    <b id="an-ptitle">No comments</b>
+    <button id="an-snap" type="button" aria-pressed="true" aria-label="Outline elements while hovering" title="Outline elements while hovering">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke-dasharray="3 2"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/>
+      </svg>
+    </button>
+    <button id="an-eye" type="button" aria-pressed="false" aria-label="Hide pins on the page" title="Hide pins on the page">
+      <svg id="an-eye-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+        <path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z"/><circle cx="8" cy="8" r="1.9"/>
+      </svg>
+    </button>
+    <button id="an-close" type="button" aria-label="Close comments" title="Close">✕</button>
+  </div>
+
+  <div id="an-list"></div>
+  <div id="an-pfoot">
+    <button id="an-copy" type="button" title="Copy all comments">Copy all</button>
+    <button id="an-wipe" type="button" title="Delete all comments">Delete all</button>
   </div>
 </div>
 
-<style>
-  #annot-bar { position:fixed; top:0; left:0; right:0; z-index:10001;
-    display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:10px 18px;
-    background:var(--annot-bar-bg, #1f2328); color:var(--annot-bar-fg, #e8e8e8); font-size:13px;
-    /* subtle bottom edge keeps the chrome/content boundary crisp on the DARK report,
-       where the drop shadow all but vanishes; invisible against a light page below. */
-    border-bottom:1px solid rgba(255,255,255,.08); box-shadow:0 2px 10px rgba(0,0,0,.25); }
-  #annot-bar strong { font-size:13px; letter-spacing:.04em; text-transform:uppercase; }
-  #annot-bar button { font:13px inherit; background:var(--annot-bar-btn-bg, #343a42); color:var(--annot-bar-fg, #e8e8e8); border:0;
-    padding:5px 12px; border-radius:7px; cursor:pointer; }
-  #annot-bar button:hover { background:var(--annot-bar-btn-bg-hover, #434b54); }
-  /* Primary controls (Pin is the tool's entry point) get the same focus ring as the
-     pins + editor buttons — a UA default ring on the dark bar reads low-contrast. */
-  #annot-bar button:focus-visible, #annot-copybox button:focus-visible { outline:2px solid var(--annot-accent, #0a5fb0); outline-offset:2px; }
-  #annot-pick[aria-pressed="true"] { background:var(--annot-accent, #0a5fb0); color:#fff; }
-  #annot-clear.armed { background:var(--annot-danger, #b3261e); color:#fff; }
-  #annot-count { background:var(--annot-bar-btn-bg, #343a42); padding:3px 9px; border-radius:999px; font-variant-numeric:tabular-nums; }
-  #annot-flash:not(:empty) { background:var(--annot-bar-btn-bg, #343a42); padding:3px 9px; border-radius:999px; }
-  .annot-hint { color:var(--annot-bar-fg, #e8e8e8); opacity:.7; margin-left:auto; }
-  body { padding-top:46px; }
+<div id="an-hl" aria-hidden="true"></div>
+<div id="an-pins"></div>
 
-  /* Picker outline — a fixed overlay snapped to the resolved element's viewport rect.
-     pointer-events:none so it never intercepts the pick; elementFromPoint stays honest. */
-  #annot-highlight { position:fixed; z-index:9998; pointer-events:none; display:none;
-    border:2px solid var(--annot-accent, #0a5fb0); background:rgba(10,95,176,.10); border-radius:3px;
-    box-shadow:0 0 0 1px rgba(255,255,255,.55) inset; }
-  /* !important: override every element's own cursor during a pick (links/buttons set their own);
-     scoped to .annot-picking and torn down on exitPick, so it never leaks past pick mode. */
-  body.annot-picking, body.annot-picking * { cursor:crosshair !important; }
-  body.annot-picking #annot-pins { pointer-events:none; } /* don't let a pin swallow a pick-click */
-
-  /* Pins live in one document-level overlay, absolutely positioned in PAGE coordinates
-     (rect + scroll offset) so they scroll with the content and sit on any element —
-     tables/paragraphs/images alike, no per-element wrapper to clobber layout. */
-  #annot-pins { position:absolute; top:0; left:0; width:0; height:0; z-index:9997; }
-  .annot-pin { position:absolute; width:24px; height:24px; margin:-12px 0 0 -12px;
-    border-radius:50%; background:var(--annot-accent, #0a5fb0); color:#fff; border:2px solid #fff;
-    font:700 12px/20px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; text-align:center; cursor:pointer;
-    box-shadow:0 1px 4px rgba(0,0,0,.4); pointer-events:auto; }
-  .annot-pin:focus-visible { outline:2px solid var(--annot-accent, #0a5fb0); outline-offset:2px; }
-  /* Unanchored (element vanished on regeneration) is an EXPECTED, benign state — the note is
-     kept + still exported — so it uses an informational amber, NOT the destructive-clear red. */
-  .annot-pin.annot-lost { position:fixed; background:var(--annot-warn, #b45309); border-style:dashed; }
-  @media (prefers-reduced-motion: no-preference) {
-    .annot-pin { transition:transform .12s ease; }
-    .annot-pin:hover { transform:scale(1.12); }
-  }
-
-  #annot-editor { position:fixed; z-index:10002; width:340px; max-width:90vw; max-height:90vh; overflow:auto;
-    background:var(--annot-editor-bg, #fff); border:1px solid var(--annot-editor-line, #e3e3e6); border-radius:12px; padding:14px;
-    box-shadow:0 12px 40px rgba(0,0,0,.3); }
-  #annot-editor-meta { font:12px ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--annot-editor-fg, #46464b); opacity:.85; margin-bottom:8px; line-height:1.5; white-space:pre-line; }
-  #annot-editor-text { width:100%; height:84px; resize:vertical; font:14px inherit;
-    border:1px solid var(--annot-editor-line, #e3e3e6); border-radius:8px; padding:8px; box-sizing:border-box; }
-  .annot-editor-row { display:flex; justify-content:space-between; align-items:center; margin-top:10px; }
-  #annot-editor button { font:13px inherit; border:0; padding:6px 13px; border-radius:7px; cursor:pointer;
-    background:var(--annot-editor-btn-bg, #eceef1); color:var(--annot-editor-fg, #1c1c1e); }
-  #annot-editor button.primary { background:var(--annot-accent, #0a5fb0); color:#fff; }
-  #annot-editor #annot-editor-del { background:none; color:var(--annot-danger, #b3261e); }
-  #annot-editor button:focus-visible, #annot-editor-text:focus-visible { outline:2px solid var(--annot-accent, #0a5fb0); outline-offset:2px; }
-
-  /* The failure-mode copy box (execCommand refused): a visible, pre-selected textarea. */
-  #annot-copybox { position:fixed; z-index:10003; top:54px; left:50%; transform:translateX(-50%);
-    width:min(560px,92vw); background:var(--annot-editor-bg, #fff); border:1px solid var(--annot-editor-line, #e3e3e6);
-    border-radius:12px; padding:12px; box-shadow:0 12px 40px rgba(0,0,0,.35); }
-  #annot-copybox textarea { width:100%; height:180px; font:12px ui-monospace,SFMono-Regular,Menlo,monospace;
-    border:1px solid var(--annot-editor-line, #e3e3e6); border-radius:8px; padding:8px; box-sizing:border-box; }
-  #annot-copybox button { margin-top:8px; font:13px inherit; border:0; padding:6px 13px; border-radius:7px; cursor:pointer;
-    background:var(--annot-editor-btn-bg, #eceef1); color:var(--annot-editor-fg, #1f2328); }
-
-  @media (prefers-color-scheme: dark) {
-    #annot-editor, #annot-copybox { background:var(--annot-editor-bg, #1f1f22); border-color:var(--annot-editor-line, #34343a); }
-    #annot-editor-text, #annot-copybox textarea { background:#161618; color:var(--annot-editor-fg, #e6e6ea); border-color:var(--annot-editor-line, #34343a); }
-    #annot-editor-meta { color:var(--annot-editor-fg, #b7b7bd); }
-    #annot-editor button, #annot-copybox button { background:var(--annot-editor-btn-bg, #2b2b30); color:var(--annot-editor-fg, #e6e6ea); }
-  }
-</style>
+<div id="an-pop" hidden role="dialog" aria-label="Edit comment">
+  <div id="an-meta"></div>
+  <textarea id="an-text" placeholder="What about this element?"></textarea>
+  <div id="an-hint">↵ saves · ⇧↵ new line · Esc discards changes</div>
+  <div id="an-prow">
+    <button id="an-del" type="button">Delete</button>
+    <button id="an-cancel" type="button">Cancel</button>
+    <button id="an-save" type="button">Save</button>
+  </div>
+</div>
 
 <script>
 (function () {
   "use strict";
 
-  // Smallest pickable box (px). Below this in EITHER dimension the walk-up skips the
-  // element — so a 1px span or a hairline rule is never the pin target; its parent is.
-  var MIN_SIZE = 8;
-  // Tags that carry no visual box worth pinning; the walk-up steps past them.
-  var SKIP_TAGS = { SCRIPT:1, STYLE:1, NOSCRIPT:1, HEAD:1, META:1, LINK:1, BASE:1, TITLE:1, BR:1, WBR:1, TEMPLATE:1, HTML:1, BODY:1 };
-  var HSEL = "h1,h2,h3,h4";
-  var CHROME_SEL = "#annot-bar,#annot-editor,#annot-highlight,#annot-pins,#annot-copybox";
+  var KEY = "flow-annotations-v2:" + location.pathname;
+  var CHROME = "#an-dock,#an-panel,#an-pop,#an-hl,#an-pins,#an-copybox";
+  var SKIP = { HTML: 1, BODY: 1, SCRIPT: 1, STYLE: 1, HEAD: 1, META: 1, LINK: 1, BR: 1 };
+  var HSEL = "h1,h2,h3,h4,h5,h6";
+  var MIN = 8, DEF = { x: 0.5, y: 0.15 };
 
-  // localStorage key derived from this document's title + path (not a project name), so
-  // a refresh doesn't lose work. Kept byte-identical to the FB-0051 layer's key so pins
-  // from a prior (image-only) load are found and MIGRATED (see migrate()) rather than orphaned.
-  var KEY = "flow-annot:" + (document.title || "") + ":" + location.pathname;
+  // SAFETY: static author-controlled markup. Never interpolate note text into these.
+  var COPY_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">' +
+    '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5h-7a1 1 0 0 0-1 1v7"/></svg>';
+  var CHECK_ICON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">' +
+    '<path d="M3 8.5 6.5 12 13 4.5"/></svg>';
 
+  var $ = function (id) { return document.getElementById(id); };
   var notes = [];
-  try { notes = JSON.parse(localStorage.getItem(KEY) || "[]").map(migrate); } catch (e) { notes = []; }
+  try { notes = JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { notes = []; }
+  if (!Array.isArray(notes)) notes = [];
+  notes = notes.filter(function (n) { return n && n.note; });   // drop any empty stranded by a reload mid-edit
 
-  var bar = document.getElementById("annot-bar");
-  var pickBtn = document.getElementById("annot-pick");
-  var clearBtn = document.getElementById("annot-clear");
-  var highlight = document.getElementById("annot-highlight");
-  var pinBox = document.getElementById("annot-pins");
-  var editor = document.getElementById("annot-editor");
-  var editText = document.getElementById("annot-editor-text");
-  var editMeta = document.getElementById("annot-editor-meta");
+  var current = null, upStack = [], active = null, armed = false, armTimer = null;
 
-  var active = null;                 // id of the note being edited
-  var editorReturnFocus = null;      // pin to return focus to when the editor closes (keyboard editing)
-  var picking = false;               // picker active?
-  var pickCurrent = null;            // element currently outlined
-  var upStack = [];                  // descent path: elements we walked UP from (ArrowDown reverses)
-  var placements = [];               // {note, el, pin} for repositioning
+  // Commenting is a STATE, not an action you re-arm after every note. It stays on until
+  // you turn it off, and it defaults to on — you land ready to comment. The button is a
+  // mode indicator you rarely press, not a trigger. ⌘/Ctrl/Alt-click passes a click
+  // through to the page, so links and interactive prototypes stay usable without toggling.
+  var MODE = "flow-annotations-v2:commenting";
+  var commenting = true;
+  try { commenting = localStorage.getItem(MODE) !== "0"; } catch (e) {}
 
-  // Default cosmetic pin position within an element (center-x, near the top edge) —
-  // used when a note carries no explicit click-offset. Placement only, never anchored.
-  var DEFAULT_OFF = { x: 0.5, y: 0.06 };
+  // Preference, not per-document state — it rides along with the reviewer, so it lives
+  // under its own key and survives regeneration. Default on (outline follows the cursor).
+  var PREF = "flow-annotations-v2:snapPreview";
+  var snapPreview = true;
+  try { snapPreview = localStorage.getItem(PREF) !== "0"; } catch (e) {}
 
-  // Persist + re-render. A localStorage failure (quota / private mode) is surfaced, not
-  // swallowed (FB-0010 silent-skip): the notes still live for the session, but the reviewer
-  // must know a refresh will lose them.
-  function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(notes)); }
-    catch (e) { flash("Couldn't save to this browser — notes kept for this session only."); }
-    render();
-  }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(notes)); } catch (e) {} }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
-  function isChrome(el) { return !!(el && el.closest && el.closest(CHROME_SEL)); }
+  function isChrome(el) { return !!(el && el.closest && el.closest(CHROME)); }
   function cssesc(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, "\\$&"); }
+  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
-  // A FB-0051 image-note ({file, screen, xPct, yPct, alt}) → the FB-0071 shape.
-  function migrate(n) {
-    if (n && n.anchor) return n;
-    if (n && (n.xPct != null || n.screen != null)) {
-      return { id: n.id || uid(),
-        anchor: { pinId: null, heading: n.screen || "(page)", tag: "img", role: "", text: n.alt || "" },
-        off: { x: n.xPct != null ? n.xPct : DEFAULT_OFF.x, y: n.yPct != null ? n.yPct : DEFAULT_OFF.y },
-        note: n.note || "", ts: n.ts || new Date().toISOString() };
-    }
-    return n;
+  // No toasts. Every control reports its own state — pressed/unpressed, a swapped icon,
+  // or a transient label on the button you just pressed (the two-step Delete-all pattern).
+  // A floating message would cover the very controls it is describing.
+  function announce(msg) {           // the non-visual half of "each control states its own condition"
+    var n = $("an-status"); if (!n) return;
+    n.textContent = "";              // re-assert so identical consecutive messages still fire
+    setTimeout(function () { n.textContent = msg; }, 30);
+  }
+  function transientLabel(btn, msg, ms) {
+    if (btn._t) { clearTimeout(btn._t); } else { btn._label = btn.textContent; }
+    btn.textContent = msg;
+    btn._t = setTimeout(function () {
+      btn.textContent = btn._label; btn._t = null;
+    }, ms || 1600);
   }
 
-  // ---- targeting: element under the cursor, walked up to a sane pick ---------------
-  // Adapts agentation's elementFromPoint + pickTarget() shape (ported to vanilla): from
-  // the raw point, step past non-visual tags, our own chrome, and sub-threshold boxes.
+  // ---- targeting (from flow) ------------------------------------------------------
   function pickTarget(el) {
     while (el && el.nodeType === 1) {
       if (isChrome(el)) { el = el.parentElement; continue; }
-      if (SKIP_TAGS[el.tagName]) { el = el.parentElement; continue; }
+      if (SKIP[el.tagName]) { el = el.parentElement; continue; }
       var r = el.getBoundingClientRect();
-      if (r.width < MIN_SIZE || r.height < MIN_SIZE) { el = el.parentElement; continue; }
+      if (r.width < MIN || r.height < MIN) { el = el.parentElement; continue; }
       return el;
     }
     return null;
   }
 
-  // ---- anchoring: a stable identity for the committed element ----------------------
+  // ---- anchoring (from flow — content-derived, survives regeneration) --------------
   function headingText(h) { return (h.innerText || h.textContent || "").replace(/\s+/g, " ").trim(); }
   function lastPreceding(list, el) {
     var best = null;
@@ -254,10 +402,6 @@
     }
     return best;
   }
-  // The human label of the section this element sits in. Structural, no project-specific
-  // container selector: the element's own heading if it is/contains one, else the last
-  // heading preceding it within the smallest heading-bearing ancestor, else the nearest
-  // preceding heading in the document, else "(page)".
   function nearestHeading(el) {
     if (el.matches && el.matches(HSEL)) return headingText(el);
     if (el.querySelector) { var own = el.querySelector(HSEL); if (own) return headingText(own); }
@@ -289,10 +433,8 @@
       text: shortText(el)
     };
   }
-  // Resolve an anchor back to a live element — position-independent, never by index.
-  // data-pin-id wins; else score candidates by role + nearest-heading + text sample and
-  // accept only a meaningful match (score > 1), so a vanished element resolves to null.
   function resolve(a) {
+    if (!a) return null;
     if (a.pinId) {
       try { var byId = document.querySelector('[data-pin-id="' + cssesc(a.pinId) + '"]'); if (byId) return byId; } catch (e) {}
     }
@@ -310,7 +452,6 @@
     }
     return best;
   }
-  // The part of the descriptor after the section (tag[role] "text") — the element itself.
   function elDesc(a) {
     var d = a.tag || "element";
     if (a.role) d += "[role=" + a.role + "]";
@@ -319,193 +460,335 @@
   }
   function descriptor(a) { return (a.heading || "(page)") + " › " + elDesc(a); }
 
-  // ---- picker lifecycle ------------------------------------------------------------
-  function enterPick() {
-    picking = true; upStack = []; pickCurrent = null;
-    document.body.classList.add("annot-picking");
-    pickBtn.setAttribute("aria-pressed", "true");
-    flash("Pick an element — ↑ widens, ↓ narrows, click or ↵ commits, Esc cancels.");
+  // ---- picker ---------------------------------------------------------------------
+  function setCommenting(on) {
+    commenting = on;
+    try { localStorage.setItem(MODE, on ? "1" : "0"); } catch (e) {}
+    document.documentElement.classList.toggle("an-picking", on);
+    var m = $("an-mode");
+    m.setAttribute("aria-checked", on ? "true" : "false");   // role="switch", not a pressed button
+    m.title = on ? "Turn commenting off to use the page" : "Turn commenting on";
+    $("an-mode-hint").textContent = on
+      ? "Click any element to comment"
+      : "Off — the page is interactive again";
+    $("an-fab").classList.toggle("on", on);
+    if (!on) { current = null; upStack = []; drawHL(null, true); }
+    updateFab();
+    announce(on ? "Commenting on" : "Commenting off, the page is interactive");
   }
-  function exitPick() {
-    picking = false; pickCurrent = null; upStack = [];
-    document.body.classList.remove("annot-picking");
-    pickBtn.setAttribute("aria-pressed", "false");
-    highlight.style.display = "none";
-  }
-  function drawHighlight(el) {
-    if (!el) { highlight.style.display = "none"; return; }
-    var r = el.getBoundingClientRect();
-    highlight.style.display = "block";
-    highlight.style.left = r.left + "px";
-    highlight.style.top = r.top + "px";
-    highlight.style.width = r.width + "px";
-    highlight.style.height = r.height + "px";
-  }
-  function setTarget(el) { pickCurrent = el; drawHighlight(el); }
 
-  function onMove(e) {
-    if (!picking) return;
-    var el = pickTarget(document.elementFromPoint(e.clientX, e.clientY));
-    // A fresh mouse move resets the descent path; re-outline only if the target changed.
-    if (el) { if (el !== pickCurrent) setTarget(el); upStack = []; }
+  // The minimized container has to say three things at once: is commenting live, how many
+  // comments exist, and does clicking expand or collapse. Colour carries the first, the
+  // count the second, and the accessible name all three.
+  function updateFab() {
+    var fab = $("an-fab"), open = $("an-panel").classList.contains("open"), n = notes.length;
+    fab.setAttribute("aria-expanded", open ? "true" : "false");
+    fab.setAttribute("aria-label",
+      (commenting ? "Commenting on" : "Commenting off") + ", " +
+      (n ? n + (n === 1 ? " comment" : " comments") : "no comments") + ", " +
+      (open ? "hide" : "show") + " the comment list");
+    fab.title = commenting
+      ? "Commenting is on — click any element on the page"
+      : "Commenting is off — the page is interactive";
   }
-  // Commit the currently-outlined element. `pt` is the pixel point to seed the cosmetic
-  // click-offset (the click position, or the element's top-center on a keyboard commit).
-  function commitPick(pt) {
-    if (!pickCurrent) { exitPick(); return; }
-    var el = pickCurrent, r = el.getBoundingClientRect();
-    var ox = r.width ? (pt.x - r.left) / r.width : DEFAULT_OFF.x;
-    var oy = r.height ? (pt.y - r.top) / r.height : DEFAULT_OFF.y;
-    var n = {
-      id: uid(),
-      anchor: anchorFor(el),
-      off: { x: clamp01(ox), y: clamp01(oy) },   // COSMETIC placement only — not in the anchor, not exported
-      note: "", ts: new Date().toISOString()
-    };
-    exitPick();
-    notes.push(n); save();
-    editorReturnFocus = null; // a fresh commit didn't come from a pin — no focus to return to
-    openEditor(n.id, r.left + n.off.x * r.width, r.top + n.off.y * r.height);
-  }
-  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
-
-  // ---- pins ------------------------------------------------------------------------
-  function pinPoint(el, off) {
+  // `force` draws the outline even when live hover-outlining is switched off — used by
+  // ↑/↓ (you must see what you are adjusting) and by the post-commit flash.
+  function drawHL(el, force) {
+    var hl = $("an-hl");
+    if (!el || (!snapPreview && !force)) { hl.style.display = "none"; return; }
     var r = el.getBoundingClientRect();
-    var ox = off ? off.x : DEFAULT_OFF.x, oy = off ? off.y : DEFAULT_OFF.y;
-    return { x: r.left + window.scrollX + ox * r.width, y: r.top + window.scrollY + oy * r.height };
+    hl.style.display = "block";
+    hl.style.left = r.left + "px"; hl.style.top = r.top + "px";
+    hl.style.width = r.width + "px"; hl.style.height = r.height + "px";
   }
+  function setTarget(el, force) { current = el; drawHL(el, force); }
+
+  // With outlining off, the snap is still happening — you just don't see it until you
+  // commit. Flash what was captured so the pick is never a mystery.
+  var flashT = null, fadeT = null;
+  function flashHL(el) {
+    if (snapPreview || !el) return;          // it was already on screen; nothing to reveal
+    var hl = $("an-hl");
+    if (flashT) clearTimeout(flashT);
+    if (fadeT) clearTimeout(fadeT);
+    hl.classList.remove("an-fade");
+    hl.classList.add("an-flash");
+    drawHL(el, true);
+    flashT = setTimeout(function () { hl.classList.add("an-fade"); }, 460);
+    fadeT = setTimeout(function () {
+      hl.style.display = "none";
+      hl.classList.remove("an-flash", "an-fade");
+    }, 700);
+  }
+
+  document.addEventListener("mousemove", function (e) {
+    if (!commenting || !$("an-pop").hidden) return;   // don't outline behind an open editor
+    var raw = document.elementFromPoint(e.clientX, e.clientY);
+    // Over our own chrome, drop the target entirely. Otherwise the outline keeps glowing
+    // on whatever page element you left behind, which makes clicking inside the panel look
+    // like it will pin that element — it never would, but the affordance said otherwise.
+    if (isChrome(raw)) { if (current) { current = null; upStack = []; drawHL(null); } return; }
+    var el = pickTarget(raw);
+    if (el && el !== current) { setTarget(el); upStack = []; }
+  }, true);
+
+  function commit(pt) {
+    if (!current) return;
+    var el = current, r = el.getBoundingClientRect();
+    var ox = r.width ? (pt.x - r.left) / r.width : DEF.x;
+    var oy = r.height ? (pt.y - r.top) / r.height : DEF.y;
+    var n = { id: uid(), anchor: anchorFor(el), off: { x: clamp01(ox), y: clamp01(oy) }, note: "", ts: new Date().toISOString() };
+    upStack = []; current = null;   // stay in commenting mode — only the selection resets
+    drawHL(null);
+    flashHL(el);                    // no-op when the outline was already visible
+    notes.push(n); render();          // NOT saved yet — an untouched empty note must not persist
+    announce("Comment " + notes.length + " added on " + descriptor(n.anchor));
+    openEditor(n.id);
+  }
+
+  // ONE click, ONE action. Order matters: chrome and modifier-clicks pass through, a
+  // text selection is never a comment, an open editor closes before anything else, and
+  // only then does a click create a new comment.
+  document.addEventListener("click", function (e) {
+    if (isChrome(e.target)) return;                       // dock, panel, pins, the editor
+    if (e.metaKey || e.ctrlKey || e.altKey) return;       // modifier → use the page normally
+
+    var sel = window.getSelection && window.getSelection();
+    if (sel && String(sel).trim().length > 1) return;     // selecting text, not commenting
+
+    if (!$("an-pop").hidden) {                            // close the open editor, nothing else
+      e.preventDefault(); e.stopPropagation();
+      if ($("an-text").value.trim()) commitNote();
+      else { dropEmpty(); closeEditor(); }
+      return;
+    }
+    if (!commenting) return;
+
+    e.preventDefault(); e.stopPropagation();
+    // ↑/↓ adjustments win; otherwise resolve the target from the click point itself, so
+    // this works identically whether or not the hover outline is switched on.
+    if (!upStack.length) {
+      var el = pickTarget(document.elementFromPoint(e.clientX, e.clientY));
+      if (!el) return;
+      setTarget(el);
+    }
+    commit({ x: e.clientX, y: e.clientY });
+  }, true);
+
+  // ---- render ---------------------------------------------------------------------
   function render() {
-    pinBox.innerHTML = "";
-    placements = [];
-    var lost = 0;
+    var wrap = $("an-pins");
+    wrap.textContent = "";
     notes.forEach(function (n, i) {
       var el = resolve(n.anchor);
-      var pin = document.createElement("span");
-      pin.className = "annot-pin" + (el ? "" : " annot-lost");
-      pin.textContent = i + 1;
-      pin.title = n.note || (el ? "Click to add a note" : "Element not found in this report — click to edit");
-      pin.setAttribute("tabindex", "0");
-      pin.setAttribute("role", "button");
-      pin.setAttribute("aria-label", "Note " + (i + 1) + " on " + descriptor(n.anchor) + ": " + (n.note || "(empty)"));
+      var pin = document.createElement("button");
+      pin.type = "button"; pin.className = "an-pin" + (el ? "" : " lost");
+      pin.textContent = String(i + 1);
+      pin.setAttribute("aria-label", "Comment " + (i + 1) + ": " + (n.note || "(empty)"));
+      pin.title = n.note || "(empty)";
       if (el) {
-        var p = pinPoint(el, n.off);
-        pin.style.left = p.x + "px"; pin.style.top = p.y + "px";
+        var r = el.getBoundingClientRect();
+        pin.style.left = (window.scrollX + r.left + r.width * n.off.x) + "px";
+        pin.style.top = (window.scrollY + r.top + r.height * n.off.y) + "px";
       } else {
-        pin.style.left = "8px"; pin.style.top = (52 + lost * 28) + "px"; lost++;
+        pin.style.display = "none"; // unanchored: no place to draw it, still listed in the panel
       }
-      pin.addEventListener("click", function (e) { e.stopPropagation(); editorReturnFocus = n.id; openEditor(n.id, e.clientX, e.clientY); });
-      pin.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault(); e.stopPropagation();
-          editorReturnFocus = n.id; // return focus to this note's pin when the editor closes (keyboard editing)
-          var pr = pin.getBoundingClientRect(); openEditor(n.id, pr.left, pr.top);
-        }
+      pin.addEventListener("click", function (ev) { ev.stopPropagation(); openEditor(n.id); });
+      wrap.appendChild(pin);
+    });
+
+    $("an-fab-label").textContent = notes.length ? String(notes.length) : "✛";
+    $("an-ptitle").textContent = notes.length === 0 ? "No comments"
+      : notes.length === 1 ? "1 comment" : notes.length + " comments";
+    updateFab();
+
+    var list = $("an-list");
+    list.textContent = "";
+    $("an-pfoot").style.display = notes.length ? "flex" : "none";  // nothing to batch on an empty list
+    if (!notes.length) {
+      var em = document.createElement("div");
+      em.id = "an-empty";
+      em.textContent = commenting
+        ? "No comments yet. Click anything on the page to add one."
+        : "No comments yet. Commenting is off — switch it back on above.";
+      list.appendChild(em);
+      return;
+    }
+    notes.forEach(function (n, i) {
+      var el = resolve(n.anchor);
+      var item = document.createElement("div");
+      item.className = "an-item" + (el ? "" : " lost");
+      item.tabIndex = 0;
+
+      var num = document.createElement("span");
+      num.className = "an-n"; num.textContent = String(i + 1);
+
+      var body = document.createElement("div");
+      body.className = "an-body";
+      var meta = document.createElement("div");
+      meta.className = "an-meta";
+      meta.textContent = el ? descriptor(n.anchor) : "unanchored · " + elDesc(n.anchor);
+      var text = document.createElement("div");
+      text.className = "an-text";
+      text.textContent = n.note || "(empty)";
+      body.appendChild(meta); body.appendChild(text);
+
+      // Copy just this one, in the same located format the batch export uses — so a
+      // single pasted comment carries its section and element, not a bare sentence.
+      var cp = document.createElement("button");
+      cp.type = "button"; cp.className = "an-row-act an-copy1";
+      cp.setAttribute("aria-label", "Copy comment " + (i + 1));
+      cp.title = "Copy this comment";
+      cp.innerHTML = COPY_ICON;
+      cp.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        var ok = writeClipboard(oneNoteBlock(n, notes.indexOf(n) + 1, !!el));
+        if (!ok) return;                        // writeClipboard already showed the fallback sheet
+        cp.innerHTML = CHECK_ICON; cp.classList.add("done");
+        announce("Comment " + (notes.indexOf(n) + 1) + " copied to the clipboard");
+        if (cp._t) clearTimeout(cp._t);
+        cp._t = setTimeout(function () { cp.innerHTML = COPY_ICON; cp.classList.remove("done"); }, 1300);
       });
-      pinBox.appendChild(pin);
-      placements.push({ note: n, el: el, pin: pin });
+
+      var del = document.createElement("button");
+      del.type = "button"; del.className = "an-row-act an-del"; del.textContent = "×";
+      del.setAttribute("aria-label", "Delete comment " + (i + 1));
+      del.title = "Delete this comment";
+      del.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        var wasIndex = notes.indexOf(n);
+        notes = notes.filter(function (x) { return x.id !== n.id; });
+        save(); render();
+        announce("Comment deleted, " + notes.length + " remaining");
+        // keep keyboard users in the list rather than dumping them on <body>
+        var rows = $("an-list").querySelectorAll(".an-item");
+        var next = rows[Math.min(wasIndex, rows.length - 1)];
+        try { (next || $("an-fab")).focus(); } catch (e) {}
+      });
+
+      item.appendChild(num); item.appendChild(body); item.appendChild(cp); item.appendChild(del);
+      item.addEventListener("click", function () { scrollToNote(n); openEditor(n.id); });
+      item.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); scrollToNote(n); openEditor(n.id); }
+      });
+      list.appendChild(item);
     });
-    var c = document.getElementById("annot-count");
-    c.textContent = notes.length + (notes.length === 1 ? " note" : " notes") + (lost ? " · " + lost + " unanchored" : "");
-  }
-  // Reposition matched pins from their element's current rect (layout/scroll changes);
-  // lost pins are fixed. Cheap — recomputes rects only.
-  function reposition() {
-    placements.forEach(function (pl) {
-      if (!pl.el) return;
-      var p = pinPoint(pl.el, pl.note.off);
-      pl.pin.style.left = p.x + "px"; pl.pin.style.top = p.y + "px";
-    });
-    if (picking && pickCurrent) drawHighlight(pickCurrent);
   }
 
-  // ---- editor ----------------------------------------------------------------------
-  function openEditor(id, clientX, clientY) {
-    active = id;
+  function scrollToNote(n) {
+    var el = resolve(n.anchor);
+    if (!el || !el.scrollIntoView) return;
+    var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+  }
+
+  // ---- editor ---------------------------------------------------------------------
+  var returnFocusTo = null;          // element to restore focus to when the editor closes
+  function openEditor(id) {
+    returnFocusTo = (document.activeElement && document.activeElement.closest &&
+                     document.activeElement.closest(CHROME)) ? document.activeElement : null;
     var n = notes.find(function (x) { return x.id === id; });
     if (!n) return;
-    var num = notes.indexOf(n) + 1;
-    var lost = resolve(n.anchor) ? "" : "\n(element not found in current report)";
-    editMeta.textContent = "#" + num + " · " + descriptor(n.anchor) + lost;
-    editText.value = n.note || "";
-    editor.hidden = false;
-    var ew = 340, eh = 200, pad = 12;
-    var x = Math.min((clientX || 0) + 14, window.innerWidth - ew - pad);
-    var y = Math.min(Math.max((clientY || 0) - 20, 52), window.innerHeight - eh - pad);
-    editor.style.left = Math.max(pad, x) + "px";
-    editor.style.top = y + "px";
-    editText.focus();
+    active = id;
+    var el = resolve(n.anchor);
+    $("an-meta").textContent = "#" + (notes.indexOf(n) + 1) + " · " + descriptor(n.anchor) +
+      (el ? "" : "  (element not found in this version of the page)");
+    $("an-text").value = n.note || "";
+    var pop = $("an-pop");
+    pop.hidden = false;
+
+    var w = 320, h = pop.offsetHeight || 210, pad = 14, x, y;
+    if (el) {
+      var r = el.getBoundingClientRect();
+      x = r.left + r.width * n.off.x + 16;
+      y = r.top + r.height * n.off.y - 10;
+    } else { x = window.innerWidth - w - pad; y = 80; }
+    pop.style.left = Math.max(pad, Math.min(x, window.innerWidth - w - pad)) + "px";
+    pop.style.top = Math.max(pad, Math.min(y, window.innerHeight - h - pad)) + "px";
+    $("an-text").focus();
   }
   function closeEditor() {
-    editor.hidden = true; active = null;
-    // Return focus to the edited note's CURRENT pin (looked up by id, since render()
-    // rebuilds pin elements on save) — so keyboard editing doesn't dump focus on <body>.
-    var rid = editorReturnFocus; editorReturnFocus = null;
-    if (rid) {
-      for (var i = 0; i < placements.length; i++) {
-        if (placements[i].note.id === rid && document.contains(placements[i].pin)) { placements[i].pin.focus(); break; }
-      }
-    }
-  }
-  function discardIfEmpty() {
-    var n = notes.find(function (x) { return x.id === active; });
-    if (n && !n.note) { notes = notes.filter(function (x) { return x.id !== n.id; }); save(); }
+    $("an-pop").hidden = true; active = null;
+    // Focus must land somewhere deliberate: the row/pin that opened this, else the dock.
+    var t = returnFocusTo; returnFocusTo = null;
+    if (t && document.contains(t)) { try { t.focus(); return; } catch (e) {} }
+    try { $("an-fab").focus(); } catch (e) {}
   }
   function commitNote() {
     var n = notes.find(function (x) { return x.id === active; });
-    if (n) n.note = editText.value.trim();
-    if (n && !n.note) notes = notes.filter(function (x) { return x.id !== n.id; }); // a stray pin with no text is discarded
-    save(); closeEditor();
+    if (n) {
+      n.note = $("an-text").value.trim();
+      if (!n.note) notes = notes.filter(function (x) { return x.id !== n.id; });
+    }
+    save(); render(); closeEditor();
   }
-  function delNote() { notes = notes.filter(function (x) { return x.id !== active; }); save(); closeEditor(); }
+  function dropEmpty() {
+    var n = notes.find(function (x) { return x.id === active; });
+    if (n && !n.note) { notes = notes.filter(function (x) { return x.id !== n.id; }); save(); render(); }
+  }
 
-  document.getElementById("annot-editor-save").addEventListener("click", commitNote);
-  document.getElementById("annot-editor-cancel").addEventListener("click", function () { discardIfEmpty(); closeEditor(); });
-  document.getElementById("annot-editor-del").addEventListener("click", delNote);
-  editText.addEventListener("keydown", function (e) { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commitNote(); });
-
-  // ---- toolbar: pick toggle, two-step clear ----------------------------------------
-  pickBtn.addEventListener("click", function () { picking ? exitPick() : enterPick(); });
-
-  var armed = false, armTimer = null;
-  function disarm() { armed = false; clearBtn.textContent = "Clear"; clearBtn.classList.remove("armed"); if (armTimer) clearTimeout(armTimer); }
-  clearBtn.addEventListener("click", function () {
-    if (!notes.length) { flash("No notes to clear."); return; }
-    if (!armed) { armed = true; clearBtn.textContent = "Confirm clear (" + notes.length + ")"; clearBtn.classList.add("armed"); armTimer = setTimeout(disarm, 4000); return; }
-    notes = []; save(); disarm();
+  $("an-save").addEventListener("click", commitNote);
+  $("an-cancel").addEventListener("click", function () { dropEmpty(); closeEditor(); });
+  $("an-del").addEventListener("click", function () {
+    notes = notes.filter(function (x) { return x.id !== active; });
+    save(); render(); closeEditor();
+    announce("Comment deleted, " + notes.length + " remaining");
+  });
+  $("an-text").addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitNote(); }       // ↵ finalizes
+    else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitNote(); }
   });
 
-  // ---- global keys: Escape (picker → editor), arrows/Enter while picking -----------
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") {
-      if (picking) { exitPick(); return; }
-      if (!editor.hidden) { discardIfEmpty(); closeEditor(); return; }
-      if (armed) { disarm(); return; }
-    }
-    if (!picking) return;
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      var par = pickCurrent && pickCurrent.parentElement;
-      if (par && par.nodeType === 1 && !isChrome(par) && !SKIP_TAGS[par.tagName]) { upStack.push(pickCurrent); setTarget(par); }
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
-      if (upStack.length) setTarget(upStack.pop());
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (pickCurrent) { var r = pickCurrent.getBoundingClientRect(); commitPick({ x: r.left + r.width / 2, y: r.top + Math.min(18, r.height * 0.1) }); }
-    }
+  // ---- dock + panel ---------------------------------------------------------------
+  $("an-fab").addEventListener("click", function () {
+    $("an-panel").classList.toggle("open");
+    disarm(); updateFab();
   });
-  // Commit on click while picking. Capture phase + preventDefault so a click on a link
-  // or button picks the element instead of following/activating it.
-  document.addEventListener("click", function (e) {
-    if (!picking) return;
-    if (isChrome(e.target)) return;           // clicks on our own toolbar/pins are not picks
-    e.preventDefault(); e.stopPropagation();
-    commitPick({ x: e.clientX, y: e.clientY });
-  }, true);
-  document.addEventListener("mousemove", onMove, true);
+  $("an-mode").addEventListener("click", function () { setCommenting(!commenting); });
+  $("an-close").addEventListener("click", function () {
+    $("an-panel").classList.remove("open");
+    disarm(); updateFab();
+  });
+  // SAFETY: static author-controlled markup, no user text — never interpolate a note here.
+  var EYE_OPEN = '<path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z"/><circle cx="8" cy="8" r="1.9"/>';
+  var EYE_SHUT = '<path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z"/><circle cx="8" cy="8" r="1.9"/><path d="M2.5 13.5 13.5 2.5"/>';
+  $("an-eye").addEventListener("click", function () {
+    var hidden = $("an-pins").classList.toggle("hidden");
+    this.setAttribute("aria-pressed", hidden ? "true" : "false");
+    var label = hidden ? "Show pins on the page" : "Hide pins on the page";
+    this.setAttribute("aria-label", label); this.title = label;
+    $("an-eye-svg").innerHTML = hidden ? EYE_SHUT : EYE_OPEN;
+  });
 
-  // ---- export: located, descriptor-based, grouped by section, reading order --------
+  var SNAP_ON = '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke-dasharray="3 2"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/>';
+  var SNAP_OFF = '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke-dasharray="3 2"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><path d="M2.5 13.5 13.5 2.5"/>';
+  $("an-snap").addEventListener("click", function () {
+    snapPreview = !snapPreview;
+    try { localStorage.setItem(PREF, snapPreview ? "1" : "0"); } catch (e) {}
+    this.setAttribute("aria-pressed", snapPreview ? "true" : "false");
+    var label = snapPreview ? "Outline elements while hovering" : "Outline only on ↑/↓ and after you click";
+    this.setAttribute("aria-label", label); this.title = label;
+    this.querySelector("svg").innerHTML = snapPreview ? SNAP_ON : SNAP_OFF;
+    if (!snapPreview) drawHL(null);
+  });
+
+  function disarm() {
+    armed = false;
+    var w = $("an-wipe"); w.textContent = "Delete all"; w.classList.remove("arm");
+    if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+  }
+  $("an-wipe").addEventListener("click", function () {
+    if (!armed) {                                   // two-step, no native confirm (file:// safe)
+      armed = true; this.textContent = "Delete all?"; this.classList.add("arm");
+      armTimer = setTimeout(disarm, 3500);
+      return;
+    }
+    var n = notes.length;
+    notes = []; save(); render(); disarm(); closeEditor();
+    announce("Deleted all " + n + " comments");
+  });
+
+  // ---- export (from flow — unchanged format) --------------------------------------
   function domOrder(a, b) {
     if (a.el && b.el) {
       var p = a.el.compareDocumentPosition(b.el);
@@ -513,30 +796,38 @@
       if (p & Node.DOCUMENT_POSITION_PRECEDING) return 1;
       return 0;
     }
-    return a.el ? -1 : b.el ? 1 : 0; // unanchored notes sink to the end
+    return a.el ? -1 : b.el ? 1 : 0;
   }
-  document.getElementById("annot-copy").addEventListener("click", function () {
-    if (!notes.length) { flash("No notes yet — click Pin, then an element."); return; }
+  $("an-copy").addEventListener("click", function () {
     var rows = notes.map(function (n) { return { n: n, num: notes.indexOf(n) + 1, el: resolve(n.anchor) }; });
     rows.sort(domOrder);
-    var lines = [], curHeading = null, sawLost = false;
+    var lines = [], cur = null, lost = false;
     rows.forEach(function (r) {
-      var head = r.el ? (r.n.anchor.heading || "(page)") : "(unanchored — element not found in current report)";
-      if (head !== curHeading) { curHeading = head; sawLost = sawLost || !r.el; lines.push("## " + head); }
+      var head = r.el ? (r.n.anchor.heading || "(page)") : "(unanchored — element not found in this version of the page)";
+      if (head !== cur) { cur = head; lost = lost || !r.el; lines.push("## " + head); }
       lines.push("#" + r.num + "\n   at " + elDesc(r.n.anchor) + "\n   note: " + (r.n.note || "(none)"));
     });
-    var header = (document.title || "Visual review") + " — " + notes.length + " annotation(s)\n" +
+    var header = (document.title || "Visual review") + " — " + notes.length + " comment(s)\n" +
       "(grouped by section, in reading order; numbers match the on-page pins;\n" +
       " each line names the section and the element the note is attached to" +
-      (sawLost ? ";\n an \"unanchored\" note's element was not found in the current report" : "") + ")\n\n";
-    copyText(header + lines.join("\n\n"), notes.length);
+      (lost ? ";\n an \"unanchored\" comment's element was not found in this version of the page" : "") + ")\n\n";
+    if (writeClipboard(header + lines.join("\n\n"))) {
+      transientLabel($("an-copy"), notes.length === 1 ? "Copied 1" : "Copied " + notes.length);
+      announce("Copied " + notes.length + (notes.length === 1 ? " comment" : " comments") + " to the clipboard");
+    }
   });
 
-  // file:// blocks the async Clipboard API in some browsers → hidden-textarea + execCommand.
-  // SAFETY: `text` is user-typed notes + numbers + descriptors + the report title, and every
-  // sink here is plain-text (textarea .value, execCommand copy) — no HTML parsing, no innerHTML.
-  // On refusal we surface a visible, pre-selected textarea to ⌘/Ctrl+C from — never a native modal.
-  function copyText(text, count) {
+  // One comment, in the same located shape the batch export uses.
+  function oneNoteBlock(n, num, anchored) {
+    var head = anchored ? (n.anchor.heading || "(page)")
+                        : "(unanchored — element not found in this version of the page)";
+    return "## " + head + "\n\n#" + num + "\n   at " + elDesc(n.anchor) +
+           "\n   note: " + (n.note || "(none)");
+  }
+
+  // Returns true when the clipboard actually took it. On refusal it surfaces the
+  // select-and-copy sheet and returns false, so callers never claim a false success.
+  function writeClipboard(text) {
     var ta = document.createElement("textarea");
     ta.value = text; ta.setAttribute("readonly", "");
     ta.style.position = "fixed"; ta.style.top = "-1000px"; ta.style.opacity = "0";
@@ -545,44 +836,98 @@
     var ok = false;
     try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
     ta.remove();
-    if (ok) { flash("Copied " + count + " note(s) — paste them to me."); return; }
-    showCopyBox(text);
+    if (!ok) showCopyBox(text);
+    return ok;
   }
   function showCopyBox(text) {
-    var old = document.getElementById("annot-copybox"); if (old) old.remove();
-    var box = document.createElement("div"); box.id = "annot-copybox";
+    var old = $("an-copybox"); if (old) old.remove();
+    var box = document.createElement("div"); box.id = "an-copybox";
+    box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-label", "Copy your comments");
+    var sheet = document.createElement("div"); sheet.className = "an-sheet";
+    var h = document.createElement("div"); h.className = "an-sheet-title";
+    h.textContent = "Copy your comments";   // not an <h3>: never pollute the host page outline
+    var p = document.createElement("p"); p.textContent = "The browser blocked the automatic copy. The text is selected — press ⌘C (or Ctrl+C), then paste it back.";
     var ta = document.createElement("textarea"); ta.readOnly = true; ta.value = text;
-    var btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Close";
+    var btn = document.createElement("button"); btn.type = "button"; btn.textContent = "Done";
     btn.addEventListener("click", function () { box.remove(); });
-    var p = document.createElement("div"); p.textContent = "Copy blocked — select all and press ⌘/Ctrl+C:";
-    p.style.cssText = "font:12px inherit;margin-bottom:6px;";
-    box.appendChild(p); box.appendChild(ta); box.appendChild(btn);
-    document.body.appendChild(box);
+    sheet.appendChild(h); sheet.appendChild(p); sheet.appendChild(ta); sheet.appendChild(btn);
+    box.appendChild(sheet); document.body.appendChild(box);
     ta.focus(); ta.select();
+    box.addEventListener("click", function (e) { if (e.target === box) box.remove(); });
   }
 
-  // Transient toast in its own aria-live region — never overwrite #annot-count (which
-  // must always show the true count, re-announced only when it changes).
-  function flash(msg) {
-    var f = document.getElementById("annot-flash");
-    f.textContent = msg;
-    setTimeout(function () { if (f.textContent === msg) f.textContent = ""; }, 2400);
+  // ---- keys -----------------------------------------------------------------------
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      if (!$("an-pop").hidden) { dropEmpty(); closeEditor(); return; }
+      var cb = $("an-copybox"); if (cb) { cb.remove(); return; }
+      if ($("an-panel").classList.contains("open")) {
+        $("an-panel").classList.remove("open");
+        updateFab();
+        return;
+      }
+      if (commenting) setCommenting(false);         // last resort: hand the page back
+      return;
+    }
+    if (!commenting || !$("an-pop").hidden) return;
+
+    // Never swallow a key the page or our own chrome needs. This handler is capture-phase
+    // on document, so an unconditional preventDefault here would cancel the synthetic
+    // click Enter fires on ANY button (making every control un-activatable by keyboard),
+    // block arrow-key scrolling, and eat Enter inside a page's own form field.
+    var t = e.target;
+    if (t && t.closest && t.closest(CHROME)) return;
+    if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+
+    if (e.key === "ArrowUp") {                       // widen to parent
+      if (!current || !current.parentElement) return;          // no target ⇒ let the page scroll
+      var p = pickTarget(current.parentElement);
+      if (!p) return;
+      e.preventDefault();
+      upStack.push(current); setTarget(p, true);               // force: you must see what you widened to
+    } else if (e.key === "ArrowDown") {              // narrow back down the path we came up
+      if (!upStack.length) return;                             // nothing to descend into ⇒ page scrolls
+      e.preventDefault();
+      setTarget(upStack.pop(), true);
+    } else if (e.key === "Enter") {
+      if (!current) return;                                    // no target ⇒ Enter belongs to the page
+      e.preventDefault();
+      var r = current.getBoundingClientRect();
+      commit({ x: r.left + r.width * DEF.x, y: r.top + r.height * DEF.y });
+    }
+  }, true);
+
+  // Keyboard path to a target: tabbing through the page sets the pick target, so
+  // Tab-to-element → Enter-to-comment works without a mouse (WCAG 2.1.1).
+  document.addEventListener("focusin", function (e) {
+    if (!commenting || !$("an-pop").hidden) return;
+    var t = e.target;
+    if (!t || (t.closest && t.closest(CHROME))) return;
+    var el = pickTarget(t);
+    if (el && el !== current) { setTarget(el, true); upStack = []; }
+  }, true);
+
+  // ---- reflow ---------------------------------------------------------------------
+  var reflow = null;
+  function scheduleRender() {
+    if (reflow) return;
+    reflow = setTimeout(function () { reflow = null; render(); }, 120);
+  }
+  window.addEventListener("resize", scheduleRender);
+  if (window.ResizeObserver) { try { new ResizeObserver(scheduleRender).observe(document.body); } catch (e) {} }
+
+  setCommenting(commenting);          // paints the dock + crosshair from the stored mode
+
+  // reflect a persisted "outline off" preference on load
+  if (!snapPreview) {
+    var sb = $("an-snap");
+    sb.setAttribute("aria-pressed", "false");
+    var l = "Outline only on ↑/↓ and after you click";
+    sb.setAttribute("aria-label", l); sb.title = l;
+    sb.querySelector("svg").innerHTML = SNAP_OFF;
   }
 
-  // Offset the report below the FIXED bar by the bar's true height — it wraps to 2–3 rows
-  // at narrow widths / high zoom, and a hardcoded single-row pad would let the extra rows
-  // occlude the top of the report (WCAG 1.4.10 reflow). The CSS 46px is the pre-JS fallback.
-  function syncBarPad() { document.body.style.paddingTop = bar.offsetHeight + "px"; }
-
-  // Reposition on scroll/resize/late image decode; a full render() only when notes change.
-  var repoTick = false;
-  function scheduleReposition() {
-    if (repoTick) return; repoTick = true;
-    (window.requestAnimationFrame || setTimeout)(function () { repoTick = false; reposition(); }, 16);
-  }
-  window.addEventListener("scroll", scheduleReposition, true);
-  window.addEventListener("resize", function () { syncBarPad(); scheduleReposition(); });
-  window.addEventListener("load", function () { syncBarPad(); render(); });
-  syncBarPad(); render();
+  render();
 })();
 </script>

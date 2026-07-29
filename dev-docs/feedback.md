@@ -35,6 +35,20 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0074 — Annotation-layer interaction: commenting is a mode, not a re-armed action
+
+**Date:** 2026-07-29
+**Source type:** user direction (iterative, over six review rounds on a live prototype)
+**What was said:** Reviewing the annotation layer by annotating it with itself, the user asked for: the ripe project's calmer floating chrome instead of flow's full-width page header; edit + per-row copy + batch operations in the comment container; "Pin" renamed to "Comment"; clicking off an empty comment to cancel it; an option to stop the DOM-snap outline chasing the cursor; and — decisively — "I wish I didn't have to click Comment again every time… commenting should just be on all the time. That makes me think we don't actually need a separate comment button." Then: put the toggle in the comment container, make the floating button show on/off state, give the toggle real prominence ("it has no state — it should be something more prominent like a toggle switch"), fix the hierarchy between it and the count label, and replace toasts with button states "the way that Delete all has a confirmation state without adding another element — I don't like how the toast covers the buttons".
+
+**Synthesized rule:** For a review overlay, the *action* is the default state, not a mode you arm. If a control must be re-pressed between every unit of work, the mode — not the button — is the design. Corollaries that fell out and generalize: (a) a control that changes what a click DOES outranks controls that change what you SEE, and must be weighted accordingly (a labelled switch, not a peer icon); (b) feedback belongs on the control that caused it, never in a floating element that covers the controls it describes; (c) an always-on capture mode owes the user explicit escape hatches — modifier-click passthrough, a text-selection guard, and a keyboard dismiss — or it breaks the very prototypes it exists to review.
+
+**Applies to:** `plugins/flow/skills/verify-build/lib/annotation-layer.html`; any future flow surface that injects reviewable chrome into someone else's page.
+
+**Process note:** the whole round ran through the loop it was designing — the user annotated the prototype *with the prototype* and pasted the located export back. That is the design gate working, and it is the cheapest validation available for this class of artifact.
+
+### FB-0072: A gate that verifies an event must distinguish "hasn't happened YET" from "will never happen" — and skills that share a trigger moment should compose (call each other), not merge into one
+
 ### FB-0075: A draft PR is not a deliverable — a blocked gate must arrive as an answerable decision with the fix already drafted, not as an artifact the human has to decode
 
 **Date:** 2026-07-29

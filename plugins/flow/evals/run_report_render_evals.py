@@ -40,14 +40,18 @@ LAYER_MUST = [
     "elementFromPoint",        # picker: raw point → element
     "pickTarget",              # walk-up to a sane target
     "getBoundingClientRect",   # outline snaps to the element rect
-    'id="annot-pick"',         # explicit pick-mode toggle
+    'id="an-mode"',            # the commenting switch (mode, not a per-comment toggle)
+    'role="switch"',           # …exposed as a switch, not a pressed button
+    "metaKey",                 # modifier-click passes through to the host page
+    "getSelection",            # selecting text must never create a comment
+    'role="status"',           # live region replaces the removed toasts
     "ArrowUp", "ArrowDown",    # keyboard parent/child traversal
     "parentElement",           # ArrowUp target
     "data-pin-id",             # stable-identity anchor opt-in
     "nearestHeading",          # content-derived anchor fallback
     "function descriptor",     # export is a location descriptor…
     "execCommand",             # …copied via hidden-textarea + execCommand
-    "Confirm clear",           # two-step inline Clear (no native confirm)
+    "Delete all?",             # two-step inline confirm (no native confirm)
     "localStorage",            # persistence retained
 ]
 # Native modals + async clipboard are suppressed in the embedded browser → forbidden.
@@ -129,7 +133,7 @@ def check_always_injected() -> list[str]:
         html = render(bp)
     if 'class="annot-shot"' in html:
         problems.append("frameless buffer should render no captured frame")
-    for s in ('id="annot-bar"', 'id="annot-pick"', "flow-annot:", "elementFromPoint"):
+    for s in ('id="an-dock"', 'id="an-mode"', "flow-annotations-v2:", "elementFromPoint"):
         if s not in html:
             problems.append(f"frameless report did not inject the annotation layer (missing {s!r})")
     return problems
