@@ -101,7 +101,9 @@ if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
   echo "[audit-skips] ROOT-UNRESOLVED — the repo under review could not be located from cwd $(pwd); no diff was read. Re-run from the repo root, or set CLAUDE_PROJECT_DIR to the repo."
   exit 0
 fi
-echo "[audit-skips] repo root: $ROOT"
+# Newline-strip the path before echoing: this block's stdout IS prompt context,
+# so a directory name containing a newline could inject a fake verdict line.
+printf '[audit-skips] repo root: %s\n' "$(printf '%s' "$ROOT" | tr -d '\n\r')"
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
 [ -z "$BASE" ] && BASE=main

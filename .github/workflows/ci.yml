@@ -32,7 +32,12 @@ jobs:
       - name: every eval harness is wired into this workflow (and vice versa)
         run: |
           ON_DISK=$(ls plugins/flow/evals/run_*.py | xargs -n1 basename | sort -u)
-          IN_CI=$(grep -oE 'run_[a-z_]+\.py' .github/workflows/ci.yml | sort -u)
+          # Scope to EXECUTABLE step lines. A bare textual grep would count a harness
+          # merely NAMED in a comment as wired — satisfying the join while nothing runs
+          # it, which is byte-identical to the real thing. That is the same failure this
+          # step exists to catch, so the step must not commit it.
+          IN_CI=$(grep -oE '^[[:space:]]*-[[:space:]]+run:[[:space:]]+python3[[:space:]]+plugins/flow/evals/run_[a-z_]+\.py' \
+                    .github/workflows/ci.yml | grep -oE 'run_[a-z_]+\.py' | sort -u)
           if [ "$ON_DISK" != "$IN_CI" ]; then
             echo "::error::eval harness/CI-runner mismatch — an unwired harness gives ZERO regression protection."
             diff <(echo "$ON_DISK") <(echo "$IN_CI") \

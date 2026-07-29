@@ -261,6 +261,49 @@ def main() -> int:
     rc, out = run("test-plan-provenance", fb.replace("- [ ] <how to verify", "- [x] <how to verify"), [])
     expect("provenance: hand-ticking the fallback box ⇒ FAIL", rc, 1, out)
 
+    # SCOPE: the renderer digests only its own block, so the verifier must too. A PR body
+    # routinely carries unrelated checkboxes (a reviewer checklist, a TODO) and is followed
+    # by `## Flow run`. Digesting the whole body would fold those in and hard-fail a
+    # perfectly good ship — a false accusation, since Step 7b exits 1.
+    ship_shaped = (
+        "## Summary\n- does a thing\n- [ ] reviewer: check the migration\n\n"
+        + rendered
+        + "\n\n## Flow run\n\n| Step | Status |\n|---|---|\n| Clarify | ✓ |\n"
+    )
+    rc, out = run("test-plan-provenance", ship_shaped, [])
+    expect("provenance: unrelated checkboxes elsewhere in the body do NOT fail it", rc, 0, out)
+
+    # ...but the scoping must not become an escape hatch: flipping a box INSIDE the
+    # section still fails even when the body has other checkboxes around it.
+    rc, out = run("test-plan-provenance",
+                  ship_shaped.replace(rendered, flipped), [])
+    expect("provenance: tick-flip inside the section still FAILS in a full body", rc, 1, out)
+
+    # --- red-team bypasses (both were EXPLOITABLE; both verified against the pre-fix code)
+    # 1. A 4-space-indented ``` is an INDENTED CODE BLOCK in CommonMark, not a fence.
+    #    Treating it as a fence swallowed the rest of the body, so the section vanished
+    #    and the check returned N/A + exit 0 — while GitHub rendered the forged, fully
+    #    ticked Test plan normally.
+    rc, out = run("test-plan-provenance",
+                  "    ```\n\n## Test plan\n- [x] totally verified\n- [x] also verified\n", [])
+    expect("bypass: 4-space-indented fence hiding a forged plan ⇒ FAIL", rc, 1, out)
+
+    # 2. An unclosed fence hides everything after it from the parser, so every question
+    #    answers "not present". Fail closed rather than report a clean N/A.
+    rc, out = run("test-plan-provenance", "```\n## Test plan\n- [x] forged\n", [])
+    expect("bypass: unclosed fence ⇒ FAIL (fail closed, not N/A)", rc, 1, out)
+
+    # 3. Verifying only the FIRST section is a bypass: keep the honest stamped block and
+    #    append a second all-ticked one; the gate validates the section nobody reads.
+    rc, out = run("test-plan-provenance",
+                  fb + "\n\n## Test plan\n- [x] everything verified\n", [])
+    expect("bypass: a SECOND '## Test plan' section ⇒ FAIL", rc, 1, out)
+
+    # ship always writes a Test plan, so at Step 7b its absence is a failed write, not
+    # "nothing to verify". Standalone use keeps the lenient N/A.
+    rc, out = run("test-plan-provenance", DOCS_FENCED_EXAMPLE, ["--require-section"])
+    expect("provenance: --require-section turns a missing section into FAIL", rc, 1, out)
+
     # A stamp with no digest (a pre-v1.22.0 render, or a stripped digest line) attests
     # nothing about checkbox state — it must not pass.
     no_digest = "\n".join(

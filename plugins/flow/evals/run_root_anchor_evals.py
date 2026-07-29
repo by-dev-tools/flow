@@ -46,17 +46,37 @@ _GUARD_RE = re.compile(
     re.MULTILINE | re.DOTALL,
 )
 
-TARGETS = [
-    ("audit-coverage", SKILLS / "audit-coverage" / "SKILL.md"),
-    ("audit-skips", SKILLS / "audit-skips" / "SKILL.md"),
-    # Same failure-open, and it gates plan approval: with no reference docs the critic
-    # structurally cannot flag a spec violation, so it returns APPROVED.
-    ("critique-plan", SKILLS / "critique-plan" / "SKILL.md"),
-]
-
 # Guards expected per skill — an exact count, not a floor. A floor (>= 2) lets a future
-# third relative-reading preamble be added WITHOUT a guard and still pass.
+# preamble be added WITHOUT a guard and still pass.
 EXPECTED_GUARDS = {"audit-coverage": 2, "audit-skips": 2, "critique-plan": 1}
+
+# `context: fork` skills that legitimately need NO root anchor, with the reason. An
+# exemption must be explicit — silence is what let this class hide in the first place.
+EXEMPT_FORK_SKILLS = {
+    # Both read the session transcript, not the repo. audit-plan does take a relative
+    # --plan-file path, but extract_session.py::load_plan_file EXITS NON-ZERO when it
+    # cannot find it — it fails loud, so it is not in the silent-degradation class.
+    "audit-plan": "reads the session transcript; a missing --plan-file exits non-zero (fails loud)",
+    "audit-completion": "reads the session transcript only; no repo-relative read",
+}
+
+
+def fork_skills() -> list:
+    """Every `context: fork` skill on disk — DERIVED, not hand-listed.
+
+    A hand-written target list is the same "nothing checks the list is complete" shape
+    this release fixes elsewhere: a fourth fork skill added later, with a relative read
+    and no guard, would pass CI in silence.
+    """
+    found = []
+    for skill_md in sorted(SKILLS.glob("*/SKILL.md")):
+        head = skill_md.read_text(encoding="utf-8", errors="replace").split("\n---", 1)[0]
+        if any(ln.strip() == "context: fork" for ln in head.splitlines()):
+            found.append((skill_md.parent.name, skill_md))
+    return found
+
+
+TARGETS = [(n, p) for n, p in fork_skills() if n not in EXEMPT_FORK_SKILLS]
 
 _failures: list[str] = []
 
@@ -110,7 +130,17 @@ def main() -> int:
         nonrepo.mkdir()
         foreign = git_repo(Path(td) / "foreign")
 
+        # Every non-exempt fork skill must have a declared expectation. A new one added
+        # without an entry here would otherwise be skipped in silence.
+        undeclared = [n for n, _ in TARGETS if n not in EXPECTED_GUARDS]
+        check("every context:fork skill is either guarded or explicitly exempt",
+              not undeclared,
+              f"no guard expectation for {undeclared} — add a count to EXPECTED_GUARDS "
+              "(and the guard to its preamble), or an entry to EXEMPT_FORK_SKILLS with a reason")
+
         for skill, path in TARGETS:
+            if skill not in EXPECTED_GUARDS:
+                continue
             if not path.is_file():
                 check(f"{skill}: SKILL.md present", False, f"missing {path}")
                 continue

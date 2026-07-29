@@ -150,7 +150,9 @@ flow_assert_test_plan_provenance() {
     return 2
   }
   flow_fetch_pr_state "$_num" || return 2
-  python3 "$_py" test-plan-provenance --body-file "$FLOW_PR_BODY_FILE"
+  # --require-section: ship writes a Test plan on EVERY PR, so absence is a failed
+  # write, not "no verification needed".
+  python3 "$_py" test-plan-provenance --body-file "$FLOW_PR_BODY_FILE" --require-section
   _rc=$?
   if [ "$_rc" -ne 0 ]; then
     echo "⚠️ [verify-pr-body] PR #$_num carries a HAND-AUTHORED Test plan." >&2

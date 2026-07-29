@@ -68,6 +68,7 @@ def _bare(target: str) -> str:
 def scan(skills_dir: Path) -> dict:
     """Build the skill table and the call graph. Pure — no printing."""
     skills = {}
+    calls = []
     warnings = []
     for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
         text = skill_md.read_text(encoding="utf-8", errors="replace")
@@ -88,9 +89,10 @@ def scan(skills_dir: Path) -> dict:
             "disabled": bool(dmi_m and dmi_m.group(1) == "true"),
         }
 
-    calls = []
-    for name, info in skills.items():
-        text = info["path"].read_text(encoding="utf-8", errors="replace")
+        # Same pass, same already-read text: extract this file's Skill() calls now rather
+        # than re-reading every SKILL.md in a second loop. Nothing here needs the completed
+        # skills table — the caller's name is known, and target resolution happens in
+        # classify().
         # Track the OPENING delimiter, not a boolean: CommonMark allows both ``` and
         # ~~~, and a ``` inside a ~~~ block must not close it. A boolean toggle also
         # missed ~~~ fences entirely — an executable call in one would evade the lint,
@@ -107,14 +109,14 @@ def scan(skills_dir: Path) -> dict:
                 continue
             for m in _SKILL_CALL_RE.finditer(line):
                 calls.append(
-                    {"caller": name, "target": m.group(1), "line": lineno, "path": info["path"]}
+                    {"caller": name, "target": m.group(1), "line": lineno, "path": skill_md}
                 )
         if fence is not None:
             # An unclosed fence flips parity for the rest of the file, so a REAL call
             # after it reads as prose and is skipped — a false negative on exactly the
             # thing being forbidden. Never silent (FB-0010 silent-skip defense).
             warnings.append(
-                f"{info['path']}: unclosed `{fence}` code fence — everything after it was "
+                f"{skill_md}: unclosed `{fence}` code fence — everything after it was "
                 "treated as fenced; a Skill() call below may have been missed."
             )
     return {"skills": skills, "calls": calls, "warnings": warnings}

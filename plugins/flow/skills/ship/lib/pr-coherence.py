@@ -98,38 +98,75 @@ def has_manifest(body: str) -> bool:
     return MANIFEST_MARKER in body or MANIFEST_HEADING in body
 
 
-def strip_fenced(body: str) -> str:
-    """Drop fenced code blocks (``` and ~~~), keeping line count irrelevant.
+def strip_fenced(body: str) -> tuple:
+    """(unfenced_text, unclosed_fence) — drop fenced code blocks (``` and ~~~).
 
     A PR body that *documents* the Test-plan format carries a fenced example
     containing a literal `## Test plan` and no stamp. Counting that as a real
-    section makes `test-plan-provenance` fail a PR whose actual Test plan is
-    fine — and Step 7b exits 1 on failure, so the false positive would hard-block
-    the ship with no escape hatch. Only unfenced text is the real body structure.
+    section would fail a PR whose actual Test plan is fine, and Step 7b exits 1,
+    so that false positive would hard-block a good ship. Only unfenced text is
+    the real body structure.
+
+    Two hardenings, both from a red-team pass that turned this parser into a
+    bypass of the gate it feeds:
+
+    - **A fence opener must be indented < 4 spaces.** CommonMark (and GitHub)
+      render 4-space-indented ``` as an *indented code block*, not a fence. A
+      parser that treats it as a fence swallows the rest of the body while the
+      reader sees normal markdown — so `    ``` ` above a forged Test plan made
+      the section vanish and the check return N/A + exit 0.
+    - **An unclosed fence is reported, never silently swallowed.** Otherwise the
+      remainder of the body disappears from the parser's view and every
+      downstream question answers "not present" — the "I never looked" reading
+      that FB-0074 exists to eliminate. The caller fails closed on it.
 
     Tracks the opening delimiter so a ``` inside a ~~~ block (or vice versa)
     doesn't close it early.
     """
     out, fence = [], None
     for line in body.splitlines():
+        indent = len(line) - len(line.lstrip())
         stripped = line.lstrip()
+        opener = indent < 4 and (stripped.startswith("```") or stripped.startswith("~~~"))
         if fence is None:
-            if stripped.startswith("```") or stripped.startswith("~~~"):
+            if opener:
                 fence = stripped[:3]
                 continue
             out.append(line)
-        elif stripped.startswith(fence):
+        elif opener and stripped.startswith(fence):
             fence = None
-    return "\n".join(out)
+    return "\n".join(out), fence is not None
 
 
-def has_test_plan(body: str) -> bool:
-    """True iff the body declares a Test plan section (unfenced, case-insensitive)."""
+def test_plan_sections(body: str) -> tuple:
+    """(sections, unclosed_fence) — EVERY unfenced `## Test plan` section.
+
+    A section runs heading → next sibling `## ` heading (or EOF); `###` subsections
+    stay inside it. Scope matters: the renderer digests ONLY its own block, so the
+    verifier must too — digesting the whole body would fold in every unrelated
+    `- [ ]` a human put in the PR description and hard-fail a good ship.
+
+    Returns ALL matches, not the first. Verifying only the first is a bypass: keep
+    the honest stamped block and append a second all-ticked `## Test plan`, and the
+    gate validates the one nobody reads while the reviewer reads the other.
+    """
     needle = TEST_PLAN_HEADING.lower()
-    return any(
-        ln.strip().lower().startswith(needle)
-        for ln in strip_fenced(body).splitlines()
-    )
+    text, unclosed = strip_fenced(body)
+    lines = text.splitlines()
+    starts = [
+        i for i, ln in enumerate(lines)
+        if ln.strip().lower().startswith(needle)
+    ]
+    sections = []
+    for start in starts:
+        end = len(lines)
+        for j in range(start + 1, len(lines)):
+            s = lines[j].lstrip()
+            if s.startswith("## ") and not s.startswith("### "):
+                end = j
+                break
+        sections.append("\n".join(lines[start:end]))
+    return sections, unclosed
 
 
 def _read_body(path: str) -> str:
@@ -213,16 +250,56 @@ def cmd_readback(args) -> int:
 def cmd_test_plan_provenance(args) -> int:
     body = _read_body(args.body_file)
 
-    if not has_test_plan(body):
-        # No Test plan section at all is a different problem (Step 7 writes one on every
-        # PR); this check has no opinion on absence — only on forgery.
+    # One parse. `test_plan_sections` fence-strips and scopes to the section(s) —
+    # the same scope the renderer digests (see its docstring).
+    sections, unclosed = test_plan_sections(body)
+
+    if unclosed:
+        # Fail closed. An unclosed fence hides the rest of the body from this parser,
+        # so every question below would answer "not present" — and a body crafted with
+        # one was the way to make a forged Test plan read as N/A.
+        print(
+            "[pr-coherence] test-plan-provenance FAIL — the body has an unclosed code "
+            "fence, so its structure cannot be parsed reliably. Everything after the "
+            "opener is invisible to this check, which means a Test plan there would go "
+            "unverified.\n"
+            "  Fix: close the fence in the PR body, then re-run."
+        )
+        return 1
+
+    if len(sections) > 1:
+        # Verifying only the first section is a bypass: keep the honest stamped block,
+        # append a second all-ticked one, and the reviewer reads the section the gate
+        # never looked at.
+        print(
+            f"[pr-coherence] test-plan-provenance FAIL — {len(sections)} '## Test plan' "
+            "sections in one body; exactly one is allowed. Verifying one while a reader "
+            "sees another is precisely the ambiguity this gate exists to remove.\n"
+            "  Fix: delete the extra section(s) and keep the single rendered block."
+        )
+        return 1
+
+    if not sections:
+        # Standalone use may legitimately have no Test plan; `/flow:ship` always writes
+        # one, so there it means something went wrong — ship passes --require-section
+        # so absence routes to the failure path instead of a clean exit.
+        if getattr(args, "require_section", False):
+            print(
+                "[pr-coherence] test-plan-provenance FAIL — no '## Test plan' section in "
+                "the body, but one was required. /flow:ship Step 7 writes a Test plan on "
+                "every PR, so its absence means the write did not land (or was removed) — "
+                "not that the PR needs no verification.\n"
+                "  Fix: re-render with ship/lib/render-test-plan.py and re-publish the body."
+            )
+            return 1
         print("[pr-coherence] test-plan-provenance N/A — body declares no '## Test plan' section.")
         return 0
 
+    section = sections[0]
+
     # Match the stamp OUTSIDE fences too, for the mirror reason: a doc example that
     # quotes the marker inside a fence must not launder a hand-authored Test plan.
-    unfenced = strip_fenced(body)
-    if PROVENANCE_MARKER not in unfenced:
+    if PROVENANCE_MARKER not in section:
         print(
             "[pr-coherence] test-plan-provenance FAIL — '## Test plan' present without the "
             f"renderer stamp ({PROVENANCE_MARKER}), so its checkboxes are self-assertion, "
@@ -237,7 +314,7 @@ def cmd_test_plan_provenance(args) -> int:
     # The marker alone proves only that the renderer ran at some point. The realistic
     # forgery is flipping `[ ]` → `[x]` on a genuinely-rendered block and leaving the
     # comment intact — so verify the content digest too.
-    m = _DIGEST_RE.search(unfenced)
+    m = _DIGEST_RE.search(section)
     if not m:
         print(
             "[pr-coherence] test-plan-provenance FAIL — the Test plan carries the renderer "
@@ -247,7 +324,7 @@ def cmd_test_plan_provenance(args) -> int:
         )
         return 1
 
-    want, got = m.group(1), checkbox_digest(unfenced)
+    want, got = m.group(1), checkbox_digest(section)
     if want != got:
         print(
             "[pr-coherence] test-plan-provenance FAIL — checkbox state does NOT match the "
@@ -288,6 +365,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="assert a published '## Test plan' carries the renderer stamp (not hand-authored)",
     )
     tp.add_argument("--body-file", required=True, help="path to the PR body, or - for stdin")
+    tp.add_argument(
+        "--require-section", action="store_true",
+        help="treat a missing '## Test plan' as FAIL (ship always writes one, so its "
+             "absence there means the write did not land — not that none was needed)",
+    )
     tp.set_defaults(func=cmd_test_plan_provenance)
 
     return parser

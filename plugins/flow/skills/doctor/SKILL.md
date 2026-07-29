@@ -505,6 +505,20 @@ else
         echo "       This PR would merge looking not-ready. Do NOT hand-edit the body (that is the silent-write path that caused this)."
         echo "       Fix: run the /flow:ship reconcile fast-path (Step 7c) to re-render the body + reconcile draft state from the current gate."
       fi
+      # FB-0074 — same re-fetch, second invariant. Ship asserts Test-plan provenance at
+      # 7b, but a body hand-edited AFTER ship is never caught there; that is exactly why
+      # the FB-0067 coherence invariant is checked here and in /flow:land as well as at
+      # ship. Checking one at three points and its sibling at one was an incomplete
+      # fan-out, not a design choice.
+      if [ -n "$NUM" ]; then
+        flow_assert_test_plan_provenance "$NUM" >/dev/null 2>&1; TPRC=$?
+        case "$TPRC" in
+          0) echo "[PASS] live-PR Test-plan provenance — PR #$NUM's Test plan matches the renderer's stamp + digest" ;;
+          1) echo "[FAIL] live-PR Test-plan provenance — PR #$NUM's Test plan was hand-authored or its checkboxes were edited after rendering"
+             echo "       Its boxes are self-assertion, not machine verdicts. Fix: re-render via /flow:ship Step 7c and re-publish." ;;
+          *) echo "[WARN] live-PR Test-plan provenance — could not verify for PR #$NUM (gh/checker unavailable) — unchecked, not clean" ;;
+        esac
+      fi
     fi
   fi
 fi

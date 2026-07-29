@@ -66,7 +66,9 @@ fi
 # Name the repo actually audited: the root resolver cannot tell "the repo under review"
 # from "some other repo this cwd happens to sit in", so make the target visible instead
 # of implied (residual limit — see FB-0074).
-echo "[audit-coverage] repo root: $ROOT"
+# Newline-strip the path before echoing: this block's stdout IS prompt context,
+# so a directory name containing a newline could inject a fake verdict line.
+printf '[audit-coverage] repo root: %s\n' "$(printf '%s' "$ROOT" | tr -d '\n\r')"
 # Resolve default branch (3-tier, [ -z ] guards — FB-0008 idiom).
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)

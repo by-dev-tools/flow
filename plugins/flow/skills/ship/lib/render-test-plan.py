@@ -420,7 +420,6 @@ def empty_criteria_block(not_tested: list, frame_integrity: list | None = None) 
         parts.append(nt)
     parts.append("")
     return stamp("\n".join(parts), RENDERED_MARKER)
-    return "\n".join(parts)
 
 
 def rendered_block(findings: dict, branch: str, sha: str) -> str:

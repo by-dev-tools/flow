@@ -342,6 +342,15 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 
 Items surfaced by `/flow:staff-review`'s push-further lens, consumer dogfood, or research passes. These don't have a concrete shape yet — they describe a direction worth investigating when relevant code is touched. Each entry includes a **`Surfaces when:`** trigger naming the file paths or area that should re-surface the item, so the auto-loading `exploration` rule can grep this section for trigger matches.
 
+### `/flow:audit-coverage`'s diff cap can be spent entirely on one metadata blob *(dogfooded on the FB-0074 ship)*
+**Surfaces when:** `plugins/flow/skills/audit-coverage/SKILL.md`'s `CAP=60000` block is next touched, OR a coverage run reports `TRUNCATED` on a PR whose code diff is small.
+
+Observed on this repo's own v1.22.0 ship. The coverage audit reported `No issues flagged` **plus** its `TRUNCATED` warning — and the truncation had consumed the entire 60000-byte budget inside the *first* file, `.claude-plugin/marketplace.json`, whose two description strings are each ~15KB of prose. Seven behavior-bearing source files were never seen. The clean verdict was therefore about marketplace metadata, not about the code.
+
+The `TRUNCATED` warning worked exactly as designed (FB-0010: pair every cap with a `[WARN]`), so this is not failure-open — but it is a **wasted gate**: the run costs a full agent spawn and returns a verdict scoped to the least interesting file. The re-run (same diff minus the two `.claude-plugin/*.json` manifests) came in at 28KB, comfortably under the cap.
+
+**Shape:** order the diff so behavior-bearing code is spent first, rather than relying on `sort -u` filename order to be kind. Cheapest version: partition `$FILES` into code vs. `(^|/)\.claude-plugin/.*\.json$`-style metadata, emit code hunks first, and let truncation fall on metadata. Better version: cap **per file** as well as overall, so one pathological file cannot starve the rest — and say in the TRUNCATED line *which* files went unseen (the operator currently has to diff the header against what appeared). Worth checking whether `/flow:security-review` and the staff-review lenses share the shape; they read the same kind of diff with their own caps.
+
 ### Extend the lint family: config slots read-but-undeclared, and `${CLAUDE_PLUGIN_ROOT}` refs that resolve *(FB-0074 class, surfaced by the push-further lens)*
 **Surfaces when:** `plugins/flow/schema/flow.config.schema.json` is next touched, OR a new `jq -r '.X' flow.config.json` read site is added, OR a lib under `plugins/flow/skills/*/lib/` is renamed or moved.
 

@@ -965,7 +965,9 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
   else
     RTP="plugins/flow/skills/ship/lib/render-test-plan.py"
   fi
-  [ -f "$RTP" ] || { echo "⚠️ [test-plan] renderer not found at \$RTP — the Test plan CANNOT be rendered, and Step 7b will refuse to verify a hand-written one. Reinstall the flow plugin, or run from the flow checkout." >&2; }
+  # exit, don't warn-and-continue: Step 7b now hard-fails on a missing stamp, so falling
+  # through here just produces a second, less legible failure further down the pipeline.
+  [ -f "$RTP" ] || { echo "⚠️ [test-plan] renderer not found at $RTP — the Test plan CANNOT be rendered, and Step 7b will refuse to verify a hand-written one. Reinstall the flow plugin, or run from the flow checkout." >&2; exit 1; }
   # If verify-build SKIPPED at Step 2 (verifyEnabled=false, platform=library|none — see the
   # Step 2 consolidated line), pass --skipped "<reason>" so the renderer emits the honest
   # manual-verification fallback instead of reading a stale/absent buffer:
@@ -1088,6 +1090,8 @@ fi
 `flow_assert_test_plan_provenance` closes the matching hole one layer down (FB-0074). The `## Test plan` is *specified* as a non-forgeable projection of the verify-build buffer — but nothing checked that the block on GitHub actually came from `render-test-plan.py`, so a hand-written section with hand-ticked boxes read as a machine verdict.
 
 `render-test-plan.py` stamps **every** path it emits — machine-judged, self-report, and the no-buffer manual fallback — with `<!-- flow:test-plan-rendered -->` **plus a content digest** over the block's checkbox states. Two distinct forgeries are therefore caught: a hand-written block (no stamp), and — the subtler one — a genuinely-rendered block whose boxes were flipped afterwards (stamp intact, digest mismatch).
+
+**Honest limit — this raises the cost of forgery, it does not make forgery impossible.** The digest is an *unkeyed* checksum whose algorithm ships in this repo, and the renderer runs in the same trust domain as anything that would forge the block: an agent that wants all-`[x]` can recompute both comment lines. What the stamp genuinely defeats is the *cheap* forgery — hand-writing the section, or flipping a box on a rendered one and leaving the comments alone — plus any post-ship hand-edit of the published body. Closing it properly needs a secret or an out-of-band channel, which flow does not have today; the residual is stated here rather than papered over.
 
 **What it does and does not guarantee.** The stamp attests *provenance*, not passage: an honest "no behavioral gate ran" fallback carries it too. The digest covers checkbox **state and count**, deliberately not criterion prose — Step 7 above instructs you to fill in the fallback's `<how to verify>` text, so hashing prose would make the documented happy path fail its own gate. Editing the surrounding narrative is fine; ticking a box is not. Checking the re-fetched body rather than the local buffer is also deliberate — the published artifact is the one a reviewer trusts.
 
