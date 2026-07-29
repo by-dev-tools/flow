@@ -110,6 +110,18 @@ The goal: leave step 1 with enough shared understanding to plan without ambiguit
 
 Write the plan to the configured plan doc under "Active Work Items". The plan **must include**:
 
+### Before activating a queued item — check for concurrent work
+
+If this plan **activates a queued roadmap/plan item** (as opposed to net-new work), first confirm no sibling workspace already picked it up. A full activation pass — plan draft + `/flow:critique-plan` run + a human gate attempt — built for an item another worktree is already carrying wastes both the reviewer runs and the human's gate attention. One sweep at activation start is enough:
+
+```sh
+git worktree list                                        # sibling worktrees + their branches
+git branch -a --sort=-committerdate | head               # recently-touched branches
+gh pr list --state open --json number,title,headRefName  # open PRs
+```
+
+If any hit matches the item you're about to activate, coordinate or pick a different item rather than opening a duplicate.
+
 ### Required fields
 
 - **Mode** — one of `feature` (default, full loop), `spike` (exploratory), `tiny` (1–3 line fix).
