@@ -36,6 +36,16 @@ Subcommands:
              every --forbid substring is absent, isDraft matches --want-draft when
              given, AND the coherence invariant holds. exit 0 PASS, 1 FAIL, 2 usage.
 
+  test-plan-provenance  --body-file PATH|-
+             Third failure mode (FB-0074): the "## Test plan" is *specified* as a
+             non-forgeable projection of the verify-build buffer, but nothing ever
+             checked that a published block came from the renderer — so an agent
+             could hand-write it and hand-tick the boxes, silently converting a
+             mechanical gate into a self-assertion. `render-test-plan.py` stamps
+             every path it emits (including the no-buffer fallback) with
+             PROVENANCE_MARKER; a body with a Test plan and no stamp is forged.
+             exit 0 PASS/N-A, 1 FAIL (hand-authored), 2 usage.
+
 `--is-draft` / `--want-draft` take the literal strings `true`/`false` (gh's JSON
 boolean, lower-cased). Body is read from --body-file, or from stdin when the path
 is `-`. Always prints a single human-readable verdict line. Stdlib only, 3.7+.
@@ -51,10 +61,21 @@ from pathlib import Path
 MANIFEST_MARKER = "<!-- flow:not-ready-manifest -->"
 MANIFEST_HEADING = "🚫 NOT READY TO MERGE"
 
+# Canonical Test-plan provenance stamp — keep in lockstep with
+# `ship/lib/render-test-plan.py::PROVENANCE_MARKER` (FB-0010 fan-out).
+PROVENANCE_MARKER = "<!-- flow:test-plan-rendered -->"
+TEST_PLAN_HEADING = "## Test plan"
+
 
 def has_manifest(body: str) -> bool:
     """True iff the body carries the NOT-READY manifest (marker OR heading)."""
     return MANIFEST_MARKER in body or MANIFEST_HEADING in body
+
+
+def has_test_plan(body: str) -> bool:
+    """True iff the body declares a Test plan section (heading match, case-insensitive)."""
+    needle = TEST_PLAN_HEADING.lower()
+    return any(ln.strip().lower().startswith(needle) for ln in body.splitlines())
 
 
 def _read_body(path: str) -> str:
@@ -135,6 +156,33 @@ def cmd_readback(args) -> int:
     return 1
 
 
+def cmd_test_plan_provenance(args) -> int:
+    body = _read_body(args.body_file)
+
+    if not has_test_plan(body):
+        # No Test plan section at all is a different problem (Step 7 writes one on every
+        # PR); this check has no opinion on absence — only on forgery.
+        print("[pr-coherence] test-plan-provenance N/A — body declares no '## Test plan' section.")
+        return 0
+
+    if PROVENANCE_MARKER in body:
+        print(
+            "[pr-coherence] test-plan-provenance PASS — Test plan carries the renderer "
+            "stamp; its checkbox state came from the verify-build buffer."
+        )
+        return 0
+
+    print(
+        "[pr-coherence] test-plan-provenance FAIL — the body has a '## Test plan' but NOT "
+        f"the renderer stamp ({PROVENANCE_MARKER}). The block was hand-authored, so its "
+        "checkboxes are self-assertion, not machine verdicts — the exact forgery the "
+        "non-forgeable Test plan exists to prevent. Re-render it with "
+        "`ship/lib/render-test-plan.py` (which stamps every path, including the "
+        "no-buffer fallback) and re-publish; do not hand-tick criterion boxes."
+    )
+    return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pr-coherence.py")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -151,6 +199,13 @@ def build_parser() -> argparse.ArgumentParser:
     rb.add_argument("--forbid", action="append", default=[], help="substring that must be ABSENT (repeatable)")
     rb.add_argument("--want-draft", default=None, help="true|false the draft state should now be")
     rb.set_defaults(func=cmd_readback)
+
+    tp = sub.add_parser(
+        "test-plan-provenance",
+        help="assert a published '## Test plan' carries the renderer stamp (not hand-authored)",
+    )
+    tp.add_argument("--body-file", required=True, help="path to the PR body, or - for stdin")
+    tp.set_defaults(func=cmd_test_plan_provenance)
 
     return parser
 

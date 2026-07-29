@@ -62,12 +62,22 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Canonical provenance stamp (FB-0074). Every block this renderer emits carries it, and
+# NOTHING else does — so its presence in a published PR body is the only evidence that the
+# "## Test plan" came from this renderer rather than an agent's keyboard. The prose markers
+# below tell a human not to hand-edit; this one lets a machine check whether they did.
+# Consumed by `ship/lib/pr-coherence.py test-plan-provenance` at the Step 7 read-back.
+# Keep in lockstep with PROVENANCE_MARKER there (FB-0010 fan-out).
+PROVENANCE_MARKER = "<!-- flow:test-plan-rendered -->"
+
 RENDERED_MARKER = (
+    PROVENANCE_MARKER + "\n"
     "<!-- Test plan rendered from the /flow:verify-build findings buffer; "
     "checkbox state = machine verdict, not self-report. Do not hand-edit "
     "criterion checkboxes. -->"
 )
 SELF_REPORT_MARKER = (
+    PROVENANCE_MARKER + "\n"
     "<!-- Test plan rendered from the /flow:verify-build findings buffer; one or "
     "more criteria are HAND-AUTHORED (provenance != adversarial-judged/spike-rubric) "
     "and render [~] = implementer self-report, NOT a machine verdict. Do not hand-edit "
@@ -90,6 +100,7 @@ def _provenance(crit: dict) -> str:
 def _is_self_reported(prov: str) -> bool:
     return prov not in _MACHINE_JUDGED
 FALLBACK_MARKER = (
+    PROVENANCE_MARKER + "\n"
     "<!-- verify-build produced no current buffer; Test plan is manual. "
     "checkbox stays unchecked until a human verifies. -->"
 )

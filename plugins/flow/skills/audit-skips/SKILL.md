@@ -41,6 +41,16 @@ against the config, the diff, and the canonical artifact's existence + freshness
 # skill (ephemeral, like the verify-build findings buffer). Standalone invocation
 # without the handoff still emits the context block, with an empty stage set.
 STAGES="${FLOW_SKIP_AUDIT_STAGES:-/tmp/flow-skip-audit-stages.json}"
+# Root anchor (FB-0074) — MUST precede every relative read below (the engine fallback path,
+# flow.config.json, and the diff block). A fork inherits the SESSION cwd, not necessarily the
+# repo under review: from a non-repo cwd every relative read silently yields empty, and every
+# unverifiable skip then validates as LEGITIMATE -- a false clean pass on a gate whose whole
+# job is to refuse those. Emit a routable root_error instead, never the standalone note.
+ROOT="${CLAUDE_PROJECT_DIR:-}"; { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
+  printf '{"root_error": "no CLAUDE_PROJECT_DIR and no git toplevel from this cwd; config and diff were NOT read", "stages": []}\n'
+  exit 0
+fi
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/audit-skips/lib/skip-audit-checks.py" ]; then
   H="${CLAUDE_PLUGIN_ROOT}/skills/audit-skips/lib/skip-audit-checks.py"
 else
@@ -75,6 +85,13 @@ fi
 ## Workspace diff — what was actually built (corroboration only)
 
 !`
+# Root anchor (FB-0074) — see the mechanical block above.
+ROOT="${CLAUDE_PROJECT_DIR:-}"; { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
+  echo "[audit-skips] ROOT-UNRESOLVED — the repo under review could not be located from cwd $(pwd); no diff was read."
+  exit 0
+fi
+echo "[audit-skips] repo root: $ROOT"
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
 [ -z "$BASE" ] && BASE=main
@@ -103,6 +120,15 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   so a `note` there means the fork couldn't see it — set `FLOW_SKIP_AUDIT_STAGES` to a shared
   path, or route it like an `engine_error` below. (The systemic fork-handoff-transport fix is
   tracked in `roadmap.md` § Exploration.)
+- If the mechanical block carries **`"root_error"`** (FB-0074 — the skill could not locate the
+  repo under review from its inherited cwd), do **NOT** treat it as "nothing to audit". Nothing
+  was read: `flow.config.json` resolved empty, every `git` call returned empty, and *every*
+  unverifiable skip would otherwise validate as LEGITIMATE — a false clean pass produced by
+  looking at the wrong place, which is strictly worse than an engine crash because it emits a
+  confident verdict. Output a loud diagnostic and stop:
+  `⚠️ SKIP-AUDIT ROOT UNRESOLVED (<root_error>). The skip-legitimacy gate did NOT run — this
+  is not a clean pass.` Route it exactly like `engine_error` below: from `/flow:ship` Step 2a
+  it becomes a `[decision-required]` draft-manifest entry, never a silent proceed.
 - If the mechanical block carries **`"engine_error"`** (the handoff file WAS present but
   `skip-audit-checks.py` failed on it — the engine exits non-zero on a malformed/unreadable
   report rather than collapsing to `stages:[]`), do **NOT** treat it as "nothing to audit" —

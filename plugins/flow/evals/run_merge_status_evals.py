@@ -12,7 +12,9 @@ is prose the agent drives, but its LOAD-BEARING core is deterministic and pinned
                  graceful, never terminal. This is the false-fail-on-merge-queue fix.
   archive-check— the "safe to archive?" verdict over real git state in a temp repo.
   contract     — the SKILL wires the pieces the way the plan committed: human-invoked
-                 (disable-model-invocation), CALLS /flow:land (composition, not
+                 (disable-model-invocation), DELEGATES to /flow:land without calling it
+                 (FB-0074: land is disable-model-invocation, so a Skill() call is rejected;
+                 composition is by instruction to the human, not
                  reimplementation), uses `branch -d` never `-D`, and writes NO feedbackPath
                  repo doc in v1 (user-scope stores only).
   schema       — the postMergeWaitSeconds slot exists and the slot count is 30 (a "N slots"
@@ -141,8 +143,29 @@ def main() -> int:
     check("skill-exists", bool(skill), "skills/post-merge/SKILL.md missing")
     check("skill-human-invoked", "disable-model-invocation: true" in skill,
           "post-merge must be human-invoked (like /flow:land), never auto-fire")
-    check("skill-calls-land", 'Skill("flow:land")' in skill or "Skill('flow:land')" in skill,
-          "must COMPOSE with /flow:land (call it), not reimplement reconciliation")
+    # FB-0074 INVERTED (was: assert post-merge CALLS Skill("flow:land")). `/flow:land` is
+    # disable-model-invocation: true, which blocks PROGRAMMATIC invocation — so that call was
+    # rejected on every run and the doc-currency step silently degraded to its fallback. This
+    # check asserted the bug. Two halves now: the delegation must still exist (don't reimplement
+    # reconciliation), but it must NOT take the executable call form.
+    #
+    # Scan only FENCED blocks: the corrected SKILL quotes `Skill("flow:land")` in prose to
+    # explain why it is forbidden, and a naive substring test would pass on that text alone —
+    # which is exactly how the original check kept passing after the call was removed.
+    fenced, in_fence = [], False
+    for line in skill.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            fenced.append(line)
+    fenced_text = "\n".join(fenced)
+    check("skill-does-not-CALL-land",
+          'Skill("flow:land")' not in fenced_text and "Skill('flow:land')" not in fenced_text,
+          "must NOT emit an executable Skill(\"flow:land\") call — /flow:land is "
+          "disable-model-invocation: true, so the call is rejected and the step silently no-ops")
+    check("skill-still-delegates-to-land", "/flow:land" in skill,
+          "must still DELEGATE doc-currency to /flow:land (hand it to the human), not reimplement it")
     check("skill-uses-helper", "merge-status.py" in skill, "must drive the deterministic helper")
     check("skill-safe-branch-delete", "branch -d" in skill and "branch -D" not in skill,
           "cleanup must use `git branch -d` (safe), never `-D`")

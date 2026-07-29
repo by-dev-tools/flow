@@ -104,6 +104,26 @@ If the agent has the `SlashCommand` tool available, it CAN invoke `/help` via th
 '/flow:(ship|staff-review|workflow-help)'. Otherwise emit [SKIP] for this check.)
 ```
 
+**Check 1.4 — skill composition targets are model-invocable (FB-0074)**
+
+A skill can instruct the agent to run another skill (`Skill("flow:x")`) — flow's "composition, not reimplementation" idiom. But `disable-model-invocation: true` blocks *programmatic* invocation, not just auto-selection: the call is rejected at runtime and the composition degrades to its fallback on **every** run, silently. The two halves of the contract live in different files (call site vs. callee frontmatter), so only a cross-file lint catches it — this is the FB-0010 fan-out class. Flow shipped exactly this bug in `/flow:post-merge` → `/flow:land` and could not see it for two releases.
+
+Runs over the installed plugin's skills, and over the project's own `.claude/skills/` when present (a consumer writing custom skills hits the same trap).
+
+```sh
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then L="${CLAUDE_PLUGIN_ROOT}/skills/doctor/lib/skill-composition-lint.py"; else L="plugins/flow/skills/doctor/lib/skill-composition-lint.py"; fi
+if [ ! -f "$L" ]; then
+  echo "[Check 1.4] SKIP — skill-composition-lint.py not found at $L (reinstall the flow plugin)."
+else
+  for D in "$(dirname "$L")/../.." ".claude/skills"; do
+    [ -d "$D" ] || continue
+    python3 "$L" "$D" --quiet-unknown || echo "[Check 1.4] FAIL — see the violation(s) above; a rejected Skill() call is a step that never runs."
+  done
+fi
+```
+
+A `PASS` line per scanned directory is the healthy result. A `FAIL` names the caller, the callee, and the file:line — fix by clearing the flag on the callee, giving it a model-invocable entrypoint, inlining the step, or handing the step to the human explicitly instead of pretending to call it.
+
 ### Section 2: project config
 
 **Check 2.1 — flow.config.json at repo root**

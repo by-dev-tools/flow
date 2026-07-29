@@ -47,6 +47,40 @@ DRAFT_WITH_MANIFEST = READY_WITH_MANIFEST  # same body, but the PR IS a draft
 HEADING_ONLY_READY = f"## {HEADING} — unresolved blockers\n\n## Summary\n- x\n"
 MARKER_ONLY_READY = f"{MARKER}\n\n## Summary\n- x\n"
 
+# --- FB-0074: Test-plan provenance fixtures -------------------------------------
+PROVENANCE = "<!-- flow:test-plan-rendered -->"
+
+# The attack: hand-authored block, hand-ticked boxes, no renderer stamp.
+FORGED_TEST_PLAN = """## Summary
+- does a thing
+
+## Test plan
+- [x] Criterion 1 verified
+- [x] Criterion 2 verified
+"""
+
+STAMPED_TEST_PLAN = f"""## Summary
+- does a thing
+
+## Test plan
+
+- [x] Criterion 1 verified
+
+{PROVENANCE}
+<!-- Test plan rendered from the /flow:verify-build findings buffer; checkbox state = machine verdict, not self-report. Do not hand-edit criterion checkboxes. -->
+"""
+
+# The honest no-gate-ran path is ALSO stamped — the marker attests provenance, not passage.
+STAMPED_FALLBACK_TEST_PLAN = f"""## Test plan
+
+> ⚠️ **No behavioral gate ran** (verify-build skipped: platform library).
+
+- [ ] <how to verify — fill in per the change>
+
+{PROVENANCE}
+<!-- verify-build produced no current buffer; Test plan is manual. checkbox stays unchecked until a human verifies. -->
+"""
+
 _failures: list[str] = []
 
 
@@ -118,11 +152,52 @@ def main() -> int:
     rc, out = run("readback", READY_WITH_MANIFEST, ["--is-draft", "false"])
     expect("readback: incoherent (ready+manifest) with no explicit forbid ⇒ FAIL", rc, 1, out)
 
+    # --- test-plan provenance (FB-0074) ----------------------------------------
+    # The forgery this closes: an agent hand-writes "## Test plan" and hand-ticks the
+    # boxes, so a self-assertion reads exactly like a machine verdict.
+    rc, out = run("test-plan-provenance", FORGED_TEST_PLAN, [])
+    expect("provenance: hand-authored Test plan ⇒ FAIL", rc, 1, out)
+
+    rc, out = run("test-plan-provenance", STAMPED_TEST_PLAN, [])
+    expect("provenance: renderer-stamped Test plan ⇒ PASS", rc, 0, out)
+
+    # The stamp attests PROVENANCE, not passage — the honest "no gate ran" fallback
+    # carries it too, so an unverified-but-honest PR is not punished.
+    rc, out = run("test-plan-provenance", STAMPED_FALLBACK_TEST_PLAN, [])
+    expect("provenance: stamped manual-fallback Test plan ⇒ PASS", rc, 0, out)
+
+    # No Test plan at all is a different defect (Step 7 always writes one); this
+    # check must stay silent rather than manufacture a second failure for it.
+    rc, out = run("test-plan-provenance", "## Summary\n- x\n", [])
+    expect("provenance: no Test plan section ⇒ N/A, exit 0", rc, 0, out)
+
+    # Heading detection must not be defeated by case or trailing text.
+    rc, out = run("test-plan-provenance", "## test plan (manual)\n- [x] faked\n", [])
+    expect("provenance: lowercase/suffixed heading still detected ⇒ FAIL", rc, 1, out)
+
+    # Real end-to-end parity: the marker this checker greps for MUST be the one the
+    # renderer actually writes. Two constants in two files = FB-0010 fan-out; assert
+    # they agree rather than trusting they were kept in sync by hand.
+    render_src = (HERE.parent / "skills" / "ship" / "lib" / "render-test-plan.py").read_text(encoding="utf-8")
+    coherence_src = SCRIPT.read_text(encoding="utf-8")
+    marker_line = 'PROVENANCE_MARKER = "<!-- flow:test-plan-rendered -->"'
+    expect(
+        "provenance: renderer + checker declare the SAME marker constant",
+        0 if (marker_line in render_src and marker_line in coherence_src) else 1,
+        0,
+        "marker constant drifted between render-test-plan.py and pr-coherence.py",
+    )
+
     # --- usage: missing body file exits 2, never a false PASS ------------------
     proc = subprocess.run(
         [sys.executable, str(SCRIPT), "coherence", "--body-file", "/no/such/file.md", "--is-draft", "false"],
         capture_output=True, text=True)
     expect("missing body file ⇒ exit 2 (never a false PASS)", proc.returncode, 2, proc.stdout + proc.stderr)
+
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT), "test-plan-provenance", "--body-file", "/no/such/file.md"],
+        capture_output=True, text=True)
+    expect("provenance: missing body file ⇒ exit 2", proc.returncode, 2, proc.stdout + proc.stderr)
 
     print()
     if _failures:

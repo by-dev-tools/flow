@@ -96,7 +96,7 @@ To customize: edit `flow.config.json` at the project root. The schema lives at `
 | `/flow:workflow-help` | (This skill) print the loop and project config |
 | `/flow:doctor` | Verify flow is installed + configured (PASS/FAIL/WARN punch-list) |
 | `/flow:land` | (Post-merge, human-only) reconcile forward docs to "merged (#N)" after a human merges; late visual-history distill; opens a `docs: land #N` PR |
-| `/flow:post-merge` | (Post-merge, human-only) the "merged — safe to archive?" close-out: queue-safe merge confirm → **calls `/flow:land`** → merge-gate feedback synthesis (user-scope) → branch cleanup → archive-safety verdict |
+| `/flow:post-merge` | (Post-merge, human-only) the "merged — safe to archive?" close-out: queue-safe merge confirm → **hands `/flow:land` to you** → merge-gate feedback synthesis (user-scope) → branch cleanup → archive-safety verdict |
 
 # Bundled Claude Code native skills
 

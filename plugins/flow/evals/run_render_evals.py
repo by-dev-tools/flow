@@ -46,7 +46,10 @@ def case(cid, crit, fixture, must, must_not, *, branch="test-branch", sha=None, 
 CASES = [
     case("all-pass-headline", "2", "all-pass",
          ["[x] Launches and renders", "[x] Submits the form",
-          "2/2 declared criteria passed", "confirm and merge"],
+          "2/2 declared criteria passed", "confirm and merge",
+          # FB-0074: every rendered path carries the provenance stamp, so a
+          # published Test plan without it is provably hand-authored.
+          "<!-- flow:test-plan-rendered -->"],
          # a fully adversarial-judged buffer keeps the machine attribution and NEVER
          # shows the hand-authored banner or the [~] self-report state (the inverse of
          # the provenance fix — guards against a regression that flags judged buffers).
@@ -60,7 +63,7 @@ CASES = [
     case("hand-authored-no-machine-verdict", "P", "hand-authored",
          ["[~] Home page renders", "[~] Tapping a card",
           "Self-reported — not independently judged", "(self-reported)",
-          "marked passing by the implementer alone"],
+          "marked passing by the implementer alone", "<!-- flow:test-plan-rendered -->"],
          ["[x] Home page", "[x] Tapping a card", "Checkbox state is the machine verdict",
           "confirm and merge", "2/2 declared criteria passed"],
          sha="abc1234"),
@@ -88,8 +91,10 @@ CASES = [
          ["No behavioral gate ran", "verify-build skipped: platform library"],
          ["[x] User can submit"],
          skipped="platform library"),
+    # FB-0074: the honest "no gate ran" fallback is stamped TOO — the marker attests
+    # provenance, not passage, so an unverified-but-honest PR is not punished for it.
     case("no-buffer-fallback", "4", "__absent__",
-         ["No behavioral gate ran", "no findings buffer"],
+         ["No behavioral gate ran", "no findings buffer", "<!-- flow:test-plan-rendered -->"],
          ["[x]"],
          branch="x", sha="y"),
     case("malformed-buffer-fallback", "4", "malformed",

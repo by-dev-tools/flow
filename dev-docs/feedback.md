@@ -35,6 +35,26 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0074: A contract that spans two files, with nothing checking the join, degrades silently — and the degradation is indistinguishable from success
+
+**Date:** 2026-07-29
+**Source:** `/flow:contribute` drain — four independent consumer-project reports (three fixed here, one escalated)
+
+**What was said:** Four separate cross-project lessons arrived in the harvest queue that looked unrelated until they were read together:
+
+1. A forked audit skill (`context: fork`) inherits the **session** cwd, not the repo under review. From a non-repo cwd every relative read silently returns empty — so `flow.config.json` resolved to `{}`, every `git` call returned `""`, and *every* unverifiable skip validated as `LEGITIMATE`. The gate printed `all stage skips LEGITIMATE — proceed` having never looked at the repo. `"could not locate the repo"` rendered byte-identically to `"there is nothing to audit"`.
+2. The PR `## Test plan` is *specified* as a non-forgeable projection of the verify-build buffer, but nothing ever checked that a published block came from the renderer — so an agent could hand-write it and hand-tick the boxes, converting a mechanical gate into a self-assertion no reviewer could distinguish.
+3. `/flow:post-merge` §3 instructed `Skill("flow:land")`, but `/flow:land` sets `disable-model-invocation: true`, which **blocks programmatic invocation** (confirmed against the Claude Code skill reference, not inferred). The call was rejected on every run since #79; the step degraded to its documented fallback and no one noticed for two releases.
+4. Fixed `/tmp` handoff filenames collide across concurrent projects. **This one had been dismissed twice as `already-encoded`**, both times by reasoning that `skip-audit-checks.py::read_buffer()`'s branch/sha freshness guard covered it. A third independent report forced a real audit: that guard covers **one of ~16** distinct `/tmp` paths, and even there only two of five consumers honor the stamp. `history.md:338` already records a live in-the-wild occurrence, filed as a process note rather than a defect.
+
+**Synthesized rule:** **When a contract's two halves live in different files, assume it is broken until something mechanical checks the join.** Author memory is not a check, and neither is "the fix exists somewhere in this module" (FB-0010 fan-out, one level up). Three corollaries, each load-bearing:
+
+- **Distinguish "I found nothing" from "I never looked" — always, at the point of evidence-gathering.** These have opposite consequences (proceed vs. block) and are the same string in most naive implementations. Any step that gathers evidence must emit a *distinct, routable* signal when it could not gather it, and every consumer must route that signal to the blocking path. A confident verdict from a step that read nothing is strictly worse than a crash. This is FB-0062's failure-open doctrine applied to the *inputs* of a gate rather than its outputs.
+- **A non-forgeable artifact needs a stamp its producer writes and its consumer checks.** "Specified as non-forgeable" is not a property of a system; a checked provenance marker is. Stamp **every** path the producer emits — including the honest failure path — so the marker attests *provenance*, not passage, and an honest "no gate ran" is not punished for being honest.
+- **An `already-encoded` dismissal must reproduce the symptom.** "It shares the hardened helper" / "PR #N covered it" is an argument about *mechanism*, not about the *failure mode*. This rule was already written (`history.md:174`, after drain #74) and was violated twice more on the same lesson — so it is now mechanically enforced (`dedup` exit 4) rather than left to prose. **A recurrence is evidence the dismissal was wrong**; re-dismissing after a recurrence costs a repro, not a paragraph.
+
+**Applies to:** `skills/audit-coverage/SKILL.md` + `skills/audit-skips/SKILL.md` (root anchor, `ROOT-UNRESOLVED` / `root_error`, routed by `skills/ship/SKILL.md` Step 2a); `skills/ship/lib/render-test-plan.py` + `skills/ship/lib/pr-coherence.py` + `skills/ship/lib/verify-pr-body.sh` (Test-plan provenance stamp, asserted at Step 7b); `skills/doctor/lib/skill-composition-lint.py` + `skills/doctor/SKILL.md` Check 1.4 + `skills/post-merge/SKILL.md` §3 (composition lint; the delegation is now an instruction to the human, since `/flow:land`'s flag is deliberate and stays). Item 4 (`/tmp` collisions) is **not fixed here** — it needs a namespacing scheme + schema-default change across ~16 paths with a 12-site fan-out, which is a design decision, not a drain edit; routed to `roadmap.md` with the full evidence table. Related: FB-0062 (failure-open), FB-0010 (fan-out contradiction), FB-0067 (read-back-verify every write), FB-0047 (the non-forgeable Test plan this finally enforces).
+
 ### FB-0073: A "contribution"/harvest workflow must not default to draft-and-park — apply high-confidence verified fixes directly (ready PR) and surface only genuine decisions
 
 **Date:** 2026-07-29

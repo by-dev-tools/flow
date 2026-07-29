@@ -24,6 +24,8 @@ _(FB-0071 cleared at ship of the annotation-layer generalization PR, v1.20.0; en
 _(FB-0072 cleared at ship of the `/flow:post-merge` skill v1 PR, v1.21.0; entry lives in `feedback.md`.)_
 _(FB-0073 cleared at ship of the audit-skips-loud + swift-glob fix PR, v1.21.1; entry lives in `feedback.md`.)_
 
+- **FB-0074** — `claude/contribute-ff3ee2` (optimistic-easley-c37004) — "A contract that spans two files, with nothing mechanically checking the join, degrades silently — and the degradation is indistinguishable from success." Fork root-anchor + Test-plan provenance stamp + skill-composition lint (v1.22.0). `/flow:contribute` drain. Entry written in `feedback.md`; clears at ship.
+
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
 - **FB-0058** — `fix/verifyenabled-jq-false-default` (PR #44, brought current) — "jq `// default` silently breaks for boolean config slots that can legitimately be false — use `if .X == false` not `.X // true`." Consumer dogfood discovery (valletta flow-migration). **Renumbered from the originally-drafted FB-0047**, which collided with main's shipped FB-0047 ("non-forgeable Test plan", #46/PR TP) — the exact collision class this file defends; entry now written in `feedback.md`. Clears at merge.

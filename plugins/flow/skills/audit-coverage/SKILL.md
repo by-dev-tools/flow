@@ -31,11 +31,34 @@ are in this prompt.
 
 ## Declared `**Spec-walk:**` criteria (the claim of what the work covers)
 
-!`PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"; if [ -f "$PLAN" ]; then python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PLAN" 2>/dev/null || echo '{"criteria": [], "warnings": ["extract-criteria.py failed"]}'; else echo "{\"criteria\": [], \"warnings\": [\"no plan at $PLAN\"]}"; fi`
+!`
+# Root anchor (FB-0074) — MUST precede every relative read. A forked skill inherits the
+# SESSION cwd, which is not necessarily the repo under review; a bare relative read then
+# audits whatever happens to be there. An unresolvable root emits its OWN line and must
+# never render as the clean-skip line (that is the failure-open this guards).
+ROOT="${CLAUDE_PROJECT_DIR:-}"; { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
+  echo '{"criteria": [], "warnings": ["ROOT-UNRESOLVED — no CLAUDE_PROJECT_DIR and no git toplevel from this cwd; criteria were NOT read. This is not an empty plan."]}'
+else
+  PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
+  if [ -f "$PLAN" ]; then python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PLAN" 2>/dev/null || echo '{"criteria": [], "warnings": ["extract-criteria.py failed"]}'; else echo "{\"criteria\": [], \"warnings\": [\"no plan at $PLAN\"]}"; fi
+fi
+`
 
 ## Workspace diff — source files changed vs the default branch (what was actually built)
 
 !`
+# Root anchor (FB-0074) — see the criteria block above. Resolve BEFORE any relative read;
+# an unresolvable root is ROOT-UNRESOLVED, never the SKIPPED line.
+ROOT="${CLAUDE_PROJECT_DIR:-}"; { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
+  echo "[audit-coverage] ROOT-UNRESOLVED — no CLAUDE_PROJECT_DIR and no git toplevel from cwd $(pwd). The diff was NOT read, so coverage was NOT audited. This is NOT a clean skip."
+  exit 0
+fi
+# Name the repo actually audited: the root resolver cannot tell "the repo under review"
+# from "some other repo this cwd happens to sit in", so make the target visible instead
+# of implied (residual limit — see FB-0074).
+echo "[audit-coverage] repo root: $ROOT"
 # Resolve default branch (3-tier, [ -z ] guards — FB-0008 idiom).
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
@@ -80,6 +103,7 @@ fi
 
 ## What to check
 
+- **`ROOT-UNRESOLVED` is NOT the skip case (FB-0074).** If either block carries a `ROOT-UNRESOLVED` line (or the criteria warning of that name), the audit **did not run** — the skill could not locate the repo under review and read nothing. Output exactly `[audit-coverage] ROOT-UNRESOLVED — the repo under review could not be located from this cwd; coverage was NOT audited. This is not a clean pass.` as your entire response, then the standard footer. Never collapse it into the `SKIPPED` line below: "I found nothing to audit" and "I never looked" have opposite consequences, and only the second must block. Invoked from `/flow:ship` Step 2 this routes to the draft manifest as `[decision-required]`, exactly like `/flow:audit-skips`' `engine_error`.
 - If either block above is empty — the criteria list has **no criteria** (no `**Spec-walk:**` block: spike/tiny/no plan), **or** the diff prints a `[audit-coverage] SKIPPED` line — then coverage cannot be audited. Output **exactly** that skip line (or `[audit-coverage] SKIPPED — no declared **Spec-walk:** criteria to compare against.` when the criteria list is empty) as your entire response, then the standard footer. Do not invent findings.
 - If the diff block contains a `[audit-coverage] TRUNCATED` line, your evidence is **partial** — behavior past the cap is unseen. Do not assert full coverage: append a one-line `Note: diff was truncated; this audit is partial` to your output (whether or not you flag anything), so a clean result is not over-trusted.
 - **You check declared-vs-built completeness only, not criterion quality.** A criterion that is vague or vacuous ("X works correctly") still *counts as covering* its behavior here — judging whether a criterion is specific enough to be meaningfully verifiable is `/flow:verify-build`'s axis, not yours. Default to "covered" when a criterion plausibly maps to the hunk; do not flag a behavior as undeclared just because its criterion is weak.
