@@ -31,6 +31,7 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/audit-skips/SKILL.md` | `/flow:audit-skips` — skip-legitimacy audit at ship Step 2a; deterministic engine in `lib/skip-audit-checks.py` (FB-0062) |
 | `plugins/flow/skills/verify-build/lib/visual-significance.py` | Shared visual-significance predicate, reused by verify-build + ship (FB-0062) |
 | `plugins/flow/skills/ship/lib/pr-coherence.py` | Deterministic PR body↔draft coherence + read-back engine, reused by ship/doctor/land (FB-0067) |
+| `plugins/flow/skills/ship/lib/manifest-triage.py` | Deterministic draft-manifest triage: classifies each blocker auto/ask/blocked, renders the plain-language NOT-READY block + the Step 8 decision list (FB-0074) |
 | `plugins/flow/skills/ship/lib/verify-pr-body.sh` | Sourced gh read-back helper: re-fetches a PR after any body/draft write + asserts it took (FB-0067) |
 | `plugins/flow/skills/ship/SKILL.md` | `/flow:ship` final-pass pipeline (Step 4c harvests flow-generalizable lessons) |
 | `plugins/flow/scripts/extract_session.py` | Session preprocessing for the reviewers (+ harvest dialogue helper) |

@@ -227,7 +227,11 @@ def main() -> int:
         "no-silent-edit": "never" in skill.lower()
                           and "silently rewrite" in skill.lower(),
         "skip-line": "none drifted" in skill,
-        "manifest-tag": "status-surface>" in skill or "|status-surface]" in skill,
+        # The kind enumeration in the manifest line template gained `rigor` and
+        # `coverage` (FB-0074), so `status-surface` is no longer last. Assert
+        # membership in the alternation, not a position in it.
+        "manifest-tag": any(t in skill for t in
+                            ("|status-surface|", "status-surface>", "|status-surface]")),
         "flow-run-row": "Status surface (§5a.5)" in skill,
     }
     for k, ok in ship.items():

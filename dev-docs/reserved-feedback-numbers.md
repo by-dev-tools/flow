@@ -18,7 +18,9 @@ This file is the **claim-time defense** (catches collisions before either branch
 
 If you find this file with no `Currently reserved` lines, no in-flight branch is racing for a number. Still add your reservation before drafting the entry — another branch may start between your check and your commit.
 
-## Currently reserved (as of 2026-07-15)
+## Currently reserved (as of 2026-07-28)
+
+- **FB-0074** — `claude/agent-draft-pr-handling-52e6dd` (agent-draft-pr-handling-52e6dd) — "A draft PR is a last resort, not a deliverable: resolve what's re-runnable, ask what's decidable, draft only what's externally blocked." Ship-manifest triage (v1.22.0). **Renumbered FB-0073 → FB-0074** at the ship-time rebase: #83 shipped FB-0073 first (the `/flow:contribute` sibling of this same user complaint) — the exact collision this file defends. Entry drafted with the PR; clears at ship.
 
 _(FB-0071 cleared at ship of the annotation-layer generalization PR, v1.20.0; entry lives in `feedback.md`.)_
 _(FB-0072 cleared at ship of the `/flow:post-merge` skill v1 PR, v1.21.0; entry lives in `feedback.md`.)_

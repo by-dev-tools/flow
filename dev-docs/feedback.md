@@ -35,6 +35,21 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0074: A draft PR is not a deliverable — a blocked gate must arrive as an answerable decision with the fix already drafted, not as an artifact the human has to decode
+
+**Date:** 2026-07-29
+**Source:** user direction (cross-repo report: music-app, ripe, flow)
+
+**What was said:** Sessions across several projects keep ending by handing back a draft PR as if that were productive. The user is not an engineer, so a draft is not something they can act on — it costs a round-trip of "now go fix it." What they need is one of exactly two things: a **blocking decision they can actually make**, presented so answering it resolves the draft; or, when the resolution is high-confidence (or the pipeline just needs re-running), **the agent does it** and hands back something actionable. Separately, and applied to this very PR: always write the plan and run the audit/critique gates before building.
+
+**Synthesized rule:** A gate outcome the human cannot act on is an unfinished gate, not a finished one. Three rules follow. **(1) Try before you gate.** A gate that asks for something the agent could have produced must attempt it once before it escalates — flow already did this at three of four producers (#81's rigor re-run, §2a's re-audit, §2's bounded retry) and the one that did not (§7a's visual-deliverable check) was a pure assertion that drafted without trying. **(2) Draft the resolution, always.** Where doctrine reserves the *decision* for the human (never self-declare a test criterion, never silently rewrite an un-fenced doc, never call a failing build shippable), it does not reserve the *drafting*. The agent proposing a concrete fix and the human approving it in one word is the design; the agent proposing nothing and the human authoring the fix is the bug. **(3) Escalate into the existing gate, in a form the reader can answer.** Do not add a new approval gate to fix an unanswerable one — the fix is the *shape of the hand-off* (plain language, a recommendation first, what was already tried, and an explicit waive option), not a new place to stop. Corollary for measurement: **diagnose from the artifacts the user is complaining about, not from the source you assume produced them** — this PR's plan was written entirely from flow's own source and its central claims survived four revisions before anyone opened a real draft PR; doing so changed the auto-resolve count from seven to one and re-weighted the whole deliverable.
+
+**Sibling entry:** **FB-0073** (`#83`, shipped while this branch was in flight) is the *same user complaint* aimed at `/flow:contribute` — "why is 82 a draft? drafts are not useful to me. i need to identify decisions to make, or if you have high confidence recommendations, just fix them." FB-0073 owns the harvest/drain half (confidence-split output, ready PR for verified edits); this entry owns the `/flow:ship` half. Together they are one doctrine: **draft state is not a substitute for either doing the work or asking the question.** Neither supersedes the other; the collision of their numbers at rebase is recorded in `reserved-feedback-numbers.md`.
+
+**Applies to:** `skills/ship/SKILL.md` (§7a attempt-then-gate, §7a.5 triage, §7c reconcile, §8 hand-off, the 8 producer-line shapes); `skills/ship/lib/manifest-triage.py`; `skills/{security,accessibility}-review/SKILL.md` routing prose; `evals/run_manifest_triage_evals.py`; `docs/workflow.md`; FB-0034 (three-outcome routing this preserves), FB-0044 (stop-before-PR reserved for one-way-doors), FB-0062 (a verdict is trusted only if its artifact exists), FB-0011 (autonomy bar — what the agent may decide alone), FB-0010 (the producer-line fan-out this had to fix first), `feedback_recommend_when_asking` (recommendation-first escalation).
+
+### FB-0072: A gate that verifies an event must distinguish "hasn't happened YET" from "will never happen" — and skills that share a trigger moment should compose (call each other), not merge into one
+
 ### FB-0074: A contract that spans two files, with nothing checking the join, degrades silently — and the degradation is indistinguishable from success
 
 **Date:** 2026-07-29

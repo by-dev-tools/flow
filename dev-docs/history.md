@@ -39,6 +39,39 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
+### SAFETY: A draft PR is a last resort, not a deliverable — ship manifest triage + an answerable hand-off (v1.22.0, FB-0074)
+
+**Date:** 2026-07-29
+**Branch:** `claude/agent-draft-pr-handling-52e6dd` (worktree `agent-draft-pr-handling-52e6dd`)
+**SHA:** _(filled at commit)_
+
+**What was done (user-facing).** When a ship gate does not pass, `/flow:ship` no longer just hands back a draft PR. Every blocker is triaged: if a resolution exists and has not been tried, the agent tries it once; if it is a real decision, the agent drafts the fix and Step 8 presents a numbered question in plain language (recommendation first, what was already tried, and an explicit "waive and ship as-is"); only an item needing an action outside the session leaves the PR as a plain draft. Answering at the hand-off resolves through the existing Step 7c reconcile path, so the PR flips to ready without a second ship run.
+
+**Why.** Cross-repo user report (music-app, ripe, flow): "I never want to be presented with a draft PR as if that's productive… I'm not an engineer so I just need to then ask the agent to fix it." The mechanism was `SKILL.md:888` — an unconditional *manifest non-empty ⇒ `--draft`* with nothing between accumulation and the decision, so three unlike populations arrived identically.
+
+**Measured, not assumed (and this correction mattered).** The plan's first four revisions diagnosed this entirely from flow's own source without opening a single real draft PR — an `/flow:audit-plan` finding forced the measurement. Ground truth: **5 flow-shipped PRs opened as drafts** (4 of music-app's 8, plus ripe #1), with draft→ready round trips of **47 min, 65 min, 5 h, 11 h, and 13 days**. Recovered kind distribution across ~6 manifest items: `skip-audit` ×2, `rigor` ×1, `visual-deliverable` ×1, `coverage` ×1, `a11y` ×1, `verify-build` ×0. **Three of six were resolved by a human waiver, at least two "waived un-performed."** None was resolved by the agent re-running a stage. Two of PR #4's three items were one `uiFilePatterns` misconfiguration wearing two hats. That evidence re-weighted the deliverable away from "auto-resolve more" and toward "draft the resolution and make the ask answerable" — the honest headline is *one* producer learns to try before it drafts; seven learn to ask a question the user can answer.
+
+**Design decisions.**
+- **Escalate into the existing gate, not a new one.** The first draft asked the human *before* creating the PR. `/flow:critique-plan` caught it as a third human gate violating FB-0034 + FB-0044. The pipeline now always reaches the PR; only the hand-off shape changed. This also deleted a model-supplied `--attended` flag (an unverifiable signal that would have gated rigor) outright.
+- **Classification keyed on `kind`, in a deterministic table** (`lib/manifest-triage.py`), not model judgment — otherwise the step is skippable by routing everything to draft. Exactly one kind (`visual-deliverable`) is `auto`; the rest already attempt at their producer or are doctrinally barred (`:272` never self-declare a criterion; `:585` never silently rewrite an un-fenced doc; FB-0011 for competing-merit fixes).
+- **Normalizing the 8 producer lines was a prerequisite, not a follow-up.** Five sites prescribed no kind token at all (so four kinds were indistinguishable) and four used off-vocabulary `needs:` verbs; the `:899` template was missing `rigor` and `coverage` entirely. No deterministic triage is possible over an unparseable line. `[decision-required]` got a named destination (a new `— confidence:` field) rather than just being evicted — "absent from the bracket" and "dropped entirely" are indistinguishable to a grep.
+
+**SAFETY — three invariants, each of which a plan gate caught me weakening.**
+1. *No merge-ready PR on a non-PASS build* (`:308`/`:310`, unqualified). A one-word waiver would have emptied the manifest and flipped `gh pr ready`. Defended twice: a `verify-build` waiver is exempt from the §7c subtraction, **and** §7c's ready-flip is re-keyed from "manifest is empty" to `verdict == READY`. The waive option is suppressed on `verify-build` entirely — offering "waive and ship as-is" on an entry that by rule keeps the PR a draft would be a lie to a non-engineer.
+2. *Residual is the uncleared set minus honored waivers, never a class filter.* A class filter let a failed `visual-deliverable` attempt drop out and reach a ready PR — the thing `SKILL.md:843` exists to prevent.
+3. *§7a's assertion is artifact-shaped* (`branch`, `sha`, `FRAMES >= 1` — it never reads `overall_verdict`), so a re-run capturing a frame but returning FAIL would overwrite the blessed buffer and satisfy the gate. §7a's sequence now re-applies Step 2's verdict accounting. Its ordering (apply → commit → push → re-run → re-account → re-assert) is pinned because Step 7 pushes *before* §7a runs.
+
+Plus two fail-safe directions: an unrecognized `needs:` verb classifies `blocked` for security/a11y and `ask` elsewhere, never `auto`; and unrecoverable state never yields `auto` — `/tmp` is a cache, the PR body's `## Waived at ship` section is the durable record (§7c step 0 reads it *before* the recompute overwrites it), and a waiver is honored only on an exact `(kind, finding)` fingerprint match so an over-greedy body parse cannot subtract a real blocker.
+
+**Tradeoffs.**
+- **Drafts do not disappear, and the docs say so.** Doctrine blocks the agent from self-declaring criteria, editing un-fenced docs, or calling a failing build shippable. Overselling "the agent now just does it" would fail the user again at the next blocked ship. What changes is that the draft is answerable.
+- **The fix does not reach the user's repos on merge.** Proof from the evidence: #81 landed 2026-07-28 02:54Z, four hours *before* a draft it would have prevented, and did not help — the host ran the installed 1.21.0 release. Same gating applies here.
+- **Waiver state is ephemeral in `/tmp` and best-effort from the body.** Reconstruction is parsing, not a guarantee; what carries the safety is the fail-safe direction, not the reconstruction.
+
+**Process note worth keeping.** This plan went through **5 `/flow:critique-plan` + 4 `/flow:audit-plan` rounds**, and the gates found real defects in every one — including three separate paths to a merge-ready PR on a failing build. One inversion is worth recording: I accused the plan-critic of fabricating an FB-0064 citation and carried that accusation for two revisions. It was accurate; my verification grep piped through `cut -c1-300` and truncated the match out of view, so a *matching* line was read as proof of absence. Two lessons: a truncating filter must never be the last word on "the text isn't there," and an accepted audit finding is not a verified one.
+
+**Files.** `skills/ship/lib/manifest-triage.py` (NEW), `skills/ship/SKILL.md` (8 producer lines, `:899` template, §7a attempt-then-gate, §7a.5 NEW, §7c steps 0/1/3/5, §8, body template + `## Waived at ship`, Flow-run row), `skills/{security,accessibility}-review/SKILL.md`, `evals/run_manifest_triage_evals.py` (NEW, CI-wired), `evals/fixtures/resolution-confidence-routing/expected/ship-routing.md` (normalized + finally read by a harness), `evals/run_status_surface_evals.py` (enumeration pin updated — FB-0010 fan-out), `CLAUDE.md`, `docs/workflow.md`, `README.md`, `CHANGELOG.md`, version 1.21.0 → 1.22.0.
+
 ### SAFETY: three gates that could report success without doing their job — fork root anchor, Test-plan provenance, skill-composition lint (v1.22.0)
 **Date:** 2026-07-29
 **Branch:** claude/contribute-ff3ee2 → **merged as #86, squash `129f582`** (2026-07-29)
@@ -98,7 +131,7 @@ This lesson had been dismissed **twice** as `already-encoded`, both times reason
 **Branch:** claude/audit-skips-loud-plus-swift-preflight-glob (commit on this branch; SHA lands with the PR)
 
 **What was done:**
-Two harvested bug fixes (drained from the `/flow:contribute` queue and applied directly per FB-0073, not parked in a draft):
+Two harvested bug fixes (drained from the `/flow:contribute` queue and applied directly per FB-0074, not parked in a draft):
 1. **audit-skips silent-no-op closed (SAFETY — error-handling contract flip).** `skills/audit-skips/lib/skip-audit-checks.py` used to `print({"error": …, "stages": []})` and **`return 0`** on a present-but-unreadable/malformed handoff — indistinguishable from a genuine absent-handoff standalone run, so the whole skip-legitimacy gate read "no stage report to audit" and silently no-op'd. Now it prints the diagnostic to **stderr** and **`return 1`** (a valid-but-empty report still exits 0). The audit-skips SKILL shell block captures the non-zero exit into a distinct `engine_error` JSON field (was `2>/dev/null`-swallowed) and the SKILL prose routes `engine_error` (loud → `[decision-required]` draft manifest) vs the absent-handoff `note` (the only clean no-op) vs a valid-empty audit. Implements the pre-queued roadmap item "audit-skips malformed-handoff vs empty-standalone disambiguation."
 2. **Swift preflight `ls -d` glob fix.** `template/stacks/swift/tools/preflight/check.sh` used `ls *.xcodeproj` / `ls *.xcworkspace`; because those are directory **bundles**, bare `ls` lists their *contents* (`project.pbxproj`, …), so `WORKSPACE_OR_PROJECT` became `-project project.pbxproj` and xcodebuild failed on every auto-discovered project. `ls -d` lists the bundle name xcodebuild expects.
 
@@ -117,7 +150,7 @@ Both were consumer-cold-run bugs harvested via `/flow:contribute`, and two of th
 
 **Tradeoffs discussed:**
 - Bumped patch version (1.21.1) for an internal robustness fix rather than leaving it under 1.21.0 — honest that shipped-skill behavior changed; description blobs left un-accreted per the roadmap "cap the description blobs" item.
-- Applied directly to a **ready** PR (not a draft) per FB-0073 — the fixes are eval-pinned + staff-reviewed + security-reviewed; draft state would be friction, not a gate.
+- Applied directly to a **ready** PR (not a draft) per FB-0074 — the fixes are eval-pinned + staff-reviewed + security-reviewed; draft state would be friction, not a gate.
 
 **Spec-walk (this PR — declares the behavior changes `/flow:audit-coverage` flagged as undeclared; each pinned by its verification):**
 - [x] `skip-audit-checks.py` exits **non-zero** on a malformed/unreadable report (stderr diagnostic, clean stdout) and **0** on a valid-but-empty one — pinned by `run_skip_audit_evals.py` (`malformed-report-exits-nonzero`, `-stdout-clean`, `-stderr-diagnostic`, `valid-empty-report-exits-zero`; full suite green).
