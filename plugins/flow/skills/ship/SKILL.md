@@ -313,11 +313,25 @@ Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=
 
 No stage skip is accepted on its own say-so, and **"the agent did it manually" never substitutes for a stage's real pipeline output.** After the four reviewers above report, audit every stage's skip (and every "ran" claim) against ground truth. The load-bearing rule: **a stage's claimed verdict is trusted only if its canonical artifact EXISTS and matches HEAD** — a verify-build PASS with no fresh findings buffer is the "confirmed manually + self-certified" failure, and the missing buffer is the tell.
 
-1. **Write the per-stage report** (you have every stage's status from this loop run) to the handoff file the skill reads:
+1. **Write the per-stage report** (you have every stage's status from this loop run) to the handoff file the skill reads.
+
+   The handoff goes in the **repo-local** scratch dir, never `/tmp` (FB-0075). Two reasons, both load-bearing: a forked skill **cannot see** a `/tmp` file this shell writes — which silently disabled this entire gate from v1.13.0 until FB-0075 — and `/tmp/flow-*` is one global namespace shared with every other project, so a concurrent session on another repo would clobber it. A repo-relative path fixes both, the second by construction. The `flow_stamp` is written **in shell, not via a helper script**, so this step carries no plugin-root dependency (`CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls).
 
    ```sh
-   cat > /tmp/flow-skip-audit-stages.json <<'EOF'
-   {"stages": [
+   # Canonical repo-local scratch idiom — keep in sync with scripts/flow_scratch.py
+   # (pinned by evals/run_scratch_isolation_evals.py).
+   FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+   if [ -z "$FLOW_ROOT" ]; then
+     echo "⚠️ BLOCKER: not inside a git repository — cannot write a handoff a forked skill can read. The skip-legitimacy gate CANNOT run; do not record it as legitimate." >&2
+   fi
+   FLOW_SCRATCH="$FLOW_ROOT/.flow"; mkdir -p "$FLOW_SCRATCH"
+   STAGES="$FLOW_SCRATCH/skip-audit-stages.json"
+   FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
+
+   # Unquoted heredoc terminator so the stamp interpolates; the stage rows are still literal.
+   cat > "$STAGES" <<EOF
+   {"flow_stamp": {"repo": "$FLOW_ROOT", "branch": "$FLOW_BR", "head": "$FLOW_HEAD"},
+    "stages": [
      {"name": "simplify",            "status": "<ran|skipped>", "skip_reason": "<spike|tiny|doc-only|null>"},
      {"name": "staff-review",        "status": "<ran|skipped>", "skip_reason": "<spike|tiny|doc-only|null>"},
      {"name": "security",            "status": "<ran|skipped>", "skip_reason": "<doc-only|null>"},
@@ -342,6 +356,8 @@ No stage skip is accepted on its own say-so, and **"the agent did it manually" n
 3. **Resolve — mirror audit-coverage's routing; never a hard mid-loop halt:**
    - **`SHOULD-RE-RUN · auto-resolvable`** → re-invoke that stage's Skill **now** (e.g. a stale/absent verify-build buffer → re-run `Skill("flow:verify-build")`; a contradicted security/a11y skip → run the reviewer), then **re-run `Skill("flow:audit-skips")` ONCE** over the refreshed report. Loop only this one re-audit cycle — do not iterate LLM judgment (reward-hackable; same discipline as Step 2's single-pass reviewers).
    - **`SHOULD-RE-RUN · decision-required`** (cannot be auto-resolved — e.g. a missing visual-history entry, a visual-deliverable gap on a no-sim host) → add a **`[decision-required]`** entry to the **draft manifest** (`[skip-audit] <stage>: <reason> — needs: <re-run | declare | human-waive>`). The PR opens as a draft (Step 7).
+   - **`⚠️ SKIP-AUDIT REFUSED …` (`stamp_error`)** → the handoff present at the scratch path did not belong to this repo/branch/HEAD, so the gate did **not** run. Re-run 2a.1 to rewrite the handoff and re-invoke the skill **once**. If it refuses again, add a **`[decision-required]`** entry (`[skip-audit] handoff failed its stamp check — the gate did not run`). Never record this as `all-legitimate`.
+   - **`SKIP-AUDIT: no stage report to audit` on a run you launched from 2a.1** → you *did* write a handoff, so an "absent" verdict means the fork could not see it — the transport regression FB-0075 fixed. Treat it exactly like `stamp_error` above; do **not** proceed as if the skips were audited.
    - **All `LEGITIMATE`** → emit a one-line confirmation (`skip-audit: all N stage skips legitimate`) and proceed.
 
 4. **Record the consolidated result** in the Step-2 `Final-pass reviews:` line (`skip-audit=all-legitimate` / `skip-audit=N should-re-run`) and in the PR `## Flow run` table (the `/flow:audit-skips` row).
@@ -386,7 +402,7 @@ Review this conversation (and any prior session since the last PR on this branch
 
 Add new entries to the configured feedback doc following the FB-XXXX format. Increment from the last ID. Skip anything already captured. The bar: would a future session benefit from this rule? If yes, write it down.
 
-**Read verify-build findings buffer (if verify-build ran at Step 2).** When Step 2's `Skill("flow:verify-build")` invocation completed (ran, not skipped), read the structured findings at the path resolved from `flow.config.json.verifyFindingsPath` (default `/tmp/flow-verify-findings.json`). The buffer's JSON shape is documented at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-schema.json` with a canonical example at `findings-example.json`.
+**Read verify-build findings buffer (if verify-build ran at Step 2).** When Step 2's `Skill("flow:verify-build")` invocation completed (ran, not skipped), read the structured findings at the path resolved from `flow.config.json.verifyFindingsPath` (default `.flow/verify-findings.json`). The buffer's JSON shape is documented at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-schema.json` with a canonical example at `findings-example.json`.
 
 For each criterion in `findings.criteria[]` with `aggregated_verdict ∈ {FAIL, Unknown}`:
 
@@ -715,8 +731,8 @@ The history entry (Step 5) is the *written* timeline. **`visual-history.html`** 
 # running the visual-history distill on a non-UI project (FB-0058 boolean-slot footgun).
 UIS=$(jq -r 'if .uiSurface == false then "false" else "true" end' flow.config.json 2>/dev/null)
 VHPATH=$(jq -r '.visualHistoryPath // "core-docs/visual-history.html"' flow.config.json 2>/dev/null); [ -z "$VHPATH" ] && VHPATH="core-docs/visual-history.html"
-FINDINGS=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS="/tmp/flow-verify-findings.json"
-REPORT=$(jq -r '.verifyReportPath // "/tmp/flow-verify-report.html"' flow.config.json 2>/dev/null); [ -z "$REPORT" ] && REPORT="/tmp/flow-verify-report.html"
+FINDINGS=$(jq -r '.verifyFindingsPath // ".flow/verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS=".flow/verify-findings.json"
+REPORT=$(jq -r '.verifyReportPath // ".flow/verify-report.html"' flow.config.json 2>/dev/null); [ -z "$REPORT" ] && REPORT=".flow/verify-report.html"
 # The buffer's observations[].content paths are RELATIVE TO THE REPORT DIR (e.g. "assets/<slug>.jpg"),
 # the same convention §5a writes and render-report.py reads via --assets-dir. Resolve frame sources
 # against $REPORT_DIR — do NOT build a separate ".../assets" prefix (see the copy block in step 3).
@@ -843,8 +859,8 @@ The PR base branch is resolved via this fallback chain:
 Before the draft decision, on a **visually-significant** change (`metadata.visual_significant=true` — the §2c verdict, the same authoritative value §5c reads), assert that **BOTH** visual deliverables exist for THIS run. If either is missing, add a `[visual-deliverable]` entry to the draft manifest so the PR opens as a draft naming the missing artifact — never a silent ready PR with no visual walkthrough.
 
 ```sh
-FINDINGS=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS="/tmp/flow-verify-findings.json"
-REPORT=$(jq -r '.verifyReportPath // "/tmp/flow-verify-report.html"' flow.config.json 2>/dev/null); [ -z "$REPORT" ] && REPORT="/tmp/flow-verify-report.html"
+FINDINGS=$(jq -r '.verifyFindingsPath // ".flow/verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS=".flow/verify-findings.json"
+REPORT=$(jq -r '.verifyReportPath // ".flow/verify-report.html"' flow.config.json 2>/dev/null); [ -z "$REPORT" ] && REPORT=".flow/verify-report.html"
 VHPATH=$(jq -r '.visualHistoryPath // "core-docs/visual-history.html"' flow.config.json 2>/dev/null); [ -z "$VHPATH" ] && VHPATH="core-docs/visual-history.html"
 BRANCH=$(git branch --show-current)
 HEAD_SHA=$(git rev-parse --short HEAD)
@@ -954,7 +970,7 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
   Run the renderer and paste its stdout verbatim as the `## Test plan` section:
 
   ```sh
-  BUF=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$BUF" ] && BUF=/tmp/flow-verify-findings.json
+  BUF=$(jq -r '.verifyFindingsPath // ".flow/verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$BUF" ] && BUF=.flow/verify-findings.json
   # Resolve the renderer with the same installed-else-checkout fallback every other
   # helper call in this skill uses. This is load-bearing since FB-0074: an unresolved
   # renderer used to degrade softly (the agent hand-wrote a Test plan); now Step 7b
@@ -1135,7 +1151,7 @@ If your project has a dev-server skill (e.g., a `/link`-style skill), invoke it 
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Steps 3, 5 |
 | `flow.config.json.specPath` | `dev-docs/spec.md` | Step 5 |
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4a |
-| `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 4a (FB candidates) + Step 5c (distill source) + Step 7 (`lib/render-test-plan.py` renders the `## Test plan`) |
+| `flow.config.json.verifyFindingsPath` | `.flow/verify-findings.json` | Step 4a (FB candidates) + Step 5c (distill source) + Step 7 (`lib/render-test-plan.py` renders the `## Test plan`) |
 | `flow.config.json.visualHistoryPath` | `core-docs/visual-history.html` | Step 5c (durable visual record; created-on-first-write; gated on `uiSurface` + a load-bearing visual decision) |
 | `flow.config.json.statusDocs` | `[]` | Step 5a (reconcile each declared marker region) + Step 5b (marker-coverage gate, manifest-independent) |
 | `flow.config.json.statusSurfaceCandidates` | `[CLAUDE.md, AGENTS.md, README.md, GEMINI.md, .cursorrules, .github/copilot-instructions.md]` | Step 5a.5 (discover UNDECLARED orientation docs that drifted → draft manifest) |

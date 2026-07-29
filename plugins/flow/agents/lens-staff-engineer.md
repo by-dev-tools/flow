@@ -22,8 +22,15 @@ Read **adversarially**: assume the diff is broken — what is the most likely br
 ## Inputs
 
 The skill that spawns you (`/flow:staff-review`) passes:
-- **Diff path** — typically `/tmp/flow-staff-diff.patch` containing the workspace diff (committed + uncommitted).
-- **Untracked files list** — typically `/tmp/flow-staff-untracked.txt`; the files listed there are NOT in the diff, you must `Read` them in full.
+- **Diff path** — passed to you by `/flow:staff-review` (a repo-local `<repo-root>/.flow/staff-diff.patch`), containing the workspace diff (committed + uncommitted).
+- **Untracked files list** — passed to you alongside it (`<repo-root>/.flow/staff-untracked.txt`); the files listed there are NOT in the diff, you must `Read` them in full.
+
+**Use the paths you were given; never guess a `/tmp` one.** The diff's first line is a
+`# flow-review-context repo=… branch=… head=…` header. If it names a repo or branch that is
+not the one you were asked to review, **stop and say so** — do not review the contents and do
+not silently regenerate. A mismatch means the orchestration handed you the wrong workspace,
+which is a finding about the run, not something to quietly work around (FB-0075).
+
 - **Changed files list** — the surface to focus your reading on.
 - **Relevant project docs** — paths to the spec doc, feedback doc, and design-language doc (resolved via `flow.config.json` slots; may be absent).
 - **PR body or workstream prompt** — if relevant context.

@@ -92,8 +92,18 @@ if [ -z "$UI_FILES_IN_DIFF" ] && [ -z "$UI_MODIFIED" ] && [ -z "$UNTRACKED_UI" ]
   exit 0
 fi
 
-{ git diff "origin/$BASE..HEAD"; git diff HEAD; } > /tmp/flow-a11y-diff.patch
-git ls-files --others --exclude-standard > /tmp/flow-a11y-untracked.txt
+# Canonical repo-local scratch idiom — keep in sync with scripts/flow_scratch.py
+# (pinned by evals/run_scratch_isolation_evals.py). NOT /tmp: that is one global
+# namespace shared with every other project on the machine, so a concurrent session
+# on another repo clobbers this reviewer's input (FB-0075).
+FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+[ -n "$FLOW_ROOT" ] && FLOW_SCRATCH="$FLOW_ROOT/.flow" || FLOW_SCRATCH="${TMPDIR:-/tmp}/flow-detached"
+mkdir -p "$FLOW_SCRATCH"
+FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
+printf '# flow-review-context repo=%s branch=%s head=%s base=origin/%s\n' \
+  "$FLOW_ROOT" "$FLOW_BR" "$FLOW_HEAD" "$BASE" > "$FLOW_SCRATCH/a11y-diff.patch"
+{ git diff "origin/$BASE..HEAD"; git diff HEAD; } >> "$FLOW_SCRATCH/a11y-diff.patch"
+git ls-files --others --exclude-standard > "$FLOW_SCRATCH/a11y-untracked.txt"
 ```
 
 ## 2. Run focused greps
@@ -116,8 +126,8 @@ Single `Agent` call with `subagent_type: Explore`. Cap at ~1000 words. Prompt sc
 > You are a staff accessibility engineer cold-reading a diff. Target: WCAG 2.1 AA in modern web browsers (or the project's stated baseline — check the spec doc if accessible). The project's tech stack and product domain are documented in the spec doc and `flow.config.json`; read those first to ground your audit.
 >
 > **Inputs:**
-> - Diff: `/tmp/flow-a11y-diff.patch`
-> - Untracked files (Read in full): `/tmp/flow-a11y-untracked.txt`
+> - Diff: `<repo-root>/.flow/a11y-diff.patch`
+> - Untracked files (Read in full): `<repo-root>/.flow/a11y-untracked.txt`
 > - Design-language doc (path injected above; may be absent — many projects don't have one)
 > - Feedback doc (path injected above; may be absent)
 >

@@ -390,7 +390,7 @@ def main(argv):
     visual_significant = bool(vs.get("visual_significant"))
 
     # Resolve artifact paths from config slots (with documented defaults).
-    findings_path = cfg.get("verifyFindingsPath") or "/tmp/flow-verify-findings.json"
+    findings_path = cfg.get("verifyFindingsPath") or ".flow/verify-findings.json"
     vh_path = cfg.get("visualHistoryPath") or "core-docs/visual-history.html"
     buf = read_buffer(findings_path, branch, head_sha)
 

@@ -23,6 +23,7 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 _(FB-0071 cleared at ship of the annotation-layer generalization PR, v1.20.0; entry lives in `feedback.md`.)_
 _(FB-0072 cleared at ship of the `/flow:post-merge` skill v1 PR, v1.21.0; entry lives in `feedback.md`.)_
 _(FB-0073 cleared at ship of the audit-skips-loud + swift-glob fix PR, v1.21.1; entry lives in `feedback.md`.)_
+- **FB-0075** — `claude/flow-fork-transport-scratch` (flamboyant-stonebraker-36ef32) — "A handoff between a parent shell and a forked skill must live somewhere BOTH can see, and must prove it belongs to this workspace before it is read." Repo-local `.flow/` scratch + `flow_stamp` refuse-on-mismatch (v1.22.0, part B of the consumer dogfood report). Claimed 2026-07-29, next free after #83's FB-0073 and this session's FB-0074 reservation. Entry written in `feedback.md`; clears at ship.
 _(FB-0074 cleared at merge of #86, v1.22.0; entry lives in `feedback.md`.)_
 
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.

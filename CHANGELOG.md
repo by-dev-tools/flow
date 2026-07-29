@@ -10,7 +10,17 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
-## v1.22.0 — 2026-07-29
+## v1.23.0 — 2026-07-29
+
+**Flow's ephemeral scratch moves out of `/tmp` into a repo-local `.flow/` directory — which restores the skip-legitimacy gate (inert since v1.13.0) and ends cross-project clobbering of reviewer inputs.**
+
+- **`/flow:audit-skips` actually runs again.** A forked skill **cannot see** a `/tmp` file the parent shell wrote — confirmed by a same-file A/B: the handoff produced a full report from the parent and "no stage report to audit" from the fork. Because that message is also the legitimate standalone no-op, the gate had been silently passing on **every ship since v1.13.0**. The handoff now lives at `<repo-root>/.flow/skip-audit-stages.json`, which both sides can read.
+- **Concurrent sessions on different projects no longer clobber each other.** `/tmp/flow-staff-diff.patch` and friends were one global filename shared by every project on the machine; in the wild, staff-review lenses were handed another project's diff. Repo-local paths are unique per **worktree** by construction, so the collision cannot happen rather than being unlikely. Reviewer diffs also carry a `# flow-review-context repo=… branch=… head=…` header, and lens agents are told to stop rather than review a workspace they weren't asked about.
+- **Handoffs must now prove they belong to this workspace.** Every handoff carries a `flow_stamp` (repo + branch + head); a reader **refuses a mismatch loudly** instead of reading it and hoping someone notices, and an *absent* stamp is refused too. `absent` / `invalid` / `stale` / `ok` are four distinct states — collapsing them is how a foreign buffer read as "nothing to do".
+- **A misconfigured `referenceGlob` no longer silently blinds the plan critic.** Zero resolved reference documents used to render *no* `## Reference documents` section, indistinguishable from "this project has no rules." It now emits a loud warning telling the reviewer it cannot raise a Spec violation at all. Flow's own `flow.config.json` was itself missing the slot, so its critic had been running document-blind.
+- New `run_scratch_isolation_evals.py` (38 checks, wired into CI) — the **first** harness here to extract and *execute* a SKILL.md `!`-block, which is precisely why the transport bug survived.
+
+**Breaking changes:** none for behavior, but two config **defaults changed**: `verifyFindingsPath` `/tmp/flow-verify-findings.json` → `.flow/verify-findings.json`, and `verifyReportPath` `/tmp/flow-verify-report.html` → `.flow/verify-report.html`. Projects that set these explicitly are unaffected. `.flow/` self-ignores (it writes its own `.gitignore`), so it never dirties `git status` and is never committed.
 
 **Three gates that could report success without doing their job — each a contract split across two files with nothing checking the join.**
 

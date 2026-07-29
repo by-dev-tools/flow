@@ -209,8 +209,12 @@ PLAN_ARG=""; [ -f "$PLAN_PATH" ] && PLAN_ARG="--plan $PLAN_PATH"
 # Add --flag-significant --flag-reason "<why>" ONLY if you (the agent) judge the change
 # visually significant beyond what the file-pattern heuristic catches (e.g. a canvas/WebGL
 # render path with no .css/.tsx edit). The helper records the flag + reason as evidence.
-python3 "$VS" --config flow.config.json $PLAN_ARG > /tmp/flow-visual-significance.json
-cat /tmp/flow-visual-significance.json
+# Repo-local scratch (FB-0075) — /tmp is a global namespace shared across projects.
+FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+[ -n "$FLOW_ROOT" ] && FLOW_SCRATCH="$FLOW_ROOT/.flow" || FLOW_SCRATCH="${TMPDIR:-/tmp}/flow-detached"
+mkdir -p "$FLOW_SCRATCH"
+python3 "$VS" --config flow.config.json $PLAN_ARG > "$FLOW_SCRATCH/visual-significance.json"
+cat "$FLOW_SCRATCH/visual-significance.json"
 ```
 
 A change is visually significant when ALL of: `uiSurface != false`; the diff (committed + uncommitted + untracked) touches `uiFilePatterns` files OR adds/modifies image/font/asset files; and it is NOT a pure no-render-delta refactor (rename-only / comment-only / whitespace-only). A plan `Visual-walk` block or your explicit `--flag-significant` forces `visual_significant = true` (but `uiSurface:false` always wins — a project with no UI surface is never significant; an override there is recorded as suppressed). Carry the helper's `visual_significant` + `visual_signals` forward to Step 8.
@@ -328,12 +332,12 @@ Per FB-0011 (autonomy bar): Unknown is gate-blocking, not advisory. The judge is
 
 ## 8. Emit findings buffer
 
-Write structured JSON to `flow.config.json.verifyFindingsPath` (default `/tmp/flow-verify-findings.json`) per the schema at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-schema.json`. A canonical example is at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-example.json` (mixed-verdict shape: one criterion PASS, one criterion Unknown — exactly the case Phase 9's smoke harness will assert against).
+Write structured JSON to `flow.config.json.verifyFindingsPath` (default `.flow/verify-findings.json`) per the schema at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-schema.json`. A canonical example is at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-example.json` (mixed-verdict shape: one criterion PASS, one criterion Unknown — exactly the case Phase 9's smoke harness will assert against).
 
 The schema pins these properties (binding — consumers depend on them):
 
 - **`schema_version`**: `"1.0"` (bumps only on breaking changes; additive changes do not bump).
-- **`metadata`**: branch, head SHA short, plugin version, platform hint (`web`/`ios`/`android`/`tauri`/`cli`/`library`/`none`/`unknown`), verify budget used + overrun flag, **`spike_mode`** (explicit `/flow:ship-spike` ONLY), **`no_plan_fallback`** (Step 2 triggers 2/3 — no governing plan), **`visual_significant`** (the §2c verdict — the ONE authoritative value downstream steps read) + **`visual_signals`** (the evidence lines behind it). Stamp both from `/tmp/flow-visual-significance.json` (written at §2c).
+- **`metadata`**: branch, head SHA short, plugin version, platform hint (`web`/`ios`/`android`/`tauri`/`cli`/`library`/`none`/`unknown`), verify budget used + overrun flag, **`spike_mode`** (explicit `/flow:ship-spike` ONLY), **`no_plan_fallback`** (Step 2 triggers 2/3 — no governing plan), **`visual_significant`** (the §2c verdict — the ONE authoritative value downstream steps read) + **`visual_signals`** (the evidence lines behind it). Stamp both from `<repo-root>/.flow/visual-significance.json` (written at §2c).
 - **`overall_verdict`**: `"PASS"` / `"FAIL"` / `"Unknown"` — aggregated per Step 7.
 - **`exit_code`**: `0` (PASS) or `1` (FAIL or Unknown). Pins the gate-blocking contract.
 - **`criteria[]`**: per-criterion entries with `text`, **`provenance`** (see next bullet), `adversarial_cases`, `observations[]` (each with `type` discriminator: `screenshot` | `a11y_snapshot` | `network` | `console` | `log` | `stdout` | `exit_code` | `narrative`), `verdicts.{correctness,regression,scope-creep}` (each with verdict + exactly-2 evidence quotes + notes), and per-criterion `aggregated_verdict`.
@@ -349,7 +353,7 @@ The schema pins these properties (binding — consumers depend on them):
 
 When `/flow:ship` Step 2 invokes `Skill("flow:verify-build")` and verify-build exits, the buffer at `flow.config.json.verifyFindingsPath` is the structured handoff to `/flow:ship` Step 4a (synthesize session feedback). Step 4a:
 
-1. Reads the buffer (defaulting to `/tmp/flow-verify-findings.json` if `verifyFindingsPath` unset).
+1. Reads the buffer (defaulting to `.flow/verify-findings.json` if `verifyFindingsPath` unset).
 2. For each criterion with `aggregated_verdict ∈ {FAIL, Unknown}`, derives a candidate FB-XXXX entry. The candidate's "What was said" field cites the criterion text + the per-dimension evidence quotes; the "Synthesized rule" field is left for the human-merge gate to author (Step 4a does not invent prose for FB entries).
 3. Routes candidates per the source-diversity bar from `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` § "Continuous improvement" (2-of-3 evidence: recurrence in time / two reviewers / one review + user correction). Verify-build findings count as one review source; pair with another source before promoting to a written FB entry.
 
@@ -383,10 +387,10 @@ What we did NOT test:
 After the buffer is written (Step 8), render it to a single self-contained HTML file — the artifact the human opens at the merge gate. **This render is MANDATORY whenever a buffer exists (Feature 1b)** — it is not gated on `visual_significant` or on frame count: even a frameless / Unknown buffer renders (the report then shows the `not_tested[]` gaps). The only no-render case is no buffer at all (verify-build skipped at Step 1.2):
 
 ```sh
-REPORT=$(jq -r '.verifyReportPath // "/tmp/flow-verify-report.html"' flow.config.json 2>/dev/null)
-[ -z "$REPORT" ] && REPORT="/tmp/flow-verify-report.html"
-FINDINGS=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null)
-[ -z "$FINDINGS" ] && FINDINGS="/tmp/flow-verify-findings.json"
+REPORT=$(jq -r '.verifyReportPath // ".flow/verify-report.html"' flow.config.json 2>/dev/null)
+[ -z "$REPORT" ] && REPORT=".flow/verify-report.html"
+FINDINGS=$(jq -r '.verifyFindingsPath // ".flow/verify-findings.json"' flow.config.json 2>/dev/null)
+[ -z "$FINDINGS" ] && FINDINGS=".flow/verify-findings.json"
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/render-report.py" "$FINDINGS" --out "$REPORT" --assets-dir "$(dirname "$REPORT")"
 ```
 
@@ -416,8 +420,8 @@ The explicit `--assets-dir <report dir>` matches §5a's persist path (`<dirname(
 | `flow.config.json.verifyEnabled` | `true` | Step 1.2 (skip-path) |
 | `flow.config.json.platform` | unset → bundled `/run` autodetect | Step 1.2 (skip-path for library/none) |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 3 (criteria extraction) |
-| `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 8 (buffer write) |
-| `flow.config.json.verifyReportPath` | `/tmp/flow-verify-report.html` | Step 5a (assets dir alongside it), Step 10 (HTML render) |
+| `flow.config.json.verifyFindingsPath` | `.flow/verify-findings.json` | Step 8 (buffer write) |
+| `flow.config.json.verifyReportPath` | `.flow/verify-report.html` | Step 5a (assets dir alongside it), Step 10 (HTML render) |
 | `flow.config.json.verifyBudgetCalls` | `60` | Step 5 (budget cap) |
 | `flow.config.json.uiSurface` | `true` | Step 2c (visual-significance gate 1, via `lib/visual-significance.py`) |
 | `flow.config.json.uiFilePatterns` | UI extensions (shared with a11y review) | Step 2c (visual-significance heuristic) |

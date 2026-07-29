@@ -26,8 +26,15 @@ False-positive "we could add X" findings pollute the roadmap and train the next 
 ## Inputs
 
 The skill that spawns you (`/flow:staff-review`) passes:
-- **Diff path** — typically `/tmp/flow-staff-diff.patch`.
-- **Untracked files list** — typically `/tmp/flow-staff-untracked.txt`.
+- **Diff path** — passed to you by `/flow:staff-review` (a repo-local `<repo-root>/.flow/staff-diff.patch`).
+- **Untracked files list** — passed to you alongside it (`<repo-root>/.flow/staff-untracked.txt`).
+
+**Use the paths you were given; never guess a `/tmp` one.** The diff's first line is a
+`# flow-review-context repo=… branch=… head=…` header. If it names a repo or branch that is
+not the one you were asked to review, **stop and say so** — do not review the contents and do
+not silently regenerate. A mismatch means the orchestration handed you the wrong workspace,
+which is a finding about the run, not something to quietly work around (FB-0075).
+
 - **Changed files list**.
 - **Relevant project docs** — `flow.config.json.designLanguagePath` (your primary grounding doc — uncommon care without grounding is just opinion).
 - **PR body or workstream prompt** — if relevant.

@@ -80,8 +80,18 @@ if [ -z "$SOURCE_FILES_IN_DIFF" ] && [ -z "$SOURCE_MODIFIED" ] && [ -z "$UNTRACK
   exit 0
 fi
 
-{ git diff "origin/$BASE..HEAD"; git diff HEAD; } > /tmp/flow-sec-diff.patch
-git ls-files --others --exclude-standard > /tmp/flow-sec-untracked.txt
+# Canonical repo-local scratch idiom — keep in sync with scripts/flow_scratch.py
+# (pinned by evals/run_scratch_isolation_evals.py). NOT /tmp: that is one global
+# namespace shared with every other project on the machine, so a concurrent session
+# on another repo clobbers this reviewer's input (FB-0075).
+FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+[ -n "$FLOW_ROOT" ] && FLOW_SCRATCH="$FLOW_ROOT/.flow" || FLOW_SCRATCH="${TMPDIR:-/tmp}/flow-detached"
+mkdir -p "$FLOW_SCRATCH"
+FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
+printf '# flow-review-context repo=%s branch=%s head=%s base=origin/%s\n' \
+  "$FLOW_ROOT" "$FLOW_BR" "$FLOW_HEAD" "$BASE" > "$FLOW_SCRATCH/sec-diff.patch"
+{ git diff "origin/$BASE..HEAD"; git diff HEAD; } >> "$FLOW_SCRATCH/sec-diff.patch"
+git ls-files --others --exclude-standard > "$FLOW_SCRATCH/sec-untracked.txt"
 ```
 
 ## 2. Run focused greps for high-signal patterns
@@ -105,8 +115,8 @@ Single `Agent` call with `subagent_type: Explore`. Cap at ~1000 words. Prompt sc
 > **Flag only gaps that are exploitable or that materially raise the attack surface.** Treat style preferences, unprovable risks, and "this could theoretically be unsafe in some hypothetical scenario" as out of scope. A red-team prompted to find vulnerabilities will usually report some, even when the code is sound — stay narrow. A missing input validator on a value that never reaches user-controlled data is not a finding; a sanitizer config that is wrong-by-default *is*. The over-engineering tax compounds across PRs.
 >
 > **Inputs:**
-> - Diff: `/tmp/flow-sec-diff.patch`
-> - Untracked files (Read them in full): `/tmp/flow-sec-untracked.txt`
+> - Diff: `<repo-root>/.flow/sec-diff.patch`
+> - Untracked files (Read them in full): `<repo-root>/.flow/sec-untracked.txt`
 > - Spec doc (path injected by the SKILL above; may be absent)
 > - Feedback doc (path injected by the SKILL above; may be absent)
 >
