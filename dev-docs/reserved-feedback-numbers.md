@@ -22,6 +22,7 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 _(FB-0071 cleared at ship of the annotation-layer generalization PR, v1.20.0; entry lives in `feedback.md`.)_
 _(FB-0072 cleared at ship of the `/flow:post-merge` skill v1 PR, v1.21.0; entry lives in `feedback.md`.)_
+_(FB-0073 cleared at ship of the audit-skips-loud + swift-glob fix PR, v1.21.1; entry lives in `feedback.md`.)_
 
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".

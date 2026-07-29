@@ -49,8 +49,24 @@ fi
 PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
 if [ -f "$STAGES" ]; then
   PLAN_ARG=""; [ -f "$PLAN" ] && PLAN_ARG="--plan $PLAN"
-  python3 "$H" --report "$STAGES" --config flow.config.json $PLAN_ARG 2>/dev/null \
-    || echo '{"error":"skip-audit-checks.py failed","stages":[]}'
+  # Capture stderr (do NOT 2>/dev/null it away) so an engine failure on a PRESENT handoff is
+  # diagnosable. Distinguish that failure from the absent-handoff no-op below via a dedicated
+  # engine_error field: a present-but-unreadable handoff is NOT "nothing to audit" -- the
+  # skip-legitimacy gate did not run, and collapsing it to the standalone message is the silent
+  # no-op this branch exists to prevent. (No backticks in this block -- it runs inside a
+  # single-backtick dynamic-context span; an inner backtick would truncate it. FB-0010.)
+  ENGINE_ERR=$(mktemp)
+  if OUT=$(python3 "$H" --report "$STAGES" --config flow.config.json $PLAN_ARG 2>"$ENGINE_ERR"); then
+    printf '%s\n' "$OUT"
+  else
+    # Both interpolations go through jq -Rs . (sound JSON-string escaping). The || branches only
+    # fire if jq is missing (it's a declared pipeline prerequisite) and emit a SAFE CONSTANT
+    # string, never a raw-interpolated value -- so the output stays valid JSON even then.
+    printf '{"engine_error": %s, "handoff": %s, "stages": []}\n' \
+      "$(jq -Rs . < "$ENGINE_ERR" 2>/dev/null || printf '"skip-audit-checks.py failed (jq unavailable)"')" \
+      "$(printf '%s' "$STAGES" | jq -Rs . 2>/dev/null || printf '"(handoff path; jq unavailable)"')"
+  fi
+  rm -f "$ENGINE_ERR"
 else
   echo '{"note":"no stages handoff at '"$STAGES"' — /flow:ship writes it at Step 2. Standalone run: nothing to audit.","stages":[]}'
 fi
@@ -78,9 +94,28 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   - An unrecognized skip reason that the diff/config plainly contradicts →
     SHOULD-RE-RUN; one you cannot refute → LEGITIMATE (default to trusting a skip
     you have no evidence against — do not manufacture findings).
-- If the mechanical block is `{"stages": []}` (no ship handoff — a standalone run),
-  output exactly `SKIP-AUDIT: no stage report to audit (run from /flow:ship Step 2).`
-  and stop.
+- If the mechanical block is `{"note": ..., "stages": []}` (the handoff file was **absent** —
+  a standalone run), output exactly `SKIP-AUDIT: no stage report to audit (run from
+  /flow:ship Step 2).` and stop. This is the clean no-op — **unless** this skill was **forked**
+  and the parent DID write a handoff to a `/tmp` path the fork's filesystem can't see (so
+  `[ -f "$STAGES" ]` reads false even though a handoff exists): then this "absent" note is a
+  false no-op, not a clean pass. When run from `/flow:ship` a handoff is always written at 2a.1,
+  so a `note` there means the fork couldn't see it — set `FLOW_SKIP_AUDIT_STAGES` to a shared
+  path, or route it like an `engine_error` below. (The systemic fork-handoff-transport fix is
+  tracked in `roadmap.md` § Exploration.)
+- If the mechanical block carries **`"engine_error"`** (the handoff file WAS present but
+  `skip-audit-checks.py` failed on it — the engine exits non-zero on a malformed/unreadable
+  report rather than collapsing to `stages:[]`), do **NOT** treat it as "nothing to audit" —
+  the gate did not execute. Output a loud diagnostic and stop:
+  `⚠️ SKIP-AUDIT ENGINE FAILED on a present handoff (<handoff>): <engine_error>. The
+  skip-legitimacy gate did NOT run — this is not a clean pass.` When invoked from `/flow:ship`
+  Step 2a this routes to the draft manifest as `[decision-required]` (`[skip-audit] engine
+  failed on a present handoff — fix the engine input or human-waive`), never a silent proceed.
+- A present, VALID handoff with genuinely zero skipped stages (`{"stages": []}` from a real
+  report — neither `note` nor `engine_error`, engine exit 0) is an honest empty audit: nothing
+  was skipped, so there is nothing to re-run. Proceed with `SKIP-AUDIT: all stage skips
+  legitimate (0 skips)`. Do not treat the empty stage set as anomalous — only the `note`
+  (absent) and `engine_error` (present-but-failed) shapes above are special.
 - **`auto_resolvable`** on a SHOULD-RE-RUN means `/flow:ship` can cheaply re-invoke
   the stage now and re-audit once. `auto_resolvable: false` (e.g. a missing
   visual-history entry, a visual-deliverable gap) means it must route to the draft

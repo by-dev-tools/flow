@@ -35,7 +35,16 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
-### FB-0072: A gate that verifies an event must distinguish "hasn't happened YET" from "will never happen" — and skills that share a trigger moment should compose (call each other), not merge into one
+### FB-0073: A "contribution"/harvest workflow must not default to draft-and-park — apply high-confidence verified fixes directly (ready PR) and surface only genuine decisions
+
+**Date:** 2026-07-29
+**Source:** user correction — reacting to `/flow:contribute` opening PR #82 as a draft
+
+**What was said:** "why is 82 a draft? drafts are not useful to me. i need to identify decisions to make, or if you have high confidence recommendations, just fix them." The user found a draft PR they must babysit to be friction, not a deliverable — the `/flow:contribute` skill's v1 "draft-only, never mark ready" default (a deliberate human-gate design) was the wrong shape for them.
+
+**Synthesized rule:** A workflow that drains/harvests candidate changes (contribution, cleanup, batch-fix) must split its output by confidence, not park everything behind one draft: **(a) high-confidence, mechanically-verified, self-contained changes → apply them and open a READY PR** (the human still gates the merge — that's the real gate, not draft state); **(b) genuine decisions — a design fork, a change needing judgment, an un-verified claim — → surface them explicitly (inline / as a decision list), not buried in a draft body.** "Draft" is not a substitute for either doing the work or asking the question. When unsure whether something is (a) or (b), lead with a recommendation (see [[feedback_recommend_when_asking]]) and let the human redirect — do not default to a draft to avoid the call. Ties to [[feedback_autonomy_bar]] (auto-apply vs stop-and-present): a verified fix is squarely auto-apply.
+
+**Applies to:** `skills/contribute/SKILL.md` (the "never mark ready-for-review, v1 draft-only" default should become confidence-split: ready PR for auto-included verified edits, decisions surfaced separately) — a queued flow change; the broader autonomy posture across `/flow:contribute` and any future batch-drain skill. Related: FB-0070 (contribution PRs still run the full pipeline — this refines what STATE they open in, not whether they're reviewed).
 
 **Date:** 2026-07-24
 **Source:** user direction + user correction (the merge-queue timing concern) — building `/flow:post-merge` (part B of the #78/#79 capture)

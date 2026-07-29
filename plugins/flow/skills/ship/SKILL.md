@@ -337,7 +337,7 @@ No stage skip is accepted on its own say-so, and **"the agent did it manually" n
    Skill("flow:audit-skips")
    ```
 
-   It returns a `SKIP-AUDIT SUMMARY` with one line per stage — `LEGITIMATE` or `SHOULD-RE-RUN` (with `auto-resolvable: re-run` or `decision-required`). The mechanical engine (`lib/skip-audit-checks.py`) backs every verdict; trust it.
+   It returns a `SKIP-AUDIT SUMMARY` with one line per stage — `LEGITIMATE` or `SHOULD-RE-RUN` (with `auto-resolvable: re-run` or `decision-required`). The mechanical engine (`lib/skip-audit-checks.py`) backs every verdict; trust it. If it instead reports an **`engine_error`** (the handoff was present but `skip-audit-checks.py` failed on it — the engine now exits non-zero on a malformed/unreadable report rather than collapsing to a silent `stages:[]`), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] engine failed on a present handoff — fix the engine input or human-waive`), **never** a clean pass. (A `no stage report` result when you DID write a handoff at 2a.1 can mean the forked skill couldn't see your `/tmp` path — a known transport limitation tracked in `roadmap.md` § Exploration; re-check the `FLOW_SKIP_AUDIT_STAGES` path if it recurs.)
 
 3. **Resolve — mirror audit-coverage's routing; never a hard mid-loop halt:**
    - **`SHOULD-RE-RUN · auto-resolvable`** → re-invoke that stage's Skill **now** (e.g. a stale/absent verify-build buffer → re-run `Skill("flow:verify-build")`; a contradicted security/a11y skip → run the reviewer), then **re-run `Skill("flow:audit-skips")` ONCE** over the refreshed report. Loop only this one re-audit cycle — do not iterate LLM judgment (reward-hackable; same discipline as Step 2's single-pass reviewers).
