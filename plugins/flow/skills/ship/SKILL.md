@@ -967,9 +967,11 @@ Three classes come back:
 # Re-resolve — separate shell block, so §7a.5's variables are NOT in scope.
 # ($STATE/$BRANCH expanding empty would silently resolve to a nonexistent state
 # path, drop every recorded waiver, and still exit 0 — the FB-0010 silent-skip class.)
+# READERS use `state-path`, never `init-state`: creating an empty record makes a
+# LOST state look `present`, which re-enables `auto` and defeats invariant 5.
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 BRANCH=$(git branch --show-current)
-STATE=$(python3 "$TRIAGE" init-state --branch "$BRANCH")   # idempotent: preserves existing waivers/attempts
+STATE=$(python3 "$TRIAGE" state-path --branch "$BRANCH")
 MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")
 python3 "$TRIAGE" render-manifest --entries-file "$MANIFEST" --state-file "$STATE" --branch "$BRANCH"
 ```
@@ -1232,11 +1234,19 @@ Invoke it as a scoped `/flow:ship` (state "reconcile the PR body to current gate
 
 ```sh
 # Re-resolve every variable — §7a.5's shell state is long gone by Step 8.
+# `state-path` RESOLVES without creating (see §7a.6), and --body-file lets a
+# previously-waived entry be reconstructed from the live PR body when the /tmp
+# cache is gone — without it, waivers the human already gave re-appear in this list.
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 BRANCH=$(git branch --show-current)
-STATE=$(python3 "$TRIAGE" init-state --branch "$BRANCH")   # idempotent: preserves existing waivers/attempts
+STATE=$(python3 "$TRIAGE" state-path --branch "$BRANCH")
 MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")
-python3 "$TRIAGE" render-decisions --entries-file "$MANIFEST" --state-file "$STATE" --branch "$BRANCH"
+BODY_ARG=""
+if [ -n "${N:-}" ]; then
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then . "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"; else . "plugins/flow/skills/ship/lib/verify-pr-body.sh"; fi
+  flow_fetch_pr_state "$N" && BODY_ARG="--body-file $FLOW_PR_BODY_FILE"
+fi
+python3 "$TRIAGE" render-decisions --entries-file "$MANIFEST" --state-file "$STATE" --branch "$BRANCH" $BODY_ARG
 ```
 
 Each `ask` entry becomes one numbered question carrying: what it means in plain language, the resolution **you drafted**, your recommendation first with its reasoning, what you already tried, and — on every entry except `verify-build` — "waive and ship as-is". Each `blocked` entry goes in a separate "needs you outside this session" list, never phrased as a question and never offered a waiver.

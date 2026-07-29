@@ -223,6 +223,62 @@ def test_manifest_lifecycle(td: str) -> None:
     p.unlink(missing_ok=True)
 
 
+def test_prescribed_sequence(td: str) -> None:
+    print("\n[prescribed] the SKILL's own call sequence must not defeat invariant 5")
+    # The engine-level state-unavailable test passed while the PIPELINE re-enabled
+    # `auto`: the prescribed blocks called `init-state` before classify, which
+    # materializes an empty record, so a LOST state read back as `present`.
+    # Readers must resolve the path without creating it.
+    rc, out = run(["state-path", "--branch", "freshhost"])
+    expect("state-path exits 0", rc, 0, out)
+    p = Path(out.strip())
+    expect_true("state-path does NOT create the record (init-state's job, once per run)",
+                not p.exists(), f"{p} was created by a read-only resolve")
+
+    b = body(line("visual-deliverable", "missing walkthrough", "re-run"))
+    r = classify(b, p, branch="freshhost")
+    expect("resolving-without-creating keeps a lost state UNAVAILABLE ⇒ ask, never auto",
+           by_kind(r, "visual-deliverable")["class"], "ask")
+    expect("…and reports it honestly", r["state_status"], "unavailable")
+
+    # Contract-grep: no reader site may call init-state.
+    src = SHIP_SKILL.read_text(encoding="utf-8")
+    for marker in ("render-manifest", "render-decisions"):
+        i = src.index(f'"$TRIAGE" {marker}')
+        window = src[max(0, i - 700):i]
+        # Match the INVOCATION, not the word — the block deliberately mentions
+        # init-state in a comment explaining why readers must not call it.
+        expect_true(f"the {marker} block resolves the state path without INVOKING init-state",
+                    'state-path --branch' in window
+                    and '"$TRIAGE" init-state' not in window, window[-250:])
+    expect_true("the render-decisions block passes --body-file so PR-body waivers "
+                "reconstruct when the /tmp cache is gone",
+                "--body-file" in src[src.index('"$TRIAGE" render-decisions') - 900:
+                                     src.index('"$TRIAGE" render-decisions') + 200],
+                "no --body-file at the render-decisions site")
+
+
+def test_auto_renders_as_question(td: str) -> None:
+    print("\n[render] a residual auto entry is still shown to the human")
+    # It should not normally exist (§7a.5 attempts then demotes), but if the
+    # attempt step is skipped it must not vanish — an item the human never sees
+    # is the exact failure this change exists to remove. It carries no waive
+    # option: the agent has not tried yet, so "waive" is not the honest move.
+    st = fresh_state(td, "autorender")
+    b = body(line("visual-deliverable", "missing walkthrough", "re-run"))
+    r = classify(b, st, branch="autorender")
+    expect("precondition: it classifies auto", by_kind(r, "visual-deliverable")["class"], "auto")
+    with tempfile.TemporaryDirectory() as td2:
+        ef = Path(td2) / "e.md"
+        ef.write_text(b, encoding="utf-8")
+        rc, out = run(["render-decisions", "--entries-file", str(ef),
+                       "--state-file", str(st), "--branch", "autorender"])
+    expect("render-decisions exits 0", rc, 0, out)
+    expect_true("an auto entry renders as a numbered question, not dropped", "1." in out, out)
+    expect_true("…with no waive option (the agent has not attempted it yet)",
+                "waive it and ship as-is" not in out, out)
+
+
 def test_state_durability(td: str) -> None:
     print("\n[invariant 5] state that cannot be recovered never yields auto")
     st = fresh_state(td)
@@ -498,6 +554,41 @@ def test_reviewer_prose() -> None:
                     "Step 7a.5" in txt and "consumed at Step 7." not in txt, txt[:200])
 
 
+def test_sibling_dependency(td: str) -> None:
+    print("\n[dependency] a missing manifest_contract.py is DETECTED, not crashed on")
+    # pr-coherence.py now imports manifest_contract. On a stale/partial plugin dir
+    # (every consumer, until they update) the import fails -- and land/doctor
+    # redirect stderr, so a bare crash would read as "manifest present" and produce
+    # a false merged-in-a-not-ready-state BLOCKER. verify-pr-body.sh's resolver
+    # therefore requires the sibling before it will name pr-coherence.py at all.
+    lib = Path(td) / "lib"
+    lib.mkdir(exist_ok=True)
+    (lib / "pr-coherence.py").write_text(
+        (HERE.parent / "skills" / "ship" / "lib" / "pr-coherence.py").read_text(encoding="utf-8"),
+        encoding="utf-8")
+    body = Path(td) / "b.md"
+    body.write_text("## Summary\nclean\n", encoding="utf-8")
+
+    proc = subprocess.run(
+        [sys.executable, str(lib / "pr-coherence.py"), "coherence",
+         "--body-file", str(body), "--is-draft", "false"],
+        capture_output=True, text=True)
+    expect_true("without the sibling, pr-coherence.py fails LOUD (non-zero) rather than "
+                "silently reporting a verdict", proc.returncode != 0,
+                proc.stdout + proc.stderr)
+    expect_true("…and names the missing module so the cause is diagnosable",
+                "manifest_contract" in (proc.stdout + proc.stderr), proc.stdout + proc.stderr)
+
+    sh = (HERE.parent / "skills" / "ship" / "lib" / "verify-pr-body.sh").read_text(encoding="utf-8")
+    # Assert each GUARD branch, not a raw occurrence count: the count includes the
+    # explanatory comment, so `>= 2` stayed green if you deleted the
+    # CLAUDE_PLUGIN_ROOT guard — the exact branch a consumer install depends on.
+    guards = re.findall(r'\[ -f "[^"]*manifest_contract\.py" \]', sh)
+    expect("verify-pr-body.sh guards BOTH resolution branches on manifest_contract.py "
+           "(plugin-installed and in-repo), so a partial install is 'unresolvable' "
+           "rather than read as 'manifest present'", len(guards), 2, "\n".join(guards))
+
+
 def test_render_coherence(td: str) -> None:
     print("\n[FB-0067] the rendered manifest stays coherent with pr-coherence.py")
     st = fresh_state(td, "coh")
@@ -585,6 +676,8 @@ def main() -> int:
         test_failsafes(td)
         test_add_entry(td)
         test_manifest_lifecycle(td)
+        test_prescribed_sequence(td)
+        test_auto_renders_as_question(td)
         test_state_durability(td)
         test_attempt_demotion(td)
         test_residual_definition(td)
@@ -592,6 +685,7 @@ def main() -> int:
         test_waiver_fingerprint(td)
         test_clears_when(td)
         test_render_coherence(td)
+        test_sibling_dependency(td)
     test_producer_lines()
     test_skill_contract()
     test_reviewer_prose()

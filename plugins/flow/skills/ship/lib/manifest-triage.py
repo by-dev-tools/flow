@@ -66,8 +66,24 @@ Subcommands (stdlib only):
     waive          --branch B --kind K --finding F [--path PATH]
     state          --branch B [--path PATH] [--body-file PATH]
 
-Exit codes are the contract the shell keys on; keep them stable. 0 = success,
-2 = malformed input. `classify` always exits 0 -- the verdict is the signal.
+Exit codes are the contract the shell keys on; keep them stable:
+
+    0  success
+    2  malformed input (unparseable entries, unknown kind/verb on `add-entry`,
+       an unwritable MANIFEST path on `init-run`)
+    3  `waive` only: the waiver WAS recorded, but its (kind, finding) fingerprint
+       matches no entry on the current manifest -- including when no manifest
+       exists at all (usually a mistyped --finding, or the wrong --branch) -- so
+       it will subtract nothing. Distinct from 2 because the write succeeded:
+       this is a "check the finding text" signal, not a failure. Callers that
+       chain off `waive` should treat 3 as a warning, not an abort.
+
+Anything else is an uncaught exception exiting 1 -- e.g. a missing --body-file on
+`parse`, or an unwritable state path. Treat any exit outside {0, 2, 3} as failure.
+(Closing that set properly means a top-level OSError handler + an eval; tracked in
+the roadmap rather than widened here.)
+
+`classify` always exits 0 -- the verdict is the signal.
 """
 
 from __future__ import annotations
@@ -547,6 +563,12 @@ def _then(entry: dict[str, Any]) -> str:
 def render_decisions(result: dict[str, Any]) -> str:
     """The Step 8 hand-off. Questions first, never a bare PR URL."""
     residual = result.get("residual", [])
+    # A residual `auto` entry should not normally exist — §7a.5 attempts it and
+    # demotes to `ask` on failure. If one reaches here anyway (the attempt step
+    # was skipped), render it as a question rather than dropping it: an unanswered
+    # item the human never sees is the failure mode this whole change exists to
+    # remove. It carries no waive option (waivable is ask-only), which is correct
+    # — the agent has not yet tried, so "waive" is not the honest next move.
     asks = [e for e in residual if e["class"] in ("ask", "auto")]
     blocked = [e for e in residual if e["class"] == "blocked"]
     if not asks and not blocked:
@@ -655,6 +677,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("manifest-path")
     p.add_argument("--branch", required=True)
 
+    p = sub.add_parser("state-path")
+    p.add_argument("--branch", required=True)
+
     p = sub.add_parser("init-run")
     p.add_argument("--branch", required=True)
 
@@ -720,6 +745,15 @@ def main(argv: list[str] | None = None) -> int:
         print(_default_manifest_path(args.branch))
         return 0
 
+    if args.cmd == "state-path":
+        # Resolve WITHOUT creating. Readers (§7a.6 render, §8 hand-off, §7c
+        # reconcile) must use this, never `init-state`: materializing an empty
+        # record makes a LOST state look `present`, which re-enables `auto` and
+        # silently defeats invariant 5 on exactly the cross-session/fresh-host
+        # reconcile it exists to protect. Only a fresh run (§7a.5) may init.
+        print(_default_state_path(args.branch))
+        return 0
+
     if args.cmd == "init-run":
         # Truncate the manifest for a FRESH run. Called once at pre-flight, before
         # any producer appends. Deliberately separate from `init-state`, which is
@@ -757,13 +791,22 @@ def main(argv: list[str] | None = None) -> int:
             # never subtract anything (invariant 6). Fail-safe, but the caller
             # deserves a signal rather than a silent no-op + a still-drafted PR.
             mp = _default_manifest_path(args.branch)
+            # An ABSENT manifest has zero entries, so it matches nothing — the same
+            # signal, not a reason to stay silent. The likeliest real trigger is a
+            # wrong --branch (which resolves a different manifest path), and exiting
+            # 0 there is the FB-0010 silent-skip shape.
             if Path(mp).exists():
                 fps = {e["fingerprint"] for e in parse_entries(_read(mp))}
-                if rec["fingerprint"] not in fps:
-                    print(f"⚠️ [manifest-triage] no entry on {mp} matches [{args.kind}] "
-                          f"{args.finding!r} — the waiver was recorded but will subtract "
-                          "nothing. Check the finding text matches verbatim.", file=sys.stderr)
-                    return 3
+                missing_note = ""
+            else:
+                fps = set()
+                missing_note = " (no manifest file at that path — check --branch)"
+            if rec["fingerprint"] not in fps:
+                print(f"⚠️ [manifest-triage] no entry on {mp} matches [{args.kind}] "
+                      f"{args.finding!r}{missing_note} — the waiver was recorded but will "
+                      "subtract nothing. Check the finding text matches verbatim.",
+                      file=sys.stderr)
+                return 3
         return 0
 
     if args.cmd == "state":
