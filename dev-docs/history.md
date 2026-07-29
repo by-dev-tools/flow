@@ -41,7 +41,7 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 ### SAFETY: three gates that could report success without doing their job — fork root anchor, Test-plan provenance, skill-composition lint (v1.22.0)
 **Date:** 2026-07-29
-**Branch:** claude/contribute-ff3ee2 (commit on this branch; SHA lands with the PR)
+**Branch:** claude/contribute-ff3ee2 → **merged as #86, squash `129f582`** (2026-07-29)
 
 **What was done:**
 A `/flow:contribute` drain of 12 queued cross-project lessons. Three were confirmed real *by reproducing the symptom*, fixed, and applied to a ready PR (FB-0073); two were dismissed with a repro; one was escalated to the roadmap; six were held. The three fixes turned out to share a spine, which became **FB-0074**: *a contract whose two halves live in different files, with nothing mechanically checking the join, degrades silently — and the degradation is indistinguishable from success.*
