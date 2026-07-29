@@ -66,6 +66,10 @@ UI_PATTERN=$(jq -r '.uiFilePatterns // empty' flow.config.json 2>/dev/null)
 # any file matching the prefix-form also matches the extension-only form). Override via
 # flow.config.json.uiFilePatterns if your project has UI files in non-standard dirs OR
 # if you want to constrain to specific path roots.
+# SHARED-EXTENSION LANGUAGES (Swift .swift, Kotlin .kt): UI and non-UI code share one
+# extension, so an extension-only pattern (\.swift$) mislabels data-layer code as UI and
+# false-triggers this review (and visual-significance) on headless PRs. Scope to conventional
+# UI dirs instead, e.g. (^|/)(App|Views|DesignSystem)/.*\.swift$.
 [ -z "$UI_PATTERN" ] && UI_PATTERN='\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$'
 
 # Validate the regex before using it. Invalid regex → empty result → silent skip

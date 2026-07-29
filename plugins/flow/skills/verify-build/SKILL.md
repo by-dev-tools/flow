@@ -215,6 +215,8 @@ cat /tmp/flow-visual-significance.json
 
 A change is visually significant when ALL of: `uiSurface != false`; the diff (committed + uncommitted + untracked) touches `uiFilePatterns` files OR adds/modifies image/font/asset files; and it is NOT a pure no-render-delta refactor (rename-only / comment-only / whitespace-only). A plan `Visual-walk` block or your explicit `--flag-significant` forces `visual_significant = true` (but `uiSurface:false` always wins — a project with no UI surface is never significant; an override there is recorded as suppressed). Carry the helper's `visual_significant` + `visual_signals` forward to Step 8.
 
+> **Shared-extension languages need a directory-scoped `uiFilePatterns`.** In Swift (`.swift`) / Kotlin (`.kt`), UI and non-UI code share one extension, so an extension-only pattern (`\.swift$`) mislabels data-layer code as UI — a headless, no-render change then trips `visual_significant` and demands frames it can't produce. Scope the pattern to conventional UI dirs instead (e.g. `(^|/)(App|Views|DesignSystem)/.*\.swift$`). Same caveat is documented in `/flow:accessibility-review`.
+
 **When `visual_significant` is true, the capture→buffer→render path (Steps 5a / 8 / 10) is MANDATORY, not best-effort** — see the bolded gate in each of those steps. A visually-significant change with ZERO captured frames is `Unknown`, never `PASS`.
 
 ## 3. Extract criteria from plan
