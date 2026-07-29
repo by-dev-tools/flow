@@ -54,6 +54,7 @@ Safety invariants encoded here (each has an eval case in
 
 Subcommands (stdlib only):
 
+    add-entry      --kind K --finding F --needs V [--resolution R] [--attempted]
     parse          --body-file PATH|-
     classify       --entries-file PATH|-  [--state-file PATH] [--body-file PATH]
     render-manifest  --entries-file PATH|-
@@ -74,7 +75,17 @@ import hashlib
 import json
 import re
 import sys
+from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from manifest_contract import (  # noqa: E402  (sibling-module import, house pattern)
+    MANIFEST_CLOSE,
+    MANIFEST_HEADING,
+    MANIFEST_OPEN,
+    extract_manifest_region,
+    slug as _slug,
+)
 
 # --------------------------------------------------------------------------
 # Contract vocabulary. Both lists are closed; drift is caught by the fail-safe
@@ -108,55 +119,99 @@ VERBS = (
 # security/a11y -- the two kinds whose findings can require out-of-repo action.
 OUT_OF_SESSION_VERBS = ("secret rotation", "dep vetting")
 
-MANIFEST_SENTINEL = "\U0001f6ab NOT READY TO MERGE"
-MANIFEST_OPEN = "<!-- flow:not-ready-manifest -->"
-MANIFEST_CLOSE = "<!-- /flow:not-ready-manifest -->"
 WAIVED_HEADING = "## Waived at ship"
 ATTEMPTED_MARKER = "already-attempted"
 
-# The re-check that must pass before an entry may be removed. Invariant 1: this
-# engine names the check; it never performs or asserts it.
-CLEARS_WHEN = {
-    "rigor": "re-read the /flow:staff-review rigor marker for the current source (ship 1.0a)",
-    "security": "re-run /flow:security-review and confirm the BLOCKER is gone",
-    "a11y": "re-run /flow:accessibility-review and confirm the BLOCKER is gone",
-    "verify-build": "re-run /flow:verify-build and confirm overall_verdict is PASS",
-    "coverage": "declare the criterion in the plan's Spec-walk block, then re-run /flow:audit-coverage clean",
-    "skip-audit": "re-run the named stage, then re-run /flow:audit-skips and confirm LEGITIMATE",
-    "status-surface": "reconcile or declare+fence the surface, then re-run the ship 5a.5 scan clean",
-    "visual-deliverable": "re-assert ship 7a: a fresh verify-build buffer for this HEAD with >=1 frame, plus a visual-history entry",
+# Kinds whose blocker a human's assertion CANNOT clear — only a passing check can.
+# Declared once here rather than spelled out as inline `kind == "verify-build"`
+# comparisons at every decision point: the property is real and will recur (a
+# "CI red" kind, a "migration not applied" kind have identical semantics), and
+# four coincidental string compares is how the next one gets added in three
+# places and forgotten in a fourth.
+#
+# For these kinds: a waiver is RECORDED but never subtracted from the residual
+# set, and "waive and ship as-is" is never offered — because it would be a lie,
+# the PR stays a draft either way. SKILL.md:308,310 is unqualified: no
+# merge-ready PR on a non-PASS build.
+CHECK_ONLY = frozenset({"verify-build"})
+
+# Everything kind-specific in ONE record per kind, so adding a kind is one edit
+# and a missing field is visible at a glance (every read site is a .get() with a
+# fallback, so a forgotten entry degrades silently to generic prose otherwise).
+#
+#   clears_when -- the re-check that must pass before the entry may be removed.
+#                  This engine NAMES it; it never performs or asserts it.
+#   means       -- plain language: what actually did not pass. The engineer
+#                  shorthand this replaces is what made these unanswerable.
+#   blocked_means -- override when the entry is `blocked`: it is blocked because
+#                  the action is outside this session, NOT because the fix is
+#                  ambiguous. Saying the latter would be wrong to the reader.
+#   needs_you   -- the one decision, phrased so it is answerable in a word.
+#   then        -- what the agent does with the answer.
+KIND_COPY: dict[str, dict[str, str]] = {
+    "rigor": {
+        "clears_when": "re-read the /flow:staff-review rigor marker for the current source (ship 1.0a)",
+        "means": "The deep code review either did not run on the final version of this code, or its record went stale.",
+        "needs_you": "Either let me re-run the review, or tell me to ship without it.",
+    },
+    "security": {
+        "clears_when": "re-run /flow:security-review and confirm the BLOCKER is gone",
+        "means": "The security review found something it will not fix on its own because more than one fix is defensible.",
+        "blocked_means": "The security review found something only you can act on outside this session.",
+        "needs_you": "Pick a fix, or — if it needs rotating a secret or vetting a dependency — do that, then tell me.",
+    },
+    "a11y": {
+        "clears_when": "re-run /flow:accessibility-review and confirm the BLOCKER is gone",
+        "means": "The accessibility review found something it will not fix on its own because more than one fix is defensible.",
+        "blocked_means": "The accessibility review found something only you can act on outside this session.",
+        "needs_you": "Pick a fix, or tell me to ship as-is and accept it.",
+    },
+    "verify-build": {
+        "clears_when": "re-run /flow:verify-build and confirm overall_verdict is PASS",
+        "means": "The app was built and exercised, and it did not demonstrably do what the plan said it would.",
+        "needs_you": "A decision on how to get a passing build — I will not call a failing one shippable.",
+        "then": ("I apply your answer and re-run the build check. A failing build never becomes a "
+                 "ready PR automatically — if you accept the risk, you mark it ready yourself."),
+    },
+    "coverage": {
+        "clears_when": "declare the criterion in the plan's Spec-walk block, then re-run /flow:audit-coverage clean",
+        "means": "This change alters behavior that no declared test criterion covers, so nothing verified it.",
+        "needs_you": "Approve the criterion I drafted, or tell me to ship without covering it.",
+    },
+    "skip-audit": {
+        "clears_when": "re-run the named stage, then re-run /flow:audit-skips and confirm LEGITIMATE",
+        "means": "A pipeline stage was skipped, and the skip could not be justified against the actual diff.",
+        "needs_you": "Approve running the stage, or tell me the skip is fine.",
+    },
+    "status-surface": {
+        "clears_when": "reconcile or declare+fence the surface, then re-run the ship 5a.5 scan clean",
+        "means": "A document that orients future sessions still describes shipped work as upcoming.",
+        "needs_you": "Approve the corrected wording I drafted, or tell me to leave the document alone.",
+    },
+    "visual-deliverable": {
+        "clears_when": ("re-assert ship 7a: a fresh verify-build buffer for this HEAD with >=1 frame, "
+                        "plus a visual-history entry"),
+        "means": "This change is visual, but the visual walkthrough or its durable record is missing.",
+        "needs_you": "Approve capturing the walkthrough, or tell me to ship without it.",
+    },
 }
 
-# Plain-language framing. The engineer shorthand ("needs: declare + verify the
-# criterion, or human waive") is what made these unanswerable to a non-engineer.
-MEANS = {
-    "rigor": "The deep code review either did not run on the final version of this code, or its record went stale.",
-    "security": "The security review found something it will not fix on its own because more than one fix is defensible.",
-    "a11y": "The accessibility review found something it will not fix on its own because more than one fix is defensible.",
-    "verify-build": "The app was built and exercised, and it did not demonstrably do what the plan said it would.",
-    "coverage": "This change alters behavior that no declared test criterion covers, so nothing verified it.",
-    "skip-audit": "A pipeline stage was skipped, and the skip could not be justified against the actual diff.",
-    "status-surface": "A document that orients future sessions still describes shipped work as upcoming.",
-    "visual-deliverable": "This change is visual, but the visual walkthrough or its durable record is missing.",
-}
+KINDS = tuple(KIND_COPY)
 
-# A `blocked` entry is blocked because the action is outside this session -- not
-# because the fix is ambiguous. Saying the latter would be wrong to the reader.
-BLOCKED_MEANS = {
-    "security": "The security review found something only you can act on outside this session.",
-    "a11y": "The accessibility review found something only you can act on outside this session.",
-}
+DEFAULT_THEN = "I apply it, re-run the check that raised this, and mark the PR ready once it passes."
+BLOCKED_THEN = "once you have done it outside this session, tell me and I re-check and mark the PR ready."
 
-NEEDS_FROM_YOU = {
-    "rigor": "Either let me re-run the review, or tell me to ship without it.",
-    "security": "Pick a fix, or — if it needs rotating a secret or vetting a dependency — do that, then tell me.",
-    "a11y": "Pick a fix, or tell me to ship as-is and accept it.",
-    "verify-build": "A decision on how to get a passing build -- I will not call a failing one shippable.",
-    "coverage": "Approve the criterion I drafted, or tell me to ship without covering it.",
-    "skip-audit": "Approve running the stage, or tell me the skip is fine.",
-    "status-surface": "Approve the corrected wording I drafted, or tell me to leave the document alone.",
-    "visual-deliverable": "Approve capturing the walkthrough, or tell me to ship without it.",
-}
+
+def _copy(kind: str, field: str, fallback: str = "") -> str:
+    return KIND_COPY.get(kind, {}).get(field, fallback)
+
+
+def _means(kind: str, cls: str) -> str:
+    if cls == "blocked":
+        blocked = _copy(kind, "blocked_means")
+        if blocked:
+            return blocked
+    return _copy(kind, "means", "A ship gate did not pass.")
 
 
 def _fingerprint(kind: str, finding: str) -> str:
@@ -165,10 +220,6 @@ def _fingerprint(kind: str, finding: str) -> str:
     (invariant 6: a waiver lapses when the finding it was given for changes)."""
     norm = re.sub(r"\s+", " ", (finding or "").strip()).lower()
     return hashlib.sha256(f"{kind}\x00{norm}".encode("utf-8")).hexdigest()[:16]
-
-
-def _slug(branch: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_.-]", "-", branch or "detached")
 
 
 def _default_state_path(branch: str) -> str:
@@ -198,9 +249,7 @@ def parse_entries(body: str) -> list[dict[str, Any]]:
     Reads only within the manifest fences when they are present, so prose
     elsewhere in the body that happens to look like an entry is never picked up.
     """
-    text = body or ""
-    if MANIFEST_OPEN in text and MANIFEST_CLOSE in text:
-        text = text.split(MANIFEST_OPEN, 1)[1].split(MANIFEST_CLOSE, 1)[0]
+    text = extract_manifest_region(body or "")
 
     entries: list[dict[str, Any]] = []
     for raw in text.splitlines():
@@ -232,7 +281,9 @@ def parse_entries(body: str) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------
 
 
-def _empty_state(branch: str, status: str) -> dict[str, Any]:
+def _empty_state(branch: str, status: str = "unavailable") -> dict[str, Any]:
+    """`status` is derived from WHERE the state came from and is never persisted —
+    `load_state` stamps it at each of its three exits."""
     return {"branch": branch, "status": status, "waivers": [], "attempts": []}
 
 
@@ -368,18 +419,18 @@ def classify(entries: list[dict[str, Any]], state: dict[str, Any]) -> dict[str, 
 
         # Invariant 6: exact fingerprint match only.
         waived = fp in waived_fps
-        # Invariant 3: a verify-build entry is never subtracted by a waiver.
-        subtracted = waived and kind != "verify-build"
+        # Invariant 3: a CHECK_ONLY kind's waiver is recorded, never subtracted.
+        subtracted = waived and kind not in CHECK_ONLY
 
         out.append(
             {
                 **e,
                 "class": cls,
                 "action": action,
-                "clears_when": CLEARS_WHEN.get(kind, "re-run the check that produced this entry"),
+                "clears_when": _copy(kind, "clears_when", "re-run the check that produced this entry"),
                 "already_attempted": attempted,
                 "waived": waived,
-                "waivable": cls == "ask" and kind != "verify-build",
+                "waivable": cls == "ask" and kind not in CHECK_ONLY,
                 "in_residual": not subtracted,
             }
         )
@@ -425,18 +476,14 @@ def render_manifest(result: dict[str, Any]) -> str:
     residual = result.get("residual", [])
     if not residual:
         return ""
-    lines = [f"## {MANIFEST_SENTINEL} — unresolved blockers", MANIFEST_OPEN]
+    lines = [f"## {MANIFEST_HEADING} — unresolved blockers", MANIFEST_OPEN]
     for e in residual:
         kind = e["kind"]
         attempted = f" ({ATTEMPTED_MARKER})" if e.get("already_attempted") else ""
         lines.append(f"- [{kind}] {e['finding']}{attempted} — needs: {e.get('needs','')}"
-                     f" — confidence: {e.get('confidence') or 'decision-required'}"
                      f" — candidate resolutions: {e.get('drafted_resolution') or '(none drafted)'}")
-        means = (BLOCKED_MEANS.get(kind) if e["class"] == "blocked" else None) or MEANS.get(
-            kind, "A ship gate did not pass."
-        )
-        lines.append(f"  - **What this means:** {means}")
-        lines.append(f"  - **What I need from you:** {NEEDS_FROM_YOU.get(kind, 'A decision on how to proceed.')}")
+        lines.append(f"  - **What this means:** {_means(kind, e['class'])}")
+        lines.append(f"  - **What I need from you:** {_copy(kind, 'needs_you', 'A decision on how to proceed.')}")
         lines.append(f"  - **What happens then:** {_then(e)}")
     lines.append(MANIFEST_CLOSE)
     lines.append(
@@ -448,11 +495,8 @@ def render_manifest(result: dict[str, Any]) -> str:
 
 def _then(entry: dict[str, Any]) -> str:
     if entry["class"] == "blocked":
-        return "once you have done it outside this session, tell me and I re-check and mark the PR ready."
-    if entry["kind"] == "verify-build":
-        return ("I apply your answer and re-run the build check. A failing build never becomes a "
-                "ready PR automatically — if you accept the risk, you mark it ready yourself.")
-    return "I apply it, re-run the check that raised this, and mark the PR ready once it passes."
+        return BLOCKED_THEN
+    return _copy(entry["kind"], "then", DEFAULT_THEN)
 
 
 def render_decisions(result: dict[str, Any]) -> str:
@@ -468,7 +512,7 @@ def render_decisions(result: dict[str, Any]) -> str:
         out.append("**Decisions for you** — answer by number; I apply it and mark the PR ready.")
         out.append("")
         for i, e in enumerate(asks, 1):
-            out.append(f"{i}. {MEANS.get(e['kind'], 'A ship gate did not pass.')}")
+            out.append(f"{i}. {_means(e['kind'], e['class'])}")
             out.append(f"   - Detail: {e['finding']}")
             if e.get("already_attempted"):
                 out.append("   - Already tried: I attempted this once and it did not clear.")
@@ -489,8 +533,9 @@ def render_decisions(result: dict[str, Any]) -> str:
         out.append("**Needs you outside this session** — I cannot do these, and they are not waivable:")
         out.append("")
         for e in blocked:
-            blurb = BLOCKED_MEANS.get(e["kind"]) or MEANS.get(e["kind"], "")
-            out.append(f"- {e['finding']} — {blurb}")
+            why = e.get("action", "")
+            out.append(f"- {e['finding']} — {_means(e['kind'], 'blocked')}"
+                       + (f" ({why})" if why else ""))
         out.append("")
     return "\n".join(out).rstrip() + "\n"
 
@@ -531,13 +576,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("parse")
     p.add_argument("--body-file", required=True)
 
-    p = sub.add_parser("classify")
-    p.add_argument("--entries-file", required=True)
-    p.add_argument("--state-file")
-    p.add_argument("--body-file")
-    p.add_argument("--branch", default="")
-
-    for name in ("render-manifest", "render-decisions"):
+    for name in ("classify", "render-manifest", "render-decisions"):
         p = sub.add_parser(name)
         p.add_argument("--entries-file", required=True)
         p.add_argument("--state-file")
@@ -555,12 +594,39 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--finding", required=True)
         p.add_argument("--path")
 
+    p = sub.add_parser("add-entry")
+    p.add_argument("--kind", required=True)
+    p.add_argument("--finding", required=True)
+    p.add_argument("--needs", required=True)
+    p.add_argument("--resolution", default="")
+    p.add_argument("--confidence", default="decision-required")
+    p.add_argument("--attempted", action="store_true")
+
     p = sub.add_parser("state")
     p.add_argument("--branch", required=True)
     p.add_argument("--path")
     p.add_argument("--body-file")
 
     args = ap.parse_args(argv)
+
+    if args.cmd == "add-entry":
+        # One place owns the line shape. Producers name their values; they never
+        # hand-compose the em-dash format, so there is nothing for a parser to
+        # defensively un-mangle later. Validate against the closed vocabularies
+        # at WRITE time rather than fail-safing at classify time.
+        if args.kind not in KINDS:
+            print(f"unknown kind {args.kind!r}; expected one of {', '.join(KINDS)}", file=sys.stderr)
+            return 2
+        if args.needs not in VERBS:
+            print(f"unknown needs verb {args.needs!r}; expected one of {', '.join(VERBS)}", file=sys.stderr)
+            return 2
+        finding = args.finding.strip()
+        if args.attempted:
+            finding = f"{finding} ({ATTEMPTED_MARKER})"
+        print(f"- [{args.kind}] {finding} — needs: {args.needs}"
+              f" — confidence: {args.confidence}"
+              f" — candidate resolutions: {args.resolution or '(none drafted)'}")
+        return 0
 
     if args.cmd == "parse":
         print(json.dumps({"entries": parse_entries(_read(args.body_file))}, indent=2))
@@ -605,7 +671,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(load_state(args.branch, args.path, body), indent=2))
         return 0
 
-    return 2
+    # Unreachable: the subparser is required and every command is handled above.
 
 
 if __name__ == "__main__":

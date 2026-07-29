@@ -133,9 +133,16 @@ TABLE_CASES = [
 def test_table(td: str) -> None:
     print("\n[table] classification, one case per row")
     st = fresh_state(td)
+    seen: dict[str, str] = {}
     for kind, verb, want, note in TABLE_CASES:
         r = classify(body(line(kind, "some finding", verb)), st)
-        expect(f"{kind} + '{verb}' ⇒ {want}  ({note})", by_kind(r, kind)["class"], want)
+        cls = by_kind(r, kind)["class"]
+        seen[kind] = cls
+        expect(f"{kind} + '{verb}' ⇒ {want}  ({note})", cls, want)
+    # The "only one auto row" claim belongs next to the table it is a claim about
+    # — and reusing the results above avoids re-running the same 13 classifications.
+    expect("visual-deliverable is the ONLY auto-class kind",
+           {k for k, c in seen.items() if c == "auto"}, {"visual-deliverable"})
 
 
 def test_failsafes(td: str) -> None:
@@ -153,13 +160,30 @@ def test_failsafes(td: str) -> None:
     expect("unrecognized KIND ⇒ ask, never auto, never dropped",
            by_kind(r, "made-up-kind")["class"], "ask")
     expect("unrecognized kind is still counted", len(r["entries"]), 1)
-    # No case anywhere may produce auto for a non-visual-deliverable kind.
-    autos = set()
-    for kind, verb, _, _ in TABLE_CASES:
-        r = classify(body(line(kind, "f", verb)), st)
-        if by_kind(r, kind)["class"] == "auto":
-            autos.add(kind)
-    expect("visual-deliverable is the ONLY auto-class kind", autos, {"visual-deliverable"})
+
+
+def test_add_entry(td: str) -> None:
+    print("\n[writer] add-entry owns the line shape and validates at write time")
+    rc, out = run(["add-entry", "--kind", "coverage", "--finding", "5 undeclared behaviors",
+                   "--needs", "declare + fence", "--resolution", "declare each in the Spec-walk block"])
+    expect("add-entry exits 0 on a valid entry", rc, 0, out)
+    with tempfile.TemporaryDirectory() as td2:
+        f = Path(td2) / "l.md"
+        f.write_text(out, encoding="utf-8")
+        rc2, parsed = run(["parse", "--body-file", str(f)])
+    e = json.loads(parsed)["entries"][0]
+    expect("its output round-trips through parse", (e["kind"], e["needs"]), ("coverage", "declare + fence"))
+    expect_true("and carries the drafted resolution", "Spec-walk" in e["drafted_resolution"], parsed)
+
+    rc, out = run(["add-entry", "--kind", "bogus", "--finding", "x", "--needs", "re-run"])
+    expect("an unknown kind is rejected at WRITE time, not fail-safed at classify", rc, 2, out)
+    rc, out = run(["add-entry", "--kind", "coverage", "--finding", "x", "--needs", "frobnicate"])
+    expect("an off-vocabulary needs verb is rejected at write time", rc, 2, out)
+
+    rc, out = run(["add-entry", "--kind", "visual-deliverable", "--finding", "missing walkthrough",
+                   "--needs", "re-run", "--attempted"])
+    expect_true("--attempted stamps the marker so the demotion survives a re-render",
+                "already-attempted" in out, out)
 
 
 def test_state_durability(td: str) -> None:
@@ -355,8 +379,15 @@ def test_skill_contract() -> None:
     i_7b = src.index("### 7b. Body↔draft coherence invariant")
     expect_true("§7a.5 exists and sits between §7a and §7b", i_7a < i_745 < i_7b, "section order")
     expect_true("the draft decision comes after §7a.5's classification", i_745 < i_draft, "draft decision order")
-    expect_true("the draft decision reads the RESIDUAL set, not the raw manifest",
-                "residual" in src[i_draft:i_draft + 400], src[i_draft:i_draft + 300])
+    window = src[i_draft:i_draft + 700]
+    expect_true("the draft decision keys on the triage verdict, not manifest emptiness",
+                "verdict" in window and "not manifest emptiness" in window, window[:300])
+    # The predicate is restated at the two create/re-ship sites; both must key on
+    # the verdict too (FB-0010 — a predicate asserted in prose at four sites is
+    # how two of them get migrated and two do not).
+    expect("no site still gates the draft flag on manifest emptiness",
+           re.findall(r"--draft` iff the manifest is non-empty|If the draft manifest is non-empty, ensure", src),
+           [])
 
     # §7a's ordered sequence: apply -> commit -> push -> re-run -> re-apply accounting -> re-assert
     seq = src[i_7a:i_745]
@@ -435,6 +466,8 @@ def test_render_coherence(td: str) -> None:
     expect_true("the 🚫 sentinel is byte-preserved", "🚫 NOT READY TO MERGE" in out, out)
     expect_true("both fences are byte-preserved",
                 "<!-- flow:not-ready-manifest -->" in out and "<!-- /flow:not-ready-manifest -->" in out, out)
+    expect_true("the machine `confidence:` axis is NOT printed at the human",
+                "confidence:" not in out, out)
     expect_true("the plain-language triple is present",
                 all(s in out for s in ("What this means", "What I need from you", "What happens then")), out)
 
@@ -491,6 +524,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as td:
         test_table(td)
         test_failsafes(td)
+        test_add_entry(td)
         test_state_durability(td)
         test_attempt_demotion(td)
         test_residual_definition(td)
