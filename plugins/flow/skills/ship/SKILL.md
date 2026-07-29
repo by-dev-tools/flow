@@ -337,7 +337,7 @@ No stage skip is accepted on its own say-so, and **"the agent did it manually" n
    Skill("flow:audit-skips")
    ```
 
-   It returns a `SKIP-AUDIT SUMMARY` with one line per stage — `LEGITIMATE` or `SHOULD-RE-RUN` (with `auto-resolvable: re-run` or `decision-required`). The mechanical engine (`lib/skip-audit-checks.py`) backs every verdict; trust it. If it instead reports an **`engine_error`** (the handoff was present but `skip-audit-checks.py` failed on it — the engine now exits non-zero on a malformed/unreadable report rather than collapsing to a silent `stages:[]`), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] engine failed on a present handoff — fix the engine input or human-waive`), **never** a clean pass. (A `no stage report` result when you DID write a handoff at 2a.1 can mean the forked skill couldn't see your `/tmp` path — a known transport limitation tracked in `roadmap.md` § Exploration; re-check the `FLOW_SKIP_AUDIT_STAGES` path if it recurs.)
+   It returns a `SKIP-AUDIT SUMMARY` with one line per stage — `LEGITIMATE` or `SHOULD-RE-RUN` (with `auto-resolvable: re-run` or `decision-required`). The mechanical engine (`lib/skip-audit-checks.py`) backs every verdict; trust it. If it reports a **`root_error`** / `ROOT UNRESOLVED` (FB-0074 — the forked skill could not locate the repo under review from its inherited cwd, so it read no config and no diff), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] root unresolved — the gate never looked at this repo; re-run with CLAUDE_PROJECT_DIR set or human-waive`), **never** a clean pass: an unanchored fork validates every unverifiable skip as LEGITIMATE, so its confident "all legitimate" is exactly the output you must not trust. If it instead reports an **`engine_error`** (the handoff was present but `skip-audit-checks.py` failed on it — the engine now exits non-zero on a malformed/unreadable report rather than collapsing to a silent `stages:[]`), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] engine failed on a present handoff — fix the engine input or human-waive`), **never** a clean pass. (A `no stage report` result when you DID write a handoff at 2a.1 can mean the forked skill couldn't see your `/tmp` path — a known transport limitation tracked in `roadmap.md` § Exploration; re-check the `FLOW_SKIP_AUDIT_STAGES` path if it recurs.)
 
 3. **Resolve — mirror audit-coverage's routing; never a hard mid-loop halt:**
    - **`SHOULD-RE-RUN · auto-resolvable`** → re-invoke that stage's Skill **now** (e.g. a stale/absent verify-build buffer → re-run `Skill("flow:verify-build")`; a contradicted security/a11y skip → run the reviewer), then **re-run `Skill("flow:audit-skips")` ONCE** over the refreshed report. Loop only this one re-audit cycle — do not iterate LLM judgment (reward-hackable; same discipline as Step 2's single-pass reviewers).
@@ -492,7 +492,7 @@ python3 "$S/harvest_lesson.py" mark --marker-file "$MARKER"
 
 Print one line — `[analyze] N findings: P project-local, F flow-generalizable, D dropped (noise/low-confidence)` (or the pre-scan skip line). Never silent.
 
-**Flow-repo nudge.** If `pwd` is the flow checkout (`flow.config.json.flowRepoPath`) and the queue is non-empty, also print `[contribute] N queued contribution(s) — run /flow:contribute to open the draft PR`.
+**Flow-repo nudge.** If `pwd` is the flow checkout (`flow.config.json.flowRepoPath`) and the queue is non-empty, also print `[contribute] N queued contribution(s) — run /flow:contribute to open the PR`.
 
 ## 5. Update project docs
 
@@ -955,13 +955,26 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
 
   ```sh
   BUF=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$BUF" ] && BUF=/tmp/flow-verify-findings.json
+  # Resolve the renderer with the same installed-else-checkout fallback every other
+  # helper call in this skill uses. This is load-bearing since FB-0074: an unresolved
+  # renderer used to degrade softly (the agent hand-wrote a Test plan); now Step 7b
+  # asserts provenance, so an unset CLAUDE_PLUGIN_ROOT would hard-fail the ship and
+  # tell the operator to run the command that just failed.
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/render-test-plan.py" ]; then
+    RTP="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/render-test-plan.py"
+  else
+    RTP="plugins/flow/skills/ship/lib/render-test-plan.py"
+  fi
+  # exit, don't warn-and-continue: Step 7b now hard-fails on a missing stamp, so falling
+  # through here just produces a second, less legible failure further down the pipeline.
+  [ -f "$RTP" ] || { echo "⚠️ [test-plan] renderer not found at $RTP — the Test plan CANNOT be rendered, and Step 7b will refuse to verify a hand-written one. Reinstall the flow plugin, or run from the flow checkout." >&2; exit 1; }
   # If verify-build SKIPPED at Step 2 (verifyEnabled=false, platform=library|none — see the
   # Step 2 consolidated line), pass --skipped "<reason>" so the renderer emits the honest
   # manual-verification fallback instead of reading a stale/absent buffer:
-  #   python3 "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/render-test-plan.py" "$BUF" --skipped "platform library"
+  #   python3 "$RTP" "$BUF" --skipped "platform library"
   # Otherwise (verify-build RAN), let it read the buffer; it self-detects no-buffer + stale
   # (buffer branch/sha ≠ current HEAD → manual fallback, never a stale render):
-  python3 "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/render-test-plan.py" "$BUF"
+  python3 "$RTP" "$BUF"
   ```
 
   The script always emits a complete, self-describing `## Test plan` block and
@@ -1042,9 +1055,9 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
 - **Manifest still non-empty → refresh + draft:** write the refreshed block, ensure draft, then `flow_verify_pr_write "$N" --expect "🚫 NOT READY TO MERGE" --want-draft true`.
 - **Body-only refresh (manifest unchanged):** after the edit, `flow_verify_pr_write "$N" --expect "<a stable substring you just wrote>"` so a no-op write can't pass silently.
 
-### 7b. Body↔draft coherence invariant (FB-0067 — the final gate before hand-off)
+### 7b. Body↔draft coherence + Test-plan provenance (FB-0067, FB-0074 — the final gate before hand-off)
 
-After the body + draft state are settled (either path above), assert the invariant that a ready PR can never carry the NOT-READY manifest:
+After the body + draft state are settled (either path above), assert two invariants against the **live, re-fetched** body: a ready PR can never carry the NOT-READY manifest, and a published Test plan must carry the renderer's provenance stamp:
 
 ```sh
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then . "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"; else . "plugins/flow/skills/ship/lib/verify-pr-body.sh"; fi
@@ -1054,9 +1067,33 @@ flow_assert_pr_coherent "$N" || {
   echo "   → Fix in place: if the draft manifest is EMPTY, scrub the block from the body and confirm; if it is NON-EMPTY, re-draft (gh pr ready --undo). Then re-run flow_assert_pr_coherent." >&2
   exit 1
 }
+# FB-0074 — the published Test plan must have come from the renderer, not your keyboard.
+# Branch on the code: 1 = a real provenance violation; anything else = the checker or gh
+# could not run. Collapsing them would accuse the operator of forgery over a missing lib
+# or a gh outage, and tell them to re-run the very command that just failed.
+flow_assert_test_plan_provenance "$N"; TP_RC=$?
+if [ "$TP_RC" -eq 1 ]; then
+  echo "⚠️ [test-plan] PR #$N's '## Test plan' is not a faithful projection of the verify-build buffer — either it carries no renderer stamp (hand-authored) or its checkbox state no longer matches the stamped digest (a box was edited after rendering). Either way its checkboxes are self-assertion, not machine verdicts." >&2
+  echo "   → Fix in place: re-render with ship/lib/render-test-plan.py (Step 7's own renderer call — it stamps every path, including the no-buffer fallback), re-publish the body, then re-run flow_assert_test_plan_provenance." >&2
+  echo "   → Filling in the fallback block's '<how to verify>' TEXT is fine — the digest covers checkbox state, not prose. Re-typing the block or ticking a box is not." >&2
+  echo "   → If this cannot be resolved here, add '[test-plan] provenance unresolvable — human-waive' to the draft manifest and open the PR as a DRAFT; do not hand off a ready PR whose Test plan you could not verify." >&2
+  exit 1
+elif [ "$TP_RC" -ne 0 ]; then
+  echo "⚠️ [test-plan] could not VERIFY provenance for PR #$N (checker or gh unavailable, exit $TP_RC) — this is a tool failure, NOT a forgery finding." >&2
+  echo "   → The Test plan is UNCHECKED, not clean. Fix the tool (is pr-coherence.py reachable? is gh authed?) and re-run; or route '[test-plan] provenance UNVERIFIED — human-waive' to the draft manifest and open as a draft." >&2
+  exit 1
+fi
 ```
 
 `flow_assert_pr_coherent` re-fetches the live PR and runs `lib/pr-coherence.py coherence`. The invariant: **`NOT isDraft ⇒ body does NOT contain "🚫 NOT READY TO MERGE"`** (and its contrapositive — a non-empty manifest ⇒ the PR is a draft). **The `exit 1` above is load-bearing, not decorative** — a bare `|| { echo ...; }` with no exit lets the compound command return 0 regardless of whether the check failed, so the pipeline would silently fall through to Step 8 hand-off with an incoherent PR: exactly the class of bug this PR fixes, reproduced one abstraction level up in its own gate. On violation: apply the fix-in-place guidance above, re-run `flow_assert_pr_coherent "$N"` once, and only proceed to Step 8 once it exits 0. If it still fails after the fix attempt, the block above's `exit 1` halts the skill — do not hand off a PR you have not confirmed is coherent. This is the last thing Step 7 does — a ready-but-manifest-carrying PR is impossible to leave in that state through `/flow:ship`.
+
+`flow_assert_test_plan_provenance` closes the matching hole one layer down (FB-0074). The `## Test plan` is *specified* as a non-forgeable projection of the verify-build buffer — but nothing checked that the block on GitHub actually came from `render-test-plan.py`, so a hand-written section with hand-ticked boxes read as a machine verdict.
+
+`render-test-plan.py` stamps **every** path it emits — machine-judged, self-report, and the no-buffer manual fallback — with `<!-- flow:test-plan-rendered -->` **plus a content digest** over the block's checkbox states. Two distinct forgeries are therefore caught: a hand-written block (no stamp), and — the subtler one — a genuinely-rendered block whose boxes were flipped afterwards (stamp intact, digest mismatch).
+
+**Honest limit — this raises the cost of forgery, it does not make forgery impossible.** The digest is an *unkeyed* checksum whose algorithm ships in this repo, and the renderer runs in the same trust domain as anything that would forge the block: an agent that wants all-`[x]` can recompute both comment lines. What the stamp genuinely defeats is the *cheap* forgery — hand-writing the section, or flipping a box on a rendered one and leaving the comments alone — plus any post-ship hand-edit of the published body. Closing it properly needs a secret or an out-of-band channel, which flow does not have today; the residual is stated here rather than papered over.
+
+**What it does and does not guarantee.** The stamp attests *provenance*, not passage: an honest "no behavioral gate ran" fallback carries it too. The digest covers checkbox **state and count**, deliberately not criterion prose — Step 7 above instructs you to fill in the fallback's `<how to verify>` text, so hashing prose would make the documented happy path fail its own gate. Editing the surrounding narrative is fine; ticking a box is not. Checking the re-fetched body rather than the local buffer is also deliberate — the published artifact is the one a reviewer trusts.
 
 ### 7c. Reconcile-only fast-path (when a blocker was cleared out-of-band)
 
@@ -1065,7 +1102,7 @@ The manifest lifecycle above is correct only when `/flow:ship` re-runs end-to-en
 1. Recompute the draft manifest from the current gate state (re-read the `verifyFindingsPath` buffer, the security/a11y/skip-audit findings, and §7a's visual-deliverable check) — the same accounting Step 2 + Step 7a do, nothing more.
 2. Re-render the body (`## Test plan` via `lib/render-test-plan.py`, the `## Flow run` table from this session) and write it as a checked statement.
 3. Reconcile draft state: empty manifest → scrub + `gh pr ready`; non-empty → refresh + ensure draft.
-4. Read-back-verify (`flow_verify_pr_write`) and run the §7b coherence assert.
+4. Read-back-verify (`flow_verify_pr_write`) and run **both** §7b asserts — `flow_assert_pr_coherent` *and* `flow_assert_test_plan_provenance` (a reconcile re-renders the Test plan, so its digest changes and must be re-verified).
 
 Invoke it as a scoped `/flow:ship` (state "reconcile the PR body to current gate state — no reviewers/doc-synthesis") or fold it into `/flow:land`'s pre-merge check (below). Either way the reconcile is one command and never a hand-edit, so the silent-write path is never the way a blocker gets cleared.
 

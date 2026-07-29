@@ -57,17 +57,70 @@ Stdlib only. Python 3.7+.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
 
+# Canonical provenance stamp (FB-0074). Every block this renderer emits carries it, and
+# NOTHING else does — so its presence in a published PR body is the only evidence that the
+# "## Test plan" came from this renderer rather than an agent's keyboard. The prose markers
+# below tell a human not to hand-edit; this one lets a machine check whether they did.
+# Consumed by `ship/lib/pr-coherence.py test-plan-provenance` at the Step 7 read-back.
+# Keep in lockstep with PROVENANCE_MARKER there (FB-0010 fan-out).
+PROVENANCE_MARKER = "<!-- flow:test-plan-rendered -->"
+
+# The stamp above proves only that the renderer RAN. The realistic forgery is subtler:
+# let ship render the section, then flip `[ ]` → `[x]` and leave the comment intact.
+# So the stamp is also CONTENT-BOUND — it carries a digest over the criterion checkbox
+# lines, which is exactly the payload that must not be editable. Deliberately scoped to
+# those lines (not the whole block): surrounding prose is the human's to edit, and a
+# whole-block hash would false-fail on a legitimate edit — and Step 7b exits 1, so a
+# brittle digest would hard-block a good ship.
+PROVENANCE_DIGEST_PREFIX = "<!-- flow:test-plan-digest "
+
+# A criterion line: `- [x] …` / `- [ ] …` / `- [~] …` (the three renderable states).
+_CHECKBOX_RE = re.compile(r"^\s*-\s\[([ x~])\]\s?(.*)$")
+
+
+def checkbox_digest(block: str) -> str:
+    """sha256 over the ORDERED checkbox STATES of a Test-plan block.
+
+    Scope is deliberate: the states (and their count/order), NOT the criterion text.
+    That is exactly what the contract protects — "checkbox state = machine verdict" —
+    so flipping `[ ]`→`[x]`, or adding/removing a criterion line, changes the digest.
+    Criterion TEXT is excluded because ship Step 7 explicitly instructs the agent to
+    fill in the fallback block's `- [ ] <how to verify — fill in per the change>` line;
+    hashing that text would make the documented happy path fail its own gate, and Step
+    7b exits 1 — every `platform: library` PR (including flow's own) would be unshippable.
+    A narrower true guarantee beats a wider one that has to be waived in practice.
+
+    Shared by the renderer (writes) and pr-coherence.py (verifies) — keep the two in
+    lockstep (FB-0010 fan-out); an eval asserts they agree on real renderer output.
+    """
+    states = [
+        m.group(1)
+        for m in (_CHECKBOX_RE.match(raw) for raw in block.replace("\r\n", "\n").split("\n"))
+        if m
+    ]
+    payload = f"{len(states)}:" + "".join(states)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def stamp(block: str, marker: str) -> str:
+    """Append the provenance marker + a content-bound digest of the block's checkboxes."""
+    return f"{block}\n{marker}\n{PROVENANCE_DIGEST_PREFIX}{checkbox_digest(block)} -->"
+
 RENDERED_MARKER = (
+    PROVENANCE_MARKER + "\n"
     "<!-- Test plan rendered from the /flow:verify-build findings buffer; "
     "checkbox state = machine verdict, not self-report. Do not hand-edit "
     "criterion checkboxes. -->"
 )
 SELF_REPORT_MARKER = (
+    PROVENANCE_MARKER + "\n"
     "<!-- Test plan rendered from the /flow:verify-build findings buffer; one or "
     "more criteria are HAND-AUTHORED (provenance != adversarial-judged/spike-rubric) "
     "and render [~] = implementer self-report, NOT a machine verdict. Do not hand-edit "
@@ -90,6 +143,7 @@ def _provenance(crit: dict) -> str:
 def _is_self_reported(prov: str) -> bool:
     return prov not in _MACHINE_JUDGED
 FALLBACK_MARKER = (
+    PROVENANCE_MARKER + "\n"
     "<!-- verify-build produced no current buffer; Test plan is manual. "
     "checkbox stays unchecked until a human verifies. -->"
 )
@@ -321,7 +375,7 @@ def _headline(n_pass: int, n: int, spike: bool, n_self_pass: int, frame_fail: bo
 
 
 def fallback_block(reason: str) -> str:
-    return "\n".join(
+    block = "\n".join(
         [
             "## Test plan",
             "",
@@ -332,9 +386,9 @@ def fallback_block(reason: str) -> str:
             "",
             "- [ ] <how to verify — fill in per the change>",
             "",
-            FALLBACK_MARKER,
         ]
     )
+    return stamp(block, FALLBACK_MARKER)
 
 
 def empty_criteria_block(not_tested: list, frame_integrity: list | None = None) -> str:
@@ -365,8 +419,7 @@ def empty_criteria_block(not_tested: list, frame_integrity: list | None = None) 
     if nt:
         parts.append(nt)
     parts.append("")
-    parts.append(RENDERED_MARKER)
-    return "\n".join(parts)
+    return stamp("\n".join(parts), RENDERED_MARKER)
 
 
 def rendered_block(findings: dict, branch: str, sha: str) -> str:
@@ -428,8 +481,7 @@ def rendered_block(findings: dict, branch: str, sha: str) -> str:
         )
 
     parts.append("")
-    parts.append(SELF_REPORT_MARKER if any_self_reported else RENDERED_MARKER)
-    return "\n".join(parts)
+    return stamp("\n".join(parts), SELF_REPORT_MARKER if any_self_reported else RENDERED_MARKER)
 
 
 def main(argv: list[str]) -> int:

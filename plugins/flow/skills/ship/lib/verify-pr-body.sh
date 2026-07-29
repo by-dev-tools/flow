@@ -136,3 +136,28 @@ flow_assert_pr_coherent() {
   rm -f "$FLOW_PR_BODY_FILE"
   return "$_rc"
 }
+
+# FB-0074 — assert the PUBLISHED "## Test plan" came from render-test-plan.py. The
+# non-forgeable-Test-plan contract was specified but never enforced: nothing checked the
+# live body, so a hand-written block with hand-ticked boxes read exactly like a machine
+# verdict. Checks the re-fetched body, not the local buffer — the published artifact is
+# what a reviewer trusts.
+flow_assert_test_plan_provenance() {
+  local _num _py _rc
+  _num="$1"
+  _py="$(_flow_pr_coherence_py)" || {
+    echo "⚠️ [verify-pr-body] pr-coherence.py not reachable — cannot verify Test-plan provenance for PR #$_num." >&2
+    return 2
+  }
+  flow_fetch_pr_state "$_num" || return 2
+  # --require-section: ship writes a Test plan on EVERY PR, so absence is a failed
+  # write, not "no verification needed".
+  python3 "$_py" test-plan-provenance --body-file "$FLOW_PR_BODY_FILE" --require-section
+  _rc=$?
+  if [ "$_rc" -ne 0 ]; then
+    echo "⚠️ [verify-pr-body] PR #$_num carries a HAND-AUTHORED Test plan." >&2
+    echo "    Re-render it with ship/lib/render-test-plan.py and re-publish; do not hand-tick boxes." >&2
+  fi
+  rm -f "$FLOW_PR_BODY_FILE"
+  return "$_rc"
+}

@@ -281,7 +281,7 @@ python3 "$S/harvest_lesson.py" mark --marker-file "$MARKER"
 
 Print one line — `[analyze] N findings: P project-local, F flow-generalizable, D dropped (noise/low-confidence)` (or the pre-scan skip line). Never silent.
 
-**Flow-repo nudge.** If `pwd` is the flow checkout (`flow.config.json.flowRepoPath`) and the queue is non-empty, also print `[contribute] N queued contribution(s) — run /flow:contribute to open the draft PR`.
+**Flow-repo nudge.** If `pwd` is the flow checkout (`flow.config.json.flowRepoPath`) and the queue is non-empty, also print `[contribute] N queued contribution(s) — run /flow:contribute to open the PR`.
 
 ## 5. Update the project's plan doc
 

@@ -6,7 +6,7 @@ false-positive, a gate that misfired, a taste call the human overruled — that
 belongs back in the flow plugin, not just this project's local docs. Harvest
 (skills/ship Step 4c, via harvest_lesson.py) enqueues those candidates here, to
 user-scope cross-project storage. /flow:contribute later drains the queue from
-the flow checkout, sanitizes, and opens a draft PR.
+the flow checkout, sanitizes, and opens a PR (ready for review; the merge is the gate).
 
 This module is the mechanical spine: it owns the storage layout, the dedup key,
 and the DETERMINISTIC confidence score (so a future auto-merge gate can be a
@@ -323,7 +323,7 @@ def cmd_score(args) -> int:
 
 def cmd_set_status(args) -> int:
     """Flip a queued entry's status (e.g. queued → proposed once it lands in a
-    draft PR) so it stops re-draining. cmd_list only emits status==queued, so a
+    contribution PR) so it stops re-draining. cmd_list only emits status==queued, so a
     `proposed` entry won't be re-included on the next /flow:contribute run."""
     found = None
     for path, entry in _iter_queue():

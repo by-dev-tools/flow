@@ -5,7 +5,7 @@ description: >
   AFTER you merge a PR, it runs the whole post-merge close-out in one command:
   (1) confirms the PR is actually merged with a MERGE-QUEUE-SAFE gate (a queued PR
   that hasn't landed yet is "not merged YET", not a failure); (2) reconciles the
-  forward docs by CALLING /flow:land (composition, not a reimplementation);
+  forward docs by handing /flow:land to you to run (it is human-invoked by design);
   (3) synthesizes the merge-gate feedback window /flow:ship structurally can't see
   (your review→iterate→merge comments) into user-scope agent memory + the
   /flow:contribute queue; (4) safe-deletes the merged branch; (5) prints a
@@ -30,11 +30,15 @@ the doc-currency reconciliation (`/flow:land`), the stale-branch cleanup, and th
 archive-safety check you'd otherwise do by hand. `disable-model-invocation: true`: a
 human runs this after merging — it must never auto-fire mid-loop.
 
-**Composition, not combination (from #79).** This skill **calls** `/flow:land` for the
-doc-currency step rather than reimplementing reconciliation. `/flow:land` stays a
-narrow, independently-invocable skill (you can still run it alone after a GitHub-web
-merge with no local workspace); `/flow:post-merge` is the orchestrator that also does
-the feedback + cleanup + verdict around it.
+**Composition, not combination (from #79; corrected by FB-0074).** This skill delegates the
+doc-currency step to `/flow:land` rather than reimplementing reconciliation. `/flow:land`
+stays a narrow, independently-invocable skill (you can still run it alone after a GitHub-web
+merge with no local workspace); `/flow:post-merge` is the orchestrator that does the feedback
++ cleanup + verdict around it. **The delegation is an instruction to the human, not a
+`Skill()` call** — `/flow:land` is `disable-model-invocation: true`, so a programmatic call is
+rejected at runtime. #79 specified the call form; it never executed, and the step degraded to
+its fallback on every run until FB-0074 caught it. §3 has the corrected contract, and
+`doctor/lib/skill-composition-lint.py` now fails on any skill that reintroduces this shape.
 
 ## Project context (resolved at invocation)
 
@@ -119,22 +123,33 @@ you can trust the poll on a queue repo. A non-queue repo merges instantly, so `c
 returns `merged` on the first pass and the loop never sleeps. `postMergeWaitSeconds: 0`
 makes an OPEN PR give up immediately (fail-fast) instead of polling.
 
-## 3. Doc-currency — call `/flow:land` (composition)
+## 3. Doc-currency — hand `/flow:land` to the human (FB-0074)
 
-Now that the merge is confirmed, reconcile the forward docs by **invoking `/flow:land`** —
-do NOT reimplement its reconciliation. `/flow:land` flips the item to "merged (#N)" across
-roadmap / plan / history, clears reserved numbers, checks CHANGELOG currency, and opens
-its own small `docs: land #N` PR. Because §2 already confirmed `merged`, `/flow:land`'s own
-two-state merge gate (its §1a) is satisfied on its first check — no queue interaction.
+Now that the merge is confirmed, the forward docs need reconciling: flipping the item to
+"merged (#N)" across roadmap / plan / history, clearing reserved numbers, checking CHANGELOG
+currency, and opening a small `docs: land #N` PR. That is exactly `/flow:land`'s job, and you
+must **not** reimplement it here.
 
-```
-Skill("flow:land")   # pass the PR number as its argument: /flow:land <PR#>
-```
+**You cannot invoke it yourself, and must not try.** `/flow:land` is
+`disable-model-invocation: true`, which blocks *programmatic* invocation — a `Skill()` call
+naming it is rejected at runtime. The flag is deliberate: `/flow:land` opens a PR, so it must
+never auto-fire mid-loop.
 
-If `/flow:land` reports it already landed this PR (idempotent re-run), that's fine —
-continue. If it errors, surface the error but continue to the feedback + cleanup steps
-(they're independent of doc reconciliation); note the land failure in the final hand-off
-so the human can re-run `/flow:land <PR#>` alone.
+So **do not emit a `Skill()` call for it.** Instead, carry the reconciliation forward as an
+explicit outstanding item:
+
+- Record `doc-currency: NOT reconciled — human must run /flow:land <PR#>` for §6's verdict.
+- Continue to the feedback + cleanup steps (they're independent of doc reconciliation).
+- In §6, name it as a required next action, not a completed step. It is a **🚫 not safe to
+  archive** input until the human runs it and merges the resulting `docs: land #N` PR —
+  the forward docs still point at unmerged work.
+
+If the human already ran `/flow:land <PR#>` for this PR before invoking this skill (check for
+an open or merged `docs: land #N` PR), treat doc-currency as satisfied and say so.
+
+`/flow:land` remains a narrow, independently-invocable skill — it is composed into this
+close-out by *instruction to the human*, which is a real composition boundary, not by a
+call the runtime refuses.
 
 ## 4. Merge-gate feedback synthesis (the delta window) — USER-SCOPE STORES ONLY (v1)
 
@@ -259,40 +274,48 @@ warning printed seconds earlier. Assemble the verdict from THREE inputs you have
    ```
 2. **Branch cleanup (from §5, which you just ran)** — did §5 actually delete the local branch, or
    leave it (the linked-worktree / dirty-tree path)? A left branch means cleanup is still owed.
-3. **The open `docs: land #N` PR (from §3)** — `/flow:land` opens a `docs: land #N` PR the human
-   still merges; archiving with it open loses the doc-currency land just produced. Check it, and
-   also recall whether `/flow:land` itself errored in §3 (then docs were NOT reconciled):
+3. **Doc-currency (from §3)** — §3 does **not** run `/flow:land` (it can't; see FB-0074), so the
+   only honest inputs here are what the repo shows. `/flow:land` produces a `docs: land #N` PR the
+   human still merges; archiving with it open — or never opened — loses doc currency:
    ```sh
-   gh pr list --search "docs: land #$N in:title" --state open --json number,url 2>/dev/null
+   gh pr list --search "docs: land #$N in:title" --state all --json number,url,state 2>/dev/null
    ```
+   No such PR ⇒ docs were **never reconciled** — `/flow:land <PR#>` is still owed. Open ⇒ it is
+   the human's remaining merge. Merged ⇒ doc-currency is satisfied.
 
 **Assemble:** print `✅ safe to archive` ONLY when ALL hold — git-state `safe`, §5 deleted the
-local branch, `/flow:land` succeeded, and its `docs: land` PR is either merged or you name it as
-the human's one remaining merge. Otherwise print `🚫 not fully closed out —` and the SPECIFIC
-leftover(s): the git-state reason(s); `local branch <name> left in place — see §5's worktree steps`;
-`/flow:land failed — run '/flow:land <PR#>'`; and/or `docs: land PR #M still open — your merge`.
+local branch, and the `docs: land #N` PR exists and is merged (or you name it as the human's one
+remaining merge). Otherwise print `🚫 not fully closed out —` and the SPECIFIC leftover(s): the
+git-state reason(s); `local branch <name> left in place — see §5's worktree steps`;
+`doc-currency NOT reconciled — run '/flow:land <PR#>'` (the default state, since this skill cannot
+run it for you); and/or `docs: land PR #M still open — your merge`.
 **Never claim a step happened that didn't** — the ✅ line is the single most-read output; it must
 not lie on the path the design highlights.
 
 ## 7. Hand off
 
 Summarize in one block, each line reflecting what ACTUALLY happened this run: the merge
-confirmation, the `/flow:land` result (+ its `docs: land #N` PR URL, or a note to run it manually
-if it failed), the feedback-synthesis line, the branch-cleanup result (deleted / left-with-reason),
-and the assembled archive-safety verdict from §6. If the verdict is 🚫, name exactly what to do to
+confirmation, the doc-currency state (the `docs: land #N` PR URL if one exists, otherwise
+`run /flow:land <PR#>` as an explicit next action — never imply this skill ran it), the
+feedback-synthesis line, the branch-cleanup result (deleted / left-with-reason), and the
+assembled archive-safety verdict from §6. If the verdict is 🚫, name exactly what to do to
 make it ✅. **Do not merge anything** — `/flow:land`'s docs PR is the human's to merge.
 
 ## Gotchas
 
 - **Merge queue = wait, not fail.** The single most important behavior: a queued-but-unlanded
   PR is `open` → poll, never `terminal`. Only a `CLOSED`-unmerged PR fails loud.
-- **Composition:** call `/flow:land`; do not reimplement doc reconciliation here (FB-0010 fan-out
-  + the compose-not-combine decision). Land stays independently invocable + auto-fireable.
+- **Composition is by instruction, not by `Skill()` (FB-0074).** Delegate doc reconciliation to
+  `/flow:land`; never reimplement it here (FB-0010 fan-out + the compose-not-combine decision).
+  But `/flow:land` is `disable-model-invocation: true`, so you **cannot** invoke it — hand it to
+  the human and carry it as an outstanding item. A `Skill("flow:land")` call is rejected at
+  runtime and degrades silently; `doctor/lib/skill-composition-lint.py` fails on that shape now.
 - **`git branch -d`, never `-D`.** The safe delete is a backstop even after the merge check.
 - **v1 writes user-scope only.** No `feedbackPath` repo-doc write; content-match dedup makes an
   overlapping window safe without a watermark (both the watermark + repo-doc FB-inbox are v1b).
-- **Idempotent.** A re-run after a partial close-out is safe: `/flow:land` no-ops if already
-  landed, dedup absorbs re-synthesis, and the branch delete is skipped if already gone.
+- **Idempotent.** A re-run after a partial close-out is safe: §3 detects an existing `docs: land`
+  PR instead of re-asking for one, dedup absorbs re-synthesis, and the branch delete is skipped
+  if already gone.
 
 ## Config slots used
 
