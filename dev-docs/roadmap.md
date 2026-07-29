@@ -405,6 +405,21 @@ In the FB-0075 measurement, 2 of ~6 items were a single `uiFilePatterns` misconf
 
 Items surfaced by `/flow:staff-review`'s push-further lens, consumer dogfood, or research passes. These don't have a concrete shape yet — they describe a direction worth investigating when relevant code is touched. Each entry includes a **`Surfaces when:`** trigger naming the file paths or area that should re-surface the item, so the auto-loading `exploration` rule can grep this section for trigger matches.
 
+### Annotation-layer render/resolve cost at scale (FB-0074 /simplify, deferred deliberately)
+
+**Surfaces when:** `annotation-layer.html`'s `render()` / `resolve()` / `mousemove` path is next touched, OR a consumer reports the overlay feeling sluggish on a long report.
+
+`/simplify` found four real efficiency wins that were **not** applied, because the file had just absorbed a four-lens review with zero CSS/behavioral regression coverage and the risk exceeded the benefit in that moment. Recorded so the next session doesn't re-derive them:
+
+- **`resolve()` is O(notes × same-tag candidates)** and `nearestHeading()` — the expensive part — re-runs per candidate, doing a subtree scan at each ancestor level. Rough shape: 20 comments on a 300-div / 40-heading report ≈ 6,000 `nearestHeading` calls per render pass. The fix is a pass-scoped cache (hoist `document.querySelectorAll(HSEL)` once; memoize `{role, heading, text}` per candidate) plus grouping notes by tag so each distinct tag's node list is swept once instead of per-note.
+- **`resolve()` still runs 2–3 extra full passes outside `render()`** — clicking a list row calls it again via `scrollToNote` and once more via `openEditor`, milliseconds after render already resolved the same anchor. Stash the hit on the note (`n._el`) and reuse it when `document.contains(n._el)`, falling back to a fresh resolve so regeneration-correctness is preserved.
+- **`mousemove` does an unthrottled hit-test plus a style write at pointer rate** while commenting is on (the default). The write dirties layout, so the next event's `elementFromPoint` forces a re-flush — a read-write-read thrash at 120 Hz. Coalesce into one `requestAnimationFrame`, and early-out while the pointer is still inside `current`'s cached rect.
+- **The resize path rebuilds everything when only rects changed.** A resize never changes which element an anchor resolves to. Split `reposition()` (re-read rects on cached elements, rewrite `left`/`top`) from `rebuild()` (the current body) and bind the ResizeObserver to the former. Keep the 120ms throttle — converting it to a settle-debounce would strand pins mid-drag.
+
+Also deferred, from the altitude lens: the layer's CSS writes generic state rules as container-descendant-plus-type (`#an-phead button:hover`, 1-1-1), so every per-button exception must double the ID to out-specify it. A button *class* would let a bare `#an-wipe:hover` win naturally — but that is ~6 rules and ~8 buttons of markup churn verifiable only by eye. A comment naming the idiom was added instead.
+
+### Annotation-layer follow-ups from the FB-0074 four-lens review
+
 ### Annotation-layer follow-ups from the FB-0074 four-lens review
 
 **Surfaces when:** `plugins/flow/skills/verify-build/lib/annotation-layer.html` is next touched.

@@ -307,7 +307,7 @@
       </svg>
     </button>
     <button id="an-eye" type="button" aria-pressed="false" aria-label="Hide pins on the page" title="Hide pins on the page">
-      <svg id="an-eye-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
         <path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z"/><circle cx="8" cy="8" r="1.9"/>
       </svg>
     </button>
@@ -409,6 +409,18 @@
     }, ms || 1600);
   }
 
+  // ONE answer to "does this event belong to the layer or to the page?", shared by the
+  // click and keydown handlers. They previously hand-rolled it separately and had already
+  // drifted: keydown exempted host form fields, click did not — so clicking into a
+  // prototype's own input was swallowed while typing in it passed through.
+  function eventIsOurs(e) {
+    var t = e.target;
+    if (t && t.closest && t.closest(CHROME)) return false;               // our own chrome
+    if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return false;
+    if (e.metaKey || e.ctrlKey || e.altKey) return false;                // explicit passthrough
+    return true;
+  }
+
   // ---- targeting (from flow) ------------------------------------------------------
   function pickTarget(el) {
     while (el && el.nodeType === 1) {
@@ -502,7 +514,7 @@
       ? "Click any element to comment · ⌘/Ctrl-click to use the page"
       : "Off — the page is interactive again";
     $("an-fab").classList.toggle("on", on);
-    if (!on) { current = null; upStack = []; drawHL(null, true); }
+    if (!on) clearTarget();
     updateFab();
     announce(on ? "Commenting on" : "Commenting off, the page is interactive");
   }
@@ -532,6 +544,8 @@
     hl.style.width = r.width + "px"; hl.style.height = r.height + "px";
   }
   function setTarget(el, force) { current = el; drawHL(el, force); }
+  // current / upStack / targetFromPointer are one fact in three variables — clear them together.
+  function clearTarget() { current = null; upStack = []; targetFromPointer = false; drawHL(null); }
 
   // With outlining off, the snap is still happening — you just don't see it until you
   // commit. Flash what was captured so the pick is never a mystery.
@@ -557,7 +571,7 @@
     // Over our own chrome, drop the target entirely. Otherwise the outline keeps glowing
     // on whatever page element you left behind, which makes clicking inside the panel look
     // like it will pin that element — it never would, but the affordance said otherwise.
-    if (isChrome(raw)) { if (current) { current = null; upStack = []; drawHL(null); } return; }
+    if (isChrome(raw)) { if (current) clearTarget(); return; }
     var el = pickTarget(raw);
     if (el && el !== current) { setTarget(el); upStack = []; targetFromPointer = true; }
   }, true);
@@ -568,8 +582,7 @@
     var ox = r.width ? (pt.x - r.left) / r.width : DEF.x;
     var oy = r.height ? (pt.y - r.top) / r.height : DEF.y;
     var n = { id: uid(), anchor: anchorFor(el), off: { x: clamp01(ox), y: clamp01(oy) }, note: "", ts: new Date().toISOString() };
-    upStack = []; current = null;   // stay in commenting mode — only the selection resets
-    drawHL(null);
+    clearTarget();                  // stay in commenting mode — only the selection resets
     flashHL(el);                    // no-op when the outline was already visible
     notes.push(n); render();          // NOT saved yet — an untouched empty note must not persist
     announce("Comment " + notes.length + " added on " + descriptor(n.anchor));
@@ -580,8 +593,7 @@
   // text selection is never a comment, an open editor closes before anything else, and
   // only then does a click create a new comment.
   document.addEventListener("click", function (e) {
-    if (isChrome(e.target)) return;                       // dock, panel, pins, the editor
-    if (e.metaKey || e.ctrlKey || e.altKey) return;       // modifier → use the page normally
+    if (!eventIsOurs(e)) return;                          // chrome, host form field, or modifier
 
     var sel = window.getSelection && window.getSelection();
     if (sel && String(sel).trim().length > 1) return;     // selecting text, not commenting
@@ -746,7 +758,7 @@
     active = id;
     var el = resolve(n.anchor);
     $("an-meta").textContent = "#" + (notes.indexOf(n) + 1) + " · " + descriptor(n.anchor) +
-      (el ? "" : "  (element not found in this version of the page)");
+      (el ? "" : "  (" + LOST + ")");
     $("an-text").value = n.note || "";
     var pop = $("an-pop");
     pop.hidden = false;
@@ -789,8 +801,7 @@
     announce("Comment deleted, " + notes.length + " remaining");
   });
   $("an-text").addEventListener("keydown", function (e) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitNote(); }       // ↵ finalizes
-    else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitNote(); }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commitNote(); }       // ↵ finalizes; ⇧↵ is a newline
   });
 
   // ---- dock + panel ---------------------------------------------------------------
@@ -805,25 +816,33 @@
     try { $("an-fab").focus(); } catch (e) {}   // the panel just un-rendered the focused node
   });
   // SAFETY: static author-controlled markup, no user text — never interpolate a note here.
-  var EYE_OPEN = '<path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z"/><circle cx="8" cy="8" r="1.9"/>';
-  var EYE_SHUT = '<path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z"/><circle cx="8" cy="8" r="1.9"/><path d="M2.5 13.5 13.5 2.5"/>';
+  var SLASH = '<path d="M2.5 13.5 13.5 2.5"/>';
+  // One repaint for every state toggle: pressed flag, accessible name, tooltip, and the
+  // base glyph (read once from the markup) with or without the slash. Previously three
+  // hand-copies, with the snap label duplicated as a literal in two of them.
+  function paintToggle(btn, pressed, label, slashed) {
+    var svg = btn.querySelector("svg");
+    if (!btn._icon) btn._icon = svg.innerHTML;      // base art authored in the markup
+    btn.setAttribute("aria-pressed", pressed ? "true" : "false");
+    btn.setAttribute("aria-label", label); btn.title = label;
+    svg.innerHTML = btn._icon + (slashed ? SLASH : "");
+  }
   $("an-eye").addEventListener("click", function () {
     var hidden = $("an-pins").classList.toggle("hidden");
-    this.setAttribute("aria-pressed", hidden ? "true" : "false");
-    var label = hidden ? "Show pins on the page" : "Hide pins on the page";
-    this.setAttribute("aria-label", label); this.title = label;
-    $("an-eye-svg").innerHTML = hidden ? EYE_SHUT : EYE_OPEN;
+    paintToggle(this, hidden, hidden ? "Show pins on the page" : "Hide pins on the page", hidden);
   });
 
-  var SNAP_ON = '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke-dasharray="3 2"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/>';
-  var SNAP_OFF = '<rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke-dasharray="3 2"/><circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none"/><path d="M2.5 13.5 13.5 2.5"/>';
+  // One painter, called by the handler AND at init — so a reworded label can't leave the
+  // load-time tooltip lying until the user's first click.
+  function paintSnap() {
+    paintToggle($("an-snap"), snapPreview,
+      snapPreview ? "Outline elements while hovering" : "Outline only on ↑/↓ and after you click",
+      !snapPreview);
+  }
   $("an-snap").addEventListener("click", function () {
     snapPreview = !snapPreview;
     try { localStorage.setItem(PREF, snapPreview ? "1" : "0"); } catch (e) {}
-    this.setAttribute("aria-pressed", snapPreview ? "true" : "false");
-    var label = snapPreview ? "Outline elements while hovering" : "Outline only on ↑/↓ and after you click";
-    this.setAttribute("aria-label", label); this.title = label;
-    this.querySelector("svg").innerHTML = snapPreview ? SNAP_ON : SNAP_OFF;
+    paintSnap();
     if (!snapPreview) drawHL(null);
   });
 
@@ -855,13 +874,13 @@
     return a.el ? -1 : b.el ? 1 : 0;
   }
   $("an-copy").addEventListener("click", function () {
-    var rows = notes.map(function (n) { return { n: n, num: notes.indexOf(n) + 1, el: resolve(n.anchor) }; });
+    var rows = notes.map(function (n, i) { return { n: n, num: i + 1, el: resolve(n.anchor) }; });
     rows.sort(domOrder);
     var lines = [], cur = null, lost = false;
     rows.forEach(function (r) {
-      var head = r.el ? (r.n.anchor.heading || "(page)") : "(unanchored — element not found in this version of the page)";
+      var head = headFor(r.n.anchor, !!r.el);
       if (head !== cur) { cur = head; lost = lost || !r.el; lines.push("## " + head); }
-      lines.push("#" + r.num + "\n   at " + elDesc(r.n.anchor) + "\n   note: " + (r.n.note || "(none)"));
+      lines.push(noteRecord(r.n, r.num));
     });
     var header = (document.title || "Visual review") + " — " + notes.length + " comment(s)\n" +
       "(grouped by section, in reading order; numbers match the on-page pins;\n" +
@@ -883,12 +902,17 @@
            ", " + (dark ? "dark" : "light") + " mode";
   }
 
-  // One comment, in the same located shape the batch export uses.
+  // ONE definition of the located record. Both copy paths and the editor's meta line render
+  // from these, so the single-comment and batch exports cannot drift into two dialects.
+  var LOST = "element not found in this version of the page";
+  function headFor(a, anchored) {
+    return anchored ? (a.heading || "(page)") : "(unanchored — " + LOST + ")";
+  }
+  function noteRecord(n, num) {
+    return "#" + num + "\n   at " + elDesc(n.anchor) + "\n   note: " + (n.note || "(none)");
+  }
   function oneNoteBlock(n, num, anchored) {
-    var head = anchored ? (n.anchor.heading || "(page)")
-                        : "(unanchored — element not found in this version of the page)";
-    return "(" + viewCtx() + ")\n\n## " + head + "\n\n#" + num + "\n   at " + elDesc(n.anchor) +
-           "\n   note: " + (n.note || "(none)");
+    return "(" + viewCtx() + ")\n\n## " + headFor(n.anchor, anchored) + "\n\n" + noteRecord(n, num);
   }
 
   // Returns true when the clipboard actually took it. On refusal it surfaces the
@@ -904,7 +928,6 @@
     var ok = false;
     try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
     ta.remove();
-    current = null;                            // the scratch node is gone; don't pick against it
     if (restoreTo && document.contains(restoreTo)) { try { restoreTo.focus(); } catch (e) {} }
     if (!ok) showCopyBox(text);
     return ok;
@@ -946,10 +969,7 @@
     // on document, so an unconditional preventDefault here would cancel the synthetic
     // click Enter fires on ANY button (making every control un-activatable by keyboard),
     // block arrow-key scrolling, and eat Enter inside a page's own form field.
-    var t = e.target;
-    if (t && t.closest && t.closest(CHROME)) return;
-    if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
-    if (e.metaKey || e.ctrlKey || e.altKey) return;   // same passthrough contract as the mouse
+    if (!eventIsOurs(e)) return;
 
     if (e.key === "ArrowUp") {                       // widen to parent
       if (!targetFromPointer) return;                          // Tab-derived target ⇒ page scrolls
@@ -991,14 +1011,7 @@
 
   setCommenting(commenting);          // paints the dock + crosshair from the stored mode
 
-  // reflect a persisted "outline off" preference on load
-  if (!snapPreview) {
-    var sb = $("an-snap");
-    sb.setAttribute("aria-pressed", "false");
-    var l = "Outline only on ↑/↓ and after you click";
-    sb.setAttribute("aria-label", l); sb.title = l;
-    sb.querySelector("svg").innerHTML = SNAP_OFF;
-  }
+  paintSnap();   // reflect a persisted "outline off" preference on load
 
   render();
 })();
