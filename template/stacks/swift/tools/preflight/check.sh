@@ -23,10 +23,14 @@ else
   echo "$TAG ⚠️ flow.config.json not found at repo root. Using all built-in defaults; some gates may not run." >&2
 fi
 
-# Discover xcworkspace/xcodeproj if not configured
+# Discover xcworkspace/xcodeproj if not configured.
+# NOTE: .xcworkspace / .xcodeproj are DIRECTORY bundles. `ls *.xcodeproj` (without -d)
+# lists the bundle's CONTENTS (project.pbxproj, xcuserdata/, …), so WORKSPACE_OR_PROJECT
+# would become `-project project.pbxproj` and xcodebuild would fail. `ls -d` lists the
+# bundle name itself (MyApp.xcodeproj) — the value xcodebuild actually wants.
 if [ -z "$WORKSPACE_OR_PROJECT" ]; then
-  WS=$(ls *.xcworkspace 2>/dev/null | head -n1)
-  PROJ=$(ls *.xcodeproj 2>/dev/null | head -n1)
+  WS=$(ls -d *.xcworkspace 2>/dev/null | head -n1)
+  PROJ=$(ls -d *.xcodeproj 2>/dev/null | head -n1)
   if [ -n "$WS" ]; then
     WORKSPACE_OR_PROJECT="-workspace $WS"
   elif [ -n "$PROJ" ]; then

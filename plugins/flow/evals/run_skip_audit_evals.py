@@ -195,6 +195,26 @@ def main() -> int:
                  files="M\tsrc/Button.tsx", diff=REAL_TSX_DIFF)
         check("zero-frames-visual-pass", verdict_of(rc, "verify-build") == "SHOULD-RE-RUN", f"{verdict_of(rc,'verify-build')}")
 
+    # A present-but-MALFORMED report must EXIT NON-ZERO with a stderr diagnostic and clean
+    # stdout — so the audit-skips SKILL / ship Step 2a can tell an engine failure apart from an
+    # absent handoff and surface it loudly, instead of the old `return 0` + `{"...","stages":[]}`
+    # that collapsed a failure into a silent "nothing to audit" no-op.
+    with tempfile.TemporaryDirectory() as tmp:
+        bad = Path(tmp) / "bad.json"
+        bad.write_text("this is not json\n", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(SCRIPT), "--report", str(bad)],
+                              capture_output=True, text=True, check=False)
+        check("malformed-report-exits-nonzero", proc.returncode != 0, f"rc={proc.returncode}")
+        check("malformed-report-stdout-clean", proc.stdout.strip() == "", f"stdout={proc.stdout!r}")
+        check("malformed-report-stderr-diagnostic",
+              "cannot read stages report" in proc.stderr, f"stderr={proc.stderr!r}")
+        # A VALID but empty report is NOT an error — must still exit 0 (an honest no-op audit).
+        okp = Path(tmp) / "empty.json"
+        okp.write_text('{"stages": []}', encoding="utf-8")
+        proc2 = subprocess.run([sys.executable, str(SCRIPT), "--report", str(okp)],
+                               capture_output=True, text=True, check=False)
+        check("valid-empty-report-exits-zero", proc2.returncode == 0, f"rc={proc2.returncode}")
+
     print(f"\n{total - fails}/{total} checks passed.")
     return 1 if fails else 0
 

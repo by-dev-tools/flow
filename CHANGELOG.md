@@ -10,6 +10,16 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.21.1 — 2026-07-29
+
+**Two bug fixes: the skip-legitimacy gate can no longer silently pass on a broken handoff, and the Swift preflight discovers `.xcodeproj` bundles correctly.**
+
+- **`/flow:audit-skips` fails loud instead of silent.** Its mechanical engine (`skip-audit-checks.py`) used to return a success exit code with an error-shaped `{"error": …, "stages": []}` when it couldn't read the per-stage handoff — indistinguishable from a genuine "no handoff" standalone run, so `/flow:ship`'s whole skip-legitimacy gate read "nothing to audit" and passed. It now exits non-zero with a diagnostic on stderr; the skill routes that as a distinct `engine_error` (loud, → draft manifest) versus the real absent-handoff no-op versus a valid empty audit.
+- **Swift preflight `xcodebuild` discovery fixed.** `template/stacks/swift/tools/preflight/check.sh` used `ls *.xcodeproj`; since `.xcodeproj`/`.xcworkspace` are directory bundles, bare `ls` listed the bundle's *contents* and handed `xcodebuild` an invalid `-project project.pbxproj`. Now `ls -d` — the bundle name xcodebuild expects.
+- New `run_skip_audit_evals.py` cases pin the exit-code contract. The related "a forked skill can't see the parent's `/tmp` handoff" transport question is captured in the roadmap, deliberately not patched per-caller here.
+
+**Breaking changes:** none. Internal robustness fixes to shipped skills; no config or API change.
+
 ## v1.21.0 — 2026-07-24
 
 **New `/flow:post-merge` skill — the "merged — anything left, or safe to archive?" close-out, run after you merge a PR.**

@@ -352,13 +352,18 @@ def main(argv):
     ap.add_argument("--base", default=None)
     args = ap.parse_args(argv[1:])
 
-    # Load the stages report.
+    # Load the stages report. A present-but-unreadable/malformed report is a real ERROR, not
+    # an empty audit: exit NON-ZERO (diagnostic on stderr, stdout left clean) so the caller —
+    # the audit-skips SKILL / ship Step 2a — can tell it apart from an absent handoff and
+    # surface it loudly, instead of the old `return 0` that collapsed a failure to `stages:[]`
+    # and read as "nothing to audit" (a silent skip of the whole skip-legitimacy gate).
     try:
         raw = Path(args.report).read_text(encoding="utf-8") if args.report else sys.stdin.read()
         report = json.loads(raw)
     except (OSError, ValueError) as exc:
-        print(json.dumps({"error": f"cannot read stages report: {exc}", "stages": []}))
-        return 0
+        print(f"skip-audit-checks: cannot read stages report "
+              f"{args.report or '(stdin)'}: {exc}", file=sys.stderr)
+        return 1
     stages = report.get("stages") or []
 
     cfg = load_json(args.config, {})
