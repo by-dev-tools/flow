@@ -478,9 +478,16 @@
     if (a.pinId) {
       try { var byId = document.querySelector('[data-pin-id="' + cssesc(a.pinId) + '"]'); if (byId) return byId; } catch (e) {}
     }
+    // Stored anchors are only ever written by this layer, but the store is same-origin
+    // writable and survives regeneration — so treat `tag` as untrusted input. A bare "*"
+    // would turn every render into a document-wide nearestHeading() sweep per note.
+    if (!/^[a-z][a-z0-9-]*$/.test(a.tag || "")) return null;
     var nodes;
-    try { nodes = document.querySelectorAll(a.tag || "*"); } catch (e) { return null; }
-    var best = null, bestScore = 1;
+    try { nodes = document.querySelectorAll(a.tag); } catch (e) { return null; }
+    // Floor of 2 (not 1): heading agreement ALONE scores 2 and must not be enough to claim
+    // a pin — after a regeneration that would silently move a comment to an unrelated
+    // element in the same section. A real claim needs a text component too.
+    var best = null, bestScore = 2;
     for (var i = 0; i < nodes.length; i++) {
       var c = nodes[i];
       if (isChrome(c)) continue;

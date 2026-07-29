@@ -405,6 +405,16 @@ In the FB-0075 measurement, 2 of ~6 items were a single `uiFilePatterns` misconf
 
 Items surfaced by `/flow:staff-review`'s push-further lens, consumer dogfood, or research passes. These don't have a concrete shape yet — they describe a direction worth investigating when relevant code is touched. Each entry includes a **`Surfaces when:`** trigger naming the file paths or area that should re-surface the item, so the auto-loading `exploration` rule can grep this section for trigger matches.
 
+### Reviewed-page text reaches the agent through the annotation export (FB-0074 security review)
+
+**Surfaces when:** the annotation layer is injected by any consumer OTHER than `/flow:verify-build` — i.e. the first time the "reusable partial" claim in `verify-build/SKILL.md` is actually taken up.
+
+`shortText()` (≤57 chars of an element's `innerText`/`aria-label`/`alt`) and the untruncated `nearestHeading()` result are embedded in the block the reviewer copies and pastes back into Claude Code. That is a path from page content into agent context — prompt injection, structurally.
+
+**Not a finding today, deliberately:** in the verify-build pipeline the report is rendered from a findings buffer the agent itself authored, so the same text was already in its context and the delta is nil. It becomes real the moment the layer is injected into a page whose headings or element text come from untrusted output (a third-party report, a scraped page, a prototype rendering user data). The fix at that point is to fence the quoted region in the export so the agent reads it as data, not instruction — not to stop quoting, since the located descriptor is the whole value of the format.
+
+**Owner:** whoever lands the first non-verify-build consumer of the partial.
+
 ### Annotation-layer render/resolve cost at scale (FB-0074 /simplify, deferred deliberately)
 
 **Surfaces when:** `annotation-layer.html`'s `render()` / `resolve()` / `mousemove` path is next touched, OR a consumer reports the overlay feeling sluggish on a long report.
