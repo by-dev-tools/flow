@@ -12,10 +12,11 @@ Subcommands (stdlib only):
 
     rigor-marker.py source-sha [--default-branch B] [--source-pattern P]
         Print a deterministic hex fingerprint of the SOURCE-file portion of the diff vs the
-        default branch. COMMIT-INVARIANT: it diffs `origin/<default>` against the WORKING TREE
-        (not `..HEAD`), so committing staff-review's fixes between staff-review and ship does
-        NOT change the fingerprint — only an actual source-content change does. Untracked source
-        files are folded in by content. Resolves the default branch via git symbolic-ref →
+        default branch. COMMIT-INVARIANT (and tracking-invariant): every changed-or-new source
+        file is folded in by its current WORKING-TREE CONTENT, not by diff-patch text, so
+        committing staff-review's fixes — OR committing a brand-new untracked file — between
+        staff-review and ship does NOT change the fingerprint; only an actual source-content
+        change does. Resolves the default branch via git symbolic-ref →
         --default-branch → "main"; uses the built-in source pattern unless --source-pattern given.
         Always exits 0 (a broken/absent git context degrades to the empty-input hash, which both
         writer and reader compute identically, so the gate no-ops rather than false-failing).
@@ -58,14 +59,6 @@ def _git(args: list[str]) -> str:
         return ""
 
 
-def _git_bytes(args: list[str]) -> bytes:
-    try:
-        out = subprocess.run(["git", *args], capture_output=True, timeout=15)
-        return out.stdout if out.returncode == 0 else b""
-    except (OSError, subprocess.SubprocessError):
-        return b""
-
-
 def _resolve_default_branch(arg: str | None) -> str:
     ref = _git(["symbolic-ref", "refs/remotes/origin/HEAD"]).strip()
     if ref:
@@ -74,35 +67,44 @@ def _resolve_default_branch(arg: str | None) -> str:
 
 
 def source_sha(default_branch: str | None, source_pattern: str | None) -> str:
-    """Commit-invariant fingerprint of the source-file delta vs origin/<default> + untracked."""
+    """Content fingerprint of the source-file delta vs origin/<default>, INVARIANT to each
+    file's tracked/untracked + committed/uncommitted status.
+
+    Every source file whose working-tree state differs from base — tracked-and-changed
+    (committed OR uncommitted; `git diff <base>` with no `..HEAD` compares base to the working
+    tree) OR untracked — is folded in by its PATH + current working-tree BYTES. It deliberately
+    does NOT hash the `git diff` PATCH text: a patch of identical content differs between the
+    untracked and tracked representations (the tracked side carries `diff --git` / `@@` / `+`
+    framing the raw bytes lack), so hashing the patch made an untracked→committed transition
+    flip the fingerprint — a FALSE source-drift at ship Step 1.0a on every new-file PR (a real
+    dogfood + Swift-stack cold-run bug). Hashing working-tree content is representation-invariant,
+    so committing a new file — like committing a modification — leaves the fingerprint unchanged."""
     branch = _resolve_default_branch(default_branch)
     pat = re.compile(source_pattern or DEFAULT_SOURCE_PATTERN)
     base = f"origin/{branch}"
 
-    # Tracked files whose working-tree content differs from base (committed OR uncommitted —
-    # `git diff <base>` with no `..HEAD` compares base to the working tree, so the partition
-    # between committed and uncommitted is irrelevant: only net content matters).
-    tracked = sorted(
+    # Union of (tracked-and-changed-vs-base) and (untracked) source files — the two ways a
+    # file can be part of this PR's source delta. A file moving between these two sets across a
+    # commit is exactly the transition that must NOT change the digest.
+    changed = {
         f for f in _git(["diff", base, "--name-only"]).splitlines() if f and pat.search(f)
-    )
-    untracked = sorted(
+    }
+    changed |= {
         f for f in _git(["ls-files", "--others", "--exclude-standard"]).splitlines()
         if f and pat.search(f)
-    )
+    }
 
     h = hashlib.sha256()
-    h.update(("\n".join(tracked) + "\0").encode("utf-8"))
-    # Net tracked patch vs base, restricted to the source files (deterministic, commit-invariant).
-    if tracked:
-        h.update(_git_bytes(["diff", base, "--", *tracked]))
-    h.update(b"\0")
-    h.update(("\n".join(untracked) + "\0").encode("utf-8"))
-    # Untracked files have no diff — fold their bytes in by sorted path.
-    for f in untracked:
+    for f in sorted(changed):
+        h.update(f.encode("utf-8"))
+        h.update(b"\0")
+        # Current working-tree content — identical whether f is tracked or untracked, so the
+        # digest is stable across an untracked→committed transition. A path present only
+        # because it was DELETED vs base has no working-tree bytes → a deletion sentinel.
         try:
             h.update(Path(f).read_bytes())
         except OSError:
-            pass
+            h.update(b"\1missing-or-deleted")
         h.update(b"\0")
     return h.hexdigest()
 

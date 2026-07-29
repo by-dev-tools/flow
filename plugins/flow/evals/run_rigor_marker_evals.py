@@ -92,6 +92,22 @@ def main() -> int:
         check("source-sha-commit-invariant", h_committed.strip() == h_dirty.strip(),
               f"committed {h_committed.strip()!r} != dirty {h_dirty.strip()!r}")
 
+        # The new-file transition the old algorithm got WRONG (Swift cold-run + dogfound): a
+        # brand-new source file is UNTRACKED pre-commit, TRACKED post-commit. Hashing raw bytes
+        # for untracked but the diff PATCH for tracked flipped the fingerprint across that
+        # commit → false source-drift at ship Step 1.0a on every new-file PR. Content-hashing
+        # must keep it stable.
+        (Path(repo) / "new_file.py").write_text("z = 3\n")  # untracked new source file
+        _, h_untracked = run(["source-sha", "--default-branch", "main"], cwd=repo)
+        git(repo, "add", "-A"); git(repo, "commit", "-q", "-m", "add new_file")
+        _, h_newcommit = run(["source-sha", "--default-branch", "main"], cwd=repo)
+        check("source-sha-untracked-to-committed-invariant",
+              h_untracked.strip() == h_newcommit.strip(),
+              f"untracked {h_untracked.strip()!r} != committed {h_newcommit.strip()!r}")
+        # And the new file's content must actually be IN the fingerprint (not silently dropped).
+        check("source-sha-new-file-detected", h_untracked.strip() != h_committed.strip(),
+              f"new untracked file did not move the fingerprint: {h_untracked.strip()!r}")
+
     print(f"\n{total - fails} passed, {fails} failed")
     return 1 if fails else 0
 
