@@ -31,7 +31,10 @@ PR body begins with the pinned block:
 ```markdown
 ## 🚫 NOT READY TO MERGE — unresolved blockers
 <!-- flow:not-ready-manifest -->
-- [security] Hardcoded production API credential committed at `src/api/client.ts:7` — needs: secret rotation — confidence: decision-required — candidate resolutions: delete the literal, read from `process.env`, rotate the credential at the provider, scrub git history.
+- [security] Hardcoded production API credential committed at `src/api/client.ts:7` — needs: secret rotation — candidate resolutions: delete the literal, read from `process.env`, rotate the credential at the provider, scrub git history.
+  - **What this means:** The security review found something only you can act on outside this session.
+  - **What I need from you:** Rotate the affected secret (or replace the dependency), then tell me and I re-check.
+  - **What happens then:** Once you have done it outside this session, tell me and I re-check.
 <!-- /flow:not-ready-manifest -->
 
 ## Summary

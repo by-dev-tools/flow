@@ -59,6 +59,8 @@ Subcommands (stdlib only):
     classify       --entries-file PATH|-  [--state-file PATH] [--body-file PATH]
     render-manifest  --entries-file PATH|-
     render-decisions --entries-file PATH|-
+    init-run       --branch B          (truncate the manifest for a fresh run)
+    manifest-path  --branch B
     init-state     --branch B [--path PATH]
     record-attempt --branch B --kind K --finding F [--path PATH]
     waive          --branch B --kind K --finding F [--path PATH]
@@ -91,17 +93,6 @@ from manifest_contract import (  # noqa: E402  (sibling-module import, house pat
 # Contract vocabulary. Both lists are closed; drift is caught by the fail-safe
 # in `classify`, never by trusting the producer.
 # --------------------------------------------------------------------------
-
-KINDS = (
-    "rigor",
-    "security",
-    "a11y",
-    "verify-build",
-    "coverage",
-    "skip-audit",
-    "status-surface",
-    "visual-deliverable",
-)
 
 VERBS = (
     "secret rotation",
@@ -153,23 +144,31 @@ KIND_COPY: dict[str, dict[str, str]] = {
         "clears_when": "re-read the /flow:staff-review rigor marker for the current source (ship 1.0a)",
         "means": "The deep code review either did not run on the final version of this code, or its record went stale.",
         "needs_you": "Either let me re-run the review, or tell me to ship without it.",
+        "waive_cost": "this code merges without a deep review of its final version",
+        "why": "re-running it is quick and tells us whether anything was actually missed",
     },
     "security": {
         "clears_when": "re-run /flow:security-review and confirm the BLOCKER is gone",
         "means": "The security review found something it will not fix on its own because more than one fix is defensible.",
         "blocked_means": "The security review found something only you can act on outside this session.",
-        "needs_you": "Pick a fix, or — if it needs rotating a secret or vetting a dependency — do that, then tell me.",
+        "needs_you": "Pick a fix, or tell me to ship as-is and accept it.",
+        "blocked_needs_you": "Rotate the affected secret (or replace the dependency), then tell me and I re-check.",
+        "why": "more than one fix is defensible here, so picking one is a judgement call rather than a lookup",
     },
     "a11y": {
         "clears_when": "re-run /flow:accessibility-review and confirm the BLOCKER is gone",
         "means": "The accessibility review found something it will not fix on its own because more than one fix is defensible.",
         "blocked_means": "The accessibility review found something only you can act on outside this session.",
         "needs_you": "Pick a fix, or tell me to ship as-is and accept it.",
+        "blocked_needs_you": "Do the change on your side, then tell me and I re-check.",
+        "waive_cost": "the accessibility problem ships as-is",
+        "why": "more than one fix is defensible here, so picking one is a judgement call rather than a lookup",
     },
     "verify-build": {
         "clears_when": "re-run /flow:verify-build and confirm overall_verdict is PASS",
         "means": "The app was built and exercised, and it did not demonstrably do what the plan said it would.",
-        "needs_you": "A decision on how to get a passing build — I will not call a failing one shippable.",
+        "needs_you": "Tell me how to get a passing build, or that you accept it failing — I won't call a failing build shippable.",
+        "why": "I already tried the automatic fix and it did not hold, so the next attempt needs a different angle",
         "then": ("I apply your answer and re-run the build check. A failing build never becomes a "
                  "ready PR automatically — if you accept the risk, you mark it ready yourself."),
     },
@@ -177,33 +176,49 @@ KIND_COPY: dict[str, dict[str, str]] = {
         "clears_when": "declare the criterion in the plan's Spec-walk block, then re-run /flow:audit-coverage clean",
         "means": "This change alters behavior that no declared test criterion covers, so nothing verified it.",
         "needs_you": "Approve the criterion I drafted, or tell me to ship without covering it.",
+        "waive_cost": "this behavior ships with nothing verifying it",
+        "why": "I can write the test criterion, but declaring my own work covered is me grading my own homework",
     },
     "skip-audit": {
         "clears_when": "re-run the named stage, then re-run /flow:audit-skips and confirm LEGITIMATE",
         "means": "A pipeline stage was skipped, and the skip could not be justified against the actual diff.",
         "needs_you": "Approve running the stage, or tell me the skip is fine.",
+        "waive_cost": "that check stays un-run for this change",
+        "why": "the skip may well be fine — I just can't confirm it from the change itself",
     },
     "status-surface": {
         "clears_when": "reconcile or declare+fence the surface, then re-run the ship 5a.5 scan clean",
         "means": "A document that orients future sessions still describes shipped work as upcoming.",
         "needs_you": "Approve the corrected wording I drafted, or tell me to leave the document alone.",
+        "waive_cost": "the document keeps telling future sessions this work is still upcoming",
+        "why": "it's your document, so I won't silently rewrite it",
     },
     "visual-deliverable": {
         "clears_when": ("re-assert ship 7a: a fresh verify-build buffer for this HEAD with >=1 frame, "
                         "plus a visual-history entry"),
         "means": "This change is visual, but the visual walkthrough or its durable record is missing.",
         "needs_you": "Approve capturing the walkthrough, or tell me to ship without it.",
+        "waive_cost": "this change ships with no visual record, so the next visual change has nothing to compare against",
+        "why": "without it nobody can see what the change actually looks like before merging",
     },
 }
 
 KINDS = tuple(KIND_COPY)
 
 DEFAULT_THEN = "I apply it, re-run the check that raised this, and mark the PR ready once it passes."
-BLOCKED_THEN = "once you have done it outside this session, tell me and I re-check and mark the PR ready."
+BLOCKED_THEN = "Once you have done it outside this session, tell me and I re-check."
 
 
 def _copy(kind: str, field: str, fallback: str = "") -> str:
     return KIND_COPY.get(kind, {}).get(field, fallback)
+
+
+def _needs_you(kind: str, cls: str) -> str:
+    if cls == "blocked":
+        blocked = _copy(kind, "blocked_needs_you")
+        if blocked:
+            return blocked
+    return _copy(kind, "needs_you", "A decision on how to proceed.")
 
 
 def _means(kind: str, cls: str) -> str:
@@ -224,6 +239,14 @@ def _fingerprint(kind: str, finding: str) -> str:
 
 def _default_state_path(branch: str) -> str:
     return f"/tmp/flow-ship-state-{_slug(branch)}.json"
+
+
+def _default_manifest_path(branch: str) -> str:
+    """Branch-scoped, like the state file. A single fixed name outlives the run,
+    the branch and the worktree, so the next ship would re-read the previous
+    one's entries — and a `verify-build` entry among them is never subtractable,
+    permanently drafting a PR over a blocker from another branch."""
+    return f"/tmp/flow-manifest-{_slug(branch)}.md"
 
 
 # --------------------------------------------------------------------------
@@ -354,7 +377,13 @@ def _write_state(branch: str, path: str | None, mutate) -> str:
             data = json.load(fh)
         if not isinstance(data, dict):
             data = _empty_state(branch, "present")
-    except (OSError, ValueError):
+    except FileNotFoundError:
+        data = _empty_state(branch, "present")
+    except (OSError, ValueError) as exc:
+        # Never silently discard recorded waivers/attempts — the PR body is the
+        # durable backstop, but the operator needs to know the cache was lost.
+        print(f"⚠️ [manifest-triage] state file {p} unreadable ({exc}); reinitializing. "
+              "Recorded waivers will be recovered from the PR body if available.", file=sys.stderr)
         data = _empty_state(branch, "present")
     data.setdefault("waivers", [])
     data.setdefault("attempts", [])
@@ -391,6 +420,16 @@ def _class_for(kind: str, needs: str, attempted: bool, auto_allowed: bool) -> tu
         return "ask", "pick a fix, or accept it as-is"
 
     if kind == "visual-deliverable":
+        # Invariant 4 applies HERE most of all: this is the only kind that can
+        # return `auto`, and §7c rebuilds entries by parsing a live PR body a
+        # human can edit. An off-vocabulary verb must become a question, never a
+        # silent re-run→commit→push.
+        # Only this kind's OWN verbs may trigger the auto attempt. An
+        # off-vocabulary verb, or an in-vocabulary verb belonging to some other
+        # kind (a hand-edited PR body at §7c can produce either), becomes a
+        # question — never a silent re-run→commit→push.
+        if verb not in ("re-run", "hand-author"):
+            return "ask", "resolution verb doesn't match this check — not re-attempting on a line I can't read"
         if attempted:
             return "ask", "the one bounded attempt already ran and did not clear it"
         if not auto_allowed:
@@ -483,13 +522,19 @@ def render_manifest(result: dict[str, Any]) -> str:
         lines.append(f"- [{kind}] {e['finding']}{attempted} — needs: {e.get('needs','')}"
                      f" — candidate resolutions: {e.get('drafted_resolution') or '(none drafted)'}")
         lines.append(f"  - **What this means:** {_means(kind, e['class'])}")
-        lines.append(f"  - **What I need from you:** {_copy(kind, 'needs_you', 'A decision on how to proceed.')}")
-        lines.append(f"  - **What happens then:** {_then(e)}")
-    lines.append(MANIFEST_CLOSE)
+        lines.append(f"  - **What I need from you:** {_needs_you(kind, e['class'])}")
+        then = _then(e)
+        # Only state it per-entry when it DIFFERS from the default — otherwise six
+        # of eight entries repeat one sentence verbatim, and the repetition (not
+        # the nesting) is what turns this into a wall at 6+ entries.
+        if then != DEFAULT_THEN:
+            lines.append(f"  - **What happens then:** {then}")
     lines.append(
-        "> Answer the items above and I apply them and mark this ready — you do not have to "
-        "edit anything here. Do not merge while this block is present."
+        "> **What happens when you answer:** " + DEFAULT_THEN + " Items that say otherwise "
+        "above are the exceptions. You do not have to edit anything here — just tell me. "
+        "Do not merge while this block is present."
     )
+    lines.append(MANIFEST_CLOSE)
     return "\n".join(lines)
 
 
@@ -509,33 +554,48 @@ def render_decisions(result: dict[str, Any]) -> str:
 
     out: list[str] = []
     if asks:
-        out.append("**Decisions for you** — answer by number; I apply it and mark the PR ready.")
+        # Do NOT promise "and mark the PR ready" — a verify-build entry renders in
+        # this same list and by rule cannot reach ready this way. A header that
+        # overpromises is the thing this whole change exists to stop doing.
+        out.append("**Decisions for you** — answer by number. I apply your answer and re-run "
+                   "the check; if it passes, that takes the PR closer to ready.")
         out.append("")
         for i, e in enumerate(asks, 1):
-            out.append(f"{i}. {_means(e['kind'], e['class'])}")
-            out.append(f"   - Detail: {e['finding']}")
+            kind = e["kind"]
+            out.append(f"{i}. {e['finding']}")
+            out.append(f"   - What this means: {_means(kind, e['class'])}")
             if e.get("already_attempted"):
                 out.append("   - Already tried: I attempted this once and it did not clear.")
-            rec = e.get("drafted_resolution") or "no automatic fix available"
-            out.append(f"   - **My recommendation: {rec}** — {e.get('action','')}.")
-            opts = ["[a] do that (recommended)"]
+
+            options: list[str] = []
+            rec = e.get("drafted_resolution", "")
+            if rec:
+                why = _copy(kind, "why")
+                out.append(f"   - **My recommendation: {rec}**" + (f" — {why}." if why else ""))
+                options.append("do that (recommended)")
+            else:
+                # No proposal means no "[a] do that" to point at. Asking someone to
+                # approve a placeholder is the round-trip this exists to remove.
+                out.append("   - I don't have a fix to propose for this one.")
+
             if e.get("waivable"):
-                opts.append("[b] waive it and ship as-is")
-            elif e["kind"] == "verify-build":
-                opts.append(
-                    "[b] leave it — I will not mark a failing build ready; you can do that "
-                    "yourself on GitHub if you accept the risk"
-                )
-            opts.append("[c] something else — tell me")
-            out.append(f"   - Options: {'  '.join(opts)}")
+                cost = _copy(kind, "waive_cost")
+                options.append("waive it and ship as-is" + (f" — {cost}" if cost else ""))
+            elif kind in CHECK_ONLY:
+                options.append("leave it — I won't mark a failing build ready; you can do that "
+                               "yourself on GitHub if you accept the risk")
+            options.append("something else — tell me")
+            out.append("   - Options:")
+            for opt in options:
+                out.append(f"     - {opt}")
             out.append("")
     if blocked:
-        out.append("**Needs you outside this session** — I cannot do these, and they are not waivable:")
+        out.append("**Needs you outside this session** — I can't do these, and they can't be waived:")
         out.append("")
         for e in blocked:
-            why = e.get("action", "")
-            out.append(f"- {e['finding']} — {_means(e['kind'], 'blocked')}"
-                       + (f" ({why})" if why else ""))
+            out.append(f"- {e['finding']}")
+            out.append(f"  - What this means: {_means(e['kind'], 'blocked')}")
+            out.append(f"  - What I need from you: {_needs_you(e['kind'], 'blocked')}")
         out.append("")
     return "\n".join(out).rstrip() + "\n"
 
@@ -553,6 +613,11 @@ def _read(path: str) -> str:
 
 
 def _load_entries(path: str) -> list[dict[str, Any]]:
+    # A missing manifest file is the COMMON case — no producer fired, so there is
+    # nothing to triage. That is an empty manifest, not an error. (`parse` keeps
+    # failing loud on a missing file; the two commands have different contracts.)
+    if path != "-" and not Path(path).exists():
+        return []
     raw = _read(path)
     try:
         data = json.loads(raw)
@@ -586,6 +651,12 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("init-state")
     p.add_argument("--branch", required=True)
     p.add_argument("--path")
+
+    p = sub.add_parser("manifest-path")
+    p.add_argument("--branch", required=True)
+
+    p = sub.add_parser("init-run")
+    p.add_argument("--branch", required=True)
 
     for name in ("record-attempt", "waive"):
         p = sub.add_parser(name)
@@ -645,6 +716,23 @@ def main(argv: list[str] | None = None) -> int:
             print(render_decisions(result))
         return 0
 
+    if args.cmd == "manifest-path":
+        print(_default_manifest_path(args.branch))
+        return 0
+
+    if args.cmd == "init-run":
+        # Truncate the manifest for a FRESH run. Called once at pre-flight, before
+        # any producer appends. Deliberately separate from `init-state`, which is
+        # called again later and must preserve recorded waivers/attempts.
+        mp = _default_manifest_path(args.branch)
+        try:
+            open(mp, "w", encoding="utf-8").close()
+        except OSError as exc:
+            print(f"⚠️ [manifest-triage] could not reset {mp}: {exc}", file=sys.stderr)
+            return 2
+        print(mp)
+        return 0
+
     if args.cmd == "init-state":
         path = _write_state(args.branch, args.path, lambda d: None)
         print(path)
@@ -664,6 +752,18 @@ def main(argv: list[str] | None = None) -> int:
 
         path = _write_state(args.branch, args.path, mutate)
         print(path)
+        if args.cmd == "waive":
+            # A waiver keyed to a finding that is not on the current manifest can
+            # never subtract anything (invariant 6). Fail-safe, but the caller
+            # deserves a signal rather than a silent no-op + a still-drafted PR.
+            mp = _default_manifest_path(args.branch)
+            if Path(mp).exists():
+                fps = {e["fingerprint"] for e in parse_entries(_read(mp))}
+                if rec["fingerprint"] not in fps:
+                    print(f"⚠️ [manifest-triage] no entry on {mp} matches [{args.kind}] "
+                          f"{args.finding!r} — the waiver was recorded but will subtract "
+                          "nothing. Check the finding text matches verbatim.", file=sys.stderr)
+                    return 3
         return 0
 
     if args.cmd == "state":

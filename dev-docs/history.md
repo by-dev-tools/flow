@@ -131,7 +131,7 @@ This lesson had been dismissed **twice** as `already-encoded`, both times reason
 **Branch:** claude/audit-skips-loud-plus-swift-preflight-glob (commit on this branch; SHA lands with the PR)
 
 **What was done:**
-Two harvested bug fixes (drained from the `/flow:contribute` queue and applied directly per FB-0074, not parked in a draft):
+Two harvested bug fixes (drained from the `/flow:contribute` queue and applied directly per FB-0073, not parked in a draft):
 1. **audit-skips silent-no-op closed (SAFETY — error-handling contract flip).** `skills/audit-skips/lib/skip-audit-checks.py` used to `print({"error": …, "stages": []})` and **`return 0`** on a present-but-unreadable/malformed handoff — indistinguishable from a genuine absent-handoff standalone run, so the whole skip-legitimacy gate read "no stage report to audit" and silently no-op'd. Now it prints the diagnostic to **stderr** and **`return 1`** (a valid-but-empty report still exits 0). The audit-skips SKILL shell block captures the non-zero exit into a distinct `engine_error` JSON field (was `2>/dev/null`-swallowed) and the SKILL prose routes `engine_error` (loud → `[decision-required]` draft manifest) vs the absent-handoff `note` (the only clean no-op) vs a valid-empty audit. Implements the pre-queued roadmap item "audit-skips malformed-handoff vs empty-standalone disambiguation."
 2. **Swift preflight `ls -d` glob fix.** `template/stacks/swift/tools/preflight/check.sh` used `ls *.xcodeproj` / `ls *.xcworkspace`; because those are directory **bundles**, bare `ls` lists their *contents* (`project.pbxproj`, …), so `WORKSPACE_OR_PROJECT` became `-project project.pbxproj` and xcodebuild failed on every auto-discovered project. `ls -d` lists the bundle name xcodebuild expects.
 
@@ -150,7 +150,7 @@ Both were consumer-cold-run bugs harvested via `/flow:contribute`, and two of th
 
 **Tradeoffs discussed:**
 - Bumped patch version (1.21.1) for an internal robustness fix rather than leaving it under 1.21.0 — honest that shipped-skill behavior changed; description blobs left un-accreted per the roadmap "cap the description blobs" item.
-- Applied directly to a **ready** PR (not a draft) per FB-0074 — the fixes are eval-pinned + staff-reviewed + security-reviewed; draft state would be friction, not a gate.
+- Applied directly to a **ready** PR (not a draft) per FB-0073 — the fixes are eval-pinned + staff-reviewed + security-reviewed; draft state would be friction, not a gate.
 
 **Spec-walk (this PR — declares the behavior changes `/flow:audit-coverage` flagged as undeclared; each pinned by its verification):**
 - [x] `skip-audit-checks.py` exits **non-zero** on a malformed/unreadable report (stderr diagnostic, clean stdout) and **0** on a valid-but-empty one — pinned by `run_skip_audit_evals.py` (`malformed-report-exits-nonzero`, `-stdout-clean`, `-stderr-diagnostic`, `valid-empty-report-exits-zero`; full suite green).

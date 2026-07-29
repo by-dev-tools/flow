@@ -153,6 +153,13 @@ def test_failsafes(td: str) -> None:
            by_kind(r, "security")["class"], "blocked")
     r = classify(body(line("a11y", "odd finding", "frobnicate")), st)
     expect("a11y + off-vocabulary verb ⇒ blocked", by_kind(r, "a11y")["class"], "blocked")
+    r = classify(body(line("visual-deliverable", "odd finding", "frobnicate")), st)
+    expect("visual-deliverable + off-vocabulary verb ⇒ ask, NOT auto "
+           "(the one kind that can go auto — §7c rebuilds entries from a human-editable PR body)",
+           by_kind(r, "visual-deliverable")["class"], "ask")
+    r = classify(body(line("visual-deliverable", "odd finding", "secret rotation")), st)
+    expect("visual-deliverable + a wrong-but-in-vocabulary verb still ⇒ auto only via its own verbs",
+           by_kind(r, "visual-deliverable")["class"], "ask")
     r = classify(body(line("coverage", "odd finding", "frobnicate")), st)
     expect("coverage + off-vocabulary verb ⇒ ask (never blocked, never auto)",
            by_kind(r, "coverage")["class"], "ask")
@@ -184,6 +191,36 @@ def test_add_entry(td: str) -> None:
                    "--needs", "re-run", "--attempted"])
     expect_true("--attempted stamps the marker so the demotion survives a re-render",
                 "already-attempted" in out, out)
+
+
+def test_manifest_lifecycle(td: str) -> None:
+    print("\n[lifecycle] the manifest file is branch-scoped and a missing one is EMPTY, not an error")
+    rc, out = run(["manifest-path", "--branch", "feature/a"])
+    rc2, out2 = run(["manifest-path", "--branch", "feature/b"])
+    expect("manifest-path exits 0", rc, 0, out)
+    expect_true("two branches resolve to DIFFERENT manifest files (a fixed name leaked "
+                "one branch's entries into the next run)", out.strip() != out2.strip(), out + out2)
+
+    st = fresh_state(td, "life")
+    missing = str(Path(td) / "no-such-manifest.md")
+    with tempfile.TemporaryDirectory() as td2:
+        args = ["classify", "--entries-file", missing, "--state-file", str(st), "--branch", "life"]
+        rc, out = run(args)
+    expect("a MISSING manifest file classifies cleanly — this is the common no-blockers path, "
+           "and it used to crash every clean ship run", rc, 0, out)
+    r = json.loads(out)
+    expect("…and yields zero entries", len(r["entries"]), 0)
+    expect("…with verdict READY", r["verdict"], "READY")
+
+    rc, out = run(["init-run", "--branch", "life-reset"])
+    expect("init-run exits 0 and prints the path it reset", rc, 0, out)
+    p = Path(out.strip())
+    p.write_text("- [coverage] stale entry — needs: declare + fence — confidence: decision-required\n",
+                 encoding="utf-8")
+    run(["init-run", "--branch", "life-reset"])
+    expect("init-run TRUNCATES a stale manifest (a survivor from a prior run is "
+           "un-subtractable if it is verify-build)", p.read_text(encoding="utf-8").strip(), "")
+    p.unlink(missing_ok=True)
 
 
 def test_state_durability(td: str) -> None:
@@ -385,8 +422,15 @@ def test_skill_contract() -> None:
     # The predicate is restated at the two create/re-ship sites; both must key on
     # the verdict too (FB-0010 — a predicate asserted in prose at four sites is
     # how two of them get migrated and two do not).
-    expect("no site still gates the draft flag on manifest emptiness",
-           re.findall(r"--draft` iff the manifest is non-empty|If the draft manifest is non-empty, ensure", src),
+    # Broad enough to actually fail: any prose in the create / read-back /
+    # PR-OPEN region that gates draft state on the manifest being (non-)empty.
+    # The previous version pinned two exact literals — the two already fixed —
+    # and therefore passed vacuously against four survivors.
+    region = src[src.index("### 7a.6. Create the PR"):src.index("### 7b.")]
+    bad = re.findall(r"(?:manifest (?:is )?(?:now )?(?:still )?(?:non-)?empty|"
+                     r"\(empty manifest\)|\(non-empty manifest\))", region)
+    expect("no site in the create/read-back/PR-OPEN region gates draft state on manifest emptiness",
+           [b for b in bad if "not on manifest emptiness" not in region[max(0, region.find(b) - 90):region.find(b) + 90]],
            [])
 
     # §7a's ordered sequence: apply -> commit -> push -> re-run -> re-apply accounting -> re-assert
@@ -468,8 +512,13 @@ def test_render_coherence(td: str) -> None:
                 "<!-- flow:not-ready-manifest -->" in out and "<!-- /flow:not-ready-manifest -->" in out, out)
     expect_true("the machine `confidence:` axis is NOT printed at the human",
                 "confidence:" not in out, out)
-    expect_true("the plain-language triple is present",
-                all(s in out for s in ("What this means", "What I need from you", "What happens then")), out)
+    expect_true("the plain-language framing is present per entry",
+                all(t in out for t in ("What this means", "What I need from you")), out)
+    # "What happens then" is stated once in the trailer and per-entry ONLY where it
+    # differs from the default — six of eight kinds share one sentence, and
+    # repeating it verbatim is what made the block a wall at scale.
+    expect("the default 'what happens then' is stated exactly once",
+           out.count("What happens when you answer"), 1)
 
     rendered = Path(td) / "rendered.md"
     rendered.write_text(out, encoding="utf-8")
@@ -500,8 +549,18 @@ def test_fixture_normalized() -> None:
                         "secret rotation", "design decision", "dep vetting", "regression fix",
                         "re-run", "reconcile", "declare + fence", "hand-author", "human-waive"),
                     json.dumps(e))
-        expect_true(f"fixture entry [{e['kind']}] carries a confidence value",
-                    e["confidence"] in ("auto-fixable", "decision-required"), json.dumps(e))
+    # The fixture pins BOTH shapes, and they legitimately differ: the manifest
+    # *file* line carries the machine `confidence:` axis; the rendered PR-body
+    # block does not (it is metadata, and printing it at the reader is the jargon
+    # this block removes). Assert each where it belongs.
+    # `parse` deliberately scopes to the fences, so it sees only the rendered
+    # PR-body block; the manifest-FILE line sits outside them. Assert that one on
+    # the text.
+    expect_true("the manifest-file line carries the machine confidence axis",
+                re.search(r"^- \[[a-z-]+\].*— confidence: (auto-fixable|decision-required)", text, re.M)
+                is not None, text[:300])
+    expect_true("the rendered PR-body block carries the plain-language framing instead",
+                "**What this means:**" in text and "**What I need from you:**" in text, text[:300])
 
 
 def test_malformed() -> None:
@@ -525,6 +584,7 @@ def main() -> int:
         test_table(td)
         test_failsafes(td)
         test_add_entry(td)
+        test_manifest_lifecycle(td)
         test_state_durability(td)
         test_attempt_demotion(td)
         test_residual_definition(td)
