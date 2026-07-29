@@ -16,6 +16,8 @@ Explicit body strings + --is-draft flags — no git/gh dependency. Stdlib only.
 
 from __future__ import annotations
 
+import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -68,6 +70,29 @@ STAMPED_TEST_PLAN = f"""## Summary
 
 {PROVENANCE}
 <!-- Test plan rendered from the /flow:verify-build findings buffer; checkbox state = machine verdict, not self-report. Do not hand-edit criterion checkboxes. -->
+"""
+
+# A docs PR that explains the Test-plan format: the only "## Test plan" is inside a fence.
+DOCS_FENCED_EXAMPLE = """## Summary
+Documents what the renderer emits.
+
+```markdown
+## Test plan
+- [x] example criterion
+```
+
+Nothing else.
+"""
+
+# A hand-authored Test plan whose only stamp sits inside a fenced example.
+FENCED_STAMP_LAUNDER = f"""## Test plan
+- [x] Criterion 1 verified
+
+Reference — the renderer emits:
+
+```markdown
+{PROVENANCE}
+```
 """
 
 # The honest no-gate-ran path is ALSO stamped — the marker attests provenance, not passage.
@@ -158,13 +183,17 @@ def main() -> int:
     rc, out = run("test-plan-provenance", FORGED_TEST_PLAN, [])
     expect("provenance: hand-authored Test plan ⇒ FAIL", rc, 1, out)
 
+    # Hand-written "stamped" fixtures are deliberately NOT used for the PASS cases any
+    # more — they carry the marker but no content digest, which is exactly the
+    # pre-v1.22.0 shape that must now fail. The PASS cases below run the REAL renderer.
     rc, out = run("test-plan-provenance", STAMPED_TEST_PLAN, [])
-    expect("provenance: renderer-stamped Test plan ⇒ PASS", rc, 0, out)
+    expect("provenance: marker without a content digest ⇒ FAIL (pre-v1.22.0 render)", rc, 1, out)
 
     # The stamp attests PROVENANCE, not passage — the honest "no gate ran" fallback
-    # carries it too, so an unverified-but-honest PR is not punished.
+    # carries it too (verified end-to-end below), so an honest-but-unverified PR is
+    # never punished for being honest.
     rc, out = run("test-plan-provenance", STAMPED_FALLBACK_TEST_PLAN, [])
-    expect("provenance: stamped manual-fallback Test plan ⇒ PASS", rc, 0, out)
+    expect("provenance: fallback marker without digest ⇒ FAIL (pre-v1.22.0 render)", rc, 1, out)
 
     # No Test plan at all is a different defect (Step 7 always writes one); this
     # check must stay silent rather than manufacture a second failure for it.
@@ -175,18 +204,70 @@ def main() -> int:
     rc, out = run("test-plan-provenance", "## test plan (manual)\n- [x] faked\n", [])
     expect("provenance: lowercase/suffixed heading still detected ⇒ FAIL", rc, 1, out)
 
-    # Real end-to-end parity: the marker this checker greps for MUST be the one the
-    # renderer actually writes. Two constants in two files = FB-0010 fan-out; assert
-    # they agree rather than trusting they were kept in sync by hand.
-    render_src = (HERE.parent / "skills" / "ship" / "lib" / "render-test-plan.py").read_text(encoding="utf-8")
-    coherence_src = SCRIPT.read_text(encoding="utf-8")
-    marker_line = 'PROVENANCE_MARKER = "<!-- flow:test-plan-rendered -->"'
-    expect(
-        "provenance: renderer + checker declare the SAME marker constant",
-        0 if (marker_line in render_src and marker_line in coherence_src) else 1,
-        0,
-        "marker constant drifted between render-test-plan.py and pr-coherence.py",
+    # Self-found false POSITIVE: a PR body that DOCUMENTS the Test-plan format carries a
+    # fenced example with a literal "## Test plan" and no stamp. Counting that as a real
+    # section fails the check — and ship Step 7b exits 1 on failure, so it would hard-block
+    # a legitimate ship with no escape hatch. Only unfenced text is real body structure.
+    rc, out = run("test-plan-provenance", DOCS_FENCED_EXAMPLE, [])
+    expect("provenance: '## Test plan' inside a fenced example ⇒ N/A, not FAIL", rc, 0, out)
+
+    # The mirror: a stamp quoted inside a fence must NOT launder a hand-authored plan.
+    rc, out = run("test-plan-provenance", FENCED_STAMP_LAUNDER, [])
+    expect("provenance: stamp only inside a fence does NOT satisfy the check ⇒ FAIL", rc, 1, out)
+
+    # END-TO-END parity (FB-0010 fan-out defense). The marker AND the digest algorithm
+    # are declared in two files; a source-text match would pass on a re-quoted literal
+    # and never exercise the renderer. So run the REAL renderer and feed its REAL output
+    # to the checker — the only test that proves the two agree.
+    renderer = HERE.parent / "skills" / "ship" / "lib" / "render-test-plan.py"
+    example = HERE.parent / "skills" / "verify-build" / "lib" / "findings-example.json"
+    meta = json.loads(example.read_text(encoding="utf-8")).get("metadata", {})
+    proc = subprocess.run(
+        [sys.executable, str(renderer), str(example),
+         "--branch", meta.get("branch", ""), "--head-sha", meta.get("head_sha_short", "")],
+        capture_output=True, text=True,
     )
+    rendered = proc.stdout
+    rc, out = run("test-plan-provenance", rendered, [])
+    expect("provenance: REAL renderer output verifies end-to-end", rc, 0, out)
+
+    # The realistic forgery the marker alone could not catch: let ship render the block,
+    # then flip a box and leave the comment intact. The content digest is what closes it.
+    flipped = re.sub(r"^- \[[ ~]\] ", "- [x] ", rendered, count=1, flags=re.M)
+    expect("provenance: rendered block was actually mutated by the test",
+           0 if flipped != rendered else 1, 0, "fixture did not flip a box — test is vacuous")
+    rc, out = run("test-plan-provenance", flipped, [])
+    expect("provenance: tick-flip on a genuinely-rendered block ⇒ FAIL", rc, 1, out)
+
+    # ...but prose around the block is the human's to edit and must NOT false-fail —
+    # Step 7b exits 1, so a brittle digest would hard-block a legitimate ship.
+    prosed = rendered.replace("## Test plan", "## Test plan\n\n_Reviewer: see criterion 2._", 1)
+    rc, out = run("test-plan-provenance", prosed + "\n\nExtra human notes.\n", [])
+    expect("provenance: prose edits around the block still PASS", rc, 0, out)
+
+    # The fallback path is the one flow's OWN repo takes (platform: library). Ship Step 7
+    # instructs the agent to fill in its `<how to verify>` line — that documented happy
+    # path must not fail its own gate, while hand-ticking its box must.
+    fb = subprocess.run(
+        [sys.executable, str(renderer), str(HERE / "no-such-buffer.json"),
+         "--branch", "main", "--head-sha", "abc1234"],
+        capture_output=True, text=True,
+    ).stdout
+    rc, out = run("test-plan-provenance", fb, [])
+    expect("provenance: manual fallback verifies", rc, 0, out)
+    rc, out = run("test-plan-provenance",
+                  fb.replace("<how to verify — fill in per the change>", "Run the suite"), [])
+    expect("provenance: filling the fallback's <how to verify> line still PASSES", rc, 0, out)
+    rc, out = run("test-plan-provenance", fb.replace("- [ ] <how to verify", "- [x] <how to verify"), [])
+    expect("provenance: hand-ticking the fallback box ⇒ FAIL", rc, 1, out)
+
+    # A stamp with no digest (a pre-v1.22.0 render, or a stripped digest line) attests
+    # nothing about checkbox state — it must not pass.
+    no_digest = "\n".join(
+        ln for ln in rendered.splitlines() if not ln.startswith("<!-- flow:test-plan-digest ")
+    )
+    rc, out = run("test-plan-provenance", no_digest, [])
+    expect("provenance: stamp present but digest line stripped ⇒ FAIL", rc, 1, out)
 
     # --- usage: missing body file exits 2, never a false PASS ------------------
     proc = subprocess.run(

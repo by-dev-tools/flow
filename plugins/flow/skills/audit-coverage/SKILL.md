@@ -36,9 +36,16 @@ are in this prompt.
 # SESSION cwd, which is not necessarily the repo under review; a bare relative read then
 # audits whatever happens to be there. An unresolvable root emits its OWN line and must
 # never render as the clean-skip line (that is the failure-open this guards).
-ROOT="${CLAUDE_PROJECT_DIR:-}"; { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+# Precedence is cwd-git-root FIRST, env second. Env-first looks safer but
+# BREAKS git worktrees: a session started in the parent repo exports a CLAUDE_PROJECT_DIR
+# pointing there, while the work (and the PR) lives in a linked worktree on a different
+# branch -- so env-first would audit the parent tree and see none of the changes, which is
+# the same failure-open this guard exists to close. `git rev-parse --show-toplevel` returns
+# the WORKTREE root, which is always the tree under review when cwd is inside a repo.
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+{ [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
-  echo '{"criteria": [], "warnings": ["ROOT-UNRESOLVED — no CLAUDE_PROJECT_DIR and no git toplevel from this cwd; criteria were NOT read. This is not an empty plan."]}'
+  echo '{"criteria": [], "warnings": ["ROOT-UNRESOLVED — no CLAUDE_PROJECT_DIR and no git toplevel from this cwd; criteria were NOT read. This is not an empty plan. Re-run from the repo root, or set CLAUDE_PROJECT_DIR to the repo."]}'
 else
   PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
   if [ -f "$PLAN" ]; then python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PLAN" 2>/dev/null || echo '{"criteria": [], "warnings": ["extract-criteria.py failed"]}'; else echo "{\"criteria\": [], \"warnings\": [\"no plan at $PLAN\"]}"; fi
@@ -50,9 +57,10 @@ fi
 !`
 # Root anchor (FB-0074) — see the criteria block above. Resolve BEFORE any relative read;
 # an unresolvable root is ROOT-UNRESOLVED, never the SKIPPED line.
-ROOT="${CLAUDE_PROJECT_DIR:-}"; { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+{ [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
-  echo "[audit-coverage] ROOT-UNRESOLVED — no CLAUDE_PROJECT_DIR and no git toplevel from cwd $(pwd). The diff was NOT read, so coverage was NOT audited. This is NOT a clean skip."
+  echo "[audit-coverage] ROOT-UNRESOLVED — no CLAUDE_PROJECT_DIR and no git toplevel from cwd $(pwd). The diff was NOT read, so coverage was NOT audited. This is NOT a clean skip. Re-run from the repo root, or set CLAUDE_PROJECT_DIR to the repo."
   exit 0
 fi
 # Name the repo actually audited: the root resolver cannot tell "the repo under review"

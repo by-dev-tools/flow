@@ -68,9 +68,17 @@ def _bare(target: str) -> str:
 def scan(skills_dir: Path) -> dict:
     """Build the skill table and the call graph. Pure — no printing."""
     skills = {}
+    warnings = []
     for skill_md in sorted(skills_dir.glob("*/SKILL.md")):
         text = skill_md.read_text(encoding="utf-8", errors="replace")
         fm = _frontmatter(text)
+        if not fm.strip():
+            # No parseable frontmatter ⇒ `disabled` would default to False with no
+            # diagnostic, inverting the lint's whole job on that file. Say so.
+            warnings.append(
+                f"{skill_md}: no parseable YAML frontmatter — treating as "
+                "model-invocable, which may be wrong. Check the leading `---` block."
+            )
         name_m = _NAME_RE.search(fm)
         dmi_m = _DMI_RE.search(fm)
         name = name_m.group(1) if name_m else skill_md.parent.name
@@ -83,18 +91,33 @@ def scan(skills_dir: Path) -> dict:
     calls = []
     for name, info in skills.items():
         text = info["path"].read_text(encoding="utf-8", errors="replace")
-        in_fence = False
+        # Track the OPENING delimiter, not a boolean: CommonMark allows both ``` and
+        # ~~~, and a ``` inside a ~~~ block must not close it. A boolean toggle also
+        # missed ~~~ fences entirely — an executable call in one would evade the lint,
+        # which is the dangerous direction (false negative on the thing being forbidden).
+        fence = None
         for lineno, line in enumerate(text.splitlines(), 1):
-            if line.lstrip().startswith("```"):
-                in_fence = not in_fence
-                continue
-            if not in_fence:
+            stripped = line.lstrip()
+            if fence is None:
+                if stripped.startswith("```") or stripped.startswith("~~~"):
+                    fence = stripped[:3]
                 continue  # prose / inline-code mention, not an executable call
+            if stripped.startswith(fence):
+                fence = None
+                continue
             for m in _SKILL_CALL_RE.finditer(line):
                 calls.append(
                     {"caller": name, "target": m.group(1), "line": lineno, "path": info["path"]}
                 )
-    return {"skills": skills, "calls": calls}
+        if fence is not None:
+            # An unclosed fence flips parity for the rest of the file, so a REAL call
+            # after it reads as prose and is skipped — a false negative on exactly the
+            # thing being forbidden. Never silent (FB-0010 silent-skip defense).
+            warnings.append(
+                f"{info['path']}: unclosed `{fence}` code fence — everything after it was "
+                "treated as fenced; a Skill() call below may have been missed."
+            )
+    return {"skills": skills, "calls": calls, "warnings": warnings}
 
 
 def classify(table: dict) -> tuple:
@@ -139,6 +162,9 @@ def main(argv=None) -> int:
     violations, unknowns = classify(table)
     n_skills, n_calls = len(table["skills"]), len(table["calls"])
 
+    for w in table.get("warnings", []):
+        print(f"[skill-composition-lint] WARN — {w}")
+
     if not args.quiet_unknown:
         for c in unknowns:
             print(
@@ -150,7 +176,7 @@ def main(argv=None) -> int:
     if not violations:
         print(
             f"[skill-composition-lint] PASS — {n_calls} Skill() call(s) across "
-            f"{n_skills} skill(s); every target is model-invocable."
+            f"{n_skills} skill(s) in {root}; every target is model-invocable."
         )
         return 0
 
@@ -160,9 +186,11 @@ def main(argv=None) -> int:
             f"{c['path']}:{c['line']}, but '{_bare(c['target'])}' sets "
             "disable-model-invocation: true, which blocks programmatic invocation. "
             "The call is rejected at runtime, so this composition silently degrades to its "
-            "fallback on EVERY run. Fix: clear the flag on the callee, give it a "
-            "model-invocable entrypoint, inline the step, or hand the step to the human "
-            "explicitly instead of pretending to call it."
+            "fallback on EVERY run.\n"
+            "  Fix (recommended): hand the step to the human explicitly instead of calling "
+            "it — the flag usually guards something that must not auto-fire.\n"
+            "  Alternatives: clear the flag on the callee, give it a model-invocable "
+            "entrypoint, or inline the step."
         )
     print(
         f"[skill-composition-lint] {len(violations)} violation(s) across {n_calls} "

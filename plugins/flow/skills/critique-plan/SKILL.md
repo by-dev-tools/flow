@@ -10,7 +10,29 @@ agent: plan-critic
 
 ## Session context (preprocessed)
 
-!`REFGLOB=$(cat flow.config.json 2>/dev/null | jq -r '.referenceGlob // empty' 2>/dev/null); [ -z "$REFGLOB" ] && REFGLOB="core-docs/*.md"; if [ -n "$ARGUMENTS" ]; then python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file "$ARGUMENTS" --reference-glob "$REFGLOB"; else python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --reference-glob "$REFGLOB"; fi`
+!`
+# Root anchor (FB-0074) — MUST precede the relative flow.config.json read. This skill is
+# context: fork, so it inherits the SESSION cwd, not necessarily the repo under review.
+# From the wrong cwd referenceGlob falls back to a default that matches nothing, the
+# "## Reference documents" section loads EMPTY, and — because a spec violation cannot be
+# flagged without quoting the rule it violates — the critic structurally cannot flag one
+# and returns APPROVED. "I found nothing" and "I never looked" render identically, on a
+# skill that gates plan approval. Emit a distinct line instead.
+# Precedence is cwd-git-root FIRST, env second (FB-0074). Env-first looks safer but
+# BREAKS git worktrees: a session started in the parent repo exports a CLAUDE_PROJECT_DIR
+# pointing there, while the work (and the PR) lives in a linked worktree on a different
+# branch -- so env-first would audit the parent tree and see none of the changes, which is
+# the same failure-open this guard exists to close. `git rev-parse --show-toplevel` returns
+# the WORKTREE root, which is always the tree under review when cwd is inside a repo.
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+{ [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT="${CLAUDE_PROJECT_DIR:-}"
+if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
+  echo "[critique-plan] ROOT-UNRESOLVED — the repo under review could not be located from cwd $(pwd); no reference documents were loaded, so spec violations CANNOT be judged. This is not an APPROVED. Re-run from the repo root, or set CLAUDE_PROJECT_DIR to the repo."
+  exit 0
+fi
+REFGLOB=$(cat flow.config.json 2>/dev/null | jq -r '.referenceGlob // empty' 2>/dev/null); [ -z "$REFGLOB" ] && REFGLOB="core-docs/*.md"
+if [ -n "$ARGUMENTS" ]; then python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file "$ARGUMENTS" --reference-glob "$REFGLOB"; else python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --reference-glob "$REFGLOB"; fi
+`
 
 ## Pinning lint (deterministic)
 

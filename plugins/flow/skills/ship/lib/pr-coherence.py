@@ -43,8 +43,12 @@ Subcommands:
              could hand-write it and hand-tick the boxes, silently converting a
              mechanical gate into a self-assertion. `render-test-plan.py` stamps
              every path it emits (including the no-buffer fallback) with
-             PROVENANCE_MARKER; a body with a Test plan and no stamp is forged.
-             exit 0 PASS/N-A, 1 FAIL (hand-authored), 2 usage.
+             PROVENANCE_MARKER **plus a digest over the checkbox states**, so two
+             forgeries are caught: a hand-written block (no stamp), and a rendered
+             block whose boxes were flipped afterwards (digest mismatch). The digest
+             deliberately excludes criterion prose — ship Step 7 tells the agent to
+             fill in the fallback's `<how to verify>` text.
+             exit 0 PASS/N-A, 1 FAIL (forged), 2 usage.
 
 `--is-draft` / `--want-draft` take the literal strings `true`/`false` (gh's JSON
 boolean, lower-cased). Body is read from --body-file, or from stdin when the path
@@ -54,6 +58,8 @@ is `-`. Always prints a single human-readable verdict line. Stdlib only, 3.7+.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import re
 import sys
 from pathlib import Path
 
@@ -64,7 +70,27 @@ MANIFEST_HEADING = "🚫 NOT READY TO MERGE"
 # Canonical Test-plan provenance stamp — keep in lockstep with
 # `ship/lib/render-test-plan.py::PROVENANCE_MARKER` (FB-0010 fan-out).
 PROVENANCE_MARKER = "<!-- flow:test-plan-rendered -->"
+PROVENANCE_DIGEST_PREFIX = "<!-- flow:test-plan-digest "
 TEST_PLAN_HEADING = "## Test plan"
+
+# Must match `render-test-plan.py::_CHECKBOX_RE` / `checkbox_digest` exactly.
+_CHECKBOX_RE = re.compile(r"^\s*-\s\[([ x~])\]\s?(.*)$")
+_DIGEST_RE = re.compile(re.escape(PROVENANCE_DIGEST_PREFIX) + r"([0-9a-f]+) -->")
+
+
+def checkbox_digest(block: str) -> str:
+    """Recompute the renderer's digest over ORDERED checkbox STATES.
+
+    Must stay byte-identical to `render-test-plan.py::checkbox_digest` (FB-0010
+    fan-out). States only, not criterion text — see that docstring for why.
+    """
+    states = [
+        m.group(1)
+        for m in (_CHECKBOX_RE.match(raw) for raw in block.replace("\r\n", "\n").split("\n"))
+        if m
+    ]
+    payload = f"{len(states)}:" + "".join(states)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def has_manifest(body: str) -> bool:
@@ -72,10 +98,38 @@ def has_manifest(body: str) -> bool:
     return MANIFEST_MARKER in body or MANIFEST_HEADING in body
 
 
+def strip_fenced(body: str) -> str:
+    """Drop fenced code blocks (``` and ~~~), keeping line count irrelevant.
+
+    A PR body that *documents* the Test-plan format carries a fenced example
+    containing a literal `## Test plan` and no stamp. Counting that as a real
+    section makes `test-plan-provenance` fail a PR whose actual Test plan is
+    fine — and Step 7b exits 1 on failure, so the false positive would hard-block
+    the ship with no escape hatch. Only unfenced text is the real body structure.
+
+    Tracks the opening delimiter so a ``` inside a ~~~ block (or vice versa)
+    doesn't close it early.
+    """
+    out, fence = [], None
+    for line in body.splitlines():
+        stripped = line.lstrip()
+        if fence is None:
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                fence = stripped[:3]
+                continue
+            out.append(line)
+        elif stripped.startswith(fence):
+            fence = None
+    return "\n".join(out)
+
+
 def has_test_plan(body: str) -> bool:
-    """True iff the body declares a Test plan section (heading match, case-insensitive)."""
+    """True iff the body declares a Test plan section (unfenced, case-insensitive)."""
     needle = TEST_PLAN_HEADING.lower()
-    return any(ln.strip().lower().startswith(needle) for ln in body.splitlines())
+    return any(
+        ln.strip().lower().startswith(needle)
+        for ln in strip_fenced(body).splitlines()
+    )
 
 
 def _read_body(path: str) -> str:
@@ -165,22 +219,51 @@ def cmd_test_plan_provenance(args) -> int:
         print("[pr-coherence] test-plan-provenance N/A — body declares no '## Test plan' section.")
         return 0
 
-    if PROVENANCE_MARKER in body:
+    # Match the stamp OUTSIDE fences too, for the mirror reason: a doc example that
+    # quotes the marker inside a fence must not launder a hand-authored Test plan.
+    unfenced = strip_fenced(body)
+    if PROVENANCE_MARKER not in unfenced:
         print(
-            "[pr-coherence] test-plan-provenance PASS — Test plan carries the renderer "
-            "stamp; its checkbox state came from the verify-build buffer."
+            "[pr-coherence] test-plan-provenance FAIL — '## Test plan' present without the "
+            f"renderer stamp ({PROVENANCE_MARKER}), so its checkboxes are self-assertion, "
+            "not machine verdicts.\n"
+            "  Fix: re-render with ship/lib/render-test-plan.py (it stamps every path, "
+            "including the no-buffer fallback) and re-publish.\n"
+            "  Note: filling in the fallback's `<how to verify>` text is fine — the stamp "
+            "covers checkbox STATE, not the surrounding prose. Re-typing the block is not."
         )
-        return 0
+        return 1
+
+    # The marker alone proves only that the renderer ran at some point. The realistic
+    # forgery is flipping `[ ]` → `[x]` on a genuinely-rendered block and leaving the
+    # comment intact — so verify the content digest too.
+    m = _DIGEST_RE.search(unfenced)
+    if not m:
+        print(
+            "[pr-coherence] test-plan-provenance FAIL — the Test plan carries the renderer "
+            f"stamp but no content digest ({PROVENANCE_DIGEST_PREFIX}…). Either it was "
+            "rendered by a pre-v1.22.0 renderer (re-render to upgrade it) or the digest "
+            "line was stripped. A stamp without a digest attests nothing about checkbox state."
+        )
+        return 1
+
+    want, got = m.group(1), checkbox_digest(unfenced)
+    if want != got:
+        print(
+            "[pr-coherence] test-plan-provenance FAIL — checkbox state does NOT match the "
+            f"renderer's digest (stamped {want}, body hashes to {got}). A criterion box was "
+            "edited after rendering, which converts a machine verdict into a self-assertion "
+            "— the exact forgery this gate exists to catch.\n"
+            "  Fix: re-run /flow:verify-build so the buffer reflects reality, then re-render "
+            "with ship/lib/render-test-plan.py. Never hand-tick a criterion box."
+        )
+        return 1
 
     print(
-        "[pr-coherence] test-plan-provenance FAIL — the body has a '## Test plan' but NOT "
-        f"the renderer stamp ({PROVENANCE_MARKER}). The block was hand-authored, so its "
-        "checkboxes are self-assertion, not machine verdicts — the exact forgery the "
-        "non-forgeable Test plan exists to prevent. Re-render it with "
-        "`ship/lib/render-test-plan.py` (which stamps every path, including the "
-        "no-buffer fallback) and re-publish; do not hand-tick criterion boxes."
+        "[pr-coherence] test-plan-provenance PASS — Test plan carries the renderer stamp "
+        f"and its checkbox state matches the rendered digest ({want})."
     )
-    return 1
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:

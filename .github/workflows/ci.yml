@@ -22,6 +22,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      # FB-0074 — assert the harness↔runner join. CI enumerates harnesses by hand (it
+      # must: the list is segmented across the evals + security jobs, which a glob would
+      # flatten). But nothing checked that the hand-written list is COMPLETE — and a run
+      # with 19 of 20 harnesses is byte-identical to one with all 20, so an unwired
+      # harness contributes zero regression protection while appearing to. That is the
+      # exact "contract split across two files, nothing checks the join" class this
+      # release fixes; it was previously guarded only by author memory.
+      - name: every eval harness is wired into this workflow (and vice versa)
+        run: |
+          ON_DISK=$(ls plugins/flow/evals/run_*.py | xargs -n1 basename | sort -u)
+          IN_CI=$(grep -oE 'run_[a-z_]+\.py' .github/workflows/ci.yml | sort -u)
+          if [ "$ON_DISK" != "$IN_CI" ]; then
+            echo "::error::eval harness/CI-runner mismatch — an unwired harness gives ZERO regression protection."
+            diff <(echo "$ON_DISK") <(echo "$IN_CI") \
+              --label "harnesses on disk" --label "harnesses run by ci.yml" -u || true
+            exit 1
+          fi
+          echo "harness/runner join OK — $(echo "$ON_DISK" | wc -l | tr -d ' ') harnesses, all wired."
       - run: python3 plugins/flow/evals/run_evals.py
       - run: python3 plugins/flow/evals/run_walk_extract_evals.py
       - run: python3 plugins/flow/evals/run_plan_file_evals.py

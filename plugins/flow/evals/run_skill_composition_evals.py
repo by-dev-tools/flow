@@ -97,6 +97,41 @@ def main() -> int:
         rc, out = lint(root)
         expect("inline-backtick prose mention is NOT a call ⇒ PASS", rc, 0, out)
 
+        # --- 3b. fence-delimiter variants (self-found false NEGATIVES) --------
+        # The dangerous direction: a real call the lint fails to see. The first
+        # implementation toggled on "```" only, so a CommonMark `~~~` fence hid an
+        # executable call completely. Each variant below must still FAIL.
+        for label, body in [
+            ("tilde", '~~~\nSkill("flow:land")\n~~~'),
+            ("info-string", '```sh\nSkill("flow:land")\n```'),
+            ("indented", '  ```\n  Skill("flow:land")\n  ```'),
+            # A ``` line inside a ~~~ block must not close it early — tracking the
+            # opening delimiter, not a boolean, is what makes this hold.
+            ("nested-delims", '~~~\nnot a fence: ```\nSkill("flow:land")\n~~~'),
+        ]:
+            root = Path(td) / f"fence-{label}"
+            make_skill(root, "land", disabled=True)
+            make_skill(root, "post-merge", disabled=True, body=body)
+            rc, out = lint(root)
+            expect(f"fence variant '{label}' still catches the call ⇒ FAIL", rc, 1, out)
+
+        # --- 3c. fail-open paths must WARN, never pass silently ---------------
+        # Both of these previously defaulted to "nothing to see", which inverts the
+        # lint's job without saying so (FB-0010 silent-skip class).
+        root = Path(td) / "unclosed-fence"
+        make_skill(root, "land", disabled=True)
+        make_skill(root, "post-merge", disabled=True,
+                   body='```\nunclosed fence\n\nSkill("flow:land")')
+        rc, out = lint(root)
+        expect("unclosed fence ⇒ WARN emitted", 0 if "WARN" in out and "unclosed" in out else 1, 0, out)
+
+        root = Path(td) / "no-frontmatter"
+        (root / "x").mkdir(parents=True)
+        (root / "x" / "SKILL.md").write_text("no frontmatter at all\n", encoding="utf-8")
+        rc, out = lint(root)
+        expect("unparseable frontmatter ⇒ WARN emitted (not a silent 'invocable')",
+               0 if "WARN" in out and "frontmatter" in out else 1, 0, out)
+
         # --- 4. unknown target = cross-plugin call, not a violation -----------
         root = Path(td) / "unknown"
         make_skill(root, "verify-build", disabled=False, body=FENCED.format(target="verify"))

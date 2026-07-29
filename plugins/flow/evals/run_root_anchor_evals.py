@@ -15,8 +15,9 @@ runs it, so the fixture and the artifact cannot disagree.
 Scenarios, per skill:
   1. non-repo cwd, no CLAUDE_PROJECT_DIR  ⇒ a DISTINCT unresolved line (the fix)
   2. real repo, no env                    ⇒ resolves + names the root (happy path)
-  3. foreign repo, CLAUDE_PROJECT_DIR set ⇒ env wins; the real repo is audited
-  4. non-repo cwd, CLAUDE_PROJECT_DIR set ⇒ env alone is sufficient
+  3. real repo cwd + conflicting CLAUDE_PROJECT_DIR ⇒ the CWD's git root wins
+     (env-first would break git worktrees — see the inline note at the case)
+  4. non-repo cwd, CLAUDE_PROJECT_DIR set ⇒ env is the fallback
 
 Also asserts the distinctness invariant directly: the unresolved output must NOT be
 confusable with the clean-skip output.
@@ -41,14 +42,21 @@ SKILLS = HERE.parent / "skills"
 # `fi` that closes its unresolved branch. Anchored on the assignment so a reworded
 # comment doesn't break extraction.
 _GUARD_RE = re.compile(
-    r"^(ROOT=\"\$\{CLAUDE_PROJECT_DIR:-\}\".*?^fi$)",
+    r"^(ROOT=\$\(git rev-parse --show-toplevel.*?^fi$)",
     re.MULTILINE | re.DOTALL,
 )
 
 TARGETS = [
     ("audit-coverage", SKILLS / "audit-coverage" / "SKILL.md"),
     ("audit-skips", SKILLS / "audit-skips" / "SKILL.md"),
+    # Same failure-open, and it gates plan approval: with no reference docs the critic
+    # structurally cannot flag a spec violation, so it returns APPROVED.
+    ("critique-plan", SKILLS / "critique-plan" / "SKILL.md"),
 ]
+
+# Guards expected per skill — an exact count, not a floor. A floor (>= 2) lets a future
+# third relative-reading preamble be added WITHOUT a guard and still pass.
+EXPECTED_GUARDS = {"audit-coverage": 2, "audit-skips": 2, "critique-plan": 1}
 
 _failures: list[str] = []
 
@@ -108,38 +116,47 @@ def main() -> int:
                 continue
 
             guards = extract_guards(path)
-            check(f"{skill}: root guard present in every preamble", len(guards) >= 2,
-                  f"found {len(guards)} guard block(s); expected >= 2 "
-                  "(each relative-reading preamble needs one)")
+            want = EXPECTED_GUARDS[skill]
+            check(f"{skill}: exactly {want} root guard(s), one per relative-reading preamble",
+                  len(guards) == want,
+                  f"found {len(guards)}, expected {want} — a preamble was added or lost a guard")
             if not guards:
                 continue
 
-            g = guards[0]
+            # Every guard is executed, not just the first: they emit DIFFERENT payloads
+            # (JSON warnings / JSON root_error / bracketed text), so the untested branch
+            # is exactly the one whose divergence could be wrong.
+            for gi, g in enumerate(guards):
 
-            # 1. THE BUG: non-repo cwd must be distinctly unresolved, not a clean skip.
-            out = run_guard(g, nonrepo)
-            check(f"{skill}: non-repo cwd ⇒ distinct unresolved signal",
-                  any(t in out for t in UNRESOLVED_TOKENS), f"got: {out!r}")
-            check(f"{skill}: unresolved output is NOT the clean-skip line",
-                  "SKIPPED" not in out and '"note"' not in out, f"got: {out!r}")
+                tag = f"{skill}[guard {gi + 1}]"
 
-            # 2. happy path unchanged.
-            out = run_guard(g, real_repo)
-            check(f"{skill}: real repo ⇒ resolves (no unresolved signal)",
-                  not any(t in out for t in UNRESOLVED_TOKENS), f"got: {out!r}")
+                # 1. THE BUG: non-repo cwd must be distinctly unresolved, not a clean skip.
+                out = run_guard(g, nonrepo)
+                check(f"{tag}: non-repo cwd ⇒ distinct unresolved signal",
+                      any(t in out for t in UNRESOLVED_TOKENS), f"got: {out!r}")
+                check(f"{tag}: unresolved output is NOT the clean-skip line",
+                      "SKIPPED" not in out and '"note"' not in out, f"got: {out!r}")
 
-            # 3. env var wins over an inherited foreign repo — the case
-            #    `git rev-parse --show-toplevel` alone cannot fix, since git
-            #    succeeds in the foreign repo too.
-            out = run_guard(g, foreign, project_dir=real_repo)
-            check(f"{skill}: CLAUDE_PROJECT_DIR overrides a foreign repo cwd",
-                  str(real_repo) in out or not any(t in out for t in UNRESOLVED_TOKENS),
-                  f"got: {out!r}")
+                # 2. happy path unchanged.
+                out = run_guard(g, real_repo)
+                check(f"{tag}: real repo ⇒ resolves (no unresolved signal)",
+                      not any(t in out for t in UNRESOLVED_TOKENS), f"got: {out!r}")
 
-            # 4. env var alone is sufficient from a non-repo cwd.
-            out = run_guard(g, nonrepo, project_dir=real_repo)
-            check(f"{skill}: CLAUDE_PROJECT_DIR alone resolves from a non-repo cwd",
-                  not any(t in out for t in UNRESOLVED_TOKENS), f"got: {out!r}")
+                # 3. PRECEDENCE — cwd's git root WINS over CLAUDE_PROJECT_DIR.
+                #    This repo's own loop runs from linked worktrees: a session started
+                #    in the parent repo exports CLAUDE_PROJECT_DIR pointing THERE, while
+                #    the PR lives in a worktree on a different branch. Env-first would
+                #    audit the parent tree and see none of the changes — the same
+                #    failure-open this guard exists to close. Pinned so a future
+                #    "env is more authoritative" refactor can't silently reintroduce it.
+                out = run_guard(g, real_repo, project_dir=foreign)
+                check(f"{tag}: cwd git root WINS over a conflicting CLAUDE_PROJECT_DIR",
+                      str(foreign) not in out, f"env leaked into the resolved root: {out!r}")
+
+                # 4. env is the FALLBACK — used only when cwd is not inside a repo.
+                out = run_guard(g, nonrepo, project_dir=real_repo)
+                check(f"{tag}: CLAUDE_PROJECT_DIR resolves from a non-repo cwd (fallback)",
+                      not any(t in out for t in UNRESOLVED_TOKENS), f"got: {out!r}")
 
     # The routing half: an unresolved root is worthless unless the prose refuses to
     # collapse it into the clean skip.

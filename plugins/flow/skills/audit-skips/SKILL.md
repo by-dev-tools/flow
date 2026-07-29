@@ -37,20 +37,29 @@ against the config, the diff, and the canonical artifact's existence + freshness
 `NEEDS-JUDGMENT` (a mode-declared spike/tiny skip, an unrecognized skip reason).
 
 !`
-# /flow:ship writes the per-stage report to this temp handoff before invoking the
-# skill (ephemeral, like the verify-build findings buffer). Standalone invocation
-# without the handoff still emits the context block, with an empty stage set.
-STAGES="${FLOW_SKIP_AUDIT_STAGES:-/tmp/flow-skip-audit-stages.json}"
 # Root anchor (FB-0074) — MUST precede every relative read below (the engine fallback path,
 # flow.config.json, and the diff block). A fork inherits the SESSION cwd, not necessarily the
 # repo under review: from a non-repo cwd every relative read silently yields empty, and every
 # unverifiable skip then validates as LEGITIMATE -- a false clean pass on a gate whose whole
 # job is to refuse those. Emit a routable root_error instead, never the standalone note.
-ROOT="${CLAUDE_PROJECT_DIR:-}"; { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+# Precedence is cwd-git-root FIRST, env second (FB-0074). Env-first looks safer but
+# BREAKS git worktrees: a session started in the parent repo exports a CLAUDE_PROJECT_DIR
+# pointing there, while the work (and the PR) lives in a linked worktree on a different
+# branch -- so env-first would audit the parent tree and see none of the changes, which is
+# the same failure-open this guard exists to close. `git rev-parse --show-toplevel` returns
+# the WORKTREE root, which is always the tree under review when cwd is inside a repo.
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+{ [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
-  printf '{"root_error": "no CLAUDE_PROJECT_DIR and no git toplevel from this cwd; config and diff were NOT read", "stages": []}\n'
+  printf '{"root_error": "no git toplevel from this cwd and no CLAUDE_PROJECT_DIR; config and diff were NOT read. Re-run from the repo root, or set CLAUDE_PROJECT_DIR to the repo", "stages": []}\n'
   exit 0
 fi
+# /flow:ship writes the per-stage report to this temp handoff before invoking the skill
+# (ephemeral, like the verify-build findings buffer); a standalone invocation without it
+# still emits the context block, with an empty stage set. Resolved AFTER the cd above, so
+# a relative FLOW_SKIP_AUDIT_STAGES override resolves against the repo root rather than
+# whatever cwd the fork inherited (which the cd just left).
+STAGES="${FLOW_SKIP_AUDIT_STAGES:-/tmp/flow-skip-audit-stages.json}"
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/audit-skips/lib/skip-audit-checks.py" ]; then
   H="${CLAUDE_PLUGIN_ROOT}/skills/audit-skips/lib/skip-audit-checks.py"
 else
@@ -86,9 +95,10 @@ fi
 
 !`
 # Root anchor (FB-0074) — see the mechanical block above.
-ROOT="${CLAUDE_PROJECT_DIR:-}"; { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+{ [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
-  echo "[audit-skips] ROOT-UNRESOLVED — the repo under review could not be located from cwd $(pwd); no diff was read."
+  echo "[audit-skips] ROOT-UNRESOLVED — the repo under review could not be located from cwd $(pwd); no diff was read. Re-run from the repo root, or set CLAUDE_PROJECT_DIR to the repo."
   exit 0
 fi
 echo "[audit-skips] repo root: $ROOT"
@@ -126,7 +136,7 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   unverifiable skip would otherwise validate as LEGITIMATE — a false clean pass produced by
   looking at the wrong place, which is strictly worse than an engine crash because it emits a
   confident verdict. Output a loud diagnostic and stop:
-  `⚠️ SKIP-AUDIT ROOT UNRESOLVED (<root_error>). The skip-legitimacy gate did NOT run — this
+  `⚠️ SKIP-AUDIT ROOT-UNRESOLVED (<root_error>). The skip-legitimacy gate did NOT run — this
   is not a clean pass.` Route it exactly like `engine_error` below: from `/flow:ship` Step 2a
   it becomes a `[decision-required]` draft-manifest entry, never a silent proceed.
 - If the mechanical block carries **`"engine_error"`** (the handoff file WAS present but

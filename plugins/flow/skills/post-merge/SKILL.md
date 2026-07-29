@@ -130,13 +130,10 @@ Now that the merge is confirmed, the forward docs need reconciling: flipping the
 currency, and opening a small `docs: land #N` PR. That is exactly `/flow:land`'s job, and you
 must **not** reimplement it here.
 
-**You cannot invoke it yourself.** `/flow:land` sets `disable-model-invocation: true`, which
-blocks *programmatic* invocation, not just auto-selection — a `Skill("flow:land")` call is
-rejected at runtime. #79 specified this step as a `Skill()` composition; that call never
-executed once, so the step silently degraded to its fallback on every run until FB-0074
-caught it. The flag on `/flow:land` is deliberate and stays: it opens a PR, so it must never
-auto-fire mid-loop. Do not work around it — a skill that opens PRs is exactly the kind that
-should require a human to start it.
+**You cannot invoke it yourself, and must not try.** `/flow:land` is
+`disable-model-invocation: true`, which blocks *programmatic* invocation — a `Skill()` call
+naming it is rejected at runtime. The flag is deliberate: `/flow:land` opens a PR, so it must
+never auto-fire mid-loop.
 
 So **do not emit a `Skill()` call for it.** Instead, carry the reconciliation forward as an
 explicit outstanding item:

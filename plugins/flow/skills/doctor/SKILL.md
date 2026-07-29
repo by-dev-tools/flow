@@ -4,8 +4,9 @@ description: >
   Verify that the flow plugin is correctly installed and configured for the
   current project. Runs a punch-list of PASS/FAIL checks: marketplace
   registered under the canonical 'flow' name, flow@flow enabled, project-root
-  flow.config.json present + parses + matches the v1.2+ schema, all 30 slots
-  have sensible values, any declared `statusDocs` status surfaces exist + are
+  flow.config.json present + parses + matches the v1.2+ schema, no skill composes
+  with a `disable-model-invocation` skill (a call the runtime rejects), all 30
+  slots have sensible values, any declared `statusDocs` status surfaces exist + are
   fenced, any undeclared `statusSurfaceCandidates` that carry status content are
   flagged for opt-in, any open PR for HEAD is body↔draft coherent (no stale
   `NOT READY TO MERGE` manifest on a ready PR), auto-loading rules visible to
@@ -111,18 +112,43 @@ A skill can instruct the agent to run another skill (`Skill("flow:x")`) — flow
 Runs over the installed plugin's skills, and over the project's own `.claude/skills/` when present (a consumer writing custom skills hits the same trap).
 
 ```sh
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then L="${CLAUDE_PLUGIN_ROOT}/skills/doctor/lib/skill-composition-lint.py"; else L="plugins/flow/skills/doctor/lib/skill-composition-lint.py"; fi
-if [ ! -f "$L" ]; then
-  echo "[Check 1.4] SKIP — skill-composition-lint.py not found at $L (reinstall the flow plugin)."
+# Emit doctor's OWN [PASS]/[FAIL]/[WARN]/[SKIP] tokens (the final-line verdict is
+# assembled by counting them). The lint's internal "[skill-composition-lint] …" lines
+# are detail, not verdict — a check whose FAIL never registers in the verdict is the
+# same never-registers-as-a-gate class this check exists to catch.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  PLUGIN_SKILLS="${CLAUDE_PLUGIN_ROOT}/skills"
+  L="${CLAUDE_PLUGIN_ROOT}/skills/doctor/lib/skill-composition-lint.py"
 else
-  for D in "$(dirname "$L")/../.." ".claude/skills"; do
-    [ -d "$D" ] || continue
-    python3 "$L" "$D" --quiet-unknown || echo "[Check 1.4] FAIL — see the violation(s) above; a rejected Skill() call is a step that never runs."
+  PLUGIN_SKILLS="plugins/flow/skills"
+  L="plugins/flow/skills/doctor/lib/skill-composition-lint.py"
+fi
+if [ ! -f "$L" ]; then
+  echo "[SKIP] skill-composition lint — helper not found at $L"
+  echo "       Fix: reinstall the flow plugin (/plugin install flow@flow)."
+else
+  for D in "$PLUGIN_SKILLS" ".claude/skills"; do
+    if [ ! -d "$D" ]; then
+      # Absent .claude/skills is normal (most projects write no custom skills); say so
+      # rather than skipping silently, so "not scanned" can't read as "scanned, clean".
+      echo "[SKIP] skill-composition lint — $D not present (no custom skills to lint)"
+      continue
+    fi
+    OUT=$(python3 "$L" "$D" 2>&1); RC=$?
+    printf '%s\n' "$OUT" | sed 's/^/       /'
+    case "$RC" in
+      0) echo "[PASS] skill-composition targets model-invocable ($D)" ;;
+      1) echo "[FAIL] skill-composition — a Skill() call names a disable-model-invocation skill ($D)"
+         echo "       That call is REJECTED at runtime, so the step silently never runs."
+         echo "       Fix: clear the flag on the callee, give it a model-invocable entrypoint,"
+         echo "            inline the step, or hand it to the human instead of calling it." ;;
+      *) echo "[WARN] skill-composition lint could not run over $D (exit $RC) — composition is UNCHECKED, not clean." ;;
+    esac
   done
 fi
 ```
 
-A `PASS` line per scanned directory is the healthy result. A `FAIL` names the caller, the callee, and the file:line — fix by clearing the flag on the callee, giving it a model-invocable entrypoint, inlining the step, or handing the step to the human explicitly instead of pretending to call it.
+`[PASS]` per scanned directory is the healthy result. `[FAIL]` names the caller, the callee, and the file:line. Note the exit codes are distinguished: **1** is a real violation, anything else is a tool failure — reporting "could not run" as a violation would be a false accusation, and reporting it as a pass would be the failure-open. UNKNOWN targets (a `Skill()` naming something outside the scanned tree — another plugin, or a typo) are printed in the indented detail rather than suppressed, so `Skill("flow:lnad")` stays visible.
 
 ### Section 2: project config
 
@@ -343,7 +369,7 @@ fi
 
 **Check 2.8 — lesson-contribution slots (`flowRepoPath` etc.) are coherent (FB-0059)**
 
-The lesson-harvest loop (`/flow:ship` + `/flow:ship-spike` Step 4c enqueues flow-generalizable lessons; `/flow:contribute` drains them into a draft PR against the flow repo). Harvest works with no config (it falls back to user-scope defaults), but the **drain** needs `flowRepoPath` set to a real flow checkout. This check verifies the slots are coherent so a misconfigured drain fails at setup, not mid-run.
+The lesson-harvest loop (`/flow:ship` + `/flow:ship-spike` Step 4c enqueues flow-generalizable lessons; `/flow:contribute` drains them into a PR against the flow repo). Harvest works with no config (it falls back to user-scope defaults), but the **drain** needs `flowRepoPath` set to a real flow checkout. This check verifies the slots are coherent so a misconfigured drain fails at setup, not mid-run.
 
 ```sh
 if [ ! -f flow.config.json ] || ! jq -e . flow.config.json >/dev/null 2>&1; then
