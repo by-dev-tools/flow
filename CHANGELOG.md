@@ -10,6 +10,21 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.23.0 — 2026-07-29
+
+**A blocked ship now hands you decisions you can answer, not a draft PR to decode.**
+
+- **The problem.** When a ship gate did not pass, `/flow:ship` opened a draft PR and handed it back. Measured across five real draft PRs in two projects, the round-trip from draft to ready ran **47 minutes to 13 days** — because the blocker was written for an engineer (`needs: declare + verify the criterion, or human waive`) with no proposed fix attached, so the only available move was to ask the agent to go fix it.
+- **What changes.** Every blocker is now triaged into one of three shapes. If a resolution exists and has not been tried, the agent tries it once — the visual-walkthrough gate used to draft without ever attempting the capture it was asking for. If it is a real decision, the agent **drafts the fix** and Step 8 hands you a **numbered question**: what it means in plain language, the proposed resolution, a recommendation with its reasoning, what was already tried, and "waive and ship as-is." You answer in a word; the agent applies it and re-runs the check, and the PR goes ready once it passes. If it needs something only you can do outside the session (rotate a leaked secret, vet a dependency), it stays a draft — which is what a draft is actually for.
+- **What does not change.** No new approval gate: the pipeline still always reaches the PR, so an unattended run is never wedged (the draft just stands, now answerable). And a failing build still cannot become a merge-ready PR — waiving one is recorded, but the PR stays a draft. If you accept that risk, you mark it ready yourself; the agent will not.
+- **Under the hood.** New `skills/ship/lib/manifest-triage.py` (deterministic table, not model judgment) + `evals/run_manifest_triage_evals.py` in CI. The eight places that write a blocker were normalized onto one parseable line shape — five of them did not carry a source tag at all, so four different blocker types were indistinguishable.
+
+Breaking changes: none.
+
+---
+
+---
+
 ## v1.22.0 — 2026-07-29
 
 **Three gates that could report success without doing their job — each a contract split across two files with nothing checking the join.**
