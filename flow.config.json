@@ -6,6 +6,8 @@
   "uiFilePatterns": "(^|/)(annotation-layer|visual-history-skeleton)\\.html$|(^|/)(render-report|insert-visual-history)\\.py$",
   "$comment-visualHistoryPath": "Default is core-docs/visual-history.html, but CLAUDE.md reserves core-docs/ for the consumer template scaffolding — flow tracks itself in dev-docs/. Set explicitly so a visually-significant ship can't create a core-docs/ directory in this repo and cross the three-surface boundary.",
   "visualHistoryPath": "dev-docs/visual-history.html",
+  "$comment-verifyReportPath": "Repo-local (gitignored) instead of the /tmp default, so the rendered report can be SERVED by the .claude/launch.json 'flow-report' recipe and driven in a browser. A /tmp path cannot be served without exposing the whole temp dir.",
+  "verifyReportPath": ".flow/report.html",
   "platform": "library",
   "defaultBranch": "main"
 }

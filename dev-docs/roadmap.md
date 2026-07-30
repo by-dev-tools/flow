@@ -405,6 +405,19 @@ In the FB-0075 measurement, 2 of ~6 items were a single `uiFilePatterns` misconf
 
 Items surfaced by `/flow:staff-review`'s push-further lens, consumer dogfood, or research passes. These don't have a concrete shape yet — they describe a direction worth investigating when relevant code is touched. Each entry includes a **`Surfaces when:`** trigger naming the file paths or area that should re-surface the item, so the auto-loading `exploration` rule can grep this section for trigger matches.
 
+### Flow cannot capture frames of its own overlay (FB-0076; the residual half of the visual deliverable)
+
+**Surfaces when:** `/flow:verify-build` §5a is next touched, OR the annotation layer / report renderer changes again, OR anyone tries to produce a rendered walkthrough for a `platform: library` project.
+
+`uiSurface: true` + `platform: library` is a legitimate combination — flow authors browser UI and has no launchable app — but §7a's visual-deliverable gate wants two artifacts and only one is reachable:
+
+- **Visual-history entry — SOLVED.** Hand-authored via the §5c REQUIRED path, which exists for exactly this case. `verifyReportPath` now points at a repo-local `.flow/report.html` (gitignored) instead of `/tmp`, and `.claude/launch.json` gained a `flow-report` recipe that serves that directory — so the report can be rendered and driven in a browser on demand without setting `platform: web` and firing verify-build on every markdown PR.
+- **Rendered walkthrough with real frames — NOT SOLVED.** Three capture routes were attempted and all failed in this environment: Playwright's bundled `headless_shell` wrote a blank frame and then stopped writing files entirely; adding `--run-all-compositor-stages-before-draw` broke output; Brave's `--headless=new` hung and was killed after two minutes. The entry's before/after frames are therefore **labelled reconstructions** (`recon: true`), which the durable-record format explicitly supports for the no-capture case — not fabricated screenshots.
+
+**What would close it:** the capability now exists to *serve* the layer; what is missing is a capture step that works headlessly on this machine. Likeliest fix is a real Playwright install (`npx playwright install chromium` — the cache holds only `headless_shell`, and its `--screenshot` path is the one that failed) plus a small dev-side script that navigates, waits for `load`, drives the layer into each state, and writes PNGs into `.flow/assets/`. That is the missing link between "flow can serve its own UI" and "flow can verify its own UI," and it is the last thing standing between this class of change and a machine visual verdict.
+
+**Do not read the reconstructions as verification.** They illustrate a decision; they assert nothing about how the layer actually renders. The verification this change does carry is the a11y audit (7 WCAG blockers found and fixed), the four review lenses, the red-team pass, and hand-checking in a real browser across both colour schemes.
+
 ### ✅ RESOLVED (FB-0076) — Keyboard reach for the annotation layer (was 1.6% of commentable elements; WCAG 2.1.1 Level A)
 
 **Shipped in v1.24.0.** The keyboard walk described below was built: `⇧↓/⇧↑` step block-level elements in reading order, `⇧→/⇧←` narrow into / widen out of the tree, `↵` commits. Measured after: **115 of 184 pointer-reachable elements (63%) reachable by stepping alone**, plus everything descending reaches — up from 2 (1.6%). Plain arrows still scroll the page, because `Shift` is free (the passthrough contract owns meta/ctrl/alt). Kept here for the measurement and the reasoning.

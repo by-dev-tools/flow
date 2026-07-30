@@ -8,3 +8,6 @@ __pycache__/
 
 # Local prototypes + diagnostics (generated; not plugin surface)
 tools/
+
+# Rendered verify-build report (served by .claude/launch.json; regenerated per run)
+.flow/

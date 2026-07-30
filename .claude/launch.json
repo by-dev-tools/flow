@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "$comment": "Flow authors browser UI (the annotation layer, the verify-build report renderer) but has no launchable app — platform stays 'library' so /flow:verify-build does not fire on every markdown PR. This recipe exists so the UI it DOES ship can be rendered and driven on demand: point verifyReportPath into .flow/, render, then serve it here. See dev-docs/roadmap.md § 'Flow cannot capture frames of its own overlay'.",
+  "configurations": [
+    {
+      "name": "flow-report",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8899", "--directory", ".flow"],
+      "port": 8899
+    }
+  ]
+}
