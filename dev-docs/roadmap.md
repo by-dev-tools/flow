@@ -405,9 +405,9 @@ In the FB-0075 measurement, 2 of ~6 items were a single `uiFilePatterns` misconf
 
 Items surfaced by `/flow:staff-review`'s push-further lens, consumer dogfood, or research passes. These don't have a concrete shape yet — they describe a direction worth investigating when relevant code is touched. Each entry includes a **`Surfaces when:`** trigger naming the file paths or area that should re-surface the item, so the auto-loading `exploration` rule can grep this section for trigger matches.
 
-### Keyboard reach for the annotation layer — 1.6% of commentable elements (FB-0074 a11y review, WCAG 2.1.1 Level A)
+### ✅ RESOLVED (FB-0074) — Keyboard reach for the annotation layer (was 1.6% of commentable elements; WCAG 2.1.1 Level A)
 
-**Surfaces when:** `annotation-layer.html`'s keyboard handling is next touched, OR before the layer is offered to anyone who cannot use a pointer.
+**Shipped in v1.22.0.** The keyboard walk described below was built: `⇧↓/⇧↑` step block-level elements in reading order, `⇧→/⇧←` narrow into / widen out of the tree, `↵` commits. Measured after: **115 of 184 pointer-reachable elements (63%) reachable by stepping alone**, plus everything descending reaches — up from 2 (1.6%). Plain arrows still scroll the page, because `Shift` is free (the passthrough contract owns meta/ctrl/alt). Kept here for the measurement and the reasoning.
 
 Measured on a real verify-build report: **129 elements are commentable with a mouse; 2 are reachable by Tab** — both `<a>` in the criteria TOC. Everything else is prose (`p`, `div`, `h2`, `li`), which is not natively focusable. The `focusin` handler added in this PR sets a pick target from whatever receives focus, which reads like a keyboard path but is really a path to those two links. `ArrowUp` is additionally gated on `targetFromPointer`, so a keyboard user cannot even widen from a focused link to its paragraph — that gate exists because letting focus-derived targets capture the arrows broke page scrolling, which is a genuine tension between two correct requirements.
 
