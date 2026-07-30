@@ -98,6 +98,8 @@ A `/flow:contribute` drain. Three confirmed lessons applied, two dismissed with 
 - [x] A recurrence of a previously-dismissed lesson is surfaced mechanically, not by prose alone: `dedup` exits 4 (distinct from 3 = already-queued) with the prior reason/date. (verify: `dedup-1-recurrence-of-dismissed`, `dedup-1b-recurrence-not-conflated-with-queued`, `dedup-3-already-queued-stays-3` in `run_contribution_evals.py`.)
 - [x] No regression across the suite. (verify: all 17 eval harnesses green; `run_walk_extract_evals.py` 47 → 67 checks.)
 
+**Staff-review follow-ups routed (not fixed here).** Four findings went to `roadmap.md` § Exploration rather than expanding this PR: the artifact-less-reviewer breadcrumb (now unblocked by `.flow/` + `flow_scratch.py`, and the highest-value item there); detached-HEAD never clearing the stamp gate; the `flow-detached` global fallback; and the missing "declared: none" sentinel for `referenceGlob`. Two naming/consistency NITs also deferred: `flow_scratch.py` is misnamed after `/simplify` reduced it to stamping only (rename touches the harness + two SKILLs, so it rides the next audit-skips change), and `visual-significance.json` lacks the `<owner>-` prefix the other seven `.flow/` artifacts carry.
+
 **Confidence verdicts (load-bearing assumptions):**
 - HIGH — the reported bug reproduces and the fix closes it: verified by running the pre-fix module (from `git show HEAD:`) and the post-fix module against the same plan fixtures.
 - HIGH — the fix is a strict improvement, not a regression: both known-limitation shapes leak *identically* on the pre-fix module, confirmed by direct measurement.
