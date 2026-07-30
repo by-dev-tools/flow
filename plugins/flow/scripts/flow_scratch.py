@@ -46,6 +46,7 @@ Shell counterpart (the canonical idiom -- keep these in sync; pinned by
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -108,6 +109,15 @@ def check_stamp(payload, cwd=None, expect=None):
     want = expect if expect is not None else current_stamp(cwd=cwd)
     for field in ("repo", "branch", "head"):
         g, w = got.get(field), want.get(field)
+        if field == "repo":
+            # Compare RESOLVED paths. A symlinked repo root (macOS /var -> /private/var,
+            # or a symlinked worktree) can otherwise render two spellings of the same
+            # directory as a mismatch -> a spurious stamp_error -> a clean PR routed to
+            # draft. This only removes FALSE positives: a genuinely different repo still
+            # resolves differently. Refusing wrongly is as bad as passing wrongly here,
+            # because a gate that cries wolf gets waived by habit.
+            g = os.path.realpath(g) if g else g
+            w = os.path.realpath(w) if w else w
         # An empty EXPECTED value means we could not determine it locally (detached
         # HEAD, no repo). Refuse rather than wave it through -- an undeterminable
         # identity cannot corroborate anything.

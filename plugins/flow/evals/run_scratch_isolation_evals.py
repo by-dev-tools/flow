@@ -183,6 +183,26 @@ def test_stamp():
         r = run_py(["check", str(h)], a)
         check("stamp-stale-head-refused", json.loads(r.stdout)["status"] == "stale", r.stdout)
 
+        # A symlinked spelling of the SAME repo root must NOT read as a mismatch. Both
+        # sides normally derive the path from `git rev-parse`, but a symlinked worktree (or
+        # macOS /var -> /private/var) can yield two spellings; a false stamp_error would
+        # route a clean PR to draft, and a gate that cries wolf gets waived by habit.
+        link = Path(a).parent / (Path(a).name + "-link")
+        try:
+            link.symlink_to(a)
+        except (OSError, NotImplementedError):
+            link = None
+        if link is not None:
+            # Re-derive: an earlier case advanced HEAD, so stamp_a is legitimately stale
+            # and would mask what this case is actually testing.
+            stamp_link = json.loads(run_py(["stamp"], a).stdout)
+            stamp_link["repo"] = str(link)
+            h.write_text(json.dumps({"flow_stamp": stamp_link, "stages": []}), encoding="utf-8")
+            r = run_py(["check", str(h)], a)
+            check("stamp-symlink-not-a-mismatch",
+                  json.loads(r.stdout)["status"] == "ok", r.stdout)
+            link.unlink()
+
         # The four statuses must stay DISTINCT — collapsing them is the original bug.
         r = run_py(["check", str(Path(a) / ".flow" / "nope.json")], a)
         check("stamp-absent-distinct", json.loads(r.stdout)["status"] == "absent", r.stdout)
