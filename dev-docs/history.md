@@ -4,13 +4,13 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
-## 2026-07-29 — Annotation-layer v2: commenting as a mode (v1.23.0, FB-0075)
+## 2026-07-29 — Annotation-layer v2: commenting as a mode (v1.24.0, FB-0076)
 
 **Branch:** `claude/flow-design-workflow-3a9392` · **SHA:** `e4d6f51`
 
 **What was done (user-facing).** The `/flow:verify-build` annotation overlay was redesigned. Commenting is now a persistent mode, on by default: click an element, write or dictate, `↵`, click the next one — no re-arming between comments. Chrome collapsed from a full-width page header + two dock buttons to ONE circular floating control (the minimized comment container; filled = live, carries the count) that expands to a panel holding a labelled Commenting switch, hover-outlining and hide-pins toggles, per-row copy/delete, Copy all, and a two-tap Delete all. Toasts were removed entirely. Anchors, the located-descriptor export, and the `file://` hardening are unchanged.
 
-**Why.** Six rounds of user review, conducted by annotating the prototype with the prototype (see FB-0075). The decisive note: having to re-press "Pin" between every comment made the button, not the mode, the design error.
+**Why.** Six rounds of user review, conducted by annotating the prototype with the prototype (see FB-0076). The decisive note: having to re-press "Pin" between every comment made the button, not the mode, the design error.
 
 **Design decisions.**
 - **Mode over action.** Considered keeping a per-comment arm (familiar, no escape hatches needed) vs a persistent mode. Chose the mode because the loop is "many comments in one sitting" — but a mode that swallows every click would break interactive prototypes, which the user names as their highest-value artifact. So the mode ships *with* three escape hatches: modifier-click passthrough, a text-selection guard, and Esc. Keeping the button as an off-switch (rather than deleting it, as the user initially proposed) is what makes the mode safe on a prototype you actually need to click through.
