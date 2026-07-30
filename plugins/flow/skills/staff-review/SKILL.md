@@ -125,6 +125,16 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 # (pinned by evals/run_scratch_isolation_evals.py).
 FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 [ -n "$FLOW_ROOT" ] && FLOW_SCRATCH="$FLOW_ROOT/.flow" || FLOW_SCRATCH="${TMPDIR:-/tmp}/flow-detached"
+# SECURITY (CWE-59): refuse to write scratch through a symlink. `.flow` is an ordinary
+# repo path with none of git's .git/.gitmodules special-casing, so an untrusted clone can
+# ship `.flow` as a symlink; `mkdir -p` on an existing symlink-to-dir exits 0 and FOLLOWS
+# it, so every write below would land in an attacker-chosen directory outside the repo
+# (e.g. truncating a `.gitignore` in ~ or a sibling repo). Moving the sink into
+# repo-controlled namespace is what introduced this, so the guard ships with it.
+if [ -L "$FLOW_SCRATCH" ]; then
+  echo "⚠️ BLOCKER: $FLOW_SCRATCH is a symlink — refusing to write flow scratch through it. Remove or replace it with a real directory." >&2
+  exit 1
+fi
 mkdir -p "$FLOW_SCRATCH"
 # Self-ignore so flow never dirties the consumer's git status. Written HERE, not only
 # in flow_scratch.py: the shell sites do their own mkdir and never call the Python

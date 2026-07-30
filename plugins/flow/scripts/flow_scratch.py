@@ -109,6 +109,12 @@ def check_stamp(payload, cwd=None, expect=None):
     want = expect if expect is not None else current_stamp(cwd=cwd)
     for field in ("repo", "branch", "head"):
         g, w = got.get(field), want.get(field)
+        # A stamp is untrusted input (it can arrive in a checked-in handoff). A non-string
+        # field must REFUSE, not raise: os.path.realpath(1) throws TypeError, which escaped
+        # this function and violated its documented (ok, reason) contract -- the caller then
+        # reported a toolchain problem for what is actually a malformed handoff.
+        if g is not None and not isinstance(g, str):
+            return False, f"handoff {field} is {type(g).__name__}, not a string -- malformed stamp"
         if field == "repo":
             # Compare RESOLVED paths. A symlinked repo root (macOS /var -> /private/var,
             # or a symlinked worktree) can otherwise render two spellings of the same

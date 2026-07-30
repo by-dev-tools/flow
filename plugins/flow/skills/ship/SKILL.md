@@ -335,15 +335,30 @@ fi
 # copies of this idiom: a fork cannot see /tmp at all, so a detached run must fail
 # loudly rather than write a handoff nothing will ever read.
 FLOW_SCRATCH="$FLOW_ROOT/.flow"
+# SECURITY (CWE-59): refuse to write scratch through a symlink. `.flow` is an ordinary
+# repo path with none of git's .git/.gitmodules special-casing, so an untrusted clone can
+# ship `.flow` as a symlink; `mkdir -p` on an existing symlink-to-dir exits 0 and FOLLOWS
+# it, so every write below would land in an attacker-chosen directory outside the repo
+# (e.g. truncating a `.gitignore` in ~ or a sibling repo). Moving the sink into
+# repo-controlled namespace is what introduced this, so the guard ships with it.
+if [ -L "$FLOW_SCRATCH" ]; then
+  echo "⚠️ BLOCKER: $FLOW_SCRATCH is a symlink — refusing to write flow scratch through it. Remove or replace it with a real directory." >&2
+  exit 1
+fi
 mkdir -p "$FLOW_SCRATCH" || { echo "⚠️ BLOCKER: cannot create $FLOW_SCRATCH — the skip-legitimacy gate cannot run." >&2; exit 1; }
 [ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
 STAGES="$FLOW_SCRATCH/skip-audit-stages.json"
 FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
 
-# Unquoted terminator so the stamp interpolates; the stage rows contain no $ or backticks.
-cat > "$STAGES" <<EOF
-{"flow_stamp": {"repo": "$FLOW_ROOT", "branch": "$FLOW_BR", "head": "$FLOW_HEAD"},
- "stages": [
+# Build the stamp with `jq -n --arg` rather than interpolating into the heredoc: a branch
+# name may legally contain a double quote (`git check-ref-format --branch 'feat"x'` exits 0),
+# which would close the JSON string early. The jq read-back below would catch the damage, but
+# soundly escaping here removes the class instead of merely detecting it.
+STAMP=$(jq -nc --arg repo "$FLOW_ROOT" --arg branch "$FLOW_BR" --arg head "$FLOW_HEAD" \
+  '{repo:$repo, branch:$branch, head:$head}')
+# Quoted terminator: the stage rows are literal, and the stamp is spliced in by jq below.
+cat > "$STAGES" <<'EOF'
+{"stages": [
   {"name": "simplify",            "status": "<ran|skipped>", "skip_reason": "<spike|tiny|doc-only|null>"},
   {"name": "staff-review",        "status": "<ran|skipped>", "skip_reason": "<spike|tiny|doc-only|null>"},
   {"name": "security",            "status": "<ran|skipped>", "skip_reason": "<doc-only|null>"},
@@ -353,6 +368,11 @@ cat > "$STAGES" <<EOF
   {"name": "visual-verification", "status": "<ran|skipped>", "skip_reason": "<null>"}
 ]}
 EOF
+# Splice the soundly-escaped stamp in (jq rewrites the file from its own parse, so this
+# doubles as a syntax check on the rows above).
+TMP_STAGES="$STAGES.tmp"
+jq --argjson stamp "$STAMP" '{flow_stamp:$stamp} + .' "$STAGES" > "$TMP_STAGES" && mv "$TMP_STAGES" "$STAGES" \
+  || { echo "⚠️ BLOCKER: could not stamp the handoff at $STAGES — the skip-legitimacy gate cannot run." >&2; rm -f "$TMP_STAGES"; exit 1; }
 
 # Read-back the write (FB-0067: never trust a write's own exit status). An unparseable
 # handoff is refused downstream as `invalid`, which reads as a gate failure rather than
