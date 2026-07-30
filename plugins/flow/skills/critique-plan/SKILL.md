@@ -22,8 +22,11 @@ agent: plan-critic
 # BREAKS git worktrees: a session started in the parent repo exports a CLAUDE_PROJECT_DIR
 # pointing there, while the work (and the PR) lives in a linked worktree on a different
 # branch -- so env-first would audit the parent tree and see none of the changes, which is
-# the same failure-open this guard exists to close. `git rev-parse --show-toplevel` returns
+# the same failure-open this guard exists to close. A git rev-parse --show-toplevel returns
 # the WORKTREE root, which is always the tree under review when cwd is inside a repo.
+# (NOTE: no backticks anywhere in this block -- it lives inside a single-backtick dynamic-
+# context span, so ONE inner backtick truncates the span and everything after it is emitted
+# as literal text instead of being executed. FB-0010.)
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then

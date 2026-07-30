@@ -98,9 +98,9 @@
     },
     "verifyFindingsPath": {
       "type": "string",
-      "description": "Path where /flow:verify-build Step 8 writes its structured findings buffer. /flow:ship Step 4a reads this path to derive candidate FB-XXXX entries (via source-diversity bar). Default '.flow/verify-findings.json' -- REPO-LOCAL (FB-0075), because the old '/tmp/flow-verify-findings.json' was one global filename shared by every project on the machine, so concurrent sessions on different repos read each other's buffers. Repo-local is unique per worktree by construction. '.flow/' self-ignores, so it never dirties the project's git status. Concurrent verify-build runs against the same path will clobber each other; single-run-per-ship is the v1 contract.",
+      "description": "Path where /flow:verify-build Step 8 writes its structured findings buffer. /flow:ship Step 4a reads this path to derive candidate FB-XXXX entries (via source-diversity bar). Default '.flow/verify-findings.json' -- REPO-LOCAL (FB-0075), because the previous global-/tmp default was one filename shared by every project on the machine, so concurrent sessions on different repos read each other's buffers. Repo-local is unique per worktree by construction. '.flow/' self-ignores, so it never dirties the project's git status. Concurrent verify-build runs against the same path will clobber each other; single-run-per-ship is the v1 contract.",
       "default": ".flow/verify-findings.json",
-      "examples": [".flow/verify-findings.json", "/tmp/flow-verify-findings.json"]
+      "examples": [".flow/verify-findings.json", ".flow/last-verify.json"]
     },
     "verifyBudgetCalls": {
       "type": "integer",
@@ -112,7 +112,7 @@
       "type": "string",
       "description": "Path where /flow:verify-build renders its EPHEMERAL HTML walkthrough (the artifact the human opens at the merge gate) from the findings buffer, via lib/render-report.py. Default '.flow/verify-report.html' -- REPO-LOCAL (FB-0075, same cross-project collision as verifyFindingsPath); '.flow/' self-ignores so it is never committed (it is image-heavy and per-run; the durable visual record is a separate, curated artifact). Persisted screenshot frames are written to an 'assets/' dir alongside this path. Override to a project-local path only if you want the report preserved across boots for inspection. Regenerated every iteration; discarded after merge.",
       "default": ".flow/verify-report.html",
-      "examples": [".flow/verify-report.html", "/tmp/flow-verify-report.html"]
+      "examples": [".flow/verify-report.html", ".flow/last-verify-report.html"]
     },
     "visualHistoryPath": {
       "type": "string",

@@ -4,7 +4,7 @@ All notable changes to flow are recorded here. Reverse chronological (newest fir
 
 This is the **consumer-facing changelog** — read this before upgrading. For per-PR design decisions + tradeoffs, see [`dev-docs/history.md`](dev-docs/history.md) (verbose, internal-tracking).
 
-Format: each entry has a date, version, headline, 2-4 bullets, and an explicit "Breaking changes:" callout (currently always "none").
+Format: each entry has a date, version, headline, 2-4 bullets, and an explicit "Breaking changes:" callout.
 
 To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
@@ -18,9 +18,11 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 - **Concurrent sessions on different projects no longer clobber each other.** `/tmp/flow-staff-diff.patch` and friends were one global filename shared by every project on the machine; in the wild, staff-review lenses were handed another project's diff. Repo-local paths are unique per **worktree** by construction, so the collision cannot happen rather than being unlikely. Reviewer diffs also carry a `# flow-review-context repo=… branch=… head=…` header, and lens agents are told to stop rather than review a workspace they weren't asked about.
 - **Handoffs must now prove they belong to this workspace.** Every handoff carries a `flow_stamp` (repo + branch + head); a reader **refuses a mismatch loudly** instead of reading it and hoping someone notices, and an *absent* stamp is refused too. `absent` / `invalid` / `stale` / `ok` are four distinct states — collapsing them is how a foreign buffer read as "nothing to do".
 - **A misconfigured `referenceGlob` no longer silently blinds the plan critic.** Zero resolved reference documents used to render *no* `## Reference documents` section, indistinguishable from "this project has no rules." It now emits a loud warning telling the reviewer it cannot raise a Spec violation at all. Flow's own `flow.config.json` was itself missing the slot, so its critic had been running document-blind.
-- New `run_scratch_isolation_evals.py` (38 checks, wired into CI) — the **first** harness here to extract and *execute* a SKILL.md `!`-block, which is precisely why the transport bug survived.
+- New `run_scratch_isolation_evals.py` (56 checks, wired into CI) — the **first** harness here to extract and *execute* a SKILL.md `!`-block, which is precisely why the transport bug survived.
 
 **Breaking changes:** none for behavior, but two config **defaults changed**: `verifyFindingsPath` `/tmp/flow-verify-findings.json` → `.flow/verify-findings.json`, and `verifyReportPath` `/tmp/flow-verify-report.html` → `.flow/verify-report.html`. Projects that set these explicitly are unaffected. `.flow/` self-ignores (it writes its own `.gitignore`), so it never dirties `git status` and is never committed.
+
+## v1.22.0 — 2026-07-29
 
 **Three gates that could report success without doing their job — each a contract split across two files with nothing checking the join.**
 

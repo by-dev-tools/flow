@@ -43,7 +43,7 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 **Date:** 2026-07-29
 **Branch:** claude/flow-fork-transport-scratch (SHA lands with the PR)
 
-**What was done.** Every ephemeral artifact that crosses a process boundary in flow moved from `/tmp/flow-*` to `<repo-root>/.flow/`, and every handoff gained a `flow_stamp` (repo + branch + head) that readers verify before use. New `scripts/flow_scratch.py` owns resolution + stamping; `evals/run_scratch_isolation_evals.py` (38 checks) pins it in CI.
+**What was done.** Every ephemeral artifact that crosses a process boundary in flow moved from `/tmp/flow-*` to `<repo-root>/.flow/`, and every handoff gained a `flow_stamp` (repo + branch + head) that readers verify before use. New `scripts/flow_scratch.py` owns resolution + stamping; `evals/run_scratch_isolation_evals.py` (56 checks) pins it in CI.
 
 **Why.** A consumer dogfood report (Swift/iOS, flow 1.20.0) described two silent false negatives. Both were reproduced in-session rather than reasoned about:
 

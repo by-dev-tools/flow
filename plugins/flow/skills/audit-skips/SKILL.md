@@ -47,10 +47,10 @@ against the config, the diff, and the canonical artifact's existence + freshness
 # pointing there, while the work (and the PR) lives in a linked worktree on a different
 # branch -- so env-first would audit the parent tree and see none of the changes, which is
 # the same failure-open this guard exists to close. A git rev-parse --show-toplevel returns
+# the WORKTREE root, which is always the tree under review when cwd is inside a repo.
 # (NOTE: no backticks anywhere in this block -- it lives inside a single-backtick dynamic-
 # context span, so ONE inner backtick truncates the span and everything after it is emitted
 # as literal text instead of being executed. FB-0010; the same warning is repeated below.)
-# the WORKTREE root, which is always the tree under review when cwd is inside a repo.
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
@@ -106,7 +106,16 @@ if [ -f "$STAGES" ]; then
     fi
   fi
 fi
-if [ -f "$STAGES" ] && [ "$STAMP_STATUS" != "ok" ] && [ -n "$STAMP_STATUS" ]; then
+if [ -f "$STAGES" ] && [ "$STAMP_STATUS" = "unverifiable" ]; then
+  # DISTINCT from stamp_error: we could not CHECK the stamp (missing checker, no python3
+  # or jq), which is an install/toolchain problem. Collapsing it into stamp_error would
+  # print "does not belong to this workspace" -- a false statement -- and send the agent
+  # to a remedy (re-run 2a.1) that cannot fix a missing interpreter. Distinguishing
+  # "cannot prove" from "disproved" is the same discipline as absent-vs-stale.
+  printf '{"stamp_unverifiable": %s, "handoff": %s, "stages": []}\n' \
+    "$(printf '%s' "$STAMP_REASON" | jq -Rs . 2>/dev/null || printf '"stamp checker unreachable"')" \
+    "$(printf '%s' "$STAGES" | jq -Rs . 2>/dev/null || printf '"(handoff path; jq unavailable)"')"
+elif [ -f "$STAGES" ] && [ "$STAMP_STATUS" != "ok" ] && [ -n "$STAMP_STATUS" ]; then
   # Present but NOT ours. Never audit it, never call it a clean standalone no-op.
   printf '{"stamp_error": %s, "handoff": %s, "stages": []}\n' \
     "$(printf '%s' "$STAMP_REASON" | jq -Rs . 2>/dev/null || printf '"handoff stamp did not match this workspace"')" \
@@ -195,6 +204,14 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   <stamp_error>. The skip-legitimacy gate did NOT run — this is not a clean pass.` From
   `/flow:ship` Step 2a this routes to the draft manifest as `[decision-required]`
   (`[skip-audit] handoff failed its stamp check — re-run ship Step 2a.1 or human-waive`).
+- If the mechanical block carries **`"stamp_unverifiable"`** (a handoff was present but the
+  stamp checker itself could not run — `flow_scratch.py` missing, or no `python3`/`jq`), this
+  is an **install/toolchain** problem, NOT a foreign handoff. Do not claim the handoff belongs
+  to someone else, and do not tell the operator to re-run ship Step 2a.1 — rewriting the
+  handoff cannot fix a missing interpreter. Output:
+  `⚠️ SKIP-AUDIT COULD NOT VERIFY the handoff stamp (<handoff>): <stamp_unverifiable>. The
+  skip-legitimacy gate did NOT run — this is not a clean pass. Reinstall the flow plugin or
+  install python3/jq, then re-run.` Routes to the draft manifest as `[decision-required]`.
 - If the mechanical block carries **`"engine_error"`** (the handoff file WAS present but
   `skip-audit-checks.py` failed on it — the engine exits non-zero on a malformed/unreadable
   report rather than collapsing to `stages:[]`), do **NOT** treat it as "nothing to audit" —

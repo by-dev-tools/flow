@@ -328,16 +328,79 @@ def test_contracts():
 
     # FB-0010: no cross-boundary /tmp/flow-* write may survive anywhere in the shipped
     # surface. Transient stderr captures inside one fenced block are exempt (named).
-    exempt = ("-err", "flow-detached", "flow-pr-body", "flow-sd-region",
-              "flow-staff-review-marker", "flow-verify")
+    # Exempt ONLY transients that never cross a fork boundary. Deliberately does NOT
+    # include `flow-verify` or `flow-staff-review-marker`: both matched nothing after this
+    # PR migrated them, so leaving them here would pre-authorise a regression that
+    # reintroduced the very cross-boundary handoff this check exists to catch.
+    exempt = ("-err", "flow-detached", "flow-pr-body", "flow-sd-region")
+    # Scan roots deliberately WIDER than the plugin's skills+agents. The first version of
+    # this guard covered only those two, and `template/base/flow.config.json.example` --
+    # the file every new consumer copies -- kept the old /tmp default past a green check.
+    # A guard narrower than the contract it defends is the failure it is meant to catch.
+    repo = FLOW.parent.parent
+    roots = [FLOW / "skills", FLOW / "agents", FLOW / "schema", repo / "template"]
     survivors = []
-    for p in list((FLOW / "skills").rglob("*.md")) + list((FLOW / "agents").rglob("*.md")):
-        for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
-            if "/tmp/flow-" in line and "FB-0075" not in line:
-                if not any(e in line for e in exempt):
-                    survivors.append(f"{p.relative_to(FLOW)}:{i}")
+    for root in roots:
+        if not root.exists():
+            continue
+        for p in sorted(list(root.rglob("*.md")) + list(root.rglob("*.json")) + list(root.rglob("*.example"))):
+            if "evals/fixtures" in str(p):
+                continue
+            for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+                if "/tmp/flow-" not in line:
+                    continue
+                if any(e in line for e in exempt):
+                    continue
+                # Test LIVE USE, not mention. Explanatory prose ("why repo-local and not
+                # /tmp") must stay legal, or the guard punishes documenting the fix. A
+                # survivor is the path actually being USED: assigned, redirected into, or
+                # given as a JSON/schema value. That is falsifiable, unlike a keyword
+                # allowlist that a future real write could hide behind.
+                if not re.search(r'(=\s*"?/tmp/flow-|>\s*"?/tmp/flow-|:\s*"/tmp/flow-|"\s*/tmp/flow-[\w.-]+"\s*[,\]])', line):
+                    continue
+                survivors.append(f"{p.relative_to(repo)}:{i}")
     check("contract-no-tmp-survivors", not survivors,
           "cross-boundary /tmp handoffs remain: " + ", ".join(survivors[:6]))
+
+
+# ------------------------------------------------------------------- span integrity
+def test_span_integrity():
+    """No inner backtick in ANY shipped `!`-span, across every SKILL.md.
+
+    A `!`-block is delimited by a SINGLE backtick, so one backtick inside it terminates
+    the span and everything after is emitted as literal prose instead of executing. The
+    failure is invisible: the skill still renders, still produces a verdict, and the
+    verdict is computed from inputs that were never read.
+
+    This has now happened three times (`#86` shipped it into audit-skips, audit-coverage
+    AND critique-plan simultaneously, silently inerting three gates). Twice it was found
+    by accident. `contract-*` above greps the idiom sites for string PRESENCE, which
+    cannot catch this — presence in a truncated span is still presence. So this asserts
+    the property that actually matters: every span is intact. Blanket, not per-file, so a
+    new skill inherits the check instead of relying on its author remembering.
+    """
+    for p in sorted((FLOW / "skills").rglob("SKILL.md")):
+        lines = p.read_text(encoding="utf-8").split("\n")
+        inblock, start, bad = False, 0, []
+        for i, line in enumerate(lines, 1):
+            s = line.strip()
+            if not inblock:
+                if s == "!`":
+                    inblock, start, bad = True, i, []
+                continue
+            if s == "`":
+                # One assertion per SPAN, not per line — a per-line check would emit
+                # hundreds of PASSes and bury the signal.
+                check(f"span-intact-{p.parent.name}-L{start}", not bad,
+                      f"inner backtick(s) at {p.parent.name}/SKILL.md line(s) "
+                      f"{', '.join(map(str, bad))} truncate the !-span opened at {start}")
+                inblock = False
+                continue
+            if "`" in line:
+                bad.append(i)
+        if inblock:
+            check(f"span-closed-{p.parent.name}-L{start}", False,
+                  f"{p.parent.name}/SKILL.md: !-span opened at {start} is never closed")
 
 
 def test_ci():
@@ -350,6 +413,7 @@ def main():
     test_stamp()
     test_audit_skips_block()
     test_contracts()
+    test_span_integrity()
     test_ci()
     print(f"\n{_total - len(_fails)}/{_total} checks passed.")
     if _fails:

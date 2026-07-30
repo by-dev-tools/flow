@@ -159,6 +159,11 @@ If `flow.config.json.reviewLenses` excludes any lens, skip its `Agent` call and 
 Each lens agent's prompt is its own file — you only need to pass the **session-specific inputs**:
 - Diff path: `<repo-root>/.flow/staff-diff.patch` (the `$FLOW_SCRATCH/staff-diff.patch` resolved above — pass the **absolute** path you just wrote, never a literal `/tmp/...`)
 - Untracked-files list path: `<repo-root>/.flow/staff-untracked.txt`
+- **Workspace identity** — pass the values you just stamped into the diff header, verbatim:
+  `repo=$FLOW_ROOT branch=$FLOW_BR head=$FLOW_HEAD`. Each lens is instructed to stop if the
+  header names a workspace other than the one it was asked to review; without this input it
+  has nothing to compare against, so the check silently degrades to trusting the header — a
+  contract split across two files with nothing asserting the join (FB-0074/FB-0075).
 - Changed-files list (computed from the diff)
 - Relevant project docs (paths resolved in the Project Context section above)
 - PR body or workstream prompt if relevant

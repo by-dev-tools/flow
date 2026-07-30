@@ -317,33 +317,48 @@ No stage skip is accepted on its own say-so, and **"the agent did it manually" n
 
    The handoff goes in the **repo-local** scratch dir, never `/tmp` (FB-0075). Two reasons, both load-bearing: a forked skill **cannot see** a `/tmp` file this shell writes — which silently disabled this entire gate from v1.13.0 until FB-0075 — and `/tmp/flow-*` is one global namespace shared with every other project, so a concurrent session on another repo would clobber it. A repo-relative path fixes both, the second by construction. The `flow_stamp` is written **in shell, not via a helper script**, so this step carries no plugin-root dependency (`CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls).
 
-   ```sh
-   # Canonical repo-local scratch idiom — keep in sync with scripts/flow_scratch.py
-   # (pinned by evals/run_scratch_isolation_evals.py).
-   FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-   if [ -z "$FLOW_ROOT" ]; then
-     echo "⚠️ BLOCKER: not inside a git repository — cannot write a handoff a forked skill can read. The skip-legitimacy gate CANNOT run; do not record it as legitimate." >&2
-   fi
-   FLOW_SCRATCH="$FLOW_ROOT/.flow"; mkdir -p "$FLOW_SCRATCH"
-   # Self-ignore so flow never dirties the consumer's git status.
-   [ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
-   STAGES="$FLOW_SCRATCH/skip-audit-stages.json"
-   FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
+```sh
+# NOTE: this fence is deliberately NOT indented. A heredoc terminator must sit at
+# column 0 — an indented `EOF` is treated as CONTENT, so the redirect swallows the
+# rest of the script and the handoff is written as invalid JSON. That failure is
+# invisible until something reads the file, which is exactly what FB-0075 made
+# happen: every ship would then emit `stamp_error` and draft. Keep column 0.
+FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$FLOW_ROOT" ]; then
+  # exit, don't warn-and-continue: with FLOW_ROOT empty the next line becomes
+  # `mkdir -p /.flow` (read-only filesystem) and the raw errors bury this message.
+  # A handoff a fork cannot read is not a degraded gate, it is no gate.
+  echo "⚠️ BLOCKER: not inside a git repository, so no handoff can be written where a forked skill can read it. The skip-legitimacy gate CANNOT run — do NOT record it as legitimate. Re-run /flow:ship from inside the repo worktree." >&2
+  exit 1
+fi
+# No `${TMPDIR:-/tmp}/flow-detached` fallback here BY DESIGN, unlike the other four
+# copies of this idiom: a fork cannot see /tmp at all, so a detached run must fail
+# loudly rather than write a handoff nothing will ever read.
+FLOW_SCRATCH="$FLOW_ROOT/.flow"
+mkdir -p "$FLOW_SCRATCH" || { echo "⚠️ BLOCKER: cannot create $FLOW_SCRATCH — the skip-legitimacy gate cannot run." >&2; exit 1; }
+[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
+STAGES="$FLOW_SCRATCH/skip-audit-stages.json"
+FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
 
-   # Unquoted heredoc terminator so the stamp interpolates; the stage rows are still literal.
-   cat > "$STAGES" <<EOF
-   {"flow_stamp": {"repo": "$FLOW_ROOT", "branch": "$FLOW_BR", "head": "$FLOW_HEAD"},
-    "stages": [
-     {"name": "simplify",            "status": "<ran|skipped>", "skip_reason": "<spike|tiny|doc-only|null>"},
-     {"name": "staff-review",        "status": "<ran|skipped>", "skip_reason": "<spike|tiny|doc-only|null>"},
-     {"name": "security",            "status": "<ran|skipped>", "skip_reason": "<doc-only|null>"},
-     {"name": "accessibility",       "status": "<ran|skipped>", "skip_reason": "<uiSurface:false|no UI in diff|null>"},
-     {"name": "verify-build",        "status": "<ran|skipped>", "verdict": "<PASS|FAIL|Unknown|null>", "skip_reason": "<platform library|verifyEnabled:false|null>"},
-     {"name": "audit-coverage",      "status": "<ran|skipped>", "skip_reason": "<no Spec-walk|no behavior in diff|null>"},
-     {"name": "visual-verification", "status": "<ran|skipped>", "skip_reason": "<null>"}
-   ]}
-   EOF
-   ```
+# Unquoted terminator so the stamp interpolates; the stage rows contain no $ or backticks.
+cat > "$STAGES" <<EOF
+{"flow_stamp": {"repo": "$FLOW_ROOT", "branch": "$FLOW_BR", "head": "$FLOW_HEAD"},
+ "stages": [
+  {"name": "simplify",            "status": "<ran|skipped>", "skip_reason": "<spike|tiny|doc-only|null>"},
+  {"name": "staff-review",        "status": "<ran|skipped>", "skip_reason": "<spike|tiny|doc-only|null>"},
+  {"name": "security",            "status": "<ran|skipped>", "skip_reason": "<doc-only|null>"},
+  {"name": "accessibility",       "status": "<ran|skipped>", "skip_reason": "<uiSurface:false|no UI in diff|null>"},
+  {"name": "verify-build",        "status": "<ran|skipped>", "verdict": "<PASS|FAIL|Unknown|null>", "skip_reason": "<platform library|verifyEnabled:false|null>"},
+  {"name": "audit-coverage",      "status": "<ran|skipped>", "skip_reason": "<no Spec-walk|no behavior in diff|null>"},
+  {"name": "visual-verification", "status": "<ran|skipped>", "skip_reason": "<null>"}
+]}
+EOF
+
+# Read-back the write (FB-0067: never trust a write's own exit status). An unparseable
+# handoff is refused downstream as `invalid`, which reads as a gate failure rather than
+# as the malformed-heredoc bug it actually is — so assert it here, at the write site.
+jq . "$STAGES" >/dev/null 2>&1 || { echo "⚠️ BLOCKER: the handoff at $STAGES is not valid JSON — the skip-legitimacy gate cannot run. Check that the heredoc terminator is at column 0." >&2; exit 1; }
+```
 
    Fill every `<…>` from what actually happened this run — do NOT leave placeholders. `verify-build`'s `verdict` is its `overall_verdict`; `visual-verification` is the Present-step visual sign-off (ran iff you captured + reviewed frames this run).
 
@@ -353,11 +368,12 @@ No stage skip is accepted on its own say-so, and **"the agent did it manually" n
    Skill("flow:audit-skips")
    ```
 
-   It returns a `SKIP-AUDIT SUMMARY` with one line per stage — `LEGITIMATE` or `SHOULD-RE-RUN` (with `auto-resolvable: re-run` or `decision-required`). The mechanical engine (`lib/skip-audit-checks.py`) backs every verdict; trust it. If it reports a **`root_error`** / `ROOT UNRESOLVED` (FB-0074 — the forked skill could not locate the repo under review from its inherited cwd, so it read no config and no diff), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] root unresolved — the gate never looked at this repo; re-run with CLAUDE_PROJECT_DIR set or human-waive`), **never** a clean pass: an unanchored fork validates every unverifiable skip as LEGITIMATE, so its confident "all legitimate" is exactly the output you must not trust. If it instead reports an **`engine_error`** (the handoff was present but `skip-audit-checks.py` failed on it — the engine now exits non-zero on a malformed/unreadable report rather than collapsing to a silent `stages:[]`), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] engine failed on a present handoff — fix the engine input or human-waive`), **never** a clean pass. (A `no stage report` result when you DID write a handoff at 2a.1 can mean the forked skill couldn't see your `/tmp` path — a known transport limitation tracked in `roadmap.md` § Exploration; re-check the `FLOW_SKIP_AUDIT_STAGES` path if it recurs.)
+   It returns a `SKIP-AUDIT SUMMARY` with one line per stage — `LEGITIMATE` or `SHOULD-RE-RUN` (with `auto-resolvable: re-run` or `decision-required`). The mechanical engine (`lib/skip-audit-checks.py`) backs every verdict; trust it. If it reports a **`root_error`** / `ROOT UNRESOLVED` (FB-0074 — the forked skill could not locate the repo under review from its inherited cwd, so it read no config and no diff), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] root unresolved — the gate never looked at this repo; re-run with CLAUDE_PROJECT_DIR set or human-waive`), **never** a clean pass: an unanchored fork validates every unverifiable skip as LEGITIMATE, so its confident "all legitimate" is exactly the output you must not trust. If it instead reports an **`engine_error`** (the handoff was present but `skip-audit-checks.py` failed on it — the engine now exits non-zero on a malformed/unreadable report rather than collapsing to a silent `stages:[]`), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] engine failed on a present handoff — fix the engine input or human-waive`), **never** a clean pass. (A `no stage report` result when you DID write a handoff at 2a.1 is **not** benign and is no longer a known limitation: FB-0075 moved the handoff to a repo-local `.flow/` path both sides can see, so an absent handoff there means the transport broke again. Route it exactly like `stamp_error` — see 2a.3 — never as a clean pass.)
 
 3. **Resolve — mirror audit-coverage's routing; never a hard mid-loop halt:**
    - **`SHOULD-RE-RUN · auto-resolvable`** → re-invoke that stage's Skill **now** (e.g. a stale/absent verify-build buffer → re-run `Skill("flow:verify-build")`; a contradicted security/a11y skip → run the reviewer), then **re-run `Skill("flow:audit-skips")` ONCE** over the refreshed report. Loop only this one re-audit cycle — do not iterate LLM judgment (reward-hackable; same discipline as Step 2's single-pass reviewers).
    - **`SHOULD-RE-RUN · decision-required`** (cannot be auto-resolved — e.g. a missing visual-history entry, a visual-deliverable gap on a no-sim host) → add a **`[decision-required]`** entry to the **draft manifest** (`[skip-audit] <stage>: <reason> — needs: <re-run | declare | human-waive>`). The PR opens as a draft (Step 7).
+   - **`⚠️ SKIP-AUDIT COULD NOT VERIFY …` (`stamp_unverifiable`)** → the stamp checker itself could not run (missing helper, no `python3`/`jq`). Do **not** re-run 2a.1 — that cannot fix a toolchain problem. Add a **`[decision-required]`** entry (`[skip-audit] stamp checker unreachable — reinstall the plugin or install python3/jq`).
    - **`⚠️ SKIP-AUDIT REFUSED …` (`stamp_error`)** → the handoff present at the scratch path did not belong to this repo/branch/HEAD, so the gate did **not** run. Re-run 2a.1 to rewrite the handoff and re-invoke the skill **once**. If it refuses again, add a **`[decision-required]`** entry (`[skip-audit] handoff failed its stamp check — the gate did not run`). Never record this as `all-legitimate`.
    - **`SKIP-AUDIT: no stage report to audit` on a run you launched from 2a.1** → you *did* write a handoff, so an "absent" verdict means the fork could not see it — the transport regression FB-0075 fixed. Treat it exactly like `stamp_error` above; do **not** proceed as if the skips were audited.
    - **All `LEGITIMATE`** → emit a one-line confirmation (`skip-audit: all N stage skips legitimate`) and proceed.
