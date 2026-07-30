@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic draft-manifest triage engine (FB-0074).
+"""Deterministic draft-manifest triage engine (FB-0075).
 
 `/flow:ship` accumulates a draft manifest from 8 producer sites, and its draft
 decision was unconditional: manifest non-empty => `gh pr create --draft`. Three

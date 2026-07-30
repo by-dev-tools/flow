@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Eval harness for manifest-triage.py — the deterministic draft-manifest triage
-engine behind FB-0074 (a draft PR is a last resort, not a deliverable).
+engine behind FB-0075 (a draft PR is a last resort, not a deliverable).
 
 Pins the classification table and, more importantly, the six safety invariants
 the plan gates hammered out. Several of these exist because a plan revision got
@@ -469,7 +469,7 @@ def test_skill_contract() -> None:
     i_7a = src.index("### 7a. Visual-deliverable gate")
     i_745 = src.index("### 7a.5. Manifest triage")
     i_draft = src.index("**Draft decision (mechanical):**")
-    i_7b = src.index("### 7b. Body↔draft coherence invariant")
+    i_7b = src.index("### 7b.")
     expect_true("§7a.5 exists and sits between §7a and §7b", i_7a < i_745 < i_7b, "section order")
     expect_true("the draft decision comes after §7a.5's classification", i_745 < i_draft, "draft decision order")
     window = src[i_draft:i_draft + 700]
@@ -670,7 +670,7 @@ def test_malformed() -> None:
 
 
 def main() -> int:
-    print("manifest-triage evals (FB-0074)")
+    print("manifest-triage evals (FB-0075)")
     with tempfile.TemporaryDirectory() as td:
         test_table(td)
         test_failsafes(td)

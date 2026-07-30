@@ -39,7 +39,7 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 <!-- Add new entries below this line, newest first. -->
 
-### SAFETY: A draft PR is a last resort, not a deliverable — ship manifest triage + an answerable hand-off (v1.22.0, FB-0074)
+### SAFETY: A draft PR is a last resort, not a deliverable — ship manifest triage + an answerable hand-off (v1.23.0, FB-0075)
 
 **Date:** 2026-07-29
 **Branch:** `claude/agent-draft-pr-handling-52e6dd` (worktree `agent-draft-pr-handling-52e6dd`)
@@ -113,7 +113,7 @@ This lesson had been dismissed **twice** as `already-encoded`, both times reason
 - **No escape hatch (ux-designer, BLOCKER).** The renderer was invoked without the installed-else-checkout fallback every other helper call uses, so an unset `CLAUDE_PLUGIN_ROOT` — which used to degrade softly — now hard-failed the ship and told the operator to run the command that had just failed. Added the fallback, and a documented human-waive route so a legitimate PR is never unshippable.
 - **Self-caught during review, before the lenses reported:** `~~~` fences evaded the lint entirely (false negative on the forbidden thing), and a `## Test plan` inside a fenced *example* hard-failed the provenance check (false positive with no recovery). Both fixed with delimiter-tracking fence parsing, plus warnings on the two remaining fail-open paths (unclosed fence, unparseable frontmatter) that previously defaulted to "nothing to see."
 - **`critique-plan` joined the root-anchor fix** after a post-review grep sweep — same shape, and it gates plan approval: with no reference docs the critic structurally cannot quote a rule, so it returns APPROVED.
-- **The push-further lens turned the thesis back on the repo** and found two more members of FB-0074's own class. One was cheap and shipped: `.github/workflows/ci.yml` enumerated 20 harnesses by hand with nothing asserting the list was complete — an unwired harness gives zero protection while CI stays green, and this PR's own +2-line ci.yml hunk exercised that unchecked join. Now guarded in both directions. The other (config slots read but undeclared; `${CLAUDE_PLUGIN_ROOT}` refs unverified) went to the roadmap with a concrete shape.
+- **The push-further lens turned the thesis back on the repo** and found two more members of FB-0075's own class. One was cheap and shipped: `.github/workflows/ci.yml` enumerated 20 harnesses by hand with nothing asserting the list was complete — an unwired harness gives zero protection while CI stays green, and this PR's own +2-line ci.yml hunk exercised that unchecked join. Now guarded in both directions. The other (config slots read but undeclared; `${CLAUDE_PLUGIN_ROOT}` refs unverified) went to the roadmap with a concrete shape.
 - Its meta-observation is worth keeping: this drain's *escalation* path was stronger than its *generalization* path — it refused to dismiss the `/tmp` lesson a third time, but scoped all three fixes to exactly the instances reported and never swept the repo for other members of the class it had just synthesized. That sweep is what produced two of the findings above.
 
 **What the security review + `/simplify` changed (two EXPLOITABLE bypasses of the new gate):**

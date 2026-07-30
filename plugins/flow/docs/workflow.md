@@ -306,7 +306,7 @@ A filled `## Flow run` for a docs-only change on a library project (no UI surfac
 
 Note the skipped rows: each names *why* it skipped, so the reader sees a legitimate config/mode skip rather than wondering whether a gate was missed — and `/flow:audit-skips` is the gate that *confirms* those skips are legitimate rather than self-certified. (`/flow:audit-skips` always runs — it audits the OTHERS' skips, so it never skips itself; on this docs-only library PR it rules every skip legitimate without noise.)
 
-### A draft PR is a last resort, not a deliverable (FB-0074)
+### A draft PR is a last resort, not a deliverable (FB-0075)
 
 A ship gate that does not pass used to become a draft PR, handed back as the result. That is not something a non-engineer can act on: the blocker was written for a reviewer who reads diffs, with no proposed fix attached, so the only move left was to ask the agent to go fix it. Measured across five real flow-shipped draft PRs, the draft→ready round trip ran 47 minutes to 13 days.
 

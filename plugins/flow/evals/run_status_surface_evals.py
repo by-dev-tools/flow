@@ -228,7 +228,7 @@ def main() -> int:
                           and "silently rewrite" in skill.lower(),
         "skip-line": "none drifted" in skill,
         # The kind enumeration in the manifest line template gained `rigor` and
-        # `coverage` (FB-0074), so `status-surface` is no longer last. Assert
+        # `coverage` (FB-0075), so `status-surface` is no longer last. Assert
         # membership in the alternation, not a position in it.
         "manifest-tag": any(t in skill for t in
                             ("|status-surface|", "status-surface>", "|status-surface]")),

@@ -286,7 +286,7 @@ Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, `/flo
 - **`/flow:verify-build` `metadata.no_plan_fallback: true` on a source-touching diff** → a draft-manifest entry in the canonical line shape (Step 7): `[verify-build] ran without a governing plan (no **Spec-walk:** block) — needs: declare + fence — confidence: decision-required — candidate resolutions: <the criteria you DRAFTED, for the human to approve into the Spec-walk block>`. The verdicts may be real (the §2b judged path produces genuine `adversarial-judged` PASSes over diff-derived criteria), but a plan was *expected* and absent: a production diff shouldn't reach a ready PR via the no-plan path. Resolve by declaring the criteria in the plan's `**Spec-walk:**` block (so the next run is full mode) or waiving at the merge gate. A docs-only no-plan run (smoke path) does not route here.
 - **FOLLOW-UP** → Step 3 routing.
 
-**How a producer writes an entry — never hand-compose the line.** The line shape lives in exactly one place (`lib/manifest-triage.py add-entry`), which validates `--kind` and `--needs` against the closed vocabularies at write time and appends to the run's manifest file. Hand-composing an em-dash format across 8 sites is how four of them drifted off-vocabulary before FB-0074:
+**How a producer writes an entry — never hand-compose the line.** The line shape lives in exactly one place (`lib/manifest-triage.py add-entry`), which validates `--kind` and `--needs` against the closed vocabularies at write time and appends to the run's manifest file. Hand-composing an em-dash format across 8 sites is how four of them drifted off-vocabulary before FB-0075:
 
 ```sh
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
@@ -908,7 +908,7 @@ if [ "$VISSIG" = "true" ]; then
 fi
 ```
 
-**If `$MISSING` is non-empty, ATTEMPT the resolution before you gate (FB-0074).** §7a is the one producer that historically drafted without ever trying — every other one makes a bounded attempt first (§1.0a re-runs staff-review per #81, §2a re-runs the stage + re-audits once, §2 spends FB-0012's bounded retry). Both missing artifacts are agent work, so try once:
+**If `$MISSING` is non-empty, ATTEMPT the resolution before you gate (FB-0075).** §7a is the one producer that historically drafted without ever trying — every other one makes a bounded attempt first (§1.0a re-runs staff-review per #81, §2a re-runs the stage + re-audits once, §2 spends FB-0012's bounded retry). Both missing artifacts are agent work, so try once:
 
 **The order is fixed, and getting it wrong wastes the attempt.** Step 7 pushed at Step 7's start, *before* this gate runs, and the assertion above compares the buffer's `head_sha_short` against `git rev-parse --short HEAD`. So:
 
@@ -928,7 +928,7 @@ python3 "$TRIAGE" record-attempt --branch "$BRANCH" --kind visual-deliverable --
 
 If the re-assert now passes, there is no manifest entry and nothing reaches the human. If it still fails, **add to the draft manifest**: `[visual-deliverable] visually-significant change is missing <named artifact(s)> — needs: <re-run | hand-author> — confidence: decision-required — candidate resolutions: re-run /flow:verify-build to capture frames, and/or hand-author the visual-history entry (Step 5c)`. Because the attempt is recorded, Step 7a.5 classifies it `ask` rather than re-attempting — it becomes a question, not a silent second try. Because the walkthrough is **ephemeral/local (not committed)**, also record its local path in the PR-body handoff (the `## Flow run` table's visual row + the closing line) so the human can open it at the merge gate: `Walkthrough (local, uncommitted): <verifyReportPath>`.
 
-### 7a.5. Manifest triage — a draft PR is a last resort, not a deliverable (FB-0074)
+### 7a.5. Manifest triage — a draft PR is a last resort, not a deliverable (FB-0075)
 
 This is the step between accumulating the manifest and acting on it. Without it, three unlike populations reach the human identically: items the agent could have resolved, genuine decisions written in engineer shorthand (`needs: declare + verify the criterion, or human waive` — unanswerable to a non-engineer), and items blocked on an out-of-session action. Only the third deserves a draft.
 
@@ -1230,7 +1230,7 @@ Invoke it as a scoped `/flow:ship` (state "reconcile the PR body to current gate
 
 **If the residual manifest is empty:** output the PR URL and a one-line summary of what shipped.
 
-**If it is not empty, LEAD WITH THE DECISIONS — never a bare PR URL (FB-0074).** A draft PR handed back on its own is not a result the user can act on; it costs them a round-trip to ask you to fix it. Render the decision list and put it *first*, above the URL:
+**If it is not empty, LEAD WITH THE DECISIONS — never a bare PR URL (FB-0075).** A draft PR handed back on its own is not a result the user can act on; it costs them a round-trip to ask you to fix it. Render the decision list and put it *first*, above the URL:
 
 ```sh
 # Re-resolve every variable — §7a.5's shell state is long gone by Step 8.

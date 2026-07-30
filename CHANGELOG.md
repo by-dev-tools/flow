@@ -10,7 +10,7 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
-## v1.22.0 — 2026-07-29
+## v1.23.0 — 2026-07-29
 
 **A blocked ship now hands you decisions you can answer, not a draft PR to decode.**
 
@@ -22,6 +22,10 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 Breaking changes: none.
 
 ---
+
+---
+
+## v1.22.0 — 2026-07-29
 
 **Three gates that could report success without doing their job — each a contract split across two files with nothing checking the join.**
 

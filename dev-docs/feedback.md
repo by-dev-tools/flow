@@ -35,7 +35,7 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
-### FB-0074: A draft PR is not a deliverable — a blocked gate must arrive as an answerable decision with the fix already drafted, not as an artifact the human has to decode
+### FB-0075: A draft PR is not a deliverable — a blocked gate must arrive as an answerable decision with the fix already drafted, not as an artifact the human has to decode
 
 **Date:** 2026-07-29
 **Source:** user direction (cross-repo report: music-app, ripe, flow)
@@ -49,8 +49,6 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 **Applies to:** `skills/ship/SKILL.md` (§7a attempt-then-gate, §7a.5 triage, §7c reconcile, §8 hand-off, the 8 producer-line shapes); `skills/ship/lib/manifest-triage.py`; `skills/{security,accessibility}-review/SKILL.md` routing prose; `evals/run_manifest_triage_evals.py`; `docs/workflow.md`; FB-0034 (three-outcome routing this preserves), FB-0044 (stop-before-PR reserved for one-way-doors), FB-0062 (a verdict is trusted only if its artifact exists), FB-0011 (autonomy bar — what the agent may decide alone), FB-0010 (the producer-line fan-out this had to fix first), `feedback_recommend_when_asking` (recommendation-first escalation).
 
 
-
-### FB-0072: A gate that verifies an event must distinguish "hasn't happened YET" from "will never happen" — and skills that share a trigger moment should compose (call each other), not merge into one
 
 ### FB-0074: A contract that spans two files, with nothing checking the join, degrades silently — and the degradation is indistinguishable from success
 
