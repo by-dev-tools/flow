@@ -457,9 +457,43 @@ def gather_reference_docs(
     return docs
 
 
-def render_reference_section(docs: list[tuple[str, str]]) -> str:
+def render_reference_section(
+    docs: list[tuple[str, str]],
+    requested: list[str] | None = None,
+) -> str:
+    """Render the reference-doc block, or a LOUD warning when nothing resolved.
+
+    SAFETY (FB-0075): this used to `return ""` when zero docs resolved, so a
+    misconfigured `referenceGlob` produced a context with NO reference section at
+    all -- indistinguishable from "this project has no rules to violate". The
+    plan-critic then ran without the documents it is required to cite, and reported
+    a clean-looking critique it had no basis for. Found by dogfooding: flow's OWN
+    flow.config.json lacked `referenceGlob`, so the default `core-docs/*.md` matched
+    nothing (flow keeps its docs in `dev-docs/`) and every critique in that session
+    silently ran document-blind.
+
+    An empty resolution is a CONFIGURATION FAILURE, not an empty set. Say so --
+    `CLAUDE.md`: "Never silently no-op on a missing slot: print a loud warning."
+    """
     if not docs:
-        return ""
+        if not requested:
+            return ""
+        pats = ", ".join(f"`{r}`" for r in requested)
+        return (
+            "## Reference documents\n"
+            "\n"
+            f"WARNING: reference-document loading resolved **zero** documents from {pats}.\n"
+            "\n"
+            "This is a configuration failure, **not** evidence that the project has no rules.\n"
+            "Do NOT treat the absence of this section's content as \"nothing to violate\": you\n"
+            "are running document-blind, so you cannot raise a **Spec violation** finding at all\n"
+            "(that category requires quoting a rule with its source path). Say so explicitly in\n"
+            "your output rather than returning a clean verdict you have no basis for.\n"
+            "\n"
+            "Likely cause: `flow.config.json.referenceGlob` is unset or wrong for this repo. The\n"
+            "default is `core-docs/*.md`; projects that keep reference docs elsewhere (e.g.\n"
+            "`dev-docs/*.md`) must set the slot explicitly.\n"
+        )
     parts = [
         "## Reference documents",
         "",
@@ -752,7 +786,9 @@ def _run_with_plan_file(
             DEFAULT_REFERENCE_SKIP_NAMES,
             allow_external_paths=allow_external_paths,
         )
-    ref_section = render_reference_section(ref_docs)
+    ref_section = render_reference_section(
+        ref_docs, (reference_paths or []) + (reference_globs or [])
+    )
 
     artifacts = find_referenced_artifacts(plan_text)
     body = render_plan_file_context(
@@ -858,7 +894,9 @@ def run(
             DEFAULT_REFERENCE_SKIP_NAMES,
             allow_external_paths=allow_external_paths,
         )
-    ref_section = render_reference_section(ref_docs)
+    ref_section = render_reference_section(
+        ref_docs, (reference_paths or []) + (reference_globs or [])
+    )
 
     artifacts = find_referenced_artifacts(last_assistant_text)
     if mode == "plan":

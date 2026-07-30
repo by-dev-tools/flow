@@ -23,8 +23,15 @@ Subcommands (stdlib only):
 
     rigor-marker.py write --branch B --source-sha S [--path P]
         Write marker JSON {"branch", "source_sha"}. Default path (when --path omitted):
-        /tmp/flow-staff-review-marker-<branch-slug>.json. Prints the path. Exit 0; a write
-        failure → stderr + exit 1 (graceful: the caller warns, never aborts the review).
+        <repo-root>/.flow/staff-review-marker-<branch-slug>.json. Prints the path. Exit 0; a
+        write failure → stderr + exit 1 (graceful: the caller warns, never aborts the review).
+
+        REPO-LOCAL since FB-0075. The old default was /tmp/flow-staff-review-marker-<slug>.json,
+        keyed on branch name alone in one global namespace — so two projects on a same-named
+        branch ("main", "claude/fix-x") wrote to the SAME file. That failed safe rather than
+        open (the source_sha would mismatch, reading as "source-drift" instead of "ok"), but it
+        made one project's staff-review invalidate another's rigor gate for no reason. Keying on
+        the worktree root removes the collision instead of relying on the hash to absorb it.
 
     rigor-marker.py check --branch B --source-sha S [--path P]
         Exit 0 + "ok" iff the marker exists AND .branch == B AND .source_sha == S. Otherwise
@@ -41,6 +48,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # Default extended-regex source pattern — MUST match ship Step 1c / verify-build Step 2.
@@ -114,7 +122,21 @@ def _slug(branch: str) -> str:
 
 
 def _default_path(branch: str) -> Path:
-    return Path(f"/tmp/flow-staff-review-marker-{_slug(branch)}.json")
+    """Repo-local marker path (FB-0075); falls back to the legacy /tmp form only when
+    there is no enclosing worktree, so a detached run still functions rather than
+    writing to the filesystem root."""
+    root = _git(["rev-parse", "--show-toplevel"]).strip()
+    if root:
+        d = Path(root) / ".flow"
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            ign = d / ".gitignore"
+            if not ign.exists():
+                ign.write_text("# Created by flow. Ephemeral scratch; never committed.\n*\n", encoding="utf-8")
+        except OSError:
+            pass
+        return d / f"staff-review-marker-{_slug(branch)}.json"
+    return Path(f"{tempfile.gettempdir()}/flow-staff-review-marker-{_slug(branch)}.json")
 
 
 def cmd_write(args) -> int:

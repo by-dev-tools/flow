@@ -23,7 +23,7 @@ verbatim as the PR body's `## Test plan` section.
 Contract
 --------
 - Input (positional): buffer path (default flow.config.json.verifyFindingsPath
-  → /tmp/flow-verify-findings.json; resolved by the caller, passed here).
+  → .flow/verify-findings.json; resolved by the caller, passed here).
 - Flags:
     --branch <name>      current git branch (default: `git branch --show-current`)
     --head-sha <short>   current short HEAD sha (default: `git rev-parse --short HEAD`)

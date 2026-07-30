@@ -46,8 +46,11 @@ against the config, the diff, and the canonical artifact's existence + freshness
 # BREAKS git worktrees: a session started in the parent repo exports a CLAUDE_PROJECT_DIR
 # pointing there, while the work (and the PR) lives in a linked worktree on a different
 # branch -- so env-first would audit the parent tree and see none of the changes, which is
-# the same failure-open this guard exists to close. `git rev-parse --show-toplevel` returns
+# the same failure-open this guard exists to close. A git rev-parse --show-toplevel returns
 # the WORKTREE root, which is always the tree under review when cwd is inside a repo.
+# (NOTE: no backticks anywhere in this block -- it lives inside a single-backtick dynamic-
+# context span, so ONE inner backtick truncates the span and everything after it is emitted
+# as literal text instead of being executed. FB-0010; the same warning is repeated below.)
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT="${CLAUDE_PROJECT_DIR:-}"
 if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
@@ -59,14 +62,65 @@ fi
 # still emits the context block, with an empty stage set. Resolved AFTER the cd above, so
 # a relative FLOW_SKIP_AUDIT_STAGES override resolves against the repo root rather than
 # whatever cwd the fork inherited (which the cd just left).
-STAGES="${FLOW_SKIP_AUDIT_STAGES:-/tmp/flow-skip-audit-stages.json}"
+# ...and the handoff itself must be REPO-LOCAL, not /tmp (FB-0075). The root anchor above
+# fixes which tree we read; it does not make a /tmp file visible. A forked skill cannot see
+# a /tmp file the parent shell wrote at all -- reproduced as a same-file A/B (full report
+# from the parent, "no stage report" from the fork) -- so through v1.22.0 this gate still
+# no-opped on every ship even with the anchor. Repo-local is visible to both AND per-worktree
+# by construction, which also ends the cross-project clobbering of the global /tmp namespace.
+# Relative default resolves against $ROOT because of the cd above.
+STAGES="${FLOW_SKIP_AUDIT_STAGES:-.flow/skip-audit-stages.json}"
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/audit-skips/lib/skip-audit-checks.py" ]; then
   H="${CLAUDE_PLUGIN_ROOT}/skills/audit-skips/lib/skip-audit-checks.py"
 else
   H="plugins/flow/skills/audit-skips/lib/skip-audit-checks.py"
 fi
 PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
+# Stamp gate (FB-0075). A handoff must PROVE it belongs to this repo+branch+HEAD before
+# it is audited. Namespacing alone is not enough: two worktrees of one repo share a repo
+# path, and a handoff left by an earlier branch in THIS worktree is still readable. A
+# mismatch is refused loudly rather than read-and-hope -- and is kept DISTINCT from the
+# absent case, because collapsing the two is exactly how a foreign buffer reads as
+# "nothing to do". An UNSTAMPED handoff is refused too (fail closed -- FB-0062).
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/flow_scratch.py" ]; then
+  SCRATCH_PY="${CLAUDE_PLUGIN_ROOT}/scripts/flow_scratch.py"
+else
+  SCRATCH_PY="plugins/flow/scripts/flow_scratch.py"
+fi
+STAMP_STATUS=""; STAMP_REASON=""
 if [ -f "$STAGES" ]; then
+  if [ ! -f "$SCRATCH_PY" ]; then
+    # The gate CANNOT fail open. If the checker is unreachable we cannot prove the
+    # handoff is ours, and "cannot prove" must never read as "verified" -- that is
+    # the exact failure this whole branch exists to remove.
+    STAMP_STATUS="unverifiable"
+    STAMP_REASON="stamp checker not reachable at $SCRATCH_PY -- cannot prove this handoff belongs to this workspace"
+  else
+    STAMP_JSON=$(python3 "$SCRATCH_PY" check "$STAGES" 2>/dev/null)
+    STAMP_STATUS=$(printf '%s' "$STAMP_JSON" | jq -r '.status // empty' 2>/dev/null)
+    STAMP_REASON=$(printf '%s' "$STAMP_JSON" | jq -r '.reason // empty' 2>/dev/null)
+    # An empty status means python3/jq failed, not that the stamp passed.
+    if [ -z "$STAMP_STATUS" ]; then
+      STAMP_STATUS="unverifiable"
+      STAMP_REASON="stamp check produced no verdict (python3 or jq unavailable) -- cannot prove this handoff belongs to this workspace"
+    fi
+  fi
+fi
+if [ -f "$STAGES" ] && [ "$STAMP_STATUS" = "unverifiable" ]; then
+  # DISTINCT from stamp_error: we could not CHECK the stamp (missing checker, no python3
+  # or jq), which is an install/toolchain problem. Collapsing it into stamp_error would
+  # print "does not belong to this workspace" -- a false statement -- and send the agent
+  # to a remedy (re-run 2a.1) that cannot fix a missing interpreter. Distinguishing
+  # "cannot prove" from "disproved" is the same discipline as absent-vs-stale.
+  printf '{"stamp_unverifiable": %s, "handoff": %s, "stages": []}\n' \
+    "$(printf '%s' "$STAMP_REASON" | jq -Rs . 2>/dev/null || printf '"stamp checker unreachable"')" \
+    "$(printf '%s' "$STAGES" | jq -Rs . 2>/dev/null || printf '"(handoff path; jq unavailable)"')"
+elif [ -f "$STAGES" ] && [ "$STAMP_STATUS" != "ok" ] && [ -n "$STAMP_STATUS" ]; then
+  # Present but NOT ours. Never audit it, never call it a clean standalone no-op.
+  printf '{"stamp_error": %s, "handoff": %s, "stages": []}\n' \
+    "$(printf '%s' "$STAMP_REASON" | jq -Rs . 2>/dev/null || printf '"handoff stamp did not match this workspace"')" \
+    "$(printf '%s' "$STAGES" | jq -Rs . 2>/dev/null || printf '"(handoff path; jq unavailable)"')"
+elif [ -f "$STAGES" ]; then
   PLAN_ARG=""; [ -f "$PLAN" ] && PLAN_ARG="--plan $PLAN"
   # Capture stderr (do NOT 2>/dev/null it away) so an engine failure on a PRESENT handoff is
   # diagnosable. Distinguish that failure from the absent-handoff no-op below via a dedicated
@@ -125,13 +179,14 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
     you have no evidence against — do not manufacture findings).
 - If the mechanical block is `{"note": ..., "stages": []}` (the handoff file was **absent** —
   a standalone run), output exactly `SKIP-AUDIT: no stage report to audit (run from
-  /flow:ship Step 2).` and stop. This is the clean no-op — **unless** this skill was **forked**
-  and the parent DID write a handoff to a `/tmp` path the fork's filesystem can't see (so
-  `[ -f "$STAGES" ]` reads false even though a handoff exists): then this "absent" note is a
-  false no-op, not a clean pass. When run from `/flow:ship` a handoff is always written at 2a.1,
-  so a `note` there means the fork couldn't see it — set `FLOW_SKIP_AUDIT_STAGES` to a shared
-  path, or route it like an `engine_error` below. (The systemic fork-handoff-transport fix is
-  tracked in `roadmap.md` § Exploration.)
+  /flow:ship Step 2).` and stop. This is the clean no-op — and since FB-0075 it is once again
+  a *trustworthy* one: the handoff is written to a **repo-local** `.flow/` path both the parent
+  and this fork can see, so an absent handoff now really does mean none was written. It did not
+  mean that before FB-0075, when the handoff lived in `/tmp` and was structurally invisible to a
+  forked skill — this note fired on **every** ship from v1.13.0 to v1.22.0, and the whole gate
+  no-opped silently behind it. If you ever see this note on a run launched from `/flow:ship`
+  Step 2a (which always writes a handoff), the transport is broken again: treat it as a
+  `stamp_error`, not a pass, and say so.
 - If the mechanical block carries **`"root_error"`** (FB-0074 — the skill could not locate the
   repo under review from its inherited cwd), do **NOT** treat it as "nothing to audit". Nothing
   was read: `flow.config.json` resolved empty, every `git` call returned empty, and *every*
@@ -141,6 +196,22 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   `⚠️ SKIP-AUDIT ROOT-UNRESOLVED (<root_error>). The skip-legitimacy gate did NOT run — this
   is not a clean pass.` Route it exactly like `engine_error` below: from `/flow:ship` Step 2a
   it becomes a `[decision-required]` draft-manifest entry, never a silent proceed.
+- If the mechanical block carries **`"stamp_error"`** (a handoff WAS present but its
+  `flow_stamp` does not match this repo/branch/HEAD, or it carries none at all), do **NOT**
+  audit it and do **NOT** report a clean standalone no-op — you are looking at another
+  workspace's handoff, or a stale one from an earlier branch. Output a loud diagnostic and stop:
+  `⚠️ SKIP-AUDIT REFUSED a handoff that does not belong to this workspace (<handoff>):
+  <stamp_error>. The skip-legitimacy gate did NOT run — this is not a clean pass.` From
+  `/flow:ship` Step 2a this routes to the draft manifest as `[decision-required]`
+  (`[skip-audit] handoff failed its stamp check — re-run ship Step 2a.1 or human-waive`).
+- If the mechanical block carries **`"stamp_unverifiable"`** (a handoff was present but the
+  stamp checker itself could not run — `flow_scratch.py` missing, or no `python3`/`jq`), this
+  is an **install/toolchain** problem, NOT a foreign handoff. Do not claim the handoff belongs
+  to someone else, and do not tell the operator to re-run ship Step 2a.1 — rewriting the
+  handoff cannot fix a missing interpreter. Output:
+  `⚠️ SKIP-AUDIT COULD NOT VERIFY the handoff stamp (<handoff>): <stamp_unverifiable>. The
+  skip-legitimacy gate did NOT run — this is not a clean pass. Reinstall the flow plugin or
+  install python3/jq, then re-run.` Routes to the draft manifest as `[decision-required]`.
 - If the mechanical block carries **`"engine_error"`** (the handoff file WAS present but
   `skip-audit-checks.py` failed on it — the engine exits non-zero on a malformed/unreadable
   report rather than collapsing to `stages:[]`), do **NOT** treat it as "nothing to audit" —
@@ -150,7 +221,7 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   Step 2a this routes to the draft manifest as `[decision-required]` (`[skip-audit] engine
   failed on a present handoff — fix the engine input or human-waive`), never a silent proceed.
 - A present, VALID handoff with genuinely zero skipped stages (`{"stages": []}` from a real
-  report — neither `note` nor `engine_error`, engine exit 0) is an honest empty audit: nothing
+  report — no `note`, `engine_error` or `stamp_error`, engine exit 0) is an honest empty audit: nothing
   was skipped, so there is nothing to re-run. Proceed with `SKIP-AUDIT: all stage skips
   legitimate (0 skips)`. Do not treat the empty stage set as anomalous — only the `note`
   (absent) and `engine_error` (present-but-failed) shapes above are special.
