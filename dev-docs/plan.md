@@ -42,6 +42,26 @@
 - **Open hygiene:** user-scope `~/.claude/settings.json` still has a stale `extraKnownMarketplaces.llm-auditor` key (cosmetic — points at `flow.git` under the pre-rename name); remove when convenient. Md-manager PR 5 (dogfood) still pending in a separate worktree.
 - **Op tip:** `gh pr edit` errors on this repo (projects-classic GraphQL deprecation) — use `gh api -X PATCH .../pulls/N -f body=...` to set a PR body.
 
+## PR — Repo-local `.flow/` scratch + handoff stamping (this branch, v1.23.0, FB-0075) — IMPLEMENTED — pending ship
+
+**Restated request:** Part B of the consumer dogfood report: make flow's cross-process ephemeral state visible to the process that has to read it, and impossible to confuse with another workspace's. Placed at the TOP of this doc deliberately — `extract-criteria.py` / `extract-visual-states.py` read only the FIRST block of their kind, so an active PR's Spec-walk must precede every retained one (`plan-discipline.md` § Active-block placement). `/flow:audit-coverage` flagged its absence on the first ship attempt: it extracted #86's stale block and correctly reported this PR's behavior as undeclared.
+
+**Mode:** feature (SAFETY — inter-process handoff transport + a new trust boundary).
+
+**Spec-walk:**
+- [x] A forked skill and its parent shell resolve the SAME handoff path, so a handoff written by ship Step 2a is readable by `Skill("flow:audit-skips")`. Repo-local `<repo-root>/.flow/`, never `/tmp` — a fork cannot see a `/tmp` file the parent wrote. (verify: `run_scratch_isolation_evals.py` `block-*` — extracts and **executes** the real audit-skips `!`-block against a matching handoff and asserts it audits rather than emitting the absent-handoff note.)
+- [x] Two different repos never share a scratch dir, and neither can read the other's handoff. (verify: `run_scratch_isolation_evals.py` `scratch-two-repos-isolated` + `stamp-foreign-refused`, two seeded temp repos.)
+- [x] A handoff must prove it belongs to this repo+branch+HEAD before it is audited; `ok` / `absent` / `invalid` / `stale` / `unverifiable` stay five distinct states, and an unstamped handoff is refused (fail closed). (verify: `stamp-*` cases incl. `stamp-absent-stamp-refused`, `stamp-stale-head-refused`, `stamp-absent-distinct`, `stamp-invalid-distinct`.)
+- [x] A symlinked spelling of the same repo root is NOT a mismatch — a false refusal would draft a clean PR, and a gate that cries wolf gets waived by habit. (verify: `stamp-symlink-not-a-mismatch`.)
+- [x] ship Step 2a writes VALID JSON: the heredoc terminator is at column 0 and the write is read-back-asserted with `jq .` at the write site. (verify: the harness extracts and **executes** the Step 2a fence in a seeded repo and `json.loads` the product — the writer half was previously only string-matched, which is how the indented-terminator bug shipped.)
+- [x] No `!`-span in any shipped `SKILL.md` contains an inner backtick (one truncates the span, so everything after it is emitted as literal text instead of executing). (verify: `span-intact-*`, blanket over every `SKILL.md`, one assertion per span.)
+- [x] No cross-boundary `/tmp/flow-*` path survives anywhere a consumer copies — including `template/` and `*.json`, not just `skills/`+`agents/`. The guard tests LIVE USE (assignment / redirect / JSON value), so documenting the fix stays legal. (verify: `contract-no-tmp-survivors`; falsifiability confirmed by reintroducing the template survivor and watching it fail.)
+- [x] `.flow/` self-ignores from the shell sites that actually run — not only from the Python helper, which no shipped path calls. (verify: `scratch-self-ignores` asserted against the EXECUTED shell idiom + `contract-*-self-ignores` at all five sites.)
+- [x] A `referenceGlob` resolving zero documents warns loudly instead of rendering no `## Reference documents` section, and flow's own config sets the slot. (verify: `extract_session.py --reference-glob` with a matching and a non-matching glob; the warning names the configuration failure and tells the reviewer it cannot raise a Spec violation.)
+- [x] `run_scratch_isolation_evals.py` is wired into `ci.yml` and self-asserts that wiring; all 21 harnesses green. (verify: `ci-wired` + the full suite.)
+
+**Explicitly OUT:** the artifact-less-reviewer breadcrumb, detached-HEAD stamp passage, the `flow-detached` global fallback, and the zero-reference-docs opt-out sentinel — all four routed to `roadmap.md` § Exploration with named shapes. Part A (verdict provenance + `UNDETERMINED`) was substantially pre-empted by `#86` and needs re-scoping against it.
+
 ## PR — Three gates that could report success without doing their job (v1.22.0, FB-0074) — **MERGED (#86, `129f582`)**
 
 A `/flow:contribute` drain. Three confirmed lessons applied, two dismissed with a reproduced symptom, one escalated to the roadmap, seven held. Unifying rule: *a contract whose two halves live in different files, with nothing mechanically checking the join, degrades silently — and the degradation is indistinguishable from success.*
@@ -56,7 +76,7 @@ A `/flow:contribute` drain. Three confirmed lessons applied, two dismissed with 
 - [x] `/flow:post-merge` §3 no longer emits `Skill("flow:land")`; it hands the step to the human and §6 holds the archive verdict at 🚫 until a `docs: land #N` PR exists and is merged. (verify: `run_merge_status_evals.py::skill-does-not-CALL-land` — fence-scoped, so the SKILL's own prose explaining the anti-pattern doesn't satisfy it; the old check asserted the bug and kept passing on that prose.)
 - [x] Every claim about `/flow:contribute` opening a *draft* and about `/flow:post-merge` *calling* `/flow:land` is swept repo-wide (FB-0010 fan-out): 8 + 7 sites incl. `docs/workflow.md`, both manifests, `workflow-help`, and the v1.21.0 CHANGELOG entry. (verify: `git grep -niE 'calls /flow:land|called by .flow:post-merge'` and the contribute-draft grep both return only deliberately-annotated historical records.)
 - [x] `.github/workflows/ci.yml` asserts its hand-written harness list matches `evals/run_*.py` in **both** directions. (verify: the step passes on the current tree; removing a runner line or renaming a harness each make it exit 1 — both directions exercised.)
-- [x] All 20 CI-wired eval harnesses green; every new fixture verified to FAIL on the pre-fix tree. (verify: run each harness listed in `ci.yml`; `git archive origin/main` for the pre-fix checks.)
+- [x] All 21 CI-wired eval harnesses green (20 at #86; this PR adds `run_scratch_isolation_evals.py`); every new fixture verified to FAIL on the pre-fix tree. (verify: run each harness listed in `ci.yml`; `git archive origin/main` for the pre-fix checks.)
 
 ## PR — `/flow:post-merge` skill, v1 (this branch, v1.21.0, FB-0072) — IMPLEMENTED — pending /simplify + staff-review + ship
 
