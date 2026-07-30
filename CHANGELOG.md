@@ -12,6 +12,8 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ## v1.23.0 — 2026-07-29
 
+
+
 **A blocked ship now hands you decisions you can answer, not a draft PR to decode.**
 
 - **The problem.** When a ship gate did not pass, `/flow:ship` opened a draft PR and handed it back. Measured across five real draft PRs in two projects, the round-trip from draft to ready ran **47 minutes to 13 days** — because the blocker was written for an engineer (`needs: declare + verify the criterion, or human waive`) with no proposed fix attached, so the only available move was to ask the agent to go fix it.
@@ -36,6 +38,8 @@ Breaking changes: none.
 - Anchors (content-derived, regeneration-stable), the located-descriptor export format, and the `file://` hardening are **unchanged**. Existing comments keyed to the old storage prefix are not migrated — the layer starts clean.
 
 **Breaking changes:** none for consumers. Internal note: the layer's element ids changed (`annot-*` → `an-*`) and the storage key is now `flow-annotations-v2:`; anything that greps the partial (flow's own evals do) must be updated with it.
+
+## v1.22.0 — 2026-07-29
 
 **Three gates that could report success without doing their job — each a contract split across two files with nothing checking the join.**
 

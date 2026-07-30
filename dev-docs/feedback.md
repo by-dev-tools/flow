@@ -35,7 +35,7 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
-### FB-0074 — Annotation-layer interaction: commenting is a mode, not a re-armed action
+### FB-0075 — Annotation-layer interaction: commenting is a mode, not a re-armed action
 
 **Date:** 2026-07-29
 **Source type:** user direction (iterative, over six review rounds on a live prototype)
