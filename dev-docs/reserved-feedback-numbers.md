@@ -23,8 +23,9 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 _(FB-0071 cleared at ship of the annotation-layer generalization PR, v1.20.0; entry lives in `feedback.md`.)_
 _(FB-0072 cleared at ship of the `/flow:post-merge` skill v1 PR, v1.21.0; entry lives in `feedback.md`.)_
 _(FB-0073 cleared at ship of the audit-skips-loud + swift-glob fix PR, v1.21.1; entry lives in `feedback.md`.)_
-- **FB-0075** — `claude/flow-fork-transport-scratch` (flamboyant-stonebraker-36ef32) — "A handoff between a parent shell and a forked skill must live somewhere BOTH can see, and must prove it belongs to this workspace before it is read." Repo-local `.flow/` scratch + `flow_stamp` refuse-on-mismatch (v1.22.0, part B of the consumer dogfood report). Claimed 2026-07-29, next free after #83's FB-0073 and this session's FB-0074 reservation. Entry written in `feedback.md`; clears at ship.
-_(FB-0074 cleared at merge of #86, v1.22.0; entry lives in `feedback.md`.)_
+_(FB-0074 cleared at ship of the three-gates PR, v1.22.0 (`#86`); entry lives in `feedback.md`. It was claimed twice concurrently — see the audit trail entry for 2026-07-29. `#86` shipped it; this branch renumbered its part-A reservation away.)_
+
+- **FB-0075** — `claude/flow-fork-transport-scratch` (flamboyant-stonebraker-36ef32) — "A handoff between a parent shell and a forked skill must live somewhere BOTH can see, and must prove it belongs to this workspace before it is read." Repo-local `.flow/` scratch + `flow_stamp` refuse-on-mismatch (v1.23.0 — renumbered from v1.22.0 after `#86` took it; part B of the consumer dogfood report). Claimed 2026-07-29, next free after #83's FB-0073 and this session's FB-0074 reservation. Entry written in `feedback.md`; clears at ship.
 
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
