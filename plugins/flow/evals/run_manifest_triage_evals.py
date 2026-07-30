@@ -432,7 +432,12 @@ def test_producer_lines() -> None:
     expect_true("at least 8 prescribed producer lines found in SKILL.md",
                 len(templates) >= 8, f"found {len(templates)}")
 
-    kinds_seen: set[str] = set()
+    # A producer may prescribe its entry either as an inline-code line TEMPLATE or
+    # as an `add-entry --kind X` invocation (the newer, validated mechanism — see
+    # Step 2). Both satisfy the contract "every kind is prescribed somewhere";
+    # collect from both. Converting the remaining template sites to `add-entry` is
+    # a roadmap follow-up, not a correctness gap.
+    kinds_seen: set[str] = set(re.findall(r"add-entry --kind ([a-z0-9-]+)", src))
     for tpl in templates:
         with tempfile.TemporaryDirectory() as td:
             f = Path(td) / "l.md"

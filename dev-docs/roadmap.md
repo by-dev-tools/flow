@@ -102,6 +102,24 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### §7c's cross-session reconcile can silently downgrade a passing Test plan (from the FB-0075 integration review)
+
+**Surfaces when:** §7c is next touched, or a PR is reconciled days after its verify-build run.
+
+§7c step 2 re-renders `## Test plan` unconditionally. Days later the `/tmp` verify buffer is gone, so `render-test-plan.py` emits the *stamped but unchecked* manual fallback; step 3 sees `verdict == READY` and marks the PR ready; step 4's provenance assert passes, because the fallback carries a valid stamp. A previously-passing Test plan is quietly downgraded to "manual, unverified" on a PR that then reads ready. Pre-existing on `origin/main` (both halves shipped before FB-0075). Needs a rule: on a buffer-less reconcile, do not overwrite a stamped passing block — keep it and warn, or refuse to flip to ready.
+
+### `/flow:land`'s coherence gate is skipped silently when `mktemp` fails (from the FB-0075 integration review)
+
+**Surfaces when:** `land/SKILL.md` is next touched.
+
+`land/SKILL.md:116` — if `mktemp` fails, `BODYFILE` is empty and the `elif [ -z "$PC" ]` arm does not fire, so the BLOCKING coherence gate is skipped with no message at all. The FB-0010 silent-skip shape in a gate whose whole job is to block. One-line fix (guard on the empty `BODYFILE` with its own loud arm); outside this PR's file set.
+
+### Convert the remaining 7 producer sites to `add-entry` (from the FB-0075 integration review)
+
+**Surfaces when:** a producer's prescribed manifest line drifts off-vocabulary again, or `add-entry` gains a field.
+
+FB-0075 gave the manifest line ONE owner (`manifest-triage.py add-entry`, which validates `--kind`/`--needs` at write time) and Step 2 tells producers "never hand-compose the line" — but only the §7a visual-deliverable site was converted; the other seven still prescribe an inline-code template. That is the same two-places-one-contract shape FB-0074 is about: the prose rule and the prescribed examples disagree, and the examples are what an agent copies. Convert the seven, then tighten `run_manifest_triage_evals.py::test_producer_lines` to accept ONLY the `add-entry` form (it currently accepts both by design).
+
 ### Un-performed waivers have a durable record and no reader (from the FB-0075 staff-review)
 
 **Surfaces when:** `/flow:post-merge` §4 is next touched, or a merged PR turns out to have carried an accepted debt nobody tracked.

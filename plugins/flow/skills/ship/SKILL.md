@@ -115,7 +115,7 @@ If `$RIGOR` was not `ok` on a source-touching, non-spike/tiny ship, **first re-r
 `/flow:staff-review`** on the final tree and re-read the marker (auto-resolvable — the same
 discipline as Step 2a's `SHOULD-RE-RUN · auto-resolvable`; re-run once, don't loop). Only if the
 re-run is impossible in this context — or itself yields an unresolved `[decision-required]` —
-**add to the draft manifest** (Step 2), in the canonical line shape (Step 7):
+**add to the draft manifest** (Step 2), in the canonical line shape (Step 2):
 `[rigor] /simplify + /flow:staff-review evidence unresolvable for this source (<reason>) — needs: human-waive — confidence: decision-required — candidate resolutions: <what would make the re-run possible, e.g. run it from a checkout where the source is present>`. This keeps the gating
 half of the Step 1.0 assumption block intact — a source-touching diff can't reach a *ready* PR
 without the reviews genuinely running — while keeping the resolution auto-resolvable, so a
@@ -277,13 +277,13 @@ Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, `/flo
 
 **Findings resolve into exactly one of three outcomes — never a silent proceed, never a hard mid-loop halt:**
 - **`[auto-fixable]` BLOCKER + cheap NIT** → fix in-tree, continue (today's happy path).
-- **`[decision-required]` BLOCKER** (security/a11y tag the axis; see their output contracts) → do NOT best-effort it. Add it to the **draft manifest** (an in-memory list this run accumulates) in the canonical line shape (Step 7):
+- **`[decision-required]` BLOCKER** (security/a11y tag the axis; see their output contracts) → do NOT best-effort it. Add it to the **draft manifest** (an in-memory list this run accumulates) in the canonical line shape (Step 2):
   `[security] <the reviewer's finding> — needs: <secret rotation | dep vetting | design decision> — confidence: decision-required — candidate resolutions: <the reviewer's candidate fixes, and the human input each needs>`
   `[a11y] <the reviewer's finding> — needs: <design decision | dep vetting> — confidence: decision-required — candidate resolutions: <the reviewer's candidate fixes, and the human input each needs>`
   The loop keeps going. Step 7a.5 triages it: `secret rotation`/`dep vetting` need an action outside this session (a genuine draft); anything else becomes a question the human answers at the Step 8 hand-off.
-- **`/flow:audit-coverage` `ISSUE · Undeclared change`** → each uncovered behavior is an entry on the draft manifest in the canonical line shape (Step 7):
+- **`/flow:audit-coverage` `ISSUE · Undeclared change`** → each uncovered behavior is an entry on the draft manifest in the canonical line shape (Step 2):
   `[coverage] <the uncovered behavior> — needs: declare + fence — confidence: decision-required — candidate resolutions: <the criterion you DRAFTED for the plan's Spec-walk block — drafting it is your job; declaring it is not>`. Do NOT auto-add the criterion yourself — that is the agent grading its own homework; the resolution is to declare the criterion in the plan's `**Spec-walk:**` block and let `/flow:verify-build` verify it (or the human waives it at the merge gate). A clean `No issues flagged.` adds nothing.
-- **`/flow:verify-build` `metadata.no_plan_fallback: true` on a source-touching diff** → a draft-manifest entry in the canonical line shape (Step 7): `[verify-build] ran without a governing plan (no **Spec-walk:** block) — needs: declare + fence — confidence: decision-required — candidate resolutions: <the criteria you DRAFTED, for the human to approve into the Spec-walk block>`. The verdicts may be real (the §2b judged path produces genuine `adversarial-judged` PASSes over diff-derived criteria), but a plan was *expected* and absent: a production diff shouldn't reach a ready PR via the no-plan path. Resolve by declaring the criteria in the plan's `**Spec-walk:**` block (so the next run is full mode) or waiving at the merge gate. A docs-only no-plan run (smoke path) does not route here.
+- **`/flow:verify-build` `metadata.no_plan_fallback: true` on a source-touching diff** → a draft-manifest entry in the canonical line shape (Step 2): `[verify-build] ran without a governing plan (no **Spec-walk:** block) — needs: declare + fence — confidence: decision-required — candidate resolutions: <the criteria you DRAFTED, for the human to approve into the Spec-walk block>`. The verdicts may be real (the §2b judged path produces genuine `adversarial-judged` PASSes over diff-derived criteria), but a plan was *expected* and absent: a production diff shouldn't reach a ready PR via the no-plan path. Resolve by declaring the criteria in the plan's `**Spec-walk:**` block (so the next run is full mode) or waiving at the merge gate. A docs-only no-plan run (smoke path) does not route here.
 - **FOLLOW-UP** → Step 3 routing.
 
 **How a producer writes an entry — never hand-compose the line.** The line shape lives in exactly one place (`lib/manifest-triage.py add-entry`), which validates `--kind` and `--needs` against the closed vocabularies at write time and appends to the run's manifest file. Hand-composing an em-dash format across 8 sites is how four of them drifted off-vocabulary before FB-0075:
@@ -330,7 +330,7 @@ Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=
 **On `exit_code: 1` (FAIL or Unknown per FB-0011) at ship time** — this means a *regression since readiness*. Handle it, do NOT hard-halt the loop:
 1. Attempt the FB-0012 bounded mechanical fix (≤3, oscillation-checked, same contract as Step 1c — loop only on the verify-build exit code, never on judge prose). Re-run verify-build.
 2. If it converges to PASS → continue.
-3. If it does NOT converge → add an entry to the **draft manifest** in the canonical line shape (Step 7): `[verify-build] <criterion + evidence> — needs: regression fix — confidence: decision-required — candidate resolutions: <what you already tried, and the different approach you would take next>` — then continue to Step 3. The PR opens as a **draft** (Step 7) — never a merge-ready PR on a non-PASS build.
+3. If it does NOT converge → add an entry to the **draft manifest** in the canonical line shape (Step 2): `[verify-build] <criterion + evidence> — needs: regression fix — confidence: decision-required — candidate resolutions: <what you already tried, and the different approach you would take next>` — then continue to Step 3. The PR opens as a **draft** (Step 7) — never a merge-ready PR on a non-PASS build.
 
 **Reconciliation with the merged PR S auto-advance predicate (do not weaken it):** PR S lets the agent auto-advance *into* `/flow:ship` only when the readiness predicate holds — which *requires* `verify-build` would return PASS (FB-0018: auto-ship needs a positive behavioral PASS, not absence-of-failure). That gate is UNCHANGED. This step only changes what ship does with a *ship-internal* failure: route to draft instead of hard-halt. The two are distinct decision points, and the safety invariant is preserved (in fact strengthened): **no merge-ready PR is ever produced on a non-PASS build** — a draft is mechanically NOT-READY and the human sees the manifest at the merge gate. (The reserved `--skip-verify` override remains a documented Step-1 escape hatch, not implemented in v1.)
 
@@ -366,7 +366,7 @@ No stage skip is accepted on its own say-so, and **"the agent did it manually" n
 
 3. **Resolve — mirror audit-coverage's routing; never a hard mid-loop halt:**
    - **`SHOULD-RE-RUN · auto-resolvable`** → re-invoke that stage's Skill **now** (e.g. a stale/absent verify-build buffer → re-run `Skill("flow:verify-build")`; a contradicted security/a11y skip → run the reviewer), then **re-run `Skill("flow:audit-skips")` ONCE** over the refreshed report. Loop only this one re-audit cycle — do not iterate LLM judgment (reward-hackable; same discipline as Step 2's single-pass reviewers).
-   - **`SHOULD-RE-RUN · decision-required`** (cannot be auto-resolved — e.g. a missing visual-history entry, a visual-deliverable gap on a no-sim host) → add an entry to the **draft manifest** in the canonical line shape (Step 7): `[skip-audit] <stage>: <reason> — needs: <re-run | declare + fence | human-waive> — confidence: decision-required — candidate resolutions: <the specific stage re-run or declaration that would settle it>`. The PR opens as a draft (Step 7).
+   - **`SHOULD-RE-RUN · decision-required`** (cannot be auto-resolved — e.g. a missing visual-history entry, a visual-deliverable gap on a no-sim host) → add an entry to the **draft manifest** in the canonical line shape (Step 2): `[skip-audit] <stage>: <reason> — needs: <re-run | declare + fence | human-waive> — confidence: decision-required — candidate resolutions: <the specific stage re-run or declaration that would settle it>`. The PR opens as a draft (Step 7).
    - **All `LEGITIMATE`** → emit a one-line confirmation (`skip-audit: all N stage skips legitimate`) and proceed.
 
 4. **Record the consolidated result** in the Step-2 `Final-pass reviews:` line (`skip-audit=all-legitimate` / `skip-audit=N should-re-run`) and in the PR `## Flow run` table (the `/flow:audit-skips` row).
@@ -926,7 +926,15 @@ TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE
 python3 "$TRIAGE" record-attempt --branch "$BRANCH" --kind visual-deliverable --finding "<the finding text, verbatim>"
 ```
 
-If the re-assert now passes, there is no manifest entry and nothing reaches the human. If it still fails, **add to the draft manifest**: `[visual-deliverable] visually-significant change is missing <named artifact(s)> — needs: <re-run | hand-author> — confidence: decision-required — candidate resolutions: re-run /flow:verify-build to capture frames, and/or hand-author the visual-history entry (Step 5c)`. Because the attempt is recorded, Step 7a.5 classifies it `ask` rather than re-attempting — it becomes a question, not a silent second try. Because the walkthrough is **ephemeral/local (not committed)**, also record its local path in the PR-body handoff (the `## Flow run` table's visual row + the closing line) so the human can open it at the merge gate: `Walkthrough (local, uncommitted): <verifyReportPath>`.
+If the re-assert now passes, there is no manifest entry and nothing reaches the human. If it still fails, **add to the draft manifest via `add-entry`** (Step 2 — never hand-compose the line; `add-entry` validates `--kind`/`--needs` at write time):
+
+```sh
+python3 "$TRIAGE" add-entry --kind visual-deliverable \
+  --finding "<plain language: this change is visible in the app and <named artifact(s)> is missing>" \
+  --needs re-run \
+  --resolution "re-run /flow:verify-build to capture frames, and/or hand-author the visual-history entry (Step 5c)" \
+  >> "$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")"
+``` Because the attempt is recorded, Step 7a.5 classifies it `ask` rather than re-attempting — it becomes a question, not a silent second try. Because the walkthrough is **ephemeral/local (not committed)**, also record its local path in the PR-body handoff (the `## Flow run` table's visual row + the closing line) so the human can open it at the merge gate: `Walkthrough (local, uncommitted): <verifyReportPath>`.
 
 ### 7a.5. Manifest triage — a draft PR is a last resort, not a deliverable (FB-0075)
 
@@ -950,7 +958,7 @@ jq -r '.verdict, .counts' /tmp/flow-triage.json
 Three classes come back:
 
 - **`auto`** — a resolution is prescribed and has not been attempted. Only `visual-deliverable` qualifies, and §7a above already attempts it, so an `auto` here means the attempt has not run: run it (§7a's ordered sequence), record it, re-classify. **One attempt.** A failed attempt **demotes to `ask`** — never to a silent draft, and never to a second try.
-- **`ask`** — a decision the human can answer now. **Draft the resolution** — the criterion, the corrected status line, the specific candidate fix — into the entry's `candidate resolutions:` field. This is the half that answers "high-confidence recs, just do it", discharged safely: you do the work of *proposing*; the human supplies only the approval that doctrine reserves for them (`:272` — never self-declare a criterion; `:585` — never silently rewrite an un-fenced human doc).
+- **`ask`** — a decision the human can answer now. **Draft the resolution** — the criterion, the corrected status line, the specific candidate fix — into the entry's `candidate resolutions:` field. This is the half that answers "high-confidence recs, just do it", discharged safely: you do the work of *proposing*; the human supplies only the approval that doctrine reserves for them (Step 2's audit-coverage rule — never self-declare a criterion; §5a.5's rule — never silently rewrite an un-fenced human doc).
 - **`blocked`** — needs an action outside this session (rotate a leaked secret, vet a dependency). Not waivable, never phrased as a question. This is what a draft PR genuinely exists for.
 
 **Invariants the classifier enforces — do not work around any of them:**
@@ -984,7 +992,7 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
 
 - Short title (under 70 chars).
 - Body — if `verdict != READY`, prepend this block before `## Summary` (render it; see below):
-  **Do NOT hand-author this block — render it** (`lib/manifest-triage.py render-manifest`, Step 7a.5). Hand-authoring is how the engineer shorthand got there, and the renderer is what guarantees each item carries its plain-language triple. Its shape:
+  **Do NOT hand-author this block — render it** (`lib/manifest-triage.py render-manifest`, Step 7a.6). Hand-authoring is how the engineer shorthand got there, and the renderer is what guarantees each item carries its plain-language triple. Its shape:
   ```markdown
   ## 🚫 NOT READY TO MERGE — unresolved blockers
   <!-- flow:not-ready-manifest -->
@@ -1003,7 +1011,7 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
   ## Waived at ship
   - [<kind>] <finding, verbatim — the exact text the waiver was given for> — waived by you (<fixed anyway | shipped as-is>)
   ```
-  A `verify-build` waiver is recorded here **and the PR stays a draft** — `:308`/`:310` take no carve-out.
+  A `verify-build` waiver is recorded here **and the PR stays a draft** — Step 2's no-merge-ready-on-a-non-PASS-build rule takes no carve-out.
 - Then:
   ```markdown
   ## Summary
@@ -1043,7 +1051,11 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
   | Status surface (§5a.5) | <✓ / skipped (status unchanged)> | <N candidates scanned, none drifted / draft: <path> stale ("<quote>") / —> |
   | Visual history (§5c) | <✓ / skipped (reason)> | <curated entry: "<decision>" / hand-authored (visual_significant) / skipped (uiSurface:false · no load-bearing visual decision) / —> |
 
-  If the `🚫 NOT READY TO MERGE` manifest above is present, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here. For a `[visual-deliverable]` draft, the ephemeral walkthrough is **local + uncommitted** — open it at the path named in the Visual-deliverable row before reviewing. Deferred follow-ups: see the configured roadmap and plan docs.
+  If a not-ready blockers block is present above, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here.
+  <!-- Never write the literal 🚫 sentinel in this sentence. `pr-coherence.py::has_manifest`
+       substring-matches it (inline backticks do not exempt it), so on a READY PR the
+       explanatory line alone trips the §7b coherence gate and halts a clean ship —
+       and makes /flow:land report a false "merged in a not-ready state". --> For a `[visual-deliverable]` draft, the ephemeral walkthrough is **local + uncommitted** — open it at the path named in the Visual-deliverable row before reviewing. Deferred follow-ups: see the configured roadmap and plan docs.
 
   🤖 Generated with [Claude Code](https://claude.com/claude-code)
   ```
@@ -1202,7 +1214,7 @@ fi
 
 ### 7c. Reconcile-only fast-path (when a blocker was cleared out-of-band)
 
-The manifest lifecycle above is correct only when `/flow:ship` re-runs end-to-end. But a blocker is often cleared *outside* a ship re-run — the operator drives the sim to clear the last Unknown criterion, or **the human answers one of the Step 8 decisions** (FB-0074 — that is a first-class trigger for this path, not an edge case) — and then wants the PR to read honestly without a full pipeline pass. **Hand-editing the PR body is the wrong path** (it is exactly the write that silently failed and produced FB-0067). Instead there is a side-effect-free reconcile that only re-renders the body + reconciles draft state — no reviewers, no `/simplify`, no doc synthesis:
+The manifest lifecycle above is correct only when `/flow:ship` re-runs end-to-end. But a blocker is often cleared *outside* a ship re-run — the operator drives the sim to clear the last Unknown criterion, or **the human answers one of the Step 8 decisions** (FB-0075 — that is a first-class trigger for this path, not an edge case) — and then wants the PR to read honestly without a full pipeline pass. **Hand-editing the PR body is the wrong path** (it is exactly the write that silently failed and produced FB-0067). Instead there is a side-effect-free reconcile that only re-renders the body + reconciles draft state — no reviewers, no `/simplify`, no doc synthesis:
 
 0. **Fetch and parse the live PR body FIRST** — before anything overwrites it. Step 1 recomputes from gate state and step 2 *writes* a new body, so by the time the old §7b read-back runs, the durable record is already gone. Read `## Waived at ship` and each entry's `already-attempted` marker out of the live body and feed them into step 1:
 
