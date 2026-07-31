@@ -10,6 +10,18 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.24.0 — 2026-07-29
+
+**The `/flow:verify-build` annotation layer is redesigned: commenting is a mode you stay in, not a button you re-press.**
+
+- **No more re-arming.** Click an element → write or dictate → `↵` → click the next one. Commenting is a persistent mode, on by default. `⌘`/`Ctrl`/`Alt`-click passes a click through to the page (so links and interactive prototypes still work), selecting text never creates a comment, and `Esc` hands the page back.
+- **Chrome is one circular floating control** — the minimized comment container. Filled = commenting is live; it carries the comment count; clicking expands the panel. The panel holds a labelled **Commenting** switch, hover-outlining and hide-pins toggles, per-comment copy and delete, **Copy all**, and a two-tap **Delete all**. Only pins float over the design being reviewed.
+- **Toasts removed.** Each control states its own condition — a switch, a swapped icon, or a transient label on the button just pressed — instead of a floating message that covered the controls it described. A visually-hidden `role="status"` region carries the same information to screen readers.
+- **Accessibility + contrast fixes from a staff design + UX review.** A capture-phase `Enter`/arrow handler was cancelling the default action on *every* key press, so `Enter` could not activate any control, arrows could not scroll, and `Enter` inside a host page's own input was swallowed. White-on-accent failed WCAG on five filled surfaces in dark mode (now a themed `--an-on-accent`); the switch off-state was 1.28:1; list rows were focusable with no focus style; and the crosshair cursor captured the layer's own buttons.
+- Anchors (content-derived, regeneration-stable), the located-descriptor export format, and the `file://` hardening are **unchanged**. Existing comments keyed to the old storage prefix are not migrated — the layer starts clean.
+
+**Breaking changes:** none for consumers. Internal note: the layer's element ids changed (`annot-*` → `an-*`) and the storage key is now `flow-annotations-v2:`; anything that greps the partial (flow's own evals do) must be updated with it.
+
 ## v1.23.0 — 2026-07-29
 
 **A blocked ship now hands you decisions you can answer, not a draft PR to decode.**
