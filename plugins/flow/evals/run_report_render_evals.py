@@ -21,6 +21,7 @@ Renders to a temp file, reads the HTML back, asserts substrings. Stdlib only.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -53,6 +54,26 @@ LAYER_MUST = [
     "execCommand",             # …copied via hidden-textarea + execCommand
     "Delete all?",             # two-step inline confirm (no native confirm)
     "localStorage",            # persistence retained
+    # --- FB-0076: the mechanisms behind defects that actually shipped and were caught by a
+    # human or a review lens, never by a test. Each line is a regression that recurred or
+    # nearly recurred; deleting the mechanism must fail CI rather than pass silently.
+    "function eventIsOurs",    # ONE ownership predicate for click+keydown. They drifted once:
+                               # keydown exempted host form fields, click did not, so clicking
+                               # into a prototype's own input was swallowed.
+    "function walkStep",       # the ⇧-arrow keyboard walk (WCAG 2.1.1). Tab alone reached 2 of
+                               # 129 commentable elements on a real report.
+    "var targetFromPointer",   # keeps a Tab-derived target from capturing the arrow keys —
+                               # without it, keyboard users lose page scrolling.
+    "function clearTarget",    # current/upStack/targetFromPointer are one fact; clearing them
+                               # separately is how they desync.
+    "--an-on-accent:",         # themed foreground on accent fills. Hardcoded #fff measured
+                               # 2.68:1 in dark mode across five surfaces.
+    "--an-field-line:",        # input boundaries need 3:1 (1.4.11); --an-line is 1.28:1.
+    "aria-describedby",        # the comment field's only name was a placeholder that vanishes
+                               # on reopen (3.3.2).
+    '"role", "listitem"',      # rows were focusable divs with no role (4.1.2). Matched in
+                               # its setAttribute form — the row is built in JS, so the
+                               # literal attribute never appears in the partial's markup.
 ]
 # Native modals + async clipboard are suppressed in the embedded browser → forbidden.
 # Comments in the partial are worded to avoid these literal call sequences, so a hit is
@@ -61,6 +82,22 @@ LAYER_MUST_NOT = [
     "navigator.clipboard",
     "confirm(", "alert(", "prompt(",
     "SHOT_SELECTOR", "shotIndex", "imageOrder",  # the FB-0051 image-index anchoring is gone
+]
+
+# Two CSS defect CLASSES that shipped in this file and failed silently — a regex catches
+# either recurrence, where a token list cannot.
+LAYER_CSS_LINTS = [
+    # `inherit` is a CSS-wide keyword: legal as a whole value, INVALID as a component of the
+    # `font` shorthand. The browser drops the entire declaration. 18 of these accumulated
+    # here and the layer rendered in the host page's typography until someone measured it.
+    (r"font:\s*[^;\n]*\binherit\s*;",
+     "invalid `font: … inherit` shorthand — a CSS-wide keyword cannot be a shorthand "
+     "component, so the whole declaration is silently dropped. Use longhands."),
+    # The accent inverts between colour schemes, so a hardcoded foreground on top of it can
+    # only be correct in one of them.
+    (r"color:\s*#fff(?:fff)?\s*;",
+     "hardcoded white on a themed fill — the accent lightens in dark mode, where white "
+     "measured 2.68:1. Use var(--an-on-accent) / var(--an-on-danger)."),
 ]
 
 # (id, buffer_path, must_contain[], must_not_contain[])
@@ -119,6 +156,39 @@ def check_layer_contract() -> list[str]:
     for s in LAYER_MUST_NOT:
         if s in text:
             problems.append(f"layer contains forbidden (embedded-browser-hostile) token: {s!r}")
+    for tok in ("--an-on-accent", "--an-field-line", "--an-track"):
+        if text.count(tok + ":") < 2:
+            problems.append(
+                f"{tok} is declared {text.count(tok + ':')} time(s), expected >=2 (light AND "
+                "dark). A single declaration is exactly how the dark scheme ended up with an "
+                "un-themed foreground measuring 2.68:1.")
+    for pattern, why in LAYER_CSS_LINTS:
+        for m in re.finditer(pattern, text):
+            line = text.count("\n", 0, m.start()) + 1
+            problems.append(f"layer:{line} {why} (matched {m.group(0)!r})")
+    # Presence is not enough: the ownership predicate exists to be shared. One definition
+    # plus at least two call sites is what stops click and keydown from drifting apart again.
+    # A global count is the wrong assertion — there are three call sites, so losing one still
+    # left two. What matters is that EACH document-level handler consults the predicate: the
+    # bug was one handler drifting away from it, not the total dropping.
+    for evt in ("click", "keydown"):
+        anchor = 'document.addEventListener("%s"' % evt
+        i = text.find(anchor)
+        if i == -1:
+            problems.append("no document-level %s handler found in the layer" % evt)
+            continue
+        # scope to that handler: up to the next document-level addEventListener, else 4k chars
+        rest = text[i + len(anchor):]
+        nxt = rest.find("document.addEventListener(")
+        body = rest[: nxt if nxt != -1 else 4000]
+        if "if (!eventIsOurs(e)) return;" not in body:
+            problems.append(
+                "the document %s handler is missing its `if (!eventIsOurs(e)) return;` guard — "
+                "click and keydown must share ONE ownership predicate, as the FIRST thing each "
+                "does. They drifted once: keydown exempted host form fields and click did not, "
+                "so clicking into a prototype's own input was swallowed while typing in it "
+                "passed through. (A later, conditional use of eventIsOurs elsewhere in the "
+                "handler is not a substitute for the guard.)" % evt)
     return problems
 
 
