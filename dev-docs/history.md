@@ -4,6 +4,34 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-01 — `/flow:land` becomes model-invocable so `/flow:post-merge` can actually call it (v1.25.0, FB-0077)
+
+**Branch:** `claude/land-model-invocable` · **SHA:** _(filled at ship)_
+
+**What was done (user-facing).** `/flow:post-merge` §3 now really calls `/flow:land` instead of printing an instruction to run it. `/flow:land`'s frontmatter flips `disable-model-invocation: true → false`; a new §0 states the never-auto-fire intent as a precondition instead. `/flow:post-merge` keeps its own `disable-model-invocation: true`, so a human gate still sits above the whole path.
+
+**Why.** `/flow:post-merge 84` ran live this session and reported that the human still had to run `/flow:land 84`. The user asked why, and then named the root cause themselves: *"land should not be disable-model-invocation - doesn't that defeat the purpose of post merge?"* It did. §3 is the step that makes `/flow:post-merge` an orchestrator; without it the skill is a reminder to run another command.
+
+**The two-fix history is the point.** #79 wrote the `Skill("flow:land")` call; it was rejected on every run and the step silently degraded to its fallback. FB-0074 (v1.22.0) caught that and added `doctor/lib/skill-composition-lint.py` — a genuinely good static detector for "skill A calls a model-disabled skill B", a contract whose two halves live in different files (the FB-0010 fan-out class). But it then satisfied its own lint by **deleting the call**, which turned a runtime defect into documented behavior. The detector was right; the remedy was applied to the wrong half.
+
+**Design decisions.**
+- **Clear the flag rather than keep the hand-off.** Considered three options. (a) Keep the flag, keep the hand-off — rejected: it concedes the feature, and the user explicitly asked for the reverse. (b) Split land into a human-facing wrapper plus a model-invocable `land-core` that post-merge calls — rejected as machinery that buys nothing; it preserves a flag that isn't doing work. (c) Clear the flag — chosen. The flag's stated job ("it opens a PR, so it must never auto-fire") is already done more precisely by land's own §1a gate, which refuses any PR `gh` doesn't report as merged. Claude cannot merge, so the flag guarded an unreachable state while blocking a reachable and wanted one.
+- **Record the intent as a precondition, not a flag.** §0 names the two legitimate entries (human types it; `/flow:post-merge` §3 calls it) and says everything else is invalid. This is strictly more expressive than the boolean it replaces — the flag could not distinguish "called by a human-gated orchestrator" from "a loop reached for me," which is exactly the distinction that mattered.
+- **Fixed the lint's remediation text, not just this call site.** The lint's message led with "hand the step to the human," which is the advice that produced the wrong fix. It now leads with the redundancy question — is the callee's own gate already the guard? — and names this reversal so the next reader doesn't repeat it.
+
+**Technical decisions.**
+- Declared `disable-model-invocation: false` explicitly rather than deleting the line. An absent flag parses as invocable, so deletion would have been behaviorally identical but would have lost the record that this is a decision. The eval asserts the explicit form for that reason.
+- The eval imports the lint by path (`importlib`, the filename is hyphenated) and reuses its `scan()`/`_frontmatter()` rather than hand-rolling a second fence parser. A duplicate parser in the test of a parser can drift from it and start agreeing with itself — the same fan-out class the lint exists to catch.
+
+**SAFETY — the new assertions were mutation-tested, and the gate they protect is named.** Clearing a capability flag is a widening of what the agent may do, so the replacement guard has to be pinned, not assumed. Layer 3 of `run_skill_composition_evals.py` adds five live assertions: land is invocable; land declares the flag explicitly; `/flow:post-merge` emits a fenced `Skill("flow:land")`; `/flow:post-merge` keeps its own flag; and **land keeps its §1a merged-PR gate** — the last because that gate is now the sole mechanical guard, so its removal would retroactively make this change unsafe. All five were verified by reintroducing the corresponding regression one at a time (5/5 caught), with the files restored byte-identical and the baseline re-run green afterward.
+
+**SAFETY — the fan-out sweep found three false-passing assertions the suite could not.** `git grep` for the old value before trusting the green suite (FB-0010, "grep first, edit second") turned up three harnesses asserting on `disable-model-invocation` by bare substring, **all three of which passed against the changed tree**: `run_land_evals`' `skill 5` demanded `true` and passed on a file declaring `false`; `run_merge_status_evals`' `skill-human-invoked` survived flipping the flag it guards (proven by mutation — it escaped the first pass); and that harness's `skill-does-not-CALL-land` was pinning the FB-0074 concession itself, so it would have failed CI on the correct tree. The cause is uniform and worth naming: the prose explaining a flag quotes the flag, so a whole-file substring test can never distinguish a declaration from a mention. All three are now anchored to the frontmatter block with a line-anchored regex, and re-mutated (3/3 for land, 2/2 for merge-status). Recorded as FB-0077 rule 3.
+
+**Tradeoffs discussed.**
+- **Residual risk, stated plainly.** With the flag gone, a model could in principle invoke `/flow:land` unprompted after noticing a merge. The blast radius is one `docs: land #N` PR against an already-merged PR, which a human still gates at merge — and §1a bounds it to genuinely merged PRs. Judged acceptable against a step that was broken on 100% of runs. The precondition in §0 is instruction-level, which is weaker than a flag; that asymmetry is the real cost of this change and is recorded here rather than glossed.
+- **Why not leave it alone.** The hand-off "worked" in the sense that the docs did get reconciled — by the human. What it cost was invisible: `/flow:post-merge` shipped for four releases advertising an orchestration it never performed, and both the lint and the eval suite reported clean the entire time, because both were satisfied by the conceded version. That combination — a feature silently absent plus green checks — is the argument for the positive assertion, not just the flag change.
+- **Historical CHANGELOG entries were annotated, not rewritten.** The v1.21.0 entry's "corrected in v1.22.0" note now reads "corrected twice," pointing forward to this reversal. Rewriting it to hide the wrong turn would erase the most useful part of the record.
+
 ## 2026-07-29 — Annotation-layer v2: commenting as a mode (v1.24.0, FB-0076)
 
 **Branch:** `claude/flow-design-workflow-3a9392` · **SHA:** `e4d6f51`

@@ -25,7 +25,8 @@ Covers:
   skill 2 — SKILL.md: no-match discovery is a WARN, not a silent no-op.
   skill 3 — SKILL.md: late visual-history distill reuses §5c / insert-visual-history.py.
   skill 4 — SKILL.md: never merges; uses REST PR-body form, never `gh pr edit --body`.
-  skill 5 — SKILL.md: disable-model-invocation: true (human-only, never auto-fires).
+  skill 5 — SKILL.md: disable-model-invocation: FALSE (FB-0077 — model-invocable so
+           /flow:post-merge §3 can call it); 5b — §0 carries the never-auto-fire intent.
   reg 1 — /flow:land is registered in plugin.json + marketplace.json skill lists.
   reg 2 — workflow-help + docs/workflow.md reference /flow:land.
   ci  1 — run_land_evals.py is wired into .github/workflows/ci.yml (not orphaned).
@@ -33,6 +34,7 @@ Covers:
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import tempfile
@@ -119,8 +121,19 @@ check("skill 3", "insert-visual-history.py" in skill and "§5c" in skill,
 check("skill 4",
       "Do not merge" in skill and "gh pr edit --body" in skill and "gh api -X PATCH" in skill,
       "must never merge; must use REST PR-body form not gh pr edit")
-check("skill 5", "disable-model-invocation: true" in skill,
-      "land must be human-only (disable-model-invocation: true)")
+# FB-0077 flipped this: land is model-invocable so /flow:post-merge §3 can call it.
+# Anchored to the FRONTMATTER block, not a bare substring — the previous form
+# (`"disable-model-invocation: true" in skill`) kept passing after the flag was
+# flipped, because §0's prose quotes the old value while explaining the change. A
+# whole-file substring check cannot tell a declaration from a mention of one.
+check("skill 5",
+      bool(re.search(r"^disable-model-invocation:\s*false\s*$",
+                     skill.split("\n---", 1)[0], re.M)),
+      "land must be model-invocable (disable-model-invocation: false, FB-0077) so "
+      "/flow:post-merge §3 can call it; the never-auto-fire guard is its §1a merged-PR gate")
+check("skill 5b", "## 0. Invocation precondition" in skill and "§1a" in skill,
+      "land must state the never-auto-fire precondition in prose (§0), since the "
+      "frontmatter flag no longer carries that intent")
 # Guard the two staff-review BLOCKERs so they can't regress green:
 check("skill 6", '[ -n "$HEADREF" ] && PAT=' in skill and 'HEADREF=$(gh pr view' in skill,
       "Step 2 discovery must assign HEADREF + guard the empty alternative (no `#N|` match-all)")

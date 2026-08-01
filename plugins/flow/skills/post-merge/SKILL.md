@@ -5,7 +5,7 @@ description: >
   AFTER you merge a PR, it runs the whole post-merge close-out in one command:
   (1) confirms the PR is actually merged with a MERGE-QUEUE-SAFE gate (a queued PR
   that hasn't landed yet is "not merged YET", not a failure); (2) reconciles the
-  forward docs by handing /flow:land to you to run (it is human-invoked by design);
+  forward docs by calling /flow:land, which opens its own `docs: land #N` PR;
   (3) synthesizes the merge-gate feedback window /flow:ship structurally can't see
   (your review→iterate→merge comments) into user-scope agent memory + the
   /flow:contribute queue; (4) safe-deletes the merged branch; (5) prints a
@@ -30,15 +30,23 @@ the doc-currency reconciliation (`/flow:land`), the stale-branch cleanup, and th
 archive-safety check you'd otherwise do by hand. `disable-model-invocation: true`: a
 human runs this after merging — it must never auto-fire mid-loop.
 
-**Composition, not combination (from #79; corrected by FB-0074).** This skill delegates the
+**Composition, not combination (from #79; settled by FB-0077).** This skill delegates the
 doc-currency step to `/flow:land` rather than reimplementing reconciliation. `/flow:land`
 stays a narrow, independently-invocable skill (you can still run it alone after a GitHub-web
 merge with no local workspace); `/flow:post-merge` is the orchestrator that does the feedback
-+ cleanup + verdict around it. **The delegation is an instruction to the human, not a
-`Skill()` call** — `/flow:land` is `disable-model-invocation: true`, so a programmatic call is
-rejected at runtime. #79 specified the call form; it never executed, and the step degraded to
-its fallback on every run until FB-0074 caught it. §3 has the corrected contract, and
-`doctor/lib/skill-composition-lint.py` now fails on any skill that reintroduces this shape.
++ cleanup + verdict around it. **The delegation is a real `Skill("flow:land")` call** — see §3.
+
+That call took two tries to get right, and the history is the point. #79 specified it, but
+`/flow:land` carried `disable-model-invocation: true`, so the call was rejected at runtime and
+§3 degraded to its fallback on **every** run. FB-0074 caught that and added
+`doctor/lib/skill-composition-lint.py`, which fails on any skill calling a model-disabled
+target — the right detector. But it then satisfied its own lint the wrong way, by deleting the
+call and rewriting §3 as "hand it to the human." That conceded the composition instead of
+fixing it, and reduced this skill to a reminder to run another command. FB-0077 cleared the
+flag on `/flow:land` instead: the flag was redundant with `/flow:land`'s own §1a gate (it
+refuses any PR that is not already merged, and Claude cannot merge), while this skill's own
+`disable-model-invocation: true` keeps a human gate above the whole path. The lint still runs
+and still passes — now because the composition is legal, not because the call was removed.
 
 ## Project context (resolved at invocation)
 
@@ -123,29 +131,44 @@ you can trust the poll on a queue repo. A non-queue repo merges instantly, so `c
 returns `merged` on the first pass and the loop never sleeps. `postMergeWaitSeconds: 0`
 makes an OPEN PR give up immediately (fail-fast) instead of polling.
 
-## 3. Doc-currency — hand `/flow:land` to the human (FB-0074)
+## 3. Doc-currency — call `/flow:land` (composition; FB-0077)
 
 Now that the merge is confirmed, the forward docs need reconciling: flipping the item to
 "merged (#N)" across roadmap / plan / history, clearing reserved numbers, checking CHANGELOG
-currency, and opening a small `docs: land #N` PR. That is exactly `/flow:land`'s job, and you
-must **not** reimplement it here.
+currency, and opening a small `docs: land #N` PR. That is exactly `/flow:land`'s job. **Call
+it — do not reimplement it here**, and do not degrade it into a note asking the human to run
+it themselves. This step is the reason `/flow:post-merge` is an orchestrator.
 
-**You cannot invoke it yourself, and must not try.** `/flow:land` is
-`disable-model-invocation: true`, which blocks *programmatic* invocation — a `Skill()` call
-naming it is rejected at runtime. The flag is deliberate: `/flow:land` opens a PR, so it must
-never auto-fire mid-loop.
+First, check whether it already ran (idempotent re-run, or the human ran it by hand before
+invoking this skill). If an open or merged `docs: land #N` PR exists, treat doc-currency as
+satisfied, say so, and skip the call:
 
-So **do not emit a `Skill()` call for it.** Instead, carry the reconciliation forward as an
-explicit outstanding item:
+```sh
+gh pr list --search "docs: land #$N in:title" --state all --json number,state,url 2>/dev/null
+```
 
-- Record `doc-currency: NOT reconciled — human must run /flow:land <PR#>` for §6's verdict.
-- Continue to the feedback + cleanup steps (they're independent of doc reconciliation).
-- In §6, name it as a required next action, not a completed step. It is a **🚫 not safe to
-  archive** input until the human runs it and merges the resulting `docs: land #N` PR —
-  the forward docs still point at unmerged work.
+Otherwise invoke it, passing the PR number as its argument:
 
-If the human already ran `/flow:land <PR#>` for this PR before invoking this skill (check for
-an open or merged `docs: land #N` PR), treat doc-currency as satisfied and say so.
+```
+Skill("flow:land")
+```
+
+`/flow:land` re-verifies the merge itself (its §1a) before editing anything, so a mistaken
+number here fails loudly there rather than corrupting the forward docs.
+
+**Handling the result:**
+
+- **Succeeded** — record the `docs: land #N` PR URL. It is still the human's to merge, so §6
+  names it as the one remaining action, not a completed step.
+- **Errored** — surface the error verbatim, record `doc-currency: NOT reconciled —
+  run '/flow:land <PR#>'`, and **continue** to §4 and §5; they are independent of doc
+  reconciliation. §6 treats it as a **🚫 not safe to archive** input, because the forward docs
+  still point at unmerged work.
+- **Rejected at runtime** (the call comes back refused rather than erroring inside the skill) —
+  that means `/flow:land`'s `disable-model-invocation` flag has been re-set to `true`,
+  reintroducing the exact FB-0074/FB-0077 defect. Say so explicitly rather than quietly falling
+  back: name the flag as the cause, carry the outstanding item as in the errored case, and flag
+  that `run_skill_composition_evals.py` should have caught it.
 
 `/flow:land` remains a narrow, independently-invocable skill — it is composed into this
 close-out by *instruction to the human*, which is a real composition boundary, not by a
@@ -305,11 +328,12 @@ make it ✅. **Do not merge anything** — `/flow:land`'s docs PR is the human's
 
 - **Merge queue = wait, not fail.** The single most important behavior: a queued-but-unlanded
   PR is `open` → poll, never `terminal`. Only a `CLOSED`-unmerged PR fails loud.
-- **Composition is by instruction, not by `Skill()` (FB-0074).** Delegate doc reconciliation to
-  `/flow:land`; never reimplement it here (FB-0010 fan-out + the compose-not-combine decision).
-  But `/flow:land` is `disable-model-invocation: true`, so you **cannot** invoke it — hand it to
-  the human and carry it as an outstanding item. A `Skill("flow:land")` call is rejected at
-  runtime and degrades silently; `doctor/lib/skill-composition-lint.py` fails on that shape now.
+- **Composition is a real `Skill()` call (FB-0077).** Delegate doc reconciliation to
+  `/flow:land`; never reimplement it here (FB-0010 fan-out + the compose-not-combine decision),
+  and never downgrade it to "ask the human to run it" — that is what made this skill a reminder
+  instead of an orchestrator. `/flow:land` is model-invocable *because* its own §1a merged-PR
+  gate is the real guard; `doctor/lib/skill-composition-lint.py` keeps the call legal, and
+  `run_skill_composition_evals.py` fails if the flag comes back.
 - **`git branch -d`, never `-D`.** The safe delete is a backstop even after the merge check.
 - **v1 writes user-scope only.** No `feedbackPath` repo-doc write; content-match dedup makes an
   overlapping window safe without a watermark (both the watermark + repo-doc FB-inbox are v1b).

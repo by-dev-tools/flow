@@ -7,11 +7,16 @@ call is rejected at runtime and the composition silently degrades to its fallbac
 every run — with the two halves of the contract (call site, flag) in different files,
 nothing could catch it.
 
-Two layers:
+Three layers:
   1. Synthetic fixtures built on disk — the violation, the clean case, the prose-only
      false-positive case, unknown targets, self-calls, absent-flag default.
   2. A live assertion over flow's OWN skills directory, so the repo can never
      reintroduce the shape the lint exists to forbid.
+  3. Live assertions that the post-merge → land composition is INTACT (FB-0077).
+     Layer 2 passes two opposite ways — the composition is legal, or the call was
+     deleted — and the lint cannot tell them apart. That ambiguity is how FB-0074
+     "fixed" this defect by conceding it, leaving /flow:post-merge a reminder to run
+     another command. Layer 3 pins the composition positively from both ends.
 
 Stdlib only. No network. Run:
     python3 plugins/flow/evals/run_skill_composition_evals.py
@@ -19,6 +24,8 @@ Stdlib only. No network. Run:
 
 from __future__ import annotations
 
+import importlib.util
+import re
 import subprocess
 import sys
 import tempfile
@@ -29,6 +36,25 @@ SCRIPT = HERE.parent / "skills" / "doctor" / "lib" / "skill-composition-lint.py"
 FLOW_SKILLS = HERE.parent / "skills"
 
 _failures: list[str] = []
+_MODULE = None
+
+
+def _lint_module():
+    """Import the lint as a module so §10 can reuse its parser.
+
+    The filename is hyphenated, so it is not importable by name — load it by path.
+    Cached: scan() re-reads every SKILL.md, and §10 calls this more than once.
+    """
+    global _MODULE
+    if _MODULE is None:
+        spec = importlib.util.spec_from_file_location("skill_composition_lint", SCRIPT)
+        _MODULE = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_MODULE)
+    return _MODULE
+
+
+def _frontmatter_of(path: Path) -> str:
+    return _lint_module()._frontmatter(path.read_text(encoding="utf-8"))
 
 
 def expect(name, got, want, out=""):
@@ -174,6 +200,56 @@ def main() -> int:
     # --- 9. live: flow's own skills must stay clean --------------------------
     rc, out = lint(FLOW_SKILLS)
     expect("flow's own skills/ carry no disabled-target Skill() call", rc, 0, out)
+
+    # --- 10. live: the post-merge → land composition is INTACT (FB-0077) -----
+    # The lint above passes two ways: the composition is legal, or the call was
+    # deleted. Those are opposite outcomes and it cannot tell them apart — which is
+    # how FB-0074 "fixed" this defect by conceding it, leaving /flow:post-merge a
+    # reminder to run another command. So assert the composition positively, from
+    # both ends. Deleting either half must fail CI, not quietly satisfy the lint.
+    # Reuse the lint's OWN parser rather than hand-rolling a second one here. A
+    # duplicate fence/frontmatter parser in the eval could drift from the one under
+    # test and start agreeing with itself — the FB-0010 fan-out class this very lint
+    # exists to catch.
+    table = _lint_module().scan(FLOW_SKILLS)
+    bare = _lint_module()._bare
+
+    expect(
+        "land is model-invocable (FB-0077) — the flag is redundant with its §1a merged-PR gate",
+        0 if table["skills"].get("land", {}).get("disabled") is False else 1, 0,
+        f"land entry: {table['skills'].get('land')}")
+
+    # Declared explicitly, not merely absent: an absent flag also parses as invocable,
+    # so a deletion would satisfy the check above while losing the deliberate
+    # declaration that records the FB-0077 decision.
+    land_fm = _frontmatter_of(FLOW_SKILLS / "land" / "SKILL.md")
+    expect(
+        "land declares the flag explicitly rather than relying on the default",
+        0 if re.search(r"^disable-model-invocation:\s*false\s*$", land_fm, re.M) else 1,
+        0, land_fm)
+
+    pm_calls = [c for c in table["calls"]
+                if c["caller"] == "post-merge" and bare(c["target"]) == "land"]
+    expect(
+        'post-merge §3 emits a fenced Skill("flow:land") call — the composition, not a hand-off',
+        0 if pm_calls else 1, 0,
+        "no fenced Skill() call naming land found in post-merge/SKILL.md")
+
+    # post-merge must itself stay human-gated: it is the human gate above land now
+    # that land's own flag is gone. Losing BOTH flags is the state nothing guards.
+    expect(
+        "post-merge stays disable-model-invocation: true — the human gate above land",
+        0 if table["skills"].get("post-merge", {}).get("disabled") is True else 1, 0,
+        f"post-merge entry: {table['skills'].get('post-merge')}")
+
+    # land's §1a gate is what makes clearing the flag safe. If it ever stops refusing
+    # unmerged PRs, the flag's removal becomes unsafe retroactively.
+    land_text = (FLOW_SKILLS / "land" / "SKILL.md").read_text(encoding="utf-8")
+    expect(
+        "land keeps its §1a merged-PR gate — the guard the cleared flag now leans on",
+        0 if re.search(r"^### 1a\. Verify the PR is actually MERGED", land_text, re.M) else 1,
+        0,
+        "land/SKILL.md no longer declares the §1a BLOCKING merged-PR gate")
 
     print()
     if _failures:

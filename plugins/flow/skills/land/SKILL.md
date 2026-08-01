@@ -1,16 +1,19 @@
 ---
 name: land
 description: >
-  Post-merge doc-currency reconciliation. Human-invoked AFTER you merge a PR
-  (Claude can't merge, so this can't live inside /flow:ship). It flips the
-  merged PR's item to "merged (#N)" across roadmap / plan / history and moves it
-  to "Recently shipped", then opens a small `docs: land #N` PR — never merges.
-  Also re-runs the visual-history distill if a visual pass was blocked at ship
-  and has since completed, clears any feedback-ID reservations the PR claimed,
-  and checks CHANGELOG currency. Closes the "at PR → merged never reconciles"
-  gap. Trigger: "/flow:land <PR#>", "land #N", "reconcile docs after merging
-  #N".
-disable-model-invocation: true
+  Post-merge doc-currency reconciliation. Runs only AFTER a human merges a PR
+  (Claude can't merge, so this can't live inside /flow:ship). Reachable two ways:
+  the human types it, or /flow:post-merge §3 calls it — and /flow:post-merge is
+  itself human-invoked, so a human gate always sits above it. It must NEVER
+  auto-fire at the end of a loop; §0 states that precondition and §1a enforces it
+  mechanically by refusing any PR that is not already merged. It flips the merged
+  PR's item to "merged (#N)" across roadmap / plan / history and moves it to
+  "Recently shipped", then opens a small `docs: land #N` PR — never merges. Also
+  re-runs the visual-history distill if a visual pass was blocked at ship and has
+  since completed, clears any feedback-ID reservations the PR claimed, and checks
+  CHANGELOG currency. Closes the "at PR → merged never reconciles" gap. Trigger:
+  "/flow:land <PR#>", "land #N", "reconcile docs after merging #N".
+disable-model-invocation: false
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash
 ---
 
@@ -22,8 +25,32 @@ This skill exists because `/flow:ship` reconciles forward docs at **PR-open** ti
 (Step 5a), but nothing flips the item to "merged (#N)" once the human merges — so
 `main` sits stale until someone hand-writes a "docs: post-merge currency" PR
 (FLOW-1, a recurring manual patch). `/flow:land <PR#>` is the one command that
-replaces that hand-edit. `disable-model-invocation: true`: a human runs this after
-merging — it must never auto-fire mid-loop.
+replaces that hand-edit.
+
+## 0. Invocation precondition (BLOCKING — read before anything else)
+
+This skill opens a PR, so **it must never auto-fire at the end of a loop.** There
+are exactly two legitimate ways in:
+
+1. A human typed `/flow:land <PR#>`.
+2. `/flow:post-merge` §3 called you — and `/flow:post-merge` is itself
+   `disable-model-invocation: true`, so a human typed *that*.
+
+Anything else — you noticed a merge and decided to reconcile, a ship pipeline
+advanced into you, a loop iteration reached for you — is **not** a valid entry.
+Stop and say so rather than proceeding.
+
+**Why this is a precondition and not a frontmatter flag (FB-0077).** `/flow:land`
+carried `disable-model-invocation: true` until v1.25.0. That flag blocks *all*
+programmatic invocation, which also blocked `/flow:post-merge` §3 — the one caller
+that has a human gate above it, and the step that made `/flow:post-merge` an
+orchestrator rather than a reminder to run another command. The flag was doing no
+work that §1a below doesn't already do more precisely: **§1a refuses to edit
+anything unless `gh` confirms the PR is genuinely merged, and Claude cannot merge.**
+So the auto-fire scenario the flag guarded against is already unreachable — the
+worst an unprompted invocation can do is open a docs PR against a PR a human
+merged, and the human still gates that PR's merge. Prefer the narrow mechanical
+gate over the blunt flag; state the intent here so it survives.
 
 ## Project context (resolved at invocation)
 

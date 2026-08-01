@@ -10,6 +10,18 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.25.0 — 2026-08-01
+
+**`/flow:post-merge` now actually runs the doc-currency step instead of telling you to run it.**
+
+- **What was wrong.** `/flow:post-merge` §3 is supposed to reconcile your forward docs by calling `/flow:land`. It never did. `/flow:land` carried `disable-model-invocation: true`, which blocks *all* programmatic invocation, so the call was rejected every time and the step degraded to "please run `/flow:land <PR#>` yourself." The close-out skill's headline step — the thing that made it an orchestrator rather than a reminder — was the one step it couldn't perform.
+- **Why the first fix made it worse.** v1.22.0 caught the broken call and added `doctor/lib/skill-composition-lint.py`, which fails any skill that calls a model-disabled target. That detector is correct and stays. But it then satisfied its own lint by *deleting the call* and rewriting §3 as a hand-off — conceding the composition rather than fixing it.
+- **The fix.** `/flow:land` is now model-invocable (`disable-model-invocation: false`) and §3 calls it for real. The flag was redundant: `/flow:land`'s §1a gate already refuses to edit anything unless `gh` confirms the PR is merged, and **Claude cannot merge** — so the auto-fire scenario the flag guarded against was already unreachable. Meanwhile `/flow:post-merge` stays `disable-model-invocation: true`, keeping a human gate above the whole path. A narrow mechanical gate beats a blunt capability flag.
+- **Pinned so it can't silently revert.** The lint passes two opposite ways — the composition is legal, *or* the call was deleted — and can't tell them apart, which is exactly how the first fix slipped through. `run_skill_composition_evals.py` now asserts the composition positively from both ends: land is invocable and says so explicitly, `/flow:post-merge` emits a fenced `Skill("flow:land")`, `/flow:post-merge` keeps its own flag, and land keeps the §1a gate the cleared flag now leans on. All five assertions were mutation-tested.
+- If a future `/flow:post-merge` run reports the call *rejected* rather than errored, that means the flag is back; §3 now says so by name instead of quietly falling back.
+
+**Breaking changes:** none. `/flow:land <PR#>` still works exactly as before when you type it.
+
 ## v1.24.0 — 2026-07-29
 
 **The `/flow:verify-build` annotation layer is redesigned: commenting is a mode you stay in, not a button you re-press.**
@@ -68,7 +80,7 @@ Breaking changes: none.
 
 - **What it does.** One human-invoked command for the moment right after a merge: (1) confirms the PR actually merged, (2) reconciles the forward docs by **calling `/flow:land`**, (3) captures the feedback you gave at the merge gate (your review→iterate→merge comments), (4) deletes the merged branch, and (5) tells you whether the workspace is `✅ safe to archive` or `🚫 not safe` (with reasons). Never merges.
 - **Merge-queue safe.** The merge check is three-state, not "merged-or-fail": `MERGED` → proceed; `CLOSED` without merging → fail loud; still `OPEN` → poll up to `postMergeWaitSeconds` (default 150; `0` = fail-fast), then a calm "still queued, re-run once it lands." So on a merge-queue / auto-merge repo — where there's a 1–2 min gap between clicking merge and the PR landing — running it immediately no longer false-fails.
-- **Composes with `/flow:land`, doesn't replace it.** ⚠️ *Corrected in v1.22.0: the `Skill()` call described here was rejected at runtime (`/flow:land` is `disable-model-invocation: true`) and never executed; the step is now an explicit hand-off to you.* `/flow:post-merge` delegates doc-currency to `/flow:land` rather than reimplementing it; `/flow:land` stays independently invocable (run it alone after a GitHub-web merge with no local workspace) and human-only by design (`disable-model-invocation: true` — it opens PRs, so it must never auto-fire).
+- **Composes with `/flow:land`, doesn't replace it.** ⚠️ *Corrected twice. In v1.22.0: the `Skill()` call described here was rejected at runtime (`/flow:land` was `disable-model-invocation: true`) and never executed, so the step became an explicit hand-off to you. In **v1.25.0** that hand-off was reversed and the call restored — clearing the flag was the right fix all along; see the v1.25.0 entry.* `/flow:post-merge` delegates doc-currency to `/flow:land` rather than reimplementing it; `/flow:land` stays independently invocable (run it alone after a GitHub-web merge with no local workspace).
 - **Feedback capture on the right side of the merge gate.** `/flow:ship` synthesizes feedback from the window that *closes when the PR opens* — so your richest design-taste comments at the merge gate leaked. `/flow:post-merge` synthesizes that delta window into user-scope agent memory + the `/flow:contribute` queue (content-match dedup; **no** repo-doc `feedbackPath` write in v1 — the transcript watermark + FB-inbox are deferred to v1b).
 - New `postMergeWaitSeconds` config slot (schema now **30 slots**). Deterministic core (`skills/post-merge/lib/merge-status.py`: three-state classify + poll policy + archive-safety check) pinned by `run_merge_status_evals.py`, wired into CI.
 
