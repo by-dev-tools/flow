@@ -251,10 +251,27 @@ Take the name from `gh` instead; it is the same value §2 already fetched:
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
-# Authoritative: the merged PR's own head ref. Falls back to the current branch only when gh
-# can't answer AND we are not sitting on a land branch (which would be the wrong target).
-MERGED_BRANCH=$(gh pr view "$N" --json headRefName -q .headRefName 2>/dev/null)
-if [ -z "$MERGED_BRANCH" ]; then
+# Authoritative: the merged PR's own head ref, NOT `git branch --show-current` (§3 left us
+# on land's branch). One `gh` call fetches both fields we need.
+#
+# SAFETY — bail out on a FORK PR. For a cross-repository PR, `headRefName` is the branch name
+# **inside the contributor's fork**, carrying no owner namespace: a PR opened from a fork's
+# `develop` reports exactly `develop`. Deleting that name on `origin` would destroy the
+# upstream branch of the same name, and GitHub auto-closes any open PR whose head it was. The
+# `ls-remote` check further down does not save us — it *confirms* the collision and proceeds.
+# Skipping is also just correct: a fork PR's head branch lives on someone else's repo, so
+# there is nothing here for this step to clean up.
+PRJSON=$(gh pr view "$N" --json headRefName,isCrossRepository 2>/dev/null)
+MERGED_BRANCH=$(printf '%s' "$PRJSON" | jq -r '.headRefName // empty' 2>/dev/null)
+IS_FORK=$(printf '%s' "$PRJSON" | jq -r '.isCrossRepository // empty' 2>/dev/null)
+
+if [ "$IS_FORK" = "true" ]; then
+  echo "[post-merge] PR #$N came from a fork — its head branch ('$MERGED_BRANCH') lives on the"
+  echo "   contributor's repo, not origin. Nothing to clean up here; skipping branch deletion."
+  MERGED_BRANCH=""
+elif [ -z "$MERGED_BRANCH" ]; then
+  # gh could not answer. Fall back to the current branch ONLY when it is not land's — after
+  # §3 that is the wrong target, and a wrong target here deletes the wrong branch.
   CUR=$(git branch --show-current)
   case "$CUR" in
     *land-"$N")
@@ -282,7 +299,7 @@ else
     git pull --ff-only origin "$DEFAULT_BRANCH" 2>/dev/null || true
     # Safe delete — `-d` refuses if the branch isn't fully merged, a last backstop even though
     # §2 confirmed the PR merged. NEVER `-D`.
-    if git branch -d "$MERGED_BRANCH" 2>/dev/null; then
+    if git branch -d -- "$MERGED_BRANCH" 2>/dev/null; then
       echo "[post-merge] deleted local branch $MERGED_BRANCH."
     else
       echo "⚠️ [post-merge] 'git branch -d $MERGED_BRANCH' refused (not fully merged into $DEFAULT_BRANCH locally)." >&2
@@ -297,8 +314,8 @@ else
   rm -f "$CO_ERR"
   # Remote delete is independent of the local checkout — attempt it either way (graceful:
   # many repos auto-delete the head branch on merge, so it may already be gone).
-  if git ls-remote --exit-code --heads origin "$MERGED_BRANCH" >/dev/null 2>&1; then
-    git push origin --delete "$MERGED_BRANCH" 2>/dev/null && echo "[post-merge] deleted remote branch $MERGED_BRANCH." \
+  if git ls-remote --exit-code --heads origin -- "$MERGED_BRANCH" >/dev/null 2>&1; then
+    git push origin --delete -- "$MERGED_BRANCH" 2>/dev/null && echo "[post-merge] deleted remote branch $MERGED_BRANCH." \
       || echo "[post-merge] could not delete remote $MERGED_BRANCH (may lack permission); harmless." >&2
   else
     echo "[post-merge] remote branch $MERGED_BRANCH already gone (auto-deleted on merge?)."

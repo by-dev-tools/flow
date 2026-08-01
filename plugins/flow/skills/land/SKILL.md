@@ -232,6 +232,21 @@ HISTORY=$(jq -r '.historyPath // "dev-docs/history.md"' flow.config.json 2>/dev/
 # Build the pattern WITHOUT an empty alternative: an unset $HEADREF must not turn
 # `#N\b|$HEADREF` into `#N\b|` (the trailing `|` matches EVERY line, which would
 # make the no-match WARN below unreachable — the FB-0010 silent-skip class).
+#
+# SAFETY — $HEADREF is interpolated into an EXTENDED REGEX, and it comes from GitHub, not
+# from us. A branch name is allowed to contain regex metacharacters, so a head ref like
+# `x|.` would expand the pattern to match every line of roadmap/plan/history and drive the
+# reconciliation edits off a match-everything set. Git already forbids most of the
+# dangerous characters in ref names, but not all (`[`, `]`, `{`, `}`, `+`, `.`, `|` are
+# legal), and a FORK PR's head ref is chosen entirely by an outside contributor. Since
+# FB-0077 made this skill model-invocable and wired /flow:post-merge to call it
+# automatically, that value now reaches here without a human reading it first. Accept only
+# ref-safe characters as a literal alternative; anything else falls back to the `#N` match.
+case "$HEADREF" in
+  ""|*[!A-Za-z0-9._/-]*)
+    [ -n "$HEADREF" ] && echo "[land] NOTE: head ref '$HEADREF' has regex-unsafe characters; matching on #$N only." >&2
+    HEADREF="" ;;
+esac
 PAT="#${N}\b"; [ -n "$HEADREF" ] && PAT="${PAT}|${HEADREF}"
 MATCHES=$(grep -nE "$PAT" "$ROADMAP" "$PLAN" "$HISTORY" 2>/dev/null)
 if [ -n "$MATCHES" ]; then
