@@ -147,14 +147,24 @@ satisfied, say so, and skip the call:
 gh pr list --search "docs: land #$N in:title" --state all --json number,state,url 2>/dev/null
 ```
 
-Otherwise invoke it, passing the PR number as its argument:
+Otherwise invoke it, **passing the PR number as the skill's argument** — the same thing the
+human types as `/flow:land <PR#>`:
 
 ```
-Skill("flow:land")
+Skill("flow:land")   # argument: $N from §2 — never invoke this bare
 ```
 
-`/flow:land` re-verifies the merge itself (its §1a) before editing anything, so a mistaken
-number here fails loudly there rather than corrupting the forward docs.
+The argument is load-bearing. Started without a number, `/flow:land` falls into its own Argument
+fallback: it guesses the most recent merged PR and then *stops to confirm with the human* —
+putting a prompt back into the orchestration this step exists to remove, and risking a land
+against the wrong PR.
+
+`/flow:land` re-verifies the merge itself (§1a) and refuses a dirty tree (§1b) before editing
+anything, so a mistaken number or a mid-loop invocation fails loudly there rather than
+corrupting the forward docs or disturbing uncommitted work.
+
+**It also leaves you on its own `<prefix>land-N` branch — it never switches back.** That is why
+§5 resolves the merged branch from `gh`, not from `git branch --show-current`.
 
 **Handling the result:**
 
@@ -167,12 +177,12 @@ number here fails loudly there rather than corrupting the forward docs.
 - **Rejected at runtime** (the call comes back refused rather than erroring inside the skill) —
   that means `/flow:land`'s `disable-model-invocation` flag has been re-set to `true`,
   reintroducing the exact FB-0074/FB-0077 defect. Say so explicitly rather than quietly falling
-  back: name the flag as the cause, carry the outstanding item as in the errored case, and flag
-  that `run_skill_composition_evals.py` should have caught it.
+  back: name the flag as the cause and carry the outstanding item as in the errored case. That is a
+  flow bug, not a repo problem — it should have been caught by CI.
 
-`/flow:land` remains a narrow, independently-invocable skill — it is composed into this
-close-out by *instruction to the human*, which is a real composition boundary, not by a
-call the runtime refuses.
+`/flow:land` remains a narrow, independently-invocable skill — the human can still run it
+alone after a GitHub-web merge with no local workspace. Calling it here does not consume
+that; it just stops this close-out from asking the human to do what it can do itself.
 
 ## 4. Merge-gate feedback synthesis (the delta window) — USER-SCOPE STORES ONLY (v1)
 
@@ -229,11 +239,32 @@ delete (`git branch -d`, which refuses if the branch isn't fully merged) — **n
 delete. Remote-delete is graceful: many repos auto-delete the head branch on merge, so it may
 already be gone.
 
+**Resolve the target branch from the PR, NOT from `git branch --show-current` (FB-0077).**
+§3 now really calls `/flow:land`, and `/flow:land` checks out its own `<prefix>land-N` branch
+and does not switch back — so by the time this step runs, `--show-current` returns **land's**
+branch, not the merged feature branch. Deleting that would delete the head branch of the
+`docs: land #N` PR §3 just opened, which makes GitHub **close that PR**, while the branch
+this step exists to clean up survives untouched — and §5 would report success either way.
+Take the name from `gh` instead; it is the same value §2 already fetched:
+
 ```sh
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
-MERGED_BRANCH=$(git branch --show-current)
+# Authoritative: the merged PR's own head ref. Falls back to the current branch only when gh
+# can't answer AND we are not sitting on a land branch (which would be the wrong target).
+MERGED_BRANCH=$(gh pr view "$N" --json headRefName -q .headRefName 2>/dev/null)
+if [ -z "$MERGED_BRANCH" ]; then
+  CUR=$(git branch --show-current)
+  case "$CUR" in
+    *land-"$N")
+      echo "⚠️ [post-merge] gh could not resolve PR #$N's head branch, and the current branch" >&2
+      echo "   ($CUR) is /flow:land's, not the merged one. Skipping cleanup rather than deleting" >&2
+      echo "   the wrong branch — clean up by hand, or re-run once gh is reachable." >&2
+      MERGED_BRANCH="" ;;
+    *) MERGED_BRANCH="$CUR" ;;
+  esac
+fi
 WORKTREE_PATH=$(git rev-parse --show-toplevel 2>/dev/null)
 CO_ERR=$(mktemp "${TMPDIR:-/tmp}/flow-pm-co.XXXXXX")   # per-run (concurrent runs won't cross-contaminate)
 if [ -z "$MERGED_BRANCH" ] || [ "$MERGED_BRANCH" = "$DEFAULT_BRANCH" ]; then
@@ -297,32 +328,39 @@ warning printed seconds earlier. Assemble the verdict from THREE inputs you have
    ```
 2. **Branch cleanup (from §5, which you just ran)** — did §5 actually delete the local branch, or
    leave it (the linked-worktree / dirty-tree path)? A left branch means cleanup is still owed.
-3. **Doc-currency (from §3)** — §3 does **not** run `/flow:land` (it can't; see FB-0074), so the
-   only honest inputs here are what the repo shows. `/flow:land` produces a `docs: land #N` PR the
-   human still merges; archiving with it open — or never opened — loses doc currency:
+3. **Doc-currency (from §3)** — branch on what §3 actually did this run, then confirm it against
+   the repo rather than trusting the call's own report:
    ```sh
    gh pr list --search "docs: land #$N in:title" --state all --json number,url,state 2>/dev/null
    ```
-   No such PR ⇒ docs were **never reconciled** — `/flow:land <PR#>` is still owed. Open ⇒ it is
-   the human's remaining merge. Merged ⇒ doc-currency is satisfied.
+   §3 succeeded (or found an existing PR) ⇒ that `docs: land #N` PR is the human's **one
+   remaining merge** — name it with its URL. Merged already ⇒ doc-currency is fully satisfied.
+   §3 errored or was rejected, and no such PR exists ⇒ docs were **never reconciled** and
+   `/flow:land <PR#>` is still owed. A §3 that reported success with no PR to show for it is a
+   contradiction — report the contradiction, don't pick the flattering side.
 
 **Assemble:** print `✅ safe to archive` ONLY when ALL hold — git-state `safe`, §5 deleted the
 local branch, and the `docs: land #N` PR exists and is merged (or you name it as the human's one
 remaining merge). Otherwise print `🚫 not fully closed out —` and the SPECIFIC leftover(s): the
 git-state reason(s); `local branch <name> left in place — see §5's worktree steps`;
-`doc-currency NOT reconciled — run '/flow:land <PR#>'` (the default state, since this skill cannot
-run it for you); and/or `docs: land PR #M still open — your merge`.
+`doc-currency NOT reconciled — run '/flow:land <PR#>'`; and/or `docs: land PR #M still open —
+your merge`.
 **Never claim a step happened that didn't** — the ✅ line is the single most-read output; it must
 not lie on the path the design highlights.
 
 ## 7. Hand off
 
-Summarize in one block, each line reflecting what ACTUALLY happened this run: the merge
-confirmation, the doc-currency state (the `docs: land #N` PR URL if one exists, otherwise
-`run /flow:land <PR#>` as an explicit next action — never imply this skill ran it), the
-feedback-synthesis line, the branch-cleanup result (deleted / left-with-reason), and the
-assembled archive-safety verdict from §6. If the verdict is 🚫, name exactly what to do to
-make it ✅. **Do not merge anything** — `/flow:land`'s docs PR is the human's to merge.
+**Lead with the verdict.** The reader's question at this moment is one question — "am I done?" —
+so answer it on the first line, before any detail: `✅ #N closed out — nothing left.` or
+`🚫 #N — 1 left: merge docs PR #M <url>`. The 🚫 list names **actions the human must take**, not
+steps that ran.
+
+Then the detail block, each line reflecting what ACTUALLY happened this run: the merge
+confirmation, the doc-currency result (the `docs: land #N` PR URL when §3 opened or found one;
+`run /flow:land <PR#>` as an explicit next action when §3 errored or was rejected — never imply
+either happened when it didn't), the feedback-synthesis line, the branch-cleanup result (deleted
+/ left-with-reason), and the §6 verdict's reasoning. **Do not merge anything** — `/flow:land`'s
+docs PR is the human's to merge.
 
 ## Gotchas
 

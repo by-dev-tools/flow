@@ -34,6 +34,7 @@ Covers:
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
@@ -74,6 +75,21 @@ def read(p: Path) -> str:
     return p.read_text() if p.is_file() else ""
 
 
+def _load_lint():
+    """Load skill-composition-lint.py by path (hyphenated name isn't importable).
+
+    Reused rather than re-implemented so the frontmatter parse has ONE definition —
+    a second copy here could drift from the shipped one and start agreeing with
+    itself (the FB-0010 fan-out class, inside the evals meant to catch it).
+    """
+    spec = importlib.util.spec_from_file_location(
+        "skill_composition_lint",
+        HERE.parent / "skills" / "doctor" / "lib" / "skill-composition-lint.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 # ---- changelog-check ----
 with tempfile.TemporaryDirectory() as d:
     cl = Path(d) / "CHANGELOG.md"
@@ -110,6 +126,7 @@ with tempfile.TemporaryDirectory() as d:
 
 # ---- SKILL.md contract prose ----
 skill = read(SKILL)
+_frontmatter = _load_lint()._frontmatter
 check("skill 1",
       "Verify the PR is actually MERGED" in skill and "BLOCKING" in skill
       and "fail loudly, edit nothing" in skill and '!= "MERGED"' in skill,
@@ -126,9 +143,13 @@ check("skill 4",
 # (`"disable-model-invocation: true" in skill`) kept passing after the flag was
 # flipped, because §0's prose quotes the old value while explaining the change. A
 # whole-file substring check cannot tell a declaration from a mention of one.
+# Use the lint's _frontmatter (fail-CLOSED: returns "" when the file has no leading
+# `---`). A local `skill.split("\n---", 1)[0]` fails OPEN on that same input — it
+# returns the entire file, silently restoring the whole-file substring search this
+# check was rewritten to eliminate.
 check("skill 5",
       bool(re.search(r"^disable-model-invocation:\s*false\s*$",
-                     skill.split("\n---", 1)[0], re.M)),
+                     _frontmatter(skill), re.M)),
       "land must be model-invocable (disable-model-invocation: false, FB-0077) so "
       "/flow:post-merge §3 can call it; the never-auto-fire guard is its §1a merged-PR gate")
 check("skill 5b", "## 0. Invocation precondition" in skill and "§1a" in skill,

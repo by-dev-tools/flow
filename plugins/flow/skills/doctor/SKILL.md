@@ -138,10 +138,12 @@ else
     printf '%s\n' "$OUT" | sed 's/^/       /'
     case "$RC" in
       0) echo "[PASS] skill-composition targets model-invocable ($D)" ;;
+      # The lint's own output (printed above) carries the full remediation, including WHICH
+      # half to change and why deleting the call is usually the wrong fix. Don't restate it
+      # here — a second, shorter, differently-ordered list is how the two drift apart.
       1) echo "[FAIL] skill-composition — a Skill() call names a disable-model-invocation skill ($D)"
          echo "       That call is REJECTED at runtime, so the step silently never runs."
-         echo "       Fix: clear the flag on the callee, give it a model-invocable entrypoint,"
-         echo "            inline the step, or hand it to the human instead of calling it." ;;
+         echo "       Fix: see the [skill-composition-lint] FAIL detail above." ;;
       *) echo "[WARN] skill-composition lint could not run over $D (exit $RC) — composition is UNCHECKED, not clean." ;;
     esac
   done
