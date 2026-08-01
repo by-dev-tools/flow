@@ -426,6 +426,95 @@ def test_anchor_co_location_cli() -> None:
           f"got {out_c.get('criteria')}")
 
 
+
+# ---------------------------------------------------------------------------
+# 6. All-demoted detection — every matched heading is qualified as already-
+#    shipped, so there is no active block at all. Distinct from block_count==0
+#    (no heading whatsoever): a post-merge hygiene / doc-reconcile PR that
+#    legitimately declares no Spec-walk of its own must not silently inherit
+#    the last-merged PR's (still-present, still heading-matching) criteria.
+# ---------------------------------------------------------------------------
+
+ALL_DEMOTED = """# Plan
+
+## Hygiene PR — active, declares no Spec-walk of its own
+
+**Mode:** tiny
+**Goal:** reconcile forward docs after merge.
+
+## Shipped PR A (retained)
+
+**Spec-walk (PR 1c — shipped):**
+- [x] old criterion A
+
+## Shipped PR B (retained)
+
+**Spec-walk (merged #86):**
+- [x] old criterion B
+"""
+
+# Regression guard: a demoted heading placed BEFORE the real active one (a
+# mis-ordered plan) must not win "first" just by position — the parser should
+# skip demoted headings when picking the active block.
+DEMOTED_BEFORE_ACTIVE = """# Plan
+
+## Shipped PR (retained, mis-ordered above the active PR)
+
+**Spec-walk (shipped):**
+- [x] STALE: already shipped criterion
+
+## Active PR
+
+**Spec-walk:**
+- [ ] ACTIVE: real criterion
+"""
+
+
+def test_all_demoted() -> None:
+    blk = extract_block(ALL_DEMOTED, "Spec-walk")
+    check("all-demoted-items", blk["items"] == [], f"stale items leaked: {blk['items']}")
+    check("all-demoted-flag", blk["all_demoted"] is True, f"got {blk['all_demoted']}")
+    check("all-demoted-count", blk["block_count"] == 2, f"got {blk['block_count']}")
+    check("all-demoted-heading", blk["first_heading"] is None, f"got {blk['first_heading']}")
+    check(
+        "all-demoted-warns",
+        any("qualified as already-shipped" in w for w in blk["warnings"]),
+        f"warnings: {blk['warnings']}",
+    )
+
+    # Not all-demoted (block_count==0, no heading at all) must NOT set the flag.
+    none_at_all = extract_block(NO_SPEC, "Spec-walk")
+    check("not-all-demoted-when-no-heading", none_at_all["all_demoted"] is False,
+          f"got {none_at_all['all_demoted']}")
+
+    # A normal single-active-block plan must not be flagged all_demoted either.
+    normal = extract_block(MULTI_BLOCK, "Spec-walk")
+    check("not-all-demoted-normal", normal["all_demoted"] is False,
+          f"got {normal['all_demoted']}")
+
+
+def test_demoted_heading_skipped_regardless_of_order() -> None:
+    blk = extract_block(DEMOTED_BEFORE_ACTIVE, "Spec-walk")
+    check(
+        "demoted-order-items",
+        blk["items"] == ["ACTIVE: real criterion"],
+        f"got {blk['items']} — a demoted heading placed first must not win",
+    )
+    check("demoted-order-not-all-demoted", blk["all_demoted"] is False, f"got {blk['all_demoted']}")
+    check(
+        "demoted-order-heading",
+        blk["first_heading"] == "**Spec-walk:**",
+        f"got {blk['first_heading']!r}",
+    )
+
+
+def test_all_demoted_cli() -> None:
+    rc, out = run_cli(CRITERIA, ALL_DEMOTED)
+    check("all-demoted-cli-exit", rc == 0, f"exit {rc}")
+    check("all-demoted-cli-criteria", out.get("criteria") == [], f"got {out.get('criteria')}")
+    check("all-demoted-cli-flag", out.get("all_demoted") is True, f"got {out.get('all_demoted')}")
+
+
 def main() -> int:
     for fn in [
         test_heading_forms,
@@ -442,6 +531,9 @@ def main() -> int:
         test_anchor_known_limitation_tiny_mode,
         test_anchor_known_limitation_retained_visual_first,
         test_anchor_co_location_cli,
+        test_all_demoted,
+        test_demoted_heading_skipped_regardless_of_order,
+        test_all_demoted_cli,
     ]:
         fn()
 
