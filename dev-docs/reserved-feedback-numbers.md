@@ -18,7 +18,10 @@ This file is the **claim-time defense** (catches collisions before either branch
 
 If you find this file with no `Currently reserved` lines, no in-flight branch is racing for a number. Still add your reservation before drafting the entry — another branch may start between your check and your commit.
 
-## Currently reserved (as of 2026-08-01)
+## Currently reserved (as of 2026-08-02)
+
+- **FB-0078** — `claude/prototype-first-gate` (prototype-gate) — "An accepted multi-item agenda held only in conversation is not a commitment; the next message's narrower focus silently becomes the whole scope." Process failure that dropped 5 of 6 accepted items. Entry drafted with the PR; clears at ship.
+- **FB-0079** — `claude/prototype-first-gate` (prototype-gate) — "For UI work the prototype approval REPLACES the plan gate; the technical plan is written after and machine-gated, never human-gated." Loop restructure. Entry drafted with the PR; clears at ship.
 
 - **FB-0077** — `claude/land-model-invocable` (land-invocable) — "A blunt capability flag that duplicates a narrow mechanical gate should lose to the gate — and satisfying a composition lint by deleting the call concedes the composition instead of fixing it." Makes `/flow:land` model-invocable so `/flow:post-merge` §3 can actually call it (v1.25.0). Entry drafted with the PR; clears at ship.
 
