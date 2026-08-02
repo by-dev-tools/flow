@@ -33,6 +33,10 @@ Three streams are open and interleave at PR boundaries (each PR is reviewed + me
 2. **PR O** (bumps to v1.2.8) — test-edit reward-hacking PreToolUse hook: mechanizes Step 1c's no-disable-tests guard via `Edit`/`Write` matcher against test-file glob, emits `ask` decision. Adds `flow.config.json.testFilePatterns` slot (18 slots total) + opt-in hook entry.
 3. **PR P** (bumps to v1.2.9 or v1.3.0) — auditor model-diversity eval addressing FB-0013 same-model critic collusion. **Measurement-first:** build comparative eval infrastructure (Step A), swap auditor to Sonnet ONLY if ≥80% finding-overlap + comparable FP rate vs Opus on existing fixtures (Step B). Tier 2/3 (plan-critic, lens agents) stay on Opus per user direction. v1.3.0 if swap ships; v1.2.9 if Step A's eval shows structural mitigation is sufficient.
 
+**Designer-signal track — move the human gate to the artifact the human can evaluate (FB-0078/FB-0079):**
+1. **D1 — prototype-first gate** (the load-bearing item; everything else in the track is smaller). Independent of Tracks 1/2 and of the V-track — can start anytime.
+2. **D2 — `role` in `flow.config.json`** (D1 needs it for its trigger), **D3 — experience/ambition lens** (promotes the queued FB-0046 item), then **D4** (split design vs engineering feedback) and **D5** (message budget).
+
 ### Cross-track dependencies
 
 | Item | Depends on | Reason |
@@ -48,6 +52,52 @@ Three streams are open and interleave at PR boundaries (each PR is reviewed + me
 **Superseded by the ▶ Next up pointer in § Now (V2).** *If* you redirect away from the Deliverable-quality track, the lowest-risk pick within these two tracks is **PR N** (docs grounding + STATUS markers; absorbs the doctor Check 2.5 generalization). The two tracks don't block each other at PR boundaries.
 
 The detailed per-PR plans live in `dev-docs/plan.md` § "Active Work Items".
+
+## Designer-signal track — move the human gate to the artifact the human can actually evaluate (FB-0078 / FB-0079)
+
+**Why this track exists.** flow's primary user is a designer running four adopting projects. Their report: *"I feel like I'm spending too much time approving things or making decisions that don't actually affect the user experience or are too in the technical weeds for me to really understand. A lot of the messages I come to are too long and I don't really read them and I just end up approving anyway."* An approval that wasn't read is worse than no gate — it launders an unreviewed decision as a reviewed one. The countervailing constraint, equally explicit: *"I don't want this to turn into slop — I need to understand what's going on and I need the builds to be high quality, safe, secure."* Less to read; not less rigor.
+
+The high-value moment they named: *"The real valuable work happens when the flow agent gives me an html and I give feedback on it (usually via voice). Interactive htmls with flows and motion and interactions are the best."* Today that moment happens at Step 8/9 — **after** implementation — so their feedback lands on something already built.
+
+### D1 — Prototype-first gate (the load-bearing item; FB-0079)
+
+**Surfaces when:** picked up directly, or whenever `plugins/flow/docs/workflow.md`'s Step 1/2 or the Step 8/9 discovery boundary is next touched.
+
+Move the human decision point for UI work from the plan to the prototype. This **moves** a gate; it does not add one — workflow.md's Step 8/9 prose currently argues visual sign-off must fold into the merge gate "not a third gate", and replacement is the answer to that objection, not an exception to it. Target loop: Clarify (ask 2–4 questions) → **design brief** (problem, whose moment, constraints, intended scope, what's excluded, where it pushes past the literal request) → **review the brief before building** (`/flow:audit-plan` + `/flow:critique-plan` + the D3 experience/ambition lens) → **prototype, iteratively** → **human gate 1: prototype approval** → **technical plan** auto-written against the approved prototype and *machine*-gated (clean ⇒ proceed; `[auto-fixable]` ⇒ fix + re-review once ⇒ proceed; `[decision-required]` ⇒ escalate as an answerable question per FB-0075) → execute → ship → **human gate 2: merge**.
+
+Cheaper than it sounds: `/flow:critique-plan` already accepts an arbitrary file path and already supports standalone review with no transcript, and its three categories map onto a brief nearly unchanged — including *"absent elements the user explicitly requested"*, the check that would have caught FB-0078. Step 1 "Clarify" already exists. Genuinely new: the brief's shape, the prototype phase, the re-ordering, and D3.
+
+**Two things to get right or this fails:** (a) **proportionality** — three review passes before a prototype exists costs more than a small change; gate the pre-prototype phase on the same trigger as the prototype and collapse to Clarify + brief on small surfaces, or this rebuilds the ceremony it removes. (b) **a plan must always exist** — the technical plan is auto-written, because `/flow:audit-coverage`, verify-build's Spec-walk, and the rigor gate all anchor to one, and FB-0078 happened precisely because none was ever produced.
+
+**Known cost:** infeasibility now surfaces after a look has been approved, so the prototype must carry a feasibility read ("expensive to build for real") rather than deferring it to the plan.
+
+### D2 — Declare the human's role in `flow.config.json`
+
+**Surfaces when:** D1 is picked up (it needs the trigger), or any skill's output-verbosity behavior is next touched.
+
+*"It would be good to define my role ideally as a config so I can say I'm a designer."* A `role` slot (`designer` / `engineer` / …) that skills read to decide what to escalate and how much to explain — the same change is a technical detail to one role and a decision to another. Feeds D1's trigger and D5's budget.
+
+### D3 — Experience + ambition lens at the brief/plan gate (promotes FB-0046)
+
+**Surfaces when:** D1 is picked up — D1 makes this load-bearing rather than optional.
+
+Already specified under § Next ("Plan-gate quality lenses"), where it is framed as an addition to the plan reviewers. Under D1 it becomes the primary check on the *brief*: is this the right problem, and is the ambition high enough? Today's two plan reviewers check conformance (assumptions; scope/spec/coherence) — neither asks whether the thing is any good. A prototype built from a bare request satisfies the request; that is the failure this lens exists to catch.
+
+### D4 — Capture design feedback and engineering feedback as distinct streams
+
+**Surfaces when:** the annotation layer's export format or `/flow:ship` Step 4 synthesis is next touched.
+
+*"I definitely want to capture both design feedback and engineering feedback."* Today both collapse into one `FB-XXXX` stream. Design-taste feedback ("this should feel lighter") and engineering feedback ("this gate can silently no-op") have different half-lives, different audiences, and different destinations — the first should reach the design-language doc and the prototype phase, the second the reviewers and evals.
+
+### D5 — Message budget for chat output
+
+**Surfaces when:** D2 lands (it should key off `role`), or any skill's hand-off format is next touched.
+
+*"Message budget is a good idea, but I don't want it to be too restrictive."* A soft cap on what the agent puts in chat at each hand-off, so the reports are short enough to actually be read. Deliberately soft — the failure mode of a hard cap is truncating the one thing that mattered. The `/flow:post-merge` §7 verdict-first change (v1.25.0) is the first instance of this shape: lead with the answer, detail below.
+
+### D6 — Voice-first annotation input — **PARKED, do not build**
+
+Investigated at length; see `dev-docs/research/voice-annotation-pipeline-2026-07.md`. The Web Speech API is unusable here (Chrome returns `ERROR:network` reaching Google's backend, reproduced in an A/B mic-check). macOS system dictation into the annotation layer's textarea solves the actual need with **zero code** and was confirmed working. Kept in the track only so the question is not re-opened from scratch.
 
 ## Deliverable-quality track — toward the autonomous high-quality deliverable
 
