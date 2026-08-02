@@ -10,6 +10,17 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.25.0 — 2026-08-01
+
+**`/flow:post-merge` now actually runs the doc-currency step instead of telling you to run it.**
+
+- **What you get.** After you merge, `/flow:post-merge <PR#>` reconciles your forward docs itself and hands you the resulting `docs: land #N` PR to merge — one action instead of two. The close-out now leads with the answer to the only question you're asking: `✅ #84 closed out — nothing left.` or `🚫 #84 — 1 left: merge docs PR #91`.
+- **Why it was broken.** That step is supposed to call `/flow:land`, but `/flow:land` was marked as never-callable-by-Claude, so the call was rejected every time and quietly degraded into "please run it yourself." The flag was guarding against `/flow:land` firing on its own — which it already can't do, because it refuses to touch anything until GitHub confirms the PR is merged, and Claude can't merge. Clearing the flag costs nothing and restores the step.
+- **Also fixed:** `/flow:land` now refuses to run over uncommitted work instead of switching branches out from under it, and its merged-PR check no longer disagrees with the one `/flow:post-merge` uses (they could previously reach opposite conclusions about the same PR during a merge-queue lag).
+- Pinned by five new assertions so the step can't be silently removed again — the old check passed whether the call worked *or* was deleted, which is how this survived four releases. All mutation-tested.
+
+**Breaking changes:** none. `/flow:land <PR#>` still works exactly as before when you type it.
+
 ## v1.24.0 — 2026-07-29
 
 **The `/flow:verify-build` annotation layer is redesigned: commenting is a mode you stay in, not a button you re-press.**
@@ -68,7 +79,7 @@ Breaking changes: none.
 
 - **What it does.** One human-invoked command for the moment right after a merge: (1) confirms the PR actually merged, (2) reconciles the forward docs by **calling `/flow:land`**, (3) captures the feedback you gave at the merge gate (your review→iterate→merge comments), (4) deletes the merged branch, and (5) tells you whether the workspace is `✅ safe to archive` or `🚫 not safe` (with reasons). Never merges.
 - **Merge-queue safe.** The merge check is three-state, not "merged-or-fail": `MERGED` → proceed; `CLOSED` without merging → fail loud; still `OPEN` → poll up to `postMergeWaitSeconds` (default 150; `0` = fail-fast), then a calm "still queued, re-run once it lands." So on a merge-queue / auto-merge repo — where there's a 1–2 min gap between clicking merge and the PR landing — running it immediately no longer false-fails.
-- **Composes with `/flow:land`, doesn't replace it.** ⚠️ *Corrected in v1.22.0: the `Skill()` call described here was rejected at runtime (`/flow:land` is `disable-model-invocation: true`) and never executed; the step is now an explicit hand-off to you.* `/flow:post-merge` delegates doc-currency to `/flow:land` rather than reimplementing it; `/flow:land` stays independently invocable (run it alone after a GitHub-web merge with no local workspace) and human-only by design (`disable-model-invocation: true` — it opens PRs, so it must never auto-fire).
+- **Composes with `/flow:land`, doesn't replace it.** ⚠️ *Superseded — see v1.25.0.* `/flow:post-merge` delegates doc-currency to `/flow:land` rather than reimplementing it; `/flow:land` stays independently invocable (run it alone after a GitHub-web merge with no local workspace).
 - **Feedback capture on the right side of the merge gate.** `/flow:ship` synthesizes feedback from the window that *closes when the PR opens* — so your richest design-taste comments at the merge gate leaked. `/flow:post-merge` synthesizes that delta window into user-scope agent memory + the `/flow:contribute` queue (content-match dedup; **no** repo-doc `feedbackPath` write in v1 — the transcript watermark + FB-inbox are deferred to v1b).
 - New `postMergeWaitSeconds` config slot (schema now **30 slots**). Deterministic core (`skills/post-merge/lib/merge-status.py`: three-state classify + poll policy + archive-safety check) pinned by `run_merge_status_evals.py`, wired into CI.
 

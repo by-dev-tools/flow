@@ -12,11 +12,10 @@ is prose the agent drives, but its LOAD-BEARING core is deterministic and pinned
                  graceful, never terminal. This is the false-fail-on-merge-queue fix.
   archive-check— the "safe to archive?" verdict over real git state in a temp repo.
   contract     — the SKILL wires the pieces the way the plan committed: human-invoked
-                 (disable-model-invocation), DELEGATES to /flow:land without calling it
-                 (FB-0074: land is disable-model-invocation, so a Skill() call is rejected;
-                 composition is by instruction to the human, not
-                 reimplementation), uses `branch -d` never `-D`, and writes NO feedbackPath
-                 repo doc in v1 (user-scope stores only).
+                 (disable-model-invocation), and CALLS /flow:land for doc-currency
+                 (FB-0077: land's flag was cleared, so the Skill() call executes —
+                 composition, not reimplementation and not a hand-off), uses `branch -d`
+                 never `-D`, and writes NO feedbackPath repo doc in v1 (user-scope only).
   schema       — the postMergeWaitSeconds slot exists and the slot count is 30 (a "N slots"
                  fan-out is the most-recurring bug class this repo tracks — FB-0010).
 
@@ -25,7 +24,9 @@ Stdlib only.
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -46,6 +47,30 @@ def run(argv: list[str], stdin: str | None = None, cwd=None) -> tuple[int, str]:
 
 def git(repo, *a):
     subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)
+
+
+_LINT = None
+
+
+def _lint():
+    """Load skill-composition-lint.py by path (hyphenated name isn't importable).
+
+    Reused, not re-implemented: this harness previously hand-rolled both a
+    frontmatter head-split and a fenced-block walk. Both were the *pre-fix*
+    versions of parsers the lint already hardened — the fence walk was a boolean
+    ``` toggle, which the sibling run_skill_composition_evals.py pins fixtures
+    against precisely because it misses ~~~ fences and closes early on nested
+    delimiters. Two parsers for one job is the FB-0010 fan-out class living
+    inside the evals meant to catch it.
+    """
+    global _LINT
+    if _LINT is None:
+        spec = importlib.util.spec_from_file_location(
+            "skill_composition_lint",
+            HERE.parent / "skills" / "doctor" / "lib" / "skill-composition-lint.py")
+        _LINT = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_LINT)
+    return _LINT
 
 
 def main() -> int:
@@ -141,31 +166,38 @@ def main() -> int:
     # ---- SKILL contract (the composition + safety commitments the plan pinned) ----
     skill = SKILL.read_text(encoding="utf-8") if SKILL.exists() else ""
     check("skill-exists", bool(skill), "skills/post-merge/SKILL.md missing")
-    check("skill-human-invoked", "disable-model-invocation: true" in skill,
-          "post-merge must be human-invoked (like /flow:land), never auto-fire")
-    # FB-0074 INVERTED (was: assert post-merge CALLS Skill("flow:land")). `/flow:land` is
-    # disable-model-invocation: true, which blocks PROGRAMMATIC invocation — so that call was
-    # rejected on every run and the doc-currency step silently degraded to its fallback. This
-    # check asserted the bug. Two halves now: the delegation must still exist (don't reimplement
-    # reconciliation), but it must NOT take the executable call form.
+    # Anchored to the FRONTMATTER block. A whole-file substring test false-passes here:
+    # the SKILL's prose quotes `disable-model-invocation: true` while narrating the FB-0077
+    # history, so the string survives even after the flag itself is flipped. Verified by
+    # mutation — the bare form did not catch the flip.
+    check("skill-human-invoked",
+          bool(re.search(r"^disable-model-invocation:\s*true\s*$",
+                         _lint()._frontmatter(skill), re.M)),
+          "post-merge must stay human-invoked, never auto-fire — it is the human gate above "
+          "/flow:land now that land's own flag is cleared (FB-0077)")
+    # This check has now been inverted TWICE, and the history is why it is worth reading.
+    # v1.21.0 asserted post-merge CALLS Skill("flow:land") — but land was
+    # disable-model-invocation: true, so the call was rejected on every run and §3 silently
+    # degraded to its fallback; the check was pinning a bug. FB-0074 inverted it to assert the
+    # call is ABSENT, which pinned the *concession* — §3 rewritten as "ask the human" — and made
+    # /flow:post-merge a reminder to run another command. FB-0077 cleared land's flag (its §1a
+    # merged-PR gate is the real never-auto-fire guard) and restored the call, so the assertion
+    # returns to its original polarity, now against a callee that can actually be invoked.
     #
-    # Scan only FENCED blocks: the corrected SKILL quotes `Skill("flow:land")` in prose to
-    # explain why it is forbidden, and a naive substring test would pass on that text alone —
-    # which is exactly how the original check kept passing after the call was removed.
-    fenced, in_fence = [], False
-    for line in skill.splitlines():
-        if line.lstrip().startswith("```"):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            fenced.append(line)
-    fenced_text = "\n".join(fenced)
-    check("skill-does-not-CALL-land",
-          'Skill("flow:land")' not in fenced_text and "Skill('flow:land')" not in fenced_text,
-          "must NOT emit an executable Skill(\"flow:land\") call — /flow:land is "
-          "disable-model-invocation: true, so the call is rejected and the step silently no-ops")
+    # Only a FENCED call counts: the SKILL discusses `Skill("flow:land")` in prose while
+    # narrating this history, so a whole-file substring test would pass on that narration
+    # alone — the same bare-substring trap that let the FB-0074 concession sail through
+    # run_land_evals' flag check. Fence detection comes from the lint's own scan(), which
+    # handles ``` and ~~~ and tracks the opening delimiter; a local boolean toggle (what
+    # this harness used to carry) silently misses a call inside a ~~~ block.
+    _calls = _lint().scan(SKILLDIR.parent)["calls"]
+    check("skill-CALLS-land",
+          any(c["caller"] == "post-merge" and _lint()._bare(c["target"]) == "land"
+              for c in _calls),
+          "§3 must emit an executable Skill(\"flow:land\") call (FB-0077) — delegation downgraded "
+          "to a hand-off is the defect, not the fix; land is model-invocable so this executes")
     check("skill-still-delegates-to-land", "/flow:land" in skill,
-          "must still DELEGATE doc-currency to /flow:land (hand it to the human), not reimplement it")
+          "must DELEGATE doc-currency to /flow:land, not reimplement it")
     check("skill-uses-helper", "merge-status.py" in skill, "must drive the deterministic helper")
     check("skill-safe-branch-delete", "branch -d" in skill and "branch -D" not in skill,
           "cleanup must use `git branch -d` (safe), never `-D`")

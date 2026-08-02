@@ -35,6 +35,23 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0077 — A capability flag that duplicates a narrow mechanical gate should lose to the gate; and satisfying a composition lint by deleting the call concedes the composition instead of fixing it
+
+**Date:** 2026-08-01
+**Source type:** user correction
+**What was said:** After `/flow:post-merge 84` reported that the human still had to run `/flow:land 84` themselves, the user asked why the agent hadn't opened the land PR during post-merge. Told the `Skill("flow:land")` call had been rejected because land is `disable-model-invocation: true`, they replied: *"land should not be disable-model-invocation - doesn't that defeat the purpose of post merge?"*
+
+**Synthesized rule:** Two rules, and the second is the one that generalizes furthest.
+
+1. **Prefer the narrow mechanical gate to the blunt capability flag.** Before setting a flag that blocks a whole class of invocation, ask whether some *specific* precondition the skill already enforces makes the flag redundant. `/flow:land` refuses to edit anything unless `gh` confirms the PR is merged, and Claude cannot merge — so the auto-fire scenario the flag guarded was already unreachable, while the flag also blocked the one caller that had a human gate above it. The flag was pure cost. Where the intent still needs recording ("never auto-fire at the end of a loop"), state it as a precondition in the skill's own prose, where it can be specific about which entries are legitimate.
+2. **A lint tells you a contract is violated, not which side to change.** FB-0074 correctly detected that `/flow:post-merge` called a model-disabled skill, then satisfied its own lint by deleting the call and rewriting the step as "ask the human." That made the detector green while removing the feature — `/flow:post-merge`'s composition step *is* what distinguishes it from a reminder to run another command. When a lint fires on a composition, the default should be to ask which half is wrong, not to remove whichever half is cheaper to remove. **Corollary:** a check that passes both when a contract is satisfied and when it is deleted cannot tell those apart, so it needs a *positive* assertion alongside it — pin that the composition exists, not merely that it isn't illegal.
+
+3. **A whole-file substring test cannot tell a declaration from a mention of one — and prose that explains a flag contains the flag.** Three separate harnesses asserted on `disable-model-invocation` by bare substring, and **all three false-passed** against the changed tree, because the new prose narrating the change quotes the old value verbatim. `run_land_evals`' `skill 5` (`"disable-model-invocation: true" in skill`) reported PASS on a file that now declares `false`; `run_merge_status_evals`' `skill-human-invoked` survived flipping the very flag it guards; and the `skill-does-not-CALL-land` check was itself pinning the concession. None of this was visible from running the suite — it went green. It surfaced only from grepping for the old value before trusting the result, then mutating. Anchor such assertions to the frontmatter block (`text.split("\n---", 1)[0]` + a line-anchored regex), and never let documentation *about* a value satisfy an assertion *of* that value.
+
+**Applies to:** `plugins/flow/skills/land/SKILL.md` (flag + new §0 precondition), `plugins/flow/skills/post-merge/SKILL.md` (§3 restored to a real call), `plugins/flow/skills/doctor/lib/skill-composition-lint.py` (remediation advice now leads with the redundancy question), `plugins/flow/evals/{run_skill_composition,run_land,run_merge_status}_evals.py`; generally, any flow skill carrying `disable-model-invocation`, any future lint whose remediation text names a default fix, and every existing eval assertion that greps a config value by bare substring.
+
+**Process note:** the defect was found by the failure it caused, one turn after `/flow:post-merge` hit it live — the user reading a hand-off that said "run this yourself" and asking why. Neither the lint nor the eval suite could surface it, because both were satisfied by the conceded version.
+
 ### FB-0076 — Annotation-layer interaction: commenting is a mode, not a re-armed action
 
 **Date:** 2026-07-29

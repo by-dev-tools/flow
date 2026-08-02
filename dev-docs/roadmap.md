@@ -106,6 +106,32 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### Declare the skill-composition graph as data, replacing per-pair hand-pins (from the FB-0077 altitude lens)
+
+`doctor/lib/skill-composition-lint.py` checks a **negative** — no `Skill()` call names a model-disabled target — which passes two opposite ways: the composition is legal, *or* the call was deleted. It cannot tell them apart, which is exactly how FB-0074 satisfied it by conceding the call. FB-0077 fixed the one instance by hand, and that fix now costs **six assertions across three harnesses** for a single caller→callee pair.
+
+The asymmetry is the argument: `ship → {security-review, accessibility-review, verify-build, audit-coverage, audit-skips}` and `ship-spike → verify-build` are equally load-bearing compositions with **zero** positive pinning. Delete any of those `Skill()` calls tomorrow and the lint still reports PASS — the FB-0074 concession could recur in six places right now, silently.
+
+The deeper form: declare each edge as data — an `invoked-by: [flow:post-merge]` frontmatter key (the runtime ignores unknown keys, so it costs nothing at load) or a small edge table — then replace every hand-pin with two generic invariants: (a) every declared edge exists as a fenced `Skill()` call whose target is model-invocable; (b) every fenced `Skill()` call is a declared edge. That covers land/post-merge *and* the six unpinned pairs, and it makes "who may call this skill" lintable in both directions — which is also the missing mechanism behind `/flow:land` §0, whose never-auto-fire intent is currently prose (the flag it replaced was enforceable; the prose is not).
+
+Also folds in: the composition contract has **no argument channel**. `_SKILL_CALL_RE` only matches `Skill("name")`, so `/flow:post-merge` §3 must tell `/flow:land` its PR number in prose, and the lint can only assert the call *exists*, never that it is invoked correctly. "Composition, not hand-off" currently only holds cleanly for zero-argument callees.
+
+### `/flow:staff-review`'s `/tmp` diff handoff collided across projects — live, this session (from the FB-0077 staff-review)
+
+`/flow:staff-review` §2 writes the workspace diff to the fixed path `/tmp/flow-staff-diff.patch`, then spawns four lens agents pointed at it. During the FB-0077 review a **concurrent session in another project (music-app) overwrote that file between the write and the reads** — three of the four lenses opened it, found a SwiftUI diff for `MusicApp.xcodeproj`, and said so. They recovered by regenerating the diff themselves, which is the only reason the review is trustworthy.
+
+The failure is silent by construction: a lens that did *not* notice would have reviewed a different repo and returned confident, well-formed, entirely irrelevant findings — and nothing downstream distinguishes that from a clean review. This is the general `/tmp` transport problem already logged under § Exploration ("fixed `/tmp` paths across the ship pipeline", ~16 paths), but this is the first time it has been *observed firing* rather than reasoned about, and the blast radius is the review gate itself.
+
+Minimum fix: make the handoff path per-run (`mktemp`), or key it on `repo_root` rather than branch+sha (a worktree and its origin share both). Independently, each lens should assert the diff it reads is for the repo it was told to review — a one-line provenance header in the patch file, checked before reviewing. Owner: whoever next touches `staff-review/SKILL.md` §2.
+
+### Deployed SKILL.md prompts are accumulating their own changelogs (from the FB-0077 push-further lens)
+
+FB-0077 added ~40 lines of *retrospective narration* to two shipped skills — land §0's "Why this is a precondition and not a frontmatter flag", post-merge's "That call took two tries to get right, and the history is the point", and the rewritten Gotcha. Each is well-written and defensible alone. But `SKILL.md` is not documentation; it is context loaded into the model on **every** invocation. `post-merge` is now ~360 lines / 12 FB references, `land` ~390 / 11, `ship` ~1300 / 40, and the trend is that every skill converges on being its own `history.md`.
+
+There is a second-order cost visible in this very PR: land §0's normative instruction ("exactly two legitimate ways in — stop and say so") was immediately followed by ten lines arguing why the previous, stronger guard was removed. Admirable in a decision record; an odd thing to hand a model at the moment you want it to obey a precondition. `CLAUDE.md` already draws this line — "'What' goes in the change itself. 'Why' goes in the documentation" — it just isn't applied to the deployed prompts themselves.
+
+Not decision-shaped yet: we don't know how much inline rationale is load-bearing for a model *not* re-breaking a fixed defect. Plausibly a lot. The answer might be a per-skill `## Decision history` appendix, a one-sentence + FB-ID pointer convention, or nothing — it needs an experiment. **Surfaces when:** any `SKILL.md` crosses ~400 lines, or a third retrospective paragraph lands in `post-merge`/`land`/`ship`. Files: `plugins/flow/skills/*/SKILL.md`.
+
 ### §7c's cross-session reconcile can silently downgrade a passing Test plan (from the FB-0075 integration review)
 
 **Surfaces when:** §7c is next touched, or a PR is reconciled days after its verify-build run.
