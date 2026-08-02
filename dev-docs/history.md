@@ -4,6 +4,30 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-02 — `harvest_lesson.py` derives project identity from git, not the cwd basename
+
+**Branch:** `claude/harvest-slug-git-identity` · **SHA:** [pending — commit at ship]
+
+**What was done (user-facing).** `harvest_lesson.py::_project_slug()` now derives the origin project's identity from git (`git remote get-url origin`'s repo name, falling back to the primary worktree's directory via `git rev-parse --git-common-dir` when there's no `origin` remote) instead of `os.getcwd()`'s basename. A linked worktree's directory name (flow's own `.claude/worktrees/<random-slug>/`, or any `git worktree add` checkout) has nothing to do with the project it's a checkout of — every harvest run recorded the WORKTREE name into `known_tokens.json` instead of the real project name.
+
+**Why.** Discussed with the user while reviewing PR #89's "Held — needs human attention" section: 16 of 17 sub-threshold held lessons shared one root cause — `known_tokens.json` had `"flow"` registered as a private-project scrub token, so nearly every lesson mentioning `/flow:*` by name got flagged as a leak. Tracing why "flow" was ever added led here: a harvest run whose cwd happened to be the flow checkout itself recorded `"flow"` as a token. The user asked to address the root cause directly.
+
+**Design decisions.**
+- **`known_tokens.json` cleanup is a local action, not part of this PR.** It's user-scope runtime data at `~/.claude/plugins/data/flow/contributions/known_tokens.json`, not a tracked repo file — removing the stale `"flow"` entry happened directly on this machine with the user's explicit go-ahead, not via a commit. Re-scanning the 30-item queue against the corrected token list flipped 22 entries from dirty/unscanned to clean, several from confidence 0.3–0.45 straight to their un-penalized 0.6–0.9 base score.
+- **Scoped to `"flow"` only, not the rest of the token list.** Most of the remaining tokens (`flamboyant-stonebraker-36ef32`, `laughing-merkle-215513` — this very worktree — etc.) are also worktree slugs, the same bug pattern. Left alone: re-deriving each one's real project name needs per-token session archaeology I can't do reliably from the token string alone, and this fix prevents new corruption going forward — the existing entries are a one-time cleanup that can happen at leisure, not blocking anything further now that the bleeding is stopped.
+- **Re-scanning the queue surfaced 3 already-resolved lessons that would otherwise have looked freshly unblocked.** Two were already fixed by #90 (`/flow:land` becomes model-invocable, FB-0077) — one inside the *same* commit that introduced the risk it describes (a fork-PR branch-deletion hazard, caught by `git log -S isCrossRepository` showing the safety check landed alongside the code it guards); the other duplicates FB-0077 rule 2 verbatim. A third (post-merge's Skill(land) composition failing) was harvested from a session that ran moments before #90 merged. All three dismissed as already-encoded with the symptom reproduced against current `main`, not reasoned from the fix.
+
+**Technical decisions.**
+- **`git remote get-url origin` before `--git-common-dir`.** The remote URL survives repo renames/forks better than a directory basename, and works identically whether or not the checkout is a linked worktree. `--git-common-dir` is the fallback for a repo with no `origin` configured (rare, but the historical cwd-basename behavior remains the last resort for a non-git directory).
+- **New regression coverage in `run_contribution_evals.py`** creates a temp git repo whose directory name is a worktree-like slug and whose `origin` is a differently-named URL, runs `harvest_lesson.py enqueue` with no `--project-slug`, and asserts the resulting `provenance.project_slug` is the git-derived name — plus a no-origin case pinning the `--git-common-dir` fallback. Confirmed both fail on the pre-fix code (recorded the worktree slug) and pass after.
+
+**Tradeoffs discussed.**
+- Whether to also clean up the rest of `known_tokens.json` now, since the pattern (worktree slugs recorded as tokens) is clearly widespread: deferred. The fix here stops new bad entries; auditing and correcting ~10 existing ones is separable work that doesn't block anything the fixed pipeline needs.
+- Whether to fold this into PR #89: declined in favor of a separate PR (user's call) — different subsystem (the harvest pipeline itself, not the reviewer skills #89 fixes), and #89 was already open for review.
+
+**Follow-ups (flagged, not fixed here):** `known_tokens.json`'s remaining worktree-slug entries could use a human pass to re-derive their real project names; the newly-unblocked queue (now ~24 clean entries, several passing the confidence threshold too) is a separate scoping decision — not drained in this PR.
+
+
 ## 2026-08-01 — `/flow:contribute` drain: three harvested fixes, one loop closed, one systemic leak surfaced
 
 **Branch:** `claude/contribution-flow-397e04` · **SHA:** [pending — commit at ship]
