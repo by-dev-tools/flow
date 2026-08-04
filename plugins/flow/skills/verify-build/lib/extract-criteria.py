@@ -15,6 +15,9 @@ Contract:
       "source_path": "<plan path>",
       "source_heading": "<the active Spec-walk heading line, for traceability>",
       "block_count": <how many Spec-walk blocks exist in the file>,
+      "all_demoted": <true iff block_count > 0 but every one is qualified
+                      shipped/merged/demoted — no active block, distinct from
+                      block_count == 0 (no heading at all)>,
       "warnings": ["..."]
     }
 - Exit codes:
