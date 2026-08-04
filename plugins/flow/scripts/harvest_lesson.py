@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -82,10 +83,64 @@ def _window_start(marker: dict, session_id: str) -> int:
         return 0
 
 
+def _git_origin_slug() -> str:
+    """Repo name from `git remote get-url origin`, e.g. both
+    'https://github.com/org/repo.git' and 'git@github.com:org/repo.git' -> 'repo'."""
+    try:
+        out = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if out.returncode != 0:
+        return ""
+    url = out.stdout.strip()
+    if not url:
+        return ""
+    name = url.rstrip("/").rsplit("/", 1)[-1]
+    if "/" not in name:
+        name = name.rsplit(":", 1)[-1]  # scp-like git@host:org/repo -> already split above
+    if name.endswith(".git"):
+        name = name[:-4]
+    return name
+
+
+def _git_common_dir_slug() -> str:
+    """Fall back to the PRIMARY worktree's directory name (via
+    `git rev-parse --git-common-dir`, which always points inside the main
+    checkout even when run from a linked worktree) when there is no `origin`
+    remote to name the project."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if out.returncode != 0 or not out.stdout.strip():
+        return ""
+    common = Path(out.stdout.strip())
+    main_worktree = common.parent if common.name == ".git" else common
+    return main_worktree.name or ""
+
+
 def _project_slug(explicit: str) -> str:
     if explicit:
         return explicit
-    # Best-effort: the working-directory basename is the project's name.
+    # Derive from git identity, never the cwd basename: a linked worktree's
+    # directory (flow's own `.claude/worktrees/<random-name>/`, or any
+    # `git worktree add` checkout) has a name that has nothing to do with the
+    # project — cwd was recording the WORKTREE name, silently corrupting
+    # known_tokens.json with tokens like "laughing-merkle-215513" while never
+    # registering the real project name a lesson's evidence text actually needs
+    # scrubbed (or, for flow's own dogfood runs, wrongly registering "flow"
+    # itself as a token to scrub — see FB harvest_lesson history).
+    slug = _git_origin_slug() or _git_common_dir_slug()
+    if slug:
+        return slug
+    # Last resort (non-git directory, or git itself unavailable): the
+    # working-directory basename, same as the historical behavior.
     return Path(os.getcwd()).name or ""
 
 

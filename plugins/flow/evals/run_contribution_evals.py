@@ -169,6 +169,70 @@ def main() -> int:
         rc, out, _ = run(STORE, ["known-tokens"], env5)
         check("known-tokens-1-recorded", "pattaya" in out)
 
+        # --- project-slug derivation: git identity, never the cwd basename -
+        # A linked worktree's directory name has nothing to do with the
+        # project (flow's own `.claude/worktrees/<random-name>/`). Omitting
+        # --project-slug must derive it from git (origin remote basename, or
+        # the primary worktree via --git-common-dir), never `os.getcwd()`.
+        def git(args, cwd):
+            envg = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                        GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+            return subprocess.run(["git", *args], cwd=cwd, env=envg,
+                                   capture_output=True, text=True)
+
+        with tempfile.TemporaryDirectory() as repos:
+            # Directory name is a worktree-like slug, deliberately NOT the
+            # project name, mirroring flow's own `.claude/worktrees/<slug>/`.
+            worktree_dir = Path(repos) / "swift-uifilepatterns-scope-063b47"
+            worktree_dir.mkdir()
+            git(["init", "-q", "-b", "main"], worktree_dir)
+            git(["remote", "add", "origin", "https://github.com/acme/real-project.git"], worktree_dir)
+
+            env6 = Path(repos) / "e6"
+            rc, out, err = run(HARVEST, [
+                "enqueue", "--session-file", str(s),
+                "--marker-file", str(env6 / "mark.json"),
+                "--source-type", "taste", "--artifact-kind", "reviewer-prompt",
+                "--summary", "project-slug regression", "--rule", "derive from git, not cwd",
+                "--evidence-strength", "direct-quote",
+                # deliberately NO --project-slug
+            ], env6, cwd=worktree_dir)
+            check("project-slug-1-enqueue-ok", rc == 0, f"rc={rc} out={out!r} err={err!r}")
+            rc, out, _ = run(STORE, ["list"], env6)
+            entries = json.loads(out)
+            slug = entries[0]["provenance"]["project_slug"] if entries else None
+            check("project-slug-2-from-git-origin-not-cwd",
+                  slug == "real-project",
+                  f"expected 'real-project' (from origin remote), got {slug!r} "
+                  f"— cwd basename was 'swift-uifilepatterns-scope-063b47'")
+            rc, out, _ = run(STORE, ["known-tokens"], env6)
+            check("project-slug-3-registers-git-derived-token",
+                  "real-project" in out and "swift-uifilepatterns-scope-063b47" not in out,
+                  f"known_tokens.json should hold the repo name, not the worktree dir name: {out!r}")
+
+            # No origin remote at all -> falls back to the primary worktree's
+            # directory name via --git-common-dir (still not a linked-worktree
+            # slug, since there's no linked worktree here — just a differently
+            # named checkout), rather than silently reusing the prior result.
+            no_origin_dir = Path(repos) / "another-worktree-name"
+            no_origin_dir.mkdir()
+            git(["init", "-q", "-b", "main"], no_origin_dir)
+            env7 = Path(repos) / "e7"
+            rc, out, err = run(HARVEST, [
+                "enqueue", "--session-file", str(s),
+                "--marker-file", str(env7 / "mark.json"),
+                "--source-type", "taste", "--artifact-kind", "reviewer-prompt",
+                "--summary", "project-slug no-origin regression", "--rule", "derive from git-common-dir",
+                "--evidence-strength", "direct-quote",
+            ], env7, cwd=no_origin_dir)
+            check("project-slug-4-no-origin-enqueue-ok", rc == 0, f"rc={rc} out={out!r} err={err!r}")
+            rc, out, _ = run(STORE, ["list"], env7)
+            entries7 = json.loads(out)
+            slug7 = entries7[0]["provenance"]["project_slug"] if entries7 else None
+            check("project-slug-5-no-origin-git-common-dir-fallback",
+                  slug7 == "another-worktree-name",
+                  f"got {slug7!r}")
+
         # --- sanitize: scan catches each class; scrub neutralizes ----------
         dirty = (FIX / "contribution_dirty_window.jsonl").read_text()
         rc, _, err = run(SANITIZE, ["scan", "--project-token", "pattaya"], d, stdin=dirty)
