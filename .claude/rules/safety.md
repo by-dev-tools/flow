@@ -26,7 +26,11 @@ Safety-critical surfaces in this plugin:
 - **`plugins/flow/scripts/log_disagreement.py`** -- writes user-pushback records to user-scope storage. The storage path is load-bearing for the disagreement-capture contract; changes here orphan prior data.
 - **`plugins/flow/skills/audit-plan/SKILL.md`**, **`plugins/flow/skills/audit-completion/SKILL.md`**, **`plugins/flow/skills/critique-plan/SKILL.md`** -- slash command dispatch. Shell substitution is used to inject preprocessed context; no size guards today.
 - **`plugins/flow/skills/ship/SKILL.md`** -- the workflow ship pipeline. Changes here affect what every project's `/flow:ship` invocation does; placeholder sections for `/flow:security-review` and `/flow:accessibility-review` are intentional until PR 2 backfills them.
-- **`.claude-plugin/marketplace.json`** and **`plugins/flow/.claude-plugin/plugin.json`** -- install surface. Breaking these breaks installation for every user.
+- **`.claude-plugin/marketplace.json`** and **`plugins/flow/.claude-plugin/plugin.json`** -- install surface. Breaking these breaks installation for every user. The `description` fields are **rendered in the `/plugin` terminal UI**. Claude Code's own [plugin-marketplace reference](https://code.claude.com/docs/en/plugin-marketplaces) (the plugin-entry field table) calls this a "Brief plugin description" and the marketplace-level one a "Brief marketplace description" -- one or two sentences on what the plugin does for the user. Two things must never go in them:
+  - **a release blurb** -- per-version notes go in `CHANGELOG.md`; a version bump edits the `version` fields only;
+  - **a catalog of the skills** -- Claude Code generates the component inventory from disk and renders it in the Discover tab's "Will install" section and the Installed tab's detail view (also `claude plugin details`), so a hand-maintained copy is redundant and goes stale.
+
+  `plugins/flow/evals/run_plugin_desc_evals.py` enforces the caps, the no-version-token rule, the no-skill-catalog rule, and plugin.json↔marketplace parity — over every description field in both manifests, plus the same version-token rule over every skill's frontmatter `description:` (FB-0078).
 - **`plugins/flow/evals/run_evals.py`** and **`plugins/flow/evals/ground_truth.yaml`** -- the only regression signal we have. If evals break silently, we lose the ability to detect reviewer behavior drift.
 
 ## Before modifying safety-critical code

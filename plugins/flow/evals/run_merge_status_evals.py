@@ -213,10 +213,10 @@ def main() -> int:
     def has(rel, needle):
         p = ROOT / rel
         return p.exists() and needle in p.read_text(encoding="utf-8")
-    check("reg-plugin-json", has("plugins/flow/.claude-plugin/plugin.json", "flow:post-merge"),
-          "/flow:post-merge not registered in plugin.json")
-    check("reg-marketplace", has(".claude-plugin/marketplace.json", "flow:post-merge"),
-          "/flow:post-merge not registered in marketplace.json")
+    # NOTE (FB-0078): this fan-out used to include the two manifests' `description`
+    # fields. Dropped — Claude Code generates the plugin's component inventory from
+    # disk for the /plugin UI, so a hand-maintained skill catalog inside `description`
+    # was a redundant copy that could go stale. The docs are the catalog sites.
     check("reg-workflow-help", has("plugins/flow/skills/workflow-help/SKILL.md", "flow:post-merge"),
           "/flow:post-merge not listed in workflow-help")
     check("reg-workflow-doc", has("plugins/flow/docs/workflow.md", "flow:post-merge"),
