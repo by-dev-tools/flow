@@ -25,7 +25,6 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 - **FB-0077** — `claude/land-model-invocable` (land-invocable) — "A blunt capability flag that duplicates a narrow mechanical gate should lose to the gate — and satisfying a composition lint by deleting the call concedes the composition instead of fixing it." Makes `/flow:land` model-invocable so `/flow:post-merge` §3 can actually call it (v1.25.0). Entry drafted with the PR; clears at ship.
 
-- **FB-0075** — `claude/agent-draft-pr-handling-52e6dd` (agent-draft-pr-handling-52e6dd) — "A draft PR is a last resort, not a deliverable: resolve what's re-runnable, ask what's decidable, draft only what's externally blocked." Ship-manifest triage (v1.23.0). **Renumbered TWICE: FB-0073 → FB-0074 → FB-0075.** First at the initial ship rebase (#83 shipped FB-0073 — the `/flow:contribute` sibling of this same user complaint); again at the post-merge rebase, when **#86 shipped FB-0074 + v1.22.0** while this PR sat open — a `/flow:contribute` drain whose thesis ("a contract split across two files with nothing checking the join degrades silently") is a close cousin of this one. Both collisions caught by the stale-base gate at rebase, neither silently merged. Entry drafted with the PR; clears at ship.
 
 _(FB-0071 cleared at ship of the annotation-layer generalization PR, v1.20.0; entry lives in `feedback.md`.)_
 _(FB-0076 claimed by the annotation-layer redesign PR, v1.24.0 — renumbered from FB-0073 at rebase, see the collision note below.)_
