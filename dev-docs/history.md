@@ -118,7 +118,7 @@ Two findings routed rather than fixed. **Doctor Check 2.5 is the consumer-facing
 
 ## 2026-08-02 — `harvest_lesson.py` derives project identity from git, not the cwd basename
 
-**Branch:** `claude/harvest-slug-git-identity` · **SHA:** [pending — commit at ship]
+**Branch:** `claude/harvest-slug-git-identity` · **SHA:** merged #91 @ d24c33f
 
 **What was done (user-facing).** `harvest_lesson.py::_project_slug()` now derives the origin project's identity from git (`git remote get-url origin`'s repo name, falling back to the primary worktree's directory via `git rev-parse --git-common-dir` when there's no `origin` remote) instead of `os.getcwd()`'s basename. A linked worktree's directory name (flow's own `.claude/worktrees/<random-slug>/`, or any `git worktree add` checkout) has nothing to do with the project it's a checkout of — every harvest run recorded the WORKTREE name into `known_tokens.json` instead of the real project name.
 
@@ -142,7 +142,7 @@ Two findings routed rather than fixed. **Doctor Check 2.5 is the consumer-facing
 
 ## 2026-08-01 — `/flow:contribute` drain: three harvested fixes, one loop closed, one systemic leak surfaced
 
-**Branch:** `claude/contribution-flow-397e04` · **SHA:** [pending — commit at ship]
+**Branch:** `claude/contribution-flow-397e04` · **SHA:** merged #89 @ 5a5e817
 
 **What was done (user-facing).** Ran `/flow:contribute` against the 25-item harvest queue + the disagreements store. Closed the calibration loop for merged #86 (3 lessons, previously uncalibrated). Dismissed 2 stale duplicate lessons as already-fixed by #86 (FB-0074), with the symptom reproduced against current `main` and confirmed gone, not just reasoned-from-the-fix. Converted the one open disagreement record (a plan-critic false-positive) into a queued `reviewer-prompt` candidate. Implemented and shipped 3 of the highest-confidence, sanitization-clean lessons, each with a CI-wired regression eval that fails on the pre-fix code and passes after:
 
