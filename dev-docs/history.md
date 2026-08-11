@@ -6,7 +6,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ## 2026-08-02 — `harvest_lesson.py` derives project identity from git, not the cwd basename
 
-**Branch:** `claude/harvest-slug-git-identity` · **SHA:** [pending — commit at ship]
+**Branch:** `claude/harvest-slug-git-identity` · **SHA:** merged #91 @ d24c33f
 
 **What was done (user-facing).** `harvest_lesson.py::_project_slug()` now derives the origin project's identity from git (`git remote get-url origin`'s repo name, falling back to the primary worktree's directory via `git rev-parse --git-common-dir` when there's no `origin` remote) instead of `os.getcwd()`'s basename. A linked worktree's directory name (flow's own `.claude/worktrees/<random-slug>/`, or any `git worktree add` checkout) has nothing to do with the project it's a checkout of — every harvest run recorded the WORKTREE name into `known_tokens.json` instead of the real project name.
 
