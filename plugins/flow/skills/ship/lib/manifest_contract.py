@@ -45,7 +45,8 @@ def slug(branch: str) -> str:
     """Filesystem-safe form of a branch name, for per-branch scratch files.
 
     Matches the convention `rigor-marker.py` established
-    (`/tmp/flow-<thing>-<branch-slug>.json`).
+    (`<repo-root>/.flow/<thing>-<branch-slug>.json` since FB-0078 — repo-local, not the
+    older global `/tmp` form, which collided across projects on same-named branches).
     """
     return re.sub(r"[^A-Za-z0-9_.-]", "-", branch or "detached")
 

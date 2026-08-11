@@ -253,8 +253,38 @@ def _fingerprint(kind: str, finding: str) -> str:
     return hashlib.sha256(f"{kind}\x00{norm}".encode("utf-8")).hexdigest()[:16]
 
 
+def _repo_scratch(name: str) -> str:
+    """Repo-local scratch path (FB-0078), replacing the old global /tmp default.
+
+    The manifest is not a cache: producers append to it and `classify` reads it to decide
+    draft-vs-ready. `/tmp/flow-manifest-<branch>.md` is ONE filename shared by every project
+    on a same-named branch, and verify-build entries are never subtractable — so a single
+    foreign entry would permanently draft an unrelated clean PR. Repo-local is unique per
+    worktree by construction. Falls back to a tempdir only when there is no worktree at all.
+    """
+    import subprocess
+    import tempfile
+    try:
+        out = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, timeout=10)
+        root = out.stdout.strip() if out.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        root = ""
+    if not root:
+        return str(Path(tempfile.gettempdir()) / "flow-detached" / name)
+    d = Path(root) / ".flow"
+    # CWE-59: never write scratch through a symlink (same refusal as the shell sites).
+    if d.is_symlink():
+        raise SystemExit(f"BLOCKER: {d} is a symlink -- refusing to write flow scratch through it.")
+    d.mkdir(parents=True, exist_ok=True)
+    ign = d / ".gitignore"
+    if not ign.exists():
+        ign.write_text("# Created by flow. Ephemeral scratch; never committed.\n*\n", encoding="utf-8")
+    return str(d / name)
+
+
 def _default_state_path(branch: str) -> str:
-    return f"/tmp/flow-ship-state-{_slug(branch)}.json"
+    return _repo_scratch(f"ship-state-{_slug(branch)}.json")
 
 
 def _default_manifest_path(branch: str) -> str:
@@ -262,7 +292,7 @@ def _default_manifest_path(branch: str) -> str:
     the branch and the worktree, so the next ship would re-read the previous
     one's entries — and a `verify-build` entry among them is never subtractable,
     permanently drafting a PR over a blocker from another branch."""
-    return f"/tmp/flow-manifest-{_slug(branch)}.md"
+    return _repo_scratch(f"manifest-{_slug(branch)}.md")
 
 
 # --------------------------------------------------------------------------

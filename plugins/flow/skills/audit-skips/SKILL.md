@@ -115,6 +115,14 @@ if [ -f "$STAGES" ] && [ "$STAMP_STATUS" = "unverifiable" ]; then
   printf '{"stamp_unverifiable": %s, "handoff": %s, "stages": []}\n' \
     "$(printf '%s' "$STAMP_REASON" | jq -Rs . 2>/dev/null || printf '"stamp checker unreachable"')" \
     "$(printf '%s' "$STAGES" | jq -Rs . 2>/dev/null || printf '"(handoff path; jq unavailable)"')"
+elif [ -f "$STAGES" ] && [ "$STAMP_STATUS" = "invalid" ]; then
+  # Present but CORRUPT — not foreign. Reuse the engine_error shape: "present but could
+  # not be processed" is exactly its semantics and its remedy already fits. Emitting
+  # stamp_error here would tell the operator the handoff belongs to another workspace,
+  # which is false, and send them to the wrong fix.
+  printf '{"engine_error": %s, "handoff": %s, "stages": []}\n' \
+    "$(printf '%s' "$STAMP_REASON" | jq -Rs . 2>/dev/null || printf '"handoff is unreadable"')" \
+    "$(printf '%s' "$STAGES" | jq -Rs . 2>/dev/null || printf '"(handoff path; jq unavailable)"')"
 elif [ -f "$STAGES" ] && [ "$STAMP_STATUS" != "ok" ] && [ -n "$STAMP_STATUS" ]; then
   # Present but NOT ours. Never audit it, never call it a clean standalone no-op.
   printf '{"stamp_error": %s, "handoff": %s, "stages": []}\n' \
@@ -203,7 +211,7 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   `⚠️ SKIP-AUDIT REFUSED a handoff that does not belong to this workspace (<handoff>):
   <stamp_error>. The skip-legitimacy gate did NOT run — this is not a clean pass.` From
   `/flow:ship` Step 2a this routes to the draft manifest as `[decision-required]`
-  (`[skip-audit] handoff failed its stamp check — re-run ship Step 2a.1 or human-waive`).
+  (`[skip-audit] handoff failed its stamp check — needs: re-run ship Step 2a.1 | human-waive — confidence: auto-resolvable — candidate resolutions: rewrite the handoff from this workspace`).
 - If the mechanical block carries **`"stamp_unverifiable"`** (a handoff was present but the
   stamp checker itself could not run — `flow_scratch.py` missing, or no `python3`/`jq`), this
   is an **install/toolchain** problem, NOT a foreign handoff. Do not claim the handoff belongs

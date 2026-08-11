@@ -105,7 +105,7 @@ FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 # (e.g. truncating a `.gitignore` in ~ or a sibling repo). Moving the sink into
 # repo-controlled namespace is what introduced this, so the guard ships with it.
 if [ -L "$FLOW_SCRATCH" ]; then
-  echo "⚠️ BLOCKER: $FLOW_SCRATCH is a symlink — refusing to write flow scratch through it. Remove or replace it with a real directory." >&2
+  echo "⚠️ BLOCKER: $FLOW_SCRATCH is a symlink — refusing to write flow scratch through it, because writes would land outside the repo (CWE-59). Replace it with a real directory." >&2
   exit 1
 fi
 mkdir -p "$FLOW_SCRATCH"

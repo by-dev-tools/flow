@@ -10,7 +10,7 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
-## v1.26.0 — 2026-07-29
+## v1.26.0 — 2026-08-10
 
 **Flow's ephemeral scratch moves out of `/tmp` into a repo-local `.flow/` directory — which restores the skip-legitimacy gate (inert since v1.13.0) and ends cross-project clobbering of reviewer inputs.**
 
@@ -21,7 +21,7 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 - **Security (CWE-59):** flow refuses to write scratch through a symlink. Moving the scratch dir into the repo created a link-following write primitive `/tmp` did not have — an untrusted clone shipping `.flow` as a symlink could redirect flow's writes outside the repo, since `mkdir -p` follows an existing symlink-to-dir. Found by this release's own security review.
 - New `run_scratch_isolation_evals.py` (56 checks, wired into CI) — the **first** harness here to extract and *execute* a SKILL.md `!`-block, which is precisely why the transport bug survived.
 
-**Breaking changes:** none for behavior, but two config **defaults changed**: `verifyFindingsPath` `/tmp/flow-verify-findings.json` → `.flow/verify-findings.json`, and `verifyReportPath` `/tmp/flow-verify-report.html` → `.flow/verify-report.html`. Projects that set these explicitly are unaffected. `.flow/` self-ignores (it writes its own `.gitignore`), so it never dirties `git status` and is never committed.
+**Behavior change:** the skip-legitimacy gate runs for the first time since v1.13.0 — ships that used to pass Step 2a silently will now surface `[skip-audit]` findings, and some will open as drafts that previously did not. That is the fix working, but it is a real change in what you will see. Two config **defaults changed** too: `verifyFindingsPath` `/tmp/flow-verify-findings.json` → `.flow/verify-findings.json`, and `verifyReportPath` `/tmp/flow-verify-report.html` → `.flow/verify-report.html`. Projects that set these explicitly are unaffected. `.flow/` self-ignores (it writes its own `.gitignore`), so it never dirties `git status` and is never committed.
 
 ## v1.25.0 — 2026-08-01
 
@@ -46,7 +46,7 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 **Breaking changes:** none for consumers. Internal note: the layer's element ids changed (`annot-*` → `an-*`) and the storage key is now `flow-annotations-v2:`; anything that greps the partial (flow's own evals do) must be updated with it.
 
-## v1.26.0 — 2026-07-29
+## v1.23.0 — 2026-07-29
 
 **A blocked ship now hands you decisions you can answer, not a draft PR to decode.**
 
