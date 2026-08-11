@@ -237,6 +237,32 @@ def main() -> int:
         # fan-out (docs/workflow.md, template/base/CLAUDE.md.template).
         # 30 -> 32 at v1.26.0 (visualFilePatterns + a11yFilePatterns, FB-0079).
         check("schema-slot-count-32", len(props) == 32, f"slot count = {len(props)} (want 32)")
+        # And no shipped surface may contradict it. Deliberately WRAP-TOLERANT: the
+        # literal is matched across newlines, because the survivor that slipped this
+        # PR's first sweep was `all 30\n  slots` wrapped inside doctor/SKILL.md's
+        # frontmatter — invisible to a line-oriented `grep -n '30 slots'`. Grepping the
+        # old VALUE also misses the class; this greps the SHAPE.
+        import re as _re
+        root = Path(__file__).resolve().parents[3]
+        stale = []
+        for sub in ("plugins", "template"):
+            for f in sorted((root / sub).rglob("*")):
+                if not f.is_file() or f.suffix not in (".md", ".json", ".sh", ".template"):
+                    continue
+                if "evals/" in str(f) or f.name == "plan-critic.md":
+                    continue  # harnesses + the prose example that teaches the failure
+                try:
+                    text = f.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                for m in _re.finditer(r"(\d+)\s+slots?\b", text):
+                    line_start = text.rfind("\n", 0, m.start()) + 1
+                    if text[line_start:m.start()].lstrip().startswith("#"):
+                        continue  # shell/prose comment — historical narrative is allowed
+                    if m.group(1) != str(len(props)):
+                        stale.append(f"{f.relative_to(root)}: {m.group(0)!r}")
+        check("no-stale-slot-count-in-shipped-surfaces", not stale,
+              "shipped surfaces contradict the schema count: " + "; ".join(stale))
     else:
         check("schema-exists", False, "flow.config.schema.json missing")
 

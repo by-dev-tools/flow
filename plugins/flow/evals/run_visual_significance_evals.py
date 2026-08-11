@@ -399,7 +399,16 @@ def main() -> int:
                         {"a11yFilePatterns": {}, "uiFilePatterns": "UI"},
                         {"a11yFilePatterns": 0, "uiFilePatterns": "UI"},
                         {"a11yFilePatterns": False, "uiFilePatterns": "UI"},
-                        {"a11yFilePatterns": None, "uiFilePatterns": "UI"}):
+                        {"a11yFilePatterns": None, "uiFilePatterns": "UI"},
+                        # TRUTHY non-strings. The falsy ones above agree by accident
+                        # (jq's `// ""` collapses them); these are the shapes that
+                        # actually diverged under bare Python truthiness, and an array
+                        # is the obvious hand-edit since most pattern knobs take lists.
+                        {"a11yFilePatterns": ["\\.tsx$"], "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": {"a": 1}, "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": 1, "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": True, "uiFilePatterns": "UI"},
+                        {"visualFilePatterns": ["x"], "uiFilePatterns": "UI"}):
                 shell_src = _jq_source(tmp, JQ_SRC_EXPR, cfg)
                 _, py_src = fp_resolve(cfg, FP_A11Y)
                 check(f"fb79-jq-matches-python:{json.dumps(cfg, sort_keys=True)}",
@@ -435,6 +444,28 @@ def main() -> int:
         check("fb79-per-consumer-slots-have-no-default",
               per_consumer_defaults == {"visualFilePatterns": False, "a11yFilePatterns": False},
               f"per-consumer slots must have no schema default: {per_consumer_defaults}")
+
+        # 10b-10. BROKEN INSTALL. No eval exercised the import-failure branch at all,
+        #         so the one change on this branch that alters a SHIP-BLOCKING verdict
+        #         was unpinned. Fails CLOSED on a UI project; still lets uiSurface:false
+        #         win, because that gate is documented everywhere as unconditional.
+        import shutil as _shutil
+        fp_src = FP_LIB / "file_patterns.py"
+        hidden = Path(tmp) / "file_patterns.py.hidden"
+        _shutil.move(str(fp_src), str(hidden))
+        try:
+            for cfg, want_sig in (({"uiSurface": True}, True), ({"uiSurface": False}, False)):
+                rc, o = run(tmp, config=cfg, files="M\tsrc/Button.tsx")
+                label = "ui" if want_sig else "headless"
+                check(f"fb79-broken-install-fails-closed:{label}",
+                      rc == 2 and o.get("visual_significant") is want_sig
+                      and o.get("ui_surface") is want_sig,
+                      f"expected rc=2 + visual_significant={want_sig}: rc={rc} {o}")
+                check(f"fb79-broken-install-names-remedy:{label}",
+                      any("Reinstall the plugin" in sig for sig in o.get("visual_signals", [])),
+                      f"the warning must name the fix: {o.get('visual_signals')}")
+        finally:
+            _shutil.move(str(hidden), str(fp_src))
 
         # 10c. A change in the #else (RELEASE) branch of `#if DEBUG` DOES ship —
         #      must still count as significant.

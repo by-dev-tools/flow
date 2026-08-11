@@ -87,16 +87,29 @@ def resolve(cfg, consumer):
     value (or `DEFAULT_SOURCE`) — callers surface it in their signals so an
     operator can see *which* slot produced the scoping they are looking at.
 
-    Truthiness (not `is not None`) decides, matching the pre-split
-    `cfg.get("uiFilePatterns") or DEFAULT_UI_PATTERN` idiom exactly: an empty
-    string falls through to the next link rather than compiling to a
-    match-everything regex.
+    A slot counts as SET only when it holds a non-empty string. Two reasons, and
+    the second is the one that bites:
+
+    1. An empty string falls through to the next link rather than compiling to a
+       match-everything regex — matching the pre-split `cfg.get(...) or DEFAULT`
+       idiom for every value the schema actually permits.
+    2. A non-string (array, object, number, `true`) also falls through, because
+       the jq mirror tests `type == "string"` and CANNOT select one. Bare
+       truthiness here would accept `["\\.tsx$"]` while jq skipped it, so the two
+       runtimes would resolve DIFFERENT slots for one config — the a11y review
+       scoping itself with one pattern while the audit confirms that skip with
+       another. That is the wrong-ruler failure this whole split exists to
+       remove, so the two "is it set?" tests must be the same test.
+
+    Note this is not a back-compat change: pre-split, a non-string slot reached
+    `re.compile` and raised an uncaught `TypeError`, so no working configuration
+    depended on it.
     """
     cfg = cfg or {}
     own = CONSUMER_SLOT[consumer]
     for slot in (own, SHARED_SLOT):
         val = cfg.get(slot)
-        if val:
+        if isinstance(val, str) and val:
             return val, slot
     return DEFAULT_UI_PATTERN, DEFAULT_SOURCE
 

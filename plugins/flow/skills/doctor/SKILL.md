@@ -5,7 +5,7 @@ description: >
   current project. Runs a punch-list of PASS/FAIL checks: marketplace
   registered under the canonical 'flow' name, flow@flow enabled, project-root
   flow.config.json present + parses + matches the v1.2+ schema, no skill composes
-  with a `disable-model-invocation` skill (a call the runtime rejects), all 30
+  with a `disable-model-invocation` skill (a call the runtime rejects), all 32
   slots have sensible values, any declared `statusDocs` status surfaces exist + are
   fenced, any undeclared `statusSurfaceCandidates` that carry status content are
   flagged for opt-in, any open PR for HEAD is body↔draft coherent (no stale
