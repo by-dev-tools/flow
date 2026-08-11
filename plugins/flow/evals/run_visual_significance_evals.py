@@ -22,6 +22,7 @@ deterministic — no git state dependency. Stdlib only.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -54,6 +55,108 @@ def run(tmp, *, config, files, diff=None, plan=None, extra=None):
     except ValueError:
         out = {"_parse_error": proc.stdout, "_stderr": proc.stderr}
     return proc.returncode, out
+
+
+# --- FB-0079 fixtures: the per-consumer pattern split -------------------------
+# Modelled on the measured iOS/SwiftUI consumer where one slot could not answer
+# both questions. `Insight/` had to be included for a11y (it builds the string
+# VoiceOver reads), which dragged its pure-persistence neighbour into the VISUAL
+# verdict; `Data/MockSleep.swift` had to be excluded for a11y (no a11y surface)
+# even though it decides what the chart draws.
+A11Y_ONLY_FILE = "Insight/InsightCacheStore.swift"     # a11y surface, no render path
+VISUAL_ONLY_FILE = "Data/MockSleep.swift"              # render path, no a11y surface
+VIEWS_FILE = "Views/HomeView.swift"                    # both
+
+# `uiFilePatterns` here is the COMPROMISE the consumer was actually forced into
+# pre-split: it had to include `Insight/` to make the a11y review fire, which is
+# what dragged Insight's persistence files into the visual verdict. Keeping it in
+# the fixture is what makes these cases RED against the pre-split resolver — drop
+# it and the old code reaches the built-in default, which doesn't match `.swift`,
+# and the assertions would pass for the wrong reason.
+SPLIT_CFG = {
+    "uiSurface": True,
+    "uiFilePatterns": r"(^|/)(Views|Insight)/.*\.swift$",
+    "a11yFilePatterns": r"(^|/)(Views|Insight)/.*\.swift$",
+    "visualFilePatterns": r"(^|/)(Views|Data)/.*\.swift$",
+}
+
+
+A11Y_SKILL = HERE.parent / "skills" / "accessibility-review" / "SKILL.md"
+SCHEMA = HERE.parent / "schema" / "flow.config.schema.json"
+FP_LIB = HERE.parent / "skills" / "verify-build" / "lib"
+sys.path.insert(0, str(FP_LIB))
+from file_patterns import (  # type: ignore  # noqa: E402
+    resolve as fp_resolve, A11Y as FP_A11Y, DEFAULT_SOURCE as FP_DEFAULT_SOURCE,
+    DEFAULT_UI_PATTERN as FP_DEFAULT_UI_PATTERN)
+
+
+def _extract_jq_src():
+    """Pull the LIVE `UI_PATTERN_SRC=$(jq -r '<expr>' ...)` expression out of the
+    a11y SKILL. Extracting beats hard-coding a copy here: a copy is a third
+    implementation of the same chain, which is the fan-out the check exists to
+    catch. Returns None if the line moved — the caller fails loudly rather than
+    silently skipping (a vacuous pass is the FB-0010 silent-skip class)."""
+    try:
+        text = A11Y_SKILL.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    # Anchored on the `# flow:jq-slot-resolution` marker rather than the shell
+    # variable name, so renaming the variable does not trip the guard — but deleting
+    # the resolution line still does.
+    m = re.search(r"#\s*flow:jq-slot-resolution\b.*?=\$\(jq -r '(.+?)' flow\.config\.json",
+                  text, re.S)
+    return m.group(1) if m else None
+
+
+JQ_SRC_EXPR = _extract_jq_src()
+
+
+def _extract_shell_defaults():
+    """Every `UI_PATTERN='<literal>'` fallback assignment in the a11y SKILL. There
+    are two (the unset branch and the invalid-regex branch) and BOTH must equal
+    DEFAULT_UI_PATTERN — a fix applied to one and not the other is the fan-out."""
+    try:
+        text = A11Y_SKILL.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return re.findall(r"UI_PATTERN='([^']+)'", text)
+
+
+def _schema_default():
+    try:
+        props = json.loads(SCHEMA.read_text(encoding="utf-8"))["properties"]
+    except (OSError, ValueError, KeyError):
+        return None, None
+    return (props.get("uiFilePatterns", {}).get("default"),
+            {k: ("default" in props.get(k, {}))
+             for k in ("visualFilePatterns", "a11yFilePatterns")})
+
+
+def _have_jq():
+    try:
+        return subprocess.run(["jq", "--version"], capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
+def _jq_source(tmp, expr, cfg):
+    """Run the extracted jq expression over `cfg`; return the slot name it picks
+    (mirroring the SKILL's own `[ -z ]` fallback to 'built-in default')."""
+    p = Path(tmp) / "jqcfg.json"
+    p.write_text(json.dumps(cfg), encoding="utf-8")
+    out = subprocess.run(["jq", "-r", expr, str(p)], capture_output=True, text=True)
+    val = out.stdout.strip()
+    return val or FP_DEFAULT_SOURCE
+
+
+def swift_diff(path):
+    """A unified diff carrying a real (non-comment, non-whitespace) render delta."""
+    return (f"diff --git a/{path} b/{path}\n"
+            f"--- a/{path}\n"
+            f"+++ b/{path}\n"
+            "@@ -1,3 +1,3 @@\n"
+            "-    let barHeight: CGFloat = 12\n"
+            "+    let barHeight: CGFloat = 18\n")
 
 
 REAL_TSX_DIFF = """\
@@ -203,6 +306,179 @@ def main() -> int:
             any("#if DEBUG" in s for s in o.get("visual_signals", [])),
             f"{o}",
         )
+
+        # --- FB-0079: the per-consumer pattern split -------------------------
+        # 10b-1. BACK-COMPAT (the load-bearing one). A project that sets ONLY
+        #        uiFilePatterns must behave exactly as it did pre-split: the
+        #        shared slot still drives the VISUAL verdict, both ways.
+        ui_only = {"uiSurface": True, "uiFilePatterns": r"(^|/)(Views|Insight)/.*\.swift$"}
+        rc, o = run(tmp, config=ui_only, files=f"M\t{VIEWS_FILE}", diff=swift_diff(VIEWS_FILE))
+        check("fb78-backcompat-ui-only-matches", o.get("visual_significant") is True, f"{o}")
+        rc, o = run(tmp, config=ui_only, files=f"M\t{VISUAL_ONLY_FILE}",
+                    diff=swift_diff(VISUAL_ONLY_FILE))
+        check("fb78-backcompat-ui-only-excludes",
+              o.get("visual_significant") is False,
+              f"uiFilePatterns must still be the visual ruler when it is the only slot set: {o}")
+
+        # 10b-2. The consumer's actual over-flagging bug. A file with an a11y
+        #        surface but NO render path must NOT be visually significant once
+        #        visualFilePatterns excludes it — even though a11yFilePatterns
+        #        (correctly) includes it. Pre-split this was forced to true.
+        rc, o = run(tmp, config=SPLIT_CFG, files=f"M\t{A11Y_ONLY_FILE}",
+                    diff=swift_diff(A11Y_ONLY_FILE))
+        check("fb78-a11y-only-file-not-visual",
+              o.get("visual_significant") is False,
+              f"a11y-surface-only file must not demand visual deliverables: {o}")
+
+        # 10b-3. The mirror. A render-only file IS visually significant even
+        #        though a11yFilePatterns excludes it — no Visual-walk workaround.
+        rc, o = run(tmp, config=SPLIT_CFG, files=f"M\t{VISUAL_ONLY_FILE}",
+                    diff=swift_diff(VISUAL_ONLY_FILE))
+        check("fb78-visual-only-file-is-visual",
+              o.get("visual_significant") is True,
+              f"render-only file must be visually significant without a Visual-walk block: {o}")
+
+        # 10b-4. a11yFilePatterns alone must have ZERO effect on the visual
+        #        verdict — with no visual/ui slot set, the built-in default
+        #        applies, and it does not match .swift.
+        rc, o = run(tmp, config={"uiSurface": True,
+                                 "a11yFilePatterns": r"(^|/)Insight/.*\.swift$"},
+                    files=f"M\t{A11Y_ONLY_FILE}", diff=swift_diff(A11Y_ONLY_FILE))
+        check("fb78-a11y-slot-does-not-leak-into-visual",
+              o.get("visual_significant") is False,
+              f"a11yFilePatterns must not widen the visual pattern: {o}")
+
+        # 10b-5. visualFilePatterns WINS over uiFilePatterns when both are set.
+        rc, o = run(tmp, config={"uiSurface": True,
+                                 "uiFilePatterns": r"(^|/)Insight/.*\.swift$",
+                                 "visualFilePatterns": r"(^|/)Data/.*\.swift$"},
+                    files=f"M\t{A11Y_ONLY_FILE}", diff=swift_diff(A11Y_ONLY_FILE))
+        check("fb78-visual-slot-overrides-shared",
+              o.get("visual_significant") is False,
+              f"visualFilePatterns must take precedence over uiFilePatterns: {o}")
+
+        # 10b-6. The signal NAMES the slot that supplied the pattern — with three
+        #        possible sources, "diff touches uiFilePatterns" would point at the
+        #        wrong knob as often as the right one.
+        rc, o = run(tmp, config=SPLIT_CFG, files=f"M\t{VIEWS_FILE}", diff=swift_diff(VIEWS_FILE))
+        check("fb78-signal-names-source-slot",
+              any("pattern from visualFilePatterns)" in s for s in o.get("visual_signals", [])),
+              f"{o}")
+
+        # 10b-7. An unusable pattern degrades to the default with a warning that
+        #        names the OFFENDING slot, not a generic 'uiFilePatterns'.
+        rc, o = run(tmp, config={"uiSurface": True, "visualFilePatterns": "([unclosed"},
+                    files="M\tsrc/Button.tsx", diff=REAL_TSX_DIFF)
+        check("fb78-invalid-slot-warns-by-name",
+              o.get("visual_significant") is True
+              and any("visualFilePatterns" in s and "[WARN]" in s
+                      for s in o.get("visual_signals", [])),
+              f"invalid visualFilePatterns must warn by name and fall back to the default: {o}")
+
+        # 10b-8. CROSS-RUNTIME JOIN. The resolution chain is implemented twice, in
+        #        two languages: file_patterns.resolve() in Python, and a jq
+        #        expression in accessibility-review/SKILL.md. A "keep these in sync"
+        #        comment is not a check — the first cut of file_patterns.py carried
+        #        exactly such a comment and transcribed the REJECTED jq form, so the
+        #        canonical module contradicted the shipped shell in the same commit.
+        #        This extracts the LIVE expression from the SKILL and runs it.
+        check("fb79-jq-mirror-extractable", JQ_SRC_EXPR is not None,
+              f"could not extract UI_PATTERN_SRC's jq from {A11Y_SKILL}; if the line was "
+              f"reworded, update _extract_jq_src — do not delete this check")
+        # NON-STRING shapes are the point, not padding: jq counts [], {} and 0 as
+        # non-empty while Python truthiness does not, so an un-guarded jq select makes
+        # the a11y gate and the audit resolve DIFFERENT slots for the same config.
+        # The schema forbids these values; a hand-edited config can still carry them,
+        # which is why compile_for catches TypeError at all.
+        if JQ_SRC_EXPR and _have_jq():
+            for cfg in ({}, {"uiFilePatterns": "UI"}, {"a11yFilePatterns": "A11Y"},
+                        {"uiFilePatterns": "UI", "a11yFilePatterns": "A11Y"},
+                        {"a11yFilePatterns": "", "uiFilePatterns": "UI"},
+                        {"uiFilePatterns": "", "a11yFilePatterns": ""},
+                        {"a11yFilePatterns": [], "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": {}, "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": 0, "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": False, "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": None, "uiFilePatterns": "UI"},
+                        # TRUTHY non-strings. The falsy ones above agree by accident
+                        # (jq's `// ""` collapses them); these are the shapes that
+                        # actually diverged under bare Python truthiness, and an array
+                        # is the obvious hand-edit since most pattern knobs take lists.
+                        {"a11yFilePatterns": ["\\.tsx$"], "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": {"a": 1}, "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": 1, "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": True, "uiFilePatterns": "UI"},
+                        {"visualFilePatterns": ["x"], "uiFilePatterns": "UI"}):
+                shell_src = _jq_source(tmp, JQ_SRC_EXPR, cfg)
+                _, py_src, _ = fp_resolve(cfg, FP_A11Y)
+                check(f"fb79-jq-matches-python:{json.dumps(cfg, sort_keys=True)}",
+                      shell_src == py_src,
+                      f"shell resolved slot {shell_src!r}, Python resolved {py_src!r} — "
+                      f"the a11y gate and the Python resolver disagree about which slot wins")
+        elif JQ_SRC_EXPR:
+            # NOT a vacuous pass: jq is a declared prerequisite of the whole pipeline
+            # (/flow:ship Step 1.5 hard-blocks without it), so its absence here means
+            # the environment changed — which is signal, not an exemption. A green
+            # check name that measured nothing is the FB-0010 silent-skip class.
+            check("fb79-jq-matches-python", False,
+                  "jq not on PATH — cross-runtime parity is UNVERIFIED, not clean")
+
+        # 10b-9. The DEFAULT literal is the other half of the cross-runtime contract.
+        #        Parity on which SLOT wins is worthless if the two runtimes disagree
+        #        about what the fallback pattern IS. Add an extension in one place and
+        #        this fails, instead of CI staying green while the a11y gate and the
+        #        visual predicate disagree about what a UI file is.
+        shell_defaults = _extract_shell_defaults()
+        check("fb79-shell-defaults-extractable", len(shell_defaults) >= 2,
+              f"expected >=2 UI_PATTERN='...' fallbacks in {A11Y_SKILL}, found "
+              f"{len(shell_defaults)} — if the shell was restructured, update "
+              f"_extract_shell_defaults; do not delete this check")
+        for i, lit in enumerate(shell_defaults):
+            check(f"fb79-shell-default-matches-python:{i}", lit == FP_DEFAULT_UI_PATTERN,
+                  f"shell fallback {lit!r} != DEFAULT_UI_PATTERN {FP_DEFAULT_UI_PATTERN!r}")
+        schema_default, per_consumer_defaults = _schema_default()
+        check("fb79-schema-default-matches-python", schema_default == FP_DEFAULT_UI_PATTERN,
+              f"schema uiFilePatterns.default {schema_default!r} != {FP_DEFAULT_UI_PATTERN!r}")
+        # The per-consumer slots must NOT declare a default — they fall back to
+        # uiFilePatterns, and a stated default would contradict the chain.
+        check("fb79-per-consumer-slots-have-no-default",
+              per_consumer_defaults == {"visualFilePatterns": False, "a11yFilePatterns": False},
+              f"per-consumer slots must have no schema default: {per_consumer_defaults}")
+
+        # 10b-10. BROKEN INSTALL. No eval exercised the import-failure branch at all,
+        #         so the one change on this branch that alters a SHIP-BLOCKING verdict
+        #         was unpinned. Fails CLOSED on a UI project; still lets uiSurface:false
+        #         win, because that gate is documented everywhere as unconditional.
+        # Simulate the broken install on a COPY of the lib — never by mutating the
+        # working tree. A try/finally restore is exception-safe but not signal-safe:
+        # a cancelled CI run or SIGTERM between the move and the restore would leave
+        # the checkout broken. Copy, delete from the copy, run the copied script.
+        import shutil as _shutil
+        broken_lib = Path(tmp) / "broken-lib"
+        _shutil.copytree(str(FP_LIB), str(broken_lib))
+        (broken_lib / "file_patterns.py").unlink()
+        broken_script = broken_lib / "visual-significance.py"
+        for cfg, want_sig in (({"uiSurface": True}, True), ({"uiSurface": False}, False)):
+            label = "ui" if want_sig else "headless"
+            d = Path(tmp) / f"bi-{label}"
+            d.mkdir(exist_ok=True)
+            (d / "flow.config.json").write_text(json.dumps(cfg), encoding="utf-8")
+            (d / "files.txt").write_text("M\tsrc/Button.tsx", encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(broken_script), "--config", str(d / "flow.config.json"),
+                 "--files-from", str(d / "files.txt")],
+                capture_output=True, text=True, check=False)
+            try:
+                o = json.loads(proc.stdout)
+            except ValueError:
+                o = {"_stdout": proc.stdout, "_stderr": proc.stderr}
+            check(f"fb79-broken-install-fails-closed:{label}",
+                  proc.returncode == 2 and o.get("visual_significant") is want_sig
+                  and o.get("ui_surface") is want_sig,
+                  f"expected rc=2 + visual_significant={want_sig}: rc={proc.returncode} {o}")
+            check(f"fb79-broken-install-names-remedy:{label}",
+                  any("Reinstall the plugin" in sig for sig in o.get("visual_signals", [])),
+                  f"the warning must name the fix: {o.get('visual_signals')}")
 
         # 10c. A change in the #else (RELEASE) branch of `#if DEBUG` DOES ship —
         #      must still count as significant.

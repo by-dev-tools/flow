@@ -11,8 +11,10 @@ is no buffer to read (verify-build skipped/short-circuited).
 
 A change is **visually significant** when ALL of:
   1. `uiSurface != false`  (the project declares a UI surface), AND
-  2. the diff (committed + uncommitted + untracked) touches a `uiFilePatterns`
-     file OR adds/modifies an image / font / asset file, AND
+  2. the diff (committed + uncommitted + untracked) touches a file matching this
+     consumer's pattern — `visualFilePatterns` → `uiFilePatterns` → the built-in
+     default (FB-0079; see lib/file_patterns.py) — OR adds/modifies an image /
+     font / asset file, AND
   3. it is NOT a pure no-render-delta refactor (rename-only / comment-only /
      whitespace-only / punctuation-only / DEBUG-only-conditional change to
      those files — a hunk entirely inside a `#if DEBUG` / `#ifdef DEBUG`
@@ -34,10 +36,13 @@ Output (stdout, JSON):
     "reason": "<one-line summary>"
   }
 
-Always exits 0 with a well-formed JSON verdict; a malformed config / unreadable
-plan degrades to a documented default (uiSurface defaults TRUE — the
+Exits 0 with a well-formed JSON verdict; a malformed config / unreadable plan
+degrades to a documented default (uiSurface defaults TRUE — the
 project-declares-UI assumption) with a `[WARN]` signal, never a crash and never a
-silent skip.
+silent skip. The one non-zero exit is an incomplete plugin install (lib/
+file_patterns.py unimportable): stdout is still valid JSON, and the verdict fails
+CLOSED (`visual_significant: true`) so a broken install demands the visual
+deliverables rather than silently skipping the gate.
 
 Two input modes:
   - GIT mode (default): collects changed files + diff from git in CWD vs --base.
@@ -66,9 +71,23 @@ try:
 except Exception:  # pragma: no cover - defensive; walk_extract ships alongside
     extract_block = None
 
-# Default UI-file pattern — MUST stay in sync with accessibility-review/SKILL.md's
-# UI_PATTERN default (the shared uiFilePatterns contract value, FB-0010).
-DEFAULT_UI_PATTERN = r"\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$"
+# Pattern resolution lives in file_patterns (FB-0079) — ONE definition of the
+# visualFilePatterns → uiFilePatterns → default chain, shared with
+# audit-skips/lib/skip-audit-checks.py so the two cannot drift. Guarded like
+# walk_extract above: a partial plugin dir must not raise an ImportError
+# traceback, because this script's only caller (skip-audit-checks.py) treats a
+# crash as `visual_significant: false` — a FAIL-OPEN skip of the very gate this
+# file exists to enforce. Missing sibling ⇒ main() emits a loud, fail-CLOSED
+# verdict instead (see `_PATTERNS_IMPORT_ERROR` handling).
+_PATTERNS_IMPORT_ERROR = None
+try:
+    from file_patterns import VISUAL, compile_for  # type: ignore
+except Exception as _exc:  # pragma: no cover - defensive; file_patterns ships alongside
+    # No sentinel rebinds: main() returns on _PATTERNS_IMPORT_ERROR before touching
+    # either name, so a NameError is unreachable — and a `VISUAL = "visual"` fallback
+    # would re-hardcode the very literal file_patterns.py says never to write bare.
+    _PATTERNS_IMPORT_ERROR = _exc
+
 # Image / font / asset files — a visual change can be a pure asset swap with no
 # source edit. Generic, project-agnostic; overridable via --asset-patterns.
 DEFAULT_ASSET_PATTERN = r"\.(png|jpe?g|gif|svg|webp|avif|ico|bmp|woff2?|ttf|otf|eot)$"
@@ -188,7 +207,7 @@ def collect_changes_explicit(files_from):
     return changes
 
 
-def _diff_content_changed(diff_text, ui_re, asset_re):
+def _diff_content_changed(diff_text, visual_re, asset_re):
     """Returns (changed, debug_only_skipped):
       - changed: True if any +/- line inside a UI/asset file's hunk is a real
         render delta (not comment / whitespace / pure-punctuation / DEBUG-only).
@@ -212,7 +231,7 @@ def _diff_content_changed(diff_text, ui_re, asset_re):
             p = line[4:].strip()
             if p.startswith("b/"):
                 p = p[2:]
-            cur_relevant = bool(ui_re.search(p) or asset_re.search(p)) and p != "/dev/null"
+            cur_relevant = bool(visual_re.search(p) or asset_re.search(p)) and p != "/dev/null"
             pp_stack = []  # preprocessor nesting does not carry across files
             continue
         if line.startswith("--- ") or line.startswith("diff ") or line.startswith("@@"):
@@ -268,16 +287,44 @@ def main(argv):
     ap.add_argument("--flag-reason", default=None, help="reason recorded for --flag-significant")
     args = ap.parse_args(argv[1:])
 
+    # A missing file_patterns sibling means we cannot resolve WHICH files count as
+    # visual. Emit a well-formed, FAIL-CLOSED verdict (significant=true demands the
+    # visual deliverables; a `false` here would silently skip the gate) and exit
+    # non-zero. stdout stays valid JSON so skip-audit-checks.py — which parses
+    # stdout regardless of exit status — reads the loud verdict, not a crash.
+    if _PATTERNS_IMPORT_ERROR is not None:
+        # Read the config FIRST. uiSurface:false is documented everywhere as
+        # unconditional — "a project that declares NO UI surface is never visually
+        # significant". Failing closed PAST that gate hands a headless project an
+        # unsatisfiable visual-deliverable blocker (ship Step 7a branches on this
+        # value with no uiSurface guard of its own) whose real cause is a broken
+        # install. load_config has no dependency on file_patterns.
+        _cfg, _cfg_warnings = load_config(args.config)
+        _uis = ui_surface(_cfg)
+        print(json.dumps({
+            "visual_significant": _uis,
+            "ui_surface": _uis,
+            "override": None,
+            "visual_signals": _cfg_warnings + [
+                f"[WARN] cannot import lib/file_patterns.py ({_PATTERNS_IMPORT_ERROR}) — "
+                f"the flow plugin install is incomplete. Reinstall the plugin. Until then "
+                f"this change is treated as needing visual review rather than skipping the "
+                f"check" + ("" if _uis else ", except that this project declares no UI "
+                            "surface (uiSurface:false), which still wins") + ".",
+            ],
+            "reason": "could not load the UI-file patterns, so this is a safe default, not a measurement",
+        }, indent=2))
+        return 2
+
     cfg, signals = load_config(args.config)
     uis = ui_surface(cfg)
 
-    ui_pat = cfg.get("uiFilePatterns") or DEFAULT_UI_PATTERN
+    # visualFilePatterns → uiFilePatterns → default (FB-0079). `source` names the
+    # slot that actually supplied the pattern so the signals show an operator which
+    # knob produced this scoping.
+    visual_re, visual_src, pat_warnings = compile_for(cfg, VISUAL)
+    signals.extend(pat_warnings)
     asset_pat = args.asset_patterns or DEFAULT_ASSET_PATTERN
-    try:
-        ui_re = re.compile(ui_pat)
-    except re.error:
-        signals.append(f"[WARN] uiFilePatterns invalid regex ({ui_pat!r}); using default")
-        ui_re = re.compile(DEFAULT_UI_PATTERN)
     try:
         asset_re = re.compile(asset_pat)
     except re.error:
@@ -350,22 +397,23 @@ def main(argv):
     else:
         base = resolve_base(args.base)
         changes = collect_changes_git(base)
-        ui_asset_paths = [p for st, p in changes if ui_re.search(p) or asset_re.search(p)]
+        visual_asset_paths = [p for st, p in changes if visual_re.search(p) or asset_re.search(p)]
         diff_text = ""
-        if ui_asset_paths:
-            diff_text = _git(["diff", f"{base}...HEAD", "-M", "--", *ui_asset_paths]) \
-                + _git(["diff", "HEAD", "-M", "--", *ui_asset_paths])
+        if visual_asset_paths:
+            diff_text = _git(["diff", f"{base}...HEAD", "-M", "--", *visual_asset_paths]) \
+                + _git(["diff", "HEAD", "-M", "--", *visual_asset_paths])
 
     # --- override path: force-true, but still attach heuristic evidence ---
     if override_signal:
         signals.append(f"{override_signal} → forces visually-significant")
 
     # --- heuristic evidence ---
-    ui_hits = [p for st, p in changes if ui_re.search(p)]
-    asset_hits = [p for st, p in changes if asset_re.search(p) and not ui_re.search(p)]
-    matched = ui_hits + asset_hits
-    if ui_hits:
-        signals.append("diff touches uiFilePatterns: " + ", ".join(sorted(set(ui_hits))[:8]))
+    visual_hits = [p for st, p in changes if visual_re.search(p)]
+    asset_hits = [p for st, p in changes if asset_re.search(p) and not visual_re.search(p)]
+    matched = visual_hits + asset_hits
+    if visual_hits:
+        signals.append(f"diff touches UI files (pattern from {visual_src}): "
+                       + ", ".join(sorted(set(visual_hits))[:8]))
     if asset_hits:
         signals.append("diff adds/modifies asset files: " + ", ".join(sorted(set(asset_hits))[:8]))
 
@@ -373,8 +421,8 @@ def main(argv):
     # render delta by construction (its content is all-added). For modified files
     # we inspect the diff: if NONE of the matched files carry a content delta, the
     # change is rename-only / comment-only / whitespace-only ⇒ not significant.
-    new_files = [p for st, p in changes if st in ("A", "U") and (ui_re.search(p) or asset_re.search(p))]
-    diff_changed, debug_only_skipped = _diff_content_changed(diff_text, ui_re, asset_re)
+    new_files = [p for st, p in changes if st in ("A", "U") and (visual_re.search(p) or asset_re.search(p))]
+    diff_changed, debug_only_skipped = _diff_content_changed(diff_text, visual_re, asset_re)
     content_changed = bool(new_files) or diff_changed
     # An asset whose path matched but which only appears under a rename (R) with no
     # content, and no diff body, is caught here: matched but content_changed False.

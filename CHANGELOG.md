@@ -10,7 +10,7 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
-## v1.26.0 — 2026-08-10
+## v1.27.0 — 2026-08-10
 
 **Flow's ephemeral scratch moves out of `/tmp` into a repo-local `.flow/` directory — which restores the skip-legitimacy gate (inert since v1.13.0) and ends cross-project clobbering of reviewer inputs.**
 
@@ -22,6 +22,19 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 - New `run_scratch_isolation_evals.py` (56 checks, wired into CI) — the **first** harness here to extract and *execute* a SKILL.md `!`-block, which is precisely why the transport bug survived.
 
 **Behavior change:** the skip-legitimacy gate runs for the first time since v1.13.0 — ships that used to pass Step 2a silently will now surface `[skip-audit]` findings, and some will open as drafts that previously did not. That is the fix working, but it is a real change in what you will see. Two config **defaults changed** too: `verifyFindingsPath` `/tmp/flow-verify-findings.json` → `.flow/verify-findings.json`, and `verifyReportPath` `/tmp/flow-verify-report.html` → `.flow/verify-report.html`. Projects that set these explicitly are unaffected. `.flow/` self-ignores (it writes its own `.gitignore`), so it never dirties `git status` and is never committed.
+
+## v1.26.0 — 2026-08-03
+
+**Two file-pattern questions, two slots — `uiFilePatterns` no longer forces one regex to answer both.**
+
+- **What you get.** Two new optional slots: `visualFilePatterns` (does this change what the app *draws*?) and `a11yFilePatterns` (does this change something with an *accessibility surface*?). Each falls back to `uiFilePatterns`, so **if you set only `uiFilePatterns`, nothing about your project changes** — the new slots are opt-in.
+- **Why it was broken.** One slot gated two reviewers that ask different questions of the same diff, so every scoping choice was a forced trade. On a real iOS project: the directory that builds the string VoiceOver reads had to be *included* for the a11y review, which then demanded screenshots for pure-persistence files that draw nothing; the mock-data file that decides a chart's shape had to be *excluded* for a11y, so its genuine visual changes went unflagged and needed a hand-written workaround. Neither question was expressible.
+- **Also fixed:** `/flow:audit-skips` now confirms each reviewer's skip against the pattern *that reviewer used*. Previously one merged field backed both checks, so once the patterns could disagree it would have confirmed an accessibility skip using the visual pattern — and reported a confident verdict measured with the wrong ruler.
+- Pinned by new assertions across two harnesses, each confirmed to fail against the old code — the two headline cases reproduce the exact symptoms reported. The two runtimes that implement the fallback chain (Python and the shell gate's jq) are now compared against each other automatically, so they can't drift apart again.
+
+**Breaking changes:** none. Schema grows to 32 slots; every existing config resolves exactly as before.
+
+---
 
 ## v1.25.0 — 2026-08-01
 

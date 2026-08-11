@@ -254,11 +254,21 @@ PR. Do not invent findings to appear thorough.
 Produce EXACTLY this shape (no prose before or after):
 
 ```
+[⚠️ PATTERN-WARNING: <warning>]        ← only when context.pattern_warnings is non-empty
 SKIP-AUDIT SUMMARY
 - <stage>: <LEGITIMATE | SHOULD-RE-RUN> — <one-line reason>[ · auto-resolvable: re-run | decision-required]
 - ...
 RESOLUTION: <all N stage skips LEGITIMATE — proceed | M SHOULD-RE-RUN (A auto-resolvable, D decision-required)>
 ```
+
+**`PATTERN-WARNING` (FB-0079).** If `context.pattern_warnings` is non-empty, emit one
+`⚠️ PATTERN-WARNING: <warning>` line per entry ABOVE the summary. The engine resolves each
+reviewer's file pattern through `visualFilePatterns`/`a11yFilePatterns` → `uiFilePatterns` →
+built-in default; an unusable pattern degrades to the default and records the warning there.
+Unlike `root_error`/`engine_error`, this is a **degraded measurement, not an absent one** — the
+verdicts below are still produced and still meaningful, but they were measured with the built-in
+pattern rather than the project's own. Say so rather than reporting a confident verdict whose
+ruler silently changed. This is the one exception to "no prose before or after".
 
 When every stage is LEGITIMATE, the body lists each stage and the `RESOLUTION:` line
 reads `all N stage skips LEGITIMATE — proceed`. When ≥1 stage is SHOULD-RE-RUN, the

@@ -29,9 +29,13 @@
   "$comment-uiSurface": "Whether this project ships a UI. If false, /flow:accessibility-review exits early instead of running an empty audit. Backend / CLI / library projects: set to false.",
   "uiSurface": true,
 
-  "$comment-diff-patterns": "Extended-regex (grep -E) patterns for per-diff early-exit. sourceFilePatterns: /flow:security-review skips a diff with no source files (docs-only PR). uiFilePatterns: /flow:accessibility-review skips a diff with no UI files. Both ship sensible cross-language defaults in the schema — set ONLY to override for an unusual project. Shown here so you know they exist.",
+  "$comment-diff-patterns": "Extended-regex (grep -E) patterns for per-diff early-exit. sourceFilePatterns: /flow:security-review skips a diff with no source files (docs-only PR). uiFilePatterns: the SHARED UI pattern — both /flow:accessibility-review and /flow:verify-build's visual-significance predicate fall back to it. All ship sensible cross-language defaults in the schema — set ONLY to override for an unusual project. Shown here so you know they exist.",
   "sourceFilePatterns": "\\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\\.|$)",
   "uiFilePatterns": "\\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$",
+
+  "$comment-split-ui-patterns": "OPTIONAL per-consumer overrides (FB-0079). uiFilePatterns above gates two reviewers that ask DIFFERENT questions: visual-significance asks 'does this change what the app DRAWS?', accessibility-review asks 'does this change something with an ACCESSIBILITY SURFACE?'. Those sets are not the same set, so one pattern can force you to mis-scope one reviewer to serve the other. Set either slot below to scope that reviewer independently; each resolves <own slot> -> uiFilePatterns -> built-in default, so leaving both unset is exactly the pre-split behavior. Worked example (iOS/SwiftUI): a store that builds the string VoiceOver reads belongs in a11yFilePatterns but not visualFilePatterns; a mock-data file that decides a chart's shape is the reverse. Both are shown below as $comment-example- keys (bootstrap.sh strips every $comment* key, so they never land in a generated config). Drop the $comment-example- prefix to activate one.",
+  "$comment-example-visualFilePatterns": "(^|/)(App|Views|DesignSystem|Charts)/.*\\.swift$",
+  "$comment-example-a11yFilePatterns": "(^|/)(App|Views|DesignSystem|Insight)/.*\\.swift$",
 
   "$comment-reviewLenses": "Which /flow:staff-review lenses spawn in parallel. Removing a lens means it won't run — document why in your plan doc.",
   "reviewLenses": ["staff-engineer", "ux-designer", "design-engineer", "push-further"],

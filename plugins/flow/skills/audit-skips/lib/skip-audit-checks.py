@@ -64,12 +64,20 @@ try:
     from walk_extract import extract_block  # type: ignore
 except Exception:
     extract_block = None
+# ONE definition of the per-consumer pattern chain, shared with
+# visual-significance.py (FB-0079). Previously this file kept its own copy of
+# DEFAULT_UI_PATTERN, hand-synced by author memory — the FB-0010 fan-out class.
+_PATTERNS_IMPORT_ERROR = None
+try:
+    from file_patterns import VISUAL, A11Y, compile_for  # type: ignore
+except Exception as _exc:  # pragma: no cover - defensive; file_patterns ships alongside
+    # No sentinel rebinds — main() returns on _PATTERNS_IMPORT_ERROR before use.
+    _PATTERNS_IMPORT_ERROR = _exc
 
 DEFAULT_SOURCE_PATTERN = (
     r"\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$"
     r"|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)"
 )
-DEFAULT_UI_PATTERN = r"\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$"
 
 # Stages whose SHOULD-RE-RUN is cheaply re-runnable by ship (re-invoke the Skill);
 # everything else routes to the draft manifest as decision-required.
@@ -253,7 +261,11 @@ def classify(stage, ctx):
                     return "LEGITIMATE", "verifyEnabled=false — project opted out", auto
                 return "SHOULD-RE-RUN", "skip claims verifyEnabled=false but it is not set false", auto
             if _reason_has(skip, "doc-only", "no behavior", "docs-only", "no source"):
-                if not diff["touches_source"] and not diff["touches_ui"]:
+                # UNION, deliberately: "doc-only" is a claim about the whole diff,
+                # so it must be refused if EITHER UI surface is touched. Checking
+                # only one pattern would let a diff that is visual-but-not-a11y
+                # (or the reverse) buy a doc-only skip it hasn't earned.
+                if not diff["touches_source"] and not diff["touches_visual"] and not diff["touches_a11y"]:
                     return "LEGITIMATE", "diff touches no source/UI files", auto
                 return "SHOULD-RE-RUN", "skip claims doc-only but the diff touches source/UI files", auto
             return "NEEDS-JUDGMENT", f"unrecognized verify-build skip reason: {skip!r}", auto
@@ -291,9 +303,12 @@ def classify(stage, ctx):
                     return "LEGITIMATE", "uiSurface=false — project declares no UI surface", auto
                 return "SHOULD-RE-RUN", "skip claims uiSurface:false but it is not set false", auto
             if _reason_has(skip, "no ui", "non-ui", "no ui in diff"):
-                if not diff["touches_ui"]:
-                    return "LEGITIMATE", "diff touches no UI files", auto
-                return "SHOULD-RE-RUN", "skip claims no UI in diff but the diff touches UI files", auto
+                # The A11Y pattern, never the visual one — /flow:accessibility-review
+                # made this skip decision using `a11yFilePatterns`, so that is the
+                # only ruler that can confirm or refute it (FB-0079).
+                if not diff["touches_a11y"]:
+                    return "LEGITIMATE", "diff touches no a11y-surface files", auto
+                return "SHOULD-RE-RUN", "skip claims no UI in diff but the diff touches a11y-surface files", auto
             return "NEEDS-JUDGMENT", f"unrecognized a11y skip reason: {skip!r}", auto
         return "LEGITIMATE", "ran", auto
 
@@ -360,6 +375,17 @@ def main(argv):
     ap.add_argument("--base", default=None)
     args = ap.parse_args(argv[1:])
 
+    # Same fail-loud contract as the malformed-report path below: without
+    # file_patterns we cannot resolve WHICH files each reviewer scoped itself to,
+    # so every skip verdict would be measured with a guessed ruler. Exit non-zero
+    # with a clean stdout rather than auditing on a fallback nobody declared.
+    if _PATTERNS_IMPORT_ERROR is not None:
+        print(f"skip-audit-checks: cannot import lib/file_patterns.py "
+              f"({_PATTERNS_IMPORT_ERROR}) — the flow plugin install is incomplete, "
+              f"so skip legitimacy cannot be measured. Reinstall the plugin.",
+              file=sys.stderr)
+        return 1
+
     # Load the stages report. A present-but-unreadable/malformed report is a real ERROR, not
     # an empty audit: exit NON-ZERO (diagnostic on stderr, stdout left clean) so the caller —
     # the audit-skips SKILL / ship Step 2a — can tell it apart from an absent handoff and
@@ -379,20 +405,34 @@ def main(argv):
     head_sha = args.head_sha if args.head_sha is not None else _git(["rev-parse", "--short", "HEAD"]).strip()
 
     source_pat = cfg.get("sourceFilePatterns") or DEFAULT_SOURCE_PATTERN
-    ui_pat = cfg.get("uiFilePatterns") or DEFAULT_UI_PATTERN
     try:
         src_re = re.compile(source_pat)
     except re.error:
         src_re = re.compile(DEFAULT_SOURCE_PATTERN)
-    try:
-        ui_re = re.compile(ui_pat)
-    except re.error:
-        ui_re = re.compile(DEFAULT_UI_PATTERN)
+
+    # Each reviewer is cross-checked against the pattern THAT reviewer used
+    # (FB-0079). Auditing an a11y skip against the visual pattern would be a
+    # confidently-wrong verdict measured with the wrong ruler — the split exists
+    # precisely because the two patterns can legitimately disagree.
+    # Carry the resolver's warnings into the emitted report. Dropping them would make
+    # an invalid a11yFilePatterns warn loudly in visual-significance.py and SILENTLY
+    # fall back here — the audit would then confirm an a11y skip against the built-in
+    # default while claiming to measure the project's own pattern.
+    visual_re, _visual_src, visual_warnings = compile_for(cfg, VISUAL)
+    a11y_re, _a11y_src, a11y_warnings = compile_for(cfg, A11Y)
+    pattern_warnings = visual_warnings + a11y_warnings
 
     base = resolve_base(args.base)
     files = collect_files(args.files_from, base)
     touches_source = any(src_re.search(p) for p in files)
-    touches_ui = any(ui_re.search(p) for p in files)
+    touches_visual = any(visual_re.search(p) for p in files)
+    touches_a11y = any(a11y_re.search(p) for p in files)
+    # ONE literal, referenced by both emit sites below (classify's ctx + the report's
+    # context block). Two hand-maintained copies is how this dict went from two keys
+    # to three at one site and not the other.
+    diff_info = {"touches_source": touches_source,
+                 "touches_visual": touches_visual,
+                 "touches_a11y": touches_a11y}
 
     vs = compute_visual_significance(args, args.config)
     visual_significant = bool(vs.get("visual_significant"))
@@ -412,7 +452,7 @@ def main(argv):
     ctx = {
         "branch": branch, "head_sha": head_sha,
         "config": cfg,
-        "diff": {"touches_source": touches_source, "touches_ui": touches_ui},
+        "diff": diff_info,
         "buffer": buf,
         "visual_significant": visual_significant,
         "spec_walk_blocks": spec_blocks,
@@ -444,7 +484,8 @@ def main(argv):
             "branch": branch, "head_sha_short": head_sha,
             "visual_significant": visual_significant,
             "visual_signals": vs.get("visual_signals", []),
-            "diff": {"touches_source": touches_source, "touches_ui": touches_ui},
+            "diff": diff_info,
+            "pattern_warnings": pattern_warnings,
         },
         "config": {"platform": cfg.get("platform"), "uiSurface": cfg.get("uiSurface"),
                    "verifyEnabled": cfg.get("verifyEnabled"),

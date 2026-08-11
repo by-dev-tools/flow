@@ -240,6 +240,120 @@ def main() -> int:
     # stdout — so the audit-skips SKILL / ship Step 2a can tell an engine failure apart from an
     # absent handoff and surface it loudly, instead of the old `return 0` + `{"...","stages":[]}`
     # that collapsed a failure into a silent "nothing to audit" no-op.
+    # --- FB-0079: each reviewer is audited against the pattern IT used ---------
+    # `touches_ui` used to back both the a11y-skip check and the verify-build
+    # doc-only check, so once visualFilePatterns and a11yFilePatterns can disagree,
+    # a merged field would confirm or refute an a11y skip with the VISUAL ruler.
+    # Every case below is constructed so the two patterns disagree about the file —
+    # which is exactly when the pre-split engine returns the opposite verdict.
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        base = {"uiSurface": True,
+                "verifyFindingsPath": str(d / "nope.json"),
+                "visualHistoryPath": str(d / "vh.html")}
+
+        # 1. A file WITH an a11y surface that the visual pattern excludes. The a11y
+        #    review should have run, so its "no UI in diff" skip is illegitimate.
+        #    Pre-split (uiFilePatterns scoped for visual) touches_ui is False and
+        #    this wrongly reads LEGITIMATE.
+        cfg = dict(base, uiFilePatterns=r"(^|/)(Views|Data)/.*\.swift$",
+                   visualFilePatterns=r"(^|/)(Views|Data)/.*\.swift$",
+                   a11yFilePatterns=r"(^|/)(Views|Insight)/.*\.swift$")
+        r = run(tmp, config=cfg,
+                report={"stages": [{"name": "accessibility", "status": "skipped",
+                                    "skip_reason": "no UI in diff"}]},
+                files="M\tInsight/InsightCacheStore.swift")
+        check("fb78-a11y-skip-refused-when-a11y-pattern-matches",
+              verdict_of(r, "accessibility") == "SHOULD-RE-RUN",
+              f"a11y skip must be refused against a11yFilePatterns, not the visual one: {r}")
+
+        # 2. The mirror: a render-only file the a11y pattern excludes. The a11y
+        #    review legitimately skipped. Pre-split (uiFilePatterns widened to cover
+        #    Data/ for visual reasons) touches_ui is True and this wrongly reads
+        #    SHOULD-RE-RUN — a re-run demanded of a review with nothing to review.
+        cfg = dict(base, uiFilePatterns=r"(^|/)(Views|Insight|Data)/.*\.swift$",
+                   visualFilePatterns=r"(^|/)(Views|Data)/.*\.swift$",
+                   a11yFilePatterns=r"(^|/)(Views|Insight)/.*\.swift$")
+        r = run(tmp, config=cfg,
+                report={"stages": [{"name": "accessibility", "status": "skipped",
+                                    "skip_reason": "no UI in diff"}]},
+                files="M\tData/MockSleep.swift")
+        check("fb78-a11y-skip-legit-when-a11y-pattern-excludes",
+              verdict_of(r, "accessibility") == "LEGITIMATE",
+              f"a11y skip must be confirmed against a11yFilePatterns: {r}")
+
+        # 3. The doc-only check takes the UNION. A template with an a11y surface but
+        #    no render path and no source extension: pre-split, touches_ui is False
+        #    and touches_source is False, so "doc-only" reads LEGITIMATE — buying a
+        #    verify-build skip for a diff that changes announced text.
+        cfg = dict(base, uiFilePatterns=r"(^|/)(Views|Data)/.*\.swift$",
+                   visualFilePatterns=r"(^|/)(Views|Data)/.*\.swift$",
+                   a11yFilePatterns=r"\.hbs$")
+        r = run(tmp, config=cfg,
+                report={"stages": [{"name": "verify-build", "status": "skipped",
+                                    "skip_reason": "doc-only diff, no behavior change"}]},
+                files="M\ttemplates/aria-labels.hbs")
+        check("fb78-doc-only-refused-when-only-a11y-surface-touched",
+              verdict_of(r, "verify-build") == "SHOULD-RE-RUN",
+              f"doc-only must be refused if EITHER UI surface is touched: {r}")
+
+        # 4. The emitted contract carries both fields and no merged survivor —
+        #    a consumer reading `touches_ui` would be reading a field whose meaning
+        #    silently changed.
+        diff_obj = (r.get("context") or {}).get("diff") or {}
+        check("fb78-emits-split-diff-fields",
+              set(diff_obj) == {"touches_source", "touches_visual", "touches_a11y"},
+              f"expected exactly the split fields, got {sorted(diff_obj)}")
+
+        # 5. Back-compat: with ONLY uiFilePatterns set, both consumers resolve to it,
+        #    so the pre-split verdicts stand unchanged.
+        cfg = dict(base, uiFilePatterns=r"(^|/)(Views|Insight)/.*\.swift$")
+        r = run(tmp, config=cfg,
+                report={"stages": [{"name": "accessibility", "status": "skipped",
+                                    "skip_reason": "no UI in diff"}]},
+                files="M\tInsight/InsightCacheStore.swift")
+        check("fb78-backcompat-shared-slot-refuses",
+              verdict_of(r, "accessibility") == "SHOULD-RE-RUN", f"{r}")
+        r = run(tmp, config=cfg,
+                report={"stages": [{"name": "accessibility", "status": "skipped",
+                                    "skip_reason": "no UI in diff"}]},
+                files="M\tData/MockSleep.swift")
+        check("fb78-backcompat-shared-slot-confirms",
+              verdict_of(r, "accessibility") == "LEGITIMATE", f"{r}")
+
+        # 7. An unusable a11yFilePatterns must SURFACE, not silently fall back. Without
+        #    this the audit confirms an a11y skip against the built-in default while
+        #    reporting a confident verdict — measured with a ruler nobody chose.
+        cfg = dict(base, a11yFilePatterns="([unclosed")
+        r = run(tmp, config=cfg,
+                report={"stages": [{"name": "accessibility", "status": "skipped",
+                                    "skip_reason": "no UI in diff"}]},
+                files="M\tsrc/Button.tsx")
+        warns = (r.get("context") or {}).get("pattern_warnings") or []
+        check("fb79-invalid-slot-surfaces-in-report",
+              any("a11yFilePatterns" in w and "[WARN]" in w for w in warns),
+              f"expected a pattern_warnings entry naming a11yFilePatterns, got {warns}")
+        # 7b. A NON-STRING slot must also surface. This is the shape that motivated
+        #     pattern_warnings in the first place, and the isinstance() filter added
+        #     to fix a cross-runtime divergence briefly made it SILENT — the value was
+        #     skipped before it could reach re.compile, so the loud path disappeared.
+        cfg = dict(base, a11yFilePatterns=["(^|/)Views/.*"])
+        r = run(tmp, config=cfg,
+                report={"stages": [{"name": "accessibility", "status": "skipped",
+                                    "skip_reason": "no UI in diff"}]},
+                files="M\tsrc/Button.tsx")
+        warns = (r.get("context") or {}).get("pattern_warnings") or []
+        check("fb79-non-string-slot-surfaces",
+              any("a11yFilePatterns" in w and "must be a string" in w for w in warns),
+              f"a non-string slot must be reported, not silently skipped: {warns}")
+
+        # And the SKILL must be told to print it — an emitted-but-unrendered field is
+        # the same silent-skip one layer up (this is why three review lenses flagged it).
+        skill = (Path(__file__).parent.parent / "skills" / "audit-skips" / "SKILL.md").read_text()
+        check("fb79-skill-renders-pattern-warnings",
+              "pattern_warnings" in skill and "PATTERN-WARNING" in skill,
+              "audit-skips/SKILL.md must instruct the agent to surface pattern_warnings")
+
     with tempfile.TemporaryDirectory() as tmp:
         bad = Path(tmp) / "bad.json"
         bad.write_text("this is not json\n", encoding="utf-8")

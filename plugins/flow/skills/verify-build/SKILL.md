@@ -231,9 +231,11 @@ python3 "$VS" --config flow.config.json $PLAN_ARG > "$FLOW_SCRATCH/visual-signif
 cat "$FLOW_SCRATCH/visual-significance.json"
 ```
 
-A change is visually significant when ALL of: `uiSurface != false`; the diff (committed + uncommitted + untracked) touches `uiFilePatterns` files OR adds/modifies image/font/asset files; and it is NOT a pure no-render-delta refactor (rename-only / comment-only / whitespace-only). A plan `Visual-walk` block or your explicit `--flag-significant` forces `visual_significant = true` (but `uiSurface:false` always wins — a project with no UI surface is never significant; an override there is recorded as suppressed). Carry the helper's `visual_significant` + `visual_signals` forward to Step 8.
+A change is visually significant when ALL of: `uiSurface != false`; the diff (committed + uncommitted + untracked) touches files matching the resolved visual pattern (**`visualFilePatterns` → `uiFilePatterns` → built-in default**) OR adds/modifies image/font/asset files; and it is NOT a pure no-render-delta refactor (rename-only / comment-only / whitespace-only). A plan `Visual-walk` block or your explicit `--flag-significant` forces `visual_significant = true` (but `uiSurface:false` always wins — a project with no UI surface is never significant; an override there is recorded as suppressed). Carry the helper's `visual_significant` + `visual_signals` forward to Step 8.
 
-> **Shared-extension languages need a directory-scoped `uiFilePatterns`.** In Swift (`.swift`) / Kotlin (`.kt`), UI and non-UI code share one extension, so an extension-only pattern (`\.swift$`) mislabels data-layer code as UI — a headless, no-render change then trips `visual_significant` and demands frames it can't produce. Scope the pattern to conventional UI dirs instead (e.g. `(^|/)(App|Views|DesignSystem)/.*\.swift$`). Same caveat is documented in `/flow:accessibility-review`.
+> **This slot answers a different question than the a11y one (FB-0079).** `visualFilePatterns` asks *"does this change what the app DRAWS?"*; `/flow:accessibility-review`'s `a11yFilePatterns` asks *"does this change something with an ACCESSIBILITY SURFACE?"*. Those sets overlap but are not equal — a store that builds the string a screen reader announces has an a11y surface and no render path; a mock-data file that decides a chart's shape has a render path and no a11y surface. Both slots fall back to the shared `uiFilePatterns`, so a project that sets only that one behaves exactly as it did before the split. Reach for the per-consumer slots the moment one pattern starts forcing you to mis-scope the other reviewer.
+
+> **Shared-extension languages need directory-scoped patterns.** In Swift (`.swift`) / Kotlin (`.kt`), UI and non-UI code share one extension, so an extension-only pattern (`\.swift$`) mislabels data-layer code as UI — a headless, no-render change then trips `visual_significant` and demands frames it can't produce. Scope to conventional UI dirs instead (e.g. `(^|/)(App|Views|DesignSystem)/.*\.swift$`). Same caveat is documented in `/flow:accessibility-review`.
 
 **When `visual_significant` is true, the capture→buffer→render path (Steps 5a / 8 / 10) is MANDATORY, not best-effort** — see the bolded gate in each of those steps. A visually-significant change with ZERO captured frames is `Unknown`, never `PASS`.
 
@@ -438,6 +440,7 @@ The explicit `--assets-dir <report dir>` matches §5a's persist path (`<dirname(
 | `flow.config.json.verifyReportPath` | `.flow/verify-report.html` | Step 5a (assets dir alongside it), Step 10 (HTML render) |
 | `flow.config.json.verifyBudgetCalls` | `60` | Step 5 (budget cap) |
 | `flow.config.json.uiSurface` | `true` | Step 2c (visual-significance gate 1, via `lib/visual-significance.py`) |
-| `flow.config.json.uiFilePatterns` | UI extensions (shared with a11y review) | Step 2c (visual-significance heuristic) |
+| `flow.config.json.visualFilePatterns` | falls back to `uiFilePatterns` | Step 2c (visual-significance heuristic) — scopes the "does it DRAW?" question only |
+| `flow.config.json.uiFilePatterns` | UI extensions | Step 2c fallback when `visualFilePatterns` is unset |
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Read by `/flow:ship` Step 4a (not by verify-build directly) |
 
