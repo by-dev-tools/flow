@@ -68,7 +68,8 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 # render path but no a11y surface. Set a11yFilePatterns to scope THIS review
 # independently; leave it unset and the shared uiFilePatterns still applies exactly
 # as it did before the split. The Python side of this chain is
-# verify-build/lib/file_patterns.py — keep the two in sync (FB-0010).
+# verify-build/lib/file_patterns.py; the two are held together by an eval, not by this
+# comment (see the NOTE below).
 #
 # Default covers TSX/JSX/Vue/Svelte/Astro/MDX/CSS/SCSS/Sass/Less/HTML/template files
 # (extension-only — the prefix-with-extension branch was redundant, since any file
@@ -89,7 +90,12 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 # a comment-enforced contract: run_visual_significance_evals.py extracts the
 # UI_PATTERN_SRC expression BELOW from this file and asserts it agrees with
 # resolve() on every config shape, so a drift here fails CI.
-UI_PATTERN_SRC=$(jq -r '. as $c | (["a11yFilePatterns","uiFilePatterns"] | map(select(($c[.] // "") != "")) | first) // "built-in default"' flow.config.json 2>/dev/null)
+# flow:jq-slot-resolution — extracted + parity-checked by run_visual_significance_evals.py.
+# The `type == "string"` guard is load-bearing, not defensive: jq counts [], {} and 0
+# as "!= \"\"" while Python's truthiness does not, so without it a hand-edited array
+# value makes the a11y gate resolve one slot while the audit resolves another — the
+# exact wrong-ruler failure this split exists to remove.
+UI_PATTERN_SRC=$(jq -r '. as $c | (["a11yFilePatterns","uiFilePatterns"] | map(select(($c[.] | type) == "string" and $c[.] != "")) | first) // "built-in default"' flow.config.json 2>/dev/null)
 [ -z "$UI_PATTERN_SRC" ] && UI_PATTERN_SRC="built-in default"
 # Pure lookup — carries no precedence logic. "built-in default" is not a real key,
 # so it yields empty and the [ -z ] fallback below supplies the default pattern.

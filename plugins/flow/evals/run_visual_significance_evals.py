@@ -82,9 +82,12 @@ SPLIT_CFG = {
 
 
 A11Y_SKILL = HERE.parent / "skills" / "accessibility-review" / "SKILL.md"
+SCHEMA = HERE.parent / "schema" / "flow.config.schema.json"
 FP_LIB = HERE.parent / "skills" / "verify-build" / "lib"
 sys.path.insert(0, str(FP_LIB))
-from file_patterns import resolve as fp_resolve, A11Y as FP_A11Y  # type: ignore  # noqa: E402
+from file_patterns import (  # type: ignore  # noqa: E402
+    resolve as fp_resolve, A11Y as FP_A11Y, DEFAULT_SOURCE as FP_DEFAULT_SOURCE,
+    DEFAULT_UI_PATTERN as FP_DEFAULT_UI_PATTERN)
 
 
 def _extract_jq_src():
@@ -97,11 +100,36 @@ def _extract_jq_src():
         text = A11Y_SKILL.read_text(encoding="utf-8")
     except OSError:
         return None
-    m = re.search(r"UI_PATTERN_SRC=\$\(jq -r '(.+?)' flow\.config\.json", text, re.S)
+    # Anchored on the `# flow:jq-slot-resolution` marker rather than the shell
+    # variable name, so renaming the variable does not trip the guard — but deleting
+    # the resolution line still does.
+    m = re.search(r"#\s*flow:jq-slot-resolution\b.*?=\$\(jq -r '(.+?)' flow\.config\.json",
+                  text, re.S)
     return m.group(1) if m else None
 
 
 JQ_SRC_EXPR = _extract_jq_src()
+
+
+def _extract_shell_defaults():
+    """Every `UI_PATTERN='<literal>'` fallback assignment in the a11y SKILL. There
+    are two (the unset branch and the invalid-regex branch) and BOTH must equal
+    DEFAULT_UI_PATTERN — a fix applied to one and not the other is the fan-out."""
+    try:
+        text = A11Y_SKILL.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    return re.findall(r"UI_PATTERN='([^']+)'", text)
+
+
+def _schema_default():
+    try:
+        props = json.loads(SCHEMA.read_text(encoding="utf-8"))["properties"]
+    except (OSError, ValueError, KeyError):
+        return None, None
+    return (props.get("uiFilePatterns", {}).get("default"),
+            {k: ("default" in props.get(k, {}))
+             for k in ("visualFilePatterns", "a11yFilePatterns")})
 
 
 def _have_jq():
@@ -118,7 +146,7 @@ def _jq_source(tmp, expr, cfg):
     p.write_text(json.dumps(cfg), encoding="utf-8")
     out = subprocess.run(["jq", "-r", expr, str(p)], capture_output=True, text=True)
     val = out.stdout.strip()
-    return val or "built-in default"
+    return val or FP_DEFAULT_SOURCE
 
 
 def swift_diff(path):
@@ -334,7 +362,7 @@ def main() -> int:
         #        wrong knob as often as the right one.
         rc, o = run(tmp, config=SPLIT_CFG, files=f"M\t{VIEWS_FILE}", diff=swift_diff(VIEWS_FILE))
         check("fb78-signal-names-source-slot",
-              any("touches visualFilePatterns:" in s for s in o.get("visual_signals", [])),
+              any("pattern from visualFilePatterns)" in s for s in o.get("visual_signals", [])),
               f"{o}")
 
         # 10b-7. An unusable pattern degrades to the default with a warning that
@@ -357,11 +385,21 @@ def main() -> int:
         check("fb79-jq-mirror-extractable", JQ_SRC_EXPR is not None,
               f"could not extract UI_PATTERN_SRC's jq from {A11Y_SKILL}; if the line was "
               f"reworded, update _extract_jq_src — do not delete this check")
+        # NON-STRING shapes are the point, not padding: jq counts [], {} and 0 as
+        # non-empty while Python truthiness does not, so an un-guarded jq select makes
+        # the a11y gate and the audit resolve DIFFERENT slots for the same config.
+        # The schema forbids these values; a hand-edited config can still carry them,
+        # which is why compile_for catches TypeError at all.
         if JQ_SRC_EXPR and _have_jq():
             for cfg in ({}, {"uiFilePatterns": "UI"}, {"a11yFilePatterns": "A11Y"},
                         {"uiFilePatterns": "UI", "a11yFilePatterns": "A11Y"},
                         {"a11yFilePatterns": "", "uiFilePatterns": "UI"},
-                        {"uiFilePatterns": "", "a11yFilePatterns": ""}):
+                        {"uiFilePatterns": "", "a11yFilePatterns": ""},
+                        {"a11yFilePatterns": [], "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": {}, "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": 0, "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": False, "uiFilePatterns": "UI"},
+                        {"a11yFilePatterns": None, "uiFilePatterns": "UI"}):
                 shell_src = _jq_source(tmp, JQ_SRC_EXPR, cfg)
                 _, py_src = fp_resolve(cfg, FP_A11Y)
                 check(f"fb79-jq-matches-python:{json.dumps(cfg, sort_keys=True)}",
@@ -369,8 +407,34 @@ def main() -> int:
                       f"shell resolved slot {shell_src!r}, Python resolved {py_src!r} — "
                       f"the a11y gate and the Python resolver disagree about which slot wins")
         elif JQ_SRC_EXPR:
-            check("fb79-jq-matches-python", True, "")  # jq absent: not a failure, see note
-            print("      (jq not on PATH — cross-runtime parity check skipped, not failed)")
+            # NOT a vacuous pass: jq is a declared prerequisite of the whole pipeline
+            # (/flow:ship Step 1.5 hard-blocks without it), so its absence here means
+            # the environment changed — which is signal, not an exemption. A green
+            # check name that measured nothing is the FB-0010 silent-skip class.
+            check("fb79-jq-matches-python", False,
+                  "jq not on PATH — cross-runtime parity is UNVERIFIED, not clean")
+
+        # 10b-9. The DEFAULT literal is the other half of the cross-runtime contract.
+        #        Parity on which SLOT wins is worthless if the two runtimes disagree
+        #        about what the fallback pattern IS. Add an extension in one place and
+        #        this fails, instead of CI staying green while the a11y gate and the
+        #        visual predicate disagree about what a UI file is.
+        shell_defaults = _extract_shell_defaults()
+        check("fb79-shell-defaults-extractable", len(shell_defaults) >= 2,
+              f"expected >=2 UI_PATTERN='...' fallbacks in {A11Y_SKILL}, found "
+              f"{len(shell_defaults)} — if the shell was restructured, update "
+              f"_extract_shell_defaults; do not delete this check")
+        for i, lit in enumerate(shell_defaults):
+            check(f"fb79-shell-default-matches-python:{i}", lit == FP_DEFAULT_UI_PATTERN,
+                  f"shell fallback {lit!r} != DEFAULT_UI_PATTERN {FP_DEFAULT_UI_PATTERN!r}")
+        schema_default, per_consumer_defaults = _schema_default()
+        check("fb79-schema-default-matches-python", schema_default == FP_DEFAULT_UI_PATTERN,
+              f"schema uiFilePatterns.default {schema_default!r} != {FP_DEFAULT_UI_PATTERN!r}")
+        # The per-consumer slots must NOT declare a default — they fall back to
+        # uiFilePatterns, and a stated default would contradict the chain.
+        check("fb79-per-consumer-slots-have-no-default",
+              per_consumer_defaults == {"visualFilePatterns": False, "a11yFilePatterns": False},
+              f"per-consumer slots must have no schema default: {per_consumer_defaults}")
 
         # 10c. A change in the #else (RELEASE) branch of `#if DEBUG` DOES ship —
         #      must still count as significant.

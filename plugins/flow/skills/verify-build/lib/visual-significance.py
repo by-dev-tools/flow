@@ -293,16 +293,26 @@ def main(argv):
     # non-zero. stdout stays valid JSON so skip-audit-checks.py — which parses
     # stdout regardless of exit status — reads the loud verdict, not a crash.
     if _PATTERNS_IMPORT_ERROR is not None:
+        # Read the config FIRST. uiSurface:false is documented everywhere as
+        # unconditional — "a project that declares NO UI surface is never visually
+        # significant". Failing closed PAST that gate hands a headless project an
+        # unsatisfiable visual-deliverable blocker (ship Step 7a branches on this
+        # value with no uiSurface guard of its own) whose real cause is a broken
+        # install. load_config has no dependency on file_patterns.
+        _cfg, _ = load_config(args.config)
+        _uis = ui_surface(_cfg)
         print(json.dumps({
-            "visual_significant": True,
-            "ui_surface": True,
+            "visual_significant": _uis,
+            "ui_surface": _uis,
             "override": None,
             "visual_signals": [
                 f"[WARN] cannot import lib/file_patterns.py ({_PATTERNS_IMPORT_ERROR}) — "
-                f"the flow plugin install is incomplete. Failing CLOSED: treating this "
-                f"change as visually significant rather than skipping the gate.",
+                f"the flow plugin install is incomplete. Reinstall the plugin. Until then "
+                f"this change is treated as needing visual review rather than skipping the "
+                f"check" + ("" if _uis else ", except that this project declares no UI "
+                            "surface (uiSurface:false), which still wins") + ".",
             ],
-            "reason": "file_patterns helper unavailable: fail-closed verdict, not a measurement",
+            "reason": "could not load the UI-file patterns, so this is a safe default, not a measurement",
         }, indent=2))
         return 2
 
@@ -402,7 +412,8 @@ def main(argv):
     asset_hits = [p for st, p in changes if asset_re.search(p) and not visual_re.search(p)]
     matched = visual_hits + asset_hits
     if visual_hits:
-        signals.append(f"diff touches {visual_src}: " + ", ".join(sorted(set(visual_hits))[:8]))
+        signals.append(f"diff touches UI files (pattern from {visual_src}): "
+                       + ", ".join(sorted(set(visual_hits))[:8]))
     if asset_hits:
         signals.append("diff adds/modifies asset files: " + ", ".join(sorted(set(asset_hits))[:8]))
 

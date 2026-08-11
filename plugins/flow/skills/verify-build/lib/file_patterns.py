@@ -71,9 +71,12 @@ SHARED_SLOT = "uiFilePatterns"
 #: Reported as the `source` when neither slot supplied a pattern.
 DEFAULT_SOURCE = "built-in default"
 
-# MUST stay in sync with the `UI_PATTERN` default literal in
-# accessibility-review/SKILL.md and the `uiFilePatterns` / `visualFilePatterns` /
-# `a11yFilePatterns` defaults in schema/flow.config.schema.json (FB-0010).
+# The SAME literal appears in two other runtimes: the `UI_PATTERN='...'` fallback in
+# accessibility-review/SKILL.md, and `uiFilePatterns.default` in the JSON Schema.
+# (The two per-consumer slots deliberately have NO schema default — they fall back to
+# uiFilePatterns, and a stated default would imply otherwise.) All three are compared
+# mechanically by run_visual_significance_evals.py; this note points at the check
+# rather than asking a reader to keep them in sync by hand.
 DEFAULT_UI_PATTERN = r"\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$"
 
 
@@ -118,6 +121,6 @@ def compile_for(cfg, consumer):
         return (
             re.compile(DEFAULT_UI_PATTERN),
             DEFAULT_SOURCE,
-            [f"[WARN] {source} is not a usable extended regex ({pattern!r}: {exc}); "
+            [f"[WARN] flow.config.json.{source} is not a usable regex ({pattern!r}: {exc}); "
              f"falling back to the built-in default UI pattern"],
         )

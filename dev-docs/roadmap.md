@@ -106,6 +106,21 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### Run FB-0079's question-test on `sourceFilePatterns` (audit, not a split)
+
+FB-0079 names a **class** — one config slot gating consumers that ask different questions — and this PR swept only the instance. `sourceFilePatterns` is the untested second member: `/flow:security-review` asks a **risk** question ("is there anything here worth a security look?"), while `/flow:ship` §1c and `/flow:ship-spike` §1c ask a **cost** question ("is a preflight run worth spending on this diff?"), and `skip-audit-checks.py`'s `touches_source` audits the verify-build doc-only claim. Their fail-safe directions diverge exactly as FB-0079's corollary predicts: the risk gate should over-include, the cost gate can be tight. The shape that would expose it: a Terraform-only PR against a `tsc && eslint && vitest` preflight — it must get a security review, and there is nothing for the preflight to run.
+
+Scope this as an **audit, not a split**: name the question each of the four consumers asks and record the answer in the schema description whether or not it diverges. Split only on a *measured* forced trade — inventing two more slots without a consumer report is the over-reach FB-0079 does not license. Cheap half worth doing regardless: `DEFAULT_SOURCE_PATTERN` is hand-copied at ~13 sites across 8 files in 3 languages with zero eval coverage — hoist it into `lib/file_patterns.py` and give it the same extract-and-compare parity guard the UI default now has. A "no split needed" outcome is a valid, cheap result.
+
+### An executable harness for the `/flow:accessibility-review` shell gate
+
+The FB-0079 parity eval extracts and checks the gate's *slot-resolution* jq, but the rest of the block is unpinned: the `[ -z "$UI_PATTERN_SRC" ]` fallback, the `.[$s] // empty` lookup, the invalid-regex branch, and the actual RAN/SKIPPED decision were hand-verified at ship and nothing holds them. A `run_a11y_gate_evals.py` that extracts the ```sh block, sources it into a temp git repo, and asserts the decision across config shapes would close it — the same shape as the hand-verification done for FB-0079, made durable. Surfaces the moment anyone edits that block.
+
+### A declared reason-string enum shared by the emitter and the recognizer
+
+`accessibility-review/SKILL.md` emits `no UI files in diff`; `skip-audit-checks.py::_reason_has` matches it by substring (`"no ui"`). FB-0079 shifted the surrounding vocabulary to "a11y-surface" everywhere *except* that emitted string — correctly, because renaming it silently downgrades every a11y skip to `NEEDS-JUDGMENT` with the raw string echoed back. That coupling is real and undeclared. Closing it properly means a shared reason vocabulary in the `manifest_contract.py` shape (one definition, imported by emitter and recognizer), not a comment. Near-term stopgap: a `# PARSED BY skip-audit-checks.py::_reason_has` marker at both ends. Owner: whoever next touches `_reason_has`.
+
+
 ### Declare the skill-composition graph as data, replacing per-pair hand-pins (from the FB-0077 altitude lens)
 
 `doctor/lib/skill-composition-lint.py` checks a **negative** — no `Skill()` call names a model-disabled target — which passes two opposite ways: the composition is legal, *or* the call was deleted. It cannot tell them apart, which is exactly how FB-0074 satisfied it by conceding the call. FB-0077 fixed the one instance by hand, and that fix now costs **six assertions across three harnesses** for a single caller→callee pair.
@@ -447,6 +462,15 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 ---
 
 ## § Exploration
+
+### A general harness for flow's shell↔Python mirrors
+
+**Surfaces when:** a third shell/Python mirror needs a parity guard, or any single change touches two or more `plugins/flow/skills/*/SKILL.md` shell preambles plus a `plugins/flow/skills/*/lib/*.py` implementing the same resolution.
+
+FB-0079 introduced `_extract_jq_src()` — extract the *live* expression out of the SKILL and assert it against the Python implementation, rather than copying it into the eval (a copy would be a third implementation of the same contract). It works, it is mutation-tested, and it is currently spent on one jq line. Flow is structurally full of the same join: `sourceFilePatterns` resolution is spelled in jq at ~5 SKILL sites and in Python at 2; the FB-0074 root-anchor block is duplicated across several SKILLs; `defaultBranch` resolution appears in nearly every shell preamble. Every one is a contract implemented twice in two languages, held together by a comment.
+
+The open question to answer first is whether the win is a *harness* or a *convention*: a registry of `(skill, marker, python_symbol)` triples that a generic eval walks, versus a `# flow:mirror-of <symbol>` marker that makes every mirrored block extractable by construction so the eval is generated rather than written. Guessing wrong is worse than waiting — which is why this is Exploration and not Next.
+
 
 ### Two blockers, one root cause — should triage relate entries? (from the FB-0075 push-further lens)
 

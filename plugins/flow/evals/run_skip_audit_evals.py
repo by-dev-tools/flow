@@ -321,6 +321,25 @@ def main() -> int:
         check("fb78-backcompat-shared-slot-confirms",
               verdict_of(r, "accessibility") == "LEGITIMATE", f"{r}")
 
+        # 7. An unusable a11yFilePatterns must SURFACE, not silently fall back. Without
+        #    this the audit confirms an a11y skip against the built-in default while
+        #    reporting a confident verdict — measured with a ruler nobody chose.
+        cfg = dict(base, a11yFilePatterns="([unclosed")
+        r = run(tmp, config=cfg,
+                report={"stages": [{"name": "accessibility", "status": "skipped",
+                                    "skip_reason": "no UI in diff"}]},
+                files="M\tsrc/Button.tsx")
+        warns = (r.get("context") or {}).get("pattern_warnings") or []
+        check("fb79-invalid-slot-surfaces-in-report",
+              any("a11yFilePatterns" in w and "[WARN]" in w for w in warns),
+              f"expected a pattern_warnings entry naming a11yFilePatterns, got {warns}")
+        # And the SKILL must be told to print it — an emitted-but-unrendered field is
+        # the same silent-skip one layer up (this is why three review lenses flagged it).
+        skill = (Path(__file__).parent.parent / "skills" / "audit-skips" / "SKILL.md").read_text()
+        check("fb79-skill-renders-pattern-warnings",
+              "pattern_warnings" in skill and "PATTERN-WARNING" in skill,
+              "audit-skips/SKILL.md must instruct the agent to surface pattern_warnings")
+
     with tempfile.TemporaryDirectory() as tmp:
         bad = Path(tmp) / "bad.json"
         bad.write_text("this is not json\n", encoding="utf-8")
