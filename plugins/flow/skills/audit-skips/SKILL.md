@@ -62,7 +62,7 @@ fi
 # still emits the context block, with an empty stage set. Resolved AFTER the cd above, so
 # a relative FLOW_SKIP_AUDIT_STAGES override resolves against the repo root rather than
 # whatever cwd the fork inherited (which the cd just left).
-# ...and the handoff itself must be REPO-LOCAL, not /tmp (FB-0080). The root anchor above
+# ...and the handoff itself must be REPO-LOCAL, not /tmp (FB-0082). The root anchor above
 # fixes which tree we read; it does not make a /tmp file visible. A forked skill cannot see
 # a /tmp file the parent shell wrote at all -- reproduced as a same-file A/B (full report
 # from the parent, "no stage report" from the fork) -- so through v1.22.0 this gate still
@@ -76,7 +76,7 @@ else
   H="plugins/flow/skills/audit-skips/lib/skip-audit-checks.py"
 fi
 PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
-# Stamp gate (FB-0080). A handoff must PROVE it belongs to this repo+branch+HEAD before
+# Stamp gate (FB-0082). A handoff must PROVE it belongs to this repo+branch+HEAD before
 # it is audited. Namespacing alone is not enough: two worktrees of one repo share a repo
 # path, and a handoff left by an earlier branch in THIS worktree is still readable. A
 # mismatch is refused loudly rather than read-and-hope -- and is kept DISTINCT from the
@@ -187,10 +187,10 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
     you have no evidence against — do not manufacture findings).
 - If the mechanical block is `{"note": ..., "stages": []}` (the handoff file was **absent** —
   a standalone run), output exactly `SKIP-AUDIT: no stage report to audit (run from
-  /flow:ship Step 2).` and stop. This is the clean no-op — and since FB-0080 it is once again
+  /flow:ship Step 2).` and stop. This is the clean no-op — and since FB-0082 it is once again
   a *trustworthy* one: the handoff is written to a **repo-local** `.flow/` path both the parent
   and this fork can see, so an absent handoff now really does mean none was written. It did not
-  mean that before FB-0080, when the handoff lived in `/tmp` and was structurally invisible to a
+  mean that before FB-0082, when the handoff lived in `/tmp` and was structurally invisible to a
   forked skill — this note fired on **every** ship from v1.13.0 to v1.22.0, and the whole gate
   no-opped silently behind it. If you ever see this note on a run launched from `/flow:ship`
   Step 2a (which always writes a handoff), the transport is broken again: treat it as a

@@ -83,7 +83,7 @@ fi
 # Canonical repo-local scratch idiom — keep in sync with scripts/flow_scratch.py
 # (pinned by evals/run_scratch_isolation_evals.py). NOT /tmp: that is one global
 # namespace shared with every other project on the machine, so a concurrent session
-# on another repo clobbers this reviewer's input (FB-0080).
+# on another repo clobbers this reviewer's input (FB-0082).
 FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 [ -n "$FLOW_ROOT" ] && FLOW_SCRATCH="$FLOW_ROOT/.flow" || FLOW_SCRATCH="${TMPDIR:-/tmp}/flow-detached"
 # SECURITY (CWE-59): refuse to write scratch through a symlink. `.flow` is an ordinary

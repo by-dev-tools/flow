@@ -11,5 +11,5 @@
   "platform": "library",
   "defaultBranch": "main",
   "referenceGlob": "dev-docs/*.md",
-  "$comment-referenceGlob": "REQUIRED here, and not cosmetic (FB-0080). The schema default is 'core-docs/*.md', which does not exist in this repo -- flow keeps reference docs in dev-docs/. Without this slot the /flow:critique-plan preprocessor resolved ZERO reference documents and injected no '## Reference documents' section at all, silently: the critic could cite no project rule, and the result was indistinguishable from 'there were no rules to violate'. critique-plan/SKILL.md has asserted \"flow's own repo overrides to dev-docs/*.md\" for several versions while this file did not; the claim was simply false."
+  "$comment-referenceGlob": "REQUIRED here, and not cosmetic (FB-0082). The schema default is 'core-docs/*.md', which does not exist in this repo -- flow keeps reference docs in dev-docs/. Without this slot the /flow:critique-plan preprocessor resolved ZERO reference documents and injected no '## Reference documents' section at all, silently: the critic could cite no project rule, and the result was indistinguishable from 'there were no rules to violate'. critique-plan/SKILL.md has asserted \"flow's own repo overrides to dev-docs/*.md\" for several versions while this file did not; the claim was simply false."
 }
