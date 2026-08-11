@@ -35,7 +35,7 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
-### FB-0078: A handoff between a parent shell and a forked skill must live where BOTH can see it, and must prove it belongs to this workspace before it is read
+### FB-0080: A handoff between a parent shell and a forked skill must live where BOTH can see it, and must prove it belongs to this workspace before it is read
 
 **Date:** 2026-07-29
 **Source:** user correction (consumer dogfood report on flow 1.20.0, Swift/iOS project) + in-session reproduction
@@ -49,6 +49,21 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 **Corollary found while fixing it:** the same silent-no-op shape existed in `extract_session.py`'s reference-doc loader, which returned `""` when a `referenceGlob` matched nothing — producing a context with no `## Reference documents` section, indistinguishable from "this project has no rules." Flow's *own* `flow.config.json` was missing `referenceGlob`, so the `core-docs/*.md` default matched nothing (flow keeps docs in `dev-docs/`) and every `/flow:critique-plan` run in this session was structurally unable to cite a project rule — while `critique-plan/SKILL.md` had asserted for several versions that "flow's own repo overrides to `dev-docs/*.md`". An empty resolution is a configuration failure, not an empty set; it now says so loudly and tells the critic it cannot raise a Spec violation at all.
 
 **Applies to:** `scripts/flow_scratch.py` (new), `skills/ship/SKILL.md` Step 2a, `skills/audit-skips/SKILL.md`, `skills/{staff-review,security-review,accessibility-review}/SKILL.md`, `agents/lens-*.md`, `skills/ship/lib/rigor-marker.py`, `skills/verify-build/SKILL.md`, `schema/flow.config.schema.json` (`verifyFindingsPath` / `verifyReportPath` defaults), `scripts/extract_session.py`, `flow.config.json`. Pinned by `evals/run_scratch_isolation_evals.py` — the **first** harness in this repo to extract and execute a SKILL.md `!`-block, which is why the transport bug survived until now.
+
+### FB-0078 — A field a UI renders is a UI surface: the manifest `description` is not an append-only changelog, and not a skill catalog either
+
+**Date:** 2026-08-03
+**Source type:** user correction
+
+**What was said:** Looking at the Plugins pane in the Claude Code terminal UI, the user pointed out that flow's description "is way too long — we need to fix this." The screenshot showed the entire pane consumed by one unbroken wall of prose. Measured at the base this landed on: `plugin.json.description` **27,711** characters, `marketplace.json`'s plugin description **25,795**, its `metadata.description` **17,461** — a full reverse-chronological changelog naming **33 distinct versions** in the plugin field alone (v1.2.3 → v1.25.0), because every version bump since had appended its release blurb to the field instead of to `CHANGELOG.md` (which already existed and already carried the same content).
+
+**Then, on the first fix:** shown a 760-char rewrite that kept a list of all 17 `/flow:*` skills, the user asked whether the field is "supposed to be a list of all the skills (since that exists elsewhere in the plugin UI) or just a clear, concise description" — and told me to check the docs rather than reason about it. It is the latter, decisively: Claude Code **generates** the component inventory from disk and renders it in the Discover tab's "Will install" section and the Installed tab's detail view (also `claude plugin details`). The docs call the field a "Brief plugin description," and across Anthropic's own 276-plugin official marketplace the median description is 176 characters, p90 312, max 665, with exactly one containing a version token. Final: 216 / 216 / 85.
+
+**Synthesized rule:** A string a UI renders is a UI surface, and it gets the same read-the-rendered-output discipline as any other. Four parts. **(1) Each field has one job.** `description` says what the plugin does for the user; `CHANGELOG.md` says what changed per version; the *component inventory is the UI's job, not the author's*. Appending to `description` because it is the easier file to edit destroys it for its actual reader. **(2) Never hand-maintain a copy of something the platform generates.** The skill list was not just verbose, it was strictly worse than the generated one — it could go stale, and the generated one cannot. Before writing any catalog into a manifest, check whether the host already renders it. **(3) Never append to a field you have not looked at rendered.** The accretion was invisible in review because a diff of a one-line JSON string shows a `+` on an already-huge line, and every individual append was a defensible sentence — the defect only exists at the aggregate the user sees. **(4) A convention held only by author memory will drift; mechanize it, and calibrate the threshold against a real corpus rather than taste.** The plugin-field cap in `run_plugin_desc_evals.py` sits above the official marketplace's measured p90 (the marketplace-level cap sits below it deliberately — different population); the load-bearing checks are the ban on `vN.N.N` tokens (the append habit always opened with one, so regrowth fails at sentence 1) and the ban on enumerating skills.
+
+**Process note:** the user's question was the correction — the first fix cut the symptom (27KB) while preserving the premise (that the field is where flow advertises its surface). "Check the docs" beat "reason from the code," which is FB-0075's diagnose-from-the-artifact corollary showing up again one PR later.
+
+**Applies to:** `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`; the version-bump step of any ship; and generally to any consumer-visible string field flow writes but never reads back rendered (skill `description:` frontmatter is the same class, though there length is functional — it drives model triggering).
 
 ### FB-0077 — A capability flag that duplicates a narrow mechanical gate should lose to the gate; and satisfying a composition lint by deleting the call concedes the composition instead of fixing it
 

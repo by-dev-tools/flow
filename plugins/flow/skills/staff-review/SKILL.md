@@ -151,7 +151,7 @@ git ls-files --others --exclude-standard > "$FLOW_SCRATCH/staff-untracked.txt"
 
 Reviewers reference both paths so each lens prompt stays small.
 
-**Why repo-local and not `/tmp` (FB-0078).** `/tmp/flow-staff-diff.patch` was one global filename shared by every project on the machine, so two concurrent sessions clobbered each other's review inputs — observed in the wild: three lenses were handed *another project's* diff, and only two noticed and regenerated on their own initiative. A lens that doesn't notice reviews the wrong code and reports clean. `$FLOW_ROOT/.flow/` is unique per **worktree** (`git rev-parse --show-toplevel` resolves to the worktree, not the shared repo), so the collision cannot occur by construction rather than by luck.
+**Why repo-local and not `/tmp` (FB-0080).** `/tmp/flow-staff-diff.patch` was one global filename shared by every project on the machine, so two concurrent sessions clobbered each other's review inputs — observed in the wild: three lenses were handed *another project's* diff, and only two noticed and regenerated on their own initiative. A lens that doesn't notice reviews the wrong code and reports clean. `$FLOW_ROOT/.flow/` is unique per **worktree** (`git rev-parse --show-toplevel` resolves to the worktree, not the shared repo), so the collision cannot occur by construction rather than by luck.
 
 ## 3. Launch the four reviews in parallel
 
@@ -173,7 +173,7 @@ Each lens agent's prompt is its own file — you only need to pass the **session
   `repo=$FLOW_ROOT branch=$FLOW_BR head=$FLOW_HEAD`. Each lens is instructed to stop if the
   header names a workspace other than the one it was asked to review; without this input it
   has nothing to compare against, so the check silently degrades to trusting the header — a
-  contract split across two files with nothing asserting the join (FB-0074/FB-0078).
+  contract split across two files with nothing asserting the join (FB-0074/FB-0080).
 - Changed-files list (computed from the diff)
 - Relevant project docs (paths resolved in the Project Context section above)
 - PR body or workstream prompt if relevant

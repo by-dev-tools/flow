@@ -254,7 +254,7 @@ def _fingerprint(kind: str, finding: str) -> str:
 
 
 def _repo_scratch(name: str) -> str:
-    """Repo-local scratch path (FB-0078), replacing the old global /tmp default.
+    """Repo-local scratch path (FB-0080), replacing the old global /tmp default.
 
     The manifest is not a cache: producers append to it and `classify` reads it to decide
     draft-vs-ready. `/tmp/flow-manifest-<branch>.md` is ONE filename shared by every project

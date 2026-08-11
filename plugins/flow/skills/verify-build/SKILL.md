@@ -209,7 +209,7 @@ PLAN_ARG=""; [ -f "$PLAN_PATH" ] && PLAN_ARG="--plan $PLAN_PATH"
 # Add --flag-significant --flag-reason "<why>" ONLY if you (the agent) judge the change
 # visually significant beyond what the file-pattern heuristic catches (e.g. a canvas/WebGL
 # render path with no .css/.tsx edit). The helper records the flag + reason as evidence.
-# Repo-local scratch (FB-0078) — /tmp is a global namespace shared across projects.
+# Repo-local scratch (FB-0080) — /tmp is a global namespace shared across projects.
 FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 [ -n "$FLOW_ROOT" ] && FLOW_SCRATCH="$FLOW_ROOT/.flow" || FLOW_SCRATCH="${TMPDIR:-/tmp}/flow-detached"
 # SECURITY (CWE-59): refuse to write scratch through a symlink. `.flow` is an ordinary

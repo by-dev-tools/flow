@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Regression harness for repo-local scratch + handoff stamping (FB-0078).
+Regression harness for repo-local scratch + handoff stamping (FB-0080).
 
 Two bugs shipped undetected because nothing here exercised them:
 
