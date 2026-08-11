@@ -78,15 +78,22 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 # extension, so an extension-only pattern (\.swift$) mislabels data-layer code as UI and
 # false-triggers this review on headless PRs. Scope to conventional UI dirs instead,
 # e.g. (^|/)(App|Views|DesignSystem)/.*\.swift$.
+# Resolve the SLOT NAME first, then look the value up by it — so the precedence
+# rule exists in exactly one expression. (An earlier cut spelled the rule twice,
+# once per variable, in two different jq dialects.)
+#
 # NOTE the explicit non-empty filter rather than the shorter `.a // .b // empty`:
 # jq's `//` only falls through on null/false, so an a11yFilePatterns set to ""
 # would skip uiFilePatterns and land on the built-in default — diverging from
-# file_patterns.resolve(), which treats "" as unset and falls through. Verified
-# against the Python resolver across all five config shapes.
-UI_PATTERN=$(jq -r '[.a11yFilePatterns, .uiFilePatterns] | map(select(. != null and . != "")) | first // empty' flow.config.json 2>/dev/null)
-# Record which slot supplied it, so the SKIPPED line below names the knob to turn.
-UI_PATTERN_SRC=$(jq -r 'if (.a11yFilePatterns // "") != "" then "a11yFilePatterns" elif (.uiFilePatterns // "") != "" then "uiFilePatterns" else "built-in default" end' flow.config.json 2>/dev/null)
+# file_patterns.resolve(), which treats "" as unset and falls through. This is not
+# a comment-enforced contract: run_visual_significance_evals.py extracts the
+# UI_PATTERN_SRC expression BELOW from this file and asserts it agrees with
+# resolve() on every config shape, so a drift here fails CI.
+UI_PATTERN_SRC=$(jq -r '. as $c | (["a11yFilePatterns","uiFilePatterns"] | map(select(($c[.] // "") != "")) | first) // "built-in default"' flow.config.json 2>/dev/null)
 [ -z "$UI_PATTERN_SRC" ] && UI_PATTERN_SRC="built-in default"
+# Pure lookup — carries no precedence logic. "built-in default" is not a real key,
+# so it yields empty and the [ -z ] fallback below supplies the default pattern.
+UI_PATTERN=$(jq -r --arg s "$UI_PATTERN_SRC" '.[$s] // empty' flow.config.json 2>/dev/null)
 [ -z "$UI_PATTERN" ] && UI_PATTERN='\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$'
 
 # Validate the regex before using it. Invalid regex → empty result → silent skip

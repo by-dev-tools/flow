@@ -22,6 +22,7 @@ deterministic — no git state dependency. Stdlib only.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -78,6 +79,46 @@ SPLIT_CFG = {
     "a11yFilePatterns": r"(^|/)(Views|Insight)/.*\.swift$",
     "visualFilePatterns": r"(^|/)(Views|Data)/.*\.swift$",
 }
+
+
+A11Y_SKILL = HERE.parent / "skills" / "accessibility-review" / "SKILL.md"
+FP_LIB = HERE.parent / "skills" / "verify-build" / "lib"
+sys.path.insert(0, str(FP_LIB))
+from file_patterns import resolve as fp_resolve, A11Y as FP_A11Y  # type: ignore  # noqa: E402
+
+
+def _extract_jq_src():
+    """Pull the LIVE `UI_PATTERN_SRC=$(jq -r '<expr>' ...)` expression out of the
+    a11y SKILL. Extracting beats hard-coding a copy here: a copy is a third
+    implementation of the same chain, which is the fan-out the check exists to
+    catch. Returns None if the line moved — the caller fails loudly rather than
+    silently skipping (a vacuous pass is the FB-0010 silent-skip class)."""
+    try:
+        text = A11Y_SKILL.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = re.search(r"UI_PATTERN_SRC=\$\(jq -r '(.+?)' flow\.config\.json", text, re.S)
+    return m.group(1) if m else None
+
+
+JQ_SRC_EXPR = _extract_jq_src()
+
+
+def _have_jq():
+    try:
+        return subprocess.run(["jq", "--version"], capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
+def _jq_source(tmp, expr, cfg):
+    """Run the extracted jq expression over `cfg`; return the slot name it picks
+    (mirroring the SKILL's own `[ -z ]` fallback to 'built-in default')."""
+    p = Path(tmp) / "jqcfg.json"
+    p.write_text(json.dumps(cfg), encoding="utf-8")
+    out = subprocess.run(["jq", "-r", expr, str(p)], capture_output=True, text=True)
+    val = out.stdout.strip()
+    return val or "built-in default"
 
 
 def swift_diff(path):
@@ -305,6 +346,31 @@ def main() -> int:
               and any("visualFilePatterns" in s and "[WARN]" in s
                       for s in o.get("visual_signals", [])),
               f"invalid visualFilePatterns must warn by name and fall back to the default: {o}")
+
+        # 10b-8. CROSS-RUNTIME JOIN. The resolution chain is implemented twice, in
+        #        two languages: file_patterns.resolve() in Python, and a jq
+        #        expression in accessibility-review/SKILL.md. A "keep these in sync"
+        #        comment is not a check — the first cut of file_patterns.py carried
+        #        exactly such a comment and transcribed the REJECTED jq form, so the
+        #        canonical module contradicted the shipped shell in the same commit.
+        #        This extracts the LIVE expression from the SKILL and runs it.
+        check("fb79-jq-mirror-extractable", JQ_SRC_EXPR is not None,
+              f"could not extract UI_PATTERN_SRC's jq from {A11Y_SKILL}; if the line was "
+              f"reworded, update _extract_jq_src — do not delete this check")
+        if JQ_SRC_EXPR and _have_jq():
+            for cfg in ({}, {"uiFilePatterns": "UI"}, {"a11yFilePatterns": "A11Y"},
+                        {"uiFilePatterns": "UI", "a11yFilePatterns": "A11Y"},
+                        {"a11yFilePatterns": "", "uiFilePatterns": "UI"},
+                        {"uiFilePatterns": "", "a11yFilePatterns": ""}):
+                shell_src = _jq_source(tmp, JQ_SRC_EXPR, cfg)
+                _, py_src = fp_resolve(cfg, FP_A11Y)
+                check(f"fb79-jq-matches-python:{json.dumps(cfg, sort_keys=True)}",
+                      shell_src == py_src,
+                      f"shell resolved slot {shell_src!r}, Python resolved {py_src!r} — "
+                      f"the a11y gate and the Python resolver disagree about which slot wins")
+        elif JQ_SRC_EXPR:
+            check("fb79-jq-matches-python", True, "")  # jq absent: not a failure, see note
+            print("      (jq not on PATH — cross-runtime parity check skipped, not failed)")
 
         # 10c. A change in the #else (RELEASE) branch of `#if DEBUG` DOES ship —
         #      must still count as significant.

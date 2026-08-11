@@ -71,9 +71,8 @@ _PATTERNS_IMPORT_ERROR = None
 try:
     from file_patterns import VISUAL, A11Y, compile_for  # type: ignore
 except Exception as _exc:  # pragma: no cover - defensive; file_patterns ships alongside
+    # No sentinel rebinds — main() returns on _PATTERNS_IMPORT_ERROR before use.
     _PATTERNS_IMPORT_ERROR = _exc
-    VISUAL = A11Y = None
-    compile_for = None
 
 DEFAULT_SOURCE_PATTERN = (
     r"\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$"
@@ -415,14 +414,25 @@ def main(argv):
     # (FB-0079). Auditing an a11y skip against the visual pattern would be a
     # confidently-wrong verdict measured with the wrong ruler — the split exists
     # precisely because the two patterns can legitimately disagree.
-    visual_re, visual_src, _w1 = compile_for(cfg, VISUAL)
-    a11y_re, a11y_src, _w2 = compile_for(cfg, A11Y)
+    # Carry the resolver's warnings into the emitted report. Dropping them would make
+    # an invalid a11yFilePatterns warn loudly in visual-significance.py and SILENTLY
+    # fall back here — the audit would then confirm an a11y skip against the built-in
+    # default while claiming to measure the project's own pattern.
+    visual_re, _visual_src, visual_warnings = compile_for(cfg, VISUAL)
+    a11y_re, _a11y_src, a11y_warnings = compile_for(cfg, A11Y)
+    pattern_warnings = visual_warnings + a11y_warnings
 
     base = resolve_base(args.base)
     files = collect_files(args.files_from, base)
     touches_source = any(src_re.search(p) for p in files)
     touches_visual = any(visual_re.search(p) for p in files)
     touches_a11y = any(a11y_re.search(p) for p in files)
+    # ONE literal, referenced by both emit sites below (classify's ctx + the report's
+    # context block). Two hand-maintained copies is how this dict went from two keys
+    # to three at one site and not the other.
+    diff_info = {"touches_source": touches_source,
+                 "touches_visual": touches_visual,
+                 "touches_a11y": touches_a11y}
 
     vs = compute_visual_significance(args, args.config)
     visual_significant = bool(vs.get("visual_significant"))
@@ -442,8 +452,7 @@ def main(argv):
     ctx = {
         "branch": branch, "head_sha": head_sha,
         "config": cfg,
-        "diff": {"touches_source": touches_source,
-                 "touches_visual": touches_visual, "touches_a11y": touches_a11y},
+        "diff": diff_info,
         "buffer": buf,
         "visual_significant": visual_significant,
         "spec_walk_blocks": spec_blocks,
@@ -475,8 +484,8 @@ def main(argv):
             "branch": branch, "head_sha_short": head_sha,
             "visual_significant": visual_significant,
             "visual_signals": vs.get("visual_signals", []),
-            "diff": {"touches_source": touches_source,
-                 "touches_visual": touches_visual, "touches_a11y": touches_a11y},
+            "diff": diff_info,
+            "pattern_warnings": pattern_warnings,
         },
         "config": {"platform": cfg.get("platform"), "uiSurface": cfg.get("uiSurface"),
                    "verifyEnabled": cfg.get("verifyEnabled"),

@@ -81,12 +81,12 @@ except Exception:  # pragma: no cover - defensive; walk_extract ships alongside
 # verdict instead (see `_PATTERNS_IMPORT_ERROR` handling).
 _PATTERNS_IMPORT_ERROR = None
 try:
-    from file_patterns import VISUAL, DEFAULT_UI_PATTERN, compile_for  # type: ignore
+    from file_patterns import VISUAL, compile_for  # type: ignore
 except Exception as _exc:  # pragma: no cover - defensive; file_patterns ships alongside
+    # No sentinel rebinds: main() returns on _PATTERNS_IMPORT_ERROR before touching
+    # either name, so a NameError is unreachable — and a `VISUAL = "visual"` fallback
+    # would re-hardcode the very literal file_patterns.py says never to write bare.
     _PATTERNS_IMPORT_ERROR = _exc
-    VISUAL = "visual"
-    DEFAULT_UI_PATTERN = None
-    compile_for = None
 
 # Image / font / asset files — a visual change can be a pure asset swap with no
 # source edit. Generic, project-agnostic; overridable via --asset-patterns.

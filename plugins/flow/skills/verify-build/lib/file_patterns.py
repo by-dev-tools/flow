@@ -38,12 +38,17 @@ exactly what it resolved to before the split, for both consumers. The
 per-consumer slots are purely additive; no existing project's behavior changes
 without an explicit opt-in.
 
-The shell consumer (/flow:accessibility-review's `grep -E` gate) implements the
-same chain as a jq alternative-operator expression:
+The shell mirror of this chain lives in `accessibility-review/SKILL.md` (see the
+NOTE above its `UI_PATTERN` assignment for why the jq form is the long one and
+not the obvious `.a // .b // empty`).
 
-    jq -r '.a11yFilePatterns // .uiFilePatterns // empty' flow.config.json
-
-Keep the two in sync — that jq line and `resolve(cfg, A11Y)` are one contract.
+That mirror is a genuine cross-runtime fan-out — one contract, two languages —
+so it is checked mechanically rather than by comment: `run_visual_significance_evals.py`
+extracts the live jq expression from the SKILL and asserts it agrees with
+`resolve()` across every config shape. This docstring deliberately does NOT
+transcribe the jq, because the first version of it did, transcribed the rejected
+form, and shipped a "single source of truth" that contradicted itself in the same
+commit. A comment saying "keep these in sync" is the failure mode, not the fix.
 
 Stdlib only. Python 3.7+.
 """
