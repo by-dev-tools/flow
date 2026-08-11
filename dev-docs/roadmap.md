@@ -124,6 +124,14 @@ The failure is silent by construction: a lens that did *not* notice would have r
 
 Minimum fix: make the handoff path per-run (`mktemp`), or key it on `repo_root` rather than branch+sha (a worktree and its origin share both). Independently, each lens should assert the diff it reads is for the repo it was told to review — a one-line provenance header in the patch file, checked before reviewing. Owner: whoever next touches `staff-review/SKILL.md` §2.
 
+### `plan.md` carries 38 Spec-walk blocks and the active one is chosen by position alone (from the FB-0078 ship run)
+
+**Surfaces when:** any PR declares a Spec-walk block, or `/flow:audit-coverage` reports a surprising criteria count.
+
+`walk_extract` takes the FIRST block, which makes correctness depend on nobody leaving a retained block above the active one. That bit this PR: the previous PR's block sat in `## Current Focus`, so the extractor attributed **#90's ten criteria to this branch**, and the first attempt to fix it by qualifying the heading made things worse — `is_terminator` does not match a bold heading with a trailing parenthetical, so the retained block stopped ending the active one and the two silently merged into 20 criteria. Resolved here by moving the retained block into its own `## PR —` section, but the general shape is unguarded: 38 blocks, one positional rule, two regexes that disagree about what counts as a heading.
+
+**Direction:** either (a) make `is_terminator` and `heading_re` agree — any line `heading_re` matches must terminate a block, which is a one-line fix and removes the trap entirely; or (b) anchor blocks to their owning PR section explicitly rather than by position. (a) is much cheaper and fixes the failure actually observed. Add an eval fixture with a retained block above the active one — the exact shape that produced the wrong answer twice in one session.
+
 ### Skill-registration coverage eval across the three catalog sites (from the FB-0078 staff-review; all four lenses converged on it)
 
 **Surfaces when:** the next new skill is registered, or the next time a `reg` assertion is added to a per-skill eval harness.
