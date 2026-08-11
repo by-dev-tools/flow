@@ -30,7 +30,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ## 2026-08-01 — `/flow:contribute` drain: three harvested fixes, one loop closed, one systemic leak surfaced
 
-**Branch:** `claude/contribution-flow-397e04` · **SHA:** [pending — commit at ship]
+**Branch:** `claude/contribution-flow-397e04` · **SHA:** merged #89 @ 5a5e817
 
 **What was done (user-facing).** Ran `/flow:contribute` against the 25-item harvest queue + the disagreements store. Closed the calibration loop for merged #86 (3 lessons, previously uncalibrated). Dismissed 2 stale duplicate lessons as already-fixed by #86 (FB-0074), with the symptom reproduced against current `main` and confirmed gone, not just reasoned-from-the-fix. Converted the one open disagreement record (a plan-critic false-positive) into a queued `reviewer-prompt` candidate. Implemented and shipped 3 of the highest-confidence, sanitization-clean lessons, each with a CI-wired regression eval that fails on the pre-fix code and passes after:
 
