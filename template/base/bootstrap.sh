@@ -163,7 +163,11 @@ else
   jq 'with_entries(select(.key | startswith("$comment") | not))' \
     "$FLOW_DIR/template/base/flow.config.json.example" \
     > "$PROJECT_ROOT/flow.config.json"
-  echo "         · created:       flow.config.json (clean JSON, 28 slots)"
+  # Count the keys rather than hardcode: a literal here is a fan-out site that goes
+  # stale on every slot change and nothing checks it (it read "28 slots" for a config
+  # carrying 22). Note this counts the GENERATED CONFIG's keys, which is a different
+  # number from the schema's slot count that /flow:doctor Check 2.5 enforces.
+  echo "         · created:       flow.config.json (clean JSON, $(jq 'keys|length' "$PROJECT_ROOT/flow.config.json") slots)"
   copied=$((copied+1))
 fi
 

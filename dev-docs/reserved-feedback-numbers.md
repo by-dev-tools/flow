@@ -18,7 +18,9 @@ This file is the **claim-time defense** (catches collisions before either branch
 
 If you find this file with no `Currently reserved` lines, no in-flight branch is racing for a number. Still add your reservation before drafting the entry — another branch may start between your check and your commit.
 
-## Currently reserved (as of 2026-08-01)
+## Currently reserved (as of 2026-08-03)
+
+- **FB-0079** — `claude/uifilepatterns-visual-a11y-51627b` (exciting-williamson-daf416) — "When one config slot gates two consumers that ask different questions, the consumer can't express either correctly — every scoping choice becomes a forced trade. Split into optional per-consumer slots that default to the shared one." Splits `uiFilePatterns` into `visualFilePatterns` + `a11yFilePatterns` (v1.26.0). **Renumbered FB-0078 → FB-0079 at the ship-time rebase: #92 shipped FB-0078 while this branch was open.** The reservation was pushed before the entry was drafted, exactly as the protocol says — and it still lost, because #92 claimed and shipped the number inside the same working day. Worth noting for the protocol's own sake: an early push detects the race, it does not win it; the renumber is the expected outcome, not a failure. Entry drafted with the PR; clears at ship.
 
 - **FB-0077** — `claude/land-model-invocable` (land-invocable) — "A blunt capability flag that duplicates a narrow mechanical gate should lose to the gate — and satisfying a composition lint by deleting the call concedes the composition instead of fixing it." Makes `/flow:land` model-invocable so `/flow:post-merge` §3 can actually call it (v1.25.0). Entry drafted with the PR; clears at ship.
 

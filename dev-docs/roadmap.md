@@ -106,6 +106,34 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### `/flow:doctor` Check 2.5 is the line-oriented twin of a guard we just made wrap-tolerant
+
+FB-0079 hardened flow's *internal* slot-count sweep after a wrapped `all 30\n  slots` in `doctor/SKILL.md` frontmatter slipped a line-oriented grep. The **consumer-facing** implementation of the same predicate — doctor Check 2.5 — still has all three of the properties that produced that miss: it is line-oriented (`grep -rEn`), its pattern requires a single literal space (`([0-9]+) slots?` vs the internal `\d+\s+slots?`), and it scans only doc-ish paths, not `.json`/`.sh`. So the guard we ship to consumers is weaker than the one we run on ourselves — FB-0079's own class (one contract, two runtimes, held together by nothing) recurring inside FB-0079's fix, one commit after "greps are line-oriented" was written down as the lesson.
+
+Fix shape: hoist the predicate into `skills/doctor/lib/slot_count_scan.py` (stdlib; takes paths + expected count, prints survivors), import it from `run_merge_status_evals.py`, and have Check 2.5's shell block invoke it — doctor already shells out elsewhere. That collapses three divergences to zero and gives the eval a red-verifiable shared target instead of a private copy. If a Python dependency inside doctor's shell is unacceptable, the minimum is a `\s+` pattern over newline-flattened file content plus an assertion that both implementations agree on a wrapped fixture. Cross-link with the § Exploration mirror-registry entry — this is a concrete member of that class. ~1–2h with red-verification.
+
+### Make `PATTERN-WARNING` a rendered string, not an instruction
+
+`skip-audit-checks.py` emits `context.pattern_warnings` as raw `[WARN] …` strings, and `audit-skips/SKILL.md` spends ~8 lines teaching the model to reformat them into a `⚠️ PATTERN-WARNING:` line — inside an output contract that otherwise says "no prose before or after," so the instruction has to carve out an exception to itself. The eval asserts the SKILL *contains the substring* `PATTERN-WARNING`, which pins the spelling rather than the behavior.
+
+`ship/lib/manifest-triage.py` already does the stronger thing in this repo: the engine renders the exact human-facing block and the eval pins the rendered text. Mirror it — have the engine emit `pattern_warning_lines` already formatted, reduce the SKILL to "print each entry verbatim above the summary," and retarget the eval to the emitted string. The "no prose" exception becomes "these lines are output, not prose." ~45 min including the eval retarget.
+
+
+### Run FB-0079's question-test on `sourceFilePatterns` (audit, not a split)
+
+FB-0079 names a **class** — one config slot gating consumers that ask different questions — and this PR swept only the instance. `sourceFilePatterns` is the untested second member: `/flow:security-review` asks a **risk** question ("is there anything here worth a security look?"), while `/flow:ship` §1c and `/flow:ship-spike` §1c ask a **cost** question ("is a preflight run worth spending on this diff?"), and `skip-audit-checks.py`'s `touches_source` audits the verify-build doc-only claim. Their fail-safe directions diverge exactly as FB-0079's corollary predicts: the risk gate should over-include, the cost gate can be tight. The shape that would expose it: a Terraform-only PR against a `tsc && eslint && vitest` preflight — it must get a security review, and there is nothing for the preflight to run.
+
+Scope this as an **audit, not a split**: name the question each of the four consumers asks and record the answer in the schema description whether or not it diverges. Split only on a *measured* forced trade — inventing two more slots without a consumer report is the over-reach FB-0079 does not license. Cheap half worth doing regardless: `DEFAULT_SOURCE_PATTERN` is hand-copied at ~13 sites across 8 files in 3 languages with zero eval coverage — hoist it into `lib/file_patterns.py` and give it the same extract-and-compare parity guard the UI default now has. A "no split needed" outcome is a valid, cheap result.
+
+### An executable harness for the `/flow:accessibility-review` shell gate
+
+The FB-0079 parity eval extracts and checks the gate's *slot-resolution* jq, but the rest of the block is unpinned: the `[ -z "$UI_PATTERN_SRC" ]` fallback, the `.[$s] // empty` lookup, the invalid-regex branch, and the actual RAN/SKIPPED decision were hand-verified at ship and nothing holds them. A `run_a11y_gate_evals.py` that extracts the ```sh block, sources it into a temp git repo, and asserts the decision across config shapes would close it — the same shape as the hand-verification done for FB-0079, made durable. Surfaces the moment anyone edits that block.
+
+### A declared reason-string enum shared by the emitter and the recognizer
+
+`accessibility-review/SKILL.md` emits `no UI files in diff`; `skip-audit-checks.py::_reason_has` matches it by substring (`"no ui"`). FB-0079 shifted the surrounding vocabulary to "a11y-surface" everywhere *except* that emitted string — correctly, because renaming it silently downgrades every a11y skip to `NEEDS-JUDGMENT` with the raw string echoed back. That coupling is real and undeclared. Closing it properly means a shared reason vocabulary in the `manifest_contract.py` shape (one definition, imported by emitter and recognizer), not a comment. Near-term stopgap: a `# PARSED BY skip-audit-checks.py::_reason_has` marker at both ends. Owner: whoever next touches `_reason_has`.
+
+
 ### Declare the skill-composition graph as data, replacing per-pair hand-pins (from the FB-0077 altitude lens)
 
 `doctor/lib/skill-composition-lint.py` checks a **negative** — no `Skill()` call names a model-disabled target — which passes two opposite ways: the composition is legal, *or* the call was deleted. It cannot tell them apart, which is exactly how FB-0074 satisfied it by conceding the call. FB-0077 fixed the one instance by hand, and that fix now costs **six assertions across three harnesses** for a single caller→callee pair.
@@ -447,6 +475,18 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 ---
 
 ## § Exploration
+
+### A general harness for flow's shell↔Python mirrors
+
+**Surfaces when:** a third shell/Python mirror needs a parity guard, or any single change touches two or more `plugins/flow/skills/*/SKILL.md` shell preambles plus a `plugins/flow/skills/*/lib/*.py` implementing the same resolution.
+
+FB-0079 introduced `_extract_jq_src()` — extract the *live* expression out of the SKILL and assert it against the Python implementation, rather than copying it into the eval (a copy would be a third implementation of the same contract). It works, it is mutation-tested, and it is currently spent on one jq line. Flow is structurally full of the same join: `sourceFilePatterns` resolution is spelled in jq at ~5 SKILL sites and in Python at 2; the FB-0074 root-anchor block is duplicated across several SKILLs; `defaultBranch` resolution appears in nearly every shell preamble. Every one is a contract implemented twice in two languages, held together by a comment.
+
+The open question to answer first is whether the win is a *harness* or a *convention*: a registry of `(skill, marker, python_symbol)` triples that a generic eval walks, versus a `# flow:mirror-of <symbol>` marker that makes every mirrored block extractable by construction so the eval is generated rather than written. Guessing wrong is worse than waiting — which is why this is Exploration and not Next.
+
+An additional half this entry does not yet name: once both sides are extractable, you still have to choose the **input corpus**, and FB-0079's rounds 1 and 2 were green because the corpus was authored by the same agent as the code. Whatever shape wins should ship a *named input axis* alongside it — for JSON-slot mirrors that axis is type × truthiness, the 6×2 grid this PR reached only after three rounds of bug reports — so a new mirror inherits the corpus instead of re-deriving it from the examples its author happens to have in hand. Extend the trigger below with: "…or when a third parity check hand-lists its own fixture values."
+
+
 
 ### Two blockers, one root cause — should triage relate entries? (from the FB-0075 push-further lens)
 

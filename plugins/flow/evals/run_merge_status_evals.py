@@ -16,7 +16,7 @@ is prose the agent drives, but its LOAD-BEARING core is deterministic and pinned
                  (FB-0077: land's flag was cleared, so the Skill() call executes —
                  composition, not reimplementation and not a hand-off), uses `branch -d`
                  never `-D`, and writes NO feedbackPath repo doc in v1 (user-scope only).
-  schema       — the postMergeWaitSeconds slot exists and the slot count is 30 (a "N slots"
+  schema       — the postMergeWaitSeconds slot exists and the slot count is 32 (a "N slots"
                  fan-out is the most-recurring bug class this repo tracks — FB-0010).
 
 Stdlib only.
@@ -232,7 +232,46 @@ def main() -> int:
         check("schema-slot-present", slot.get("type") == "integer" and "default" in slot,
               f"postMergeWaitSeconds slot: {slot}")
         check("schema-slot-default", slot.get("default") == 150, f"default={slot.get('default')}")
-        check("schema-slot-count-30", len(props) == 30, f"slot count = {len(props)} (want 30)")
+        # Deliberately a hard-coded literal, not a computed value: this is the
+        # FB-0010 tripwire that forces every slot addition to walk the "N slots"
+        # fan-out (docs/workflow.md, template/base/CLAUDE.md.template).
+        # 30 -> 32 at v1.26.0 (visualFilePatterns + a11yFilePatterns, FB-0079).
+        check("schema-slot-count-32", len(props) == 32, f"slot count = {len(props)} (want 32)")
+        # And no shipped surface may contradict it. Deliberately WRAP-TOLERANT: the
+        # literal is matched across newlines, because the survivor that slipped this
+        # PR's first sweep was `all 30\n  slots` wrapped inside doctor/SKILL.md's
+        # frontmatter — invisible to a line-oriented `grep -n '30 slots'`. Grepping the
+        # old VALUE also misses the class; this greps the SHAPE.
+        import re as _re
+        root = Path(__file__).resolve().parents[3]
+        stale, scanned = [], 0
+        for sub in ("plugins", "template"):
+            for f in sorted((root / sub).rglob("*")):
+                if not f.is_file() or f.suffix not in (".md", ".json", ".sh", ".template"):
+                    continue
+                if "evals/" in str(f) or f.name == "plan-critic.md":
+                    continue  # harnesses + the prose example that teaches the failure
+                try:
+                    text = f.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                scanned += 1
+                for m in _re.finditer(r"(\d+)\s+slots?\b", text):
+                    line_start = text.rfind("\n", 0, m.start()) + 1
+                    prefix = text[line_start:m.start()].lstrip()
+                    # Shell comments only. A markdown heading also starts with "#",
+                    # so exempting it repo-wide would let "## Config (30 slots)" hide.
+                    if f.suffix == ".sh" and prefix.startswith("#"):
+                        continue
+                    if m.group(1) != str(len(props)):
+                        stale.append(f"{f.relative_to(root)}: {m.group(0)!r}")
+        # Vacuous-pass guard: an empty sweep (moved dirs, installed-plugin layout)
+        # would otherwise go green having measured nothing — the exact class this
+        # same commit fixed in the jq-parity check.
+        check("slot-count-sweep-scanned-files", scanned > 0,
+              f"sweep scanned {scanned} files under {root} — it measured nothing")
+        check("no-stale-slot-count-in-shipped-surfaces", not stale,
+              "shipped surfaces contradict the schema count: " + "; ".join(stale))
     else:
         check("schema-exists", False, "flow.config.schema.json missing")
 
