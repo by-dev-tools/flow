@@ -29,7 +29,11 @@ Most recurring bug class flow's own development has surfaced (6 incidents across
 
 2. **Fan-out contradiction.** A contract value (count, name, slot, version) referenced in N files, where a contract change only updated some of them. Defense: **grep first, edit second.** When changing a count or name, run `git grep -nE '<old-value>'` across the codebase before staging. Treat every survivor as a fix that ships with the contract change, not a follow-up. Specifically watch: schema slot counts (`N slots`), skill/agent counts (`N user-visible skills`), version strings, slot/flag/skill names.
 
-When in doubt, ask: "If a colleague greps for the old value tomorrow, will they find a contradiction?" If yes, fix it now.
+3. **Prohibition satisfiable by deletion.** An assertion that only forbids something — `X not in <text>`, "no `Skill()` call names a disabled target", "the manifest is absent" — passes in two opposite worlds: the contract is honored, *or* the contract was removed. The check cannot tell them apart, so deleting the protected thing turns it green. Defense: **never ship a negative assertion alone.** Pair it with the positive assertion of the thing it protects (`"branch -d" in skill` **and** `"branch -D" not in skill`). The same applies to lint remediation text — if the advice names a fix that deletes the call site, it is telling the author to satisfy the detector rather than the contract.
+
+   This is not hypothetical, and the repo contains both outcomes. `run_visual_history_evals.py` pairs its negative with three positives and is correct. `skill-does-not-CALL-land` was the identical shape *without* the pairing, so when FB-0074 satisfied it by deleting `/flow:post-merge`'s composition call, CI went green over a feature that no longer existed — for four releases (FB-0077). Same repo, same class, opposite outcomes; the only variable was whether anyone remembered to add the positive.
+
+When in doubt, ask: "If a colleague greps for the old value tomorrow, will they find a contradiction?" If yes, fix it now. And: "If someone deleted the thing this check protects, would the check still pass?" If yes, it isn't a check yet.
 
 ## Workflow discipline (FB-0010 workflow-step sub-class)
 

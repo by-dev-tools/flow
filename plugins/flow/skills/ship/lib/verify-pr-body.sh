@@ -38,10 +38,17 @@
 #       The final gate at ship Step 7 and the doctor/land drift checks call this.
 
 # Resolve pr-coherence.py once (plugin-installed, else in-repo).
+# Require its sibling manifest_contract.py too: pr-coherence.py imports the
+# manifest markers from it, so a partial/stale plugin dir makes the script exit
+# non-zero with ModuleNotFoundError. Callers that redirect stderr (land, doctor)
+# would read that crash as "the manifest is present" and report a false
+# merged-in-a-not-ready-state BLOCKER. Missing sibling => report unresolvable.
 _flow_pr_coherence_py() {
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/pr-coherence.py" ]; then
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/pr-coherence.py" ] \
+     && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest_contract.py" ]; then
     printf '%s' "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/pr-coherence.py"
-  elif [ -f "plugins/flow/skills/ship/lib/pr-coherence.py" ]; then
+  elif [ -f "plugins/flow/skills/ship/lib/pr-coherence.py" ] \
+     && [ -f "plugins/flow/skills/ship/lib/manifest_contract.py" ]; then
     printf '%s' "plugins/flow/skills/ship/lib/pr-coherence.py"
   else
     return 1

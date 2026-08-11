@@ -490,7 +490,7 @@ def render(buffer, assets_dir):
     # the layer anchors a pin to ANY DOM element (hover-picked), not just a captured frame,
     # so a text-only report (open questions, criteria, coverage) is a valid annotation
     # surface too — hence unconditional, gated only on the layer file being readable.
-    # The layer makes the report two-way: the human pins an element, and "Copy notes"
+    # The layer makes the report two-way: the human comments on an element, and "Copy all"
     # returns located, descriptor-based feedback.
     layer = load_annotation_layer(warnings)
     doc = (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'

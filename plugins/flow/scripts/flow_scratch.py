@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Handoff stamping for flow (FB-0075).
+Handoff stamping for flow (FB-0078).
 
 Two failures this exists to close, which turned out to share one cause and one fix:
 

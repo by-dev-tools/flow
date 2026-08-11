@@ -26,7 +26,7 @@ Subcommands (stdlib only):
         <repo-root>/.flow/staff-review-marker-<branch-slug>.json. Prints the path. Exit 0; a
         write failure → stderr + exit 1 (graceful: the caller warns, never aborts the review).
 
-        REPO-LOCAL since FB-0075. The old default was /tmp/flow-staff-review-marker-<slug>.json,
+        REPO-LOCAL since FB-0078. The old default was /tmp/flow-staff-review-marker-<slug>.json,
         keyed on branch name alone in one global namespace — so two projects on a same-named
         branch ("main", "claude/fix-x") wrote to the SAME file. That failed safe rather than
         open (the source_sha would mismatch, reading as "source-drift" instead of "ok"), but it
@@ -122,7 +122,7 @@ def _slug(branch: str) -> str:
 
 
 def _default_path(branch: str) -> Path:
-    """Repo-local marker path (FB-0075); falls back to the legacy /tmp form only when
+    """Repo-local marker path (FB-0078); falls back to the legacy /tmp form only when
     there is no enclosing worktree, so a detached run still functions rather than
     writing to the filesystem root."""
     root = _git(["rev-parse", "--show-toplevel"]).strip()

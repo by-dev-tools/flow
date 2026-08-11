@@ -63,9 +63,15 @@ import re
 import sys
 from pathlib import Path
 
-# Canonical manifest markers — keep in lockstep with the block ship Step 7 writes.
-MANIFEST_MARKER = "<!-- flow:not-ready-manifest -->"
-MANIFEST_HEADING = "🚫 NOT READY TO MERGE"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from manifest_contract import (  # noqa: E402  (sibling-module import, house pattern)
+    MANIFEST_HEADING,
+    MANIFEST_OPEN as MANIFEST_MARKER,
+)
+
+# The markers live in `manifest_contract.py` because this file DETECTS them and
+# `manifest-triage.py` EMITS them — two independent copies of the same literal is
+# how an emitter/detector pair silently splits (FB-0010).
 
 # Canonical Test-plan provenance stamp — keep in lockstep with
 # `ship/lib/render-test-plan.py::PROVENANCE_MARKER` (FB-0010 fan-out).

@@ -210,8 +210,16 @@ def rigor_fresh(branch, source_pattern):
 
 
 def _reason_has(skip_reason, *needles):
+    """True if any `needle` appears in `skip_reason` at word boundaries.
+
+    Plain substring matching false-positives on short needles: "none" matches
+    inside "nonetheless", "library" matches inside "interlibrary" — turning an
+    ordinary English word into a confidently-wrong SHOULD-RE-RUN verdict that
+    misquotes which claim it is refuting. `\\b` anchors work for multi-word
+    phrases too ("platform library" still matches as a phrase; the boundary
+    applies at the phrase's own start/end, not each internal space)."""
     s = (skip_reason or "").lower()
-    return any(n in s for n in needles)
+    return any(re.search(r"\b" + re.escape(n) + r"\b", s) for n in needles)
 
 
 def _doc_only_verdict(diff_is_clean, label, auto):

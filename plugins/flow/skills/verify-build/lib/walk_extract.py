@@ -74,6 +74,19 @@ follow-ups):
   a parser tweak; tracked in the roadmap. `test_anchor_known_limitation_*` pin
   the current behavior of both so neither is rediscovered as a fresh bug.
 
+- **All-demoted detection.** A heading may carry a demote qualifier — `(shipped)`,
+  `(merged …)`, `(demoted)` — already recognized by the heading regex but, until
+  now, not given any meaning: "first heading found" won a plan even when that
+  heading was qualified as already-shipped. When EVERY matched heading for a
+  label is qualified this way, there is no active block at all — a PR with
+  legitimately no `Spec-walk`/`Visual-walk` of its own (post-merge hygiene, a
+  doc reconcile) must not be silently hidden behind the last-merged PR's
+  criteria. `extract_block` now skips demoted headings when choosing the
+  active one, and reports `all_demoted: True` (with `items: []`) instead of
+  quietly returning a demoted heading's stale checkboxes. This is distinct
+  from `block_count == 0` (no heading at all) — callers should not conflate
+  the two when deciding whether to fall back to spike mode.
+
 Stdlib only. Python 3.7+.
 """
 
@@ -103,6 +116,19 @@ _BOLD_LABEL_RE = re.compile(r"^\s*\*\*[^*]+\*\*(?:\s*\*[^*]+\*)?\s*:?\s*$")
 # Malformed checkbox: `- []` (no space) / `- [?]` — worth a warning so the
 # author notices, since it silently drops a would-be criterion otherwise.
 _MALFORMED_CB_RE = re.compile(r"^\s*[-*+]\s+\[\s*[^\] xX]?\s*\]")
+
+# A heading qualifier marking a block as already-shipped/merged/demoted, e.g.
+# `**Spec-walk (PR 1c — shipped):**`, `**Spec-walk (merged #86):**`. Matched
+# against the heading LINE (not just the parenthetical), so it fires wherever
+# the qualifier word appears inside any parens on that line.
+_DEMOTED_QUALIFIER_RE = re.compile(
+    r"\([^)]*\b(?:shipped|merged|demoted)\b[^)]*\)", re.IGNORECASE
+)
+
+
+def _is_demoted_heading(line: str) -> bool:
+    """True if `line` is a walk heading qualified as already-shipped."""
+    return bool(_DEMOTED_QUALIFIER_RE.search(line))
 
 
 def heading_re(label: str) -> "re.Pattern[str]":
@@ -140,15 +166,19 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
 
     Returns a dict:
       {
-        "items":         [<checkbox text>, ...],   # first block only
+        "items":         [<checkbox text>, ...],   # first ACTIVE block only
         "block_count":   <int>,                    # how many label blocks exist
         "first_heading": "<heading line>" | None,  # the selected heading
         "co_located":    True | False | None,      # vs anchor_label's active region
+        "all_demoted":   True | False,              # every block is qualified shipped/merged/demoted
         "warnings":      ["..."],
       }
 
     `block_count == 0` means no label block at all (caller falls back / skips
-    with an explicit reason — never a silent gap).
+    with an explicit reason — never a silent gap). `all_demoted == True` is a
+    DIFFERENT empty-items case: `block_count > 0`, but every matched heading is
+    qualified as already-shipped — there is no active block, not "no heading at
+    all". Callers must not conflate the two.
 
     When `anchor_label` is given, the matched block must fall inside the ACTIVE
     region — every line before the SECOND `anchor_label` heading — or it is
@@ -168,10 +198,30 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
             "block_count": 0,
             "first_heading": None,
             "co_located": None,
+            "all_demoted": False,
             "warnings": warnings,
         }
 
-    first = heading_idxs[0]
+    active_idxs = [i for i in heading_idxs if not _is_demoted_heading(lines[i])]
+    if not active_idxs:
+        at = ", ".join(str(i + 1) for i in heading_idxs)
+        warnings.append(
+            f"every {label} block found (lines {at}) is qualified as already-"
+            f"shipped/merged/demoted — the active section declares NO {label} "
+            f"of its own. This is NOT the same as no {label} heading at all "
+            f"(block_count=0); do not silently borrow a demoted block's stale "
+            f"checkboxes."
+        )
+        return {
+            "items": [],
+            "block_count": len(heading_idxs),
+            "first_heading": None,
+            "co_located": None,
+            "all_demoted": True,
+            "warnings": warnings,
+        }
+
+    first = active_idxs[0]
     first_heading = lines[first].strip()
 
     if len(heading_idxs) > 1:
@@ -244,6 +294,7 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
         "block_count": len(heading_idxs),
         "first_heading": first_heading,
         "co_located": co_located,
+        "all_demoted": False,
         "warnings": warnings,
     }
 
@@ -337,6 +388,7 @@ def cli_main(
                 "source_heading": block["first_heading"],
                 "block_count": block["block_count"],
                 "co_located": block["co_located"],
+                "all_demoted": block["all_demoted"],
                 "warnings": warnings,
             },
             indent=2,

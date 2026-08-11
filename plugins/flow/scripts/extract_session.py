@@ -463,7 +463,7 @@ def render_reference_section(
 ) -> str:
     """Render the reference-doc block, or a LOUD warning when nothing resolved.
 
-    SAFETY (FB-0075): this used to `return ""` when zero docs resolved, so a
+    SAFETY (FB-0078): this used to `return ""` when zero docs resolved, so a
     misconfigured `referenceGlob` produced a context with NO reference section at
     all -- indistinguishable from "this project has no rules to violate". The
     plan-critic then ran without the documents it is required to cite, and reported

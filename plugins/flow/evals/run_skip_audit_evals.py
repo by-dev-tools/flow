@@ -195,6 +195,47 @@ def main() -> int:
                  files="M\tsrc/Button.tsx", diff=REAL_TSX_DIFF)
         check("zero-frames-visual-pass", verdict_of(rc, "verify-build") == "SHOULD-RE-RUN", f"{verdict_of(rc,'verify-build')}")
 
+        # --- substring-needle false positive (_reason_has word-boundary regression) ---
+        # "nonetheless" contains "none"; "interlibrary" contains "library". A skip
+        # reason that merely happens to contain one of those words as a SUBSTRING
+        # must NOT be misread as a "platform library/none" claim — the honest
+        # outcome for an unrecognized reason is NEEDS-JUDGMENT, never a
+        # confidently-wrong SHOULD-RE-RUN.
+        web_cfg = {"uiSurface": True, "platform": "web", "verifyFindingsPath": buf_path, "visualHistoryPath": vh_path}
+        report_substr = {"stages": [
+            {"name": "verify-build", "status": "skipped",
+             "skip_reason": "reviewer decided nonetheless to skip, no further action needed"},
+        ]}
+        r = run(tmp, config=web_cfg, report=report_substr, files="M\tsrc/server.py")
+        check(
+            "substring-needle-not-mismatched",
+            verdict_of(r, "verify-build") == "NEEDS-JUDGMENT",
+            f"got {verdict_of(r, 'verify-build')!r} — 'nonetheless'/'none' substring must not "
+            f"be read as a platform-library/none claim: {r.get('stages')}",
+        )
+
+        report_substr2 = {"stages": [
+            {"name": "verify-build", "status": "skipped",
+             "skip_reason": "the interlibrary loan importer is unrelated to this change"},
+        ]}
+        r2 = run(tmp, config=web_cfg, report=report_substr2, files="M\tsrc/server.py")
+        check(
+            "substring-needle-interlibrary-not-mismatched",
+            verdict_of(r2, "verify-build") == "NEEDS-JUDGMENT",
+            f"got {verdict_of(r2, 'verify-build')!r}: {r2.get('stages')}",
+        )
+
+        # The genuine multi-word phrase must still match (regression guard for the fix itself).
+        report_genuine = {"stages": [
+            {"name": "verify-build", "status": "skipped", "skip_reason": "platform library"},
+        ]}
+        r3 = run(tmp, config=lib_cfg, report=report_genuine, files="M\tsrc/server.py")
+        check(
+            "genuine-platform-library-still-legit",
+            verdict_of(r3, "verify-build") == "LEGITIMATE",
+            f"got {verdict_of(r3, 'verify-build')!r}",
+        )
+
     # A present-but-MALFORMED report must EXIT NON-ZERO with a stderr diagnostic and clean
     # stdout — so the audit-skips SKILL / ship Step 2a can tell an engine failure apart from an
     # absent handoff and surface it loudly, instead of the old `return 0` + `{"...","stages":[]}`

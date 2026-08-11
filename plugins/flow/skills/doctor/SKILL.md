@@ -138,10 +138,12 @@ else
     printf '%s\n' "$OUT" | sed 's/^/       /'
     case "$RC" in
       0) echo "[PASS] skill-composition targets model-invocable ($D)" ;;
+      # The lint's own output (printed above) carries the full remediation, including WHICH
+      # half to change and why deleting the call is usually the wrong fix. Don't restate it
+      # here — a second, shorter, differently-ordered list is how the two drift apart.
       1) echo "[FAIL] skill-composition — a Skill() call names a disable-model-invocation skill ($D)"
          echo "       That call is REJECTED at runtime, so the step silently never runs."
-         echo "       Fix: clear the flag on the callee, give it a model-invocable entrypoint,"
-         echo "            inline the step, or hand it to the human instead of calling it." ;;
+         echo "       Fix: see the [skill-composition-lint] FAIL detail above." ;;
       *) echo "[WARN] skill-composition lint could not run over $D (exit $RC) — composition is UNCHECKED, not clean." ;;
     esac
   done
@@ -498,12 +500,22 @@ else
       NUM=$(printf '%s' "$LIST_OUT" | jq -r '.[0].number // empty' 2>/dev/null)
       if [ -z "$NUM" ]; then
         echo "[PASS] live-PR coherence — no open PR for '$BR' (nothing to check)"
-      elif flow_assert_pr_coherent "$NUM" >/dev/null 2>&1; then
-        echo "[PASS] live-PR coherence — PR #$NUM body↔draft state coherent"
       else
-        echo "[FAIL] live-PR coherence — PR #$NUM is NOT a draft but its body still carries '🚫 NOT READY TO MERGE'"
-        echo "       This PR would merge looking not-ready. Do NOT hand-edit the body (that is the silent-write path that caused this)."
-        echo "       Fix: run the /flow:ship reconcile fast-path (Step 7c) to re-render the body + reconcile draft state from the current gate."
+        # Three-way, mirroring the provenance sibling below: rc 2 means "could not
+        # verify" (e.g. a partial plugin dir where pr-coherence.py's
+        # manifest_contract sibling is absent), NOT "the PR is incoherent".
+        # Printing a definitive FAIL there is the false-BLOCKER the resolver guard
+        # in verify-pr-body.sh exists to prevent.
+        flow_assert_pr_coherent "$NUM" >/dev/null 2>&1
+        COH_RC=$?
+        case "$COH_RC" in
+          0) echo "[PASS] live-PR coherence — PR #$NUM body↔draft state coherent" ;;
+          1) echo "[FAIL] live-PR coherence — PR #$NUM is NOT a draft but its body still carries the not-ready sentinel"
+             echo "       This PR would merge looking not-ready. Do NOT hand-edit the body (that is the silent-write path that caused this)."
+             echo "       Fix: run the /flow:ship reconcile fast-path (Step 7c) to re-render the body + reconcile draft state from the current gate." ;;
+          *) echo "[WARN] live-PR coherence — could not verify PR #$NUM (checker exit $COH_RC); treat as UNCHECKED, not a pass"
+             echo "       Usual cause: a partial/stale plugin dir (pr-coherence.py present, manifest_contract.py missing). Reinstall the plugin." ;;
+        esac
       fi
       # FB-0074 — same re-fetch, second invariant. Ship asserts Test-plan provenance at
       # 7b, but a body hand-edited AFTER ship is never caught there; that is exactly why

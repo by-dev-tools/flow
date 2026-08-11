@@ -14,7 +14,9 @@ A change is **visually significant** when ALL of:
   2. the diff (committed + uncommitted + untracked) touches a `uiFilePatterns`
      file OR adds/modifies an image / font / asset file, AND
   3. it is NOT a pure no-render-delta refactor (rename-only / comment-only /
-     whitespace-only / punctuation-only change to those files).
+     whitespace-only / punctuation-only / DEBUG-only-conditional change to
+     those files — a hunk entirely inside a `#if DEBUG` / `#ifdef DEBUG`
+     region is Release-byte-identical and does not count).
 
 Strong overrides that force `significant = true` regardless of the heuristics
 above (but still subject to gate 1 — a project that declares NO UI surface is
@@ -76,6 +78,31 @@ DEFAULT_ASSET_PATTERN = r"\.(png|jpe?g|gif|svg|webp|avif|ico|bmp|woff2?|ttf|otf|
 # one of these — or is pure punctuation — does not constitute a render delta.
 _COMMENT_PREFIXES = ("//", "#", "/*", "*/", "*", "<!--", "-->", "--", ";")
 _PUNCT_ONLY = set("{}()[];,.:")
+
+# `#if DEBUG` / `#endif` tracking (Swift + C/Obj-C forms). A changed line inside
+# a DEBUG-only conditional-compilation region is Release-byte-identical — it
+# cannot be a visual delta for the build that ships. Detectable only from what
+# the diff's own context shows (a DEBUG region opened outside the visible hunk
+# is a known limitation of diff-based analysis, not something this can see).
+_PP_IF_RE = re.compile(r"^#\s*(if|ifdef|ifndef)\b(.*)$")
+_PP_ELSE_RE = re.compile(r"^#\s*else\b")
+_PP_ENDIF_RE = re.compile(r"^#\s*endif\b")
+_DEBUG_COND_RE = re.compile(r"^(?:defined\(\s*DEBUG\s*\)|DEBUG)$")
+_NOT_DEBUG_COND_RE = re.compile(r"^!\s*(?:defined\(\s*DEBUG\s*\)|DEBUG)$")
+
+
+def _pp_own_kind(directive, cond):
+    """Classify a `#if`/`#ifdef`/`#ifndef` condition as debug / not-debug / other."""
+    cond = cond.strip()
+    if directive == "ifdef":
+        return "debug" if cond == "DEBUG" else "other"
+    if directive == "ifndef":
+        return "not-debug" if cond == "DEBUG" else "other"
+    if _DEBUG_COND_RE.match(cond):
+        return "debug"
+    if _NOT_DEBUG_COND_RE.match(cond):
+        return "not-debug"
+    return "other"
 
 
 def _git(args):
@@ -162,31 +189,71 @@ def collect_changes_explicit(files_from):
 
 
 def _diff_content_changed(diff_text, ui_re, asset_re):
-    """True if any +/- line inside a UI/asset file's hunk is a real render delta
-    (not comment / whitespace / pure-punctuation). Parses unified diff; tracks the
-    current file via the `+++ b/<path>` header."""
+    """Returns (changed, debug_only_skipped):
+      - changed: True if any +/- line inside a UI/asset file's hunk is a real
+        render delta (not comment / whitespace / pure-punctuation / DEBUG-only).
+      - debug_only_skipped: True iff at least one candidate content line was
+        excluded specifically for being inside a DEBUG-only region (evidence
+        for the caller's signals, even when `changed` ends up True from some
+        other line).
+    Parses unified diff; tracks the current file via the `+++ b/<path>` header.
+    Also tracks `#if DEBUG` / `#endif` nesting (from context + changed lines
+    alike) so a change entirely inside a DEBUG-only conditional-compilation
+    region — Release byte-identical — does not count as a visual delta."""
     cur_relevant = False
+    pp_stack = []  # [{"effective": bool, "kind": "debug"|"not-debug"|"other"}, ...]
+    debug_only_skipped = False
+
+    def debug_only():
+        return bool(pp_stack) and pp_stack[-1]["effective"]
+
     for line in diff_text.splitlines():
         if line.startswith("+++ "):
             p = line[4:].strip()
             if p.startswith("b/"):
                 p = p[2:]
             cur_relevant = bool(ui_re.search(p) or asset_re.search(p)) and p != "/dev/null"
+            pp_stack = []  # preprocessor nesting does not carry across files
             continue
         if line.startswith("--- ") or line.startswith("diff ") or line.startswith("@@"):
             continue
         if not cur_relevant:
             continue
-        if line[:1] in ("+", "-") and not line.startswith(("+++", "---")):
-            body = line[1:].strip()
-            if not body:
-                continue  # whitespace-only
-            if any(body.startswith(pfx) for pfx in _COMMENT_PREFIXES):
-                continue  # comment-only
-            if all(ch in _PUNCT_ONLY or ch.isspace() for ch in body):
-                continue  # pure punctuation / brace move
-            return True
-    return False
+
+        prefix = line[:1]
+        raw = line[1:] if prefix in ("+", "-", " ") else line
+        stripped = raw.strip()
+
+        m = _PP_IF_RE.match(stripped)
+        if m:
+            kind = _pp_own_kind(m.group(1), m.group(2))
+            parent_effective = pp_stack[-1]["effective"] if pp_stack else False
+            effective = {"debug": True, "not-debug": False}.get(kind, parent_effective)
+            pp_stack.append({"effective": effective, "kind": kind})
+        elif _PP_ELSE_RE.match(stripped) and pp_stack:
+            top = pp_stack[-1]
+            if top["kind"] == "debug":
+                top["effective"], top["kind"] = False, "not-debug"
+            elif top["kind"] == "not-debug":
+                top["effective"], top["kind"] = True, "debug"
+            # "other"-kind #if: #else stays at the parent's effective value.
+        elif _PP_ENDIF_RE.match(stripped) and pp_stack:
+            pp_stack.pop()
+
+        if prefix not in ("+", "-"):
+            continue
+        body = stripped
+        if not body:
+            continue  # whitespace-only
+        if any(body.startswith(pfx) for pfx in _COMMENT_PREFIXES):
+            continue  # comment-only (also catches the #if/#else/#endif lines themselves)
+        if all(ch in _PUNCT_ONLY or ch.isspace() for ch in body):
+            continue  # pure punctuation / brace move
+        if debug_only():
+            debug_only_skipped = True
+            continue  # DEBUG-only region — Release build is byte-identical
+        return True, debug_only_skipped
+    return False, debug_only_skipped
 
 
 def main(argv):
@@ -307,9 +374,15 @@ def main(argv):
     # we inspect the diff: if NONE of the matched files carry a content delta, the
     # change is rename-only / comment-only / whitespace-only ⇒ not significant.
     new_files = [p for st, p in changes if st in ("A", "U") and (ui_re.search(p) or asset_re.search(p))]
-    content_changed = bool(new_files) or _diff_content_changed(diff_text, ui_re, asset_re)
+    diff_changed, debug_only_skipped = _diff_content_changed(diff_text, ui_re, asset_re)
+    content_changed = bool(new_files) or diff_changed
     # An asset whose path matched but which only appears under a rename (R) with no
     # content, and no diff body, is caught here: matched but content_changed False.
+    if debug_only_skipped:
+        signals.append(
+            "some matched-file hunks were inside a `#if DEBUG` region and were "
+            "NOT counted as a render delta (Release build is byte-identical there)"
+        )
 
     if override_signal:
         return emit(True, f"override ({override}) forces visually-significant")

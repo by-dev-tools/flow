@@ -115,12 +115,21 @@ If `$RIGOR` was not `ok` on a source-touching, non-spike/tiny ship, **first re-r
 `/flow:staff-review`** on the final tree and re-read the marker (auto-resolvable — the same
 discipline as Step 2a's `SHOULD-RE-RUN · auto-resolvable`; re-run once, don't loop). Only if the
 re-run is impossible in this context — or itself yields an unresolved `[decision-required]` —
-**add to the draft manifest** (Step 2): `[decision-required] /simplify + /flow:staff-review
-evidence unresolvable for this source (<reason>) — human-waive or resolve`. This keeps the gating
+**add to the draft manifest** (Step 2), in the canonical line shape (Step 2):
+`[rigor] /simplify + /flow:staff-review evidence unresolvable for this source (<reason>) — needs: human-waive — confidence: decision-required — candidate resolutions: <what would make the re-run possible, e.g. run it from a checkout where the source is present>`. This keeps the gating
 half of the Step 1.0 assumption block intact — a source-touching diff can't reach a *ready* PR
 without the reviews genuinely running — while keeping the resolution auto-resolvable, so a
 merely-stale marker never forces a draft PR the human must clear by hand (a draft is reserved for
 genuine open decisions, not a re-runnable step).
+
+### 1.0b. Reset the run's draft manifest
+
+Producers append to a branch-scoped manifest file from §1.0a onward. Reset it here, once, before any of them fires — otherwise a previous run's entries survive into this one, and a stale `[verify-build]` entry among them is never subtractable (`CHECK_ONLY`), so the PR could never reach `verdict == READY` over a blocker from another branch.
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+python3 "$TRIAGE" init-run --branch "$(git branch --show-current)"
+```
 
 ### 1.5. External CLI dependency check (BLOCKING)
 
@@ -268,10 +277,26 @@ Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, `/flo
 
 **Findings resolve into exactly one of three outcomes — never a silent proceed, never a hard mid-loop halt:**
 - **`[auto-fixable]` BLOCKER + cheap NIT** → fix in-tree, continue (today's happy path).
-- **`[decision-required]` BLOCKER** (security/a11y tag the axis; see their output contracts) → do NOT best-effort it. Add it to the **draft manifest** (an in-memory list this run accumulates) for Step 7. The loop keeps going — the human resolves it at the merge gate, not mid-flight.
-- **`/flow:audit-coverage` `ISSUE · Undeclared change`** → each uncovered behavior is a **`[decision-required]`** entry on the draft manifest (`needs: declare + verify the criterion, or human waive`). Do NOT auto-add the criterion yourself — that is the agent grading its own homework; the resolution is to declare the criterion in the plan's `**Spec-walk:**` block and let `/flow:verify-build` verify it (or the human waives it at the merge gate). A clean `No issues flagged.` adds nothing.
-- **`/flow:verify-build` `metadata.no_plan_fallback: true` on a source-touching diff** → a **`[decision-required]`** draft-manifest entry (`verify-build ran without a governing plan (no **Spec-walk:** block) — declare the criteria + re-verify, or human-waive`). The verdicts may be real (the §2b judged path produces genuine `adversarial-judged` PASSes over diff-derived criteria), but a plan was *expected* and absent: a production diff shouldn't reach a ready PR via the no-plan path. Resolve by declaring the criteria in the plan's `**Spec-walk:**` block (so the next run is full mode) or waiving at the merge gate. A docs-only no-plan run (smoke path) does not route here.
+- **`[decision-required]` BLOCKER** (security/a11y tag the axis; see their output contracts) → do NOT best-effort it. Add it to the **draft manifest** (an in-memory list this run accumulates) in the canonical line shape (Step 2):
+  `[security] <the reviewer's finding> — needs: <secret rotation | dep vetting | design decision> — confidence: decision-required — candidate resolutions: <the reviewer's candidate fixes, and the human input each needs>`
+  `[a11y] <the reviewer's finding> — needs: <design decision | dep vetting> — confidence: decision-required — candidate resolutions: <the reviewer's candidate fixes, and the human input each needs>`
+  The loop keeps going. Step 7a.5 triages it: `secret rotation`/`dep vetting` need an action outside this session (a genuine draft); anything else becomes a question the human answers at the Step 8 hand-off.
+- **`/flow:audit-coverage` `ISSUE · Undeclared change`** → each uncovered behavior is an entry on the draft manifest in the canonical line shape (Step 2):
+  `[coverage] <the uncovered behavior> — needs: declare + fence — confidence: decision-required — candidate resolutions: <the criterion you DRAFTED for the plan's Spec-walk block — drafting it is your job; declaring it is not>`. Do NOT auto-add the criterion yourself — that is the agent grading its own homework; the resolution is to declare the criterion in the plan's `**Spec-walk:**` block and let `/flow:verify-build` verify it (or the human waives it at the merge gate). A clean `No issues flagged.` adds nothing.
+- **`/flow:verify-build` `metadata.no_plan_fallback: true` on a source-touching diff** → a draft-manifest entry in the canonical line shape (Step 2): `[verify-build] ran without a governing plan (no **Spec-walk:** block) — needs: declare + fence — confidence: decision-required — candidate resolutions: <the criteria you DRAFTED, for the human to approve into the Spec-walk block>`. The verdicts may be real (the §2b judged path produces genuine `adversarial-judged` PASSes over diff-derived criteria), but a plan was *expected* and absent: a production diff shouldn't reach a ready PR via the no-plan path. Resolve by declaring the criteria in the plan's `**Spec-walk:**` block (so the next run is full mode) or waiving at the merge gate. A docs-only no-plan run (smoke path) does not route here.
 - **FOLLOW-UP** → Step 3 routing.
+
+**How a producer writes an entry — never hand-compose the line.** The line shape lives in exactly one place (`lib/manifest-triage.py add-entry`), which validates `--kind` and `--needs` against the closed vocabularies at write time and appends to the run's manifest file. Hand-composing an em-dash format across 8 sites is how four of them drifted off-vocabulary before FB-0075:
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+python3 "$TRIAGE" add-entry --kind <kind> --finding "<finding>" --needs "<verb>" \
+  --resolution "<the resolution you drafted>" >> "$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)")"
+```
+
+The manifest is that file — append to it as each producer fires, rather than carrying 8 lines in your context from §1.0a to §7a.5. The `--kind`/`--needs` values each producer passes are named at its own site below.
+
+**Write `--finding` and `--resolution` in plain language.** They are rendered verbatim to a human who has not read the diff — `--finding` becomes the headline of a numbered question at Step 8. "criterion 3 FAIL/Unknown unresolved" and "visually-significant change is missing the rendered walkthrough" are the shorthand this whole step exists to remove; "the offline-retry behaviour didn't hold up when I ran it" and "this change is visible in the app and no screenshots were captured" say the same thing to the person who has to answer. No internal vocabulary (Spec-walk, buffer, HEAD, manifest, verdict, criterion N), no FB-XXXX.
 
 The draft manifest starts empty. Anything added to it makes the eventual PR a **draft** (Step 7). This is how an unresolved blocker reaches the human at the merge gate they were hitting anyway, instead of halting the loop or shipping a merge-ready-looking PR that isn't ready.
 
@@ -305,7 +330,7 @@ Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=
 **On `exit_code: 1` (FAIL or Unknown per FB-0011) at ship time** — this means a *regression since readiness*. Handle it, do NOT hard-halt the loop:
 1. Attempt the FB-0012 bounded mechanical fix (≤3, oscillation-checked, same contract as Step 1c — loop only on the verify-build exit code, never on judge prose). Re-run verify-build.
 2. If it converges to PASS → continue.
-3. If it does NOT converge → add a `[decision-required]` entry to the **draft manifest** ("verify-build FAIL/Unknown unresolved: <criterion + evidence>") and continue to Step 3. The PR opens as a **draft** (Step 7) — never a merge-ready PR on a non-PASS build.
+3. If it does NOT converge → add an entry to the **draft manifest** in the canonical line shape (Step 2): `[verify-build] <criterion + evidence> — needs: regression fix — confidence: decision-required — candidate resolutions: <what you already tried, and the different approach you would take next>` — then continue to Step 3. The PR opens as a **draft** (Step 7) — never a merge-ready PR on a non-PASS build.
 
 **Reconciliation with the merged PR S auto-advance predicate (do not weaken it):** PR S lets the agent auto-advance *into* `/flow:ship` only when the readiness predicate holds — which *requires* `verify-build` would return PASS (FB-0018: auto-ship needs a positive behavioral PASS, not absence-of-failure). That gate is UNCHANGED. This step only changes what ship does with a *ship-internal* failure: route to draft instead of hard-halt. The two are distinct decision points, and the safety invariant is preserved (in fact strengthened): **no merge-ready PR is ever produced on a non-PASS build** — a draft is mechanically NOT-READY and the human sees the manifest at the merge gate. (The reserved `--skip-verify` override remains a documented Step-1 escape hatch, not implemented in v1.)
 
@@ -315,13 +340,13 @@ No stage skip is accepted on its own say-so, and **"the agent did it manually" n
 
 1. **Write the per-stage report** (you have every stage's status from this loop run) to the handoff file the skill reads.
 
-   The handoff goes in the **repo-local** scratch dir, never `/tmp` (FB-0075). Two reasons, both load-bearing: a forked skill **cannot see** a `/tmp` file this shell writes — which silently disabled this entire gate from v1.13.0 until FB-0075 — and `/tmp/flow-*` is one global namespace shared with every other project, so a concurrent session on another repo would clobber it. A repo-relative path fixes both, the second by construction. The `flow_stamp` is written **in shell, not via a helper script**, so this step carries no plugin-root dependency (`CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls).
+   The handoff goes in the **repo-local** scratch dir, never `/tmp` (FB-0078). Two reasons, both load-bearing: a forked skill **cannot see** a `/tmp` file this shell writes — which silently disabled this entire gate from v1.13.0 until FB-0078 — and `/tmp/flow-*` is one global namespace shared with every other project, so a concurrent session on another repo would clobber it. A repo-relative path fixes both, the second by construction. The `flow_stamp` is written **in shell, not via a helper script**, so this step carries no plugin-root dependency (`CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls).
 
 ```sh
 # NOTE: this fence is deliberately NOT indented. A heredoc terminator must sit at
 # column 0 — an indented `EOF` is treated as CONTENT, so the redirect swallows the
 # rest of the script and the handoff is written as invalid JSON. That failure is
-# invisible until something reads the file, which is exactly what FB-0075 made
+# invisible until something reads the file, which is exactly what FB-0078 made
 # happen: every ship would then emit `stamp_error` and draft. Keep column 0.
 FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$FLOW_ROOT" ]; then
@@ -388,14 +413,14 @@ jq . "$STAGES" >/dev/null 2>&1 || { echo "⚠️ BLOCKER: the handoff at $STAGES
    Skill("flow:audit-skips")
    ```
 
-   It returns a `SKIP-AUDIT SUMMARY` with one line per stage — `LEGITIMATE` or `SHOULD-RE-RUN` (with `auto-resolvable: re-run` or `decision-required`). The mechanical engine (`lib/skip-audit-checks.py`) backs every verdict; trust it. If it reports a **`root_error`** / `ROOT UNRESOLVED` (FB-0074 — the forked skill could not locate the repo under review from its inherited cwd, so it read no config and no diff), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] root unresolved — the gate never looked at this repo; re-run with CLAUDE_PROJECT_DIR set or human-waive`), **never** a clean pass: an unanchored fork validates every unverifiable skip as LEGITIMATE, so its confident "all legitimate" is exactly the output you must not trust. If it instead reports an **`engine_error`** (the handoff was present but `skip-audit-checks.py` failed on it — the engine now exits non-zero on a malformed/unreadable report rather than collapsing to a silent `stages:[]`), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] engine failed on a present handoff — fix the engine input or human-waive`), **never** a clean pass. (A `no stage report` result when you DID write a handoff at 2a.1 is **not** benign and is no longer a known limitation: FB-0075 moved the handoff to a repo-local `.flow/` path both sides can see, so an absent handoff there means the transport broke again. Route it exactly like `stamp_error` — see 2a.3 — never as a clean pass.)
+   It returns a `SKIP-AUDIT SUMMARY` with one line per stage — `LEGITIMATE` or `SHOULD-RE-RUN` (with `auto-resolvable: re-run` or `decision-required`). The mechanical engine (`lib/skip-audit-checks.py`) backs every verdict; trust it. If it reports a **`root_error`** / `ROOT UNRESOLVED` (FB-0074 — the forked skill could not locate the repo under review from its inherited cwd, so it read no config and no diff), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] root unresolved — the gate never looked at this repo; re-run with CLAUDE_PROJECT_DIR set or human-waive`), **never** a clean pass: an unanchored fork validates every unverifiable skip as LEGITIMATE, so its confident "all legitimate" is exactly the output you must not trust. If it instead reports an **`engine_error`** (the handoff was present but `skip-audit-checks.py` failed on it — the engine now exits non-zero on a malformed/unreadable report rather than collapsing to a silent `stages:[]`), treat that as a `[decision-required]` draft-manifest entry (`[skip-audit] engine failed on a present handoff — fix the engine input or human-waive`), **never** a clean pass. (A `no stage report` result when you DID write a handoff at 2a.1 is **not** benign and is no longer a known limitation: FB-0078 moved the handoff to a repo-local `.flow/` path both sides can see, so an absent handoff there means the transport broke again. Route it exactly like `stamp_error` — see 2a.3 — never as a clean pass.)
 
 3. **Resolve — mirror audit-coverage's routing; never a hard mid-loop halt:**
    - **`SHOULD-RE-RUN · auto-resolvable`** → re-invoke that stage's Skill **now** (e.g. a stale/absent verify-build buffer → re-run `Skill("flow:verify-build")`; a contradicted security/a11y skip → run the reviewer), then **re-run `Skill("flow:audit-skips")` ONCE** over the refreshed report. Loop only this one re-audit cycle — do not iterate LLM judgment (reward-hackable; same discipline as Step 2's single-pass reviewers).
    - **`SHOULD-RE-RUN · decision-required`** (cannot be auto-resolved — e.g. a missing visual-history entry, a visual-deliverable gap on a no-sim host) → add a **`[decision-required]`** entry to the **draft manifest** (`[skip-audit] <stage>: <reason> — needs: <re-run | declare | human-waive>`). The PR opens as a draft (Step 7).
    - **`⚠️ SKIP-AUDIT COULD NOT VERIFY …` (`stamp_unverifiable`)** → the stamp checker itself could not run (missing helper, no `python3`/`jq`). Do **not** re-run 2a.1 — that cannot fix a toolchain problem. Add a **`[decision-required]`** entry (`[skip-audit] stamp checker unreachable — reinstall the plugin or install python3/jq`).
    - **`⚠️ SKIP-AUDIT REFUSED …` (`stamp_error`)** → the handoff present at the scratch path did not belong to this repo/branch/HEAD, so the gate did **not** run. Re-run 2a.1 to rewrite the handoff and re-invoke the skill **once**. If it refuses again, add a **`[decision-required]`** entry (`[skip-audit] handoff failed its stamp check — the gate did not run`). Never record this as `all-legitimate`.
-   - **`SKIP-AUDIT: no stage report to audit` on a run you launched from 2a.1** → you *did* write a handoff, so an "absent" verdict means the fork could not see it — the transport regression FB-0075 fixed. Treat it exactly like `stamp_error` above; do **not** proceed as if the skips were audited.
+   - **`SKIP-AUDIT: no stage report to audit` on a run you launched from 2a.1** → you *did* write a handoff, so an "absent" verdict means the fork could not see it — the transport regression FB-0078 fixed. Treat it exactly like `stamp_error` above; do **not** proceed as if the skips were audited.
    - **All `LEGITIMATE`** → emit a one-line confirmation (`skip-audit: all N stage skips legitimate`) and proceed.
 
 4. **Record the consolidated result** in the Step-2 `Final-pass reviews:` line (`skip-audit=all-legitimate` / `skip-audit=N should-re-run`) and in the PR `## Flow run` table (the `/flow:audit-skips` row).
@@ -635,7 +660,7 @@ fi
 **False-positive discipline — flag ONLY with a verbatim drift quote as evidence.** Mere keyword presence is NOT drift: a doc that says "Phase 3c" or "the 3c work" with no stale forward-looking claim is fine. You must be able to quote the exact stale sentence (e.g. `"3c is next (not started)"`). **If you can't quote the stale claim, don't flag it.** When in doubt, don't flag — the declared-surface gate (5b) and the human at the merge gate are the backstops; a false positive that wedged a ship would be worse than a missed nudge (doctor Check 2.9 catches the durable case at setup).
 
 - **A flagged surface → a `[decision-required]` draft-manifest entry** (the same in-memory manifest Step 2 accumulates; it makes the PR a draft at Step 7). Format:
-  `[status-surface] <path> carries stale forward-looking status ("<verbatim quote>") — needs: reconcile it to the just-shipped reality now, OR declare it in statusDocs + fence the region (<!-- flow:status --> … <!-- /flow:status -->) so it auto-reconciles every ship, OR human-waive`
+  `[status-surface] <path> carries stale forward-looking status ("<verbatim quote>") — needs: reconcile — confidence: decision-required — candidate resolutions: <the corrected line you DRAFTED, verbatim, for the human to approve> — or declare it in statusDocs + fence the region (<!-- flow:status --> … <!-- /flow:status -->) so it auto-reconciles every ship, or human-waive`
   Do **not** silently rewrite the un-fenced doc — the draft item **is** the "propose before editing" proposal (many CLAUDE.mds forbid silent edits; the fix is the human's call, or an opt-in to Tier 2). If the human resolves it in-session by fencing + declaring the surface, it becomes Tier 2 and 5a reconciles it on the next ship.
 - **No candidate drifted (or the scan found 0 undeclared candidates)** → emit the explicit skip line (never a silent pass): `[status-surface] N candidates scanned, none drifted` (take N from the scan header).
 
@@ -937,23 +962,110 @@ if [ "$VISSIG" = "true" ]; then
 fi
 ```
 
-If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable] visually-significant change is missing <named artifact(s)> — needs: re-run /flow:verify-build to capture frames, or hand-author the visual-history entry (Step 5c), or human-waive`. Because the walkthrough is **ephemeral/local (not committed)**, also record its local path in the PR-body handoff (the `## Flow run` table's visual row + the closing line) so the human can open it at the merge gate: `Walkthrough (local, uncommitted): <verifyReportPath>`.
+**If `$MISSING` is non-empty, ATTEMPT the resolution before you gate (FB-0075).** §7a is the one producer that historically drafted without ever trying — every other one makes a bounded attempt first (§1.0a re-runs staff-review per #81, §2a re-runs the stage + re-audits once, §2 spends FB-0012's bounded retry). Both missing artifacts are agent work, so try once:
 
-**Draft decision (mechanical):** if the **draft manifest** accumulated in Step 2 (and Step 7a) is non-empty, create the PR as a **draft** (`gh pr create --draft`) and pin the manifest block at the TOP of the body. An empty manifest → a normal (ready) PR. Draft status is the mechanical signal the human merge gate trusts; the manifest is the human-readable one. A not-ready PR can never *look* ready.
+**The order is fixed, and getting it wrong wastes the attempt.** Step 7 pushed at Step 7's start, *before* this gate runs, and the assertion above compares the buffer's `head_sha_short` against `git rev-parse --short HEAD`. So:
 
-**LOCAL-ONLY**: `gh pr create --base $BASE_BRANCH` (add `--draft` iff the manifest is non-empty) with:
+1. **Apply** the resolution — re-run `Skill("flow:verify-build")` to capture frames, and/or author the visual-history entry per Step 5c.
+2. **Commit** the resulting file changes (visual-history entry, any captured assets) as their own commit.
+3. **Push** it, so the PR opens against a remote head that actually contains the resolution.
+4. **Re-run** the producing check against the new `HEAD` (the capture must be stamped with the SHA the PR will carry — re-running before the commit stamps a SHA the commit then invalidates).
+5. **Re-apply Step 2's verify-build accounting to the fresh buffer.** This is load-bearing, not ceremony: the assertion above is *artifact-shaped* (`branch`, `sha`, `FRAMES >= 1`) and never reads `overall_verdict`. A re-run that captures a frame but returns FAIL/Unknown would overwrite the buffer Step 2 already blessed and satisfy this gate anyway — a ready PR on a non-PASS build, produced by the step meant to reduce drafts. If the fresh verdict is not PASS, add a `[verify-build]` entry (Step 2's line shape).
+6. **Re-assert** the `$MISSING` check above.
 
-> **After the create, read-back-verify (FB-0067).** `gh pr create` is unaffected by the projectCards deprecation, but a create can still land a body you didn't intend (a truncated `--body-file`, a race). Re-fetch and assert before handing off: source the helper and call `flow_verify_pr_write "$N"` — with `--forbid "🚫 NOT READY TO MERGE" --want-draft false` on a **ready** PR (empty manifest), or `--expect "🚫 NOT READY TO MERGE" --want-draft true` on a **draft** PR (non-empty manifest). A mismatch means the body↔draft state on GitHub contradicts the manifest decision — fix it before Step 8, don't hand off a PR you never confirmed.
+**Attempt ONCE.** Record it either way so the attempt survives a later reconcile:
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+python3 "$TRIAGE" record-attempt --branch "$BRANCH" --kind visual-deliverable --finding "<the finding text, verbatim>"
+```
+
+If the re-assert now passes, there is no manifest entry and nothing reaches the human. If it still fails, **add to the draft manifest via `add-entry`** (Step 2 — never hand-compose the line; `add-entry` validates `--kind`/`--needs` at write time):
+
+```sh
+python3 "$TRIAGE" add-entry --kind visual-deliverable \
+  --finding "<plain language: this change is visible in the app and <named artifact(s)> is missing>" \
+  --needs re-run \
+  --resolution "re-run /flow:verify-build to capture frames, and/or hand-author the visual-history entry (Step 5c)" \
+  >> "$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")"
+``` Because the attempt is recorded, Step 7a.5 classifies it `ask` rather than re-attempting — it becomes a question, not a silent second try. Because the walkthrough is **ephemeral/local (not committed)**, also record its local path in the PR-body handoff (the `## Flow run` table's visual row + the closing line) so the human can open it at the merge gate: `Walkthrough (local, uncommitted): <verifyReportPath>`.
+
+### 7a.5. Manifest triage — a draft PR is a last resort, not a deliverable (FB-0075)
+
+This is the step between accumulating the manifest and acting on it. Without it, three unlike populations reach the human identically: items the agent could have resolved, genuine decisions written in engineer shorthand (`needs: declare + verify the criterion, or human waive` — unanswerable to a non-engineer), and items blocked on an out-of-session action. Only the third deserves a draft.
+
+**This step NEVER halts before the PR.** The pipeline always completes and the PR is always created. That is FB-0034 (three outcomes, escalation routes into an *existing* gate) and FB-0044 (stop-before-PR is reserved for genuine one-way-doors); a mid-loop question would be a third human gate the two-gate thesis forbids. What changes is the *shape of the hand-off*, at Step 8 — not when the question is asked.
+
+Classify the manifest each producer appended to (the branch-scoped file `manifest-path` resolves, written via `add-entry` — see Step 2). The table is deterministic (`lib/manifest-triage.py`), keyed on `kind` — **not** your judgment, so the pass cannot be skipped by routing everything to draft:
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+BRANCH=$(git branch --show-current)
+STATE=$(python3 "$TRIAGE" init-state --branch "$BRANCH")   # cache; the PR body is the durable record
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")
+# A MISSING manifest file is the common case — no producer fired, nothing to triage.
+# classify treats that as an empty manifest and returns READY; it is not an error.
+python3 "$TRIAGE" classify --entries-file "$MANIFEST" --state-file "$STATE" --branch "$BRANCH" > /tmp/flow-triage.json
+jq -r '.verdict, .counts' /tmp/flow-triage.json
+```
+
+Three classes come back:
+
+- **`auto`** — a resolution is prescribed and has not been attempted. Only `visual-deliverable` qualifies, and §7a above already attempts it, so an `auto` here means the attempt has not run: run it (§7a's ordered sequence), record it, re-classify. **One attempt.** A failed attempt **demotes to `ask`** — never to a silent draft, and never to a second try.
+- **`ask`** — a decision the human can answer now. **Draft the resolution** — the criterion, the corrected status line, the specific candidate fix — into the entry's `candidate resolutions:` field. This is the half that answers "high-confidence recs, just do it", discharged safely: you do the work of *proposing*; the human supplies only the approval that doctrine reserves for them (Step 2's audit-coverage rule — never self-declare a criterion; §5a.5's rule — never silently rewrite an un-fenced human doc).
+- **`blocked`** — needs an action outside this session (rotate a leaked secret, vet a dependency). Not waivable, never phrased as a question. This is what a draft PR genuinely exists for.
+
+**Invariants the classifier enforces — do not work around any of them:**
+- Clearing is not the classifier's job. Every entry carries `clears_when`; an entry leaves the manifest only when the check that produced it re-runs clean (FB-0062).
+- **`residual` = every entry whose `clears_when` has not passed, minus recorded waivers — except `verify-build`, which is never subtracted.** Never a class filter: keying the draft decision on class is exactly how a failed `visual-deliverable` attempt could vanish into a ready PR.
+- **No merge-ready PR on a non-PASS build** (§2, unqualified). A `verify-build` entry is never waivable-to-ready; a waiver on it is recorded and the PR **stays a draft**. If the human accepts the risk, they mark it ready on GitHub themselves — you do not.
+- Fail-safe direction is toward the human: an unrecognized `needs:` verb classifies `blocked` for security/a11y and `ask` for every other kind, **never `auto`**. Likewise, if the state record cannot be recovered (a cross-session or fresh-host reconcile), `auto` downgrades to `ask` — a question is safe, a blind re-attempt is not.
+
+### 7a.6. Create the PR
+
+**Draft decision (mechanical):** the decision reads the triage **`verdict`** — not the raw manifest, not a class, and **not manifest emptiness**. `verdict == READY` → a normal ready PR. Anything else → create the PR as a **draft** (`gh pr create --draft`) with the rendered manifest block pinned at the TOP of the body. (Keying on emptiness is what would let a waived `verify-build` entry flip a non-PASS build to merge-ready; the verdict already encodes every exemption.)
+
+```sh
+# Re-resolve — separate shell block, so §7a.5's variables are NOT in scope.
+# ($STATE/$BRANCH expanding empty would silently resolve to a nonexistent state
+# path, drop every recorded waiver, and still exit 0 — the FB-0010 silent-skip class.)
+# READERS use `state-path`, never `init-state`: creating an empty record makes a
+# LOST state look `present`, which re-enables `auto` and defeats invariant 5.
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+BRANCH=$(git branch --show-current)
+STATE=$(python3 "$TRIAGE" state-path --branch "$BRANCH")
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")
+python3 "$TRIAGE" render-manifest --entries-file "$MANIFEST" --state-file "$STATE" --branch "$BRANCH"
+```
+
+Draft status is the mechanical signal the human merge gate trusts; the manifest is the human-readable one. A not-ready PR can never *look* ready.
+
+**LOCAL-ONLY**: `gh pr create --base $BASE_BRANCH` (add `--draft` iff `verdict != READY`) with:
+
+> **After the create, read-back-verify (FB-0067).** `gh pr create` is unaffected by the projectCards deprecation, but a create can still land a body you didn't intend (a truncated `--body-file`, a race). Re-fetch and assert before handing off: source the helper and call `flow_verify_pr_write "$N"` — with `--forbid "🚫 NOT READY TO MERGE" --want-draft false` when `verdict == READY`, or `--expect "🚫 NOT READY TO MERGE" --want-draft true` otherwise. **Key on the verdict, not on manifest emptiness** — they diverge exactly in the case this change introduces: waive every non-`verify-build` entry and the manifest file is still non-empty while `verdict` is `READY` and `render-manifest` returns nothing, so an emptiness-keyed assertion would demand a manifest that is correctly absent and wedge Step 7. A mismatch means the body↔draft state on GitHub contradicts the manifest decision — fix it before Step 8, don't hand off a PR you never confirmed.
 
 - Short title (under 70 chars).
-- Body — if the draft manifest is non-empty, prepend this block before `## Summary`:
+- Body — if `verdict != READY`, prepend this block before `## Summary` (render it; see below):
+  **Do NOT hand-author this block — render it** (`lib/manifest-triage.py render-manifest`, Step 7a.6). Hand-authoring is how the engineer shorthand got there, and the renderer is what guarantees each item carries its plain-language triple. Its shape:
   ```markdown
   ## 🚫 NOT READY TO MERGE — unresolved blockers
   <!-- flow:not-ready-manifest -->
-  - [<security|a11y|verify-build|skip-audit|visual-deliverable|status-surface>] <finding> — needs: <secret rotation | design decision | dep vetting | regression fix | re-run | reconcile | declare + fence | hand-author | human-waive> — candidate resolutions: <...>
+  - [<rigor|security|a11y|verify-build|coverage|skip-audit|status-surface|visual-deliverable>] <finding> — needs: <secret rotation | design decision | dep vetting | regression fix | re-run | reconcile | declare + fence | hand-author | human-waive> — candidate resolutions: <...>
+    - **What this means:** <plain language, no jargon — what actually did not pass>
+    - **What I need from you:** <the one decision, answerable in a word>
+    - **What happens then:** <ONLY when it differs from the default stated in the trailer>
+  > **What happens when you answer:** <the default, stated once> ...
   <!-- /flow:not-ready-manifest -->
-  > Resolve every item above, then re-run `/flow:ship` — it removes this block and marks the PR ready (`gh pr ready`) once the manifest is empty. Do not merge while this block is present.
   ```
+  (The `— confidence:` field is carried on the manifest *file* line, not rendered here — it is machine metadata, and printing it at the reader is the jargon this block exists to remove. The trailer sits INSIDE the fence so the one line telling the reader they need not edit anything is covered by the byte-preserved region.)
+  The `🚫 NOT READY TO MERGE` sentinel and both `<!-- flow:not-ready-manifest -->` fences are byte-preserved by the renderer, so `lib/pr-coherence.py`, `/flow:doctor` Check 2.10, and `/flow:land`'s pre-merge check keep matching (FB-0067 — do not "tidy" them).
+
+- **If anything was waived** (`.waived[]` in the triage output — do not hand-author it from memory), add a `## Waived at ship` section (after `## Test plan`). A waiver is a decision the human made, never a silent delete — and Step 7c re-reads this section to reconstruct waivers when the `/tmp` cache is gone (a cross-session or fresh-host reconcile), so it is the durable record, not decoration:
+  ```markdown
+  ## Waived at ship
+  - [<kind>] <finding, verbatim — the exact text the waiver was given for> — waived by you (<fixed anyway | shipped as-is>)
+  ```
+  A `verify-build` waiver is recorded here **and the PR stays a draft** — Step 2's no-merge-ready-on-a-non-PASS-build rule takes no carve-out.
 - Then:
   ```markdown
   ## Summary
@@ -987,12 +1099,17 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
   | /flow:verify-build | <✓ / skipped (reason)> | <overall_verdict; a non-converging regression → draft / —> |
   | /flow:audit-coverage | <✓ / skipped (reason)> | <undeclared changes → draft / "no undeclared changes" / —> |
   | /flow:audit-skips | ✓ | <all N stage skips legitimate / N should-re-run → re-ran M, K → draft> |
+  | Manifest triage (§7a.5) | <✓ / n/a (nothing on the manifest)> | <N entries: A auto-resolved, B decisions surfaced at hand-off, C need you outside the session / —> |
   | Visual deliverable (§7a) | <✓ / n/a (not visually significant)> | <both present / draft: missing <walkthrough · visual-history entry>; Walkthrough (local, uncommitted): <verifyReportPath> / —> |
   | Doc synthesis | ✓ | <docs updated> |
   | Status surface (§5a.5) | <✓ / skipped (status unchanged)> | <N candidates scanned, none drifted / draft: <path> stale ("<quote>") / —> |
   | Visual history (§5c) | <✓ / skipped (reason)> | <curated entry: "<decision>" / hand-authored (visual_significant) / skipped (uiSurface:false · no load-bearing visual decision) / —> |
 
-  If the `🚫 NOT READY TO MERGE` manifest above is present, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here. For a `[visual-deliverable]` draft, the ephemeral walkthrough is **local + uncommitted** — open it at the path named in the Visual-deliverable row before reviewing. Deferred follow-ups: see the configured roadmap and plan docs.
+  If a not-ready blockers block is present above, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here.
+  <!-- Never write the literal 🚫 sentinel in this sentence. `pr-coherence.py::has_manifest`
+       substring-matches it (inline backticks do not exempt it), so on a READY PR the
+       explanatory line alone trips the §7b coherence gate and halts a clean ship —
+       and makes /flow:land report a false "merged in a not-ready state". --> For a `[visual-deliverable]` draft, the ephemeral walkthrough is **local + uncommitted** — open it at the path named in the Visual-deliverable row before reviewing. Deferred follow-ups: see the configured roadmap and plan docs.
 
   🤖 Generated with [Claude Code](https://claude.com/claude-code)
   ```
@@ -1102,11 +1219,11 @@ If `$MISSING` is non-empty, **add to the draft manifest**: `[visual-deliverable]
   table's closing line only points at them. The PR is still never merged by
   Claude (Step 8).
 
-**PR-OPEN**: push the new commits. If the draft manifest is non-empty, ensure the PR is a draft (`gh pr ready --undo <num>` if it was marked ready) and refresh the `🚫 NOT READY TO MERGE` block; if the manifest is now empty (blockers since resolved), remove the block and `gh pr ready <num>` to mark it ready. Otherwise update the body only if the summary/test plan/Flow-run table needs to reflect the latest scope — and **re-render the `## Test plan` via `lib/render-test-plan.py`** (above), don't hand-edit it, so a re-ship after new commits reflects the fresh buffer (or correctly falls back if HEAD moved past the last verify-build run).
+**PR-OPEN**: push the new commits. If `verdict != READY`, ensure the PR is a draft (`gh pr ready --undo <num>` if it was marked ready) and refresh the `🚫 NOT READY TO MERGE` block; if `verdict == READY` (blockers since resolved), remove the block and `gh pr ready <num>` to mark it ready. Key on the verdict, never on manifest emptiness — same reason as §7a.6. Otherwise update the body only if the summary/test plan/Flow-run table needs to reflect the latest scope — and **re-render the `## Test plan` via `lib/render-test-plan.py`** (above), don't hand-edit it, so a re-ship after new commits reflects the fresh buffer (or correctly falls back if HEAD moved past the last verify-build run).
 
 **Every body/draft write on the PR-OPEN path is read-back-verified (FB-0067).** This path is where the recurring bug bit: the manifest scrub + `gh pr ready` is coupled to a full re-ship, and a masked write left a ready PR carrying the manifest. So each write is its own checked statement, followed by `flow_verify_pr_write` (source the helper per the § "gh resilience" read-back block above):
-- **Manifest now empty → scrub + ready:** write the manifest-free body, run `gh pr ready <num>` (with the projectCards→`markPullRequestReadyForReview` fallback if it errors), then `flow_verify_pr_write "$N" --forbid "🚫 NOT READY TO MERGE" --want-draft false`. The `--forbid` + `--want-draft false` is the exact assertion that would have caught the original silent failure.
-- **Manifest still non-empty → refresh + draft:** write the refreshed block, ensure draft, then `flow_verify_pr_write "$N" --expect "🚫 NOT READY TO MERGE" --want-draft true`.
+- **`verdict == READY` → scrub + ready:** write the manifest-free body, run `gh pr ready <num>` (with the projectCards→`markPullRequestReadyForReview` fallback if it errors), then `flow_verify_pr_write "$N" --forbid "🚫 NOT READY TO MERGE" --want-draft false`. The `--forbid` + `--want-draft false` is the exact assertion that would have caught the original silent failure.
+- **`verdict != READY` → refresh + draft:** write the refreshed block, ensure draft, then `flow_verify_pr_write "$N" --expect "🚫 NOT READY TO MERGE" --want-draft true`.
 - **Body-only refresh (manifest unchanged):** after the edit, `flow_verify_pr_write "$N" --expect "<a stable substring you just wrote>"` so a no-op write can't pass silently.
 
 ### 7b. Body↔draft coherence + Test-plan provenance (FB-0067, FB-0074 — the final gate before hand-off)
@@ -1151,18 +1268,58 @@ fi
 
 ### 7c. Reconcile-only fast-path (when a blocker was cleared out-of-band)
 
-The manifest lifecycle above is correct only when `/flow:ship` re-runs end-to-end. But a blocker is often cleared *outside* a ship re-run — e.g. the operator drives the sim to clear the last Unknown criterion, then wants the PR to read honestly without a full pipeline pass. **Hand-editing the PR body is the wrong path** (it is exactly the write that silently failed and produced this bug). Instead there is a side-effect-free reconcile that only re-renders the body + reconciles draft state from the *current* findings buffer — no reviewers, no `/simplify`, no doc synthesis:
+The manifest lifecycle above is correct only when `/flow:ship` re-runs end-to-end. But a blocker is often cleared *outside* a ship re-run — the operator drives the sim to clear the last Unknown criterion, or **the human answers one of the Step 8 decisions** (FB-0075 — that is a first-class trigger for this path, not an edge case) — and then wants the PR to read honestly without a full pipeline pass. **Hand-editing the PR body is the wrong path** (it is exactly the write that silently failed and produced FB-0067). Instead there is a side-effect-free reconcile that only re-renders the body + reconciles draft state — no reviewers, no `/simplify`, no doc synthesis:
 
-1. Recompute the draft manifest from the current gate state (re-read the `verifyFindingsPath` buffer, the security/a11y/skip-audit findings, and §7a's visual-deliverable check) — the same accounting Step 2 + Step 7a do, nothing more.
-2. Re-render the body (`## Test plan` via `lib/render-test-plan.py`, the `## Flow run` table from this session) and write it as a checked statement.
-3. Reconcile draft state: empty manifest → scrub + `gh pr ready`; non-empty → refresh + ensure draft.
+0. **Fetch and parse the live PR body FIRST** — before anything overwrites it. Step 1 recomputes from gate state and step 2 *writes* a new body, so by the time the old §7b read-back runs, the durable record is already gone. Read `## Waived at ship` and each entry's `already-attempted` marker out of the live body and feed them into step 1:
+
+   ```sh
+   # Use the shared fetch helper, NOT a bare `gh pr view … > /tmp/<fixed-name>`:
+   # it carries the projectCards→REST fallback, checks gh's exit code rather than
+   # stdout emptiness, and writes to an mktemp path (a fixed /tmp name is a
+   # symlink-attack surface — CWE-377/CWE-59 — which verify-pr-body.sh refuses).
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then . "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"; else . "plugins/flow/skills/ship/lib/verify-pr-body.sh"; fi
+   TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+   flow_fetch_pr_state "$N" || exit 1
+   python3 "$TRIAGE" state --branch "$(git branch --show-current)" --body-file "$FLOW_PR_BODY_FILE"
+   ```
+
+   The `/tmp` state file is a same-session cache; **the PR body is the durable record** (it travels with the branch, across sessions and hosts). If neither is recoverable, the classifier refuses to emit `auto` — a question is the safe direction.
+1. Recompute the draft manifest from the current gate state (re-read the `verifyFindingsPath` buffer, the security/a11y/skip-audit findings, and §7a's visual-deliverable check) — the same accounting Step 2 + Step 7a do, nothing more — then **subtract recorded waivers** (step 0). Without the subtraction a recompute re-adds every entry the human just answered, and the manifest can never empty. A waiver is honored **only on an exact `(kind, finding)` fingerprint match** against an entry in this same recompute: an ambiguous or partial match is not subtracted, so an over-greedy body parse can never remove a real blocker. A `verify-build` waiver is never subtracted at all.
+2. Re-render the body (the manifest via `lib/manifest-triage.py render-manifest`, `## Test plan` via `lib/render-test-plan.py`, the `## Flow run` table from this session) and write it as a checked statement.
+3. Reconcile draft state — **keyed on the triage `verdict`, not on manifest emptiness**: `verdict == READY` → scrub + `gh pr ready`; anything else → refresh + ensure draft. Keying on emptiness is how a waived `verify-build` entry could flip a non-PASS build to merge-ready; the verdict already encodes every exemption.
 4. Read-back-verify (`flow_verify_pr_write`) and run **both** §7b asserts — `flow_assert_pr_coherent` *and* `flow_assert_test_plan_provenance` (a reconcile re-renders the Test plan, so its digest changes and must be re-verified).
+5. **If the post-reconcile residual is still non-empty, re-emit the decision list** (`lib/manifest-triage.py render-decisions`). A partial answer — two of four questions — otherwise hands back a refreshed draft with no in-session decision surface, which is strictly weaker than what Step 8 gives for the identical state. Round two gets the same surface as round one.
 
 Invoke it as a scoped `/flow:ship` (state "reconcile the PR body to current gate state — no reviewers/doc-synthesis") or fold it into `/flow:land`'s pre-merge check (below). Either way the reconcile is one command and never a hand-edit, so the silent-write path is never the way a blocker gets cleared.
 
 ## 8. Hand off
 
-Output the PR URL and a one-line summary of what shipped.
+**If the residual manifest is empty:** output the PR URL and a one-line summary of what shipped.
+
+**If it is not empty, LEAD WITH THE DECISIONS — never a bare PR URL (FB-0075).** A draft PR handed back on its own is not a result the user can act on; it costs them a round-trip to ask you to fix it. Render the decision list and put it *first*, above the URL:
+
+```sh
+# Re-resolve every variable — §7a.5's shell state is long gone by Step 8.
+# `state-path` RESOLVES without creating (see §7a.6), and --body-file lets a
+# previously-waived entry be reconstructed from the live PR body when the /tmp
+# cache is gone — without it, waivers the human already gave re-appear in this list.
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+BRANCH=$(git branch --show-current)
+STATE=$(python3 "$TRIAGE" state-path --branch "$BRANCH")
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")
+BODY_ARG=""
+if [ -n "${N:-}" ]; then
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then . "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"; else . "plugins/flow/skills/ship/lib/verify-pr-body.sh"; fi
+  flow_fetch_pr_state "$N" && BODY_ARG="--body-file $FLOW_PR_BODY_FILE"
+fi
+python3 "$TRIAGE" render-decisions --entries-file "$MANIFEST" --state-file "$STATE" --branch "$BRANCH" $BODY_ARG
+```
+
+Each `ask` entry becomes one numbered question carrying: what it means in plain language, the resolution **you drafted**, your recommendation first with its reasoning, what you already tried, and — on every entry except `verify-build` — "waive and ship as-is". Each `blocked` entry goes in a separate "needs you outside this session" list, never phrased as a question and never offered a waiver.
+
+**When the user answers, resolve it immediately via the Step 7c reconcile fast-path** — apply the answer, record any waiver (`manifest-triage.py waive`), recompute, re-render, and `gh pr ready` once the verdict is `READY`. Not a hand-edit, and not a second full ship run. A `verify-build` entry is the one exception: a waiver on it is recorded and the PR stays a draft — if the user accepts the risk, they mark it ready themselves.
+
+If nobody answers (an unattended autonomous-loop run), nothing is wedged: the draft stands, and its manifest is now written so the next action is an approval rather than authoring.
 
 If your project has a dev-server skill (e.g., a `/link`-style skill), invoke it now and include the URL so the user can verify in-browser before they review. Flow itself does not bundle a dev-server skill — that's deliberately project-shaped.
 

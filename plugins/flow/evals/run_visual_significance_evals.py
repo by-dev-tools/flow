@@ -74,6 +74,64 @@ diff --git a/src/Button.css b/src/Button.css
 +/* new note about the button */
 """
 
+# A real content change, but entirely inside a `#if DEBUG` region — Release
+# byte-identical. Needs a UI pattern that covers .swift (not in the default set).
+DEBUG_ONLY_DIFF = """\
+diff --git a/Sources/DebugOverlay.swift b/Sources/DebugOverlay.swift
+--- a/Sources/DebugOverlay.swift
++++ b/Sources/DebugOverlay.swift
+@@ -1,7 +1,7 @@
+ struct DebugOverlay: View {
+     var body: some View {
+ #if DEBUG
+-        Text("v1").font(.caption)
++        Text("v2 debug-only").font(.caption)
+ #endif
+         EmptyView()
+     }
+"""
+
+# The #else branch of `#if DEBUG` is the RELEASE path — a change there ships
+# and must still count as a real render delta.
+DEBUG_ELSE_DIFF = """\
+diff --git a/Sources/Badge.swift b/Sources/Badge.swift
+--- a/Sources/Badge.swift
++++ b/Sources/Badge.swift
+@@ -1,8 +1,8 @@
+ struct Badge: View {
+     var body: some View {
+ #if DEBUG
+         Text("debug badge")
+ #else
+-        Text("v1")
++        Text("v2 release label")
+ #endif
+     }
+ }
+"""
+
+# One DEBUG-only hunk plus one real (non-DEBUG) hunk in the same file — the
+# real hunk must still win (significant), with the DEBUG-only skip recorded
+# as evidence rather than silently absorbed.
+DEBUG_MIXED_DIFF = """\
+diff --git a/Sources/Mixed.swift b/Sources/Mixed.swift
+--- a/Sources/Mixed.swift
++++ b/Sources/Mixed.swift
+@@ -1,6 +1,6 @@
+ struct Mixed: View {
+     var body: some View {
+ #if DEBUG
+-        Text("dbg1")
++        Text("dbg2")
+ #endif
+-        Text("shipped v1")
++        Text("shipped v2")
+     }
+ }
+"""
+
+SWIFT_CFG = {"uiSurface": True, "uiFilePatterns": r"\.swift$"}
+
 
 def main() -> int:
     fails = 0
@@ -135,6 +193,31 @@ def main() -> int:
                     extra=["--flag-significant", "--flag-reason", "canvas render changed"])
         check("agent-flag",
               o.get("visual_significant") is True and o.get("override") == "agent-flag", f"{o}")
+
+        # 10b. DEBUG-only change to a matched .swift file → NOT significant
+        #      (Release build is byte-identical).
+        rc, o = run(tmp, config=SWIFT_CFG, files="M\tSources/DebugOverlay.swift", diff=DEBUG_ONLY_DIFF)
+        check("debug-only-not-significant", o.get("visual_significant") is False, f"{o}")
+        check(
+            "debug-only-signal-recorded",
+            any("#if DEBUG" in s for s in o.get("visual_signals", [])),
+            f"{o}",
+        )
+
+        # 10c. A change in the #else (RELEASE) branch of `#if DEBUG` DOES ship —
+        #      must still count as significant.
+        rc, o = run(tmp, config=SWIFT_CFG, files="M\tSources/Badge.swift", diff=DEBUG_ELSE_DIFF)
+        check("debug-else-branch-significant", o.get("visual_significant") is True, f"{o}")
+
+        # 10d. Mixed: one DEBUG-only hunk + one real hunk in the same file — the
+        #      real hunk must still win, with the DEBUG-only skip recorded too.
+        rc, o = run(tmp, config=SWIFT_CFG, files="M\tSources/Mixed.swift", diff=DEBUG_MIXED_DIFF)
+        check("debug-mixed-still-significant", o.get("visual_significant") is True, f"{o}")
+        check(
+            "debug-mixed-signal-recorded",
+            any("#if DEBUG" in s for s in o.get("visual_signals", [])),
+            f"{o}",
+        )
 
         # 11. malformed config degrades to uiSurface=true default (loud), never crash.
         d = Path(tmp)

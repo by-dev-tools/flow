@@ -10,7 +10,7 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
-## v1.23.0 — 2026-07-29
+## v1.26.0 — 2026-07-29
 
 **Flow's ephemeral scratch moves out of `/tmp` into a repo-local `.flow/` directory — which restores the skip-legitimacy gate (inert since v1.13.0) and ends cross-project clobbering of reviewer inputs.**
 
@@ -22,6 +22,44 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 - New `run_scratch_isolation_evals.py` (56 checks, wired into CI) — the **first** harness here to extract and *execute* a SKILL.md `!`-block, which is precisely why the transport bug survived.
 
 **Breaking changes:** none for behavior, but two config **defaults changed**: `verifyFindingsPath` `/tmp/flow-verify-findings.json` → `.flow/verify-findings.json`, and `verifyReportPath` `/tmp/flow-verify-report.html` → `.flow/verify-report.html`. Projects that set these explicitly are unaffected. `.flow/` self-ignores (it writes its own `.gitignore`), so it never dirties `git status` and is never committed.
+
+## v1.25.0 — 2026-08-01
+
+**`/flow:post-merge` now actually runs the doc-currency step instead of telling you to run it.**
+
+- **What you get.** After you merge, `/flow:post-merge <PR#>` reconciles your forward docs itself and hands you the resulting `docs: land #N` PR to merge — one action instead of two. The close-out now leads with the answer to the only question you're asking: `✅ #84 closed out — nothing left.` or `🚫 #84 — 1 left: merge docs PR #91`.
+- **Why it was broken.** That step is supposed to call `/flow:land`, but `/flow:land` was marked as never-callable-by-Claude, so the call was rejected every time and quietly degraded into "please run it yourself." The flag was guarding against `/flow:land` firing on its own — which it already can't do, because it refuses to touch anything until GitHub confirms the PR is merged, and Claude can't merge. Clearing the flag costs nothing and restores the step.
+- **Also fixed:** `/flow:land` now refuses to run over uncommitted work instead of switching branches out from under it, and its merged-PR check no longer disagrees with the one `/flow:post-merge` uses (they could previously reach opposite conclusions about the same PR during a merge-queue lag).
+- Pinned by five new assertions so the step can't be silently removed again — the old check passed whether the call worked *or* was deleted, which is how this survived four releases. All mutation-tested.
+
+**Breaking changes:** none. `/flow:land <PR#>` still works exactly as before when you type it.
+
+## v1.24.0 — 2026-07-29
+
+**The `/flow:verify-build` annotation layer is redesigned: commenting is a mode you stay in, not a button you re-press.**
+
+- **No more re-arming.** Click an element → write or dictate → `↵` → click the next one. Commenting is a persistent mode, on by default. `⌘`/`Ctrl`/`Alt`-click passes a click through to the page (so links and interactive prototypes still work), selecting text never creates a comment, and `Esc` hands the page back.
+- **Chrome is one circular floating control** — the minimized comment container. Filled = commenting is live; it carries the comment count; clicking expands the panel. The panel holds a labelled **Commenting** switch, hover-outlining and hide-pins toggles, per-comment copy and delete, **Copy all**, and a two-tap **Delete all**. Only pins float over the design being reviewed.
+- **Toasts removed.** Each control states its own condition — a switch, a swapped icon, or a transient label on the button just pressed — instead of a floating message that covered the controls it described. A visually-hidden `role="status"` region carries the same information to screen readers.
+- **Accessibility + contrast fixes from a staff design + UX review.** A capture-phase `Enter`/arrow handler was cancelling the default action on *every* key press, so `Enter` could not activate any control, arrows could not scroll, and `Enter` inside a host page's own input was swallowed. White-on-accent failed WCAG on five filled surfaces in dark mode (now a themed `--an-on-accent`); the switch off-state was 1.28:1; list rows were focusable with no focus style; and the crosshair cursor captured the layer's own buttons.
+- Anchors (content-derived, regeneration-stable), the located-descriptor export format, and the `file://` hardening are **unchanged**. Existing comments keyed to the old storage prefix are not migrated — the layer starts clean.
+
+**Breaking changes:** none for consumers. Internal note: the layer's element ids changed (`annot-*` → `an-*`) and the storage key is now `flow-annotations-v2:`; anything that greps the partial (flow's own evals do) must be updated with it.
+
+## v1.26.0 — 2026-07-29
+
+**A blocked ship now hands you decisions you can answer, not a draft PR to decode.**
+
+- **The problem.** When a ship gate did not pass, `/flow:ship` opened a draft PR and handed it back. Measured across five real draft PRs in two projects, the round-trip from draft to ready ran **47 minutes to 13 days** — because the blocker was written for an engineer (`needs: declare + verify the criterion, or human waive`) with no proposed fix attached, so the only available move was to ask the agent to go fix it.
+- **What changes.** Every blocker is now triaged into one of three shapes. If a resolution exists and has not been tried, the agent tries it once — the visual-walkthrough gate used to draft without ever attempting the capture it was asking for. If it is a real decision, the agent **drafts the fix** and Step 8 hands you a **numbered question**: what it means in plain language, the proposed resolution, a recommendation with its reasoning, what was already tried, and "waive and ship as-is." You answer in a word; the agent applies it and re-runs the check, and the PR goes ready once it passes. If it needs something only you can do outside the session (rotate a leaked secret, vet a dependency), it stays a draft — which is what a draft is actually for.
+- **What does not change.** No new approval gate: the pipeline still always reaches the PR, so an unattended run is never wedged (the draft just stands, now answerable). And a failing build still cannot become a merge-ready PR — waiving one is recorded, but the PR stays a draft. If you accept that risk, you mark it ready yourself; the agent will not.
+- **Under the hood.** New `skills/ship/lib/manifest-triage.py` (deterministic table, not model judgment) + `evals/run_manifest_triage_evals.py` in CI. The eight places that write a blocker were normalized onto one parseable line shape — five of them did not carry a source tag at all, so four different blocker types were indistinguishable.
+
+Breaking changes: none.
+
+---
+
+---
 
 ## v1.22.0 — 2026-07-29
 
@@ -54,7 +92,7 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 - **What it does.** One human-invoked command for the moment right after a merge: (1) confirms the PR actually merged, (2) reconciles the forward docs by **calling `/flow:land`**, (3) captures the feedback you gave at the merge gate (your review→iterate→merge comments), (4) deletes the merged branch, and (5) tells you whether the workspace is `✅ safe to archive` or `🚫 not safe` (with reasons). Never merges.
 - **Merge-queue safe.** The merge check is three-state, not "merged-or-fail": `MERGED` → proceed; `CLOSED` without merging → fail loud; still `OPEN` → poll up to `postMergeWaitSeconds` (default 150; `0` = fail-fast), then a calm "still queued, re-run once it lands." So on a merge-queue / auto-merge repo — where there's a 1–2 min gap between clicking merge and the PR landing — running it immediately no longer false-fails.
-- **Composes with `/flow:land`, doesn't replace it.** ⚠️ *Corrected in v1.22.0: the `Skill()` call described here was rejected at runtime (`/flow:land` is `disable-model-invocation: true`) and never executed; the step is now an explicit hand-off to you.* `/flow:post-merge` delegates doc-currency to `/flow:land` rather than reimplementing it; `/flow:land` stays independently invocable (run it alone after a GitHub-web merge with no local workspace) and human-only by design (`disable-model-invocation: true` — it opens PRs, so it must never auto-fire).
+- **Composes with `/flow:land`, doesn't replace it.** ⚠️ *Superseded — see v1.25.0.* `/flow:post-merge` delegates doc-currency to `/flow:land` rather than reimplementing it; `/flow:land` stays independently invocable (run it alone after a GitHub-web merge with no local workspace).
 - **Feedback capture on the right side of the merge gate.** `/flow:ship` synthesizes feedback from the window that *closes when the PR opens* — so your richest design-taste comments at the merge gate leaked. `/flow:post-merge` synthesizes that delta window into user-scope agent memory + the `/flow:contribute` queue (content-match dedup; **no** repo-doc `feedbackPath` write in v1 — the transcript watermark + FB-inbox are deferred to v1b).
 - New `postMergeWaitSeconds` config slot (schema now **30 slots**). Deterministic core (`skills/post-merge/lib/merge-status.py`: three-state classify + poll policy + archive-safety check) pinned by `run_merge_status_evals.py`, wired into CI.
 

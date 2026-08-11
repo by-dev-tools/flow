@@ -1,16 +1,19 @@
 ---
 name: land
 description: >
-  Post-merge doc-currency reconciliation. Human-invoked AFTER you merge a PR
-  (Claude can't merge, so this can't live inside /flow:ship). It flips the
-  merged PR's item to "merged (#N)" across roadmap / plan / history and moves it
-  to "Recently shipped", then opens a small `docs: land #N` PR — never merges.
-  Also re-runs the visual-history distill if a visual pass was blocked at ship
-  and has since completed, clears any feedback-ID reservations the PR claimed,
-  and checks CHANGELOG currency. Closes the "at PR → merged never reconciles"
-  gap. Trigger: "/flow:land <PR#>", "land #N", "reconcile docs after merging
-  #N".
-disable-model-invocation: true
+  Post-merge doc-currency reconciliation. Runs only AFTER a human merges a PR
+  (Claude can't merge, so this can't live inside /flow:ship). Reachable two ways:
+  the human types it, or /flow:post-merge §3 calls it — and /flow:post-merge is
+  itself human-invoked, so a human gate always sits above it. It must NEVER
+  auto-fire at the end of a loop; §0 states that precondition and §1a enforces it
+  mechanically by refusing any PR that is not already merged. It flips the merged
+  PR's item to "merged (#N)" across roadmap / plan / history and moves it to
+  "Recently shipped", then opens a small `docs: land #N` PR — never merges. Also
+  re-runs the visual-history distill if a visual pass was blocked at ship and has
+  since completed, clears any feedback-ID reservations the PR claimed, and checks
+  CHANGELOG currency. Closes the "at PR → merged never reconciles" gap. Trigger:
+  "/flow:land <PR#>", "land #N", "reconcile docs after merging #N".
+disable-model-invocation: false
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash
 ---
 
@@ -22,8 +25,33 @@ This skill exists because `/flow:ship` reconciles forward docs at **PR-open** ti
 (Step 5a), but nothing flips the item to "merged (#N)" once the human merges — so
 `main` sits stale until someone hand-writes a "docs: post-merge currency" PR
 (FLOW-1, a recurring manual patch). `/flow:land <PR#>` is the one command that
-replaces that hand-edit. `disable-model-invocation: true`: a human runs this after
-merging — it must never auto-fire mid-loop.
+replaces that hand-edit.
+
+## 0. Invocation precondition (enforced mechanically by §1a + §1b)
+
+This skill opens a PR, so **it must never auto-fire at the end of a loop.** There
+are exactly two legitimate ways in:
+
+1. A human typed `/flow:land <PR#>`.
+2. `/flow:post-merge` §3 called you — and `/flow:post-merge` is itself
+   `disable-model-invocation: true`, so a human typed *that*.
+
+Anything else — you noticed a merge and decided to reconcile, a ship pipeline
+advanced into you, a loop iteration reached for you — is **not** a valid entry.
+Stop and say so rather than proceeding.
+
+**Why this is a precondition and not a frontmatter flag (FB-0077).** `/flow:land`
+carried `disable-model-invocation: true` until v1.25.0. That flag blocks *all*
+programmatic invocation, which also blocked `/flow:post-merge` §3 — the one caller
+with a human gate above it, and the step that made `/flow:post-merge` an orchestrator
+rather than a reminder to run another command. Two mechanical gates below do the
+flag's job more precisely, and between them they bound both *which* PRs this can act
+on and *when*: **§1a** refuses to edit anything unless `gh` confirms the PR is merged,
+and Claude cannot merge; **§1b's clean-tree gate** refuses to switch branches over
+uncommitted work, which is the mutating step a stray mid-loop invocation would
+otherwise reach. With both in place the residual blast radius is one `docs: land #N`
+PR against an already-merged PR, which the human still gates at merge. The guarantee
+lives in those two gates, not in this paragraph.
 
 ## Project context (resolved at invocation)
 
@@ -73,12 +101,19 @@ if [ -z "$STATE_JSON" ]; then
 fi
 STATE=$(printf '%s' "$STATE_JSON" | jq -r '.state')
 MERGED_AT=$(printf '%s' "$STATE_JSON" | jq -r '.mergedAt // empty')
-if [ "$STATE" != "MERGED" ] || [ -z "$MERGED_AT" ]; then
+# MERGED **or** a truthy mergedAt — deliberately the same predicate as
+# `post-merge/lib/merge-status.py classify()`, which is eval-pinned and documents the
+# reason: a merge queue can lag the `state` field, so a genuinely-merged PR can still
+# report OPEN with mergedAt set. Requiring BOTH (the pre-FB-0077 form) made this gate
+# stricter than the classifier that now calls it — so `/flow:post-merge` §2 could
+# classify `merged`, invoke §3, and have this gate reject the very PR it just confirmed.
+# Divergent copies of one predicate is the FB-0010 fan-out class; keep them in step.
+if [ "$STATE" != "MERGED" ] && [ -z "$MERGED_AT" ]; then
   echo "⚠️ BLOCKER: PR #$N is '$STATE' (mergedAt=${MERGED_AT:-none}) — /flow:land runs AFTER a human merges." >&2
   echo "   If it really is merged, check you passed the right number. Nothing changed." >&2
   exit 1
 fi
-echo "[land] PR #$N is MERGED ($MERGED_AT). Title: $(printf '%s' "$STATE_JSON" | jq -r '.title')"
+echo "[land] PR #$N is MERGED (${MERGED_AT:-state=MERGED}). Title: $(printf '%s' "$STATE_JSON" | jq -r '.title')"
 echo "[land] branch=$(printf '%s' "$STATE_JSON" | jq -r '.headRefName')  mergeCommit=$(printf '%s' "$STATE_JSON" | jq -r '.mergeCommit.oid // "unknown" | .[0:9]')"
 ```
 
@@ -133,7 +168,7 @@ else
 fi
 ```
 
-### 1b. Sync `main` so the reconciliation lands on top of the merge
+### 1b. Clean tree (BLOCKING) + sync `main` so the reconciliation lands on top of the merge
 
 ```sh
 git fetch origin --quiet
@@ -147,6 +182,28 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null); [ -z "$BASE" ] && BASE=main
 PREFIX=$(jq -r '.branchPrefix // empty' flow.config.json 2>/dev/null)
 BR="${PREFIX}land-${N}"
+
+# Clean-tree gate (BLOCKING) — the checkout below MUTATES the working tree, so it must never
+# run over someone else's work in progress. With the disable-model-invocation flag cleared
+# (FB-0077) this is the mechanical half of §0's never-auto-fire precondition: §1a bounds
+# *which PRs* this can act on; this bounds *when*. A stray mid-loop invocation would otherwise
+# switch branches out from under uncommitted work — a materially worse blast radius than the
+# docs PR §0 describes. Refuse; never stash on the user's behalf.
+#
+# Two deliberate narrowings, both from the FB-0077 staff-review:
+#  - `--untracked-files=no`: an untracked file cannot be clobbered by `checkout`, so blocking
+#    on one is a false positive — and a damaging one, because the message says "commit or
+#    stash" while plain `git stash` does not remove untracked files, so the user re-runs into
+#    a byte-identical error with no idea why.
+#  - Already on "$BR": that is land's OWN in-progress work from a partial run. §4 explicitly
+#    tells the user to add a missing CHANGELOG entry and re-run, and the Gotchas promise a
+#    re-run after a partial land is safe. Blocking here would break both.
+if [ "$(git branch --show-current)" != "$BR" ] && [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+  echo "⚠️ BLOCKER: /flow:land switches branches, and the working tree has uncommitted changes." >&2
+  echo "   Nothing was touched. Commit or stash them, then re-run '/flow:land $N'." >&2
+  git status --short --untracked-files=no 2>/dev/null | head -20 >&2
+  exit 1
+fi
 # Idempotent: a re-run after a partial land reuses the existing branch (checkout -b
 # would die "branch already exists", breaking the idempotency contract below).
 if git show-ref --verify --quiet "refs/heads/${BR}"; then
@@ -175,6 +232,21 @@ HISTORY=$(jq -r '.historyPath // "dev-docs/history.md"' flow.config.json 2>/dev/
 # Build the pattern WITHOUT an empty alternative: an unset $HEADREF must not turn
 # `#N\b|$HEADREF` into `#N\b|` (the trailing `|` matches EVERY line, which would
 # make the no-match WARN below unreachable — the FB-0010 silent-skip class).
+#
+# SAFETY — $HEADREF is interpolated into an EXTENDED REGEX, and it comes from GitHub, not
+# from us. A branch name is allowed to contain regex metacharacters, so a head ref like
+# `x|.` would expand the pattern to match every line of roadmap/plan/history and drive the
+# reconciliation edits off a match-everything set. Git already forbids most of the
+# dangerous characters in ref names, but not all (`[`, `]`, `{`, `}`, `+`, `.`, `|` are
+# legal), and a FORK PR's head ref is chosen entirely by an outside contributor. Since
+# FB-0077 made this skill model-invocable and wired /flow:post-merge to call it
+# automatically, that value now reaches here without a human reading it first. Accept only
+# ref-safe characters as a literal alternative; anything else falls back to the `#N` match.
+case "$HEADREF" in
+  ""|*[!A-Za-z0-9._/-]*)
+    [ -n "$HEADREF" ] && echo "[land] NOTE: head ref '$HEADREF' has regex-unsafe characters; matching on #$N only." >&2
+    HEADREF="" ;;
+esac
 PAT="#${N}\b"; [ -n "$HEADREF" ] && PAT="${PAT}|${HEADREF}"
 MATCHES=$(grep -nE "$PAT" "$ROADMAP" "$PLAN" "$HISTORY" 2>/dev/null)
 if [ -n "$MATCHES" ]; then

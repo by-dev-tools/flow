@@ -64,7 +64,7 @@ jobs:
       - run: python3 plugins/flow/evals/run_pr_coherence_evals.py
       - run: python3 plugins/flow/evals/run_skill_composition_evals.py
       - run: python3 plugins/flow/evals/run_root_anchor_evals.py
-      - run: python3 plugins/flow/evals/run_scratch_isolation_evals.py
+      - run: python3 plugins/flow/evals/run_manifest_triage_evals.py
 
   security:
     name: security
@@ -75,3 +75,4 @@ jobs:
         with:
           python-version: '3.11'
       - run: python3 plugins/flow/evals/run_security_evals.py
+      - run: python3 plugins/flow/evals/run_scratch_isolation_evals.py

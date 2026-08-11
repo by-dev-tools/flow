@@ -28,7 +28,7 @@ The skill that spawns you (`/flow:staff-review`) passes:
 **Use the paths you were given; never guess a `/tmp` one.** The diff's first line is a
 `# flow-review-context repo=… branch=… head=…` header. Compare it against the **Workspace identity** line in your prompt. If they disagree, **stop and say so** — do not review the contents and do
 not silently regenerate. A mismatch means the orchestration handed you the wrong workspace,
-which is a finding about the run, not something to quietly work around (FB-0075).
+which is a finding about the run, not something to quietly work around (FB-0078).
 
 - **Changed files list** — the surface to focus your reading on.
 - **Relevant project docs** — paths to the spec doc, feedback doc, and design-language doc (resolved via `flow.config.json` slots; may be absent).
