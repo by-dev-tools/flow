@@ -417,9 +417,9 @@ jq . "$STAGES" >/dev/null 2>&1 || { echo "⚠️ BLOCKER: the handoff at $STAGES
 
 3. **Resolve — mirror audit-coverage's routing; never a hard mid-loop halt:**
    - **`SHOULD-RE-RUN · auto-resolvable`** → re-invoke that stage's Skill **now** (e.g. a stale/absent verify-build buffer → re-run `Skill("flow:verify-build")`; a contradicted security/a11y skip → run the reviewer), then **re-run `Skill("flow:audit-skips")` ONCE** over the refreshed report. Loop only this one re-audit cycle — do not iterate LLM judgment (reward-hackable; same discipline as Step 2's single-pass reviewers).
-   - **`SHOULD-RE-RUN · decision-required`** (cannot be auto-resolved — e.g. a missing visual-history entry, a visual-deliverable gap on a no-sim host) → add a **`[decision-required]`** entry to the **draft manifest** (`[skip-audit] <stage>: <reason> — needs: <re-run | declare | human-waive>`). The PR opens as a draft (Step 7).
-   - **`⚠️ SKIP-AUDIT COULD NOT VERIFY …` (`stamp_unverifiable`)** → the stamp checker itself could not run (missing helper, no `python3`/`jq`). Do **not** re-run 2a.1 — that cannot fix a toolchain problem. Add a **`[decision-required]`** entry (`[skip-audit] stamp checker unreachable — reinstall the plugin or install python3/jq`).
-   - **`⚠️ SKIP-AUDIT REFUSED …` (`stamp_error`)** → the handoff present at the scratch path did not belong to this repo/branch/HEAD, so the gate did **not** run. Re-run 2a.1 to rewrite the handoff and re-invoke the skill **once**. If it refuses again, add a **`[decision-required]`** entry (`[skip-audit] handoff failed its stamp check — the gate did not run`). Never record this as `all-legitimate`.
+   - **`SHOULD-RE-RUN · decision-required`** (cannot be auto-resolved — e.g. a missing visual-history entry, a visual-deliverable gap on a no-sim host) → add a **`[decision-required]`** entry to the **draft manifest** (`[skip-audit] <stage>: <reason> — needs: <re-run | declare | human-waive> — confidence: <auto-resolvable | decision-required> — candidate resolutions: <what would clear it>`). The PR opens as a draft (Step 7).
+   - **`⚠️ SKIP-AUDIT COULD NOT VERIFY …` (`stamp_unverifiable`)** → the stamp checker itself could not run (missing helper, no `python3`/`jq`). Do **not** re-run 2a.1 — that cannot fix a toolchain problem. Add a **`[decision-required]`** entry (`[skip-audit] stamp checker unreachable (<reason>) — needs: install python3/jq or reinstall the flow plugin — confidence: auto-resolvable — candidate resolutions: re-run ship once the toolchain is present; the gate itself is fine`).
+   - **`⚠️ SKIP-AUDIT REFUSED …` (`stamp_error`)** → the handoff present at the scratch path did not belong to this repo/branch/HEAD, so the gate did **not** run. Re-run 2a.1 to rewrite the handoff and re-invoke the skill **once**. If it refuses again, add a **`[decision-required]`** entry (`[skip-audit] handoff failed its stamp check (<reason>) — needs: re-run ship Step 2a.1 — confidence: auto-resolvable — candidate resolutions: rewrite the handoff from this workspace; a second refusal means the transport is broken, which is decision-required`). Never record this as `all-legitimate`.
    - **`SKIP-AUDIT: no stage report to audit` on a run you launched from 2a.1** → you *did* write a handoff, so an "absent" verdict means the fork could not see it — the transport regression FB-0078 fixed. Treat it exactly like `stamp_error` above; do **not** proceed as if the skips were audited.
    - **All `LEGITIMATE`** → emit a one-line confirmation (`skip-audit: all N stage skips legitimate`) and proceed.
 
@@ -1005,8 +1005,11 @@ STATE=$(python3 "$TRIAGE" init-state --branch "$BRANCH")   # cache; the PR body 
 MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")
 # A MISSING manifest file is the common case — no producer fired, nothing to triage.
 # classify treats that as an empty manifest and returns READY; it is not an error.
-python3 "$TRIAGE" classify --entries-file "$MANIFEST" --state-file "$STATE" --branch "$BRANCH" > /tmp/flow-triage.json
-jq -r '.verdict, .counts' /tmp/flow-triage.json
+# Repo-local like every other flow scratch artifact (FB-0078): /tmp is one global
+# namespace shared across projects, and a forked reader cannot see it at all.
+FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null); FLOW_SCRATCH="${FLOW_ROOT:-.}/.flow"; mkdir -p "$FLOW_SCRATCH"
+python3 "$TRIAGE" classify --entries-file "$MANIFEST" --state-file "$STATE" --branch "$BRANCH" > "$FLOW_SCRATCH/triage.json"
+jq -r '.verdict, .counts' "$FLOW_SCRATCH/triage.json"
 ```
 
 Three classes come back:
