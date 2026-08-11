@@ -27,8 +27,12 @@ Covers:
   skill 4 — SKILL.md: never merges; uses REST PR-body form, never `gh pr edit --body`.
   skill 5 — SKILL.md: disable-model-invocation: FALSE (FB-0077 — model-invocable so
            /flow:post-merge §3 can call it); 5b — §0 carries the never-auto-fire intent.
-  reg 1 — /flow:land is registered in plugin.json + marketplace.json skill lists.
-  reg 2 — workflow-help + docs/workflow.md reference /flow:land.
+  reg 1 — workflow-help + docs/workflow.md reference /flow:land.
+          (This previously also asserted the manifest `description` fields listed the
+          skill. Dropped in FB-0078: the /plugin UI generates the component inventory
+          from disk — Discover's "Will install", the Installed detail view — so a
+          hand-maintained catalog in `description` was redundant and staleable. The
+          consumer-facing catalog sites are the docs, which is what this now checks.)
   ci  1 — run_land_evals.py is wired into .github/workflows/ci.yml (not orphaned).
 """
 
@@ -45,8 +49,6 @@ HERE = Path(__file__).parent
 ROOT = HERE.parent.parent.parent  # repo root
 HELPER = HERE.parent / "skills" / "land" / "lib" / "land-helpers.py"
 SKILL = HERE.parent / "skills" / "land" / "SKILL.md"
-PLUGIN_JSON = HERE.parent / ".claude-plugin" / "plugin.json"
-MARKETPLACE = ROOT / ".claude-plugin" / "marketplace.json"
 WORKFLOW_HELP = HERE.parent / "skills" / "workflow-help" / "SKILL.md"
 WORKFLOW_DOC = HERE.parent / "docs" / "workflow.md"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
@@ -162,11 +164,7 @@ check("skill 7", 'git show-ref --verify --quiet' in skill and "reusing existing 
       "Step 1b branch creation must be idempotent (reuse existing land branch on re-run)")
 
 # ---- registration fan-out ----
-pj = read(PLUGIN_JSON)
-mk = read(MARKETPLACE)
-check("reg 1", "/flow:land" in pj and "/flow:land" in mk,
-      "/flow:land must be listed in plugin.json + marketplace.json")
-check("reg 2", "/flow:land" in read(WORKFLOW_HELP) and "/flow:land" in read(WORKFLOW_DOC),
+check("reg 1", "/flow:land" in read(WORKFLOW_HELP) and "/flow:land" in read(WORKFLOW_DOC),
       "/flow:land must be in workflow-help + docs/workflow.md")
 
 # ---- CI wiring (the orphaned-eval guard, FB-0056 lesson) ----
