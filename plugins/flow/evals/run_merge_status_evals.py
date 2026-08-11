@@ -16,7 +16,7 @@ is prose the agent drives, but its LOAD-BEARING core is deterministic and pinned
                  (FB-0077: land's flag was cleared, so the Skill() call executes —
                  composition, not reimplementation and not a hand-off), uses `branch -d`
                  never `-D`, and writes NO feedbackPath repo doc in v1 (user-scope only).
-  schema       — the postMergeWaitSeconds slot exists and the slot count is 30 (a "N slots"
+  schema       — the postMergeWaitSeconds slot exists and the slot count is 32 (a "N slots"
                  fan-out is the most-recurring bug class this repo tracks — FB-0010).
 
 Stdlib only.
@@ -232,7 +232,11 @@ def main() -> int:
         check("schema-slot-present", slot.get("type") == "integer" and "default" in slot,
               f"postMergeWaitSeconds slot: {slot}")
         check("schema-slot-default", slot.get("default") == 150, f"default={slot.get('default')}")
-        check("schema-slot-count-30", len(props) == 30, f"slot count = {len(props)} (want 30)")
+        # Deliberately a hard-coded literal, not a computed value: this is the
+        # FB-0010 tripwire that forces every slot addition to walk the "N slots"
+        # fan-out (docs/workflow.md, template/base/CLAUDE.md.template).
+        # 30 -> 32 at v1.26.0 (visualFilePatterns + a11yFilePatterns, FB-0079).
+        check("schema-slot-count-32", len(props) == 32, f"slot count = {len(props)} (want 32)")
     else:
         check("schema-exists", False, "flow.config.schema.json missing")
 

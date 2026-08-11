@@ -56,6 +56,40 @@ def run(tmp, *, config, files, diff=None, plan=None, extra=None):
     return proc.returncode, out
 
 
+# --- FB-0079 fixtures: the per-consumer pattern split -------------------------
+# Modelled on the measured iOS/SwiftUI consumer where one slot could not answer
+# both questions. `Insight/` had to be included for a11y (it builds the string
+# VoiceOver reads), which dragged its pure-persistence neighbour into the VISUAL
+# verdict; `Data/MockSleep.swift` had to be excluded for a11y (no a11y surface)
+# even though it decides what the chart draws.
+A11Y_ONLY_FILE = "Insight/InsightCacheStore.swift"     # a11y surface, no render path
+VISUAL_ONLY_FILE = "Data/MockSleep.swift"              # render path, no a11y surface
+VIEWS_FILE = "Views/HomeView.swift"                    # both
+
+# `uiFilePatterns` here is the COMPROMISE the consumer was actually forced into
+# pre-split: it had to include `Insight/` to make the a11y review fire, which is
+# what dragged Insight's persistence files into the visual verdict. Keeping it in
+# the fixture is what makes these cases RED against the pre-split resolver — drop
+# it and the old code reaches the built-in default, which doesn't match `.swift`,
+# and the assertions would pass for the wrong reason.
+SPLIT_CFG = {
+    "uiSurface": True,
+    "uiFilePatterns": r"(^|/)(Views|Insight)/.*\.swift$",
+    "a11yFilePatterns": r"(^|/)(Views|Insight)/.*\.swift$",
+    "visualFilePatterns": r"(^|/)(Views|Data)/.*\.swift$",
+}
+
+
+def swift_diff(path):
+    """A unified diff carrying a real (non-comment, non-whitespace) render delta."""
+    return (f"diff --git a/{path} b/{path}\n"
+            f"--- a/{path}\n"
+            f"+++ b/{path}\n"
+            "@@ -1,3 +1,3 @@\n"
+            "-    let barHeight: CGFloat = 12\n"
+            "+    let barHeight: CGFloat = 18\n")
+
+
 REAL_TSX_DIFF = """\
 diff --git a/src/Button.tsx b/src/Button.tsx
 --- a/src/Button.tsx
@@ -203,6 +237,74 @@ def main() -> int:
             any("#if DEBUG" in s for s in o.get("visual_signals", [])),
             f"{o}",
         )
+
+        # --- FB-0079: the per-consumer pattern split -------------------------
+        # 10b-1. BACK-COMPAT (the load-bearing one). A project that sets ONLY
+        #        uiFilePatterns must behave exactly as it did pre-split: the
+        #        shared slot still drives the VISUAL verdict, both ways.
+        ui_only = {"uiSurface": True, "uiFilePatterns": r"(^|/)(Views|Insight)/.*\.swift$"}
+        rc, o = run(tmp, config=ui_only, files=f"M\t{VIEWS_FILE}", diff=swift_diff(VIEWS_FILE))
+        check("fb78-backcompat-ui-only-matches", o.get("visual_significant") is True, f"{o}")
+        rc, o = run(tmp, config=ui_only, files=f"M\t{VISUAL_ONLY_FILE}",
+                    diff=swift_diff(VISUAL_ONLY_FILE))
+        check("fb78-backcompat-ui-only-excludes",
+              o.get("visual_significant") is False,
+              f"uiFilePatterns must still be the visual ruler when it is the only slot set: {o}")
+
+        # 10b-2. The consumer's actual over-flagging bug. A file with an a11y
+        #        surface but NO render path must NOT be visually significant once
+        #        visualFilePatterns excludes it — even though a11yFilePatterns
+        #        (correctly) includes it. Pre-split this was forced to true.
+        rc, o = run(tmp, config=SPLIT_CFG, files=f"M\t{A11Y_ONLY_FILE}",
+                    diff=swift_diff(A11Y_ONLY_FILE))
+        check("fb78-a11y-only-file-not-visual",
+              o.get("visual_significant") is False,
+              f"a11y-surface-only file must not demand visual deliverables: {o}")
+
+        # 10b-3. The mirror. A render-only file IS visually significant even
+        #        though a11yFilePatterns excludes it — no Visual-walk workaround.
+        rc, o = run(tmp, config=SPLIT_CFG, files=f"M\t{VISUAL_ONLY_FILE}",
+                    diff=swift_diff(VISUAL_ONLY_FILE))
+        check("fb78-visual-only-file-is-visual",
+              o.get("visual_significant") is True,
+              f"render-only file must be visually significant without a Visual-walk block: {o}")
+
+        # 10b-4. a11yFilePatterns alone must have ZERO effect on the visual
+        #        verdict — with no visual/ui slot set, the built-in default
+        #        applies, and it does not match .swift.
+        rc, o = run(tmp, config={"uiSurface": True,
+                                 "a11yFilePatterns": r"(^|/)Insight/.*\.swift$"},
+                    files=f"M\t{A11Y_ONLY_FILE}", diff=swift_diff(A11Y_ONLY_FILE))
+        check("fb78-a11y-slot-does-not-leak-into-visual",
+              o.get("visual_significant") is False,
+              f"a11yFilePatterns must not widen the visual pattern: {o}")
+
+        # 10b-5. visualFilePatterns WINS over uiFilePatterns when both are set.
+        rc, o = run(tmp, config={"uiSurface": True,
+                                 "uiFilePatterns": r"(^|/)Insight/.*\.swift$",
+                                 "visualFilePatterns": r"(^|/)Data/.*\.swift$"},
+                    files=f"M\t{A11Y_ONLY_FILE}", diff=swift_diff(A11Y_ONLY_FILE))
+        check("fb78-visual-slot-overrides-shared",
+              o.get("visual_significant") is False,
+              f"visualFilePatterns must take precedence over uiFilePatterns: {o}")
+
+        # 10b-6. The signal NAMES the slot that supplied the pattern — with three
+        #        possible sources, "diff touches uiFilePatterns" would point at the
+        #        wrong knob as often as the right one.
+        rc, o = run(tmp, config=SPLIT_CFG, files=f"M\t{VIEWS_FILE}", diff=swift_diff(VIEWS_FILE))
+        check("fb78-signal-names-source-slot",
+              any("touches visualFilePatterns:" in s for s in o.get("visual_signals", [])),
+              f"{o}")
+
+        # 10b-7. An unusable pattern degrades to the default with a warning that
+        #        names the OFFENDING slot, not a generic 'uiFilePatterns'.
+        rc, o = run(tmp, config={"uiSurface": True, "visualFilePatterns": "([unclosed"},
+                    files="M\tsrc/Button.tsx", diff=REAL_TSX_DIFF)
+        check("fb78-invalid-slot-warns-by-name",
+              o.get("visual_significant") is True
+              and any("visualFilePatterns" in s and "[WARN]" in s
+                      for s in o.get("visual_signals", [])),
+              f"invalid visualFilePatterns must warn by name and fall back to the default: {o}")
 
         # 10c. A change in the #else (RELEASE) branch of `#if DEBUG` DOES ship —
         #      must still count as significant.

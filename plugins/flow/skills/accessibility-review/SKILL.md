@@ -55,21 +55,38 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
 [ -z "$BASE" ] && BASE=main
 
-# Per-diff UI-file detection (PR D / FB-0007). Pairs with the project-wide uiSurface=false
-# gate above — that gate catches non-UI PROJECTS; this gate catches docs-only PRs in
-# UI-surface PROJECTS. Patterns configurable via flow.config.json.uiFilePatterns;
-# default covers TSX/JSX/Vue/Svelte/Astro/MDX/CSS/SCSS/Sass/Less/HTML/template files.
-# Path-prefix anchors require extension within prefixed dirs (avoids false-positive
-# on src/**/*.md docs).
-UI_PATTERN=$(jq -r '.uiFilePatterns // empty' flow.config.json 2>/dev/null)
-# Default pattern: extension-only branch (the prefix-with-extension branch was redundant —
-# any file matching the prefix-form also matches the extension-only form). Override via
-# flow.config.json.uiFilePatterns if your project has UI files in non-standard dirs OR
-# if you want to constrain to specific path roots.
+# Per-diff a11y-surface detection (PR D / FB-0007). Pairs with the project-wide
+# uiSurface=false gate above — that gate catches non-UI PROJECTS; this gate catches
+# docs-only PRs in UI-surface PROJECTS.
+#
+# SLOT RESOLUTION (FB-0079): a11yFilePatterns → uiFilePatterns → built-in default.
+# This review asks "does the diff touch something with an ACCESSIBILITY SURFACE?",
+# which is NOT the same question /flow:verify-build's visual-significance predicate
+# asks ("does this change what the app DRAWS?"). A file can have one and not the
+# other — a store that builds the string a screen reader announces has an a11y
+# surface but no render path; a mock-data file that decides a chart's shape has a
+# render path but no a11y surface. Set a11yFilePatterns to scope THIS review
+# independently; leave it unset and the shared uiFilePatterns still applies exactly
+# as it did before the split. The Python side of this chain is
+# verify-build/lib/file_patterns.py — keep the two in sync (FB-0010).
+#
+# Default covers TSX/JSX/Vue/Svelte/Astro/MDX/CSS/SCSS/Sass/Less/HTML/template files
+# (extension-only — the prefix-with-extension branch was redundant, since any file
+# matching the prefix-form also matches the extension-only form).
+#
 # SHARED-EXTENSION LANGUAGES (Swift .swift, Kotlin .kt): UI and non-UI code share one
 # extension, so an extension-only pattern (\.swift$) mislabels data-layer code as UI and
-# false-triggers this review (and visual-significance) on headless PRs. Scope to conventional
-# UI dirs instead, e.g. (^|/)(App|Views|DesignSystem)/.*\.swift$.
+# false-triggers this review on headless PRs. Scope to conventional UI dirs instead,
+# e.g. (^|/)(App|Views|DesignSystem)/.*\.swift$.
+# NOTE the explicit non-empty filter rather than the shorter `.a // .b // empty`:
+# jq's `//` only falls through on null/false, so an a11yFilePatterns set to ""
+# would skip uiFilePatterns and land on the built-in default — diverging from
+# file_patterns.resolve(), which treats "" as unset and falls through. Verified
+# against the Python resolver across all five config shapes.
+UI_PATTERN=$(jq -r '[.a11yFilePatterns, .uiFilePatterns] | map(select(. != null and . != "")) | first // empty' flow.config.json 2>/dev/null)
+# Record which slot supplied it, so the SKIPPED line below names the knob to turn.
+UI_PATTERN_SRC=$(jq -r 'if (.a11yFilePatterns // "") != "" then "a11yFilePatterns" elif (.uiFilePatterns // "") != "" then "uiFilePatterns" else "built-in default" end' flow.config.json 2>/dev/null)
+[ -z "$UI_PATTERN_SRC" ] && UI_PATTERN_SRC="built-in default"
 [ -z "$UI_PATTERN" ] && UI_PATTERN='\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$'
 
 # Validate the regex before using it. Invalid regex → empty result → silent skip
@@ -77,8 +94,9 @@ UI_PATTERN=$(jq -r '.uiFilePatterns // empty' flow.config.json 2>/dev/null)
 echo "" | grep -qE "$UI_PATTERN" 2>/dev/null
 GREP_RC=$?
 if [ "$GREP_RC" -gt 1 ]; then
-  echo "⚠️ [a11y-review] flow.config.json.uiFilePatterns is invalid as an extended regex (grep exit $GREP_RC); falling back to default." >&2
+  echo "⚠️ [a11y-review] flow.config.json.$UI_PATTERN_SRC is invalid as an extended regex (grep exit $GREP_RC); falling back to default." >&2
   UI_PATTERN='\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$'
+  UI_PATTERN_SRC="built-in default"
 fi
 
 # Three checks (not two): committed + uncommitted-modified + untracked. The uncommitted-
@@ -88,7 +106,7 @@ UI_FILES_IN_DIFF=$(git diff "origin/$BASE..HEAD" --name-only 2>/dev/null | grep 
 UI_MODIFIED=$(git diff HEAD --name-only 2>/dev/null | grep -E "$UI_PATTERN" || true)
 UNTRACKED_UI=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E "$UI_PATTERN" || true)
 if [ -z "$UI_FILES_IN_DIFF" ] && [ -z "$UI_MODIFIED" ] && [ -z "$UNTRACKED_UI" ]; then
-  echo "[a11y-review] STATUS: SKIPPED — no UI files in diff (committed+uncommitted+untracked). Pattern: $UI_PATTERN. Override via flow.config.json.uiFilePatterns."
+  echo "[a11y-review] STATUS: SKIPPED — no UI files in diff (committed+uncommitted+untracked). Pattern: $UI_PATTERN (from $UI_PATTERN_SRC). Override via flow.config.json.a11yFilePatterns (scopes this review only) or .uiFilePatterns (shared with visual-significance)."
   exit 0
 fi
 

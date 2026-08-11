@@ -35,6 +35,19 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0079 — When one config slot gates two consumers that ask different questions, the consumer can't express either correctly — and every scoping choice becomes a forced trade
+
+**Date:** 2026-08-03
+**Source type:** user direction (consumer cold-run report, health-tracker PR #100)
+
+**What was said.** A consumer shipping an iOS/SwiftUI project reported that `uiFilePatterns` was annotated in `verify-build/SKILL.md` as "UI extensions (shared with a11y review)" — and that the *sharing* was the defect, not a convenience. Evidence given as a pair of forced trades: `Insight/` had to be included so the a11y review would fire (it builds the string VoiceOver reads), which forced `Insight/InsightCacheStore.swift` — pure persistence — to over-flag visually; `Data/MockSleep.swift` had to be excluded (no a11y surface) even though it decides what the hypnogram draws, so the visual half needed a hand-authored `**Visual-walk:**` block as a workaround. The user also flagged the subtle half themselves: splitting the slot without splitting `audit-skips`'s `touches_ui` field would make the audit validate a skip against the wrong pattern.
+
+**Synthesized rule.** Before sharing a config slot between two consumers, ask what *question* each consumer asks of it. If the questions differ, the slot has two correct answers and the consumer is forced to pick which consumer to answer wrongly — a bug that presents as user error ("your patterns are misconfigured") and is therefore rarely traced back to the schema. Split into optional per-consumer slots that fall back to the shared one, so back-compat is free and the split costs nothing until a project hits the trade. **Then sweep for every derived value that also merged the two** — a split slot with a still-merged downstream field is worse than no split, because the audit now reports a confident verdict measured with the wrong ruler. Watch particularly for fields whose *name* survives the split (`touches_ui`) while their meaning quietly changes.
+
+**Corollary on fail-safe direction.** When splitting, each derived check must pick its own fail-safe direction, and they will not always match. A whole-diff claim ("this PR is doc-only") must take the **union** — over-refusing is safe. A single-consumer claim ("the a11y review had nothing to review") must take **that consumer's pattern alone** — precision is safe. Applying one rule uniformly gets half of them wrong.
+
+**Applies to:** `schema/flow.config.schema.json`; `skills/verify-build/lib/{file_patterns.py,visual-significance.py}`; `skills/audit-skips/lib/skip-audit-checks.py`; `skills/accessibility-review/SKILL.md`. Related: FB-0010 (fan-out contradiction — the duplicated `DEFAULT_UI_PATTERN` this split retired), FB-0075 (2 of ~6 measured draft-manifest items were this one misconfiguration wearing two hats).
+
 ### FB-0078 — A field a UI renders is a UI surface: the manifest `description` is not an append-only changelog, and not a skill catalog either
 
 **Date:** 2026-08-03

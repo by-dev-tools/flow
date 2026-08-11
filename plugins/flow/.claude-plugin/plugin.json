@@ -1,6 +1,6 @@
 {
   "name": "flow",
-  "version": "1.25.0",
+  "version": "1.26.0",
   "description": "Runs every coding task through one loop: Claude plans, builds, reviews, and opens the PR. You approve the plan and you merge the PR. Skeptical reviewers check the plan, the \"done\" claims, and any step Claude skipped.",
   "author": {
     "name": "by-dev-tools",
