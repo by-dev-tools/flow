@@ -299,13 +299,13 @@ def main(argv):
         # unsatisfiable visual-deliverable blocker (ship Step 7a branches on this
         # value with no uiSurface guard of its own) whose real cause is a broken
         # install. load_config has no dependency on file_patterns.
-        _cfg, _ = load_config(args.config)
+        _cfg, _cfg_warnings = load_config(args.config)
         _uis = ui_surface(_cfg)
         print(json.dumps({
             "visual_significant": _uis,
             "ui_surface": _uis,
             "override": None,
-            "visual_signals": [
+            "visual_signals": _cfg_warnings + [
                 f"[WARN] cannot import lib/file_patterns.py ({_PATTERNS_IMPORT_ERROR}) — "
                 f"the flow plugin install is incomplete. Reinstall the plugin. Until then "
                 f"this change is treated as needing visual review rather than skipping the "

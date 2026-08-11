@@ -333,6 +333,20 @@ def main() -> int:
         check("fb79-invalid-slot-surfaces-in-report",
               any("a11yFilePatterns" in w and "[WARN]" in w for w in warns),
               f"expected a pattern_warnings entry naming a11yFilePatterns, got {warns}")
+        # 7b. A NON-STRING slot must also surface. This is the shape that motivated
+        #     pattern_warnings in the first place, and the isinstance() filter added
+        #     to fix a cross-runtime divergence briefly made it SILENT — the value was
+        #     skipped before it could reach re.compile, so the loud path disappeared.
+        cfg = dict(base, a11yFilePatterns=["(^|/)Views/.*"])
+        r = run(tmp, config=cfg,
+                report={"stages": [{"name": "accessibility", "status": "skipped",
+                                    "skip_reason": "no UI in diff"}]},
+                files="M\tsrc/Button.tsx")
+        warns = (r.get("context") or {}).get("pattern_warnings") or []
+        check("fb79-non-string-slot-surfaces",
+              any("a11yFilePatterns" in w and "must be a string" in w for w in warns),
+              f"a non-string slot must be reported, not silently skipped: {warns}")
+
         # And the SKILL must be told to print it — an emitted-but-unrendered field is
         # the same silent-skip one layer up (this is why three review lenses flagged it).
         skill = (Path(__file__).parent.parent / "skills" / "audit-skips" / "SKILL.md").read_text()

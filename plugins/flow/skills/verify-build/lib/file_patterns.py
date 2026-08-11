@@ -83,9 +83,10 @@ DEFAULT_UI_PATTERN = r"\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|n
 def resolve(cfg, consumer):
     """Resolve `consumer`'s pattern from `cfg`.
 
-    Returns `(pattern, source)` where `source` names whichever slot supplied the
-    value (or `DEFAULT_SOURCE`) — callers surface it in their signals so an
-    operator can see *which* slot produced the scoping they are looking at.
+    Returns `(pattern, source, warnings)`. `source` names whichever slot supplied
+    the value (or `DEFAULT_SOURCE`) — callers surface it so an operator can see
+    *which* slot produced the scoping. `warnings` reports any slot that was
+    present but skipped for being the wrong type.
 
     A slot counts as SET only when it holds a non-empty string. Two reasons, and
     the second is the one that bites:
@@ -107,11 +108,20 @@ def resolve(cfg, consumer):
     """
     cfg = cfg or {}
     own = CONSUMER_SLOT[consumer]
+    warnings = []
     for slot in (own, SHARED_SLOT):
         val = cfg.get(slot)
         if isinstance(val, str) and val:
-            return val, slot
-    return DEFAULT_UI_PATTERN, DEFAULT_SOURCE
+            return val, slot, warnings
+        if val is not None and not isinstance(val, str):
+            # Skipped, but NEVER silently. Filtering the value out before it can
+            # reach re.compile also removed the TypeError that used to make it
+            # loud, so the report has to say so here instead — otherwise the
+            # operator's setting is ignored with no signal at all.
+            warnings.append(
+                f"[WARN] flow.config.json.{slot} must be a string, got "
+                f"{type(val).__name__} ({val!r}); ignoring it and falling back")
+    return DEFAULT_UI_PATTERN, DEFAULT_SOURCE, warnings
 
 
 def compile_for(cfg, consumer):
@@ -122,18 +132,18 @@ def compile_for(cfg, consumer):
     override slots plus a shared fallback, "uiFilePatterns is invalid" would point
     at the wrong line as often as the right one.
 
-    `TypeError` is caught alongside `re.error` because a slot holding a non-string
-    (an array — a shape the schema forbids but a hand-edited config can still
-    carry) raises `TypeError` from `re.compile`, which the pre-split callers did
-    not catch and crashed on.
+    Only `re.error` is caught here: `resolve()` already filters non-strings out
+    (and warns about them), so nothing but a `str` reaches `re.compile`. A
+    `TypeError` arm would be unreachable code.
     """
-    pattern, source = resolve(cfg, consumer)
+    pattern, source, warnings = resolve(cfg, consumer)
     try:
-        return re.compile(pattern), source, []
-    except (re.error, TypeError) as exc:
+        return re.compile(pattern), source, warnings
+    except re.error as exc:
         return (
             re.compile(DEFAULT_UI_PATTERN),
             DEFAULT_SOURCE,
-            [f"[WARN] flow.config.json.{source} is not a usable regex ({pattern!r}: {exc}); "
-             f"falling back to the built-in default UI pattern"],
+            warnings + [f"[WARN] flow.config.json.{source} is not a usable regex "
+                        f"({pattern!r}: {exc}); falling back to the built-in default "
+                        f"UI pattern"],
         )

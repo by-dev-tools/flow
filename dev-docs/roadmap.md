@@ -106,6 +106,19 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### `/flow:doctor` Check 2.5 is the line-oriented twin of a guard we just made wrap-tolerant
+
+FB-0079 hardened flow's *internal* slot-count sweep after a wrapped `all 30\n  slots` in `doctor/SKILL.md` frontmatter slipped a line-oriented grep. The **consumer-facing** implementation of the same predicate — doctor Check 2.5 — still has all three of the properties that produced that miss: it is line-oriented (`grep -rEn`), its pattern requires a single literal space (`([0-9]+) slots?` vs the internal `\d+\s+slots?`), and it scans only doc-ish paths, not `.json`/`.sh`. So the guard we ship to consumers is weaker than the one we run on ourselves — FB-0079's own class (one contract, two runtimes, held together by nothing) recurring inside FB-0079's fix, one commit after "greps are line-oriented" was written down as the lesson.
+
+Fix shape: hoist the predicate into `skills/doctor/lib/slot_count_scan.py` (stdlib; takes paths + expected count, prints survivors), import it from `run_merge_status_evals.py`, and have Check 2.5's shell block invoke it — doctor already shells out elsewhere. That collapses three divergences to zero and gives the eval a red-verifiable shared target instead of a private copy. If a Python dependency inside doctor's shell is unacceptable, the minimum is a `\s+` pattern over newline-flattened file content plus an assertion that both implementations agree on a wrapped fixture. Cross-link with the § Exploration mirror-registry entry — this is a concrete member of that class. ~1–2h with red-verification.
+
+### Make `PATTERN-WARNING` a rendered string, not an instruction
+
+`skip-audit-checks.py` emits `context.pattern_warnings` as raw `[WARN] …` strings, and `audit-skips/SKILL.md` spends ~8 lines teaching the model to reformat them into a `⚠️ PATTERN-WARNING:` line — inside an output contract that otherwise says "no prose before or after," so the instruction has to carve out an exception to itself. The eval asserts the SKILL *contains the substring* `PATTERN-WARNING`, which pins the spelling rather than the behavior.
+
+`ship/lib/manifest-triage.py` already does the stronger thing in this repo: the engine renders the exact human-facing block and the eval pins the rendered text. Mirror it — have the engine emit `pattern_warning_lines` already formatted, reduce the SKILL to "print each entry verbatim above the summary," and retarget the eval to the emitted string. The "no prose" exception becomes "these lines are output, not prose." ~45 min including the eval retarget.
+
+
 ### Run FB-0079's question-test on `sourceFilePatterns` (audit, not a split)
 
 FB-0079 names a **class** — one config slot gating consumers that ask different questions — and this PR swept only the instance. `sourceFilePatterns` is the untested second member: `/flow:security-review` asks a **risk** question ("is there anything here worth a security look?"), while `/flow:ship` §1c and `/flow:ship-spike` §1c ask a **cost** question ("is a preflight run worth spending on this diff?"), and `skip-audit-checks.py`'s `touches_source` audits the verify-build doc-only claim. Their fail-safe directions diverge exactly as FB-0079's corollary predicts: the risk gate should over-include, the cost gate can be tight. The shape that would expose it: a Terraform-only PR against a `tsc && eslint && vitest` preflight — it must get a security review, and there is nothing for the preflight to run.
@@ -470,6 +483,9 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 FB-0079 introduced `_extract_jq_src()` — extract the *live* expression out of the SKILL and assert it against the Python implementation, rather than copying it into the eval (a copy would be a third implementation of the same contract). It works, it is mutation-tested, and it is currently spent on one jq line. Flow is structurally full of the same join: `sourceFilePatterns` resolution is spelled in jq at ~5 SKILL sites and in Python at 2; the FB-0074 root-anchor block is duplicated across several SKILLs; `defaultBranch` resolution appears in nearly every shell preamble. Every one is a contract implemented twice in two languages, held together by a comment.
 
 The open question to answer first is whether the win is a *harness* or a *convention*: a registry of `(skill, marker, python_symbol)` triples that a generic eval walks, versus a `# flow:mirror-of <symbol>` marker that makes every mirrored block extractable by construction so the eval is generated rather than written. Guessing wrong is worse than waiting — which is why this is Exploration and not Next.
+
+An additional half this entry does not yet name: once both sides are extractable, you still have to choose the **input corpus**, and FB-0079's rounds 1 and 2 were green because the corpus was authored by the same agent as the code. Whatever shape wins should ship a *named input axis* alongside it — for JSON-slot mirrors that axis is type × truthiness, the 6×2 grid this PR reached only after three rounds of bug reports — so a new mirror inherits the corpus instead of re-deriving it from the examples its author happens to have in hand. Extend the trigger below with: "…or when a third parity check hand-lists its own fixture values."
+
 
 
 ### Two blockers, one root cause — should triage relate entries? (from the FB-0075 push-further lens)

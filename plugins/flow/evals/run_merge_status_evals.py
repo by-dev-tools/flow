@@ -244,7 +244,7 @@ def main() -> int:
         # old VALUE also misses the class; this greps the SHAPE.
         import re as _re
         root = Path(__file__).resolve().parents[3]
-        stale = []
+        stale, scanned = [], 0
         for sub in ("plugins", "template"):
             for f in sorted((root / sub).rglob("*")):
                 if not f.is_file() or f.suffix not in (".md", ".json", ".sh", ".template"):
@@ -255,12 +255,21 @@ def main() -> int:
                     text = f.read_text(encoding="utf-8")
                 except (OSError, UnicodeDecodeError):
                     continue
+                scanned += 1
                 for m in _re.finditer(r"(\d+)\s+slots?\b", text):
                     line_start = text.rfind("\n", 0, m.start()) + 1
-                    if text[line_start:m.start()].lstrip().startswith("#"):
-                        continue  # shell/prose comment — historical narrative is allowed
+                    prefix = text[line_start:m.start()].lstrip()
+                    # Shell comments only. A markdown heading also starts with "#",
+                    # so exempting it repo-wide would let "## Config (30 slots)" hide.
+                    if f.suffix == ".sh" and prefix.startswith("#"):
+                        continue
                     if m.group(1) != str(len(props)):
                         stale.append(f"{f.relative_to(root)}: {m.group(0)!r}")
+        # Vacuous-pass guard: an empty sweep (moved dirs, installed-plugin layout)
+        # would otherwise go green having measured nothing — the exact class this
+        # same commit fixed in the jq-parity check.
+        check("slot-count-sweep-scanned-files", scanned > 0,
+              f"sweep scanned {scanned} files under {root} — it measured nothing")
         check("no-stale-slot-count-in-shipped-surfaces", not stale,
               "shipped surfaces contradict the schema count: " + "; ".join(stale))
     else:

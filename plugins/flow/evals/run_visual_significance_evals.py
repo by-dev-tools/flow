@@ -410,7 +410,7 @@ def main() -> int:
                         {"a11yFilePatterns": True, "uiFilePatterns": "UI"},
                         {"visualFilePatterns": ["x"], "uiFilePatterns": "UI"}):
                 shell_src = _jq_source(tmp, JQ_SRC_EXPR, cfg)
-                _, py_src = fp_resolve(cfg, FP_A11Y)
+                _, py_src, _ = fp_resolve(cfg, FP_A11Y)
                 check(f"fb79-jq-matches-python:{json.dumps(cfg, sort_keys=True)}",
                       shell_src == py_src,
                       f"shell resolved slot {shell_src!r}, Python resolved {py_src!r} — "
@@ -449,23 +449,36 @@ def main() -> int:
         #         so the one change on this branch that alters a SHIP-BLOCKING verdict
         #         was unpinned. Fails CLOSED on a UI project; still lets uiSurface:false
         #         win, because that gate is documented everywhere as unconditional.
+        # Simulate the broken install on a COPY of the lib — never by mutating the
+        # working tree. A try/finally restore is exception-safe but not signal-safe:
+        # a cancelled CI run or SIGTERM between the move and the restore would leave
+        # the checkout broken. Copy, delete from the copy, run the copied script.
         import shutil as _shutil
-        fp_src = FP_LIB / "file_patterns.py"
-        hidden = Path(tmp) / "file_patterns.py.hidden"
-        _shutil.move(str(fp_src), str(hidden))
-        try:
-            for cfg, want_sig in (({"uiSurface": True}, True), ({"uiSurface": False}, False)):
-                rc, o = run(tmp, config=cfg, files="M\tsrc/Button.tsx")
-                label = "ui" if want_sig else "headless"
-                check(f"fb79-broken-install-fails-closed:{label}",
-                      rc == 2 and o.get("visual_significant") is want_sig
-                      and o.get("ui_surface") is want_sig,
-                      f"expected rc=2 + visual_significant={want_sig}: rc={rc} {o}")
-                check(f"fb79-broken-install-names-remedy:{label}",
-                      any("Reinstall the plugin" in sig for sig in o.get("visual_signals", [])),
-                      f"the warning must name the fix: {o.get('visual_signals')}")
-        finally:
-            _shutil.move(str(hidden), str(fp_src))
+        broken_lib = Path(tmp) / "broken-lib"
+        _shutil.copytree(str(FP_LIB), str(broken_lib))
+        (broken_lib / "file_patterns.py").unlink()
+        broken_script = broken_lib / "visual-significance.py"
+        for cfg, want_sig in (({"uiSurface": True}, True), ({"uiSurface": False}, False)):
+            label = "ui" if want_sig else "headless"
+            d = Path(tmp) / f"bi-{label}"
+            d.mkdir(exist_ok=True)
+            (d / "flow.config.json").write_text(json.dumps(cfg), encoding="utf-8")
+            (d / "files.txt").write_text("M\tsrc/Button.tsx", encoding="utf-8")
+            proc = subprocess.run(
+                [sys.executable, str(broken_script), "--config", str(d / "flow.config.json"),
+                 "--files-from", str(d / "files.txt")],
+                capture_output=True, text=True, check=False)
+            try:
+                o = json.loads(proc.stdout)
+            except ValueError:
+                o = {"_stdout": proc.stdout, "_stderr": proc.stderr}
+            check(f"fb79-broken-install-fails-closed:{label}",
+                  proc.returncode == 2 and o.get("visual_significant") is want_sig
+                  and o.get("ui_surface") is want_sig,
+                  f"expected rc=2 + visual_significant={want_sig}: rc={proc.returncode} {o}")
+            check(f"fb79-broken-install-names-remedy:{label}",
+                  any("Reinstall the plugin" in sig for sig in o.get("visual_signals", [])),
+                  f"the warning must name the fix: {o.get('visual_signals')}")
 
         # 10c. A change in the #else (RELEASE) branch of `#if DEBUG` DOES ship —
         #      must still count as significant.
