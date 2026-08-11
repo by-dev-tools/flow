@@ -299,7 +299,7 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 
 **Date:** 2026-07-29
 **Branch:** `claude/agent-draft-pr-handling-52e6dd` (worktree `agent-draft-pr-handling-52e6dd`)
-**SHA:** _(filled at commit)_
+**SHA:** `9efa9a4` (squash-merged as #85, 2026-07-30)
 
 **What was done (user-facing).** When a ship gate does not pass, `/flow:ship` no longer just hands back a draft PR. Every blocker is triaged: if a resolution exists and has not been tried, the agent tries it once; if it is a real decision, the agent drafts the fix and Step 8 presents a numbered question in plain language (recommendation first, what was already tried, and an explicit "waive and ship as-is"); only an item needing an action outside the session leaves the PR as a plain draft. Answering at the hand-off resolves through the existing Step 7c reconcile path, so the PR flips to ready without a second ship run.
 
