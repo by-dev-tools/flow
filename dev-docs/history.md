@@ -6,7 +6,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ## 2026-08-03 — One slot can't answer two questions: `uiFilePatterns` splits into `visualFilePatterns` + `a11yFilePatterns`
 
-**Branch:** `claude/uifilepatterns-visual-a11y-51627b` · **SHA:** [pending — commit at ship]
+**Branch:** `claude/uifilepatterns-visual-a11y-51627b` · **SHA:** merged #95 @ `4fe0851`
 
 **What was done (user-facing).** Two new optional schema slots, `visualFilePatterns` and `a11yFilePatterns`, each resolving `explicit slot → uiFilePatterns → built-in default`. A project that sets only `uiFilePatterns` (or neither) behaves byte-identically to before. A new shared resolver, `skills/verify-build/lib/file_patterns.py`, owns that chain for both Python consumers; `/flow:accessibility-review`'s shell gate implements the same chain in jq. `/flow:audit-skips` splits its `touches_ui` field into `touches_visual` + `touches_a11y` so each reviewer's skip is confirmed against the pattern that reviewer itself used.
 
