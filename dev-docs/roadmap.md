@@ -177,6 +177,36 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### AI-workflow benchmark reconciliation (2026-07-08) — where the five-item program landed
+
+Full external analysis: `dev-docs/research/ai-workflow-landscape-2026-07.md` (gstack / Superpowers / GSD comparison + the Claude-Code loops article + the reflection & visual-feedback landscape). This entry **applies** the preserved `dev-docs/handoffs/active-program-2026-07-08.md` (which recorded the original user-directed M→#5→#2→#4→#3 sequence but was held "preserved, not applied" pending this judgment-reconciliation against v1.27.0). The five-item program reconciles against the current roadmap — **most of it was already on the board or has shipped; two items are genuinely net-new** (the M and #3 entries directly below):
+
+| Program item | Status on current `main` |
+|---|---|
+| **#2 — plan-gate ambition lens** | = **§ Designer-signal track D3** ("Experience + ambition lens", promotes FB-0046) + the § Next "Plan-gate quality lenses" entry. Already specified. Refinement to fold in: keep `lens-push-further` as the *execution* uncommon-care lens in staff-review (it already routes `roadmap-concrete` → roadmap); D3 is the *product-ambition* lens at the brief gate. Still-unbuilt nuance: an eval that a `roadmap-concrete` finding actually lands in `roadmapPath`, not just the PR body. |
+| **#4 — visual report reframe** | Largely subsumed by **§ Designer-signal track D1** (prototype-first gate — the load-bearing item) + shipped annotation work: **pin-to-anything shipped** (v1.20.0, #75, FB-0071); commenting-as-mode shipped (v1.22.0, #84). Still open under D1: the report's *content* reframe (product/visual-change-centric vs build-verdict), fires-every-PR delivery, auto-open in Claude-desktop preview, reliable image loading, and **plain-local-HTML** support — the Agentation differentiator (Agentation requires React; the user runs local HTML demos). Route as D1 execution requirements. |
+| **#5 — goals + required success criteria** | Captured across **Facet 4** (plan-declared criteria enforced by plan-critic) + the **Agentic-iteration doctrine** (FB-0044, the `/goal` execution loop). Framing to fold in: two `/goal` cycles — *plan* (iterate the brief to a clear-criteria bar before gate 1) and *execution* (iterate to all-criteria-PASS before ship); `/loop` stays reserved for recurring/external work. |
+| **M — model-measurement harness** | **NET-NEW** (only PR P's auditor-only eval exists). See directly below. |
+| **#3 — memory-effectiveness instrumentation** | **NET-NEW** (nothing captures it). See directly below. |
+
+### M — Model-measurement harness: measure before routing (extends PR P)
+
+**Surfaces when:** picked up directly, or whenever `scripts/extract_session.py`'s usage-parsing path or PR P's auditor eval is next touched.
+
+Every framework benchmarked either routes models per-subagent (gstack: Sonnet fast-actions / Opus analysis) or gets it free from the platform (`model:` frontmatter); the Claude-Code loops article names it a first-class loop-management principle. Flow runs *every* subagent on the inherited session model. **User direction (conservative, measurement-first):** Opus stays default, **Sonnet is the only challenger, no Haiku yet**, and nothing routes until a harness shows the quality/token delta — PR P's discipline generalized from one agent to the fleet. Three pieces, in order:
+
+1. **Per-subagent token attribution** — a stdlib report (extends `extract_session.py`, which already parses the transcript; `/usage` + `/workflows` surface the raw numbers) attributing tokens per subagent + which model ran. The cheap, zero-risk first cut.
+2. **Offline A/B eval** — run the reviewer fixtures (`auditor`, `plan-critic`, `lens-*`) through Opus vs Sonnet; report finding-overlap + FP-rate + token cost. Generalizes PR P Step A into a reusable harness. Standing constraint preserved: `plan-critic` + lens agents stay on Opus unless the data clears the bar; FB-0013 (same-model critic collusion) means a Sonnet swap must not collapse the context-diversity the separate windows provide.
+3. **Randomized/shadow sampler** — log `(agent, model, tokens, output)` per real invocation so paired/aggregate samples accumulate over normal use; single-assignment on read-heavy agents first (double-run doubles that agent's cost). Routing decisions consume this data — no agent moves to a cheaper model on faith.
+
+Detailed plan drafted in `plan.md` § "PR — Model-measurement harness (QUEUED)". Independent of the Designer-signal + Deliverable tracks; interleaves at any PR boundary.
+
+### #3 — Memory-effectiveness instrumentation (net-new)
+
+**Surfaces when:** `tools/memory/check.mjs` or `/flow:ship` Step 4b (memory synthesis / Fire-log) is next touched, OR the corpus crosses ~20 entries with no signal on which earn their place.
+
+Reflection best-practice (Reflexion / Experiential Reflective Learning / OpenAI's Self-Evolving Agents Cookbook) has moved to **scored, measured** memory: multi-signal relevance ranking + instrumented effectiveness. Flow's corpus is count-capped (30) + mtime-sorted, injected wholesale, with a manually-annotated "Fire log" — nothing measures whether an entry ever *fired* or *helped*, which is why effectiveness is a black box. Shape: (a) increment a fire-count when an entry is cited/matched in a session (Step 4b already appends a Fire-log date — instrument it); (b) surface dead entries (no fire in N ships) at the periodic audit; (c) rank injection by fire-rate × recency rather than flat mtime. Distinct from **V4** (check-work-against-past-errors); this measures *which memories help*. Net-new; independent track.
+
 ### `/flow:doctor` Check 2.5 is the line-oriented twin of a guard we just made wrap-tolerant
 
 FB-0079 hardened flow's *internal* slot-count sweep after a wrapped `all 30\n  slots` in `doctor/SKILL.md` frontmatter slipped a line-oriented grep. The **consumer-facing** implementation of the same predicate — doctor Check 2.5 — still has all three of the properties that produced that miss: it is line-oriented (`grep -rEn`), its pattern requires a single literal space (`([0-9]+) slots?` vs the internal `\d+\s+slots?`), and it scans only doc-ish paths, not `.json`/`.sh`. So the guard we ship to consumers is weaker than the one we run on ourselves — FB-0079's own class (one contract, two runtimes, held together by nothing) recurring inside FB-0079's fix, one commit after "greps are line-oriented" was written down as the lesson.
