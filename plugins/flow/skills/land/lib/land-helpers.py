@@ -82,7 +82,17 @@ def clear_reservation(args) -> int:
             f"strike lines on an unconstrained match.\n"
         )
         return 2
-    tok_re = re.compile(r"\b" + re.escape(token) + r"\b")
+    # Match a RESERVATION BULLET only — a list item that OPENS with the id — not any line
+    # mentioning it. The previous `search` form removed every occurrence, so clearing one
+    # shipped number also deleted the audit-trail entries that cite it: this file's whole
+    # second half is institutional memory about past collisions, and a land run silently
+    # destroyed three of those entries before this was caught (dogfooded on #88). An
+    # audit-trail line opens with its date (`- **2026-08-11** — ...`), so anchoring on
+    # `- **<id>**` separates the two without needing to parse section headings.
+    # Bold is optional: real files write `- **FB-0082** — …`, older ones `- FB-0013 (PR P)`.
+    # The anchor that matters is that the bullet OPENS with the id; an audit-trail entry
+    # opens with its date (`- **2026-08-11** — …`), so it can never match.
+    tok_re = re.compile(r"^\s*[-*]\s+\*{0,2}" + re.escape(token) + r"\b")
     kept, removed = [], []
     for line in text.splitlines(keepends=True):
         (removed if tok_re.search(line) else kept).append(line)
