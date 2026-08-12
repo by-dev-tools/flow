@@ -118,6 +118,24 @@ with tempfile.TemporaryDirectory() as d:
     after = resv.read_text()
     check("cr 2", "FB-001 (old)" not in after and "FB-0014" in after,
           f"FB-001 must strike its own line, not FB-0014: {after!r}")
+    # cr 2b — a reservation bullet is struck, but an AUDIT-TRAIL line citing the same id
+    # SURVIVES. The predicate was `search` (any occurrence) until #88's own land run deleted
+    # three collision-history entries: this file's second half is institutional memory, and
+    # clearing a number must not erase the record of why it was renumbered. Both directions
+    # asserted, so a match-nothing bug cannot pass this either.
+    audit = Path(d) / "resv_audit.md"
+    audit.write_text(
+        "## Currently reserved\n\n"
+        "- **FB-0077** — `some/branch` — \"a rule.\" Entry written in `feedback.md`; clears at ship.\n\n"
+        "## Audit trail (past collisions, kept for institutional memory)\n\n"
+        "- **2026-08-11** — a collision in which FB-0077 was renumbered; this line must survive.\n"
+    )
+    rc, out, err = run("clear-reservation", str(audit), "--id", "FB-0077")
+    after_a = audit.read_text()
+    check("cr 2b", rc == 0
+          and "- **FB-0077** —" not in after_a
+          and "a collision in which FB-0077 was renumbered" in after_a,
+          f"reservation must go, audit-trail mention must stay: {after_a!r}")
     rc, out, err = run("clear-reservation", str(resv), "--id", "FB-0099")
     check("cr 3", rc == 0 and "already clear" in out, f"rc={rc} out={out!r}")
     before = resv.read_text()

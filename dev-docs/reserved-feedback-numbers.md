@@ -32,7 +32,6 @@ _(FB-0072 cleared at ship of the `/flow:post-merge` skill v1 PR, v1.21.0; entry 
 _(FB-0073 cleared at ship of the audit-skips-loud + swift-glob fix PR, v1.21.1; entry lives in `feedback.md`.)_
 _(FB-0074 cleared at ship of the three-gates PR, v1.22.0 (`#86`); entry lives in `feedback.md`. It was claimed twice concurrently — see the audit trail entry for 2026-07-29. `#86` shipped it; this branch renumbered its part-A reservation away.)_
 
-- **FB-0082** — `claude/flow-fork-transport-scratch` (flamboyant-stonebraker-36ef32) — "A handoff between a parent shell and a forked skill must live somewhere BOTH can see, and must prove it belongs to this workspace before it is read." Repo-local `.flow/` scratch + `flow_stamp` refuse-on-mismatch (v1.27.0 — renumbered from v1.22.0 after `#86` took it; part B of the consumer dogfood report). Claimed 2026-07-29, next free after #83's FB-0073 and this session's FB-0074 reservation. Entry written in `feedback.md`; clears at ship.
 
 _(FB-0074 cleared at merge of #86, v1.22.0; entry lives in `feedback.md`.)_
 _(FB-0078 cleared at merge of #92 — its own line said "held until MERGE"; #92 merged 2026-08-11, so `/flow:land 95` reconciled it. Entry lives in `feedback.md`.)_
