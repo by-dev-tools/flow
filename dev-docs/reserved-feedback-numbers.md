@@ -20,10 +20,7 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 ## Currently reserved (as of 2026-08-03)
 
-- **FB-0080** — `claude/prototype-first-gate` (prototype-gate) — "An accepted multi-item agenda held only in conversation is not a commitment; the next message's narrower focus silently becomes the whole scope." Process failure that dropped 5 of 6 accepted items. **Renumbered TWICE: FB-0078 → FB-0079 → FB-0080** — #92 shipped FB-0078, then #95 shipped FB-0079, both while this branch was open. Third instance of the pattern this file now documents. **Held until MERGE, not cleared at ship** (per the FB-0078 entry's amended protocol).
-- **FB-0081** — `claude/prototype-first-gate` (prototype-gate) — "For UI work the prototype approval REPLACES the plan gate; the technical plan is written after and machine-gated, never human-gated." Loop restructure (designer-signal track D1). Renumbered FB-0079 → FB-0080 → FB-0081 alongside its sibling above. **Held until MERGE.**
 
-- **FB-0077** — `claude/land-model-invocable` (land-invocable) — "A blunt capability flag that duplicates a narrow mechanical gate should lose to the gate — and satisfying a composition lint by deleting the call concedes the composition instead of fixing it." Makes `/flow:land` model-invocable so `/flow:post-merge` §3 can actually call it (v1.25.0). Entry drafted with the PR; clears at ship.
 
 
 _(FB-0071 cleared at ship of the annotation-layer generalization PR, v1.20.0; entry lives in `feedback.md`.)_
@@ -36,6 +33,8 @@ _(FB-0074 cleared at ship of the three-gates PR, v1.22.0 (`#86`); entry lives in
 _(FB-0074 cleared at merge of #86, v1.22.0; entry lives in `feedback.md`.)_
 _(FB-0078 cleared at merge of #92 — its own line said "held until MERGE"; #92 merged 2026-08-11, so `/flow:land 95` reconciled it. Entry lives in `feedback.md`.)_
 _(FB-0079 cleared at merge of #95, v1.26.0; entry lives in `feedback.md`.)_
+_(FB-0077 cleared at merge of #90, v1.25.0 — `/flow:land` made model-invocable; entry lives in `feedback.md`.)_
+_(FB-0080 + FB-0081 cleared at merge of #97 — the designer-signal track. Both were **renumbered twice** while the branch was open (FB-0078/0079 → 0079/0080 → 0080/0081) as #92 then #95 took the numbers ahead of them; the third and fourth instances of the pattern this file records. Released here per the amended protocol — held until MERGE, not cleared at ship. Entries live in `feedback.md`.)_
 
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
