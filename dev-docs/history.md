@@ -65,7 +65,7 @@ Two findings routed rather than fixed. **Doctor Check 2.5 is the consumer-facing
 
 ## 2026-08-03 — Plugin descriptions trimmed from 27KB to 216 chars + a guard that keeps them there (FB-0078)
 
-**Branch:** `claude/flow-description-terminal-ui-49aaaf` · **SHA:** _(set at commit)_ · rebased onto `d24c33f`
+**Branch:** `claude/flow-description-terminal-ui-49aaaf` · **SHA:** merged #92 @ `0f1bc6dc4` · rebased onto `d24c33f`
 
 **What was done (user-facing).** The `description` fields in `plugins/flow/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` — the text Claude Code renders in the `/plugin` Plugins pane — were rewritten. `plugin.json.description` went from **27,711 → 216** characters; `marketplace.json` `plugins[0].description` from **25,795 → 216** (now byte-identical to plugin.json's); `metadata.description` from **17,461 → 85** (and it now describes the *marketplace*, which is what that field is for, rather than repeating the plugin blurb). The text is two sentences on what flow does for the user. No version bump — this is a presentation fix to an existing release, and marketplaces re-read the manifest on update.
 
