@@ -415,6 +415,14 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 If safety-critical code changed, include `SAFETY` in the commit subject.
 
+**Post-merge fix attribution.** If this work changes behavior a *previously merged* PR already shipped, add the trailer required by `${CLAUDE_PLUGIN_ROOT}/rules/general.md` § "Post-merge fix attribution" — `Fixes-PR: #N` (+ a `Fix-class:`) when the merged work contradicted what it declared, `Revises-PR: #N` when it did what it declared and the intent changed. Resolve the call against the referenced PR's **Spec-walk criteria**, not by how bug-like it feels; when neither doc settles it, use `Revises-PR` and say why in the body.
+
+Do not add a trailer for in-branch iteration — fixes to work that never merged are the gates functioning, not escaped defects. If the plan named the PR this supersedes, carry that number through rather than re-deriving it:
+```sh
+# find the PR that last shipped the file(s) this commit repairs
+git log --merges --oneline -n 5 -- <path>
+```
+
 ## 7. Push and PR
 
 Push with `-u` if the branch isn't tracking yet.
@@ -439,6 +447,11 @@ The PR base branch is resolved via this fallback chain:
 - Then:
   ```markdown
   ## Summary
+  **Scope:** <docs-only | new feature | bugfix | refactor | test | chore | mixed>
+
+  <1-2 plain-language sentences: what changed, readable by someone who has not
+  seen the diff. No internal codenames (FB-XXXX, PR letters), no jargon.>
+
   - <1-3 bullets on why this exists>
 
   ## Test plan
@@ -466,6 +479,17 @@ The PR base branch is resolved via this fallback chain:
 
   🤖 Generated with [Claude Code](https://claude.com/claude-code)
   ```
+
+  **Write the `## Summary` for a reader at the merge gate**, top-down:
+  - **Scope** — the primary category of the change, so a reviewer knows what
+    kind of review it needs: `docs-only`, `new feature`, `bugfix`, `refactor`,
+    `test`, `chore` (build/tooling/deps), or `mixed`. Pick the one that
+    dominates; use `mixed` only when two genuinely co-lead, and name the parts.
+  - **The plain-language line** — what changed, in one or two sentences a reader
+    can follow without opening the diff. No internal codenames (FB-XXXX, PR
+    letters), no jargon — this is the first thing the human reads at the gate.
+  - **The bullets** — why the change exists (context, motivation), not a restated
+    what. Drop them if the plain-language line already carries the why.
 
   **Populate the `## Flow run` table from THIS session's loop history** — you
   have that context at ship time (the same context you used to write the

@@ -44,6 +44,38 @@ Every plan declares one of three modes:
 - "What" goes in the code change itself. "Why" goes in the history doc at ship time.
 - Tradeoffs are the most valuable part of the history doc — they're what future sessions need to avoid re-litigating.
 
+## Post-merge fix attribution
+
+When a commit changes behavior that a **previously merged PR** already shipped, it carries exactly one trailer naming that PR:
+
+```
+Fixes-PR: #104        # the merged work did not do what it claimed
+Revises-PR: #104      # the merged work did what it claimed; the intent changed
+```
+
+These exist to make *escaped defects* countable. That only works if design iteration is kept out of the numerator — a project that refines its surfaces more would otherwise look buggier than one that ships and walks away, which is exactly backwards.
+
+**The discriminating test — use the referenced PR's own Spec-walk, not your judgment of "bug-ness":**
+
+- The behavior **contradicts** a criterion that PR declared → `Fixes-PR`. It claimed something it did not do.
+- The behavior **satisfied** its declared criteria and you now want different criteria → `Revises-PR`. It did what it said; you changed your mind.
+- Neither doc supports a call → default to `Revises-PR` and say why in the body. Under-counting defects is the safer error: it biases against the tooling rather than flattering it.
+
+**`Fixes-PR` also takes a class**, because these have different owners and only the first two are code defects:
+
+```
+Fix-class: contradicts-spec   # violates a criterion the PR declared
+Fix-class: regression         # worked before that PR, broken after
+Fix-class: undeclared         # real defect, but no criterion ever covered it — a planning gap
+Fix-class: integration        # only surfaced once combined with other merged work
+```
+
+`undeclared` is the class `/flow:audit-coverage` exists to prevent, so it must stay separable — folding it in with `contradicts-spec` hides whether the coverage gate is working.
+
+**Scope, deliberately narrow.** No trailer for: new features, follow-on scope the PR explicitly deferred, docs, refactors that preserve behavior, or fixes to work that never merged (in-branch iteration is not an escaped defect — that is the gates doing their job). One trailer per referenced PR; repeat the line if a commit genuinely repairs two.
+
+The point of the pair is that **both** rates are informative: `Fixes` measures what escaped, `Revises` measures how much the design moved after shipping. Reporting either alone misleads.
+
 ## Autonomous work guardrails
 
 This workflow is **hybrid managed autonomy** — human-gated at Plan (step 2) and Merge (step 11), with autonomy-friendly primitives between. Even inside the autonomous portion, always confirm with the user before proceeding if the action involves:

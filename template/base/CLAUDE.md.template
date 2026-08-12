@@ -71,6 +71,17 @@ After the assumption surface, `/flow:ship` runs hard pre-flight gates (Step 1a s
 | `core-docs/feedback.md` | User feedback synthesized to rules (FB-XXXX) |
 | `core-docs/design-language.md` | (UI projects) Tokens, axioms, components, motion — read before any UI change |
 
+## Commit trailers — post-merge fixes
+
+A commit that changes behavior a **previously merged** PR already shipped names that PR:
+
+```
+Fixes-PR: #104        # it did not do what it claimed  (+ Fix-class: contradicts-spec | regression | undeclared | integration)
+Revises-PR: #104      # it did what it claimed; the intent changed
+```
+
+Decide against the referenced PR's **Spec-walk criteria**, not by how bug-like it feels. In-branch iteration gets no trailer — fixes before merge are the gates working. Full rule: `${CLAUDE_PLUGIN_ROOT}/rules/general.md` § "Post-merge fix attribution".
+
 ## Quality bar
 
 - **Polished over partial.** Every visible control does its job. Wire-vs-defer: if the gap is < 1 day, wire it; else remove the visible affordance and capture in roadmap.
