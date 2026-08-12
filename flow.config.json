@@ -9,5 +9,7 @@
   "$comment-verifyReportPath": "Repo-local (gitignored) instead of the /tmp default, so the rendered report can be SERVED by the .claude/launch.json 'flow-report' recipe and driven in a browser. A /tmp path cannot be served without exposing the whole temp dir.",
   "verifyReportPath": ".flow/report.html",
   "platform": "library",
-  "defaultBranch": "main"
+  "defaultBranch": "main",
+  "referenceGlob": "dev-docs/*.md",
+  "$comment-referenceGlob": "REQUIRED here, and not cosmetic (FB-0082). The schema default is 'core-docs/*.md', which does not exist in this repo -- flow keeps reference docs in dev-docs/. Without this slot the /flow:critique-plan preprocessor resolved ZERO reference documents and injected no '## Reference documents' section at all, silently: the critic could cite no project rule, and the result was indistinguishable from 'there were no rules to violate'. critique-plan/SKILL.md has asserted \"flow's own repo overrides to dev-docs/*.md\" for several versions while this file did not; the claim was simply false."
 }

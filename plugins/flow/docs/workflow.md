@@ -559,7 +559,7 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / HUMAN (you type it; ca
 | `statusSurfaceCandidates` | `[CLAUDE.md, AGENTS.md, README.md, GEMINI.md, .cursorrules, .github/copilot-instructions.md]` | `/flow:ship` Step 5a.5 (discover UNDECLARED orientation docs that drifted → draft); `/flow:doctor` Check 2.9 (warn-only opt-in nudge) |
 | `referenceGlob` | `core-docs/*.md` | `/flow:critique-plan` preprocessor |
 | `verifyEnabled` | `true` | `/flow:verify-build` skip-path (project-wide opt-out) |
-| `verifyFindingsPath` | `/tmp/flow-verify-findings.json` | `/flow:verify-build` step 8 write; `/flow:ship` step 4a read |
+| `verifyFindingsPath` | `.flow/verify-findings.json` | `/flow:verify-build` step 8 write; `/flow:ship` step 4a read |
 | `verifyBudgetCalls` | `60` | `/flow:verify-build` step 5 (tool-call cap before forced Unknown) |
 
 Why two defaults: flow's *own* dev-tracking lives at `dev-docs/` (so `core-docs/` stays free as the name consumer-template scaffolding ships at). Consumer projects typically use `core-docs/`. The defaults bake that distinction in.

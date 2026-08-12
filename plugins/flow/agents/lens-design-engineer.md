@@ -17,8 +17,14 @@ You are a staff-level design engineer cold-reading a workspace diff. Your job is
 ## Inputs
 
 The skill that spawns you (`/flow:staff-review`) passes:
-- **Diff path** — typically `/tmp/flow-staff-diff.patch`.
-- **Untracked files list** — typically `/tmp/flow-staff-untracked.txt`; `Read` each one in full.
+- **Diff path** — passed to you by `/flow:staff-review` (a repo-local `<repo-root>/.flow/staff-diff.patch`).
+- **Untracked files list** — passed to you alongside it (`<repo-root>/.flow/staff-untracked.txt`); `Read` each one in full.
+
+**Use the paths you were given; never guess a `/tmp` one.** The diff's first line is a
+`# flow-review-context repo=… branch=… head=…` header. Compare it against the **Workspace identity** line in your prompt. If they disagree, **stop and say so** — do not review the contents and do
+not silently regenerate. A mismatch means the orchestration handed you the wrong workspace,
+which is a finding about the run, not something to quietly work around (FB-0082).
+
 - **Changed files list**.
 - **Relevant project docs** — `flow.config.json.designLanguagePath` (your primary source-of-truth; if absent, flag the gap before reviewing craft).
 - **PR body or workstream prompt** — if relevant.

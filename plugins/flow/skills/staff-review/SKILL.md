@@ -121,11 +121,37 @@ Both committed-since-base and uncommitted, plus untracked files (which `git diff
 
 ```sh
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main")
-{ git diff "origin/$BASE..HEAD"; git diff HEAD; } > /tmp/flow-staff-diff.patch
-git ls-files --others --exclude-standard > /tmp/flow-staff-untracked.txt
+# Canonical repo-local scratch idiom — keep in sync with scripts/flow_scratch.py
+# (pinned by evals/run_scratch_isolation_evals.py).
+FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+[ -n "$FLOW_ROOT" ] && FLOW_SCRATCH="$FLOW_ROOT/.flow" || FLOW_SCRATCH="${TMPDIR:-/tmp}/flow-detached"
+# SECURITY (CWE-59): refuse to write scratch through a symlink. `.flow` is an ordinary
+# repo path with none of git's .git/.gitmodules special-casing, so an untrusted clone can
+# ship `.flow` as a symlink; `mkdir -p` on an existing symlink-to-dir exits 0 and FOLLOWS
+# it, so every write below would land in an attacker-chosen directory outside the repo
+# (e.g. truncating a `.gitignore` in ~ or a sibling repo). Moving the sink into
+# repo-controlled namespace is what introduced this, so the guard ships with it.
+if [ -L "$FLOW_SCRATCH" ]; then
+  echo "⚠️ BLOCKER: $FLOW_SCRATCH is a symlink — refusing to write flow scratch through it, because writes would land outside the repo (CWE-59). Replace it with a real directory." >&2
+  exit 1
+fi
+mkdir -p "$FLOW_SCRATCH"
+# Self-ignore so flow never dirties the consumer's git status. Written HERE, not only
+# in flow_scratch.py: the shell sites do their own mkdir and never call the Python
+# helper, so a gitignore created only there would never exist in production.
+[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
+FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
+# Provenance header: leading non-diff lines are ignored by every reader of a patch, but a
+# lens that finds itself reviewing unfamiliar code can confirm WHOSE diff it has.
+printf '# flow-review-context repo=%s branch=%s head=%s base=origin/%s\n' \
+  "$FLOW_ROOT" "$FLOW_BR" "$FLOW_HEAD" "$BASE" > "$FLOW_SCRATCH/staff-diff.patch"
+{ git diff "origin/$BASE..HEAD"; git diff HEAD; } >> "$FLOW_SCRATCH/staff-diff.patch"
+git ls-files --others --exclude-standard > "$FLOW_SCRATCH/staff-untracked.txt"
 ```
 
 Reviewers reference both paths so each lens prompt stays small.
+
+**Why repo-local and not `/tmp` (FB-0082).** `/tmp/flow-staff-diff.patch` was one global filename shared by every project on the machine, so two concurrent sessions clobbered each other's review inputs — observed in the wild: three lenses were handed *another project's* diff, and only two noticed and regenerated on their own initiative. A lens that doesn't notice reviews the wrong code and reports clean. `$FLOW_ROOT/.flow/` is unique per **worktree** (`git rev-parse --show-toplevel` resolves to the worktree, not the shared repo), so the collision cannot occur by construction rather than by luck.
 
 ## 3. Launch the four reviews in parallel
 
@@ -141,8 +167,13 @@ A single tool message with four `Agent` calls. Each call uses `subagent_type` to
 If `flow.config.json.reviewLenses` excludes any lens, skip its `Agent` call and note the exclusion in the reviewer notes (Section 7 below).
 
 Each lens agent's prompt is its own file — you only need to pass the **session-specific inputs**:
-- Diff path: `/tmp/flow-staff-diff.patch`
-- Untracked-files list path: `/tmp/flow-staff-untracked.txt`
+- Diff path: `<repo-root>/.flow/staff-diff.patch` (the `$FLOW_SCRATCH/staff-diff.patch` resolved above — pass the **absolute** path you just wrote, never a literal `/tmp/...`)
+- Untracked-files list path: `<repo-root>/.flow/staff-untracked.txt`
+- **Workspace identity** — pass the values you just stamped into the diff header, verbatim:
+  `repo=$FLOW_ROOT branch=$FLOW_BR head=$FLOW_HEAD`. Each lens is instructed to stop if the
+  header names a workspace other than the one it was asked to review; without this input it
+  has nothing to compare against, so the check silently degrades to trusting the header — a
+  contract split across two files with nothing asserting the join (FB-0074/FB-0082).
 - Changed-files list (computed from the diff)
 - Relevant project docs (paths resolved in the Project Context section above)
 - PR body or workstream prompt if relevant

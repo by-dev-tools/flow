@@ -49,7 +49,7 @@
   "$comment-verify-build": "Controls /flow:verify-build, the runtime behavioral-verification gate at /flow:ship Step 2 (v1.3.0). platform: hint for skip-path decisions — 'library'/'none' self-skips (no runnable target); web/ios/android/tauri/cli run the verify pass; UNSET → bundled /run autodetects. verifyEnabled: project-wide on/off. verifyBudgetCalls: tool-call cap before unjudged verdicts are forced to Unknown (which gates ship). NOTE: requires a /run launch recipe — run /run-skill-generator once per project (doctor Check 5.3 surfaces the gap).",
   "platform": "web",
   "verifyEnabled": true,
-  "verifyFindingsPath": "/tmp/flow-verify-findings.json",
+  "verifyFindingsPath": ".flow/verify-findings.json",
   "verifyBudgetCalls": 60,
 
   "$comment-rustWorkspaceDir": "(Tauri / Rust stacks only — omit on pure web / swift / non-Rust projects.) Directory holding your Cargo workspace. Default 'src-tauri' is the Tauri convention; non-Tauri Rust projects set '.' (workspace at root) or the subdir name.",

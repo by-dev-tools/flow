@@ -312,7 +312,7 @@ second chance. Run the SAME gate `/flow:ship` §5c uses:
 ```sh
 UIS=$(jq -r '.uiSurface // true' flow.config.json 2>/dev/null)
 VHPATH=$(jq -r '.visualHistoryPath // "core-docs/visual-history.html"' flow.config.json 2>/dev/null); [ -z "$VHPATH" ] && VHPATH="core-docs/visual-history.html"
-FINDINGS=$(jq -r '.verifyFindingsPath // "/tmp/flow-verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS="/tmp/flow-verify-findings.json"
+FINDINGS=$(jq -r '.verifyFindingsPath // ".flow/verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS=".flow/verify-findings.json"
 if [ "$UIS" != "true" ]; then
   echo "[land] visual-history: skipped (uiSurface:false) — non-UI project."
 elif [ ! -f "$FINDINGS" ]; then
@@ -407,4 +407,4 @@ Output the reconciliation PR URL + a one-line summary (`landed #N: <item> → me
 | `flow.config.json.changelogPath` | `CHANGELOG.md` | Step 4 |
 | `flow.config.json.uiSurface` | `true` | Step 5 (§5c gate) |
 | `flow.config.json.visualHistoryPath` | `core-docs/visual-history.html` | Step 5 (late distill) |
-| `flow.config.json.verifyFindingsPath` | `/tmp/flow-verify-findings.json` | Step 5 (distill source) |
+| `flow.config.json.verifyFindingsPath` | `.flow/verify-findings.json` | Step 5 (distill source) |

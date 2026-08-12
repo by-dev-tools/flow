@@ -35,6 +35,21 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 <!-- Add new entries below this line, newest first. -->
 
+### FB-0082: A handoff between a parent shell and a forked skill must live where BOTH can see it, and must prove it belongs to this workspace before it is read
+
+**Date:** 2026-07-29
+**Source:** user correction (consumer dogfood report on flow 1.20.0, Swift/iOS project) + in-session reproduction
+
+**What was said:** The reporter hit two silent false negatives. `/flow:audit-skips` returned `SKIP-AUDIT: no stage report to audit` while `/tmp/flow-skip-audit-stages.json` existed and was well-formed — running the helper directly against that same file produced a full, correct report. Separately, `/tmp/flow-staff-diff.patch` contained **another project's** diff (a `HealthTracker` sleep-metrics change) when the staff-review lenses read it; two of three lenses noticed and regenerated on their own initiative, the third did not. They asked for the collision "at least made detectable (stamp + refuse-on-mismatch), ideally namespaced."
+
+**Reproduced in-session, twice.** (1) A same-file A/B settled the first: `/tmp/flow-skip-audit-stages.json`, valid and readable, produced a full report from the parent shell and "no stage report to audit" from `Skill("flow:audit-skips")`. Forked skills cannot see a `/tmp` file the parent wrote — so the skip-legitimacy gate had been inert **on every ship since v1.13.0**, behind a message that reads like a clean no-op. `roadmap.md` § Exploration had this as an open question ("investigate whether the fork isolation is systematic before committing to (a) vs (b)"); it is systematic. (2) A repo-relative probe confirmed the converse: a fork *does* read a file the parent wrote under the repo root, so the roadmap's option (a) is viable.
+
+**Synthesized rule:** Ephemeral inter-process state in flow goes in a **repo-local** `.flow/` directory, never `/tmp`. This is one mechanism closing two distinct failures: a repo-relative path is visible across the parent↔fork boundary, **and** it is unique per worktree by construction (`git rev-parse --show-toplevel` resolves to the worktree, not the shared repo), so cross-project and cross-worktree collisions cannot occur rather than being made unlikely. Namespacing alone is still insufficient — a stale handoff from an earlier branch in the *same* worktree is indistinguishable from a current one — so every handoff also carries a `flow_stamp` (repo + branch + head), and readers **refuse a mismatch loudly** rather than reading it and hoping the consumer notices. An **absent** stamp is refused too (fail closed, per FB-0062): "written by an older flow" is not a reason to trust a file. Critically, `absent` / `invalid` / `stale` / `ok` must stay four **distinct** states — collapsing them is exactly how a foreign or out-of-date buffer reads as "nothing to do."
+
+**Corollary found while fixing it:** the same silent-no-op shape existed in `extract_session.py`'s reference-doc loader, which returned `""` when a `referenceGlob` matched nothing — producing a context with no `## Reference documents` section, indistinguishable from "this project has no rules." Flow's *own* `flow.config.json` was missing `referenceGlob`, so the `core-docs/*.md` default matched nothing (flow keeps docs in `dev-docs/`) and every `/flow:critique-plan` run in this session was structurally unable to cite a project rule — while `critique-plan/SKILL.md` had asserted for several versions that "flow's own repo overrides to `dev-docs/*.md`". An empty resolution is a configuration failure, not an empty set; it now says so loudly and tells the critic it cannot raise a Spec violation at all.
+
+**Applies to:** `scripts/flow_scratch.py` (new), `skills/ship/SKILL.md` Step 2a, `skills/audit-skips/SKILL.md`, `skills/{staff-review,security-review,accessibility-review}/SKILL.md`, `agents/lens-*.md`, `skills/ship/lib/rigor-marker.py`, `skills/verify-build/SKILL.md`, `schema/flow.config.schema.json` (`verifyFindingsPath` / `verifyReportPath` defaults), `scripts/extract_session.py`, `flow.config.json`. Pinned by `evals/run_scratch_isolation_evals.py` — the **first** harness in this repo to extract and execute a SKILL.md `!`-block, which is why the transport bug survived until now.
+
 ### FB-0081 — For UI work the prototype approval REPLACES the plan gate; the technical plan is written afterward and machine-gated, never human-gated
 
 **Date:** 2026-08-02
@@ -74,7 +89,6 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 **How to apply:** (1) On any message that accepts more than one item, capture the list to the plan doc *before* acting, with each item's status. (2) Treat a follow-up that narrows focus as prioritization; re-surface the unstarted items when that thread closes, rather than at the end of the session. (3) Flow-side, the fix is that a plan must always exist — see [FB-0081], where the technical plan is auto-written after prototype approval precisely so the drift check always has an anchor. See also [[feedback_sweep_the_class_you_name]]: the same "grep for the other members" discipline applies to accepted requests, not just to bug classes.
 
 **Applies to:** the Clarify + Plan steps of `plugins/flow/docs/workflow.md`; `dev-docs/plan.md` maintenance discipline (`.claude/rules/general.md` § Documentation discipline); the agent's own conduct on any multi-item request.
-
 
 ### FB-0079 — When one config slot gates two consumers that ask different questions, the consumer can't express either correctly — and every scoping choice becomes a forced trade
 
@@ -153,8 +167,6 @@ The transferable rule: **when a check compares two implementations, enumerate th
 **Sibling entry:** **FB-0073** (`#83`, shipped while this branch was in flight) is the *same user complaint* aimed at `/flow:contribute` — "why is 82 a draft? drafts are not useful to me. i need to identify decisions to make, or if you have high confidence recommendations, just fix them." FB-0073 owns the harvest/drain half (confidence-split output, ready PR for verified edits); this entry owns the `/flow:ship` half. Together they are one doctrine: **draft state is not a substitute for either doing the work or asking the question.** Neither supersedes the other; the collision of their numbers at rebase is recorded in `reserved-feedback-numbers.md`.
 
 **Applies to:** `skills/ship/SKILL.md` (§7a attempt-then-gate, §7a.5 triage, §7c reconcile, §8 hand-off, the 8 producer-line shapes); `skills/ship/lib/manifest-triage.py`; `skills/{security,accessibility}-review/SKILL.md` routing prose; `evals/run_manifest_triage_evals.py`; `docs/workflow.md`; FB-0034 (three-outcome routing this preserves), FB-0044 (stop-before-PR reserved for one-way-doors), FB-0062 (a verdict is trusted only if its artifact exists), FB-0011 (autonomy bar — what the agent may decide alone), FB-0010 (the producer-line fan-out this had to fix first), `feedback_recommend_when_asking` (recommendation-first escalation).
-
-
 
 ### FB-0074: A contract that spans two files, with nothing checking the join, degrades silently — and the degradation is indistinguishable from success
 
