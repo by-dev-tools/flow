@@ -3,6 +3,7 @@
 **Date:** 2026-06-04
 **Branch:** `claude/flow-visual-verification-blueprint-DBWxo`
 **Source:** analysis of `byamron/health-tracker` visual-verification work, mapped onto Flow's shipped `/flow:verify-build` (v1.3.0) + the roadmap "Verify-build HTML case-study report" vision (O8).
+**Status:** point-in-time blueprint, **largely implemented**. The V2/V3 Deliverable-quality track it describes shipped across v1.6.0–v1.8.1 (rendered capture, annotation layer, durable visual history). Not maintained since; read for the design rationale, not current behavior. Index: [`dev-docs/README.md`](../README.md).
 
 ---
 

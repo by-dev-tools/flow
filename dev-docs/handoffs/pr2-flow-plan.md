@@ -1,5 +1,7 @@
 # PR 2 — Flow plugin workflow surface backfill (handoff plan)
 
+> ⚪ **SHIPPED — historical record.** This plan's work landed long ago; the plugin is now at v1.22.0. The `**Status:**` line below ("ready for next session pickup") is **no longer true**. Retained for the decision rationale. Index: [`dev-docs/README.md`](../README.md).
+
 **Status:** ready for next session pickup
 **Repo:** `by-dev-tools/flow`, off `main` (currently squash commit `f8610a1`)
 **Target version:** v1.0.0 → v1.1.0 (additive; no breaking changes)

@@ -1,403 +1,480 @@
-# Flow × Codex × Cursor — implementation roadmap
+# Service-agnostic Flow — Codex + Cursor support from one source tree
 
-**Date:** 2026-07-29
-**Branch:** `claude/flow-service-agnostic-96aec1`
-**Plugin version at time of writing:** v1.22.0
+**Mode:** feature (large, multi-PR) | **Priority:** medium | **Horizon:** post-v1.22.0, unscheduled
+**Branch:** `claude/flow-service-agnostic-96aec1` (research only — no plugin artifacts changed)
+**Status:** **PLAN — not started.** Research complete and validated 2026-07-29/30. Nothing implemented.
 **Scope:** Claude Code (primary) + OpenAI Codex CLI + Cursor. **No other hosts.**
-**Status:** proposal. No plugin artifacts changed by this doc. Companion to `dev-docs/research/service-agnostic-2026-07.md` (the field survey); this doc is the *execution* layer.
-
-Every fact below was validated against official vendor docs, and where docs are silent, against `openai/codex@406dc92` source or artifacts on disk. Source-only facts are marked ⚠️ **unstable** and must not become contracts.
+**Companion:** `dev-docs/research/service-agnostic-2026-07.md` — the field survey (standards landscape, prior art, why other approaches lose). This doc is the *execution* layer and is self-contained; read the survey only for background.
 
 ---
 
-## 0. The three decisions that determine everything
+## 0. Picking this up cold
 
-**1. One repo, three plugin manifests, one shared source tree.** Not three forks, not a runtime abstraction layer. All three hosts have a near-isomorphic plugin format, and Codex's loader already discovers all three manifest paths.
+You need nothing from the originating conversation. Read in this order:
 
-**2. The gate guarantee moves from the host into `tools/flow`.** Today Flow's gates rely on host mechanics (`!`-backtick substitution, hook exit codes). **Both Codex and Cursor fail hooks OPEN** — on timeout, on any non-zero-but-not-2 exit, on exit-2-with-empty-stderr, and on unparseable JSON stdout. So a crashed Flow gate on either host *permits and looks like a pass*. That is FB-0074 at the host layer, and it cannot be fixed by configuration. The fix is to make a verdict **impossible without fresh stamped evidence** — which Flow already does for test plans and skip audits, and which needs generalizing to context.
+1. §1 Goal + §2 Scope — what this is and isn't.
+2. §3 The three decisions — the architecture, and why.
+3. §5 Validated facts — every load-bearing claim with its provenance. **Do not re-derive these; do re-verify anything marked ⚠️.**
+4. **§17 first, then §11 Phase 00.** Spike S6 resolved to a **confirmed live bug in the shipped plugin**, independent of this port: the 4 advertised "auto-loading rules" have never loaded for any consumer, and the default hooks don't load either. Fix that before anything else here.
+5. §11 Spec-walk — the actual work, as checkboxes.
+6. §12 Confidence verdicts — **two assumptions remain LOW, which is an automatic human gate.** Phases 2–3 cannot start until §14's spikes resolve them.
 
-**3. Codex first, Cursor second — but they are not a ranking.** Codex is stronger on **gate mechanics**: `CLAUDE_PLUGIN_ROOT` set for free, real per-turn context injection, constrained decoding (`--output-schema`), richer subagent config. Cursor is stronger on **verification**: a bundled zero-setup Browser tool that beats anything Codex CLI has (§1.1). Codex goes first because gate mechanics are what Flow *is*; verification is what Flow *checks*. Capability declarations must therefore be **per-capability, not one tier per host**.
+**Prerequisite:** neither `codex` nor `cursor-agent`/`agent` was installed on the originating machine, so every Codex/Cursor claim below is docs- or source-derived, never runtime-verified. Claude Code claims **were** empirically tested against CLI v2.1.141. Install both CLIs before Phase 2.
 
 ---
 
-## 1. What is free, what is generated, what is lost
+## 1. Goal
 
-### Free — works unchanged, no adapter code
+Let Flow's workflow run on Codex CLI and Cursor as well as Claude Code, generated from **one source tree** so a change is authored once and never hand-ported. Claude Code remains the primary, most-capable host; the other two get an honestly-degraded tier that declares which gates are mechanical and which are advisory.
 
-| Thing | Why |
+## 2. Scope
+
+### In
+- One plugin root, three generated host manifests; a generator + CI drift check.
+- A `tools/flow` CLI that owns determinism and host dispatch.
+- A stamped-context invariant so gates cannot pass without fresh evidence.
+- Codex adapter, then Cursor adapter.
+- Per-capability declarations surfaced by `/flow:doctor`.
+- An owned `/simplify` replacement (5th lens) for hosts lacking it.
+
+### Out
+- **Any host beyond these three.** Aider is stalled (v0.86.0, Aug 2025); Roo Code is archived.
+- **MCP as a delivery vehicle.** MCP prompts-as-slash-commands don't work on Codex ([#8342](https://github.com/openai/codex/issues/8342), open since 2025-12-19, no maintainer reply); SEP-2640 forbids executable skill content by design.
+- **Codex custom prompts** (`~/.codex/prompts/`) — officially deprecated in favour of skills, user-scope only, not repo-shareable.
+- **Mobile behavioral verification on non-Claude hosts** (§10).
+- **Changing the plugin name.** Not needed (§5.6).
+- Any change to the two human gates (plan approval, merge).
+
+---
+
+## 3. The three decisions
+
+**1. One repo, one plugin root, three manifests — all generated but the Claude Code one.** Not three forks, not a runtime abstraction layer. Generated artifacts are committed (all three hosts install from git with **no build step**), and `flow gen --check` in CI is what makes "never hand-edit" true rather than aspirational.
+
+**2. The gate guarantee moves from the host into `tools/flow`.** **Both Codex and Cursor fail hooks OPEN** — on timeout, on any non-zero-but-not-2 exit, on exit-2-with-empty-stderr, and on unparseable JSON stdout. A crashed Flow gate *permits and looks like a pass*. That is FB-0074 at the host layer and no configuration fixes it. So make a verdict **impossible without fresh stamped evidence** (§8).
+
+**3. Codex first, Cursor second — but they are not a ranking.** Codex is stronger on **gate mechanics** (`CLAUDE_PLUGIN_ROOT` set for free, per-turn context injection, constrained decoding, richer subagents). Cursor is stronger on **verification** (bundled zero-setup Browser). Codex goes first because gate mechanics are what Flow *is*. Capability declarations must be **per-capability, not one tier per host**.
+
+---
+
+## 4. Why this exists
+
+Flow is ~13,700 lines of host-neutral content (7,267 markdown doctrine + 6,404 stdlib Python, zero third-party deps) wrapped in a thin Claude-Code-specific layer. The coupling is real but narrow and concentrated:
+
+| Coupling | Count | Disposition |
+|---|---|---|
+| `${CLAUDE_PLUGIN_ROOT}` refs | 143 | **Free** — Codex sets it (§5.1) |
+| `` !`shell` `` substitution sites | 51 | ~11 load-bearing → stamped context (§8); ~40 are `git`/`jq` orientation → CLI calls |
+| `Skill("...")` composition calls | 21 | → instructions-as-data (Phase 1c) |
+| `Agent`/`subagent_type` spawns | 7 | → per-host spawn vocabulary |
+| Skills using `context: fork` + `agent:` | 5 | Both hosts have the primitive |
+| Skills using `disable-model-invocation: true` | 2 | Exact on Cursor; sidecar on Codex |
+| Bundled-native deps | `/verify` ×34, `/simplify` ×25, `/run` ×18, `/run-skill-generator` ×6 | §10 |
+
+All 17 skills reduce to **three frontmatter shapes**, so the generator is a 3-case transform:
+
+| Shape | Count | Skills |
+|---|---|---|
+| `allowed-tools` only | 7 | accessibility-review, contribute, log-disagreement, security-review, staff-review, verify-build, workflow-help |
+| `allowed-tools` + `disable-model-invocation` | 5 | ship, ship-spike, doctor, land, post-merge |
+| `agent` + `context: fork` + `disable-model-invocation` | 5 | audit-plan, audit-completion, audit-coverage, audit-skips, critique-plan |
+
+---
+
+## 5. Validated facts
+
+Provenance: **[DOC]** official vendor docs · **[SRC]** `openai/codex@406dc92` source · **[TEST]** empirically run · ⚠️ = undocumented, may change without notice.
+
+### 5.1 Free — works unchanged
+
+| Fact | Provenance |
 |---|---|
-| **`${CLAUDE_PLUGIN_ROOT}` — all 143 refs** | Codex **documents** setting `CLAUDE_PLUGIN_ROOT` and `CLAUDE_PLUGIN_DATA` "for compatibility with existing plugin hooks." This single fact removes what looked like the largest mechanical cost in the port. |
-| **One `SKILL.md` per skill, serving all three hosts** | Codex's frontmatter struct has no `deny_unknown_fields`; unknown keys are silently dropped (⚠️ source-verified, not documented). Cursor's behavior is undocumented but the spec's `metadata` escape hatch and `allowed-tools` being a *spec* field both point to lenient parsing. |
-| **`agents/*.md` reviewer prompts** | Cursor officially reads `.claude/agents/` (project *and* user scope), and documents precedence: `.cursor/` > `.claude/` > `.codex/`. Same 9 files serve Claude Code + Cursor. |
-| **All 6,404 lines of stdlib Python, all 26 `lib/` files, `verify-pr-body.sh`** | Zero harness surface. |
-| **`gh`-driven logic — 27 calls in `ship`, 8 in `land`, 7 in `staff-review`** | Host-agnostic. |
-| **All 21 eval harnesses** | They test the deterministic core. |
-| **`flow.config.json` + its 30-slot schema** | Plain JSON Schema. |
-| **Subagent depth** | Verified: every Flow spawn is depth 1 (agent prompt files never spawn). Safe under Codex's undocumented `agents.max_depth = 1` default. |
-| **Root `CLAUDE.md`** | Cursor CLI reads it as rules; Codex reads it via `project_doc_fallback_filenames`. |
+| Codex sets `CLAUDE_PLUGIN_ROOT` **and** `CLAUDE_PLUGIN_DATA` "for compatibility with existing plugin hooks" — all 143 refs work | **[DOC]** |
+| Codex silently ignores unknown `SKILL.md` frontmatter (`RawPluginManifest`/`SkillFrontmatter` have no `deny_unknown_fields`) → one SKILL.md serves all hosts | **[SRC]** ⚠️ |
+| Cursor officially reads `.claude/agents/` (project + user); precedence `.cursor/` > `.claude/` > `.codex/` | **[DOC]** |
+| Cursor officially reads `.claude/skills/` and `.codex/skills/` for compatibility | **[DOC]** |
+| `$REPO_ROOT/.claude-plugin/marketplace.json` is supported by Codex ("legacy-compatible") | **[DOC]** |
+| All 6,404 lines of stdlib Python, 26 `lib/` files, `verify-pr-body.sh`, 21 eval harnesses, `flow.config.json` + schema | — |
+| `gh`-driven logic (27 calls in ship, 8 in land, 7 in staff-review) | — |
+| Every Flow subagent spawn is **depth 1** (agent prompt files never spawn) → safe under Codex `agents.max_depth = 1` | **[TEST]** grep |
 
-### Generated — one source, N emitted artifacts
+### 5.2 Codex specifics
 
-| Source | Emits | Notes |
-|---|---|---|
-| `SKILL.md` frontmatter | `agents/openai.yaml` sidecar per skill | Only for the 5 skills needing `disable-model-invocation`. Codex **ignores** that key — the real control is `policy.allow_implicit_invocation: false`. Set `policy.products: [CODEX]`. ⚠️ Sidecar `interface` is **snake_case**; plugin-manifest `interface` is **camelCase**. |
-| `agents/*.md` | `agents-codex/*.toml` | Codex requires TOML with `name`, `description`, `developer_instructions`. Map `tools: Read, Grep` → `sandbox_mode = "read-only"`. |
-| `rules/*.md` (`paths:`) | `rules-cursor/*.mdc` (`globs:` + `alwaysApply: false`) | **`.md` in `.cursor/rules/` is silently ignored — extension must be `.mdc`.` No `.claude/rules/` compat path exists on Cursor. |
-| `hooks/default-hooks.json` | `hooks/codex-hooks.json`, `hooks/cursor-hooks.json` | Cursor cannot use the Claude-format file (see §3). |
-| `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json` | Cursor requires only `name`; Codex requires only `name`. |
+| Fact | Provenance |
+|---|---|
+| Skills load from `.agents/skills` (cwd→repo root), `$HOME/.agents/skills`, `/etc/codex/skills` | **[DOC]** |
+| `~/.codex/skills/` is a **deprecated** user root, and hosts the `.system` cache Codex rewrites on upgrade — **never install there** | **[SRC]** ⚠️ + **[TEST]** (`.codex-system-skills.marker` on disk) |
+| No name-based dedupe: *"If two skills share the same `name`, Codex doesn't merge them; both can appear in skill selectors"* | **[DOC]** |
+| Manifest discovery is **first-match-wins** over `[.codex-plugin, .claude-plugin, .cursor-plugin]`, then `break`. **There is no overlay merge** | **[SRC]** ⚠️ |
+| `skills` manifest field is **ADDITIVE** — `./skills` is always loaded regardless | **[SRC]** ⚠️ ([PR #28790](https://github.com/openai/codex/pull/28790)) |
+| `hooks` field **REPLACES**; default is exactly `hooks/hooks.json` | **[DOC]** |
+| Plugins **cannot bundle subagents** — no `agents` manifest field exists | **[DOC]** + **[SRC]** |
+| Subagents are `~/.codex/agents/*.toml` or `.codex/agents/*.toml`; require `name`, `description`, `developer_instructions`; accept any `config.toml` key | **[DOC]** |
+| Sidecar path is exactly `<skill-dir>/agents/openai.yaml`; `policy.allow_implicit_invocation: false` is the `disable-model-invocation` analogue | **[DOC]** |
+| Hooks fail OPEN on timeout, non-zero-non-2, exit-2-with-empty-stderr, unparseable JSON | **[SRC]** ⚠️ |
+| Hook trust is hash-keyed `path:event:group:handler` → any command-string change silently un-trusts and disables | **[DOC]** + **[SRC]** |
+| `UserPromptSubmit` + `SessionStart` inject via `hookSpecificOutput.additionalContext`, default ~2500 tokens, tunable | **[DOC]** |
+| `codex exec --output-schema` is real constrained decoding (Responses API `text.format`, `strict:true`) | **[SRC]** ⚠️ |
+| Sessions at `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, **also `.jsonl.zst`**; schema explicitly disclaimed as unstable | **[SRC]** ⚠️ |
+| **No `Read`/`Grep`/`Glob`/`Write`/`Edit`/`Task` tools.** Canonical `tool_name`s: `Bash`, `apply_patch`, `update_plan`, `spawn_agent`. Hook matcher aliases ≠ payload `tool_name` | **[DOC]** + **[SRC]** |
+| `auto_review.policy` is the **sandbox-approval** reviewer, NOT code review | **[DOC]** |
 
-### Lost — declare it, don't paper over it
+### 5.3 Cursor specifics
 
-| Loss | Host | Consequence |
-|---|---|---|
-| **Behavioral verify gate** (`/verify` ×34, `/run` ×18, `/run-skill-generator` ×6) | **web: neither — see §1.1** · **iOS/Android/Tauri: both** | Much smaller than the reference count implies. See §1.1. |
-| **`/simplify`** (×25 in `workflow.md`, enforced by `audit-skips`) | Codex + Cursor | **Neither host substitutes it** — both ship diff-scoped reviewers pointed at *defects*, not quality. Own it as a 5th lens, layered on native diff scoping. |
-| **Per-turn deterministic context injection** | **Cursor only** | `UserPromptSubmit` → `beforeSubmitPrompt`, whose entire output is `continue` + `user_message`. **No context field.** Only `sessionStart` (fire-and-forget, non-blocking) and `postToolUse` have `additional_context`. Codex is fine — `UserPromptSubmit` supports `hookSpecificOutput.additionalContext`, default ~2500 tokens, tunable via `additionalContextLimit`. |
-| **Schema-enforced subagent output** | **Cursor only** | Codex has real constrained decoding: `codex exec --output-schema` becomes Responses API `text.format={type:"json_schema",strict:true}` (⚠️ source-verified). Cursor's `--output-format json` returns a free-text `result` blob, and emits **no well-formed JSON at all on failure**. |
-| **Subagents inside a plugin bundle** | Codex | No `agents` field in the manifest (⚠️ source-verified absent). The 9 `.toml` files must install out-of-band to `~/.codex/agents/`. Biggest packaging asymmetry. |
-| **`sandbox_mode` as a hard guarantee** | Codex | *"Codex reapplies the parent turn's live runtime overrides… including `--yolo`, even if the selected custom agent file sets different defaults."* A read-only auditor is not enforced under `--yolo`. |
-| **Hook fail-closed** | Both | See §3. |
+| Fact | Provenance |
+|---|---|
+| Skills load from `.agents/skills/`, `.cursor/skills/`, `.claude/skills/`, `.codex/skills/` + user equivalents. **Precedence not documented** | **[DOC]** |
+| Frontmatter: `name`, `description` required; `paths`, `disable-model-invocation`, `metadata` optional. `user-invocable` exists in the changelog but not `skills.md` ⚠️ | **[DOC]** |
+| Subagents `.cursor/agents/`, `.claude/agents/`, `.codex/agents/`; fields `name`, `description`, `model`, `readonly`, `is_background` — all optional | **[DOC]** |
+| Built-in subagents: Explore, Bash, Browser. Nesting allowed to depth 2 | **[DOC]** |
+| All manifest fields **REPLACE** folder discovery: *"The default folder is not also scanned"* | **[DOC]** |
+| Plugin `rules/` discovery accepts `.md` — but the standalone rules system silently ignores `.md`; **must be `.mdc`** | **[DOC]** (internally inconsistent — use `.mdc`) |
+| Reads Claude-format hooks from `.claude/settings.json`, **but requires an account-level flag** ("Include third-party Plugins, Skills, and other configs") that cannot be set from the repo | **[DOC]** |
+| `tool_input.command` documented for Shell; **`tool_input.file_path` is NOT documented** and evidence says absent (Cursor's file tools use `path`/`fileText`). `Edit`→`Write`; `Glob`/`WebFetch`/`WebSearch` have no equivalent; `tool_input` flips object↔JSON-string across events | **[DOC]** |
+| `failClosed` defaults **false**; default `timeout` value unpublished; timeout counts as failure → fail-open | **[DOC]** |
+| **`beforeSubmitPrompt` cannot inject context** — output is only `continue` + `user_message`. Only `sessionStart` (fire-and-forget, non-blocking) and `postToolUse` have `additional_context` | **[DOC]** |
+| **No constrained-output mode**; on failure "no well-formed JSON object is emitted" | **[DOC]** |
+| Bundled **Browser** tool (extension-hosted MCP, zero setup): navigate, click, type, scroll, screenshot, console, network, dev-server port awareness. **No documented a11y-tree read** | **[DOC]** |
+| CLI binary is `agent` (not `cursor-agent`); reads `AGENTS.md` **and** `CLAUDE.md` at project root | **[DOC]** |
+| Transcripts: `transcript_path`/`CURSOR_TRANSCRIPT_PATH` is the only supported locator; changelog claims headless writes "Claude Code-compatible JSONL" ⚠️ | **[DOC]** |
+| Local install: `~/.cursor/plugins/local/<name>`, symlink officially endorsed | **[DOC]** |
 
-### 1.1 The bundled-skill question, answered — and a correction
+### 5.4 Claude Code regression safety — **[TEST]** on CLI v2.1.141
 
-An earlier draft of this doc said "Flow doesn't own its behavioral gate; accept degradation." **That over-stated the loss.** `/verify` is not one capability, it is three, and Flow already owns the expensive one.
+Adding `.codex-plugin/`, `.cursor-plugin/`, `agents-codex/*.toml`, `rules-cursor/*.mdc`, `capabilities/*.json` and a nested `skills/ship/agents/openai.yaml` produced an **identical component inventory** (17 skills / 9 agents) and `claude plugin validate` passed. Discovery is fixed-name; `.claude-plugin` is matched exactly with no `.*-plugin` glob; agent discovery is plugin-root-anchored. The plugin root **already ships 5 unrecognized directories** (`docs/`, `evals/`, `schema/`, `scripts/`, `tools/` — 108 files) with no ignore file.
 
-| Layer | Who owns it today | Portable? |
-|---|---|---|
-| **Launch** — the per-project recipe + dispatch (`/run`, `/run-skill-generator`) | Claude Code natives | **Replace with a `flow.config.json` `launchCmd` slot.** More deterministic than a generated skill, and an improvement on Claude Code too. Neither Codex CLI nor Cursor has a launch-recipe concept to leverage. |
-| **Drive + observe** — navigate, click, screenshot, read state | Platform MCPs, which **Flow already drives itself** (`verify-build:278`: *"Capture the frame via the platform's screenshot MCP"*) | **Yes.** MCP servers are host-agnostic and all three hosts are MCP clients. |
-| **The plan-driven judging gate** — criteria extraction, adversarial transformation, per-dimension rubric, Unknown-blocking | **Flow, entirely** (`verify-build` 425 lines + `render-report.py` 532 + rubrics) | Already portable |
+Two hard constraints:
+1. **`bin/` is a documented Claude Code component** — *"Executables added to the Bash tool's `PATH`… invokable as bare commands."* Use `tools/flow`. Also avoid `commands/`, `workflows/`, `output-styles/`, `themes/`, `monitors/`, `settings.json`, `.mcp.json`, `.lsp.json`, `hooks/hooks.json`.
+2. **Keep `plugin.json` metadata-only.** Unknown top-level keys are documented-safe and load fine at runtime but **fail `claude plugin validate` on v2.1.141**.
 
-So the real gap is the launch layer plus an orchestration prompt — not an engine.
+Claude Code's `skills` field **ADDS to** default discovery; `commands`/`agents`/`workflows` **REPLACE**.
 
-**Per-host reality for the drive/observe layer:**
+### 5.5 The layout is undocumented on both non-Claude hosts
 
-- **Cursor — NATIVE, and best-in-class for web.** A **bundled** Browser tool (extension-hosted MCP, *zero user setup*): navigate, click, type, scroll, screenshot, **console output**, **network traffic**, plus dev-server port awareness (*"detect running development servers and use the correct ports instead of starting duplicate servers"*). Plus a context-filtering **Browser subagent**. One gap: **no accessibility-tree read**, which Flow's §5a a11y-gated capture protocol depends on — verify before relying on it.
-- **Codex CLI — build on MCP.** No built-in browser (*"Browser isn't available in Codex CLI"* — ChatGPT desktop app only). But Codex's own docs recommend **Playwright MCP** and **Chrome DevTools MCP** by name.
-- **iOS / Android / Tauri — Claude Code only in practice.** Neither host has a mobile automation story. XcodeBuildMCP is *just an MCP server*, so it should work on both — but that is untested and must not be assumed.
+**Neither vendor documents, recommends, or exemplifies a single-repo multi-host layout.** OpenAI ships its own plugin as **three separate repos** (`openai-developers-for-claude`, `openai-developers-for-cursor`, plus the directory listing). Codex's portal *converts* `.claude-plugin/plugin.json` → `.codex-plugin/plugin.json` (`claude_format_normalized`) — conversion is the opposite of endorsing coexistence.
 
-**Correction to §2's tier assignment:** Cursor is **not** weaker than Codex on verification. For web surfaces it is the strongest of the three. Codex remains the better first target for the *other* reasons in §0.3 (`CLAUDE_PLUGIN_ROOT`, real per-turn context injection, constrained decoding, richer subagents).
+Against that: **36 repos verified shipping 2+ host manifests at one plugin root** (34 with all three), including Firebase, DataDog, Slack, Microsoft, Meta, Kraken, Resend, GitGuardian.
 
-**What neither host gives you:**
+**`firebase/agent-skills` has already drifted** — `license` says MIT in the Claude manifest, Apache-2.0 in the other two. That is FB-0010 fan-out contradiction, live, in exactly this layout. **Flow avoids it structurally by generating two manifests from one** — which is the entire argument for generation over hand-maintenance.
 
-- **`/simplify` — no substitute anywhere.** Codex's `/review` is explicitly the wrong lens (*"focusing on behavior changes and missing tests"*) and explicitly **does not apply fixes** (*"reports prioritized findings without changing your working tree"*). Cursor's Agent Review / Bugbot is closer — it names *"code quality problems"* and Autofix applies — but it is defect-and-security weighted, not reuse/altitude. **Build the owned lens, layer it on native scoping**: `codex review --uncommitted|--base` for Codex, `agent -p --force` for Cursor.
-  ⚠️ Codex trap: the custom `PROMPT` argument **conflicts with** `--base`/`--commit`/`--uncommitted`, so you cannot combine a custom lens with explicit scoping in one invocation.
-- **`/run-skill-generator` — nothing to leverage on either host.** Confirms the `launchCmd` slot decision.
+### 5.6 The `flow` name is safe; only `bin/` was the hazard
 
-⚠️ **Correction to an earlier assumption:** Codex's `auto_review.policy` is **not** code review — it is the *sandbox-approval* reviewer (*"a reviewer swap, not a permission grant"*). Only `review_model` + `/review` + `codex review` are the review surface.
-
-⚠️ **Enterprise gating:** Cursor's browser and Codex's Computer Use are both admin-disableable. Any substitute above can be switched off by someone else's policy — a capability probe, not an assumption.
-
-⚠️ **Cursor's built-in skill set is moving weekly** — the on-disk snapshot here (13 skills) is ~3 months behind the documented 19. Re-verify before depending on any of it.
+Plugin name `flow`, `flow@flow`, `/flow:*`, and `flow.config.json` have zero shell exposure (Facebook Flow uses `.flowconfig`; Flow blockchain uses `flow.json`). **No rename needed.** The collision existed only via `bin/` PATH injection (§5.4), where `flow` would have collided with Facebook Flow's `flow check` and the Flow blockchain CLI in exactly the `web`/`tauri-rust-ts` stacks Flow ships — ambiguous in both directions (prepend shadows theirs; append makes ours unreachable).
 
 ---
 
-## 2. Host capability matrix — the honest version
+## 6. Host capability matrix
 
 | Primitive | Claude Code | Codex | Cursor |
 |---|---|---|---|
-| `SKILL.md`, one file | ✅ | ✅ ignores extra keys ⚠️ | ⚠️ undocumented |
-| Human-only skill | `disable-model-invocation` | `policy.allow_implicit_invocation: false` | `disable-model-invocation` ✅ exact |
-| Fresh-context fork | `context: fork` + `agent:` | `.codex/agents/*.toml` + `spawn_agent` | `.cursor/agents/*.md`, reads `.claude/agents/` |
-| Read-only reviewer | `tools:` allowlist | `sandbox_mode` (⚠️ not enforced under `--yolo`) | `readonly: true` ✅ |
-| Per-turn context injection | ✅ `additionalContext` | ✅ `additionalContext` (~2500 tok) | ❌ **none** |
-| Session-start injection | ✅ | ✅ | ⚠️ fire-and-forget, non-blocking |
+| One `SKILL.md` | ✅ | ✅ ignores extra keys ⚠️ | ⚠️ undocumented (**spike S1**) |
+| Human-only skill | `disable-model-invocation` | `policy.allow_implicit_invocation` | `disable-model-invocation` ✅ exact |
+| Fresh-context fork | `context: fork` + `agent:` | `.codex/agents/*.toml` + `spawn_agent` | reads `.claude/agents/` |
+| Read-only reviewer | `tools:` allowlist | `sandbox_mode` ⚠️ not enforced under `--yolo` | `readonly: true` ✅ |
+| Per-turn context injection | ✅ | ✅ ~2500 tok | ❌ **none** |
 | Hook blocks on failure | exit 2 | exit 2 + **stderr required** | exit 2, or `failClosed: true` |
-| **Hook fails OPEN on timeout** | — | ⚠️ **yes** | **yes (documented)** |
+| **Hook fails OPEN on timeout** | — | ⚠️ yes | yes (documented) |
 | Constrained output | — | ✅ `--output-schema` | ❌ none |
 | Plugin bundles subagents | ✅ | ❌ | ✅ |
-| `${CLAUDE_PLUGIN_ROOT}` | ✅ | ✅ **documented alias** | ❌ |
-| Drive/observe for **web** | ✅ `/verify` | 🟡 Playwright / Chrome DevTools MCP | ✅ **bundled Browser** (no a11y tree) |
-| Drive/observe for **iOS/Android** | ✅ | ❌ untested via MCP | ❌ untested via MCP |
-| Launch recipe | ✅ `/run` + generator | ❌ (desktop-app-only Actions) | ❌ | 
-| Diff-scoped reviewer to build on | ✅ | 🟡 `codex review` (no apply) | 🟡 Agent Review + Bugbot Autofix |
-| Transcript parseable | ✅ | ⚠️ `.jsonl`/`.jsonl.zst`, schema disclaimed | ⚠️ claims "Claude Code-compatible JSONL" (headless only) |
+| `${CLAUDE_PLUGIN_ROOT}` | ✅ | ✅ documented alias | ❌ |
+| Drive/observe **web** | ✅ `/verify` | 🟡 Playwright / Chrome DevTools MCP | ✅ **bundled Browser** (no a11y tree) |
+| Drive/observe **mobile** | ✅ | ❌ untested via MCP | ❌ untested via MCP |
+| Launch recipe | ✅ `/run` + generator | ❌ (desktop-app-only Actions) | ❌ |
+| Diff reviewer to build on | ✅ | 🟡 `codex review` (no apply) | 🟡 Agent Review + Bugbot Autofix |
+| Validate/lint command | ✅ `claude plugin validate` | ❌ none | ❌ none |
 
-**Tier assignment (revised per §1.1):** Claude Code = **Full**. Codex = **High** — loses `/simplify` and the launch recipe; verification is buildable on Playwright MCP. Cursor = **High for web / Medium otherwise** — it has the *best* drive-observe layer of the three (bundled, zero-setup), but loses per-turn context injection and constrained output, which are the gate-integrity primitives.
-
-The tiers are no longer a single ranking: **Codex is stronger on gate mechanics, Cursor is stronger on verification.** `capabilities/*.json` must therefore be per-capability, not one tier label per host.
+**Codex is stronger on gate mechanics; Cursor is stronger on verification.** Hence per-capability declarations, not one tier per host.
 
 ---
 
-## 3. The two hazards that must be designed around, not configured around
+## 7. The two hazards
 
-### 3.1 Both hosts fail hooks OPEN
+### 7.1 Both hosts fail hooks OPEN
 
-Codex (⚠️ source-verified, undocumented — identical logic across all 7 event handlers): `Failed` status leaves `should_stop = false` for timeout, any non-zero-non-2 exit, exit-2-with-empty-stderr, and unparseable JSON stdout. A Python hook with a `SyntaxError` (exit 1) or a missing interpreter (127) **does not block**.
+Only `exit 2` blocks (and on Codex, only with non-empty stderr). Generator rules:
+1. Every generated hook exits **exactly 0 or exactly 2**, always writing stderr on 2.
+2. `failClosed: true` + an **explicit** `timeout` on every Cursor hook.
+3. Never rely on "hook errored ⇒ blocked." Hooks are *enrichment*; the gate lives in §8.
 
-Cursor (documented): *"Other exit codes: Hook failed, action proceeds (fail-open)"*, and `failClosed` defaults to `false` where *"hook failures (crash, timeout, invalid JSON) allow the action through."* The default `timeout` value is **not published**.
+### 7.2 Codex hook trust is hash-keyed — regeneration silently disables gates
 
-**Rules for the generator:**
-1. Every generated hook exits **exactly 0 or exactly 2**, and **always writes to stderr on 2** (Codex discards an exit-2 with empty stderr and fails open).
-2. Set `failClosed: true` and an **explicit** `timeout` on every Cursor hook.
-3. Never rely on "hook errored ⇒ blocked." Treat hooks as *enrichment*, and put the gate in the artifact invariant (§4).
+Trust is keyed on the handler definition. Any command-string change or handler reorder un-trusts the hook, and Codex **skips untrusted hooks** — combined with fail-open, a Flow upgrade silently drops every gate.
 
-### 3.2 Codex hook trust is hash-keyed — regeneration silently disables gates
-
-⚠️ Source-verified: trust persists in `config.toml` as `[hooks.state]`, keyed `"<source-path>:<event>:<group_index>:<handler_index>"`, value `trusted_hash = "sha256:…"`. Docs confirm the behavior: *"Codex records trust against the hook's current hash, so new or changed hooks are marked for review and skipped until trusted"* — and explicitly for plugins: *"Installing or enabling a plugin doesn't automatically trust its hooks."*
-
-**Combined with fail-open, a Flow upgrade silently drops every gate on Codex.** This is the single nastiest failure mode in the port.
-
-**Mitigation, and it constrains the design:** hooks must dispatch through **one stable entrypoint per event** — e.g. `command: "$CLAUDE_PLUGIN_ROOT/tools/flow hook pre-tool-use"` — whose *string never changes across releases*. Version the logic inside `tools/flow`, never in the `command` field. Keep handler order fixed. And `/flow:doctor` must assert on Codex that every declared hook is currently **trusted**, not merely present.
+**Mitigation (constrains the design):** dispatch through **one stable entrypoint per event** — `command: "$CLAUDE_PLUGIN_ROOT/tools/flow hook pre-tool-use"` — whose string never changes across releases. Version the logic inside `tools/flow`. Keep handler order fixed. `/flow:doctor` must assert hooks are **trusted**, not merely present.
 
 ---
 
-## 4. The load-bearing invariant: stamped context
+## 8. The load-bearing invariant: stamped context
 
-This replaces the "move the 51 substitution sites to hooks" plan, which cannot work on Cursor.
+Hook-based context injection **cannot work on Cursor** (§5.3). The portable replacement is already Flow's own doctrine.
 
-The 51 sites are not uniform:
-- **~11 script-backed sites** (the 5 audit/critique forks + `ship` + `verify-build`) feed deterministic Python. **These are the gates.**
-- **~40 inline sites** are `git`/`jq`/`cat` orientation (branch name, config slots). If the model runs these itself, the cost is convenience, not soundness.
+The 51 substitution sites are not uniform: **~11 script-backed** (the 5 audit/critique forks + `ship` + `verify-build`) feed deterministic Python — these are the gates. **~40 inline** are `git`/`jq`/`cat` orientation; if the model runs those itself the cost is convenience, not soundness.
 
-**Invariant to add:** `flow context <mode>` writes its output to a file stamped with `branch`, `head_sha_short`, and a content digest. Every consumer refuses to produce a verdict when the stamp is absent or stale, emitting the existing `[decision-required]` routing instead.
+**Invariant:** `flow context <mode>` writes its output stamped with `branch`, `head_sha_short`, and a content digest. Every consumer refuses to produce a verdict when the stamp is absent or stale, emitting the existing `[decision-required]` routing.
 
-This is not new machinery — it is generalizing what already exists:
-- `ship/lib/render-test-plan.py:138` — *"an un-stamped buffer reads as un-judged"* (the load-bearing untrusting default)
-- `audit-skips/lib/skip-audit-checks.py:178-179` — `fresh` computed from `branch` + `head_sha_short` match
+This generalizes existing machinery:
+- `ship/lib/render-test-plan.py:138` — *"an un-stamped buffer reads as un-judged"*
+- `audit-skips/lib/skip-audit-checks.py:178-179` — `fresh` from `branch` + `head_sha_short`
 - `audit-skips/SKILL.md:10` — *"verdict-without-artifact == skip"*
 
-**Why this is the right answer:** the guarantee stops depending on host mechanics Flow doesn't control and starts depending on Flow's own engine, which is identical on all three hosts. Injection becomes a per-host *optimization*: Claude Code and Codex hooks inject mechanically; Cursor's skill body asks the model to run it, and non-compliance is **detected** rather than silent. It also closes the roadmap § Exploration item on stamping the resolved repo root into the skip-audit handoff — same mechanism, same PR family.
+The guarantee stops depending on host mechanics and starts depending on Flow's engine, which is identical on all three hosts. Injection becomes a per-host optimization. It also closes the roadmap § Exploration item on stamping the repo root into the skip-audit handoff — same mechanism, same PR family.
 
 ---
 
-## 5. Target layout
+## 9. Target layout
 
-### 5.0 Not three plugins — one plugin, three manifests
-
-**There is exactly one source tree and one plugin root.** Generated artifacts are committed build output (all three hosts install from a git repo with **no build step**, so they must be in the repo), and are never hand-edited. `flow gen --check` in CI is what makes that true rather than aspirational.
-
-**Plugin root stays `plugins/flow/`** — the existing `.claude-plugin/marketplace.json` already points there (`"source": "./plugins/flow"`), and all three host manifests live side by side inside it.
-
-The mechanism that lets three hosts read one tree without colliding is documented manifest behavior: **naming a component path in the manifest replaces folder auto-discovery for that component.** So each host's manifest points at the variant it can parse, and ignores the others.
+Plugin root stays `plugins/flow/` (marketplace already points there). Each host's manifest names the variant it can parse.
 
 ```
-flow/                                        ← repo root
-├── .claude-plugin/marketplace.json          SOURCE   Claude Code entry; ALSO read by Codex (documented)
-├── .cursor-plugin/marketplace.json          GEN      Cursor marketplace entry
+flow/
+├── .claude-plugin/marketplace.json          SOURCE   also read by Codex (documented)
+├── .cursor-plugin/marketplace.json          GEN
 │
-└── plugins/flow/                            ← THE plugin root, all hosts
+└── plugins/flow/                            ← THE plugin root, all three hosts
+    ├── .claude-plugin/plugin.json           SOURCE   metadata-only — never add keys (§5.4)
+    ├── .codex-plugin/plugin.json            GEN
+    ├── .cursor-plugin/plugin.json           GEN
     │
-    ├── .claude-plugin/plugin.json           SOURCE   ─┐
-    ├── .codex-plugin/plugin.json            GEN       │ 3 manifests, 1 root
-    ├── .cursor-plugin/plugin.json           GEN      ─┘
-    │
-    ├── skills/<name>/
-    │   ├── SKILL.md                         SOURCE   ★ ONE file → all 3 hosts
-    │   ├── agents/openai.yaml               GEN        Codex sidecar (only the 5 that need it)
-    │   └── lib/**                           SOURCE     shared verbatim (26 files)
+    ├── skills/<name>/SKILL.md               SOURCE   ★ one file → all 3 hosts
+    ├── skills/<name>/agents/openai.yaml     GEN      Codex sidecar (5 skills only)
+    ├── skills/<name>/lib/**                 SOURCE   shared verbatim (26 files)
     │
     ├── agents/*.md                          SOURCE   ★ Claude Code + Cursor read as-is (9)
-    ├── agents-codex/*.toml                  GEN        Codex; installed out-of-band (9)
+    ├── agents-codex/*.toml                  GEN      installed out-of-band (9)
     │
-    ├── rules/*.md            (paths:)       SOURCE     Claude Code (4)
-    ├── rules-cursor/*.mdc    (globs:)       GEN        Cursor — .mdc MANDATORY (4)
+    ├── rules/*.md            (paths:)       SOURCE   (4) — but see §14 spike S6
+    ├── rules-cursor/*.mdc    (globs:)       GEN      .mdc MANDATORY
     │
-    ├── hooks/
-    │   ├── default-hooks.json               SOURCE   ★ Claude Code + Codex share this format
-    │   ├── codex-hooks.json                 GEN        stable-entrypoint dispatch (§3.2)
-    │   └── cursor-hooks.json                GEN        native camelCase events, failClosed
+    ├── hooks/default-hooks.json             SOURCE   ★ Claude Code + Codex format
+    ├── hooks/codex-hooks.json               GEN
+    ├── hooks/cursor-hooks.json              GEN      native camelCase, failClosed
     │
-    ├── tools/flow                            SOURCE   NEW — determinism + host dispatch
-    │                                                  ⚠️ NOT bin/ — that PATH-injects (§5.4)
-    ├── tools/memory/**                       SOURCE   existing
-    ├── adapters/{codex,cursor}/gen.py        SOURCE   NEW — the generators
-    ├── capabilities/*.json                   SOURCE   NEW — per-host tier declarations
+    ├── tools/flow                           SOURCE   NEW — ⚠️ NOT bin/ (§5.4)
+    ├── tools/memory/**                      SOURCE   existing
+    ├── adapters/{codex,cursor}/gen.py       SOURCE   NEW
+    ├── capabilities/*.json                  SOURCE   NEW
     │
-    ├── scripts/**  schema/**  docs/**        SOURCE   shared verbatim, untouched
-    └── evals/**                              SOURCE   98 files; + per-adapter fixtures
+    └── scripts/ schema/ docs/ evals/        SOURCE   shared, untouched
 ```
 
-★ = the three places where one file genuinely serves multiple hosts with no transformation.
+★ = one file serving multiple hosts with zero transformation.
 
-### 5.1 What each manifest declares
+**Split:** ~165 source files (~88%) / ~22 generated (~12%).
 
-Discovery semantics differ **per field per host**. This table is the contract; §5.2 lists what breaks if you get it wrong.
+### 9.1 Manifest field matrix
 
 | | Claude Code | Codex | Cursor |
 |---|---|---|---|
-| `skills` | **ADDS to** default `skills/` | **ADDS to** default `./skills` ⚠️ *(undocumented — [PR #28790](https://github.com/openai/codex/pull/28790))* | **REPLACES** — must set `"./skills/"` |
-| `agents` | **REPLACES** default `agents/` | **field does not exist** — cannot bundle subagents | **REPLACES** — must set `"./agents/"` |
-| `rules` | not a documented component (§5.7) | n/a | **REPLACES** — **must set `"./rules-cursor/"`** |
-| `hooks` | own merge rules; default `hooks/hooks.json` | **REPLACES**; default `hooks/hooks.json` | **REPLACES**; default `hooks/hooks.json` |
-| `mcpServers` | own merge rules | **no auto-discovery at all** — `.mcp.json` imported only if declared | auto-detects `mcp.json` |
-| Human-only skill | `disable-model-invocation` | `agents/openai.yaml` → `policy.allow_implicit_invocation: false` | `disable-model-invocation` (exact) |
+| `skills` | ADDS to `skills/` | **ADDS** to `./skills` ⚠️ | **REPLACES** — set `"./skills/"` |
+| `agents` | REPLACES | **field doesn't exist** | REPLACES — set `"./agents/"` |
+| `rules` | not a component (§14 S6) | n/a | REPLACES — **must set `"./rules-cursor/"`** |
+| `hooks` | own merge rules | REPLACES; default `hooks/hooks.json` | REPLACES; default `hooks/hooks.json` |
 
-**Two asymmetries that matter most:**
+**Codex's `skills` is additive → `./skills` always loads.** Per-host skill gating must happen in frontmatter or the sidecar, never by path.
 
-- **Codex's `skills` is ADDITIVE, so `./skills` is *always* loaded** no matter what the manifest says. You cannot scope skills per-host by path. Any per-host gating must happen inside `SKILL.md` frontmatter or the `agents/openai.yaml` sidecar.
-- **All three hosts auto-discover the same `hooks/hooks.json` path** — but Codex wants Claude-style PascalCase events and Cursor wants native camelCase. **Never place a file at `hooks/hooks.json`.** Per-host filenames + explicit manifest pointers are mandatory (§5.2).
+### 9.2 Four silent-no-op defects → CI assertions
 
-### 5.2 The four silent-no-op defects — and the CI assertions that catch them
-
-Every one of these fails **silently**, which is this repo's documented worst bug class (FB-0010 silent-skip). Each gets a mechanical assertion in `flow gen --check`.
-
-| # | Defect | Assertion |
+| # | Defect | Assertion in `flow gen --check` |
 |---|---|---|
-| 1 | `hooks/default-hooks.json`, `codex-hooks.json`, `cursor-hooks.json` match **no host's auto-discovery default**, so hooks load for nobody unless every manifest declares its own path. | Every manifest declares `hooks`, **and** the declared path resolves, **and** `hooks/hooks.json` does **NOT** exist (it would be auto-read by both Codex and Cursor in the wrong format). |
-| 2 | Cursor auto-discovers `rules/` and **accepts `.md`** — so Flow's Claude-format rules (`paths:` frontmatter) would load into Cursor **unscoped**, since Cursor expects `globs:`. | `.cursor-plugin/plugin.json` sets `"rules": "./rules-cursor/"`. Assert present; assert every file in `rules-cursor/` is `.mdc` with `globs`/`alwaysApply`. |
-| 3 | `agents-codex/*.toml` is **inert on every host** — no loader reads it. The out-of-band install to `~/.codex/agents/` is entirely undocumented territory, and a plugin hook **cannot** do it silently (plugin hooks are untrusted until the user reviews them). | `flow install --host codex` places them; `/flow:doctor --host codex` asserts they landed. Without this the 5 fork-based audit skills run **inline**, which looks identical to working. |
-| 4 | Three manifests drift. **This is not hypothetical** — `firebase/agent-skills` ships all three and its `license` has already diverged (MIT in the Claude manifest, Apache-2.0 in the other two). | Cross-manifest field-agreement check on `name`, `version`, `license`, `repository`. |
+| 1 | No hook filename matches any host's auto-discovery default → hooks load for nobody | Every manifest declares `hooks`; the path resolves; **`hooks/hooks.json` does NOT exist** (both Codex and Cursor would auto-read it in the wrong format) |
+| 2 | Cursor auto-discovers `rules/` and accepts `.md` → Flow's `paths:` rules load **unscoped** | `.cursor-plugin/plugin.json` sets `"rules": "./rules-cursor/"`; every file there is `.mdc` with `globs`/`alwaysApply` |
+| 3 | `agents-codex/*.toml` is inert everywhere; no loader reads it | `flow install --host codex` places them; `/flow:doctor --host codex` asserts they landed. **Without this the 5 fork skills run inline, which looks identical to working** |
+| 4 | Three manifests drift (Firebase precedent, §5.5) | Cross-manifest agreement on `name`, `version`, `license`, `repository` |
 
-**Why Flow can adopt this layout safely where Firebase didn't:** Firebase hand-maintains three manifests, so drift is inevitable. Flow **generates two from one**, so the failure mode is structurally impossible. That is the entire argument for generation over hand-maintenance, and it is the reason this layout is defensible here.
+### 9.3 Do NOT dual-publish skills
 
-### 5.3 Honest status of the layout
-
-**Neither vendor documents, recommends, or provides an example of a single-repo multi-host plugin layout.** Stated plainly because it matters:
-
-- Cursor's plugin docs never mention another host.
-- Codex's two cross-host affordances are both framed as *legacy*: the officially-supported `$REPO_ROOT/.claude-plugin/marketplace.json` ("legacy-compatible"), and the submission portal's `claude_format_normalized`, which **converts** `.claude-plugin/plugin.json` into `.codex-plugin/plugin.json`. Conversion-on-upload is the opposite of endorsing keeping both.
-- **OpenAI ships its own plugin as three separate repos** — `openai-developers-for-claude`, `openai-developers-for-cursor`, plus the directory listing — with different internal layouts.
-
-Against that: **36 repos were verified shipping 2+ host manifests at one plugin root**, 34 with all three, including Firebase, DataDog, Slack, Microsoft, Meta, Kraken, Resend, and GitGuardian. It is a real de-facto convention among credible publishers.
-
-**Verdict: adopt it, with the §5.2 assertions.** The pattern works, is source-verified deterministic on Codex, and is empirically verified non-breaking on Claude Code (§5.4). The residual risk is that it is undocumented on both non-Claude hosts and could change without a changelog obligation — which the drift/resolve assertions turn into a loud CI failure rather than a silent regression.
-
-⚠️ **Correction to an earlier claim in the companion research doc:** Codex does **not** overlay-merge `.claude-plugin/plugin.json` with `.codex-plugin/plugin.json`. Manifest discovery is **first-match-wins** over `[".codex-plugin", ".claude-plugin", ".cursor-plugin"]` and then breaks. The overlay that does exist is `MarketplacePluginManifestFallback` — a marketplace-entry↔manifest bridge, a different mechanism.
-
-### 5.4 Claude Code regression safety — empirically verified
-
-Tested against CLI **v2.1.141** on this plugin: adding `.codex-plugin/`, `.cursor-plugin/`, `agents-codex/*.toml`, `rules-cursor/*.mdc`, `capabilities/*.json`, and a nested `skills/ship/agents/openai.yaml` produced an **identical component inventory** (17 skills / 9 agents) and `claude plugin validate` passed. Discovery is fixed-name, `.claude-plugin` is matched exactly with no `.*-plugin` glob, and agent discovery is plugin-root-anchored so a nested `agents/` inside a skill is off every scan path. The plugin root already ships 5 unrecognized directories (108 files) today.
-
-**Two hard constraints found:**
-
-1. **`bin/` is a documented Claude Code component** — *"Executables added to the Bash tool's `PATH`… invokable as bare commands."* Putting the CLI under `bin/` would inject a bare `flow` onto every consumer's PATH and **collide with Facebook's Flow type-checker** in exactly the `web` and `tauri-rust-ts` stacks Flow ships. **Put it at `tools/flow` instead.** Also avoid the other reserved names: `commands/`, `workflows/`, `output-styles/`, `themes/`, `monitors/`, `settings.json`, `.mcp.json`, `.lsp.json`, `hooks/hooks.json`.
-2. **Keep `plugin.json` metadata-only.** Unknown top-level keys are documented-safe and load fine at runtime, but **fail `claude plugin validate` on v2.1.141** — reddening CI while user installs stay fine. All multi-host config goes in sibling files.
-
-**The real regression gate for CI** (only Claude Code has a validator — Codex and Cursor have none):
-
-```bash
-claude plugin validate ./plugins/flow
-claude plugin validate .
-claude --plugin-dir ./plugins/flow plugin details flow@inline   # assert 17 skills / 9 agents
-```
-
-### 5.5 Shared vs generated, counted
-
-| Class | Files | Share |
-|---|---|---|
-| **Source, shared by all hosts** | ~165 (43 skills + 9 agents + 4 rules + 1 hooks + 6 scripts + 4 schema/docs/tools + 98 evals) | **~88%** |
-| **Generated per host** | ~22 (2 manifests + ~5 sidecars + 9 TOML + 4 `.mdc` + 2 hook files) | ~12% |
-
-The 12% is machine-written and CI-verified. **You maintain the 88%.**
-
-### 5.6 The maintenance loop
-
-```
-edit source  →  flow gen  →  commit source + generated together
-                                        ↓
-                          CI: flow gen --check  (fails if drifted)
-```
-
-Three rules make it hold:
-1. Every generated file carries a `DO NOT EDIT — generated by flow gen` header.
-2. `flow gen --check` re-runs the generator into a temp dir and diffs. Any hand-edit fails the build.
-3. **The generator fails loudly when a source declares a semantic with no mapping for a target host** — e.g. adding `context: fork` to a new skill errors until the Codex TOML and Cursor agent mappings exist. Silent omission is what produces three divergent plugins; a hard failure is what prevents it.
-
-### 5.7 Where per-host divergence is *allowed* to live
-
-Exactly two places, both small and both declarative:
-
-- `adapters/{codex,cursor}/gen.py` — the transformation rules.
-- `capabilities/{claude-code,codex,cursor}.json` — which gates are mechanical vs advisory on that host, consumed by `/flow:doctor`.
-
-Nothing else may branch on host. If a skill body needs an `if codex:` clause, that is a signal the logic belongs in `tools/flow` behind a capability check, not in prose.
-
-### 5.8 Do NOT dual-publish skills
-
-Do not place the same skill in both `.claude/skills/` and `.agents/skills/` of one project. Cursor reads both, Codex reads `.agents/`, and **neither dedupes by name** — Codex docs, verbatim: *"If two skills share the same `name`, Codex doesn't merge them; both can appear in skill selectors."* Plugin packaging sidesteps this entirely because each host loads its own manifest. For loose user-scope installs target `~/.agents/skills/` only, never `~/.codex/skills/` (⚠️ deprecated root that also hosts the `.system` cache Codex rewrites on upgrade).
-
-**Do NOT dual-publish the same skill into `.claude/skills/` and `.agents/skills/` in one project.** Cursor reads both, Codex reads `.agents/`, and **neither does name-based dedupe** — Codex docs: *"If two skills share the same `name`, Codex doesn't merge them; both can appear in skill selectors."* You'd get duplicate entries. Plugin packaging avoids this entirely because each host loads its own manifest. (This corrects the dual-publish advice in the companion research doc.)
-
-**Install targets:** user skills → `~/.agents/skills/`, never `~/.codex/skills/` (⚠️ source-verified deprecated, and it hosts the `.system` cache Codex rewrites on upgrade — confirmed on this machine: `~/.codex/skills/.system/.codex-system-skills.marker`).
+Never place one skill in both `.claude/skills/` and `.agents/skills/` of a project — Cursor reads both, Codex reads `.agents/`, and **neither dedupes by name**. Plugin packaging sidesteps this. For loose user-scope installs target `~/.agents/skills/` only.
 
 ---
 
-## 6. Phases
+## 10. The bundled skills — `/verify`, `/simplify`, `/run`, `/run-skill-generator`
 
-### Phase 0 — Harden on Claude Code only (3–4 PRs, zero host work)
+`/verify` is **three** capabilities, and Flow already owns the expensive one:
 
-Everything here is independently valuable and ships whether or not a port happens.
-
-| PR | Content | Acceptance |
+| Layer | Owner today | Disposition |
 |---|---|---|
-| **0a** | **Stamped-context invariant** (§4). `flow context <mode>` writes stamped artifacts; the 11 script-backed consumers assert stamp freshness and route `[decision-required]` on absent/stale. | New eval fixture: stale stamp ⇒ `[decision-required]`, never a clean verdict. Wired into `ci.yml`. |
-| **0b** | **Renderer fail-loud audit.** `render-test-plan.py`, `render-report.py`, `skip-audit-checks.py` must fail loudly on schema mismatch, never degrade. Prerequisite for hosts without constrained decoding. | Fixture per renderer: malformed model JSON ⇒ non-zero exit + named error, not a partial render. |
-| **0c** | **Env overrides + schema slots.** `FLOW_DISAGREEMENT_DIR` (chip already queued); add `host` + `capabilityTier` slots; land the already-known-missing `changelogPath`. Re-derive the "30 slots" fan-out count across `workflow.md` / `plugin.json` / `marketplace.json` / doctor. | `git grep -n '30 slots'` returns zero contradictions. |
-| **0d** | **`extract_session.py` adapter seam.** Split discovery+parse (`:74-208`) behind an interface; keep `:222-673` + `bounding_logic.py` neutral. Tool-name tables (`:347`, `:350`, `:354`, `:575`) become a per-host map. | Eval for the **false-`UNREAD`** failure mode: an unrecognized tool name must fail loudly, not silently make every artifact `UNREAD` and mint false "unverified recall" findings. |
+| Launch recipe (`/run`, `/run-skill-generator`) | Claude Code natives | **New `flow.config.json` `launchCmd` slot.** More deterministic than a generated skill; an improvement on Claude Code too. Nothing to leverage on either host. |
+| Drive + observe | Platform MCPs — **Flow already drives these itself** (`verify-build:278`) | Portable; MCP is host-agnostic |
+| Plan-driven judging gate | **Flow, entirely** (425 + 532 lines + rubrics) | Already portable |
 
-### Phase 1 — `tools/flow` + the generator + drift enforcement (2–3 PRs)
+**`/simplify` has no substitute on either host.** Flow never *calls* it — zero `Skill("simplify")` sites; it's prose, and Flow *audits whether it ran* via `rigor-marker.py`, which fingerprints **source content, not provenance**. So it is a *slot with an evidence check*, not a call:
+- Claude Code → native `/simplify`, unchanged.
+- Codex/Cursor → owned 5th lens (`lens-simplify`, ~60 lines), layered on native diff scoping (`codex review --uncommitted|--base`; `agent -p --force` to apply).
+- ⚠️ Codex trap: custom `PROMPT` **conflicts with** `--base`/`--commit`/`--uncommitted`.
 
-| PR | Content | Acceptance |
-|---|---|---|
-| **1a** | **`tools/flow` CLI** wrapping existing `lib/*.py`: `flow context`, `flow gate`, `flow render`, `flow audit`, `flow hook <event>`, `flow doctor`. Claude Code artifacts now call the CLI instead of inlining shell. | All 21 existing evals still green; ~40 inline substitution sites reduced to CLI calls. |
-| **1b** | **The generator + drift lint.** `adapters/*/gen.py` emits every generated artifact in §5. A `flow gen --check` mode fails if any emitted artifact differs from what the source would produce. | New `evals/run_adapter_gen_evals.py`, **enumerated in `ci.yml`**. CI fails on any hand-edited generated file. Every generated file carries a `DO NOT EDIT — generated by flow gen` header. |
-| **1c** | **Instructions-as-data.** `flow gate ship --step 2` returns JSON describing what must happen next, including `{action: "spawn_fork", prompt_file, schema}`. Adapters translate the spawn vocabulary. | `ship` and `verify-build` orchestration expressed as data; one Claude Code translator consumes it. |
+`rigor-marker.py`, `audit-skips`, and the ship gate all keep working unchanged.
 
-**◆ Decision gate.** Proceed only if Phase 1 landed clean and dogfooded on ≥2 real Flow PRs. If the CLI refactor doesn't hold under Flow's own gates, stop — the port was never the constraint.
+**This requires amending CLAUDE.md.** [CLAUDE.md:125](../../CLAUDE.md) says "Never wrap a bundled Claude Code skill." Scope it to: *never wrap a bundled skill **on Claude Code**; where a host lacks the native, ship an owned equivalent dispatched by capability — never a wrapper that shadows the native.*
 
-### Phase 2 — Codex adapter (3 PRs)
+**Verification, split by platform not host:** web is affordable (Cursor bundled Browser; Codex Playwright MCP). **Mobile stays degraded and declared** — neither host has an automation story; XcodeBuildMCP *should* work as an MCP server but that is untested (spike S5).
 
-| PR | Content | Acceptance |
-|---|---|---|
-| **2a** | `.codex-plugin/plugin.json`, `agents/openai.yaml` sidecars, `agents-codex/*.toml`, `hooks/codex-hooks.json`. Hooks dispatch through the **stable** `tools/flow hook <event>` entrypoint (§3.2). | `codex plugin marketplace add by-dev-tools/flow --ref vX` installs; `/skills` lists all 17. |
-| **2b** | Codex transcript adapter: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` **and `.jsonl.zst`**; prefer `transcript_path` from hooks over globbing; prefer `codex exec --json`'s documented event stream and `last_assistant_message` over parsing rollouts (schema is explicitly disclaimed as unstable). Tool map: `Read\|Grep\|Glob → Bash`, `Write\|Edit → apply_patch`, `Task → spawn_agent`. | Fixtures for both plain and zstd rollouts, plus an unknown-tool-name case. Note: hook *matcher* aliases ≠ payload `tool_name` — payload always reports `apply_patch`. |
-| **2c** | Capability declaration: tier **High**, `verifyEnabled` forced false with a loud reason, `/flow:doctor --host codex` asserting hooks are **trusted** (not just present), skill-catalog budget check (2% of context or 8,000 chars — 17 skills *will* get squeezed, so front-load trigger words in descriptions). Adopt `codex exec --output-schema` to harden the 3 renderers' inputs. | Doctor prints mechanical-vs-advisory per gate. A skipped verify gate blocks ship auto-invocation exactly as `platform: library` does today. |
-
-### Phase 3 — Cursor adapter (2 PRs)
-
-| PR | Content | Acceptance |
-|---|---|---|
-| **3a** | `.cursor-plugin/plugin.json`, `rules-cursor/*.mdc` (`.mdc` mandatory — `.md` is silently ignored), `hooks/cursor-hooks.json` using **native** events. Do **not** ship a shared `.claude/settings.json` hooks path: `tool_input.file_path` is undocumented and probably absent (Cursor's file tools use `path`/`fileText`), `Edit` collapses into `Write`, `Glob`/`WebFetch`/`WebSearch` have no equivalent, and `tool_input` flips between object and JSON-string across events. Use `beforeShellExecution` (`.command`) and `beforeReadFile`/`afterFileEdit` (`.file_path`) — top-level and documented. `failClosed: true` + explicit `timeout` everywhere. | Local install via `~/.cursor/plugins/local/flow` symlink; skills and agents resolve. |
-| **3b** | Tier **Medium**: no per-turn injection (skill bodies invoke `flow context` and the §4 stamp catches non-compliance), no constrained output (text contract + Python parser is the enforcement point), verify disabled. Document the **account-level** prerequisite: *"Include third-party Plugins, Skills, and other configs"* must be enabled — it cannot be set from the repo, so doctor must verify it took effect. | Doctor names every advisory gate. An advisory gate never renders byte-identically to a mechanical one. |
+⚠️ Both Cursor's Browser and Codex's Computer Use are **admin-disableable**. Probe, never assume.
 
 ---
 
-## 7. How this stays maintainable
+## 11. Spec-walk
 
-The maintainability property comes from five mechanical rules, not discipline:
+### Phase 00 — PREREQUISITE: two shipped features that never load (§17)
 
-1. **One source per artifact, enumerated in §5.** Generated files carry a `DO NOT EDIT` header.
-2. **`flow gen --check` in CI.** Editing a source without regenerating fails the build. This is the FB-0010 fan-out defense applied to the adapter layer — grep-first becomes generate-first.
-3. **One `SKILL.md` per skill, three hosts.** Extra frontmatter is ignored, not honored — so any Claude-Code-only *semantic* (`context: fork`, `disable-model-invocation`) must have a generated counterpart, and the generator fails loudly if a source declares one with no mapping for a target host.
-4. **Capability is data, not prose — and PER-CAPABILITY, not one tier per host.** §1.1 showed the hosts don't rank linearly (Codex is stronger on gate mechanics, Cursor on verification), so `capabilities/*.json` declares each capability separately (`contextInjection`, `constrainedOutput`, `driveObserveWeb`, `driveObserveMobile`, `freshContextFork`, `hookFailClosed`). `/flow:doctor` renders it, and adding a gate forces declaring which capability it needs.
-5. **Per-host eval fixtures, enumerated in `ci.yml`.** CI enumerates rather than globs, so every new harness must be wired explicitly.
+**Not part of the port. Ship this first, standalone.** Both are advertised in `README.md`, the marketplace description, and `/flow:doctor`, and both are mechanically absent for every consumer.
 
-**The rule that keeps it honest:** never let an advisory gate render byte-identically to a mechanical one. That is the FB-0074 lesson, and at three hosts it's the whole ballgame.
+- [ ] **00a — Convert the 4 rules to path-activated skills.** `rules/` is not a Claude Code plugin component; the four rules have never loaded for anyone. Convert each to a skill under `plugins/flow/skills/` carrying the same `paths:` globs plus `user-invocable: false`. Claude Code's SKILL.md **does** support `paths:` (docs + binary-confirmed Zod schema), and the docs point at exactly this: *"To ship instructions that load into Claude's context, put them in a skill."* *Verify:* a session touching `plan.md` loads the plan-discipline content; `claude plugin details` skill count rises from 17 to 21.
+- [ ] **00b — Fix the hooks filename.** `hooks/default-hooks.json` matches no documented default (`hooks/hooks.json`) and `plugin.json` declares no `hooks` field — hence `Hooks (0)`. Rename, or declare `"hooks": "./hooks/default-hooks.json"`. **Decide deliberately whether hooks should be opt-in**: if the current opt-in posture is intentional, the *docs* are wrong, not the code. *Verify:* `claude plugin details` reports the intended hook count and the marketplace description matches.
+- [ ] **00c — Reconcile the drifted project-scope copies.** `.claude/rules/{general,documentation}.md` differ from their plugin counterparts by 101 and 74 diff lines. These masked the bug during dogfooding. *Verify:* one source of truth; no near-duplicate pairs remain.
+- [ ] **00d — Fix the consumer path.** `template/base/bootstrap.sh:150` copies **only** `safety.md.template`; `general`, `plan-discipline`, `documentation`, `exploration` are copied by nothing and loaded by nothing. *Verify:* a freshly bootstrapped project has all intended rules active by a mechanism that is actually read.
+- [ ] **00e — Correct every claim.** `README.md:86` "4 auto-loading rules", the `plugin.json`/`marketplace.json` "four portable rules", `/flow:doctor` Section 3's "auto-load via flow@flow", and `docs/automation-boundaries.md:17` "only the auto-loading rules attach". *Verify:* `git grep -n 'auto-loading rules'` shows no claim the code doesn't back.
+- [ ] **00f — Add the missing gate.** A doctor check that asserts each advertised component is actually *reported by the loader*, not merely present on disk. *Verify:* deleting a skill dir reds the check.
+
+### Phase 0 — Harden on Claude Code (no host work; ships regardless)
+
+- [ ] **0a — Stamped-context invariant.** `flow context <mode>` writes stamped artifacts; the 11 script-backed consumers assert freshness. *Verify:* new eval — stale stamp ⇒ `[decision-required]`, never a clean verdict; wired into `ci.yml`.
+- [ ] **0b — Renderer fail-loud audit.** `render-test-plan.py`, `render-report.py`, `skip-audit-checks.py` fail loudly on schema mismatch, never degrade. *Verify:* fixture per renderer — malformed model JSON ⇒ non-zero exit + named error, not a partial render.
+- [ ] **0c — Env overrides + schema slots.** `FLOW_DISAGREEMENT_DIR`; new `host`, `capabilityTier`, `launchCmd` slots; land the read-but-undeclared `changelogPath`. *Verify:* `git grep -nE '3[0-9] slots'` returns zero contradictions across `workflow.md`/`plugin.json`/`marketplace.json`/doctor.
+- [ ] **0d — `extract_session.py` adapter seam.** Split discovery+parse (`:74-208`) behind an interface; keep `:222-673` + `bounding_logic.py` neutral; tool-name tables (`:347`,`:350`,`:354`,`:575`) become a per-host map. *Verify:* eval for the **false-`UNREAD`** mode — an unrecognized tool name fails loudly instead of silently marking every artifact UNREAD and minting false "unverified recall" findings.
+- [ ] **0e — CI regression gate.** Add `claude plugin validate ./plugins/flow`, `claude plugin validate .`, and an inventory assertion (`claude --plugin-dir ./plugins/flow plugin details flow@inline` ⇒ 17 skills / 9 agents). *Verify:* deliberately break a skill frontmatter; CI reds.
+
+### Phase 1 — `tools/flow` + generator + drift enforcement
+
+- [ ] **1a — The CLI.** `tools/flow` wrapping existing `lib/*.py`: `context`, `gate`, `render`, `audit`, `hook <event>`, `doctor`, `gen`, `install`. *Verify:* all 21 existing evals green; ~40 inline substitution sites become CLI calls.
+- [ ] **1b — Generator + drift lint.** `adapters/*/gen.py` emits every §9 artifact; `flow gen --check` regenerates into a temp dir and diffs. Every generated file carries `DO NOT EDIT — generated by flow gen`. *Verify:* new `evals/run_adapter_gen_evals.py` **enumerated in `ci.yml`**; hand-edit a generated file ⇒ CI reds.
+- [ ] **1c — Instructions-as-data.** `flow gate ship --step 2` returns JSON including `{action:"spawn_fork", prompt_file, schema}`. *Verify:* ship + verify-build orchestration expressed as data; one Claude Code translator consumes it; existing behavior unchanged.
+- [ ] **1d — Generator completeness guard.** Generator **errors** when a source declares a semantic with no mapping for a target host. *Verify:* add `context: fork` to a scratch skill with no Codex mapping ⇒ `flow gen` exits non-zero.
+
+**◆ Decision gate.** Proceed only if Phase 1 landed clean and dogfooded on ≥2 real Flow PRs, **and** spikes S1–S4 (§14) have resolved.
+
+### Phase 2 — Codex adapter
+
+- [ ] **2a — Packaging.** `.codex-plugin/plugin.json`, `agents/openai.yaml` sidecars, `agents-codex/*.toml`, `hooks/codex-hooks.json` dispatching through the **stable** `tools/flow hook <event>` entrypoint. *Verify:* `codex plugin marketplace add … && codex plugin add` installs; `/skills` lists all 17.
+- [ ] **2b — Transcript adapter.** `~/.codex/sessions/**` plain **and `.jsonl.zst`**; prefer `transcript_path` from hooks and `codex exec --json` over rollout parsing. Tool map `Read|Grep|Glob → Bash`, `Write|Edit → apply_patch`, `Task → spawn_agent`. *Verify:* fixtures for plain + zstd + unknown-tool-name.
+- [ ] **2c — Capability declaration.** `capabilities/codex.json`; `/flow:doctor --host codex` asserts hooks are **trusted**, agents landed in `~/.codex/agents/`, and the skill catalog fits the 2%/8,000-char budget. Adopt `--output-schema` for the 3 renderers' inputs. *Verify:* doctor prints mechanical-vs-advisory per gate; a skipped verify gate blocks ship auto-invocation exactly as `platform: library` does.
+
+### Phase 3 — Cursor adapter
+
+- [ ] **3a — Packaging.** `.cursor-plugin/plugin.json` + `.cursor-plugin/marketplace.json`, `rules-cursor/*.mdc`, `hooks/cursor-hooks.json` using **native** events (`beforeShellExecution` → `.command`; `beforeReadFile`/`afterFileEdit` → `.file_path`), `failClosed: true` + explicit `timeout` everywhere. *Verify:* symlink install to `~/.cursor/plugins/local/flow`; skills + agents resolve.
+- [ ] **3b — Capability declaration + verify path.** `capabilities/cursor.json`; wire the bundled Browser as the web drive/observe provider; document the account-level "Include third-party Plugins, Skills, and other configs" prerequisite and have doctor verify it took. *Verify:* doctor names every advisory gate; **an advisory gate never renders byte-identically to a mechanical one.**
+
+### Phase 4 — Owned `/simplify` + launch slot
+
+- [ ] **4a — `lens-simplify` agent** + capability dispatch (native on Claude Code, owned elsewhere). *Verify:* `rigor-marker.py` accepts the owned lens's marker unchanged.
+- [ ] **4b — `launchCmd` slot** replacing `/run` + `/run-skill-generator`. *Verify:* verify-build launches from config on all three hosts.
+- [ ] **4c — CLAUDE.md rule amendment** (§10). *Verify:* `git grep -n 'Never wrap a bundled'` shows the scoped form only.
 
 ---
 
-## 8. Open items to verify empirically (cheap, and they gate real work)
+## 12. Confidence verdicts
+
+**Assumption:** Adding sibling dirs and manifests to `plugins/flow/` does not break the live Claude Code plugin.
+**Confidence:** **HIGH**
+**Why:** Empirically tested on CLI v2.1.141 — identical inventory (17/9), `claude plugin validate` passed; discovery is fixed-name; the plugin root already ships 5 unrecognized dirs.
+**If it flips:** Generate complete host trees into `dist/codex/` + `dist/cursor/` instead, leaving `plugins/flow/` byte-identical. Costs duplication of generated content only.
+
+**Assumption:** One `SKILL.md` with Claude-Code-only frontmatter loads cleanly on Codex and Cursor.
+**Confidence:** **LOW** *(Codex alone would be HIGH; Cursor is undocumented)*
+**Why:** Codex is source-verified lenient (no `deny_unknown_fields`). Cursor's behavior is documented **nowhere**, and the risk isn't a parse error — it's **silent semantic loss**: `context: fork` ignored means a skill that must fork runs inline and looks like it worked.
+**If it flips:** Generate per-host `SKILL.md` variants; the generator gains a frontmatter-projection stage. Adds ~17 generated files, no architectural change. **Gate: spike S1.**
+
+**Assumption:** Flow's gates can be made mechanical on Codex and Cursor.
+**Confidence:** **LOW**
+**Why:** Both hosts fail hooks open in undocumented ways; Cursor cannot inject per-turn context at all; Codex's hash-keyed hook trust silently disables gates on upgrade. The stamped-context invariant (§8) is the proposed answer but is **unproven** on either host.
+**If it flips:** Non-Claude hosts become advisory-only for gate enforcement — the loop still runs, but `ship` always requires an explicit human "ship it" there. That is a materially smaller product. **Gate: spikes S2 + S3.**
+
+**Assumption:** Cursor's bundled Browser can serve Flow's §5a a11y-gated capture protocol.
+**Confidence:** **MEDIUM**
+**Why:** Documented surface covers navigate/click/screenshot/console/network but has **no documented a11y-tree read**, which §5a requires (*snapshot tree → assert state → screenshot*).
+**If it flips:** §5a needs a DOM-based variant for Cursor, or web verification there degrades to screenshot-only. Design decision, not implementation. **Gate: spike S4.**
+
+**Assumption:** The single-repo three-manifest layout stays viable.
+**Confidence:** **MEDIUM**
+**Why:** Undocumented on both non-Claude hosts and unverifiable on Cursor (closed source). Codex's precedence is source-verified but could reorder in any release with no changelog obligation. Offset by 36 credible repos using it, and by generation making drift structurally impossible.
+**If it flips:** Split into per-host plugin roots under `dist/` — the generator already produces every artifact, so this is a re-target, not a rewrite.
+
+**Assumption:** Flow's 4 portable rules currently auto-load for Claude Code consumers.
+**Confidence:** ~~LOW~~ → **RESOLVED 2026-08-12: they do NOT load. Confirmed broken.** See §17.
+**Why:** Docs + binary decompilation of CLI v2.1.141 both confirm `rules/` is not a plugin component and no loader call site joins a plugin root.
+**If it flips:** n/a — resolved. This became **Phase 00**, a prerequisite bug fix ahead of all porting work.
+
+---
+
+## 13. Risks
+
+1. **Silent gate degradation** — the whole plan's failure mode. Mitigated by §8 + §9.2 + the §7 rules, and by never letting an advisory gate render like a mechanical one.
+2. **Undocumented behavior changing** — 12 load-bearing facts are ⚠️ source- or inference-derived. Mitigated by CI assertions that fail loudly, and by keeping them out of contracts.
+3. **Scope inflation** — Phases 2–4 are optional. Phase 0 + 1 must stand alone in value.
+4. **No validator on 2 of 3 hosts** — Codex and Cursor have no `plugin validate`. Flow's own `flow gen --check` is the only mechanical gate there.
+5. **Cursor's surface moves weekly** — the on-disk snapshot used here (13 built-in skills) is ~3 months behind the documented 19. Re-verify §5.3 before Phase 3.
+6. **Queue debt** — 41 queued lesson-contributions and § Exploration entries (fork-handoff transport, `/tmp` collisions, `${CLAUDE_PLUGIN_ROOT}` resolution lint) touch the exact seams this work moves. Drain first; the port gets smaller.
+
+---
+
+## 14. Open spikes — these gate the phases
+
+None can be resolved without the CLIs installed. **Install `codex` and `agent` first.**
 
 | # | Question | Cost | Gates |
 |---|---|---|---|
-| 1 | Do Cursor and Codex actually tolerate Flow's extra SKILL.md frontmatter without erroring? Codex is source-verified lenient; Cursor is undocumented. | 5 min | Whether one `SKILL.md` works or each host needs its own |
-| 2 | Does Cursor's headless transcript really write *"Claude Code-compatible JSONL"* (its April 2026 changelog claim), and is it thick enough for `extract_session.py`? | 30 min | Size of PR 3a |
-| 3 | Does Claude Code enforce `allowed-tools` for the `Skill` tool? | 15 min | Severity of the queued `ship-spike:176` chip |
-| 4 | Codex `agents.max_concurrent_threads_per_session` real default (⚠️ source says 6 for v1, 4 for v2; undocumented). | 10 min | staff-review's 4-lens fan-out |
-| 5 | Does Flow's doctrine fit Codex's 32 KiB `AGENTS.md` cap? The marketplace description alone is 17 KB. | 10 min | Whether `AGENTS.md` can carry orientation |
-
-Do #1 first. It's five minutes and it decides the shape of the generator.
-
----
-
-## 9. Explicitly out of scope
-
-- Any host other than Claude Code, Codex, Cursor.
-- MCP as a delivery vehicle. MCP prompts as slash commands **do not work on Codex** ([#8342](https://github.com/openai/codex/issues/8342), open since 2025-12-19, no maintainer reply), and SEP-2640 forbids executable skill content by design.
-- Codex custom prompts (`~/.codex/prompts/`) — **officially deprecated** in favor of skills, user-scope only, not repo-shareable.
-- Relying on `.claude-plugin/plugin.json` being discovered by Codex. It is (⚠️ source-only, `DISCOVERABLE_PLUGIN_MANIFEST_PATHS`), but emit `.codex-plugin/plugin.json` explicitly. The `.claude-plugin/marketplace.json` path **is** documented and can be relied on.
-- Building a Flow-owned behavioral-verify engine. That is a separate, larger decision (§10).
+| **S1** | Do Cursor + Codex load a `SKILL.md` carrying `context: fork`, `agent:`, `allowed-tools`, `disable-model-invocation` without error — and is the *semantic* loss detectable? | 30 min | Generator shape; **LOW→HIGH** |
+| **S2** | Does Cursor's `.claude/settings.json` hook shim populate `tool_input.file_path`/`.command`? (Native stdin has no `cwd`/`session_id`.) | 1 h | Phase 3a; **LOW→** |
+| **S3** | Does the stamped-context invariant actually block a stale verdict on Codex and Cursor end-to-end? | 2 h | Phase 2/3 tier; **LOW→** |
+| **S4** | Can Cursor's Browser return an accessibility tree? | 1 h | §5a protocol; **MEDIUM→** |
+| **S5** | Does XcodeBuildMCP work as an MCP server under Codex/Cursor? | 2 h | Whether mobile verification degrades |
+| **S6** | **Do plugin-shipped `rules/` auto-load on Claude Code at all?** | 1 h | **Pre-existing bug — do this FIRST** |
+| S7 | Does Claude Code enforce `allowed-tools` for the `Skill` tool? (`ship-spike:176` vs `:12` — chip queued) | 15 min | Severity of a separate bug |
+| S8 | Codex `agents.max_concurrent_threads_per_session` real default (⚠️ src says 6 v1 / 4 v2) | 15 min | staff-review's 4-lens fan-out |
+| S9 | Does Flow's doctrine fit Codex's 32 KiB `AGENTS.md` cap? (marketplace description alone is 17 KB) | 15 min | Whether AGENTS.md carries orientation |
+| S10 | Cursor headless transcript — really "Claude Code-compatible JSONL"? | 30 min | Size of Phase 3 transcript work |
 
 ---
 
-## 10. The one decision this plan does not make
+## 15. Files touched (anticipated)
 
-**This decision got cheaper.** §1.1 established that Flow already owns the judging gate, and that the drive/observe layer is host-provided (bundled on Cursor, Playwright MCP on Codex). So the choice is no longer "build an engine or give up":
+**New:** `plugins/flow/tools/flow`, `plugins/flow/adapters/{codex,cursor}/gen.py`, `plugins/flow/capabilities/{claude-code,codex,cursor}.json`, `plugins/flow/agents/lens-simplify.md`, `plugins/flow/evals/run_adapter_gen_evals.py`, `plugins/flow/evals/run_stamped_context_evals.py`.
 
-- **Web surfaces — own it.** The work is a `launchCmd` slot plus an orchestration prompt over MCP primitives Flow *already drives itself*. Medium, not large. Cursor's bundled Browser makes this genuinely cheap there; Codex needs Playwright MCP declared as a dependency.
-- **iOS / Android / Tauri — accept degradation.** Neither host has a mobile automation story. XcodeBuildMCP is just an MCP server and *should* work on both, but that is untested; treat it as a spike, not a plan. Until proven, `ship` on those platforms requires an explicit human "ship it" on non-Claude hosts, exactly as `platform: library` does today.
+**Generated (new, committed):** `plugins/flow/.{codex,cursor}-plugin/plugin.json`, `.cursor-plugin/marketplace.json`, `plugins/flow/skills/*/agents/openai.yaml` (×5), `plugins/flow/agents-codex/*.toml` (×9), `plugins/flow/rules-cursor/*.mdc` (×4), `plugins/flow/hooks/{codex,cursor}-hooks.json`.
 
-Recommendation: **split the decision by platform rather than by host.** Do the web path in Phase 2/3 — it is affordable and it is where Cursor is strongest. Leave mobile degraded and *declared*. Phase 0's stamped-context work is what makes the degradation visible rather than silent, which remains the property that actually matters.
+**Modified:** `plugins/flow/scripts/{extract_session,log_disagreement}.py`, `plugins/flow/schema/flow.config.schema.json`, `plugins/flow/skills/{ship,verify-build,doctor,audit-skips,critique-plan,audit-plan,audit-completion,audit-coverage}/SKILL.md`, `plugins/flow/skills/ship/lib/{render-test-plan,rigor-marker}.py`, `plugins/flow/skills/verify-build/lib/render-report.py`, `plugins/flow/skills/audit-skips/lib/skip-audit-checks.py`, `plugins/flow/docs/workflow.md`, `.github/workflows/ci.yml`, `CLAUDE.md`, `README.md`.
 
-**Before committing to the web path, run one spike:** confirm Cursor's Browser can return an accessibility tree. Flow's §5a protocol is a11y-gated (*snapshot the tree, assert the state, then screenshot*), and the tool's documented surface is DOM + screenshot only. If there is no a11y read, either §5a's gate weakens on Cursor or the protocol needs a DOM-based variant — and that is a design decision, not an implementation detail.
+**Docs cascade:** `dev-docs/{plan,history,roadmap,feedback,spec}.md`.
+
+---
+
+## 16. Validation against the quality bar
+
+- **Correct** — no reviewer output schema changes; all 21 existing evals must stay green.
+- **Evidence-backed** — every new behavior gets a fixture; 4 new eval harnesses, each explicitly enumerated in `ci.yml` (CI enumerates, never globs).
+- **Graceful on malformed input** — Phase 0b makes renderers fail loud; Phase 0d makes an unknown tool name fail loud instead of minting false findings.
+- **Lean** — stdlib only. No new dependencies.
+- **Project-agnostic** — no host-specific tokens outside `adapters/` and `capabilities/`.
+- **Honest limitations** — §6, §10, and §12's two LOW verdicts must be reflected in `README.md` and `docs/workflow.md` "Bootstrap status" before Phase 2 ships.
+
+---
+
+## 17. Resolved spike S6 — two shipped features that never load
+
+**Resolved 2026-08-12. Verdict: CONFIRMED BROKEN.** Independent of the port; fix first (Phase 00).
+
+### Finding A — the 4 portable rules have never loaded for anyone
+
+`rules/` is not a Claude Code plugin component:
+
+- **[DOC]** The Component-path-fields table lists 13 fields; `rules` is not among them. The File-locations table has 13 rows; there is no Rules row. The standard-layout warning enumerates valid root dirs (`commands/`, `agents/`, `skills/`, `workflows/`, `output-styles/`, `themes/`, `monitors/`, `hooks/`) — `rules/` is absent.
+- **[DOC]** Stated directly: *"Plugins contribute context through skills, agents, and hooks rather than CLAUDE.md. To ship instructions that load into Claude's context, put them in a skill."*
+- **[TEST]** Decompiling CLI v2.1.141: all 8 `rulesDir` occurrences resolve to exactly four sources — managed, user (`~/.claude/rules`), project (`.claude/rules`, walking ancestors), and env-gated additional dirs. **No call site joins a plugin root.** The lazy path-scoped loader (the only one handling `paths:` frontmatter) is likewise only ever handed a project path. The plugin manifest's Zod schema has no `rules` key.
+- `paths:` frontmatter **is** real — but only at project/user scope.
+
+**Why it looked fine:** this repo has its own project-scope `.claude/rules/` with near-duplicates that have **drifted** — **[TEST]** `general.md` differs by 101 diff lines, `documentation.md` by 74. Every dogfooding session loaded those *project* rules; the plugin copies contributed nothing.
+
+**Consumer blast radius is worse.** **[TEST]** `template/base/bootstrap.sh:150` copies only `safety.md.template`. `general`, `plan-discipline`, `documentation`, `exploration` are copied by nothing and loaded by nothing — **a bootstrapped consumer has zero of the four advertised rules active.** So `docs/automation-boundaries.md:17`'s claim that on a cold start *"only the auto-loading rules attach"* describes a cold start with **no enforcement layer at all**.
+
+### Finding B — default hooks never load either
+
+**[TEST]** `plugin.json` top-level keys are `author, description, homepage, keywords, license, name, repository, version` — **no `hooks` field** — and the file is named `hooks/default-hooks.json` where the documented auto-discovery default is exactly `hooks/hooks.json`. Hence `claude plugin details` → `Hooks (0)`.
+
+The plugin's own `default-hooks.json` header says hooks are *"NOT auto-applied — consumers opt-in"*, so the posture may be intentional; the marketplace description advertising "default hooks" is then the thing that's wrong. **Decide which, then make code and docs agree.**
+
+### The fix
+
+**[DOC]** SKILL.md supports `paths:` — *"Glob patterns that limit when this skill is activated… Uses the same format as path-specific rules"* — binary-confirmed in the skill Zod schema. Convert each rule to a skill with the same `paths:` list plus `user-invocable: false`. Semantics shift slightly (a rule is *injected* as context; a skill body *loads* when Claude touches a matching file), but it is the mechanism the docs explicitly point at and the only one that ships path-activated guidance from a plugin.
+
+### Why this belongs in this doc
+
+It is the same failure class the port is designed around — **a component advertised as load-bearing that is mechanically absent, and whose absence is indistinguishable from working.** FB-0074, at product scale, in the shipped plugin. Phase 00f adds the missing gate: assert each advertised component is *reported by the loader*, not merely present on disk.

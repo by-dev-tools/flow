@@ -5,6 +5,8 @@
 **Plugin version at time of research:** v1.22.0
 **Status:** research / direction-setting. **No plugin artifacts changed by this doc.** Actionable hooks land in `roadmap.md` § Exploration; the staged plan in §8 is a proposal, not an approved scope.
 
+> ⚠️ **PARTIALLY SUPERSEDED.** This is the *field survey*. For every execution decision — layout, tiering, the CLI's location, how context is injected — `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` is authoritative. Later validation against official docs, `openai/codex` source, and the shipped Claude Code binary overturned several conclusions below; those are marked inline.
+
 Question researched: *can Flow run on Codex, Cursor, and other agents instead of only Claude Code — what are the implications, what approaches exist, and how do context / skills / workflows survive the move?*
 
 Four parallel research streams: Flow's internal coupling map (first-hand, this branch), Codex CLI, Cursor + 12 other harnesses, and portability prior-art/tooling.
@@ -13,7 +15,7 @@ Four parallel research streams: Flow's internal coupling map (first-hand, this b
 
 ## 0. One-line synthesis
 
-> **The premise is half out of date. Flow's *doctrine* is already portable — `SKILL.md` is a published spec with ~44 adopters, and Claude Code's `.claude/skills/` and `.claude/agents/` are read by Cursor, Copilot, Amp, OpenCode, and Cline directly. But the *loop machinery* will not standardize: the one governed spec body with authority here (Agent Plugins v1.0.0, TSC from Amazon/Cursor/Microsoft/OpenAI/Vercel) has **formally declared commands, hooks, agents, and rules out of scope** as "too client-specific for a stable portable contract." So the portable artifact set is exactly two things — skills and MCP servers — and everything else must be generated per host. Flow's orchestration currently lives inside prompt markdown; moving it into a `flow` CLI is the whole job. Two real losses: Flow doesn't own its behavioral-gate engine, and hook-based gates are **fail-open by default** on two of three target hosts.**
+> **The premise is half out of date. Flow's *doctrine* is already portable — `SKILL.md` is a published spec with ~44 adopters, and Claude Code's `.claude/skills/` and `.claude/agents/` are read by Cursor, Copilot, Amp, OpenCode, and Cline directly. But the *loop machinery* will not standardize: the one governed spec body with authority here (Agent Plugins v1.0.0, TSC from Amazon/Cursor/Microsoft/OpenAI/Vercel) has **formally declared commands, hooks, agents, and rules out of scope** as "too client-specific for a stable portable contract." So the portable artifact set is exactly two things — skills and MCP servers — and everything else must be generated per host. Flow's orchestration currently lives inside prompt markdown; moving it into a `flow` CLI is the whole job. Two real losses: hook-based gates are **fail-open by default** on both non-Claude hosts, and `/simplify` has no substitute anywhere. ⚠️ *A third claimed loss — "Flow doesn't own its behavioral-gate engine" — was later **overturned**: Flow already owns the judging gate, the drive/observe layer is host-provided (bundled on Cursor), and only the launch recipe is genuinely missing. See roadmap §1.1.***
 
 **Direction-of-travel caveat, stated plainly:** the "portable" half of this is vendor convergence, not ratified standards. Every cross-tool win below was produced unilaterally by vendors while the corresponding standards proposal sat unanswered. Design for it; don't assume it's stable.
 
@@ -301,7 +303,7 @@ Do **not** build a runtime abstraction layer. Every project that tried is dead o
 flow-core/                      # the asset — host-agnostic
   doctrine/                     # was agents/, docs/, rules/, rubrics — pure markdown
   lib/                          # was scripts/ + skills/*/lib/ — unchanged, stdlib Python
-  bin/flow                      # NEW: the CLI that owns all determinism
+  tools/flow                    # NEW: the CLI. NOT bin/ — that PATH-injects on Claude Code
   flow.config.schema.json       # + host slot, + capability tier
 adapters/
   claude-code/                  # .claude-plugin/, context:fork skills, hooks
@@ -325,7 +327,7 @@ Today orchestration lives *inside prompt markdown* — 51 substitution sites, 21
 |---|---|
 | **Context** (the docs) | Already portable — `core-docs/*.md` are plain markdown, paths already come from `flow.config.json`. Make `AGENTS.md` the source of truth. Watch the **32 KiB Codex cap** (§10.6). |
 | **Skills** (the doctrine) | Already portable, and partly *unchanged* — `SKILL.md` is a published spec; `.agents/skills/` + `.claude/skills/` reach ~everything. Host-specific fields move to the adapter's generator. |
-| **Workflows** (the loop) | Does **not** survive as markdown. It survives by moving into `bin/flow` as instructions-as-data, with per-host spawn/hook translation in the adapters. |
+| **Workflows** (the loop) | Does **not** survive as markdown. It survives by moving into `tools/flow` as instructions-as-data, with per-host spawn/hook translation in the adapters. |
 
 ---
 
@@ -338,8 +340,8 @@ So each adapter declares a tier, and `/flow:doctor` must print **which gates are
 | Tier | Hosts | Mechanical | Advisory |
 |---|---|---|---|
 | **Full** | Claude Code | all gates | — |
-| **High** | Codex | plan/merge gates, fresh-context audits, hook-injected context, skip audit | behavioral verify (no engine) |
-| **High−** | Cursor | same as Codex **only with `failClosed: true`** set — and only if the hook stdin schema carries `tool_input` (§10.3, unverified) | behavioral verify |
+| **High** | Codex | plan/merge gates, fresh-context audits, hook-injected context, skip audit | behavioral verify — ⚠️ *revised: buildable on Playwright MCP, see roadmap §1.1* |
+| **High−** | Cursor | plan/merge gates, fresh-context audits — **only with `failClosed: true`**; hook stdin does NOT carry `tool_input` (resolved: see roadmap §5.3) | per-turn context injection (impossible). ⚠️ *revised: Cursor has the BEST web verification of the three — bundled Browser, roadmap §1.1* |
 | **Medium** | Copilot | plan/merge gates, fresh-context audits | **hooks (fail-open on timeout)**, verify |
 | **Degraded** | Zed, Cline, Gemini | plan/merge gates (prose) | audits (no agent definition files), context, verify |
 | **Doctrine-only** | generic AGENTS.md hosts | — | everything |
@@ -366,7 +368,7 @@ Enforcement should reuse machinery Flow already has: `verifyEnabled: false` + `p
 
 ### Stage 1 — the load-bearing refactor (Claude Code only)
 
-Build `bin/flow` wrapping the existing `lib/*.py`. Move the 51 substitution sites to `flow context <mode>` invoked via a `UserPromptSubmit`/`SessionStart` hook returning `additionalContext` (§5.1).
+Build `tools/flow` wrapping the existing `lib/*.py`. ⚠️ **The hook-injection half of this is superseded** — `UserPromptSubmit` cannot inject context on Cursor. Use the **stamped-context invariant** instead (roadmap §4/§8): make a verdict impossible without fresh stamped evidence, so injection is a per-host optimization rather than the guarantee.
 
 **This is where the value is, and it's verifiable without a second host.** If Stage 1 doesn't hold up under Flow's own evals and dogfood, stop — the port was never the problem.
 
