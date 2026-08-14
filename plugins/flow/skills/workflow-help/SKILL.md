@@ -15,6 +15,7 @@ Print the canonical 11-step loop and the current project's resolved flow.config.
 
 ## Project context (resolved at invocation)
 
+- Config readability: !`if command -v jq >/dev/null 2>&1; then echo "jq available — slot values below reflect this project's flow.config.json"; else echo "⚠️ jq NOT on PATH — the slot values below are built-in DEFAULTS, not this project's flow.config.json (which cannot be read without jq). Install jq (https://jqlang.org) to see the real values. This is a read-only display, so it still renders."; fi`
 - Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — flow uses built-in defaults for every slot)"`
 - Default branch: !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
 - Current branch: !`git branch --show-current 2>/dev/null || echo "(not in a git repo)"`

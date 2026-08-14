@@ -35,7 +35,27 @@ Skip if the diff is non-UI (data layer, build config, doc-only).
 - Design-language doc (for context): !`DL=$(cat flow.config.json 2>/dev/null | jq -r '.designLanguagePath // empty'); [ -z "$DL" ] && DL="dev-docs/design-language.md"; [ -f "$DL" ] && echo "$DL" || echo "(no design-language doc at $DL — many projects don't have one)"`
 - Feedback doc (for context): !`FB=$(cat flow.config.json 2>/dev/null | jq -r '.feedbackPath // empty'); [ -z "$FB" ] && FB="dev-docs/feedback.md"; [ -f "$FB" ] && echo "$FB" || echo "(no feedback doc at $FB)"`
 
-## 0. Honor uiSurface=false (project-wide gate)
+## 0. Preflight — `jq` required (BLOCKING)
+
+The `uiSurface` gate below and every `flow.config.json` slot read (`defaultBranch`,
+`a11yFilePatterns`→`uiFilePatterns`, design-language + feedback paths) depend on `jq`. If
+it is absent, each read silently falls back to a default — worst of all `uiSurface` reads
+as TRUE, so a project that declared `uiSurface: false` gets reviewed anyway, and the scan
+scopes the wrong files. Silent wrong-scope masquerades as a real review. Fail fast, same
+shape as `/flow:ship` Step 1.5 (FB-0009). See `dev-docs/research/jq-absence-handling-2026-06.md`.
+
+```sh
+MISSING=""
+command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
+if [ -n "$MISSING" ]; then
+  MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
+  echo "⚠️ BLOCKER: /flow:accessibility-review requires $MISSING_TRIMMED (missing on PATH)." >&2
+  echo "   Install: brew install$MISSING (macOS) | apt install$MISSING (Debian/Ubuntu) | https://jqlang.org (jq)" >&2
+  exit 1
+fi
+```
+
+## 0.1. Honor uiSurface=false (project-wide gate)
 
 If `flow.config.json.uiSurface` is `false`, exit early with this message and stop:
 
@@ -231,7 +251,7 @@ Same convention as `/flow:security-review`: standalone → user; via `/flow:ship
 
 | Slot | Default | Used in |
 |---|---|---|
-| `flow.config.json.uiSurface` | `true` | Step 0 (skip-early gate) |
+| `flow.config.json.uiSurface` | `true` | Step 0.1 (skip-early gate) |
 | `flow.config.json.defaultBranch` | `git symbolic-ref` → `main` | Step 1 (diff base) |
 | `flow.config.json.typecheckCmd` | unset → loud warning | Step 4 (post-fix re-check) |
 | `flow.config.json.designLanguagePath` | `dev-docs/design-language.md` | Project context (optional doc) |

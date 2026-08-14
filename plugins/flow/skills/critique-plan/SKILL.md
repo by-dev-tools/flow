@@ -33,6 +33,12 @@ if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
   echo "[critique-plan] ROOT-UNRESOLVED — the repo under review could not be located from cwd $(pwd); no reference documents were loaded, so spec violations CANNOT be judged. This is not an APPROVED. Re-run from the repo root, or set CLAUDE_PROJECT_DIR to the repo."
   exit 0
 fi
+# jq reads referenceGlob below; if it is absent the glob silently defaults, the reference
+# documents load from the wrong place (likely EMPTY), and — because a spec violation cannot
+# be flagged without quoting the rule it violates — the critic structurally returns APPROVED
+# on a plan it never checked. Same failure-open as ROOT-UNRESOLVED; route it the same way
+# (jq-absence-handling-2026-06).
+command -v jq >/dev/null 2>&1 || { echo "[critique-plan] JQ-MISSING — jq is not on PATH; flow.config.json (referenceGlob) was NOT read, so no reference documents were reliably loaded and spec violations CANNOT be judged. This is not an APPROVED. Install jq (https://jqlang.org) and re-run."; exit 0; }
 REFGLOB=$(cat flow.config.json 2>/dev/null | jq -r '.referenceGlob // empty' 2>/dev/null); [ -z "$REFGLOB" ] && REFGLOB="core-docs/*.md"
 if [ -n "$ARGUMENTS" ]; then python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file "$ARGUMENTS" --reference-glob "$REFGLOB"; else python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --reference-glob "$REFGLOB"; fi
 `

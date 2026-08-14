@@ -66,6 +66,7 @@ jobs:
       - run: python3 plugins/flow/evals/run_root_anchor_evals.py
       - run: python3 plugins/flow/evals/run_manifest_triage_evals.py
       - run: python3 plugins/flow/evals/run_plugin_desc_evals.py
+      - run: python3 plugins/flow/evals/run_jq_guard_evals.py
 
   security:
     name: security

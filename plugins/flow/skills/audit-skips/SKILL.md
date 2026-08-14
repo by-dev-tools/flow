@@ -57,6 +57,10 @@ if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
   printf '{"root_error": "no git toplevel from this cwd and no CLAUDE_PROJECT_DIR; config and diff were NOT read. Re-run from the repo root, or set CLAUDE_PROJECT_DIR to the repo", "stages": []}\n'
   exit 0
 fi
+# jq reads planPath below and parses the stamp JSON; if it is absent, config is never read
+# and the gate cannot run. Route it like root_error — the gate did NOT run, not a clean pass
+# (jq-absence-handling-2026-06).
+command -v jq >/dev/null 2>&1 || { printf '{"jq_error": "jq is not on PATH; flow.config.json and the plan were NOT read, so the skip-legitimacy gate did NOT run. Install jq (https://jqlang.org) and re-run", "stages": []}\n'; exit 0; }
 # /flow:ship writes the per-stage report to this temp handoff before invoking the skill
 # (ephemeral, like the verify-build findings buffer); a standalone invocation without it
 # still emits the context block, with an empty stage set. Resolved AFTER the cd above, so
@@ -166,6 +170,8 @@ fi
 # Newline-strip the path before echoing: this block's stdout IS prompt context,
 # so a directory name containing a newline could inject a fake verdict line.
 printf '[audit-skips] repo root: %s\n' "$(printf '%s' "$ROOT" | tr -d '\n\r')"
+# jq scopes the diff below (defaultBranch); if absent it silently defaults. Route like ROOT-UNRESOLVED.
+command -v jq >/dev/null 2>&1 || { echo "[audit-skips] JQ-MISSING — jq is not on PATH; flow.config.json (defaultBranch) was NOT read, so the diff was NOT reliably scoped. This is not a clean pass. Install jq (https://jqlang.org) and re-run."; exit 0; }
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
 [ -z "$BASE" ] && BASE=main
@@ -204,6 +210,13 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   `⚠️ SKIP-AUDIT ROOT-UNRESOLVED (<root_error>). The skip-legitimacy gate did NOT run — this
   is not a clean pass.` Route it exactly like `engine_error` below: from `/flow:ship` Step 2a
   it becomes a `[decision-required]` draft-manifest entry, never a silent proceed.
+- If the mechanical block carries **`"jq_error"`** (jq-absence-handling-2026-06 — `jq` was not
+  on PATH, so `flow.config.json` and the plan were never read and the gate could not run), treat
+  it identically to `root_error`: nothing was read, so an all-LEGITIMATE verdict would be a false
+  clean pass. Output a loud diagnostic and stop:
+  `⚠️ SKIP-AUDIT JQ-MISSING (<jq_error>). The skip-legitimacy gate did NOT run — this is not a
+  clean pass. Install jq and re-run.` Routes to `[decision-required]` like `root_error` (though
+  `/flow:ship` blocks earlier at Step 1.5 when jq is missing, so this is reached mainly on direct invocation).
 - If the mechanical block carries **`"stamp_error"`** (a handoff WAS present but its
   `flow_stamp` does not match this repo/branch/HEAD, or it carries none at all), do **NOT**
   audit it and do **NOT** report a clean standalone no-op — you are looking at another

@@ -57,29 +57,28 @@ The lens prompts live in separate plugin-shipped agent files at `${CLAUDE_PLUGIN
 
 ## 1. Detect what artefact exists
 
-### 1.5. External CLI dependency check (warn-only for `gh`; informational for `jq`)
+### 1.5. External CLI dependency check (warn-only for `gh`; BLOCKING for `jq`)
 
-`gh` is used in Step 1b (`gh pr list` for PR-OPEN detection) but the failure mode is graceful (`2>/dev/null`); staff-review works without it (PR detection just returns LOCAL-ONLY). `jq` is used by the frontmatter slot reads + Step 1a stale-base check + Step 4 config-slot consumers; if jq is missing, those silently degrade via `|| default` chains — which is fine for non-fatal slot reads but masks the real diagnostic. Both warn-only — do NOT block.
+The two tools are **not** the same shape, and the original code treated them as if they were (jq-absence-handling-2026-06 corrected this):
+
+- **`gh` — warn-only.** Used in Step 1b (`gh pr list` for PR-OPEN detection) with a graceful failure mode (`2>/dev/null`): staff-review works without it (PR detection just returns LOCAL-ONLY, and the Step 7 PR-body write branch is then unreachable). Degrading is safe.
+- **`jq` — BLOCKING.** Feeds Step 1a's stale-base check (the diff **base**) and the Step 4 config-slot consumers (incl. the design-language doc). If jq is absent those reads don't "degrade gracefully" — they diff the **wrong base**, which is the exact FB-0008 phantom-deletion failure Step 1a exists to prevent, and read the wrong design-language doc. A review scoped against the wrong base reports green while looking at the wrong thing. That is not non-fatal; fail loud.
 
 ```sh
-# POSIX-portable (same shape as /flow:ship Step 1.5 but warn-only — no exit).
+# gh is graceful — warn only (PR detection degrades to LOCAL-ONLY, safe).
+command -v gh >/dev/null 2>&1 || echo "ℹ️ [staff-review] gh not on PATH → PR-OPEN detection returns LOCAL-ONLY for any branch (safe). Install: https://cli.github.com" >&2
+# jq is NOT graceful — it scopes the diff base (Step 1a) + config-slot reads. BLOCK.
 MISSING=""
-command -v gh >/dev/null 2>&1 || MISSING="$MISSING gh"
 command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
 if [ -n "$MISSING" ]; then
   MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
-  echo "ℹ️ [staff-review] $MISSING_TRIMMED not installed on PATH:" >&2
-  case " $MISSING_TRIMMED " in
-    *" gh "*) echo "   - gh missing → PR-OPEN/LOCAL-ONLY detection will return LOCAL-ONLY for any branch." >&2 ;;
-  esac
-  case " $MISSING_TRIMMED " in
-    *" jq "*) echo "   - jq missing → flow.config.json slot reads silently degrade to defaults; project-specific config won't apply." >&2 ;;
-  esac
-  echo "   Install for full functionality: brew install$MISSING | apt install$MISSING | https://cli.github.com (gh), https://jqlang.org (jq)" >&2
+  echo "⚠️ BLOCKER: /flow:staff-review requires $MISSING_TRIMMED (missing on PATH) — jq scopes the diff base + config reads; degrading to defaults diffs the wrong base (FB-0008)." >&2
+  echo "   Install: brew install$MISSING (macOS) | apt install$MISSING (Debian/Ubuntu) | https://jqlang.org (jq)" >&2
+  exit 1
 fi
 ```
 
-(Why warn-only here vs BLOCKING in /flow:ship + /flow:ship-spike: those skills MUST `gh pr create` at Step 7 / Step 6; /flow:staff-review's only mandatory `gh` use is the optional artefact-classification at Step 1b. The Step 7 PR-body write (`gh pr edit`, or its `gh api` projectCards fallback) on the reviewer-notes template IS unsafe if gh is missing — but safe in practice because Step 1b's PR-OPEN detection silently fails to LOCAL-ONLY when gh is missing, so the Step 7 PR-OPEN branch is unreachable in the gh-missing case. jq is the same shape — slot reads degrade gracefully, so warn-only.)
+(Why `jq` blocks here as in `/flow:ship` + `/flow:ship-spike`, but `gh` does not: those skills MUST `gh pr create`, so gh is mandatory for them; staff-review's only mandatory config-reader is jq. The earlier revision of this section reasoned that jq slot reads "degrade gracefully" — that was the weakest claim in the codebase, because the diff base is one of those slots and diffing the wrong base is precisely the failure Step 1a guards. See `dev-docs/research/jq-absence-handling-2026-06.md` §3.)
 
 ### 1a. Stale-base check (BLOCKING)
 
