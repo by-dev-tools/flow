@@ -16,7 +16,7 @@ This file exists because point-in-time docs get buried by default: `CLAUDE.md`'s
 | [`feedback.md`](feedback.md) | Synthesized user corrections (FB-XXXX) |
 | [`spec.md`](spec.md) | Plugin scope. ⚠️ **Known stale** — still describes the audit-only scope; broadening to full flow identity is a queued hygiene PR |
 | [`workflow.md`](workflow.md) | Flow-internal dev workflow (≠ the shipped `plugins/flow/docs/workflow.md`) |
-| [`design-language.md`](design-language.md) | Visual/interaction rules. Thin — flow itself is `uiSurface: false` |
+| [`design-language.md`](design-language.md) | Visual/interaction rules for the browser UI flow ships (annotation overlay, verify-build report). `uiSurface` flipped to `true` in v1.24.0 |
 | [`reserved-feedback-numbers.md`](reserved-feedback-numbers.md) | FB-number reservation protocol + collision audit trail. **Reserve before drafting an FB entry** |
 
 ## Research — point-in-time findings, not living docs
@@ -30,6 +30,14 @@ Each is accurate as of its date and is **not** maintained afterward. Read the St
 | [`research/dynamic-workflows-2026-05.md`](research/dynamic-workflows-2026-05.md) | 2026-05 | Reviewer-refutation spike (empirical layer) |
 | [`research/dynamic-workflows-alignment-2026-06.md`](research/dynamic-workflows-alignment-2026-06.md) | 2026-06 | Architecture-alignment layer; companion to the above |
 | [`research/visual-verification-blueprint-2026-06.md`](research/visual-verification-blueprint-2026-06.md) | 2026-06 | **Largely implemented** — the V2/V3 Deliverable-quality track shipped across v1.6.0–v1.8.1 |
+
+### Also: repo-root `research/`
+
+A **second** research location exists outside `dev-docs/`, added by #104. It is deliberately quarantined (exploratory notes not being pursued, kept greppable without touching any tracked surface), so it is not governed by the Rules below — but it is listed here so it is findable rather than buried.
+
+| Doc | Status |
+|---|---|
+| [`research/2026-08-14-cloud-ios-simulator-limrun.md`](../research/2026-08-14-cloud-ios-simulator-limrun.md) | ⏸️ **Parked** — cloud iOS simulators (Limrun + alternatives) for agent workflows. Not being pursued |
 
 ## Handoffs — per-PR execution plans
 

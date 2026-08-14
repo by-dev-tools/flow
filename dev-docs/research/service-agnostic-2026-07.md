@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-29
 **Branch:** `claude/flow-service-agnostic-96aec1`
-**Plugin version at time of research:** v1.22.0
+**Plugin version at time of research:** v1.27.0
 **Status:** research / direction-setting. **No plugin artifacts changed by this doc.** Actionable hooks land in `roadmap.md` § Exploration; the staged plan in §8 is a proposal, not an approved scope.
 
 > ⚠️ **PARTIALLY SUPERSEDED.** This is the *field survey*. For every execution decision — layout, tiering, the CLI's location, how context is injected — `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` is authoritative. Later validation against official docs, `openai/codex` source, and the shipped Claude Code binary overturned several conclusions below; those are marked inline.
@@ -27,14 +27,14 @@ Three separable assets with very different portability profiles. Measured on thi
 
 | Asset | Size | Portability |
 |---|---|---|
-| **Doctrine** — 17 `SKILL.md`, 9 `agents/*.md`, 4 `rules/*.md`, `docs/workflow.md`, 5 judging rubrics | **7,267 lines markdown** | Portable **today**, some of it *unchanged* (§3.1) |
-| **Deterministic core** — 22 non-eval `.py`, 1 `.sh`, 1 `.mjs`, `flow.config.schema.json` (30 slots) | **6,404 lines Python**, stdlib only, zero third-party deps | Host-agnostic **already** |
-| **Eval harnesses** — 25 files, all enumerated in CI | **5,235 lines Python** | Host-agnostic already |
+| **Doctrine** — 17 `SKILL.md`, 9 `agents/*.md`, 4 `rules/*.md`, `docs/workflow.md`, 5 judging rubrics | **7,900 lines markdown** | Portable **today**, some of it *unchanged* (§3.1) |
+| **Deterministic core** — 26 non-eval `.py`, 1 `.sh`, 1 `.mjs`, `flow.config.schema.json` (32 slots) | **8,015 lines Python**, stdlib only, zero third-party deps | Host-agnostic **already** |
+| **Eval harnesses** — 29 files, all enumerated in CI | **7,603 lines Python** | Host-agnostic already |
 | **Orchestration glue** | see §2 | **0% portable** |
 
-~13,700 lines of host-neutral content wrapped in a thin Claude-Code-specific layer. The asset:liability ratio is much better than it looks from outside.
+~15,900 lines of host-neutral content wrapped in a thin Claude-Code-specific layer. The asset:liability ratio is much better than it looks from outside.
 
-**Load-bearing skills:** `ship` (1147 L), `doctor` (665), `verify-build` (425), `ship-spike` (392), `land` (338), `post-merge` (327), `staff-review` (269).
+**Load-bearing skills:** `ship` (1370 L), `doctor` (677), `verify-build` (446), `ship-spike` (392), `land` (410), `post-merge` (406), `staff-review` (300).
 **Thin dispatch skills** (a `!`-backtick call plus "obey your system prompt"): `critique-plan` (79), `log-disagreement` (48), `audit-plan` (30), `audit-completion` (27). Cheapest to port, most dependent on `context: fork`.
 
 ---
@@ -45,17 +45,17 @@ Counted on this branch, not estimated:
 
 | Coupling | Count | Notes |
 |---|---|---|
-| `${CLAUDE_PLUGIN_ROOT}` references | **143** | ~38 distinct paths. Several already carry a `plugins/flow/...` fallback — the seed of a shim. |
+| `${CLAUDE_PLUGIN_ROOT}` references | **165** | ~38 distinct paths. Several already carry a `plugins/flow/...` fallback — the seed of a shim. |
 | `` !`shell` `` prompt-time substitution sites | **51** | Across 15 of 17 skills. **The sharpest incompatibility** (§5.1). |
 | `Skill("...")` composition calls | **21** | Flow's "composition, not reimplementation" idiom. |
 | `Agent` / `subagent_type` spawn sites | **7** | staff-review's four lenses, security/a11y `Explore`, verify-build's adversarial fork. |
 | Skills using `context: fork` + `agent:` | **5** | All four audit skills + critique-plan. They have **no body logic** — the harness fork *is* the mechanism. |
-| Skills using `disable-model-invocation: true` | **2** | `land`, `post-merge` — the human-only gate. |
-| Bundled-native dependencies | `/verify` ×34, `/simplify` ×25, `/run` ×18, `/run-skill-generator` ×6 | Flow **does not own** these (§5.2). |
+| Skills using `disable-model-invocation: true` | **3** | `land`, `post-merge` — the human-only gate. |
+| Bundled-native dependencies | `/verify` ×42, `/simplify` ×25, `/run` ×18, `/run-skill-generator` ×10 | Flow **does not own** these (§5.2). |
 | Hook configs | 3 files | The `SessionStart` hook is the **only unattended entry point** in the whole system. |
 | Packaging | 2 manifests | Descriptions are 17KB and 25KB of release-note prose doubling as the changelog surface. |
 
-**Transcript parsing is the deepest single coupling.** `scripts/extract_session.py` (925 L) reimplements Claude Code's project-dir slug encoding (`slugify_cwd`, `:74-89`), globs `~/.claude/projects/*/<session_id>.jsonl`, and parses the Anthropic Messages API content-block shape. It hard-codes Claude Code **tool names as data** (`:347` `("Read","NotebookRead")`, `:350` `"Grep"`, `:354` `"Bash"`, `:575` `("Edit","Write","NotebookEdit","MultiEdit")`).
+**Transcript parsing is the deepest single coupling.** `scripts/extract_session.py` (963 L) reimplements Claude Code's project-dir slug encoding (`slugify_cwd`, `:74-89`), globs `~/.claude/projects/*/<session_id>.jsonl`, and parses the Anthropic Messages API content-block shape. It hard-codes Claude Code **tool names as data** (`:347` `("Read","NotebookRead")`, `:350` `"Grep"`, `:354` `"Bash"`, `:575` `("Edit","Write","NotebookEdit","MultiEdit")`).
 
 The failure mode is the dangerous kind: if tool names don't match, `artifact_was_read()` returns `False` for everything, every artifact renders `UNREAD`, and **the auditor mints false "unverified recall" findings**. Silent wrong answer, not a crash. This matters more than it looks because **Codex has no first-class `Read`/`Grep`/`Glob` at all** — file access goes through the shell. Any host adapter needs an eval fixture on this exact path.
 
@@ -252,7 +252,7 @@ But the failure semantics diverge in exactly the direction that matters:
 | **Cursor** | exit 2 = deny, but **other non-zero codes are fail-open by default** — a gate needs explicit `failClosed: true` |
 | **Copilot** | *"Timeouts are fail-open for every event, including `preToolUse`"* — **a hung gate silently permits** |
 
-So a Flow hook that crashes, times out, or exits 1 on Cursor or Copilot **permits the action and looks identical to a pass**. That is precisely the class v1.22.0 spent three fixes on: *a gate that reports success without doing its job.* Any adapter emitting hooks **must** set `failClosed: true` on Cursor, and must treat Copilot hooks as advisory rather than mechanical, and `/flow:doctor` must say so.
+So a Flow hook that crashes, times out, or exits 1 on Cursor or Copilot **permits the action and looks identical to a pass**. That is precisely the class v1.27.0 spent three fixes on: *a gate that reports success without doing its job.* Any adapter emitting hooks **must** set `failClosed: true` on Cursor, and must treat Copilot hooks as advisory rather than mechanical, and `/flow:doctor` must say so.
 
 ### 5.2 Flow doesn't own its behavioral gate
 
@@ -274,7 +274,7 @@ This ports better than anticipated: **Cursor and Copilot both read `.claude/agen
 
 ### 5.4 Strict-schema instruction-following
 
-Flow's determinism rests on subagents emitting exact schemas that **deterministic Python then parses**: `render-test-plan.py` (561 L), `render-report.py` (532 L), `skip-audit-checks.py` (453 L) all consume model-authored JSON per `findings-schema.json`. Rubrics require case-sensitive `PASS`/`FAIL`/`Unknown`; `lens-push-further` requires a verbatim sentence.
+Flow's determinism rests on subagents emitting exact schemas that **deterministic Python then parses**: `render-test-plan.py` (561 L), `render-report.py` (532 L), `skip-audit-checks.py` (502 L) all consume model-authored JSON per `findings-schema.json`. Rubrics require case-sensitive `PASS`/`FAIL`/`Unknown`; `lens-push-further` requires a verbatim sentence.
 
 No tool enforces any of this — the model complies. Flow has never had to think about it because it only ran on Claude. Mitigations: constrained decoding where offered (`codex exec --output-schema`), and making every renderer **fail loud on schema mismatch rather than degrade**. Worth auditing regardless of any port.
 
@@ -318,7 +318,7 @@ Today orchestration lives *inside prompt markdown* — 51 substitution sites, 21
 
 - Per-host surface collapses from **79 embedded orchestration sites** to one CLI plus thin generated wrappers.
 - Each adapter translates one vocabulary: *spawn a fork* → `Agent(subagent_type:…)` / `spawn_agent` / `runSubagent` / `codex exec`.
-- The 21 eval harnesses keep working — they test the CLI, which is where the logic now lives.
+- The 23 eval harnesses keep working — they test the CLI, which is where the logic now lives.
 - **It is testable inside Claude Code before betting on a second host.**
 
 ### How the three things the question asked about survive
@@ -348,7 +348,7 @@ So each adapter declares a tier, and `/flow:doctor` must print **which gates are
 
 Enforcement should reuse machinery Flow already has: `verifyEnabled: false` + `platform: library|none` already causes `ship` to refuse auto-invocation and demand an explicit human "ship it" (`ship/SKILL.md:20-22`). A host without a verify engine is the same condition. `reviewLenses: []` already degrades staff-review cleanly.
 
-**Corollary:** never let an advisory gate render byte-identically to a mechanical one. That is exactly the bug v1.22.0 fixed three instances of.
+**Corollary:** never let an advisory gate render byte-identically to a mechanical one. That is exactly the bug v1.27.0 fixed three instances of.
 
 ---
 
@@ -358,7 +358,7 @@ Enforcement should reuse machinery Flow already has: `verifyEnabled: false` + `p
 
 1. `AGENTS.md` as source of truth; generate/symlink `CLAUDE.md`.
 2. Env override for the hardcoded `~/.claude` disagreements path (`log_disagreement.py:32-35`), de-duplicating the copy in `contribute/SKILL.md:38`. *Chip queued.*
-3. `host` slot + capability tier in the schema (slot 31 — note `changelogPath` is already read-but-undeclared per roadmap § Exploration, so fix both and re-derive the "30 slots" fan-out count).
+3. `host` slot + capability tier in the schema (slot 33 — note `changelogPath` is already read-but-undeclared per roadmap § Exploration, so fix both and re-derive the "32 slots" fan-out count).
 4. Split `extract_session.py` at its existing seam: discovery+parse (`:74-208`) behind an adapter interface; keep `:222-673` + `bounding_logic.py` neutral. **~70% becomes reusable.** Add an eval for the false-`UNREAD` failure mode specifically.
 5. Audit the three renderers for fail-loud-on-schema-mismatch (§5.4).
 6. ~~Dual-publish skills.~~ **SUPERSEDED** — causes duplicate skill entries; use per-host plugin manifests instead (see the roadmap doc §5).

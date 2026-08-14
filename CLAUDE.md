@@ -58,6 +58,10 @@ Flow tracks its own development in `dev-docs/` (NOT `core-docs/` — that name i
 | `dev-docs/feedback.md` | Synthesized user corrections (FB-XXXX) |
 | `dev-docs/spec.md` | Plugin scope + features + categories (legacy: audit-only scope; broadening to full flow identity is a queued hygiene PR) |
 | `dev-docs/workflow.md` | Flow-internal dev workflow (different from the consumer-facing `plugins/flow/docs/workflow.md`) |
+| `dev-docs/README.md` | **Index of every dev-doc**, including `research/` + `handoffs/`. Add a new doc there in the same PR that creates it |
+| `dev-docs/roadmap.md` | Now / Next / Later / § Exploration |
+| `dev-docs/research/*.md` | Point-in-time findings; not maintained — check the `Status:` line |
+| `dev-docs/handoffs/*.md` | Per-PR execution plans; check the Status banner before treating one as active |
 
 ### 3. Project-dev infrastructure (how we build the plugin; also not shipped)
 

@@ -1,6 +1,6 @@
 # Service-agnostic Flow — Codex + Cursor support from one source tree
 
-**Mode:** feature (large, multi-PR) | **Priority:** medium | **Horizon:** post-v1.22.0, unscheduled
+**Mode:** feature (large, multi-PR) | **Priority:** medium | **Horizon:** post-v1.27.0, unscheduled
 **Branch:** `claude/flow-service-agnostic-96aec1` (research only — no plugin artifacts changed)
 **Status:** **PLAN — not started.** Research complete and validated 2026-07-29/30. Nothing implemented.
 **Scope:** Claude Code (primary) + OpenAI Codex CLI + Cursor. **No other hosts.**
@@ -59,17 +59,17 @@ Let Flow's workflow run on Codex CLI and Cursor as well as Claude Code, generate
 
 ## 4. Why this exists
 
-Flow is ~13,700 lines of host-neutral content (7,267 markdown doctrine + 6,404 stdlib Python, zero third-party deps) wrapped in a thin Claude-Code-specific layer. The coupling is real but narrow and concentrated:
+Flow is ~15,900 lines of host-neutral content (7,900 markdown doctrine + 8,015 stdlib Python, zero third-party deps) wrapped in a thin Claude-Code-specific layer. The coupling is real but narrow and concentrated:
 
 | Coupling | Count | Disposition |
 |---|---|---|
-| `${CLAUDE_PLUGIN_ROOT}` refs | 143 | **Free** — Codex sets it (§5.1) |
+| `${CLAUDE_PLUGIN_ROOT}` refs | 165 | **Free** — Codex sets it (§5.1) |
 | `` !`shell` `` substitution sites | 51 | ~11 load-bearing → stamped context (§8); ~40 are `git`/`jq` orientation → CLI calls |
 | `Skill("...")` composition calls | 21 | → instructions-as-data (Phase 1c) |
 | `Agent`/`subagent_type` spawns | 7 | → per-host spawn vocabulary |
 | Skills using `context: fork` + `agent:` | 5 | Both hosts have the primitive |
-| Skills using `disable-model-invocation: true` | 2 | Exact on Cursor; sidecar on Codex |
-| Bundled-native deps | `/verify` ×34, `/simplify` ×25, `/run` ×18, `/run-skill-generator` ×6 | §10 |
+| Skills using `disable-model-invocation: true` | 3 | Exact on Cursor; sidecar on Codex |
+| Bundled-native deps | `/verify` ×42, `/simplify` ×25, `/run` ×18, `/run-skill-generator` ×10 | §10 |
 
 All 17 skills reduce to **three frontmatter shapes**, so the generator is a 3-case transform:
 
@@ -89,12 +89,12 @@ Provenance: **[DOC]** official vendor docs · **[SRC]** `openai/codex@406dc92` s
 
 | Fact | Provenance |
 |---|---|
-| Codex sets `CLAUDE_PLUGIN_ROOT` **and** `CLAUDE_PLUGIN_DATA` "for compatibility with existing plugin hooks" — all 143 refs work | **[DOC]** |
+| Codex sets `CLAUDE_PLUGIN_ROOT` **and** `CLAUDE_PLUGIN_DATA` "for compatibility with existing plugin hooks" — all 165 refs work | **[DOC]** |
 | Codex silently ignores unknown `SKILL.md` frontmatter (`RawPluginManifest`/`SkillFrontmatter` have no `deny_unknown_fields`) → one SKILL.md serves all hosts | **[SRC]** ⚠️ |
 | Cursor officially reads `.claude/agents/` (project + user); precedence `.cursor/` > `.claude/` > `.codex/` | **[DOC]** |
 | Cursor officially reads `.claude/skills/` and `.codex/skills/` for compatibility | **[DOC]** |
 | `$REPO_ROOT/.claude-plugin/marketplace.json` is supported by Codex ("legacy-compatible") | **[DOC]** |
-| All 6,404 lines of stdlib Python, 26 `lib/` files, `verify-pr-body.sh`, 21 eval harnesses, `flow.config.json` + schema | — |
+| All 8,015 lines of stdlib Python, 29 `lib/` files, `verify-pr-body.sh`, 23 eval harnesses, `flow.config.json` + schema | — |
 | `gh`-driven logic (27 calls in ship, 8 in land, 7 in staff-review) | — |
 | Every Flow subagent spawn is **depth 1** (agent prompt files never spawn) → safe under Codex `agents.max_depth = 1` | **[TEST]** grep |
 
@@ -237,7 +237,7 @@ flow/
     │
     ├── skills/<name>/SKILL.md               SOURCE   ★ one file → all 3 hosts
     ├── skills/<name>/agents/openai.yaml     GEN      Codex sidecar (5 skills only)
-    ├── skills/<name>/lib/**                 SOURCE   shared verbatim (26 files)
+    ├── skills/<name>/lib/**                 SOURCE   shared verbatim (29 files)
     │
     ├── agents/*.md                          SOURCE   ★ Claude Code + Cursor read as-is (9)
     ├── agents-codex/*.toml                  GEN      installed out-of-band (9)
@@ -259,7 +259,7 @@ flow/
 
 ★ = one file serving multiple hosts with zero transformation.
 
-**Split:** ~165 source files (~88%) / ~22 generated (~12%).
+**Split:** ~172 source files (~89%) / ~22 generated (~11%).
 
 ### 9.1 Manifest field matrix
 
@@ -295,7 +295,7 @@ Never place one skill in both `.claude/skills/` and `.agents/skills/` of a proje
 |---|---|---|
 | Launch recipe (`/run`, `/run-skill-generator`) | Claude Code natives | **New `flow.config.json` `launchCmd` slot.** More deterministic than a generated skill; an improvement on Claude Code too. Nothing to leverage on either host. |
 | Drive + observe | Platform MCPs — **Flow already drives these itself** (`verify-build:278`) | Portable; MCP is host-agnostic |
-| Plan-driven judging gate | **Flow, entirely** (425 + 532 lines + rubrics) | Already portable |
+| Plan-driven judging gate | **Flow, entirely** (446 + 532 lines + rubrics) | Already portable |
 
 **`/simplify` has no substitute on either host.** Flow never *calls* it — zero `Skill("simplify")` sites; it's prose, and Flow *audits whether it ran* via `rigor-marker.py`, which fingerprints **source content, not provenance**. So it is a *slot with an evidence check*, not a call:
 - Claude Code → native `/simplify`, unchanged.
@@ -335,7 +335,7 @@ Never place one skill in both `.claude/skills/` and `.agents/skills/` of a proje
 
 ### Phase 1 — `tools/flow` + generator + drift enforcement
 
-- [ ] **1a — The CLI.** `tools/flow` wrapping existing `lib/*.py`: `context`, `gate`, `render`, `audit`, `hook <event>`, `doctor`, `gen`, `install`. *Verify:* all 21 existing evals green; ~40 inline substitution sites become CLI calls.
+- [ ] **1a — The CLI.** `tools/flow` wrapping existing `lib/*.py`: `context`, `gate`, `render`, `audit`, `hook <event>`, `doctor`, `gen`, `install`. *Verify:* all 23 existing evals green; ~40 inline substitution sites become CLI calls.
 - [ ] **1b — Generator + drift lint.** `adapters/*/gen.py` emits every §9 artifact; `flow gen --check` regenerates into a temp dir and diffs. Every generated file carries `DO NOT EDIT — generated by flow gen`. *Verify:* new `evals/run_adapter_gen_evals.py` **enumerated in `ci.yml`**; hand-edit a generated file ⇒ CI reds.
 - [ ] **1c — Instructions-as-data.** `flow gate ship --step 2` returns JSON including `{action:"spawn_fork", prompt_file, schema}`. *Verify:* ship + verify-build orchestration expressed as data; one Claude Code translator consumes it; existing behavior unchanged.
 - [ ] **1d — Generator completeness guard.** Generator **errors** when a source declares a semantic with no mapping for a target host. *Verify:* add `context: fork` to a scratch skill with no Codex mapping ⇒ `flow gen` exits non-zero.
@@ -439,7 +439,7 @@ None can be resolved without the CLIs installed. **Install `codex` and `agent` f
 
 ## 16. Validation against the quality bar
 
-- **Correct** — no reviewer output schema changes; all 21 existing evals must stay green.
+- **Correct** — no reviewer output schema changes; all 23 existing evals must stay green.
 - **Evidence-backed** — every new behavior gets a fixture; 4 new eval harnesses, each explicitly enumerated in `ci.yml` (CI enumerates, never globs).
 - **Graceful on malformed input** — Phase 0b makes renderers fail loud; Phase 0d makes an unknown tool name fail loud instead of minting false findings.
 - **Lean** — stdlib only. No new dependencies.
