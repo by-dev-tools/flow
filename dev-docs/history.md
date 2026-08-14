@@ -4,6 +4,24 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-14 — Anthropic-canon alignment check + reprioritize model routing & attention budget
+
+**Branch:** `claude/agent-flow-best-practices-bhygw1` · **SHA:** this branch, docs-only (pending commit)
+
+**What was done (user-facing).** Checked flow against Anthropic's first-party agent-building canon — *Building Effective Agents*, *Effective Context Engineering for AI Agents*, and *Effective Harnesses for Long-Running Agents* — and captured the result in a new research doc (`dev-docs/research/anthropic-canon-alignment-2026-08.md`). Flow is strongly aligned, and ahead of the canon on structured note-taking, sub-agent verification, and self-improvement. Two recurring gaps were pulled to the top of the roadmap at the user's direction: **M** (per-subagent model routing, already scoped) and **AB** (attention budget & harness-weight audit, net-new). Both are marked ▶ TOP PRIORITY in `roadmap.md` § Now + § Next; `plan.md` Current Focus + Handoff Notes hand a fresh agent the two starting points; FB-0084 records the direction.
+
+**Why.** The competitive landscape doc (`ai-workflow-landscape-2026-07.md`) benchmarked flow against *rival frameworks* and the loops article, but never mapped flow against Anthropic's **context-engineering** article — the freshest and most load-bearing of the canon. That article's "context is a finite resource / smallest set of high-signal tokens" framing, plus the harnesses article's "harness assumptions expire" meta-lesson, name a gap nothing in flow tracks: flow accretes always-on surface and prunes only reactively.
+
+**Design decisions.**
+- **Two items, not one.** M (model cost per subagent) and AB (context cost per surface) are flow's two distinct token-economy levers; kept as independent, interleavable roadmap items rather than one program, so either can start first.
+- **AB's one net-new mechanism is a periodic harness-weight audit** modeled on the existing 5-ship memory audit — reusing a proven shape rather than inventing governance. Everything else in AB (compact the dev-docs, a context-budget report) is application of Anthropic's own compaction/note-taking techniques.
+- **M unchanged in substance** — FB-0083's measurement-first constraints (Opus default, Sonnet-only challenger, no Haiku, no swap on faith) are preserved verbatim; this change only re-ranks it.
+
+**Technical decisions / tradeoffs.**
+- **Provenance honesty:** `anthropic.com` is egress-blocked from this environment (Cloudflare 403 direct; not-in-allowlist via proxy; policy forbids retrying the denial). The article specifics came from WebSearch summaries + training knowledge, not source text — flagged explicitly in the research doc so a future session re-verifies quotes before relying on them. Tradeoff: capturing the direction now on best-available evidence beats blocking on a fetch the environment can't perform.
+- **Dogfood evidence, not just theory:** the AB writeup cites flow's own `roadmap.md` § Now append-blobs, `plan.md`'s 38 Spec-walk blocks, and auto-loading `workflow.md`/`CLAUDE.md`/rules as concrete instances of the debt — the same append-only-in-a-context-surface class flow already fixed once for the `/plugin` description (FB-0078). The irony that the reprioritization *adds* text to those very files is accepted: compacting them is item AB.2.
+- **Docs-only, no plugin artifacts touched.** No behavior change; the four ship reviewers would self-skip. Not run through the full `/flow:ship` pipeline this session (the `/flow:*` skills aren't installed in this remote environment); committed and pushed directly to the task branch for the user to route.
+
 ## 2026-07-08 — AI-workflow competitive benchmark + five-item program reconciliation
 
 **Branch:** `claude/cool-ardinghelli-43c165` · **SHA:** merged #102 @ `3fac2a2`
