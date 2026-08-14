@@ -600,6 +600,18 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 
 ## § Exploration
 
+### Long-running autonomous loops — successive PRs, a decision corpus, and divergent-variation landscapes
+
+**Surfaces when:** `plugins/flow/docs/workflow.md`'s Step 8 auto-advance or the two-gate model is next touched, OR the **Designer-signal track / D1** prototype-first gate is picked up (this extends it), OR anyone asks how to make flow run all day / chain PRs / build variant explorations.
+
+Full design + evidence + external validation: **`dev-docs/research/2026-08-14-long-running-loops.md`**. Direction-setting, prototype-gated — not committed work.
+
+The shape: flow already ships single-loop autonomy (Step-8 auto-advance between plan + merge). This explores the layer **above** it — chaining loops so flow runs unattended for a full work-shift (fresh-session-per-item executor, a durable queue + integration-branch + a `mechanical-verifiable ∧ inert ∧ reversible` **merge predicate** that lets stepping-stones auto-merge to a staging branch while `main` stays human-gated) — and the quality substrate **below** it: a **decision corpus** (forward priors + corrective feedback, surface-indexed, *loaded at build time*) that grounds autonomous judgment and absorbs every correction so it is applied forward, never re-litigated. The corpus is the dominant reliability fix and stands alone; build it first.
+
+Grounded in a 12-agent, adversarially-validated investigation of health-tracker (phases 0–2, ~20 transcripts, PRs #7–#41). Two load-bearing findings: (a) the naive "agent predicts the winning variant" idea is refuted (D1's none-of-the-above 4th option; FB-0013's explicit refusal of an A/B menu) — reframed to **coverage, not precision**: map the decision *landscape* so the human's feedback is complete and early, then reconfigure; (b) the dominant all-day reliability threat is **rule-regression + gate-skipping**, not weak taste — which is what the decision corpus targets. **Externally validated:** Anthropic's "Effective harnesses for long-running agents" independently arrives at the fresh-context-increment + durable-on-disk-state + self-verification core; the divergent-variation coding loop is the one piece Anthropic still calls open research, so it is scoped narrowly and sequenced last. Prototype order lives in the research doc § 9.
+
+**Why Exploration, not Next:** the load-bearing bet — that the agent can predict *which* foundational forks to prototype (coverage recall), and classify Tier-0-stance vs Tier-1-taste reliably — is unproven and must be measured on real health-tracker rounds before any build. Guessing wrong ships a variant sweep on a decision the user wanted researched, or a menu they've refused.
+
 ### A general harness for flow's shell↔Python mirrors
 
 **Surfaces when:** a third shell/Python mirror needs a parity guard, or any single change touches two or more `plugins/flow/skills/*/SKILL.md` shell preambles plus a `plugins/flow/skills/*/lib/*.py` implementing the same resolution.
