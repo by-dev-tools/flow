@@ -6,7 +6,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ## 2026-07-08 — AI-workflow competitive benchmark + five-item program reconciliation
 
-**Branch:** `claude/cool-ardinghelli-43c165` · **SHA:** PR pending (merge SHA stamped at `/flow:land`)
+**Branch:** `claude/cool-ardinghelli-43c165` · **SHA:** merged #102 @ `3fac2a2`
 
 **What was done (user-facing).** Captured a competitive benchmark of flow against the current AI-coding-workflow landscape (gstack, Superpowers, GSD, Spec Kit, BMAD; the Claude-Code loops article; the reflection & visual-feedback literature). The durable report already landed on `main` via the pre-archive preservation commit (#100) at `dev-docs/research/ai-workflow-landscape-2026-07.md`; this PR does the two follow-on doc actions: reconciles the five-item program the benchmark produced against the current roadmap in `roadmap.md` § Next, and drafts the net-new model-measurement harness (M) as a QUEUED PR plan in `plan.md`.
 
