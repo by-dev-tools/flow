@@ -26,6 +26,9 @@ Each is accurate as of its date and is **not** maintained afterward. Read the St
 | Doc | Date | Status |
 |---|---|---|
 | [`research/service-agnostic-2026-07.md`](research/service-agnostic-2026-07.md) | 2026-07 | ⚠️ **Partially superseded** — field survey (standards, prior art, 13-host landscape). For execution decisions the roadmap below is authoritative |
+| [`research/ai-workflow-landscape-2026-07.md`](research/ai-workflow-landscape-2026-07.md) | 2026-07 | Competitive benchmark vs Flow; fed the roadmap's § ▶ Active program sequence. ⚠️ Its own header flags throttled provenance — the `/deep-research` fan-out was cut off mid-run |
+| [`research/voice-annotation-pipeline-2026-07.md`](research/voice-annotation-pipeline-2026-07.md) | 2026-07 | ⏸️ **PARKED — DO NOT BUILD.** macOS dictation solves it with zero code. Retained for *why Web Speech can never work here* |
+| [`research/jq-absence-handling-2026-06.md`](research/jq-absence-handling-2026-06.md) | 2026-06 | Surfaces the shape of silent degradation when `jq` is absent across 16 skills. **No fix shipped** |
 | [`research/agent-orchestration-2026-05.md`](research/agent-orchestration-2026-05.md) | 2026-05 | Field survey of multi-agent patterns; informed the loop's gate design |
 | [`research/dynamic-workflows-2026-05.md`](research/dynamic-workflows-2026-05.md) | 2026-05 | Reviewer-refutation spike (empirical layer) |
 | [`research/dynamic-workflows-alignment-2026-06.md`](research/dynamic-workflows-alignment-2026-06.md) | 2026-06 | Architecture-alignment layer; companion to the above |
@@ -44,6 +47,7 @@ A **second** research location exists outside `dev-docs/`, added by #104. It is 
 | Doc | Status |
 |---|---|
 | [`handoffs/service-agnostic-roadmap-2026-07.md`](handoffs/service-agnostic-roadmap-2026-07.md) | 🟢 **ACTIVE — not started.** Codex + Cursor support from one source tree. **Contains Phase 00, a confirmed live bug** (plugin `rules/` and default hooks never load). Self-contained; §0 is a cold-start reading order |
+| [`handoffs/active-program-2026-07-08.md`](handoffs/active-program-2026-07-08.md) | 🟡 **PRESERVED, NOT APPLIED** — a roadmap section that never reached main, recovered verbatim before its worktree was archived. Re-integrating is a judgment call: the roadmap moved v1.19.0 → v1.27.0 since |
 | [`handoffs/pr-q-verify-build-plan.md`](handoffs/pr-q-verify-build-plan.md) | ⚪ **SHIPPED** — `/flow:verify-build`, v1.3.0 (#26). Historical record; its "Phase 3 in progress" status line is stale |
 | [`handoffs/pr2-flow-plan.md`](handoffs/pr2-flow-plan.md) | ⚪ **SHIPPED** — the workflow-skills extraction. Historical record; status line is stale |
 | [`handoffs/md-manager-pr4-6-spec.md`](handoffs/md-manager-pr4-6-spec.md) | ⚪ **FOREIGN REPO** — spec for md-manager PRs 4–6, not flow. Kept for cross-repo context |

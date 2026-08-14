@@ -3,6 +3,7 @@
 *Investigation into how flow skills behave when `jq` is absent from PATH, and whether they should fail loud instead of silently degrading to defaults.*
 
 **Date:** 2026-06-29
+**Status:** point-in-time findings, **no fix shipped** — this surfaces the shape only. Not maintained; the skill count below (16) predates the current 17. Index: [`dev-docs/README.md`](../README.md).
 **Scope:** all 16 skills under `plugins/flow/skills/`. No fix shipped — this surfaces the shape.
 **Triggering observation:** on a freshly-provisioned Conductor cloud workspace (no `jq` in the base image), `/flow:doctor` reported a **false** Section-1 FAIL ("marketplace not registered", "flow@flow not enabled") while flow skills were demonstrably loaded. Root cause: every `jq -e` check returned 127 (command-not-found), the `if` condition went false, and the FAIL branch fired — a false negative on a correct install.
 **Lineage:** direct extension of PR #44 (`3d0883e`, v1.10.2) — "jq `// true` silently inverts explicit verifyEnabled/uiSurface false." Same root-cause family: **a jq fallback masking a real signal.** That fix addressed the boolean-slot case; this finding addresses the jq-*absent* case, which defaults *every* slot read wrong at once.
