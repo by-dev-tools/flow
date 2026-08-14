@@ -26,6 +26,7 @@ Each is accurate as of its date and is **not** maintained afterward. Read the St
 | Doc | Date | Status |
 |---|---|---|
 | [`research/service-agnostic-2026-07.md`](research/service-agnostic-2026-07.md) | 2026-07 | ⚠️ **Partially superseded** — field survey (standards, prior art, 13-host landscape). For execution decisions the roadmap below is authoritative |
+| [`research/anthropic-canon-alignment-2026-08.md`](research/anthropic-canon-alignment-2026-08.md) | 2026-08 | Alignment check vs Anthropic's first-party agent canon. **Elevated M (model routing) + AB (attention budget) to top priority** in `roadmap.md` § Now |
 | [`research/ai-workflow-landscape-2026-07.md`](research/ai-workflow-landscape-2026-07.md) | 2026-07 | Competitive benchmark vs Flow; fed the roadmap's § ▶ Active program sequence. ⚠️ Its own header flags throttled provenance — the `/deep-research` fan-out was cut off mid-run |
 | [`research/voice-annotation-pipeline-2026-07.md`](research/voice-annotation-pipeline-2026-07.md) | 2026-07 | ⏸️ **PARKED — DO NOT BUILD.** macOS dictation solves it with zero code. Retained for *why Web Speech can never work here* |
 | [`research/jq-absence-handling-2026-06.md`](research/jq-absence-handling-2026-06.md) | 2026-06 | Surfaces the shape of silent degradation when `jq` is absent across 16 skills. **No fix shipped** |
