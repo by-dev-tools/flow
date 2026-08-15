@@ -67,6 +67,17 @@ jobs:
       - run: python3 plugins/flow/evals/run_manifest_triage_evals.py
       - run: python3 plugins/flow/evals/run_plugin_desc_evals.py
 
+  dev-docs:
+    name: dev-docs index
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: every point-in-time doc is indexed + status-lined (FB-0085)
+        run: python3 dev-docs/check-index.py
+
   security:
     name: security
     runs-on: ubuntu-latest

@@ -1,5 +1,7 @@
 # PR Q — `/flow:verify-build`: plan-driven behavioral verification gate at ship
 
+> ⚪ **SHIPPED — historical record.** `/flow:verify-build` shipped in **v1.3.0 (#26)**; the plugin is now at v1.22.0. The `**Status:**` line below ("Phase 3 in progress") describes the state during execution and is **no longer true**. Retained for the decision rationale. Index: [`dev-docs/README.md`](../README.md).
+
 **Mode:** feature (medium) | **Priority:** high | **Horizon:** v1.3.0 (target manifest bump; may shift based on what's on main at ship time)
 **Branch:** `claude/lucid-matsumoto-730ba0` during execution; renamed to `pr-q/verify-build-skill` at ship time (or `/flow:ship` creates it from this branch's state).
 **Execution path:** **Path B — full skill built on this branch through all 11 phases; ships as a single PR when Phase 11 dogfood completes.** Not an intake-PR-then-phases pattern; one PR per skill.

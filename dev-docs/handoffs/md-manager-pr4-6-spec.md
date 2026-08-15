@@ -1,5 +1,7 @@
 # Md-manager PRs 4–6 — flow plugin consumer migration spec
 
+> ⚪ **FOREIGN REPO — historical record.** This specs PRs 4–6 in **md-manager**, not flow. Its `**Status:**` line is about that repo and is **not an open flow work item**. Retained for cross-repo context. Index: [`dev-docs/README.md`](../README.md).
+
 **Status:** ready for next session pickup IN md-manager (not flow)
 **Repo:** `by-dev-tools/md-manager`, off `main`
 **Prerequisites:** flow PR 2 (workflow surface backfill, v1.1.0) AND flow PR 3 (template directory, v1.2.0) both merged. **Do not start PR 4 until both upstream PRs are on flow's main.**

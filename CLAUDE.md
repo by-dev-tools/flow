@@ -58,6 +58,10 @@ Flow tracks its own development in `dev-docs/` (NOT `core-docs/` — that name i
 | `dev-docs/feedback.md` | Synthesized user corrections (FB-XXXX) |
 | `dev-docs/spec.md` | Plugin scope + features + categories (legacy: audit-only scope; broadening to full flow identity is a queued hygiene PR) |
 | `dev-docs/workflow.md` | Flow-internal dev workflow (different from the consumer-facing `plugins/flow/docs/workflow.md`) |
+| `dev-docs/README.md` | **Index of every dev-doc**, including `research/` + `handoffs/`. Add a new doc there in the same PR that creates it |
+| `dev-docs/roadmap.md` | Now / Next / Later / § Exploration |
+| `dev-docs/research/*.md` | Point-in-time findings; not maintained — check the `Status:` line |
+| `dev-docs/handoffs/*.md` | Per-PR execution plans; check the Status banner before treating one as active |
 
 ### 3. Project-dev infrastructure (how we build the plugin; also not shipped)
 
@@ -95,13 +99,21 @@ When you see `agents/` and `skills/` under `plugins/flow/`, those are **plugin a
 
 All living project knowledge lives in `dev-docs/`. Read before acting; update before shipping.
 
+**Start at [`dev-docs/README.md`](dev-docs/README.md)** — the index of every dev-doc, including the `research/` and `handoffs/` directories that this table does not cover. A new doc under either of those must be added to that index in the same PR that creates it.
+
 | Document | Path | Purpose |
 |----------|------|---------|
+| **Index** | `dev-docs/README.md` | **Map of all dev-docs, incl. `research/` + `handoffs/` with status** |
 | Plan | `dev-docs/plan.md` | Current focus, active work items, handoff notes |
+| Roadmap | `dev-docs/roadmap.md` | Now / Next / Later / § Exploration |
 | History | `dev-docs/history.md` | Per-PR decision log |
 | Feedback | `dev-docs/feedback.md` | Synthesized user corrections (FB-XXXX) |
 | Spec | `dev-docs/spec.md` | Plugin scope (audit-side today; broadening queued) |
 | Workflow | `dev-docs/workflow.md` | Flow-internal dev workflow |
+| Design language | `dev-docs/design-language.md` | Visual/interaction rules (thin — flow is `uiSurface: false`) |
+| Reserved FB numbers | `dev-docs/reserved-feedback-numbers.md` | Reserve an FB number **before** drafting its entry |
+| Research | `dev-docs/research/*.md` | Point-in-time findings. Not maintained — check the Status line |
+| Handoffs | `dev-docs/handoffs/*.md` | Per-PR execution plans. Check the Status banner before treating one as active |
 
 The **consumer-facing** workflow doc — the one that ships with the plugin — is `plugins/flow/docs/workflow.md`. Don't conflate them.
 
