@@ -59,7 +59,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 ## Service-agnostic research + Codex/Cursor roadmap, and a dev-docs index
 
 **Date:** 2026-08-12
-**Branch:** `claude/flow-service-agnostic-96aec1` (`84735f3`)
+**Branch:** `claude/flow-service-agnostic-96aec1` — merged #105 @ `e1a73937f`
 **Mode:** feature (docs-only) — no plugin artifacts changed
 
 **What was done.** Two research docs and an index. `dev-docs/research/service-agnostic-2026-07.md` is the field survey (standards landscape, prior art, a 13-host capability map). `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` is the execution plan — self-contained for a cold pickup, with 23 spec-walk checkboxes and 6 confidence verdicts. `dev-docs/README.md` indexes every dev-doc; `CLAUDE.md` now points at it.
