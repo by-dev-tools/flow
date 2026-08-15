@@ -38,7 +38,27 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 ## Entries
 
 
-### docs: read six Anthropic blog posts in full — seven new findings incl. two native-overlap risks and a net-new product gap
+### Read the 5 Anthropic engineering posts (Findings 16–30) + F11: reword the "never wrap" rule to permit composition
+**Date:** 2026-08-15
+**Branch:** claude/twitter-x-flow-research-28ghls (commits: 240f66c + this)
+
+**What was done:**
+Two things on the Anthropic-research thread. (1) **Research:** `anthropic.com/engineering` became reachable (200) this session, so the 5 engineering posts the 2026-07-25 handoff queued were fetched (curl + a stdlib HTML→text extractor; `WebFetch` still 403s) and read in full, folded into `plan.md § RESEARCH` as **Findings 16–30**, each tagged with model era per FB-0072 (240f66c). (2) **First actionable fix — F11:** reworded the "never wrap a bundled skill" rule in `CLAUDE.md` (rule 5) and the shipped `plugins/flow/docs/workflow.md` (§ "A note on bundled-vs-flow skills", :22 + :70/78) from a blanket *"never wrap"* to *"never re-implement; compose instead"* — forbidding duplication (parroting Anthropic's maintenance) while explicitly permitting a thin delegating wrapper that invokes a bundled skill and adds flow-specific value. Added a consumer note: plugin-managed skills are overwritten on update, so chaining (not in-place edits) is the only extension pattern that survives an update.
+
+**Why:**
+Finding 11: the word "wrap" was used in *opposite senses* inside flow's own docs. Rule 5 said "never wrap," yet `workflow.md:537` / `doctor:540` / `ship:277` / `bootstrap.md:181` / `migration.md:130` all describe `/flow:verify-build` as *"wraps bundled `/verify`"* — the permitted composition. Worse, rule 5 was stricter than flow's **own** FB-0015, which endorses "a thin wrapper that delegates to the bundled skill" (the `/flow:security-review` / `/flow:accessibility-review` shape). A future session reading rule 5 literally would reject a legitimate chain. Anthropic's [C] ("Building verification loops… with skills") recommends exactly this: *"build a custom wrapper skill that invokes the original, then invokes your verification skill,"* and notes embedded copies are off-limits for plugin-managed skills. So the intent (don't re-implement) was always right; only the vocabulary was inverted.
+
+**Design decisions:**
+- **Reword, don't delete.** FB-0015's don't-reimplement intent is load-bearing (it caught a 20-file `/verify` duplication). The fix preserves that intent and names the permitted pattern (delegating wrapper / chain) explicitly, with `/flow:verify-build`-over-`/verify` and `/flow:ship`-chaining-its-reviewers as the canonical examples.
+- **Left the "wraps bundled `/verify`" composition lines untouched.** Under the new vocabulary "wrap" = the permitted *invoke-and-extend*, so those five lines are now consistent, not contradictory. Rewording them too would be scope creep (general.md scope discipline) and would not improve correctness. FB-0010 grep sweep (`git grep -nE 'not.{0,6}wrap|never wrap|parrot'`) confirms the only "not-wrap" survivors are the two reworded lines.
+- **No version bump.** Prose clarification to a shipped doc + a project-dev CLAUDE.md rule; no schema/skill/behavior change. Same docs-only precedent as #65/#67 (rides the current release). Avoids a version-collision dance for a non-behavioral change.
+
+**Technical / process decisions:**
+- **`/flow:ship` could not run natively (Finding 9).** flow is not installed in this cloud session (not in the available-skills list; a mid-session install can't register a slash command without a restart I can't trigger). Per the handoff's sanctioned fallback, opened the PR manually and documented the deviation, after running the pipeline stages that *are* available (`/security-review`; a11y + verify-build self-skip on `platform:library` / `uiSurface:false`, as they would in-pipeline).
+- **Push path:** Conductor's auth broker had no GitHub token for this session's context (git-over-HTTPS push denied), so the branch was pushed from the Mac mirror (which auto-syncs cloud commits and carries working auth) via `RunLocalCommand` — the token never left the Mac.
+
+**Tradeoffs discussed:**
+- Manual PR open vs. native `/flow:ship`: the repo's own `general.md` forbids `gh pr create`, but F9 makes `/flow:ship` un-invocable in a cloud session. The handoff pre-authorized "open manually and document the deviation" for exactly this case; the alternative (stand up a flow-installed session just to run ship) is disproportionate for a docs+rule prose change. The deviation is recorded in the PR body and here so the `STATUS: SKIPPED` audit-trail intent is preserved in prose.
 **Date:** 2026-07-25
 **Branch:** claude/twitter-x-flow-research-28ghls (commit: this)
 
