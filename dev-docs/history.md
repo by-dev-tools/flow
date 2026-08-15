@@ -6,7 +6,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ## 2026-08-14 — jq-absence fail-fast across flow skills (SAFETY)
 
-**Branch:** `fix-jq-absence-fail-fast` · **SHA:** this branch (v1.28.0)
+**Branch:** `fix-jq-absence-fail-fast` · **SHA:** merged #110 @ `5475ad00`
 
 **What was done (user-facing).** Every flow skill that reads `flow.config.json` via `jq` now fails loud when `jq` is absent instead of silently falling back to hardcoded defaults and reporting green. Action-taking skills (`security-review`, `accessibility-review`, `staff-review`, `contribute`) `exit 1` with an install hint; `doctor` emits an honest `[SKIP]` (never a false `[FAIL]`); `workflow-help` warns read-only; the fork skills (`audit-coverage`, `audit-skips`, `critique-plan`) route a `JQ-MISSING`/`jq_error` signal. Pinned by `run_jq_guard_evals.py` (wired into CI).
 
