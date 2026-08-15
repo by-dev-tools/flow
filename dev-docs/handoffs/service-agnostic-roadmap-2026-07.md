@@ -59,6 +59,14 @@ Let Flow's workflow run on Codex CLI and Cursor as well as Claude Code, generate
 
 ## 4. Why this exists
 
+> ⚠️ **Every count in §4 and §5 was measured at v1.27.0 and will drift.** Main moved five releases while this doc was being written, and the counts were corrected twice. They are here to convey *shape and proportion*, not to be quoted. **Re-measure before acting on any of them** — the measurements are one-liners:
+> ```sh
+> ls plugins/flow/skills/*/SKILL.md | wc -l                       # skills
+> grep -ro 'CLAUDE_PLUGIN_ROOT' plugins/flow/ | wc -l             # plugin-root refs
+> grep -o '!`' plugins/flow/skills/*/SKILL.md | wc -l             # substitution sites
+> python3 -c "import json;print(len(json.load(open('plugins/flow/schema/flow.config.schema.json'))['properties']))"
+> ```
+
 Flow is ~15,900 lines of host-neutral content (7,900 markdown doctrine + 8,015 stdlib Python, zero third-party deps) wrapped in a thin Claude-Code-specific layer. The coupling is real but narrow and concentrated:
 
 | Coupling | Count | Disposition |

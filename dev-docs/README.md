@@ -58,6 +58,7 @@ A **second** research location exists outside `dev-docs/`, added by #104. It is 
 ## Rules
 
 1. **Index at creation.** A new doc under `research/` or `handoffs/` is added to the table above **in the same PR**. An unindexed point-in-time doc is a buried doc.
+   **This is enforced**, not just asked: `dev-docs/check-index.py` runs as the `dev-docs index` CI job and fails the build on any unindexed or status-less doc. Run it locally with `python3 dev-docs/check-index.py`. It deliberately does **not** check that a status is *accurate* — no script can, and pretending otherwise would be the failure-open this repo keeps fixing.
 2. **Every point-in-time doc carries a `Status:` line in its header** — and the status must be true *now*, not when it was written. A stale "in progress" is indistinguishable from a current one; that is the FB-0074 class.
 3. **Living docs are never archived**; point-in-time docs are never edited to stay current. If a research doc's conclusion is overturned, mark it superseded inline and point at what replaced it — don't silently rewrite history.
 4. **`spec.md` is the known-stale one.** Fix or retire it; don't add to it.
