@@ -360,6 +360,16 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 ## Entries
 
 <!-- Add new entries below this line, newest first. -->
+### F11: reword "never wrap a bundled skill" → "never re-implement; compose instead"
+**Date:** 2026-08-15
+**Branch:** claude/f11-reword-never-wrap (off main; SHA lands with the PR)
+
+**What was done:** Reworded the bundled-skill rule in `CLAUDE.md` (rule 5) and the shipped `plugins/flow/docs/workflow.md` (§ "A note on bundled-vs-flow skills") from a blanket *"Never wrap a bundled Claude Code skill"* to *"Never re-implement a bundled skill; compose with it instead."* Forbids duplication (parroting Anthropic's maintenance, which drifts) while explicitly permitting composition — a thin wrapper that invokes a bundled skill and adds flow-specific value (config-slot resolution, gate contract, feedback routing). Added a consumer note: plugin-managed skills are overwritten on update, so chaining, not in-place edits, is the only surviving extension pattern.
+
+**Why:** "Wrap" was used in opposite senses across flow's own docs — rule 5 said "never wrap," yet the verify-build prerequisite notes in `workflow.md`/`doctor`/`ship`/`bootstrap`/`migration` describe `/flow:verify-build` as "wraps bundled `/verify`" (the permitted composition), and rule 5 was even stricter than FB-0015, which endorses a thin delegating wrapper. A literal reading would reject a legitimate chain. Anthropic's "Building verification loops in Claude Code with skills" recommends exactly this ("build a custom wrapper skill that invokes the original"). The intent (don't re-implement) was always right; only the vocabulary was inverted. Finding 11 of the Anthropic-research thread.
+
+**Decisions:** Reword, don't delete (FB-0015 intent is load-bearing). Left the "wraps bundled `/verify`" composition lines untouched — now consistent, not contradictory (FB-0010 grep sweep clean). No version bump (prose clarification, no behavior change; docs-only precedent #65/#67). Split clean off `main` from the research thread's PR #113 (stale against main's Aug canon thread). `/flow:ship` couldn't run natively — flow isn't installed in this cloud session (Finding 9) — so pipeline stages that could run did (`/security-review` clean; a11y/verify-build self-skip on `platform:library`) and the deviation is documented in the PR body.
+
 
 ### SAFETY: `/flow:land` clear-reservation deleted audit-trail entries, not just the reservation (found by #88's own land run)
 **Date:** 2026-08-12
