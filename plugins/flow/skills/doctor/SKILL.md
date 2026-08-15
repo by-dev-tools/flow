@@ -49,7 +49,12 @@ Run the following checks in order. For each check: print `[PASS]` or `[FAIL]` or
 
 **Check 1.1 — marketplace registered under canonical 'flow' name**
 
+**Guard against jq-absence FIRST (carve-out — jq-absence-handling-2026-06).** These checks read settings.json with `jq -e … ; then PASS; else FAIL`. When jq is absent it exits 127 (non-zero), the `if` goes false, and the FAIL branch fires **regardless of the actual config** — a false `[FAIL]` on a correct install (the observed Conductor bug). doctor's job is to diagnose a broken env, so it must NOT `exit`; instead it emits an honest `[SKIP]` here and the single real `[FAIL]` lands at Check 4.1. Every jq-reading check in Sections 1–3 carries this same `command -v jq` guard.
+
 ```sh
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] marketplace 'flow' registration — jq not on PATH (see Check 4.1); cannot read settings.json. A failure verdict here without jq would be false."
+else
 USER_SETTINGS="$HOME/.claude/settings.json"
 PROJECT_SETTINGS=".claude/settings.json"
 MARKETPLACE_FOUND=""
@@ -68,6 +73,7 @@ else
   echo "       (Most common cause: stale 'extraKnownMarketplaces.<old-name>' entry pointing"
   echo "        at the right URL but under the wrong key — re-adding registers under 'flow'.)"
 fi
+fi
 ```
 
 The check uses `extraKnownMarketplaces.flow` (an exact-key JSON lookup) rather than a regex match — definitive, no false-positives from sibling marketplaces.
@@ -75,6 +81,11 @@ The check uses `extraKnownMarketplaces.flow` (an exact-key JSON lookup) rather t
 **Check 1.2 — flow@flow plugin enabled**
 
 ```sh
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] flow@flow enabled — jq not on PATH (see Check 4.1); cannot read settings.json. A failure verdict here without jq would be false."
+else
+USER_SETTINGS="$HOME/.claude/settings.json"
+PROJECT_SETTINGS=".claude/settings.json"
 ENABLED_AT=""
 for f in "$USER_SETTINGS" "$PROJECT_SETTINGS"; do
   if [ -f "$f" ] && jq -e '.enabledPlugins."flow@flow" == true' "$f" >/dev/null 2>&1; then
@@ -91,6 +102,7 @@ else
   echo "         - User-scope:    /plugin install flow@flow   (in any Claude Code session)"
   echo "         - Project-scope: add to .claude/settings.json:"
   echo "                          \"enabledPlugins\": { \"flow@flow\": true }"
+fi
 fi
 ```
 
@@ -169,7 +181,9 @@ fi
 **Check 2.2 — flow.config.json parses as valid JSON**
 
 ```sh
-if [ -f flow.config.json ]; then
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] flow.config.json JSON validity — jq not on PATH (see Check 4.1); cannot parse. A failure verdict here without jq would be false."
+elif [ -f flow.config.json ]; then
   if jq -e . flow.config.json >/dev/null 2>&1; then
     echo "[PASS] flow.config.json parses as valid JSON"
   else
@@ -183,7 +197,9 @@ fi
 **Check 2.3 — required slots have sensible values**
 
 ```sh
-if [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] required-slot values — jq not on PATH (see Check 4.1); cannot read flow.config.json."
+elif [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
   # typecheckCmd: warn-only (unset means /flow:ship prints a loud warning at ship time)
   TC=$(jq -r '.typecheckCmd // empty' flow.config.json)
   if [ -n "$TC" ]; then
@@ -207,7 +223,9 @@ fi
 **Check 2.4 — doc-path slots point at existing files (or paths that will be auto-created)**
 
 ```sh
-if [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] doc-path slots — jq not on PATH (see Check 4.1); cannot read flow.config.json."
+elif [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
   for slot in planPath specPath roadmapPath historyPath feedbackPath; do
     P=$(jq -r ".${slot} // empty" flow.config.json)
     [ -z "$P" ] && P="core-docs/$(echo $slot | sed 's/Path//').md"   # defaults
@@ -236,7 +254,9 @@ elif [ -f "plugins/flow/schema/flow.config.schema.json" ]; then
   SCHEMA="plugins/flow/schema/flow.config.schema.json"
 fi
 
-if [ -z "$SCHEMA" ]; then
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] documented slot-count vs schema — jq not on PATH (see Check 4.1); cannot read the schema. A failure verdict here without jq would be false."
+elif [ -z "$SCHEMA" ]; then
   echo "[SKIP] flow schema not reachable — install flow plugin (\$CLAUDE_PLUGIN_ROOT must point to a flow install) or run from the flow repo root"
 else
   # Guard malformed schema with explicit FAIL (don't let jq error string flow into ACTUAL).

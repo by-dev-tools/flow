@@ -14,6 +14,21 @@ You are draining accumulated, generalizable lessons into a PR against the flow p
 ## Resolve scripts + config
 
 ```sh
+# Preflight (BLOCKING) — jq reads every config slot below; gh opens the PR. If either is
+# absent, slot reads silently fall back to defaults (contributionThreshold, and a custom
+# contributionsQueuePath → split-brain with contribution_store.py's own default). Fail
+# loud, same shape as /flow:ship Step 1.5 (FB-0009). Ref jq-absence-handling-2026-06.
+MISSING=""
+command -v gh >/dev/null 2>&1 || MISSING="$MISSING gh"
+command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
+if [ -n "$MISSING" ]; then
+  MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
+  echo "⚠️ BLOCKER: /flow:contribute requires $MISSING_TRIMMED (missing on PATH)." >&2
+  echo "   Install: brew install$MISSING (macOS) | apt install$MISSING (Debian/Ubuntu) | https://cli.github.com (gh), https://jqlang.org (jq)" >&2
+  case " $MISSING_TRIMMED " in *" gh "*) echo "   After install, run: gh auth login" >&2 ;; esac
+  exit 1
+fi
+
 # Resolve plugin scripts: installed plugin root, else this flow checkout.
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/scripts" ]; then
   SCRIPTS="${CLAUDE_PLUGIN_ROOT}/scripts"

@@ -10,6 +10,16 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.28.0 — 2026-08-14
+
+**Every config-reading flow skill now fails loud when `jq` is missing, instead of silently degrading to hardcoded defaults and reporting green.**
+
+- **Why it mattered.** Skills read `flow.config.json` via `jq … // default` chains. On a box with no `jq` on PATH, each read silently substitutes a hardcoded default — wrong diff base, wrong file patterns, wrong doc paths — and the skill reports success while looking at the wrong thing. `/flow:doctor` was worse: its `jq -e …; then PASS; else FAIL` conditionals took the FAIL branch on exit 127, so a correct install reported `[FAIL]`.
+- **What changed.** The action-taking skills (`security-review`, `accessibility-review`, `staff-review`, `contribute`) now `exit 1` with an install hint on missing `jq` (the `/flow:ship` Step 1.5 shape, FB-0009). Three principled carve-outs: `doctor` emits an honest `[SKIP]` (it must diagnose a broken env, never `exit`); `workflow-help` warns but keeps rendering (read-only); the fork skills (`audit-coverage`, `audit-skips`, `critique-plan`) route a `JQ-MISSING`/`jq_error` signal, because a load-time `!`-span cannot abort with `exit`.
+- **Regression-pinned.** New `run_jq_guard_evals.py` (wired into CI) *derives* the guarded-skill set from disk and *executes* each live guard under a `jq`-stripped PATH — so a new config-reading skill added without a guard, or a guard that stops blocking, fails CI rather than drifting silently.
+
+**Behavior change:** on a machine without `jq`, the four action-taking skills now stop with a clear install hint instead of running against wrong-scoped defaults. Install `jq` (`brew install jq` / `apt install jq`) and they proceed as before; machines that already have `jq` see no change.
+
 ## v1.27.0 — 2026-08-10
 
 **Flow's ephemeral scratch moves out of `/tmp` into a repo-local `.flow/` directory — which restores the skip-legitimacy gate (inert since v1.13.0) and ends cross-project clobbering of reviewer inputs.**

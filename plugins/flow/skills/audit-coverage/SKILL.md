@@ -50,6 +50,9 @@ ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
   echo '{"criteria": [], "warnings": ["ROOT-UNRESOLVED — no CLAUDE_PROJECT_DIR and no git toplevel from this cwd; criteria were NOT read. This is not an empty plan. Re-run from the repo root, or set CLAUDE_PROJECT_DIR to the repo."]}'
 else
+  # jq reads planPath below; if it is absent the read silently defaults and criteria are
+  # read from the wrong plan. Route it like ROOT-UNRESOLVED — NOT a clean/empty plan (FB jq-absence).
+  command -v jq >/dev/null 2>&1 || { echo '{"criteria": [], "warnings": ["JQ-MISSING — jq is not on PATH; flow.config.json (planPath) could not be read, so criteria were NOT reliably read. This is not an empty plan. Install jq (https://jqlang.org) and re-run."]}'; exit 0; }
   PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
   if [ -f "$PLAN" ]; then python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PLAN" 2>/dev/null || echo '{"criteria": [], "warnings": ["extract-criteria.py failed"]}'; else echo "{\"criteria\": [], \"warnings\": [\"no plan at $PLAN\"]}"; fi
 fi
@@ -72,6 +75,9 @@ fi
 # Newline-strip the path before echoing: this block's stdout IS prompt context,
 # so a directory name containing a newline could inject a fake verdict line.
 printf '[audit-coverage] repo root: %s\n' "$(printf '%s' "$ROOT" | tr -d '\n\r')"
+# jq scopes the diff below (defaultBranch + sourceFilePatterns); if absent, both silently
+# default and the audit reads the wrong base / wrong files. Route it like ROOT-UNRESOLVED.
+command -v jq >/dev/null 2>&1 || { echo "[audit-coverage] JQ-MISSING — jq is not on PATH; flow.config.json (defaultBranch/sourceFilePatterns) could not be read, so the diff was NOT reliably scoped and coverage was NOT audited. This is NOT a clean skip. Install jq (https://jqlang.org) and re-run."; exit 0; }
 # Resolve default branch (3-tier, [ -z ] guards — FB-0008 idiom).
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
@@ -117,6 +123,7 @@ fi
 ## What to check
 
 - **`ROOT-UNRESOLVED` is NOT the skip case (FB-0074).** If either block carries a `ROOT-UNRESOLVED` line (or the criteria warning of that name), the audit **did not run** — the skill could not locate the repo under review and read nothing. Output exactly `[audit-coverage] ROOT-UNRESOLVED — the repo under review could not be located from this cwd; coverage was NOT audited. This is not a clean pass.` as your entire response, then the standard footer. Never collapse it into the `SKIPPED` line below: "I found nothing to audit" and "I never looked" have opposite consequences, and only the second must block. Invoked from `/flow:ship` Step 2 this routes to the draft manifest as `[decision-required]`, exactly like `/flow:audit-skips`' `engine_error`.
+- **`JQ-MISSING` is NOT the skip case either (jq-absence-handling-2026-06).** Same shape, same routing: if either block carries a `JQ-MISSING` line (or the criteria warning of that name), `jq` was absent, `flow.config.json` was never read, and the plan/base/patterns fell back to defaults — so the audit is unreliable, not clean. Output exactly `[audit-coverage] JQ-MISSING — jq is not on PATH; flow.config.json was not read, so coverage was NOT reliably audited. This is not a clean pass. Install jq and re-run.` as your entire response, then the standard footer. Routes to `[decision-required]` from `/flow:ship` Step 2 exactly like `ROOT-UNRESOLVED` (though ship itself blocks earlier at Step 1.5 when jq is missing, so this is reached mainly on direct invocation).
 - If either block above is empty — the criteria list has **no criteria** (no `**Spec-walk:**` block: spike/tiny/no plan), **or** the diff prints a `[audit-coverage] SKIPPED` line — then coverage cannot be audited. Output **exactly** that skip line (or `[audit-coverage] SKIPPED — no declared **Spec-walk:** criteria to compare against.` when the criteria list is empty) as your entire response, then the standard footer. Do not invent findings.
 - If the diff block contains a `[audit-coverage] TRUNCATED` line, your evidence is **partial** — behavior past the cap is unseen. Do not assert full coverage: append a one-line `Note: diff was truncated; this audit is partial` to your output (whether or not you flag anything), so a clean result is not over-trusted.
 - **You check declared-vs-built completeness only, not criterion quality.** A criterion that is vague or vacuous ("X works correctly") still *counts as covering* its behavior here — judging whether a criterion is specific enough to be meaningfully verifiable is `/flow:verify-build`'s axis, not yours. Default to "covered" when a criterion plausibly maps to the hunk; do not flag a behavior as undeclared just because its criterion is weak.

@@ -5,6 +5,8 @@
 **Date:** 2026-06-29
 **Status:** point-in-time findings, **no fix shipped** — this surfaces the shape only. Not maintained; the skill count below (16) predates the current 17. Index: [`dev-docs/README.md`](../README.md).
 **Scope:** all 16 skills under `plugins/flow/skills/`. No fix shipped — this surfaces the shape.
+
+> **Update (2026-08-13):** the fix landed in branch `fix-jq-absence-fail-fast` (uniform fail-fast with the two carve-outs recommended in §4, plus the fork-skill `!`-span routed-warning variant — see below). Regression-pinned by `plugins/flow/evals/run_jq_guard_evals.py`. One nuance the original findings under-specified: the 6 "unguarded" skills split by architecture — inline skills (security-review, accessibility-review, contribute) take the `/flow:ship` Step 1.5 `exit 1` guard, but the three `context: fork` skills (audit-coverage, audit-skips, critique-plan) read config in load-time `!` spans where a body `exit` can't reach, so they fail loud by emitting a **routed warning payload** (the existing ROOT-UNRESOLVED / `root_error` pattern), not an exit. The doctor false-FAIL class was also broader than Section 1: Checks 2.2 and 2.5 had the identical `jq -e … else [FAIL]` shape and are now guarded too.
 **Triggering observation:** on a freshly-provisioned Conductor cloud workspace (no `jq` in the base image), `/flow:doctor` reported a **false** Section-1 FAIL ("marketplace not registered", "flow@flow not enabled") while flow skills were demonstrably loaded. Root cause: every `jq -e` check returned 127 (command-not-found), the `if` condition went false, and the FAIL branch fired — a false negative on a correct install.
 **Lineage:** direct extension of PR #44 (`3d0883e`, v1.10.2) — "jq `// true` silently inverts explicit verifyEnabled/uiSurface false." Same root-cause family: **a jq fallback masking a real signal.** That fix addressed the boolean-slot case; this finding addresses the jq-*absent* case, which defaults *every* slot read wrong at once.
 
@@ -30,7 +32,7 @@
 | `staff-review` | [Step 1.5, SKILL.md:68](plugins/flow/skills/staff-review/SKILL.md) | **WARN-only** | proceeds; prints "jq missing → slot reads silently degrade to defaults", then degrades anyway |
 | `doctor` | [Check 4.1, SKILL.md:391](plugins/flow/skills/doctor/SKILL.md) | **DETECT-LATE** | Sections 1–3 run *before* 4.1 and **false-FAIL**; 4.1 then correctly reports jq missing — too late |
 | `security-review` | — | **NONE** | silent: `BASE`→`main`, `sourceFilePatterns`→default, spec/feedback paths→defaults |
-| `accessibility-review` | — | **NONE** | silent: `BASE`→`main`, `uiFilePatterns`→default, `uiSurface`→TRUE, design-language/feedback→defaults |
+| `accessibility-review` | — | **NONE** | silent: `BASE`→`main`, `a11yFilePatterns`→`uiFilePatterns`→default (two reads since PR #95's slot split), `uiSurface`→TRUE, design-language/feedback→defaults |
 | `audit-coverage` | — | **NONE** | silent: `planPath`→default, `BASE`→`main`, `sourceFilePatterns`→default |
 | `audit-skips` | — | **NONE** | silent: `planPath`→default, `BASE`→`main` |
 | `contribute` | — | **NONE** | every slot→empty via `get()`; `flowRepoPath` empty disables contribute (arguably OK) but `contributionThreshold`/`contributionsQueuePath` silently fall to defaults |
@@ -92,7 +94,7 @@ SOURCE_PATTERN=$(jq -r '.sourceFilePatterns // empty' …); [ -z "$SOURCE_PATTER
 | [security-review/SKILL.md:54](plugins/flow/skills/security-review/SKILL.md) | `sourceFilePatterns` | builtin regex | security scan includes/excludes the wrong files |
 | [security-review/SKILL.md:35-36](plugins/flow/skills/security-review/SKILL.md) | `specPath`, `feedbackPath` | `dev-docs/*` | reviewer reads wrong/absent context docs |
 | [accessibility-review/SKILL.md:55](plugins/flow/skills/accessibility-review/SKILL.md) | `defaultBranch` | `main` | as above |
-| [accessibility-review/SKILL.md:64](plugins/flow/skills/accessibility-review/SKILL.md) | `uiFilePatterns` | builtin | a11y scan scopes the wrong files |
+| [accessibility-review/SKILL.md:64](plugins/flow/skills/accessibility-review/SKILL.md) | `a11yFilePatterns` → `uiFilePatterns` (PR #95 split) | builtin | a11y scan scopes the wrong files |
 | [accessibility-review/SKILL.md:33](plugins/flow/skills/accessibility-review/SKILL.md) | `uiSurface` | `TRUE` | a project that set `uiSurface:false` gets the a11y review run anyway (low harm — runs unnecessarily) |
 | [accessibility-review/SKILL.md:35-36](plugins/flow/skills/accessibility-review/SKILL.md) | `designLanguagePath`, `feedbackPath` | `dev-docs/*` | wrong/absent context |
 | [audit-coverage/SKILL.md:34,41,44](plugins/flow/skills/audit-coverage/SKILL.md) | `planPath`, `defaultBranch`, `sourceFilePatterns` | defaults | coverage audit reads wrong plan, diffs wrong base, scopes wrong files |

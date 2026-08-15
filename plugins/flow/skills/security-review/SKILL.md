@@ -35,6 +35,26 @@ Skip if the diff is doc-only or trivially safe (e.g. a copy tweak).
 - Spec doc (for context): !`SPEC=$(cat flow.config.json 2>/dev/null | jq -r '.specPath // empty'); [ -z "$SPEC" ] && SPEC="dev-docs/spec.md"; [ -f "$SPEC" ] && echo "$SPEC" || echo "(no spec doc at $SPEC)"`
 - Feedback doc (for context): !`FB=$(cat flow.config.json 2>/dev/null | jq -r '.feedbackPath // empty'); [ -z "$FB" ] && FB="dev-docs/feedback.md"; [ -f "$FB" ] && echo "$FB" || echo "(no feedback doc at $FB)"`
 
+## 0. Preflight — `jq` required (BLOCKING)
+
+Every `flow.config.json` slot read below depends on `jq`. If it is absent, each read
+silently falls back to a hardcoded default (`defaultBranch`→`main`, `sourceFilePatterns`→
+built-in, spec/feedback paths→`dev-docs/*`) — so the review would diff the wrong base,
+scan the wrong files, and read the wrong context docs, then report green. Silent
+wrong-scope masquerades as a real review; a loud failure does not. Fail fast, same shape
+as `/flow:ship` Step 1.5 (FB-0009). See `dev-docs/research/jq-absence-handling-2026-06.md`.
+
+```sh
+MISSING=""
+command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
+if [ -n "$MISSING" ]; then
+  MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
+  echo "⚠️ BLOCKER: /flow:security-review requires $MISSING_TRIMMED (missing on PATH)." >&2
+  echo "   Install: brew install$MISSING (macOS) | apt install$MISSING (Debian/Ubuntu) | https://jqlang.org (jq)" >&2
+  exit 1
+fi
+```
+
 ## 1. Save the diff
 
 Capture both committed-since-base and uncommitted, plus untracked files (which `git diff` misses):
