@@ -20,6 +20,8 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 ## Currently reserved (as of 2026-08-03)
 
+_(FB-0085 cleared at merge of #105 — service-agnostic research + Codex/Cursor roadmap + the dev-docs index. Entry lives in `feedback.md`.)_
+
 
 
 
@@ -36,7 +38,6 @@ _(FB-0079 cleared at merge of #95, v1.26.0; entry lives in `feedback.md`.)_
 _(FB-0077 cleared at merge of #90, v1.25.0 — `/flow:land` made model-invocable; entry lives in `feedback.md`.)_
 _(FB-0080 + FB-0081 cleared at merge of #97 — the designer-signal track. Both were **renumbered twice** while the branch was open (FB-0078/0079 → 0079/0080 → 0080/0081) as #92 then #95 took the numbers ahead of them; the third and fourth instances of the pattern this file records. Released here per the amended protocol — held until MERGE, not cleared at ship. Entries live in `feedback.md`.)_
 
-- **FB-0085** — `claude/flow-service-agnostic-96aec1` (intelligent-lederberg-a3b4e6) — "Validate a structural change against the live loader before proposing it, not after — and index every point-in-time doc at creation or it is buried by default." Service-agnostic research + Codex/Cursor roadmap; surfaced two shipped-but-never-loading features (plugin `rules/`, default hooks). Entry written in `feedback.md`; held until MERGE (amended protocol). **Renumbered FB-0075 → FB-0084 → FB-0085** across two rebases — #92/#95 took 0075-0083, then #106 took 0084 while this branch was open. The fifth and sixth instances of the pattern this file records, on a single PR.
 
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
@@ -45,6 +46,8 @@ _(FB-0080 + FB-0081 cleared at merge of #97 — the designer-signal track. Both 
 - **FB-0067** — `claude/flamboyant-stonebraker-36ef32` (flamboyant-stonebraker-36ef32) — "Every PR-body/draft-state write must be read-back-verified, and a body↔draft coherence invariant (ready PR ⇒ no NOT-READY manifest) must be enforced at ship and surfaced by doctor + land." Stale-manifest-on-ready-PR fix (v1.17.0). Entry written in `feedback.md`; clears at ship. (Renumbered twice: FB-0065/v1.15.0 → FB-0066/v1.16.0 after `#68` shipped both first, then → FB-0067/v1.17.0 after a second concurrent branch, `#71` (frame-integrity gate), *also* independently shipped FB-0066/v1.16.0 first — both caught on ship-time stale-base rebases.)
 
 ## Audit trail (past collisions, kept for institutional memory)
+
+- **2026-08-15** — **two collisions on a single PR** (#105, service-agnostic research). Reserved **FB-0075**; #92/#95 took 0075–0083 while the branch was open, so it renumbered to **FB-0084** at the first rebase — then **#106 took 0084** before the branch landed, forcing a second renumber to **FB-0085**. Both were caught by the stale-base gate at rebase, not at merge. The second sweep touched 4 references across `reserved`/`history`/`plan`/`roadmap` while leaving #106's own 5 FB-0084 references intact — content-anchored replacement with a uniqueness assertion per edit, not line numbers. Lesson: on a long-lived branch, re-check the FB high-water at **every** rebase, not only at reservation time; and the renumber sweep must distinguish *your* references from the colliding PR's, which a blanket find-replace cannot.
 
 - **2026-08-11 (seventh collision, same branch)** — `#97` took **FB-0080**; this branch renumbered **FB-0080 → FB-0082**. That is five renumbers on one PR (FB-0074 → 0075 → 0078 → 0080 → 0082, plus v1.22.0 → 1.23.0 → 1.26.0 → 1.27.0). Every one was caught by the stale-base gate at ship, none shipped silently. The sweep used the standing rule (rename only lines absent from `origin/main`) and required no repair this time — the technique works; the frequency is the signal. **This branch's cost is now dominated by renumbering, not by the fix**, which is itself worth a roadmap look: the reservation protocol defends the number but nothing shortens the window between claiming one and merging.
 
