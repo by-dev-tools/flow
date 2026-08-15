@@ -235,6 +235,53 @@ diff --git a/Sources/Mixed.swift b/Sources/Mixed.swift
 
 SWIFT_CFG = {"uiSurface": True, "uiFilePatterns": r"\.swift$"}
 
+# --- FB-0086 fixtures: a binary asset has NO `+++ b/<path>` header -------------
+# Git emits only `Binary files a/… and b/… differ` for a binary change, so the
+# header-based file tracking never sees it and the pure-refactor exclusion fires
+# (health-tracker PR #100: an in-place font re-export read visual_significant:
+# false). Fixtures span the distinguishing axis — binary × add / modify / delete —
+# plus a non-asset control (FB-0079 corollary 2: pick fixtures by the axis, not
+# the example in hand). `.ttf` matches DEFAULT_ASSET_PATTERN, so no uiFilePatterns
+# is needed — this is the consumer's real, default-config shape.
+BINARY_ASSET = "Sources/Views/Fonts/Fraunces.ttf"
+BINARY_MODIFY_DIFF = (
+    f"diff --git a/{BINARY_ASSET} b/{BINARY_ASSET}\n"
+    "index 4472f17..ef9bf8d 100644\n"
+    f"Binary files a/{BINARY_ASSET} and b/{BINARY_ASSET} differ\n")
+# Add carries the path on the b/ side only (a/ is /dev/null).
+BINARY_ADD_ASSET = "Sources/Views/Fonts/NewFont.ttf"
+BINARY_ADD_DIFF = (
+    f"diff --git a/{BINARY_ADD_ASSET} b/{BINARY_ADD_ASSET}\n"
+    "new file mode 100644\n"
+    "index 0000000..ef9bf8d 100644\n"
+    f"Binary files /dev/null and b/{BINARY_ADD_ASSET} differ\n")
+# Delete carries the path on the a/ side only (b/ is /dev/null).
+BINARY_DELETE_DIFF = (
+    f"diff --git a/{BINARY_ASSET} b/{BINARY_ASSET}\n"
+    "deleted file mode 100644\n"
+    "index 4472f17..0000000 100644\n"
+    f"Binary files a/{BINARY_ASSET} and /dev/null differ\n")
+# A binary file whose extension is outside the asset pattern (and no UI match) —
+# proves the parser matches the path, it does not fire on every `Binary files` line.
+BINARY_NONASSET = "src/data.pack"
+BINARY_NONASSET_DIFF = (
+    f"diff --git a/{BINARY_NONASSET} b/{BINARY_NONASSET}\n"
+    "index 1111111..2222222 100644\n"
+    f"Binary files a/{BINARY_NONASSET} and b/{BINARY_NONASSET} differ\n")
+# Rename+modify of a binary: a NON-matching a/ path, a MATCHING b/ path. Isolates
+# that BOTH sides are parsed — if the parser only inspected the a/ side (group 1),
+# this would miss. The add case can't isolate this (its A-status hits the pre-
+# existing new_files shortcut, so it is green with or without the parser); this
+# is the b-side's real red-verify.
+BINARY_RENAMED_TO_ASSET = "Sources/Views/Fonts/Fraunces.ttf"
+BINARY_BOTH_SIDES_DIFF = (
+    f"diff --git a/src/blob.pack b/{BINARY_RENAMED_TO_ASSET}\n"
+    "similarity index 40%\n"
+    "rename from src/blob.pack\n"
+    f"rename to {BINARY_RENAMED_TO_ASSET}\n"
+    "index 1111111..ef9bf8d 100644\n"
+    f"Binary files a/src/blob.pack and b/{BINARY_RENAMED_TO_ASSET} differ\n")
+
 
 def main() -> int:
     fails = 0
@@ -494,6 +541,49 @@ def main() -> int:
             any("#if DEBUG" in s for s in o.get("visual_signals", [])),
             f"{o}",
         )
+
+        # --- FB-0086: binary assets have no `+++ b/<path>` header ------------
+        # 10e. In-place binary MODIFY of a matched asset → significant. This is
+        #      the reported bug: a font re-export at the same path read false.
+        rc, o = run(tmp, config={"uiSurface": True}, files=f"M\t{BINARY_ASSET}",
+                    diff=BINARY_MODIFY_DIFF)
+        check("binary-modify-significant", o.get("visual_significant") is True,
+              f"in-place binary asset re-export must be visually significant: {o}")
+
+        # 10f. Binary ADD → significant. REGRESSION CONTROL, not a red-verify: an
+        #      A-status file already hits the pre-existing `new_files` shortcut, so
+        #      this stays green with OR without the parser. Kept to pin that a new
+        #      binary asset carrying a `Binary files /dev/null and b/…` diff stays
+        #      significant (the report's `A NewFont.ttf = True` baseline). The
+        #      b-side parser's real red-verify is 10f-2 below.
+        rc, o = run(tmp, config={"uiSurface": True}, files=f"A\t{BINARY_ADD_ASSET}",
+                    diff=BINARY_ADD_DIFF)
+        check("binary-add-significant", o.get("visual_significant") is True,
+              f"a new binary asset must be visually significant: {o}")
+
+        # 10f-2. Binary rename+modify: NON-matching a/ path, MATCHING b/ path, and
+        #        status M (so new_files does NOT cover it). RED pre-fix, and it also
+        #        fails if the parser inspects only the a/ side — the real proof that
+        #        BOTH sides of the `Binary files … differ` line are parsed.
+        rc, o = run(tmp, config={"uiSurface": True}, files=f"M\t{BINARY_RENAMED_TO_ASSET}",
+                    diff=BINARY_BOTH_SIDES_DIFF)
+        check("binary-both-sides-checked", o.get("visual_significant") is True,
+              f"a matched path on the b/ side alone must be significant: {o}")
+
+        # 10g. Binary DELETE, via the a-side (b/ is /dev/null). Deliberate call
+        #      (see history): removing a rendered asset changes what draws →
+        #      significant. RED pre-fix (D is excluded from new_files + diff blind).
+        rc, o = run(tmp, config={"uiSurface": True}, files=f"D\t{BINARY_ASSET}",
+                    diff=BINARY_DELETE_DIFF)
+        check("binary-delete-significant", o.get("visual_significant") is True,
+              f"deleting a rendered binary asset must be visually significant: {o}")
+
+        # 10h. NON-asset binary change → not significant. The parser matches the
+        #      path against the patterns; it does not fire on every Binary line.
+        rc, o = run(tmp, config={"uiSurface": True}, files=f"M\t{BINARY_NONASSET}",
+                    diff=BINARY_NONASSET_DIFF)
+        check("binary-nonasset-not-significant", o.get("visual_significant") is False,
+              f"a non-asset binary change must NOT be visually significant: {o}")
 
         # 11. malformed config degrades to uiSurface=true default (loud), never crash.
         d = Path(tmp)

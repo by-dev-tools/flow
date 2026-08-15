@@ -45,6 +45,21 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 **Applies to:** workflow, architecture, roadmap items M + AB, model selection, dev-docs hygiene
 
+### FB-0086 — A diff-parsing gate must enumerate git's output formats, not just the common one: a binary file has no `+++` header, so a header-driven predicate fails open on it
+
+**Date:** 2026-08-15
+**Source type:** user direction (consumer cold-run report, health-tracker PR #100 — item 1 of 3)
+
+**What was said.** A consumer shipping an iOS/SwiftUI project reported that an in-place font re-export (`M …/Fraunces.ttf`) computed `visual_significant: false` and silently skipped the visual-deliverable gate, while *adding* a new font (`A …/NewFont.ttf`) correctly read `true`. The diagnosis was precise and reproduced: `visual-significance.py`'s `_diff_content_changed()` tracks the current file via the `+++ b/<path>` header, and **git emits no `+++` header for a binary file** — only `Binary files a/… and b/… differ`. The same class covers an in-place `AppIcon.png` swap. (The report also flagged that two of the four original consumer items had arrived with a wrong diagnosis — a standing reason to re-verify each claim against HEAD before acting; both live reproductions here matched.)
+
+**Synthesized rule.** When a check parses another tool's output, enumerate the *shapes* that tool actually emits, not the one shape your examples happen to have. Unified diff has (at least) two file-record formats: the `---`/`+++` header pair for text, and a single `Binary files a/… and b/… differ` line for binary — with **no** `+++` for the latter. A predicate keyed only on `+++` doesn't error on a binary file; it silently classifies it as "no render delta" and **fails open on the gate it exists to enforce** (the FB-0010 silent-skip class, and the fail-open direction FB-0062 forbids). The corollary that generalizes furthest: **a header-driven diff parser must handle every record format the source produces**, and the cheapest way to prove it does is to enumerate the format axis (here: binary vs text × add/modify/delete) as fixtures — because the format you forgot is exactly the one your own examples won't contain.
+
+**Corollary — a fail-safe *direction* is a decision, not an implementation accident.** Whether deleting a rendered asset counts as a render delta was decided explicitly (it does: removing a font/icon changes what draws, and the gate should over-demand a screenshot rather than under-demand), not left to fall out of whichever side of the `Binary files` line the code happened to read. Same fail-safe reasoning as FB-0079's union corollary.
+
+**Corollary — an author's own red-verify inherits the author's blind spot (FB-0079 corollary 2, applied reflexively).** The natural "binary add" fixture is green *both* before and after the fix, because an A-status file already hits the pre-existing `new_files` shortcut — so it proves nothing about the new b-side parsing. Caught during red-verify, it was relabelled a **regression control** and a genuinely-isolating fixture added (a rename+modify with a non-matching `a/` and matching `b/`, status M, mutation-tested against an a-side-only parse). A fixture that has never been red is not a proof; say so in its label rather than counting it.
+
+**Applies to:** `skills/verify-build/lib/visual-significance.py` (`_diff_content_changed`), `evals/run_visual_significance_evals.py`. Related: FB-0079 (the split this builds on, and corollary 2 on author-blind-spot fixtures), FB-0010 (silent-skip / fail-open), FB-0062 (a stage's verdict is trusted only if it measured the thing). **Known limitation left open:** a *text*-file full deletion has a separate `+++ /dev/null` blind spot not reached by this fix — a queued follow-up, recorded in history so it surfaces as a decision, not a surprise.
+
 ### FB-0085: Verify a mechanism against the runtime, not against its own documentation
 
 **Date:** 2026-08-12  *(renumbered FB-0075 → FB-0084 → FB-0085; #92/#95 then #106 took the numbers while this branch was open)*
