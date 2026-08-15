@@ -20,7 +20,7 @@ Everything described in the loop below is shipped and installable today. The ful
 - **`/flow:post-merge`** — post-merge, human-invoked: the "merged — anything left, or safe to archive?" close-out (v1.21.0, FB-0072). One command that (1) confirms the merge with a **merge-queue-safe** three-state gate (a queued-but-unlanded PR is *not merged yet* → polled, never a false failure; only a `CLOSED`-unmerged PR fails loud), (2) **calls `/flow:land`** for doc-currency, then holds the archive verdict at `🚫` until you merge the `docs: land #N` PR it opens, (3) synthesizes the merge-gate feedback window `/flow:ship` structurally can't see into user-scope memory + the `/flow:contribute` queue, (4) safe-deletes the merged branch, (5) prints a `✅ safe to archive` / `🚫 not safe` verdict. Never merges.
 - **`/flow:workflow-help`** / **`/flow:doctor`** — onboarding (print the loop + resolved config) and setup verification.
 
-Plus the two reviewer subagents (`auditor`, `plan-critic`) and the four staff-review lens agents, the `planner` and `docs` context-isolation agents, the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (32 slots), default hooks, and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow does **not** wrap it.
+Plus the two reviewer subagents (`auditor`, `plan-critic`) and the four staff-review lens agents, the `planner` and `docs` context-isolation agents, the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (32 slots), default hooks, and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow references it directly rather than re-implementing it.
 
 ## What this workflow is (and isn't)
 
@@ -68,7 +68,7 @@ The user's request kicks the loop off (input, not a Claude step). From there:
 
 ### A note on bundled-vs-flow skills
 
-Claude Code bundles several native skills out of the box. Flow does **not** wrap any of them — wrapping bundled skills adds weight without value (the wrapper either parrots Anthropic's maintenance or drifts from it). The bundled skills referenced in this loop:
+Claude Code bundles several native skills out of the box. Flow does **not re-implement** any of them. For the skills below it adds no flow-specific value, so it references them directly — re-implementing them would only parrot Anthropic's maintenance and drift from it. The bundled skills this loop references directly:
 
 - `/simplify` — bundled with Claude Code.
 - `/batch` — bundled with Claude Code.
@@ -76,7 +76,11 @@ Claude Code bundles several native skills out of the box. Flow does **not** wrap
 - `/loop` — bundled with Claude Code.
 - `/claude-api` — bundled with Claude Code.
 
-When this doc references one of those by name, treat it as the native bundled skill. Everything else with a `/flow:` prefix is flow-provided.
+Where flow *does* add value — config-slot resolution, a gate-shaped contract, feedback routing, in-flow orchestration — it **composes** rather than duplicates: a thin wrapper that *invokes* the bundled skill and layers flow's value on top. `/flow:verify-build` wraps bundled `/verify` this way; `/flow:ship` chains its reviewers the way Anthropic's own team chains `/code-review` → `/simplify` → `/verify`. Composition is the pattern; re-implementation is the anti-pattern.
+
+**For consumers extending flow:** plugin-managed skills are overwritten on every plugin update, so you can never safely edit a bundled or flow skill *in place* to add behavior — the edit is lost on the next update. Chain instead: build your own prefixed wrapper skill that invokes the original and then your addition. Chaining is the only extension pattern that survives a plugin update.
+
+When this doc references one of the bundled skills by name, treat it as the native bundled skill. Everything else with a `/flow:` prefix is flow-provided.
 
 ### Flow's own audit/critique skills
 
