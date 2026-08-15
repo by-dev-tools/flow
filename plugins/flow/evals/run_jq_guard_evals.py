@@ -28,6 +28,7 @@ Stdlib only, POSIX sh. Run:
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
 import shutil
@@ -135,12 +136,27 @@ def extract_guard(text: str) -> str | None:
     return m.group(1) if m else None
 
 
+_SHADOW_BIN_CACHE: dict[tuple[bool, bool], str] = {}
+
+
+@atexit.register
+def _cleanup_shadow_bins() -> None:
+    for d in _SHADOW_BIN_CACHE.values():
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def _shadow_bin(include_jq: bool, include_gh: bool) -> str:
     """A PATH dir with the tools the blocks need, jq/gh present per the flags.
 
     Only jq/gh presence is under test; everything else the shell needs (sed, git…) is
     symlinked from the real PATH. jq/gh are excluded to simulate the fresh-sandbox case.
+    Built once per (jq, gh) combination (≤4 dirs for the whole run) and reused across
+    every block; the dirs are removed at interpreter exit rather than leaking into $TMPDIR.
     """
+    key = (include_jq, include_gh)
+    cached = _SHADOW_BIN_CACHE.get(key)
+    if cached is not None:
+        return cached
     d = tempfile.mkdtemp(prefix="jqguard-bin-")
     tools = ["sh", "sed", "cat", "grep", "git", "tr", "head", "tail", "printf", "echo", "env"]
     if include_jq:
@@ -154,6 +170,7 @@ def _shadow_bin(include_jq: bool, include_gh: bool) -> str:
                 os.symlink(real, os.path.join(d, t))
             except FileExistsError:
                 pass
+    _SHADOW_BIN_CACHE[key] = d
     return d
 
 
