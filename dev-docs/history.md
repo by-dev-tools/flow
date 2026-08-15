@@ -24,7 +24,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ## 2026-08-14 — Anthropic-canon alignment check + reprioritize model routing & attention budget
 
-**Branch:** `claude/agent-flow-best-practices-bhygw1` · **SHA:** this branch, docs-only (pending commit)
+**Branch:** `claude/agent-flow-best-practices-bhygw1` · **SHA:** merged #106 @ `3f71883` (docs-only)
 
 **What was done (user-facing).** Checked flow against Anthropic's first-party agent-building canon — *Building Effective Agents*, *Effective Context Engineering for AI Agents*, and *Effective Harnesses for Long-Running Agents* — and captured the result in a new research doc (`dev-docs/research/anthropic-canon-alignment-2026-08.md`). Flow is strongly aligned, and ahead of the canon on structured note-taking, sub-agent verification, and self-improvement. Two recurring gaps were pulled to the top of the roadmap at the user's direction: **M** (per-subagent model routing, already scoped) and **AB** (attention budget & harness-weight audit, net-new). Both are marked ▶ TOP PRIORITY in `roadmap.md` § Now + § Next; `plan.md` Current Focus + Handoff Notes hand a fresh agent the two starting points; FB-0084 records the direction.
 
