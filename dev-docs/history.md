@@ -6,7 +6,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ## 2026-08-14 — Capture the long-running-loop design + external validation
 
-**Branch:** `docs/long-running-loops` · **SHA:** this branch, docs-only
+**Branch:** `docs/long-running-loops` · **SHA:** merged #107 @ `0c17b638`
 
 **What was done (user-facing).** Durably recorded a multi-session design exploration for making flow run much longer autonomously, as a new research note (`dev-docs/research/2026-08-14-long-running-loops.md`) plus a `roadmap.md` § Exploration entry cross-linked to the Designer-signal (D1) + Deliverable-quality tracks. Three parts: a successive-PR "shift" model (a stateless fresh-session-per-item executor, a durable queue, an integration branch + a `mechanically-verifiable ∧ inert ∧ reversible` merge predicate that lets stepping-stones auto-merge to staging while `main` stays human-gated); a decision-corpus quality substrate (forward priors + corrective feedback, surface-indexed, loaded at build time); and a divergent-variation landscape reframed from precision to coverage.
 
