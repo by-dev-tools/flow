@@ -4,6 +4,22 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-14 — jq-absence fail-fast across flow skills (SAFETY)
+
+**Branch:** `fix-jq-absence-fail-fast` · **SHA:** this branch (v1.28.0)
+
+**What was done (user-facing).** Every flow skill that reads `flow.config.json` via `jq` now fails loud when `jq` is absent instead of silently falling back to hardcoded defaults and reporting green. Action-taking skills (`security-review`, `accessibility-review`, `staff-review`, `contribute`) `exit 1` with an install hint; `doctor` emits an honest `[SKIP]` (never a false `[FAIL]`); `workflow-help` warns read-only; the fork skills (`audit-coverage`, `audit-skips`, `critique-plan`) route a `JQ-MISSING`/`jq_error` signal. Pinned by `run_jq_guard_evals.py` (wired into CI).
+
+**Why (SAFETY — error-handling/fallback).** `jq … // default` chains silently substitute hardcoded defaults on jq-absence — the review then diffs the wrong base, scans the wrong files, reads the wrong docs, and reports green. `/flow:doctor` was worse: `jq -e …; then PASS; else FAIL` takes the FAIL branch on exit 127, so a correct install reports `[FAIL]`. This *upgrades* error handling (silent degrade → loud fail), the direction `.claude/rules/safety.md` mandates. Extends FB-0009's fail-fast lineage.
+
+**Design decisions.** (1) Per-file inline guard over a shared `require-jq.sh`: fenced SKILL `!`/`sh` blocks execute as standalone snippets pasted into a fresh shell, so a sourced helper is structurally unreachable — and the eval extracts + runs each live guard, so drift/omission fails CI (closing the usual copy-paste cost). (2) The three carve-outs are encoded as *tested policy* (`CARVE_OUTS`, `is_fork()` derived from frontmatter), not ad-hoc exceptions. (3) The eval derives the guarded-skill set from disk (drift-proof), so a new config-reading skill can't ship unguarded.
+
+**Review (this ship).** `/simplify` memoized the eval's `_shadow_bin` (+ `atexit` cleanup; it was leaking a temp dir per block). Four-lens `/flow:staff-review`: no blockers — the feature reviewed "at ceiling for its scope." Fixed inline: a **vacuous Part D test** ("gh stays warn-only" never actually ran the gh line, since it sits above `MISSING=""` and `extract_guard`'s regex skipped it — a regression to `|| exit 1` would have passed; mutation-verified the fix now fails on that regression); **pinned doctor 2.3/2.4's** new `[SKIP]` emission; dropped an **unused `import sys`** and a leaked **`(FB-0008)`** internal codename from a user-facing BLOCKER message. Security review: **clean** — the eval runs only the repo's own trusted shell under a shadow PATH, CI is a read-only `pull_request` with no secrets, guards interpolate only fixed literals. Follow-up → roadmap § Exploration: derive the eval's doctor-side coverage from disk (rather than a hand-listed enumeration) so a future `Check` can't reintroduce the false-`[FAIL]` uncaught.
+
+**Adoption note.** Authored by a prior session (the commit deferred docs to `/flow:ship`); adopted and shipped from the primary worktree after a concurrent-session collision was resolved — see the long-running-loop capture entry below for the collision detail.
+
+---
+
 ## 2026-08-14 — Capture the long-running-loop design + external validation
 
 **Branch:** `docs/long-running-loops` · **SHA:** merged #107 @ `0c17b638`
