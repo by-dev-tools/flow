@@ -1,9 +1,26 @@
 # Handoff — Anthropic blog/docs research → flow improvement findings
 
 **Status:** research captured, unshipped; no plugin artifact changed. Ready for pickup.
-**Branch:** `claude/twitter-x-flow-research-28ghls` (4 commits, pushed, working tree clean, **no PR**).
+**Branch:** `claude/twitter-x-flow-research-28ghls` (5+ commits, pushed, working tree clean, **no PR**).
 **Repo:** `by-dev-tools/flow`, branched off `main`.
-**Session dates:** 2026-07-24 → 07-25.
+**Session dates:** 2026-07-24 → 07-25, resumed 2026-08-15.
+
+---
+
+## 2026-08-15 update — the 5 engineering posts are now READ (Findings 16–30)
+
+`anthropic.com/engineering` returned **200** this session (the previous container's 403 is resolved — the allowlist edit reached this environment). All five posts in the reading list below were fetched via `curl` + a stdlib HTML→text extractor (`.context/html2text.py`; `WebFetch` still 403s regardless) and read in full. They are folded into `plan.md § RESEARCH` as **Findings 16–30**, each tagged with its model era per FB-0072. Highlights:
+- **[G] harnesses → F16–19:** the closest thing to a spec for flow; it converged on flow's architecture from scratch and names flow's two core failure modes (one-shotting, declaring-victory-early). F17 flags a testable tension (flow's author-facing `Spec-walk` is Markdown, which [G] measured the model overwriting — [G] chose JSON). F19 validates verify-build's visual gate + the FB-0071 no-native-modal hardening.
+- **[H] multi-agent → F20–23:** **F20 turns F14 from "document the bottleneck" into a fix** — subagent-output-to-filesystem for `staff-review`'s lens fan-out. **F21/F22 are a caution** (coding is less parallelizable; single-judge beat multi-judge in [H]'s domain) — but [H] is the oldest source (Claude 4), weight down.
+- **[I] context-engineering → F24–26:** **F25 is the key corrective** — [I] (near-current) says "minimal ≠ short," keep sufficient info, and few-shot examples are still strongly advised; it guards Finding 5's strip-and-measure and Finding 2's footgun comments from over-cutting. F24 gives F3/F15 their mechanism (context rot / attention budget).
+- **[J] writing-tools → F27:** the native-overlap problem at tool level ("if a human can't say which tool to use, an agent can't"); reframes flow's loud-warning discipline as ergonomics. Transfer caveat: MCP-tool source, principles only.
+- **[K] agent-skills → F28–30:** **F28 is the source-of-record for Finding 2** (3-level progressive disclosure; `ship/SKILL.md` at 1096 lines violates it, add run-vs-read marking). **F29** names `/flow:contribute` as both best practice and stated future. **F30 is net-new** — flow's inbound trust/auditability posture for adopters.
+
+The head-of-queue is unchanged (**F11 → F10 → F12**); see the "Sequencing update (2026-08-15)" at the end of the RESEARCH block for what shifted. **Still analysis-only — zero changes to `plugins/flow/*`.** The open decisions below (open a PR? F9→F11→ship? F12 as its own PR?) remain the user's call and are unchanged.
+
+---
+
+## Original handoff (2026-07-25)
 
 ---
 
