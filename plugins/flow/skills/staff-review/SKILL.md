@@ -72,7 +72,7 @@ MISSING=""
 command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
 if [ -n "$MISSING" ]; then
   MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
-  echo "⚠️ BLOCKER: /flow:staff-review requires $MISSING_TRIMMED (missing on PATH) — jq scopes the diff base + config reads; degrading to defaults diffs the wrong base (FB-0008)." >&2
+  echo "⚠️ BLOCKER: /flow:staff-review requires $MISSING_TRIMMED (missing on PATH) — jq scopes the diff base + config reads; degrading to defaults diffs the wrong base." >&2
   echo "   Install: brew install$MISSING (macOS) | apt install$MISSING (Debian/Ubuntu) | https://jqlang.org (jq)" >&2
   exit 1
 fi

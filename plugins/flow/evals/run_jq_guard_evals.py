@@ -33,7 +33,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -283,6 +282,23 @@ def main() -> int:
                   "[SKIP]" in out and "[SKIP]" in out25,
                   f"did not degrade to [SKIP]. output: {out_all!r}")
 
+    # Checks 2.3/2.4 have NO [FAIL] branch, so they're outside the false-FAIL scope above —
+    # but their new guard's honest [SKIP] emission is still a contract to pin (FB-0010
+    # "assert the guard you add"): the `if ! command -v jq; then echo [SKIP]` then-branch
+    # must fire on jq-absence. (Deriving these from disk instead of a hand list is the
+    # general fix — roadmap § Next "derive the doctor-side coverage from disk".)
+    c23 = fenced_after(doctor, "Check 2.3 —")
+    c24 = fenced_after(doctor, "Check 2.4 —")
+    check("doctor: Checks 2.3/2.4 blocks are extractable", all([c23, c24]),
+          "could not locate the 2.3/2.4 jq-skip guards")
+    for label, block in (("2.3", c23), ("2.4", c24)):
+        if block is None:
+            continue
+        rc, out = run_block(block, include_jq=False, include_gh=True)
+        check(f"doctor: Check {label} ⇒ honest [SKIP] on jq-absence (never a false verdict)",
+              "[SKIP]" in out and not has_verdict_fail(out),
+              f"did not emit [SKIP] (or emitted a false FAIL). output: {out!r}")
+
     # ---- Part C: workflow-help WARNS from a `!` span, does not block (read-only carve-out) ----
     wh = (SKILLS / "workflow-help" / "SKILL.md").read_text(encoding="utf-8")
     warn_spans = [s for s in _BANG_SPAN_RE.findall(wh) if "command -v jq" in s]
@@ -307,6 +323,20 @@ def main() -> int:
               rc == 0, f"blocked on missing gh — gh must stay graceful. output: {out!r}")
     elif guard is not None:
         print("  SKIP  staff-review gh-split check — no real jq on PATH to build the scenario")
+
+    # The gh warn line sits ABOVE `MISSING=""`, so extract_guard()'s `MISSING="".*fi` regex
+    # never captures it — the check above alone would still PASS if that line regressed to
+    # `|| exit 1`. Extract the gh line directly and prove it warns-without-blocking, so the
+    # "gh stays warn-only" contract is actually exercised, not just asserted by name.
+    gh_line = next((ln for ln in sr.splitlines()
+                    if ln.lstrip().startswith("command -v gh")), None)
+    check("staff-review: gh-presence warn line is extractable", gh_line is not None,
+          "the gh warn line moved/renamed; its warn-only contract is now unpinned")
+    if gh_line is not None:
+        rc, out = run_block(gh_line, include_jq=True, include_gh=False)
+        check("staff-review: gh-absent ⇒ gh line warns but does NOT block (exit 0)",
+              rc == 0 and "gh" in out.lower(),
+              f"the gh line must warn without exiting; a regression to `|| exit 1` fails here. rc={rc} output: {out!r}")
 
     print()
     if _failures:

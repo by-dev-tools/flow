@@ -624,6 +624,14 @@ An additional half this entry does not yet name: once both sides are extractable
 
 
 
+### Derive the jq-guard eval's doctor-side coverage from disk (from the jq-absence staff-review push-further lens)
+
+**Surfaces when:** `plugins/flow/evals/run_jq_guard_evals.py` Part B is next touched, OR a new `doctor` Check is added with the `jq -e …; then PASS; else [FAIL]` shape.
+
+Distinct from the shell↔Python mirrors item above (that's about the *guards* being duplicated across files; this is about the *eval's* doctor-side coverage being enumerated rather than derived). `run_jq_guard_evals.py`'s skill-population side is drift-proof — it derives the guarded-skill set from disk, so a new jq+config skill with no guard fails CI. But Part B (doctor's false-`[FAIL]` coverage) is a hand-listed enumeration of four headings (Checks 1.1/1.2/2.2/2.5), plus the just-added 2.3/2.4 `[SKIP]` pins. A future `Check 2.11` with the same `then PASS; else [FAIL]` shape would reintroduce the exact false-FAIL regression the harness exists to prevent, uncaught — author-memory-dependent inside an otherwise memory-proof eval, in the file it was born from. The fix is a **static** structural assertion (the checks have heterogeneous fixtures, so an execution sweep is heavy): enumerate every ` ```sh ` block in `doctor/SKILL.md` containing a `jq -e` whose reachable false/else branch can emit a line-start `[FAIL]`, and assert each is guarded by either a leading `command -v jq …; then echo "[SKIP]"` or a `! jq -e . flow.config.json` no-op branch (the 2.7/2.8/2.9 shape) — never false-positiving on the correctly-unguarded no-op checks. Push-further sized it as one added static check; horizon Next.
+
+**Related smaller hardening surfaced in the same review (fold in when this is picked up):** (a) the security/accessibility-review load-time `!`-spans print a misleading `TRUE (default — no flow.config.json found)` when a config *exists* but jq is merely absent (no wrong decision ships — the body `## 0` guard aborts first — but the message conflates "jq missing" with "no config"); a one-line message tweak. (b) The eval extracts + runs each guard in isolation but doesn't assert *ordering* — that `## 0`'s guard precedes `## 1`'s first body `jq` read; low risk (a reorder is an obvious review catch), but an ordering assertion would harden it.
+
 ### Two blockers, one root cause — should triage relate entries? (from the FB-0075 push-further lens)
 
 **Surfaces when:** a second ship produces ≥2 manifest entries that trace to one cause, or `manifest-triage.py classify()` grows any cross-entry relation for another reason.
