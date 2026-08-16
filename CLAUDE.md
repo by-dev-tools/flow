@@ -136,7 +136,7 @@ Dev-side slash commands: `/ship` (project-dev push + PR), `/preship` (standards 
 2. **Respect the three-surface boundary.** Changes to plugin artifacts (`plugins/flow/*`, `.claude-plugin/marketplace.json`, `README.md`) change user-visible behavior. Changes under `dev-docs/` are dev-tracking only. Changes under `.claude/` are project-dev infra. Never mix.
 3. **Prompt changes are code changes.** The reviewer prompts at `plugins/flow/agents/{auditor,plan-critic}.md` and the new `plugins/flow/skills/ship/SKILL.md` are deployed surface. Treat edits like edits to a deployed service: write an eval fixture first (where applicable), update `dev-docs/history.md`, tune deliberately.
 4. **Follow the rules.** `.claude/rules/` auto-loads safety and documentation discipline when you touch matching files.
-5. **Never wrap a bundled Claude Code skill.** `/simplify`, `/batch`, `/debug`, `/loop`, `/claude-api` are native. If a future flow skill would parrot one, drop it and reference the native one instead.
+5. **Never re-implement a bundled Claude Code skill; compose with it instead.** `/simplify`, `/batch`, `/debug`, `/loop`, `/claude-api` are native — reference them directly. What's forbidden is *duplicating* a bundled skill's behavior (parroting Anthropic's maintenance, which drifts from it). What's permitted and preferred is a thin wrapper that **invokes** the bundled skill and adds flow-specific value — config-slot resolution, a gate contract, feedback routing, in-flow orchestration (the FB-0015 delegating-wrapper shape; e.g. `/flow:verify-build` over bundled `/verify`, `/flow:ship` chaining its reviewers). If a proposed skill would only duplicate a bundled one with no added value, drop it and reference the native skill instead.
 
 ## Quality Bar
 
