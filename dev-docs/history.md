@@ -371,6 +371,25 @@ Use the `SAFETY` marker on any entry that modifies error handling, persistence, 
 **Decisions:** Reword, don't delete (FB-0015 intent is load-bearing). Left the "wraps bundled `/verify`" composition lines untouched — now consistent, not contradictory (FB-0010 grep sweep clean). No version bump (prose clarification, no behavior change; docs-only precedent #65/#67). Split clean off `main` from the research thread's PR #113 (stale against main's Aug canon thread). `/flow:ship` couldn't run natively — flow isn't installed in this cloud session (Finding 9) — so pipeline stages that could run did (`/security-review` clean; a11y/verify-build self-skip on `platform:library`) and the deviation is documented in the PR body.
 
 
+### F11: reword "never wrap a bundled skill" → "never re-implement; compose instead"
+**Date:** 2026-08-15
+**Branch:** claude/f11-reword-never-wrap (off main; commit: this)
+
+**What was done:**
+Reworded the bundled-skill rule in `CLAUDE.md` (rule 5) and the shipped `plugins/flow/docs/workflow.md` (§ "A note on bundled-vs-flow skills") from a blanket *"Never wrap a bundled Claude Code skill"* to *"Never re-implement a bundled skill; compose with it instead."* The new wording forbids **duplication** (parroting Anthropic's maintenance, which drifts) while explicitly permitting **composition** — a thin wrapper that *invokes* a bundled skill and adds flow-specific value (config-slot resolution, gate contract, feedback routing, in-flow orchestration). Added a consumer note: plugin-managed skills are overwritten on update, so **chaining, not in-place edits**, is the only extension pattern that survives an update.
+
+**Why:**
+The word "wrap" was used in *opposite senses* across flow's own docs. Rule 5 said "never wrap," yet `workflow.md` (the `/flow:verify-build` prerequisite note), `doctor/SKILL.md`, `ship/SKILL.md`, `docs/bootstrap.md`, and `docs/migration.md` all describe `/flow:verify-build` as *"wraps bundled `/verify`"* — the permitted composition. Worse, rule 5 was **stricter than flow's own FB-0015**, which endorses "a thin wrapper that delegates to the bundled skill" (the `/flow:security-review` / `/flow:accessibility-review` shape). A future session reading rule 5 literally would reject a legitimate chain. Anthropic's "Building verification loops in Claude Code with skills" recommends exactly this: *"build a custom wrapper skill that invokes the original, then invokes your verification skill,"* and notes embedded copies are off-limits for plugin-managed skills. The intent (don't re-implement) was always right; only the vocabulary was inverted. This is **Finding 11** of the Anthropic-research thread.
+
+**Design decisions:**
+- **Reword, don't delete.** FB-0015's don't-reimplement intent is load-bearing (it caught a 20-file `/verify` duplication). The fix preserves that intent and names the permitted pattern (delegating wrapper / chain), with `/flow:verify-build`-over-`/verify` and `/flow:ship`-chaining-its-reviewers as canonical examples.
+- **Left the "wraps bundled `/verify`" composition lines untouched.** Under the new vocabulary "wrap" = the permitted *invoke-and-extend*, so those lines are now consistent, not contradictory. Rewording them too would be scope creep (general.md scope discipline). FB-0010 grep sweep (`git grep -nE 'not.{0,6}wrap|never wrap|parrot'`) confirms the only survivors are the two reworded lines.
+- **No version bump.** Prose clarification to a shipped doc + a project-dev CLAUDE.md rule; no schema/skill/behavior change. Docs-only precedent (#65/#67) — rides the current release.
+
+**Technical / process decisions:**
+- **`/flow:ship` couldn't run natively (Finding 9).** flow is not installed in this Claude-Code-on-the-web session (no `~/.claude/plugins`, no `/flow:*` commands registered; a mid-session install can't register a slash command without a restart). Per the handoff's sanctioned fallback, opened the PR manually with the deviation documented, after running the pipeline stages that *are* available (`/security-review` → clean; a11y + verify-build self-skip on `platform:library` / `uiSurface:false`).
+- **Push path:** Conductor's auth broker had no GitHub token for this session context, so the branch was pushed from the Mac mirror (auto-syncs cloud commits, carries working auth) via `RunLocalCommand` — the token never left the Mac. Split out of the research thread's PR #113 (which was stale against main's Aug canon thread) so this clean, additive change ships on its own.
+
 ### SAFETY: `/flow:land` clear-reservation deleted audit-trail entries, not just the reservation (found by #88's own land run)
 **Date:** 2026-08-12
 **Branch:** land-88 (SHA lands with the PR)
