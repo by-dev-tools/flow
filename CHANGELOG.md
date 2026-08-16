@@ -10,6 +10,17 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.29.0 — 2026-08-15
+
+**A binary asset change (font / icon / image) now correctly reads as visually significant, instead of silently skipping the `/flow:ship` visual-deliverable gate.**
+
+- **Why it mattered.** `visual-significance.py` found a hunk's file via the `+++ b/<path>` header, but git emits **no** `+++` header for a binary file — only `Binary files a/… and b/… differ`. So an in-place font/icon re-export (`M …/Fraunces.ttf`) computed `visual_significant: false` and waved the change through the visual gate. Because a real font/icon PR *is* an in-place re-export at the same path, this was always the broken case (reported from a live consumer ship).
+- **What changed.** A dedicated branch parses the `Binary files … differ` line, checking **both** the `a/` and `b/` sides against the UI/asset patterns. This covers binary **add / modify / delete** uniformly. A binary *delete* of a matched asset now counts as a render delta (removing a rendered asset changes what draws — the gate over-demands a screenshot rather than under-demanding).
+- **Unaffected.** The `#if DEBUG` render-delta tracking, the FB-0079 per-consumer pattern split, and all text-diff handling are untouched (the new branch is self-contained).
+- **Known limitation.** A *text*-file full deletion has a separate `+++ /dev/null` blind spot not addressed here; tracked as a follow-up.
+
+**Breaking changes:** none. A project that was (incorrectly) skipping the visual gate on a binary asset change will now be asked for the visual deliverable it should always have provided.
+
 ## v1.28.0 — 2026-08-14
 
 **Every config-reading flow skill now fails loud when `jq` is missing, instead of silently degrading to hardcoded defaults and reporting green.**

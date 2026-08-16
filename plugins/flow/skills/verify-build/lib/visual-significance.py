@@ -109,6 +109,12 @@ _PP_ENDIF_RE = re.compile(r"^#\s*endif\b")
 _DEBUG_COND_RE = re.compile(r"^(?:defined\(\s*DEBUG\s*\)|DEBUG)$")
 _NOT_DEBUG_COND_RE = re.compile(r"^!\s*(?:defined\(\s*DEBUG\s*\)|DEBUG)$")
 
+# A modified/added/deleted binary file has NO `+++ b/<path>` header — git emits
+# only `Binary files a/<pathA> and b/<pathB> differ`. Both sides are captured so
+# add (`/dev/null and b/<path>`), delete (`a/<path> and /dev/null`), and modify
+# (same path on both sides) are all covered by matching either side.
+_BINARY_DIFF_RE = re.compile(r"^Binary files (.+) and (.+) differ$")
+
 
 def _pp_own_kind(directive, cond):
     """Classify a `#if`/`#ifdef`/`#ifndef` condition as debug / not-debug / other."""
@@ -216,9 +222,13 @@ def _diff_content_changed(diff_text, visual_re, asset_re):
         for the caller's signals, even when `changed` ends up True from some
         other line).
     Parses unified diff; tracks the current file via the `+++ b/<path>` header.
-    Also tracks `#if DEBUG` / `#endif` nesting (from context + changed lines
-    alike) so a change entirely inside a DEBUG-only conditional-compilation
-    region — Release byte-identical — does not count as a visual delta."""
+    A binary file emits NO `+++` header (only `Binary files a/… and b/… differ`),
+    so those are handled separately: a matched path on either side of that line is
+    a real render delta, covering binary add / modify / delete uniformly (a font or
+    icon re-export is an in-place modify at the same path — the always-broken case
+    this fix closes). Also tracks `#if DEBUG` / `#endif` nesting (from context +
+    changed lines alike) so a change entirely inside a DEBUG-only conditional-
+    compilation region — Release byte-identical — does not count as a visual delta."""
     cur_relevant = False
     pp_stack = []  # [{"effective": bool, "kind": "debug"|"not-debug"|"other"}, ...]
     debug_only_skipped = False
@@ -227,6 +237,24 @@ def _diff_content_changed(diff_text, visual_re, asset_re):
         return bool(pp_stack) and pp_stack[-1]["effective"]
 
     for line in diff_text.splitlines():
+        if line.startswith("Binary files "):
+            # No `+++ b/<path>` header exists for a binary file — parse this line
+            # instead. Check BOTH sides (add carries the path on b/, delete on a/,
+            # modify on both) directly against the patterns; a matched path on
+            # either side (ignoring /dev/null) is a render delta. Self-contained:
+            # does not read/write cur_relevant or the preprocessor stack, so text-
+            # hunk DEBUG tracking is unaffected. A binary delete counts as a render
+            # delta by the same fail-safe logic as a modify (see the module + the
+            # history entry: removing a rendered asset changes what draws).
+            mb = _BINARY_DIFF_RE.match(line)
+            if mb:
+                for side in (mb.group(1), mb.group(2)):
+                    p = side.strip()
+                    if p.startswith("a/") or p.startswith("b/"):
+                        p = p[2:]
+                    if p != "/dev/null" and (visual_re.search(p) or asset_re.search(p)):
+                        return True, debug_only_skipped
+            continue
         if line.startswith("+++ "):
             p = line[4:].strip()
             if p.startswith("b/"):

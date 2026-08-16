@@ -4,6 +4,32 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-15 — Binary asset re-export now reads visually significant (SAFETY, FB-0086)
+
+**Branch:** `fix/binary-asset-visual-significance` · **SHA:** _(set at ship)_
+
+**What was done (user-facing).** `visual-significance.py` — the shared predicate that gates the `/flow:ship` visual-deliverable requirement — now recognises an in-place binary asset change (font / icon / image) as a real render delta. Before this, `M …/Fraunces.ttf` computed `visual_significant: false` and silently skipped the visual gate; after, it reads `true`, the same as a text UI edit. Item 1 of 3 from the health-tracker PR #100 consumer report.
+
+**Why (SAFETY — a silent fail-open of a ship gate).** `_diff_content_changed()` decides which file a hunk belongs to by watching for the `+++ b/<path>` header. **Git emits no `+++` header for a binary file** — only `Binary files a/<path> and b/<path> differ`. So for a modified binary, `cur_relevant` never flipped true, no render delta was seen, and the pure-refactor exclusion fired ⇒ `false`. A real font/icon PR *is* an in-place re-export at the same path, so this was **always** the broken case — the gate that exists to demand a screenshot silently waved through exactly the change class it is meant to catch. This is the FB-0010 silent-skip / fail-open class, in the surface FB-0079 rewrote one PR earlier.
+
+**The fix.** A dedicated branch for the `Binary files … differ` line: parse **both** the `a/` and `b/` sides, strip the prefix, and if either (ignoring `/dev/null`) matches `visual_re` or `asset_re`, return a render delta. Parsing both sides covers binary **add / modify / delete uniformly** — an add is `/dev/null and b/<path>`, a delete is `a/<path> and /dev/null`, a modify carries the path on both. The branch is self-contained (it inspects the parsed paths directly, never reading or writing `cur_relevant` or the preprocessor stack), so the `#if DEBUG` text-hunk tracking is provably unaffected.
+
+**Design decision — a binary DELETE counts as a render delta (argued deliberately, not left to fall out).** Options considered:
+- **(chosen) Delete ⇒ significant.** Removing a rendered asset changes what the app draws (a fallback renders, or the element disappears). The gate's fail-safe direction is to **over-demand** a screenshot: a false positive costs one "nothing visual to show" note; a false negative ships an unverified visual regression — the exact class this fix closes. The diff cannot distinguish dead-asset cleanup from live-asset removal, so we take the safe union (consistent with FB-0079's fail-safe-direction corollary: a whole-diff safety claim takes the over-refusing union).
+- **(rejected) Count only add/modify, ignore the `a/` side.** Reintroduces a blind spot identical to the one being removed, and asset removal genuinely changes rendering. Rejected.
+
+**Technical decisions.**
+- **Both-sides parse, not b-side-only.** Needed for delete (path on `a/` only) and uniform for modify. Regex `^Binary files (.+) and (.+) differ$`; greedy split mis-handles the pathological case of `" and "` inside a filename, noted as an accepted limitation (asset paths don't carry it, and either side matching still catches the trailing extension).
+- **No new eval harness.** `run_visual_significance_evals.py` was already wired into CI (ci.yml:62); the wired-vs-on-disk integrity guard (ci.yml:34-45) re-verified MATCH, so nothing to wire.
+
+**Verification (the repo's red-verify bar; FB-0079 corollary 2 — pick fixtures by the distinguishing axis = binary × add/modify/delete, not the example in hand).** Five fixtures added. Three are **RED pre-fix**: `binary-modify-significant` (the reported bug), `binary-delete-significant`, and `binary-both-sides-checked` (a rename+modify with a non-matching `a/` and matching `b/`, status M so the `new_files` shortcut can't cover it — the b-side's real proof; also **mutation-tested**: reducing the loop to `mb.group(1)` makes it fail). `binary-add-significant` is kept as an honest **regression control**, explicitly NOT a red-verify — an A-status file already hits the pre-existing `new_files` shortcut, so it is green both ways and proves nothing about the parser; labelling it a control rather than a proof is the FB-0079-corollary-2 discipline applied to my own fixtures. `binary-nonasset-not-significant` pins that the parser matches the path and does not fire on every `Binary files` line. Red-verified by restoring the pre-fix file (3 checks FAIL), then the fix (57/57 pass). All 24 CI harnesses + `check-index.py` green.
+
+**Known limitation (explicit non-goal, scope discipline).** A *text*-file full deletion has a **separate** blind spot — `+++ /dev/null` sets `cur_relevant` false and the `---` line is skipped, so a deleted text UI file's `-` lines are never counted. The `Binary files` parser does not reach it (text files have real `+++`/`---` headers). Out of scope for item 1 (binary assets); left for a follow-up rather than silently pinned green. Recorded here so the next session finds it as a decision, not a surprise.
+
+**Process.** Followed flow's own loop: plan written to `plan.md` with a Spec-walk block and human-approved before implementing; FB-0086 reserved (held to **merge**, not ship — three of the last five PRs renumbered because numbers were released at ship while the PR sat open); shipped via `/flow:ship`. Related: FB-0079 (the split this fix builds on), FB-0010 (silent-skip / fail-open class), FB-0062 (a stage's verdict is trusted only if it actually measured the thing).
+
+---
+
 ## 2026-08-14 — jq-absence fail-fast across flow skills (SAFETY)
 
 **Branch:** `fix-jq-absence-fail-fast` · **SHA:** merged #110 @ `5475ad00`
