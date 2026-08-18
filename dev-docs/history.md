@@ -6,7 +6,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ## 2026-08-15 — Binary asset re-export now reads visually significant (SAFETY, FB-0086)
 
-**Branch:** `fix/binary-asset-visual-significance` · **SHA:** _(set at ship)_
+**Branch:** `fix/binary-asset-visual-significance` · **SHA:** merged #116 @ `fc0bdf78`
 
 **What was done (user-facing).** `visual-significance.py` — the shared predicate that gates the `/flow:ship` visual-deliverable requirement — now recognises an in-place binary asset change (font / icon / image) as a real render delta. Before this, `M …/Fraunces.ttf` computed `visual_significant: false` and silently skipped the visual gate; after, it reads `true`, the same as a text UI edit. Item 1 of 3 from the health-tracker PR #100 consumer report.
 
