@@ -20,6 +20,8 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 ## Currently reserved (as of 2026-08-03)
 
+_(FB-0086 cleared at merge of #116, v1.29.0 — binary-asset visual-significance fail-open fix (item 1 of the health-tracker PR #100 report). Its reservation line said "held until MERGE"; #116 merged 2026-08-16, so `/flow:land 116` reconciled it. Entry lives in `feedback.md`.)_
+
 _(FB-0085 cleared at merge of #105 — service-agnostic research + Codex/Cursor roadmap + the dev-docs index. Entry lives in `feedback.md`.)_
 
 
@@ -39,7 +41,6 @@ _(FB-0077 cleared at merge of #90, v1.25.0 — `/flow:land` made model-invocable
 _(FB-0080 + FB-0081 cleared at merge of #97 — the designer-signal track. Both were **renumbered twice** while the branch was open (FB-0078/0079 → 0079/0080 → 0080/0081) as #92 then #95 took the numbers ahead of them; the third and fourth instances of the pattern this file records. Released here per the amended protocol — held until MERGE, not cleared at ship. Entries live in `feedback.md`.)_
 
 
-- **FB-0086** — `fix/binary-asset-visual-significance` (tehran-v2 workspace) — "A modified/deleted binary asset emits no `+++ b/<path>` header, so the visual-significance predicate reads it as a pure no-render-delta refactor and computes `visual_significant:false` — parse both sides of the `Binary files … differ` line to cover binary add/modify/delete uniformly." Item 1 of 3 from the health-tracker PR #100 consumer report. **Held until MERGE, not ship** (three of the last five PRs had to renumber because numbers were released at ship while the PR sat open). Next-free re-verified 2026-08-15: #105 took FB-0085, so 0086 is next.
 - **FB-0013** — same-model-critic-collusion / auditor model-diversity (**PR P**) — plan-level reservation; see `dev-docs/plan.md` PR P + `roadmap.md`. No active branch yet — add a worktree slug here when PR P starts.
 - **FB-0014** — `pr-r/flow-init-skill` (thirsty-napier-5a3ff4) — "Init skill must default to additive + per-item human approval; never overwrite or delete existing files." Provisional letter `PR R`; finalize at ship time. Plan landed 2026-05-28 in `dev-docs/plan.md` § "PR R — `/flow:init` skill (planning; queued)".
 - **FB-0058** — `fix/verifyenabled-jq-false-default` (PR #44, brought current) — "jq `// default` silently breaks for boolean config slots that can legitimately be false — use `if .X == false` not `.X // true`." Consumer dogfood discovery (valletta flow-migration). **Renumbered from the originally-drafted FB-0047**, which collided with main's shipped FB-0047 ("non-forgeable Test plan", #46/PR TP) — the exact collision class this file defends; entry now written in `feedback.md`. Clears at merge.
