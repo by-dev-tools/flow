@@ -398,7 +398,8 @@ def main(argv):
                 signals.append(
                     "[WARN] every Visual-walk block is demoted (qualified "
                     "merged/shipped) — the active plan section declares none; "
-                    "NOT treating it as an override"
+                    "NOT treating it as an override (expected after demote-at-merge; "
+                    "no action needed)"
                 )
                 signals.extend(f"[WARN] {w}" for w in blk.get("warnings", []))
             elif blk.get("block_count", 0) >= 1:

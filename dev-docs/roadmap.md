@@ -617,6 +617,10 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 
 ## § Exploration
 
+### `all_demoted` × walk_extract anchor-limitations composition (2026-08-17, push-further)
+
+The v1.30.0 fix and the two documented `walk_extract` anchor limitations (`walk_extract.py:53-75`: active-PR-has-no-anchor; retained Visual-walk authored above its own Spec-walk) are currently reasoned about independently, but they compose: a no-anchor `tiny`/`spike` plan whose only walk block is a *retained, demoted* one is now suppressed by `all_demoted` detection — arguably the right answer for the wrong reason, while a retained-but-*not*-demoted block still leaks. Whether `all_demoted` strengthens or merely masks the anchor limitations isn't obvious, and no fixture pins the intersection. **Surfaces when:** `walk_extract.py` anchor limitations OR `all_demoted` are next touched, OR the "universal per-PR boundary marker" plan-format decision is taken — that decision should also specify how demote-qualification and region-boundary detection compose, so the next author doesn't treat them as orthogonal.
+
 ### Held design-forks from the #119 contribution drain (2026-08-17) — need a scope/design decision
 
 Five verified-novel held items are design calls, not mechanical fixes (full evidence in the merged #119 PR body):
