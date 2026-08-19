@@ -82,6 +82,10 @@ Where flow *does* add value — config-slot resolution, a gate-shaped contract, 
 
 When this doc references one of the bundled skills by name, treat it as the native bundled skill. Everything else with a `/flow:` prefix is flow-provided.
 
+### Human-only skills the model can't see
+
+Skills marked `disable-model-invocation: true` (today only `/flow:post-merge`) are absent from the model's skill registry — the model has no tool for them. A model asked to run one may wrongly conclude *"that skill does not exist"* — a confident falsehood, since the skill ships in the plugin and the human can run it. Before asserting any named `/flow:*` skill is unavailable, list `${CLAUDE_PLUGIN_ROOT}/skills/`. And a skill that composes a human-only skill should say plainly *"you must run X yourself; I can't invoke it"* rather than infer absence from the missing tool.
+
 ### Flow's own audit/critique skills
 
 `/flow:audit-plan`, `/flow:audit-completion`, `/flow:critique-plan`, and `/flow:log-disagreement` are **flow-internal** (bundled into flow v1.0.0), not an external `assumption-auditor` plugin. Prior versions of flow's lineage shipped them as a separate plugin; v1.0.0 absorbs them because they're used together with the workflow skills 100% of the time and separation imposes install friction without compositional value.
@@ -583,3 +587,5 @@ Why two defaults: flow's *own* dev-tracking lives at `dev-docs/` (so `core-docs/
 - **Skipping Preflight before /simplify.** `/simplify` is judgment work; preflight is mechanical. Don't waste the former on the latter.
 - **Asking 12 questions in step 1 (Clarify).** Ask 2–4 high-leverage ones, or list assumptions with confidence.
 - **Wrapping a bundled Claude Code skill in a `/flow:` namespace.** `/simplify`, `/batch`, `/debug`, `/loop`, `/claude-api` are native. Use them as-is.
+- **Blanket find-replace during a rebase renumber.** When a rebase forces renumbering a contract value (feedback id, version, slot count), never global-replace across the tree — the branch also holds upstream's lines carrying the same token, and the sweep rewrites the *other* PR's shipped identifiers. Scope every sweep to lines absent from the upstream version of the file (`git diff origin/<base> -- <file>` first).
+- **Resolving a reverse-chronological append-only doc by keeping conflict markers.** CHANGELOG / feedback / history / roadmap all prepend, so a marker resolution silently drops one side's entry (or merges two bodies under one heading). Rebuild the file as the upstream copy plus your one new entry at the top, then assert no base line went missing (`git diff origin/<base> -- <doc>` should show only additions).

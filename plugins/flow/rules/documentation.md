@@ -26,6 +26,10 @@ Every entry must include:
 
 Entries that modify error handling, persistence, fallback behavior, or sanitization (markdown rendering, HTML sanitizer config, etc.) must include a `SAFETY` marker in the title or body.
 
+## Recorded rejections
+
+When any narrative entry (history, roadmap, plan) records that an alternative was rejected — "we did not do X because Y", "chose A over B because…" — Y must be a *measured* result, or the entry must state plainly that X is unevaluated and name the cheap experiment that would settle it. An unverified prediction may not, on its own, carry a rejection: a future reader inherits "X is closed" as settled fact and never re-opens it. A hedge word ("plausibly", "likely", "probably") does not discharge this — it flags the claim as exactly the unmeasured kind that must not close an alternative by itself.
+
 ## feedback.md format
 
 Every entry must include:
