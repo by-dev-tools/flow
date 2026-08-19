@@ -70,7 +70,7 @@ def make_buffer(path, *, branch, sha, verdict, frames, visual_significant=True):
     Path(path).write_text(json.dumps(buf), encoding="utf-8")
 
 
-def run(tmp, *, config, report, files, diff=None, vh_text=None):
+def run(tmp, *, config, report, files, diff=None, vh_text=None, plan=None):
     d = Path(tmp)
     cfg_p = d / "flow.config.json"
     cfg_p.write_text(json.dumps(config), encoding="utf-8")
@@ -84,6 +84,10 @@ def run(tmp, *, config, report, files, diff=None, vh_text=None):
         diff_p = d / "diff.txt"
         diff_p.write_text(diff, encoding="utf-8")
         argv += ["--diff-from", str(diff_p)]
+    if plan is not None:
+        plan_p = d / "plan.md"
+        plan_p.write_text(plan, encoding="utf-8")
+        argv += ["--plan", str(plan_p)]
     proc = subprocess.run(argv, capture_output=True, text=True, check=False)
     try:
         out = json.loads(proc.stdout)
@@ -353,6 +357,30 @@ def main() -> int:
         check("fb79-skill-renders-pattern-warnings",
               "pattern_warnings" in skill and "PATTERN-WARNING" in skill,
               "audit-skips/SKILL.md must instruct the agent to surface pattern_warnings")
+
+        # Walk-parser lifecycle leak: an all-DEMOTED Spec-walk must not read as an
+        # active block. A docs-only post-merge PR whose plan carries only demoted
+        # headings (qualified "(merged #N)") has block_count >= 1 but NO active block,
+        # so audit-coverage's "no Spec-walk" skip is LEGITIMATE. Pre-fix, skip-audit
+        # read block_count and flagged SHOULD-RE-RUN ("plan has 1 block") — a false
+        # positive routing a clean docs PR to the draft manifest.
+        demoted_plan = "## Recently Completed\n\n### PR #99\n\n**Spec-walk (merged #99):**\n- [x] the button renders\n"
+        r = run(tmp, config={"uiSurface": True},
+                report={"stages": [{"name": "audit-coverage", "status": "skipped",
+                                    "skip_reason": "no Spec-walk"}]},
+                files="M\tdev-docs/history.md", plan=demoted_plan)
+        check("all-demoted-spec-walk-skip-legit",
+              verdict_of(r, "audit-coverage") == "LEGITIMATE",
+              f"demoted-only plan has no active Spec-walk; skip must be LEGITIMATE, got {verdict_of(r,'audit-coverage')}: {r.get('stages')}")
+        # Regression control: an ACTIVE (bare) Spec-walk with the SAME skip is still refused.
+        active_plan = "## Current Focus\n\n**Spec-walk:**\n- [ ] the button renders\n"
+        r2 = run(tmp, config={"uiSurface": True},
+                 report={"stages": [{"name": "audit-coverage", "status": "skipped",
+                                     "skip_reason": "no Spec-walk"}]},
+                 files="M\tdev-docs/history.md", plan=active_plan)
+        check("active-spec-walk-skip-refused",
+              verdict_of(r2, "audit-coverage") == "SHOULD-RE-RUN",
+              f"active Spec-walk contradicts a no-Spec-walk skip, got {verdict_of(r2,'audit-coverage')}: {r2.get('stages')}")
 
     with tempfile.TemporaryDirectory() as tmp:
         bad = Path(tmp) / "bad.json"

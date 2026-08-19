@@ -388,6 +388,19 @@ def main(argv):
                 # and the move-it-here remedy. Dropping them would leave the
                 # operator with a refusal and no way to act on it.
                 signals.extend(f"[WARN] {w}" for w in blk.get("warnings", []))
+            elif blk.get("all_demoted"):
+                # Every Visual-walk block is qualified (merged/shipped/demoted), so
+                # the active plan section declares none. block_count >= 1 here, but
+                # the just-demoted pair floats to the top and would read as active —
+                # exactly the state a correct demote-at-merge produces. Requiring an
+                # ACTIVE (bare) block closes the false override: a docs-only post-merge
+                # PR must NOT be forced visually significant off a retained block.
+                signals.append(
+                    "[WARN] every Visual-walk block is demoted (qualified "
+                    "merged/shipped) — the active plan section declares none; "
+                    "NOT treating it as an override"
+                )
+                signals.extend(f"[WARN] {w}" for w in blk.get("warnings", []))
             elif blk.get("block_count", 0) >= 1:
                 override = "visual-walk-block"
                 override_signal = "plan declares a Visual-walk block"

@@ -333,6 +333,21 @@ def main() -> int:
         check("visual-walk-override",
               o.get("visual_significant") is True and o.get("override") == "visual-walk-block", f"{o}")
 
+        # 8b. All Visual-walk blocks demoted (qualified merged/shipped) → the active
+        #     plan section declares none, so NO override even though block_count >= 1.
+        #     A docs-only post-merge PR must NOT be forced visually significant off a
+        #     retained block. Pre-fix, the override keyed on block_count and returned
+        #     true here, routing a docs-only post-merge PR to the draft manifest.
+        demoted_plan = (
+            "## Recently Completed\n\n### PR #99\n\n"
+            "**Spec-walk (merged #99):**\n- [x] the button renders\n\n"
+            "**Visual-walk (merged #99):**\n- [ ] Empty state renders centered\n"
+        )
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tsrc/logic.py", plan=demoted_plan)
+        demoted_warn = any("demoted" in s for s in o.get("visual_signals", []))
+        check("visual-walk-all-demoted-no-override",
+              o.get("visual_significant") is False and o.get("override") is None and demoted_warn, f"{o}")
+
         # 9. override suppressed by uiSurface:false (recorded, not honored).
         rc, o = run(tmp, config={"uiSurface": False}, files="M\tsrc/logic.py", plan=plan)
         sup = any("SUPPRESSED" in s for s in o.get("visual_signals", []))

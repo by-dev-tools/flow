@@ -445,7 +445,13 @@ def main(argv):
     spec_blocks = 0
     if args.plan and extract_block is not None:
         try:
-            spec_blocks = extract_block(Path(args.plan).read_text(encoding="utf-8"), "Spec-walk").get("block_count", 0)
+            _blk = extract_block(Path(args.plan).read_text(encoding="utf-8"), "Spec-walk")
+            # Count only an ACTIVE block. A plan whose Spec-walk headings are all
+            # demoted (qualified merged/shipped) has block_count >= 1 but no active
+            # block — the next PR must not inherit its criteria, and audit-coverage
+            # must not read it as "the plan has a Spec-walk". all_demoted and
+            # first_heading is None both mean "no active block selected".
+            spec_blocks = 0 if _blk.get("all_demoted") or _blk.get("first_heading") is None else _blk.get("block_count", 0)
         except OSError:
             spec_blocks = 0
 
