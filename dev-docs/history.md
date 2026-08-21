@@ -4,6 +4,26 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-17 — Walk-parser lifecycle fix: an all-demoted block no longer reads as active (v1.30.0, FB-0059)
+
+**Branch:** `fix-walk-parser-all-demoted-leak` · **SHA:** _(set at ship)_
+
+**What was done (user-facing).** The two walk-parser consumers that ignored the `all_demoted` lifecycle predicate now honor it. `visual-significance.py` keyed the Visual-walk override on `block_count >= 1`, and `skip-audit-checks.py` read `block_count` for its "no Spec-walk" audit — so a plan whose Spec-walk/Visual-walk headings are *all* demoted (qualified `(merged #N)` by the demote-at-merge convention) was mis-read as having an *active* block. Both now key on the `all_demoted` / `first_heading is None` predicate `walk_extract.extract_block` already computes. First of the executable held items from the #119 contribution drain.
+
+**Why (a gate misfire, reproduced live).** With every block correctly demoted, the just-demoted pair floats to the top of the plan and the position-based proxies read it as active. Consequence, reproduced on `main`: a **docs-only post-merge PR** whose plan carries only demoted blocks computes `visual_significant: true` (off a retained Visual-walk) and audit-coverage's legitimate "no Spec-walk" skip is flagged `SHOULD-RE-RUN` — so a clean docs PR is wrongly routed to the draft manifest. The parsers model POSITION; the fix makes them model LIFECYCLE, using the predicate the shared parser already emits. This is the FB-0010 silent-drift class in a ship gate.
+
+**The fix (two sites, one predicate).**
+- `visual-significance.py:391` — a new `elif blk.get("all_demoted")` branch *before* the `block_count >= 1` override: emit a `[WARN]` ("every Visual-walk block is demoted … NOT treating it as an override") and set no override.
+- `skip-audit-checks.py:448` — `spec_blocks = 0 if _blk.get("all_demoted") or _blk.get("first_heading") is None else _blk.get("block_count", 0)`, so a fully-demoted plan reports zero active Spec-walk blocks and the "no Spec-walk" skip is `LEGITIMATE`.
+
+**Design decision — key on the existing predicate, not a new anchor.** `walk_extract` already distinguishes `all_demoted` (block_count > 0, none active) from `block_count == 0` (no heading). The alternative — a new plan-format boundary marker for "active section" — is the documented `walk_extract` limitation for the *separate* "active PR at top declares none, retained PR below has a bare heading" case, which needs a format change and is explicitly out of scope here. Consuming the predicate that already exists is the minimal, self-contained fix; the bare-retained sub-case stays a tracked limitation.
+
+**Verification (red-green, both harnesses, regression controls labelled).** Two fixtures added: `visual-walk-all-demoted-no-override` (run_visual_significance_evals.py) and `all-demoted-spec-walk-skip-legit` (run_skip_audit_evals.py; the harness `run()` gained a `--plan` param it lacked). Each is **RED pre-fix** (verified by stashing only the two code fixes and keeping the eval cases: both fail exactly as the bug predicts) and **GREEN post-fix** (58/58 + 35/35). Each ships with an **active-plan regression control** (`active-spec-walk-skip-refused` / the existing override case) that passes *both* ways — labelled a control, not a proof, per the FB-0079-corollary-2 discipline. Both harnesses were already CI-wired; no wiring change.
+
+**Process.** Held item from the #119 drain, applied here as its own PR with human review (the drain deliberately did not auto-apply gate code). The remaining held backlog is captured to `roadmap.md` § Next (executable fixes) + § Exploration (design-forks). Related: FB-0059 (the drain), FB-0010 (silent-drift class), and the first-block/demote-at-merge extraction contract this predicate backs.
+
+---
+
 ## 2026-08-17 — Lesson-contribution drain: reviewer + doc-discipline hardening (FB-0059)
 
 **Branch:** `drain-lesson-queue` · **SHA:** _(set at ship)_

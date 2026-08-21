@@ -10,6 +10,16 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.30.0 — 2026-08-17
+
+**A plan whose walk blocks are all demoted (already merged/shipped) no longer reads as having an active block — so a docs-only post-merge PR is no longer wrongly flagged visually significant.**
+
+- **Why it mattered.** The walk parsers model a block's *position*, not its *lifecycle*. Once the demote-at-merge convention qualified every `Spec-walk`/`Visual-walk` heading (e.g. `**Spec-walk (merged #99):**`), the just-demoted block floated to the top and read as active. `visual-significance.py` (Visual-walk override) and `skip-audit-checks.py` (audit-coverage "no Spec-walk" check) both keyed on `block_count`, so a docs-only post-merge PR computed `visual_significant: true` and had its legitimate skip flagged — routing a clean docs PR to the draft manifest.
+- **What changed.** Both consumers now key on the `all_demoted` / `first_heading is None` predicate the shared `walk_extract` parser already emits. `/flow:verify-build` §5a frame-capture activation gains the same guard (the third consumer of the predicate). Red-green fixtures added to both eval harnesses.
+- **Unaffected.** A plan with a genuine *active* (bare) walk block behaves exactly as before (regression controls pin this).
+- **Known limitation.** The separate "active PR has no anchor / retained block authored above its Spec-walk" leak is still a tracked `walk_extract` limitation (needs a plan-format boundary marker); out of scope here.
+- **Breaking changes:** none.
+
 ## v1.29.0 — 2026-08-15
 
 **A binary asset change (font / icon / image) now correctly reads as visually significant, instead of silently skipping the `/flow:ship` visual-deliverable gate.**
