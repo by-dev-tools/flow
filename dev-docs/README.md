@@ -49,6 +49,7 @@ A **second** research location exists outside `dev-docs/`, added by #104. It is 
 
 | Doc | Status |
 |---|---|
+| [`handoffs/d1-prototype-first-gate.md`](handoffs/d1-prototype-first-gate.md) | 🟢 **ACTIVE — not started.** Move the human's first gate from the plan to a prototype (Designer-signal track D1; FB-0081). Self-contained; §0 is a cold-start reading order. **Two assumptions gate the build** (§9.3 auto-plan-quality spike; §9.4 prototype medium — human decision) |
 | [`handoffs/service-agnostic-roadmap-2026-07.md`](handoffs/service-agnostic-roadmap-2026-07.md) | 🟢 **ACTIVE — not started.** Codex + Cursor support from one source tree. **Contains Phase 00, a confirmed live bug** (plugin `rules/` and default hooks never load). Self-contained; §0 is a cold-start reading order |
 | [`handoffs/active-program-2026-07-08.md`](handoffs/active-program-2026-07-08.md) | 🟡 **PRESERVED, NOT APPLIED** — a roadmap section that never reached main, recovered verbatim before its worktree was archived. Re-integrating is a judgment call: the roadmap moved v1.19.0 → v1.27.0 since |
 | [`handoffs/pr-q-verify-build-plan.md`](handoffs/pr-q-verify-build-plan.md) | ⚪ **SHIPPED** — `/flow:verify-build`, v1.3.0 (#26). Historical record; its "Phase 3 in progress" status line is stale |

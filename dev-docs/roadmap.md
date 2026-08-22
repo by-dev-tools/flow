@@ -81,6 +81,8 @@ The high-value moment they named: *"The real valuable work happens when the flow
 
 ### D1 — Prototype-first gate (the load-bearing item; FB-0081)
 
+**▶ Execution plan written (2026-08-17, user-directed): [`dev-docs/handoffs/d1-prototype-first-gate.md`](handoffs/d1-prototype-first-gate.md)** — self-contained, cold-start-executable, phased spec-walk + confidence verdicts. Two assumptions gate the build (auto-plan-quality spike §9.3; prototype-medium human decision §9.4). The prose below is the design rationale; the handoff is the work.
+
 **Surfaces when:** picked up directly, or whenever `plugins/flow/docs/workflow.md`'s Step 1/2 or the Step 8/9 discovery boundary is next touched.
 
 Move the human decision point for UI work from the plan to the prototype. This **moves** a gate; it does not add one — workflow.md's Step 8/9 prose currently argues visual sign-off must fold into the merge gate "not a third gate", and replacement is the answer to that objection, not an exception to it. Target loop: Clarify (ask 2–4 questions) → **design brief** (problem, whose moment, constraints, intended scope, what's excluded, where it pushes past the literal request) → **review the brief before building** (`/flow:audit-plan` + `/flow:critique-plan` + the D3 experience/ambition lens) → **prototype, iteratively** → **human gate 1: prototype approval** → **technical plan** auto-written against the approved prototype and *machine*-gated (clean ⇒ proceed; `[auto-fixable]` ⇒ fix + re-review once ⇒ proceed; `[decision-required]` ⇒ escalate as an answerable question per FB-0075) → execute → ship → **human gate 2: merge**.
