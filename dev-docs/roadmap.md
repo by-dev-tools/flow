@@ -644,6 +644,29 @@ Grounded in a 12-agent, adversarially-validated investigation of health-tracker 
 
 **Why Exploration, not Next:** the load-bearing bet — that the agent can predict *which* foundational forks to prototype (coverage recall), and classify Tier-0-stance vs Tier-1-taste reliably — is unproven and must be measured on real health-tracker rounds before any build. Guessing wrong ships a variant sweep on a decision the user wanted researched, or a menu they've refused.
 
+### Step 2's concurrent-work check is inert on any cloud host
+
+**Surfaces when:** `plugins/flow/docs/workflow.md` Step 2 is next touched, OR anyone reports that two
+workspaces activated the same queued item, OR flow is run anywhere other than a local git checkout
+(Conductor cloud, Claude Code on the web, CI, a container).
+
+Step 2's "Before activating a queued item — check for concurrent work" sweep leads with
+`git worktree list`. In a cloud workspace that returns **only the workspace itself** — verified live
+2026-08-22 — so the check silently passes for every cloud session and the duplicate-activation it
+exists to prevent is unguarded. It is the FB-0010 silent-skip shape: the failing case is
+byte-identical to "nothing to report."
+
+The fix is small and the evidence is stronger than what it replaces: `git ls-remote --heads origin`
++ `gh pr list` + `conductor project workspace` (or the equivalent) all work from a cloud workspace,
+and **remote branches are better evidence than local worktrees** — they are the shared state
+conflicts actually occur in, and they are visible from every host, local included.
+
+**Why Exploration, not Next:** the one-line swap is obvious, but the surrounding question is not —
+whether the sweep should stay prose in a SKILL (portable, unenforceable) or move behind the
+`tools/flow` CLI the service-agnostic roadmap already proposes, which is where host-specific
+discovery belongs. Deciding that in isolation risks a third implementation of the same contract.
+Full context: **`research/2026-08-22-conductor-orchestration.md`** §2 fact 8, §11.
+
 ### A general harness for flow's shell↔Python mirrors
 
 **Surfaces when:** a third shell/Python mirror needs a parity guard, or any single change touches two or more `plugins/flow/skills/*/SKILL.md` shell preambles plus a `plugins/flow/skills/*/lib/*.py` implementing the same resolution.
