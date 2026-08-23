@@ -67,6 +67,26 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-25 — Plan drafted (awaiting human gate): Step 2's concurrent-work sweep is inert on cloud hosts
+
+**Branch:** `conductor/phase0-concurrent-work-check-cloud-inert` · **SHA:** _(set at ship)_
+
+**What was done.** No code changed yet — this entry records the plan (`dev-docs/plan.md`, "PR — Step 2 concurrent-work sweep is inert on cloud hosts") drafted and reviewed via `/flow:critique-plan` (0 findings on the second pass), now waiting at the human gate per the branch's contract. Recorded here because the plan itself embeds two decisions worth keeping regardless of when execution lands.
+
+**Why (the bug being planned for).** `plugins/flow/docs/workflow.md` Step 2's "Before activating a queued item — check for concurrent work" sweep leads with `git worktree list`. On a Conductor-style cloud workspace (an isolated clone per workspace, not a linked worktree of a shared repo), that command always returns only the current workspace — so the check that exists to prevent duplicate activation of a queued item silently reads as "nothing to report" on exactly the hosts where many parallel agents drawing from one queue make duplication most likely. Verified live in a cloud workspace 2026-08-22 (per the task brief): `git worktree list` returns only itself, while `git fetch` / remote-tracking branches / `gh pr list` all work normally there. FB-0010 silent-skip class — the failing case is byte-identical to the legitimately-empty case.
+
+**Design decision 1 — fix stays in prose now, CLI migration deferred.** A `roadmap.md` § Exploration entry (landing separately on branch `calgary`) poses an open fork for this sweep: leave it as prose in the SKILL (portable, unenforceable) vs. move it behind the `tools/flow` CLI the service-agnostic roadmap proposes. This plan takes an explicit position — fix the prose now (fastest correctness fix, zero new infrastructure), leave the CLI migration as a natural follow-up once that CLI exists — without preempting the roadmap fork itself, which stays branch `calgary`'s to decide.
+
+**Design decision 2 — no new eval fixture.** Every eval harness in this repo pins an *executable* engine (a `lib/*.py` module, or a `!`-block extracted and actually run from a `SKILL.md`); this sweep is narrative prose with no extraction point any harness targets. Fixturing it would mean either building that extraction/execution engine now (preempting the CLI-vs-prose fork by accident) or asserting on the doc's string content only, which cannot prove cross-host behavior and is exactly the "grep the value, not the behavior" anti-pattern `general.md`'s FB-0010 section warns against. The cross-host evidence already exists via direct reproduction (2026-08-22); no synthetic fixture is needed to replay something already observed directly. If the sweep later gains an executable engine, that engine gets fixtures then.
+
+**Plan-critic finding, applied.** First critique pass found a genuine internal incoherence: the plan asserted HIGH confidence with "no reasonable alternative host behaves differently," while the Risks section separately conceded `gh pr list` silently degrades to "no open PRs" when `gh` is unavailable/unauthenticated — the same silent-skip shape one precondition down from the bug being fixed. Resolved by adding an explicit Scope-in requirement: the reordered sweep must name the `gh`-unavailable case out loud rather than silently proceeding as if the PR check had run and found nothing. Second critique pass: 0 findings.
+
+**Tradeoffs discussed.** Keeping `git worktree list` in the sweep (relabeled local-only, not evidence of absence) versus dropping it outright — kept, since it still adds fidelity on a genuine local multi-worktree setup; the fix is demoting it from primary to supplementary evidence, not removing a working signal.
+
+**Note on the `calgary` research entry above (2026-08-23, "Spike: orchestrator-driven Conductor cloud workspaces").** That merged spike independently found and named the same bug (`git worktree list` reads empty on a cloud host) and deliberately routed it to `roadmap.md` § Exploration rather than fixing it inline, reasoning that the prose-vs-`tools/flow`-CLI question would otherwise be decided in isolation. This branch was dispatched to fix the bug directly (task predates discovery that `calgary` had also surfaced it); its plan takes the same position `calgary`'s own proposed replacement evidence implies (`git ls-remote`/`gh pr list` over `git worktree list`) without resolving the prose-vs-CLI fork itself. The § Exploration entry should be closed against this fix once it ships — left to the human/a future PR per this branch's `do not touch: roadmap.md` boundary.
+
+---
+
 ## 2026-08-17 — Walk-parser lifecycle fix: an all-demoted block no longer reads as active (v1.30.0, FB-0059)
 
 **Branch:** `fix-walk-parser-all-demoted-leak` · **SHA:** _(set at ship)_
