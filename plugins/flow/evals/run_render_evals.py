@@ -79,6 +79,16 @@ CASES = [
          # ever means an unverified criterion):
          ["[ ] >1 browser engine", "[x] >1 browser engine"],
          sha="abc1234"),
+    # Harvested lesson (ripe#16): the unchecked-box footnote must NOT reproduce the
+    # literal `🚫 NOT READY TO MERGE` heading — pr-coherence.has_manifest substring-
+    # matches that sentinel, so a READY PR whose Test plan carries an unchecked box
+    # would trip flow_assert_pr_coherent on renderer output alone. The footnote still
+    # directs a draft author to the not-ready manifest (positive assertion), just
+    # without emitting the machine sentinel (negative) — the FB-0010 pairing.
+    case("footnote-omits-manifest-sentinel", "coh", "mixed",
+         ["unresolved verification gap", "not-ready manifest"],
+         ["🚫 NOT READY TO MERGE"],
+         sha="abc1234"),
     case("spike-correctness-only", "5", "spike",
          ["Spike smoke check", "[x] Launch: the built artifact starts", "1/1 smoke checks passed"],
          ["regression:", "scope-creep:", "dimension not applicable"],

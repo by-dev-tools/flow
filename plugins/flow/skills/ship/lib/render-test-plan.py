@@ -476,8 +476,8 @@ def rendered_block(findings: dict, branch: str, sha: str) -> str:
     if n_pass < n:
         parts.append(
             "\n> An unchecked box above is a real, unresolved verification gap. "
-            "If this PR is a draft, resolve via the `🚫 NOT READY TO MERGE` "
-            "manifest, not here."
+            "If this PR is a draft, resolve it through the not-ready manifest "
+            "in the PR body, not here."
         )
 
     parts.append("")
