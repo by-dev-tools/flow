@@ -44,6 +44,8 @@ A **second** research location exists outside `dev-docs/`, added by #104. It is 
 | Doc | Status |
 |---|---|
 | [`research/2026-08-14-cloud-ios-simulator-limrun.md`](../research/2026-08-14-cloud-ios-simulator-limrun.md) | ⏸️ **Parked** — cloud iOS simulators (Limrun + alternatives) for agent workflows. Not being pursued |
+| [`research/2026-08-23-flow-cloud-workflow-plan.md`](../research/2026-08-23-flow-cloud-workflow-plan.md) | ⭐ **CANONICAL cloud-workflow plan** — consolidates the 08-22 research + the Trio tiered cloud/local plan; one pipeline with environment-keyed placement, PR+label verify queue, the `toolchain` manifest kind as keystone. Where docs disagree, this one wins |
+| [`research/2026-08-22-conductor-orchestration.md`](../research/2026-08-22-conductor-orchestration.md) | 🟡 **Partially superseded** — §2 facts + cost model remain authoritative (cited as `[F#]` by the canonical plan); §8 design + §10.1 ledger superseded by the 08-23 plan |
 
 ## Handoffs — per-PR execution plans
 

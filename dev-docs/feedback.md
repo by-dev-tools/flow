@@ -45,6 +45,34 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 
 **Applies to:** workflow, architecture, roadmap items M + AB, model selection, dev-docs hygiene
 
+### FB-0088 — Encode facts, not procedures: a harness that scripts judgment becomes a ceiling as models improve
+
+**Date:** 2026-08-23
+**Source type:** user direction
+
+**What was said.** While specifying the artifacts for a Conductor-orchestrator design, the user set a standing constraint: *"we need to watch for bloat, especially as it relates to building things that get in the way of or inhibit natural model capabilities as the models get better. This should be as lightweight as possible while still enforcing the workflow, but we need to be careful not to lose functionality because we're building too heavy."*
+
+**Synthesized rule.** When deciding whether a piece of harness earns its place, ask which of two things it encodes. **A fact the model cannot know** — what is in flight, who owns which paths, what the human decided, which version is installed — *compounds* as models improve: a better model does more with an accurate ledger. **A procedure the model could derive** — a triage decision tree, a scripted review order, a wrapper restating what a bundled skill already does — *decays*: it is written against today's model, and every capability gain makes it more ceiling and less floor. Prefer the first; delete the second.
+
+**Corollary (a) — enforce mechanically only what must not drift, and keep that list short.** For flow that is the two human gates and the artifact-existence checks (FB-0062's "a verdict without its artifact is a skip"). Everything else is prose, which a better model handles better than a rule would.
+
+**Corollary (b) — every artifact carries a deletion criterion**, stated when it is created: the condition under which it stops earning its keep. The failure mode is not adding the wrong thing once; it is never removing the right thing later. **FB-0077 is the precedent** — a check outlived the feature it protected and stayed green over its absence for four releases, and nobody had written down when it should have been retired.
+
+**Applies to:** any new `/flow:*` skill, rule, or eval; CLAUDE.md's F11 "never re-implement a bundled skill; compose instead" (this is F11's motivation generalized past bundled skills); `research/2026-08-22-conductor-orchestration.md` §9 "Deliberately not built". Related: FB-0056 (drop a skill whose delta over a bundled one is null), FB-0077 (a check that outlived its feature), FB-0010 (fan-out — a duplicated contract is a procedure encoded twice).
+
+### FB-0087 — Establish that a capability is absent before planning to provide it; the platform may already ship it
+
+**Date:** 2026-08-23
+**Source type:** user correction
+
+**What was said.** A staged orchestrator proposal included a "Phase 2" whose job was a `.conductor/settings.toml` setup script, so every spawned cloud workspace would bootstrap the flow plugin identically. The user cut it: *"how necessary is phase 2 given the conductor cloud computer setup? flow will always be installed because of the nature of the setup."* Checking rather than arguing settled it in one command — `~/.claude/plugins/installed_plugins.json` records flow at **user** scope with `installedAt 2026-08-19T04:51`, while the workspace it was running in was created `2026-08-20T21:40`. The plugin *predates the workspace*, so it comes from the cloud-computer image and is present in every new workspace by construction. The phase was solving a problem the platform had already solved.
+
+**Synthesized rule.** Before planning work whose purpose is to *provide* a capability, spend one command establishing that the capability is actually absent. A proposal that adds a bootstrap / setup / sync layer is **asserting an absence**, and that assertion is a load-bearing claim that belongs in the plan's confidence verdicts — verified before the phase is scoped, not after it is built. The cost of getting it wrong is not the wasted plan (plans are cheap); it is that scaffolding built over a capability the platform already supplies becomes permanent maintenance with no corresponding benefit, and it is invisible from then on precisely *because it works*.
+
+**Corollary — what survives the cut is usually narrower and genuinely load-bearing.** Here the image pins a *version*: `known_marketplaces.lastUpdated` had not moved in days and the installed plugin was already a commit behind `origin/main`. So the residue is a **version assertion**, not an install step — a much smaller artifact than the phase it replaced.
+
+**Applies to:** planning discipline (`plugins/flow/docs/workflow.md` Step 2 confidence verdicts) and any staged plan that opens with an environment-bootstrap phase. Related: FB-0085 (verify a mechanism against the runtime, not its own documentation — the same discipline one layer up: verify the *environment* against the runtime, not against your model of it), FB-0088 (the bloat this avoids), FB-0010.
+
 ### FB-0086 — A diff-parsing gate must enumerate git's output formats, not just the common one: a binary file has no `+++` header, so a header-driven predicate fails open on it
 
 **Date:** 2026-08-15
