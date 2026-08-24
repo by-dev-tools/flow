@@ -20,9 +20,7 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 ## Currently reserved (as of 2026-08-03)
 
-- FB-0087 — `calgary` — "establish a capability is absent before planning to provide it" — flow-cloud-calgary — **held until MERGE**
-- FB-0088 — `calgary` — "encode facts, not procedures; every artifact carries a deletion criterion" — flow-cloud-calgary — **held until MERGE**
-  _(Held rather than cleared at ship: a concurrent worker branch is live right now (the Step-2 concurrent-work fix dispatched from this session). Clearing at ship would free both numbers while this PR is still open, which is exactly the race this file exists to catch. `/flow:land` clears them at merge.)_
+_(FB-0087 + FB-0088 cleared for merged #122 — the canonical flow cloud-workflow plan + Conductor orchestration spike. Both lines said "held until MERGE" (a concurrent worker branch was live at ship). Reconciled by the SUCCESSOR PR (handoff-without-land), not a standalone `/flow:land` PR — dogfooding canonical-plan §4.5 (durable currency folds into the next ship). Entries live in `feedback.md`.)_
 
 _(FB-0086 cleared at merge of #116, v1.29.0 — binary-asset visual-significance fail-open fix (item 1 of the health-tracker PR #100 report). Its reservation line said "held until MERGE"; #116 merged 2026-08-16, so `/flow:land 116` reconciled it. Entry lives in `feedback.md`.)_
 
