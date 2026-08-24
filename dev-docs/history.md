@@ -6,7 +6,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ## 2026-08-23 — Spike: orchestrator-driven Conductor cloud workspaces — feasibility, constraints, measured cost (FB-0087, FB-0088)
 
-**Branch:** `calgary` · **SHA:** _(set at ship)_ · **Mode:** spike (the research note IS the deliverable)
+**Branch:** `calgary` · **SHA:** merged #122 @ `8eb0497` · **Mode:** spike (the research note IS the deliverable)
 
 **What was done (user-facing).** A new research note, `research/2026-08-22-conductor-orchestration.md`, answering: can one "orchestrator" workspace per repo spawn and direct sibling Conductor cloud workspaces via the public API, with the spawned workers running the flow loop, and does that match Anthropic's orchestration guidance? Indexed in `dev-docs/README.md` (repo-root `research/` table). Plus one `roadmap.md` § Exploration entry for the **confirmed flow bug** the research surfaced. No plugin artifacts changed.
 
