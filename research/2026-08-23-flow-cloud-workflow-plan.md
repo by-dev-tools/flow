@@ -203,12 +203,63 @@ The 08-22 note's orchestrator survives with half its ledger deleted:
 | `tools/flow` CLI for the Step-2 sweep | Open fork owned by the service-agnostic roadmap; prose fix first (PHASE0 worker's explicit position, endorsed) | The CLI exists for other reasons |
 | Cron/scheduler for overnight drafts | No native scheduler [📄 C-API]; external cron is Trio Phase 3 | ≥3 workstreams regularly queued at end-of-day |
 
+### 4.5 Handoff without a docs-only PR class (the land-elimination)
+
+`/flow:land` opens a *second* PR after every merge — doubling PR count and adding a
+handoff hop — to flip `main`'s forward docs from `at PR (#N)` → `merged (#N)`, stamp the
+history SHA, and clear held FB reservations. It exists because `/flow:ship` reconciles at
+*PR-open* time and nothing reconciles at merge. Its load-bearing assumption is stated in
+its own header [📄 land/SKILL.md §0]: the roadmap "Now" / plan "Current Focus" are what a
+**cold reader — a new contributor, or the autonomous loop, a cold agent on each run —**
+reads to decide what to do next. **The orchestrator model breaks that assumption:** the
+next workspace is not a cold agent re-reading stale `main`; it is spawned by a coordinator
+holding live state and handed a dispatch brief (§4.3, 08-22 §10.2). Land's primary consumer
+disappears.
+
+Land conflates two jobs; only one survives, and it needs no PR of its own:
+
+| Land reconciles | In the orchestrator model |
+|---|---|
+| **Forward pointers** (roadmap "Now", plan "Current Focus", ▶ Next up) | **Superseded** — the dispatch brief carries "what's next" live; stale-between-merges is harmless when a coordinator knows the true frontier. |
+| **Durable currency** (history status, cleared FB reservations, CHANGELOG) | **Still needed on `main`, but folded — not a separate PR.** |
+
+The *only* reason durable currency needs an after-merge PR is one vestigial dependency:
+**the merge SHA is unknown until merge** [✅ verified — #123's entire diff was stamping
+`**SHA:** _(set at ship)_` → `merged #122 @ 8eb0497` + clearing two reservations]. Three
+changes collapse land to ~nothing:
+
+1. **Reference merged PRs by `#N`, not SHA, in history.** `#N` is known at ship time; GitHub
+   already maps `#N` → its merge commit. Drop the SHA convention and the post-merge stamp
+   has nothing left to write — the ordering dependency (must run *after* merge) evaporates.
+2. **Clear reservations at ship in the common case.** Land held them only because a
+   concurrent sibling branch was live; in the orchestrator model the coordinator *knows*
+   whether siblings are live (admission control, §4.3) and tells ship, instead of defaulting
+   to hold-then-reconcile-at-merge.
+3. **Piggyback any true residual on the next ship.** Anything that genuinely cannot be
+   written until after merge is absorbed by the *next* feature PR's Step 5a — zero extra PRs.
+
+**Guardrail — currency still reaches `main` through a *reviewed* PR, never a direct push.**
+The tempting shortcut (orchestrator commits currency straight to `main`) would bypass the
+merge gate, which is flow's whole thesis (§6). The orchestrator speeds the *handoff to the
+next workspace*; it does not get to skip G3. Durable currency rides the ship PR itself, or
+the next one.
+
+**Deletion criterion (FB-0088).** `/flow:land` is the artifact; its deletion criterion has
+now arrived. It is deleted for any repo driven by an orchestrator once changes 1–3 land.
+It is *retained* only for the pure-cold-autonomous-loop consumer with **no** coordinator —
+where a cold agent really does re-read `main` to choose its next move, and forward-pointer
+currency on `main` is load-bearing. That is a real deployment, so land stays in the plugin,
+gated on a slot rather than run by default — the same "encode a fact, not a procedure"
+discipline this session shipped.
+
 ## 5. Execution sequence
 
 | # | Step | Where | State |
 |---|---|---|---|
 | 0 | Resolve `RunLocalCommand` (§2.4) | Mac, 5 min | **open — next human action** |
 | 1 | `toolchain` manifest kind + skip-audit branch + fixtures (§4.2) | flow plugin | queued — next dispatch after PHASE0; full flow loop, own PR |
+| 1a | `#N`-not-SHA history convention (§4.5) — the tiny, high-leverage prerequisite that removes land's only after-merge dependency | flow plugin (ship/land skills + history format) | queued; **dogfooded first in this change** (currency folded here, no standalone land PR) |
+| 1b | Fold durable currency into ship / next-ship; gate `/flow:land` behind a slot for the cold-loop-only consumer (§4.5) | flow plugin | after 1a; validate across a few merges before removing land from the default path |
 | 2 | PHASE0: Step-2 sweep fix | flow plugin | **in flight — worker at plan gate, awaiting approval** |
 | 3 | Trio-local artifacts: placement rule (emitting via `add-entry --kind toolchain`, not Appendix B) + `needs-mac-verify` label + `/verify-queue` + greenlit-queue section | Trio repo | after Step 1 ships |
 | 4 | Orchestrator v1: dispatch skill + narrowed ledger + usage.tsv (§4.3) | per-repo `.claude/skills/` | after 2–3 real dispatches validate the brief/report loop (1 of 3 done) |
@@ -219,7 +270,10 @@ The 08-22 note's orchestrator survives with half its ledger deleted:
 compose with ship's gates until the vocabulary exists — building Trio's artifacts first
 would ship a hand-authored manifest and a skip string the auditor rejects. Step 0 is free
 and can only *shrink* later steps. Step 4 last because the orchestrator is the piece whose
-design most benefits from live dispatch data, and dispatch works today via CLI without it.
+design most benefits from live dispatch data, and dispatch works today via CLI without it. Steps 1a/1b
+are sequenced early and small: 1a is a one-line-per-entry convention change with immediate
+payoff (this very change dogfoods it), and it must precede 1b because folding currency into
+ship is only safe once nothing depends on an after-merge SHA stamp.
 
 ## 6. Relationship to flow's two-gate thesis
 

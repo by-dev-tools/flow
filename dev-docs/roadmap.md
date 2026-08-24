@@ -191,6 +191,14 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### Handoff / land-elimination (2026-08-24) — canonical plan §4.5
+
+In the Conductor orchestrator model the next workspace is spawned with a live dispatch brief, not a cold re-read of `main`, so `/flow:land`'s forward-pointer job is superseded and its durable-currency job needs no PR of its own. Design + rationale live in `research/2026-08-23-flow-cloud-workflow-plan.md` §4.5; this session dogfooded the pattern (folded #122's currency into its successor PR instead of a standalone land PR — #123 closed). Queued flow-plugin work (canonical §5 rows 1a/1b):
+
+- **1a — `#N`-not-SHA history convention.** Reference merged PRs by `#N` (known at PR-open) instead of a `merged @ <sha>` stamp (unknowable until merge). Removes land's only after-merge dependency. Touches the ship/land skills + the history-entry format. *(Ships with a red-green fixture over `render`/`land-helpers`.)*
+- **1b — fold durable currency into the ship path; gate `/flow:land` behind a slot** for the pure cold-autonomous-loop consumer (no orchestrator) that genuinely re-reads `main`. Depends on 1a. Validate across a few merges before removing land from the default path.
+- **Relation to the existing `/flow:land` items below** (duplicate-PR pre-check, pre-commit re-assert): if 1b moves land off the default path, those harden a now-rare path — keep them, but they drop in priority once land is slot-gated.
+
 ### Held from the #119 contribution drain (2026-08-17, FB-0059) — verified-novel flow bugs
 
 The `/flow:contribute` drain (#119, merged) verified 55 harvested lessons against v1.29.0 and held 31 as verified-novel. The `all_demoted` walk-parser leak shipped as v1.30.0 (this PR). The rest are captured here as flow's own tracked work (they also remain in the contribution queue). Each carries an exact fix — see the merged #119 PR body for full evidence.
