@@ -4,6 +4,21 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-25 — Orchestrator handoff model: two-lifetime doc-currency (§4.6) + human-alongside-orchestrator (§4.7) + forward-doc reconciliation
+
+**Branch:** `orchestrator-handoff-process` · **PR:** #(assigned at open, per the §4.5 #N convention) · **Mode:** docs
+
+**What was done.** Two orchestrator-model design captures in the canonical cloud-workflow plan, plus reconciliation of the stale forward docs a regroup audit surfaced.
+- **§4.6 (two-lifetime handoff / evolved archive-safety):** doc-currency splits into *live handoff* (the orchestrator dispatch brief, not in git) + *durable* (folds into the next ship, §4.5). Archive-safety's four checks; doc-currency shifts from an archive *blocker* to a tracked *follow-up*; the session-end currency-flush bound keeps "eventual" from becoming "never."
+- **§4.7 (human alongside the orchestrator):** a lightweight consideration, not a feature — reading a worker is always safe; writing shares the orchestrator's inbox; (b)-by-default human-takeover detection rides the re-sync the orchestrator already owes (latest inbound `userMessage` it didn't send → back off), with (a) "I've got X" as override. One hard rule: don't message a worker mid-`/flow:ship` unless aborting.
+- **Forward-doc reconciliation:** a doc/memory audit confirmed ONE authoritative plan (the 2026-08-23 canonical) and no competing plans/memories, but `plan.md` Current Focus/Handoff Notes and `roadmap.md` §Now were stale (pointing at M/AB + a retired `/flow:land 84` step). New program head in both; removed the `/flow:land 84` + stale-installed-plugin bullets; fixed a README row referencing a nonexistent research doc.
+
+**Why.** This session ran the first end-to-end orchestrated loop — dispatch → execute → ship #126 → archive-check — from a sibling workspace via the `conductor` CLI + ambient `CONDUCTOR_API_KEY`. Two corrections drove §4.6/§4.4: a dispatch ledger with a `status` column went stale within minutes (the API's `conductor workspace list` was the live truth), reinforcing "state is never a maintained artifact"; and the orchestration channel is the CLI, not the OAuth MCP initially chased. §4.7 was kept lightweight per an explicit anti-bloat steer (rides existing re-sync; no new state/lock).
+
+**Three-surface note.** Docs-only (`research/` + `dev-docs/`). No plugin artifacts — the orchestrator skill + toolchain manifest kind are queued §5 work, dispatched as parallel workspaces this session.
+
+---
+
 ## 2026-08-24 — Handoff without a docs-only PR class: canonical-plan §4.5 + #122 currency folded (no standalone `/flow:land` PR)
 
 **Branch:** `handoff-without-land` · **PR:** #(assigned at open; refer to it by that number per the §4.5 convention below) · **Mode:** docs

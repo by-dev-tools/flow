@@ -252,6 +252,83 @@ currency on `main` is load-bearing. That is a real deployment, so land stays in 
 gated on a slot rather than run by default — the same "encode a fact, not a procedure"
 discipline this session shipped.
 
+### 4.6 Post-merge and archive in the orchestrator model — the two-lifetime handoff
+
+Post-merge/archive safety carries a doc-currency requirement: reconcile the forward docs so
+the *next* agent doesn't work from a stale `main`. Pre-orchestrator, that reconciliation is
+what `/flow:post-merge` → `/flow:land` did — a second PR (the doubling §4.5 removes). The
+orchestrator model splits doc-currency into **two lifetimes**, and only the second touches git:
+
+- **Handoff currency — live, immediate, NOT in git.** The next workspace is
+  orchestrator-spawned with a dispatch brief (§4.3/§4.5), so it never cold-reads `main`. The
+  orchestrator carries the delta and states it in the brief ("#126 fixed the concurrent-work
+  bug — work from current main"). A stale forward-doc on `main` therefore cannot mislead the
+  next agent, because the next agent is not reading it.
+- **Durable currency — eventual, GitHub.** The forward-doc reconciliation (roadmap "Now",
+  plan "Current Focus", closing a resolved `§ Exploration` entry) **folds into the next ship's
+  Step 5a** — batched into a substantive PR, never a standalone land PR (§4.5, changes 2–3).
+
+**What this does to archive-safety.** Doc-currency stops being an archive *blocker*
+(reconcile-via-land-PR-first) and becomes a tracked *follow-up*. A workspace is safe to
+archive when:
+
+1. Its PR is **merged**.
+2. All **committed** work is in `main` (the branch tree matches for the changed files).
+3. Nothing **uncommitted / unaccounted** remains in the sandbox — the workspace self-reports
+   `git status` / `stash list` / untracked files. This is the one check only the sandbox can
+   answer; the orchestrator asks it via `conductor message create`.
+4. Any pending forward-doc reconciliation is **tracked to fold into the next ship AND the
+   orchestrator holds correct live state** — NOT "`main` is fully reconciled right now."
+
+Checks 1–2 are verifiable from any workspace via `gh` + git; check 3 requires asking the
+sandbox; check 4 is a routing fact the orchestrator owns.
+
+**State — including handoff state — is never a maintained artifact** (this is §4.4's
+"ledger state-tracking deleted," generalized). It is *live* — the orchestrator's working
+context + PR draft/ready/merged + labels + `conductor workspace list` — and *eventual* —
+GitHub, via the next ship. A `status` column in a ledger is the wrong shape for the same
+reason a land PR is: both duplicate state that already has an authoritative live source, and
+both go stale. [✅ 2026-08-25 dogfood: a dispatch ledger written with a `status` column was
+stale within minutes — `conductor workspace list` showed three just-created workspaces
+already `deleted` while the ledger still read "dispatched." The live API was right; the
+maintained artifact was wrong.]
+
+**The one bound — "eventual" must not become "never."** Between a merge and the next ship,
+the live handoff/currency state lives only in the orchestrator's session. If that session ends
+before a ship carries it to GitHub, it is lost. So the orchestrator **flushes pending durable
+currency to GitHub when the queue drains or at session end** — the next-ship fold is the
+normal path; a session-end flush is the backstop. This bound is what keeps "eventual" honest.
+
+**Provenance.** Derived from the 2026-08-25 orchestration dogfood — the first end-to-end
+orchestrated loop (dispatch → execute → ship #126 → archive-check) run from a sibling
+workspace via the `conductor` CLI. It extends §4.5 (land-elimination) from *ship-time*
+forward-pointers to *post-merge/archive*, and reinforces §4.4 (no ledger state-tracking).
+
+### 4.7 Human alongside the orchestrator (a consideration, not a feature)
+
+Most implementation workspaces are orchestrator-driven, so the human works from the
+orchestrator seat and doesn't track the others — but every worker stays open in the Conductor
+UI, and the human may look in or intervene. This needs **no new machinery**; it rides the
+re-sync the orchestrator already owes (§4.4/§4.6):
+
+- **Reading is always safe** — opening a worker's transcript/diff disrupts nothing.
+- **Writing goes to the same inbox `conductor message create` uses**, so a human message is
+  indistinguishable from an orchestrator one. The only real risks are (a) conflicting
+  simultaneous instructions the worker can't disambiguate, and (b) the orchestrator acting on
+  a now-stale model.
+- **Takeover detection is (b)-by-default and near-free:** because the orchestrator must
+  re-read a worker's live state before acting on it anyway, it gets human-takeover detection
+  for *one extra comparison* — if the latest inbound message is a `userMessage` it did not
+  send, treat that worker as human-driven and back off until handed back. **(a) override:** the
+  human says "I've got X" / "back to you on X" to set it explicitly. No takeover-lock, no new
+  state — just the existing re-sync plus one check.
+- **One hard rule:** don't message a worker that is actively mid-`/flow:ship` unless you mean
+  to abort it — the one window a stray message can produce a half-ship. At rest or at a gate
+  (plan approval / merge), a human message *is* the intended interaction.
+
+The whole consideration reduces to: the human never *has* to touch a worker, and touching one
+never corrupts anything, because state is live and the orchestrator re-syncs before it acts.
+
 ## 5. Execution sequence
 
 | # | Step | Where | State |
@@ -262,7 +339,7 @@ discipline this session shipped.
 | 1b | Fold durable currency into ship / next-ship; gate `/flow:land` behind a slot for the cold-loop-only consumer (§4.5) | flow plugin | after 1a; validate across a few merges before removing land from the default path |
 | 2 | PHASE0: Step-2 sweep fix | flow plugin | **in flight — worker at plan gate, awaiting approval** |
 | 3 | Trio-local artifacts: placement rule (emitting via `add-entry --kind toolchain`, not Appendix B) + `needs-mac-verify` label + `/verify-queue` + greenlit-queue section | Trio repo | after Step 1 ships |
-| 4 | Orchestrator v1: dispatch skill + narrowed ledger + usage.tsv (§4.3) | per-repo `.claude/skills/` | after 2–3 real dispatches validate the brief/report loop (1 of 3 done) |
+| 4 | Orchestrator v1: dispatch skill + narrowed ledger + usage.tsv (§4.3) + post-merge/archive close-out + session-end currency flush (§4.6) | per-repo `.claude/skills/` | after 2–3 real dispatches validate the brief/report loop (1 of 3 done) |
 | 5 | Re-read everything against 10 dispatches; cut what wasn't load-bearing | — | standing (FB-0088 discipline) |
 | 6 | Doc cleanup: Trio plan header edit (§0); confirm 08-22 note status line | Trio repo / flow repo | with steps 3 / this change |
 
