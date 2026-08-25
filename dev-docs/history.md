@@ -83,7 +83,7 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 **Tradeoffs discussed.** Keeping `git worktree list` in the sweep (relabeled local-only, not evidence of absence) versus dropping it outright — kept, since it still adds fidelity on a genuine local multi-worktree setup; the fix demotes it from primary to supplementary evidence rather than removing a working signal.
 
-**Process note — rebase across a concurrent doc-owning branch.** This branch and `calgary` (#122, #124, merged first) both append to the same reverse-chronological `dev-docs/history.md`. `git rebase origin/main` produced the expected top-of-file conflict; resolved per the FB-0074 append-only-doc convention — keep upstream's entries in full, insert this branch's entry immediately after (not interleaved), verified no upstream line was lost. `dev-docs/plan.md` rebased cleanly with no conflict, as predicted when the plan was drafted.
+**Process note.** Rebased cleanly onto `main` after `calgary`'s merge; the expected `history.md` top-of-file conflict (two branches appending to the same reverse-chronological doc) resolved per the FB-0074 convention — keep upstream's entries in full, insert this branch's entry immediately after. `dev-docs/plan.md` rebased with no conflict.
 
 ---
 
