@@ -67,6 +67,26 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-25 — Step 2's concurrent-work sweep no longer goes inert on cloud hosts (SAFETY)
+
+**Branch:** `conductor/phase0-concurrent-work-check-cloud-inert` · **SHA:** _(set at ship)_
+
+**What was done (user-facing).** `plugins/flow/docs/workflow.md` Step 2's "Before activating a queued item — check for concurrent work" sweep no longer leads with `git worktree list`. It now leads with `git fetch --quiet origin`, then `git branch -r --sort=-committerdate`, then `gh pr list` (with an explicit `|| echo "gh unavailable — PR check skipped, rely on branch evidence only"` fallback); `git worktree list` is retained as the last line, relabeled a LOCAL-ONLY supplement whose empty/self-only result is explicitly documented as not evidence of absence.
+
+**Why (the bug).** On a Conductor-style cloud workspace (an isolated clone per workspace, not a linked worktree of a shared repo), `git worktree list` always returns only the current workspace — so the check that exists to prevent duplicate activation of a queued item silently read as "nothing to report" on exactly the hosts where many parallel agents drawing from one queue make duplicate activation most likely. Verified live in a cloud workspace 2026-08-22 (per the task brief) and reproduced again in this session: `git worktree list` → self only; `git fetch` / `git branch -r` / `gh pr list` → full remote picture. FB-0010 silent-skip class — the failing case was byte-identical to the legitimately-empty case, so nothing about running it ever signaled the gate wasn't working.
+
+**Design decision 1 — fix stays in prose now, CLI migration deferred.** `dev-docs/roadmap.md` § Exploration ("Step 2's concurrent-work check is inert on any cloud host," landed via branch `calgary`'s merged research spike, #122) poses an open fork for this sweep: leave it as prose in the SKILL (portable, unenforceable) vs. move it behind the `tools/flow` CLI the service-agnostic roadmap proposes, explicitly declining to decide it in isolation. This PR takes a position without resolving that fork: fix the prose now (fastest correctness fix, zero new infrastructure), leave the CLI migration as a natural follow-up once that CLI exists. The roadmap entry's own suggested replacement evidence (`git ls-remote --heads origin` + `gh pr list`) is the same shape adopted here; this PR uses `git fetch` + `git branch -r --sort=-committerdate` instead of bare `git ls-remote` specifically so the listing keeps committer-date ordering (`ls-remote` only returns ref names + SHAs, no dates) — same remote-state evidence, richer sort. The `roadmap.md` § Exploration entry itself is left untouched (out of this branch's `do not touch` scope); it should be closed against this fix in a follow-up.
+
+**Design decision 2 — no new eval fixture.** Every eval harness in this repo pins an *executable* engine (a `lib/*.py` module, or a `!`-block extracted and actually run from a `SKILL.md`); this sweep is narrative prose with no extraction point any harness targets. Fixturing it would mean either building that extraction/execution engine now (preempting the CLI-vs-prose fork by accident) or asserting on the doc's string content only, which cannot prove cross-host behavior and is exactly the "grep the value, not the behavior" anti-pattern `general.md`'s FB-0010 section warns against. The cross-host evidence already exists via direct reproduction (2026-08-22 and again this session); no synthetic fixture is needed to replay something already observed directly. If the sweep later gains an executable engine, that engine gets fixtures then.
+
+**Technical decision — the `gh`-unavailable fallback is advisory, not enforced.** Because this is prose read by a planning agent, not shipped skill code, the `|| echo "..."` fallback can't `exit 1` the way a real gate would; it only makes the degraded case visible to whoever's following the doc. That's consistent with the rest of this section (the whole sweep is advisory today) and is explicitly flagged as a limitation rather than left implicit — closing the exact silent-skip shape, one precondition down from the bug this PR fixes, that a first draft of the plan left unaddressed (caught by `/flow:critique-plan`'s first pass; see the plan's Confidence verdict).
+
+**Tradeoffs discussed.** Keeping `git worktree list` in the sweep (relabeled local-only, not evidence of absence) versus dropping it outright — kept, since it still adds fidelity on a genuine local multi-worktree setup; the fix demotes it from primary to supplementary evidence rather than removing a working signal.
+
+**Process note.** Rebased cleanly onto `main` after `calgary`'s merge; the expected `history.md` top-of-file conflict (two branches appending to the same reverse-chronological doc) resolved per the FB-0074 convention — keep upstream's entries in full, insert this branch's entry immediately after. `dev-docs/plan.md` rebased with no conflict.
+
+---
+
 ## 2026-08-17 — Walk-parser lifecycle fix: an all-demoted block no longer reads as active (v1.30.0, FB-0059)
 
 **Branch:** `fix-walk-parser-all-demoted-leak` · **SHA:** _(set at ship)_

@@ -120,15 +120,16 @@ Write the plan to the configured plan doc under "Active Work Items". The plan **
 
 ### Before activating a queued item — check for concurrent work
 
-If this plan **activates a queued roadmap/plan item** (as opposed to net-new work), first confirm no sibling workspace already picked it up. A full activation pass — plan draft + `/flow:critique-plan` run + a human gate attempt — built for an item another worktree is already carrying wastes both the reviewer runs and the human's gate attention. One sweep at activation start is enough:
+If this plan **activates a queued roadmap/plan item** (as opposed to net-new work), first confirm no sibling workspace already picked it up. A full activation pass — plan draft + `/flow:critique-plan` run + a human gate attempt — built for an item another worktree is already carrying wastes both the reviewer runs and the human's gate attention. One sweep at activation start is enough — **lead with remote state, not the local worktree table**: on a cloud host (one isolated clone per workspace, not a linked worktree of a shared repo), `git worktree list` always shows only itself, which is byte-identical to "no concurrent work" whether or not it's true (the FB-0010 silent-skip shape — this sweep was fixed after that exact failure went unnoticed on cloud hosts). Remote-tracking branches and open PRs carry the real signal on every host:
 
 ```sh
-git worktree list                                        # sibling worktrees + their branches
-git branch -a --sort=-committerdate | head               # recently-touched branches
-gh pr list --state open --json number,title,headRefName  # open PRs
+git fetch --quiet origin                                 # refresh remote-tracking refs before reading them
+git branch -r --sort=-committerdate | head                # recently-touched remote branches — works identically local or cloud
+gh pr list --state open --json number,title,headRefName || echo "gh unavailable — PR check skipped, rely on branch evidence only"
+git worktree list                                         # LOCAL-ONLY supplement: sibling worktrees in THIS clone; an empty/self-only result is NOT evidence of no concurrent work — see the note above
 ```
 
-If any hit matches the item you're about to activate, coordinate or pick a different item rather than opening a duplicate.
+If any hit matches the item you're about to activate, coordinate or pick a different item rather than opening a duplicate. If `gh` fails or isn't available, say so explicitly rather than silently treating it as "no open PRs" — the branch evidence alone is a weaker signal, and a reader needs to know the PR check didn't run.
 
 ### Required fields
 
