@@ -40,6 +40,7 @@ Stdlib only. Run:
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -50,6 +51,19 @@ DOCTOR_SKILL = HERE.parent / "skills" / "doctor" / "SKILL.md"
 WORKFLOW_DOC = HERE.parent / "docs" / "workflow.md"
 
 fails = 0
+
+
+def section_after(text, heading_substr):
+    """The text from `heading_substr` up to (not including) the next '**Check' or
+    '### ' heading — scopes a check to Check 2.11's own block rather than the
+    whole SKILL.md, so an unrelated mention elsewhere in the file can't make a
+    check pass vacuously (staff-review NIT)."""
+    idx = text.find(heading_substr)
+    if idx == -1:
+        return None
+    rest = text[idx:]
+    m = re.search(r"\n(?:\*\*Check |### )", rest[1:])
+    return rest[:m.start() + 1] if m else rest
 
 
 def check(cid, ok, detail=""):
@@ -111,9 +125,14 @@ def main():
                   f"was {is_valid}, expected {expect_valid}")
 
     # --- doctor: the new check exists and covers all states -------------------
-    doctor = DOCTOR_SKILL.read_text()
-    check("doctor-1-check-present",
-          "2.11" in doctor and "role" in doctor.lower())
+    # Scoped to Check 2.11's own block (section_after), not the whole SKILL.md —
+    # an unrelated "2.11" or "designer"/"engineer" mention elsewhere in the file
+    # must not make these pass vacuously if Check 2.11 itself regresses.
+    doctor_full = DOCTOR_SKILL.read_text()
+    doctor = section_after(doctor_full, "Check 2.11 —")
+    check("doctor-1-check-present", doctor is not None,
+          "Check 2.11 not found in doctor/SKILL.md")
+    doctor = doctor or ""
     check("doctor-2-reads-role-slot", ".role // empty" in doctor)
     check("doctor-3-unset-message",
           "classic plan gate" in doctor.lower())

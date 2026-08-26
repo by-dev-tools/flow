@@ -111,6 +111,7 @@ The pre-prototype phase (Steps 2–3) fires on the **same trigger as the prototy
 
 - **Open design point (§9.2):** define "small surface" concretely. Options: a size heuristic (files/lines), a declared `mode: tiny`, or the agent's own judgment gated by the human at Clarify. Pick one and pin it with a fixture; do not leave it to per-run vibes, or the ceremony returns.
 - **D2 dependency:** the `role` slot is what lets a designer opt the whole loop into prototype-first while an engineer gets the classic plan gate. Build D2 first or in the same first PR.
+- **FOLLOW-UP (from `/flow:staff-review`'s UX-designer lens on the D2 Phase-0 PR):** once this trigger is wired, a `designer`-role user needs a way to confirm the prototype-first behavior actually activated — not just that `role` round-trips through config. `/flow:doctor`'s Phase-0 check only reports the slot's resolved value with an explicit "informational only, no consumer yet" disclaimer; whichever phase wires the trigger should either extend that doctor check or add a workflow-help mention so "I set role: designer" and "I can tell it's live" aren't two different questions with no bridge between them.
 
 ## 8. Spec-walk (the work, phased)
 

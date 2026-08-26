@@ -568,8 +568,8 @@ elif [ ! -f flow.config.json ]; then
 elif jq -e . flow.config.json >/dev/null 2>&1; then
   ROLE=$(jq -r '.role // empty' flow.config.json)
   case "$ROLE" in
-    "") echo "[PASS] role unset — classic plan gate (D1 prototype-first trigger not active)" ;;
-    designer|engineer) echo "[PASS] role: $ROLE" ;;
+    "") echo "[PASS] role unset — classic plan gate (no role-based behavior active yet)" ;;
+    designer|engineer) echo "[PASS] role: $ROLE (informational only — no flow skill reads this yet)" ;;
     *) echo "[WARN] role: \"$ROLE\" is not a recognized value (expected 'designer' or 'engineer')"
        echo "       Fix: set flow.config.json's \"role\" to 'designer' or 'engineer', or unset it for classic behavior." ;;
   esac
