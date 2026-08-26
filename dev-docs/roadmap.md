@@ -654,6 +654,8 @@ Grounded in a 12-agent, adversarially-validated investigation of health-tracker 
 
 ### Step 2's concurrent-work check is inert on any cloud host
 
+> **RESOLVED — the correctness bug is fixed (#126, merged 2026-08-24):** Step 2's sweep now leads with `git fetch` + remote-tracking branches + `gh pr list`, with `git worktree list` demoted to a labeled local-only signal. What remains open below is only the *design fork* — prose-in-the-SKILL vs a `tools/flow` CLI. The bug write-up is kept for that context.
+
 **Surfaces when:** `plugins/flow/docs/workflow.md` Step 2 is next touched, OR anyone reports that two
 workspaces activated the same queued item, OR flow is run anywhere other than a local git checkout
 (Conductor cloud, Claude Code on the web, CI, a container).
