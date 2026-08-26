@@ -417,6 +417,62 @@ tamper-evident):
   so `merged_by` resolves to the App. The human keeps their own token for human merges — the
   two identities are the entire audit trail.
 
+### 4.9 Orchestrator succession — the seat is disposable
+
+The orchestrator workspace fills with context over time; the model fails if that seat becomes
+a **hostage** — a full-context orchestrator the human won't leave for fear of losing
+accumulated state. The fix is §4.4/§4.6's principle turned on the orchestrator itself: **the
+orchestrator must hold no state that isn't recoverable from GitHub + the Conductor API.** If
+that invariant holds, rotating the seat loses nothing, and the reluctance dissolves at the
+root.
+
+**The disposability invariant.** The orchestrator's context is three things; two are durable
+by construction:
+
+- **Durable design/decisions** — the canonical plan, `feedback.md`, roadmap/plan/history —
+  live in **GitHub**, flushed *as the session goes* (never batched to the end).
+- **Live worker state** — who's dispatched, status, transcripts — is **the Conductor API**
+  (`conductor workspace list` / `session status`); a successor **re-derives it live**, never
+  from a snapshot (the §4.4 "state is live" rule).
+- **In-flight narrative** — unresolved threads, pending decisions, next actions — is the
+  *only* session-local part, and it is small precisely because the first two flush
+  continuously.
+
+**Wind-down is two steps, and only the first touches git:**
+
+1. **Flush** any pending *durable* currency (a decision made but not yet documented) → a
+   normal docs ship (the §4.6 session-end flush). This is where "major decisions in GitHub" is
+   honored.
+2. **Hand off** the transient succession brief → **via the API, not git.** The winding-down
+   orchestrator spawns its successor with the brief as the first message
+   (`conductor workspace create --name orchestrator --message-file <brief>`); the brief lands
+   in the successor's transcript, consumed once at boot.
+
+**The succession brief points, it does not duplicate** (so it stays tiny and cannot rot):
+
+- *Read first:* the canonical plan (⭐), `CLAUDE.md`, `feedback.md`, roadmap Now / plan
+  Current Focus.
+- *Live workers:* "run `conductor workspace list`" — re-derive, never snapshot.
+- *In-flight threads + pending decisions:* the handful not yet resolved — the only
+  genuinely-new content.
+
+It is **generated at hand-off, not maintained** (like a dispatch brief), and delivered by API
+for the same reason a dispatch brief is (§4.6): a handoff is *live*, not durable currency, and
+committing it would add per-rotation PR churn plus a snapshot stale the instant it lands.
+
+**Why API-only is safe — the brief is an accelerant, not a lifeline.** Even with no brief (the
+old orchestrator crashed before writing one), a fresh orchestrator reconstructs its whole world
+from GitHub (durable design) + the Conductor API (live workers). The succession depends on the
+*invariant*, not on any handoff artifact; a stale committed snapshot would be **worse** than
+re-deriving live. The brief only saves the successor from re-deriving the small in-flight delta.
+
+**The UX that kills the hostage dynamic: rotation is cheap and frequent, not a dreaded event.**
+The human rotates *before* it is urgent; the orchestrator proactively offers a wind-down on a
+long/heavy session ("this is getting long — want the succession brief so you can rotate
+freely?"). Detecting context-fill precisely from inside the session is imperfect, so lean on
+proactive offers + trivial rotation rather than a hard threshold. The seat is a role, not a
+vessel.
+
 ## 5. Execution sequence
 
 | # | Step | Where | State |
