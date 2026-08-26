@@ -232,6 +232,8 @@ Every framework benchmarked either routes models per-subagent (gstack: Sonnet fa
 
 Detailed plan drafted in `plan.md` § "PR — Model-measurement harness, Step 1: per-subagent token + model attribution" (item 1, now ACTIVE, FB-0089) and § "PR — Model-measurement harness, Steps 2+3 (QUEUED)" (items 2-3). Independent of the Designer-signal + Deliverable tracks; interleaves at any PR boundary.
 
+**FOLLOW-UP (roadmap-concrete) from `/flow:staff-review`'s push-further lens on Step 1:** the rendered report shows per-bucket totals but not the one number it exists to answer — a reader must manually sum across rows to see which subagent type dominates spend. Add a total row (main + all subagent buckets, `unattributed` called out separately) and a %-of-total column once a consumer (Step 2's A/B eval, or a human reading it directly) needs that comparison; the underlying totals are already computed, this is a rendering change only.
+
 ### AB — Attention budget & harness-weight audit (net-new) — ▶ TOP PRIORITY (2026-08-14, FB-0084)
 
 **Surfaces when:** picked up directly, or whenever a new gate/step/always-loaded surface is added — that is the moment to ask whether it earns its token cost. Full analysis: `dev-docs/research/anthropic-canon-alignment-2026-08.md` § 3.
@@ -620,6 +622,10 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 ---
 
 ## § Exploration
+
+### `spawn_depth` is captured but discarded before the model-measurement report renders it (2026-08-26, push-further)
+
+`model_measure.py`'s `_make_invocation` threads `spawn_depth` from each `.meta.json` into every invocation dict (and a dedicated eval case proves the plumbing is deliberate), but `aggregate_by_type` only reads `agent_type`/`totals`/`models` — depth is computed, tested, then thrown away before rendering. Nesting depth is exactly the signal that distinguishes "one subagent called three independent siblings" from "a subagent spawned a subagent spawned a subagent" — the latter shape is the one most likely to blow an attention/token budget without anyone noticing, which is the substance of the sibling item AB below. No clear shape yet for how depth should surface in a report whose current unit of aggregation is subagent *type*, not spawn tree. **Surfaces when:** `tools/model-measure/model_measure.py` (`aggregate_by_type`/`_make_invocation`) or this doc's "AB — Attention budget & harness-weight audit" entry is next touched.
 
 ### `all_demoted` × walk_extract anchor-limitations composition (2026-08-17, push-further)
 

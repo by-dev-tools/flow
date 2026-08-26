@@ -75,6 +75,7 @@ These files help Claude sessions develop and maintain this repo. Not part of the
 | `.claude/rules/` | Auto-loading scoped rules (safety, general, documentation) |
 | `.claude/settings.json` | Hooks (secret blocking) |
 | `.context/` | Per-session scratch |
+| `tools/model-measure/` | Per-subagent token/model measurement harness reading Claude Code session transcripts (roadmap item M, FB-0083/FB-0089) -- dev tooling, no shipped `/flow:*` skill invokes it |
 
 When you see `agents/` and `skills/` under `plugins/flow/`, those are **plugin artifacts** (what consumers get when they install flow). When you see `.claude/agents/` and `.claude/skills/`, those are **project-dev** roles for building flow itself. The two never mix. Same for `dev-docs/` (plugin's own self-tracking) vs the future `template/core-docs/` (PR 3 — the scaffolding consumer projects copy when adopting flow).
 
@@ -133,7 +134,7 @@ Dev-side slash commands: `/ship` (project-dev push + PR), `/preship` (standards 
 ## How to Work
 
 1. **Read before writing.** Check `dev-docs/plan.md` for current focus and `dev-docs/feedback.md` for past corrections.
-2. **Respect the three-surface boundary.** Changes to plugin artifacts (`plugins/flow/*`, `.claude-plugin/marketplace.json`, `README.md`) change user-visible behavior. Changes under `dev-docs/` are dev-tracking only. Changes under `.claude/` are project-dev infra. Never mix.
+2. **Respect the three-surface boundary.** Changes to plugin artifacts (`plugins/flow/*`, `.claude-plugin/marketplace.json`, `README.md`) change user-visible behavior. Changes under `dev-docs/` are dev-tracking only. Changes under `.claude/` or `tools/` are project-dev infra. Never mix.
 3. **Prompt changes are code changes.** The reviewer prompts at `plugins/flow/agents/{auditor,plan-critic}.md` and the new `plugins/flow/skills/ship/SKILL.md` are deployed surface. Treat edits like edits to a deployed service: write an eval fixture first (where applicable), update `dev-docs/history.md`, tune deliberately.
 4. **Follow the rules.** `.claude/rules/` auto-loads safety and documentation discipline when you touch matching files.
 5. **Never re-implement a bundled Claude Code skill; compose with it instead.** `/simplify`, `/batch`, `/debug`, `/loop`, `/claude-api` are native — reference them directly. What's forbidden is *duplicating* a bundled skill's behavior (parroting Anthropic's maintenance, which drifts from it). What's permitted and preferred is a thin wrapper that **invokes** the bundled skill and adds flow-specific value — config-slot resolution, a gate contract, feedback routing, in-flow orchestration (the FB-0015 delegating-wrapper shape; e.g. `/flow:verify-build` over bundled `/verify`, `/flow:ship` chaining its reviewers). If a proposed skill would only duplicate a bundled one with no added value, drop it and reference the native skill instead.
