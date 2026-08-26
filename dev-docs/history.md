@@ -4,6 +4,18 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-26 — §4.8 gate-delegation policy + escalation format (FB-0090) + doc-currency fold
+
+**Branch:** `gate-delegation-policy` · **PR:** #(assigned at open, §4.5 #N convention) · **Mode:** docs
+
+**What was done.** Added **§4.8 "Gate delegation"** to the canonical plan: *who* holds each gate is a function of the decision's properties — a four-axis rule (stakes / reversibility / confidence / taste) for the plan gate, and an **explicit-verifiability** rule (docs-only OR verify-build `PASS` + extremely-high confidence) for the merge gate; carve-outs (prototype-attached plan → human; `sensitivePaths` → human); **`merged_by`-via-GitHub-App** as the free, no-seat transparency primitive (label interim + a one-time App-setup checklist); crawl → walk → run rollout. Added the **escalation-format** rule (FB-0090): decisions surfaced to the human carry recommendation + confidence + justification by default. **Folded the pending doc-currency** (§4.6's "eventual must not become never" bound, discharged into this substantive ship rather than a standalone land PR): plan.md ACTIVE PROGRAM head reconciled (#129 shipped; toolchain executing; D1 + measure archived), roadmap `§ Exploration` concurrent-work entry marked **RESOLVED by #126** (the CLI-vs-prose design fork retained).
+
+**Why.** This session ran the orchestrator model live — dispatched three workers, **delegated the first plan approval** (measure: low-stakes / reversible / high-confidence / low-taste) and **escalated the gate-machinery one** (toolchain) to the human. §4.8 codifies the policy those calls followed. The measurement + iOS-simulator angle decides where merge-automation pays off (flow's own `platform: library` code merges stay human; consumer iOS projects with real verify-build are where it earns its keep).
+
+**Three-surface note.** Docs-only (`research/` + `dev-docs/`). No plugin artifacts.
+
+---
+
 ## 2026-08-26 — Model-measurement harness, Step 1: per-subagent token + model attribution (FB-0089, dev-tooling only)
 
 **Branch:** `conductor/model-measurement-harness-item-m-v1` · **PR:** #(assigned at open) · **Mode:** feature (non-shipped dev tooling)

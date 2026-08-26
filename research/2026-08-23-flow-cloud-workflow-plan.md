@@ -329,6 +329,94 @@ re-sync the orchestrator already owes (§4.4/§4.6):
 The whole consideration reduces to: the human never *has* to touch a worker, and touching one
 never corrupts anything, because state is live and the orchestrator re-syncs before it acts.
 
+### 4.8 Gate delegation — when the orchestrator may approve, and how it's recorded
+
+Flow keeps two human gates (plan approval, merge). The orchestrator model doesn't remove
+them; it makes **who holds each gate a function of the decision's properties**, so
+low-stakes reversible work stops costing human attention while high-stakes / irreversible /
+taste-laden work still requires it. This is an *extension* of FB-0011 (the autonomy bar) and
+FB-0018 (auto-advance needs a positive PASS) — a policy over the existing gates, not new
+machinery.
+
+**The plan gate.** The orchestrator may approve a worker's plan iff **all four** hold; any
+one red → human:
+
+- **Stakes = low** — the diff touches none of `sensitivePaths` (gate machinery:
+  ship / manifest-triage / skip-audit / verify-build / pr-coherence; security / auth /
+  secrets; persistence / migrations; the published config schema). Those stay human because a
+  wrong version there fails *silently* (a gate that mis-classifies lets bad work through),
+  is *exploitable*, or is a *one-way door*.
+- **Reversible = yes (two-way door)** — a plain `git revert` fully undoes it: no migration,
+  no external side-effect (no secret rotation, no released artifact consumers pull).
+- **Confidence = high** — the plan's own confidence verdict is HIGH **and**
+  `/flow:critique-plan` returned APPROVED with no open MEDIUM/LOW assumption (reuses the
+  existing verdict; no new signal).
+- **Taste = low** — a correct answer exists and is checkable by tests/critique; not a
+  visual / UX / product call.
+- **Carve-out (always human):** a plan gate with a **prototype attached** (D1) — the
+  prototype *is* the high-taste artifact.
+
+**The merge gate** keys on a stricter thing than stakes — **explicit verifiability** —
+because a merge writes to `main`:
+
+- **docs-only** → orchestrator may merge (no behavior to get wrong); OR
+- **code with a real end-to-end verification** — `/flow:verify-build`
+  `overall_verdict: PASS` (e.g. driven on the simulator) — **and** extremely-high confidence
+  **and** still in the plan-gate green quadrant → orchestrator may merge (the green run *is*
+  the proof); OR
+- **anything else** — verify-build skipped (`platform: library`, no runnable path) or
+  `Unknown`, or any red axis → **human.** No behavioral proof, no orchestrator merge.
+
+This is FB-0018's "positive PASS, not absence-of-failure" applied to *who* merges. The
+consequence decides where the payoff is: flow's own repo is `platform: library`, so its
+*code* merges can never be explicitly verified and **stay human** — only its *docs* merges
+delegate; the iOS consumer projects (ripe, health-tracker) with real simulator verify-build
+are where code-merge automation earns its keep. [✅ 2026-08-25: the first orchestrator-
+delegated plan approval (the measurement-harness worker) matched this quadrant exactly —
+low-stakes, reversible, critique-APPROVED, low-taste — while the toolchain worker
+(edits `skip-audit-checks.py`) correctly escalated as gate machinery.]
+
+**Escalation format (default).** When any axis is red and a decision goes to the human, the
+orchestrator — and a worker paused at its gate — presents it **by default** as: the
+**recommendation**, a **confidence score** (high / medium / low), and the **justification**. The
+human should never have to *ask* for the confidence or the why — that is what lets the
+orchestrator-seat decide fast. (User preference, 2026-08-26; it also goes in the dispatch-brief
+template so workers surface gate decisions this way without being asked.)
+
+**Transparency — the record is `merged_by`.** The only provenance the human requires is who
+merged; GitHub attributes `merged_by` to the authenticating account natively (filterable,
+tamper-evident):
+
+- **Target:** agent-delegated merges run under a **GitHub App** identity → `merged_by =
+  <app>[bot]`; human merges stay the human. A GitHub App is **free and consumes no seat** (a
+  machine-user would eat a paid org seat); its installation token is the merge credential.
+  Plan-approval is pre-PR and deliberately *not* recorded in GitHub (operator's call — merge
+  provenance is enough).
+- **Interim** (until the App exists, while agent + human share one identity): tag
+  agent-merged PRs `merged:agent` + an "Approved/merged by: orchestrator" line in the PR
+  body — transparency-grade, not tamper-proof.
+
+**Rollout (crawl → walk → run), each step earned by the audit log:**
+
+1. **Crawl (now):** orchestrator auto-approves only *plans* in the green quadrant; every
+   merge stays human. Each auto-approval is logged with its four-axis classification.
+2. **Walk:** once the log shows the orchestrator's plan-calls match what the human would have
+   done, delegate *merges* for the two safest classes — docs-only, and code with a green
+   verify-build PASS — under the App identity.
+3. **Run:** widen only as the audit trail justifies. Sensitive paths / one-way doors /
+   high-taste never delegate.
+
+**One-time GitHub-App setup (prerequisite for step 2):**
+
+- Register a GitHub App on the `by-dev-tools` org — permissions: *Pull requests: read/write*,
+  *Contents: read/write*; no webhooks. Generate + store its private key as a Conductor Cloud
+  Computer secret.
+- Install the App on the target repo(s).
+- In the orchestrator env, exchange the App JWT → a short-lived installation access token; the
+  agent's merge calls (`gh pr merge` / `gh api -X PUT …/merge`) authenticate with that token
+  so `merged_by` resolves to the App. The human keeps their own token for human merges — the
+  two identities are the entire audit trail.
+
 ## 5. Execution sequence
 
 | # | Step | Where | State |
