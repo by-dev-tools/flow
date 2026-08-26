@@ -422,7 +422,7 @@ tamper-evident):
 The orchestrator workspace fills with context over time; the model fails if that seat becomes
 a **hostage** — a full-context orchestrator the human won't leave for fear of losing
 accumulated state. The fix is §4.4/§4.6's principle turned on the orchestrator itself: **the
-orchestrator must hold no state that isn't recoverable from GitHub + the Conductor API.** If
+orchestrator must hold no state that isn't recoverable from GitHub + the Conductor API (or already delivered to the human).** If
 that invariant holds, rotating the seat loses nothing, and the reluctance dissolves at the
 root.
 
@@ -438,12 +438,23 @@ by construction:
   *only* session-local part, and it is small precisely because the first two flush
   continuously.
 
-**Wind-down is two steps, and only the first touches git:**
+**Wind-down is three steps:**
 
 1. **Flush** any pending *durable* currency (a decision made but not yet documented) → a
    normal docs ship (the §4.6 session-end flush). This is where "major decisions in GitHub" is
    honored.
-2. **Hand off** the transient succession brief → **via the API, not git.** The winding-down
+2. **Externalize any non-git artifact that matters.** A file the orchestrator created that is
+   not in git — a scratch report, a generated deliverable — is recoverable from **neither**
+   GitHub **nor** the Conductor API (the API exposes transcripts and workspace metadata, *not*
+   sandbox filesystems) and **dies when the sandbox is torn down**. So inventory such files and
+   externalize each: **commit** it to the right repo if it is repo content, or **hand its
+   contents to the human** (paste/deliver) if it is not — e.g. a vendor feedback report, which
+   does not belong in the flow repo per the three-surface rule. This sharpens the invariant to:
+   *recoverable from GitHub, the Conductor API, **or** already-delivered-to-the-human* — a
+   sandbox-local file is recoverable from none. [✅ 2026-08-26 dogfood: the first real
+   succession pointed the successor at a sandbox-local report path it could not reach; the
+   report survived only because it had already been surfaced to the human. This step is why.]
+3. **Hand off** the transient succession brief → **via the API, not git.** The winding-down
    orchestrator spawns its successor with the brief as the first message
    (`conductor workspace create --name orchestrator --message-file <brief>`); the brief lands
    in the successor's transcript, consumed once at boot.
@@ -459,6 +470,12 @@ by construction:
 It is **generated at hand-off, not maintained** (like a dispatch brief), and delivered by API
 for the same reason a dispatch brief is (§4.6): a handoff is *live*, not durable currency, and
 committing it would add per-rotation PR churn plus a snapshot stale the instant it lands.
+
+**Every reference in the brief must point at a location the successor can actually reach** —
+GitHub, the Conductor API, or "handed to the human" — **never a path in the outgoing sandbox.**
+The successor is a *different* sandbox; a `/home/…` path from the old one is unreachable and
+gone the moment it is archived. (Step 2's externalization is what lets such a thing be named as
+"in GitHub" or "delivered to the human" rather than a dead path.)
 
 **Why API-only is safe — the brief is an accelerant, not a lifeline.** Even with no brief (the
 old orchestrator crashed before writing one), a fresh orchestrator reconstructs its whole world
