@@ -18,7 +18,7 @@ them WRONG and /flow:critique-plan or /flow:audit-plan caught it:
     reconstruction could otherwise subtract a real blocker)
   * an unrecognized verb goes blocked for security/a11y, ask elsewhere, auto never
 
-Also pins the producer-line contract: every one of the 8 producer sites' real
+Also pins the producer-line contract: every one of the 9 producer sites' real
 prescribed line must round-trip through `parse` yielding a kind, an in-vocabulary
 verb, and a confidence value — and the rendered manifest must stay coherent with
 lib/pr-coherence.py (the FB-0067 invariant this must not disturb).
@@ -127,6 +127,9 @@ TABLE_CASES = [
     ("security", "secret rotation", "blocked", "out-of-session human action"),
     ("security", "dep vetting", "blocked", "out-of-session human action"),
     ("a11y", "dep vetting", "blocked", "out-of-session human action"),
+    # Verb-independent: no resolution verb makes a missing toolchain answerable
+    # in-session, so unlike security/a11y there is no verb sub-split to test.
+    ("toolchain", "re-run", "blocked", "the machine lacks the toolchain — out-of-session by nature"),
 ]
 
 
@@ -140,7 +143,7 @@ def test_table(td: str) -> None:
         seen[kind] = cls
         expect(f"{kind} + '{verb}' ⇒ {want}  ({note})", cls, want)
     # The "only one auto row" claim belongs next to the table it is a claim about
-    # — and reusing the results above avoids re-running the same 13 classifications.
+    # — and reusing the results above avoids re-running the same 14 classifications.
     expect("visual-deliverable is the ONLY auto-class kind",
            {k for k, c in seen.items() if c == "auto"}, {"visual-deliverable"})
 
@@ -414,7 +417,7 @@ def test_clears_when(td: str) -> None:
     st = fresh_state(td)
     b = body(*[line(k, "f", "re-run") for k in
                ("rigor", "security", "a11y", "verify-build", "coverage",
-                "skip-audit", "status-surface", "visual-deliverable")])
+                "skip-audit", "status-surface", "visual-deliverable", "toolchain")])
     r = classify(b, st)
     expect("every kind carries a clears_when re-check",
            all(e.get("clears_when") for e in r["entries"]), True)
@@ -422,8 +425,77 @@ def test_clears_when(td: str) -> None:
                 "cleared" not in json.dumps(r), "found a 'cleared' key/value in classify output")
 
 
+def test_toolchain_kind(td: str) -> None:
+    """The `toolchain` kind: blocked, un-waivable, and it drafts the PR.
+
+    This is the kind that says "verifiable in principle, just not on this host".
+    It exists so an honest skip on a toolchain-less machine can be recorded through
+    flow's non-forgeable manifest path instead of a hand-written PR-body note.
+    """
+    print("\n[toolchain] the kind that means 'not on this machine'")
+    st = fresh_state(td, branch="toolchainbranch")
+    b = body(line("toolchain", "verify-build could not run: no Apple toolchain here", "re-run"))
+
+    r = classify(b, st, branch="toolchainbranch")
+    e = by_kind(r, "toolchain")
+    # `class == blocked` is TABLE_CASES' job (same kind, same verb, same path) and
+    # `clears_when` is test_clears_when's; asserting either again here would pin one
+    # contract in two places, which is how the two copies come to disagree.
+    expect("a blocked toolchain entry is never waivable", e["waivable"], False)
+    expect("it stays in the residual set", len(r["residual"]), 1)
+    # The whole point: an honest skip still cannot produce a merge-ready PR.
+    expect("verdict is not READY — the PR opens as a draft", r["verdict"], "BLOCKED")
+
+    # CHECK_ONLY: a human's say-so cannot clear it — only a passing check can.
+    rc, _ = run(["waive", "--branch", "toolchainbranch", "--kind", "toolchain",
+                 "--finding", "verify-build could not run: no Apple toolchain here",
+                 "--path", str(st)])
+    r = classify(b, st, branch="toolchainbranch")
+    e = by_kind(r, "toolchain")
+    expect("a recorded waiver is NOT subtracted (CHECK_ONLY, same as verify-build)",
+           len(r["residual"]), 1)
+    expect("the waiver is still recorded, just not honored", e["waived"], True)
+    expect("and the verdict still is not READY", r["verdict"], "BLOCKED")
+
+    # add-entry accepts it at WRITE time (the kind is in the allow-list), and the
+    # line it writes round-trips through the strict parser.
+    rc, out = run(["add-entry", "--kind", "toolchain",
+                   "--finding", "verify-build could not run: no Apple toolchain here",
+                   "--needs", "re-run", "--confidence", "decision-required",
+                   "--resolution", "re-run on a machine that has the toolchain"])
+    expect("add-entry --kind toolchain is accepted at write time", rc, 0, out)
+    with tempfile.TemporaryDirectory() as td2:
+        f = Path(td2) / "l.md"
+        f.write_text(out, encoding="utf-8")
+        rc2, parsed = run(["parse", "--body-file", str(f)])
+    expect("its output round-trips through parse", rc2, 0, parsed)
+    expect("with kind == toolchain", json.loads(parsed)["entries"][0]["kind"], "toolchain")
+
+    # The human-facing copy must not point at machinery that does not exist yet
+    # (the `needs-mac-verify` label + /verify-queue are a later step).
+    ef = Path(td) / "toolchain-entries.md"
+    ef.write_text(b, encoding="utf-8")
+    rc, rendered = run(["render-manifest", "--entries-file", str(ef),
+                        "--state-file", str(st), "--branch", "toolchainbranch"])
+    expect("render-manifest exits 0", rc, 0, rendered)
+    expect_true("it renders under the blocked surface with plain-language copy",
+                "What this means" in rendered and "toolchain" in rendered, rendered)
+    expect_true("the copy promises no queue that does not exist yet",
+                "queue" not in rendered.lower(), rendered)
+
+    # The rendered block must still satisfy pr-coherence in both directions.
+    rp = Path(td) / "toolchain-rendered.md"
+    rp.write_text(rendered, encoding="utf-8")
+    for is_draft, want in (("true", 0), ("false", 1)):
+        proc = subprocess.run(
+            [sys.executable, str(COHERENCE), "coherence", "--body-file", str(rp),
+             "--is-draft", is_draft], capture_output=True, text=True)
+        expect(f"pr-coherence on the toolchain block, --is-draft {is_draft} ⇒ exit {want}",
+               proc.returncode, want, proc.stdout + proc.stderr)
+
+
 def test_producer_lines() -> None:
-    print("\n[contract] all 8 producer sites round-trip through parse")
+    print("\n[contract] all 9 producer sites round-trip through parse")
     src = SHIP_SKILL.read_text(encoding="utf-8")
     # Producer sites write the line as an inline-code TEMPLATE (no leading "- ");
     # the dash appears when it is rendered into the PR body. Normalize the template
@@ -451,10 +523,36 @@ def test_producer_lines() -> None:
             expect_true(f"[{e['kind']}] template carries a confidence slot",
                         bool(e["confidence"]), json.dumps(e))
 
-    expect("every one of the 8 kinds is prescribed by a producer site",
+    expect("every one of the 9 kinds is prescribed by a producer site",
            sorted(kinds_seen),
            ["a11y", "coverage", "rigor", "security", "skip-audit",
-            "status-surface", "verify-build", "visual-deliverable"])
+            "status-surface", "toolchain", "verify-build", "visual-deliverable"])
+
+    # PAIRED with the equality above, and not redundant with it. `kinds_seen` is the
+    # UNION of the `add-entry --kind` harvest and the inline-code template harvest,
+    # so a Step 2a.3 bullet written in the template form every neighbouring bullet
+    # uses would balance the 9 on its own — the equality cannot tell the validated
+    # write path from the hand-composed line it exists to forbid. This can.
+    # `add-entry` PRINTS the line; it does not write it. A producer bullet without the
+    # `>> "$(… manifest-path …)"` redirect therefore emits to stdout, Step 7a.5 classifies
+    # an EMPTY manifest, and the PR opens READY — the precise failure every one of these
+    # producers exists to prevent. A staff-review lens caught exactly that in the toolchain
+    # bullet; `test_producer_lines`' kind harvest could not, because a redirect-less
+    # invocation matches `add-entry --kind ([a-z0-9-]+)` identically. This closes the class,
+    # not just the instance.
+    for m in re.finditer(r"add-entry --kind ([a-z0-9-]+)", src):
+        tail = src[m.start():m.start() + 900]
+        stop = tail.find("```")
+        window = tail[:stop] if stop != -1 else tail
+        expect_true(f"the `{m.group(1)}` add-entry site redirects into the manifest file",
+                    "manifest-path" in window,
+                    "an add-entry with no `>> \"$(… manifest-path --branch …)\"` prints the "
+                    "entry to stdout and leaves the manifest empty ⇒ verdict READY ⇒ a "
+                    "non-draft PR over an unresolved blocker")
+
+    expect_true("the toolchain producer prescribes the VALIDATED write path, not a template line",
+                "add-entry --kind toolchain" in src,
+                "Step 2a.3 must spell the literal `add-entry --kind toolchain`")
 
     # The anchored grep the plan gates demanded: no prescribed manifest line may
     # still OPEN with the confidence axis where the kind token belongs. A bare
@@ -611,7 +709,7 @@ def test_render_coherence(td: str) -> None:
     expect_true("the plain-language framing is present per entry",
                 all(t in out for t in ("What this means", "What I need from you")), out)
     # "What happens then" is stated once in the trailer and per-entry ONLY where it
-    # differs from the default — six of eight kinds share one sentence, and
+    # differs from the default — most kinds share one sentence, and
     # repeating it verbatim is what made the block a wall at scale.
     expect("the default 'what happens then' is stated exactly once",
            out.count("What happens when you answer"), 1)
@@ -691,6 +789,7 @@ def main() -> int:
         test_clears_when(td)
         test_render_coherence(td)
         test_sibling_dependency(td)
+        test_toolchain_kind(td)
     test_producer_lines()
     test_skill_contract()
     test_reviewer_prose()

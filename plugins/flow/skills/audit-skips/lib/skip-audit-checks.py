@@ -73,6 +73,23 @@ try:
 except Exception as _exc:  # pragma: no cover - defensive; file_patterns ships alongside
     # No sentinel rebinds — main() returns on _PATTERNS_IMPORT_ERROR before use.
     _PATTERNS_IMPORT_ERROR = _exc
+# ONE definition of the host-toolchain table, shared with the PRODUCER side
+# (/flow:verify-build SKILL.md § 1.2). Imported, never copied: a second copy is how
+# the producer self-skips on a host the auditor believes is equipped — which yields
+# a LEGITIMATE carrying no manifest entry, and a ready PR with no behavioral gate.
+# Fail-loud for the same reason file_patterns is: adjudicating a toolchain claim
+# against a guessed table is a confidently-wrong verdict, which is worse than none.
+_TOOLCHAIN_IMPORT_ERROR = None
+try:
+    from toolchain import (  # type: ignore
+        REASON_NEEDLES,
+        absent as toolchain_absent,
+        load_present as toolchain_load_present,
+        missing as toolchain_missing,
+        required as toolchain_required,
+    )
+except Exception as _exc:  # pragma: no cover - defensive; toolchain.py ships alongside
+    _TOOLCHAIN_IMPORT_ERROR = _exc
 
 DEFAULT_SOURCE_PATTERN = (
     r"\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$"
@@ -230,16 +247,42 @@ def _reason_has(skip_reason, *needles):
     return any(re.search(r"\b" + re.escape(n) + r"\b", s) for n in needles)
 
 
+# The needles come from `toolchain.REASON_NEEDLES`, imported above — the module that
+# also emits the producer's sentence. Hand-keeping a copy here is how the auditor's
+# predicate and the producer's wording drift apart (FB-0010, applied to prose).
+#
+# Why a needle is required AT ALL, given the host probe below: ground truth alone
+# would have the skip auditor — whose whole job is contesting skips — excuse a "ran
+# out of time" skip merely because the host happens to lack a toolchain. And the
+# reason alone is not enough either: it is free text the claimant writes, and a gate
+# that trusts the claim it is auditing is not a gate. Only the CONJUNCTION earns
+# LEGITIMATE.
+
+
 def _doc_only_verdict(diff_is_clean, label, auto):
     """Shared resolution for a 'doc-only / no <label>' skip claim: LEGITIMATE when
-    the diff really touches no files of that class, else SHOULD-RE-RUN."""
+    the diff really touches no files of that class, else SHOULD-RE-RUN.
+
+    Returns the same 4-tuple `classify` does; a doc-only skip never owes the PR a
+    manifest entry, so the last slot is always None."""
     if diff_is_clean:
-        return "LEGITIMATE", f"diff touches no {label}", auto
-    return "SHOULD-RE-RUN", f"skip claims doc-only but the diff touches {label}", auto
+        return "LEGITIMATE", f"diff touches no {label}", auto, None
+    return "SHOULD-RE-RUN", f"skip claims doc-only but the diff touches {label}", auto, None
 
 
 def classify(stage, ctx):
-    """Return (mechanical, reason, auto_resolvable) for one stage."""
+    """Return (mechanical, reason, auto_resolvable, manifest_kind) for one stage.
+
+    `manifest_kind` is None for every verdict except the one case where a skip is
+    HONEST and the check still never ran: a validated toolchain absence. The
+    engine -- not the calling agent -- decides that such a LEGITIMATE still owes
+    the PR a draft-manifest entry, so a session cannot talk its way past it
+    (/flow:ship Step 2a.3 routes on this field).
+
+    Every return site carries all four values on purpose. An optional/len()-tolerant
+    4th slot would make a forgotten site silently default to "owes nothing" -- the
+    FB-0010 silent-skip shape, in the engine whose job is refusing silent skips.
+    Missing one here raises an unpack error under the harness instead."""
     name = stage.get("name", "?")
     status = (stage.get("status") or "").lower()
     verdict = stage.get("verdict")
@@ -254,31 +297,66 @@ def classify(stage, ctx):
         if status == "skipped":
             if _reason_has(skip, "platform library", "platform none", "library", "none"):
                 if str(cfg.get("platform")) in ("library", "none"):
-                    return "LEGITIMATE", "platform resolves to library/none — no runnable target", auto
-                return "SHOULD-RE-RUN", f"skip claims platform library/none but platform={cfg.get('platform')!r}", auto
+                    return "LEGITIMATE", "platform resolves to library/none — no runnable target", auto, None
+                return "SHOULD-RE-RUN", f"skip claims platform library/none but platform={cfg.get('platform')!r}", auto, None
             if _reason_has(skip, "verifyenabled"):
                 if cfg.get("verifyEnabled") is False:
-                    return "LEGITIMATE", "verifyEnabled=false — project opted out", auto
-                return "SHOULD-RE-RUN", "skip claims verifyEnabled=false but it is not set false", auto
+                    return "LEGITIMATE", "verifyEnabled=false — project opted out", auto, None
+                return "SHOULD-RE-RUN", "skip claims verifyEnabled=false but it is not set false", auto, None
             if _reason_has(skip, "doc-only", "no behavior", "docs-only", "no source"):
                 # UNION, deliberately: "doc-only" is a claim about the whole diff,
                 # so it must be refused if EITHER UI surface is touched. Checking
                 # only one pattern would let a diff that is visual-but-not-a11y
                 # (or the reverse) buy a doc-only skip it hasn't earned.
                 if not diff["touches_source"] and not diff["touches_visual"] and not diff["touches_a11y"]:
-                    return "LEGITIMATE", "diff touches no source/UI files", auto
-                return "SHOULD-RE-RUN", "skip claims doc-only but the diff touches source/UI files", auto
-            return "NEEDS-JUDGMENT", f"unrecognized verify-build skip reason: {skip!r}", auto
+                    return "LEGITIMATE", "diff touches no source/UI files", auto, None
+                return "SHOULD-RE-RUN", "skip claims doc-only but the diff touches source/UI files", auto, None
+            # ---- toolchain absent on THIS host (validated, never merely claimed) ----
+            # Appended LAST in the skipped-block chain on purpose: every branch
+            # above keeps its position, its condition and its strings verbatim, so
+            # this adds a case rather than re-deciding existing ones.
+            #
+            # Both conditions or nothing (see REASON_NEEDLES). Then the host —
+            # not the prose — decides:
+            #   absent  -> LEGITIMATE, and it STILL owes the PR a manifest entry.
+            #              LEGITIMATE means "the skip was honest", never "the check
+            #              may be forgotten"; `manifest_kind` is what holds those
+            #              apart, and ship Step 2a.3 routes on it.
+            #   present -> SHOULD-RE-RUN, naming the binary that refutes the claim.
+            #
+            # `absent()` and never "missing() is non-empty": a partially-equipped
+            # host (Xcode present, xcrun off PATH) must RUN the gate, not skip it.
+            #
+            # No diff condition here, deliberately. An earlier design skipped the
+            # entry for a docs-only diff; but a toolchain entry means "draft", and
+            # a docs-only PR on such a host drafts today anyway (verify-build runs,
+            # cannot launch, returns Unknown). Drafting every validated case keeps
+            # the status quo without a second diff predicate to disagree with the
+            # producer's.
+            if toolchain_required(cfg.get("platform")) and _reason_has(skip, *REASON_NEEDLES):
+                platform = cfg.get("platform")
+                present = ctx["toolchain_present"]
+                gone = toolchain_missing(platform, present)
+                if toolchain_absent(platform, present):
+                    return ("LEGITIMATE",
+                            f"toolchain absent on this host ({', '.join(gone)} not on PATH) — "
+                            f"platform={platform!r} is verifiable in principle, just not here",
+                            auto, "toolchain")
+                have = next(b for b in toolchain_required(platform) if b not in gone)
+                return ("SHOULD-RE-RUN",
+                        f"skip claims the toolchain is absent but {have} is on PATH",
+                        auto, None)
+            return "NEEDS-JUDGMENT", f"unrecognized verify-build skip reason: {skip!r}", auto, None
         # status ran
         if not buf["exists"]:
-            return "SHOULD-RE-RUN", f"claims it ran (verdict {verdict}) but NO findings buffer at {buf['path']} — verdict without an artifact is a skip", auto
+            return "SHOULD-RE-RUN", f"claims it ran (verdict {verdict}) but NO findings buffer at {buf['path']} — verdict without an artifact is a skip", auto, None
         if str(verdict) == "PASS" and not buf["fresh"]:
             return ("SHOULD-RE-RUN",
-                    f"claims PASS but the buffer is stale (verified {buf['branch']}@{buf['head_sha_short']}, HEAD is {ctx['branch']}@{ctx['head_sha']}) — self-certified PASS with no fresh artifact", auto)
+                    f"claims PASS but the buffer is stale (verified {buf['branch']}@{buf['head_sha_short']}, HEAD is {ctx['branch']}@{ctx['head_sha']}) — self-certified PASS with no fresh artifact", auto, None)
         if str(verdict) == "PASS" and ctx["visual_significant"] and buf["screenshot_frames"] == 0:
             return ("SHOULD-RE-RUN",
-                    "visually-significant PASS with ZERO captured frames — must be Unknown until frames are captured or a not_tested rationale is recorded", auto)
-        return "LEGITIMATE", f"ran; fresh buffer present (verdict {verdict})", auto
+                    "visually-significant PASS with ZERO captured frames — must be Unknown until frames are captured or a not_tested rationale is recorded", auto, None)
+        return "LEGITIMATE", f"ran; fresh buffer present (verdict {verdict})", auto, None
 
     # ---- security ----
     # ASYMMETRY (intentional): the "verdict-without-artifact == skip" rule can only
@@ -292,39 +370,39 @@ def classify(stage, ctx):
         if status == "skipped":
             if _reason_has(skip, "doc-only", "docs-only", "trivially safe", "no source"):
                 return _doc_only_verdict(not diff["touches_source"], "source/config files", auto)
-            return "NEEDS-JUDGMENT", f"unrecognized security skip reason: {skip!r}", auto
-        return "LEGITIMATE", "ran (no machine artifact to cross-check)", auto
+            return "NEEDS-JUDGMENT", f"unrecognized security skip reason: {skip!r}", auto, None
+        return "LEGITIMATE", "ran (no machine artifact to cross-check)", auto, None
 
     # ---- accessibility ----
     if name in ("accessibility", "a11y"):
         if status == "skipped":
             if _reason_has(skip, "uisurface"):
                 if cfg.get("uiSurface") is False:
-                    return "LEGITIMATE", "uiSurface=false — project declares no UI surface", auto
-                return "SHOULD-RE-RUN", "skip claims uiSurface:false but it is not set false", auto
+                    return "LEGITIMATE", "uiSurface=false — project declares no UI surface", auto, None
+                return "SHOULD-RE-RUN", "skip claims uiSurface:false but it is not set false", auto, None
             if _reason_has(skip, "no ui", "non-ui", "no ui in diff"):
                 # The A11Y pattern, never the visual one — /flow:accessibility-review
                 # made this skip decision using `a11yFilePatterns`, so that is the
                 # only ruler that can confirm or refute it (FB-0079).
                 if not diff["touches_a11y"]:
-                    return "LEGITIMATE", "diff touches no a11y-surface files", auto
-                return "SHOULD-RE-RUN", "skip claims no UI in diff but the diff touches a11y-surface files", auto
-            return "NEEDS-JUDGMENT", f"unrecognized a11y skip reason: {skip!r}", auto
-        return "LEGITIMATE", "ran", auto
+                    return "LEGITIMATE", "diff touches no a11y-surface files", auto, None
+                return "SHOULD-RE-RUN", "skip claims no UI in diff but the diff touches a11y-surface files", auto, None
+            return "NEEDS-JUDGMENT", f"unrecognized a11y skip reason: {skip!r}", auto, None
+        return "LEGITIMATE", "ran", auto, None
 
     # ---- audit-coverage ----
     if name == "audit-coverage":
         if status == "skipped":
             if _reason_has(skip, "no spec-walk", "no spec walk", "no plan"):
                 if ctx["spec_walk_blocks"] == 0:
-                    return "LEGITIMATE", "plan has no **Spec-walk:** block", auto
-                return "SHOULD-RE-RUN", f"skip claims no Spec-walk but the plan has {ctx['spec_walk_blocks']} block(s)", auto
+                    return "LEGITIMATE", "plan has no **Spec-walk:** block", auto, None
+                return "SHOULD-RE-RUN", f"skip claims no Spec-walk but the plan has {ctx['spec_walk_blocks']} block(s)", auto, None
             if _reason_has(skip, "no behavior", "doc", "test", "refactor"):
                 if not diff["touches_source"]:
-                    return "LEGITIMATE", "diff has no behavior-bearing source files", auto
-                return "SHOULD-RE-RUN", "skip claims no behavior but the diff touches source files", auto
-            return "NEEDS-JUDGMENT", f"unrecognized audit-coverage skip reason: {skip!r}", auto
-        return "LEGITIMATE", "ran", auto
+                    return "LEGITIMATE", "diff has no behavior-bearing source files", auto, None
+                return "SHOULD-RE-RUN", "skip claims no behavior but the diff touches source files", auto, None
+            return "NEEDS-JUDGMENT", f"unrecognized audit-coverage skip reason: {skip!r}", auto, None
+        return "LEGITIMATE", "ran", auto, None
 
     # ---- simplify / staff-review ----
     if name in ("simplify", "staff-review"):
@@ -332,20 +410,20 @@ def classify(stage, ctx):
             if _reason_has(skip, "doc-only", "docs-only", "no source"):
                 return _doc_only_verdict(not diff["touches_source"], "source files", auto)
             # spike / tiny mode is a plan declaration — not mechanically decidable.
-            return "NEEDS-JUDGMENT", f"skip reason {skip!r} is mode-declared (spike/tiny) — confirm against the plan", auto
+            return "NEEDS-JUDGMENT", f"skip reason {skip!r} is mode-declared (spike/tiny) — confirm against the plan", auto, None
         # ran: staff-review writes the rigor marker; a missing/stale marker on a
         # source-touching diff means no mechanical evidence it ran on THIS source.
         if name == "staff-review" and diff["touches_source"]:
             if ctx["rigor_fresh"] is False:
-                return "SHOULD-RE-RUN", "claims it ran but no fresh staff-review rigor marker for this source (ship Step 1.0a) — verdict without an artifact is a skip", auto
+                return "SHOULD-RE-RUN", "claims it ran but no fresh staff-review rigor marker for this source (ship Step 1.0a) — verdict without an artifact is a skip", auto, None
             if ctx["rigor_fresh"] is True:
-                return "LEGITIMATE", "ran; fresh rigor marker matches the current source", auto
-        return "NEEDS-JUDGMENT", "ran (no mechanically-verifiable artifact for this stage)", auto
+                return "LEGITIMATE", "ran; fresh rigor marker matches the current source", auto, None
+        return "NEEDS-JUDGMENT", "ran (no mechanically-verifiable artifact for this stage)", auto, None
 
     # ---- visual-verification / Present visual sign-off ----
     if name in ("visual-verification", "present", "visual"):
         if not ctx["visual_significant"]:
-            return "LEGITIMATE", "change is not visually significant — no visual verification required", auto
+            return "LEGITIMATE", "change is not visually significant — no visual verification required", auto, None
         # visually significant: the dual deliverable is required.
         missing = []
         if not (buf["fresh"] and buf["screenshot_frames"] >= 1):
@@ -354,13 +432,13 @@ def classify(stage, ctx):
             missing.append("a new visual-history entry referencing this branch")
         if status == "skipped":
             return ("SHOULD-RE-RUN",
-                    "visual verification skipped while the change is visually significant", False)
+                    "visual verification skipped while the change is visually significant", False, None)
         if missing:
             return ("SHOULD-RE-RUN",
-                    "visually significant but missing " + " AND ".join(missing), False)
-        return "LEGITIMATE", "visually significant; both deliverables present", auto
+                    "visually significant but missing " + " AND ".join(missing), False, None)
+        return "LEGITIMATE", "visually significant; both deliverables present", auto, None
 
-    return "NEEDS-JUDGMENT", f"unknown stage {name!r}", auto
+    return "NEEDS-JUDGMENT", f"unknown stage {name!r}", auto, None
 
 
 def main(argv):
@@ -373,12 +451,27 @@ def main(argv):
     ap.add_argument("--diff-from", default=None)
     ap.add_argument("--plan", default=None)
     ap.add_argument("--base", default=None)
+    # Eval determinism ONLY (same family as --files-from / --diff-from / --config,
+    # which the module header already documents as overridable): a file of command
+    # names to treat as resolvable on this host. CI runners have no Apple
+    # toolchain, so without it the "toolchain present => SHOULD-RE-RUN" red case
+    # is unrunnable and would silently never execute. /flow:ship's Step 2a.1
+    # handoff does not pass it; the default is the real shutil.which.
+    ap.add_argument("--which-from", default=None,
+                    help="file of command names to treat as present (eval determinism only)")
     args = ap.parse_args(argv[1:])
 
     # Same fail-loud contract as the malformed-report path below: without
     # file_patterns we cannot resolve WHICH files each reviewer scoped itself to,
     # so every skip verdict would be measured with a guessed ruler. Exit non-zero
     # with a clean stdout rather than auditing on a fallback nobody declared.
+    if _TOOLCHAIN_IMPORT_ERROR is not None:
+        print(f"skip-audit-checks: cannot import lib/toolchain.py "
+              f"({_TOOLCHAIN_IMPORT_ERROR}) — the flow plugin install is incomplete, so a "
+              f"toolchain-absence skip cannot be checked against this host. Reinstall the plugin.",
+              file=sys.stderr)
+        return 1
+
     if _PATTERNS_IMPORT_ERROR is not None:
         print(f"skip-audit-checks: cannot import lib/file_patterns.py "
               f"({_PATTERNS_IMPORT_ERROR}) — the flow plugin install is incomplete, "
@@ -455,8 +548,17 @@ def main(argv):
         except OSError:
             spec_blocks = 0
 
+    toolchain_present = None
+    if args.which_from:
+        try:
+            toolchain_present = toolchain_load_present(args.which_from)
+        except OSError as exc:
+            print(f"skip-audit-checks: cannot read --which-from {args.which_from}: {exc}", file=sys.stderr)
+            return 1
+
     ctx = {
         "branch": branch, "head_sha": head_sha,
+        "toolchain_present": toolchain_present,
         "config": cfg,
         "diff": diff_info,
         "buffer": buf,
@@ -469,7 +571,7 @@ def main(argv):
     out_stages = []
     n_rerun = n_legit = n_judg = 0
     for st in stages:
-        mech, reason, auto = classify(st, ctx)
+        mech, reason, auto, manifest_kind = classify(st, ctx)
         if mech == "SHOULD-RE-RUN":
             n_rerun += 1
         elif mech == "LEGITIMATE":
@@ -483,6 +585,10 @@ def main(argv):
             "mechanical": mech,
             "reason": reason,
             "auto_resolvable": auto if mech == "SHOULD-RE-RUN" else None,
+            # Non-null ONLY when a LEGITIMATE skip still owes the PR a manifest
+            # entry. Ship Step 2a.3 routes on this; audit-skips/SKILL.md renders it
+            # on the summary line so it survives the fork boundary.
+            "manifest_kind": manifest_kind,
         })
 
     result = {

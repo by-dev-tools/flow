@@ -269,9 +269,9 @@ Produce EXACTLY this shape (no prose before or after):
 ```
 [⚠️ PATTERN-WARNING: <warning>]        ← only when context.pattern_warnings is non-empty
 SKIP-AUDIT SUMMARY
-- <stage>: <LEGITIMATE | SHOULD-RE-RUN> — <one-line reason>[ · auto-resolvable: re-run | decision-required]
+- <stage>: <LEGITIMATE | SHOULD-RE-RUN> — <one-line reason>[ · auto-resolvable: re-run | decision-required][ · manifest: <kind>]
 - ...
-RESOLUTION: <all N stage skips LEGITIMATE — proceed | M SHOULD-RE-RUN (A auto-resolvable, D decision-required)>
+RESOLUTION: <all N stage skips LEGITIMATE — proceed | all N LEGITIMATE, K owe the manifest (<kind>) — add + draft | M SHOULD-RE-RUN (A auto-resolvable, D decision-required)>
 ```
 
 **`PATTERN-WARNING` (FB-0079).** If `context.pattern_warnings` is non-empty, emit one
@@ -283,7 +283,17 @@ verdicts below are still produced and still meaningful, but they were measured w
 pattern rather than the project's own. Say so rather than reporting a confident verdict whose
 ruler silently changed. This is the one exception to "no prose before or after".
 
-When every stage is LEGITIMATE, the body lists each stage and the `RESOLUTION:` line
-reads `all N stage skips LEGITIMATE — proceed`. When ≥1 stage is SHOULD-RE-RUN, the
+**`manifest: <kind>` (the toolchain case).** When a stage's mechanical block carries a
+non-null `manifest_kind`, append ` · manifest: <kind>` to that stage's line and use the
+`K owe the manifest` form of `RESOLUTION:`. This is the one case where LEGITIMATE does
+**not** mean "proceed": the skip was honest — the engine verified against this host that
+the toolchain the platform needs really is absent — but the check still never ran, so the
+PR owes a draft-manifest entry (`/flow:ship` Step 2a.3 adds it via `manifest-triage.py
+add-entry`, and the PR opens as a draft). Echo the field exactly as the engine emitted it;
+never invent one and never drop one. Dropping it is not a cosmetic omission — it is how a
+change with no behavioral gate reaches a **ready** PR.
+
+When every stage is LEGITIMATE and none carries a `manifest:` field, the body lists each
+stage and the `RESOLUTION:` line reads `all N stage skips LEGITIMATE — proceed`. When ≥1 stage is SHOULD-RE-RUN, the
 `RESOLUTION:` line names how many are auto-resolvable (re-run + re-audit once) vs
 decision-required (→ draft manifest). Do not explain your process.

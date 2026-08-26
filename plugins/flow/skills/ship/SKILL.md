@@ -17,7 +17,7 @@ description: >
   "didn't fail"). If ANY of FB-0011's escalation triggers hold — unclear path,
   significant risk, competing options of comparable merit, or a one-way-door
   decision — do NOT auto-invoke: present findings and wait (workflow.md Step 8).
-  NEVER auto-invoke when verify-build is skipped (platform library/none, or a
+  NEVER auto-invoke when verify-build is skipped (platform library/none, a toolchain absent from this host, or a
   doc-only diff) — there is no behavioral gate, so those require an explicit
   "ship it" from the user. The plan and merge gates are untouched: this never
   starts before an approved plan and never merges.
@@ -310,7 +310,7 @@ Skill("flow:audit-coverage")
 Skip behavior:
 - `/flow:security-review`: skip if the diff is doc-only or trivially safe (a copy tweak). The reviewer self-detects this and exits early with a clean message.
 - `/flow:accessibility-review`: skip if `flow.config.json.uiSurface` is `false` (the reviewer self-detects this and exits early), or if the diff is non-UI (data layer, build config, doc-only).
-- `/flow:verify-build`: skip if `flow.config.json.verifyEnabled` is `false` (project-wide opt-out), or if `flow.config.json.platform` resolves to `library` or `none` (no runnable target). The skill self-detects both and exits early with a clean `[verify-build] ...skipping.` message. Unlike security + a11y, verify-build does NOT auto-skip on doc-only diffs — the user may have shipped a behavioral change in a non-code file (e.g., a config-driven feature toggle); the run-and-observe loop is cheap enough to attempt and fall through to Unknown if there's nothing to observe.
+- `/flow:verify-build`: skip if `flow.config.json.verifyEnabled` is `false` (project-wide opt-out), if `flow.config.json.platform` resolves to `library` or `none` (no runnable target), or if `platform` is toolchain-gated and **every** binary its build needs is absent from this host (verifiable in principle, not here — e.g. a Linux cloud workspace on a `platform: ios` project). The skill self-detects all three and exits early with a clean `[verify-build] ...skipping.` message. The third is not a free pass: `/flow:audit-skips` validates the claim against the host and routes a `toolchain` entry to the draft manifest, so the PR still opens as a draft. Unlike security + a11y, verify-build does NOT auto-skip on doc-only diffs — the user may have shipped a behavioral change in a non-code file (e.g., a config-driven feature toggle); the run-and-observe loop is cheap enough to attempt and fall through to Unknown if there's nothing to observe.
 - `/flow:audit-coverage`: self-skips (prints `[audit-coverage] SKIPPED — ...`) when the diff has no behavior-bearing source files (doc/test/refactor-only) or the plan has no `**Spec-walk:**` block (spike/tiny/no plan) — there's nothing to compare. Runs on **all platforms** (under-declaration is not platform-specific — unlike verify-build, it does NOT skip on `platform: library|none`).
 
 The first two reviewers are tuned for the in-flow ship context; the bundled Claude Code `/security-review` is fine for out-of-band deep audits but `/flow:security-review` carries the config-slot doc-path resolution this pipeline needs. Verify-build catches the Potemkin-interface / hallucinated-success class no static reviewer catches; it wraps bundled `/verify` with plan-driven criteria. At ship it's a confirmation re-run (discovery happened at the Step 8/9 readiness boundary); a non-converging FAIL/Unknown regression routes to the draft manifest, not a hard halt. **Audit-coverage** closes the complementary gap verify-build can't: verify-build tests the criteria that were *declared*; audit-coverage checks the diff for behavior that was *never declared* (so verify-build never tested it). Together: declared criteria are verified (verify-build → rendered Test plan) AND the declared set is complete (audit-coverage). It is best-effort LLM judgment — it raises the completeness bar, it does not deterministically guarantee it (false negatives possible); a flagged gap routes to draft, never a hard halt.
@@ -318,10 +318,10 @@ The first two reviewers are tuned for the in-flow ship context; the bundled Clau
 After all four Skill calls return, emit one consolidated user-facing line so the user can see what actually ran vs skipped:
 
 ```
-Final-pass reviews: security=[ran|skipped: <reason>], accessibility=[ran|skipped: <reason>], verify-build=[ran|skipped: <reason>], coverage=[ran|skipped: <reason>], skip-audit=[all-legitimate|N should-re-run].
+Final-pass reviews: security=[ran|skipped: <reason>], accessibility=[ran|skipped: <reason>], verify-build=[ran|skipped: <reason>], coverage=[ran|skipped: <reason>], skip-audit=[all-legitimate|all-legitimate (K owe the manifest: <kind>)|N should-re-run].
 ```
 
-Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=skipped (uiSurface:false), verify-build=ran (overall_verdict:PASS, all criteria PASS), coverage=ran (no undeclared changes), skip-audit=all-legitimate.`
+Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=skipped (uiSurface:false), verify-build=ran (overall_verdict:PASS, all criteria PASS), coverage=ran (no undeclared changes), skip-audit=all-legitimate.` On a host that could not run the behavioral gate: `… verify-build=skipped (toolchain absent: xcodebuild, xcrun not on PATH), coverage=ran, skip-audit=all-legitimate (1 owes the manifest: toolchain).`
 
 (The `skip-audit=` field is filled by **Step 2a** below — `/flow:audit-skips` runs AFTER the four reviewers report and BEFORE Step 3.)
 
@@ -388,7 +388,7 @@ cat > "$STAGES" <<'EOF'
   {"name": "staff-review",        "status": "<ran|skipped>", "skip_reason": "<spike|tiny|doc-only|null>"},
   {"name": "security",            "status": "<ran|skipped>", "skip_reason": "<doc-only|null>"},
   {"name": "accessibility",       "status": "<ran|skipped>", "skip_reason": "<uiSurface:false|no UI in diff|null>"},
-  {"name": "verify-build",        "status": "<ran|skipped>", "verdict": "<PASS|FAIL|Unknown|null>", "skip_reason": "<platform library|verifyEnabled:false|null>"},
+  {"name": "verify-build",        "status": "<ran|skipped>", "verdict": "<PASS|FAIL|Unknown|null>", "skip_reason": "<platform library|verifyEnabled:false|toolchain absent: <binaries> not on PATH|null>"},
   {"name": "audit-coverage",      "status": "<ran|skipped>", "skip_reason": "<no Spec-walk|no behavior in diff|null>"},
   {"name": "visual-verification", "status": "<ran|skipped>", "skip_reason": "<null>"}
 ]}
@@ -421,9 +421,21 @@ jq . "$STAGES" >/dev/null 2>&1 || { echo "⚠️ BLOCKER: the handoff at $STAGES
    - **`⚠️ SKIP-AUDIT COULD NOT VERIFY …` (`stamp_unverifiable`)** → the stamp checker itself could not run (missing helper, no `python3`/`jq`). Do **not** re-run 2a.1 — that cannot fix a toolchain problem. Add a **`[decision-required]`** entry (`[skip-audit] the skip-check never ran — flow could not verify the handoff belongs to this workspace (<reason>), so NO stage skip in this change was audited — needs: install python3/jq or reinstall the flow plugin | human-waive — confidence: decision-required — candidate resolutions: restore the toolchain and re-run /flow:ship; or waive, accepting that no skip was checked`).
    - **`⚠️ SKIP-AUDIT REFUSED …` (`stamp_error`)** → the handoff present at the scratch path did not belong to this repo/branch/HEAD, so the gate did **not** run. Re-run 2a.1 to rewrite the handoff and re-invoke the skill **once**. If it refuses again, add a **`[decision-required]`** entry (`[skip-audit] the skip-check refused a handoff from another workspace (<reason>), so NO stage skip in this change was audited — needs: re-run ship Step 2a.1 | human-waive — confidence: auto-resolvable — candidate resolutions: rewrite the handoff from this workspace and re-audit once; a second refusal means the transport is broken (decision-required)`). Never record this as `all-legitimate`.
    - **`SKIP-AUDIT: no stage report to audit` on a run you launched from 2a.1** → you *did* write a handoff, so an "absent" verdict means the fork could not see it — the transport regression FB-0082 fixed. Treat it exactly like `stamp_error` above; do **not** proceed as if the skips were audited.
-   - **All `LEGITIMATE`** → emit a one-line confirmation (`skip-audit: all N stage skips legitimate`) and proceed.
+   - **`LEGITIMATE · manifest: <kind>`** → the skip was honest **and** the check still never ran, so this is **not** a clean pass. The engine — not you — decided it owes the PR an entry (today the only kind is `toolchain`: a validated toolchain absence on this host). Add it through the validated write path, never a hand-composed line:
+     ```sh
+     TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+     BRANCH=$(git branch --show-current)
+     python3 "$TRIAGE" add-entry --kind toolchain \
+       --finding "verify-build could not run: this machine has none of the tools an <platform> build needs (<the binaries the engine named>), so nothing was built or exercised" \
+       --needs re-run --confidence decision-required \
+       --resolution "re-run /flow:verify-build on a machine that has the toolchain" \
+       >> "$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")"
+     ```
+     **The `>>` redirect is the whole point** — `add-entry` validates and PRINTS the line, it does not write it. Without the redirect the entry goes to stdout, Step 7a.5 classifies an empty manifest, the verdict is `READY`, and §7a.6 opens a **non-draft** PR: a validated-unverifiable skip reaching a ready PR with no behavioral gate, which is exactly what this bullet exists to prevent. Same reason the `TRIAGE` fallback is not optional: `CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls, so a bare `${CLAUDE_PLUGIN_ROOT}/…` path fails outright in the flow repo itself.
+     Then continue. The entry makes the triage verdict `≠ READY`, so §7a.6 opens a **draft** through machinery that already exists — no special-casing there. Do **not** re-invoke verify-build: re-running a stage on a host that cannot run it is the wasted cycle this whole path removes.
+   - **All `LEGITIMATE`, and none carrying a `manifest:` field** → emit a one-line confirmation (`skip-audit: all N stage skips legitimate`) and proceed. The qualifier is load-bearing: an unqualified "all legitimate → proceed" is exactly how a validated-but-unverifiable skip would reach a **ready** PR with no behavioral gate.
 
-4. **Record the consolidated result** in the Step-2 `Final-pass reviews:` line (`skip-audit=all-legitimate` / `skip-audit=N should-re-run`) and in the PR `## Flow run` table (the `/flow:audit-skips` row).
+4. **Record the consolidated result** in the Step-2 `Final-pass reviews:` line (`skip-audit=all-legitimate` / `skip-audit=all-legitimate (K owe the manifest: <kind>)` / `skip-audit=N should-re-run`) and in the PR `## Flow run` table (the `/flow:audit-skips` row).
 
 A docs-only or backend-only PR must rule clean here: those stage skips ARE legitimate (the diff/config back them), so the audit confirms them without noise — no false positives. The audit validates the skip; it does not ban skipping. Skips stay honest, not impossible.
 
@@ -477,7 +489,7 @@ Single-source verify-build findings without pairing source do NOT earn an FB ent
 
 **Also derive candidates from resolved open questions.** For each `open_questions[]` entry with `routing = this-iteration` that the human **answered with a correction** during Present (Step 8/9) — i.e. they overruled the `recommended_default` — treat it as a candidate FB: that *is* a user correction, the canonical FB source (blueprint § 4). The question + the human's answer form the candidate's "What was said"; the synthesized rule is the corrected direction. This pairs the visual-decision loop with the feedback pipeline (the same answered questions feed the durable record's "questions carried forward" at Step 5c). The source-diversity bar still applies — a human correction is itself one strong source; pair it as usual before writing.
 
-If verify-build was skipped at Step 2 (`verifyEnabled=false`, `platform=library|none`, or doc-only diff per the skill's self-detection), no buffer read; skip this paragraph. If verify-build ran but the buffer is absent or unreadable, emit a `⚠️ verify-build ran but findings buffer at <path> is missing/unreadable; skipping FB-XXXX synthesis from verify-build` warning and continue — don't block ship on a missing diagnostic artifact (verify-build's verdict was already resolved at Step 2 — a non-converging regression would already be in the draft manifest).
+If verify-build was skipped at Step 2 (`verifyEnabled=false`, `platform=library|none`, a toolchain absent from this host, or doc-only diff per the skill's self-detection), no buffer read; skip this paragraph. If verify-build ran but the buffer is absent or unreadable, emit a `⚠️ verify-build ran but findings buffer at <path> is missing/unreadable; skipping FB-XXXX synthesis from verify-build` warning and continue — don't block ship on a missing diagnostic artifact (verify-build's verdict was already resolved at Step 2 — a non-converging regression would already be in the draft manifest).
 
 ### 4b. Agent self-feedback → failure-pattern memory
 
@@ -1025,7 +1037,7 @@ Three classes come back:
 
 - **`auto`** — a resolution is prescribed and has not been attempted. Only `visual-deliverable` qualifies, and §7a above already attempts it, so an `auto` here means the attempt has not run: run it (§7a's ordered sequence), record it, re-classify. **One attempt.** A failed attempt **demotes to `ask`** — never to a silent draft, and never to a second try.
 - **`ask`** — a decision the human can answer now. **Draft the resolution** — the criterion, the corrected status line, the specific candidate fix — into the entry's `candidate resolutions:` field. This is the half that answers "high-confidence recs, just do it", discharged safely: you do the work of *proposing*; the human supplies only the approval that doctrine reserves for them (Step 2's audit-coverage rule — never self-declare a criterion; §5a.5's rule — never silently rewrite an un-fenced human doc).
-- **`blocked`** — needs an action outside this session (rotate a leaked secret, vet a dependency). Not waivable, never phrased as a question. This is what a draft PR genuinely exists for.
+- **`blocked`** — needs an action outside this session (rotate a leaked secret, vet a dependency, or re-run the behavioral gate on a machine that has the toolchain this one lacks). Not waivable, never phrased as a question. This is what a draft PR genuinely exists for.
 
 **Invariants the classifier enforces — do not work around any of them:**
 - Clearing is not the classifier's job. Every entry carries `clears_when`; an entry leaves the manifest only when the check that produced it re-runs clean (FB-0062).
@@ -1062,7 +1074,7 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
   ```markdown
   ## 🚫 NOT READY TO MERGE — unresolved blockers
   <!-- flow:not-ready-manifest -->
-  - [<rigor|security|a11y|verify-build|coverage|skip-audit|status-surface|visual-deliverable>] <finding> — needs: <secret rotation | design decision | dep vetting | regression fix | re-run | reconcile | declare + fence | hand-author | human-waive> — candidate resolutions: <...>
+  - [<rigor|security|a11y|verify-build|coverage|skip-audit|status-surface|visual-deliverable|toolchain>] <finding> — needs: <secret rotation | design decision | dep vetting | regression fix | re-run | reconcile | declare + fence | hand-author | human-waive> — candidate resolutions: <...>
     - **What this means:** <plain language, no jargon — what actually did not pass>
     - **What I need from you:** <the one decision, answerable in a word>
     - **What happens then:** <ONLY when it differs from the default stated in the trailer>
@@ -1110,7 +1122,7 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
   | /flow:accessibility-review | <✓ / skipped (reason)> | <result, incl. any [decision-required] blocker / —> |
   | /flow:verify-build | <✓ / skipped (reason)> | <overall_verdict; a non-converging regression → draft / —> |
   | /flow:audit-coverage | <✓ / skipped (reason)> | <undeclared changes → draft / "no undeclared changes" / —> |
-  | /flow:audit-skips | ✓ | <all N stage skips legitimate / N should-re-run → re-ran M, K → draft> |
+  | /flow:audit-skips | ✓ | <all N stage skips legitimate / all N legitimate, K owe the manifest (toolchain) → draft / N should-re-run → re-ran M, K → draft> |
   | Manifest triage (§7a.5) | <✓ / n/a (nothing on the manifest)> | <N entries: A auto-resolved, B decisions surfaced at hand-off, C need you outside the session / —> |
   | Visual deliverable (§7a) | <✓ / n/a (not visually significant)> | <both present / draft: missing <walkthrough · visual-history entry>; Walkthrough (local, uncommitted): <verifyReportPath> / —> |
   | Doc synthesis | ✓ | <docs updated> |
@@ -1151,7 +1163,7 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
   # exit, don't warn-and-continue: Step 7b now hard-fails on a missing stamp, so falling
   # through here just produces a second, less legible failure further down the pipeline.
   [ -f "$RTP" ] || { echo "⚠️ [test-plan] renderer not found at $RTP — the Test plan CANNOT be rendered, and Step 7b will refuse to verify a hand-written one. Reinstall the flow plugin, or run from the flow checkout." >&2; exit 1; }
-  # If verify-build SKIPPED at Step 2 (verifyEnabled=false, platform=library|none — see the
+  # If verify-build SKIPPED at Step 2 (verifyEnabled=false, platform=library|none, toolchain absent — see the
   # Step 2 consolidated line), pass --skipped "<reason>" so the renderer emits the honest
   # manual-verification fallback instead of reading a stale/absent buffer:
   #   python3 "$RTP" "$BUF" --skipped "platform library"
@@ -1201,12 +1213,13 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
     - `/flow:accessibility-review` skips when `flow.config.json.uiSurface` is
       `false`, or when the diff touches no UI files → `skipped (uiSurface:false)` / `skipped (no UI in diff)`.
     - `/flow:verify-build` skips when `flow.config.json.verifyEnabled` is `false`
-      or `platform` is `library`/`none` → `skipped (verifyEnabled:false)` / `skipped (platform library|none)`.
+      or `platform` is `library`/`none` → `skipped (verifyEnabled:false)` / `skipped (platform library|none)`; or the platform's toolchain is absent from this host → `skipped (toolchain absent)`.
     - `/flow:audit-coverage` skips on a doc/test/refactor-only diff or a plan with no
       `**Spec-walk:**` block → `skipped (no behavior in diff)` / `skipped (no Spec-walk)`. Runs on all platforms.
     - `/flow:audit-skips` always runs at Step 2a (it audits the OTHER stages' skips) →
-      `✓`; its Notable cell carries the consolidated verdict (`all N legitimate` / `N
-      should-re-run → re-ran M, K → draft`).
+      `✓`; its Notable cell carries the consolidated verdict (`all N legitimate` /
+      `all N legitimate, K owe the manifest (<kind>) → draft` / `N should-re-run →
+      re-ran M, K → draft`).
     - **Visual deliverable (§7a)** is `n/a (not visually significant)` unless the §2c
       verdict is true; when true, `✓` (both deliverables present) or the draft note
       naming the missing artifact + the local walkthrough path.

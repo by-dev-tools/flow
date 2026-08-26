@@ -77,7 +77,7 @@ What we did NOT test:
 
 ### Library
 
-Library projects skip verify-build at Step 1.2 (`flow.config.json.platform=library` or no runnable target). No `What we did NOT test` checklist is emitted in this case — the skill exits before reaching Step 9.
+Library projects skip verify-build at Step 1.2 (`flow.config.json.platform=library` or no runnable target), as does any host missing the whole toolchain its declared `platform` needs. No `What we did NOT test` checklist is emitted in this case — the skill exits before reaching Step 9.
 
 ## Status footer (Phase 5 to refine)
 

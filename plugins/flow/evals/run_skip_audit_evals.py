@@ -70,7 +70,7 @@ def make_buffer(path, *, branch, sha, verdict, frames, visual_significant=True):
     Path(path).write_text(json.dumps(buf), encoding="utf-8")
 
 
-def run(tmp, *, config, report, files, diff=None, vh_text=None, plan=None):
+def run(tmp, *, config, report, files, diff=None, vh_text=None, plan=None, which=None):
     d = Path(tmp)
     cfg_p = d / "flow.config.json"
     cfg_p.write_text(json.dumps(config), encoding="utf-8")
@@ -88,6 +88,13 @@ def run(tmp, *, config, report, files, diff=None, vh_text=None, plan=None):
         plan_p = d / "plan.md"
         plan_p.write_text(plan, encoding="utf-8")
         argv += ["--plan", str(plan_p)]
+    if which is not None:
+        # Eval determinism: CI runners have no Apple toolchain, so without an
+        # explicit "treat these as present" list the toolchain-PRESENT cases below
+        # could never run — and a red case that never executes is not a red case.
+        w = d / "which.txt"
+        w.write_text("\n".join(which), encoding="utf-8")
+        argv += ["--which-from", str(w)]
     proc = subprocess.run(argv, capture_output=True, text=True, check=False)
     try:
         out = json.loads(proc.stdout)
@@ -96,11 +103,23 @@ def run(tmp, *, config, report, files, diff=None, vh_text=None, plan=None):
     return out
 
 
-def verdict_of(result, name):
+def stage_of(result, name):
     for s in result.get("stages", []):
         if s.get("name") == name:
-            return s.get("mechanical")
-    return None
+            return s
+    return {}
+
+
+def kind_of(result, name):
+    return stage_of(result, name).get("manifest_kind")
+
+
+def reason_of(result, name):
+    return stage_of(result, name).get("reason", "")
+
+
+def verdict_of(result, name):
+    return stage_of(result, name).get("mechanical")
 
 
 def main() -> int:
@@ -239,6 +258,309 @@ def main() -> int:
             verdict_of(r3, "verify-build") == "LEGITIMATE",
             f"got {verdict_of(r3, 'verify-build')!r}",
         )
+
+
+        # --- TOOLCHAIN: "verifiable in principle, just not on THIS host" ---------
+        #
+        # The gate this closes: a Linux cloud workspace on a `platform: ios`
+        # project cannot build the target at all. Before this branch existed its
+        # only honest skip was mechanically refused ("skip claims platform
+        # library/none but platform='ios'"), so the session either burned a launch
+        # attempt to reach Unknown or fought the auditor.
+        #
+        # The rule is a CONJUNCTION, deliberately, and the four cases below are
+        # the four corners of it: a toolchain-shaped REASON plus a HOST that
+        # actually lacks the toolchain. Reason alone is free text the claimant
+        # writes; host alone would have the skip auditor — whose whole job is
+        # contesting skips — excuse any skip at all on an under-equipped machine.
+        ios_cfg = {"uiSurface": True, "platform": "ios",
+                   "verifyFindingsPath": buf_path, "visualHistoryPath": vh_path}
+        TC_REASON = "toolchain absent: xcodebuild, xcrun not on PATH"
+        tc_report = {"stages": [
+            {"name": "verify-build", "status": "skipped", "skip_reason": TC_REASON},
+        ]}
+        SRC = "M\tsrc/ContentView.swift"
+
+        # GREEN — reason names it AND the host confirms it (nothing on PATH).
+        # Hoisted: four later cases need this exact engine result, and re-running it
+        # four times cost three subprocesses and made the reader diff long call lines
+        # to discover they were identical.
+        r_green = run(tmp, config=ios_cfg, report=tc_report, files=SRC, which=[])
+        r = r_green
+        check("toolchain-green-legitimate", verdict_of(r, "verify-build") == "LEGITIMATE",
+              f"got {verdict_of(r, 'verify-build')!r}: {r.get('stages')}")
+        # The verdict alone is not the point. LEGITIMATE means "the skip was
+        # honest", never "the check may be forgotten" — the manifest_kind is what
+        # holds those apart, and ship Step 2a.3 routes the PR to draft on it.
+        # Without this assertion the branch would be a licence to ship un-verified.
+        check("toolchain-green-owes-the-manifest", kind_of(r, "verify-build") == "toolchain",
+              f"manifest_kind={kind_of(r, 'verify-build')!r} — a LEGITIMATE that owes nothing is a ready PR with no behavioral gate")
+        check("toolchain-green-reason-names-the-host-fact",
+              "not on PATH" in reason_of(r, "verify-build"),
+              reason_of(r, "verify-build"))
+
+        # RED — identical claim, identical config, host that HAS the toolchain.
+        r = run(tmp, config=ios_cfg, report=tc_report, files=SRC, which=["xcodebuild", "xcrun"])
+        check("toolchain-red-should-re-run", verdict_of(r, "verify-build") == "SHOULD-RE-RUN",
+              f"got {verdict_of(r, 'verify-build')!r}: {r.get('stages')}")
+        check("toolchain-red-names-the-binary-it-found",
+              "xcodebuild is on PATH" in reason_of(r, "verify-build"),
+              f"a verdict that is right for the wrong reason still misleads: {reason_of(r, 'verify-build')!r}")
+        check("toolchain-red-owes-no-manifest-entry", kind_of(r, "verify-build") is None,
+              f"manifest_kind={kind_of(r, 'verify-build')!r}")
+
+        # PARTIAL toolchain — Xcode present, xcrun off PATH. `absent()` is False,
+        # so the gate must RUN, not be suppressed. This is why the predicate is
+        # "every binary missing" and not "any binary missing": erring toward
+        # running is recoverable, erring toward skipping silently drops the gate.
+        r = run(tmp, config=ios_cfg, report=tc_report, files=SRC, which=["xcodebuild"])
+        check("toolchain-partial-is-not-absent", verdict_of(r, "verify-build") == "SHOULD-RE-RUN",
+              f"a partially-equipped host must not buy the skip: {verdict_of(r, 'verify-build')!r}")
+        check("toolchain-partial-owes-no-manifest-entry", kind_of(r, "verify-build") is None)
+
+        # DECISION B — the host fact ALONE never earns LEGITIMATE. Same
+        # toolchain-less host as the green case; only the wording differs.
+        for label, reason in (("unrelated-reason", "ran out of time"), ("null-reason", None)):
+            r = run(tmp, config=ios_cfg, files=SRC, which=[],
+                    report={"stages": [{"name": "verify-build", "status": "skipped",
+                                        "skip_reason": reason}]})
+            check(f"toolchain-hostfact-alone-{label}-needs-judgment",
+                  verdict_of(r, "verify-build") == "NEEDS-JUDGMENT",
+                  f"got {verdict_of(r, 'verify-build')!r} — a skip that never claimed a toolchain "
+                  f"problem must not be excused just because the host lacks one")
+            check(f"toolchain-hostfact-alone-{label}-owes-no-entry",
+                  kind_of(r, "verify-build") is None)
+
+        # ...and the REASON alone never earns it either, on a platform flow does
+        # not model as toolchain-gated. Honest NEEDS-JUDGMENT, never a confident
+        # verdict in either direction.
+        for label, plat in (("web", "web"), ("unset", None)):
+            cfg = {"uiSurface": True, "verifyFindingsPath": buf_path, "visualHistoryPath": vh_path}
+            if plat:
+                cfg["platform"] = plat
+            r = run(tmp, config=cfg, report=tc_report, files=SRC, which=[])
+            check(f"toolchain-ungated-platform-{label}-needs-judgment",
+                  verdict_of(r, "verify-build") == "NEEDS-JUDGMENT",
+                  f"got {verdict_of(r, 'verify-build')!r}")
+            check(f"toolchain-ungated-platform-{label}-owes-no-entry",
+                  kind_of(r, "verify-build") is None)
+
+        # PAIRED POSITIVES (.claude/rules/general.md rule 3). The new branch sits
+        # AFTER these; if a future edit lets it consume their reasons, or if
+        # someone "simplifies" by deleting them, these fail. Both must also carry
+        # a null manifest_kind — an over-firing branch would draft every library PR.
+        r = run(tmp, config=lib_cfg, files="M\tsrc/server.py",
+                report={"stages": [{"name": "verify-build", "status": "skipped",
+                                    "skip_reason": "platform library"}]})
+        check("paired-positive-platform-library-still-legit",
+              verdict_of(r, "verify-build") == "LEGITIMATE" and kind_of(r, "verify-build") is None,
+              f"{verdict_of(r, 'verify-build')!r} / {kind_of(r, 'verify-build')!r}")
+        # ...including when its reason happens to mention a toolchain. flow's OWN
+        # repo is platform: library, and this reason is one a human would write.
+        r = run(tmp, config=lib_cfg, files="M\tsrc/server.py",
+                report={"stages": [{"name": "verify-build", "status": "skipped",
+                                    "skip_reason": "platform library — no toolchain to build"}]})
+        check("paired-positive-library-reason-mentioning-toolchain-still-legit",
+              verdict_of(r, "verify-build") == "LEGITIMATE" and kind_of(r, "verify-build") is None,
+              f"the toolchain branch must not consume an un-gated platform's skip: "
+              f"{verdict_of(r, 'verify-build')!r} / {kind_of(r, 'verify-build')!r}")
+        ve_cfg = {"uiSurface": True, "platform": "ios", "verifyEnabled": False,
+                  "verifyFindingsPath": buf_path, "visualHistoryPath": vh_path}
+        r = run(tmp, config=ve_cfg, files=SRC, which=[],
+                report={"stages": [{"name": "verify-build", "status": "skipped",
+                                    "skip_reason": "verifyEnabled:false"}]})
+        check("paired-positive-verifyEnabled-false-still-legit",
+              verdict_of(r, "verify-build") == "LEGITIMATE" and kind_of(r, "verify-build") is None,
+              f"{verdict_of(r, 'verify-build')!r} / {kind_of(r, 'verify-build')!r}")
+
+        # ACCEPTED RESIDUAL, pinned so a future reorder is a visible decision.
+        # A toolchain reason containing the bare word "none" matches the
+        # library/none branch FIRST and gets a misquoting refutation. Unhelpful,
+        # but safe AND self-healing: verify-build is auto-resolvable, so ship
+        # re-invokes it, the producer writes the canonical reason, and the single
+        # re-audit lands on the toolchain branch. Both hops end in a draft.
+        r = run(tmp, config=ios_cfg, files=SRC, which=[],
+                report={"stages": [{"name": "verify-build", "status": "skipped",
+                                    "skip_reason": "toolchain absent — none of the Apple tools are present"}]})
+        check("residual-none-in-reason-is-safe-not-clean",
+              verdict_of(r, "verify-build") == "SHOULD-RE-RUN" and kind_of(r, "verify-build") is None,
+              f"{verdict_of(r, 'verify-build')!r} — must never be a clean pass")
+        # ...and the second hop — the report the producer writes on re-run — IS the
+        # GREEN case above (same config, same canonical reason), so it needs no
+        # separate assertion; `toolchain-green-*` already pins that terminal state.
+
+        # THE FORK BOUNDARY (FB-0074: a contract whose halves live in two files is
+        # broken until something mechanical checks the join). The engine computes
+        # manifest_kind, but /flow:ship only ever sees the forked skill's SUMMARY
+        # text — so if the SKILL's Output block has no field for it, the emitter is
+        # unreachable while every assertion above stays green. Asserted in BOTH
+        # directions so deleting either half fails.
+        as_skill = (HERE.parent / "skills" / "audit-skips" / "SKILL.md").read_text(encoding="utf-8")
+        check("fork-join-engine-emits-the-key", "manifest_kind" in stage_of(r_green, "verify-build"),
+              f"engine stage keys: {sorted(stage_of(r_green, 'verify-build'))}")
+        check("fork-join-skill-output-block-names-it", "manifest: <kind>" in as_skill,
+              "audit-skips/SKILL.md's ## Output block must carry the field, or the "
+              "ship agent never sees it and Step 2a.3 can never fire")
+        check("fork-join-skill-resolution-can-say-it", "owe the manifest" in as_skill,
+              "the RESOLUTION: vocabulary must be able to express 'all LEGITIMATE, K owe the manifest'")
+
+        # SPIKE MODE HAS NO OTHER NET. /flow:ship turns a toolchain-absent skip into a
+        # draft via audit-skips + the manifest; ship-spike invokes NEITHER (0 audit-skips
+        # calls, and its PR is explicitly not manifest-gated), so before this kind existed
+        # its only gate on a toolchain-less host was verify-build running, failing to
+        # launch, and judging Unknown. A silent exit-0 self-skip would turn that halt into
+        # a clean pass — strictly LESS gated than before, on exactly the hosts this
+        # program targets, and a direct contradiction of the plan's stated invariant.
+        spike_skill = (HERE.parent / "skills" / "ship-spike" / "SKILL.md").read_text(encoding="utf-8")
+        check("ship-spike-does-not-silently-pass-a-toolchain-skip",
+              "NOT a pass in spike mode" in spike_skill,
+              "ship-spike must adjudicate a toolchain-absent skip the way it adjudicates "
+              "Unknown, or the new self-skip removes its only behavioral gate")
+        # Count INVOCATIONS, not mentions: the adjudication note above necessarily names
+        # the skill it is explaining the absence of, so a bare substring count would fire
+        # on this change's own documentation. (It did, first run.)
+        check("ship-spike-still-has-no-manifest-net",
+              'Skill("flow:audit-skips")' not in spike_skill,
+              "if ship-spike ever gains an audit-skips invocation, the adjudication note "
+              "above becomes duplicated protection and should be revisited")
+
+        # THE SHARED MODULE, DRIVEN DIRECTLY. Everything above exercises toolchain.py
+        # THROUGH skip-audit-checks.py; these drive its own CLI, which is what the
+        # producer runs. Without them `--which-from` and `load_present` have no caller
+        # on that side, and the `absent()` predicate rests on a one-off manual run.
+        TCPY = HERE.parent / "skills" / "verify-build" / "lib" / "toolchain.py"
+
+        def tc(*args, present=None):
+            argv = [sys.executable, str(TCPY), *args, "--platform", "ios"]
+            if present is not None:
+                w = Path(tmp) / "tc-which.txt"
+                w.write_text("\n".join(present), encoding="utf-8")
+                argv += ["--which-from", str(w)]
+            pr = subprocess.run(argv, capture_output=True, text=True)
+            return pr.returncode, pr.stdout.strip()
+
+        # `absent` means EVERY binary missing — not "any". The middle case is the whole
+        # reason for that choice: a host with Xcode but no xcrun on PATH must RUN the
+        # gate, not be let off it. Erring toward running costs a failed build; erring
+        # toward skipping silently drops the change's only behavioral gate.
+        rc, out = tc("skip-reason", present=[])
+        check("toolchain-cli-all-absent-emits-the-sentence",
+              rc == 0 and "xcodebuild" in out and "xcrun" in out, f"rc={rc} out={out!r}")
+        rc, out = tc("skip-reason", present=["xcodebuild", "xcrun"])
+        check("toolchain-cli-fully-equipped-host-does-not-skip", rc == 1 and out == "", f"rc={rc} out={out!r}")
+        rc, out = tc("skip-reason", present=["xcodebuild"])
+        check("toolchain-cli-partial-toolchain-does-not-skip", rc == 1 and out == "",
+              f"rc={rc} out={out!r} — a partially-equipped host must run the gate, so `absent` "
+              f"must mean every binary missing, never merely some")
+        rc, out = subprocess.run(
+            [sys.executable, str(TCPY), "skip-reason", "--platform", "web"],
+            capture_output=True, text=True).returncode, ""
+        check("toolchain-cli-ungated-platform-never-skips", rc == 1, f"rc={rc}")
+
+        # "Could not answer" must never wear the same exit code as "the answer is no".
+        # `json.loads("[]")` parses and then explodes on `.get`, and an uncaught
+        # exception exits 1 — indistinguishable from "toolchain present", so the caller
+        # would run a build it cannot run and file the failure as a regression.
+        bad = Path(tmp) / "bad-flow.config.json"
+        for label, body in (("not-an-object", "[]"), ("not-json", "{ nope")):
+            bad.write_text(body, encoding="utf-8")
+            pr = subprocess.run([sys.executable, str(TCPY), "skip-reason", "--config", str(bad)],
+                                capture_output=True, text=True)
+            check(f"toolchain-cli-malformed-config-{label}-exits-2",
+                  pr.returncode == 2,
+                  f"rc={pr.returncode} — a config it cannot read must be distinguishable "
+                  f"from 'the toolchain is present' (exit 1), or the caller silently "
+                  f"proceeds to a build that cannot succeed")
+            check(f"toolchain-cli-malformed-config-{label}-says-why",
+                  "toolchain:" in pr.stderr and "Traceback" not in pr.stderr,
+                  f"stderr={pr.stderr!r} — a traceback is not a diagnostic")
+        # An ABSENT config is a normal condition, not an error: no config, no declared
+        # platform, run the build. Paired with the two above so neither can be
+        # satisfied by collapsing all three cases onto one code.
+        pr = subprocess.run([sys.executable, str(TCPY), "skip-reason",
+                             "--config", str(Path(tmp) / "definitely-not-here.json")],
+                            capture_output=True, text=True)
+        check("toolchain-cli-absent-config-is-not-an-error", pr.returncode == 1,
+              f"rc={pr.returncode} — a missing config means 'no declared platform', not 'broken'")
+
+        # THE PRODUCER↔AUDITOR CONTRACT, tested end to end rather than against a third
+        # hardcoded string. The producer's sentence must satisfy the auditor's OWN
+        # predicate — otherwise flow's own emitted skip would fall through to
+        # NEEDS-JUDGMENT and the whole path would quietly never fire.
+        _, sentence = tc("skip-reason", present=[])
+        contract_report = {"stages": [
+            {"name": "verify-build", "status": "skipped", "skip_reason": sentence},
+        ]}
+        r_contract = run(tmp, config=ios_cfg, report=contract_report, files=SRC, which=[])
+        check("producer-sentence-satisfies-the-auditor-predicate",
+              verdict_of(r_contract, "verify-build") == "LEGITIMATE"
+              and kind_of(r_contract, "verify-build") == "toolchain",
+              f"the producer emitted {sentence!r} and the auditor answered "
+              f"{verdict_of(r_contract, 'verify-build')!r} — the two halves of the contract "
+              f"have drifted; both import toolchain.REASON_NEEDLES for exactly this reason")
+
+        # THE PRODUCER (/flow:verify-build § 1.2). Without it nothing inside flow
+        # ever emits this skip, so the branch above would classify a skip that
+        # never occurs. Paired positive: the two PRE-EXISTING self-skip cases must
+        # still be there, so the third cannot be added by replacing one of them.
+        vb_skill = (HERE.parent / "skills" / "verify-build" / "SKILL.md").read_text(encoding="utf-8")
+        check("producer-case-exists", "skip-reason --platform" in vb_skill,
+              "verify-build § 1.2 must self-skip when the toolchain is absent")
+        # THE THREE-OUTCOME CONTRACT. Two lenses independently found that a bare
+        # `2>/dev/null` + conditional folds "the check could not run" into "the
+        # toolchain is present" — which silently restores the launch→Unknown→
+        # filed-as-a-regression path this whole case exists to delete. Nothing
+        # discriminated exit 1 from exit 2 before this assertion existed.
+        check("producer-distinguishes-broken-check-from-present-toolchain",
+              "TC_RC" in vb_skill and "could not run" in vb_skill,
+              "§ 1.2 must branch on the exit status and WARN when the probe itself failed, "
+              "rather than treating every non-zero exit as 'toolchain present'")
+        check("producer-does-not-swallow-the-probes-diagnostic",
+              "skip-reason --platform \"$PLATFORM\" 2>&1" in vb_skill,
+              "the probe's stderr must be captured for the warning, not sent to /dev/null")
+        check("producer-skips-the-spawn-on-an-undeclared-platform", '[ -n "$PLATFORM" ]' in vb_skill,
+              "an undeclared platform can never be toolchain-gated, so it must not pay the interpreter spawn")
+        check("producer-keeps-verifyEnabled-case", 'VERIFY_ENABLED" = "false"' in vb_skill)
+        check("producer-keeps-library-none-case", "library|none)" in vb_skill)
+        # The producer no longer PHRASES the reason — it echoes what toolchain.py emits,
+        # so the assertion moves to the module that owns the sentence (see the
+        # producer↔auditor contract case below, which feeds one through the other).
+        check("producer-echoes-the-modules-sentence", "$TC_REASON" in vb_skill,
+              "the SKILL must echo toolchain.py's sentence, not compose its own")
+
+        # END-TO-END: the engine's manifest_kind, fed to the triage engine, must
+        # yield a non-READY verdict. This pins the ENGINE-COMPOSITION half of
+        # "honest skip still drafts"; the Step 2a.3 invocation itself is prose,
+        # pinned by run_manifest_triage_evals.py's add-entry assertion.
+        mt = HERE.parent / "skills" / "ship" / "lib" / "manifest-triage.py"
+        e2e_kind = kind_of(r_green, "verify-build")
+        # One if/else, not a sentinel: on a pre-change tree there is no manifest_kind
+        # to route, and the red-verify must print clean FAILs rather than raising
+        # mid-harness (which would hide every later case) or spawning three
+        # subprocesses whose output is discarded.
+        if e2e_kind is None:
+            check("end-to-end-add-entry-accepted", False,
+                  "no manifest_kind to route — the engine did not classify the skip")
+            check("end-to-end-honest-skip-still-drafts", False, "no manifest_kind to route")
+        else:
+            e2e = Path(tmp) / "e2e-entries.md"
+            add = subprocess.run([sys.executable, str(mt), "add-entry",
+                                  "--kind", e2e_kind,
+                                  "--finding", "verify-build could not run on this host",
+                                  "--needs", "re-run", "--confidence", "decision-required",
+                                  "--resolution", "re-run where the toolchain exists"],
+                                 capture_output=True, text=True)
+            e2e.write_text(add.stdout, encoding="utf-8")
+            st_p = Path(tmp) / "e2e-state.json"
+            subprocess.run([sys.executable, str(mt), "init-state", "--branch", "e2e",
+                            "--path", str(st_p)], capture_output=True, text=True)
+            cls = subprocess.run([sys.executable, str(mt), "classify", "--entries-file", str(e2e),
+                                  "--state-file", str(st_p), "--branch", "e2e"],
+                                 capture_output=True, text=True)
+            check("end-to-end-add-entry-accepted", add.returncode == 0, add.stdout + add.stderr)
+            e2e_verdict = json.loads(cls.stdout).get("verdict") if cls.returncode == 0 else None
+            check("end-to-end-honest-skip-still-drafts", e2e_verdict not in (None, "READY"),
+                  f"verdict={e2e_verdict!r} — an honest toolchain skip must never produce a ready PR")
 
     # A present-but-MALFORMED report must EXIT NON-ZERO with a stderr diagnostic and clean
     # stdout — so the audit-skips SKILL / ship Step 2a can tell an engine failure apart from an

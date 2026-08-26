@@ -123,9 +123,65 @@ case "$PLATFORM" in
     exit 0
     ;;
 esac
+
+# Third skip case: the target IS runnable in principle — just not on THIS machine.
+# Without it a toolchain-less host burns a launch attempt to arrive at Unknown, which
+# then gets filed as a regression — the wrong diagnosis, because nothing was exercised.
+#
+# `lib/toolchain.py skip-reason` answers the predicate AND emits the sentence in one
+# call: exit 0 + the canonical `skip_reason` on stdout when EVERY binary the platform's
+# build needs is missing; exit 1 and no output otherwise (a partially-equipped host
+# still runs the gate, deliberately). The sentence is owned by that module because
+# /flow:audit-skips matches it before it will consult the host — phrasing it here and
+# keeping the matching needles there is the FB-0010 fan-out, applied to prose.
+#
+# Guarded on a DECLARED platform: an undeclared project can never be toolchain-gated,
+# so skip the interpreter spawn entirely rather than starting python to be told the
+# table has no entry.
+if [ -n "$PLATFORM" ]; then
+  # Resolve the helper the way every other flow skill does (plugin root first, in-repo
+  # second) — `$0` is the shell here, not this file, so a $0-relative path would
+  # silently miss and the check would never fire (FB-0010 silent-skip).
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/toolchain.py" ]; then
+    TC="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/toolchain.py"
+  elif [ -f "plugins/flow/skills/verify-build/lib/toolchain.py" ]; then
+    TC="plugins/flow/skills/verify-build/lib/toolchain.py"
+  else
+    TC=""
+    echo "⚠️ [verify-build] toolchain.py helper not reachable — the toolchain-absent skip check did NOT run. On a machine without this platform's toolchain the launch below will fail and judge to Unknown." >&2
+  fi
+  if [ -n "$TC" ]; then
+    # Three outcomes, and folding any two together is the bug. `2>&1` + a case, not
+    # `2>/dev/null` + a bare conditional: exit 1 means "toolchain present, run the
+    # build" and is correctly silent, but exit 2 (bad args / unreadable override) and
+    # 127 (no python3) mean the check NEVER RAN. Collapsing those into 1 says "all
+    # fine" when the honest answer is "I could not tell" — the operator then gets a
+    # launch that cannot succeed, an Unknown, and a regression filed against a change
+    # that introduced nothing, with no line anywhere saying the probe was skipped.
+    # That is the exact experience this case exists to delete. (.claude/rules/general.md
+    # rule 1: pair every 2>/dev/null fallback with a [WARN] branch — the branch was
+    # already written six lines above for the helper-not-reachable case; this covers
+    # the helper-present-but-broken one.)
+    TC_REASON=$(python3 "$TC" skip-reason --platform "$PLATFORM" 2>&1); TC_RC=$?
+    case "$TC_RC" in
+      0)
+        echo "[verify-build] This machine cannot build the $PLATFORM target — $TC_REASON; skipping."
+        echo "[verify-build] Hand this to /flow:ship Step 2a.1 as: skip_reason=\"$TC_REASON\""
+        exit 0
+        ;;
+      1) : ;;  # toolchain present, or platform not toolchain-gated — run the gate.
+      *)
+        echo "⚠️ [verify-build] the toolchain-absent check could not run (exit $TC_RC: $TC_REASON) — continuing to launch. On a machine without this platform's toolchain that launch will fail and judge to Unknown, which is NOT a regression in your change." >&2
+        ;;
+    esac
+  fi
+fi
 ```
 
-Note: when `platform` is unset, bundled `/run` will autodetect — no flow-side autodetect needed.
+Note: when `platform` is unset, bundled `/run` will autodetect — no flow-side autodetect needed. The
+toolchain check above is keyed on a **declared** `platform` and is skipped outright when the slot is
+empty, so an undeclared project neither pays for it nor is affected by it, and keeps the
+run-then-Unknown path.
 
 ## 2. Mode detection — explicit spike vs no-plan fallback
 
@@ -434,7 +490,7 @@ The explicit `--assets-dir <report dir>` matches §5a's persist path (`<dirname(
 | Slot | Default | Used by |
 |---|---|---|
 | `flow.config.json.verifyEnabled` | `true` | Step 1.2 (skip-path) |
-| `flow.config.json.platform` | unset → bundled `/run` autodetect | Step 1.2 (skip-path for library/none) |
+| `flow.config.json.platform` | unset → bundled `/run` autodetect | Step 1.2 (skip-path for library/none, and the toolchain-absent skip on a declared toolchain-gated platform) |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 3 (criteria extraction) |
 | `flow.config.json.verifyFindingsPath` | `.flow/verify-findings.json` | Step 8 (buffer write) |
 | `flow.config.json.verifyReportPath` | `.flow/verify-report.html` | Step 5a (assets dir alongside it), Step 10 (HTML render) |

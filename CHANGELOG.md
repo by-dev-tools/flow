@@ -10,6 +10,22 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.32.0 — 2026-08-26
+
+**A session can no longer claim verification it had no way to perform — or be refused the honest admission that it couldn't.**
+
+- **New `toolchain` manifest kind.** Flow could say *there is no runnable target* (`platform: library|none`, `verifyEnabled: false`); it could not say *there is one, and this machine cannot build it* — the normal condition of a Linux cloud workspace on an iOS project. Both prior exits were wrong: run `/flow:verify-build` and it fails to launch, judges `Unknown`, and gets filed as a regression nobody introduced; skip it and `/flow:audit-skips` refuses the skip, because `platform` is `ios`, not `library`.
+- **`/flow:verify-build` now declares that skip itself** — a third self-skip case beside the two it already had, firing when *every* binary its declared platform's build needs is missing from the host. A partially-equipped machine (SDK present, one tool off `PATH`) is deliberately **not** treated as absent and still runs the gate: erring toward running costs a failed build, erring toward skipping silently drops the change's only behavioral gate.
+- **The skip is validated, never trusted.** `/flow:audit-skips` calls it LEGITIMATE only on a **conjunction** — the reason must name a toolchain problem *and* a probe of this host must confirm it. Neither half alone: the reason is free text the claimant writes, and the host fact alone would excuse any skip at all on an under-equipped machine. Claimed on a machine that has the toolchain ⇒ `SHOULD-RE-RUN`, naming the binary it found.
+- **An honest skip still drafts the PR.** A LEGITIMATE toolchain verdict carries a `toolchain` manifest entry, so `/flow:ship` opens a draft with plain-language copy instead of a green tick. "The skip was honest" and "the change was verified" are different claims, and only the first is established. The entry is `blocked` and un-waivable — no assertion clears it, only a passing check on a machine that has the toolchain.
+- **Scope:** `platform: ios` only for now. Android's near-universal `./gradlew` wrapper never resolves through a `PATH` lookup, so a table entry there would make every fully-equipped Android machine self-skip — admitting a platform needs a wrapper-aware probe and a capable-host fixture, not a new dict key. Projects that leave `platform` undeclared are unaffected and keep today's behavior.
+
+**Under the hood.** New shared `skills/verify-build/lib/toolchain.py` (one table, two consumers — the producer and the auditor import it rather than each keeping a copy). `skip-audit-checks.py` gains a `manifest_kind` field so the *engine*, not the calling agent, decides that a LEGITIMATE skip still owes the PR an entry; the field is rendered on `/flow:audit-skips`' summary line so it survives the fork boundary, with a bidirectional eval assertion on that join. New eval coverage across the two CI-wired harnesses — `run_skip_audit_evals.py` goes 35 → 79 checks — each case red-verified against the pre-change tree.
+
+**Breaking changes:** none. Projects without a declared toolchain-gated `platform` see no behavior change; `platform: library|none` and `verifyEnabled: false` skips are untouched.
+
+---
+
 ## v1.31.0 — 2026-08-26
 
 **A new optional `role` config slot (`designer` | `engineer`) — Phase 0 of the D1 "prototype-first gate" track.**
