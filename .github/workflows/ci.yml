@@ -80,6 +80,16 @@ jobs:
       - name: every point-in-time doc is indexed + status-lined (FB-0085)
         run: python3 dev-docs/check-index.py
 
+  model-measure:
+    name: model-measure (dev tooling, not shipped — FB-0089)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 tools/model-measure/run_model_measure_evals.py
+
   security:
     name: security
     runs-on: ubuntu-latest
