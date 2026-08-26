@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -51,6 +52,17 @@ DOCTOR_SKILL = HERE.parent / "skills" / "doctor" / "SKILL.md"
 WORKFLOW_DOC = HERE.parent / "docs" / "workflow.md"
 
 fails = 0
+
+
+def fenced_block(text, heading_substr):
+    """The first ```sh fenced block after `heading_substr` — the executable
+    shell, not the surrounding prose. Used to actually RUN Check 2.11 rather
+    than grep its text (the shell-injection regression tripwire below)."""
+    idx = text.find(heading_substr)
+    if idx == -1:
+        return None
+    m = re.search(r"```sh\n(.*?)\n```", text[idx:], re.DOTALL)
+    return m.group(1) if m else None
 
 
 def section_after(text, heading_substr):
@@ -141,6 +153,31 @@ def main():
     check("doctor-5-warn-on-invalid",
           "[WARN] role:" in doctor,
           "an out-of-enum role value must WARN, not silently PASS")
+
+    # --- security: a shell-metacharacter-laden role value must never execute --
+    # (flow:security-review NIT on the D1 Phase 0 PR): Check 2.11's safety rests
+    # entirely on every use of $ROLE staying double-quoted. This ACTUALLY RUNS
+    # the extracted shell block (not a grep) against a crafted flow.config.json
+    # whose role value would execute a command if quoting were ever dropped, and
+    # asserts the canary command never ran. A future edit that drops a quote
+    # around $ROLE fails this, not just an attacker.
+    block = fenced_block(doctor_full, "Check 2.11 —")
+    check("security-1-block-extractable", block is not None,
+          "could not extract Check 2.11's executable shell block")
+    if block:
+        with tempfile.TemporaryDirectory() as td:
+            canary = Path(td) / "pwned"
+            payload = f'$(touch {canary})'
+            cfg_path = Path(td) / "flow.config.json"
+            cfg_path.write_text(json.dumps({"role": payload}))
+            proc = subprocess.run(["sh", "-c", block], cwd=td,
+                                   capture_output=True, text=True, timeout=10)
+            check("security-2-no-command-injection", not canary.exists(),
+                  "the canary file was created — $ROLE's command-substitution "
+                  "payload EXECUTED; a quote was dropped around a use of $ROLE")
+            check("security-3-value-echoed-inert", payload in proc.stdout,
+                  f"expected the payload to be echoed verbatim (inert) in "
+                  f"stdout, got: {proc.stdout!r}")
 
     # --- docs: workflow.md documents the slot ----------------------------------
     workflow = WORKFLOW_DOC.read_text()
