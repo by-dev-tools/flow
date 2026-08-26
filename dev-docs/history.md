@@ -4,6 +4,22 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-26 — Orchestrator communication contract: decide within scope, escalate concise + progressive (FB-0092)
+
+**Branch:** `conductor/orchestrator-flow-cloud-workflow-succession-2` · **PR:** #(assigned at open, §4.5 #N convention) · **Mode:** docs
+
+**What was done.** Amended canonical plan **§4.8** with a four-rule communication contract for every orchestrator-to-human message, not only gate escalations: (1) decide within the plan-gate/merge-gate green quadrants and advance workers directly, escalating only what a red axis forces; (2) every escalation carries the FB-0090 triple (recommendation/confidence/justification) trimmed to the minimum, never a transcript; (3) progressive disclosure — lead with the decision needed, let the human pull detail by asking; (4) one decision at a time, with a one-line pointer to other open threads so the human keeps the lay of the land without being forced through everything at once. Explicitly ties this to the §4.10 skill suite (`/flow:orchestrate`/`/flow:spawn`/`/flow:handoff`/`/flow:gate`) so it's a design requirement for those skills' human-facing output, not an unenforced convention a fresh orchestrator seat has to rediscover each time. Added FB-0092 to `feedback.md`.
+
+**Why.** Ben's stated model: the orchestrator seat exists so he doesn't have to spend time in worker workspaces, which only works if the orchestrator's own channel to him is high-signal — humans read large blocks of text far worse than agents do. A verbose orchestrator (or one that dumps every open thread flatly) recreates the exact attention cost the seat was built to remove. Demonstrated live in-session: the orchestrator's own first status update was rewritten against these rules once stated, surfacing that this needed to be *built into the skills*, not left as a personal habit — hence codifying it in the plan + feedback doc rather than only session memory.
+
+**Design decisions.** Placed the contract inside existing §4.8 (rather than a new section) since §4.8 already specified the escalation-format triple (FB-0090) — this generalizes that paragraph rather than duplicating a parallel rule elsewhere. Explicitly scoped to govern §4.10's skill suite by name, since that suite (decided the same session, landing separately on #131) is where these rules get mechanically enforced rather than relying on author memory.
+
+**Tradeoffs discussed.** Considered leaving this as session memory only — rejected per direct user instruction: memory doesn't propagate to a fresh orchestrator seat or to the skill suite other repos install, so the rule would have to be rediscovered every rotation (exactly the hostage/rot pattern §4.9 exists to prevent).
+
+**Three-surface note.** Docs-only (`research/` + `dev-docs/`). No plugin artifacts.
+
+---
+
 ## 2026-08-26 — §4.9 externalize-non-git fix + §4.10 orchestrator skill suite (in flow) + FB-0091
 
 **Branch:** `succession-file-externalization` · **PR:** #(assigned at open) · **Mode:** docs
@@ -65,7 +81,6 @@ That also collapsed the CLI: it had grown `required` (never called by anything),
 
 **Files.** `skills/verify-build/lib/toolchain.py` (NEW), `skills/verify-build/SKILL.md` (§ 1.2 + `:437`), `skills/ship/lib/manifest-triage.py`, `skills/audit-skips/lib/skip-audit-checks.py`, `skills/ship/SKILL.md` (Step 2a.3 + fan-out), `skills/audit-skips/SKILL.md` (`## Output` contract), `skills/ship-spike/SKILL.md`, `skills/verify-build/lib/not-tested-checklist.md`, both eval harnesses, `docs/workflow.md`, `schema/flow.config.schema.json`, `template/base/flow.config.json.example`, `docs/automation-boundaries.md`, `plugin.json` + `marketplace.json` (1.32.0), `CHANGELOG.md`, `dev-docs/{plan,roadmap,history}.md`. No `ci.yml` change (both harnesses already wired); `file_patterns.py` untouched.
 ---
-
 ## 2026-08-26 — §4.8 gate delegation + §4.9 orchestrator succession + escalation format (FB-0090) + doc-currency fold
 
 **Branch:** `gate-delegation-policy` · **PR:** #(assigned at open, §4.5 #N convention) · **Mode:** docs

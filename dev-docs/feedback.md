@@ -6,6 +6,17 @@ This is not a transcript. Each entry distills feedback into a rule or preference
 
 ---
 
+### FB-0092 — Orchestrator communication: decide within scope, escalate concise + progressive + one-at-a-time
+
+**Date:** 2026-08-26
+**Source type:** user direction
+
+**What was said:** The orchestrator workspace exists so the human doesn't have to spend time in worker workspaces. That only works if (1) the orchestrator makes appropriate decisions within its own scope to keep workers moving, and (2) what it relays to the human is very concise and high-signal — humans read large blocks of text far worse than agents do — while still carrying everything needed to decide. Progressive disclosure (lead with what's needed, let the human ask for more) and surfacing one thing at a time (with a lay-of-the-land pointer to what else is open, not a flat dump) are the preferred shape. The user then clarified this must be codified in the actual flow plugin's orchestrator skills (§4.10), not left as session-local behavior.
+
+**Synthesized rule:** Every orchestrator-to-human message applies four rules: (1) decide within the §4.8 green quadrants and advance the worker directly — escalate only what a red axis forces; (2) every escalation carries the FB-0090 triple (recommendation/confidence/justification) trimmed to the minimum, never a transcript; (3) progressive disclosure — lead with the decision needed, not full context; (4) one decision at a time, with a one-line pointer to other open threads so the human keeps the lay of the land without being forced to process everything at once.
+
+**Applies to:** the canonical cloud-workflow plan §4.8 (communication contract, amended this entry), and must be built into `/flow:orchestrate`/`/flow:spawn`/`/flow:handoff`/`/flow:gate` (§4.10) when that suite ships — it is a design requirement for those skills' human-facing output, not an unenforced convention.
+
 ### FB-0091 — The orchestrator routes *itself* as deliberately as it routes workers (table + logged why, never by feel)
 
 **What was said (2026-08-26):** Asked why the successor orchestrator was spawned on `sonnet-5-1m`/high — "was that on purpose according to a settled decision?" The *family* (sonnet, not opus) matched the routing table, but the *effort* (high) was a by-feel bump with no logged rationale.
