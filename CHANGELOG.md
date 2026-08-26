@@ -18,8 +18,7 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 - **What changed.** `flow.config.schema.json` gains an optional `role` enum (`"designer" | "engineer"`, no default — unset is a distinct, valid state, not silently coerced to either value). `/flow:doctor` gains Check 2.11, reporting the resolved value in all three states. `workflow.md` documents the slot and states plainly that no skill reads it yet.
 - **Unaffected.** No runtime behavior changes for any existing project — this is additive schema + reporting only. The eventual trigger, the experience/ambition lens, the design-brief template, and the prototype phase are later, separate releases.
 - **Known limitation.** `role` has no consumer yet; setting it today has zero effect beyond `/flow:doctor`'s report.
-
-**Breaking changes:** none. Schema grows to 33 slots; every existing config resolves exactly as before.
+- **Breaking changes:** none. Schema grows to 33 slots; every existing config resolves exactly as before.
 
 ## v1.30.0 — 2026-08-17
 
