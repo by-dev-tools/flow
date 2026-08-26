@@ -2,7 +2,7 @@
 
 **Mode:** feature (large; restructures the front half of the loop) | **Priority:** high (the load-bearing item of the Designer-signal track) | **Horizon:** now-ish, user-directed 2026-08-17
 **Branch:** _(fresh — none yet)_
-**Status:** 🟢 **PLAN — not started.** Design is settled (FB-0081 is the definitive spec, user-directed); this doc is the execution layer. Nothing implemented.
+**Status:** 🟡 **IN PROGRESS — Phase 0 shipped (D2 `role` slot); Phases 1–3 not started.** Design is settled (FB-0081 is the definitive spec, user-directed); this doc is the execution layer. §9.3's spike (auto-plan quality) and §9.4's human decision (prototype medium) still gate Phase 2.
 **Scope:** the front half of the flow loop (Clarify → Plan) for **UI-surface changes**. Does **not** touch the merge gate or `/flow:verify-build`.
 **Source of truth (read these, do not re-derive):** `dev-docs/feedback.md` **FB-0081** (the shape + every ordering decision, verbatim user direction), **FB-0080** (why this exists — the drift-with-no-anchor failure), **FB-0046** (the experience/ambition lens = D3), and `dev-docs/roadmap.md` § "Designer-signal track" (D1–D5).
 
@@ -116,10 +116,10 @@ The pre-prototype phase (Steps 2–3) fires on the **same trigger as the prototy
 
 Phasing is dependency-ordered. **Do not start Phase 2 until §9.3's spike resolves** (auto-plan quality) and §9.4 is a human decision (prototype medium).
 
-### Phase 0 — D2 role slot (small, unblocks the trigger)
-- [ ] Add `role` to `plugins/flow/schema/flow.config.schema.json` (enum incl. `designer`, `engineer`; optional; documented default = unset ⇒ classic behavior). Verify with a schema round-trip.
-- [ ] `/flow:doctor` reports the resolved `role` (or "unset ⇒ classic plan gate").
-- [ ] `plugins/flow/docs/workflow.md` documents the slot + that D1's trigger reads it.
+### Phase 0 — D2 role slot (small, unblocks the trigger) — ✅ SHIPPED (`conductor/d1-role-slot-phase-0-v1`; see `dev-docs/plan.md` "PR — D2 `role` config slot")
+- [x] Add `role` to `plugins/flow/schema/flow.config.schema.json` (enum incl. `designer`, `engineer`; optional; documented default = unset ⇒ classic behavior). Verify with a schema round-trip. *Verified:* `run_role_slot_evals.py` shape + roundtrip checks, wired into CI.
+- [x] `/flow:doctor` reports the resolved `role` (or "unset ⇒ classic plan gate"). *Verified:* new Check 2.11.
+- [x] `plugins/flow/docs/workflow.md` documents the slot + that D1's trigger reads it. *Verified:* § "Project config slots" table row + narrative paragraph — explicitly notes no skill reads it yet (that's Phase 1+).
 
 ### Phase 1 — the experience/ambition lens agent (D3) + the brief + the pre-prototype orchestrator
 - [ ] Author `plugins/flow/agents/lens-experience.md` (or similarly named) from FB-0046: (a) experience/product-designer lens — right problem? ambition high enough? journey/edge-states/friction/feel; (b) push-further-on-quality — raise the craft bar of the *declared* scope, with a loud anti-scope-creep guard. Match the `lens-*.md` frontmatter + output shape. **Prompt change = code change: ship an eval fixture** (a brief that is conformant-but-low-ambition → the lens flags ambition; a genuinely-tight brief → "nothing to push").

@@ -20,7 +20,7 @@ Everything described in the loop below is shipped and installable today. The ful
 - **`/flow:post-merge`** — post-merge, human-invoked: the "merged — anything left, or safe to archive?" close-out (v1.21.0, FB-0072). One command that (1) confirms the merge with a **merge-queue-safe** three-state gate (a queued-but-unlanded PR is *not merged yet* → polled, never a false failure; only a `CLOSED`-unmerged PR fails loud), (2) **calls `/flow:land`** for doc-currency, then holds the archive verdict at `🚫` until you merge the `docs: land #N` PR it opens, (3) synthesizes the merge-gate feedback window `/flow:ship` structurally can't see into user-scope memory + the `/flow:contribute` queue, (4) safe-deletes the merged branch, (5) prints a `✅ safe to archive` / `🚫 not safe` verdict. Never merges.
 - **`/flow:workflow-help`** / **`/flow:doctor`** — onboarding (print the loop + resolved config) and setup verification.
 
-Plus the two reviewer subagents (`auditor`, `plan-critic`) and the four staff-review lens agents, the `planner` and `docs` context-isolation agents, the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (32 slots), default hooks, and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow references it directly rather than re-implementing it.
+Plus the two reviewer subagents (`auditor`, `plan-critic`) and the four staff-review lens agents, the `planner` and `docs` context-isolation agents, the portable rules (`general`, `plan-discipline`, `documentation`, `exploration`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (33 slots), default hooks, and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow references it directly rather than re-implementing it.
 
 ## What this workflow is (and isn't)
 
@@ -556,6 +556,7 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / HUMAN (you type it; ca
 
 | Slot | Default | Used by |
 |---|---|---|
+| `role` | unset → classic plan gate | not yet consumed by any skill (Phase 0 of the D1 "prototype-first gate" track; a future trigger reads it) |
 | `defaultBranch` | falls back to `git symbolic-ref refs/remotes/origin/HEAD`, then literal `main` | `/flow:ship` (NOTHING-TO-SHIP check, PR base) |
 | `typecheckCmd` | unset → loud warning, never silent | `/flow:ship` (post-fix re-check) |
 | `preflightCmd` | unset → consumer must wire (project-shaped); typical convention `node tools/preflight/check.mjs` | preflight step 4 |
@@ -572,6 +573,8 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / HUMAN (you type it; ca
 | `verifyBudgetCalls` | `60` | `/flow:verify-build` step 5 (tool-call cap before forced Unknown) |
 
 Why two defaults: flow's *own* dev-tracking lives at `dev-docs/` (so `core-docs/` stays free as the name consumer-template scaffolding ships at). Consumer projects typically use `core-docs/`. The defaults bake that distinction in.
+
+**`role` (`designer` | `engineer`, unset by default).** Declares the human's role on the project so flow skills can decide what to escalate and how much technical detail to surface — the same change is a technical detail to an engineer and a decision to a designer. It is persistent, project-scoped config: set it once in `flow.config.json` and every future session reads it, rather than re-declaring it per conversation; it does not belong in `CLAUDE.md` because skills read config slots deterministically via `jq`, not by parsing prose. **As of this schema version, no skill reads `role` yet** — this slot is Phase 0 of the D1 "prototype-first gate" track (`dev-docs/roadmap.md` § Designer-signal track D1/D2, FB-0081): a later phase will read it (`designer` ⇒ the human's first gate moves from plan-text approval to prototype approval; `engineer`/unset ⇒ today's classic plan gate, unchanged). `/flow:doctor` reports the resolved value.
 
 **`/flow:verify-build` prerequisite:** `/flow:verify-build` wraps bundled `/verify`, which in turn invokes bundled `/run`. `/run` works best with a per-project launch recipe scaffolded by Anthropic's bundled `/run-skill-generator` at `.claude/skills/run-<name>/`. Without that recipe, heuristic launch may fail on projects with env files, databases, multi-step builds, or non-standard scheme/package selection (Anthropic's docs explicitly call out this limitation). After installing flow, run `/run-skill-generator` once per project; `/flow:doctor` Check 5.3 surfaces the gap if you skip it.
 

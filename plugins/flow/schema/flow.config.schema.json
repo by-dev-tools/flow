@@ -9,6 +9,12 @@
       "description": "The branch that PRs target and that diffs are computed against. If unset, flow resolves via `git symbolic-ref refs/remotes/origin/HEAD`, then falls back to the literal `main`.",
       "examples": ["main", "trunk", "develop"]
     },
+    "role": {
+      "type": "string",
+      "enum": ["designer", "engineer"],
+      "description": "Optional declaration of the human's role on this project, read by flow skills to decide what to escalate and how much technical detail to surface (the same change can be a technical detail to one role and a decision to another). Persistent, project-scoped config — set once, applies to every future session; not a per-message or per-session setting, and not something CLAUDE.md can express reliably since skills read this deterministically via `jq`, not by parsing prose. UNSET behavior (the default): classic behavior — no role-based branching anywhere in the loop, including the plan-gate. As of this schema version, no flow skill yet reads this slot (Phase 0 of the D1 'prototype-first gate' track, FB-0081) — it exists so that later phases (the prototype-first trigger for `designer`) have a slot to read without a breaking schema change. Setting it today is forward-compatible and has zero effect on current behavior.",
+      "examples": ["designer", "engineer"]
+    },
     "typecheckCmd": {
       "type": "string",
       "description": "Shell command to run as the project's typecheck. Run via `sh -c` (NOT eval) by /flow:ship Step 3 (one-shot after reviewer fixes) and /flow:staff-review after applying review fixes. UNSET behavior: each invoking skill prints a loud ⚠️ warning, never silently no-ops. Project owns this string at the same trust level as package.json scripts or pre-commit hooks. Precedence vs `preflightCmd`: if both are set, BOTH run (preflightCmd at Step 1c with bounded retry; typecheckCmd at Step 3 one-shot after reviewer fixes). To use only one, set the other to empty or unset.",

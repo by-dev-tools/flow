@@ -282,16 +282,20 @@ def main() -> int:
                   "[SKIP]" in out and "[SKIP]" in out25,
                   f"did not degrade to [SKIP]. output: {out_all!r}")
 
-    # Checks 2.3/2.4 have NO [FAIL] branch, so they're outside the false-FAIL scope above —
-    # but their new guard's honest [SKIP] emission is still a contract to pin (FB-0010
+    # Checks 2.3/2.4/2.11 have NO [FAIL] branch, so they're outside the false-FAIL scope
+    # above — but their guard's honest [SKIP] emission is still a contract to pin (FB-0010
     # "assert the guard you add"): the `if ! command -v jq; then echo [SKIP]` then-branch
     # must fire on jq-absence. (Deriving these from disk instead of a hand list is the
-    # general fix — roadmap § Next "derive the doctor-side coverage from disk".)
+    # general fix — roadmap § Next "derive the doctor-side coverage from disk". 2.11 added
+    # by hand here per that same lesson — FB-0074/D1-Phase-0 dogfood: a NEW jq-reading
+    # doctor check that isn't registered in this harness is exactly the unguarded-drift
+    # gap this file exists to close.)
     c23 = fenced_after(doctor, "Check 2.3 —")
     c24 = fenced_after(doctor, "Check 2.4 —")
-    check("doctor: Checks 2.3/2.4 blocks are extractable", all([c23, c24]),
-          "could not locate the 2.3/2.4 jq-skip guards")
-    for label, block in (("2.3", c23), ("2.4", c24)):
+    c211 = fenced_after(doctor, "Check 2.11 —")
+    check("doctor: Checks 2.3/2.4/2.11 blocks are extractable", all([c23, c24, c211]),
+          "could not locate the 2.3/2.4/2.11 jq-skip guards")
+    for label, block in (("2.3", c23), ("2.4", c24), ("2.11", c211)):
         if block is None:
             continue
         rc, out = run_block(block, include_jq=False, include_gh=True)
