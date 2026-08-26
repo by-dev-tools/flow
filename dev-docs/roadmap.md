@@ -230,7 +230,7 @@ Every framework benchmarked either routes models per-subagent (gstack: Sonnet fa
 2. **Offline A/B eval** — run the reviewer fixtures (`auditor`, `plan-critic`, `lens-*`) through Opus vs Sonnet; report finding-overlap + FP-rate + token cost. Generalizes PR P Step A into a reusable harness. Standing constraint preserved: `plan-critic` + lens agents stay on Opus unless the data clears the bar; FB-0013 (same-model critic collusion) means a Sonnet swap must not collapse the context-diversity the separate windows provide.
 3. **Randomized/shadow sampler** — log `(agent, model, tokens, output)` per real invocation so paired/aggregate samples accumulate over normal use; single-assignment on read-heavy agents first (double-run doubles that agent's cost). Routing decisions consume this data — no agent moves to a cheaper model on faith.
 
-Detailed plan drafted in `plan.md` § "PR — Model-measurement harness (QUEUED)". Independent of the Designer-signal + Deliverable tracks; interleaves at any PR boundary.
+Detailed plan drafted in `plan.md` § "PR — Model-measurement harness, Step 1: per-subagent token + model attribution" (item 1, now ACTIVE, FB-0089) and § "PR — Model-measurement harness, Steps 2+3 (QUEUED)" (items 2-3). Independent of the Designer-signal + Deliverable tracks; interleaves at any PR boundary.
 
 ### AB — Attention budget & harness-weight audit (net-new) — ▶ TOP PRIORITY (2026-08-14, FB-0084)
 
