@@ -197,7 +197,7 @@ The 08-22 note's orchestrator survives with half its ledger deleted:
 | Not built | Why | Revisit when |
 |---|---|---|
 | Self-hosted GHA macOS runner (Trio Phase 1) | Ben deferred (attendance/cost); `/verify-queue` manual-first proves the shape | The manual sweep exceeds ~1 sitting/week, or overnight batches start |
-| `/flow:orchestrate` skill | Flow is project-agnostic; active roadmap decouples from hosts; Conductor API in plugin artifacts fights that | The pattern proves out AND can be expressed host-agnostically |
+| `/flow:orchestrate` skill *(and the `spawn`/`handoff` suite)* | ~~project-agnosticism~~ — resolved by a `dispatchBackend` adapter (§4.10), not by exclusion | **Now building — §4.10.** Both conditions met 2026-08-26: the pattern proved out over this session's dispatches + a full succession, and host-agnosticism is preserved by the adapter. The user directed it into flow as a core part of the workflow. |
 | Cost model / token estimator / model-selection classifier | Procedures that decay (FB-0088); `usage.tsv` ratios + the routing table suffice | Never, in this form — ratios promote to table edits by hand |
 | Ledger state-tracking | PR+label is strictly better (Requirement 3) | n/a — deleted now |
 | `tools/flow` CLI for the Step-2 sweep | Open fork owned by the service-agnostic roadmap; prose fix first (PHASE0 worker's explicit position, endorsed) | The CLI exists for other reasons |
@@ -490,6 +490,55 @@ freely?"). Detecting context-fill precisely from inside the session is imperfect
 proactive offers + trivial rotation rather than a hard threshold. The seat is a role, not a
 vessel.
 
+### 4.10 The orchestrator skill suite — in flow, host-abstracted, agent-invocable
+
+§4.4 excluded a `/flow:orchestrate` skill *until* "the pattern proves out AND can be expressed
+host-agnostically." Both conditions are now met — this session ran multiple dispatches + a full
+succession — and the orchestration workflow is a **core part of flow**, so the suite ships **in
+the flow plugin** (`plugins/flow/skills/`), not per-repo. Shipping it in flow is not just
+acceptable but *required* by the cross-workspace goal below: **a freshly-spawned workspace only
+has the skills that are installed there**, and every flow-consuming repo's workspaces get the
+plugin's skills automatically — per-repo `.claude/skills/` would leave a fresh spawn without
+them.
+
+**Host-agnosticism is preserved by an adapter, not by exclusion.** The Conductor-specific
+mechanics (spawn a workspace, message a session, list workspaces) live behind a
+`dispatchBackend` config slot — the Conductor CLI is the first adapter; local / other backends
+slot in later. The skills define the *workflow*; the slot provides the *mechanics*, so plugin
+artifacts carry no `conductor`-hardcoded tokens and flow's project/host-agnostic quality bar
+holds.
+
+**The suite — all `disable-model-invocation: false` (agent-invocable):**
+
+- **`/flow:orchestrate`** — successor / first-run bootstrap: read the canonical plan +
+  `CLAUDE.md` + `feedback.md`, re-derive live worker state from the backend (`workspace list`),
+  load the §4.8 gate policy → report ready. The standard first action of any orchestrator seat.
+- **`/flow:spawn`** — dispatch a worker: apply the §4.3 model-decision-tree (table →
+  `model·effort·why`, logged — FB-0091), emit the §10.2 dispatch brief (carrying the FB-0090
+  "surface every decision with recommendation + confidence + justification" contract, the
+  stop-at-plan-gate rule, and the FB-reservation note), create the workspace via the backend,
+  and instruct the new agent's first action.
+- **`/flow:handoff`** — orchestrator succession: the §4.9 three-step wind-down (flush durable
+  currency → externalize non-git artifacts → hand the brief via the backend) + the §4.6
+  archive-safety check on the outgoing seat.
+- *(optional)* **`/flow:gate`** — apply the §4.8 four-axis classification → auto-approve vs
+  escalate, formatted per FB-0090.
+
+**How one agent gets another to run a skill in a spawned workspace — the crux, and it is
+*instruct-not-remote-invoke*.** An agent cannot reach into another workspace's process. The
+mechanism is that `/flow:spawn` creates workspace B **and** its first message instructs B's
+agent to run a named flow skill (e.g. "your first action: `/flow:orchestrate`"). B — having the
+flow plugin installed — invokes that skill in *its own* process. So "A gets B to run X" = A
+*instructs* B via the dispatch/brief message; B invokes X locally. This is exactly why the
+skills must ship **in flow** (so B *has* them) and be **agent-invocable** (so B *can* run them
+with no human in the loop).
+
+**Anti-bloat guardrail (unchanged).** The skills wrap the *checklists and decision-trees* we
+have already written (§4.3 / §4.6 / §4.8 / §4.9 + FB-0090 / FB-0091); the *judgment* — which
+worker, is the plan sound, is decision B reason-conditioned — stays the agent's. They
+**compose** the backend + the existing flow skills (`/flow:ship`, `/flow:critique-plan`, …),
+never reimplement them.
+
 ## 5. Execution sequence
 
 | # | Step | Where | State |
@@ -500,7 +549,7 @@ vessel.
 | 1b | Fold durable currency into ship / next-ship; gate `/flow:land` behind a slot for the cold-loop-only consumer (§4.5) | flow plugin | after 1a; validate across a few merges before removing land from the default path |
 | 2 | PHASE0: Step-2 sweep fix | flow plugin | **in flight — worker at plan gate, awaiting approval** |
 | 3 | Trio-local artifacts: placement rule (emitting via `add-entry --kind toolchain`, not Appendix B) + `needs-mac-verify` label + `/verify-queue` + greenlit-queue section | Trio repo | after Step 1 ships |
-| 4 | Orchestrator v1: dispatch skill + narrowed ledger + usage.tsv (§4.3) + post-merge/archive close-out + session-end currency flush (§4.6) | per-repo `.claude/skills/` | after 2–3 real dispatches validate the brief/report loop (1 of 3 done) |
+| 4 | Orchestrator v1: dispatch skill + narrowed ledger + usage.tsv (§4.3) + post-merge/archive close-out + session-end currency flush (§4.6); **now defined as the agent-invocable skill suite in §4.10** | **flow plugin** (`plugins/flow/skills/`, host-abstracted via `dispatchBackend`) | after 2–3 real dispatches validate the brief/report loop (1 of 3 done) |
 | 5 | Re-read everything against 10 dispatches; cut what wasn't load-bearing | — | standing (FB-0088 discipline) |
 | 6 | Doc cleanup: Trio plan header edit (§0); confirm 08-22 note status line | Trio repo / flow repo | with steps 3 / this change |
 
