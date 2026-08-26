@@ -54,14 +54,20 @@ WORKFLOW_DOC = HERE.parent / "docs" / "workflow.md"
 fails = 0
 
 
+def _rest_from(text, heading_substr):
+    """Slice `text` from `heading_substr` onward, or None if absent."""
+    idx = text.find(heading_substr)
+    return None if idx == -1 else text[idx:]
+
+
 def fenced_block(text, heading_substr):
     """The first ```sh fenced block after `heading_substr` — the executable
     shell, not the surrounding prose. Used to actually RUN Check 2.11 rather
-    than grep its text (the shell-injection regression tripwire below)."""
-    idx = text.find(heading_substr)
-    if idx == -1:
+    than grep its text (the shell-injection regression check below)."""
+    rest = _rest_from(text, heading_substr)
+    if rest is None:
         return None
-    m = re.search(r"```sh\n(.*?)\n```", text[idx:], re.DOTALL)
+    m = re.search(r"```sh\n(.*?)\n```", rest, re.DOTALL)
     return m.group(1) if m else None
 
 
@@ -70,10 +76,9 @@ def section_after(text, heading_substr):
     '### ' heading — scopes a check to Check 2.11's own block rather than the
     whole SKILL.md, so an unrelated mention elsewhere in the file can't make a
     check pass vacuously (staff-review NIT)."""
-    idx = text.find(heading_substr)
-    if idx == -1:
+    rest = _rest_from(text, heading_substr)
+    if rest is None:
         return None
-    rest = text[idx:]
     m = re.search(r"\n(?:\*\*Check |### )", rest[1:])
     return rest[:m.start() + 1] if m else rest
 
@@ -155,12 +160,18 @@ def main():
           "an out-of-enum role value must WARN, not silently PASS")
 
     # --- security: a shell-metacharacter-laden role value must never execute --
-    # (flow:security-review NIT on the D1 Phase 0 PR): Check 2.11's safety rests
-    # entirely on every use of $ROLE staying double-quoted. This ACTUALLY RUNS
-    # the extracted shell block (not a grep) against a crafted flow.config.json
-    # whose role value would execute a command if quoting were ever dropped, and
-    # asserts the canary command never ran. A future edit that drops a quote
-    # around $ROLE fails this, not just an attacker.
+    # (flow:security-review NIT on the D1 Phase 0 PR): this ACTUALLY RUNS the
+    # extracted Check 2.11 shell block (not a grep) against a crafted
+    # flow.config.json whose role value contains a command-substitution
+    # payload, and asserts the payload never executed. Note what this does
+    # and does NOT prove (staff-review correction): `$ROLE` is captured once
+    # via command substitution and never re-parsed for shell metacharacters
+    # afterward, so this stays inert whether or not `$ROLE`'s later uses are
+    # quoted — POSIX shells only re-interpret a variable's contents as code
+    # via `eval` or an equivalent re-invocation, neither of which Check 2.11
+    # does. This test proves that invariant holds *today*; it would only go
+    # red if a future edit introduced `eval`/`sh -c "$ROLE"` or similar, not
+    # from merely dropping a quote around an existing `$ROLE` use.
     block = fenced_block(doctor_full, "Check 2.11 —")
     check("security-1-block-extractable", block is not None,
           "could not extract Check 2.11's executable shell block")
@@ -170,14 +181,23 @@ def main():
             payload = f'$(touch {canary})'
             cfg_path = Path(td) / "flow.config.json"
             cfg_path.write_text(json.dumps({"role": payload}))
-            proc = subprocess.run(["sh", "-c", block], cwd=td,
-                                   capture_output=True, text=True, timeout=10)
-            check("security-2-no-command-injection", not canary.exists(),
-                  "the canary file was created — $ROLE's command-substitution "
-                  "payload EXECUTED; a quote was dropped around a use of $ROLE")
-            check("security-3-value-echoed-inert", payload in proc.stdout,
-                  f"expected the payload to be echoed verbatim (inert) in "
-                  f"stdout, got: {proc.stdout!r}")
+            try:
+                proc = subprocess.run(["sh", "-c", block], cwd=td,
+                                       capture_output=True, text=True, timeout=10)
+                stdout = proc.stdout
+            except subprocess.TimeoutExpired:
+                check("security-2-no-command-injection", False,
+                      "Check 2.11's shell block did not terminate within 10s")
+                check("security-3-value-echoed-inert", False, "block timed out")
+                stdout = None
+            if stdout is not None:
+                check("security-2-no-command-injection", not canary.exists(),
+                      "the canary file was created — $ROLE's command-substitution "
+                      "payload EXECUTED (Check 2.11 must not pipe $ROLE through "
+                      "eval or an equivalent re-invocation)")
+                check("security-3-value-echoed-inert", payload in stdout,
+                      f"expected the payload to be echoed verbatim (inert) in "
+                      f"stdout, got: {stdout!r}")
 
     # --- docs: workflow.md documents the slot ----------------------------------
     workflow = WORKFLOW_DOC.read_text()
