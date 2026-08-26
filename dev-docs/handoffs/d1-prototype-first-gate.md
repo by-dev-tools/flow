@@ -2,7 +2,7 @@
 
 **Mode:** feature (large; restructures the front half of the loop) | **Priority:** high (the load-bearing item of the Designer-signal track) | **Horizon:** now-ish, user-directed 2026-08-17
 **Branch:** _(fresh — none yet)_
-**Status:** 🟢 **PLAN — not started.** Design is settled (FB-0081 is the definitive spec, user-directed); this doc is the execution layer. Nothing implemented.
+**Status:** 🟡 **IN PROGRESS — Phase 0 shipped (D2 `role` slot); Phases 1–3 not started.** Design is settled (FB-0081 is the definitive spec, user-directed); this doc is the execution layer. §9.3's spike (auto-plan quality) and §9.4's human decision (prototype medium) still gate Phase 2.
 **Scope:** the front half of the flow loop (Clarify → Plan) for **UI-surface changes**. Does **not** touch the merge gate or `/flow:verify-build`.
 **Source of truth (read these, do not re-derive):** `dev-docs/feedback.md` **FB-0081** (the shape + every ordering decision, verbatim user direction), **FB-0080** (why this exists — the drift-with-no-anchor failure), **FB-0046** (the experience/ambition lens = D3), and `dev-docs/roadmap.md` § "Designer-signal track" (D1–D5).
 
@@ -111,15 +111,16 @@ The pre-prototype phase (Steps 2–3) fires on the **same trigger as the prototy
 
 - **Open design point (§9.2):** define "small surface" concretely. Options: a size heuristic (files/lines), a declared `mode: tiny`, or the agent's own judgment gated by the human at Clarify. Pick one and pin it with a fixture; do not leave it to per-run vibes, or the ceremony returns.
 - **D2 dependency:** the `role` slot is what lets a designer opt the whole loop into prototype-first while an engineer gets the classic plan gate. Build D2 first or in the same first PR.
+- **FOLLOW-UP (from `/flow:staff-review`'s UX-designer lens on the D2 Phase-0 PR):** once this trigger is wired, a `designer`-role user needs a way to confirm the prototype-first behavior actually activated — not just that `role` round-trips through config. `/flow:doctor`'s Phase-0 check only reports the slot's resolved value with an explicit "informational only, no consumer yet" disclaimer; whichever phase wires the trigger should either extend that doctor check or add a workflow-help mention so "I set role: designer" and "I can tell it's live" aren't two different questions with no bridge between them.
 
 ## 8. Spec-walk (the work, phased)
 
 Phasing is dependency-ordered. **Do not start Phase 2 until §9.3's spike resolves** (auto-plan quality) and §9.4 is a human decision (prototype medium).
 
-### Phase 0 — D2 role slot (small, unblocks the trigger)
-- [ ] Add `role` to `plugins/flow/schema/flow.config.schema.json` (enum incl. `designer`, `engineer`; optional; documented default = unset ⇒ classic behavior). Verify with a schema round-trip.
-- [ ] `/flow:doctor` reports the resolved `role` (or "unset ⇒ classic plan gate").
-- [ ] `plugins/flow/docs/workflow.md` documents the slot + that D1's trigger reads it.
+### Phase 0 — D2 role slot (small, unblocks the trigger) — ✅ SHIPPED (`conductor/d1-role-slot-phase-0-v1`; see `dev-docs/plan.md` "PR — D2 `role` config slot")
+- [x] Add `role` to `plugins/flow/schema/flow.config.schema.json` (enum incl. `designer`, `engineer`; optional; documented default = unset ⇒ classic behavior). Verify with a schema round-trip. *Verified:* `run_role_slot_evals.py` shape + roundtrip checks, wired into CI.
+- [x] `/flow:doctor` reports the resolved `role` (or "unset ⇒ classic plan gate"). *Verified:* new Check 2.11.
+- [x] `plugins/flow/docs/workflow.md` documents the slot + that D1's trigger reads it. *Verified:* § "Project config slots" table row + narrative paragraph — explicitly notes no skill reads it yet (that's Phase 1+).
 
 ### Phase 1 — the experience/ambition lens agent (D3) + the brief + the pre-prototype orchestrator
 - [ ] Author `plugins/flow/agents/lens-experience.md` (or similarly named) from FB-0046: (a) experience/product-designer lens — right problem? ambition high enough? journey/edge-states/friction/feel; (b) push-further-on-quality — raise the craft bar of the *declared* scope, with a loud anti-scope-creep guard. Match the `lens-*.md` frontmatter + output shape. **Prompt change = code change: ship an eval fixture** (a brief that is conformant-but-low-ambition → the lens flags ambition; a genuinely-tight brief → "nothing to push").

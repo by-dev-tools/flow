@@ -5,7 +5,7 @@ description: >
   current project. Runs a punch-list of PASS/FAIL checks: marketplace
   registered under the canonical 'flow' name, flow@flow enabled, project-root
   flow.config.json present + parses + matches the v1.2+ schema, no skill composes
-  with a `disable-model-invocation` skill (a call the runtime rejects), all 32
+  with a `disable-model-invocation` skill (a call the runtime rejects), all 33
   slots have sensible values, any declared `statusDocs` status surfaces exist + are
   fenced, any undeclared `statusSurfaceCandidates` that carry status content are
   flagged for opt-in, any open PR for HEAD is body↔draft coherent (no stale
@@ -554,6 +554,28 @@ else
     fi
   fi
 fi
+```
+
+**Check 2.11 — `role` slot resolution (D1 prototype-first trigger dependency, FB-0081 Phase 0)**
+
+Reports the resolved `role` slot so a human can confirm it's set (or intentionally unset) without opening `flow.config.json`. This slot has no consumer yet (Phase 0 only — see `dev-docs/handoffs/d1-prototype-first-gate.md`); this check is informational, never a FAIL. A value outside the enum is warned, not silently accepted, since nothing enforces the schema's enum at runtime — a plain `jq` read of a typo'd value would otherwise report as if it resolved cleanly.
+
+```sh
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] role slot resolution — jq not on PATH (see Check 4.1); cannot read flow.config.json."
+elif [ ! -f flow.config.json ]; then
+  echo "[PASS] role unset — classic plan gate (no flow.config.json; see Check 2.1)"
+elif jq -e . flow.config.json >/dev/null 2>&1; then
+  ROLE=$(jq -r '.role // empty' flow.config.json)
+  case "$ROLE" in
+    "") echo "[PASS] role unset — classic plan gate (no role-based behavior active yet)" ;;
+    designer|engineer) echo "[PASS] role: $ROLE (informational only — no flow skill reads this yet)" ;;
+    *) echo "[WARN] role: \"$ROLE\" is not a recognized value (expected 'designer' or 'engineer')"
+       echo "       Fix: set flow.config.json's \"role\" to 'designer' or 'engineer', or unset it for classic behavior." ;;
+  esac
+fi
+# else: flow.config.json exists but doesn't parse — Check 2.2 already reports this FAIL;
+# no duplicate/conflicting message here (same silent-defer convention as Checks 2.3/2.4).
 ```
 
 ### Section 3: auto-loading rules (the load-bearing enforcement mechanism)
