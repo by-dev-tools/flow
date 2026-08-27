@@ -1,4 +1,7 @@
 ---
+name: general
+description: Auto-loading workflow-discipline guidance (plan-before-code, mode flags, scope discipline, decision tracking, autonomous work guardrails) for every file touched in a flow-using project. Not user-invocable — path-activated only.
+user-invocable: false
 paths:
   - "**/*"
 ---
@@ -9,10 +12,12 @@ These apply to all work in any flow-using project. They reinforce the workflow d
 
 Doc-path references in this rule resolve via `flow.config.json` slots with built-in defaults (`dev-docs/<name>.md` for flow's own repo; consumer projects typically `core-docs/<name>.md`).
 
+**Relationship to `.claude/rules/general.md` (this repo's own dev-side meta-rule, FB-0085 / Phase 00 / 00c):** § Scope discipline, § Decision tracking, and § Autonomous work guardrails below are intentionally mirrored there — edit both together or note why the occurrence diverges. The rest of each file is deliberately different (this file stays project-agnostic; the dev-side file carries flow-repo-specific FB-0010/dogfooding content that would violate this file's quality bar if shipped here).
+
 ## Workflow discipline
 
-- **Plan before code.** Every non-trivial request gets a plan in the project's plan doc (`flow.config.json.planPath`) with the **required fields from `${CLAUDE_PLUGIN_ROOT}/rules/plan-discipline.md`**: mode, goal, scope (in/out), spec-walk checkboxes, confidence verdict per load-bearing assumption, risks, files touched. Wait for user approval before executing. The exception is `mode: tiny` (a 1–3 line bug fix the user explicitly asked you to "just do") which skips spec-walk + confidence verdict but still gets a one-line plan.
-- **Confidence verdicts gate the plan.** Every load-bearing assumption gets HIGH/MEDIUM/LOW per `plan-discipline.md`. **LOW = automatic human gate** — the assumption must be resolved by an explicit user answer before the plan can proceed. `/flow:critique-plan` is advisory; the workflow's enforcement is the human gate.
+- **Plan before code.** Every non-trivial request gets a plan in the project's plan doc (`flow.config.json.planPath`) with the **required fields from `${CLAUDE_PLUGIN_ROOT}/skills/plan-discipline/SKILL.md`**: mode, goal, scope (in/out), spec-walk checkboxes, confidence verdict per load-bearing assumption, risks, files touched. Wait for user approval before executing. The exception is `mode: tiny` (a 1–3 line bug fix the user explicitly asked you to "just do") which skips spec-walk + confidence verdict but still gets a one-line plan.
+- **Confidence verdicts gate the plan.** Every load-bearing assumption gets HIGH/MEDIUM/LOW per `plan-discipline`. **LOW = automatic human gate** — the assumption must be resolved by an explicit user answer before the plan can proceed. `/flow:critique-plan` is advisory; the workflow's enforcement is the human gate.
 - **Preflight is a required step, not a tool.** Mechanical gates (the project's `tools/preflight/check.mjs` if present + typecheck via `flow.config.json.typecheckCmd` + build + test + project invariants) must be green before `/simplify` runs. Both `spike` and `tiny` modes still run preflight.
 - **Run `/simplify` (bundled with Claude Code) after commit, before `/flow:staff-review`.** Code-quality pass (reuse, clarity, efficiency) lands first so staff-review can focus on architecture and craft instead of "this could be shorter." Both are part of the standard loop — not optional, not just for "big" changes. **Spike mode skips both** (the code is disposable; craft review on throwaway is theater).
 - **The PR opens at `/flow:ship`, not before.** Mid-pipeline PRs create half-done state and force the PR body to lie about completed reviews / doc synthesis. See `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` § "Why the PR opens here, not earlier" for the full rationale. Spike-mode PRs open at `/flow:ship-spike` (also end-of-pipeline, just lighter).

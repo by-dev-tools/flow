@@ -1,4 +1,7 @@
 ---
+name: exploration
+description: Auto-loading nudge to check the roadmap's § Exploration section when touching common source roots. Not user-invocable — path-activated only.
+user-invocable: false
 paths:
   - "src/**"
   - "app/**"

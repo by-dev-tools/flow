@@ -333,7 +333,7 @@ FB-0078 sharpened the urgency: it removed the manifest `description` fields as a
 
 ### Deployed SKILL.md prompts are accumulating their own changelogs (from the FB-0077 push-further lens)
 
-**The frontmatter half SHIPPED in FB-0078; only the bodies question below is still open.** `run_plugin_desc_evals.py` now carries `no-version-token:{skill,agent}-frontmatter` over all 17 skills and 9 agents, plus a `*-frontmatter-parsed` guard so an unreadable file can't pass as clean. Two things it taught, worth keeping:
+**The frontmatter half SHIPPED in FB-0078; only the bodies question below is still open.** `run_plugin_desc_evals.py` now carries `no-version-token:{skill,agent}-frontmatter` over all 21 skills (17 → 21 at FB-0085 Phase 00, which converted the 4 previously-inert `rules/*.md` into path-activated skills) and 9 agents, plus a `*-frontmatter-parsed` guard so an unreadable file can't pass as clean. Two things it taught, worth keeping:
 
 - The check needed a **stricter** token than the display-copy fields use — a complete three-component release (`v1.21.0`), not the looser `v1.2`-style form. `/flow:doctor`'s description legitimately says the config must match "the v1.2+ schema", which is a compatibility floor, not a changelog. Display copy has no legitimate reason to name any version; trigger text does.
 - Deliberately **no length cap** there. Length is functional in trigger text — it drives model selection — so the display-copy caps would be actively wrong.

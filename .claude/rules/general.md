@@ -2,6 +2,8 @@
 
 These rules apply to all work in this project. They enforce the documentation workflow, not code style -- code style is project-specific and belongs in CLAUDE.md or a separate rule file.
 
+**Relationship to `plugins/flow/skills/general/SKILL.md` (FB-0085, Phase 00 / 00c):** that file is the plugin's shipped, project-agnostic rule-skill for *consumers* of flow; this file is flow's own dev-side meta-rule for *building* flow, and the two audiences genuinely diverge in most sections (this file's Consistency discipline and dogfooding-specific Workflow discipline below would violate the plugin's project-agnostic quality bar if shipped there; the plugin's Mode flags and ship auto-advance predicate don't belong in a meta-rule about developing flow itself). Three sections are pure overlap that had drifted out of sync for no reason -- **Scope discipline**, **Decision tracking**, **Autonomous work guardrails** -- and were re-synced to the plugin's wording in this pass. If you edit any of those three here, mirror the edit in the plugin file (and vice versa) or note here why this occurrence is deliberately different.
+
 ## Documentation discipline
 
 - Every non-trivial change must have a corresponding `dev-docs/history.md` entry before committing.
@@ -11,15 +13,16 @@ These rules apply to all work in this project. They enforce the documentation wo
 
 ## Decision tracking
 
-- When a change involves a non-trivial decision (a reasonable alternative existed), document the options considered and why this one was chosen in `dev-docs/history.md`.
-- "What" goes in the change itself. "Why" goes in the documentation.
-- Tradeoffs discussed during implementation must be captured -- they are the most valuable part of the history for future context.
+- When a change involves a non-trivial decision (a reasonable alternative existed), note the tradeoff so `/flow:ship` can capture it in `dev-docs/history.md`. A one-line scratch note is fine; `/flow:ship` will write the formal entry.
+- "What" goes in the code change itself. "Why" goes in the history doc at ship time.
+- Tradeoffs are the most valuable part of the history doc -- they're what future sessions need to avoid re-litigating.
 
 ## Scope discipline
 
 - Do what was asked. Don't refactor adjacent code, add unrequested features, or "improve" things that work.
 - No dead code, commented-out code, unused imports, or placeholder files.
 - If something isn't needed yet, don't create it.
+- **New scope discovered mid-execution: surface to the user, don't silently absorb.** Update the plan with a fresh confidence verdict for the new assumption, get approval, then continue.
 
 ## Consistency discipline (FB-0010)
 
@@ -45,10 +48,10 @@ This repo dogfoods the flow plugin it ships. When opening a PR from this repo:
 
 ## Autonomous work guardrails
 
-Always confirm with the user before proceeding if the action involves:
+This workflow is **hybrid managed autonomy** -- human-gated at Plan and Merge, with autonomy-friendly primitives between. Even inside the autonomous portion, always confirm with the user before proceeding if the action involves:
 
 1. **Cost exposure** -- API calls that could hit rate limits or incur charges, adding paid services
-2. **Permanence** -- irreversible changes (deleting data models, breaking migration paths, force pushes)
+2. **Permanence** -- irreversible changes (deleting data models, breaking migration paths, force pushes, `rm -rf`)
 3. **Risk** -- security-sensitive changes, privacy implications, anything where a reasonable person might disagree
 
-Everything else (bug fixes, spec compliance, reliability, polish) can be done autonomously with documentation.
+Bug fixes, spec compliance, reliability work, and polish can proceed autonomously (still requires a plan + user approval at the plan gate).

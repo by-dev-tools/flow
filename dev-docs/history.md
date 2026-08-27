@@ -4,6 +4,40 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-27 — Phase 00: fix two shipped-but-never-loading flow features (FB-0085)
+
+**Branch:** `conductor/phase-00-rules-as-skills-hooks-fix-fb-0085` · **PR:** #(assigned at open) · **Mode:** feature
+
+**What was done.** Fixed two flow features advertised since early releases that had never mechanically fired for any consumer, per `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` §17/Phase 00:
+- **00a.** Converted the 4 portable rules (`general`, `plan-discipline`, `documentation`, `exploration`) from `plugins/flow/rules/*.md` — not a real Claude Code plugin component — into path-activated skills at `plugins/flow/skills/{general,plan-discipline,documentation,exploration}/SKILL.md` (`paths:` frontmatter, carried over unchanged; `user-invocable: false`). Deleted the dead `rules/` directory. Updated the two internal cross-references (`ship/SKILL.md:518`, and the two self-references now living inside the moved files) and rewrote doctor's Check 3.2 (item 00f).
+- **00b.** Confirmed hooks stay opt-in (human decision, see below) — no `plugin.json` change. Fixed `plugins/flow/docs/workflow.md`'s "default hooks" phrasing to state the opt-in posture explicitly, matching `docs/automation-boundaries.md`'s already-correct wording.
+- **00c.** Reconciled the drifted `.claude/rules/{general,documentation}.md` vs their plugin counterparts (human decision, see below) — synced the 3 genuinely-duplicated sections in `general.md` (Scope discipline, Decision tracking, Autonomous work guardrails) and the whole of `documentation.md` (the plugin's version had evolved fields the project-dev copy never backported: forward-referenceable Commit/PR field, sanitization in the SAFETY-marker criteria, the "Recorded rejections" section). Added an explicit cross-reference/sync-obligation note to all 4 files (2 pairs) so future drift is a decision, not an accident.
+- **00d.** No `bootstrap.sh` change (human decision, see below) — `docs/bootstrap.md`'s install-then-scaffold ordering already means the 4 rule-skills reach consumers via the plugin install with zero copy step, which is why `template/base/` never had rule templates beyond `safety.md.template` (the one that's genuinely per-project).
+- **00e.** Corrected every live claim found by an evidence-based sweep (superseding the handoff's own file-list guess, which cited 2 sites that carry no such claim today). `docs/first-pr.md:208` named literal old filenames (`plan-discipline.md`, `exploration.md`) that no longer exist — fixed. `README.md:86` and `docs/automation-boundaries.md:17` needed no edit — both become *true* once 00a lands rather than needing reworded, and the human explicitly asked that README not be touched beyond what's true when this PR lands.
+- **00f.** Rewrote doctor's Check 3.2 from an inferred-PASS (based on Section 1's marketplace/enabled checks) to a real shell-out: `claude plugin details flow@flow`, grep the `Skills (` line for each of the 4 names, `[FAIL]` naming which are missing, `[SKIP]` cleanly when `claude` isn't on `PATH`.
+- **Fan-out sweep (FB-0010).** `dev-docs/roadmap.md:336`'s live "17 skills" claim updated to 21 (it would otherwise have gone silently stale on a living doc). Confirmed no other live surface — README, `marketplace.json`, `plugin.json`, doctor's own description, `workflow.md` — carries a stale count.
+
+**Why.** Both were confirmed live bugs, not hypothetical: `rules/` has no plugin-root loader call site (binary-decompiled the installed CLI, v2.1.237 — one minor version past the roadmap doc's v2.1.141, so the bug is still live in the current release), and `hooks/default-hooks.json` matches no auto-discovery filename while `plugin.json` declares no `hooks` field, so `claude plugin details` always reported `Hooks (0)`.
+
+**Design decisions.**
+- **Skill naming.** Kept the source files' names as directory names (`general`, `plan-discipline`, `documentation`, `exploration`) rather than prefixing (e.g. `rule-general`) — lowest-diff option, and `user-invocable: false` means they never surface in `/help` or get model-selected, so collision risk with a future invocable skill is low.
+- **Hooks stay opt-in (escalated, human call).** Recommended and accepted: `default-hooks.json`'s own header already stated the intent ("NOT auto-applied — consumers opt-in"), the shipped hook does broad substring matching with real false-positive risk (`*token*`, `*key*`, `*secret*`), and it matches flow's stated "Passive over active" product principle. Mechanically verified the alternative (declaring `"hooks": "./hooks/default-hooks.json"` in `plugin.json`) works — `Hooks (0)` → `Hooks (1)` in a scratch test — but chose not to take it.
+- **Reconciliation via sync + cross-reference, not merge (escalated, human call).** Recommended and accepted: the two `.claude/rules/general.md` vs plugin `general` skill copies serve genuinely different audiences for most of their content (this repo's own FB-0010/dogfooding meta-rules vs the plugin's project-agnostic consumer content) — only 3 of ~6 sections were real accidental duplication. A structural fix (deleting the project-dev copies and self-installing `flow@flow` for this repo's own sessions) was considered and set aside as disproportionate to a loading-bug fix.
+- **No bootstrap.sh copy logic added (escalated finding, human-confirmed deviation from the handoff's literal wording).** Adding `copy_n` lines for the 4 rules would have re-created exactly the copy-then-drift problem 00c exists to fix, fanned out to every consumer project — and it isn't needed, since the plugin install already precedes the scaffold step.
+
+**Technical decisions.**
+- The doctor check greps only the `Skills (` line of `claude plugin details`'s output (not the whole multi-line output) to avoid any incidental false-positive match against prose elsewhere (e.g. a future description mentioning one of the 4 names as an English word).
+- `git grep` fan-out exemption narrowed from "all of `dev-docs/*`" to specifically `history.md`/`CHANGELOG.md` (immutable per-PR logs) after `/flow:critique-plan` caught that the original wording would have let `roadmap.md` — a **living doc** per `dev-docs/README.md` — go silently stale.
+
+**Tradeoffs discussed.**
+- Chose docs-only fixes for 00b/00e over touching `plugin.json`'s `hooks` field, trading a smaller code diff for the safer default (opt-in stays opt-in).
+- Chose partial content-sync over full structural merge for 00c, trading a fully single-sourced rule for preserving each file's genuinely audience-specific content without a larger self-dogfood-install architecture change.
+- Left `dev-docs/roadmap.md:912`'s queued config-driven-`paths:` item (activation parity for non-standard doc-name projects) unaddressed — real and related, but a distinct gap from "never loads at all," and out of this phase's scope.
+
+**Lessons learned.** Verified both bugs against the live, installed CLI (binary string search + a scratch-copy round-trip test showing skill count 17→18 and `Hooks (0)`→`Hooks (1)`) before writing the plan, per FB-0085's own discipline — catching in the process that the handoff's own citation of `plugin.json`/`marketplace.json` as carrying a live "portable rules" claim was stale; a fresh `grep` found nothing there. `/flow:critique-plan` caught two real issues in the drafted plan (the eliminated `/flow:land` mechanism named for a job it no longer does; an overbroad `dev-docs/*` fan-out exemption that would have let a living doc go stale) — both fixed before execution.
+
+---
+
 ## 2026-08-26 — Orchestrator communication contract: decide within scope, escalate concise + progressive (FB-0092)
 
 **Branch:** `conductor/orchestrator-flow-cloud-workflow-succession-2` · **PR:** #(assigned at open, §4.5 #N convention) · **Mode:** docs

@@ -1,4 +1,7 @@
 ---
+name: documentation
+description: Auto-loading formatting rules for the project's narrative docs (history, feedback, plan, roadmap, spec). Not user-invocable — path-activated only.
+user-invocable: false
 paths:
   - "**/history.md"
   - "**/feedback.md"
@@ -10,6 +13,8 @@ paths:
 # Documentation Format Rules (flow plugin)
 
 These rules ensure consistent formatting across the project's narrative docs (history, feedback, plan, roadmap, spec). Path-matches the file names so the rule auto-loads regardless of where the project keeps the docs (`flow.config.json.{history,feedback,plan,roadmap,spec}Path`; defaults `dev-docs/<name>.md`; consumer projects typically `core-docs/<name>.md`).
+
+**Relationship to `.claude/rules/documentation.md` (this repo's own dev-side copy, FB-0085 / Phase 00 / 00c):** the history.md/feedback.md format sections below are mirrored there, scoped to this repo's own `dev-docs/` paths. Keep both in sync.
 
 ## history.md format
 
@@ -49,7 +54,7 @@ Every entry must include:
 
 ## plan.md work-item format
 
-Every entry under "Active Work Items" must include the fields from `${CLAUDE_PLUGIN_ROOT}/rules/plan-discipline.md`:
+Every entry under "Active Work Items" must include the fields from `${CLAUDE_PLUGIN_ROOT}/skills/plan-discipline/SKILL.md`:
 
 - **Mode** — `feature` (default), `spike`, or `tiny`
 - **Goal** — 1–3 sentences in user terms
@@ -59,7 +64,7 @@ Every entry under "Active Work Items" must include the fields from `${CLAUDE_PLU
 - **Risks / open questions**
 - **Files touched** — anticipated paths
 
-See `plan-discipline.md` for the full spec and the LOW = automatic-human-gate behavior.
+See `plan-discipline` for the full spec and the LOW = automatic-human-gate behavior.
 
 ## memory entry format (failure-pattern memory)
 
