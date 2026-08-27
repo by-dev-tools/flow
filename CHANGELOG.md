@@ -36,7 +36,6 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 **Breaking changes:** none. Consumers who already deleted local `.claude/rules/{general,plan-discipline,documentation,exploration}.md` copies per `docs/migration.md`'s Stage 2 guidance now correctly receive the plugin's content for the first time — previously they'd have received none. Consumers who never had local copies see the 4 rules become active where they were silently inert before.
 
 ---
-
 ## v1.32.0 — 2026-08-26
 
 **A session can no longer claim verification it had no way to perform — or be refused the honest admission that it couldn't.**
