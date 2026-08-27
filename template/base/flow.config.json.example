@@ -46,7 +46,7 @@
   "$comment-branchPrefix": "Conventional prefix for feature branches created by /flow:ship and /flow:ship-spike. Common: 'claude/', 'feature/', 'fix/'. Empty disables.",
   "branchPrefix": "claude/",
 
-  "$comment-verify-build": "Controls /flow:verify-build, the runtime behavioral-verification gate at /flow:ship Step 2 (v1.3.0). platform: hint for skip-path decisions — 'library'/'none' self-skips (no runnable target); web/ios/android/tauri/cli run the verify pass; UNSET → bundled /run autodetects. verifyEnabled: project-wide on/off. verifyBudgetCalls: tool-call cap before unjudged verdicts are forced to Unknown (which gates ship). NOTE: requires a /run launch recipe — run /run-skill-generator once per project (doctor Check 5.3 surfaces the gap).",
+  "$comment-verify-build": "Controls /flow:verify-build, the runtime behavioral-verification gate at /flow:ship Step 2 (v1.3.0). platform: hint for skip-path decisions — 'library'/'none' self-skips (no runnable target); ios additionally self-skips on a host missing the whole Apple toolchain (verifiable in principle, not here — the skip is validated by /flow:audit-skips and still drafts the PR); web/android/tauri/cli run the verify pass; UNSET → bundled /run autodetects. verifyEnabled: project-wide on/off. verifyBudgetCalls: tool-call cap before unjudged verdicts are forced to Unknown (which gates ship). NOTE: requires a /run launch recipe — run /run-skill-generator once per project (doctor Check 5.3 surfaces the gap).",
   "platform": "web",
   "verifyEnabled": true,
   "verifyFindingsPath": ".flow/verify-findings.json",

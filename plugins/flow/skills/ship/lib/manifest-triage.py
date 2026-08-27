@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic draft-manifest triage engine (FB-0075).
 
-`/flow:ship` accumulates a draft manifest from 8 producer sites, and its draft
+`/flow:ship` accumulates a draft manifest from 9 producer sites, and its draft
 decision was unconditional: manifest non-empty => `gh pr create --draft`. Three
 unlike populations therefore reached the human identically -- items the agent
 could resolve itself, genuine decisions written in engineer shorthand, and items
@@ -140,7 +140,7 @@ ATTEMPTED_MARKER = "already-attempted"
 # set, and "waive and ship as-is" is never offered — because it would be a lie,
 # the PR stays a draft either way. SKILL.md:308,310 is unqualified: no
 # merge-ready PR on a non-PASS build.
-CHECK_ONLY = frozenset({"verify-build"})
+CHECK_ONLY = frozenset({"verify-build", "toolchain"})
 
 # Everything kind-specific in ONE record per kind, so adding a kind is one edit
 # and a missing field is visible at a glance (every read site is a .get() with a
@@ -216,6 +216,44 @@ KIND_COPY: dict[str, dict[str, str]] = {
         "needs_you": "Approve capturing the walkthrough, or tell me to ship without it.",
         "waive_cost": "this change ships with no visual record, so the next visual change has nothing to compare against",
         "why": "without it nobody can see what the change actually looks like before merging",
+    },
+    # The one kind whose blocker is a property of the MACHINE, not of the code:
+    # the change is verifiable in principle, just not on this host (a cloud Linux
+    # workspace on an iOS project). Emitted by ship Step 2a.3 when /flow:audit-skips
+    # returns a verify-build skip whose toolchain-absence claim it VERIFIED against
+    # the host (see audit-skips/lib/skip-audit-checks.py). It is deliberately NOT
+    # `verify-build`: that kind's copy says the app was built and exercised and did
+    # not do what the plan said -- actively wrong here, where nothing ran at all.
+    #
+    # No `then` field on purpose: this kind always classifies `blocked`, and
+    # `_then()` returns BLOCKED_THEN for blocked entries, so a `then` here would be
+    # dead copy. Same reason there is no `waive_cost`: it is CHECK_ONLY, so no
+    # waive option is ever offered.
+    #
+    # The copy describes only what exists TODAY. The canonical cloud-workflow plan
+    # 4.2 drafts it as "queued for a machine that does", but the queue it names
+    # (a `needs-mac-verify` label + `/verify-queue`) is a later step and does not
+    # exist yet -- shipping that wording would send a reader looking for something
+    # that is not there. When the queue lands, this gains one clause.
+    "toolchain": {
+        "clears_when": "re-run /flow:verify-build on a machine that has the toolchain and confirm overall_verdict is PASS",
+        # The copy says "the machine", not "this change" — on purpose. The change has no
+        # toolchain dependency; the CHECK does, and conflating them tells the reader their
+        # code is at fault when nothing about it is.
+        "means": ("Nothing on this machine can build this project, so no check ever ran against "
+                  "your change. This is about the machine, not about the code."),
+        # The second option is stated in full because the short version ("mark it ready if you
+        # accept it") dead-ends: this kind is CHECK_ONLY, so nothing in flow ever removes the
+        # block, and /flow:land refuses to reconcile a PR merged while carrying it. For
+        # verify-build that is a rare trap (a passing re-run clears the entry); for toolchain it
+        # is the EXPECTED end state of every cloud-workspace PR, so the copy has to be honest
+        # that the block stays and that flow will ask again.
+        "needs_you": ("Nothing I can do from this machine. Either re-run the check on a machine "
+                      "that has the toolchain and tell me, or — if you accept the change "
+                      "un-verified — mark the PR ready and merge it yourself. The block stays in "
+                      "the body either way, so flow will ask you once more to confirm that the "
+                      "merge was deliberate."),
+        "why": "this machine cannot build the target at all, so there is no version of trying again here that works",
     },
 }
 
@@ -483,6 +521,18 @@ def _class_for(kind: str, needs: str, attempted: bool, auto_allowed: bool) -> tu
             return "ask", "no recoverable record of a prior attempt; not re-attempting blind"
         return "auto", "capture the walkthrough and author the visual-history entry, once"
 
+    if kind == "toolchain":
+        # Verb-independent, unlike security/a11y: no resolution verb makes a
+        # missing toolchain answerable in this session. `ask` would be actively
+        # wrong here -- it renders a numbered question whose only offered options
+        # are the CHECK_ONLY line ("I won't mark a failing build ready", when
+        # nothing was built) and DEFAULT_THEN ("re-run the check ... and mark the
+        # PR ready once it passes", on a host that by construction cannot re-run
+        # it). `blocked` is this situation's definition: the action -- run the
+        # verify pass on a machine that has the toolchain -- happens outside this
+        # session, and it is not waivable.
+        return "blocked", "the verify pass has to run on a machine that has the toolchain"
+
     if kind in KINDS:
         return "ask", "already attempted at its producer, or the agent must not decide it"
 
@@ -570,8 +620,8 @@ def render_manifest(result: dict[str, Any]) -> str:
         lines.append(f"  - **What this means:** {_means(kind, e['class'])}")
         lines.append(f"  - **What I need from you:** {_needs_you(kind, e['class'])}")
         then = _then(e)
-        # Only state it per-entry when it DIFFERS from the default — otherwise six
-        # of eight entries repeat one sentence verbatim, and the repetition (not
+        # Only state it per-entry when it DIFFERS from the default — otherwise most
+        # entries repeat one sentence verbatim, and the repetition (not
         # the nesting) is what turns this into a wall at 6+ entries.
         if then != DEFAULT_THEN:
             lines.append(f"  - **What happens then:** {then}")
