@@ -4,6 +4,22 @@ Detailed record of shipped work. Reverse chronological (newest first). This is n
 
 ---
 
+## 2026-08-26 — §4.9 externalize-non-git fix + §4.10 orchestrator skill suite (in flow) + FB-0091
+
+**Branch:** `succession-file-externalization` · **PR:** #(assigned at open) · **Mode:** docs
+
+**What was done.** Closed two gaps the first real orchestrator succession surfaced.
+- **§4.9 file-externalization fix.** The disposability invariant was too loose — a *sandbox-local file* is recoverable from **neither** GitHub nor the Conductor API and dies when the sandbox is torn down, yet the first succession brief pointed the successor at a `/home/…` report path in the *outgoing* sandbox (a different sandbox it cannot reach). Wind-down is now **three steps** — flush durable currency to git, **externalize any non-git artifact that matters** (commit if repo content, else hand its contents to the human), then hand off the brief — and the invariant sharpens to "recoverable from GitHub, the API, **or already delivered to the human**." Added the rule that every brief reference must point at a reachable location, never the outgoing sandbox. (The report survived only because it had been surfaced to the human; caught live.)
+- **FB-0091.** The successor was spawned on `sonnet-5-1m`/high; the family matched the routing table but the effort was a by-feel bump. Rule: the orchestrator routes *itself* (including its successor) per the §4.3 table with a logged `model · effort · why`, never silently by feel.
+
+**Why.** Both are dogfood findings from executing the §4.9 succession this session — the model working, and revealing its own two soft spots.
+
+- **§4.10 + §4.4 revision — the orchestrator skill suite moves INTO flow.** The user directed the orchestration workflow to be a core part of flow (not per-repo): a suite of **agent-invocable** skills — `/flow:orchestrate` (successor bootstrap), `/flow:spawn` (the model-decision-tree + dispatch brief), `/flow:handoff` (the §4.9 wind-down + archive-safety), optional `/flow:gate` — shipped in `plugins/flow/skills/`, with Conductor mechanics behind a `dispatchBackend` adapter slot so host-agnosticism holds (reversing §4.4's exclusion, whose revisit criterion is now met). Cross-workspace invocation is *instruct-not-remote-invoke*: `/flow:spawn` creates B and tells B's agent to run a named flow skill; B, having flow installed, invokes it locally — which is precisely why the suite must ship in flow and be agent-invocable. This is now the concrete shape of §5 Step 4 (orchestrator v1).
+
+**Three-surface note.** Docs-only (`research/` + `dev-docs/`).
+
+---
+
 ## 2026-08-26 — SAFETY — The `toolchain` manifest kind: "verifiable in principle, just not on *this* machine" (canonical cloud-workflow §5 Step 1)
 
 **Branch:** `conductor/toolchain-manifest-kind-keystone-v1` · **PR:** #(assigned at open) · **Mode:** feature · **Version:** 1.31.0 → 1.32.0
@@ -48,7 +64,6 @@ That also collapsed the CLI: it had grown `required` (never called by anything),
 **Process note.** The plan went through 18 `/flow:critique-plan` rounds before the gate. Several were substantive and changed the design: the original scope was a **net weakening** of the gate (an uncontested skip routed nowhere ⇒ empty manifest ⇒ ready PR with no behavioral verification); prose-keyed verdicts were exploitable in both directions; the `./gradlew` failure mode killed `android`/`tauri`; and one round caught a fan-out grep that could never return zero, so its own Spec-walk box was unsatisfiable except by widening the carve-out until it passed.
 
 **Files.** `skills/verify-build/lib/toolchain.py` (NEW), `skills/verify-build/SKILL.md` (§ 1.2 + `:437`), `skills/ship/lib/manifest-triage.py`, `skills/audit-skips/lib/skip-audit-checks.py`, `skills/ship/SKILL.md` (Step 2a.3 + fan-out), `skills/audit-skips/SKILL.md` (`## Output` contract), `skills/ship-spike/SKILL.md`, `skills/verify-build/lib/not-tested-checklist.md`, both eval harnesses, `docs/workflow.md`, `schema/flow.config.schema.json`, `template/base/flow.config.json.example`, `docs/automation-boundaries.md`, `plugin.json` + `marketplace.json` (1.32.0), `CHANGELOG.md`, `dev-docs/{plan,roadmap,history}.md`. No `ci.yml` change (both harnesses already wired); `file_patterns.py` untouched.
-
 ---
 
 ## 2026-08-26 — §4.8 gate delegation + §4.9 orchestrator succession + escalation format (FB-0090) + doc-currency fold
