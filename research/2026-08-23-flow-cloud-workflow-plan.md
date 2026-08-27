@@ -400,6 +400,16 @@ message the orchestrator sends the human, not only gate escalations:
    surface the single most pressing one, plus a one-line mention that other threads exist and
    their state — never a flat dump of unrelated asks demanding simultaneous attention, but never
    silent about parallel threads either.
+5. **The orchestrator seat is the single human-facing decision surface — in both directions.**
+   Escalation does **not** mean "the human goes to the worker." It means the orchestrator
+   collects the decision, presents it in the seat with recommendation/confidence/justification,
+   the human decides *there*, and the orchestrator relays the answer back to the worker. This
+   holds for decisions the orchestrator may **not** approve itself (high stakes, one-way doors,
+   high taste, gate machinery): the *approval authority* stays with the human, but the
+   *interaction surface* stays the orchestrator seat. A human should never have to open N worker
+   workspaces to keep N workstreams moving — that is the attention cost the seat exists to
+   remove, and routing approvals through worker chats reintroduces it in full. (User direction,
+   2026-08-27.)
 
 This governs `/flow:orchestrate`/`/flow:spawn`/`/flow:handoff`/`/flow:gate` (§4.10): each must be
 built to apply these rules to its own human-facing output, not leave them as an unenforced
