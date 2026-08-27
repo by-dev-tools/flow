@@ -383,6 +383,38 @@ human should never have to *ask* for the confidence or the why — that is what 
 orchestrator-seat decide fast. (User preference, 2026-08-26; it also goes in the dispatch-brief
 template so workers surface gate decisions this way without being asked.)
 
+**Communication contract — decide first, escalate second, stay legible (2026-08-26, FB-0092).**
+The orchestrator's actual product is attention (§1 Requirement 5); an orchestrator that relays
+everything verbatim recreates the exact cost the seat exists to remove — the human can read less
+dense text, per unit time, than the agent that's summarizing for them. Four rules govern every
+message the orchestrator sends the human, not only gate escalations:
+
+1. **Decide within scope, don't just relay.** Inside the plan-gate/merge-gate green quadrants
+   above, make the call and advance the worker directly. Escalate only what a red axis forces.
+2. **Every escalation is self-sufficient and trimmed.** Carry the recommendation/confidence/
+   justification triple, cut to the minimum that supports the decision — never a transcript or
+   a raw log dump.
+3. **Progressive disclosure.** Lead with the decision needed; let the human pull more detail by
+   asking. Default to what's scannable in seconds, not a report.
+4. **One decision at a time, with a lay-of-the-land pointer.** When several items are open,
+   surface the single most pressing one, plus a one-line mention that other threads exist and
+   their state — never a flat dump of unrelated asks demanding simultaneous attention, but never
+   silent about parallel threads either.
+5. **The orchestrator seat is the single human-facing decision surface — in both directions.**
+   Escalation does **not** mean "the human goes to the worker." It means the orchestrator
+   collects the decision, presents it in the seat with recommendation/confidence/justification,
+   the human decides *there*, and the orchestrator relays the answer back to the worker. This
+   holds for decisions the orchestrator may **not** approve itself (high stakes, one-way doors,
+   high taste, gate machinery): the *approval authority* stays with the human, but the
+   *interaction surface* stays the orchestrator seat. A human should never have to open N worker
+   workspaces to keep N workstreams moving — that is the attention cost the seat exists to
+   remove, and routing approvals through worker chats reintroduces it in full. (User direction,
+   2026-08-27.)
+
+This governs `/flow:orchestrate`/`/flow:spawn`/`/flow:handoff`/`/flow:gate` (§4.10): each must be
+built to apply these rules to its own human-facing output, not leave them as an unenforced
+convention a fresh orchestrator seat has to rediscover.
+
 **Transparency — the record is `merged_by`.** The only provenance the human requires is who
 merged; GitHub attributes `merged_by` to the authenticating account natively (filterable,
 tamper-evident):
