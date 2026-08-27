@@ -18,7 +18,9 @@ This file is the **claim-time defense** (catches collisions before either branch
 
 If you find this file with no `Currently reserved` lines, no in-flight branch is racing for a number. Still add your reservation before drafting the entry — another branch may start between your check and your commit.
 
-## Currently reserved (as of 2026-08-03)
+## Currently reserved (as of 2026-08-27)
+
+- FB-0093 — `conductor/phase-00-rules-as-skills-hooks-fix-fb-0085` — "a bug-fix PR corrects claims that are false today, not claims about work tracked elsewhere" — held until MERGE (renumbered from FB-0092 at rebase; #133 merged FB-0092 for a different concept)
 
 _(FB-0087 + FB-0088 cleared for merged #122 — the canonical flow cloud-workflow plan + Conductor orchestration spike. Both lines said "held until MERGE" (a concurrent worker branch was live at ship). Reconciled by the SUCCESSOR PR (handoff-without-land), not a standalone `/flow:land` PR — dogfooding canonical-plan §4.5 (durable currency folds into the next ship). Entries live in `feedback.md`.)_
 
