@@ -1,0 +1,19 @@
+EXPERIENCE LENS
+1 finding(s): 1 REDIRECT
+
+---
+
+ISSUE 1 · REDIRECT · Ambition ceiling
+Brief says:
+> "Add an "Undo" text link that appears for 5 seconds after a delete, restoring the item on click."
+> "Where this pushes past the literal request: Nowhere — this satisfies exactly what was asked."
+
+Gap: the brief explicitly declines to push past the literal request, but "whose moment" names the exact moment a user is anxious about a mistake they just made — a 5-second text link gives them almost no room to notice, decide, and act before the window closes, and nothing in the brief considers the reassurance/confidence dimension of "did that actually work."
+Why it matters: an accidental-deletion recovery feature that's easy to miss defeats its own purpose; a user who misses the window once learns not to trust delete at all.
+Suggested: extend the window or replace the timed disappearance with a dismissible toast, and consider whether the delete action itself should feel reversible-by-default rather than requiring the user to catch a 5-second link.
+
+PUSH-FURTHER (quality, not scope)
+Nothing to push — surface at ceiling for its scope.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

@@ -47,6 +47,7 @@ STAFF_SKILL = FLOW / "skills" / "staff-review" / "SKILL.md"
 SEC_SKILL = FLOW / "skills" / "security-review" / "SKILL.md"
 A11Y_SKILL = FLOW / "skills" / "accessibility-review" / "SKILL.md"
 VERIFY_SKILL = FLOW / "skills" / "verify-build" / "SKILL.md"
+REVIEW_BRIEF_SKILL = FLOW / "skills" / "review-brief" / "SKILL.md"
 SCHEMA = FLOW / "schema" / "flow.config.schema.json"
 CI = FLOW.parent.parent / ".github" / "workflows" / "ci.yml"
 
@@ -277,7 +278,8 @@ def test_contracts():
     # while something pins every copy — a guard covering 3 of 6 sites is the exact
     # fan-out-contradiction class this harness exists to prevent.
     idiom_sites = [("staff", STAFF_SKILL), ("sec", SEC_SKILL), ("a11y", A11Y_SKILL),
-                   ("ship", SHIP_SKILL), ("verify", VERIFY_SKILL)]
+                   ("ship", SHIP_SKILL), ("verify", VERIFY_SKILL),
+                   ("review-brief", REVIEW_BRIEF_SKILL)]
     for name, path in idiom_sites:
         t = path.read_text(encoding="utf-8")
         check(f"contract-{name}-idiom", idiom in t and '"$FLOW_SCRATCH/' in t,

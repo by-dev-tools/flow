@@ -10,6 +10,19 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.35.0 — 2026-08-27
+
+**A design brief gets its own review pass — before any prototype gets built.**
+
+- **New `lens-experience` agent (D3, FB-0046).** Two lenses in one prompt: an experience/product-designer lens (is this the right problem, is the ambition high enough, does the brief consider the journey/edge-states/friction/feel) and a push-further-on-quality lens (raise the craft bar of the brief's *declared* scope only — a loud guard against proposing new functionality). Reached only through `/flow:review-brief`, matching the rest of the `lens-*.md` family's "would anyone run this alone?" test.
+- **New `/flow:review-brief` skill.** One extraction of a design brief, fanned to `auditor` + `plan-critic` + `lens-experience` in a single tool message, so all three demonstrably reviewed the same artifact. Returns one triaged verdict: a clean pass states "proceed to the prototype phase"; any `decision-required` finding renders as a numbered, answerable question — never a document to go read. Standalone-invocable today (`/flow:review-brief <path>`), the same way `/flow:critique-plan <path>` is.
+- **A six-field design-brief template**, documented in `workflow.md`: Problem, Whose moment, Constraints, Intended scope, Deliberately excluded, Where this pushes past the literal request — targeting roughly a 20-second read (~80 words total).
+- **This is D1 Phase 1** (`dev-docs/handoffs/d1-prototype-first-gate.md`) — the "review the brief before building anything" half of the prototype-first gate. No trigger, no prototype phase, and no loop re-ordering ship here; a brief is still something you write by hand today. Phase 0 (the `role` config slot, v1.31.0) and Phase 1 are both self-contained and don't change behavior for any project that isn't explicitly invoking `/flow:review-brief`.
+
+**Breaking changes:** none. No existing skill, schema slot, or default changes; this PR only adds new, opt-in surface.
+
+---
+
 ## v1.34.0 — 2026-08-27
 
 **The periodic memory audit no longer eyeballs Fire-log dates across up to 30 entries by hand.**
