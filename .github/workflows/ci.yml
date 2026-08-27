@@ -92,6 +92,16 @@ jobs:
           python-version: '3.11'
       - run: python3 tools/model-measure/run_model_measure_evals.py
 
+  harness-audit:
+    name: harness-audit (dev tooling, not shipped — FB-0095)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 tools/harness_audit/run_harness_audit_evals.py
+
   security:
     name: security
     runs-on: ubuntu-latest

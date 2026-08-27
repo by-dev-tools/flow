@@ -76,6 +76,7 @@ These files help Claude sessions develop and maintain this repo. Not part of the
 | `.claude/settings.json` | Hooks (secret blocking) |
 | `.context/` | Per-session scratch |
 | `tools/model-measure/` | Per-subagent token/model measurement harness reading Claude Code session transcripts (roadmap item M, FB-0083/FB-0089) -- dev tooling, no shipped `/flow:*` skill invokes it |
+| `tools/harness_audit/` | Periodic harness-weight audit mechanism: cadence gate + always-loaded/invoked-per-use surface inventory (roadmap item AB, Step 1, FB-0095) -- dev tooling, no shipped `/flow:*` skill invokes it |
 
 When you see `agents/` and `skills/` under `plugins/flow/`, those are **plugin artifacts** (what consumers get when they install flow). When you see `.claude/agents/` and `.claude/skills/`, those are **project-dev** roles for building flow itself. The two never mix. Same for `dev-docs/` (plugin's own self-tracking) vs the future `template/core-docs/` (PR 3 — the scaffolding consumer projects copy when adopting flow).
 
