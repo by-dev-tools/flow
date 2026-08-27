@@ -254,10 +254,22 @@ elif [ -f "plugins/flow/schema/flow.config.schema.json" ]; then
   SCHEMA="plugins/flow/schema/flow.config.schema.json"
 fi
 
+# Resolve the shared scan predicate the same way (mirrors Check 1.4/2.7's resolution).
+# This is the SAME module `run_merge_status_evals.py` imports for flow's own internal
+# sweep (FB-0079) — one wrap-tolerant regex, not two implementations that can drift.
+LIB=""
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/doctor/lib/slot_count_scan.py" ]; then
+  LIB="${CLAUDE_PLUGIN_ROOT}/skills/doctor/lib/slot_count_scan.py"
+elif [ -f "plugins/flow/skills/doctor/lib/slot_count_scan.py" ]; then
+  LIB="plugins/flow/skills/doctor/lib/slot_count_scan.py"
+fi
+
 if ! command -v jq >/dev/null 2>&1; then
   echo "[SKIP] documented slot-count vs schema — jq not on PATH (see Check 4.1); cannot read the schema. A failure verdict here without jq would be false."
 elif [ -z "$SCHEMA" ]; then
   echo "[SKIP] flow schema not reachable — install flow plugin (\$CLAUDE_PLUGIN_ROOT must point to a flow install) or run from the flow repo root"
+elif [ -z "$LIB" ]; then
+  echo "[SKIP] slot-count scan helper not reachable — install flow plugin (\$CLAUDE_PLUGIN_ROOT must point to a flow install) or run from the flow repo root"
 else
   # Guard malformed schema with explicit FAIL (don't let jq error string flow into ACTUAL).
   ACTUAL=$(jq -r '.properties | keys | length' "$SCHEMA" 2>/dev/null)
@@ -267,43 +279,50 @@ else
   else
     # Scope the doc scan to the union of flow's own convention (dev-docs/) and the
     # consumer template's convention (CLAUDE.md, README.md, core-docs/, plus the
-    # CLAUDE.md.template that consumers may not yet have renamed). docs/ covers
-    # this repo's own consumer-facing guides. Only emit SKIP if NONE exist —
-    # an empty scan with no docs is itself a silent-skip class FB-0010 catches.
+    # CLAUDE.md.template that consumers may not yet have renamed, and bootstrap.sh —
+    # a plausible top-level leftover if a consumer downloaded it into their project
+    # root to bootstrap flow. Staff-review's engineer lens found this does NOT close
+    # the specific FB-0079 corollary-3 instance — the template's own bootstrap.sh
+    # never lands at a project's root via the copy step, and the historical stale
+    # comment lived at `template/base/bootstrap.sh`, already covered by the
+    # *internal* sweep's separate recursive scan (a different runtime, different
+    # scan root). Kept anyway as a harmless, zero-cost addition, not a closed gap.)
+    # docs/ covers this repo's own consumer-facing guides. Only emit SKIP if NONE
+    # exist — an empty scan with no docs is itself a silent-skip class FB-0010 catches.
     # Build scan-target list as positional params (POSIX-portable; works in
     # both bash and zsh — bash word-splits unquoted vars but zsh does NOT, so
     # an earlier "$SCAN_TARGETS" string-join silently no-op'd under zsh and
     # reported vacuous PASS. The exact FB-0010 silent-skip class this check
     # is supposed to catch. Positional params via "$@" are portable.)
     set --
-    for t in CLAUDE.md CLAUDE.md.template README.md CHANGELOG.md docs core-docs dev-docs; do
+    for t in CLAUDE.md CLAUDE.md.template README.md CHANGELOG.md bootstrap.sh docs core-docs dev-docs; do
       [ -e "$t" ] && set -- "$@" "$t"
     done
     if [ $# -eq 0 ]; then
-      echo "[SKIP] no project docs found to scan for slot-count consistency (looked for CLAUDE.md, CLAUDE.md.template, README.md, CHANGELOG.md, docs/, core-docs/, dev-docs/)"
+      echo "[SKIP] no project docs found to scan for slot-count consistency (looked for CLAUDE.md, CLAUDE.md.template, README.md, CHANGELOG.md, bootstrap.sh, docs/, core-docs/, dev-docs/)"
     else
-      # Portable across BSD + GNU: extract the FIRST "N slots" pair on each grep
-      # output line via grep -oE (works around grep-prefix line-number digits that
-      # confused an earlier sed-anchor attempt, and works around the gawk-only
-      # 3-arg match() that an even earlier awk attempt silently no-op'd on BSD —
-      # both of those earlier attempts were silent-skip bugs of the exact class
-      # FB-0010 catches, fixed before this PR shipped).
-      STALE=$(grep -rEn '([0-9]+) slots?' "$@" 2>/dev/null \
-        | grep -vE ":[[:space:]]*#" \
-        | while IFS= read -r line; do
-            N=$(printf '%s\n' "$line" | grep -oE '[0-9]+ slots?' | head -n1 | grep -oE '^[0-9]+')
-            if [ -n "$N" ] && [ "$N" != "$ACTUAL" ]; then
-              printf '%s\n' "$line"
-            fi
-          done)
-      if [ -z "$STALE" ]; then
-        echo "[PASS] documented slot count matches schema ($ACTUAL slots; scanned $# path(s))"
-      else
-        echo "[WARN] documented slot count contradicts schema (schema has $ACTUAL slots; survivors below)"
-        echo "       Survivors (some may be intentional historical narrative — e.g., 'schema bumped from 13 to 16'):"
-        printf '%s\n' "$STALE" | sed 's/^/         /'
-        echo "       Fix: update each line to '$ACTUAL slots' (grep-first-edit-second; FB-0010 discipline), OR move historical numbers behind a comment marker (# prefix) so the check ignores them."
-      fi
+      # Delegate to the shared, wrap-tolerant predicate (slot_count_scan.py) rather
+      # than a line-oriented grep. A line-oriented grep is exactly what missed
+      # `all 30\n  slots` wrapped across a newline inside doctor/SKILL.md's own
+      # frontmatter (FB-0079) — that miss is invisible to ANY line-oriented tool,
+      # so this check must run the same regex-over-full-file-text logic, not a
+      # shell-native re-derivation of it that can silently diverge again.
+      OUT=$(python3 "$LIB" --expected "$ACTUAL" "$@" 2>&1); RC=$?
+      case "$RC" in
+        0) # Extracted from a dedicated machine-parseable trailer line ("SCANNED_COUNT=N"),
+           # not by word position in the human-readable sentence above it — a future rewording
+           # of that sentence can't silently shift which field carries the count.
+           SCANNED=$(printf '%s\n' "$OUT" | sed -n 's/^\[slot-count-scan\] SCANNED_COUNT=//p')
+           case "$SCANNED" in ''|*[!0-9]*) SCANNED="an unparsed count — see raw output: $OUT" ;; esac
+           echo "[PASS] documented slot count matches schema ($ACTUAL slots; scanned $SCANNED file(s) across $# path(s))" ;;
+        1) echo "[WARN] documented slot count contradicts schema (schema has $ACTUAL slots; survivors below)"
+           printf '%s\n' "$OUT" | sed -n 's/^\[slot-count-scan\] STALE /         /p'
+           echo "       (some may be intentional historical narrative — e.g., 'schema bumped from 13 to 16')"
+           echo "       Fix: update each line to '$ACTUAL slots' (grep-first-edit-second; FB-0010 discipline), OR move historical numbers behind a comment marker (# prefix) so the check ignores them." ;;
+        2) echo "[SKIP] slot-count scan measured 0 files across $# path(s) — nothing to verify" ;;
+        *) echo "[WARN] slot-count scan could not run (exit $RC) — treat as unchecked, not a verified clean"
+           printf '%s\n' "$OUT" | sed 's/^/       /' ;;
+      esac
     fi
   fi
 fi

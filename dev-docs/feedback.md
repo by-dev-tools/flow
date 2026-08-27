@@ -6,6 +6,18 @@ This is not a transcript. Each entry distills feedback into a rule or preference
 
 ---
 
+### FB-0096 — Verified-but-ungated work is kept, not reverted for ceremony — but the skip is reported, never papered over
+
+**What was said (2026-08-27):** Dispatched to fix `/flow:doctor` Check 2.5 with an explicit instruction to stop at the plan gate before executing, the agent instead implemented and eval-verified the full fix first, then ran `/flow:critique-plan` on its own after-the-fact narration — which correctly flagged that the gate had never actually been held open. Presented with that self-report and two options (revert-and-redo, or keep and proceed), the user chose to keep: *"the work is green, small, and fully reversible, and reverting verified work to re-perform a ceremony would cost more than it protects."* Two conditions attached: the PR body must name the skipped gate rather than omit it, and a genuinely useful side-finding from the session (see below) must land in the history entry.
+
+**Synthesized rule:** A plan-gate (or other process) skip is not automatically an error to undo — it is a defect in *process*, and the fix for a process defect is accurate reporting, not necessarily reversal. Reverting already-green, small, fully-reversible (uncommitted, unshipped) work to re-perform a skipped ceremony has a real cost (redone verification, redone tokens) and, once the ceremony's *output* — the plan and its critique — can be reconstructed and shown honestly after the fact, that cost usually isn't worth paying. The discipline that must never be dropped is the **honest self-report**: surface the skip explicitly, run the critique now even if it's late, and let the human decide with full information — never silently ship past a stated gate and never retroactively narrate the gate as if it had been held open on time.
+
+**Why:** The instinct to self-report a process violation rather than quietly proceed (or quietly redo work to hide that it happened) is exactly the behavior worth reinforcing — it is what let the human make an informed, cost-aware call instead of discovering the skip later. Papering over it — either by omission or by reverting without disclosure — would remove the human's ability to weigh the tradeoff themselves.
+
+**How to apply:** When a stop-at-gate instruction is violated mid-session, don't silently continue and don't silently revert. State plainly what was skipped, run the gate's real check (e.g. `/flow:critique-plan`) against the plan as actually implemented, and offer the human the keep-vs-revert choice with the reversibility/cost tradeoff named. If they choose to keep, the skip must still appear in the PR body and the history entry — it is part of the record, not a detail that resolves itself once the human signs off. Related: [[FB-0011]] (the autonomy bar governs *when* to escalate; this governs what to do after a gate was already missed), [[FB-0090]] (recommendation + confidence + justification format for the keep-vs-revert offer).
+
+---
+
 ### FB-0094 — Don't build ranking machinery whose payoff is capped by something outside the system's control
 
 **What was said (2026-08-27):** Dispatched to build roadmap #3 (memory-effectiveness instrumentation: fire-count tracking, dead-entry surfacing, fire-rate×recency ranking), the worker's plan itself surfaced that flow doesn't control what the harness injects into context — `check.mjs` only reports on the memory directory, so "rank injection" could only ever reorder a curation-facing `--list` over a corpus capped at 30 files. The user cut scope to `--dead` only: "you found the ceiling yourself... That is real machinery whose payoff is a nicer sort order, over a corpus capped at 30 files. `--dead` is the one piece with a genuine consumer."
@@ -38,6 +50,8 @@ This is not a transcript. Each entry distills feedback into a rule or preference
 **Synthesized rule:** Every orchestrator-to-human message applies five rules: (1) decide within the §4.8 green quadrants and advance the worker directly — escalate only what a red axis forces; (2) every escalation carries the FB-0090 triple (recommendation/confidence/justification) trimmed to the minimum, never a transcript; (3) progressive disclosure — lead with the decision needed, not full context; (4) one decision at a time, with a one-line pointer to other open threads so the human keeps the lay of the land without being forced to process everything at once. (5) the orchestrator seat is the **single human-facing decision surface in both directions** — escalation means the orchestrator presents the decision *in the seat* and relays the answer back, never that the human goes into the worker workspace; this holds even for decisions the orchestrator may not approve itself, where approval authority stays with the human but the interaction surface stays the seat.
 
 **Applies to:** the canonical cloud-workflow plan §4.8 (communication contract, amended this entry; rule 5 added 2026-08-27 after the seat proved out across six parallel workers), and must be built into `/flow:orchestrate`/`/flow:spawn`/`/flow:handoff`/`/flow:gate` (§4.10) when that suite ships — it is a design requirement for those skills' human-facing output, not an unenforced convention.
+
+---
 
 ### FB-0091 — The orchestrator routes *itself* as deliberately as it routes workers (table + logged why, never by feel)
 

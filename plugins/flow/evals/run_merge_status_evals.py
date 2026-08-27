@@ -26,17 +26,21 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
+from eval_utils import fenced_block
+
 HERE = Path(__file__).parent
 SKILLDIR = HERE.parent / "skills" / "post-merge"
 HELPER = SKILLDIR / "lib" / "merge-status.py"
 SKILL = SKILLDIR / "SKILL.md"
 SCHEMA = HERE.parent / "schema" / "flow.config.schema.json"
+SKILL_DOCTOR = HERE.parent / "skills" / "doctor" / "SKILL.md"
 
 
 def run(argv: list[str], stdin: str | None = None, cwd=None) -> tuple[int, str]:
@@ -71,6 +75,25 @@ def _lint():
         _LINT = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(_LINT)
     return _LINT
+
+
+_SLOT_SCAN = None
+SLOT_SCAN_PATH = HERE.parent / "skills" / "doctor" / "lib" / "slot_count_scan.py"
+
+
+def _slot_scan():
+    """Load slot_count_scan.py by path — the module `/flow:doctor` Check 2.5 also
+    invokes (as a subprocess, since Check 2.5 runs from a shell block), so this
+    harness and the consumer-facing check run the identical predicate rather than
+    two implementations that can silently drift (the exact FB-0079 class)."""
+    global _SLOT_SCAN
+    if _SLOT_SCAN is None:
+        spec = importlib.util.spec_from_file_location("slot_count_scan", SLOT_SCAN_PATH)
+        _SLOT_SCAN = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_SLOT_SCAN)
+    return _SLOT_SCAN
+
+
 
 
 def main() -> int:
@@ -242,30 +265,15 @@ def main() -> int:
         # literal is matched across newlines, because the survivor that slipped this
         # PR's first sweep was `all 30\n  slots` wrapped inside doctor/SKILL.md's
         # frontmatter — invisible to a line-oriented `grep -n '30 slots'`. Grepping the
-        # old VALUE also misses the class; this greps the SHAPE.
-        import re as _re
+        # old VALUE also misses the class; this greps the SHAPE. The predicate itself
+        # now lives in slot_count_scan.py, shared with /flow:doctor Check 2.5 — see
+        # the shell-parity check below for why that sharing is the point.
         root = Path(__file__).resolve().parents[3]
-        stale, scanned = [], 0
-        for sub in ("plugins", "template"):
-            for f in sorted((root / sub).rglob("*")):
-                if not f.is_file() or f.suffix not in (".md", ".json", ".sh", ".template"):
-                    continue
-                if "evals/" in str(f) or f.name == "plan-critic.md":
-                    continue  # harnesses + the prose example that teaches the failure
-                try:
-                    text = f.read_text(encoding="utf-8")
-                except (OSError, UnicodeDecodeError):
-                    continue
-                scanned += 1
-                for m in _re.finditer(r"(\d+)\s+slots?\b", text):
-                    line_start = text.rfind("\n", 0, m.start()) + 1
-                    prefix = text[line_start:m.start()].lstrip()
-                    # Shell comments only. A markdown heading also starts with "#",
-                    # so exempting it repo-wide would let "## Config (30 slots)" hide.
-                    if f.suffix == ".sh" and prefix.startswith("#"):
-                        continue
-                    if m.group(1) != str(len(props)):
-                        stale.append(f"{f.relative_to(root)}: {m.group(0)!r}")
+        stale, scanned = _slot_scan().scan_paths(
+            [root / "plugins", root / "template"], expected=len(props),
+            exclude_substrings=("evals/", "plan-critic.md"),  # harnesses + the prose
+                                                               # example teaching the failure
+            root=root)
         # Vacuous-pass guard: an empty sweep (moved dirs, installed-plugin layout)
         # would otherwise go green having measured nothing — the exact class this
         # same commit fixed in the jq-parity check.
@@ -273,6 +281,64 @@ def main() -> int:
               f"sweep scanned {scanned} files under {root} — it measured nothing")
         check("no-stale-slot-count-in-shipped-surfaces", not stale,
               "shipped surfaces contradict the schema count: " + "; ".join(stale))
+
+        # ---- the hoisted predicate itself: prove the wrap-tolerant case, and prove
+        # doctor's Check 2.5 shell block actually delegates to it rather than having
+        # regrown its own line-oriented grep (the exact regression this PR closes) ----
+        with tempfile.TemporaryDirectory() as scratch:
+            wrapped = Path(scratch) / "WRAPPED.md"
+            # The literal FB-0079 shape: the number and "slots" separated by a newline
+            # inside what would be YAML frontmatter — invisible to `grep -n`.
+            wrapped.write_text("---\nname: x\ndescription: all 30\n  slots\n---\n")
+            lib_stale, lib_scanned = _slot_scan().scan_paths([wrapped], expected=len(props))
+            check("slot-count-scan-catches-wrapped-fixture",
+                  lib_scanned == 1 and any("30" in s for s in lib_stale),
+                  f"scan_paths() did not catch a newline-wrapped '30\\n  slots' "
+                  f"(scanned={lib_scanned}, stale={lib_stale}) — the exact FB-0079 miss")
+
+            doctor_skill_text = SKILL_DOCTOR.read_text(encoding="utf-8") if SKILL_DOCTOR.exists() else ""
+            check("doctor-check-2.5-invokes-shared-scan",
+                  "slot_count_scan.py" in doctor_skill_text,
+                  "Check 2.5 must invoke the shared slot_count_scan.py predicate, not "
+                  "a private grep — otherwise the consumer-facing check can silently "
+                  "regrow the exact line-oriented gap FB-0079 fixed internally")
+            block = fenced_block(doctor_skill_text, "Check 2.5 —")
+            check("doctor-check-2.5-block-extractable", block is not None,
+                  "could not extract Check 2.5's executable shell block")
+            if block is not None:
+                # Run the REAL shell block (not a grep of its text) against the same
+                # wrapped fixture, from a temp cwd, pointed at this checkout's plugin
+                # root via CLAUDE_PLUGIN_ROOT so SCHEMA + LIB resolve without touching
+                # the real repo's own CLAUDE.md. This is the parity guarantee: if
+                # Check 2.5 ever regrows a private line-oriented grep, this check goes
+                # red on the exact fixture the library-only check above already passes.
+                (Path(scratch) / "CLAUDE.md").write_text("all 30\n  slots\n")
+                plugin_root = HERE.parent  # plugins/flow
+                env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(plugin_root))
+                proc = subprocess.run(["sh", "-c", block], cwd=scratch, env=env,
+                                       capture_output=True, text=True, timeout=10)
+                out = proc.stdout
+                check("doctor-check-2.5-shell-catches-wrapped-fixture",
+                      "[WARN]" in out and "30" in out,
+                      f"Check 2.5's real shell block did not flag a newline-wrapped "
+                      f"'30\\n  slots' in CLAUDE.md (stdout={out!r})")
+
+                # PASS-path regression case (staff-review altitude lens): the WARN case
+                # above never exercises RC=0's SCANNED_COUNT= extraction, so a future
+                # rewording of slot_count_scan.py's human-readable line could silently
+                # blank that field and nothing here would catch it. Separate scratch
+                # dir — a clean, matching count, not the wrapped-stale fixture above.
+                with tempfile.TemporaryDirectory() as clean_scratch:
+                    (Path(clean_scratch) / "CLAUDE.md").write_text(
+                        f"this project uses {len(props)} slots\n")
+                    proc_pass = subprocess.run(["sh", "-c", block], cwd=clean_scratch, env=env,
+                                                capture_output=True, text=True, timeout=10)
+                    out_pass = proc_pass.stdout
+                    check("doctor-check-2.5-shell-pass-path-renders-scanned-count",
+                          "[PASS]" in out_pass and "scanned 1 file(s)" in out_pass,
+                          f"Check 2.5's real shell block did not render a real scanned "
+                          f"count on a clean, matching doc (stdout={out_pass!r}) — the "
+                          f"SCANNED_COUNT= extraction may have silently gone blank")
     else:
         check("schema-exists", False, "flow.config.schema.json missing")
 

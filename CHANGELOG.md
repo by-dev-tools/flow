@@ -10,6 +10,19 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.36.0 — 2026-08-27
+
+**`/flow:doctor` Check 2.5's slot-count guard is now the same wrap-tolerant predicate flow runs on itself.**
+
+*(Versioned v1.36.0, not v1.33.0 — v1.33.0–v1.36.0 were all claimed by other concurrently open PRs (two of which, v1.33.0 and v1.34.0, shipped below before this one); re-checked at each rebase and took the next free minor above every live claim. See `dev-docs/history.md` 2026-08-27 for the account.)*
+
+- **The consumer-facing check was weaker than flow's own internal one.** FB-0079 hardened flow's internal slot-count sweep after a wrapped `all 30\n  slots` slipped a line-oriented grep inside `doctor/SKILL.md`'s own YAML frontmatter. Check 2.5 — the guard every consumer project runs — still had every property that produced that miss: line-oriented, a single-literal-space pattern, and doc-ish-only scan targets.
+- **Hoisted to one shared predicate.** New `skills/doctor/lib/slot_count_scan.py` (stdlib) matches `N slots` claims over each file's full text rather than line-by-line, so a wrapped claim is caught regardless of where the line breaks. Both flow's internal eval harness and Check 2.5's own shell block now call the identical module — no more two implementations that can silently drift apart.
+- **Human-readable survivor output.** Stale claims are reported with a line number and plain words ("13 slots"), not a Python `repr()` that would leak a literal `\n` escape sequence to the terminal.
+- **Also added `bootstrap.sh`** to Check 2.5's scan targets — a harmless, zero-cost addition, though narrower than first scoped (it doesn't close the specific gap it was drafted to close; see `dev-docs/history.md` for the honest accounting).
+
+**Breaking changes:** none. The check's output shape and its historical-narrative tolerance (a `#`-prefixed `.sh` comment is still exempt) are unchanged; only its matching precision improved.
+
 ## v1.35.0 — 2026-08-27
 
 **A design brief gets its own review pass — before any prototype gets built.**
@@ -49,6 +62,7 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 **Breaking changes:** none. Consumers who already deleted local `.claude/rules/{general,plan-discipline,documentation,exploration}.md` copies per `docs/migration.md`'s Stage 2 guidance now correctly receive the plugin's content for the first time — previously they'd have received none. Consumers who never had local copies see the 4 rules become active where they were silently inert before.
 
 ---
+
 ## v1.32.0 — 2026-08-26
 
 **A session can no longer claim verification it had no way to perform — or be refused the honest admission that it couldn't.**
