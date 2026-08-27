@@ -156,11 +156,15 @@ function extractDates(text) {
     .filter(d => !isNaN(d.getTime()));
 }
 
-// Grabs the content of every line containing a `**Label**` bullet (not just the first) —
-// nothing pins whether a repeated firing is appended onto the existing bullet's line or
-// written as its own new bullet line, so both shapes are unioned rather than assuming one.
+// Grabs the content of every LINE THAT STARTS WITH a `- **Label**` bullet (not just the
+// first one) — nothing pins whether a repeated firing is appended onto the existing bullet's
+// line or written as its own new bullet line, so both shapes are unioned rather than assuming
+// one. Anchored to the bullet marker (^\s*-\s*), not just "contains **Label**" anywhere in the
+// line: an unanchored match would also fire on a DIFFERENT field's prose that happens to
+// mention "**Fire log**" in passing (e.g. a Pattern field discussing the feature itself),
+// silently reading unrelated dates as real activity and defeating --dead's whole purpose.
 function fieldLines(content, label) {
-  const re = new RegExp(`\\*\\*${label}\\*\\*[^\\n]*`, 'g');
+  const re = new RegExp(`^\\s*-\\s*\\*\\*${label}\\*\\*.*$`, 'gm');
   return content.match(re) || [];
 }
 
@@ -168,23 +172,34 @@ function fieldLines(content, label) {
 // each tier reached only if the one before yields nothing parseable:
 //   most recent Fire log date  →  First seen date  →  file mtime.
 // Never throws — pre-this-feature entries with no Fire log (or no First seen) bullet at all
-// still resolve to a usable date via mtime.
+// still resolve to a usable date via mtime. `activitySource` names which tier resolved it, so
+// callers can distinguish "known-quiet since a real date" from "no dates recorded at all" —
+// collapsing that distinction into a bare day-count would make a legacy entry with no dates
+// indistinguishable from one that's genuinely been fired recently and just happens to read old.
+// NOTE: the mtime tier is a last resort, not a durable timestamp — a re-materialized directory
+// (fresh checkout, backup restore, cross-machine sync) resets mtime to the copy time, so an
+// entry with no Fire log/First seen dates can transiently under-flag as fresh regardless of its
+// true age. Accepted tradeoff (parse-never-throws beats a hard failure on legacy entries); the
+// periodic audit is agent-reviewed downstream, which bounds the impact.
 function parseEntry(path) {
   const content = readFileSync(path, 'utf-8');
   const fireDates = extractDates(fieldLines(content, 'Fire log').join(' '));
   const firstSeenDates = extractDates(fieldLines(content, 'First seen').join(' '));
   const firstSeen = firstSeenDates.length ? firstSeenDates[0] : null;
 
-  let lastActivity;
+  let lastActivity, activitySource;
   if (fireDates.length) {
     lastActivity = new Date(Math.max(...fireDates.map(d => d.getTime())));
+    activitySource = 'fire';
   } else if (firstSeen) {
     lastActivity = firstSeen;
+    activitySource = 'first-seen';
   } else {
     lastActivity = statSync(path).mtime;
+    activitySource = 'mtime';
   }
 
-  return { fireCount: fireDates.length, lastActivity };
+  return { fireCount: fireDates.length, lastActivity, activitySource };
 }
 
 function daysSince(date) {
@@ -209,15 +224,22 @@ if (args.has('--list')) {
 
 if (args.has('--dead')) {
   let days = DEAD_ENTRY_DAYS;
-  for (const a of args) {
-    const m = a.match(/^--days=(.+)$/);
-    if (m) {
-      const parsed = parseInt(m[1], 10);
-      if (Number.isInteger(parsed) && parsed > 0) {
-        days = parsed;
-      } else {
-        console.error(`⚠️ --days=${m[1]} is not a positive integer; using default ${DEAD_ENTRY_DAYS}`);
-      }
+  // Only the FIRST --days= occurrence is honored (valid or not) — a second occurrence is
+  // silently ignored rather than potentially overwriting `days` again with a message that no
+  // longer matches what's in effect (e.g. `--days=30 --days=bogus` warning about `bogus` while
+  // `days` is actually still 30 from the first flag).
+  const daysFlag = [...args].find(a => a.startsWith('--days='));
+  if (daysFlag) {
+    // Validate the RAW string, not parseInt's output — parseInt('60.9')=60 and
+    // Number.isInteger(60)===true, so checking only the parsed value silently truncates
+    // fractional/exponential input instead of rejecting it. `(.*)$` (not `(.+)$`) also
+    // catches a bare `--days=` with nothing after the `=` (e.g. an unset shell variable
+    // expansion) rather than letting it slip past the flag match entirely.
+    const raw = daysFlag.slice('--days='.length);
+    if (/^\d+$/.test(raw) && parseInt(raw, 10) > 0) {
+      days = parseInt(raw, 10);
+    } else {
+      console.error(`⚠️ --days=${raw} is not a positive integer; using default ${DEAD_ENTRY_DAYS}`);
     }
   }
 
@@ -234,9 +256,11 @@ if (args.has('--dead')) {
     process.exit(0);
   }
 
+  const sourceLabel = { fire: 'fire', 'first-seen': 'first-seen', mtime: 'mtime — no Fire log/First seen found' };
   for (const e of stale) {
     const d = Math.floor(e.daysSinceActivity);
-    console.log(`${e.name}  (${d}d since last activity, ${e.fireCount} fire${e.fireCount === 1 ? '' : 's'})`);
+    const iso = e.lastActivity.toISOString().slice(0, 10);
+    console.log(`${e.name}  (${iso}, ${d}d since last activity via ${sourceLabel[e.activitySource]}, ${e.fireCount} fire${e.fireCount === 1 ? '' : 's'})`);
   }
   console.log(`${stale.length} entr${stale.length === 1 ? 'y' : 'ies'} stale beyond ${days} days — archive candidates for the periodic audit.`);
   process.exit(0);

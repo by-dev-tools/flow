@@ -142,7 +142,7 @@ computes the date arithmetic itself.
 **Scope (in):**
 
 1. **`plugins/flow/tools/memory/check.mjs`** — a lenient date-extracting parser
-   (`extractDates`/`fieldLine`/`parseEntry`) reading the `Fire log` and `First seen` bullets
+   (`extractDates`/`fieldLines`/`parseEntry`) reading the `Fire log` and `First seen` bullets
    already written by the existing freehand `ship § 4b.v` append (no format pinning needed —
    the parser just regex-scans for `YYYY-MM-DD` substrings), a three-tier `lastActivity`
    fallback (last fire → first seen → mtime), and the new `--dead [--days=N]` flag. `--list`,

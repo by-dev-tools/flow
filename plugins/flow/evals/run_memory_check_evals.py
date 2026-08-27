@@ -26,6 +26,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -119,6 +120,27 @@ def build_fixture(root: Path) -> Path:
     (memory_dir / "feedback_split_fire_lines.md").write_text(
         entry_text(first_seen_days_ago=200, fire_days_ago=[90, 10], fire_days_ago_split=True))
 
+    # Real Fire log is a single stale fire (90d ago), but the Pattern field's PROSE bolds
+    # "**Fire log**"/"**First seen**" while discussing the feature itself, with recent dates
+    # nearby. An unanchored "contains **Label** anywhere in the line" match would misread those
+    # prose dates as real activity and report this entry as fresh — it must still be flagged.
+    (memory_dir / "feedback_prose_mentions_fire_log.md").write_text(
+        f"- **Source** — test fixture\n"
+        f"- **First seen** — {days_ago(200)} on branch test\n"
+        f"- **Fire log** — {days_ago(90)}\n"
+        f"- **Pattern** — do not confuse this with **Fire log** semantics from {days_ago(10)} "
+        f"or **First seen** claims from {days_ago(5)}\n"
+    )
+
+    # No Fire log, no First seen — mtime is the ONLY resolvable tier — but backdated past the
+    # default 60d threshold, so this must actually surface as stale via mtime (unlike
+    # feedback_legacy_no_dates.md above, whose mtime is "now" and stays fresh). Exercises the
+    # third fallback tier in the STALE set, not just the "doesn't crash" path.
+    stale_mtime_path = memory_dir / "feedback_stale_mtime_only.md"
+    stale_mtime_path.write_text("- **Source** — test fixture\n- **Pattern** — no dates, old mtime\n")
+    backdated = time.time() - (90 * 86400)
+    os.utime(stale_mtime_path, (backdated, backdated))
+
     return memory_dir
 
 
@@ -149,12 +171,18 @@ def main() -> int:
             ("notes.md", False, "not feedback_-prefixed"),
             ("feedback_split_fire_lines.md", False,
              "fires on two separate Fire-log bullet lines; most recent (10d) must still win"),
+            ("feedback_prose_mentions_fire_log.md", True,
+             "real fire is 90d ago; Pattern-field prose mentioning **Fire log** must NOT count"),
+            ("feedback_stale_mtime_only.md", True, "no dates at all; mtime backdated 90d"),
         ]
         for name, expected, reason in EXPECTED_DEFAULT:
             verb = "flags" if expected else "does NOT flag"
             check(f"--dead: {verb} {name} ({reason})", (name in out) == expected, f"stdout={out!r}")
         check("--dead: reports a fire count alongside each stale entry",
               "0 fires" in out and "1 fire" in out, f"stdout={out!r}")
+        check("--dead: enriches each line with an ISO date and the resolving tier",
+              f"{days_ago(90)}" in out and "via fire" in out and "via first-seen" in out
+              and "via mtime" in out, f"stdout={out!r}")
 
         # ---- --dead --days=30: narrower window catches feedback_mid_fire.md too ----
         rc, out, err = run_check(["--dead", "--days=30"], memory_dir)
@@ -166,13 +194,32 @@ def main() -> int:
         check("--dead --days=30: still does not flag feedback_fresh_fire.md",
               "feedback_fresh_fire.md" not in out, f"stdout={out!r}")
 
-        # ---- malformed --days value: falls back to default, warns, doesn't crash ----
-        rc, out, err = run_check(["--dead", "--days=bogus"], memory_dir)
-        check("--dead --days=bogus: exits 0 (degrades, doesn't crash)", rc == 0,
-              f"rc={rc} stderr={err!r}")
-        check("--dead --days=bogus: warns on stderr rather than silently defaulting",
+        # ---- malformed --days values: each falls back to default, warns, doesn't crash ----
+        # Validated against the RAW string, not parseInt()'s lenient coercion — parseInt("30.5")
+        # is a valid integer (30), so a fractional/exponential/empty value must be caught before
+        # parseInt runs, not after.
+        for bad in ["bogus", "", "30.5", "1e5", "-5", "0"]:
+            rc, out, err = run_check(["--dead", f"--days={bad}"], memory_dir)
+            check(f"--dead --days={bad!r}: exits 0 (degrades, doesn't crash)", rc == 0,
+                  f"rc={rc} stderr={err!r}")
+            check(f"--dead --days={bad!r}: warns on stderr rather than silently defaulting",
+                  "not a positive integer" in err, f"stderr={err!r}")
+            check(f"--dead --days={bad!r}: still applies the default 60d threshold",
+                  "feedback_stale_fire.md" in out and "feedback_mid_fire.md" not in out,
+                  f"stdout={out!r}")
+
+        # ---- duplicate --days flags: only the FIRST occurrence is honored, so the stderr
+        # message always matches the days value actually in effect (never warns about a second
+        # flag while silently keeping an earlier one, or vice versa). Invalid-first order proves
+        # the invariant directly: the message names 'bogus' AND the effective threshold stays
+        # the default (60d) — a later valid '30' is never reached, so feedback_mid_fire.md (45d)
+        # is NOT flagged (45 < 60), the same as the single --days=bogus case above.
+        rc, out, err = run_check(["--dead", "--days=bogus", "--days=30"], memory_dir)
+        check("--dead --days=bogus --days=30: exits 0", rc == 0, f"rc={rc} stderr={err!r}")
+        check("--dead --days=bogus --days=30: warns about the FIRST (invalid) occurrence",
               "not a positive integer" in err, f"stderr={err!r}")
-        check("--dead --days=bogus: still applies the default 60d threshold",
+        check("--dead --days=bogus --days=30: effective threshold is the default (60d), "
+              "not the later 30 — message and behavior agree",
               "feedback_stale_fire.md" in out and "feedback_mid_fire.md" not in out,
               f"stdout={out!r}")
 
@@ -187,12 +234,12 @@ def main() -> int:
 
         # ---- regression: --count and --list unaffected by this change ----
         rc, out, _ = run_check(["--count"], memory_dir)
-        check("--count: regression, matches fixture's 7 feedback_ entries",
-              rc == 0 and out.strip() == "7", f"rc={rc} stdout={out!r}")
+        check("--count: regression, matches fixture's 9 feedback_ entries",
+              rc == 0 and out.strip() == "9", f"rc={rc} stdout={out!r}")
 
         rc, out, _ = run_check(["--list"], memory_dir)
-        check("--list: regression, still lists all 7 feedback_ entries",
-              rc == 0 and out.count("feedback_") == 7, f"rc={rc} stdout={out!r}")
+        check("--list: regression, still lists all 9 feedback_ entries",
+              rc == 0 and out.count("feedback_") == 9, f"rc={rc} stdout={out!r}")
 
         # ---- regression: --audit-due still runs; marker saved/restored to avoid polluting
         # real ship-counter state (the marker lives beside check.mjs, not in memory_dir).

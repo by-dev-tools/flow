@@ -96,6 +96,45 @@ computed twice per stale entry (once to filter, once to print) — now computed 
 through. The eval's 7 near-identical `--dead`-default presence/absence checks collapsed into one
 data-driven table. Reuse and efficiency lenses returned clean.
 
+**`/flow:staff-review` (4 lenses) caught one real correctness bug and three cheap-nit
+improvements, all fixed in-tree; two lenses N/A'd correctly.** Design-engineer lens: no visual
+surface in this diff (confirmed by inspection, not assumed) — correctly returned no findings.
+Staff-engineer lens found the more serious issue: `fieldLines`' regex still matched
+`**Fire log**` (or `**First seen**`) **anywhere in a line**, not just on the bullet line itself —
+so a *different* field's prose (e.g. a `Pattern` field discussing the feature and happening to
+bold "**Fire log**") could have its own nearby dates misread as real activity, silently making a
+genuinely-stale entry look fresh and defeating `--dead`'s entire purpose. Fixed by anchoring the
+regex to the bullet marker (`^\s*-\s*\*\*Label\*\*.*$`, multiline). Added
+`feedback_prose_mentions_fire_log.md` (a real 90-day-old fire, with Pattern-field prose bolding
+"Fire log"/"First seen" near recent dates that must not count) to pin it, and confirmed the fix
+is load-bearing by temporarily reverting the regex and re-running the harness (red: 1 failure on
+that exact fixture; green after restoring the fix). UX-designer + staff-engineer lenses
+independently converged on the same `--days=` validation gap: `parseInt` accepts fractional
+(`30.5`→30) and the original regex silently skipped an empty value (`--days=` with nothing after
+`=`), so both bypassed the PR's own "loud warning, never a silent wrong-default" contract (the
+Spec-walk's own words). Fixed by validating the raw string (`/^\d+$/`) before `parseInt` rather
+than checking `Number.isInteger` after it. UX-designer also found that passing `--days=` twice
+could set a value from the first flag, then print a warning about a *different*, second flag —
+message and behavior disagreeing. Fixed by honoring only the first `--days=` occurrence
+(valid or not) and never inspecting a second one, so the message always describes what's actually
+in effect; and that `--dead`'s printed line carried only a relative day-count while `--list`
+prints an absolute ISO date, forcing a reader to compute the date themselves. Push-further lens
+(independently) found the same shape from a different angle: the day-count alone can't
+distinguish "known-quiet since a real date" from "no dates recorded at all, mtime is just
+noise" — the exact ambiguity `parseEntry`'s three-tier fallback exists to resolve, thrown away
+before printing. Both close with one fix: `parseEntry` now returns `activitySource`
+(`fire`/`first-seen`/`mtime`), and the `--dead` line prints the ISO date plus which tier resolved
+it (e.g. `2026-XX-XX, 90d since last activity via fire, 1 fire`) — added a backdated-mtime
+fixture (`feedback_stale_mtime_only.md`, via `os.utime`) since no prior fixture actually exercised
+the `mtime` tier in the *stale* set. Staff-engineer's remaining findings were accepted as
+documented, no-action tradeoffs: the mtime-fallback-resets-on-rehome case (now called out
+explicitly in `parseEntry`'s comment), `DEAD_ENTRY_DAYS` as a second hardcoded constant matching
+the `AUDIT_INTERVAL` precedent (already reasoned about in this entry's Technical decisions), and
+the eval's dependency on a writable `~/.claude/projects/` (already documented in the harness's own
+docstring) — plus a cosmetic `fieldLine`→`fieldLines` doc-drift fix in `plan.md`. Reviewer notes
+kept in this history entry rather than a separate PR-body section since this is a LOCAL-ONLY
+review (no PR existed yet) folded directly into the ship pipeline that opens one.
+
 **Three-surface note.** Entirely inside `plugins/flow/` (shipped plugin artifact) plus this
 `dev-docs/` entry and `.github/workflows/ci.yml`. No `.claude/`/`tools/` (project-dev infra)
 touched.
