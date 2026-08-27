@@ -600,8 +600,12 @@ Plugin-shipped rules ship as path-activated skills at `${CLAUDE_PLUGIN_ROOT}/ski
 if ! command -v claude >/dev/null 2>&1; then
   echo "[SKIP] plugin-shipped rule-skills check — 'claude' CLI not on PATH; cannot query the loader"
 else
-  SKILLS_LINE=$(claude plugin details flow@flow 2>/dev/null | grep -E "^[[:space:]]*Skills \(")
-  if [ -z "$SKILLS_LINE" ]; then
+  DETAILS_OUT=$(claude plugin details flow@flow 2>&1)
+  DETAILS_RC=$?
+  SKILLS_LINE=$(echo "$DETAILS_OUT" | grep -E "^[[:space:]]*Skills \(")
+  if [ -z "$SKILLS_LINE" ] && [ "$DETAILS_RC" -ne 0 ]; then
+    echo "[WARN] plugin-shipped rule-skills check — 'claude plugin details flow@flow' errored (exit $DETAILS_RC): $DETAILS_OUT"
+  elif [ -z "$SKILLS_LINE" ]; then
     echo "[SKIP] plugin-shipped rule-skills check — 'claude plugin details flow@flow' returned no Skills line (is flow@flow installed?)"
   else
     MISSING=""
