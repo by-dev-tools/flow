@@ -2,6 +2,10 @@
 
 ## Current Focus
 
+**▶ Active (this branch, `conductor/3-memory-effectiveness-instrumentation`, v1.34.0, shipping): Memory-effectiveness instrumentation (roadmap #3) — reduced to `--dead` only.** Roadmap #3 drafted three pieces (fire-count instrumentation, dead-entry surfacing, fire-rate×recency ranking of injection). The plan's own analysis surfaced the ceiling: flow doesn't control what the harness injects into context, so "rank injection" could only ever reorder a curation-facing `--list` over a corpus capped at 30 files — real machinery for a cosmetic payoff. The human cut scope after plan review to **`--dead [--days=N]`** (default 60d) only — the one piece with a genuine consumer (the periodic audit at `/flow:ship` § 4b.vi). See the "PR — Memory-effectiveness instrumentation" block below for the full Spec-walk. FB-0092.
+
+**▶ Active (this branch, KEYSTONE — plan APPROVED at the gate, executing): the `toolchain` manifest kind (canonical §4.2 / §5 Step 1).** Flow can say "there is no runnable target" but not "runnable in principle, not on *this* host" — so a cloud Linux workspace on an `ios` project is mechanically told SHOULD-RE-RUN for the only honest skip it has. Adds a `toolchain` KIND_COPY record (`blocked` + `CHECK_ONLY`), a **validated** LEGITIMATE branch in the skip auditor (toolchain-shaped reason **AND** a ground-truth `absent()` probe — the human overruled my reason-independent recommendation, correctly), a minimal `/flow:verify-build` § 1.2 producer so the skip is actually emitted, and the Step 2a.3 routing that turns the verdict into a draft-manifest entry. v1.32.0. Steps 3+ (placement rule, `needs-mac-verify`, `/verify-queue`, orchestrator) explicitly NOT built. See the "PR — `toolchain` manifest kind" block below.
+
 **▶ EXECUTED, shipping (this branch, `conductor/phase-00-rules-as-skills-hooks-fix-fb-0085`): Phase 00 — fix two shipped-but-never-loading flow features (rules→skills, hooks declaration; FB-0085), v1.33.0.** Standalone prerequisite from `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` §17/Phase 00, independent of any Codex/Cursor porting work. Plan approved with both escalated decisions accepted as recommended (00b hooks stay opt-in; 00c one-time content sync + explicit sync-note, not a full merge; 00d no bootstrap.sh change). Executed: skill count 17→21 (`claude plugin details` confirms live), full eval suite green, `/flow:critique-plan` findings fixed pre-execution. See the "PR — Phase 00" block below for the full Spec-walk + confidence verdicts, and `dev-docs/history.md` 2026-08-27 for the shipped write-up.
 
 ## PR — Phase 00: fix two shipped-but-never-loading flow features (this branch, EXECUTED — shipping)
@@ -99,6 +103,106 @@ The handoff's wording ("Fix the consumer path... copies only safety.md.template"
 **▶ Shipped (v1.27.0, merged #88, `783c9fcc`): flow's ephemeral scratch moves from `/tmp` to a repo-local `.flow/` — restoring the skip-legitimacy gate and ending cross-project collisions (FB-0082, SAFETY).** Part B of a consumer dogfood report on flow 1.20.0, implemented first because the finding that came out of planning outranked it: **`/flow:audit-skips` has been inert on every ship since v1.13.0.** A forked skill cannot see a `/tmp` file the parent shell wrote — established by a same-file A/B (full report from the parent, `no stage report to audit` from the fork), which also settles the open `roadmap.md` § Exploration question as *systematic*. Because that message is also the legitimate standalone no-op, nothing ever surfaced it. Fix: every cross-boundary artifact moves to `<repo-root>/.flow/` (visible to both sides **and** unique per worktree by construction, so the cross-project clobbering of reviewer diffs the reporter observed cannot recur), plus a `flow_stamp` readers refuse on mismatch — namespacing alone can't catch a stale handoff from an earlier branch in the same worktree. Also fixed in-pass, same bug class: a `referenceGlob` matching nothing rendered **no** `## Reference documents` section at all, and flow's own config was missing the slot — so every `/flow:critique-plan` run in this session was document-blind. New `scripts/flow_scratch.py` + `evals/run_scratch_isolation_evals.py` (56 checks, the first harness here to execute a SKILL.md `!`-block). **Part A (verdict provenance + `UNDETERMINED`, FB-0074) is stacked on top of this branch.**
 
 **▶ Prior (v1.21.1, shipped #83): audit-skips can't silently no-op on a broken handoff + Swift preflight `ls -d` glob fix (FB-0073).** Two consumer-cold-run bugs drained from the `/flow:contribute` queue and applied directly to a **ready** PR (per FB-0073 — high-confidence, eval-pinned fixes don't get parked in a draft): (1) `skills/audit-skips/lib/skip-audit-checks.py` now **exits non-zero** (stderr diagnostic, clean stdout) on a present-but-malformed handoff instead of `return 0` + `{"error":…,"stages":[]}` — so the skip-legitimacy gate can no longer read an engine failure as "clean, nothing to audit"; the SKILL routes a distinct `engine_error` (loud → draft) vs the absent-handoff `note` vs a valid-empty audit. (2) `template/stacks/swift/tools/preflight/check.sh` uses `ls -d *.xcodeproj` (bundle name) not bare `ls` (bundle contents → `-project project.pbxproj`). New `run_skip_audit_evals.py` cases; the removed `/flow:ship` Step 2a per-caller guard + the systemic fork-`/tmp`-transport question routed to `roadmap.md` § Exploration (per the `/simplify` altitude lens). See history.md "audit-skips can't silently no-op" + the Spec-walk there.
+
+## PR — Memory-effectiveness instrumentation (this branch, roadmap #3, reduced scope)
+
+> **Scope cut by the orchestrator/human after plan review, 2026-08-27.** The initial plan
+> covered three pieces from `roadmap.md` § Next "#3": (a) fire-count instrumentation, (b)
+> dead-entry surfacing, (c) fire-rate×recency ranking of injection. Cut to **(b) only**. The
+> plan's own analysis surfaced the reason: flow's `check.mjs` only *reports on* the memory
+> directory — the harness's native auto-memory loader is what actually reads
+> `~/.claude/projects/<canonical>/memory/`, and flow has no index or injection-order hook to
+> sort. So (c) could only ever reorder a curation-facing `--list` output over a corpus capped
+> at 30 files, not what the model actually sees — real machinery for a cosmetic payoff. (a)
+> (a deterministic `--record-fire` writer) existed only to make (c)'s ranking robust to
+> freehand date formatting, so it fell with (c). `--dead` is the one piece with a genuine
+> downstream consumer: the periodic audit agent at `/flow:ship` § 4b.vi, which previously had
+> to eyeball Fire-log dates across up to 30 entries by hand. See FB-0092.
+
+**Restated request:** `dev-docs/roadmap.md` § Next "#3 — Memory-effectiveness instrumentation":
+flow's failure-pattern memory corpus is count-capped + mtime-sorted with a manually-annotated
+Fire log, and nothing measures whether an entry ever fired. Reduced scope: mechanize the
+"dead entry" half of the periodic audit.
+
+**Mode:** feature (code + eval + docs), fully inside `plugins/flow/` — `tools/memory/check.mjs`
+is a **shipped plugin artifact** (referenced via `${CLAUDE_PLUGIN_ROOT}` from `/flow:ship`,
+`/flow:ship-spike`, `/flow:post-merge`), not dev-tooling — corrected from the original dispatch
+brief, which cited it as a `tools/model-measure/`-style dev tool. `platform: library` ⇒
+`/flow:verify-build` + `/flow:accessibility-review` self-skip; the new eval harness is the
+behavioral gate.
+
+**Goal:** `tools/memory/check.mjs --dead [--days=N]` (default 60, matching the number already
+committed in `/flow:ship` § 4b.vi's prose) mechanically lists memory entries with no activity —
+most recent `Fire log` date, falling back to `First seen`, falling back to file mtime — older
+than the threshold. `/flow:ship` § 4b.vi now runs it before spawning the periodic-audit Explore
+agent and feeds its output in as a deterministic candidate list; the agent still makes the
+archive-vs-keep judgment call (a slow-firing pattern can still be correct), it just no longer
+computes the date arithmetic itself.
+
+**Scope (in):**
+
+1. **`plugins/flow/tools/memory/check.mjs`** — a lenient date-extracting parser
+   (`extractDates`/`fieldLine`/`parseEntry`) reading the `Fire log` and `First seen` bullets
+   already written by the existing freehand `ship § 4b.v` append (no format pinning needed —
+   the parser just regex-scans for `YYYY-MM-DD` substrings), a three-tier `lastActivity`
+   fallback (last fire → first seen → mtime), and the new `--dead [--days=N]` flag. `--list`,
+   `--count`, `--audit-due`, and the default summary are all **unchanged** — this PR only adds
+   the new flag.
+2. **`plugins/flow/skills/ship/SKILL.md` § 4b.vi** — runs `--dead` before spawning the audit
+   agent, passes its output in as input; the "60+ days" language in the prose is now backed by
+   a mechanical check instead of being purely descriptive.
+3. **`plugins/flow/skills/ship-spike/SKILL.md`** — mirrored bullet updated to match (inherits
+   most of its text by reference to ship's § 4b, so only the one summary line changed).
+4. **`plugins/flow/docs/workflow.md`** § "Continuous improvement" guardrail 5 — one sentence
+   noting the staleness half is now mechanically computed.
+5. **`plugins/flow/evals/run_memory_check_evals.py`** (new) — builds a real fixture memory dir
+   under `~/.claude/projects/` (required by `check.mjs`'s own path-validation guard) with
+   synthetic entries spanning: multi-fire recent, single-fire-long-ago, first-seen-fallback on
+   both sides of the default boundary, a `--days=` override case, a legacy entry with no date
+   bullets at all (malformed-input path), an empty memory dir, and regression coverage for
+   `--count`/`--list`/`--audit-due` (the last one saves/restores the shared `.last-audit`
+   marker file, which lives beside the script per-install rather than per-fixture-dir, so the
+   eval doesn't perturb real ship-counter state). Wired into `.github/workflows/ci.yml`
+   (verified against the repo's own harness/runner join check).
+
+**Scope (out):**
+
+- Fire-rate×recency ranking of `--list`, `--record-fire`, the at-cap lowest-N archive hint,
+  and pinning the `Fire log` field's exact write syntax in `rules/documentation.md` — all cut
+  per the scope decision above; none of them are load-bearing for `--dead`.
+- The known `check.mjs` worktree mis-resolution bug (`roadmap.md:215`) — pre-existing, unrelated.
+- A new `flow.config.json` schema slot for the dead-entry-day threshold — hardcoded constant
+  (`DEAD_ENTRY_DAYS = 60`), mirroring the existing unconfigurable `AUDIT_INTERVAL = 5`. Moot
+  now that the original plan's Decision 1 (days vs. ships) is the only surviving judgment call,
+  already resolved calendar-days by the human.
+- `post-merge/SKILL.md` § 4a — no change needed; without `--record-fire`, there's no second
+  write path to reconcile against it.
+
+**Spec-walk (acceptance criteria):**
+
+- [x] `check.mjs --dead` (default 60d) and `--dead --days=N` return the correct stale-entry
+      set on a fixture straddling the boundary. (pinned by
+      `run_memory_check_evals.py`'s boundary + override cases; verified green locally)
+- [x] A legacy entry with no `Fire log`/`First seen` bullets at all still parses without
+      crashing anywhere `--dead` touches it. (pinned by
+      `run_memory_check_evals.py`'s legacy-entry case)
+- [x] A malformed `--days=` value degrades to the default with a loud stderr warning, never a
+      silent wrong-default or a crash. (pinned by the `--days=bogus` case)
+- [x] `--count`, `--list`, `--audit-due` behavior is unchanged from before this PR. (pinned by
+      the harness's regression cases; `--audit-due`'s shared `.last-audit` marker is
+      saved/restored around the test)
+- [x] `/flow:ship` § 4b.vi feeds `--dead` output to the audit agent instead of leaving it to
+      eyeball dates. (manual read of the `ship/SKILL.md` diff)
+- [x] `run_memory_check_evals.py` green locally and wired into `ci.yml`; the repo's own
+      harness/runner join check (`ci.yml` "every eval harness is wired" step) passes.
+- [x] No slot-count fan-out — no new `flow.config.json` schema slot added; `workflow.md`'s "33
+      slots" line is unaffected (verified: schema still has 40 top-level property keys, same
+      as before this PR).
+
+**Decision resolved by the human (not re-litigated here):** dead-entry threshold is
+calendar-days, default 60 — matches the number `/flow:ship` § 4b.vi's prose already committed
+to, avoids inventing a new per-ship, per-entry counter the "N ships" framing would have
+required. The ranking-formula question from the original plan is moot (ranking cut).
 
 ## PR — `toolchain` manifest kind + a validated toolchain-absence branch in the skip auditor (this branch, KEYSTONE — canonical cloud-workflow plan §4.2 / §5 Step 1)
 

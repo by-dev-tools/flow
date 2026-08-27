@@ -10,6 +10,18 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.34.0 — 2026-08-27
+
+**The periodic memory audit no longer eyeballs Fire-log dates across up to 30 entries by hand.**
+
+- **New `tools/memory/check.mjs --dead [--days=N]`** (default 60). Lists failure-pattern memory entries with no recent activity — most recent `Fire log` date, falling back to `First seen`, falling back to file mtime — so `/flow:ship` § 4b.vi's periodic audit agent gets a deterministic candidate list instead of computing date arithmetic itself. `--list`, `--count`, and `--audit-due` are unchanged.
+- **Reduced scope from the original roadmap item.** Fire-rate×recency ranking of `--list` and a deterministic fire-log writer were cut before implementation: flow doesn't control what the harness actually injects into a session's context, so ranking could only ever reorder a curation-facing `--list` output over a corpus capped at 30 files — not worth the added machinery. See `dev-docs/feedback.md` FB-0093.
+- **Output includes the resolving date + fallback tier** (e.g. `2026-XX-XX, 90d since last activity via fire, 1 fire`), not just a bare day-count, so a human or the audit agent can tell "known-quiet since a real date" from "no dates recorded at all."
+
+**Breaking changes:** none. `--dead` is a new, opt-in flag; every existing `check.mjs` invocation and output shape is unchanged.
+
+---
+
 ## v1.33.0 — 2026-08-27
 
 **The 4 advertised auto-loading rules have never fired for any consumer — until now.**

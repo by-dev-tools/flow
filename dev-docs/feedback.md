@@ -6,6 +6,18 @@ This is not a transcript. Each entry distills feedback into a rule or preference
 
 ---
 
+### FB-0094 — Don't build ranking machinery whose payoff is capped by something outside the system's control
+
+**What was said (2026-08-27):** Dispatched to build roadmap #3 (memory-effectiveness instrumentation: fire-count tracking, dead-entry surfacing, fire-rate×recency ranking), the worker's plan itself surfaced that flow doesn't control what the harness injects into context — `check.mjs` only reports on the memory directory, so "rank injection" could only ever reorder a curation-facing `--list` over a corpus capped at 30 files. The user cut scope to `--dead` only: "you found the ceiling yourself... That is real machinery whose payoff is a nicer sort order, over a corpus capped at 30 files. `--dead` is the one piece with a genuine consumer."
+
+**Synthesized rule:** When a plan's own analysis surfaces that a proposed piece's output feeds nothing but a low-stakes cosmetic surface (here: a sort order in a report, over a small capped corpus, with no downstream consumer that acts on it), that is grounds to cut the piece — not merely a caveat to note and build anyway. Building the "correct in principle" version of something whose payoff is structurally bounded is overbuilding. Escalating the ceiling honestly (rather than quietly reinterpreting the roadmap wording to save the feature) is what let the cut happen cheaply, before implementation — this is the same discipline as [[FB-0090]] applied to scope decisions, not just gate decisions: surface the limiting fact, let the human decide, don't silently route around it.
+
+**Why:** A worker under "build what the roadmap says" pressure will tend to implement every named sub-piece even after finding a real reason one of them can't deliver its stated value. The corrective is architectural honesty over completeness — say "this piece's ceiling is low" and let scope follow, rather than shipping the full surface area because it was asked for.
+
+**How to apply:** When a plan (yours or a dispatched worker's) finds that a component's output has no real consumer, or its consumer is capped well below the component's cost/complexity, name that explicitly as a cut candidate at the plan gate — don't build it "for completeness" and don't quietly redefine the goal to make the built thing look load-bearing. Related: [[FB-0090]] (escalate with recommendation + confidence + justification — the same discipline, here applied to a scope-cut rather than a design fork).
+
+---
+
 ### FB-0093 — A bug-fix PR corrects claims that are false today, not claims about work tracked elsewhere
 
 **What was said (2026-08-27):** Approving the Phase 00 plan (FB-0085's fix — converting 4 dead `rules/*.md` files to path-activated skills, plus a doctor loader-verification check), the user added: "Do NOT update README.md's user-facing claims beyond what is true when your PR lands; README currency is being tracked separately and must not describe unbuilt behavior."

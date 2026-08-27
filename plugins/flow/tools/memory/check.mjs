@@ -8,6 +8,10 @@
 //   node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs --count        — print entry count only
 //   node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs --list         — list entries by mtime (newest first)
 //   node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs --audit-due    — increment ship counter; exit 1 if audit due
+//   node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs --dead [--days=N]
+//                                                                    — list entries with no
+//                                                                      activity in N days
+//                                                                      (default 60)
 //
 // Memory directory resolution (in priority order):
 //   1. $MEMORY_DIR env var
@@ -42,6 +46,7 @@ import { fileURLToPath } from 'url';
 // Defaults; overridable per-project via flow.config.json at the cwd.
 const DEFAULT_HARD_CAP = 30;
 const AUDIT_INTERVAL = 5; // ship runs between audits
+const DEAD_ENTRY_DAYS = 60; // no-activity threshold for --dead; matches ship/SKILL.md § 4b.vi prose
 
 // Read flow.config.json.memoryHardCap if present + valid; else default.
 // The config is consumer-owned (same trust level as package.json scripts).
@@ -141,6 +146,51 @@ function listEntries() {
     .map(f => ({ name: f, mtime: statSync(join(memoryDir, f)).mtime }));
 }
 
+// Pull every YYYY-MM-DD-shaped substring out of a single field's text. Entries write this
+// field freehand (ship/SKILL.md § 4b.v appends a date per firing) so this is deliberately
+// lenient rather than pinned to one exact separator style.
+function extractDates(text) {
+  const matches = text.match(/\d{4}-\d{2}-\d{2}/g) || [];
+  return matches
+    .map(d => new Date(d))
+    .filter(d => !isNaN(d.getTime()));
+}
+
+// Grabs the content of every line containing a `**Label**` bullet (not just the first) —
+// nothing pins whether a repeated firing is appended onto the existing bullet's line or
+// written as its own new bullet line, so both shapes are unioned rather than assuming one.
+function fieldLines(content, label) {
+  const re = new RegExp(`\\*\\*${label}\\*\\*[^\\n]*`, 'g');
+  return content.match(re) || [];
+}
+
+// Reads a feedback_*.md entry and resolves its last-activity date via a three-tier fallback,
+// each tier reached only if the one before yields nothing parseable:
+//   most recent Fire log date  →  First seen date  →  file mtime.
+// Never throws — pre-this-feature entries with no Fire log (or no First seen) bullet at all
+// still resolve to a usable date via mtime.
+function parseEntry(path) {
+  const content = readFileSync(path, 'utf-8');
+  const fireDates = extractDates(fieldLines(content, 'Fire log').join(' '));
+  const firstSeenDates = extractDates(fieldLines(content, 'First seen').join(' '));
+  const firstSeen = firstSeenDates.length ? firstSeenDates[0] : null;
+
+  let lastActivity;
+  if (fireDates.length) {
+    lastActivity = new Date(Math.max(...fireDates.map(d => d.getTime())));
+  } else if (firstSeen) {
+    lastActivity = firstSeen;
+  } else {
+    lastActivity = statSync(path).mtime;
+  }
+
+  return { fireCount: fireDates.length, lastActivity };
+}
+
+function daysSince(date) {
+  return (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24);
+}
+
 const args = new Set(process.argv.slice(2));
 const entries = listEntries();
 const count = entries.length;
@@ -154,6 +204,41 @@ if (args.has('--list')) {
   for (const e of entries.sort((a, b) => b.mtime - a.mtime)) {
     console.log(`${e.mtime.toISOString().slice(0, 10)}  ${e.name}`);
   }
+  process.exit(0);
+}
+
+if (args.has('--dead')) {
+  let days = DEAD_ENTRY_DAYS;
+  for (const a of args) {
+    const m = a.match(/^--days=(.+)$/);
+    if (m) {
+      const parsed = parseInt(m[1], 10);
+      if (Number.isInteger(parsed) && parsed > 0) {
+        days = parsed;
+      } else {
+        console.error(`⚠️ --days=${m[1]} is not a positive integer; using default ${DEAD_ENTRY_DAYS}`);
+      }
+    }
+  }
+
+  const stale = entries
+    .map(e => {
+      const parsed = parseEntry(join(memoryDir, e.name));
+      return { name: e.name, ...parsed, daysSinceActivity: daysSince(parsed.lastActivity) };
+    })
+    .filter(e => e.daysSinceActivity > days)
+    .sort((a, b) => a.lastActivity - b.lastActivity); // oldest activity first
+
+  if (stale.length === 0) {
+    console.log(`No entries stale beyond ${days} days.`);
+    process.exit(0);
+  }
+
+  for (const e of stale) {
+    const d = Math.floor(e.daysSinceActivity);
+    console.log(`${e.name}  (${d}d since last activity, ${e.fireCount} fire${e.fireCount === 1 ? '' : 's'})`);
+  }
+  console.log(`${stale.length} entr${stale.length === 1 ? 'y' : 'ies'} stale beyond ${days} days — archive candidates for the periodic audit.`);
   process.exit(0);
 }
 
