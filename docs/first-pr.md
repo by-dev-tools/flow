@@ -205,7 +205,7 @@ You review the PR. CI runs (your project's `.github/workflows/ci.yml` from the b
 ## What you should walk away with after one trip through the loop
 
 1. **Muscle memory for the gate sequence.** Plan (gate) → execute → preflight → commit → reviews → ship → merge (gate). The two human gates are non-negotiable; everything between is delegable.
-2. **Familiarity with which auto-loading rules fire when.** Edit `plan.md` → `plan-discipline.md` injects. Edit `src/foo.tsx` → `ui.md` + `exploration.md` inject. The rules are the load-bearing enforcement.
+2. **Familiarity with which auto-loading rules fire when.** Edit `plan.md` → the `plan-discipline` rule-skill injects. Edit `src/foo.tsx` → `ui.md` (project-shaped, if your stack overlay ships one) + the `exploration` rule-skill inject. The rules are the load-bearing enforcement.
 3. **A real PR history entry in `core-docs/history.md`** with the per-PR decision log shape (what + why + design decisions + technical decisions + tradeoffs + lessons learned).
 4. **A first sense of when the lens agents catch real things.** On a trivial docs change, they won't catch much. On a real product change, the 4-parallel pattern's value compounds.
 

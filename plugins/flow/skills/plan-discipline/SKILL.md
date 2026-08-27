@@ -1,4 +1,7 @@
 ---
+name: plan-discipline
+description: Auto-loading plan-writing requirements (required fields, spec-walk/visual-walk, confidence verdicts) when writing to the project's plan doc. Not user-invocable — path-activated only.
+user-invocable: false
 paths:
   - "**/plan.md"
 ---

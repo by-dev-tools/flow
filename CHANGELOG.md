@@ -10,6 +10,21 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.33.0 — 2026-08-27
+
+**The 4 advertised auto-loading rules have never fired for any consumer — until now.**
+
+- **The 4 portable rules (`general`, `plan-discipline`, `documentation`, `exploration`) now ship as path-activated skills.** `plugins/flow/rules/` was never a Claude Code plugin component — no loader call site joins a plugin root to a `rules/` directory, confirmed by decompiling the installed CLI. Every consumer who installed flow got zero of these rules active, regardless of how carefully they followed the bootstrap docs. They now live at `plugins/flow/skills/{general,plan-discipline,documentation,exploration}/SKILL.md` (`paths:` frontmatter + `user-invocable: false`), the mechanism Claude Code's own docs point at for path-triggered guidance. No bootstrap.sh change needed — the plugin install already precedes the scaffold step, so a consumer gets all 4 for free on `/plugin install flow@flow`.
+- **`/flow:doctor` now verifies the loader's own report, not disk presence.** The old Check 3.2 inferred a pass from the marketplace + enabled checks; it could never actually detect the rules-never-load bug it existed to catch. It now shells out to `claude plugin details flow@flow` and asserts each of the 4 rule-skills is named in the loader's own output — deleting one reds the check.
+- **Hooks stay opt-in, deliberately.** `hooks/default-hooks.json`'s own header already says "NOT auto-applied — consumers opt-in," and the shipped sensitive-file-blocking hook does broad substring matching (`*token*`, `*key*`, `*secret*`) with real false-positive risk — auto-enabling it for every consumer was the riskier direction, not the safer one. The docs that blurred this (`workflow.md` listing "default hooks" alongside unconditionally-bundled components) are corrected instead.
+- **Reconciled the drift that let this go unnoticed for so long.** This repo's own dogfooding never caught the bug because its project-scope `.claude/rules/{general,documentation}.md` — a separate, legitimately-forked copy for flow's own dev workflow — auto-loaded successfully and looked like proof the mechanism worked. Three genuinely-duplicated sections (Scope discipline, Decision tracking, Autonomous work guardrails) had drifted between the two copies; synced now, with an explicit cross-reference note in both files so future drift is a decision, not an accident.
+
+**Under the hood.** Skill count 17 → 21 (`claude plugin details` confirms). No gate-machinery code touched — ship/manifest-triage/skip-audit/verify-build/pr-coherence are all untouched. Full eval suite green post-move (`run_plugin_desc_evals.py`'s glob-based skill discovery and the composition lint's dynamic count both picked up the 4 new files with no hardcoded-count breakage).
+
+**Breaking changes:** none. Consumers who already deleted local `.claude/rules/{general,plan-discipline,documentation,exploration}.md` copies per `docs/migration.md`'s Stage 2 guidance now correctly receive the plugin's content for the first time — previously they'd have received none. Consumers who never had local copies see the 4 rules become active where they were silently inert before.
+
+---
+
 ## v1.32.0 — 2026-08-26
 
 **A session can no longer claim verification it had no way to perform — or be refused the honest admission that it couldn't.**

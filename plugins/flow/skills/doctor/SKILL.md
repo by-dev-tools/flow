@@ -594,14 +594,32 @@ fi
 
 **Check 3.2 — plugin-shipped auto-load rules are reachable**
 
-Plugin-shipped rules live at `${CLAUDE_PLUGIN_ROOT}/rules/{general,plan-discipline,documentation,exploration}.md` and auto-load on path matches when `flow@flow` is enabled. Inferred-PASS if Checks 1.1 + 1.2 both passed above (those gate the entire plugin-rule-reachability). If 1.1 or 1.2 failed, emit `[SKIP] (depends on Section 1 passing)`.
+Plugin-shipped rules ship as path-activated skills at `${CLAUDE_PLUGIN_ROOT}/skills/{general,plan-discipline,documentation,exploration}/SKILL.md` (`paths:` frontmatter + `user-invocable: false`) and auto-load on path matches when `flow@flow` is enabled. This check asks the loader itself, not disk presence or an inferred pass from Section 1 — a component can be present on disk and still not be what the running Claude Code actually reports (FB-0085: this exact gap is why the 4 rules never loaded for any consumer despite always being on disk).
 
 ```sh
-# Re-test based on prior section's findings:
-if [ -n "$MARKETPLACE_FOUND" ] && [ -n "$ENABLED_AT" ]; then
-  echo "[PASS] plugin-shipped rules (general/plan-discipline/documentation/exploration) auto-load via flow@flow"
+if ! command -v claude >/dev/null 2>&1; then
+  echo "[SKIP] plugin-shipped rule-skills check — 'claude' CLI not on PATH; cannot query the loader"
 else
-  echo "[SKIP] plugin-shipped rules check — depends on Section 1 (marketplace + enabled) passing first"
+  DETAILS_RAW=$(claude plugin details flow@flow 2>&1)
+  DETAILS_RC=$?
+  DETAILS_OUT=$(printf '%s' "$DETAILS_RAW" | tr -d '\000-\010\013\014\016-\037')
+  SKILLS_LINE=$(echo "$DETAILS_OUT" | grep -E "^[[:space:]]*Skills \(")
+  if [ -z "$SKILLS_LINE" ] && [ "$DETAILS_RC" -ne 0 ]; then
+    echo "[WARN] plugin-shipped rule-skills check — 'claude plugin details flow@flow' errored (exit $DETAILS_RC): $DETAILS_OUT"
+  elif [ -z "$SKILLS_LINE" ]; then
+    echo "[SKIP] plugin-shipped rule-skills check — 'claude plugin details flow@flow' returned no Skills line (is flow@flow installed?)"
+  else
+    MISSING=""
+    for s in general plan-discipline documentation exploration; do
+      echo "$SKILLS_LINE" | grep -qE "(^|[, ])$s(,|$| )" || MISSING="$MISSING $s"
+    done
+    if [ -z "$MISSING" ]; then
+      echo "[PASS] plugin-shipped rule-skills (general/plan-discipline/documentation/exploration) reported by the loader"
+    else
+      echo "[FAIL] plugin-shipped rule-skills missing from the loader's own report:$MISSING"
+      echo "       Fix: /plugin marketplace update flow && /plugin install flow@flow"
+    fi
+  fi
 fi
 ```
 
