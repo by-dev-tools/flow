@@ -117,7 +117,7 @@ The handoff's wording ("Fix the consumer path... copies only safety.md.template"
 > (a deterministic `--record-fire` writer) existed only to make (c)'s ranking robust to
 > freehand date formatting, so it fell with (c). `--dead` is the one piece with a genuine
 > downstream consumer: the periodic audit agent at `/flow:ship` § 4b.vi, which previously had
-> to eyeball Fire-log dates across up to 30 entries by hand. See FB-0092.
+> to eyeball Fire-log dates across up to 30 entries by hand. See FB-0093.
 
 **Restated request:** `dev-docs/roadmap.md` § Next "#3 — Memory-effectiveness instrumentation":
 flow's failure-pattern memory corpus is count-capped + mtime-sorted with a manually-annotated

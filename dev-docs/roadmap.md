@@ -267,7 +267,7 @@ Net-new; independent track; interleaves at any PR boundary. Complements M — M 
 
 ### #3 — Memory-effectiveness instrumentation — **(b) shipped reduced-scope; (a)/(c) cut, see § Exploration**
 
-**Shipped 2026-08-27 (FB-0092):** `tools/memory/check.mjs --dead [--days=N]` mechanizes the
+**Shipped 2026-08-27 (FB-0093):** `tools/memory/check.mjs --dead [--days=N]` mechanizes the
 "no fire in N days" half of the periodic audit at `/flow:ship` § 4b.vi. See `dev-docs/history.md`
 "Memory-effectiveness instrumentation, reduced to `--dead`" for the full record. The original
 three-piece shape (fire-count instrumentation, dead-entry surfacing, fire-rate×recency ranking)
@@ -652,7 +652,7 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 Roadmap #3's original shape included (a) fire-count instrumentation (a deterministic
 `--record-fire` writer) and (c) ranking `tools/memory/check.mjs --list` by fire-rate×recency
 instead of flat mtime — the idea being to "rank injection" so higher-value memory entries
-surface first. Cut before implementation (FB-0092) when the plan's own analysis found the
+surface first. Cut before implementation (FB-0093) when the plan's own analysis found the
 ceiling: flow does not control what the harness actually injects into a session's context —
 the harness's native auto-memory loader reads `~/.claude/projects/<canonical>/memory/`
 directly, and flow has no index file or injection-order hook to sort. So a ranking change could
