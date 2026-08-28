@@ -513,7 +513,7 @@ Captured at `/flow:ship` step 3b. **All five guardrails apply.**
 2. **Mechanical-check beats memory** — if a preflight rule could catch it deterministically, write the preflight rule (or file as follow-up). Memory is for judgment-level patterns that resist mechanization.
 3. **User feedback wins ties** — if memory contradicts a feedback rule, user feedback wins. Memory entry gets revised or archived.
 4. **Hard cap (~30 entries)** — forces curation pressure rather than unbounded growth. (Tunable; the PR-2 `tools/memory/check.mjs` checks this.)
-5. **Periodic audit (every 5 ship runs)** — fresh-context audit pass over the corpus to identify stale, contradicting, or over-fitted entries.
+5. **Periodic audit (every 5 ship runs)** — fresh-context audit pass over the corpus to identify stale, contradicting, or over-fitted entries. The staleness half is mechanically computed (`tools/memory/check.mjs --dead` — no Fire-log/First-seen activity in 60+ days) so the audit agent judges archive-vs-keep on a deterministic candidate list instead of eyeballing dates across the whole corpus.
 
 ### Promotion path: memory → preflight (user-gated)
 

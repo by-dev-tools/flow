@@ -527,7 +527,13 @@ If a finding this PR matches an EXISTING memory entry's pattern, append `YYYY-MM
 node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs --audit-due
 ```
 
-If exit 1 (audit due), spawn an Agent (subagent_type: Explore) with the memory directory as input. The audit reads ONLY the memory entries (no PR diff, no other context) and answers: which entries' fire logs show no activity in 60+ days (archive candidates)? which entries contradict each other (resolve)? which entries look like over-fitting on a single past incident (revise or delete)? This is the cure for memory ossification.
+If exit 1 (audit due), first run:
+
+```sh
+node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs --dead
+```
+
+`--dead` mechanically computes which entries have had no Fire-log activity (falling back to First-seen, then file mtime) in 60+ days — the archive-candidate half of the audit no longer depends on the agent eyeballing dates across up to 30 entries. Spawn an Agent (subagent_type: Explore) with the memory directory **and the `--dead` output** as input. The audit reads ONLY the memory entries (no PR diff, no other context) and answers: are the `--dead` candidates genuinely stale, or a slow-firing-but-still-correct pattern (archive vs keep is still the agent's judgment call)? which entries contradict each other (resolve)? which entries look like over-fitting on a single past incident (revise or delete)? This is the cure for memory ossification.
 
 ### 4c. Harvest flow-generalizable lessons → contribution queue (FB-0059)
 

@@ -223,7 +223,7 @@ Run the same sub-steps in order:
 - 4b.iii — Resolve contradictions with the project's feedback doc (path from `flow.config.json.feedbackPath`; user wins)
 - 4b.iv — Write the entry if guardrails pass
 - 4b.v — Update fire log on existing entries; flag promotion candidates to the project's roadmap
-- 4b.vi — `node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs --audit-due`; spawn audit Explore agent if exit 1
+- 4b.vi — `node ${CLAUDE_PLUGIN_ROOT}/tools/memory/check.mjs --audit-due`; if exit 1, run `... --dead` and feed its output to the audit Explore agent
 
 The bar is identical. Spike mode is **lighter on review** (skips /simplify + /flow:staff-review) but **not lighter on learning capture** — if anything, spikes are higher-yield for memory entries because the exploration surfaces failure modes feature work doesn't.
 
