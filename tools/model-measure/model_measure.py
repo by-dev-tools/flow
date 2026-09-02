@@ -159,6 +159,44 @@ def read_sidecar_subagents(session_dir: Path) -> tuple[list[dict], list[str]]:
     return invocations, warnings
 
 
+def find_sidecar_invocation(session_dir: Path, tool_use_id) -> tuple[dict | None, list[str]]:
+    """Targeted counterpart to read_sidecar_subagents: look up ONE invocation
+    by tool_use_id without parsing every other sidecar transcript in the
+    session. Meta files are cheap (small JSON); only the matching invocation's
+    .jsonl is loaded, not the other N-1 -- for callers (e.g. shadow_sampler.py)
+    that log one invocation at a time over a session's life and would
+    otherwise re-parse the whole session on every call."""
+    subdir = session_dir / "subagents"
+    warnings: list[str] = []
+    if not subdir.is_dir():
+        return None, warnings
+    for meta_path in sorted(subdir.glob("*.meta.json")):
+        meta = _load_json_file(meta_path)
+        if not isinstance(meta, dict):
+            continue
+        if meta.get("toolUseId") != tool_use_id:
+            continue
+        if not meta.get("agentType"):
+            # The matching invocation's own meta is malformed -- warn the same
+            # way read_sidecar_subagents does, rather than returning None with
+            # no trace (indistinguishable from "this invocation never happened").
+            warnings.append(f"unreadable or incomplete meta file: {meta_path.name}")
+            return None, warnings
+        stem = meta_path.name[: -len(".meta.json")]
+        jsonl_path = subdir / f"{stem}.jsonl"
+        if not jsonl_path.is_file():
+            warnings.append(
+                f"meta file {meta_path.name} references a missing transcript "
+                f"{jsonl_path.name}"
+            )
+            return None, warnings
+        records = load_session(jsonl_path)
+        return _make_invocation(
+            meta.get("agentType"), meta.get("toolUseId"), meta.get("spawnDepth", 1), records,
+        ), warnings
+    return None, warnings
+
+
 def has_inline_sidechains(records: list[dict]) -> bool:
     return any(r.get("isSidechain") for r in records)
 

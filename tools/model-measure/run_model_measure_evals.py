@@ -187,6 +187,83 @@ def test_multiple_invocations_aggregate_same_type_distinct_types() -> None:
               and explore["models"] == {"claude-sonnet-5"})
 
 
+def test_concurrent_same_type_invocations_do_not_cross_contaminate() -> None:
+    # Belt-and-suspenders proof for M's Step 2/3 open risk (1): sidecar
+    # attribution keys off a distinct file per spawn (tool_use_id in the
+    # meta.json), not conversation position or timing -- so two spawns of
+    # the SAME agent_type that would be ambiguous under the legacy inline
+    # format (see test_inline_ambiguous_overlap_is_unattributed) are
+    # inherently disambiguated here: nothing about this format depends on
+    # when either spawn started or finished relative to the other.
+    with TempSession() as s:
+        s.write_main([assistant_record("m1", "claude-sonnet-5", usage(input_tokens=1))])
+        s.write_subagent("a1", "Explore", "toolu_1", [
+            assistant_record("sm1", "claude-opus-5", usage(input_tokens=10, output_tokens=1)),
+        ])
+        s.write_subagent("a2", "Explore", "toolu_2", [
+            assistant_record("sm2", "claude-sonnet-5", usage(input_tokens=20, output_tokens=2)),
+        ])
+        records = mm.load_session(s.session_path)
+        data = mm.build_report(s.session_path, records)
+        explore = data["subagents"]["Explore"]
+        check("concurrent same-type: totals sum correctly across both spawns",
+              explore["totals"] == usage(input_tokens=30, output_tokens=3), explore)
+        check("concurrent same-type: both models attributed, not collapsed to one",
+              explore["models"] == {"claude-opus-5", "claude-sonnet-5"}, explore)
+
+
+def test_find_sidecar_invocation_targeted_lookup() -> None:
+    with TempSession() as s:
+        s.write_main([assistant_record("m1", "claude-sonnet-5", usage(input_tokens=1))])
+        s.write_subagent("a1", "Explore", "toolu_1", [
+            assistant_record("sm1", "claude-opus-5", usage(input_tokens=10, output_tokens=1)),
+        ])
+        s.write_subagent("a2", "auditor", "toolu_2", [
+            assistant_record("sm2", "claude-sonnet-5", usage(input_tokens=20, output_tokens=2)),
+        ])
+        session_dir = mm.session_dir_for(s.session_path)
+        inv, warnings = mm.find_sidecar_invocation(session_dir, "toolu_2")
+        check("find_sidecar_invocation: finds the matching invocation by tool_use_id",
+              inv is not None and inv["agent_type"] == "auditor"
+              and inv["totals"] == usage(input_tokens=20, output_tokens=2), inv)
+        check("find_sidecar_invocation: no warnings on a clean match", warnings == [], warnings)
+
+
+def test_find_sidecar_invocation_no_match_returns_none() -> None:
+    with TempSession() as s:
+        s.write_main([assistant_record("m1", "claude-sonnet-5", usage(input_tokens=1))])
+        s.write_subagent("a1", "Explore", "toolu_1", [
+            assistant_record("sm1", "claude-opus-5", usage(input_tokens=10)),
+        ])
+        session_dir = mm.session_dir_for(s.session_path)
+        inv, warnings = mm.find_sidecar_invocation(session_dir, "toolu_does_not_exist")
+        check("find_sidecar_invocation: unmatched tool_use_id returns None, not a crash",
+              inv is None and warnings == [], (inv, warnings))
+
+
+def test_find_sidecar_invocation_matching_but_malformed_meta_warns() -> None:
+    with TempSession() as s:
+        s.write_main([assistant_record("m1", "claude-sonnet-5", usage(input_tokens=1))])
+        subdir = s.session_dir / "subagents"
+        subdir.mkdir(parents=True, exist_ok=True)
+        (subdir / "agent-bad.meta.json").write_text(
+            json.dumps({"toolUseId": "toolu_1"}), encoding="utf-8",  # missing agentType
+        )
+        session_dir = mm.session_dir_for(s.session_path)
+        inv, warnings = mm.find_sidecar_invocation(session_dir, "toolu_1")
+        check("find_sidecar_invocation: matching-but-malformed meta warns rather than a bare None",
+              inv is None and len(warnings) == 1, (inv, warnings))
+
+
+def test_find_sidecar_invocation_no_subagents_dir() -> None:
+    with TempSession() as s:
+        s.write_main([assistant_record("m1", "claude-sonnet-5", usage(input_tokens=1))])
+        session_dir = mm.session_dir_for(s.session_path)
+        inv, warnings = mm.find_sidecar_invocation(session_dir, "toolu_1")
+        check("find_sidecar_invocation: no subagents dir at all returns None, not a crash",
+              inv is None and warnings == [], (inv, warnings))
+
+
 def test_nested_subagent_attributes_to_own_type() -> None:
     with TempSession() as s:
         s.write_main([assistant_record("m1", "claude-sonnet-5", usage(input_tokens=1))])
@@ -350,6 +427,11 @@ TESTS = [
     test_sidecar_single_invocation,
     test_main_bucket_isolated_from_subagent,
     test_multiple_invocations_aggregate_same_type_distinct_types,
+    test_concurrent_same_type_invocations_do_not_cross_contaminate,
+    test_find_sidecar_invocation_targeted_lookup,
+    test_find_sidecar_invocation_no_match_returns_none,
+    test_find_sidecar_invocation_matching_but_malformed_meta_warns,
+    test_find_sidecar_invocation_no_subagents_dir,
     test_nested_subagent_attributes_to_own_type,
     test_message_id_repeat_dedup,
     test_malformed_meta_json_warns,

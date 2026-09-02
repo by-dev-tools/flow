@@ -21,6 +21,7 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 ## Currently reserved (as of 2026-08-27)
 
 _(FB-0093 cleared at merge of #135, "4 auto-loading rules + doctor loader-verification check" — its reservation line said "held until MERGE"; #135 merged, so the line lingered stale until swept here at this branch's second rebase. Entry lives in `feedback.md`.)_
+- FB-0097 — `conductor/model-measurement-harness-steps-2-3-item-m` — "push immediately after commit, decoupled from completing /flow:ship, in ephemeral/session-limited environments" — model-measurement-harness-steps-2-3 (renumbered from FB-0094 at rebase; #134 merged FB-0094 for a different concept)
 
 _(FB-0087 + FB-0088 cleared for merged #122 — the canonical flow cloud-workflow plan + Conductor orchestration spike. Both lines said "held until MERGE" (a concurrent worker branch was live at ship). Reconciled by the SUCCESSOR PR (handoff-without-land), not a standalone `/flow:land` PR — dogfooding canonical-plan §4.5 (durable currency folds into the next ship). Entries live in `feedback.md`.)_
 
