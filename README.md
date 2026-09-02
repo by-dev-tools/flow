@@ -82,7 +82,7 @@ Adoption guides: [new project](docs/bootstrap.md) · [existing project](docs/mig
 
 ## Under the hood
 
-- **2 review agents** (`auditor`, `plan-critic`) + **4 staff-review lenses** (engineer, UX, design-engineer, push-further) + 2 context-isolation helpers (`planner`, `docs`).
+- **2 review agents** (`auditor`, `plan-critic`) + **4 staff-review lenses** (engineer, UX, design-engineer, push-further) + the **D1 `lens-experience` agent** (experience/ambition + push-further-on-quality, reached via `/flow:review-brief`) + 2 context-isolation helpers (`planner`, `docs`).
 - **4 auto-loading rules** that attach by file path — workflow discipline, plan requirements, doc format, exploration triggers.
 - **A 24-slot `flow.config.json`** ([schema](plugins/flow/schema/flow.config.schema.json)) so every doc path, command, and branch name is configurable, never hardcoded.
 - **A template directory** (`template/`) with per-stack overlays for web, Swift, and Tauri/Rust/TS — the scaffolding `bootstrap.sh` copies in.
@@ -99,6 +99,7 @@ The canonical reference — every step with its rationale, gate semantics, spike
 | `/flow:ship-spike` | Throwaway exploratory PRs — skips the heavy reviews |
 | `/flow:post-merge` | After you merge — "anything left, or safe to archive?" Confirms the merge (queue-safe), reconciles the docs, captures your merge-gate feedback, cleans up the branch, gives a safe-to-archive verdict |
 | `/flow:log-disagreement` | Fires on its own when you dispute a finding |
+| `/flow:review-brief` | Pre-prototype review of a design brief (D1 Phase 1): one extraction fanned to `auditor` + `plan-critic` + the new `lens-experience` agent, one triaged verdict. Standalone today — not yet wired into the loop |
 
 ## Boundaries & limitations
 

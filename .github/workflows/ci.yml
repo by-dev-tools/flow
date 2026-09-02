@@ -69,6 +69,7 @@ jobs:
       - run: python3 plugins/flow/evals/run_jq_guard_evals.py
       - run: python3 plugins/flow/evals/run_role_slot_evals.py
       - run: python3 plugins/flow/evals/run_memory_check_evals.py
+      - run: python3 plugins/flow/evals/run_review_brief_evals.py
 
   dev-docs:
     name: dev-docs index

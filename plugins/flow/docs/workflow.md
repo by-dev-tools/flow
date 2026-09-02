@@ -14,13 +14,14 @@ Everything described in the loop below is shipped and installable today. The ful
 - **`/flow:audit-skips`** — the skip-legitimacy auditor that runs after those four (ship Step 2a). It accepts no stage skip on its own say-so: a skip is trusted only if the diff/config backs it, and a "ran" claim only if its canonical output artifact exists for HEAD. A self-certified short-circuit (e.g. a verify-build PASS with no fresh findings buffer) routes the PR to a draft. Also invocable standalone.
 - **`/flow:critique-plan`** — plan-critic pass over the most recent plan (scope drift, spec violation, internal incoherence). A deterministic pinning lint (`lib/walk-pin-lint.py`, reusing the shared `walk_extract` parser) also reports Spec-walk checkboxes that name no test or verification artifact — advisory input to the critic, which assigns severity only where a reference doc requires pinning. Pass a path (`/flow:critique-plan <plan.md>`) to review a queued plan **document** instead of the session's most recent plan; session context then degrades to best-effort with a loud standalone-review note (a legitimate invocation, not missing evidence).
 - **`/flow:audit-plan`** / **`/flow:audit-completion`** — auditor passes (unverified assumptions + recall; false-verification proxies). `/flow:audit-plan` takes the same optional plan-file path argument; on a standalone plan-document review, artifact read-status renders UNKNOWN (never UNREAD), so a merely-absent transcript can't mint false unverified-recall findings.
+- **`/flow:review-brief`** — D1 Phase 1's pre-prototype review: one extraction of a design brief, fanned to `auditor` + `plan-critic` + the new `lens-experience` (experience/ambition + push-further-on-quality) in one tool message, returning one triaged verdict. `decision-required` findings render as an answerable question list, never a document to read. Not yet wired to a live trigger or a prototype phase (D1 Phase 2) — standalone-invocable today, the same way `/flow:critique-plan <path>` is. See § "D1 design-brief template".
 - **`/flow:log-disagreement`** — auto-invoked feedback channel that captures user pushback on a finding for prompt-tuning input.
 - **`/flow:contribute`** — drains the lesson-harvest queue (and the `log-disagreement` store) into a **draft** PR back to the flow plugin. The drain end of the self-improvement loop; run from the flow checkout, self-triggered, never merges (v1.11.0; see § "Contributing lessons back to flow").
 - **`/flow:land`** — post-merge, human-invoked: after *you* merge a PR, reconciles the forward docs to "merged (#N)" (the slot the open-PR ship couldn't), re-runs the visual-history distill if a blocked visual pass since completed, and opens a small `docs: land #N` PR. Closes the "at PR → merged never reconciles" gap. Never merges (v1.12.0). Independently invocable, and **called by `/flow:post-merge`** §3 (model-invocable since v1.25.0/FB-0077; kept from auto-firing by its own §1a merged-PR gate and §1b clean-tree gate) for its doc-currency step.
 - **`/flow:post-merge`** — post-merge, human-invoked: the "merged — anything left, or safe to archive?" close-out (v1.21.0, FB-0072). One command that (1) confirms the merge with a **merge-queue-safe** three-state gate (a queued-but-unlanded PR is *not merged yet* → polled, never a false failure; only a `CLOSED`-unmerged PR fails loud), (2) **calls `/flow:land`** for doc-currency, then holds the archive verdict at `🚫` until you merge the `docs: land #N` PR it opens, (3) synthesizes the merge-gate feedback window `/flow:ship` structurally can't see into user-scope memory + the `/flow:contribute` queue, (4) safe-deletes the merged branch, (5) prints a `✅ safe to archive` / `🚫 not safe` verdict. Never merges.
 - **`/flow:workflow-help`** / **`/flow:doctor`** — onboarding (print the loop + resolved config) and setup verification.
 
-Plus the two reviewer subagents (`auditor`, `plan-critic`) and the four staff-review lens agents, the `planner` and `docs` context-isolation agents, the four portable rules (`general`, `plan-discipline`, `documentation`, `exploration` — path-activated skills, `user-invocable: false`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (33 slots), an **opt-in** default-hooks recipe (`hooks/default-hooks.json` — not auto-applied; consumers merge the hooks they want into their own `.claude/settings.json`), and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow references it directly rather than re-implementing it.
+Plus the two reviewer subagents (`auditor`, `plan-critic`) the four staff-review lens agents, the D1 `lens-experience` agent (experience/ambition + push-further-on-quality, reached only through `/flow:review-brief`), the `planner` and `docs` context-isolation agents, the four portable rules (`general`, `plan-discipline`, `documentation`, `exploration` — path-activated skills, `user-invocable: false`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (33 slots), an **opt-in** default-hooks recipe (`hooks/default-hooks.json` — not auto-applied; consumers merge the hooks they want into their own `.claude/settings.json`), and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow references it directly rather than re-implementing it.
 
 ## What this workflow is (and isn't)
 
@@ -527,6 +528,23 @@ If a `/flow:staff-review` or `/flow:ship` finding suggests a missing rule, write
 
 ---
 
+## D1 design-brief template (Phase 1 artifact — not wired into the loop yet)
+
+`dev-docs/handoffs/d1-prototype-first-gate.md` (FB-0081) moves a UI change's first human gate from the plan to a prototype. Phase 1 ships the review half of that (`/flow:review-brief` + the `lens-experience` agent) and this template; it does **not** ship the trigger, the prototype phase, or the Step 1–2 re-ordering below — those are D1 Phase 2. Until then, a design brief is something you or the agent writes by hand and hands to `/flow:review-brief`, not something the loop produces automatically.
+
+A design brief is **short enough to read in about 20 seconds** — target **~80 words total** across all six fields (roughly one to two short sentences each; ≈250 words/minute × 20s). This is a documented guideline, not a mechanically-enforced cap in Phase 1 — nothing yet produces a brief for a cap to apply to. Whichever Phase 2 step ends up drafting briefs is the natural place to enforce it operationally.
+
+The six fields, in order:
+
+1. **Problem** — what's actually wrong or missing, in the user's terms, not the literal request's terms if they differ.
+2. **Whose moment** — who experiences this, and when.
+3. **Constraints** — the real limits (technical, time, platform) that shape what's possible.
+4. **Intended scope** — what this brief commits to building.
+5. **Deliberately excluded** — what's out, named explicitly (this is the field that would have caught FB-0080 — an accepted-but-unwritten item silently dropping out of scope).
+6. **Where this pushes past the literal request** — if anywhere; empty is a valid, honest answer.
+
+`/flow:review-brief` reviews a brief against these fields implicitly (via `auditor` + `plan-critic` + `lens-experience`); it does not currently enforce that all six are present as a mechanical gate.
+
 ## Skills cheat sheet
 
 Listed in loop order. **Invocation:** AUTO (self-fires) / HUMAN (you type it; carries `disable-model-invocation: true`) / BOTH (typed, or called by another skill — `/flow:ship`, `/flow:post-merge` — or a phrase-trigger on a diff).
@@ -537,6 +555,7 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / HUMAN (you type it; ca
 | `/flow:doctor` | Setup PASS/FAIL/WARN punch-list | After bootstrap / when something feels off | BOTH | flow |
 | `/flow:critique-plan` | Critique plan vs. core-docs (scope drift / spec violation / internal incoherence) | At the plan gate within a driven loop (never cold-start); also typeable | BOTH | flow |
 | `/flow:audit-plan` | Audit plan for unverified assumptions and unverified recall | At the plan gate, complementary to `/flow:critique-plan` (never cold-start); also typeable | BOTH | flow |
+| `/flow:review-brief` | D1 Phase 1 pre-prototype review: one extraction fanned to `auditor` + `plan-critic` + `lens-experience`, one triaged verdict; `decision-required` → answerable question list | Standalone today (D1 Phase 2 wires a live trigger) | BOTH | flow |
 | `/simplify` | Cold-read changed code for reuse, clarity, efficiency; fix in-tree | After commit, before staff-review | — | bundled (Claude Code) |
 | `/flow:staff-review` | Four-lens parallel review (engineer / UX / design-engineer / push-further) | After `/simplify`, before presenting | BOTH | flow |
 | `/flow:audit-completion` | Audit "done / fixed / ready" claims for false-verification proxies | At the present gate within a driven loop (never cold-start); also typeable | BOTH | flow |
