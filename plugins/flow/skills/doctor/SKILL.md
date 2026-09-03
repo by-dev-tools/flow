@@ -5,12 +5,15 @@ description: >
   current project. Runs a punch-list of PASS/FAIL checks: marketplace
   registered under the canonical 'flow' name, flow@flow enabled, project-root
   flow.config.json present + parses + matches the v1.2+ schema, no skill composes
-  with a `disable-model-invocation` skill (a call the runtime rejects), all 33
-  slots have sensible values, any declared `statusDocs` status surfaces exist + are
+  with a `disable-model-invocation` skill (a call the runtime rejects), the
+  required, doc-path, and dependent slots have sensible values and their paths
+  exist on disk (not all 33 of the schema's slots — see Check 2.3/2.4/2.7/2.8/2.9/2.11
+  for exactly which; ephemeral paths created on first write and non-path config
+  are intentionally excluded), any declared `statusDocs` status surfaces exist + are
   fenced, any undeclared `statusSurfaceCandidates` that carry status content are
   flagged for opt-in, any open PR for HEAD is body↔draft coherent (no stale
   `NOT READY TO MERGE` manifest on a ready PR), auto-loading rules visible to
-  Claude Code, the paths named in slots actually exist on disk, prerequisite CLI
+  Claude Code, prerequisite CLI
   tools (gh, jq, git) installed, preflight + CI optionally wired. Each FAIL prints an actionable
   fix command. Emits a final-line verdict ([READY] / [READY with WARN] /
   [NOT READY]) so the bottom line is scannable. Use after `bash bootstrap.sh`
@@ -222,21 +225,63 @@ fi
 
 **Check 2.4 — doc-path slots point at existing files (or paths that will be auto-created)**
 
+Existence-checks the doc-path slots a fresh project is expected to scaffold: `planPath`, `specPath`, `roadmapPath`, `historyPath`, `feedbackPath`, and — when `uiSurface` resolves `true` — `designLanguagePath` (FB-0098; previously absent from this loop despite 23+ dependent files across four staff-review lens agents, `plan-critic`, `planner`, `verify-build`, `staff-review`, `accessibility-review`, and `ship`; `template/base/core-docs/design-language.md` now ships a template for it). WARN, not FAIL — a missing doc is fixable by `bootstrap.sh` or a manual `touch`, never a hard block. **Deletion criterion:** delete the `designLanguagePath` loop entry if the slot ever leaves the schema.
+
+The unset-slot fallback below builds `dev-docs/<slot>.md` — matching `flow.config.schema.json`'s own declared `default` for every doc-path slot, and the convention every *other* call site in the plugin already uses (16 sites across `ship`, `ship-spike`, `land`, `verify-build`, `staff-review`, `security-review`, `accessibility-review`, `audit-coverage`, `audit-skips`, `planner`, `docs` — all `dev-docs/`). Before FB-0098 this line was the *only* `core-docs/` outlier against that convention (FB-0098's own root cause, caught mid-fix: setting flow's own `flow.config.json` slots explicitly would have masked the symptom on this one dogfood repo while leaving the same false-WARN live for every other consumer with an unset slot — the fix belongs in the default, not the config).
+
+**This loop is deliberately not exhaustive over all 33 schema slots** — see the frontmatter for the honest scope claim. Not existence-checked here, on purpose:
+- `verifyFindingsPath`, `verifyReportPath`, `visualHistoryPath`, `lastHarvestedPath` — ephemeral or CREATED ON FIRST WRITE by design (not scaffolded by `bootstrap.sh`); a missing file is the correct steady state.
+- `statusDocs`, `statusSurfaceCandidates` (Check 2.7/2.9), `flowRepoPath`, `contributionsQueuePath` (Check 2.8) — path-shaped but already existence/coherence-checked by a different check (arrays or dev-tooling paths, not scalar doc paths).
+- `referenceGlob` — a glob, not a single path; a zero-match glob isn't inherently wrong.
+- `rustWorkspaceDir` — directory path, Tauri/Rust-only, conditional on the optional `platform` hint; known gap, not fixed here — see `roadmap.md` § Exploration.
+- All other slots (`defaultBranch`, `role`, `typecheckCmd`, `preflightCmd`, `uiSurface`, `reviewLenses`, `memoryHardCap`, `branchPrefix`, `platform`, `verifyEnabled`, `verifyBudgetCalls`, `contributionThreshold`, `postMergeWaitSeconds`, `sourceFilePatterns`, `uiFilePatterns`, `visualFilePatterns`, `a11yFilePatterns`) are non-path config (commands, enums, booleans, numbers, regexes) — existence-checking a path doesn't apply. `defaultBranch`/`typecheckCmd` (Check 2.3), `role` (Check 2.11), and `contributionThreshold` (Check 2.8) get a value-sanity check instead; the remaining 13 rely on schema type/enum validation only.
+
 ```sh
 if ! command -v jq >/dev/null 2>&1; then
   echo "[SKIP] doc-path slots — jq not on PATH (see Check 4.1); cannot read flow.config.json."
 elif [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
-  for slot in planPath specPath roadmapPath historyPath feedbackPath; do
+  # NOT `.uiSurface // true` — jq's `//` treats JSON `false` as "no value" too
+  # (same as null/absent), so that form silently coerces an explicit
+  # `uiSurface: false` back to true. `if ... == false` is the plugin's
+  # established safe pattern (accessibility-review's Check 0.1 gate).
+  UI_SURFACE=$(jq -r 'if .uiSurface == false then "false" else "true" end' flow.config.json)
+  DOC_SLOTS="planPath specPath roadmapPath historyPath feedbackPath"
+  [ "$UI_SURFACE" = "true" ] && DOC_SLOTS="$DOC_SLOTS designLanguagePath"
+  for slot in $DOC_SLOTS; do
     P=$(jq -r ".${slot} // empty" flow.config.json)
-    [ -z "$P" ] && P="core-docs/$(echo $slot | sed 's/Path//').md"   # defaults
+    SLOT_WAS_SET=true
+    if [ -z "$P" ]; then
+      SLOT_WAS_SET=false
+      # dev-docs/<kebab-case-slot>.md — matches the schema's declared per-slot
+      # default, not the consumer-scaffold convention (core-docs/). camelCase ->
+      # kebab-case so a compound slot name (designLanguagePath) builds
+      # "design-language.md", not "designLanguage.md".
+      BASE=$(echo "$slot" | sed 's/Path$//' | sed 's/\([a-z0-9]\)\([A-Z]\)/\1-\2/g' | tr '[:upper:]' '[:lower:]')
+      P="dev-docs/${BASE}.md"
+    fi
     if [ -f "$P" ]; then
       echo "[PASS] ${slot}: ${P} exists"
-    else
+    elif [ "$SLOT_WAS_SET" = true ]; then
+      # An explicitly-set slot pointing at a missing file: touching THAT path is
+      # unambiguously correct — the project already told us where it wants this doc.
       echo "[WARN] ${slot}: ${P} does not exist yet"
       echo "       Fix: mkdir -p \$(dirname \"${P}\") && touch \"${P}\""
-      echo "       (Or let bootstrap.sh create it from template/base/core-docs/*.md)"
+    else
+      # Unset slot, resolved via the dev-docs/ fallback: do NOT lead with a
+      # touch-a-stub-in-dev-docs/ instruction (staff-review UX finding) — a
+      # consumer project almost always wants core-docs/ instead, and a reader
+      # who mechanically runs a bolded "Fix:" line ends up with a stray stub
+      # in the wrong directory. Point straight at the real remedy.
+      echo "[WARN] ${slot}: ${P} does not exist yet (unset — resolved via the dev-docs/ default)"
+      echo "       Fix: run bootstrap.sh to scaffold core-docs/*.md from"
+      echo "       template/base/core-docs/*.md, then set '${slot}' to that path in flow.config.json."
+      echo "       (Or, if this project deliberately uses dev-docs/ like flow's own repo:"
+      echo "       mkdir -p dev-docs && touch \"${P}\".)"
     fi
   done
+  if [ "$UI_SURFACE" != "true" ]; then
+    echo "[PASS] designLanguagePath: uiSurface is false — design-language doc not required"
+  fi
 fi
 ```
 

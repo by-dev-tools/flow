@@ -310,7 +310,11 @@ self-skipped and the entry was never written. `/flow:land` is where it gets a
 second chance. Run the SAME gate `/flow:ship` §5c uses:
 
 ```sh
-UIS=$(jq -r '.uiSurface // true' flow.config.json 2>/dev/null)
+# NOT `.uiSurface // true` — jq's `//` treats JSON `false` as "no value" too
+# (same as null/absent), so that form silently coerces an explicit
+# `uiSurface: false` back to true. `if ... == false` is the plugin's
+# established safe pattern (ship/SKILL.md §5c, doctor Check 2.4, FB-0098).
+UIS=$(jq -r 'if .uiSurface == false then "false" else "true" end' flow.config.json 2>/dev/null)
 VHPATH=$(jq -r '.visualHistoryPath // "core-docs/visual-history.html"' flow.config.json 2>/dev/null); [ -z "$VHPATH" ] && VHPATH="core-docs/visual-history.html"
 FINDINGS=$(jq -r '.verifyFindingsPath // ".flow/verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS=".flow/verify-findings.json"
 if [ "$UIS" != "true" ]; then

@@ -6,6 +6,21 @@ This is not a transcript. Each entry distills feedback into a rule or preference
 
 ---
 
+### FB-0098 — When a check disagrees with the schema it's supposed to enforce, fix the check's assumption, not the data that exposed it
+
+**Date:** 2026-09-03
+**Source type:** user correction (redirected a proposed fix mid-implementation)
+
+**What was said.** Dispatched to close a gap between `/flow:doctor`'s advertised slot coverage and what Check 2.4 actually verified (`designLanguagePath` was the named finding). While implementing, I found Check 2.4's own default-fallback would misfire on flow's own repo — it resolves an unset doc-path slot to `core-docs/<slot>.md`, which doesn't exist in flow's repo (flow uses `dev-docs/`) — and initially proposed fixing it by explicitly setting the six doc-path slots in flow's own `flow.config.json`. The user redirected: *"THE ROOT CAUSE IS NOT flow's unset config. It is that doctor disagrees with the schema... doctor is simply wrong — one outlier against the schema and 16 other call sites... setting flow's six slots explicitly would make the WARNs disappear on flow's repo while leaving every OTHER consumer with unset slots getting the same false WARNs. It masks the symptom on the dogfood repo and ships the defect."*
+
+**Synthesized rule.** When a check's behavior disagrees with a declared contract it's supposed to enforce (a JSON Schema's own `default` field, a documented convention, another check's assumption), and a specific instance exposes the disagreement, fix the check against the contract — never patch the exposing instance's data to make the symptom disappear locally. Patching the data (a) only fixes the one instance that happened to surface it, leaving every other instance silently broken, and (b) buries the actual defect one layer deeper, since the check now "passes" for a reason unrelated to its own correctness. Before accepting a fix like this, ask: does this fix make the check correct, or does it just make *this* case stop complaining?
+
+**How it was verified, not just asserted.** Before implementing either fix, both the original claim (schema declares `dev-docs/` defaults for all six doc-path slots) and the correction (16 other call sites across the plugin already use `dev-docs/`, Check 2.4 was the sole `core-docs/` outlier) were checked directly — `jq` against the live schema file, and `grep -rn` across every shipped skill/agent — rather than accepted on either party's say-so. The fix (change the check's hardcoded default literal) was then round-tripped against a real execution of the extracted shell block, including a from-scratch eval harness (`run_design_language_scaffold_evals.py`) that caught a second, independent bug in the same edit: `jq -r '.uiSurface // true'` silently coerces an explicit `uiSurface: false` back to `true`, because jq's `//` operator treats JSON `false` as "no value" the same as null/absent — the plugin's own established-correct pattern elsewhere is `if .uiSurface == false then ... else ... end`.
+
+**Applies to:** any `/flow:doctor` check or flow skill reading a `flow.config.json` slot against a schema-declared default; any future edit near a boolean-valued config slot read via jq's `//` operator (the `false`-coercion gotcha applies to every such read, not just `uiSurface`); the general discipline of escalating "should I fix the check or the data" as an open call rather than picking the locally-convenient one silently.
+
+---
+
 ### FB-0097 — Push to the remote branch is its own priority step, decoupled from finishing `/flow:ship`, in ephemeral/session-limited environments
 
 **Date:** 2026-08-27

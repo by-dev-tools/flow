@@ -10,6 +10,15 @@ To upgrade: see [`docs/upgrade.md`](docs/upgrade.md).
 
 ---
 
+## v1.37.0 — 2026-09-03
+
+**`/flow:doctor`'s slot-coverage promise now matches what it verifies, and every project gets a design-language template.**
+
+- **Check 2.4 now covers `designLanguagePath`** (gated on `uiSurface`, WARN not FAIL) — previously the only unchecked doc-path slot despite 23+ dependent files across four staff-review lens agents, `plan-critic`, `planner`, `verify-build`, `staff-review`, `accessibility-review`, and `ship`.
+- **Fixed the check's actual root cause**, found while wiring the slot in: its unset-slot default resolved to `core-docs/<slot>.md`, the *only* place in the whole plugin using that literal — the schema's own declared default, and every one of 16 other call sites, use `dev-docs/<slot>.md`. That mismatch produced false `[WARN]`s on flow's own repo for all 5 pre-existing doc-path slots, not just the new one; fixed at the source (the default), not by editing any project's config.
+- **New template: `template/base/core-docs/design-language.md`** — shape only (Axioms, Anti-patterns, a conflict-resolution Priority order, one-home Tokens, Coverage gaps), zero project content. Auto-scaffolds via `bootstrap.sh`'s existing glob.
+- **Doctor's frontmatter no longer claims "all 33 slots have sensible values"** — reworded to name exactly which checks cover which slots, and why the rest (ephemeral paths, non-path config) are intentionally excluded.
+
 ## v1.36.0 — 2026-08-27
 
 **`/flow:doctor` Check 2.5's slot-count guard is now the same wrap-tolerant predicate flow runs on itself.**
