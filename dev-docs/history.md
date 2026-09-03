@@ -414,6 +414,22 @@ That also collapsed the CLI: it had grown `required` (never called by anything),
 
 **Three-surface note.** Docs-only (`research/` + `dev-docs/`). No plugin artifacts — the orchestrator skill + toolchain manifest kind are queued §5 work, dispatched as parallel workspaces this session.
 
+## 2026-08-24 — flow-contribution: render-test-plan footnote no longer trips the coherence gate
+
+**Branch:** `drain-lesson-harvest-queue` · **PR:** #(assigned at open) · **Mode:** contribution (`/flow:contribute` drain)
+
+**What was done.** `/flow:contribute` drained the harvest queue (41 queued lessons + 1 disagreement record). One lesson was verified self-contained and clean, so it was **applied**; the rest are surfaced in the PR body as explicit, actionable holds (the human merge gate is where they get decided — FB-0073). The applied fix: `render-test-plan.py`'s unchecked-box footnote emitted the literal `🚫 NOT READY TO MERGE` heading (`= MANIFEST_HEADING`), and `pr-coherence.has_manifest` substring-matches that heading. So any **ready** PR whose Test plan carried an unchecked box (a self-reported `[~]` or unverified `[ ]` criterion) tripped `flow_assert_pr_coherent` on renderer output alone — the only escape was hand-editing generated output, which then risks the provenance digest. The footnote now directs a draft author to "the not-ready manifest" in domain prose without reproducing the machine sentinel.
+
+**Why this one, and not the other 40.** The drain is fail-safe: apply only what is verifiable as self-contained + sanitization-clean, hold the rest. This fix is a two-line prose change to one renderer with an exact, mechanical failure it removes; it earns an auto-apply. The higher-confidence holds (ship Step-5a reverse-reconciliation at 0.9; the AskUserQuestion authorization-invisibility disagreement at 0.8; the no-bare-block extractor fallback at 0.6) each need either a coordinated multi-function edit, a faithful fixture that doesn't exist yet, or a placement decision inside a heavily-defended skill — regression risk to a live gate that a blind unattended apply shouldn't take. They are named with their exact fork in the PR body so a human (or a focused session) can green-light them cheaply.
+
+**Design decision — fix the emitter, not the detector.** The lesson offered two forks: (a) the renderer stops reproducing the sentinel, or (b) `pr-coherence` matches only the fenced manifest region instead of a bare substring. Chose (a). `has_manifest`'s heading-substring check is *intentional robustness* — `manifest_contract.MANIFEST_TOKENS` documents that a body carrying the fence but not the heading (or vice versa) is still a not-ready body, so weakening the detector to fence-only would remove a real defense. The footnote reproducing the sentinel in explanatory prose was the actual defect, exactly as the skill's own author-warning says never to do.
+
+**Consistency (FB-0010 pairing).** Added a `run_render_evals.py` case (`footnote-omits-manifest-sentinel`) that pairs the negative (`🚫 NOT READY TO MERGE` must NOT appear) with the positive (the footnote must still say "not-ready manifest" and "unresolved verification gap") — so satisfying the check by deleting the footnote entirely would fail it. Mutation-tested: re-introducing the literal sentinel flips the case to FAIL; the fix makes it PASS. `run_render_evals.py` and `run_pr_coherence_evals.py` both already CI-wired; no new harness.
+
+**Provenance.** Lesson harvested from a personal project (ripe#16), sanitization-clean (no project tokens survive the scrub/scan). Confidence 0.8.
+
+**Three-surface note.** Plugin artifact change (`plugins/flow/skills/ship/lib/render-test-plan.py` + `plugins/flow/evals/run_render_evals.py`); dev-doc update here only.
+
 ---
 
 ## 2026-08-24 — Handoff without a docs-only PR class: canonical-plan §4.5 + #122 currency folded (no standalone `/flow:land` PR)
