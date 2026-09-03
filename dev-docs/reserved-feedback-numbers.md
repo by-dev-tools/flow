@@ -20,6 +20,8 @@ If you find this file with no `Currently reserved` lines, no in-flight branch is
 
 ## Currently reserved (as of 2026-09-03)
 
+- **FB-0099** — `conductor/ship-spike-audits-its-own-skips-gate-machinery` — "A gate must fire on the path that produces the most skips: `/flow:ship-spike` invoked no skip-legitimacy audit at all, so spike-mode skips were accepted on their own say-so (same class as FB-0082, FB-0085, FB-0077)." Plan at the human gate; see `dev-docs/plan.md` "PR — `/flow:ship-spike` audits its own skips". Held until MERGE. (Claimed above main's FB-0097 high-water and the in-flight FB-0098; re-check at rebase.)
+
 _(FB-0093 cleared at merge of #135, "4 auto-loading rules + doctor loader-verification check" — its reservation line said "held until MERGE"; #135 merged, so the line lingered stale until swept here at this branch's second rebase. Entry lives in `feedback.md`.)_
 _(FB-0097 cleared at merge of #138, "model-measurement harness Steps 2+3" — its reservation line lingered past merge (the documented dev-side non-auto-clear gap); swept here. Entry lives in `feedback.md`.)_
 _(FB-0098 cleared at merge of #141, "doctor slot-coverage honesty + design-language template" — its reservation line lingered past merge (same dev-side non-auto-clear gap); swept here at this branch's rebase onto the merged v1.37.0 tip. Entry lives in `feedback.md`.)_
