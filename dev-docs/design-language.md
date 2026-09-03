@@ -1,6 +1,6 @@
 # Report design language — the verify-build HTML walkthrough
 
-Scope: this doc governs the **visual language of the `/flow:verify-build` HTML report** emitted by `plugins/flow/skills/verify-build/lib/render-report.py` (V3a). It is **not** a UI surface of the flow plugin itself — flow is a library (`uiSurface: false`). It exists so the renderer's embedded CSS is a deliberate, documented system rather than ad-hoc styling, and so a future change to the report stays coherent.
+Scope: this doc governs the **visual language of the `/flow:verify-build` HTML report** emitted by `plugins/flow/skills/verify-build/lib/render-report.py` (V3a) — **that report only**. Flow *is* a UI surface (`uiSurface: true` since v1.24.0: flow has no app, but it authors browser UI a human interacts with). The report's two sibling surfaces — the click-to-comment annotation overlay and the visual-history skeleton — are **deliberately outside this doc's scope and currently ungrounded**; see `roadmap.md` § "`designLanguagePath` has no entry pointing at this surface." This doc exists so the renderer's embedded CSS is a deliberate, documented system rather than ad-hoc styling, and so a future change to the report stays coherent.
 
 The report's job (FB-0040): make the human's merge-gate task *thinking*, not rubber-stamping. The design serves legibility of **evidence** and **decisions that need input** — never decoration.
 

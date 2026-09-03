@@ -4,7 +4,9 @@
 **Status:** research / direction-setting. Elevates **two** items to top priority in `roadmap.md` § Now — **M** (subagent model routing, already scoped) and **AB** (attention budget & harness-weight audit, **net-new**). No plugin artifacts changed by this doc.
 **Companion doc:** `ai-workflow-landscape-2026-07.md` benchmarks flow against *competing frameworks* (gstack / Superpowers / GSD) and the Claude-Code **loops** article. This doc is the *first-party Anthropic canon* layer that one never mapped — specifically the **context-engineering** article, which is the freshest and most load-bearing of the set.
 
-**Provenance / confidence.** `anthropic.com` is **egress-blocked** from the flow CI/dev environment (Cloudflare 403 on the direct route; not-in-allowlist through the agent proxy), and per proxy policy those denials are not retried. The article specifics below were recovered from **WebSearch result summaries** (which quote the articles) plus training knowledge — **not** the full article text. Treat the "the article says X" claims as **high-confidence-but-unverified against source**; re-fetch and confirm quotes if any of them become load-bearing for a shipped change. Flow's *own* state (what it does and doesn't do) is directly verified against the repo.
+**Provenance / confidence.** ⚠️ **Access caveat CORRECTED 2026-09-03 — `anthropic.com` is NOT blocked.** As written 2026-08-14, this line claimed `anthropic.com` was **egress-blocked** from the flow CI/dev environment (Cloudflare 403 direct; not-in-allowlist through the agent proxy). That is **false as of 2026-09-03**: `www.anthropic.com`, `code.claude.com` and `docs.claude.com` all return `200` and serve real content. Verified twice independently — `https://www.anthropic.com/engineering/building-effective-agents` returns `200 text/html`, title *"Building Effective AI Agents \ Anthropic"*, headings *"Building effective agents" → "What are agents?"*. Whether the original block was environment-specific or has since lifted is unknown and not worth investigating.
+
+**What that does and does not change.** The article specifics below were recovered from **WebSearch result summaries** (which quote the articles) plus training knowledge — **not** the full article text — so they remain **unverified against source** and should still be treated that way until someone re-reads them. What *has* changed is the cost of fixing that: re-verification is now **cheap and unblocked**, so a future pass can confirm every quote directly instead of routing around a block. Do that before any of these quotes becomes load-bearing for a shipped change. Flow's *own* state (what it does and doesn't do) was directly verified against the repo and is unaffected.
 
 ---
 
@@ -73,7 +75,7 @@ The user reviewed this alignment check and directed that flow **capture the find
 
 ## Sources
 
-First-party (egress-blocked — recovered via WebSearch summaries + training knowledge; re-fetch to verify quotes):
+First-party (**reachable — see the corrected Provenance note above.** Quotes below were recovered via WebSearch summaries + training knowledge and are still unverified against source; re-fetching to confirm them is now cheap and unblocked):
 - Anthropic — *Effective context engineering for AI agents* (`anthropic.com/engineering/effective-context-engineering-for-ai-agents`)
 - Anthropic — *Building Effective AI Agents* (`anthropic.com/engineering/building-effective-agents`)
 - Anthropic — *Effective harnesses for long-running agents* (`anthropic.com/engineering/effective-harnesses-for-long-running-agents`)

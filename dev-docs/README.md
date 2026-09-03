@@ -25,6 +25,7 @@ Each is accurate as of its date and is **not** maintained afterward. Read the St
 
 | Doc | Date | Status |
 |---|---|---|
+| [`research/2026-09-design-md-investigation.md`](research/2026-09-design-md-investigation.md) | 2026-09 | Vercel's `design.md` / `product-design` trilogy + a survey of agentic *design-quality* guidance in public, with first-hand drift checks across the 4 consumer repos. **Recommends building almost nothing** — 3 plumbing fixes, 1 doc template, 1 cheap ablation; explicit NO to 6 things. Routes to § Next + § Exploration |
 | [`research/service-agnostic-2026-07.md`](research/service-agnostic-2026-07.md) | 2026-07 | ⚠️ **Partially superseded** — field survey (standards, prior art, 13-host landscape). For execution decisions the roadmap below is authoritative |
 | [`research/2026-08-14-long-running-loops.md`](research/2026-08-14-long-running-loops.md) | 2026-08 | **Prototype-gated, not committed work** — successive-PR autonomous loops, a decision corpus, divergent-variation landscapes. Feeds a `roadmap.md` § Exploration entry |
 | [`research/anthropic-canon-alignment-2026-08.md`](research/anthropic-canon-alignment-2026-08.md) | 2026-08 | Alignment check vs Anthropic's first-party agent canon. **Elevated M (model routing) + AB (attention budget) to top priority** in `roadmap.md` § Now |
