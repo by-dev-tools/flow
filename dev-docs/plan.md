@@ -2,6 +2,8 @@
 
 ## Current Focus
 
+**▶ Shipped (this branch, `conductor/doctor-slot-loop-coverage-design-language-template`, v1.37.0, FB-0098): `/flow:doctor` slot-coverage honesty + design-language template.** Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its actual root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source. New `template/base/core-docs/design-language.md` (shape only: Axioms, Anti-patterns, Priority order, Tokens, Coverage gaps). Doctor's frontmatter no longer over-promises "all 33 slots." See the "PR — Doctor slot-coverage honesty" block below for the full Spec-walk.
+
 **▶ Active (this branch, `conductor/d1-phase-1-experience-lens-brief-orchestrator`, v1.35.0): D1 Phase 1 — the experience/ambition lens (D3) + design-brief template + pre-prototype review orchestrator.** Implements `dev-docs/handoffs/d1-prototype-first-gate.md` § Phase 1 (FB-0081/FB-0046) — the new `plugins/flow/agents/lens-experience.md` agent, a design-brief template documented in `workflow.md`, and `/flow:review-brief` (fans `auditor` + `plan-critic` + `lens-experience` out over one extraction, one triaged verdict). Self-contained per the handoff's own §13 PR breakdown: no trigger, no prototype phase, no human gate 1, no workflow.md Step 1–2 reorder — those are Phase 2/3. §9.2 (proportionality threshold) deliberately deferred to Phase 2. See the "PR — D1 Phase 1" block below for the full Spec-walk + the three human-decided open calls (severity taxonomy, ~80-word brief target, §9.2 deferral).
 
 **▶ Active (this branch, KEYSTONE — plan APPROVED at the gate, executing): the `toolchain` manifest kind (canonical §4.2 / §5 Step 1).** Flow can say "there is no runnable target" but not "runnable in principle, not on *this* host" — so a cloud Linux workspace on an `ios` project is mechanically told SHOULD-RE-RUN for the only honest skip it has. Adds a `toolchain` KIND_COPY record (`blocked` + `CHECK_ONLY`), a **validated** LEGITIMATE branch in the skip auditor (toolchain-shaped reason **AND** a ground-truth `absent()` probe — the human overruled my reason-independent recommendation, correctly), a minimal `/flow:verify-build` § 1.2 producer so the skip is actually emitted, and the Step 2a.3 routing that turns the verdict into a draft-manifest entry. v1.32.0. Steps 3+ (placement rule, `needs-mac-verify`, `/verify-queue`, orchestrator) explicitly NOT built. See the "PR — `toolchain` manifest kind" block below.
@@ -12,7 +14,48 @@
 
 **▶ EXECUTED, shipping (this branch, `conductor/phase-00-rules-as-skills-hooks-fix-fb-0085`): Phase 00 — fix two shipped-but-never-loading flow features (rules→skills, hooks declaration; FB-0085), v1.33.0.** Standalone prerequisite from `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` §17/Phase 00, independent of any Codex/Cursor porting work. Plan approved with both escalated decisions accepted as recommended (00b hooks stay opt-in; 00c one-time content sync + explicit sync-note, not a full merge; 00d no bootstrap.sh change). Executed: skill count 17→21 (`claude plugin details` confirms live), full eval suite green, `/flow:critique-plan` findings fixed pre-execution. See the "PR — Phase 00" block below for the full Spec-walk + confidence verdicts, and `dev-docs/history.md` 2026-08-27 for the shipped write-up.
 
-**▶ EXECUTED, shipping (this branch, `conductor/spike-designmd-investigation-vercel-agentic-design-guidance`): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md` and the "PR — Spike" block below.
+**▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
+
+## PR — Doctor slot-coverage honesty + design-language template (this branch, `conductor/doctor-slot-loop-coverage-design-language-template`, FB-0098, v1.37.0, EXECUTED — shipping)
+
+**Restated request:** close the gap between `/flow:doctor`'s advertised "all 33 slots have sensible values" and Check 2.4's actual 5-slot loop (`designLanguagePath` named as the verified finding — 23+ dependent files, no template shipped for it), per `dev-docs/research/2026-09-design-md-investigation.md` (spike, branch `conductor/spike-designmd-investigation-vercel-agentic-design-guidance`).
+
+**Mode:** bugfix + small feature (`platform: library`-shaped; no UI surface in this diff — security/a11y self-skip).
+
+**Scope (in):**
+- Check 2.4 adds `designLanguagePath`, gated on `uiSurface`, WARN not FAIL.
+- All 33 schema slots classified by reading each one's own schema description; only `designLanguagePath` was a genuine unchecked doc-path slot. Classification documented inline in Check 2.4's own prose.
+- Root-cause fix: Check 2.4's unset-slot default now builds `dev-docs/<slot>.md` (matching the schema's declared default + 16 other call sites), not `core-docs/<slot>.md` (the sole prior outlier). Includes a camelCase→kebab-case fix for compound slot names.
+- Second bug caught by the new eval: `uiSurface` gate fixed from `// true` (silently coerces explicit `false`) to `if ... == false` (the plugin's established-safe pattern).
+- `template/base/core-docs/design-language.md` — new, shape only, per the spike's S3.
+- Doctor frontmatter reworded to an honest, check-number-cited claim.
+- `rustWorkspaceDir` (a same-class, evidenced-but-out-of-scope gap) routed to `roadmap.md` § Exploration.
+- New eval `run_design_language_scaffold_evals.py` (executes the real extracted Check 2.4 shell block, doesn't just grep it; includes a schema-driven "join" check tying the default-resolution output directly to the schema's declared defaults). Wired into `ci.yml`.
+
+**Scope (out) — per the spike's DO-NOT-BUILD list, explicitly not built:** a design-doc eval harness, a token drift-checker, a fifth design gate, a hosted design.md convention, multi-path `designLanguagePath`, design linters. Also not auditing/fixing all 26 originally-unchecked slots — only the evidenced instance plus honest reclassification of the rest. `rustWorkspaceDir` deferred (see above).
+
+**Spec-walk:**
+- [x] Check 2.4 checks `designLanguagePath` when `uiSurface` is true, WARN not FAIL. *Verified:* `run_design_language_scaffold_evals.py` `exec-1`/`exec-2` (real shell block executed against both missing and present fixtures).
+- [x] `uiSurface: false` projects are not required to have the doc, and get an explicit PASS explaining why (not silence). *Verified:* `exec-3`/`exec-4`.
+- [x] Unset-slot default matches the schema's own declared default for all six doc-path slots — not a duplicated hardcoded expectation, read directly from `flow.config.schema.json`. *Verified:* `join-1`/`join-2` (6 slots).
+- [x] The `core-docs/` literal is gone from the default-assignment; `dev-docs/` is present. *Verified:* `doctor-4`/`doctor-5` (string-level pin) plus every `exec-*`/`join-*` check (behavioral proof).
+- [x] Manually confirmed against flow's own real `flow.config.json` (no edits needed): all 6 doc-path slots resolve `[PASS]`.
+- [x] Template file exists with all five required headings, the authoring-rule footer, zero project-token-shaped strings, and lives where `bootstrap.sh`'s existing `core-docs/*.md` glob picks it up. *Verified:* `template-1` through `template-6`.
+- [x] Frontmatter no longer contains the bare "all 33 slots have sensible values" phrase, and cites every check number (2.3/2.4/2.7/2.8/2.9/2.11) the classification assigns coverage to. *Verified:* `honesty-1`/`honesty-2` (6 checks).
+- [x] No regression across the full eval suite. *Verified:* all 25 `plugins/flow/evals/run_*.py` harnesses green, run locally.
+
+**Confidence verdicts (per load-bearing assumption):**
+
+**Assumption:** the 16-call-site `dev-docs/` convention + schema declared defaults are the correct target, not `core-docs/`.
+**Confidence:** HIGH
+**Why:** directly verified — `jq` against the live schema, `grep -rn` across every shipped skill/agent for the literal default strings, and the extracted Check 2.4 block executed against flow's own real (unedited) `flow.config.json`, all agreeing.
+**If it flips:** would require the schema's own `default` fields to be wrong, which is a separate, larger defect than this PR's scope.
+
+**Tradeoffs discussed:** see `dev-docs/history.md` 2026-09-03 — the redirected root-cause fix (config-edit vs. check-fix), the `rustWorkspaceDir` deferral, and the hand-maintained (not mechanically derived) frontmatter check-citation list.
+
+**Plan-gate history:** three `/flow:critique-plan` findings surfaced and fixed before execution — a batched (not immediate) FB-0098 reservation (protocol violation, fixed: pushed as its own first commit), an under-cited frontmatter check list (fixed twice — first missing Check 2.7, then Check 2.11), and a factually wrong "verified fact" in an early plan draft (claimed flow's config explicitly set 5 slots it does not — corrected after re-verification, which also surfaced the actual root-cause redirect from the human). Never picked silently — see FB-0098.
+
+**Files touched:** `plugins/flow/skills/doctor/SKILL.md`, `template/base/core-docs/design-language.md` (new), `plugins/flow/evals/run_design_language_scaffold_evals.py` (new), `.github/workflows/ci.yml`, `.claude-plugin/marketplace.json`, `plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, `dev-docs/roadmap.md`, `dev-docs/plan.md` (this block), `dev-docs/history.md`, `dev-docs/feedback.md` (FB-0098), `dev-docs/reserved-feedback-numbers.md`.
 
 ## PR — Model-measurement harness, Steps 2+3 (this branch, `conductor/model-measurement-harness-steps-2-3-item-m`, EXECUTED — shipping)
 

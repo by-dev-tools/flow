@@ -663,6 +663,18 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 
 ## § Exploration
 
+### `rustWorkspaceDir` existence check — deferred out of the FB-0098 doctor-slot-coverage PR (2026-09-03)
+
+FB-0098's slot classification (`/flow:doctor` Check 2.4) found `rustWorkspaceDir` is a genuine directory-path gap — nothing checks it exists — but deliberately did not fix it in that PR. Two reasons: it's conditional on the optional `platform` hint slot (a fuzzier shape than the other doc-path slots, which are unconditional), and it wasn't part of the verified finding that PR was dispatched to close (only `designLanguagePath` was). Narrow blast radius today — one stack overlay (Tauri/Rust).
+
+**Surfaces when:** a second Tauri/Rust-stack project reports doctor missing a misconfigured `rustWorkspaceDir`, or the next doctor slot-coverage pass is already open anyway.
+
+### Three staff-review follow-ups from the FB-0098 doctor slot-coverage PR (2026-09-03)
+
+- **`run_jq_guard_evals.py` doesn't cover `land/SKILL.md`'s `uiSurface`/`visualHistoryPath`/`verifyFindingsPath` reads.** FB-0098 fixed a `.uiSurface // true` jq-`false`-coercion bug in `land/SKILL.md` (mirroring the same fix already made in `doctor/SKILL.md` Check 2.4), but confirmed via grep that the guard-eval harness's site inventory never included `land`'s reads — so the bug would not have been caught even after a future regression. Extend the harness's site inventory the next time someone is in that file (same "derive coverage from disk, not memory" discipline the harness's own comments already state for doctor checks). **Surfaces when:** `run_jq_guard_evals.py` or `land/SKILL.md` is next touched.
+- **`workflow-help/SKILL.md`'s slot table is missing several real `designLanguagePath` consumers** (`/flow:doctor`, `planner`, `verify-build`, `ship`) in its "Used by" column — pre-existing incompleteness, not something FB-0098 introduced or is scoped to fix. **Surfaces when:** that table is next revisited for any reason.
+- **`template/base/core-docs/design-language.md` has no signal distinguishing "populated" from "still the unfilled scaffold."** Check 2.4 only checks existence; a project that bootstraps and never authors the doc gets an unqualified `[PASS]`, and downstream `/flow:staff-review` + `/flow:accessibility-review` lens agents are handed the raw file (including its HTML-comment worked examples) with nothing instructing them to discount comment-wrapped example text as illustrative rather than the project's real, declared axioms. Risk: a lens could quote the template's own worked example back as if it were project-specific taste — false grounding presented as real. A cheap partial fix (proposed by the reviewing lens): Check 2.4 also greps for a still-present placeholder marker (e.g. `<!-- Numbered, falsifiable rules`) and downgrades to a distinct `[WARN] designLanguagePath: template not yet authored`. A full fix spans Check 2.4, the template's placeholder convention, and every lens prompt's read-instructions — real scope, not a one-line fix, so not built into FB-0098. **Surfaces when:** a first `uiSurface: true` consumer project bootstraps and runs `/flow:staff-review` before authoring the design-language doc, or the next doctor/lens-prompt pass touches this area anyway.
+
 ### Fire-rate×recency memory ranking — blocked on flow controlling injection order (2026-08-27)
 
 Roadmap #3's original shape included (a) fire-count instrumentation (a deterministic
