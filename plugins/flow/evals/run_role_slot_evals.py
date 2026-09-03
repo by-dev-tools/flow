@@ -46,29 +46,14 @@ import sys
 import tempfile
 from pathlib import Path
 
+from eval_utils import fenced_block, rest_from as _rest_from  # noqa: F401 (fenced_block used below)
+
 HERE = Path(__file__).parent
 SCHEMA = HERE.parent / "schema" / "flow.config.schema.json"
 DOCTOR_SKILL = HERE.parent / "skills" / "doctor" / "SKILL.md"
 WORKFLOW_DOC = HERE.parent / "docs" / "workflow.md"
 
 fails = 0
-
-
-def _rest_from(text, heading_substr):
-    """Slice `text` from `heading_substr` onward, or None if absent."""
-    idx = text.find(heading_substr)
-    return None if idx == -1 else text[idx:]
-
-
-def fenced_block(text, heading_substr):
-    """The first ```sh fenced block after `heading_substr` — the executable
-    shell, not the surrounding prose. Used to actually RUN Check 2.11 rather
-    than grep its text (the shell-injection regression check below)."""
-    rest = _rest_from(text, heading_substr)
-    if rest is None:
-        return None
-    m = re.search(r"```sh\n(.*?)\n```", rest, re.DOTALL)
-    return m.group(1) if m else None
 
 
 def section_after(text, heading_substr):
