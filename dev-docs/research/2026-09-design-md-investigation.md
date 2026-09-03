@@ -1,7 +1,8 @@
 # Agentic design guidance in public — Vercel's `design.md`, the wider survey, and what flow should (and shouldn't) do
 
 **Date:** 2026-09-03
-**Status:** research / direction-setting. **Spike — no plugin artifacts changed by this doc.** Deliverable is the finding + a recommendation; §6 routes items to `roadmap.md`. Nothing here is approved scope.
+**Status:** research / direction-setting. **Spike — no plugin artifacts changed (`plugins/flow/**` untouched).** Deliverable is the finding + a recommendation; §6 routes items to `roadmap.md`. Nothing in §5 is approved scope.
+**Shipped alongside this doc:** the two doc-currency bugs it found in passing (§6) — the stale `uiSurface: false` claim in `CLAUDE.md` + `dev-docs/design-language.md`, and the stale egress-blocked caveat in `anthropic-canon-alignment-2026-08.md`. Both independently re-confirmed by the human before fixing. Dev-doc / project-infra corrections only; no plugin behavior changes.
 **Question researched (original):** what is Vercel's `design.md`, and what should flow learn from it?
 **Question researched (extended, user direction 2026-09-03):** widen to a survey of how leading AI/product companies build in public on *agentic design quality* — how agents produce high-quality design/craft output, and how that improves from human feedback.
 **Companion docs:** `ai-workflow-landscape-2026-07.md` (competitor frameworks, reflection, visual feedback), `anthropic-canon-alignment-2026-08.md` (Anthropic canon), `service-agnostic-2026-07.md` (AGENTS.md / skills / packaging), `dev-docs/handoffs/d1-prototype-first-gate.md` (the prototype-first gate this interacts with).
@@ -255,7 +256,19 @@ These are defects in flow, found while checking the above. All three verified in
 2. **Nothing checks the doc exists.** `/flow:doctor`'s slot-existence loop is `for slot in planPath specPath roadmapPath historyPath feedbackPath` (`skills/doctor/SKILL.md:229`). `designLanguagePath` is **not in it**, despite doctor's own header promising *"the paths named in slots actually exist on disk."* Meanwhile **15 plugin files** reference the slot (agents `lens-design-engineer`, `lens-ux-designer`, `lens-push-further`, `planner`; skills `staff-review`, `accessibility-review`, `plan-discipline`, `ship`, `verify-build`, `workflow-help`, `doctor`-adjacent schema; plus `docs/workflow.md` and the verify-build schema/example). Three lens agents treat it as their *primary grounding doc* — `lens-design-engineer.md:29` calls it *"your primary source-of-truth"*, `lens-push-further.md:38` says *"uncommon care without grounding is just opinion."*
 3. **The slot is a single string; the richest consumer has ten files.** `health-tracker` points `designLanguagePath` at `decisions/design-language.md`, so the lens agents never see `workflow/design-system/{color-tokens,typography,motion,spacing-and-layout,components,accessibility,voice-and-copy}.md`. Its `referenceGlob` is `decisions/*.md`, which doesn't reach them either. The best design corpus in the fleet is ~80% invisible to the reviewers that most need it.
 
-Gap 2 is also an instance of the shape `.claude/rules/general.md` warns about: doctor's header asserts a property that its code does not check for this slot.
+**Gap 2 is broader than `designLanguagePath`, and that reframing matters** *(sharpened 2026-09-03 on review; the original wording under-stated it)*. Doctor's frontmatter advertises two distinct guarantees — *"all 33 slots have sensible values"* and *"the paths named in slots actually exist on disk."* Measured against the code:
+
+| Advertised | Delivered | Coverage |
+|---|---|---|
+| "all 33 slots have sensible values" (`SKILL.md:9`) | Check 2.3 value-checks **2** slots — `typecheckCmd`, `defaultBranch` | 2 / 33 |
+| "the paths named in slots actually exist on disk" (`SKILL.md:13`) | Check 2.4's loop path-checks **5** — `planPath specPath roadmapPath historyPath feedbackPath` (`SKILL.md:229`) | 5 / 33 |
+| — | **Union: 7 of 33 slots are checked at all** | **~21%** |
+
+`designLanguagePath` is one of the 26 unchecked slots, not a lone oversight. So this is the **same advertised-but-not-delivered class as Phase 00 / FB-0085** (the auto-loading rules that were documented but never verified as loaded), and it is exactly the shape `.claude/rules/general.md` § "Consistency discipline" warns about: a header asserts a property the code does not check.
+
+Sharpest instance of the irony: **Check 2.5 exists specifically to catch stale literal "N slots" counts in *consumer* docs** (the FB-0010 fan-out check) — while doctor's own frontmatter carries a "33 slots" promise it does not keep. The count is accurate (the schema does have 33 properties); the *guarantee attached to it* is not.
+
+**This widens S1 (§5a) but does not change its size.** Adding `designLanguagePath` to the loop is still the right first move — it is the slot with 15 dependent files and three agents calling it their primary source-of-truth. Auditing all 26 unchecked slots is a separate, larger job that should be sized on its own evidence, not smuggled in here. What *should* change now is the **frontmatter wording**, so the advertised guarantee matches what ships (one line, and it costs nothing to be honest).
 
 ### 3.5 Interaction with D1 (prototype-first gate)
 
@@ -305,7 +318,12 @@ Flow carries ~91 queued roadmap items and a recent repo-wide review found real o
 
 ### 5a. DO — fix the plumbing (small, obviously correct, pays for itself)
 
-**S1. Add `designLanguagePath` to `/flow:doctor`'s slot-existence check.** One token added to the loop at `skills/doctor/SKILL.md:229`, gated on `uiSurface: true`, WARN not FAIL (the slot is legitimately optional). Closes gap §3.4-2, where doctor's header already promises this. **Cost:** ~1 line + a check-count update (grep first — the "N checks" fan-out is the FB-0010 class). **Deletion criterion (FB-0088):** delete if `designLanguagePath` is ever removed from the schema.
+**S1. Add `designLanguagePath` to `/flow:doctor`'s slot-existence check, and make the frontmatter's promise honest.** Two parts, both small:
+- One token added to the loop at `skills/doctor/SKILL.md:229`, gated on `uiSurface: true`, WARN not FAIL (the slot is legitimately optional).
+- **Reword the frontmatter guarantee.** *"all 33 slots have sensible values"* is false — 7 of 33 are checked (§3.4-2). Say what ships (e.g. "required and doc-path slots have sensible values") rather than deleting the check. ⚠️ **Do not satisfy this by deleting the claim alone** — that is the "prohibition satisfiable by deletion" trap in `.claude/rules/general.md`; pair the reworded claim with the positive assertion of what *is* checked.
+
+Closes gap §3.4-2. **Cost:** ~1 line of shell + a frontmatter sentence + a check-count update (grep first — the "N checks" fan-out is the FB-0010 class).
+**Deletion criterion (FB-0088):** delete the loop entry if `designLanguagePath` leaves the schema. **Explicitly NOT in scope:** auditing the other 26 unchecked slots — see §6 § Exploration.
 
 **S2. Ship `template/base/core-docs/design-language.md` as a template.** Closes gap §3.4-1. Content = the *shape* only, no taste. See S3.
 
@@ -361,9 +379,11 @@ Proposed; nothing added by this doc.
 - **Merge candidate into roadmap #3 — measure whether encoded corrections stop recurring.** *Surfaces when:* roadmap #3 (memory instrumentation) is next sized. Cross-reference §5d; do not size independently.
 - **`health-tracker`'s design-system corpus is ~80% invisible to the lens agents** (§3.4-3). *Surfaces when:* a lens finding in `health-tracker` turns out to be ungrounded because the relevant rule lived in `workflow/design-system/`. *Cheap fix first:* an index doc at the slot path; only consider a schema change if a second repo hits it.
 
-**Also worth doing, unrelated to design (found in passing)**
-- `dev-docs/design-language.md` and `CLAUDE.md` both state *"flow is `uiSurface: false`"*; `flow.config.json` has said `uiSurface: true` since v1.24.0 with a long comment explaining why. Two stale claims, FB-0010 fan-out class. One-line fix in each; fold into any docs PR.
-- `anthropic-canon-alignment-2026-08.md`'s provenance caveat (anthropic.com egress-blocked) is stale in this environment — its quotes can now be verified against source cheaply.
+- **`/flow:doctor` checks only 7 of 33 config slots** while its frontmatter advertises all 33 (§3.4-2). *Surfaces when:* a consumer reports a misconfiguration doctor said was clean, or the next doctor PR opens the file anyway. *Do not size off this spike* — S1 fixes the one slot with 15 dependents and corrects the wording; auditing the remaining 26 needs its own evidence that unchecked slots actually cause failures. Same class as Phase 00 / FB-0085.
+
+**Also worth doing, unrelated to design (found in passing — both FIXED in this PR)**
+- ✅ `dev-docs/design-language.md:3` and `CLAUDE.md:115` both stated *"flow is `uiSurface: false`"*; `flow.config.json` has said `uiSurface: true` since v1.24.0 with a long comment explaining why. Two stale claims, FB-0010 fan-out class. **Corrected in this PR** — the design-language doc's *scope* claim (it governs the verify-build report specifically) was correct and was preserved; only the `uiSurface` assertion changed.
+- ✅ `anthropic-canon-alignment-2026-08.md`'s provenance caveat claimed anthropic.com was egress-blocked. **Corrected in this PR** — re-verified live (`200`, title *"Building Effective AI Agents \ Anthropic"*). Its quotes remain unverified against source; what changed is that re-verification is now cheap and unblocked. That larger re-read is deliberately **not** done here.
 
 ---
 

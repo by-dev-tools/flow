@@ -12,6 +12,8 @@
 
 **▶ EXECUTED, shipping (this branch, `conductor/phase-00-rules-as-skills-hooks-fix-fb-0085`): Phase 00 — fix two shipped-but-never-loading flow features (rules→skills, hooks declaration; FB-0085), v1.33.0.** Standalone prerequisite from `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` §17/Phase 00, independent of any Codex/Cursor porting work. Plan approved with both escalated decisions accepted as recommended (00b hooks stay opt-in; 00c one-time content sync + explicit sync-note, not a full merge; 00d no bootstrap.sh change). Executed: skill count 17→21 (`claude plugin details` confirms live), full eval suite green, `/flow:critique-plan` findings fixed pre-execution. See the "PR — Phase 00" block below for the full Spec-walk + confidence verdicts, and `dev-docs/history.md` 2026-08-27 for the shipped write-up.
 
+**▶ EXECUTED, shipping (this branch, `conductor/spike-designmd-investigation-vercel-agentic-design-guidance`): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md` and the "PR — Spike" block below.
+
 ## PR — Model-measurement harness, Steps 2+3 (this branch, `conductor/model-measurement-harness-steps-2-3-item-m`, EXECUTED — shipping)
 
 **Superseded/retained note:** Step 1 (per-subagent token attribution) shipped as #129 with its own Spec-walk (see history.md 2026-08-26). This block replaces the original QUEUED draft for Steps 2+3 with what was actually built; the original draft's bullets are preserved below each corresponding item for traceability.
@@ -53,6 +55,36 @@
 **Deliberately deferred (human decision at the plan gate):** the first live A/B run (spawning real Opus + Sonnet subagents against the fixtures) is real cost exposure and was explicitly NOT bundled into this PR — the human approved the harness + synthetic self-tests only, deferring the first live run to a separate, later, explicitly-confirmed step.
 
 **Files touched:** `tools/model-measure/ab_eval.py` (new), `tools/model-measure/run_ab_eval_evals.py` (new), `tools/model-measure/shadow_sampler.py` (new), `tools/model-measure/run_shadow_sampler_evals.py` (new), `tools/model-measure/run_model_measure_evals.py` (new concurrent-spawn case), `.github/workflows/ci.yml` (two more `run:` steps under `model-measure`), `dev-docs/plan.md` (this entry), `dev-docs/roadmap.md` (item M Steps 2/3 marked shipped + follow-ups), `dev-docs/history.md` (ship-time entry). **No plugin artifacts changed** — no version bump, no manifest edit, no CHANGELOG entry, same non-shipped status as Step 1. **Zero agent `model:` changes.**
+
+## PR — SPIKE: agentic design-guidance investigation (this branch, `conductor/spike-designmd-investigation-vercel-agentic-design-guidance`, EXECUTED — shipping)
+
+**Mode:** spike (research — the doc is the deliverable; no code was written to answer the question).
+`platform: library` ⇒ `/flow:verify-build` self-skips. Docs-only diff ⇒ mechanical preflight self-skips; `/simplify` + `/flow:staff-review` skipped per spike mode.
+
+**Research question.** What, if anything, should flow learn from Vercel's `design.md`? Extended mid-spike by user direction to: what are leading AI/product companies publishing on how agents produce high-quality **design/craft** output, and how that improves from human feedback — the axis flow's existing research corpus (orchestration, context, reflection, spec-driven loops) does not cover?
+
+**What was built.** Nothing shipped as code. `dev-docs/research/2026-09-design-md-investigation.md` (~420 lines): primary sources fetched live and quoted, the four consumer repos read at HEAD via `gh api` with two token drift-checks, a flow-level-mechanism vs repo-level-content split argued from that evidence, and a recommendation with explicit non-goals.
+
+**What we learned (short form; full doc for the argument).**
+- Vercel published **three** artifacts, not one. `design.md` is a rewrite compensating for an agent that *cannot read a codebase* — every flow consumer can, so the relevant post is the other one (`product-design`, in-repo skill + linters + review loop).
+- The only large measured result in the survey is about **loading, not authoring**: an available skill went uninvoked 56% of the time and scored *at* baseline (53%/53%), while passive always-present context hit 100%. Measured on framework APIs, not design — extension to design guidance is flagged as inference, with the cheap experiment named.
+- **Drift-checked the fleet:** `ripe` and `health-tracker` zero drift, `music-app` drift-proof by construction, `portfolio` (not a flow consumer) has one confirmed doc↔code divergence. **The design docs are working; nothing enforces them; the evidence does not show that anything needs to.**
+- Two of Vercel's strongest moves (falsifiable axioms, named anti-patterns) were **already independently invented** in `ripe` and `music-app` — and never written anywhere the next repo could inherit them. Supplying the *shape* is flow's job; supplying the *content* never is.
+- Three verified defects in flow's own `designLanguagePath` plumbing (no template, absent from doctor's slot loop, single-string slot hides ~80% of `health-tracker`'s design corpus).
+
+**Recommendation: proceed — but small.** Next real PR is S1+S2+S3 (§5a): add `designLanguagePath` to `/flow:doctor`'s slot-existence loop **and** correct the frontmatter's false "all 33 slots" guarantee (7 of 33 are actually checked); ship `template/base/core-docs/design-language.md` carrying five shape rules and no taste. Explicit **NO** to six things (§5c), each with a deletion criterion (FB-0088) and what would flip it. Routed to `roadmap.md` § Next + § Exploration by this doc's §6; **not yet added to the roadmap** — that is the follow-up PR's job, not the spike's.
+
+**Disposability.** No code to dispose of. The research doc is **kept** as a point-in-time record with a `Status:` line per repo convention and is indexed in `dev-docs/README.md`. It gates the S1–S3 PR; if that PR never happens, the doc still stands as the recorded reason flow did *not* build design machinery.
+
+**Carried in the same PR (doc-currency fixes, both independently confirmed by the human before fixing).**
+- Stale `uiSurface: false` claim in `CLAUDE.md:115` and `dev-docs/design-language.md:3` — `flow.config.json` has said `true` since v1.24.0. The design-language doc's *scope* claim (it governs the verify-build HTML report specifically) was correct and was **preserved**; only the `uiSurface` assertion changed, plus a pointer to the two sibling browser surfaces that remain deliberately out of its scope.
+- Stale "anthropic.com is egress-blocked" caveat in `dev-docs/research/anthropic-canon-alignment-2026-08.md` (lines 7 + 76). Re-verified live: `200`, title *"Building Effective AI Agents \ Anthropic"*. The caveat is corrected **without** claiming its quotes are now verified — they aren't; what changed is that re-verification is cheap and unblocked, which is stated so a future pass can do it.
+
+**Deliberately NOT done.**
+- **No version bump.** The diff touches zero plugin artifacts, and the last three merges to `main` (#125, #136, #138) all sit at v1.36.0. Flagged to the human rather than decided silently — a one-line change if they want it.
+- **No `feedback.md` entry.** `/flow:ship-spike` § 4 forbids it: spike conversations are too sparse on user direction to distill reliably. FB-0097 remains the high-water mark, unconsumed.
+- **No roadmap edits.** §6 *proposes* routing; the human decides what lands.
+- **Did not re-verify `anthropic-canon-alignment-2026-08.md`'s quotes.** Separate, larger job, explicitly out of scope.
 
 ## PR — Phase 00: fix two shipped-but-never-loading flow features (this branch, EXECUTED — shipping)
 

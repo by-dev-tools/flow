@@ -112,7 +112,7 @@ All living project knowledge lives in `dev-docs/`. Read before acting; update be
 | Feedback | `dev-docs/feedback.md` | Synthesized user corrections (FB-XXXX) |
 | Spec | `dev-docs/spec.md` | Plugin scope (audit-side today; broadening queued) |
 | Workflow | `dev-docs/workflow.md` | Flow-internal dev workflow |
-| Design language | `dev-docs/design-language.md` | Visual/interaction rules (thin — flow is `uiSurface: false`) |
+| Design language | `dev-docs/design-language.md` | Visual/interaction rules (thin — scoped to the `/flow:verify-build` HTML report. Flow is `uiSurface: true`: no app, but it ships browser UI) |
 | Reserved FB numbers | `dev-docs/reserved-feedback-numbers.md` | Reserve an FB number **before** drafting its entry |
 | Research | `dev-docs/research/*.md` | Point-in-time findings. Not maintained — check the Status line |
 | Handoffs | `dev-docs/handoffs/*.md` | Per-PR execution plans. Check the Status banner before treating one as active |
