@@ -91,6 +91,8 @@ jobs:
         with:
           python-version: '3.11'
       - run: python3 tools/model-measure/run_model_measure_evals.py
+      - run: python3 tools/model-measure/run_ab_eval_evals.py
+      - run: python3 tools/model-measure/run_shadow_sampler_evals.py
 
   harness-audit:
     name: harness-audit (dev tooling, not shipped — FB-0095)
