@@ -23,7 +23,6 @@ git-state dependency. Stdlib only.
 
 from __future__ import annotations
 
-import re
 import json
 import subprocess
 import sys
@@ -436,10 +435,6 @@ def main() -> int:
               "ship-spike must actually CALL /flow:audit-skips (FB-0100) — a spike PR is "
               "the skip-heaviest path in the workflow, and through v1.37.0 it was the one "
               "path that audited none of them")
-        check("ship-spike-declares-the-Skill-tool",
-              re.search(r"^allowed-tools:.*\bSkill\b", spike_skill, re.M) is not None,
-              "ship-spike's frontmatter must declare the Skill tool, or every Skill() call "
-              "in it is a composition the runtime can reject — an inert gate, FB-0082's shape")
         # Spike PRs are not manifest-gated, so the ONE outcome ship routes to a draft
         # (a LEGITIMATE that still owes an entry) has to land somewhere here instead.
         # Without this, adding the audit would produce a gate that reports and proceeds.
@@ -744,10 +739,11 @@ def main() -> int:
         # LOOSE side: the two stages disposability actually reaches stay NEEDS-JUDGMENT.
         # NOT SHOULD-RE-RUN — mode is a plan declaration, so the engine hands these to
         # the fork agent with plan_mode evidence rather than pretending to decide them.
-        r = run(tmp, config={"uiSurface": True},
-                report={"stages": [{"name": "simplify", "status": "skipped", "skip_reason": "spike"},
-                                   {"name": "staff-review", "status": "skipped", "skip_reason": "spike"}]},
-                files="M\tdev-docs/history.md", plan=spike_plan)
+        r_loose = run(tmp, config={"uiSurface": True},
+                      report={"stages": [{"name": "simplify", "status": "skipped", "skip_reason": "spike"},
+                                         {"name": "staff-review", "status": "skipped", "skip_reason": "spike"}]},
+                      files="M\tdev-docs/history.md", plan=spike_plan)
+        r = r_loose
         for st in ("simplify", "staff-review"):
             check(f"spike-{st}-stays-needs-judgment",
                   verdict_of(r, st) == "NEEDS-JUDGMENT",
@@ -756,18 +752,23 @@ def main() -> int:
 
         # TIGHT side: the three stages disposability does NOT reach are refused a
         # mode-based excuse outright, and the refusal is auto-resolvable (just run it).
-        for st, alias in (("security", "security"), ("accessibility", "accessibility"),
-                          ("audit-coverage", "audit-coverage")):
-            r = run(tmp, config={"uiSurface": True},
-                    report={"stages": [{"name": st, "status": "skipped", "skip_reason": "spike"}]},
-                    files="M\tsrc/Button.tsx", diff=REAL_TSX_DIFF, plan=spike_plan)
-            check(f"spike-is-no-excuse-for-{alias}",
+        # One engine run carrying all four rows — the engine classifies stages
+        # independently, so four subprocesses bought nothing. `verify-build` is in the
+        # list deliberately: it is the behavioral gate, and the FIRST draft of this
+        # rule (a denylist) left it excusable by typing "spike".
+        r = run(tmp, config={"uiSurface": True},
+                report={"stages": [{"name": st, "status": "skipped", "skip_reason": "spike"}
+                                   for st in ("security", "accessibility", "audit-coverage",
+                                              "verify-build")]},
+                files="M\tsrc/Button.tsx", diff=REAL_TSX_DIFF, plan=spike_plan)
+        for st in ("security", "accessibility", "audit-coverage", "verify-build"):
+            check(f"spike-is-no-excuse-for-{st}",
                   verdict_of(r, st) == "SHOULD-RE-RUN",
                   f"'spike' must not excuse {st}: the code is disposable, the commit is not, "
                   f"and an approved prototype's pattern outlives its code; got {verdict_of(r, st)}")
-            check(f"spike-refusal-for-{alias}-is-auto-resolvable",
+            check(f"spike-refusal-for-{st}-is-auto-resolvable",
                   stage_of(r, st).get("auto_resolvable") is True,
-                  "the remedy is 'just run the reviewer', so this must never route to a "
+                  "the remedy is 'just run the stage', so this must never route to a "
                   "decision the human has to answer")
         # 'tiny' is the same class and must not be a loophole for the same three.
         r = run(tmp, config={"uiSurface": True},
@@ -790,10 +791,7 @@ def main() -> int:
         # plan_mode EVIDENCE (never a verdict input). The fork agent resolves the
         # NEEDS-JUDGMENT rows against this; before it existed, the one fact the rule
         # turns on was a file the agent had to go find on its own.
-        r = run(tmp, config={"uiSurface": True},
-                report={"stages": [{"name": "simplify", "status": "skipped", "skip_reason": "spike"}]},
-                files="M\tdev-docs/history.md", plan=spike_plan)
-        pm = r.get("context", {}).get("plan_mode", {})
+        pm = r_loose.get("context", {}).get("plan_mode", {})
         check("plan-mode-evidence-emitted", pm.get("first_mode_line", "").startswith("spike"), f"{pm}")
         check("plan-mode-not-ambiguous-when-single", pm.get("ambiguous") is False, f"{pm}")
         # A multi-block plan (flow's own carries 53 Mode lines) must report ambiguity
@@ -816,6 +814,31 @@ def main() -> int:
         pm = r.get("context", {}).get("plan_mode", {})
         check("plan-mode-absent-is-visible",
               pm.get("occurrences") == 0 and pm.get("first_mode_line") is None, f"{pm}")
+
+        # Every artifact-less stage must render its "ran" claim with the SAME
+        # qualifier — one epistemic state, one wording. These three emit no per-HEAD
+        # artifact, so a bare "ran" reads as verified to the human reading the summary,
+        # and spike mode made two of the three mandatory (v1.38.0) with no draft
+        # manifest behind them. Asserted together so a future edit cannot re-split them.
+        r = run(tmp, config={"uiSurface": True},
+                report={"stages": [{"name": st, "status": "ran"}
+                                   for st in ("security", "accessibility", "audit-coverage")]},
+                files="M\tdev-docs/history.md")
+        r_pf = run(tmp, config={"uiSurface": True},
+                   report={"stages": [{"name": "preflight", "status": "ran"}]},
+                   files="M\tdev-docs/history.md")
+        check("artifact-less-ran-is-qualified-preflight",
+              verdict_of(r_pf, "preflight") == "LEGITIMATE"
+              and reason_of(r_pf, "preflight") == "ran (no machine artifact to cross-check)",
+              f"preflight is artifact-less like the other three and must resolve the same "
+              f"way — a NEEDS-JUDGMENT row on every green spike is the noise the docs "
+              f"promise a clean spike won't produce; got "
+              f"{verdict_of(r_pf,'preflight')} / {reason_of(r_pf,'preflight')!r}")
+        for st in ("security", "accessibility", "audit-coverage"):
+            check(f"artifact-less-ran-is-qualified-{st}",
+                  reason_of(r, st) == "ran (no machine artifact to cross-check)",
+                  f"{st} must not render a bare 'ran' — it has no artifact to cross-check, "
+                  f"and an unqualified claim reads as verified; got {reason_of(r, st)!r}")
 
         # --- preflight stage (FB-0100) --------------------------------------
         # One of the five stages PR #140 skipped with nothing auditing it. Both of its

@@ -215,7 +215,7 @@ The same rule applies here as at `/flow:ship` Step 2a: no stage skip is accepted
 
 ### 2a.1. Write the stage handoff
 
-**Identical in shape to `/flow:ship` Step 2a.1 — the consistency itself is the value**, exactly as with Steps 1.5 and 1a. Only the stage rows differ (spike-appropriate statuses, plus a `preflight` row). Every guard below is load-bearing and none is decorative; see ship's Step 2a.1 for the incident behind each. The two copies are pinned against drift by `contract-ship-spike-handoff-*` in `evals/run_scratch_isolation_evals.py`, so this duplication does not depend on author memory (FB-0010).
+**The executable half is identical to `/flow:ship` Step 2a.1 — the consistency itself is the value**, exactly as with Steps 1.5 and 1a. Only the stage rows differ (spike-appropriate statuses, plus a `preflight` row). The *comments* below are abridged: `/flow:ship` Step 2a.1 is canonical for each guard's rationale and names the specific incident behind it. If you are changing a guard here, read ship's copy first — the reason it exists is written there, not here. Every guard below is load-bearing and none is decorative; see ship's Step 2a.1 for the incident behind each. The two copies are pinned against drift by `contract-ship-spike-handoff-*` in `evals/run_scratch_isolation_evals.py`, so this duplication does not depend on author memory (FB-0010).
 
 ```sh
 # NOTE: this fence is deliberately NOT indented. A heredoc terminator must sit at
@@ -257,7 +257,7 @@ cat > "$STAGES" <<'EOF'
   {"name": "preflight",           "status": "<ran|skipped>", "skip_reason": "<preflightCmd not set|doc-only|null>"},
   {"name": "simplify",            "status": "skipped",       "skip_reason": "spike"},
   {"name": "staff-review",        "status": "skipped",       "skip_reason": "spike"},
-  {"name": "security",            "status": "<ran|skipped>", "skip_reason": "<doc-only|null>"},
+  {"name": "security",            "status": "<ran|skipped>", "skip_reason": "<doc-only|trivially safe|null>"},
   {"name": "accessibility",       "status": "<ran|skipped>", "skip_reason": "<uiSurface:false|no UI in diff|null>"},
   {"name": "verify-build",        "status": "<ran|skipped>", "verdict": "<PASS|FAIL|Unknown|null>", "skip_reason": "<platform library|verifyEnabled:false|toolchain absent: <binaries> not on PATH|null>"},
   {"name": "audit-coverage",      "status": "skipped",       "skip_reason": "no Spec-walk"},
@@ -276,7 +276,7 @@ jq . "$STAGES" >/dev/null 2>&1 || { echo "⚠️ BLOCKER: the handoff at $STAGES
 
 Fill every `<…>` from what actually happened this run — do **NOT** leave placeholders. `verify-build`'s `verdict` is its `overall_verdict`; `visual-verification` is the Present-step visual sign-off (ran iff you captured + reviewed frames this run); `preflight` is Step 1c.
 
-**The two pre-filled rows are the only mode-declared skips spike mode gets.** `simplify` and `staff-review` are literal `"spike"` because that skip *is* the mode, and the engine routes it to `NEEDS-JUDGMENT` for the auditor to confirm against the plan's declared mode — which your Pre-condition already required. **Do not write `"spike"` as the skip reason for `security`, `accessibility` or `audit-coverage`.** The engine rejects it outright (`SHOULD-RE-RUN`), because a mode-declared blanket skip is unauditable by construction: mode is a plan declaration, so the gate would be accepting the very claim it exists to contest. Those three skip for diff/config/plan reasons the engine can check, or they run.
+**The two pre-filled rows are the only mode-declared skips spike mode gets.** `simplify` and `staff-review` are literal `"spike"` because that skip *is* the mode, and the engine routes it to `NEEDS-JUDGMENT` for the auditor to confirm against the plan's declared mode — which your Pre-condition already required. **Do not write `"spike"` as the skip reason for any OTHER row.** The engine rejects it outright (`SHOULD-RE-RUN`) for every stage except those two — it holds a closed two-member allowlist, not a list of stages someone remembered to forbid, so a stage added tomorrow is covered the day it lands. A mode-declared blanket skip is unauditable by construction: mode is a plan declaration, so the gate would be accepting the very claim it exists to contest. Every other row skips for a diff/config/plan reason the engine can check, or it runs.
 
 ### 2a.2. Invoke the audit
 
@@ -291,7 +291,7 @@ Fresh-context, read-only — it classifies, it never fixes. It returns a `SKIP-A
 `/flow:ship` routes unresolved findings to the NOT-READY draft manifest. A spike PR is explicitly not gated by that manifest (see the PR sections below), so spike mode uses the mechanism it already has for exactly this situation: **the same halt-and-adjudicate the toolchain-absent verify-build skip uses in Step 2.** The user decides; you never decide for them, and you never proceed silently.
 
 - **All `LEGITIMATE`, none carrying a `manifest:` field** → print `skip-audit: all N stage skips legitimate` and continue to Step 3. The qualifier is load-bearing — an unqualified "all legitimate → proceed" is how a validated-but-*unverifiable* skip slips through.
-- **`SHOULD-RE-RUN · auto-resolvable`** → re-run that stage **now** (`Skill("flow:security-review")` / `Skill("flow:accessibility-review")` / `Skill("flow:audit-coverage")` / `Skill("flow:verify-build")`, or re-run `preflightCmd`), rewrite the handoff row, and re-invoke `Skill("flow:audit-skips")` **ONCE**. One cycle only — never iterate on LLM judgment, which is reward-hackable (same discipline as `/flow:ship`).
+- **`SHOULD-RE-RUN · auto-resolvable`** → re-run that stage **now** (e.g. `Skill("flow:security-review")` / `Skill("flow:accessibility-review")` / `Skill("flow:audit-coverage")` / `Skill("flow:verify-build")`, or re-run `preflightCmd`), rewrite the handoff row, and re-invoke `Skill("flow:audit-skips")` **ONCE**. **If the stage is `simplify` or `staff-review`**, this verdict means something specific: the auditor could not find your declared spike mode in the plan, so those reviews were *owed*. Do not paper over it — either the plan really does declare `**Mode:** spike` and the handoff or plan path is wrong (fix and re-audit), or it does not, in which case your Pre-condition was violated and this is a feature PR in spike clothing: stop and tell the user. One cycle only — never iterate on LLM judgment, which is reward-hackable (same discipline as `/flow:ship`).
 - **`SHOULD-RE-RUN · decision-required`** → **halt and hand the user the choice**, in the same two-option shape the Step 2 toolchain gate uses: fix the gap and re-run, **or** record the un-audited state as part of the spike's finding. Whatever they choose goes verbatim into the Step 3 history entry and the `## Flow run` table.
 - **`LEGITIMATE · manifest: <kind>`** (today: a validated `toolchain` absence) → **not a clean pass.** The skip was honest *and* the check still never ran. There is no manifest here to carry it, so it becomes the same halt: tell the user the behavioral check could not run on this machine and why, and let them re-run on an equipped machine or record the un-verified state as the spike's finding.
 - **Any error shape — `root_error` / `ROOT UNRESOLVED`, `jq_error`, `engine_error`, `stamp_error`, `stamp_unverifiable`, or `SKIP-AUDIT: no stage report to audit` on a run where you DID write a handoff at 2a.1** → the gate **did not run**. Never record it as legitimate; never treat it as "nothing to audit". For `stamp_error` only, rewrite the handoff at 2a.1 and re-invoke **once** — a second refusal means the transport is broken. For every other shape, halt and adjudicate as above, naming which shape fired and what it means. An unanchored fork validates every unverifiable skip as LEGITIMATE, so a confident "all legitimate" from a broken run is exactly the output you must not trust.
@@ -511,9 +511,8 @@ Output the PR URL and the recommendation (proceed / pivot / abandon). The user m
 | `flow.config.json.sourceFilePatterns` | covers common source/config extensions | Step 1c (docs-only early-exit) |
 | `flow.config.json.typecheckCmd` | unset → loud warning | Step 2 (post-1c one-shot typecheck) |
 | `flow.config.json.uiSurface` | `true` | Step 2.1 (`/flow:accessibility-review` self-skip) + Step 2a (audit of that skip) |
-| `flow.config.json.planPath` | `dev-docs/plan.md` | Step 2a (the audit checks the `audit-coverage` `no Spec-walk` claim against the plan, and reads its declared **Mode** as evidence for the spike rows) |
 | `flow.config.json.historyPath` | `dev-docs/history.md` | Step 3 (spike entry — THE deliverable) |
-| `flow.config.json.planPath` | `dev-docs/plan.md` | Step 5 (move to Recently Completed) |
+| `flow.config.json.planPath` | `dev-docs/plan.md` | Step 2a (the audit checks the `audit-coverage` `no Spec-walk` claim against the plan, and reads its declared **Mode** as evidence for the spike rows) + Step 5 (move to Recently Completed) |
 | `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4 (contradiction check; not written to) |
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Step 5 (next-PR scope if proceed) |
 | `flow.config.json.lastHarvestedPath` | `~/.claude/plugins/data/flow/contributions/last_harvested.json` | Step 4c (lesson-harvest watermark; only new transcript since last harvest is analyzed) |

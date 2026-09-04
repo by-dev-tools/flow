@@ -28,7 +28,7 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/critique-plan/SKILL.md` | `/flow:critique-plan` slash command |
 | `plugins/flow/skills/log-disagreement/SKILL.md` | Auto-invoked disagreement-capture skill |
 | `plugins/flow/skills/contribute/SKILL.md` | `/flow:contribute` — drains the lesson-harvest queue + disagreement store into a draft PR back to flow (FB-0059) |
-| `plugins/flow/skills/audit-skips/SKILL.md` | `/flow:audit-skips` — skip-legitimacy audit at ship Step 2a; deterministic engine in `lib/skip-audit-checks.py` (FB-0062) |
+| `plugins/flow/skills/audit-skips/SKILL.md` | `/flow:audit-skips` — skip-legitimacy audit at `/flow:ship` Step 2a **and `/flow:ship-spike` Step 2a**; deterministic engine in `lib/skip-audit-checks.py` (FB-0062) |
 | `plugins/flow/skills/verify-build/lib/visual-significance.py` | Shared visual-significance predicate, reused by verify-build + ship (FB-0062) |
 | `plugins/flow/skills/ship/lib/pr-coherence.py` | Deterministic PR body↔draft coherence + read-back engine, reused by ship/doctor/land (FB-0067) |
 | `plugins/flow/skills/ship/lib/manifest_contract.py` | Shared NOT-READY manifest markers — one definition for the emitter (manifest-triage) and the detector (pr-coherence) |
