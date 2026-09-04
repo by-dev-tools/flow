@@ -48,6 +48,7 @@ SEC_SKILL = FLOW / "skills" / "security-review" / "SKILL.md"
 A11Y_SKILL = FLOW / "skills" / "accessibility-review" / "SKILL.md"
 VERIFY_SKILL = FLOW / "skills" / "verify-build" / "SKILL.md"
 REVIEW_BRIEF_SKILL = FLOW / "skills" / "review-brief" / "SKILL.md"
+SPIKE_SKILL = FLOW / "skills" / "ship-spike" / "SKILL.md"
 SCHEMA = FLOW / "schema" / "flow.config.schema.json"
 CI = FLOW.parent.parent / ".github" / "workflows" / "ci.yml"
 
@@ -321,6 +322,99 @@ def test_contracts():
     check("contract-ship-stamp-routing", "stamp_error" in ship,
           "ship must route a stamp_error rather than accepting it as legitimate")
 
+    # ---- ship-spike's handoff (FB-0100) ------------------------------------
+    # ship-spike gained a SECOND copy of the handoff block. That duplication is
+    # justified for the same reason ship's is (a sourced helper is unreachable from a
+    # Bash-tool fenced block, where CLAUDE_PLUGIN_ROOT is unset) — but justified
+    # duplication is only safe while something pins every copy, which is the whole
+    # premise of this harness.
+    spike = SPIKE_SKILL.read_text(encoding="utf-8")
+    check("contract-ship-spike-handoff-repo-local",
+          "$FLOW_SCRATCH/skip-audit-stages.json" in spike and "flow_stamp" in spike,
+          "ship-spike Step 2a.1 must write a stamped, repo-local handoff")
+    check("contract-ship-spike-stamp-routing", "stamp_error" in spike,
+          "ship-spike must route a stamp_error rather than accepting it as legitimate")
+    # Every guard ship's copy carries, spike's copy must carry too. A copy that drops
+    # the symlink refusal or the read-back is not a lighter copy, it is a broken one.
+    for label, needle in [("symlink-guard", 'if [ -L "$FLOW_SCRATCH" ]'),
+                          ("self-ignore", '"$FLOW_SCRATCH/.gitignore"'),
+                          ("jq-stamp", "jq -nc --arg repo"),
+                          ("readback", 'jq . "$STAGES" >/dev/null')]:
+        check(f"contract-ship-spike-handoff-{label}", needle in spike,
+              f"ship-spike's handoff block must keep ship's {label} — {needle!r} absent")
+
+
+def _handoff_stage_names(text):
+    """Stage names from a SKILL.md's `cat > "$STAGES" <<'EOF'` heredoc, in order."""
+    m = re.search(r"""cat > "\$STAGES" <<'EOF'\n(.*?)\nEOF\n""", text, re.S)
+    if not m:
+        return []
+    return re.findall(r'\{"name":\s*"([a-z-]+)"', m.group(1))
+
+
+def test_handoff_rows():
+    """The handoff↔engine join, pinned behaviourally (FB-0100).
+
+    THE FAILURE THIS EXISTS TO CATCH. ship and ship-spike each write their own stage
+    rows; `skip-audit-checks.py` decides what each row means. Nothing connected the
+    two, so a row naming a stage the engine does not know would classify as
+    `NEEDS-JUDGMENT: unknown stage` — which reads, in the summary the agent sees, like
+    an ordinary judgment call rather than "this row was never checked against
+    anything". A silent no-op wearing a verdict's clothes: the exact shape of FB-0082
+    and of the defect FB-0100 closes.
+
+    A string-presence grep cannot catch it — the existing `contract-ship-handoff-*`
+    checks assert each file's idiom in isolation and would have passed just as green
+    with a `preflight` row the engine had never heard of. So this drives the REAL
+    engine with every row name found in either handoff and asserts none falls through.
+    """
+    ship_rows = _handoff_stage_names(SHIP_SKILL.read_text(encoding="utf-8"))
+    spike_rows = _handoff_stage_names(SPIKE_SKILL.read_text(encoding="utf-8"))
+    check("handoff-ship-rows-extractable", len(ship_rows) >= 7, f"ship rows: {ship_rows}")
+    check("handoff-spike-rows-extractable", len(spike_rows) >= 7, f"spike rows: {spike_rows}")
+
+    # Every row in EITHER handoff must be a stage the engine actually recognizes.
+    engine = Path(__file__).parent.parent / "skills" / "audit-skips" / "lib" / "skip-audit-checks.py"
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        names = sorted(set(ship_rows) | set(spike_rows))
+        rep = d / "rows.json"
+        rep.write_text(json.dumps(
+            {"stages": [{"name": n, "status": "skipped", "skip_reason": "doc-only"} for n in names]}),
+            encoding="utf-8")
+        (d / "cfg.json").write_text("{}", encoding="utf-8")
+        (d / "files.txt").write_text("dev-docs/history.md\n", encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(engine), "--report", str(rep), "--config", str(d / "cfg.json"),
+             "--files-from", str(d / "files.txt"), "--branch", "b", "--head-sha", "deadbee"],
+            capture_output=True, text=True, check=False)
+        try:
+            out = json.loads(proc.stdout)
+        except ValueError:
+            out = {"stages": []}
+            check("handoff-engine-ran", False, f"engine failed: {proc.stderr[:200]}")
+        unknown = [s["name"] for s in out.get("stages", [])
+                   if "unknown stage" in (s.get("reason") or "")]
+        check("handoff-rows-all-known-to-engine", not unknown,
+              f"handoff rows the engine does not recognize (they audit nothing and say "
+              f"NEEDS-JUDGMENT while doing it): {unknown}")
+
+    # The two handoffs are allowed to differ — but only in ways someone wrote down.
+    # ship-spike is a SUPERSET of ship: it carries everything ship reports plus the
+    # rows only spike mode has an opinion about. Pinning the delta as a literal is what
+    # makes the asymmetry VISIBLE: change either file's rows and this check fails
+    # naming the other file, instead of the two drifting apart unobserved (FB-0010).
+    missing = sorted(set(ship_rows) - set(spike_rows))
+    check("handoff-spike-covers-every-ship-stage", not missing,
+          f"ship-spike's handoff omits stages ship audits: {missing}. Spike mode skips "
+          f"MORE than feature mode, so it cannot audit less")
+    extra = sorted(set(spike_rows) - set(ship_rows))
+    check("handoff-spike-delta-is-declared", extra == ["preflight"],
+          f"the spike/ship row delta is {extra}, expected ['preflight'] — if that is a "
+          f"deliberate change, update this literal AND say why in the history entry. "
+          f"`preflight` is spike-only today by scope choice, not by principle: ship's "
+          f"Step 1c runs the same gate and the engine can check it there too")
+
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     props = schema["properties"]
     for slot, want in [("verifyFindingsPath", ".flow/verify-findings.json"),
@@ -415,6 +509,7 @@ def main():
     test_stamp()
     test_audit_skips_block()
     test_contracts()
+    test_handoff_rows()
     test_span_integrity()
     test_ci()
     print(f"\n{_total - len(_fails)}/{_total} checks passed.")

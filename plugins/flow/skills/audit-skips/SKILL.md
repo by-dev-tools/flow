@@ -1,17 +1,20 @@
 ---
 name: audit-skips
 description: >
-  Audit every /flow:ship stage skip (and silent self-certified short-circuit) for
-  legitimacy. No stage skip is accepted on its own say-so, and "the agent did it
-  manually" never substitutes for a stage's real pipeline output. For each stage
-  (/simplify, staff-review, security, a11y, verify-build, audit-coverage, and the
-  visual-verification/Present step) it classifies LEGITIMATE (skip reason verified
-  against ground truth) or SHOULD-RE-RUN (reason contradicted by the diff/config,
-  OR the stage claims it ran but its canonical OUTPUT ARTIFACT is absent/stale for
-  HEAD — verdict-without-artifact == skip). Runs in /flow:ship Step 2 AFTER the
-  four reviewers report and BEFORE Step 3; a SHOULD-RE-RUN that can't be cheaply
-  re-run routes to the draft manifest (decision-required). Skeptical, fresh-context,
-  read-only — it never fixes. Invocable directly (/flow:audit-skips) or by /flow:ship.
+  Audit every /flow:ship and /flow:ship-spike stage skip (and silent self-certified
+  short-circuit) for legitimacy. No stage skip is accepted on its own say-so, and
+  "the agent did it manually" never substitutes for a stage's real pipeline output.
+  For each stage (preflight, /simplify, staff-review, security, a11y, verify-build,
+  audit-coverage, and the visual-verification/Present step) it classifies LEGITIMATE
+  (skip reason verified against ground truth) or SHOULD-RE-RUN (reason contradicted
+  by the diff/config, OR the stage claims it ran but its canonical OUTPUT ARTIFACT
+  is absent/stale for HEAD — verdict-without-artifact == skip). Runs in /flow:ship
+  Step 2a AFTER the four reviewers report and BEFORE Step 3, and in /flow:ship-spike
+  Step 2a — spike mode produces the most skips, so it is the path that most needs
+  this gate. On the ship path a SHOULD-RE-RUN that can't be cheaply re-run routes to
+  the draft manifest (decision-required); spike PRs have no manifest, so ship-spike
+  halts and the user adjudicates. Skeptical, fresh-context, read-only — it never
+  fixes. Invocable directly (/flow:audit-skips), or by /flow:ship or /flow:ship-spike.
 disable-model-invocation: false
 context: fork
 agent: skip-auditor
@@ -21,7 +24,8 @@ agent: skip-auditor
 
 You are a skeptical, read-only auditor. Your one job: decide, **per stage**, whether
 a skip (or a "ran" claim) is honest against ground truth. You **never fix** anything
-and you **never re-run** a stage — you classify; `/flow:ship` does the routing.
+and you **never re-run** a stage — you classify; the caller (`/flow:ship` or
+`/flow:ship-spike`) does the routing.
 
 The load-bearing rule: **a stage's claimed verdict is trusted only if its canonical
 artifact EXISTS and matches HEAD.** A PASS with no fresh findings buffer is the
@@ -61,7 +65,8 @@ fi
 # and the gate cannot run. Route it like root_error — the gate did NOT run, not a clean pass
 # (jq-absence-handling-2026-06).
 command -v jq >/dev/null 2>&1 || { printf '{"jq_error": "jq is not on PATH; flow.config.json and the plan were NOT read, so the skip-legitimacy gate did NOT run. Install jq (https://jqlang.org) and re-run", "stages": []}\n'; exit 0; }
-# /flow:ship writes the per-stage report to this temp handoff before invoking the skill
+# /flow:ship (Step 2a.1) and /flow:ship-spike (Step 2a.1) write the per-stage report to this
+# handoff before invoking the skill
 # (ephemeral, like the verify-build findings buffer); a standalone invocation without it
 # still emits the context block, with an empty stage set. Resolved AFTER the cd above, so
 # a relative FLOW_SKIP_AUDIT_STAGES override resolves against the repo root rather than
@@ -153,7 +158,7 @@ elif [ -f "$STAGES" ]; then
   fi
   rm -f "$ENGINE_ERR"
 else
-  echo '{"note":"no stages handoff at '"$STAGES"' — /flow:ship writes it at Step 2. Standalone run: nothing to audit.","stages":[]}'
+  echo '{"note":"no stages handoff at '"$STAGES"' — /flow:ship and /flow:ship-spike write it at Step 2a. Standalone run: nothing to audit.","stages":[]}'
 fi
 `
 
@@ -187,19 +192,34 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   SHOULD-RE-RUN yourself, using the diff above + the plan's declared mode:
   - A `/simplify` / `staff-review` skip tagged spike/tiny is **LEGITIMATE** only if
     the plan actually declares that mode; otherwise the reviews were owed →
-    SHOULD-RE-RUN.
+    SHOULD-RE-RUN. **`context.plan_mode` in the block above is your evidence** — it
+    carries the plan path, the first `**Mode:**` line found there, and how many such
+    lines exist. `occurrences: 0` means the mode was never declared: the claim is
+    unbacked, so the reviews were owed. `ambiguous: true` means the plan holds more
+    than one `**Mode:**` line (normal — plan docs accumulate one per PR block), so
+    `first_mode_line` is the *convention's* answer ("active PR at the top"), not a
+    proven one; when it disagrees with what the diff plainly shows you, say so and
+    resolve toward SHOULD-RE-RUN rather than adopting a retained block's mode. This
+    field is evidence, never a verdict — the engine deliberately does not decide the
+    row for you, because a first-match read of a 50-block plan can be confidently
+    wrong in the failure-open direction.
+  - Spike/tiny is **not** an accepted reason for `security`, `accessibility` or
+    `audit-coverage` — the engine already returns SHOULD-RE-RUN for those without
+    consulting you. Don't soften it. Disposability is about code quality on code
+    that gets deleted; it does not reach a permanent commit's secrets, or an
+    accessibility pattern a prototype gets a human's approval for.
   - An unrecognized skip reason that the diff/config plainly contradicts →
     SHOULD-RE-RUN; one you cannot refute → LEGITIMATE (default to trusting a skip
     you have no evidence against — do not manufacture findings).
 - If the mechanical block is `{"note": ..., "stages": []}` (the handoff file was **absent** —
   a standalone run), output exactly `SKIP-AUDIT: no stage report to audit (run from
-  /flow:ship Step 2).` and stop. This is the clean no-op — and since FB-0082 it is once again
+  /flow:ship or /flow:ship-spike Step 2a).` and stop. This is the clean no-op — and since FB-0082 it is once again
   a *trustworthy* one: the handoff is written to a **repo-local** `.flow/` path both the parent
   and this fork can see, so an absent handoff now really does mean none was written. It did not
   mean that before FB-0082, when the handoff lived in `/tmp` and was structurally invisible to a
   forked skill — this note fired on **every** ship from v1.13.0 to v1.22.0, and the whole gate
-  no-opped silently behind it. If you ever see this note on a run launched from `/flow:ship`
-  Step 2a (which always writes a handoff), the transport is broken again: treat it as a
+  no-opped silently behind it. If you ever see this note on a run launched from `/flow:ship` or
+  `/flow:ship-spike` Step 2a (both of which always write a handoff), the transport is broken again: treat it as a
   `stamp_error`, not a pass, and say so.
 - If the mechanical block carries **`"root_error"`** (FB-0074 — the skill could not locate the
   repo under review from its inherited cwd), do **NOT** treat it as "nothing to audit". Nothing
@@ -209,7 +229,8 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   confident verdict. Output a loud diagnostic and stop:
   `⚠️ SKIP-AUDIT ROOT-UNRESOLVED (<root_error>). The skip-legitimacy gate did NOT run — this
   is not a clean pass.` Route it exactly like `engine_error` below: from `/flow:ship` Step 2a
-  it becomes a `[decision-required]` draft-manifest entry, never a silent proceed.
+  it becomes a `[decision-required]` draft-manifest entry; from `/flow:ship-spike` Step 2a.3 —
+  which has no manifest — it halts for the user to adjudicate. Never a silent proceed.
 - If the mechanical block carries **`"jq_error"`** (jq-absence-handling-2026-06 — `jq` was not
   on PATH, so `flow.config.json` and the plan were never read and the gate could not run), treat
   it identically to `root_error`: nothing was read, so an all-LEGITIMATE verdict would be a false

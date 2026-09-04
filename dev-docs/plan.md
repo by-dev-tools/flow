@@ -2,6 +2,8 @@
 
 ## Current Focus
 
+**▶ Active (this branch, `conductor/ship-spike-audits-its-own-skips-gate-machinery`, v1.38.0, FB-0100): `/flow:ship-spike` audits its own skips.** Spike mode was the skip-heaviest path in the workflow and the only one that audited none of its skips — `/flow:ship` invokes five reviewers then `/flow:audit-skips`; ship-spike invoked one, and its only mention of the audit was the admission that it never called it (#140 shipped five unaudited skips). Adds ship-spike Step 2a (the same stamped repo-local handoff + `Skill("flow:audit-skips")`), runs security + a11y in spike mode (the disposability rationale covers code *quality*, not a permanent commit's secrets or a pattern a human approves on a prototype), refuses `spike`/`tiny` as a skip reason for security/a11y/audit-coverage in the engine, adds a `preflight` stage and `plan_mode` evidence, and fixes `allowed-tools` missing `Skill` (a second inert-gate shape). Human decided both open calls at the plan gate; the `preflight`-row scope stayed spike-only **conditional on** the drift-pin genuinely covering the new row — verified, which required strengthening the pin from a string grep to a behavioural engine join. See the "PR — ship-spike audits its own skips" block below.
+
 **▶ EXECUTED, shipping (this branch, `conductor/design-language-migration-brief-existing-repos`, v1.37.0 unchanged): existing-repo design-language migration brief (FB-0099).** Dev-docs-only, no plugin artifacts touched, no version bump — plugin stays at v1.37.0. New `dev-docs/design-language-migration-brief.md` — a portable prompt to audit an *existing* repo's design-language doc against the five shape rules from `dev-docs/research/2026-09-design-md-investigation.md`, propose additions in that repo's own vocabulary, and stop (never edit unilaterally). Mirror of the now-merged sibling `#141` (`template/base/core-docs/design-language.md`, the scaffold for *new* repos) — wording kept character-for-character identical to `#141`'s shipped rule descriptions per FB-0099; re-confirmed against `#141`'s merged `main` content at this branch's rebase (v1.36.0 → v1.37.0), no drift. See the "PR — Design-language migration brief" block below for the full account, and `dev-docs/history.md` 2026-09-03.
 
 **▶ Shipped (merged #141, v1.37.0, FB-0098): `/flow:doctor` slot-coverage honesty + design-language template.** Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its actual root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source. New `template/base/core-docs/design-language.md` (shape only: Axioms, Anti-patterns, Priority order, Tokens, Coverage gaps). Doctor's frontmatter no longer over-promises "all 33 slots." See the "PR — Doctor slot-coverage honesty" block below for the full Spec-walk.
@@ -58,6 +60,26 @@
 **Plan-gate history:** three `/flow:critique-plan` findings surfaced and fixed before execution — a batched (not immediate) FB-0098 reservation (protocol violation, fixed: pushed as its own first commit), an under-cited frontmatter check list (fixed twice — first missing Check 2.7, then Check 2.11), and a factually wrong "verified fact" in an early plan draft (claimed flow's config explicitly set 5 slots it does not — corrected after re-verification, which also surfaced the actual root-cause redirect from the human). Never picked silently — see FB-0098.
 
 **Files touched:** `plugins/flow/skills/doctor/SKILL.md`, `template/base/core-docs/design-language.md` (new), `plugins/flow/evals/run_design_language_scaffold_evals.py` (new), `.github/workflows/ci.yml`, `.claude-plugin/marketplace.json`, `plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, `dev-docs/roadmap.md`, `dev-docs/plan.md` (this block), `dev-docs/history.md`, `dev-docs/feedback.md` (FB-0098), `dev-docs/reserved-feedback-numbers.md`.
+
+## PR — `/flow:ship-spike` audits its own skips (this branch, `conductor/ship-spike-audits-its-own-skips-gate-machinery`, FB-0100, v1.38.0, EXECUTED — shipping)
+
+**Mode:** feature (gate machinery — `ship-spike` + `audit-skips` are both in the sensitive set, so the plan went to the human and the merge stays with the human). `platform: library` ⇒ `/flow:verify-build` self-skips; the diff touches no browser-UI file ⇒ `/flow:accessibility-review` early-exits. The behavioral gate for this PR is the three CI-wired eval harnesses.
+
+**Spec-walk:**
+- [x] `/flow:ship-spike` Step 2a writes a stamped, repo-local stage handoff and invokes `Skill("flow:audit-skips")`.
+- [x] The handoff block keeps every guard ship's copy carries — root guard, CWE-59 symlink refusal, self-ignoring `.gitignore`, `jq -n --arg` stamp, `jq .` read-back — pinned in both copies by `contract-ship-spike-handoff-*`.
+- [x] `ship-spike` frontmatter declares `Skill` in `allowed-tools`, and a repo-wide lint fails CI for any skill emitting a fenced `Skill()` call without it.
+- [x] Spike-mode routing covers every audit outcome — auto-resolvable, decision-required, all five error shapes, and `LEGITIMATE · manifest:` — with no silent-proceed path.
+- [x] The engine refuses `spike`/`tiny` as a skip reason for security / accessibility / audit-coverage (SHOULD-RE-RUN · auto-resolvable).
+- [x] A declared spike skip of `/simplify` + staff-review still classifies NEEDS-JUDGMENT — pinned so a future tightening cannot make spike mode unusable.
+- [x] `context.plan_mode` evidence emitted (path, first `**Mode:**` line, occurrences, ambiguity) and deliberately not promoted to a verdict.
+- [x] `preflight` is a stage the engine recognizes; the handoff↔engine join is pinned behaviourally so no row can classify as `unknown stage`.
+- [x] The line asserting ship-spike "never invokes `/flow:audit-skips`" is rewritten, and every doc surface enumerating spike-mode skips or audit-skips callers is updated.
+- [x] Every new eval case red-verified against the pre-change tree.
+
+**Human decisions at the plan gate:** (A) accessibility runs in spike mode — decided on the D1 prototype-gate argument (an a11y flaw in an approved prototype propagates as a *pattern*), with the "declare no-UI, never invoke" fallback explicitly rejected as reintroducing an unauditable claim. (C) `preflight` row spike-only, **conditional** on the drift-pin covering it; condition verified by strengthening the pin, so ship's Step 2a.1 is untouched.
+
+**Deliberately not done:** auditing the `memory` stage (runs after the audit point — an ordering impossibility — and not mechanically decidable); importing the NOT-READY draft manifest into spike mode; any change to `/flow:ship`'s reviewer set or routing.
 
 ## PR — Design-language migration brief (this branch, `conductor/design-language-migration-brief-existing-repos`, EXECUTED — shipping)
 
