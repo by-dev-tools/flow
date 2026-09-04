@@ -17,6 +17,7 @@ This file exists because point-in-time docs get buried by default: `CLAUDE.md`'s
 | [`spec.md`](spec.md) | Plugin scope. ⚠️ **Known stale** — still describes the audit-only scope; broadening to full flow identity is a queued hygiene PR |
 | [`workflow.md`](workflow.md) | Flow-internal dev workflow (≠ the shipped `plugins/flow/docs/workflow.md`) |
 | [`design-language.md`](design-language.md) | Visual/interaction rules for the browser UI flow ships (annotation overlay, verify-build report). `uiSurface` flipped to `true` in v1.24.0 |
+| [`design-language-migration-brief.md`](design-language-migration-brief.md) | Portable prompt: paste into an agent session in any existing repo to audit its design-language doc against the five shape rules from `research/2026-09-design-md-investigation.md`. Not shipped — copy it out by hand. Sibling of `template/base/core-docs/design-language.md` (scaffold for *new* repos); wording must stay in sync (FB-0099) |
 | [`reserved-feedback-numbers.md`](reserved-feedback-numbers.md) | FB-number reservation protocol + collision audit trail. **Reserve before drafting an FB entry** |
 
 ## Research — point-in-time findings, not living docs

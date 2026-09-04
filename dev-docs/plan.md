@@ -2,7 +2,9 @@
 
 ## Current Focus
 
-**▶ Shipped (this branch, `conductor/doctor-slot-loop-coverage-design-language-template`, v1.37.0, FB-0098): `/flow:doctor` slot-coverage honesty + design-language template.** Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its actual root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source. New `template/base/core-docs/design-language.md` (shape only: Axioms, Anti-patterns, Priority order, Tokens, Coverage gaps). Doctor's frontmatter no longer over-promises "all 33 slots." See the "PR — Doctor slot-coverage honesty" block below for the full Spec-walk.
+**▶ EXECUTED, shipping (this branch, `conductor/design-language-migration-brief-existing-repos`, v1.37.0 unchanged): existing-repo design-language migration brief (FB-0099).** Dev-docs-only, no plugin artifacts touched, no version bump — plugin stays at v1.37.0. New `dev-docs/design-language-migration-brief.md` — a portable prompt to audit an *existing* repo's design-language doc against the five shape rules from `dev-docs/research/2026-09-design-md-investigation.md`, propose additions in that repo's own vocabulary, and stop (never edit unilaterally). Mirror of the now-merged sibling `#141` (`template/base/core-docs/design-language.md`, the scaffold for *new* repos) — wording kept character-for-character identical to `#141`'s shipped rule descriptions per FB-0099; re-confirmed against `#141`'s merged `main` content at this branch's rebase (v1.36.0 → v1.37.0), no drift. See the "PR — Design-language migration brief" block below for the full account, and `dev-docs/history.md` 2026-09-03.
+
+**▶ Shipped (merged #141, v1.37.0, FB-0098): `/flow:doctor` slot-coverage honesty + design-language template.** Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its actual root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source. New `template/base/core-docs/design-language.md` (shape only: Axioms, Anti-patterns, Priority order, Tokens, Coverage gaps). Doctor's frontmatter no longer over-promises "all 33 slots." See the "PR — Doctor slot-coverage honesty" block below for the full Spec-walk.
 
 **▶ Active (this branch, `conductor/d1-phase-1-experience-lens-brief-orchestrator`, v1.35.0): D1 Phase 1 — the experience/ambition lens (D3) + design-brief template + pre-prototype review orchestrator.** Implements `dev-docs/handoffs/d1-prototype-first-gate.md` § Phase 1 (FB-0081/FB-0046) — the new `plugins/flow/agents/lens-experience.md` agent, a design-brief template documented in `workflow.md`, and `/flow:review-brief` (fans `auditor` + `plan-critic` + `lens-experience` out over one extraction, one triaged verdict). Self-contained per the handoff's own §13 PR breakdown: no trigger, no prototype phase, no human gate 1, no workflow.md Step 1–2 reorder — those are Phase 2/3. §9.2 (proportionality threshold) deliberately deferred to Phase 2. See the "PR — D1 Phase 1" block below for the full Spec-walk + the three human-decided open calls (severity taxonomy, ~80-word brief target, §9.2 deferral).
 
@@ -56,6 +58,29 @@
 **Plan-gate history:** three `/flow:critique-plan` findings surfaced and fixed before execution — a batched (not immediate) FB-0098 reservation (protocol violation, fixed: pushed as its own first commit), an under-cited frontmatter check list (fixed twice — first missing Check 2.7, then Check 2.11), and a factually wrong "verified fact" in an early plan draft (claimed flow's config explicitly set 5 slots it does not — corrected after re-verification, which also surfaced the actual root-cause redirect from the human). Never picked silently — see FB-0098.
 
 **Files touched:** `plugins/flow/skills/doctor/SKILL.md`, `template/base/core-docs/design-language.md` (new), `plugins/flow/evals/run_design_language_scaffold_evals.py` (new), `.github/workflows/ci.yml`, `.claude-plugin/marketplace.json`, `plugins/flow/.claude-plugin/plugin.json`, `CHANGELOG.md`, `dev-docs/roadmap.md`, `dev-docs/plan.md` (this block), `dev-docs/history.md`, `dev-docs/feedback.md` (FB-0098), `dev-docs/reserved-feedback-numbers.md`.
+
+## PR — Design-language migration brief (this branch, `conductor/design-language-migration-brief-existing-repos`, EXECUTED — shipping)
+
+**Restated request:** produce a portable brief Ben can hand to an agent inside any *existing* repo, which upgrades that repo's design-language doc in place against the five shape rules `dev-docs/research/2026-09-design-md-investigation.md` derived. Dispatched as the mirror of sibling PR #141, which scaffolds the equivalent doc for *new* repos. Stop at the plan gate before executing; the human decided two open calls (wording-sync approach, placement) before execution began.
+
+**Mode:** tiny (dev-docs only, not shipped).
+
+**Spec-walk:**
+- [x] Read `dev-docs/research/2026-09-design-md-investigation.md` §5a/S3 as sole source of truth for the five rules; did not re-derive independently.
+- [x] Confirmed #141's `template/base/core-docs/design-language.md` (fetched from its open branch) uses the same five rules and copied its rule-description wording character-for-character, per the human's decision on the wording-sync open call.
+- [x] Drafted a plan with the full brief text + a placement recommendation (`dev-docs/`) with reasoning against CLAUDE.md's three-surface boundary; ran `/flow:critique-plan`, which flagged a real paraphrase-vs-verbatim gap on the Priority-order rule — escalated to the human rather than silently resolved.
+- [x] Human approved both open calls: wording-sync via exact character match with #141's shipped wording; placement in `dev-docs/`, reinforced with the `portfolio`-non-consumer fact and the `docs/workflow.md`-graveyard finding.
+- [x] `dev-docs/design-language-migration-brief.md` created — Locate → Audit the five rules → Check token drift → Propose in the repo's own vocabulary → Stop and present, plus an explicit out-of-scope list matching the spike's DO-NOT-BUILD table.
+- [x] Indexed in `dev-docs/README.md`.
+- [x] Reserved FB-0099 in `dev-docs/reserved-feedback-numbers.md` before drafting the `feedback.md` entry.
+- [x] `dev-docs/feedback.md`, `dev-docs/history.md`, `dev-docs/plan.md` updated (this entry).
+- [ ] `/flow:ship` — pending.
+
+**Deliberately not touched:** `dev-docs/roadmap.md` (avoids an unforced collision with #141's own roadmap.md edits on the same lines; this is a completed deliverable, not a queued backlog item) and `CHANGELOG.md` (no plugin-facing change).
+
+**Closed at rebase (2026-09-03):** #141 merged (v1.37.0) while this branch was open. Re-diffed `dev-docs/design-language-migration-brief.md`'s five rule descriptions against the merged `template/base/core-docs/design-language.md` (mechanically, via a normalize-whitespace substring check per rule). Four of five matched on first check; the Tokens rule needed two corrections (a dropped period + "below", a wrongly-added backtick pair around `<path>`, an extra period my brief had added that the template's own text doesn't carry). One deliberate, documented exception: the Tokens rule's trailing template-authoring clause ("see the token names below only if you chose the code-pointer form") — a pointer at the template's own fill-in placeholder section — is intentionally not copied since this brief has no equivalent placeholder; everything else, including the rest of the Tokens definition, is exact. See the brief's own Provenance note.
+
+**Files touched:** `dev-docs/design-language-migration-brief.md` (new), `dev-docs/README.md`, `dev-docs/reserved-feedback-numbers.md`, `dev-docs/feedback.md`, `dev-docs/history.md`, `dev-docs/plan.md` (this entry). No `plugins/flow/**` changes, no version bump, no CHANGELOG entry.
 
 ## PR — Model-measurement harness, Steps 2+3 (this branch, `conductor/model-measurement-harness-steps-2-3-item-m`, EXECUTED — shipping)
 
