@@ -98,7 +98,35 @@ DEFAULT_SOURCE_PATTERN = (
 
 # Stages whose SHOULD-RE-RUN is cheaply re-runnable by ship (re-invoke the Skill);
 # everything else routes to the draft manifest as decision-required.
-_AUTO_RERUN = {"verify-build", "security", "accessibility", "audit-coverage", "simplify", "staff-review"}
+# `preflight` is re-runnable by re-running `preflightCmd` — a shell command, not a
+# Skill, but "cheap and mechanical" is the property that matters here.
+_AUTO_RERUN = {"verify-build", "security", "accessibility", "audit-coverage",
+               "simplify", "staff-review", "preflight"}
+
+# Stages for which spike/tiny mode is NOT a legitimate blanket skip reason (FB-0100).
+#
+# `/flow:ship-spike`'s stated rationale — "the code is disposable" — reaches exactly
+# two stages: /simplify and staff-review, both of which review code QUALITY on code
+# that gets deleted. It does not reach these three, and letting it would rebuild the
+# defect this rule ships to close:
+#
+#   security      — the code is disposable; the COMMIT is not. A key hardcoded to move
+#                   fast in a spike stays in git history after the spike is deleted.
+#   accessibility — flow is moving the human gate onto prototypes (D1: a written plan
+#                   cannot convey feel, so the human approves a prototype instead). An
+#                   a11y flaw in an approved prototype does not die with the throwaway
+#                   code — it propagates into the real PR as an endorsed PATTERN.
+#   audit-coverage— its premise (is the DECLARED criteria set complete?) is about the
+#                   plan, not the code, so disposability says nothing about it either
+#                   way. Its real spike skip is `no Spec-walk`, which is mechanically
+#                   verifiable against the plan file — a strictly better claim.
+#
+# These three may still skip in spike mode — for the same diff/config/plan reasons
+# they may skip in feature mode, every one of which this engine can check. What they
+# may not do is skip because someone typed "spike". A mode-declared blanket skip is
+# unauditable by construction: mode is a plan declaration, so the gate would be
+# accepting the claim it exists to contest.
+_NO_MODE_SKIP = {"security", "accessibility", "a11y", "audit-coverage"}
 
 
 def _git(args):
@@ -234,6 +262,39 @@ def rigor_fresh(branch, source_pattern):
         return None
 
 
+def read_plan_mode(path):
+    """EVIDENCE ONLY (FB-0100) — never a verdict input.
+
+    `/simplify` + `staff-review` skipped for spike/tiny return NEEDS-JUDGMENT, and
+    audit-skips/SKILL.md tells the fork agent to resolve that against "the plan's
+    declared mode". Nothing used to put the plan's mode in front of it, so the one
+    fact the rule turns on was a file the agent had to go find. This surfaces it.
+
+    Deliberately NOT promoted to a mechanical verdict. The plan doc accumulates one
+    `**Mode:**` line per PR block (flow's own carries 53), and the "active PR at the
+    top" convention is the same soft convention `walk_extract.py` needed multi-block
+    warnings and anchor co-location to survive. A first-match read could return a
+    confident LEGITIMATE sourced from a RETAINED block — failure-open on gate
+    machinery, which is worse than the judgment call it would replace. So: report
+    the first line, report how many exist, and let the agent see the ambiguity
+    rather than hiding it behind a verdict.
+    """
+    out = {"path": path, "first_mode_line": None, "occurrences": 0, "ambiguous": False}
+    if not path:
+        return out
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return out
+    hits = re.findall(r"^\s*\*\*Mode:?\*\*:?\s*(.+)$", text, re.M)
+    out["occurrences"] = len(hits)
+    if hits:
+        out["first_mode_line"] = hits[0].strip()[:200]
+    # >1 declaration means "first == active" is a convention, not a fact.
+    out["ambiguous"] = len(hits) > 1
+    return out
+
+
 def _reason_has(skip_reason, *needles):
     """True if any `needle` appears in `skip_reason` at word boundaries.
 
@@ -257,6 +318,16 @@ def _reason_has(skip_reason, *needles):
 # reason alone is not enough either: it is free text the claimant writes, and a gate
 # that trusts the claim it is auditing is not a gate. Only the CONJUNCTION earns
 # LEGITIMATE.
+
+
+def _is_mode_declared(skip_reason):
+    """True if the skip reason leans on a declared plan MODE (spike / tiny).
+
+    Kept separate from `_reason_has` at the call sites so the two consumers cannot
+    drift: `simplify`/`staff-review` route this to NEEDS-JUDGMENT (mode is a real
+    rationale there, just not a mechanically decidable one), while `_NO_MODE_SKIP`
+    stages route it to SHOULD-RE-RUN (mode is not a rationale there at all)."""
+    return _reason_has(skip_reason, "spike", "tiny", "spike/tiny", "spike mode", "tiny mode")
 
 
 def _doc_only_verdict(diff_is_clean, label, auto):
@@ -291,6 +362,19 @@ def classify(stage, ctx):
     diff = ctx["diff"]
     buf = ctx["buffer"]
     auto = name in _AUTO_RERUN
+
+    # ---- mode-declared blanket skip (FB-0100) ----
+    # Checked BEFORE each stage's own branch, deliberately. Placing it inside the
+    # three branches would leave three places to remember it, and the next stage
+    # added would silently inherit the hole. See `_NO_MODE_SKIP` for why these three
+    # stages get no mode-based excuse.
+    if status == "skipped" and name in _NO_MODE_SKIP and _is_mode_declared(skip):
+        return ("SHOULD-RE-RUN",
+                f"skip reason {skip!r} claims a plan MODE, which is not a legitimate "
+                f"reason to skip {name} — spike/tiny disposability covers /simplify and "
+                f"staff-review only. Skip it for a diff/config reason this engine can "
+                f"check, or run it",
+                auto, None)
 
     # ---- verify-build ----
     if name == "verify-build":
@@ -403,6 +487,28 @@ def classify(stage, ctx):
                 return "SHOULD-RE-RUN", "skip claims no behavior but the diff touches source files", auto, None
             return "NEEDS-JUDGMENT", f"unrecognized audit-coverage skip reason: {skip!r}", auto, None
         return "LEGITIMATE", "ran", auto, None
+
+    # ---- preflight (ship Step 1c / ship-spike Step 1c) ----
+    # Both skip conditions are config/diff facts, so both are checkable — which is
+    # exactly why this stage is worth a row. It was one of the five stages PR #140
+    # skipped with nothing auditing it (FB-0100).
+    if name == "preflight":
+        if status == "skipped":
+            if _reason_has(skip, "preflightcmd", "not set", "unset", "no preflight"):
+                pf = cfg.get("preflightCmd")
+                if not str(pf or "").strip():
+                    return "LEGITIMATE", "preflightCmd is unset — no preflight to run", auto, None
+                return ("SHOULD-RE-RUN",
+                        f"skip claims preflightCmd is unset but it is set to {pf!r}",
+                        auto, None)
+            if _reason_has(skip, "doc-only", "docs-only", "no source"):
+                return _doc_only_verdict(not diff["touches_source"], "source files", auto)
+            return "NEEDS-JUDGMENT", f"unrecognized preflight skip reason: {skip!r}", auto, None
+        # Preflight emits no canonical per-HEAD artifact (it is a shell exit code, not
+        # a file), so a bare "ran" claim has nothing to cross-check — the same declared
+        # asymmetry security / a11y / audit-coverage carry. Do NOT invent a LEGITIMATE
+        # here that reads as verified.
+        return "NEEDS-JUDGMENT", "ran (no mechanically-verifiable artifact for this stage)", auto, None
 
     # ---- simplify / staff-review ----
     if name in ("simplify", "staff-review"):
@@ -598,6 +704,9 @@ def main(argv):
             "visual_signals": vs.get("visual_signals", []),
             "diff": diff_info,
             "pattern_warnings": pattern_warnings,
+            # Evidence for the NEEDS-JUDGMENT rows only (FB-0100). No verdict above
+            # reads this — see read_plan_mode's docstring for why that is deliberate.
+            "plan_mode": read_plan_mode(args.plan),
         },
         "config": {"platform": cfg.get("platform"), "uiSurface": cfg.get("uiSurface"),
                    "verifyEnabled": cfg.get("verifyEnabled"),
