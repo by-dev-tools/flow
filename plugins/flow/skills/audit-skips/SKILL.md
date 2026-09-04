@@ -203,11 +203,12 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
     field is evidence, never a verdict — the engine deliberately does not decide the
     row for you, because a first-match read of a 50-block plan can be confidently
     wrong in the failure-open direction.
-  - Spike/tiny is **not** an accepted reason for `security`, `accessibility` or
-    `audit-coverage` — the engine already returns SHOULD-RE-RUN for those without
-    consulting you. Don't soften it. Disposability is about code quality on code
-    that gets deleted; it does not reach a permanent commit's secrets, or an
-    accessibility pattern a prototype gets a human's approval for.
+  - Spike/tiny is an accepted reason for **`/simplify` and `staff-review` only**.
+    For every other stage — security, accessibility, audit-coverage, verify-build,
+    preflight — the engine already returns SHOULD-RE-RUN without consulting you.
+    Don't soften it. Disposability is about code quality on code that gets deleted;
+    it does not reach a permanent commit's secrets, an accessibility pattern a
+    prototype gets a human's approval for, or whether the thing ever ran.
   - An unrecognized skip reason that the diff/config plainly contradicts →
     SHOULD-RE-RUN; one you cannot refute → LEGITIMATE (default to trusting a skip
     you have no evidence against — do not manufacture findings).
@@ -275,10 +276,14 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 **Known asymmetry (intentional, not a gap).** The "verdict-without-artifact == skip"
 rule only fires for stages that emit a canonical per-HEAD artifact — verify-build (the
 findings buffer) and staff-review (the rigor marker). `security` / `accessibility` /
-`audit-coverage` emit **no** machine artifact, so a bare "ran" claim from them has
-nothing to cross-check and is trusted as `LEGITIMATE`. Giving every reviewer a freshness
-breadcrumb so its "ran" claim becomes mechanically checkable is a tracked roadmap § Next
-exploration — until then, this asymmetry is by design, not a silent hole.
+`audit-coverage` / `preflight` emit **no** machine artifact, so a bare "ran" claim from
+them has nothing to cross-check and is trusted as `LEGITIMATE` — all four render the SAME
+qualifier (`ran (no machine artifact to cross-check)`), so the summary never shows one
+epistemic state in two voices. Giving every reviewer a freshness breadcrumb so its "ran"
+claim becomes mechanically checkable is a tracked roadmap § Next item — promoted out of
+§ Exploration at v1.38.0, because spike mode made two of these four mandatory and routes
+their claim to a clean pass with no draft manifest behind it. Until then, this asymmetry
+is by design and stated, not a silent hole.
 
 A result where every stage is LEGITIMATE is the correct, common outcome on a clean
 PR. Do not invent findings to appear thorough.

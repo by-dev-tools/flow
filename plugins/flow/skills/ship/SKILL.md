@@ -356,9 +356,11 @@ if [ -z "$FLOW_ROOT" ]; then
   echo "⚠️ BLOCKER: not inside a git repository, so no handoff can be written where a forked skill can read it. The skip-legitimacy gate CANNOT run — do NOT record it as legitimate. Re-run /flow:ship from inside the repo worktree." >&2
   exit 1
 fi
-# No `${TMPDIR:-/tmp}/flow-detached` fallback here BY DESIGN, unlike the other four
-# copies of this idiom: a fork cannot see /tmp at all, so a detached run must fail
-# loudly rather than write a handoff nothing will ever read.
+# No `${TMPDIR:-/tmp}/flow-detached` fallback here BY DESIGN — state the PROPERTY, not
+# a count of the other copies (that count was already wrong for review-brief, and
+# /flow:ship-spike Step 2a.1 has since made the same deliberate omission): the two
+# HANDOFF writers omit it, the reviewer copies keep it. A fork cannot see /tmp at all,
+# so a detached run must fail loudly rather than write a handoff nothing will ever read.
 FLOW_SCRATCH="$FLOW_ROOT/.flow"
 # SECURITY (CWE-59): refuse to write scratch through a symlink. `.flow` is an ordinary
 # repo path with none of git's .git/.gitmodules special-casing, so an untrusted clone can
