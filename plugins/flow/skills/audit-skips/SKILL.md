@@ -193,11 +193,14 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   - A `/simplify` / `staff-review` skip tagged spike/tiny is **LEGITIMATE** only if
     the plan actually declares that mode; otherwise the reviews were owed →
     SHOULD-RE-RUN. **`context.plan_mode` in the block above is your evidence** — it
-    carries the plan path, the first `**Mode:**` line found there, and how many such
-    lines exist. `occurrences: 0` means the mode was never declared: the claim is
+    carries the plan path, `declared_mode` (`spike` / `tiny` / `other` / `null`), and
+    how many `**Mode:**` lines exist. It reports a CLASSIFICATION, never a line copied
+    out of the plan: the plan doc is repo-controlled and this field lands in your
+    prompt, so quoting it verbatim would let whoever wrote the plan address you
+    directly. `occurrences: 0` means the mode was never declared: the claim is
     unbacked, so the reviews were owed. `ambiguous: true` means the plan holds more
     than one `**Mode:**` line (normal — plan docs accumulate one per PR block), so
-    `first_mode_line` is the *convention's* answer ("active PR at the top"), not a
+    `declared_mode` is the *convention's* answer ("active PR at the top"), not a
     proven one; when it disagrees with what the diff plainly shows you, say so and
     resolve toward SHOULD-RE-RUN rather than adopting a retained block's mode. This
     field is evidence, never a verdict — the engine deliberately does not decide the

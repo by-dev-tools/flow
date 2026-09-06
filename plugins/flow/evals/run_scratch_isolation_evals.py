@@ -341,9 +341,26 @@ def test_contracts():
         check(f"contract-{name}-stamp-routing", "stamp_error" in t_,
               f"{path.name} must route a stamp_error rather than accepting it as legitimate")
         for label, needle in [("jq-stamp", "jq -nc --arg repo"),
-                              ("readback", 'jq . "$STAGES" >/dev/null')]:
+                              ("readback", 'jq . "$STAGES" >/dev/null'),
+                              # CWE-59 has TWO halves and the container guard is only
+                              # the first. A `.flow` that is a real directory can still
+                              # contain a symlinked `skip-audit-stages.json`, which the
+                              # heredoc would follow and truncate. Pin the sink guard too.
+                              ("sink-guard", 'rm -f "$STAGES" "$STAGES.tmp"'),
+                              ("sink-guard-gitignore",
+                               '[ -L "$FLOW_SCRATCH/.gitignore" ] && rm -f')]:
             check(f"contract-{name}-handoff-{label}", needle in t_,
                   f"{path.name}'s handoff block must keep the {label} — {needle!r} absent")
+        # A substring needle is ORDER-BLIND, and for this guard order IS the contract:
+        # placed after the .gitignore creation it prevents nothing (the redirect has
+        # already followed a dangling symlink) and it regresses the self-ignore. The
+        # first shipped version of this guard had exactly that bug, in both copies —
+        # which the presence-only needle passed. Assert the sequence, not just the text.
+        check(f"contract-{name}-handoff-sink-guard-precedes-write",
+              t_.index('rm -f "$STAGES" "$STAGES.tmp"')
+              < t_.index("""|| printf '# Created by flow."""),
+              f"{path.name}: the sink unlinks must run BEFORE .flow/.gitignore is "
+              f"created, or the guard runs twelve lines too late")
 
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     props = schema["properties"]

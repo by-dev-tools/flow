@@ -24,7 +24,7 @@
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
 
-## PR — Doctor slot-coverage honesty + design-language template (this branch, `conductor/doctor-slot-loop-coverage-design-language-template`, FB-0098, v1.37.0, EXECUTED — shipping)
+## PR — Doctor slot-coverage honesty + design-language template (this branch, `conductor/doctor-slot-loop-coverage-design-language-template`, FB-0098, v1.37.0, merged #141)
 
 **Restated request:** close the gap between `/flow:doctor`'s advertised "all 33 slots have sensible values" and Check 2.4's actual 5-slot loop (`designLanguagePath` named as the verified finding — 23+ dependent files, no template shipped for it), per `dev-docs/research/2026-09-design-md-investigation.md` (spike, branch `conductor/spike-designmd-investigation-vercel-agentic-design-guidance`).
 
@@ -42,7 +42,7 @@
 
 **Scope (out) — per the spike's DO-NOT-BUILD list, explicitly not built:** a design-doc eval harness, a token drift-checker, a fifth design gate, a hosted design.md convention, multi-path `designLanguagePath`, design linters. Also not auditing/fixing all 26 originally-unchecked slots — only the evidenced instance plus honest reclassification of the rest. `rustWorkspaceDir` deferred (see above).
 
-**Spec-walk:**
+**Spec-walk (merged #141 — shipped v1.37.0):**
 - [x] Check 2.4 checks `designLanguagePath` when `uiSurface` is true, WARN not FAIL. *Verified:* `run_design_language_scaffold_evals.py` `exec-1`/`exec-2` (real shell block executed against both missing and present fixtures).
 - [x] `uiSurface: false` projects are not required to have the doc, and get an explicit PASS explaining why (not silence). *Verified:* `exec-3`/`exec-4`.
 - [x] Unset-slot default matches the schema's own declared default for all six doc-path slots — not a duplicated hardcoded expectation, read directly from `flow.config.schema.json`. *Verified:* `join-1`/`join-2` (6 slots).
@@ -74,7 +74,10 @@
 - [x] The handoff block keeps every guard ship's copy carries — root guard, CWE-59 symlink refusal, self-ignoring `.gitignore`, `jq -n --arg` stamp, `jq .` read-back — pinned in both copies by `contract-ship-spike-handoff-*`.
 - [x] `ship-spike` frontmatter declares `Skill` in `allowed-tools`, and a repo-wide lint fails CI for any skill emitting a fenced `Skill()` call without it.
 - [x] Spike-mode routing covers every audit outcome — auto-resolvable, decision-required, all five error shapes, and `LEGITIMATE · manifest:` — with no silent-proceed path.
-- [x] The engine refuses `spike`/`tiny` as a skip reason for security / accessibility / audit-coverage (SHOULD-RE-RUN · auto-resolvable).
+- [x] The engine refuses `spike`/`tiny` as a skip reason for **every stage outside a closed two-member allowlist** (`{simplify, staff-review}`) — including `verify-build`, the behavioral gate, and `preflight` — each as SHOULD-RE-RUN · auto-resolvable. *Verified:* `spike-is-no-excuse-for-{security,accessibility,audit-coverage,verify-build}` + `handoff-no-row-is-excused-by-claiming-a-mode`, the latter asserted over the LIVE row sets scraped from both handoffs so a stage added later is covered the day it lands.
+- [x] **Known precedence limitation, declared not discovered:** the mode guard matches the WORD anywhere in the reason and runs before each stage's own branch, so a compound reason (`"toolchain absent: xcodebuild not on PATH (spike mode)"`) is refused without its verifiable half being checked — losing that row's `manifest: toolchain` entry. It fails toward SHOULD-RE-RUN (noise, auto-resolvable), never toward a false pass, and no shipped reason menu pairs a mode word with another reason. Documented in-code as a KNOWN LIMITATION and routed to roadmap § Next; the fix is a precedence change, not a line edit.
+- [x] `context.plan_mode` reports a **closed vocabulary** (`spike`/`tiny`/`other`/null), never a line copied from the plan: the field is spliced into the forked auditor's prompt and the plan doc is repo-controlled. *Verified:* `plan-mode-classifies-rather-than-quotes` + `plan-mode-emits-no-free-text-field`, driving an injection payload through the engine.
+- [x] The handoff's sink FILES refuse a symlink, not just the scratch directory — a `.flow` that is a real directory can still contain a symlinked `skip-audit-stages.json` that the heredoc would follow and truncate (CWE-59). *Verified:* end-to-end against a hostile fixture repo, red-verified as exploitable before the fix; pinned in both copies by `contract-*-handoff-sink-guard`.
 - [x] A declared spike skip of `/simplify` + staff-review still classifies NEEDS-JUDGMENT — pinned so a future tightening cannot make spike mode unusable.
 - [x] `context.plan_mode` evidence emitted (path, first `**Mode:**` line, occurrences, ambiguity) and deliberately not promoted to a verdict.
 - [x] `preflight` is a stage the engine recognizes; the handoff↔engine join is pinned behaviourally so no row can classify as `unknown stage`.
@@ -85,13 +88,13 @@
 
 **Deliberately not done:** auditing the `memory` stage (runs after the audit point — an ordering impossibility — and not mechanically decidable); importing the NOT-READY draft manifest into spike mode; any change to `/flow:ship`'s reviewer set or routing.
 
-## PR — Design-language migration brief (this branch, `conductor/design-language-migration-brief-existing-repos`, EXECUTED — shipping)
+## PR — Design-language migration brief (this branch, `conductor/design-language-migration-brief-existing-repos`, merged #142)
 
 **Restated request:** produce a portable brief Ben can hand to an agent inside any *existing* repo, which upgrades that repo's design-language doc in place against the five shape rules `dev-docs/research/2026-09-design-md-investigation.md` derived. Dispatched as the mirror of sibling PR #141, which scaffolds the equivalent doc for *new* repos. Stop at the plan gate before executing; the human decided two open calls (wording-sync approach, placement) before execution began.
 
 **Mode:** tiny (dev-docs only, not shipped).
 
-**Spec-walk:**
+**Spec-walk (merged #142 — docs-only, no version bump):**
 - [x] Read `dev-docs/research/2026-09-design-md-investigation.md` §5a/S3 as sole source of truth for the five rules; did not re-derive independently.
 - [x] Confirmed #141's `template/base/core-docs/design-language.md` (fetched from its open branch) uses the same five rules and copied its rule-description wording character-for-character, per the human's decision on the wording-sync open call.
 - [x] Drafted a plan with the full brief text + a placement recommendation (`dev-docs/`) with reasoning against CLAUDE.md's three-surface boundary; ran `/flow:critique-plan`, which flagged a real paraphrase-vs-verbatim gap on the Priority-order rule — escalated to the human rather than silently resolved.
