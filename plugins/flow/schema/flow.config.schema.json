@@ -27,8 +27,13 @@
     },
     "historyPath": {
       "type": "string",
-      "description": "Path (relative to repo root) to the project's history doc. /flow:ship writes new entries here. /flow:ship-spike writes the spike entry here (it IS the deliverable). Default: dev-docs/history.md (flow's own repo convention). Consumer projects typically set this to core-docs/history.md.",
+      "description": "Path (relative to repo root) to the project's history doc. /flow:ship writes new entries here. /flow:ship-spike writes the spike entry here (it IS the deliverable). Default: dev-docs/history.md (flow's own repo convention). Consumer projects typically set this to core-docs/history/. ACCEPTS EITHER SHAPE: a single .md file, or a DIRECTORY holding one file per entry -- the shape that stops concurrent PRs colliding on a shared insertion point, and the one bootstrap.sh scaffolds for new projects. The DEFAULT stays a single file deliberately: changing it would silently repoint every existing consumer who never set the slot. Readers resolve both via plugins/flow/lib/resolve-doc-slot.sh.",
       "default": "dev-docs/history.md"
+    },
+    "changelogPath": {
+      "type": "string",
+      "default": "CHANGELOG.md",
+      "description": "Consumer-facing changelog. A single file, OR a DIRECTORY holding one file per release (vX.Y.Z.md) -- the shape that stops concurrent PRs colliding on a shared insertion point. Read by /flow:land's currency check via plugins/flow/lib/resolve-doc-slot.sh, which resolves either form. This slot was READ by /flow:land for several releases while absent from this schema, so consumers could not discover it and it silently fell back forever -- indistinguishable from choosing the default."
     },
     "planPath": {
       "type": "string",
@@ -47,7 +52,7 @@
     },
     "feedbackPath": {
       "type": "string",
-      "description": "Path to the project's user-feedback doc (FB-XXXX entries synthesized from user corrections / preferences / direction / review feedback). Written by /flow:ship step 4a; read by every reviewer for context. Default: dev-docs/feedback.md.",
+      "description": "Path to the project's user-feedback doc (FB-XXXX entries synthesized from user corrections / preferences / direction / review feedback). Written by /flow:ship step 4a; read by every reviewer for context. Default: dev-docs/feedback.md. ACCEPTS EITHER SHAPE: a single .md file, or a DIRECTORY holding one file per entry -- the shape that stops concurrent PRs colliding on a shared insertion point, and the one bootstrap.sh scaffolds for new projects. The DEFAULT stays a single file deliberately: changing it would silently repoint every existing consumer who never set the slot. Readers resolve both via plugins/flow/lib/resolve-doc-slot.sh. NOTE for referenceGlob: the feedback corpus is a reference document for /flow:critique-plan, so if you point this at a directory you must ALSO add that directory to referenceGlob -- otherwise every FB rule silently drops out of the critic's context with no zero-resolution warning, because the other reference docs still resolve.",
       "default": "dev-docs/feedback.md"
     },
     "designLanguagePath": {
@@ -57,7 +62,7 @@
     },
     "referenceGlob": {
       "type": "string",
-      "description": "Glob pattern (relative to repo root) that /flow:critique-plan's preprocessor uses to load reference docs deterministically. Excludes history.md / plan.md / roadmap.md automatically (those churn too often to be reliable spec sources). Default: core-docs/*.md (the consumer-side convention). Flow's own repo overrides to dev-docs/*.md.",
+      "description": "Glob pattern (relative to repo root) that /flow:critique-plan's preprocessor uses to load reference docs deterministically. Excludes history.md / plan.md / roadmap.md automatically (those churn too often to be reliable spec sources). Default: core-docs/*.md (the consumer-side convention). Flow's own repo overrides to dev-docs/*.md. Accepts a COMMA-SEPARATED list of patterns, each expanded independently (a single pattern with no comma behaves exactly as before). Use the list form when a reference doc is fragmented into a directory, e.g. 'core-docs/*.md,core-docs/feedback/*.md' -- NOT 'core-docs/**/*.md', which drags in every point-in-time research and handoff doc.",
       "default": "core-docs/*.md",
       "examples": ["core-docs/*.md", "dev-docs/*.md", "docs/**/*.md"]
     },

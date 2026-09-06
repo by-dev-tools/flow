@@ -40,6 +40,14 @@ DEFAULT_REFERENCE_SKIP_NAMES = {
     "roadmap.md",
 }
 
+# FB-0100: the skip above is BY FILENAME, which is a prohibition satisfiable by
+# deletion. Once history.md is fragmented into a `history/` directory the
+# "history.md" entry matches nothing -- it silently stops protecting anything while
+# still looking like a guard -- and any widening of `referenceGlob` would flood the
+# reference set with ~106 history fragments. Skip by DIRECTORY too, so the guard
+# survives the file becoming a directory.
+DEFAULT_REFERENCE_SKIP_DIRS = {"history", "handoffs", "research"}
+
 ARTIFACT_EXTENSIONS = (
     "md", "py", "ts", "tsx", "js", "jsx", "swift", "go", "rs",
     "json", "yaml", "yml", "toml", "css", "scss", "html",
@@ -436,6 +444,17 @@ def gather_reference_docs(
                 )
                 continue
         if resolved.name in skip_names:
+            continue
+        # Directory-level skip (FB-0100). The name-based skip above stops
+        # protecting anything the moment a skipped doc becomes a directory of
+        # fragments, and `history/2026-*.md` would otherwise flood the reference
+        # set. Checked against the path's parts relative to cwd, so a top-level
+        # `research/` is skipped without also skipping a `docs/x/research-notes.md`.
+        try:
+            rel_parts = resolved.relative_to(cwd).parts[:-1]
+        except ValueError:
+            rel_parts = ()
+        if any(part in DEFAULT_REFERENCE_SKIP_DIRS for part in rel_parts):
             continue
         if not resolved.is_file():
             continue

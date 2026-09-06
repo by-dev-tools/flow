@@ -32,8 +32,8 @@ Skip if the diff is doc-only or trivially safe (e.g. a copy tweak).
 
 - Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — using built-in defaults)"`
 - Default branch: !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
-- Spec doc (for context): !`SPEC=$(cat flow.config.json 2>/dev/null | jq -r '.specPath // empty'); [ -z "$SPEC" ] && SPEC="dev-docs/spec.md"; [ -f "$SPEC" ] && echo "$SPEC" || echo "(no spec doc at $SPEC)"`
-- Feedback doc (for context): !`FB=$(cat flow.config.json 2>/dev/null | jq -r '.feedbackPath // empty'); [ -z "$FB" ] && FB="dev-docs/feedback.md"; [ -f "$FB" ] && echo "$FB" || echo "(no feedback doc at $FB)"`
+- Spec doc (for context): !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || R="plugins/flow/lib/resolve-doc-slot.sh"; [ -f "$R" ] && sh "$R" specPath dev-docs/spec.md || echo "⚠️ resolve-doc-slot.sh not found — specPath was NOT resolved, so this review has NO specPath context. Reinstall the flow plugin."`
+- Feedback doc (for context): !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || R="plugins/flow/lib/resolve-doc-slot.sh"; [ -f "$R" ] && sh "$R" feedbackPath dev-docs/feedback.md || echo "⚠️ resolve-doc-slot.sh not found — feedbackPath was NOT resolved, so this review has NO feedbackPath context. Reinstall the flow plugin."`
 
 ## 0. Preflight — `jq` required (BLOCKING)
 
@@ -214,6 +214,6 @@ When invoked standalone (not via `/flow:ship` — which handles triage itself):
 | `flow.config.json.defaultBranch` | `git symbolic-ref` → `main` | Step 1 (diff base) |
 | `flow.config.json.typecheckCmd` | unset → loud warning | Step 4 (post-fix re-check) |
 | `flow.config.json.specPath` | `dev-docs/spec.md` | Project context section |
-| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Project context section |
+| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Project context section — file or one-file-per-entry directory |
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Step 4 (FOLLOW-UP routing) |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 4 (FOLLOW-UP routing) |

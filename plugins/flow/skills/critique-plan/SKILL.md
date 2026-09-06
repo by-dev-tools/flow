@@ -40,7 +40,8 @@ fi
 # (jq-absence-handling-2026-06).
 command -v jq >/dev/null 2>&1 || { echo "[critique-plan] JQ-MISSING — jq is not on PATH; flow.config.json (referenceGlob) was NOT read, so no reference documents were reliably loaded and spec violations CANNOT be judged. This is not an APPROVED. Install jq (https://jqlang.org) and re-run."; exit 0; }
 REFGLOB=$(cat flow.config.json 2>/dev/null | jq -r '.referenceGlob // empty' 2>/dev/null); [ -z "$REFGLOB" ] && REFGLOB="core-docs/*.md"
-if [ -n "$ARGUMENTS" ]; then python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file "$ARGUMENTS" --reference-glob "$REFGLOB"; else python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --reference-glob "$REFGLOB"; fi
+REFARGS=""; OLDIFS=$IFS; IFS=","; for g in $REFGLOB; do [ -n "$g" ] && REFARGS="$REFARGS --reference-glob $g"; done; IFS=$OLDIFS
+if [ -n "$ARGUMENTS" ]; then python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file "$ARGUMENTS" $REFARGS; else python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan $REFARGS; fi
 `
 
 ## Pinning lint (deterministic)

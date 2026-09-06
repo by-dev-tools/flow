@@ -36,7 +36,7 @@ In any Claude Code session (or your global `~/.claude/settings.json`):
 
 ### Verify the install actually took
 
-Two checks. **Both must pass** — silent failure on either is a real consumer footgun (see `dev-docs/feedback.md` FB-0005 for the canonical class).
+Two checks. **Both must pass** — silent failure on either is a real consumer footgun (see `dev-docs/feedback/` FB-0005 for the canonical class).
 
 ```
 /plugin marketplace list | grep -E '^flow($|[[:space:]])'   # must return a line — word-anchored so a sibling marketplace like 'flow-experimental' doesn't false-positive

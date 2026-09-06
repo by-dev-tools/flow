@@ -54,6 +54,7 @@ if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
   exit 0
 fi
 REFGLOB=$(cat flow.config.json 2>/dev/null | jq -r '.referenceGlob // empty' 2>/dev/null); [ -z "$REFGLOB" ] && REFGLOB="core-docs/*.md"
+REFARGS=""; OLDIFS=$IFS; IFS=","; for g in $REFGLOB; do [ -n "$g" ] && REFARGS="$REFARGS --reference-glob $g"; done; IFS=$OLDIFS
 # Repo-local scratch (FB-0082) — same idiom as staff-review/SKILL.md, kept in sync with
 # scripts/flow_scratch.py; pinned by evals/run_scratch_isolation_evals.py.
 FLOW_SCRATCH="$ROOT/.flow"
@@ -66,7 +67,7 @@ mkdir -p "$FLOW_SCRATCH"
 FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
 {
   printf '# flow-review-context repo=%s branch=%s head=%s\n' "$ROOT" "$FLOW_BR" "$FLOW_HEAD"
-  if [ -n "$ARGUMENTS" ]; then python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file "$ARGUMENTS" --reference-glob "$REFGLOB"; else python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --reference-glob "$REFGLOB"; fi
+  if [ -n "$ARGUMENTS" ]; then python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file "$ARGUMENTS" $REFARGS; else python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan $REFARGS; fi
 } > "$FLOW_SCRATCH/review-brief-context.txt"
 echo "Context written to $FLOW_SCRATCH/review-brief-context.txt (repo=$ROOT branch=$FLOW_BR head=$FLOW_HEAD)"
 ```

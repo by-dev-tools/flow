@@ -151,6 +151,28 @@ copy_n "$FLOW_DIR/template/base/.claude/rules/safety.md.template"         "$PROJ
 for f in "$FLOW_DIR/template/base/core-docs/"*.md; do
   copy_n "$f" "$PROJECT_ROOT/core-docs/$(basename "$f")"
 done
+# Fragmented (one-file-per-entry) doc directories: history/, feedback/, changelog/.
+# The *.md glob above matches FILES ONLY, so without this loop a fresh project would
+# silently scaffold no history and no feedback doc at all -- and the first thing the
+# reviewers would report is "(no feedback doc)", indistinguishable from a project
+# that genuinely has none. Scaffold the directory + its README so the shape is
+# obvious before the first entry exists.
+for d in "$FLOW_DIR/template/base/core-docs/"*/; do
+  [ -d "$d" ] || continue
+  name=$(basename "$d")
+  mkdir -p "$PROJECT_ROOT/core-docs/$name"
+  for f in "$d"*.md; do
+    [ -e "$f" ] || continue
+    copy_n "$f" "$PROJECT_ROOT/core-docs/$name/$(basename "$f")"
+  done
+done
+if [ -d "$FLOW_DIR/template/base/changelog" ]; then
+  mkdir -p "$PROJECT_ROOT/changelog"
+  for f in "$FLOW_DIR/template/base/changelog/"*.md; do
+    [ -e "$f" ] || continue
+    copy_n "$f" "$PROJECT_ROOT/changelog/$(basename "$f")"
+  done
+fi
 
 # --- Step B: flow.config.json from example, with $comment-* keys stripped ---
 echo ""

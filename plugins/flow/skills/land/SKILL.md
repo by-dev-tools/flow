@@ -58,7 +58,9 @@ lives in those two gates, not in this paragraph.
 - Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — using built-in defaults)"`
 - Default branch: !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
 - Current branch: !`git branch --show-current`
-- Roadmap / plan / history paths: !`cat flow.config.json 2>/dev/null | jq -r '"roadmap=" + (.roadmapPath // "dev-docs/roadmap.md") + " plan=" + (.planPath // "dev-docs/plan.md") + " history=" + (.historyPath // "dev-docs/history.md")' 2>/dev/null || echo "roadmap=dev-docs/roadmap.md plan=dev-docs/plan.md history=dev-docs/history.md"`
+- Roadmap / plan paths: !`cat flow.config.json 2>/dev/null | jq -r '"roadmap=" + (.roadmapPath // "dev-docs/roadmap.md") + " plan=" + (.planPath // "dev-docs/plan.md")' 2>/dev/null || echo "roadmap=dev-docs/roadmap.md plan=dev-docs/plan.md"`
+- History doc: !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || R="plugins/flow/lib/resolve-doc-slot.sh"; [ -f "$R" ] && sh "$R" historyPath dev-docs/history.md || echo "⚠️ resolve-doc-slot.sh not found — historyPath was NOT resolved. Reinstall the flow plugin."`
+- Changelog: !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || R="plugins/flow/lib/resolve-doc-slot.sh"; [ -f "$R" ] && sh "$R" changelogPath CHANGELOG.md || echo "⚠️ resolve-doc-slot.sh not found — changelogPath was NOT resolved. Reinstall the flow plugin."`
 
 ## Argument
 
@@ -248,7 +250,12 @@ case "$HEADREF" in
     HEADREF="" ;;
 esac
 PAT="#${N}\b"; [ -n "$HEADREF" ] && PAT="${PAT}|${HEADREF}"
-MATCHES=$(grep -nE "$PAT" "$ROADMAP" "$PLAN" "$HISTORY" 2>/dev/null)
+# `-r` (FB-0100): $HISTORY may be a DIRECTORY of one-file-per-entry fragments.
+# Plain `grep` on a directory emits "Is a directory" to stderr and contributes no
+# matches, so the history half of this sweep would silently drop out while the
+# roadmap/plan halves still matched -- a PARTIAL result that looks like a whole
+# one. `-r` handles regular files identically, so this is safe for both shapes.
+MATCHES=$(grep -rnE "$PAT" "$ROADMAP" "$PLAN" "$HISTORY" 2>/dev/null)
 if [ -n "$MATCHES" ]; then
   printf '%s\n' "$MATCHES"
 else
@@ -292,9 +299,20 @@ CHANGELOG=$(jq -r '.changelogPath // "CHANGELOG.md"' flow.config.json 2>/dev/nul
 # Resolve the shipped version from the manifest the merge updated.
 VSRC=""; for c in plugins/flow/.claude-plugin/plugin.json .claude-plugin/plugin.json package.json; do [ -f "$c" ] && { VSRC="$c"; break; }; done
 VER=$(jq -r '.version // empty' "$VSRC" 2>/dev/null)
-if [ -n "$VER" ] && [ -f "$CHANGELOG" ]; then
+# NOT `[ -f "$CHANGELOG" ]` (FB-0100). `changelogPath` may point at a DIRECTORY --
+# flow's own does, and one-file-per-release is the recommended shape -- and `-f` is
+# FALSE on a directory, which made this entire block a SILENT no-op: the currency
+# check never ran and never said so. `-e` covers both; the helper itself resolves
+# file-or-directory. If the slot resolves to neither, say so loudly rather than
+# skipping quietly -- a skipped currency check that prints nothing is
+# indistinguishable from a passing one.
+if [ -z "$VER" ]; then
+  echo "[land] ⚠️ could not resolve a version from any manifest — CHANGELOG currency NOT checked." >&2
+elif [ -e "$CHANGELOG" ]; then
   python3 "${CLAUDE_PLUGIN_ROOT}/skills/land/lib/land-helpers.py" changelog-check "$CHANGELOG" --version "$VER" || \
     echo "[land] (add the missing changelog entry in this reconciliation PR, then re-run if needed)"
+else
+  echo "[land] ⚠️ changelogPath resolves to '$CHANGELOG', which is neither a file nor a directory — CHANGELOG currency NOT checked. Fix the slot; do not read this as 'the changelog is current'." >&2
 fi
 ```
 
@@ -334,24 +352,7 @@ is present, author ONE curated entry, insert via
 distill implementation. **Skip if the decision is already in `$VHPATH`** (don't
 double-log an entry §5c already wrote at ship).
 
-## 6. Clear the PR's reserved FB/VH numbers
-
-`/flow:ship` clears a shipped PR's `FB-XXXX` reservation at Step 5a, but a PR that
-merged without that step (or whose numbers were reserved late) can leave stale
-lines. Clear each FB/VH id this PR introduced, from the reservations file if the
-project keeps one:
-
-```sh
-RESV="dev-docs/reserved-feedback-numbers.md"   # project-specific; skip if absent
-for ID in <FB-XXXX this PR claimed> <VH-XXXX if any>; do
-  [ -f "$RESV" ] && python3 "${CLAUDE_PLUGIN_ROOT}/skills/land/lib/land-helpers.py" clear-reservation "$RESV" --id "$ID"
-done
-```
-
-The helper is idempotent: clearing an absent id is a clean no-op (a re-run of
-`/flow:land` never fails on an already-cleared number).
-
-## 7. Commit + open the reconciliation PR
+## 6. Commit + open the reconciliation PR
 
 Stage the doc changes (+ any visual-history assets from Step 5). Commit `why`, not
 `what`; `SAFETY` in the subject only if Step 5 touched the durable record:
@@ -407,8 +408,8 @@ Output the reconciliation PR URL + a one-line summary (`landed #N: <item> → me
 | `flow.config.json.branchPrefix` | unset (no prefix) | Step 1b (reconciliation branch) |
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Steps 2, 3 |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Steps 2, 3 |
-| `flow.config.json.historyPath` | `dev-docs/history.md` | Steps 2, 3 |
-| `flow.config.json.changelogPath` | `CHANGELOG.md` | Step 4 |
+| `flow.config.json.historyPath` | `dev-docs/history.md` | Steps 2, 3 (accepts a file OR a one-file-per-entry directory) |
+| `flow.config.json.changelogPath` | `CHANGELOG.md` | Step 4 (accepts a file OR a one-file-per-release directory) |
 | `flow.config.json.uiSurface` | `true` | Step 5 (§5c gate) |
 | `flow.config.json.visualHistoryPath` | `core-docs/visual-history.html` | Step 5 (late distill) |
 | `flow.config.json.verifyFindingsPath` | `.flow/verify-findings.json` | Step 5 (distill source) |

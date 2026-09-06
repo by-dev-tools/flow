@@ -6,14 +6,14 @@ These rules apply to all work in this project. They enforce the documentation wo
 
 ## Documentation discipline
 
-- Every non-trivial change must have a corresponding `dev-docs/history.md` entry before committing.
+- Every non-trivial change must have a corresponding `dev-docs/history/` entry before committing — a new file, `YYYY-MM-DD-<slug>.md`, never an append to a rollup.
 - `dev-docs/plan.md` must reflect reality. If you completed something, mark it done. If scope changed, update it.
-- When the user corrects your approach or expresses a preference, add a synthesized entry to `dev-docs/feedback.md` before continuing.
-- Read `dev-docs/feedback.md` before starting work to avoid repeating documented mistakes.
+- When the user corrects your approach or expresses a preference, add a synthesized entry as a NEW FILE under `dev-docs/feedback/` (`FB-XXXX-<slug>.md`) before continuing. Creating and pushing that file IS the number claim — there is no reservations file.
+- Read `dev-docs/feedback/` (`cat dev-docs/feedback/*.md`) before starting work to avoid repeating documented mistakes.
 
 ## Decision tracking
 
-- When a change involves a non-trivial decision (a reasonable alternative existed), note the tradeoff so `/flow:ship` can capture it in `dev-docs/history.md`. A one-line scratch note is fine; `/flow:ship` will write the formal entry.
+- When a change involves a non-trivial decision (a reasonable alternative existed), note the tradeoff so `/flow:ship` can capture it in `dev-docs/history/`. A one-line scratch note is fine; `/flow:ship` will write the formal entry.
 - "What" goes in the code change itself. "Why" goes in the history doc at ship time.
 - Tradeoffs are the most valuable part of the history doc -- they're what future sessions need to avoid re-litigating.
 

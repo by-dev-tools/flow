@@ -52,7 +52,7 @@ Once those are confirmed:
 
   Plus, if not already done at user-scope: `/plugin marketplace add by-dev-tools/flow && /plugin install flow@flow`.
 
-  **Verify the install actually took** (two checks, both must pass — silent failure on either is a real consumer footgun per `dev-docs/feedback.md` FB-0005):
+  **Verify the install actually took** (two checks, both must pass — silent failure on either is a real consumer footgun per `dev-docs/feedback/` FB-0005):
 
   ```
   /plugin marketplace list | grep -E '^flow($|[[:space:]])'   # must return a line — word-anchored so a sibling marketplace doesn't false-positive
@@ -99,7 +99,7 @@ You should see BOTH `/staff-review` (your local) AND `/flow:staff-review` (plugi
 
 ### Smoke test
 
-Invoke `/flow:staff-review` on this PR's own diff (the install + config + CLAUDE.md edit). All 4 lenses should spawn; output should match the documented BLOCKER/NIT/FOLLOW-UP/EXPLORATION shape. Any rough edges: capture in **flow's** `dev-docs/feedback.md` via a follow-up PR in flow's repo — NOT in your project's feedback.md (plugin feedback belongs to plugin's dev-tracking).
+Invoke `/flow:staff-review` on this PR's own diff (the install + config + CLAUDE.md edit). All 4 lenses should spawn; output should match the documented BLOCKER/NIT/FOLLOW-UP/EXPLORATION shape. Any rough edges: capture in **flow's** `dev-docs/feedback/` (a new `FB-XXXX-<slug>.md`) via a follow-up PR in flow's repo — NOT in your project's feedback.md (plugin feedback belongs to plugin's dev-tracking).
 
 Open the Stage 1 PR against `main`. Don't merge — let the user merge.
 
@@ -132,7 +132,7 @@ Open the Stage 1 PR against `main`. Don't merge — let the user merge.
   **Note for verify-build:** run `/run-skill-generator` once before this stage if you haven't (one-time per-project setup that scaffolds `.claude/skills/run-<name>/`). Without it, `/flow:verify-build` falls back to heuristic launch and may return Unknown verdicts, which BLOCK ship per FB-0011. `/flow:doctor` Check 5.3 surfaces this prerequisite.
   11. STOP.
 
-- **Capture every rough edge** in flow's `dev-docs/feedback.md` via a follow-up flow PR. This is the load-bearing output.
+- **Capture every rough edge** in flow's `dev-docs/feedback/` via a follow-up flow PR. This is the load-bearing output.
 
 - **Do NOT fix flow bugs as part of Stage 1.5.** Fixes happen as follow-up PRs in flow, not bundled here. Stage 1.5 is a clean test surface.
 

@@ -103,7 +103,7 @@ The canonical reference — every step with its rationale, gate semantics, spike
 
 ## Boundaries & limitations
 
-What runs automatically vs. what needs a keystroke, the soft-enforcement seams, and the honest list of known gaps: [automation boundaries](docs/automation-boundaries.md). Per-version detail: [`CHANGELOG.md`](CHANGELOG.md).
+What runs automatically vs. what needs a keystroke, the soft-enforcement seams, and the honest list of known gaps: [automation boundaries](docs/automation-boundaries.md). Per-version detail: [`changelog/`](changelog/) — one file per release.
 
 ## License
 

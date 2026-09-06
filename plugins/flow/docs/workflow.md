@@ -21,7 +21,7 @@ Everything described in the loop below is shipped and installable today. The ful
 - **`/flow:post-merge`** — post-merge, human-invoked: the "merged — anything left, or safe to archive?" close-out (v1.21.0, FB-0072). One command that (1) confirms the merge with a **merge-queue-safe** three-state gate (a queued-but-unlanded PR is *not merged yet* → polled, never a false failure; only a `CLOSED`-unmerged PR fails loud), (2) **calls `/flow:land`** for doc-currency, then holds the archive verdict at `🚫` until you merge the `docs: land #N` PR it opens, (3) synthesizes the merge-gate feedback window `/flow:ship` structurally can't see into user-scope memory + the `/flow:contribute` queue, (4) safe-deletes the merged branch, (5) prints a `✅ safe to archive` / `🚫 not safe` verdict. Never merges.
 - **`/flow:workflow-help`** / **`/flow:doctor`** — onboarding (print the loop + resolved config) and setup verification.
 
-Plus the two reviewer subagents (`auditor`, `plan-critic`) the four staff-review lens agents, the D1 `lens-experience` agent (experience/ambition + push-further-on-quality, reached only through `/flow:review-brief`), the `planner` and `docs` context-isolation agents, the four portable rules (`general`, `plan-discipline`, `documentation`, `exploration` — path-activated skills, `user-invocable: false`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (33 slots), an **opt-in** default-hooks recipe (`hooks/default-hooks.json` — not auto-applied; consumers merge the hooks they want into their own `.claude/settings.json`), and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow references it directly rather than re-implementing it.
+Plus the two reviewer subagents (`auditor`, `plan-critic`) the four staff-review lens agents, the D1 `lens-experience` agent (experience/ambition + push-further-on-quality, reached only through `/flow:review-brief`), the `planner` and `docs` context-isolation agents, the four portable rules (`general`, `plan-discipline`, `documentation`, `exploration` — path-activated skills, `user-invocable: false`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (34 slots), an **opt-in** default-hooks recipe (`hooks/default-hooks.json` — not auto-applied; consumers merge the hooks they want into their own `.claude/settings.json`), and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow references it directly rather than re-implementing it.
 
 ## What this workflow is (and isn't)
 
@@ -145,7 +145,7 @@ If any hit matches the item you're about to activate, coordinate or pick a diffe
 
 ### After drafting, run `/flow:critique-plan`
 
-**Run on EVERY plan — including docs-only ones.** The dogfood lesson from md-manager PR 4 (`dev-docs/feedback.md` FB-0008 + FB-0033-style cross-repo discipline): skips compound. A docs-only PR's missing `/critique-plan` step is what surfaced the stale-base BLOCKER class. Diff-size is not a legitimate skip reason.
+**Run on EVERY plan — including docs-only ones.** The dogfood lesson from md-manager PR 4 (`dev-docs/feedback/` FB-0008 + FB-0033-style cross-repo discipline): skips compound. A docs-only PR's missing `/critique-plan` step is what surfaced the stale-base BLOCKER class. Diff-size is not a legitimate skip reason.
 
 The plan-critic reviews the plan against the user's request and the reference docs (`flow.config.json.referenceGlob`, default `core-docs/*.md`), returning either `APPROVED` or a `CRITIQUE SUMMARY` with BLOCKER / REDIRECT / FOLLOW-UP findings.
 
@@ -607,11 +607,12 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / HUMAN (you type it; ca
 | `defaultBranch` | falls back to `git symbolic-ref refs/remotes/origin/HEAD`, then literal `main` | `/flow:ship` (NOTHING-TO-SHIP check, PR base) |
 | `typecheckCmd` | unset → loud warning, never silent | `/flow:ship` (post-fix re-check) |
 | `preflightCmd` | unset → consumer must wire (project-shaped); typical convention `node tools/preflight/check.mjs` | preflight step 4 |
-| `historyPath` | `core-docs/history.md` (consumers) / `dev-docs/history.md` (flow's own repo) | `/flow:ship` step 4 |
+| `historyPath` | `core-docs/history.md` (schema default) — **a directory is preferred**: `core-docs/history/` (consumers) / `dev-docs/history/` (flow's own repo), one file per entry | `/flow:ship` step 4 |
 | `planPath` | `core-docs/plan.md` (consumers) / `dev-docs/plan.md` (flow's own repo) | clarify, plan, `/flow:ship` steps 2 + 4 |
 | `roadmapPath` | `core-docs/roadmap.md` (consumers) / `dev-docs/roadmap.md` (flow's own repo) | `/flow:ship` steps 2 + 4; `/flow:staff-review` follow-ups |
 | `specPath` | `core-docs/spec.md` (consumers) / `dev-docs/spec.md` (flow's own repo) | clarify, `/flow:ship` step 4 |
-| `feedbackPath` | `core-docs/feedback.md` (consumers) / `dev-docs/feedback.md` (flow's own repo) | clarify, `/flow:ship` step 3a |
+| `feedbackPath` | `core-docs/feedback.md` (schema default) — **a directory is preferred**: `core-docs/feedback/` (consumers) / `dev-docs/feedback/` (flow's own repo), one file per entry | clarify, `/flow:ship` step 3a |
+| `changelogPath` | `CHANGELOG.md` (schema default) — **a directory is preferred**: `changelog/`, one file per release | `/flow:land` step 4 |
 | `statusDocs` | `[]` | `/flow:ship` Step 5a/5b (reconcile + marker-coverage gate declared status surfaces); `/flow:doctor` Check 2.7 |
 | `statusSurfaceCandidates` | `[CLAUDE.md, AGENTS.md, README.md, GEMINI.md, .cursorrules, .github/copilot-instructions.md]` | `/flow:ship` Step 5a.5 (discover UNDECLARED orientation docs that drifted → draft); `/flow:doctor` Check 2.9 (warn-only opt-in nudge) |
 | `referenceGlob` | `core-docs/*.md` | `/flow:critique-plan` preprocessor |

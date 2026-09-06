@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Eval harness for /flow:land (post-merge doc-currency, FB-0061).
 
-Pins the deterministic helper `skills/land/lib/land-helpers.py` (changelog-check +
-clear-reservation) plus the load-bearing SKILL.md contract prose. The narrative
+Pins the deterministic helper `skills/land/lib/land-helpers.py` (changelog-check,
+file- and directory-valued) plus the load-bearing SKILL.md contract prose. The narrative
 reconciliation (Step 3 status-flips) is agent judgment — like /flow:ship Step 5a it
 has no helper and isn't unit-tested; what IS pinned here is the mechanical core and
 the contract that the safety steps (merged-gate, no-match WARN, §5c reuse, never
@@ -16,11 +16,11 @@ Covers:
   cc 2 — changelog-check: absent version → exit 1 + WARN.
   cc 3 — changelog-check: prefix version (v1.10) does NOT match v1.10.1 → exit 1.
   cc 4 — changelog-check: missing file → exit 2 (distinct from absent-entry).
-  cr 1 — clear-reservation: removes the matching id, leaves others.
-  cr 2 — clear-reservation: word-boundary — FB-001 does not strike FB-0014.
-  cr 3 — clear-reservation: absent id → idempotent no-op, exit 0.
-  cr 4 — clear-reservation: non FB/VH id rejected → exit 2, file untouched.
-  cr 5 — clear-reservation: missing file → clean no-op, exit 0.
+  cd 1 — changelog-check: DIRECTORY-valued changelogPath produces a verdict.
+  cd 2 — changelog-check: absent version in a directory corpus → exit 1.
+  cd 3 — changelog-check: prefix anchoring holds for directories too.
+  cd 4 — changelog-check: EMPTY directory → exit 2, distinct from absent-entry.
+  cr-removed 1 — clear-reservation subcommand is gone (v1.38.0), helper still runs.
   skill 1 — SKILL.md: merged-state gate is BLOCKING + fail-loud, edits nothing.
   skill 2 — SKILL.md: no-match discovery is a WARN, not a silent no-op.
   skill 3 — SKILL.md: late visual-history distill reuses §5c / insert-visual-history.py.
@@ -105,44 +105,47 @@ with tempfile.TemporaryDirectory() as d:
     rc, out, err = run("changelog-check", str(Path(d) / "nope.md"), "--version", "1.0.0")
     check("cc 4", rc == 2, f"missing file should be exit 2 (rc={rc})")
 
-# ---- clear-reservation ----
+# ---- changelog-check against a FRAGMENTED (directory) changelogPath ----
+# FB-0100: `changelogPath` may point at a DIRECTORY of one-file-per-release
+# fragments. The SKILL used to guard this whole check with `[ -f "$CHANGELOG" ]`,
+# which is FALSE on a directory — so the currency check became a silent no-op that
+# never ran and never said so. These are POSITIVE assertions (a verdict is produced
+# from a directory), deliberately paired with the negative in
+# run_doc_slot_resolution_evals.py: a negative alone would pass if the call site
+# were simply deleted.
 with tempfile.TemporaryDirectory() as d:
-    resv = Path(d) / "resv.md"
-    resv.write_text("- FB-001 (old)\n- FB-0013 (PR P)\n- FB-0014 (PR R)\n- VH-0008 (PR X)\n")
-    rc, out, err = run("clear-reservation", str(resv), "--id", "FB-0013")
-    check("cr 1", rc == 0 and "FB-0013" not in resv.read_text() and "FB-0014" in resv.read_text(),
-          f"rc={rc} after={resv.read_text()!r}")
-    # word boundary: --id FB-001 strikes the `FB-001` line but NOT `FB-0014` (positive
-    # removal AND non-removal both asserted, so a match-nothing bug can't pass).
-    rc, out, err = run("clear-reservation", str(resv), "--id", "FB-001")
-    after = resv.read_text()
-    check("cr 2", "FB-001 (old)" not in after and "FB-0014" in after,
-          f"FB-001 must strike its own line, not FB-0014: {after!r}")
-    # cr 2b — a reservation bullet is struck, but an AUDIT-TRAIL line citing the same id
-    # SURVIVES. The predicate was `search` (any occurrence) until #88's own land run deleted
-    # three collision-history entries: this file's second half is institutional memory, and
-    # clearing a number must not erase the record of why it was renumbered. Both directions
-    # asserted, so a match-nothing bug cannot pass this either.
-    audit = Path(d) / "resv_audit.md"
-    audit.write_text(
-        "## Currently reserved\n\n"
-        "- **FB-0077** — `some/branch` — \"a rule.\" Entry written in `feedback.md`; clears at ship.\n\n"
-        "## Audit trail (past collisions, kept for institutional memory)\n\n"
-        "- **2026-08-11** — a collision in which FB-0077 was renumbered; this line must survive.\n"
-    )
-    rc, out, err = run("clear-reservation", str(audit), "--id", "FB-0077")
-    after_a = audit.read_text()
-    check("cr 2b", rc == 0
-          and "- **FB-0077** —" not in after_a
-          and "a collision in which FB-0077 was renumbered" in after_a,
-          f"reservation must go, audit-trail mention must stay: {after_a!r}")
-    rc, out, err = run("clear-reservation", str(resv), "--id", "FB-0099")
-    check("cr 3", rc == 0 and "already clear" in out, f"rc={rc} out={out!r}")
-    before = resv.read_text()
-    rc, out, err = run("clear-reservation", str(resv), "--id", "ready")
-    check("cr 4", rc == 2 and resv.read_text() == before, f"rc={rc} mutated={resv.read_text() != before}")
-    rc, out, err = run("clear-reservation", str(Path(d) / "absent.md"), "--id", "FB-0001")
-    check("cr 5", rc == 0, f"missing reservations file should be clean no-op (rc={rc})")
+    cldir = Path(d) / "changelog"
+    cldir.mkdir()
+    (cldir / "v1.10.1.md").write_text("## v1.10.1 — 2026-01-01\n\n- a thing\n")
+    (cldir / "v1.11.0.md").write_text("## v1.11.0 — 2026-01-02\n\n- another\n")
+    (cldir / "README.md").write_text("# Changelog\n\nNot a release fragment.\n")
+
+    rc, out, err = run("changelog-check", str(cldir), "--version", "1.10.1")
+    check("cd 1", rc == 0 and "PASS" in out,
+          f"a directory-valued changelogPath must PRODUCE A VERDICT, not silently skip (rc={rc} out={out!r})")
+
+    rc, out, err = run("changelog-check", str(cldir), "--version", "9.9.9")
+    check("cd 2", rc == 1, f"absent version in a directory corpus should be exit 1 (rc={rc})")
+
+    # Prefix anchoring must survive the directory path too.
+    rc, out, err = run("changelog-check", str(cldir), "--version", "1.10")
+    check("cd 3", rc == 1, f"v1.10 must NOT be satisfied by v1.10.1 in a directory (rc={rc})")
+
+    # An EMPTY directory is exit 2 (broken migration), NOT exit 1 (missing entry).
+    # Conflating them would send the reader to write an entry when the real fault is
+    # that there are no entries at all.
+    empty = Path(d) / "empty-changelog"
+    empty.mkdir()
+    rc, out, err = run("changelog-check", str(empty), "--version", "1.0.0")
+    check("cd 4", rc == 2, f"empty directory must be exit 2, distinct from absent-entry (rc={rc})")
+
+# ---- clear-reservation is GONE (v1.38.0) ----
+# Paired assertion, per .claude/rules/general.md item 3: asserting only that the
+# subcommand is absent would also pass if the whole helper were deleted. Assert the
+# removal AND that the helper still works.
+rc, out, err = run("clear-reservation", "whatever", "--id", "FB-0001")
+check("cr-removed 1", rc != 0 and "invalid choice" in (out + err),
+      f"clear-reservation must be rejected — reserved-feedback-numbers.md no longer exists (rc={rc})")
 
 # ---- SKILL.md contract prose ----
 skill = read(SKILL)

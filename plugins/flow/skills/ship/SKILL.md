@@ -39,7 +39,7 @@ The `flow.config.json` slots referenced below have built-in fallbacks (see "Conf
 
 ### 1.0. Workflow-step assumptions (informational)
 
-Print the loop steps `/flow:ship` ASSUMES have already run during the feature work. Skips become visible at the next ship rather than weeks later. This is informational only — does not gate; just surfaces. See `dev-docs/feedback.md` FB-0033-style discipline (cross-repo with md-manager): "don't skip /critique-plan or /simplify, even on docs-only diffs."
+Print the loop steps `/flow:ship` ASSUMES have already run during the feature work. Skips become visible at the next ship rather than weeks later. This is informational only — does not gate; just surfaces. See `dev-docs/feedback/` FB-0033-style discipline (cross-repo with md-manager): "don't skip /critique-plan or /simplify, even on docs-only diffs."
 
 Emit (verbatim, single block — do NOT customize per project; the consistency IS the value):
 
@@ -161,7 +161,7 @@ Per FB-0009's general rule: any external CLI invoked by a flow skill must fail-f
 
 ### 1a. Stale-base check (BLOCKING)
 
-**Before any other pre-flight work**, confirm the branch isn't stale vs the default branch. A stale base produces phantom-deletion diffs that burn reviewer-agent spawns surfacing — see `dev-docs/feedback.md` FB-0008 for the dogfood discovery that motivated this gate. This is the cheapest mechanical check for the most expensive class of dogfood waste.
+**Before any other pre-flight work**, confirm the branch isn't stale vs the default branch. A stale base produces phantom-deletion diffs that burn reviewer-agent spawns surfacing — see `dev-docs/feedback/` FB-0008 for the dogfood discovery that motivated this gate. This is the cheapest mechanical check for the most expensive class of dogfood waste.
 
 ```sh
 # Resolve default branch via the 3-tier fallback chain (matches PR 1 locked idiom).
@@ -496,6 +496,10 @@ Review this conversation (and any prior session since the last PR on this branch
 
 Add new entries to the configured feedback doc following the FB-XXXX format. Increment from the last ID. Skip anything already captured. The bar: would a future session benefit from this rule? If yes, write it down.
 
+**One file per entry (FB-0100).** If the slot resolves to a **directory**, write a NEW FILE — never append to a rollup, and never create one. `Filename: `FB-XXXX-<kebab-slug-of-the-headline>.md`, with the `### FB-XXXX: ...` heading kept INSIDE the file`. There is deliberately no index file to update: `ls` is the index, and a committed index would recreate the very merge conflict one-file-per-entry removes (every entry would append a line to it). If the slot resolves to a single `.md` file, append as before — both shapes are supported, and `${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh` tells you which one you have.
+
+**Claiming the number.** There is no reservations file (deleted in v1.38.0). Creating and pushing the entry file IS the claim: a racing branch gets a both-added filename conflict, which git cannot auto-merge and no protocol can forget. Push it early, before you invest in cross-file `FB-XXXX` references.
+
 **Read verify-build findings buffer (if verify-build ran at Step 2).** When Step 2's `Skill("flow:verify-build")` invocation completed (ran, not skipped), read the structured findings at the path resolved from `flow.config.json.verifyFindingsPath` (default `.flow/verify-findings.json`). The buffer's JSON shape is documented at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-schema.json` with a canonical example at `findings-example.json`.
 
 For each criterion in `findings.criteria[]` with `aggregated_verdict ∈ {FAIL, Unknown}`:
@@ -682,7 +686,9 @@ window can be answered from PR history alone.
 
 For each meaningful change in the diff, update via the config slots (all default to `dev-docs/<name>.md`; consumer projects typically set them to `core-docs/<name>.md`):
 
-- **`flow.config.json.historyPath`** (default `dev-docs/history.md`) — add an entry (newest first) with: title, date, branch, what was done, why, design decisions, technical decisions, tradeoffs, lessons learned. Flag with `SAFETY` if it touches persistence, error handling, or fallback behavior.
+- **`flow.config.json.historyPath`** (default `dev-docs/history.md`) — add an entry with: title, date, branch, what was done, why, design decisions, technical decisions, tradeoffs, lessons learned. Flag with `SAFETY` if it touches persistence, error handling, or fallback behavior.
+
+**One file per entry (FB-0100).** If the slot resolves to a **directory**, write a NEW FILE — never append to a rollup, and never create one. `Filename: `YYYY-MM-DD-<kebab-slug-of-the-title>.md`, with the `## YYYY-MM-DD — Title` heading kept INSIDE the file`. There is deliberately no index file to update: `ls` is the index, and a committed index would recreate the very merge conflict one-file-per-entry removes (every entry would append a line to it). If the slot resolves to a single `.md` file, append as before — both shapes are supported, and `${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh` tells you which one you have.
 - **`flow.config.json.specPath`** (default `dev-docs/spec.md`) — if features changed status (planned → shipped) or new features were added, update the features table. If the product surface area changed materially, update the relevant section.
 
 Do **not** add entries that already exist. Skip silently.
@@ -699,7 +705,7 @@ The history entry above is backward-looking. The roadmap "Now" and plan "Current
 - **`flow.config.json.planPath`** (default `dev-docs/plan.md`):
   - Update "Current Focus" to the real current version + state.
   - Move shipped items from "Active Work Items" → "Recently Completed" (keep last 3–5); clear stale "Handoff Notes".
-- **Reservations:** remove this PR's now-shipped `FB-XXXX` line(s) from `reserved-feedback-numbers.md` (this is the step the dev-side `/ship` historically forgot — do it here so reservations never go stale).
+- **Reservations:** nothing to clear. `reserved-feedback-numbers.md` was deleted in v1.38.0. With one file per feedback entry, the entry file *is* the reservation: it lands with the PR and needs no separate sweep, which removes the "reservation lingers past merge" gap this step existed to patch (and repeatedly failed to — six renumbering incidents are recorded in that file's own audit trail).
 - **Project-declared status surfaces (`flow.config.json.statusDocs`):** the two docs above are the surfaces flow knows about by name. A project may declare *additional* forward-looking status surfaces — e.g. a `CLAUDE.md` or `README.md` phase/status line that auto-loads into every session and silently rots after a sub-PR merges. Reconcile each one's fenced region to the just-shipped reality (you have that context — same as for "Current Focus"):
 
   ```sh
@@ -915,7 +921,7 @@ fi
 if [ -z "$VISSIG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then VS="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/visual-significance.py"; else VS="plugins/flow/skills/verify-build/lib/visual-significance.py"; fi
   PLAN_P=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN_P" ] && PLAN_P="dev-docs/plan.md"
-  PLAN_A=""; [ -f "$PLAN_P" ] && PLAN_A="--plan $PLAN_P"
+  PLAN_A=""; { [ -f "$PLAN_P" ] && PLAN_A="--plan $PLAN_P"; } || echo "⚠️ [ship] no plan doc at $PLAN_P — running WITHOUT plan context. This is NOT the same as \"the plan declares no criteria\": check flow.config.json.planPath." >&2
   VISSIG=$(python3 "$VS" --config flow.config.json $PLAN_A 2>/dev/null | jq -r '.visual_significant // false')
 fi
 
@@ -1038,7 +1044,7 @@ VISSIG=""
 if [ -z "$VISSIG" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then VS="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/visual-significance.py"; else VS="plugins/flow/skills/verify-build/lib/visual-significance.py"; fi
   PLAN_P=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN_P" ] && PLAN_P="dev-docs/plan.md"
-  PLAN_A=""; [ -f "$PLAN_P" ] && PLAN_A="--plan $PLAN_P"
+  PLAN_A=""; { [ -f "$PLAN_P" ] && PLAN_A="--plan $PLAN_P"; } || echo "⚠️ [ship] no plan doc at $PLAN_P — running WITHOUT plan context. This is NOT the same as \"the plan declares no criteria\": check flow.config.json.planPath." >&2
   VISSIG=$(python3 "$VS" --config flow.config.json $PLAN_A 2>/dev/null | jq -r '.visual_significant // false')
 fi
 
@@ -1467,11 +1473,11 @@ If your project has a dev-server skill (e.g., a `/link`-style skill), invoke it 
 | `flow.config.json.preflightCmd` | unset → loud warning, never silent | Step 1c (bounded-retry mechanical preflight, N≤3) |
 | `flow.config.json.sourceFilePatterns` | covers common source/config extensions | Step 1c (docs-only early-exit) |
 | `flow.config.json.typecheckCmd` | unset → loud warning, never silent | Step 3 (post-reviewer-fix one-shot re-check) |
-| `flow.config.json.historyPath` | `dev-docs/history.md` | Step 5 |
+| `flow.config.json.historyPath` | `dev-docs/history.md` | Step 5 — file or one-file-per-entry directory |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Steps 3, 5 |
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Steps 3, 5 |
 | `flow.config.json.specPath` | `dev-docs/spec.md` | Step 5 |
-| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4a |
+| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4a — file or one-file-per-entry directory |
 | `flow.config.json.verifyFindingsPath` | `.flow/verify-findings.json` | Step 4a (FB candidates) + Step 5c (distill source) + Step 7 (`lib/render-test-plan.py` renders the `## Test plan`) |
 | `flow.config.json.visualHistoryPath` | `core-docs/visual-history.html` | Step 5c (durable visual record; created-on-first-write; gated on `uiSurface` + a load-bearing visual decision) |
 | `flow.config.json.statusDocs` | `[]` | Step 5a (reconcile each declared marker region) + Step 5b (marker-coverage gate, manifest-independent) |

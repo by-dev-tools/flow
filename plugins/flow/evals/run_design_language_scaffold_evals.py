@@ -21,7 +21,7 @@ Pins three things the FB-0098 PR changed:
               merely mentions the right thing is not the same as a check that
               DOES the right thing (the same principle `run_role_slot_evals.py`
               already applies to Check 2.11).
-  honesty   — doctor's frontmatter no longer claims "all 33 slots have
+  honesty   — doctor's frontmatter no longer claims "all N slots have
               sensible values" bare; it cites every check number the slot
               classification in Check 2.4's own prose assigns a slot to. This
               is the fan-out-omission class the PR exists to fix, so the
@@ -222,11 +222,15 @@ def main():
 
     # The specific bad phrase (contiguous, whitespace-tolerant since the YAML
     # `>` block scalar folds newlines to spaces at parse time but the raw text
-    # here still has them) — NOT a bare "33" anywhere, since the honest
-    # replacement legitimately says "not all 33 of the schema's slots".
-    check("honesty-1-no-bare-all-33-claim",
-          re.search(r"all 33\s+slots have sensible values", frontmatter) is None,
-          "frontmatter must not claim 'all 33 slots have sensible values' bare")
+    # here still has them) — NOT a bare count claim anywhere, since the honest
+    # replacement legitimately says "not all N of the schema's slots".
+    # Slot-count-agnostic (FB-0100): pinning the literal 33 made this assertion
+    # fail open the moment a slot was added — it would stop matching the forbidden
+    # string for the WRONG reason (the number changed), not because the claim was
+    # removed. `\d+` keeps it testing the claim rather than the count.
+    check("honesty-1-no-bare-all-N-claim",
+          re.search(r"all \d+\s+slots have sensible values", frontmatter) is None,
+          "frontmatter must not claim 'all N slots have sensible values' bare")
     for num in EXPECTED_CITED_CHECKS:
         check(f"honesty-2-cites-check-{num}",
               num in frontmatter,

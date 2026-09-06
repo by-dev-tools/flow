@@ -54,8 +54,8 @@ Flow tracks its own development in `dev-docs/` (NOT `core-docs/` — that name i
 | Path | Purpose |
 |------|---------|
 | `dev-docs/plan.md` | Current focus + active work items + handoff notes |
-| `dev-docs/history.md` | Per-PR decision log: what + why + tradeoffs + SHA |
-| `dev-docs/feedback.md` | Synthesized user corrections (FB-XXXX) |
+| `dev-docs/history/` | Per-PR decision log: what + why + tradeoffs + SHA. **One file per entry** (`YYYY-MM-DD-<slug>.md`); no rollup, no index |
+| `dev-docs/feedback/` | Synthesized user corrections. **One file per entry** (`FB-XXXX-<slug>.md`); pushing the file is how you claim the number |
 | `dev-docs/spec.md` | Plugin scope + features + categories (legacy: audit-only scope; broadening to full flow identity is a queued hygiene PR) |
 | `dev-docs/workflow.md` | Flow-internal dev workflow (different from the consumer-facing `plugins/flow/docs/workflow.md`) |
 | `dev-docs/README.md` | **Index of every dev-doc**, including `research/` + `handoffs/`. Add a new doc there in the same PR that creates it |
@@ -108,12 +108,11 @@ All living project knowledge lives in `dev-docs/`. Read before acting; update be
 | **Index** | `dev-docs/README.md` | **Map of all dev-docs, incl. `research/` + `handoffs/` with status** |
 | Plan | `dev-docs/plan.md` | Current focus, active work items, handoff notes |
 | Roadmap | `dev-docs/roadmap.md` | Now / Next / Later / § Exploration |
-| History | `dev-docs/history.md` | Per-PR decision log |
-| Feedback | `dev-docs/feedback.md` | Synthesized user corrections (FB-XXXX) |
+| History | `dev-docs/history/` | Per-PR decision log — **one file per entry** (`YYYY-MM-DD-<slug>.md`). `ls -r` for newest-first |
+| Feedback | `dev-docs/feedback/` | Synthesized user corrections — **one file per entry** (`FB-XXXX-<slug>.md`). No rollup, no index: `ls` is the index. Claiming a number = pushing the file |
 | Spec | `dev-docs/spec.md` | Plugin scope (audit-side today; broadening queued) |
 | Workflow | `dev-docs/workflow.md` | Flow-internal dev workflow |
 | Design language | `dev-docs/design-language.md` | Visual/interaction rules (thin — scoped to the `/flow:verify-build` HTML report. Flow is `uiSurface: true`: no app, but it ships browser UI) |
-| Reserved FB numbers | `dev-docs/reserved-feedback-numbers.md` | Reserve an FB number **before** drafting its entry |
 | Research | `dev-docs/research/*.md` | Point-in-time findings. Not maintained — check the Status line |
 | Handoffs | `dev-docs/handoffs/*.md` | Per-PR execution plans. Check the Status banner before treating one as active |
 
@@ -134,9 +133,9 @@ Dev-side slash commands: `/ship` (project-dev push + PR), `/preship` (standards 
 
 ## How to Work
 
-1. **Read before writing.** Check `dev-docs/plan.md` for current focus and `dev-docs/feedback.md` for past corrections.
+1. **Read before writing.** Check `dev-docs/plan.md` for current focus and `dev-docs/feedback/` for past corrections.
 2. **Respect the three-surface boundary.** Changes to plugin artifacts (`plugins/flow/*`, `.claude-plugin/marketplace.json`, `README.md`) change user-visible behavior. Changes under `dev-docs/` are dev-tracking only. Changes under `.claude/` or `tools/` are project-dev infra. Never mix.
-3. **Prompt changes are code changes.** The reviewer prompts at `plugins/flow/agents/{auditor,plan-critic}.md` and the new `plugins/flow/skills/ship/SKILL.md` are deployed surface. Treat edits like edits to a deployed service: write an eval fixture first (where applicable), update `dev-docs/history.md`, tune deliberately.
+3. **Prompt changes are code changes.** The reviewer prompts at `plugins/flow/agents/{auditor,plan-critic}.md` and the new `plugins/flow/skills/ship/SKILL.md` are deployed surface. Treat edits like edits to a deployed service: write an eval fixture first (where applicable), update `dev-docs/history/`, tune deliberately.
 4. **Follow the rules.** `.claude/rules/` auto-loads safety and documentation discipline when you touch matching files.
 5. **Never re-implement a bundled Claude Code skill; compose with it instead.** `/simplify`, `/batch`, `/debug`, `/loop`, `/claude-api` are native — reference them directly. What's forbidden is *duplicating* a bundled skill's behavior (parroting Anthropic's maintenance, which drifts from it). What's permitted and preferred is a thin wrapper that **invokes** the bundled skill and adds flow-specific value — config-slot resolution, a gate contract, feedback routing, in-flow orchestration (the FB-0015 delegating-wrapper shape; e.g. `/flow:verify-build` over bundled `/verify`, `/flow:ship` chaining its reviewers). If a proposed skill would only duplicate a bundled one with no added value, drop it and reference the native skill instead.
 

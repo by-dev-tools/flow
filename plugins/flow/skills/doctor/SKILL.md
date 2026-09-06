@@ -7,7 +7,7 @@ description: >
   flow.config.json present + parses + matches the v1.2+ schema, no skill composes
   with a `disable-model-invocation` skill (a call the runtime rejects), the
   required, doc-path, and dependent slots have sensible values and their paths
-  exist on disk (not all 33 of the schema's slots — see Check 2.3/2.4/2.7/2.8/2.9/2.11
+  exist on disk (not all 34 of the schema's slots — see Check 2.3/2.4/2.7/2.8/2.9/2.11
   for exactly which; ephemeral paths created on first write and non-path config
   are intentionally excluded), any declared `statusDocs` status surfaces exist + are
   fenced, any undeclared `statusSurfaceCandidates` that carry status content are
@@ -259,7 +259,32 @@ elif [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
       BASE=$(echo "$slot" | sed 's/Path$//' | sed 's/\([a-z0-9]\)\([A-Z]\)/\1-\2/g' | tr '[:upper:]' '[:lower:]')
       P="dev-docs/${BASE}.md"
     fi
-    if [ -f "$P" ]; then
+    # `-e`, not `-f` (FB-0100). historyPath / feedbackPath / changelogPath may point
+    # at a DIRECTORY of one-file-per-entry fragments, and `-f` is FALSE on a
+    # directory — so this loop would have printed [WARN] for a slot that is
+    # CORRECT, and told the reader to `touch` a file over a healthy directory.
+    if [ -d "$P" ]; then
+      # A doc directory with no entries is a half-finished migration, not a
+      # configured doc. Distinguish the two — conflating them is how a broken
+      # migration ships looking healthy.
+      N=$(find "$P" -maxdepth 1 -type f -name '*.md' ! -name 'README.md' ! -name '_*' 2>/dev/null | wc -l | tr -d ' ')
+      if [ "${N:-0}" -gt 0 ]; then
+        echo "[PASS] ${slot}: ${P}/ exists (${N} entries, one file per entry)"
+      elif [ -f "${P}/README.md" ]; then
+        # Scaffolded but empty is the CORRECT state for a fresh project --
+        # bootstrap.sh always writes the README, so its presence is what separates
+        # "set up, nothing shipped yet" from "empty for an unknown reason". WARNing
+        # here would greet every newly bootstrapped project with a false alarm on the
+        # very first /flow:doctor run.
+        echo "[PASS] ${slot}: ${P}/ scaffolded, 0 entries yet (expected on a new project)"
+      else
+        echo "[WARN] ${slot}: ${P}/ is an empty directory with no README.md"
+        echo "       Either a migration did not finish, or the slot points at the wrong"
+        echo "       place. Readers will report NO ${slot} context — which is NOT the"
+        echo "       same as 'this project has none'. Fix: re-run bootstrap.sh, or"
+        echo "       correct ${slot} in flow.config.json."
+      fi
+    elif [ -f "$P" ]; then
       echo "[PASS] ${slot}: ${P} exists"
     elif [ "$SLOT_WAS_SET" = true ]; then
       # An explicitly-set slot pointing at a missing file: touching THAT path is
@@ -796,6 +821,6 @@ Always emit the verdict as the FINAL line so the agent/user can scan to the bott
 ## When to escalate
 
 If doctor's output doesn't match what you observe (e.g., it says PASS but `/flow:staff-review` is broken):
-- Check `dev-docs/feedback.md` in the flow repo for known issues.
+- Check `dev-docs/feedback/` in the flow repo for known issues.
 - File a follow-up flow PR with the discrepancy under FB-XXXX format.
 - Run `claude plugin validate <flow-checkout>` to confirm the manifest is intact.

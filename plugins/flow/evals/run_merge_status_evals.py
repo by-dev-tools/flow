@@ -16,7 +16,7 @@ is prose the agent drives, but its LOAD-BEARING core is deterministic and pinned
                  (FB-0077: land's flag was cleared, so the Skill() call executes —
                  composition, not reimplementation and not a hand-off), uses `branch -d`
                  never `-D`, and writes NO feedbackPath repo doc in v1 (user-scope only).
-  schema       — the postMergeWaitSeconds slot exists and the slot count is 33 (a "N slots"
+  schema       — the postMergeWaitSeconds slot exists and the slot count is 34 (a "N slots"
                  fan-out is the most-recurring bug class this repo tracks — FB-0010).
 
 Stdlib only.
@@ -260,7 +260,12 @@ def main() -> int:
         # fan-out (docs/workflow.md, template/base/CLAUDE.md.template).
         # 30 -> 32 at v1.26.0 (visualFilePatterns + a11yFilePatterns, FB-0079).
         # 32 -> 33 at D1 Phase 0 (role slot, FB-0081).
-        check("schema-slot-count-33", len(props) == 33, f"slot count = {len(props)} (want 33)")
+        # 33 -> 34 at FB-0100 (changelogPath). That slot had been READ by
+        # /flow:land for several releases while absent from the schema, so
+        # consumers could not discover it and it silently fell back forever --
+        # indistinguishable from having chosen the default. Declaring it was a
+        # precondition for repointing it at a one-file-per-release directory.
+        check("schema-slot-count-34", len(props) == 34, f"slot count = {len(props)} (want 34)")
         # And no shipped surface may contradict it. Deliberately WRAP-TOLERANT: the
         # literal is matched across newlines, because the survivor that slipped this
         # PR's first sweep was `all 30\n  slots` wrapped inside doctor/SKILL.md's

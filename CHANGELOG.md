@@ -1,6 +1,8 @@
 # Changelog
 
-All notable changes to flow are recorded here. Reverse chronological (newest first).
+Entries live in [`changelog/`](changelog/) — **one file per release**, `vX.Y.Z.md`.
+
+This file is a pointer, not a rollup. A rollup here would recreate the merge conflict that one-file-per-release exists to remove: every release would append to it, so every concurrent PR would collide on the same lines. `ls -v changelog/` is the index; `cat changelog/v*.md` is the full text. Start at [`changelog/README.md`](changelog/README.md).
 
 This is the **consumer-facing changelog** — read this before upgrading. For per-PR design decisions + tradeoffs, see [`dev-docs/history.md`](dev-docs/history.md) (verbose, internal-tracking).
 

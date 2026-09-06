@@ -54,7 +54,7 @@ else
   # read from the wrong plan. Route it like ROOT-UNRESOLVED — NOT a clean/empty plan (FB jq-absence).
   command -v jq >/dev/null 2>&1 || { echo '{"criteria": [], "warnings": ["JQ-MISSING — jq is not on PATH; flow.config.json (planPath) could not be read, so criteria were NOT reliably read. This is not an empty plan. Install jq (https://jqlang.org) and re-run."]}'; exit 0; }
   PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
-  if [ -f "$PLAN" ]; then python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PLAN" 2>/dev/null || echo '{"criteria": [], "warnings": ["extract-criteria.py failed"]}'; else echo "{\"criteria\": [], \"warnings\": [\"no plan at $PLAN\"]}"; fi
+  if [ -f "$PLAN" ]; then python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PLAN" 2>/dev/null || echo '{"criteria": [], "warnings": ["extract-criteria.py failed"]}'; else echo "⚠️ [audit-coverage] no plan doc at $PLAN — every criterion check below is vacuous. This is NOT the same as \"the diff is fully covered\": check flow.config.json.planPath." >&2; echo "{\"criteria\": [], \"warnings\": [\"no plan at $PLAN\"]}"; fi
 fi
 `
 

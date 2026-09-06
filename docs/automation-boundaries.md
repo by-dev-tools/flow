@@ -41,4 +41,4 @@ The two human gates never move: **plan approval** (Step 2) and **merge** (Step 1
 
 This repo was previously published as `byamron/llm-auditor` (marketplace) hosting the `assumption-auditor` plugin. It was renamed to `by-dev-tools/flow` on 2026-05-23 and restructured into the marketplace + plugin shape in v1.0.0. Pre-v1.0.0 content is recoverable via `git checkout pre-flow-plugin`. GitHub redirects `byamron/llm-auditor` → `by-dev-tools/flow`, so old clones still pull from the same place.
 
-Per-version detail: [`CHANGELOG.md`](../CHANGELOG.md).
+Per-version detail: [`changelog/`](../changelog/) — one file per release.
