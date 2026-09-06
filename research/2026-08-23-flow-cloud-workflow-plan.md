@@ -95,7 +95,54 @@ Run verify-build → cannot launch → Unknown → draft, but filed as `needs: r
 | 08-22 note §8: committed markdown ledger as the coordination substrate | Demoted (§4.3) — PR + label is the queue | The ledger kept state that PRs already express authoritatively; drift-by-construction removed by using the PR itself |
 | 08-22 note: stage-split workers (plan worker → execute worker) | Already deleted by the wake probe [F22] | Recorded here so no future doc resurrects it |
 
-### 2.4 The one open conflict — resolve before building anything Mac-bridge-shaped
+### 2.4 ~~The one open conflict~~ — **RESOLVED 2026-09-03** ✅
+
+> **RESOLVED. `mcp__conductor__RunLocalCommand` EXISTS and works** — and the conclusion this
+> section anticipated does **not** follow. Read the three qualifiers before acting on the
+> resolution; a bare "it exists" is what produces the wrong design.
+>
+> **What it is.** A **one-shot shell command**, run on **the Mac that created the workspace**,
+> **attended** — the human approves each command — **60 s default, up to 30 min with
+> justification**. Probed against the operator's Mac: macOS 26.0.1 · `xcodebuild` at
+> `/usr/bin/xcodebuild` · `xcrun` at `/usr/bin/xcrun` · `gh` present · 9 iPhone simulators.
+>
+> **What it is NOT — state this precisely.** It is **not local execution**. It is a **remote
+> execution channel**. A cloud sandbox is **Linux and will never run `xcodebuild` locally,
+> regardless of tooling**. So the correct sentence is never *"cloud agents can run
+> `xcodebuild`"*; it is **"the orchestrator seat can ask the Mac to run it, with a human
+> approval each time."**
+>
+> **Availability is not universal — and it is absent where the work happens.** The channel is
+> **not inherited by API-created workspaces**. The orchestrator seat (workspace created *by*
+> the Mac) has it; an **orchestrator-dispatched implementation worker does not** — measured
+> absent four independent ways from a dispatched worker on 2026-09-03 (`ToolSearch` by exact
+> name, by keyword ×2, and `conductor --help`; the whole `mcp__conductor__*` surface there was
+> `GetWorkspaceDiff` / `DiffComment` / `GetTerminalOutput`). n=2, and the tool's own stated
+> scope explains it, though a staged rollout is not fully excluded.
+>
+> **Scope, narrowly: diagnostics from the orchestrator seat** (this is how this very section
+> and §5 Step 0 were resolved) **and optionally a human or orchestrator kicking off a sweep
+> manually. It is NOT in the per-PR verification path**, and it must **not** be brokered on
+> workers' behalf — that would put the coordinator inside the verification loop, and the
+> orchestrator's job is routing attention, not producing evidence.
+>
+> **The predicted consequence did NOT hold.** This section said *"`/verify-queue` becomes a
+> convenience rather than the load-bearing G2 mechanism."* It does not, for two reasons this
+> section could not have known: (a) **availability** — the placement the design serves has no
+> channel at all; (b) **dimension** — the channel is one-shot with a 30-min ceiling, while
+> `/flow:verify-build` is a multi-command loop that spawns fresh-context judges, drives the
+> simulator across pinned states in both ambient polarities, and captures frames (9–16 criteria
+> × four judges on the health-tracker consumer). That does not fit in one command or in 30
+> minutes at **any** approval budget. **`/verify-queue` remains load-bearing; §4.1 is unchanged.**
+>
+> **Why this note is this long.** The failure being guarded against is a future reader
+> concluding *"RunLocalCommand exists, therefore cloud can build"* and designing around a
+> capability that does not exist where the work happens. That inference has **already been made
+> twice** — once by the orchestrator seat on the day the tool was confirmed, and once by an
+> automated check that string-matched the question text and reported PRESENT. Two independent
+> occurrences is what makes it worth writing down rather than trusting to the reader.
+
+*Original text, retained for provenance:*
 
 **⚠️ `RunLocalCommand`.** Trio session: observed, attended (per-command user prompt), ≤10 min,
 undocumented. This session: absent from the workspace toolset, and the MCP docs state cloud
@@ -110,7 +157,7 @@ NOT exist (fail-safe direction: the queue works either way; a bridge would only 
 
 | Question | Why it matters | How to settle |
 |---|---|---|
-| `RunLocalCommand` (§2.4) | G2 mechanism shape | 5-min Mac check |
+| ~~`RunLocalCommand` (§2.4)~~ | ~~G2 mechanism shape~~ | ✅ **RESOLVED 2026-09-03** — exists, attended, remote-execution-only, orchestrator-seat-only. `/verify-queue` stays load-bearing (§2.4) |
 | Does Conductor surcharge `-1m` context variants? | Routing table defaults to `-1m` | Ask Conductor / billing |
 | Subscription consumption weighting | Whether usage ratios can become absolutes | Not published; track ratios only (usage.tsv) |
 | Does the wake-on-message hold for a workspace near its 23.8 h hard stop? | Long-queued G2 bounces might land on a dead workspace | Observe in practice; bounce falls back to PR comment (Trio's design already handles it) |
@@ -193,6 +240,14 @@ The 08-22 note's orchestrator survives with half its ledger deleted:
   (baseline `34bfa3137014f884`, reviewed 2026-08-22).
 
 ### 4.4 What is deliberately NOT built (each with its deletion criterion)
+
+**Noted while resolving §2.4 — a copy staleness, not fixed here.** The `toolchain` kind's
+`needs_you` copy in `manifest-triage.py`'s `KIND_COPY` reads *"Nothing I can do from this
+machine."* With §2.4 resolved that is now **sometimes false** at the orchestrator seat — there
+*is* something a session can do from that machine (ask for one approved command), even though it
+is explicitly **not** part of the per-PR verification path. That file is gate machinery (§4.8
+`sensitivePaths`), so it is recorded here for a separate plugin PR rather than edited in a
+docs-only change.
 
 | Not built | Why | Revisit when |
 |---|---|---|
@@ -575,7 +630,7 @@ never reimplement them.
 
 | # | Step | Where | State |
 |---|---|---|---|
-| 0 | Resolve `RunLocalCommand` (§2.4) | Mac, 5 min | **open — next human action** |
+| 0 | Resolve `RunLocalCommand` (§2.4) | Mac, 5 min | ✅ **DONE 2026-09-03** — exists; **remote execution channel, attended, orchestrator-seat-only, not in the per-PR verification path**. The predicted demotion of `/verify-queue` did **not** follow (§2.4) |
 | 1 | `toolchain` manifest kind + skip-audit branch + fixtures (§4.2) | flow plugin | queued — next dispatch after PHASE0; full flow loop, own PR |
 | 1a | `#N`-not-SHA history convention (§4.5) — the tiny, high-leverage prerequisite that removes land's only after-merge dependency | flow plugin (ship/land skills + history format) | queued; **dogfooded first in this change** (currency folded here, no standalone land PR) |
 | 1b | Fold durable currency into ship / next-ship; gate `/flow:land` behind a slot for the cold-loop-only consumer (§4.5) | flow plugin | after 1a; validate across a few merges before removing land from the default path |
