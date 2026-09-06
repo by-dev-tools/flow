@@ -79,7 +79,7 @@
 - [x] `context.plan_mode` reports a **closed vocabulary** (`spike`/`tiny`/`other`/null), never a line copied from the plan: the field is spliced into the forked auditor's prompt and the plan doc is repo-controlled. *Verified:* `plan-mode-classifies-rather-than-quotes` + `plan-mode-emits-no-free-text-field`, driving an injection payload through the engine.
 - [x] The handoff's sink FILES refuse a symlink, not just the scratch directory — a `.flow` that is a real directory can still contain a symlinked `skip-audit-stages.json` that the heredoc would follow and truncate (CWE-59). *Verified:* end-to-end against a hostile fixture repo, red-verified as exploitable before the fix; pinned in both copies by `contract-*-handoff-sink-guard`.
 - [x] A declared spike skip of `/simplify` + staff-review still classifies NEEDS-JUDGMENT — pinned so a future tightening cannot make spike mode unusable.
-- [x] `context.plan_mode` evidence emitted (path, first `**Mode:**` line, occurrences, ambiguity) and deliberately not promoted to a verdict.
+- [x] `context.plan_mode` evidence emitted (path, `declared_mode`, occurrences, ambiguity, truncation) and deliberately not promoted to a verdict.
 - [x] `preflight` is a stage the engine recognizes; the handoff↔engine join is pinned behaviourally so no row can classify as `unknown stage`.
 - [x] The line asserting ship-spike "never invokes `/flow:audit-skips`" is rewritten, and every doc surface enumerating spike-mode skips or audit-skips callers is updated.
 - [x] Every new eval case red-verified against the pre-change tree.

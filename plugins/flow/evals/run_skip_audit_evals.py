@@ -829,6 +829,29 @@ def main() -> int:
               pm_inj.get("declared_mode") == "spike"
               and "AUDITOR NOTE" not in json.dumps(r_inj),
               f"attacker text from the plan must not reach the engine's output: {pm_inj}")
+        # Formatting the plan docs actually use must not degrade to "other" — that
+        # reads to the auditor as "a mode WAS declared and it isn't spike", a positive
+        # claim more misleading than "unrecognized".
+        for fmt, want in [("`spike`", "spike"), ("**spike**", "spike"),
+                          ("_tiny_", "tiny"), ("feature (tooling)", "other")]:
+            r_fmt = run(tmp, config={"uiSurface": True},
+                        report={"stages": [{"name": "simplify", "status": "skipped",
+                                            "skip_reason": "spike"}]},
+                        files="M\tdev-docs/history.md", plan=f"**Mode:** {fmt}\n")
+            check(f"plan-mode-classifies-formatted-{want}-{fmt.strip('`*_ ')[:7]}",
+                  r_fmt.get("context", {}).get("plan_mode", {}).get("declared_mode") == want,
+                  f"{fmt!r} should classify {want}, got "
+                  f"{r_fmt.get('context', {}).get('plan_mode', {})}")
+        # A partial read must SAY it is partial: an unflagged partial `occurrences`
+        # count is evidence the auditor would trust as if it covered the whole plan.
+        r_big = run(tmp, config={"uiSurface": True},
+                    report={"stages": [{"name": "simplify", "status": "skipped",
+                                        "skip_reason": "spike"}]},
+                    files="M\tdev-docs/history.md", plan=("y" * 4_000_001))
+        check("plan-mode-flags-truncation",
+              r_big.get("context", {}).get("plan_mode", {}).get("truncated") is True,
+              f"{r_big.get('context', {}).get('plan_mode', {})}")
+
         check("plan-mode-emits-no-free-text-field",
               "first_mode_line" not in pm_inj,
               f"a verbatim-capture field is an injection surface by construction: {pm_inj}")

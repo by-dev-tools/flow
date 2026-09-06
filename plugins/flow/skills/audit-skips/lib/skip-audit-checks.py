@@ -91,6 +91,10 @@ try:
 except Exception as _exc:  # pragma: no cover - defensive; toolchain.py ships alongside
     _TOOLCHAIN_IMPORT_ERROR = _exc
 
+# Bounded plan read: a plan doc is prose. flow's own is ~732 KB; the cap sits far
+# above any legitimate plan and below "this file will stall the gate".
+_PLAN_READ_CAP = 4_000_000
+
 DEFAULT_SOURCE_PATTERN = (
     r"\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$"
     r"|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)"
@@ -292,9 +296,15 @@ def read_plan_mode(path, text):
     the first line, report how many exist, and let the agent see the ambiguity
     rather than hiding it behind a verdict.
     """
-    out = {"path": path, "declared_mode": None, "occurrences": 0, "ambiguous": False}
+    out = {"path": path, "declared_mode": None, "occurrences": 0, "ambiguous": False,
+           "truncated": False}
     if not path or text is None:
         return out
+    if len(text) > _PLAN_READ_CAP:
+        # The caller read one byte past the cap precisely so this is knowable. Say the
+        # count is partial rather than reporting it as if it covered the whole plan.
+        out["truncated"] = True
+        text = text[:_PLAN_READ_CAP]
     # `[ \t]` not `\s`: under re.M, `\s` also matches the newline, so a whitespace-heavy
     # plan makes this scan roughly O(lines x filesize). A newline can never precede the
     # marker on its own line anyway.
@@ -310,7 +320,11 @@ def read_plan_mode(path, text):
         # A closed vocabulary carries every property the abstention argument needs
         # (which mode was declared, how many were found, whether that is ambiguous)
         # and carries no attacker-controlled text at all.
-        first = hits[0].strip().lower()
+        # Strip the inline formatting plan docs actually use (`**Mode:** `spike``,
+        # `**Mode:** **spike**`) before classifying: left in, those degrade to "other",
+        # which the auditor reads as "a mode WAS declared and it isn't spike" — a
+        # positive claim, and a more misleading one than "unrecognized".
+        first = hits[0].strip().lower().lstrip("`*_ ").rstrip("`*_ ")
         if re.match(r"^spike\b", first):
             out["declared_mode"] = "spike"
         elif re.match(r"^tiny\b", first):
@@ -696,7 +710,10 @@ def main(argv):
             # Bounded read: a plan doc is prose. flow's own is ~732 KB; the cap is far
             # above any legitimate plan and below "this file will stall the gate".
             with open(args.plan, encoding="utf-8") as _fh:
-                plan_text = _fh.read(4_000_000)
+                # Read one byte PAST the cap so truncation is detectable rather than
+                # silent: a partial read yields a partial `occurrences` count, and an
+                # unflagged partial count is evidence the auditor would trust as whole.
+                plan_text = _fh.read(_PLAN_READ_CAP + 1)
         except OSError:
             plan_text = None
 
