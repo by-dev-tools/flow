@@ -44,6 +44,50 @@ Use `/clear` between agent phases to keep context small.
 2. Domain/Testing Agent: apply the corrected approach
 3. Docs Agent: document feedback in feedback.md, update history.md
 
+## Orchestrator close-out — record your own lessons as they land (FB-0101)
+
+**Who this is for:** the coordinating seat — the session that dispatches workers, reviews their PRs
+and holds the merge gate. Not the workers.
+
+**The gap.** Lesson harvest runs only at ship time (`/flow:ship` + `/flow:ship-spike` Step 4c). The
+orchestrator dispatches, reviews and merge-gates but **never ships**, so Step 4c never fires for it
+and every lesson generated at the coordinating seat is structurally unharvestable. In one measured
+session that cost three measurement failures, a capability-claims-expire correction, and an
+FB-collision pattern — all lost at teardown.
+
+**What to do — an instruction, not a mechanism.** Write your own lessons **straight into the
+project's feedback doc** as `FB-XXXX` entries (claim the number in the reservations doc first — `dev-docs/reserved-feedback-numbers.md` in *this* repo; the slot-resolved equivalent elsewhere), then
+land them as a small docs PR like any other change.
+
+**Do it when the lesson lands, not at archive time.** "Before archiving" is the obvious trigger and
+it is the wrong one: FB-0101 records the human archiving six workspaces in one day without checking
+any of them, which is exactly the failure this section exists to prevent — a close-out step that
+fires only at close-out inherits the same miss. Write the entry in the same session the lesson
+appears, while the evidence is still in context.
+
+**On "never ships":** the seat never ships *the work it dispatches* — that is the worker's job, and
+why Step 4c never fires for it. Landing its own small docs PR is not a counterexample; it is the
+ordinary route for any doc change, and it does not make the seat a feature-shipper.
+
+Resolve the destination from **`flow.config.json.feedbackPath`**, never a hardcoded filename — the
+slot is the contract, and it stays correct if the doc's on-disk shape changes (e.g. a
+one-file-per-entry split). If that path resolves to a directory rather than a single file, add one
+file per entry there using the same `FB-XXXX` fields; the *fields* are the format, the file layout is
+not.
+
+**Why no mechanism.** The queue exists to carry a lesson **across a repo boundary**. The orchestrator
+already sits inside a flow checkout with merge rights — it is already on the far side of that
+boundary and does not need transport. A `/flow:harvest` skill would be a queue-management subsystem
+and a parallel learner, which FB-0059(f) forbids.
+
+**The tradeoff, stated plainly:** lessons written this way skip confidence scoring, dedup, and the
+recurrence counter. That is a real loss of signal, and it is the right trade — the alternative is not
+"scored lessons" but *no lessons at all*, which is the status quo this replaces.
+
+**Deletion criterion (FB-0088):** delete this section if the orchestrator ever gains a ship step of
+its own (Step 4c would then cover it), or if `/flow:contribute` grows a documented orchestrator-seat
+entry point.
+
 ## Harness-weight audit (roadmap item AB, Step 1, FB-0095)
 
 Parallel to the memory-corpus audit (`plugins/flow/tools/memory/check.mjs --audit-due`, run from `/flow:ship` §4b.vi), but over flow's own **static always-loaded and invoked-per-use surfaces** rather than memory entries. Dev-tooling only — see CLAUDE.md § 3.

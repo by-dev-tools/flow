@@ -22,6 +22,7 @@ session starts at 0 (whole session); re-ship advances past prior turns.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -235,6 +236,148 @@ def cmd_mark(args) -> int:
     return 0
 
 
+
+# ---------------------------------------------------------------------------
+# flush (FB-0101) -- durability for ephemeral hosts.
+#
+# The queue lives in user-scope storage (contributionsQueuePath). That is correct
+# on a persistent machine and correct for the cross-project contract, but on an
+# ephemeral cloud workspace the whole filesystem dies at teardown, taking every
+# queued lesson with it. `flush` writes the queued records to a path INSIDE the
+# repo so the PR carries them -- git is durable by construction.
+#
+# Two outputs, deliberately split (see FB-0101 "the 37-record ceiling"):
+#   * --out-dir  : full records, committed to the branch. No size ceiling.
+#   * stdout     : a BOUNDED manifest (one short row per record) for the PR body.
+# Putting full JSON in the PR body overflows GitHub's 65,536-char limit at ~37
+# records -- i.e. exactly when the queue has been accumulating longest.
+# ---------------------------------------------------------------------------
+
+FLUSH_MARKER_BEGIN = "<!-- flow:lesson-flush:begin -->"
+FLUSH_MARKER_END = "<!-- flow:lesson-flush:end -->"
+
+
+def _queued_records(store_dir, project_slug=None):
+    """`status:queued` records, oldest first. Malformed files are skipped, not fatal.
+
+    When `project_slug` is given, records harvested in a DIFFERENT project are excluded.
+    The queue is deliberately cross-project (FB-0059: a lesson harvested in project A must
+    be drainable from the flow checkout), but the FLUSH commits into whichever repo is
+    being shipped — so exporting the whole queue would publish project A's slugs, branch
+    names and internal `target_hint` paths into project B's (possibly public) repo.
+    Cross-project drainage stays the job of `/flow:contribute`, which scrubs tokens first.
+    """
+    qdir = os.path.join(store_dir, "queue")
+    out = []
+    if not os.path.isdir(qdir):
+        return out
+    for name in sorted(os.listdir(qdir)):
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(qdir, name), "r", encoding="utf-8") as fh:
+                rec = json.load(fh)
+        except (OSError, ValueError):
+            continue  # a corrupt record must not break the ship pipeline
+        if not (isinstance(rec, dict) and rec.get("status") == "queued"):
+            continue
+        if project_slug:
+            origin = ((rec.get("provenance") or {}).get("project_slug") or "")
+            if origin and origin != project_slug:
+                continue   # another project's lesson — not ours to publish
+        out.append((name, rec))
+    return out
+
+
+def _md_cell(value, limit=None):
+    """Make a value safe for one markdown table cell.
+
+    Collapses ALL whitespace (a newline in a model-authored summary otherwise splits
+    the row and corrupts every row below it) and ESCAPES rather than substitutes the
+    pipe, so the lesson's own text survives. Truncates on a word boundary with an
+    explicit ellipsis -- an unsignalled clip reads as a typo, not as a cut.
+    """
+    text = " ".join(str(value).split())
+    # Neutralize the marker protocol BEFORE truncation: the end marker is 30 chars, well
+    # inside any limit, and ship Step 7 anchors its region replacement on it. A forged
+    # marker in model-authored text could truncate or overwrite the real PR body region.
+    text = text.replace("flow:lesson-flush", "flow-lesson-flush")
+    # Angle brackets: not XSS (GitHub sanitizes), but a forged </details> lifts attacker
+    # text out of the collapsed block into top-level PR-body content.
+    text = text.replace("<", "&lt;").replace(">", "&gt;")
+    if limit and len(text) > limit:
+        head = text[:limit - 1]
+        cut = head.rsplit(" ", 1)[0] if " " in head else head
+        text = cut + "\u2026"
+    return text.replace("|", "\\|")
+
+
+def cmd_flush(args) -> int:
+    queue_dir = os.environ.get("FLOW_CONTRIB_DIR") or os.path.expanduser(
+        "~/.claude/plugins/data/flow/contributions"
+    )
+    here = _project_slug("")
+    recs = _queued_records(queue_dir, project_slug=here)
+    if not recs:
+        # stderr, NOT stdout: stdout is STRICTLY the manifest, because the ship block
+        # gates on `[ -n "$LESSON_MANIFEST" ]`. Printing a diagnostic here would make
+        # that guard inert and paste this literal line into the PR body on any re-ship
+        # of a branch whose .flow-lessons/ already exists.
+        sys.stderr.write("[flush] queue empty - nothing to flush\n")
+        return 0
+
+    written = 0
+    if args.out_dir:
+        os.makedirs(args.out_dir, exist_ok=True)
+        for name, rec in recs:
+            # Redact the absolute window path: it is a machine path, and the window
+            # itself is never committed (raw transcript; may carry private-repo names).
+            prov = rec.get("provenance")
+            if isinstance(prov, dict) and prov.get("session_id"):
+                prov["session_id"] = "sha256:" + hashlib.sha256(
+                    str(prov["session_id"]).encode("utf-8")
+                ).hexdigest()[:16]
+            ev = rec.get("evidence")
+            if isinstance(ev, dict) and ev.get("window_path"):
+                ev["window_path_original_basename"] = os.path.basename(ev["window_path"])
+                ev["window_path"] = "(not committed - raw transcript window, see README)"
+            dest = os.path.join(args.out_dir, name)
+            with open(dest, "w", encoding="utf-8") as fh:
+                json.dump(rec, fh, indent=2, ensure_ascii=False)
+                fh.write("\n")
+            written += 1
+
+    # Bounded manifest for the PR body.
+    where = args.out_dir or "the local queue"
+    lines = [
+        FLUSH_MARKER_BEGIN,
+        "<details><summary>%d harvested lesson(s) ride this PR - they would have been "
+        "lost at workspace teardown. No action needed at merge; /flow:contribute drains "
+        "them later. Full records in %s/</summary>" % (len(recs), where),
+        "",
+        "| Lesson | Source | Conf | Record |",
+        "|---|---|---|---|",
+    ]
+    for name, rec in recs:
+        lesson = rec.get("lesson") or {}
+        lines.append(
+            "| %s | %s | %s | `%s` |"
+            % (
+                _md_cell(lesson.get("summary", ""), 110),
+                _md_cell(rec.get("source_type", "?")),
+                _md_cell(rec.get("confidence", "?")),
+                _md_cell(name),
+            )
+        )
+    lines += ["", "</details>", FLUSH_MARKER_END]
+    manifest = "\n".join(lines)
+    print(manifest)
+
+    if args.out_dir:
+        sys.stderr.write("[flush] wrote %d record(s) to %s\n" % (written, args.out_dir))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="flow lesson harvest (ship Step 4c)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -262,6 +405,10 @@ def main(argv=None) -> int:
     m.add_argument("--marker-file", default="")
     m.add_argument("--session-file", default="")
     m.set_defaults(fn=cmd_mark)
+
+    f = sub.add_parser("flush")
+    f.add_argument("--out-dir", default="", help="repo-local dir for full records (committed)")
+    f.set_defaults(fn=cmd_flush)
 
     args = ap.parse_args(argv)
     return args.fn(args)

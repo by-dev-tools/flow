@@ -22,6 +22,8 @@ Needs an **option decision at a human gate** (ascending cost): **(a)** confirm-a
 
 Canonical: `research/2026-08-23-flow-cloud-workflow-plan.md`. One orchestrator workspace per repo spawns + drives implementation workspaces (each running the flow loop); the human works from the orchestrator seat, keeping the plan-approval + merge gates. **Three fronts:** D1 prototype-first gate (Phase 0 + Phase 1 shipped; Phase 2 next); the cloud workflow (`toolchain` manifest-kind keystone -> orchestrator dispatch, §5 execution sequence); model selection for spawned workspaces (measurement-first, item M). Shipped #122 / #124 (land-elimination §4.5) / #126 (PHASE0 sweep fix) / #128 (D1 Phase 0) / this D1 Phase 1 PR; orchestration proven end-to-end 2026-08-25 via the `conductor` CLI. **M** (per-subagent model routing) and **AB** (attention-budget audit) — the 2026-08-14 Anthropic-canon items (FB-0084) — fold into this program: M is front (3); AB stays scoped in § Next. Both remain detailed in § Next below.
 
+**Plugin at v1.39.0 (shipped — SAFETY: harvested lessons now survive an ephemeral workspace. The lesson-contribution queue lives in user-scope storage that a cloud workspace destroys at teardown, so in that environment the source-diversity bar stopped *deferring* weak signals and started *destroying* them — `recurrence_count` pinned at 1 forever. `/flow:ship` + `/flow:ship-spike` Step 4c.iv now flush the queue into the PR: full records committed, a bounded manifest in the body (inline records overflow GitHub's 65,536-char cap at ~37, measured). Scoped to the CURRENT project only — the queue is cross-project by design, so an unfiltered flush would publish one project's internals into another's public repo. `/flow:contribute` gains a subordinate cross-repo recovery input, constrained to `--author "@me" --merged`. The orchestrator seat gets an instruction, not a mechanism. The harness-audit marker (AB.1b) and the memory corpus are deliberately NOT unified with it — three stores, three scopes; FB-0101.)** Recently shipped: **v1.37.0 (shipped #141 — `/flow:doctor` slot-coverage honesty + design-language template, FB-0098: Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source, not by editing any project's config. New `template/base/core-docs/design-language.md` (shape only). Doctor's frontmatter no longer over-promises "all 33 slots have sensible values." See `dev-docs/history.md` 2026-09-03.)** Recently shipped: **v1.36.0 (`/flow:doctor` Check 2.5's slot-count guard hoisted to the shared, wrap-tolerant predicate flow runs on itself; FB-0096).**
+
 **Plugin at v1.38.0 (this PR — `/flow:ship-spike` audits its own skips, FB-0100: spike mode was the skip-heaviest path in the workflow and the only one that audited none of its skips. Adds ship-spike Step 2a (`/flow:audit-skips` over the same stamped repo-local handoff `/flow:ship` writes), runs security + a11y in spike mode — the disposability rationale covers code *quality*, not a permanent commit's secrets nor an a11y pattern a human approves on a prototype (D1's own thesis) — and makes the engine REFUSE `spike`/`tiny` as a skip reason for every stage outside a closed two-member allowlist (`{simplify, staff-review}`) — so `verify-build`, the behavioral gate, is covered by the rule rather than by whoever remembered to list it — since a mode-declared blanket skip is unauditable by construction. Fourth recorded instance of the gate-that-does-not-fire-where-most-needed class (FB-0082, FB-0085, FB-0077). See `dev-docs/history.md` 2026-09-03.)** Recently shipped: **#142 (existing-repo design-language migration brief, FB-0099 — docs-only, no version bump), v1.37.0 (`/flow:doctor` slot-coverage honesty + design-language template, FB-0098), v1.36.0 (`/flow:doctor` Check 2.5's slot-count guard hoisted to the shared, wrap-tolerant predicate; FB-0096).**
 
 **Plugin at v1.35.0 (this PR — D1 Phase 1: `plugins/flow/agents/lens-experience.md` (D3, FB-0046) — an experience/ambition lens plus a push-further-on-quality lens with a loud anti-scope-creep guard — and `/flow:review-brief`, a new standalone-invocable orchestrator that extracts a design brief once and fans it to `auditor` + `plan-critic` + `lens-experience` in one tool message, returning a single triaged verdict (`decision-required` findings render as an answerable question list, never a document to read — there's no PR yet at this stage, so this is explicitly not gate machinery). A six-field design-brief template + its ~80-word/~20-second-read guideline are documented in `workflow.md`. Not `context: fork` — it fans out three parallel `Agent` calls, which a single-agent fork dispatch can't do, so its jq-absence handling follows the blocking `MISSING=""`/`exit 1` shape, not the fork-routed-signal shape (`run_jq_guard_evals.py` caught the first draft's mismatch). No trigger, no prototype phase, no loop re-ordering — those are D1 Phase 2/3; FB-0081/FB-0090).** Recently shipped: **v1.32.0 (the `toolchain` manifest kind: flow can finally say "verifiable in principle, just not on *this* machine". `/flow:verify-build` self-skips when every binary its declared platform's build needs is absent from the host; `/flow:audit-skips` accepts that skip only on a conjunction (a toolchain-shaped reason **and** a host probe confirming it) and still routes a `blocked`, un-waivable `toolchain` manifest entry, so the PR opens as a draft rather than a green tick. `ios` only for now — Android's `./gradlew` wrapper never resolves through a PATH lookup. Step 1 of the canonical cloud-workflow plan §5; Steps 3+ (placement rule, `needs-mac-verify`, `/verify-queue`, orchestrator) deliberately not built).**
@@ -708,6 +710,84 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 ---
 
 ## § Exploration
+
+### Step 4c.iv has no ephemerality predicate — it commits `.flow-lessons/` on every host (FB-0101, staff-review UX lens)
+
+**Surfaces when:** a consumer notices `.flow-lessons/` accumulating in their repo, OR AB.1b (the
+harness-audit marker) is picked up — same root cause, adjacent subsystem.
+
+The flush runs unconditionally, so a **laptop** ship also commits records into the repo permanently,
+for a defect that only exists on ephemeral hosts. That directly pressures the "this is a workaround,
+not a second store" guarantee the same section asserts. Genuinely open: what the predicate should key
+on (there is no reliable "am I ephemeral?" signal — a container check is a proxy, not the property),
+and whether records should be *removed* post-drain or left as history. Both are design calls, not
+copy fixes, which is why this is Exploration rather than a scheduled fix.
+
+### Recurrence is only counted along the axis the store indexes (FB-0101 #2, staff-review push-further lens)
+
+**Surfaces when:** a third instance of a user-scope-store-on-ephemeral-host defect appears; OR AB.1b
+is picked up; OR anyone edits `contribution_store.py`'s dedup logic or the source-diversity bar.
+
+FB-0101 #2 establishes that the pairing which justified the whole fix — the harness-audit marker
+(2026-08-27) and the contributions queue (a week later) — was invisible to every mechanism flow has,
+because `dedup` keys on `lesson_hash` **within one store**. The doc's conclusion is "cross-subsystem
+recurrence has to be looked for by hand," which is a standing manual obligation with no re-entry
+point. **Not a request for a mechanism** (that would be the queue subsystem FB-0101 forbids). The
+open question is whether this is even representable without a second store — probably not — or
+whether the honest answer is a *review-time question* (`plan-critic`/`auditor` asking "is this root
+cause already recorded against a different subsystem?") against docs that already exist, needing no
+new storage.
+
+### The manifest is bounded per-row but not in total (FB-0101, staff-review engineer lens)
+
+**Surfaces when:** a queue exceeds ~450 records, OR the ephemerality predicate above is designed.
+
+`flush` truncates each summary but has no row cap, so a large enough queue reproduces the exact
+overflow the split exists to prevent. Deferred deliberately: the realistic queue size is ~41 (the
+#119 drain) against a ~450-row ceiling, and a fix needs a `--max-rows` + truncation-notice design
+call. The eval exercises 60 rows and asserts realistic headroom, so the gap is bounded and measured,
+not unknown.
+
+### A copy/console-voice section for flow's human-facing text surfaces (staff-review UX + design-engineer lenses)
+
+**Surfaces when:** a fourth human-facing rendered surface appears, OR the existing roadmap item
+"`designLanguagePath` has no entry pointing at this surface" (annotation overlay + visual-history
+skeleton) is picked up — **the PR-body lesson manifest belongs in that same entry.**
+
+`dev-docs/design-language.md` is scoped to the verify-build HTML report *only* (correctly — that
+scope was just re-confirmed). But flow's highest-traffic human surfaces are **PR-body blocks and
+console lines**, and three of the four staff-review blockers on FB-0101 were copy defects with no doc
+to arbitrate them. `manifest-triage.py`'s "What this means / What I need from you / What happens
+then" is already a de-facto standard; writing it down would give the next block a grounding doc
+instead of a reviewer.
+
+
+
+### The memory corpus is entirely non-functional on ephemeral hosts (FB-0101)
+
+**Surfaces when:** anyone asks why failure-memory never seems to fire in cloud workspaces, OR the
+harness-audit marker fix (AB.1b) is picked up — same root cause, adjacent subsystem.
+
+`tools/memory/check.mjs` reports **0/30 entries on every fresh Conductor cloud workspace**: the
+corpus lives at `~/.claude/projects/<canonical>/memory/`, which is created empty and destroyed at
+teardown. This is not degradation — on an ephemeral host the memory system has **never** had an entry
+to read, so every guardrail built on it is inert there. `/flow:ship` § 4b spends its corpus-health,
+source-diversity and audit-due steps on a corpus that is always empty.
+
+**Deliberately not fixed with the FB-0101 queue flush**, and the reason is the point: the three
+affected stores do **not** share a substrate. The contributions queue is *cross-project* (fixed by
+flushing into the PR); the harness-audit marker is *flow-repo-only* (git-backed, filed as AB.1b); the
+memory corpus is *per-project* and sits at a **harness-owned path flow does not control**. Unifying
+them would over-couple three different scopes for the appearance of tidiness.
+
+**What is genuinely open:** whether per-project memory should be relocated to a repo-local path at
+all (it would then be committed and shared across contributors, which may be wrong for failure
+memory), or whether ephemeral hosts should simply declare memory unavailable and have § 4b self-skip
+loudly rather than silently operating on an empty corpus. **The cheap first step is the latter** — a
+loud skip costs one predicate and removes a false sense of coverage, without deciding the harder
+relocation question.
+
+
 
 ### E2 — `log-disagreement` capture rate, unresolved (`research/2026-09-agents-md-vs-skills.md` §5.2, 2026-09-04)
 

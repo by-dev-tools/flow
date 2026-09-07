@@ -24,6 +24,37 @@
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
 
+**▶ EXECUTED, shipping (this branch, `conductor/spike-designmd-investigation-vercel-agentic-design-guidance`, v1.39.0, FB-0101): harvested lessons survive an ephemeral workspace.** The contribution queue lives in user-scope storage that dies at cloud-workspace teardown — so in that environment the single-source bar stops *deferring* weak signals and starts *destroying* them (`recurrence_count` is pinned at 1 forever). Fix the storage, not the bar: ship/ship-spike Step 4c.iv flushes the queue into the PR (full records committed; **bounded** manifest in the body — inline records overflow GitHub's 65,536-char cap at ~37, measured). `/flow:contribute` gains a subordinate cross-repo recovery input. Orchestrator seat gets an **instruction**, not a mechanism. Marker (AB.1b) and memory (§ Exploration) deliberately NOT unified — three stores, three scopes. See the "PR — Ephemeral-host lesson durability" block below.
+
+## PR — Ephemeral-host lesson durability: queue flush + orchestrator close-out (this branch, FB-0101, v1.39.0, EXECUTED — shipping)
+
+**Mode:** feature (script + two skill steps + one drain input + docs + eval). `platform: library` ⇒ `/flow:verify-build` self-skips; no browser-UI files in the diff ⇒ security/a11y self-skip on file patterns.
+
+**Spec-walk:**
+- [x] `harvest_lesson.py flush` — full records to `--out-dir`, bounded manifest to stdout, redacts absolute window paths, never emits the raw transcript window. *Verified:* `run_lesson_flush_evals.py`, 18 checks green.
+- [x] Survives a missing / empty / corrupt queue without failing the ship. *Verified:* evals 1–2.
+- [x] `/flow:ship` + `/flow:ship-spike` Step 4c.iv wired identically (the consistency is the value). *Verified:* both files, same block.
+- [x] `/flow:contribute` Step 2 input 3 — cross-repo recovery via `gh search prs`, local queue takes precedence, eventual-consistency caveat stated.
+- [x] Orchestrator close-out in `dev-docs/workflow.md`, resolved through `feedbackPath` (survives the fragmentation sibling).
+- [x] FB-0101 written + number reserved; roadmap § Exploration for memory; AB.1b left to own the marker.
+- [x] Eval CI-wired (FB-0056: an un-wired eval provides zero standing protection).
+- [x] Version 1.37.0 → **1.39.0** (1.38.0 claimed by open #145) across `plugin.json` + `marketplace.json`; no stale refs.
+
+**Spec-walk — added after `/flow:security-review` (SAFETY; each is a behavior change, declared so it is verified rather than assumed):**
+- [x] **`flush` publishes only the CURRENT project's records.** The queue is cross-project by design, but the flush commits into whichever repo is shipping — unfiltered it would publish a private project's slug/branch/`target_hint` into a public repo. *Verified:* evals "foreign-project record excluded from manifest" + "own-project record still included" + "not written to out-dir".
+- [x] **Model-authored lesson text cannot forge the marker protocol or escape `<details>`.** ship Step 7 anchors region replacement on those markers. *Verified:* evals "exactly one begin/end marker survives", "forged `</details>` neutralized", "angle brackets escaped".
+- [x] **No raw session id and no absolute machine path reach a committed record or the PR body.** *Verified:* evals "session id hashed, not verbatim", "no absolute home path in the PR-body manifest".
+- [x] **`git add` does not use `-f`** — a consumer who gitignored `.flow*` chose that; the flush warns loudly instead of overriding them. *Verified:* both skill blocks, byte-identical.
+- [x] **`/flow:contribute` cross-repo discovery is constrained to `--author "@me" --merged`,** and reads the merge commit rather than a fork ref. *Verified:* contribute/SKILL.md Step 2 input 3 + the never-relax note.
+
+**Two preconditions settled empirically BEFORE building (human-required):**
+1. **Cross-repo discovery works** — `gh search prs` indexes PR bodies and reaches private repos. The flush is not capped to flow's own lessons. *Design confirmed.*
+2. **Body size — this CHANGED the design.** Records ~1,596 B; cap 65,536; ~37 records overflow. Split into committed records + ~104 B manifest rows. *Had this been deferred, the mechanism would have failed exactly when the queue mattered most.*
+
+**Deliberately NOT done:** the harness-audit marker fix (AB.1b owns it), the memory fix (§ Exploration), any change to the source-diversity bar, a `/flow:harvest` skill, or unifying the three stores.
+
+## PR — Doctor slot-coverage honesty + design-language template (this branch, `conductor/doctor-slot-loop-coverage-design-language-template`, FB-0098, v1.37.0, EXECUTED — shipping)
+
 ## PR — Doctor slot-coverage honesty + design-language template (this branch, `conductor/doctor-slot-loop-coverage-design-language-template`, FB-0098, v1.37.0, merged #141)
 
 **Restated request:** close the gap between `/flow:doctor`'s advertised "all 33 slots have sensible values" and Check 2.4's actual 5-slot loop (`designLanguagePath` named as the verified finding — 23+ dependent files, no template shipped for it), per `dev-docs/research/2026-09-design-md-investigation.md` (spike, branch `conductor/spike-designmd-investigation-vercel-agentic-design-guidance`).
