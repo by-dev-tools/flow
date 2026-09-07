@@ -245,7 +245,11 @@ elif [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
   # `uiSurface: false` back to true. `if ... == false` is the plugin's
   # established safe pattern (accessibility-review's Check 0.1 gate).
   UI_SURFACE=$(jq -r 'if .uiSurface == false then "false" else "true" end' flow.config.json)
-  DOC_SLOTS="planPath specPath roadmapPath historyPath feedbackPath"
+  # changelogPath included (FB-0100): it is a doc-path slot like the rest, and it may
+  # resolve to a one-file-per-release DIRECTORY, which is exactly the shape this loop
+  # was taught to check. Leaving it out would repeat FB-0098 -- a coverage claim that
+  # quietly excludes the newest slot.
+  DOC_SLOTS="planPath specPath roadmapPath historyPath feedbackPath changelogPath"
   [ "$UI_SURFACE" = "true" ] && DOC_SLOTS="$DOC_SLOTS designLanguagePath"
   for slot in $DOC_SLOTS; do
     P=$(jq -r ".${slot} // empty" flow.config.json)
@@ -280,10 +284,14 @@ elif [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
     # The resolver may print a leading jq-absent notice; the resolution is the LAST line.
     RES=$(sh "$RDS" "$slot" "$P" 2>/dev/null | tail -1)
     case "$RES" in
-      "DIR "*scaffolded*)
+      "DIR "*"(scaffolded, no entries yet)"*)
         echo "[PASS] ${slot}: ${P}/ scaffolded, 0 entries yet (expected on a new project)" ;;
       "DIR "*)
-        echo "[PASS] ${slot}: ${RES#DIR }" ;;
+        # Strip the resolver's read hint: it exists to tell a MODEL how to consume the
+        # corpus, and doctor is a scannable health report for a human. Keeping it made
+        # the PASS lines the widest in the output and put "how to read this" where a
+        # health fact belongs. The FILE arm below prints no hint either.
+        echo "[PASS] ${slot}: $(printf '%s' "${RES#DIR }" | sed 's/ - browse:.*//')" ;;
       "FILE "*)
         echo "[PASS] ${slot}: ${P} exists" ;;
       *EMPTY*)

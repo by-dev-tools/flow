@@ -157,7 +157,7 @@ done
 # reviewers would report is "(no feedback doc)", indistinguishable from a project that
 # genuinely has none.
 #
-# DERIVED from the template tree, never hand-listed: the destination comes from the
+# DERIVED from the template tree by a positive test, never a hand-list: the destination comes from the
 # path relative to template/base/, so a new fragmented directory added to the template
 # is picked up automatically. The first cut hand-listed changelog/ as its own `if`
 # block, which silently dropped exactly that case -- the same silent-skip class this
@@ -165,9 +165,13 @@ done
 for d in "$FLOW_DIR/template/base/core-docs/"*/ "$FLOW_DIR/template/base/"*/; do
   [ -d "$d" ] || continue
   rel=${d#"$FLOW_DIR/template/base/"}
-  case "$rel" in
-    core-docs/|stacks/|.claude/) continue ;;   # handled above / not doc directories
-  esac
+  # POSITIVE predicate, not a denylist: a fragmented doc directory is one that ships a
+  # README.md explaining the convention. A denylist has to be remembered every time
+  # template/base/ gains a directory, and forgetting it scaffolds something unintended
+  # into every consumer repo -- the failure this loop's own comment claims to prevent.
+  # (The first cut listed `core-docs/ stacks/ .claude/`, and `stacks/` is not even under
+  # template/base/, which is what a hand-list looks like after one edit.)
+  [ -f "$d/README.md" ] || continue
   mkdir -p "$PROJECT_ROOT/$rel"
   for f in "$d"*.md; do
     [ -e "$f" ] || continue

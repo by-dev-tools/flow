@@ -251,6 +251,54 @@ After migration completes, picking up new flow versions follows the same 2-comma
 
 ---
 
+## Optional — fragmenting an append-only doc into one file per entry
+
+**Entirely optional, and orthogonal to the three stages above.** Every doc-path slot
+accepts a single `.md` file *or* a directory of one-file-per-entry fragments, and the
+schema defaults are still single files. A project that never does this keeps working
+exactly as before, forever. `bootstrap.sh` scaffolds directories for *new* projects
+because that is the better default going forward — not because the file shape is
+deprecated.
+
+**Why you might.** `history`, `feedback` and `CHANGELOG` are append-only: every PR adds
+an entry at the same insertion point, so every concurrent PR collides there. One file
+per entry removes the shared line. It also removes a quieter failure — a clean
+auto-merge can drop an entry with no conflict markers and a clean parse, and nothing
+downstream can tell. A merge cannot silently drop a *file*.
+
+**The method matters more than any script.** Flow's own migration used a one-shot tool
+(`tools/doc-fragment/fragment.py` in the flow checkout — dev infra, deliberately not
+shipped, because a rollup generator living in the plugin is how a committed rollup
+eventually happens). You do not need it. What you need is the discipline, which is
+short enough to restate:
+
+1. **Split at the entry heading level** — whatever your doc uses (`## vX.Y.Z`,
+   `### FB-XXXX`, `## YYYY-MM-DD — Title`). Keep that heading *inside* the fragment.
+2. **Write verbatim slices, un-normalised.** Do not tidy trailing newlines on the way
+   out. Normalising makes the next step impossible to state honestly.
+3. **Prove it with an independent reader.** Concatenate the fragments back *from disk*
+   in source order and compare `sha256` against the original. A tool that checks its own
+   in-memory work proves only that it agrees with itself.
+4. **Census the identifiers.** Byte conservation cannot catch a heading swallowed into a
+   neighbour's body — every byte is still present, in the wrong fragment. Compare the
+   *set* of entry IDs found by re-parsing the written files against the source's.
+5. **Treat a filename collision as a hard stop, never an auto-rename.** Two entries
+   claiming one identity is the signal, not noise. Flow's own migration hit two, both
+   pre-existing merge damage nobody had noticed.
+6. **Repoint the slot, then run `/flow:doctor`.** It reports the entry count per slot.
+
+**Two gotchas, both real:**
+
+- **`referenceGlob` does not follow you into the subdirectory.** The feedback corpus is a
+  reference document for `/flow:critique-plan`. If you fragment `feedbackPath`, add the
+  directory to the slot as well — it accepts a comma-separated list:
+  `"referenceGlob": "core-docs/*.md,core-docs/feedback/*.md"`. Miss this and every FB rule
+  silently drops out of the critic's context **without** the zero-resolution warning
+  firing, because your other reference docs still resolve.
+- **Do not add an index or a rollup file.** Either recreates the exact conflict you just
+  removed, because every new entry appends a line to it. `ls` is the index (`ls -r` for
+  newest-first on date-prefixed entries, `ls -v` for version-named ones).
+
 ## Troubleshooting
 
 - **Plugin skill missing a behavior your local skill had.** Don't restore the local skill. File a flow follow-up PR. Workarounds in your project belong in `.claude/rules/<project-rule>.md` if they're rules, or `.claude/skills/<project-skill>/` if they're project-specific orchestration.

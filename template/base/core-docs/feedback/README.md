@@ -49,9 +49,3 @@ Increment from the last entry. Use `FB-0001`, `FB-0002`, etc.
 - **user preference** — user expressed a stylistic or process preference
 - **user direction** — user set strategic direction or priorities
 - **review feedback** — issues found during code/design review
-
----
-
-## Entries
-
-<!-- Add new entries below this line, newest first. -->

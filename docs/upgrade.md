@@ -112,6 +112,8 @@ Two possibilities:
 
 ### Upgrade brought a breaking change you didn't expect
 
+**Want the one-file-per-entry doc shape?** It is optional and there is no deadline — single-file docs stay supported and the schema defaults are still files. See [`migration.md` § "Optional — fragmenting an append-only doc"](migration.md#optional--fragmenting-an-append-only-doc-into-one-file-per-entry) for the method and the two gotchas.
+
 Flow follows semver. Major bumps (`x.0.0`) are reserved for breaking changes and are called out in the release's `changelog/vX.Y.Z.md` with an explicit "Breaking changes:" block. Minor bumps (`1.y.0`) add user-visible surface. Patch bumps (`1.2.x`) follow flow's discipline of additive-only changes — but verify each upgrade with `/flow:doctor` regardless; the discipline is enforced by lens-staff-engineer + Check 2.5 + author care, not by tooling.
 
 If a patch upgrade DOES break something, **that's a bug, not a feature**. File an issue at https://github.com/by-dev-tools/flow/issues with:

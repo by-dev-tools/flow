@@ -3,8 +3,17 @@ name: documentation
 description: Auto-loading formatting rules for the project's narrative docs (history, feedback, plan, roadmap, spec). Not user-invocable — path-activated only.
 user-invocable: false
 paths:
+  # Both shapes, deliberately. The single-file forms stay because single-file docs
+  # remain supported (the schema defaults are still files); the directory forms are
+  # added because a fragmented doc is `history/2026-09-06-<slug>.md`, which matches
+  # NEITHER of the originals. Without them this rule-skill silently stops activating
+  # for every project that adopts one-file-per-entry -- the entry-format contract
+  # would go unenforced with nothing printed. Same by-filename-prohibition shape that
+  # `scripts/extract_session.py` fixes for the reference-doc skip list (FB-0100).
   - "**/history.md"
+  - "**/history/*.md"
   - "**/feedback.md"
+  - "**/feedback/*.md"
   - "**/plan.md"
   - "**/roadmap.md"
   - "**/spec.md"

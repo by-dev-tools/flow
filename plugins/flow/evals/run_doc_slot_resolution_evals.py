@@ -28,17 +28,22 @@ Checks:
             also carries a loud marker or a resolver call (repo-wide, not
             prelude-scoped: a prelude-scoped check goes green over a repo that still
             degrades silently at the argv-construction sites)
-  join 1  — the pinned prelude list equals what is actually shipped (both directions)
+  join 1  — the pinned prelude list equals what is actually SHIPPED AND EXECUTING
+            (both directions; anchored on the `!` marker, so commenting a prelude out
+            fails the join rather than passing as "documentation")
+  neg 3   — no SKILL.md carries an inert (non-`!`) copy of a resolver prelude
   pos 1-N — each pinned context prelude calls resolve-doc-slot.sh for its slot
   loud-fallback — every prelude is loud when the resolver itself is missing
   schema-default-pin — each prelude's default argument matches the schema default
-  pos 9   — resolver on a DIRECTORY: reports the count + the read command, and does
+  state 1 — resolver on a DIRECTORY: reports the count + the read command, and does
             NOT emit a "no ... doc" phrase
-  pos 10  — resolver on a FILE: unchanged legacy behaviour
-  pos 11  — resolver on an EXPLICITLY SET missing path: loud
-  pos 12  — resolver on an EMPTY directory: loud, and distinct from missing
-  pos 13  — resolver on an UNSET slot + absent default: quiet (the one ambiguous case)
-  pos 14  — the functional (argv-construction) readers are loud on a missing plan
+  state 2 — resolver on a FILE: unchanged legacy behaviour
+  state 3 — resolver on an EXPLICITLY SET missing path: loud
+  state 4 — resolver on an EMPTY directory: loud, and distinct from missing
+  state 6 — resolver on a SCAFFOLDED directory (README only) is QUIET
+  state 7b— resolver on a SET slot pointing at a ZERO-BYTE file is LOUD
+  state 5 — resolver on an UNSET slot + absent default: quiet (the one ambiguous case)
+  state 7 — the functional (argv-construction) readers are loud on a missing plan
   ref 1   — a fragmented feedbackPath still reaches the plan-critic's reference set
   ref 2   — history fragments are NOT dragged into the reference set
   slot 1  — changelogPath is declared in the schema (it was read-but-undeclared)
@@ -149,7 +154,12 @@ EXPECTED = [
     ("ship-spike", "historyPath"),
 ]
 
-PRELUDE_RX = re.compile(r'sh "\$R" (\w+) (\S+?) \|\|')
+# Captures (slot, default). The optional trailing group is the resolver's third
+# argument, an entry glob -- /flow:land passes 'v*.md' for changelogPath so the read
+# hint offers `ls -v` rather than a lexical sort that puts v1.10.0 before v1.9.0.
+# Without the optional group the glob was captured AS the default and join 1 failed,
+# which is the join doing its job on a real change of shape.
+PRELUDE_RX = re.compile(r"""!`[^`\n]*sh "\$R" (\w+) (\S+?)(?: '[^']*')? \|\|""")
 
 
 def on_disk_preludes():
@@ -161,6 +171,19 @@ def on_disk_preludes():
 
 
 DISK = on_disk_preludes()
+
+# A resolver call OUTSIDE an `!`-span is inert: it renders as prose and never runs.
+# Paired with join 1 (which now only counts executing ones), this closes the
+# de-activation route in both directions -- you can neither disarm a prelude nor
+# reintroduce a disarmed copy alongside a live one.
+INERT_RX = re.compile(r'(?<!!)`[^`\n]*sh "\$R" \w+ ')
+inert = []
+for f in shipped_skills():
+    for n, line in enumerate(f.read_text(encoding="utf-8").split("\n"), 1):
+        if INERT_RX.search(line):
+            inert.append(f"{f.relative_to(ROOT)}:{n}")
+check("neg 3", not inert,
+      f"resolver prelude(s) present but NOT executing (missing the leading `!`): {inert}")
 
 # join — the pin must equal what is actually shipped, in BOTH directions.
 check("join 1", sorted({(a, b) for a, b, _ in DISK}) == sorted(set(EXPECTED)),
@@ -218,25 +241,52 @@ with tempfile.TemporaryDirectory() as d:
     (w / "docs" / "empty").mkdir()
 
     out = run_resolver(w, "feedbackPath", "docs/feedback.md")
-    check("pos 9", out.startswith("DIR ") and "(3 entries)" in out
-          and "cat docs/feedback/*.md" in out and "no feedbackPath doc" not in out,
+    check("state 1", out.startswith("DIR ") and "(3 entries" in out
+          and "cat docs/feedback/*.md" in out and "no feedbackPath doc" not in out
+          and "browse:" in out,
           f"directory resolution wrong (README must not count): {out!r}")
 
     out = run_resolver(w, "specPath", "docs/spec.md")
-    check("pos 10", out.startswith("FILE docs/spec.md"), f"file resolution wrong: {out!r}")
+    check("state 2", out.startswith("FILE docs/spec.md"), f"file resolution wrong: {out!r}")
 
     out = run_resolver(w, "historyPath", "docs/history.md")
-    check("pos 11", "⚠️" in out and "MISSING" in out and "historyPath" in out,
+    check("state 3", "⚠️" in out and "MISSING" in out and "historyPath" in out,
           f"an explicitly-SET missing path must be LOUD: {out!r}")
 
     out = run_resolver(w, "designLanguagePath", "docs/design-language.md")
-    check("pos 12", "⚠️" in out and "EMPTY" in out and "MISSING" not in out,
+    check("state 4", "⚠️" in out and "EMPTY" in out and "MISSING" not in out,
           f"an EMPTY directory must be loud AND distinct from missing: {out!r}")
 
-    # The one quiet case: unset slot, default path, nothing there. Quiet because it
+    # state 6 — SCAFFOLDED: a directory holding only its README. This is the CORRECT
+    # state on day one of every new project, so it must be QUIET. It had no test until
+    # the push-further lens pointed out that deleting the resolver's README arm left the
+    # whole suite green while every correct fresh install started warning -- the exact
+    # false alarm the resolver's longest comment exists to prevent. Paired: the quiet
+    # marker must be absent AND the scaffolded wording present.
+    sc = w / "docs" / "scaffolded"; sc.mkdir()
+    (sc / "README.md").write_text("# just the readme\n")
+    (w / "flow.config.json").write_text(json.dumps({
+        "feedbackPath": "docs/feedback", "specPath": "docs/spec.md",
+        "historyPath": "docs/nowhere", "designLanguagePath": "docs/empty",
+        "visualHistoryPath": "docs/scaffolded", "planPath": "docs/truncated.md",
+    }))
+    out = run_resolver(w, "visualHistoryPath", "docs/visual-history.md")
+    check("state 6", "⚠️" not in out and "scaffolded" in out and out.startswith("DIR "),
+          f"a scaffolded-but-empty directory must resolve QUIETLY: {out!r}")
+
+    # state 7 — a SET slot pointing at a ZERO-BYTE file. Loud, for the same reason the
+    # empty directory is loud: the slot resolves to no context. This is the state every
+    # un-migrated consumer sits in (the schema defaults are single files), and FB-0101's
+    # thesis is that a merge can silently empty a doc.
+    (w / "docs" / "truncated.md").write_text("")
+    out = run_resolver(w, "planPath", "docs/plan.md")
+    check("state 7b", "⚠️" in out and "EMPTY" in out,
+          f"a SET slot pointing at a zero-byte file must be LOUD: {out!r}")
+
+    # The quiet cases: unset slot, default path, nothing there. Quiet because it
     # is genuinely ambiguous with "this project has none" -- and ONLY because of that.
     out = run_resolver(w, "roadmapPath", "docs/roadmap.md")
-    check("pos 13", "⚠️" not in out and out.startswith("(no roadmapPath doc"),
+    check("state 5", "⚠️" not in out and out.startswith("(no roadmapPath doc"),
           f"unset slot + absent default should stay quiet: {out!r}")
 
 # --------------------------------------------------------------------------
@@ -254,7 +304,7 @@ for skill, needle in FUNCTIONAL:
     for line in text.split("\n"):
         if needle in line and "⚠️" not in line:
             missing_loud.append(f"{skill}: {line.strip()[:70]}")
-check("pos 14", not missing_loud, f"functional readers still silent: {missing_loud}")
+check("state 7", not missing_loud, f"functional readers still silent: {missing_loud}")
 
 # --------------------------------------------------------------------------
 # REFERENCE SET — a fragmented feedbackPath must still reach the plan-critic
@@ -267,7 +317,7 @@ r = subprocess.run(
      "--reference-glob", "dev-docs/feedback/*.md"],
     capture_output=True, text=True, cwd=ROOT,
 )
-check("ref 1", r.stdout.count("### dev-docs/feedback/FB-") > 10,
+check("ref 1", r.returncode == 0 and r.stdout.count("### dev-docs/feedback/FB-") > 10,
       f"fragmented feedbackPath must still populate the reference set "
       f"(got {r.stdout.count('### dev-docs/feedback/FB-')})")
 
@@ -277,7 +327,7 @@ r2 = subprocess.run(
      "--reference-glob", "dev-docs/history/*.md"],
     capture_output=True, text=True, cwd=ROOT,
 )
-check("ref 2", "### dev-docs/history/" not in r2.stdout,
+check("ref 2", r2.returncode == 0 and "### dev-docs/history/" not in r2.stdout,
       "history fragments must stay OUT of the reference set (the name-based skip "
       "stops working once history.md becomes a directory)")
 

@@ -34,7 +34,7 @@ Skip if `flow.config.json.verifyEnabled` is `false` (project-wide opt-out) or `f
 
 - Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — using built-in defaults)"`
 - Default branch: !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
-- Plan doc: !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || R="plugins/flow/lib/resolve-doc-slot.sh"; [ -f "$R" ] && sh "$R" planPath dev-docs/plan.md || echo "⚠️ resolve-doc-slot.sh not found — planPath was NOT resolved, so this run has NO planPath context. Reinstall the flow plugin."`
+- Plan doc: !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || R="plugins/flow/lib/resolve-doc-slot.sh"; [ -f "$R" ] && sh "$R" planPath dev-docs/plan.md || echo "⚠️ [resolve-doc-slot] not found — planPath was NOT resolved, so this run has NO planPath context. Reinstall the flow plugin."`
 - Verify enabled: !`cat flow.config.json 2>/dev/null | jq -r 'if .verifyEnabled == false then "false" else "true" end'`
 - Project run skill: !`ls -d .claude/skills/run-*/ 2>/dev/null | head -1 || echo "(none — heuristic launch only)"`
 

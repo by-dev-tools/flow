@@ -19,7 +19,7 @@ You are running the flow ship-spike pipeline for a spike-mode PR. **Never merge.
 - Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — using built-in defaults)"`
 - Default branch (PR base): !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
 - Current branch: !`git branch --show-current`
-- History doc: !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || R="plugins/flow/lib/resolve-doc-slot.sh"; [ -f "$R" ] && sh "$R" historyPath dev-docs/history.md || echo "⚠️ resolve-doc-slot.sh not found — historyPath was NOT resolved, so this run has NO historyPath context. Reinstall the flow plugin."`
+- History doc: !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || R="plugins/flow/lib/resolve-doc-slot.sh"; [ -f "$R" ] && sh "$R" historyPath dev-docs/history.md || echo "⚠️ [resolve-doc-slot] not found — historyPath was NOT resolved, so this run has NO historyPath context. Reinstall the flow plugin."`
 - Plan doc path: !`cat flow.config.json 2>/dev/null | jq -r '.planPath // "dev-docs/plan.md"' 2>/dev/null || echo "dev-docs/plan.md"`
 
 ## Pre-condition
@@ -321,7 +321,7 @@ A docs-only spike — the common case — rules clean here without noise: those 
 
 The point of a spike is the learning, not the code. The history entry (path from `flow.config.json.historyPath`; default `dev-docs/history.md`) is the canonical artifact.
 
-**One file per entry (FB-0100).** If the slot resolves to a **directory**, write a NEW FILE — never append to a rollup, and never create one. Filename: `YYYY-MM-DD-<kebab-slug-of-the-title>.md`, with the `## YYYY-MM-DD — Title` heading kept INSIDE the file.. There is deliberately no index file to update: `ls` is the index, and a committed index would recreate the very merge conflict one-file-per-entry removes (every entry would append a line to it). If the slot resolves to a single `.md` file, append as before — both shapes are supported, and `${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh` tells you which one you have.
+**One file per entry (FB-0100).** If the slot resolves to a **directory**, write a NEW FILE — never append to a rollup, and never create one. Filename: `YYYY-MM-DD-<kebab-slug-of-the-title>.md`, with the `## YYYY-MM-DD — Title` heading kept INSIDE the file. There is deliberately no index file to update: `ls` is the index, and a committed index would recreate the very merge conflict one-file-per-entry removes (every entry would append a line to it). If the slot resolves to a single `.md` file, append as before — both shapes are supported, and `${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh` tells you which one you have.
 
 Add an entry with:
 

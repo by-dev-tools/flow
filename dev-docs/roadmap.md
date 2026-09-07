@@ -237,6 +237,47 @@ Shape and cost are unchanged from the original capture (~3 one-line writes + one
 
 `exploration`'s `src|app|lib|packages/**` match **0 files** in `health-tracker` (0/515), `ripe` (0/98), `music-app` (0/92), and **0 in flow's own repo**; only `portfolio` matches (56/237). Three of four consumer repos are Swift/iOS with no lowercase `src`/`app`/`lib`/`packages` root, and `health-tracker`'s capitalized `App/` doesn't match `app/**`. E1 makes this **moot today** (no skill's `paths:` fires at all), but it means the fix is **two-part**: correcting activation alone would leave `exploration` dead in 75% of the fleet. Merges with the already-queued config-driven `paths:` item — cheapest shape is a per-project `paths:` from `flow.config.json`, or an added `**/*.swift` / capitalized-root pattern. **Surfaces when:** S0 lands (fix them together — `exploration` is dead either way until activation is restored).
 
+### Deferred from the doc-fragmentation PR (v1.38.0, FB-0100/FB-0101)
+
+Routed here rather than left in a PR body — all four were raised by `/flow:staff-review`
+lenses and consciously deferred, not missed.
+
+1. **Prose-as-API: `/flow:doctor` string-matches the resolver's human-readable output.**
+   `doctor/SKILL.md` does `case "$RES" in "DIR "*"(scaffolded, no entries yet)"*) …`,
+   keying on words inside a sentence written to be *read*. The repo already solves this
+   properly elsewhere — `skills/ship/lib/manifest_contract.py` gives the emitter and the
+   detector one shared marker definition; `status-docs.py entries` emits `<marker>\t<path>`;
+   `slot_count_scan.py` uses exit codes. Rewording the resolver's display text silently
+   flips a doctor `[PASS]` to a wrong `[WARN]`. *Shape:* a structured first field
+   (`STATE\tpath\tn`) or exit codes, with the state tokens defined once. Touches the
+   resolver, doctor, and two eval harnesses — which is why it isn't in v1.38.0. Same
+   "unverified contract between two files" family as the `${CLAUDE_PLUGIN_ROOT}`-reference
+   linter already queued below, and a good candidate to land with it.
+
+2. **The entry-file predicate (`*.md` minus `README.md` minus `_*`) is stated twice, in two
+   languages, and the `_*` convention is documented nowhere.** `resolve-doc-slot.sh` (shell
+   `find`) and `land/lib/land-helpers.py` (Python `glob`). `manifest_contract.py`'s
+   treatment doesn't transfer cleanly — that's Python↔Python, this is sh↔Python — so the
+   honest shape is a **behavioural** join: one eval fixture directory both implementations
+   must count identically, plus one sentence naming the `_*` rule in the three directory
+   READMEs.
+
+3. **`skip_dirs` doesn't apply under `--allow-external-paths`.** In
+   `scripts/extract_session.py`, `rel` is `None` exactly when a path is outside cwd and
+   external paths are permitted, so the directory skip is bypassed there while the
+   name-based skip still applies. An asymmetry rather than a hole, but it's the
+   "guard stops applying on one branch" shape. Needs a decision on what a directory skip
+   means for a path with no cwd-relative form.
+
+4. **The two preserved merge-damaged entries need an owner.** `dev-docs/feedback/FB-0072-*-a.md`
+   / `-b.md` (a heading whose body a merge dropped) and
+   `dev-docs/history/2026-08-15-f11-*-a.md` / `-b.md` (the same entry twice with different
+   bodies). Preserving over repairing was the right call at migration time — reversible
+   beats irreversible at MEDIUM confidence — but "resolve it whenever someone has the
+   context", recorded only in a README paragraph, is how it becomes permanent. Each is a
+   thirty-second merge for someone with the context.
+
+
 **`docs/first-pr.md`'s auto-loading-rules claim asks a first-time reader to take it on faith (from `/flow:staff-review` UX lens, v1.33.0).** Post-Phase-00, `docs/first-pr.md:208` correctly says "Edit `plan.md` → the `plan-discipline` rule-skill injects" — but a first-PR reader has no inline way to *verify* that claim themselves, at the exact moment this PR fixes a bug where the equivalent claim was false for every consumer for a long time. **Shape:** point the sentence at `/flow:doctor` Check 3.2 (the loader-verification mechanism this PR built) so a reader can confirm it rather than trust it. Cheap, single-line. **Surfaces when:** `docs/first-pr.md` is next touched.
 
 **Mechanize the `.claude/rules/{general,documentation}.md` ↔ plugin-skill sync obligation (from `/simplify` altitude lens, v1.33.0).** Phase 00 (FB-0085) added a cross-reference note to both sides of two file pairs stating that 3 sections in `general.md` (Scope discipline, Decision tracking, Autonomous work guardrails) and the history.md/feedback.md format fields in `documentation.md` are intentionally mirrored between this repo's dev-side rules and the plugin's shipped `general`/`documentation` skills — "edit both together, or note why." Nothing mechanically enforces that promise; it's pure honor-system, weaker than this repo's own Consistency-discipline bar ("never ship a negative assertion alone... treat every survivor as a fix that ships with the contract change"). **Shape:** a small eval (same shape as `run_jq_guard_evals.py`, which derives its guarded set from disk rather than a hardcoded list) that extracts the named sections from both files in each pair and asserts textual equality, failing loudly the next time one side is edited and the other forgotten. **Surfaces when:** either file in either pair is touched.

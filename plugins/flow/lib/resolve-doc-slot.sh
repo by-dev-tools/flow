@@ -18,12 +18,13 @@
 # `|| echo "(no ...)"` fallback to be paired with a loud [WARN] branch. This script
 # is that pairing, hoisted to one place so it cannot drift.
 #
-# CONTRACT -- one resolution line on stdout, one of six forms:
+# CONTRACT -- one resolution line on stdout, one of SEVEN forms:
 #
 #   FILE <path> (N lines)
 #   DIR <path> (N entries) - read with: cat <path>/<glob>
 #   DIR <path> (scaffolded, 0 entries yet) - ...
-#   ⚠️ EMPTY ...     (a directory with no entries AND no README -- nobody scaffolded it)
+#   ⚠️ EMPTY ...     (a directory with no entries AND no README -- nobody scaffolded it,
+#                     OR a SET slot pointing at a zero-byte file -- probably truncated)
 #   ⚠️ MISSING ...   (slot explicitly SET, resolves to nothing)
 #   (no <slot> doc at <path> - unset slot, default path; project may have none)
 #
@@ -48,13 +49,33 @@ SLOT="${1:?usage: resolve-doc-slot.sh <slotName> <defaultPath> [entryGlob]}"
 DEFAULT="${2:?usage: resolve-doc-slot.sh <slotName> <defaultPath> [entryGlob]}"
 GLOB="${3:-*.md}"
 
-WARN='⚠️'
+# Match the repo's helper-output convention: every shared lib prefixes its warnings
+# with its own name (`[verify-pr-body]`, `[status-docs]`, `[manifest-triage]`, ...) so a
+# reader can tell WHICH component is complaining. This one fans out to 11 preludes.
+WARN='⚠️ [resolve-doc-slot]'
 
 # `jq` absent is not the same as "slot unset" -- say so rather than silently taking
 # the default, which would mask a broken host as a configuration choice (FB-0009).
 if ! command -v jq >/dev/null 2>&1; then
   printf '%s jq is not on PATH, so flow.config.json.%s was NOT read. Falling back to "%s". If this project configures %s elsewhere, this reader is looking in the wrong place.\n' \
     "$WARN" "$SLOT" "$DEFAULT" "$SLOT"
+  P="$DEFAULT"
+  SET=false
+elif [ ! -f flow.config.json ]; then
+  # No config at all. Not necessarily wrong (a project may run flow unconfigured), but
+  # it must not be reported as "the slot is unset" -- that phrasing implies a config was
+  # read and this key was absent from it.
+  printf '%s no flow.config.json in %s, so no slot could be read. Falling back to "%s".\n' \
+    "$WARN" "$(pwd)" "$DEFAULT"
+  P="$DEFAULT"
+  SET=false
+elif ! jq -e . flow.config.json >/dev/null 2>&1; then
+  # Malformed JSON is the dangerous one: `jq -r ... 2>/dev/null || true` swallows the
+  # parse error, P comes back empty, and the quiet unset-slot line then tells the reader
+  # the project "may legitimately have none" -- a reassuring sentence over a broken
+  # config. Fail loud instead.
+  printf '%s flow.config.json is present but does NOT parse as JSON, so NO slot could be read and every path below is a guess. Falling back to "%s" for %s. Fix the config first.\n' \
+    "$WARN" "$DEFAULT" "$SLOT"
   P="$DEFAULT"
   SET=false
 else
@@ -68,7 +89,15 @@ if [ -d "$P" ]; then
   N=$(find "$P" -maxdepth 1 -type f -name "$GLOB" \
         ! -name 'README.md' ! -name '_*' 2>/dev/null | wc -l | tr -d ' ')
   if [ "${N:-0}" -gt 0 ]; then
-    printf 'DIR %s (%s entries) - read with: cat %s/%s\n' "$P" "$N" "$P" "$GLOB"
+    # `ls -v` (version sort) when the entries are version-named, else `ls -r` for
+    # newest-first: a date-prefixed directory sorts oldest-first, and a version-named
+    # one sorts v1.10.0 before v1.9.0. Both would mislead a reader following the hint.
+    case "$GLOB" in
+      v*) BROWSE="ls -v $P" ;;
+      *)  BROWSE="ls -r $P" ;;
+    esac
+    printf 'DIR %s (%s entries, one file per entry) - browse: %s | select: grep -rl <topic> %s | all %s: cat %s/%s\n' \
+      "$P" "$N" "$BROWSE" "$P" "$N" "$P" "$GLOB"
   elif [ -f "$P/README.md" ]; then
     # SCAFFOLDED: a doc directory holding only its README is exactly what bootstrap.sh
     # creates, so this is the CORRECT state on day one of every new project -- not a
@@ -83,18 +112,27 @@ if [ -d "$P" ]; then
     # on-disk state produced [PASS] there and a warning in every reviewer prelude -- two
     # copies of one predicate, disagreeing. A warning that fires on 100% of correct
     # installs also teaches readers to ignore warnings, which costs more than it saves.
-    printf 'DIR %s (scaffolded, 0 entries yet) - nothing has been written here yet\n' "$P"
+    printf 'DIR %s (scaffolded, no entries yet) - the correct state for a new project, not a misconfiguration\n' "$P"
   else
     # Neither entries nor a README: nobody scaffolded this and nothing wrote to it.
     # That is a real fault -- a wrong slot, or a migration that did not finish -- and
     # it is now distinguishable from the scaffolded case above, so this message can
     # name a cause instead of hedging between two.
-    printf '%s EMPTY: %s is a directory with 0 %s entries and no README.md, so nothing scaffolded it and this run has NO %s context. Do NOT read that as "the project has no %s" -- the slot is probably wrong, or a migration did not finish.\n' \
-      "$WARN" "$P" "$SLOT" "$SLOT" "$SLOT"
+    printf '%s EMPTY: %s is a directory with 0 entries and no README.md, so nothing scaffolded it and this run has NO %s context. Do NOT read that as "the project has no such doc" -- flow.config.json.%s is probably wrong, or a migration did not finish.\n' \
+      "$WARN" "$P" "$SLOT" "$SLOT"
   fi
 elif [ -f "$P" ]; then
   L=$(wc -l < "$P" 2>/dev/null | tr -d ' ')
-  printf 'FILE %s (%s lines)\n' "$P" "${L:-0}"
+  if [ -s "$P" ]; then
+    printf 'FILE %s (%s lines)\n' "$P" "${L:-0}"
+  elif [ "$SET" = true ]; then
+    printf '%s EMPTY: flow.config.json sets %s to "%s", which exists but is a ZERO-BYTE file, so this run has NO %s context. Do NOT read that as "the project has no such doc" -- a merge or a migration probably truncated it.\n' \
+      "$WARN" "$SLOT" "$P" "$SLOT"
+  else
+    # Unset slot + an empty file at the default path: same genuine ambiguity as the
+    # unset-and-absent case below, so it stays quiet for the same reason.
+    printf '(no %s doc at %s - the default path exists but is empty; this project may legitimately have none)\n' "$SLOT" "$P"
+  fi
 elif [ "$SET" = true ]; then
   # The project explicitly named this path. Its absence is a configuration failure,
   # never an empty set -- CLAUDE.md: "Never silently no-op on a missing slot."

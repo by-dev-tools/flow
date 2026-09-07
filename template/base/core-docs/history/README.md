@@ -24,10 +24,8 @@ Oldest-first is `ls`; newest-first is `ls -r`.
 ## How to write an entry
 
 ```
-### [Short title of what was shipped]
-**Date:** YYYY-MM-DD
-**Branch:** branch-name
-**Commit:** [SHA or range; PR link]
+## YYYY-MM-DD — [Short title of what was shipped]
+**Branch:** branch-name · **SHA:** [SHA or range; PR link]
 
 **What was done:**
 [Concrete deliverables — what changed in user-facing terms.]
@@ -49,9 +47,3 @@ Oldest-first is `ls`; newest-first is `ls -r`.
 ```
 
 Use the `SAFETY` marker on any entry that modifies error handling, persistence, data loss prevention, or fallback behavior.
-
----
-
-## Entries
-
-<!-- Add new entries below this line, newest first. -->
