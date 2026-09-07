@@ -25,7 +25,7 @@ tools/*
 # them stageable by `git add -A`, and run_shadow_sampler_evals.py (CI-wired) asserts
 # they are ignored — so the first cut of this rule turned CI red AND widened what a
 # careless `git add` could commit.
-tools/**/samples/
+tools/**/samples*
 tools/**/__pycache__/
 
 # Rendered verify-build report (served by .claude/launch.json; regenerated per run)

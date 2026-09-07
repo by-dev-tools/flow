@@ -46,6 +46,8 @@ Checks:
   state 7 — the functional (argv-construction) readers are loud on a missing plan
   ref 1   — a fragmented feedbackPath still reaches the plan-critic's reference set
   ref 2   — history fragments are NOT dragged into the reference set
+  sec 1   — the cwd-relative resolver fallback is gated on the flow-checkout marker
+  sec 2   — ...and the gated form is actually present (not satisfied by deletion)
   slot 1  — changelogPath is declared in the schema (it was read-but-undeclared)
 """
 
@@ -223,6 +225,32 @@ check("schema-default-pin", not drifted, f"prelude default(s) drifted from the s
 # --------------------------------------------------------------------------
 # POSITIVE, runtime — the five resolver states
 # --------------------------------------------------------------------------
+# SECURITY — the cwd-relative fallback tier must be GATED on the working tree being
+# the flow checkout. Ungated, `sh "$R"` on a repo-relative path executes a file the
+# REVIEWED REPOSITORY controls whenever CLAUDE_PLUGIN_ROOT is unset, and `sh <file>`
+# ignores the exec bit -- so a hostile repo need only commit plain text at
+# plugins/flow/lib/resolve-doc-slot.sh. These preludes auto-fire on the cold-read
+# reviewers, whose entire job is to be pointed at code the developer does not trust.
+ungated = []
+for f in shipped_skills():
+    for n, line in executable_lines(f):
+        if 'R="plugins/flow/lib/resolve-doc-slot.sh"' in line or "R=plugins/flow/lib/resolve-doc-slot.sh" in line:
+            if ".claude-plugin/plugin.json" not in line:
+                ungated.append(f"{f.relative_to(ROOT)}:{n}")
+check("sec 1", not ungated,
+      f"cwd-relative resolver fallback is NOT gated on the flow-checkout marker at: {ungated}")
+
+# Paired positive: the gate must not be satisfiable by deleting the fallback outright
+# (that would also be safe, but it silently removes flow's own dogfooding path, and a
+# negative alone cannot tell the two apart). Assert the gated form is actually present.
+gated = sum(
+    1 for f in shipped_skills()
+    for _n, line in executable_lines(f)
+    if "resolve-doc-slot.sh" in line and ".claude-plugin/plugin.json" in line
+)
+check("sec 2", gated >= len(EXPECTED),
+      f"expected >= {len(EXPECTED)} gated fallbacks, found {gated}")
+
 check("resolver-exists", RESOLVER.is_file(), f"{RESOLVER} missing")
 
 with tempfile.TemporaryDirectory() as d:

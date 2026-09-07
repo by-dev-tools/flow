@@ -41,6 +41,24 @@
 # Exit status is always 0 -- this resolves context for a reader, it does not gate.
 # The loudness is in the text, which is what lands in the model's context.
 #
+# SECURITY -- how callers must resolve THIS script. Every caller does:
+#
+#   R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"
+#   [ -f "$R" ] || { <flow-checkout marker> && R=plugins/flow/lib/resolve-doc-slot.sh; }
+#
+# The second tier is a path relative to the WORKING DIRECTORY, i.e. to the repository
+# under review. Ungated, a caller would `sh` a file that repository controls whenever
+# CLAUDE_PLUGIN_ROOT is unset or the install predates this file -- and `sh <file>` ignores
+# the exec bit, so a hostile repo need only commit plain text there. That is outside the
+# flow.config.json trust boundary (which is repo-local and knowingly trusted); this is a
+# repo the developer explicitly does NOT trust, which is why they pointed a reviewer at it.
+#
+# So the cwd tier is gated on the working tree actually BEING the flow checkout (a
+# plugin.json naming "flow"). Consumers never take that tier; flow's own dogfooding still
+# does. A caller that finds neither tier must print its loud not-found branch -- silently
+# degrading to repo-supplied code is strictly worse than the loud branch.
+# `run_doc_slot_resolution_evals.py` pins the gate at every call site.
+#
 # Usage: resolve-doc-slot.sh <slotName> <defaultPath> [entryGlob]
 
 set -u

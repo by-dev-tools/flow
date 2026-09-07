@@ -32,8 +32,8 @@ Skip if the diff is doc-only or trivially safe (e.g. a copy tweak).
 
 - Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — using built-in defaults)"`
 - Default branch: !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
-- Spec doc (for context): !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || R="plugins/flow/lib/resolve-doc-slot.sh"; [ -f "$R" ] && sh "$R" specPath dev-docs/spec.md || echo "⚠️ [resolve-doc-slot] not found — specPath was NOT resolved, so this run has NO specPath context. Reinstall the flow plugin."`
-- Feedback doc (for context): !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || R="plugins/flow/lib/resolve-doc-slot.sh"; [ -f "$R" ] && sh "$R" feedbackPath dev-docs/feedback.md || echo "⚠️ [resolve-doc-slot] not found — feedbackPath was NOT resolved, so this run has NO feedbackPath context. Reinstall the flow plugin."`
+- Spec doc (for context): !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && R=plugins/flow/lib/resolve-doc-slot.sh; }; [ -f "$R" ] && sh "$R" specPath dev-docs/spec.md || echo "⚠️ [resolve-doc-slot] not found — specPath was NOT resolved, so this run has NO specPath context. Reinstall the flow plugin."`
+- Feedback doc (for context): !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && R=plugins/flow/lib/resolve-doc-slot.sh; }; [ -f "$R" ] && sh "$R" feedbackPath dev-docs/feedback.md || echo "⚠️ [resolve-doc-slot] not found — feedbackPath was NOT resolved, so this run has NO feedbackPath context. Reinstall the flow plugin."`
 
 ## 0. Preflight — `jq` required (BLOCKING)
 

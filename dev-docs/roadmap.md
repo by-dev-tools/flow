@@ -262,14 +262,30 @@ lenses and consciously deferred, not missed.
    must count identically, plus one sentence naming the `_*` rule in the three directory
    READMEs.
 
-3. **`skip_dirs` doesn't apply under `--allow-external-paths`.** In
+3. **The two-tier helper-resolution idiom is ungated at its PRE-EXISTING sites (security).**
+   `R="${CLAUDE_PLUGIN_ROOT}/lib/x.sh"; [ -f "$R" ] || R="plugins/flow/lib/x.sh"` — the second
+   tier is relative to the **working directory**, i.e. to the repository under review, so with
+   `CLAUDE_PLUGIN_ROOT` unset a caller `sh`-executes a file that repo controls (and `sh <file>`
+   ignores the exec bit, so plain text suffices). v1.38.0 gated every `resolve-doc-slot.sh` call
+   site on a flow-checkout marker and pinned it (`sec 1`/`sec 2`), but the **other** helpers
+   resolved this way were out of that PR's scope and remain ungated — `manifest-triage.py`
+   (8 sites in `ship`), `extract_session.py` (`critique-plan`, `review-brief`),
+   `rigor-marker.py`, `status-docs.py`, `verify-pr-body.sh`, `render-test-plan.py`,
+   `visual-significance.py`, `insert-visual-history.py`. Most sit in human-invoked step bodies
+   rather than auto-firing preludes, which is why they rank below the reviewer preludes that
+   were fixed — but the class is identical. *Shape:* one shared `flow_resolve_helper` shell
+   function carrying the gate once, or the same inline marker test at each site, plus a
+   repo-wide eval assertion generalising `sec 1` beyond `resolve-doc-slot.sh`. Found by
+   `/flow:security-review` on the v1.38.0 diff.
+
+4. **`skip_dirs` doesn't apply under `--allow-external-paths`.** In
    `scripts/extract_session.py`, `rel` is `None` exactly when a path is outside cwd and
    external paths are permitted, so the directory skip is bypassed there while the
    name-based skip still applies. An asymmetry rather than a hole, but it's the
    "guard stops applying on one branch" shape. Needs a decision on what a directory skip
    means for a path with no cwd-relative form.
 
-4. **The two preserved merge-damaged entries need an owner.** `dev-docs/feedback/FB-0072-*-a.md`
+5. **The two preserved merge-damaged entries need an owner.** `dev-docs/feedback/FB-0072-*-a.md`
    / `-b.md` (a heading whose body a merge dropped) and
    `dev-docs/history/2026-08-15-f11-*-a.md` / `-b.md` (the same entry twice with different
    bodies). Preserving over repairing was the right call at migration time — reversible

@@ -39,10 +39,26 @@ This change adds a **new BLOCKER path** (the resolver's loud states, and `/flow:
 **What `/simplify` and `/flow:staff-review` caught in this PR's own work.** Recorded because the pattern is the point: every one of these is the class this PR exists to remove, committed by the PR itself.
 - **Doctor re-derived the entry predicate inline** instead of calling the new resolver — and drifted from it within the same session, so one on-disk state gave `[PASS]` in doctor and `⚠️` in every reviewer prelude. A Spec-walk box was checked over the delegation that had not happened.
 - **The eval's pin covered 8 of 11 preludes**, and its join matched raw text, so preludes could be deleted *or* commented out with CI green.
-- **The `.gitignore` blanket `tools/` rule** silently swallowed the migration tool on `git add -A`; the first fix then un-ignored generated shadow-sampler logs, turning a CI-wired eval red and making transcript excerpts stageable.
+- **The `.gitignore` blanket `tools/` rule** silently swallowed the migration tool on `git add -A`; the first fix then un-ignored generated shadow-sampler logs, turning a CI-wired eval red and making those logs stageable. **Correction:** I first described those logs as holding "session transcript excerpts"; `/flow:security-review` checked `shadow_sampler.py::record_sample` and they do not — they hold token accounting, model names and opaque `tool_use_id`s. The CI breakage was real, the disclosure severity was overstated, and the reviewer was right to disprove the premise it had been handed rather than accept it.
 - **`plugins/flow/skills/documentation/SKILL.md` activates on `**/history.md` and `**/feedback.md`** — which a fragmented doc never matches, so every new consumer would have silently lost the entry-format rules. The identical by-filename prohibition was fixed one file over in `extract_session.py` and not swept here.
 - **Two template READMEs still ended with `## Entries` + "Add new entries below this line"** — an instruction to build the rollup the same file forbids 40 lines earlier. Worse, the resolver excludes `README.md` from its count, so a project that followed it would write its whole corpus into a file every reader and `/flow:doctor` both report as empty.
 - **The read hint said `cat <path>/*.md`** — a literal imperative, in 11 preludes, pointing at ~93k words of history. Replaced with browse-and-select first.
 - **An empty *file* was quiet where an empty *directory* was loud**, contradicting the resolver's own central claim, in the state every un-migrated consumer sits in.
+
+**Security finding from `/flow:security-review` (fixed in this PR).** The two-tier helper-resolution idiom
+`R="${CLAUDE_PLUGIN_ROOT}/lib/x.sh"; [ -f "$R" ] || R="plugins/flow/lib/x.sh"` has a second tier that is relative to
+the **working directory** — i.e. to the repository under review. With `CLAUDE_PLUGIN_ROOT` unset (or an install
+predating this file), a caller `sh`-executes a path the reviewed repo controls, and `sh <file>` ignores the exec bit,
+so a hostile repo need only commit plain text there. That sits outside the `flow.config.json` trust boundary
+entirely: that file is repo-local and knowingly trusted, whereas this is a repo the developer explicitly does *not*
+trust — which is why they pointed a reviewer at it. Reproduced end-to-end before fixing.
+
+The idiom is **pre-existing** (`critique-plan`, `ship`) and this PR did not invent it; what this PR did was multiply
+it ×11 and move it into **auto-firing preludes on the four cold-read reviewers**, including `/flow:security-review`
+itself, plus `/flow:doctor` — the skill you run precisely when your install looks broken, i.e. exactly when the
+fallback fires. Fixed by gating the cwd tier on the working tree actually *being* the flow checkout (a `plugin.json`
+naming `flow`), which preserves flow's own dogfooding and gives every consumer the loud not-found branch instead.
+Pinned by `sec 1` / `sec 2` in the eval, paired so deleting the fallback cannot satisfy the check either. The
+pre-existing sites are named in `roadmap.md` § Next for the same treatment.
 
 **Lessons learned.** The strongest verification here was the one that could disagree with its author: `fragment.py` checking its own in-memory slices proved only self-consistency, and rewriting it to write verbatim so an *independent* reader could reassemble from disk is what made the accounting worth anything. Same shape as the eval's paired assertion, and same shape as `/flow:critique-plan` finding the `referenceGlob` gap that the plan — and the design decision it implemented — had both missed.

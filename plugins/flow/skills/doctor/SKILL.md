@@ -276,7 +276,17 @@ elif [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
     # predicate, disagreeing, inside the PR that exists to kill that class. Doctor now
     # ASKS the resolver and only translates the answer into its own [PASS]/[WARN]
     # dialect — the entry predicate lives in exactly one place.
-    RDS="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$RDS" ] || RDS="plugins/flow/lib/resolve-doc-slot.sh"
+    RDS="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"
+    # SECURITY: the cwd-relative tier is gated on the working tree actually BEING the
+    # flow checkout. Ungated, `sh "$RDS"` on a repo-relative path executes a file the
+    # REVIEWED REPOSITORY controls whenever CLAUDE_PLUGIN_ROOT is unset -- and `sh <file>`
+    # ignores the exec bit, so a hostile repo need only commit plain text at
+    # plugins/flow/lib/resolve-doc-slot.sh. That is outside the flow.config.json trust
+    # boundary entirely, and doctor is precisely what you run when your install looks
+    # broken -- i.e. exactly when the fallback fires.
+    if [ ! -f "$RDS" ] && [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null; then
+      RDS=plugins/flow/lib/resolve-doc-slot.sh
+    fi
     if [ ! -f "$RDS" ]; then
       echo "[WARN] ${slot}: cannot check — resolve-doc-slot.sh not found (reinstall the flow plugin)"
       continue
