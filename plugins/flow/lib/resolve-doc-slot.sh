@@ -18,18 +18,24 @@
 # `|| echo "(no ...)"` fallback to be paired with a loud [WARN] branch. This script
 # is that pairing, hoisted to one place so it cannot drift.
 #
-# CONTRACT -- exactly one line on stdout, one of five forms:
+# CONTRACT -- one resolution line on stdout, one of six forms:
 #
 #   FILE <path> (N lines)
 #   DIR <path> (N entries) - read with: cat <path>/<glob>
-#   WARN-EMPTY  ... with a leading warning marker
-#   WARN-MISSING ... with a leading warning marker
+#   DIR <path> (scaffolded, 0 entries yet) - ...
+#   ⚠️ EMPTY ...     (a directory with no entries AND no README -- nobody scaffolded it)
+#   ⚠️ MISSING ...   (slot explicitly SET, resolves to nothing)
 #   (no <slot> doc at <path> - unset slot, default path; project may have none)
 #
-# The last form is the ONLY quiet one, and it is quiet because it is the only
-# genuinely ambiguous case: an UNSET slot resolving to a default path that does not
-# exist really is indistinguishable from "this project has none". An explicitly SET
-# slot that resolves to nothing is never quiet again.
+# When `jq` is absent an additional warning line is printed BEFORE the resolution
+# line, so callers must tolerate a leading notice rather than assuming exactly one
+# line. (Stated because an earlier version of this header promised exactly one line
+# while the jq branch already emitted two.)
+#
+# Two forms are quiet, and only these two: the unset-slot default, and the
+# scaffolded-but-empty directory. Both are quiet for the same reason -- "no entries"
+# is genuinely what "nothing has shipped yet" looks like, so warning there would fire
+# on correct installs. An explicitly SET slot that resolves to nothing is never quiet.
 #
 # Exit status is always 0 -- this resolves context for a reader, it does not gate.
 # The loudness is in the text, which is what lands in the model's context.
@@ -63,18 +69,27 @@ if [ -d "$P" ]; then
         ! -name 'README.md' ! -name '_*' 2>/dev/null | wc -l | tr -d ' ')
   if [ "${N:-0}" -gt 0 ]; then
     printf 'DIR %s (%s entries) - read with: cat %s/%s\n' "$P" "$N" "$P" "$GLOB"
-  else
-    # EMPTY is a distinct state from MISSING, but it is genuinely AMBIGUOUS and this
-    # message must not pretend otherwise: a freshly bootstrapped project has an empty
-    # doc directory and that is correct, while an empty one in a repo with shipped
-    # history means the slot is wrong or a migration failed. Naming a single cause
-    # here would be a confident wrong diagnosis on whichever project it guessed
-    # against -- and the first version of this script did exactly that, WARNing on a
-    # correctly-scaffolded new project (caught by dogfooding bootstrap.sh).
+  elif [ -f "$P/README.md" ]; then
+    # SCAFFOLDED: a doc directory holding only its README is exactly what bootstrap.sh
+    # creates, so this is the CORRECT state on day one of every new project -- not a
+    # fault. Quiet for the same reason the unset-slot case is quiet: "no entries yet"
+    # really is indistinguishable from "nothing has shipped yet", because that is what
+    # it means.
     #
-    # What is NOT ambiguous, and is the whole point, is the consequence: this run has
-    # no context from this slot, and that must not be read as "there are no rules".
-    printf '%s EMPTY: %s is a directory with 0 %s entries, so this run has NO %s context. Do NOT read that as "the project has no %s". Expected on a newly bootstrapped project; on a project with shipped work it means the slot is wrong or a migration did not finish.\n' \
+    # The README is a disambiguator, not a heuristic: bootstrap.sh always writes it, so
+    # its presence means someone set this directory up deliberately. /flow:doctor Check
+    # 2.4 gets this same answer by CALLING this script. An earlier cut instead softened
+    # the warning text here and put a README carve-out only in doctor, so one identical
+    # on-disk state produced [PASS] there and a warning in every reviewer prelude -- two
+    # copies of one predicate, disagreeing. A warning that fires on 100% of correct
+    # installs also teaches readers to ignore warnings, which costs more than it saves.
+    printf 'DIR %s (scaffolded, 0 entries yet) - nothing has been written here yet\n' "$P"
+  else
+    # Neither entries nor a README: nobody scaffolded this and nothing wrote to it.
+    # That is a real fault -- a wrong slot, or a migration that did not finish -- and
+    # it is now distinguishable from the scaffolded case above, so this message can
+    # name a cause instead of hedging between two.
+    printf '%s EMPTY: %s is a directory with 0 %s entries and no README.md, so nothing scaffolded it and this run has NO %s context. Do NOT read that as "the project has no %s" -- the slot is probably wrong, or a migration did not finish.\n' \
       "$WARN" "$P" "$SLOT" "$SLOT" "$SLOT"
   fi
 elif [ -f "$P" ]; then

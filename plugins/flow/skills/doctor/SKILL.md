@@ -229,7 +229,7 @@ Existence-checks the doc-path slots a fresh project is expected to scaffold: `pl
 
 The unset-slot fallback below builds `dev-docs/<slot>.md` — matching `flow.config.schema.json`'s own declared `default` for every doc-path slot, and the convention every *other* call site in the plugin already uses (16 sites across `ship`, `ship-spike`, `land`, `verify-build`, `staff-review`, `security-review`, `accessibility-review`, `audit-coverage`, `audit-skips`, `planner`, `docs` — all `dev-docs/`). Before FB-0098 this line was the *only* `core-docs/` outlier against that convention (FB-0098's own root cause, caught mid-fix: setting flow's own `flow.config.json` slots explicitly would have masked the symptom on this one dogfood repo while leaving the same false-WARN live for every other consumer with an unset slot — the fix belongs in the default, not the config).
 
-**This loop is deliberately not exhaustive over all 33 schema slots** — see the frontmatter for the honest scope claim. Not existence-checked here, on purpose:
+**This loop is deliberately not exhaustive over all 34 schema slots** — see the frontmatter for the honest scope claim. Not existence-checked here, on purpose:
 - `verifyFindingsPath`, `verifyReportPath`, `visualHistoryPath`, `lastHarvestedPath` — ephemeral or CREATED ON FIRST WRITE by design (not scaffolded by `bootstrap.sh`); a missing file is the correct steady state.
 - `statusDocs`, `statusSurfaceCandidates` (Check 2.7/2.9), `flowRepoPath`, `contributionsQueuePath` (Check 2.8) — path-shaped but already existence/coherence-checked by a different check (arrays or dev-tooling paths, not scalar doc paths).
 - `referenceGlob` — a glob, not a single path; a zero-match glob isn't inherently wrong.
@@ -259,50 +259,56 @@ elif [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
       BASE=$(echo "$slot" | sed 's/Path$//' | sed 's/\([a-z0-9]\)\([A-Z]\)/\1-\2/g' | tr '[:upper:]' '[:lower:]')
       P="dev-docs/${BASE}.md"
     fi
-    # `-e`, not `-f` (FB-0100). historyPath / feedbackPath / changelogPath may point
-    # at a DIRECTORY of one-file-per-entry fragments, and `-f` is FALSE on a
-    # directory — so this loop would have printed [WARN] for a slot that is
-    # CORRECT, and told the reader to `touch` a file over a healthy directory.
-    if [ -d "$P" ]; then
-      # A doc directory with no entries is a half-finished migration, not a
-      # configured doc. Distinguish the two — conflating them is how a broken
-      # migration ships looking healthy.
-      N=$(find "$P" -maxdepth 1 -type f -name '*.md' ! -name 'README.md' ! -name '_*' 2>/dev/null | wc -l | tr -d ' ')
-      if [ "${N:-0}" -gt 0 ]; then
-        echo "[PASS] ${slot}: ${P}/ exists (${N} entries, one file per entry)"
-      elif [ -f "${P}/README.md" ]; then
-        # Scaffolded but empty is the CORRECT state for a fresh project --
-        # bootstrap.sh always writes the README, so its presence is what separates
-        # "set up, nothing shipped yet" from "empty for an unknown reason". WARNing
-        # here would greet every newly bootstrapped project with a false alarm on the
-        # very first /flow:doctor run.
-        echo "[PASS] ${slot}: ${P}/ scaffolded, 0 entries yet (expected on a new project)"
-      else
+    # Resolve through the SHARED resolver, never a private copy (FB-0100).
+    # historyPath / feedbackPath / changelogPath may point at a DIRECTORY of
+    # one-file-per-entry fragments, and the old `[ -f "$P" ]` is FALSE on a directory —
+    # so this loop used to print [WARN] for a slot that is CORRECT and tell the reader
+    # to `touch` a file over a healthy directory.
+    #
+    # The first cut of that fix re-derived the whole ladder inline, and it did not stay
+    # consistent for even one commit: doctor grew a README carve-out ("scaffolded, 0
+    # entries yet") that the resolver did not have, so one identical on-disk state
+    # produced [PASS] here and a ⚠️ in every reviewer prelude. Two copies of one
+    # predicate, disagreeing, inside the PR that exists to kill that class. Doctor now
+    # ASKS the resolver and only translates the answer into its own [PASS]/[WARN]
+    # dialect — the entry predicate lives in exactly one place.
+    RDS="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$RDS" ] || RDS="plugins/flow/lib/resolve-doc-slot.sh"
+    if [ ! -f "$RDS" ]; then
+      echo "[WARN] ${slot}: cannot check — resolve-doc-slot.sh not found (reinstall the flow plugin)"
+      continue
+    fi
+    # The resolver may print a leading jq-absent notice; the resolution is the LAST line.
+    RES=$(sh "$RDS" "$slot" "$P" 2>/dev/null | tail -1)
+    case "$RES" in
+      "DIR "*scaffolded*)
+        echo "[PASS] ${slot}: ${P}/ scaffolded, 0 entries yet (expected on a new project)" ;;
+      "DIR "*)
+        echo "[PASS] ${slot}: ${RES#DIR }" ;;
+      "FILE "*)
+        echo "[PASS] ${slot}: ${P} exists" ;;
+      *EMPTY*)
         echo "[WARN] ${slot}: ${P}/ is an empty directory with no README.md"
         echo "       Either a migration did not finish, or the slot points at the wrong"
         echo "       place. Readers will report NO ${slot} context — which is NOT the"
         echo "       same as 'this project has none'. Fix: re-run bootstrap.sh, or"
-        echo "       correct ${slot} in flow.config.json."
-      fi
-    elif [ -f "$P" ]; then
-      echo "[PASS] ${slot}: ${P} exists"
-    elif [ "$SLOT_WAS_SET" = true ]; then
-      # An explicitly-set slot pointing at a missing file: touching THAT path is
-      # unambiguously correct — the project already told us where it wants this doc.
-      echo "[WARN] ${slot}: ${P} does not exist yet"
-      echo "       Fix: mkdir -p \$(dirname \"${P}\") && touch \"${P}\""
-    else
-      # Unset slot, resolved via the dev-docs/ fallback: do NOT lead with a
-      # touch-a-stub-in-dev-docs/ instruction (staff-review UX finding) — a
-      # consumer project almost always wants core-docs/ instead, and a reader
-      # who mechanically runs a bolded "Fix:" line ends up with a stray stub
-      # in the wrong directory. Point straight at the real remedy.
-      echo "[WARN] ${slot}: ${P} does not exist yet (unset — resolved via the dev-docs/ default)"
-      echo "       Fix: run bootstrap.sh to scaffold core-docs/*.md from"
-      echo "       template/base/core-docs/*.md, then set '${slot}' to that path in flow.config.json."
-      echo "       (Or, if this project deliberately uses dev-docs/ like flow's own repo:"
-      echo "       mkdir -p dev-docs && touch \"${P}\".)"
-    fi
+        echo "       correct ${slot} in flow.config.json." ;;
+      *MISSING*)
+        # An explicitly-set slot pointing at nothing: touching THAT path is
+        # unambiguously correct — the project already told us where it wants this doc.
+        echo "[WARN] ${slot}: ${P} does not exist yet"
+        echo "       Fix: mkdir -p \$(dirname \"${P}\") && touch \"${P}\"" ;;
+      *)
+        # Unset slot, resolved via the dev-docs/ fallback: do NOT lead with a
+        # touch-a-stub-in-dev-docs/ instruction (staff-review UX finding) — a
+        # consumer project almost always wants core-docs/ instead, and a reader
+        # who mechanically runs a bolded "Fix:" line ends up with a stray stub
+        # in the wrong directory. Point straight at the real remedy.
+        echo "[WARN] ${slot}: ${P} does not exist yet (unset — resolved via the dev-docs/ default)"
+        echo "       Fix: run bootstrap.sh to scaffold core-docs/*.md from"
+        echo "       template/base/core-docs/*.md, then set '${slot}' to that path in flow.config.json."
+        echo "       (Or, if this project deliberately uses dev-docs/ like flow's own repo:"
+        echo "       mkdir -p dev-docs && touch \"${P}\".)" ;;
+    esac
   done
   if [ "$UI_SURFACE" != "true" ]; then
     echo "[PASS] designLanguagePath: uiSurface is false — design-language doc not required"

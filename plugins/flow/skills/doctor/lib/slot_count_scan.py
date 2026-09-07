@@ -44,9 +44,17 @@ from pathlib import Path
 
 # Wrap-tolerant by construction: matched over each file's FULL text (not per-line),
 # so whitespace between the number and "slots" — including a newline — still matches.
-# Second group captures "slot"/"slots" so survivor messages can render the human words
-# instead of Python's repr() (which would print a literal "\n" for a wrapped match).
-SLOT_RE = re.compile(r"(\d+)\s+(slots?)\b")
+# Second group captures the words through "slot"/"slots" so survivor messages can render
+# them instead of Python's repr() (which would print a literal "\n" for a wrapped match).
+#
+# WORD-tolerant too (FB-0100). FB-0079 made this wrap-tolerant after `all 30\n  slots`
+# slipped a line-oriented grep; the generalization it missed is that flow's own prose
+# also writes an adjective between the number and the noun — "all 33 schema slots",
+# "34 config slots". A stale `33 schema slots` sat in doctor/SKILL.md through this very
+# release while this scanner reported green, because `\d+\s+slots?` cannot see across an
+# interposed word. Same value, same guard, second escape. Up to two words are allowed
+# between the count and the noun; more than that stops being one claim.
+SLOT_RE = re.compile(r"(\d+\s+(?:[A-Za-z-]+\s+){0,2}slots?)\b")
 
 # Extensions worth scanning for "N slots" prose. Kept narrow deliberately (see
 # module docstring) rather than scanning every file a directory walk turns up.
@@ -107,9 +115,10 @@ def scan_paths(paths, expected, exclude_substrings=(), root=None):
             prefix = text[line_start:m.start()].lstrip()
             if f.suffix == ".sh" and prefix.startswith("#"):
                 continue
-            if m.group(1) != expected_str:
+            claim = " ".join(m.group(1).split())
+            if claim.split()[0] != expected_str:
                 line_no = text.count("\n", 0, m.start()) + 1
-                words = f'"{m.group(1)} {m.group(2)}"'
+                words = f'"{claim}"'
                 if "\n" in m.group(0):
                     words += " (wrapped across a line break)"
                 display = f.relative_to(root) if root is not None else f

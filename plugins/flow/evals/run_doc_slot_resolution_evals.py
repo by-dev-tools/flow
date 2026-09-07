@@ -28,14 +28,17 @@ Checks:
             also carries a loud marker or a resolver call (repo-wide, not
             prelude-scoped: a prelude-scoped check goes green over a repo that still
             degrades silently at the argv-construction sites)
-  pos 1-8 — each of the 8 context preludes calls resolve-doc-slot.sh for its slot
+  join 1  — the pinned prelude list equals what is actually shipped (both directions)
+  pos 1-N — each pinned context prelude calls resolve-doc-slot.sh for its slot
+  loud-fallback — every prelude is loud when the resolver itself is missing
+  schema-default-pin — each prelude's default argument matches the schema default
   pos 9   — resolver on a DIRECTORY: reports the count + the read command, and does
             NOT emit a "no ... doc" phrase
   pos 10  — resolver on a FILE: unchanged legacy behaviour
   pos 11  — resolver on an EXPLICITLY SET missing path: loud
   pos 12  — resolver on an EMPTY directory: loud, and distinct from missing
   pos 13  — resolver on an UNSET slot + absent default: quiet (the one ambiguous case)
-  pos 14  — the five functional readers are loud on a missing plan
+  pos 14  — the functional (argv-construction) readers are loud on a missing plan
   ref 1   — a fragmented feedbackPath still reaches the plan-critic's reference set
   ref 2   — history fragments are NOT dragged into the reference set
   slot 1  — changelogPath is declared in the schema (it was read-but-undeclared)
@@ -123,6 +126,15 @@ check("neg 2", not quiet,
 # Paired with neg 1/neg 2: deleting a prelude satisfies the negatives but fails
 # these, so "satisfy the detector by removing the feature" is not available.
 # --------------------------------------------------------------------------
+# The PINNED set of doc-slot context preludes. Hand-written on purpose: a derived
+# list cannot detect deletion, because deleting a prelude would shrink the derived
+# list and the check would pass. The `join` assertion below then guarantees the pin
+# stays complete — same two-sided shape ci.yml uses for the eval-harness list.
+#
+# This pin previously covered 8 of the 11 real preludes, so `land`'s two and
+# `ship-spike`'s one could be deleted with CI still green — the exact
+# negative-satisfiable-by-deletion hole this harness exists to close, inside the
+# harness itself. The join is what makes the pin self-maintaining.
 EXPECTED = [
     ("security-review", "specPath"),
     ("security-review", "feedbackPath"),
@@ -132,12 +144,58 @@ EXPECTED = [
     ("staff-review", "designLanguagePath"),
     ("staff-review", "feedbackPath"),
     ("verify-build", "planPath"),
+    ("land", "historyPath"),
+    ("land", "changelogPath"),
+    ("ship-spike", "historyPath"),
 ]
+
+PRELUDE_RX = re.compile(r'sh "\$R" (\w+) (\S+?) \|\|')
+
+
+def on_disk_preludes():
+    found = []
+    for f in shipped_skills():
+        for m in PRELUDE_RX.finditer(f.read_text(encoding="utf-8")):
+            found.append((f.parent.name, m.group(1), m.group(2)))
+    return found
+
+
+DISK = on_disk_preludes()
+
+# join — the pin must equal what is actually shipped, in BOTH directions.
+check("join 1", sorted({(a, b) for a, b, _ in DISK}) == sorted(set(EXPECTED)),
+      f"pinned preludes != shipped preludes.\n"
+      f"  only pinned: {sorted(set(EXPECTED) - {(a, b) for a, b, _ in DISK})}\n"
+      f"  only shipped: {sorted({(a, b) for a, b, _ in DISK} - set(EXPECTED))}")
+
 for i, (skill, slot) in enumerate(EXPECTED, 1):
     f = PLUGIN / "skills" / skill / "SKILL.md"
     text = f.read_text(encoding="utf-8") if f.is_file() else ""
     ok = bool(re.search(r'resolve-doc-slot\.sh[^\n`]*\b' + re.escape(slot) + r'\b', text))
     check(f"pos {i}", ok, f"{skill}/SKILL.md must resolve {slot} via resolve-doc-slot.sh")
+
+# Every prelude must be LOUD when the resolver itself cannot be found — otherwise a
+# missing helper is indistinguishable from a resolved slot, which is the same
+# silent-degradation this whole harness is about, one level up.
+quiet_fallback = [
+    f"{sk}:{slot}" for sk, slot, _ in DISK
+    if not re.search(
+        r'sh "\$R" ' + re.escape(slot) + r'[^`]*?NO ' + re.escape(slot) + r' context',
+        (PLUGIN / "skills" / sk / "SKILL.md").read_text(encoding="utf-8"))
+]
+check("loud-fallback", not quiet_fallback,
+      f"prelude(s) whose resolver-not-found branch omits the 'NO <slot> context' clause: {quiet_fallback}")
+
+# Each prelude passes the schema default as argv[2]. #141's entire root cause was ONE
+# default literal drifting from the schema across 17 call sites; this PR added eleven
+# more, so pin them to the schema rather than to author memory.
+_schema = json.loads((PLUGIN / "schema" / "flow.config.schema.json").read_text(encoding="utf-8"))
+drifted = [
+    f"{sk}:{slot} passes {default!r}, schema default is {_schema['properties'].get(slot, {}).get('default')!r}"
+    for sk, slot, default in DISK
+    if slot in _schema["properties"] and _schema["properties"][slot].get("default") != default
+]
+check("schema-default-pin", not drifted, f"prelude default(s) drifted from the schema: {drifted}")
 
 # --------------------------------------------------------------------------
 # POSITIVE, runtime — the five resolver states
@@ -182,7 +240,7 @@ with tempfile.TemporaryDirectory() as d:
           f"unset slot + absent default should stay quiet: {out!r}")
 
 # --------------------------------------------------------------------------
-# POSITIVE — the five functional (argv-construction) readers are loud
+# POSITIVE — the functional (argv-construction) readers are loud
 # --------------------------------------------------------------------------
 FUNCTIONAL = [
     ("verify-build", 'PLAN_ARG=""'),
