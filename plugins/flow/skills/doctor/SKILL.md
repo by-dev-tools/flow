@@ -245,7 +245,7 @@ elif [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
   # `uiSurface: false` back to true. `if ... == false` is the plugin's
   # established safe pattern (accessibility-review's Check 0.1 gate).
   UI_SURFACE=$(jq -r 'if .uiSurface == false then "false" else "true" end' flow.config.json)
-  # changelogPath included (FB-0100): it is a doc-path slot like the rest, and it may
+  # changelogPath included (FB-0101): it is a doc-path slot like the rest, and it may
   # resolve to a one-file-per-release DIRECTORY, which is exactly the shape this loop
   # was taught to check. Leaving it out would repeat FB-0098 -- a coverage claim that
   # quietly excludes the newest slot.
@@ -263,7 +263,7 @@ elif [ -f flow.config.json ] && jq -e . flow.config.json >/dev/null 2>&1; then
       BASE=$(echo "$slot" | sed 's/Path$//' | sed 's/\([a-z0-9]\)\([A-Z]\)/\1-\2/g' | tr '[:upper:]' '[:lower:]')
       P="dev-docs/${BASE}.md"
     fi
-    # Resolve through the SHARED resolver, never a private copy (FB-0100).
+    # Resolve through the SHARED resolver, never a private copy (FB-0101).
     # historyPath / feedbackPath / changelogPath may point at a DIRECTORY of
     # one-file-per-entry fragments, and the old `[ -f "$P" ]` is FALSE on a directory —
     # so this loop used to print [WARN] for a slot that is CORRECT and tell the reader

@@ -102,7 +102,7 @@ def run_block(block, cwd, config):
     """Execute Check 2.4's real extracted shell block against a real temp repo.
 
     CLAUDE_PLUGIN_ROOT is set to this checkout's plugin root because Check 2.4 now
-    resolves doc slots by CALLING `lib/resolve-doc-slot.sh` (FB-0100) rather than
+    resolves doc slots by CALLING `lib/resolve-doc-slot.sh` (FB-0101) rather than
     re-deriving the ladder inline. Running it in a bare temp dir with no reachable
     plugin root would exercise the "reinstall the flow plugin" branch, not the check
     — and a consumer running /flow:doctor always has the plugin installed, so the
@@ -252,7 +252,7 @@ def main():
     # `>` block scalar folds newlines to spaces at parse time but the raw text
     # here still has them) — NOT a bare count claim anywhere, since the honest
     # replacement legitimately says "not all N of the schema's slots".
-    # Slot-count-agnostic (FB-0100): pinning the literal 33 made this assertion
+    # Slot-count-agnostic (FB-0101): pinning the literal 33 made this assertion
     # fail open the moment a slot was added — it would stop matching the forbidden
     # string for the WRONG reason (the number changed), not because the claim was
     # removed. `\d+` keeps it testing the claim rather than the count.

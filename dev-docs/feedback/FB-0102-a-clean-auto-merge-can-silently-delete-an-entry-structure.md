@@ -1,4 +1,4 @@
-### FB-0101 — A clean auto-merge can silently DELETE an entry; prefer structure that makes the deletion visible over discipline that asks people to notice
+### FB-0102 — A clean auto-merge can silently DELETE an entry; prefer structure that makes the deletion visible over discipline that asks people to notice
 
 **Date:** 2026-09-06
 **Source:** user direction (the silent-deletion class, raised in the doc-fragmentation design session) + two live artifacts found in `main` while implementing it
@@ -17,5 +17,12 @@ Neither is a hypothetical. Both survived every gate this repo has — CI, four s
 **Synthesized rule (2) — prefer mechanical detection over protocol discipline, and check the timing claim honestly.** `dev-docs/reserved-feedback-numbers.md` was deleted in the same change. It existed to prevent FB-number collisions and it *records six separate renumbering incidents in its own audit trail* — it did not prevent the cost, it documented it, because its conflict surface was a free-form log git merges happily and its protocol depended on author memory. With one file per entry, a duplicate number IS a duplicate filename, which git reports as a both-added conflict: unmissable, un-auto-mergeable, zero discipline required. The one honest objection — that a registry is a *claim-time* defense while a filename collision is *merge-time* — does not survive contact: **claiming a number is now pushing the file**, which is the same early-push race detection with the entry itself as the artifact instead of a line in a second file.
 
 **Synthesized rule (3) — when a migration surfaces damage, prefer the reversible resolution and schedule the judgment.** Both damaged entries were **preserved as `-a`/`-b` fragments, not repaired.** The user's reasoning, which generalizes: when a reversible option and an irreversible one are both available at MEDIUM confidence, take the reversible one — preserving costs a duplicate file someone merges in thirty seconds; deleting costs content nobody can recover. The judgment gets *scheduled* (named as a follow-up, and in each directory's README) rather than *lost*. The fragmenter enforces this shape: filename collision is a **hard stop** by default, and the two known cases are admitted one at a time by explicit `--disambiguate <basename>`. There is deliberately no global `--force`, which would let a future migration paper over an *unknown* collision — the exact failure the tool exists to surface.
+
+**Live instance, during this very PR.** These two entries were drafted as FB-0100/FB-0101 against a confirmed-free
+high-water. A concurrently-open PR then claimed FB-0100 and the same version, and a **human caught it by eye** — the
+registry did not, because it only fires when both branches remember to claim early, and nothing at all guards a version
+bump. Fourth collision in one batch of work, against a file whose own audit trail already recorded six. The point is
+not that the protocol was violated; it is that a protocol which depends on everyone remembering has no failure mode
+except silence. A filename cannot be forgotten.
 
 **Applies to:** any append-only artifact edited by more than one branch; any decision between "add a check" and "change the structure so the failure cannot occur"; any migration that uncovers pre-existing damage. Corollary worth stating plainly: **"it merged cleanly" is not evidence that nothing was lost.**

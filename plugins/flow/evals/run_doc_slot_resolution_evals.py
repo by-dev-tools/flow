@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression harness for doc-slot resolution (FB-0100).
+"""Regression harness for doc-slot resolution (FB-0101).
 
 THE BUG THIS PINS. Every doc-slot reader used to inline its own
 `[ -f "$X" ] && echo "$X" || echo "(no ... doc at $X)"`. Three properties made that
@@ -304,7 +304,7 @@ with tempfile.TemporaryDirectory() as d:
 
     # state 7 — a SET slot pointing at a ZERO-BYTE file. Loud, for the same reason the
     # empty directory is loud: the slot resolves to no context. This is the state every
-    # un-migrated consumer sits in (the schema defaults are single files), and FB-0101's
+    # un-migrated consumer sits in (the schema defaults are single files), and FB-0102's
     # thesis is that a merge can silently empty a doc.
     (w / "docs" / "truncated.md").write_text("")
     out = run_resolver(w, "planPath", "docs/plan.md")
@@ -358,6 +358,58 @@ r2 = subprocess.run(
 check("ref 2", r2.returncode == 0 and "### dev-docs/history/" not in r2.stdout,
       "history fragments must stay OUT of the reference set (the name-based skip "
       "stops working once history.md becomes a directory)")
+
+# --------------------------------------------------------------------------
+# Coverage for behaviour added during review (found by /flow:audit-coverage as
+# undeclared). Each of these was a real behaviour change with no mechanical check.
+# --------------------------------------------------------------------------
+
+# The `documentation` rule-skill must activate on BOTH doc shapes. Single-file globs
+# stay (single-file docs remain supported); the directory globs are what keeps the
+# entry-format rules loading after a project migrates. Paired: a bare "has the new
+# globs" check would also pass if the old ones were deleted, silently dropping every
+# un-migrated consumer.
+_doc_skill = (PLUGIN / "skills" / "documentation" / "SKILL.md").read_text(encoding="utf-8")
+for _g in ('"**/history.md"', '"**/history/*.md"', '"**/feedback.md"', '"**/feedback/*.md"'):
+    check(f"cov doc-glob {_g}", _g in _doc_skill,
+          f"skills/documentation must activate on {_g} — a fragmented doc matches neither "
+          f"single-file glob, so without the directory forms every migrated project silently "
+          f"loses the entry-format rules")
+
+# changelogPath must be in doctor's existence-checked loop, not silently excluded.
+_doctor = (PLUGIN / "skills" / "doctor" / "SKILL.md").read_text(encoding="utf-8")
+check("cov doctor-changelogPath", 'DOC_SLOTS="planPath specPath roadmapPath historyPath feedbackPath changelogPath"' in _doctor,
+      "changelogPath must be in Check 2.4's DOC_SLOTS — it is a doc-path slot that may "
+      "resolve to a directory, and omitting it repeats FB-0098's silently-incomplete "
+      "coverage claim")
+
+# slot_count_scan must tolerate interposed words. A stale "33 schema slots" survived the
+# previous `(\d+)\s+slots?` regex through this very release.
+import subprocess as _sp, tempfile as _tf
+with _tf.TemporaryDirectory() as _d:
+    _f = Path(_d) / "x.md"
+    _f.write_text("doc claims all 33 schema slots exist\n", encoding="utf-8")
+    _r = _sp.run([sys.executable, str(PLUGIN / "skills" / "doctor" / "lib" / "slot_count_scan.py"),
+                  "--expected", "34", str(_f)], capture_output=True, text=True)
+    check("cov slot-scan-word-tolerant", _r.returncode == 1 and "33 schema slots" in _r.stdout,
+          f"a stale count with an interposed word must be caught (rc={_r.returncode}): {_r.stdout!r}")
+    _f.write_text("doc claims all 34 schema slots exist\n", encoding="utf-8")
+    _r = _sp.run([sys.executable, str(PLUGIN / "skills" / "doctor" / "lib" / "slot_count_scan.py"),
+                  "--expected", "34", str(_f)], capture_output=True, text=True)
+    check("cov slot-scan-no-false-positive", _r.returncode == 0,
+          f"a CORRECT count with an interposed word must not be flagged: {_r.stdout!r}")
+
+# The directory skip list is exactly {history, handoffs, research}. ref 2 only covered
+# history; handoffs/ and research/ are point-in-time docs that must never enter the
+# reference corpus even under a widened glob.
+for _dir in ("history", "handoffs", "research"):
+    _rr = subprocess.run(
+        [sys.executable, str(extract), "--mode", "plan", "--plan-file", "dev-docs/plan.md",
+         "--reference-glob", f"dev-docs/{_dir}/*.md"],
+        capture_output=True, text=True, cwd=ROOT)
+    check(f"cov skip-dir {_dir}",
+          _rr.returncode == 0 and f"### dev-docs/{_dir}/" not in _rr.stdout,
+          f"dev-docs/{_dir}/ must stay OUT of the reference corpus even when globbed directly")
 
 # --------------------------------------------------------------------------
 # SCHEMA — changelogPath was read-but-undeclared for several releases

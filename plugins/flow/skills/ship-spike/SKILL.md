@@ -321,7 +321,7 @@ A docs-only spike — the common case — rules clean here without noise: those 
 
 The point of a spike is the learning, not the code. The history entry (path from `flow.config.json.historyPath`; default `dev-docs/history.md`) is the canonical artifact.
 
-**One file per entry (FB-0100).** If the slot resolves to a **directory**, write a NEW FILE — never append to a rollup, and never create one. Filename: `YYYY-MM-DD-<kebab-slug-of-the-title>.md`, with the `## YYYY-MM-DD — Title` heading kept INSIDE the file. There is deliberately no index file to update: `ls` is the index, and a committed index would recreate the very merge conflict one-file-per-entry removes (every entry would append a line to it). If the slot resolves to a single `.md` file, append as before — both shapes are supported, and `${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh` tells you which one you have.
+**One file per entry (FB-0101).** If the slot resolves to a **directory**, write a NEW FILE — never append to a rollup, and never create one. Filename: `YYYY-MM-DD-<kebab-slug-of-the-title>.md`, with the `## YYYY-MM-DD — Title` heading kept INSIDE the file. There is deliberately no index file to update: `ls` is the index, and a committed index would recreate the very merge conflict one-file-per-entry removes (every entry would append a line to it). If the slot resolves to a single `.md` file, append as before — both shapes are supported, and `${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh` tells you which one you have.
 
 Add an entry with:
 

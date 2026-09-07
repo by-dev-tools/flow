@@ -260,7 +260,7 @@ def main() -> int:
         # fan-out (docs/workflow.md, template/base/CLAUDE.md.template).
         # 30 -> 32 at v1.26.0 (visualFilePatterns + a11yFilePatterns, FB-0079).
         # 32 -> 33 at D1 Phase 0 (role slot, FB-0081).
-        # 33 -> 34 at FB-0100 (changelogPath). That slot had been READ by
+        # 33 -> 34 at FB-0101 (changelogPath). That slot had been READ by
         # /flow:land for several releases while absent from the schema, so
         # consumers could not discover it and it silently fell back forever --
         # indistinguishable from having chosen the default. Declaring it was a

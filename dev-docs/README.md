@@ -12,9 +12,9 @@ This file exists because point-in-time docs get buried by default: `CLAUDE.md`'s
 |---|---|
 | [`plan.md`](plan.md) | Current focus, active work items, handoff notes |
 | [`roadmap.md`](roadmap.md) | Now / Next / Later / § Exploration |
-| [`history/`](history/) | Per-PR decision log — what, why, tradeoffs. **One file per entry** (`YYYY-MM-DD-<slug>.md`), v1.38.0. `ls -r` for newest-first; there is no rollup and no index by design — `ls` is the index |
-| [`feedback/`](feedback/) | Synthesized user corrections (FB-XXXX). **One file per entry** (`FB-XXXX-<slug>.md`), v1.38.0. Claiming a number = pushing the file; the old `reserved-feedback-numbers.md` registry was deleted, since a duplicate number is now a duplicate filename |
-| [`../changelog/`](../changelog/) | Consumer-facing release notes. **One file per release** (`vX.Y.Z.md`), v1.38.0. Root `CHANGELOG.md` is a pointer stub, not a rollup. `ls -v` for version order |
+| [`history/`](history/) | Per-PR decision log — what, why, tradeoffs. **One file per entry** (`YYYY-MM-DD-<slug>.md`), v1.39.0. `ls -r` for newest-first; there is no rollup and no index by design — `ls` is the index |
+| [`feedback/`](feedback/) | Synthesized user corrections (FB-XXXX). **One file per entry** (`FB-XXXX-<slug>.md`), v1.39.0. Claiming a number = pushing the file; the old `reserved-feedback-numbers.md` registry was deleted, since a duplicate number is now a duplicate filename |
+| [`../changelog/`](../changelog/) | Consumer-facing release notes. **One file per release** (`vX.Y.Z.md`), v1.39.0. Root `CHANGELOG.md` is a pointer stub, not a rollup. `ls -v` for version order |
 | [`spec.md`](spec.md) | Plugin scope. ⚠️ **Known stale** — still describes the audit-only scope; broadening to full flow identity is a queued hygiene PR |
 | [`workflow.md`](workflow.md) | Flow-internal dev workflow (≠ the shipped `plugins/flow/docs/workflow.md`) |
 | [`design-language.md`](design-language.md) | Visual/interaction rules for the browser UI flow ships (annotation overlay, verify-build report). `uiSurface` flipped to `true` in v1.24.0 |

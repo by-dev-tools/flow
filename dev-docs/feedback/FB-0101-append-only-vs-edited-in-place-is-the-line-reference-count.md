@@ -1,4 +1,4 @@
-### FB-0100 — The line is APPEND-ONLY vs EDITED-IN-PLACE, not "prose vs machine-input"; and reference COUNT is not COUPLING
+### FB-0101 — The line is APPEND-ONLY vs EDITED-IN-PLACE, not "prose vs machine-input"; and reference COUNT is not COUPLING
 
 **Date:** 2026-09-06
 **Source:** user direction (framing correction during the doc-fragmentation design session) + a defect the same session found in its own conclusion

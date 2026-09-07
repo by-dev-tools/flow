@@ -9,7 +9,7 @@ paths:
   # NEITHER of the originals. Without them this rule-skill silently stops activating
   # for every project that adopts one-file-per-entry -- the entry-format contract
   # would go unenforced with nothing printed. Same by-filename-prohibition shape that
-  # `scripts/extract_session.py` fixes for the reference-doc skip list (FB-0100).
+  # `scripts/extract_session.py` fixes for the reference-doc skip list (FB-0101).
   - "**/history.md"
   - "**/history/*.md"
   - "**/feedback.md"
