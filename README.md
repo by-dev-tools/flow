@@ -28,7 +28,7 @@ The workflow is a progression of skills held together by two human gates. The sk
 | ↳ `/flow:accessibility-review` | WCAG 2.1 AA audit. Skips non-UI diffs. |
 | ↳ `/flow:verify-build` | Runs the built artifact, adversarially tested against the plan's criteria. A failure keeps the PR a draft with a `🚫 NOT READY TO MERGE` manifest — and it is the one blocker you cannot waive to ready. On a visually-significant change, captured frames are required — zero frames is `Unknown`, never a pass. |
 | ↳ `/flow:audit-coverage` | Flags changed behavior no criterion covers — the gap between "what was tested" and "what changed." |
-| ↳ `/flow:audit-skips` | Audits every stage skip for legitimacy — a skip is trusted only if the diff/config backs it, and a "ran" claim only if its output artifact exists for HEAD. A self-certified short-circuit becomes a decision you answer at hand-off. |
+| ↳ `/flow:audit-skips` | Audits every stage skip for legitimacy — on the spike path too, which produces the most skips — a skip is trusted only if the diff/config backs it, and a "ran" claim only if its output artifact exists for HEAD. A self-certified short-circuit becomes a decision you answer at hand-off. |
 | **Gate 2 · you merge the PR** | Claude never runs `gh pr merge`. |
 
 So the autonomous path narrows to two touchpoints: **approve the plan → merge the PR.** The skills fire automatically *within a driven loop*, not from a cold "build me X" — see [automation boundaries](docs/automation-boundaries.md) for exactly what runs on its own.
@@ -96,7 +96,7 @@ The canonical reference — every step with its rationale, gate semantics, spike
 |---|---|
 | `/flow:workflow-help` | "What's the workflow?" — prints the loop + your config |
 | `/flow:doctor` | After bootstrap, or when something feels off |
-| `/flow:ship-spike` | Throwaway exploratory PRs — skips the heavy reviews |
+| `/flow:ship-spike` | Throwaway exploratory PRs — skips the craft reviews (`/simplify`, staff-review), keeps security, accessibility, the behavioral check, and the skip audit |
 | `/flow:post-merge` | After you merge — "anything left, or safe to archive?" Confirms the merge (queue-safe), reconciles the docs, captures your merge-gate feedback, cleans up the branch, gives a safe-to-archive verdict |
 | `/flow:log-disagreement` | Fires on its own when you dispute a finding |
 | `/flow:review-brief` | Pre-prototype review of a design brief (D1 Phase 1): one extraction fanned to `auditor` + `plan-critic` + the new `lens-experience` agent, one triaged verdict. Standalone today — not yet wired into the loop |

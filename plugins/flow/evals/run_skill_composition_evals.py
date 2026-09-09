@@ -251,6 +251,38 @@ def main() -> int:
         0,
         "land/SKILL.md no longer declares the §1a BLOCKING merged-PR gate")
 
+    # --- 11. live: a caller that emits Skill() must DECLARE the Skill tool (FB-0100) --
+    # The sibling half of §10's contract, and the same class of two-halves-in-two-files
+    # bug. §10 checks the CALLEE's flag permits the call; this checks the CALLER is
+    # allowed to make it at all. `allowed-tools` is an allowlist: a SKILL.md that omits
+    # `Skill` while instructing `Skill("flow:x")` is a composition the runtime can
+    # reject — the call degrades to nothing, silently, on every run. That is FB-0082's
+    # shape (a gate that is present in the prose and absent at runtime), and nothing
+    # here looked for it.
+    #
+    # Found live: `/flow:ship-spike` declared `Read, Edit, Write, Glob, Grep, Bash,
+    # Agent` while Step 2 instructed `Skill("flow:verify-build")`. `ship`, `post-merge`
+    # and `verify-build` all declared `Skill`; ship-spike alone did not.
+    #
+    # Uses the lint's own fenced-call parser, so a PROSE mention of `Skill("flow:x")`
+    # (as in `/flow:doctor`, which documents the idiom it lints) is correctly not a
+    # call site and does not need the declaration. Hand-rolling a second matcher here
+    # is what would make this check disagree with the one under test.
+    callers = sorted({c["caller"] for c in table["calls"]})
+    expect("at least one caller was parsed — an empty set would pass this vacuously",
+           0 if callers else 1, 0, "no fenced Skill() call sites found in the skills tree")
+    for caller in callers:
+        fm = _frontmatter_of(FLOW_SKILLS / caller / "SKILL.md")
+        declared = re.search(r"^allowed-tools:.*\bSkill\b", fm, re.M)
+        # No `allowed-tools:` line at all means "inherit everything" — permitted, and
+        # not the bug. The bug is declaring a RESTRICTED list that omits Skill.
+        restricted = re.search(r"^allowed-tools:", fm, re.M)
+        expect(
+            f"{caller} emits Skill() and declares the Skill tool",
+            0 if (declared or not restricted) else 1, 0,
+            f"{caller}/SKILL.md restricts allowed-tools without listing Skill, so its "
+            f"Skill() call sites can be rejected at runtime: {fm.strip()[:200]}")
+
     print()
     if _failures:
         print(f"FAILED: {len(_failures)} eval(s): {', '.join(_failures)}")

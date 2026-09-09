@@ -356,9 +356,11 @@ if [ -z "$FLOW_ROOT" ]; then
   echo "⚠️ BLOCKER: not inside a git repository, so no handoff can be written where a forked skill can read it. The skip-legitimacy gate CANNOT run — do NOT record it as legitimate. Re-run /flow:ship from inside the repo worktree." >&2
   exit 1
 fi
-# No `${TMPDIR:-/tmp}/flow-detached` fallback here BY DESIGN, unlike the other four
-# copies of this idiom: a fork cannot see /tmp at all, so a detached run must fail
-# loudly rather than write a handoff nothing will ever read.
+# No `${TMPDIR:-/tmp}/flow-detached` fallback here BY DESIGN — state the PROPERTY, not
+# a count of the other copies (that count was already wrong for review-brief, and
+# /flow:ship-spike Step 2a.1 has since made the same deliberate omission): the two
+# HANDOFF writers omit it, the reviewer copies keep it. A fork cannot see /tmp at all,
+# so a detached run must fail loudly rather than write a handoff nothing will ever read.
 FLOW_SCRATCH="$FLOW_ROOT/.flow"
 # SECURITY (CWE-59): refuse to write scratch through a symlink. `.flow` is an ordinary
 # repo path with none of git's .git/.gitmodules special-casing, so an untrusted clone can
@@ -371,8 +373,25 @@ if [ -L "$FLOW_SCRATCH" ]; then
   exit 1
 fi
 mkdir -p "$FLOW_SCRATCH" || { echo "⚠️ BLOCKER: cannot create $FLOW_SCRATCH — the skip-legitimacy gate cannot run." >&2; exit 1; }
-[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
 STAGES="$FLOW_SCRATCH/skip-audit-stages.json"
+# CWE-59, second half: the guard above protects the scratch DIRECTORY; these lines
+# protect the FILES written inside it. `.flow` can be a real directory that CONTAINS
+# `skip-audit-stages.json` as a symlink to ~/.claude/settings.json, .git/config, or a
+# sibling repo's file — git checks symlinks out happily, `[ -L "$FLOW_SCRATCH" ]` passes,
+# and `cat > "$STAGES"` then FOLLOWS the link and truncates the victim. `.tmp` is a
+# second, independently plantable name, and `[ -f ]` is false for a DANGLING symlink so
+# the .gitignore redirect would create an attacker-named file. rm -f unlinks the symlink
+# itself rather than writing through it, which is why it is safe to do unconditionally:
+# every file here is ephemeral scratch this block is about to rewrite anyway.
+#
+# ORDER IS LOAD-BEARING: these unlinks must precede the `.gitignore` creation below.
+# Placed after it, the guard prevents nothing (the redirect already followed a dangling
+# symlink) AND regresses the self-ignore — a symlink to an EXISTING file makes `[ -f ]`
+# true, so nothing is written, and removing the link afterwards leaves .flow with no
+# .gitignore at all, making the stamped handoff git-visible.
+rm -f "$STAGES" "$STAGES.tmp"
+[ -L "$FLOW_SCRATCH/.gitignore" ] && rm -f "$FLOW_SCRATCH/.gitignore"
+[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
 FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
 
 # Build the stamp with `jq -n --arg` rather than interpolating into the heredoc: a branch
