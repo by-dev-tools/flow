@@ -1,8 +1,12 @@
 # Handoff — generated, read-only Notion surface (PLAN GATE, NOT APPROVED)
 
 > **Status: 🟠 DRAFT — awaiting the human plan gate. NOT approved, NOT started.**
-> Nothing in this plan has been executed. No `tools/notion-publish/`, no
-> `.github/workflows/notion-publish.yml`, no plugin artifact exists.
+> **No implementation has been executed.** No `tools/notion-publish/`, no
+> `.github/workflows/notion-publish.yml`, no plugin artifact exists. **One
+> protocol action HAS been taken:** FB-0103 is reserved and pushed (`84fcbd1`),
+> because the reservation protocol requires claiming a number *before* investing
+> in cross-file references, and this doc already carried eleven. That is the only
+> checked box in §11.
 > This document is committed **only** so the plan-gate work survives an ephemeral
 > workspace — per `dev-docs/README.md` § Handoffs, check this banner before
 > treating it as active.
@@ -60,7 +64,6 @@
 
 **FB-0103's headline:** *"A generated human-facing surface is one-way and read-only: nothing in the repo may read it, depend on it, or be broken by its deletion."* That is the standing constraint from the design session — real user direction, synthesizable, and the property every mechanical choice in this plan (§4.5, §2, the exit story) defends. The reservation line will carry it verbatim, per § Protocol step 2's required shape. **If you'd rather this PR carry no FB number**, say so and I will drop the reservation, the `feedback.md` edit, and the two criteria that pin them — the plan gate flagged that reserving a number silently pre-decides whether a correction is being recorded, and it is your call, not mine.
 
-**To be reserved** — this has NOT happened yet; no `FB-0103` appears anywhere on this branch, and the branch's first commit was spent preserving this handoff. The reservation lands as **the first commit of the execution phase**, before the FB entry is drafted at `dev-docs/feedback{.md,/}`, per `dev-docs/reserved-feedback-numbers.md` § Protocol ("push your reservation immediately — the early push is the race-detection mechanism") and CLAUDE.md's "Reserve an FB number **before** drafting its entry". *(An earlier draft cited this as the "FB-0098 protocol"; FB-0098 is about fixing a check rather than the data that exposed it and says nothing about reservation — exactly the wrong-concept cross-reference `reserved-feedback-numbers.md` § Why this exists warns will propagate into commit messages, history and PR bodies.)*
 **Status:** DRAFT — at the plan gate. Not executed.
 
 ---
@@ -193,11 +196,15 @@ jobs:
         with:
           fetch-depth: 0     # case-study range needs history
       - id: guard
-        env:
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}   # via env, NEVER inlined into run:
+        env:                                           # via env, NEVER inlined into run:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_PARENT_PAGE_ID: ${{ vars.NOTION_PARENT_PAGE_ID }}
         run: |
-          if [ -z "$NOTION_TOKEN" ]; then
-            echo "Notion publishing not configured - set the NOTION_TOKEN secret" >> "$GITHUB_STEP_SUMMARY"
+          MISSING=""
+          [ -z "$NOTION_TOKEN" ] && MISSING="$MISSING NOTION_TOKEN(secret)"
+          [ -z "$NOTION_PARENT_PAGE_ID" ] && MISSING="$MISSING NOTION_PARENT_PAGE_ID(variable)"
+          if [ -n "$MISSING" ]; then
+            echo "Notion publishing not configured - missing:$MISSING" >> "$GITHUB_STEP_SUMMARY"
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -225,7 +232,11 @@ Five choices worth their justification:
 
 #### 4.1.2 The one deliberate non-failure: secret not yet set
 
-Before Ben creates the integration, `secrets.NOTION_TOKEN` is empty and **every merge to main would otherwise produce a red run**. The workflow therefore guards on **the secret** being non-empty (only the secret — a missing `NOTION_PARENT_PAGE_ID` is a loud red run by design, see §4.4: it means setup was started and abandoned, not that it never began) and, when it is absent, writes an explicit `$GITHUB_STEP_SUMMARY` line — `Notion publishing not configured — set the NOTION_TOKEN secret` — and exits 0.
+Before Ben creates the integration, `secrets.NOTION_TOKEN` is empty and **every merge to main would otherwise produce a red run**. The workflow therefore guards on **both setup inputs** — the `NOTION_TOKEN` secret and the `NOTION_PARENT_PAGE_ID` variable — announcing which one is missing and exiting 0.
+
+**Changed at the plan gate; an earlier draft guarded only the secret** and called a missing variable a deliberate red run ("setup started and abandoned"). That does not survive contact with how setup actually happens: this session's instruction has Ben create the integration and set the secret, then hand *me* the page ID — so "secret set, variable missing" is the **default transient state of every setup**, not an anomaly, and the design's only defence against reddening `main` was an ordering instruction Ben cannot follow on that route. Both inputs are now pre-setup conditions, which is what they are.
+
+**The tradeoff, stated rather than hidden:** a genuinely abandoned half-setup is now a green run with a notice instead of a red build. Two things keep that from hiding: the notice names the missing input explicitly on every run, and §9's deletion criterion requires a *successful publish* with both page types present — so an abandoned setup can never masquerade as a working surface and, when it is absent, writes an explicit `$GITHUB_STEP_SUMMARY` line — `Notion publishing not configured — set the NOTION_TOKEN secret` — and exits 0.
 
 **This is one of the three enumerated non-exit-1 paths in §4.4 — the only one that exits 0 — and it is announced rather than silent** — same reasoning as `--check`'s old exit-3: "not configured yet" is a known, expected, pre-setup state, not a malfunction. Once the secret exists, every other failure is loud and red. The guard must test the *secret*, never swallow an error from the publisher itself; §11 pins both halves.
 
@@ -297,7 +308,7 @@ Trigger and range now read the *same* anchor, so they cannot disagree about what
 
 **#146 changes where history entries live, and it makes this simpler — coordinate with its shape, don't fight it.** Verified against `origin/conductor/fragment-append-only-docs-one-file-per-entry`: `dev-docs/history/` becomes one file per entry (`YYYY-MM-DD-slug.md`, plus a `README.md`), `dev-docs/feedback/` becomes `FB-XXXX-slug.md`, `changelog/` becomes `vX.Y.Z.md`, and `CHANGELOG.md` shrinks to a 448-byte pointer stub. `plan.md` and `roadmap.md` stay single files.
 
-**Every range endpoint is `origin/main`, never `HEAD` — and an append refuses to run off-main.** An earlier draft ended the post-#146 range at `HEAD`, which is silently wrong on the two paths where HEAD is not main's tip: a `workflow_dispatch` re-run on another ref, and the off-main temp-repo publish the version-ref criterion itself constructs. Either would append unmerged entries **and** advance the watermark to an off-main `to_sha` — so when those commits later merge they fall *before* the anchor and are never appended. That is the silent gap §4.2 calls corruption of the one page that cannot be re-run to fix. **The guard is ancestry on `push: main`, equality only on `workflow_dispatch`** — and that distinction is load-bearing, because a plain equality check would fire on the very situation `concurrency` exists to create. Queuing holds an earlier run until a later merge has advanced `main`; that queued run then checks out its own event SHA while `refs/remotes/origin/main` (refetched under `fetch-depth: 0`) is already the newer tip. Equality would exit 1 and redden `main` for two benign back-to-back merges. So:
+**Every range endpoint is `origin/main`, never `HEAD` — and an append refuses to run off-main.** An earlier draft ended the post-#146 range at `HEAD`, which is silently wrong on the two paths where HEAD is not main's tip: a `workflow_dispatch` re-run on another ref, and the off-main temp-repo publish the version-ref criterion itself constructs. Either would append unmerged entries **and** advance the watermark to an off-main `to_sha` — so when those commits later merge they fall *before* the anchor and are never appended. That is the silent gap §4.2 calls corruption of the one page that cannot be re-run to fix. **The guard is evaluated ONLY when a case-study append is pending** — a dashboard-only publish skips it entirely. That scoping is what makes it consistent with the version-ref criterion, which deliberately publishes from an off-main temp repo and asserts exit 0: that fixture has no milestone pending, so the guard never fires. The dashboard is safe off-main by construction — it is overwritten every run and reads all content at `origin/main`, so an off-main run publishes correct content. Only the *accumulating* page can be corrupted by an off-main range, so only that path is guarded. Within that scope: **ancestry on `push: main`, equality only on `workflow_dispatch`** — and that distinction is load-bearing, because a plain equality check would fire on the very situation `concurrency` exists to create. Queuing holds an earlier run until a later merge has advanced `main`; that queued run then checks out its own event SHA while `refs/remotes/origin/main` (refetched under `fetch-depth: 0`) is already the newer tip. Equality would exit 1 and redden `main` for two benign back-to-back merges. So:
    - **`push: main`** ⇒ assert `HEAD` is an **ancestor of** `origin/main` (`git merge-base --is-ancestor HEAD origin/main`). A lagging checkout is fine: all content is read via `git show origin/main:<path>`, so the run publishes correct, current content idempotently.
    - **`workflow_dispatch`** ⇒ assert **equality**, since that trigger admits any ref and an off-main append silently corrupts the accumulating page.
 
@@ -365,7 +376,7 @@ Everything else exits `1` with an `ERROR:` line. **Paths 4–6 live in §4.2 and
 |---|---|---|
 | ≥2 parent children share a target title (`Dashboard` / `Case study`) | title lookup | **exit 1** naming both page ids. Never "take the first" (§4.2). Enumerated here because §11 derives its executed test set from this table, so a fatal rule stated only in §4.2 prose would be pinned by nothing |
 | Any `git` subprocess fails (`origin/main` unresolvable, `git show` non-zero, `git diff` non-zero) | wherever invoked | **exit 1** with `ERROR:` naming the failed command and its stderr — never a bare traceback, and never a silent empty result treated as "no entries" |
-| `NOTION_PARENT_PAGE_ID` missing or blank | publisher pre-flight | **exit 1** with `ERROR:` naming the variable and §5.2. **The half-configured state is reachable** — §5.2 (variable) and §5.3 (secret) are independent human actions, so "secret set, variable not" produces a red run on `main`. §5 now orders them variable-first specifically so that window never opens. That is deliberate: unlike the never-configured state, this one means setup was started and left incomplete, which is a real defect worth surfacing loudly rather than a benign pre-setup condition |
+| `NOTION_PARENT_PAGE_ID` missing or blank **at the publisher** (the guard passed but the env var did not arrive) | publisher pre-flight | **exit 1** with `ERROR:` naming the variable and §5.2. Distinct from the workflow-level guard, which treats a missing variable as a pre-setup state (exit 0, announced) — the same secret/publisher split as the token. That is deliberate: unlike the never-configured state, this one means setup was started and left incomplete, which is a real defect worth surfacing loudly rather than a benign pre-setup condition |
 | `NOTION_TOKEN` empty **at the publisher** (secret present but blank, or the env var lost between guard and process) | publisher pre-flight | **exit 1** with `ERROR:` — distinct from the workflow-level guard below, which is the only exit-0 path |
 | HTTP 401 `unauthorized` | response code | "token invalid or **expired** — PATs expire (max 1 yr); reissue in the Developer portal" (F12) |
 | HTTP 403 `restricted_resource` | response code | block-limit / permission, with the F2 solo-vs-multi-member distinction |
@@ -440,27 +451,26 @@ Per the approved decision, create the integration with the **read comments** cap
 
 > **Note on the current platform, not a request to change the plan.** Notion's developer portal now also issues **Personal Access Tokens**, whose single "Notion API" capability is defined as *"Read, create, update, and search content; **read and create comments**"* — i.e. for a PAT there is no separate read-comments toggle to miss, and a PAT inherits your own page permissions so no per-page sharing step is needed (F10, F11). If you take the OAuth-connection route as decided, the original constraint applies in full: **check read-comments at connection time.** Either path works with this plan; only the capability matters.
 
-### 5.2 Set the parent page ID as a repository *variable* (do this FIRST)
+### 5.2 Set the parent page ID as a repository *variable* (or hand it to me — it is not a credential)
 Create one page in the workspace (e.g. `flow`) and copy its 32-char id from the URL. Set it as a repository **variable** (same UI, "Variables" tab), named **`NOTION_PARENT_PAGE_ID`**.
 
 A variable, not a secret: it is not sensitive, and variables are readable and editable without a PR. **Not committed into the workflow file** either — that would put a Ben-specific id into a tracked file for no benefit, and changing pages would need a PR. You can hand me the id in chat safely if you prefer I set it, since it is not a credential; the workflow reads it from `vars.` regardless.
 
-### 5.3 Set the token as a repository secret — never as anything else (do this SECOND)
-GitHub → repo → **Settings → Secrets and variables → Actions → New repository secret**, named exactly **`NOTION_TOKEN`**. Do this *after* 5.2, so you never sit in the secret-set-variable-missing state that reddens `main` (§5.4).
+### 5.3 Set the token as a repository secret — never as anything else
+GitHub → repo → **Settings → Secrets and variables → Actions → New repository secret**, named exactly **`NOTION_TOKEN`**. Order-independent: a run with only one of the two set is a green run naming the other (§5.4).
 
 Secrets are encrypted at rest and in transit, auto-redacted from workflow logs, and **write-only after creation** — nobody, including me, can read it back. This is the only place the token is ever entered. **Do not** paste it into a chat, an issue, a `.env`, or any repo file, and it is never needed in a workspace.
 
 ### 5.4 What happens next, with no further action
-**The section order above is the safe order: variable (5.2) first, secret (5.3) second** — it keeps the red window from ever opening. Four states, all reachable, stated so none surprises you:
+**Order no longer matters** — the §4.1.2 guard announces whichever input is still missing and exits 0 either way. Set them in whichever order suits you; if you hand me the page ID, I set the variable and you never touch it. Three states, all reachable, stated so none surprises you:
 
 | State | Every merge to `main` does this |
 |---|---|
-| Neither set | **Green run** with the "not configured" summary line (§4.1.2) |
-| Variable set, secret not | **Green run**, same announced skip — the guard tests the secret |
-| **Secret set, variable not** | **Red run** naming `NOTION_PARENT_PAGE_ID` (§4.4). Deliberate: setup was started and left incomplete, which is a defect worth surfacing, not a benign pre-setup state |
+| Neither set | **Green run**, summary line naming both missing inputs |
+| Exactly one set (either order) | **Green run**, summary line naming the one still missing |
 | Both set | **Publishes automatically** |
 
-Setting the variable first means you pass through the second row, never the third. The first successful run is what checks the [LIVE] criterion in §11.
+**No ordering hazard remains.** An earlier draft made "secret set, variable missing" a deliberate red run and relied on Ben setting the variable first to avoid it — unworkable on the actual route, where he sets the secret and hands me the page ID. The guard now treats both inputs as pre-setup conditions, so the order genuinely does not matter.  The first successful run is what checks the [LIVE] criterion in §11.
 
 ---
 
@@ -585,7 +595,7 @@ The publisher loses ~40 lines; the stamp is untouched; it can be added later wit
 
 ---
 
-## 11. Spec-walk (acceptance criteria — none checked; nothing is executed)
+## 11. Spec-walk (acceptance criteria — one checked: the FB-0103 reservation, which the protocol required now. No implementation has been executed.)
 
 **Every criterion below is tagged with the bucket that runs it.** The plan gate caught that an untagged list plus a CI job is a trap: the repo-state criteria (zero-`plugins/flow/` diff, version unchanged, slot count 33) are one-shot properties of *this* PR, and wiring them into a job that runs on every `pull_request` would redden the next PR that legitimately edits `plugins/flow/**` — the repo's primary surface. That is the same red-build-for-an-unrelated-author outcome §4.2 rejects, one layer over.
 
@@ -635,7 +645,7 @@ The publisher loses ~40 lines; the stamp is untouched; it can be added later wit
 - [ ] **[PRE-SHIP]** **(b)** `CLAUDE.md` § 3's tools table has a row naming `tools/notion-publish/`. *Verify:* its own positive grep. Split from (a) deliberately — the tools row names a **path**, not a command, so the `/preship`-derived class-grep structurally never inspects it and (a) alone would go green over its absence.
 - [ ] **[CI]** The two child pages are resolved by title lookup under the parent, created once if absent, and ≥2 same-title children is fatal. *Verify:* three eval cases (absent / one / two) against a stubbed transport.
 - [ ] **[CI]** **A dashboard overwrite leaves the case study's blocks intact.** *Verify:* eval asserting every archive call targets a child of the *dashboard* page id, never the parent id — the specific mistake that would silently destroy the accumulating page.
-- [ ] **[CI]** **The pre-append guard discriminates by trigger** (§4.2): on `push: main` it requires `HEAD` to be an **ancestor of** `origin/main`; on `workflow_dispatch` it requires **equality**. Both selection shapes end their range at `origin/main`, never `HEAD`. *Verify:* four cases — push/ancestor ⇒ publishes; push/diverged ⇒ exits non-zero, no append recorded; dispatch/off-main ⇒ exits non-zero, no append; dispatch/on-main ⇒ publishes. **The push/ancestor case is the one that matters**: a plain equality guard fails it, and that is exactly the state `concurrency` queuing produces on two back-to-back merges. Catches the silent-gap path too — an off-main append advances the watermark past commits not yet on `main`, so those entries fall before the anchor when they do merge and are never appended.
+- [ ] **[CI]** **The pre-append guard discriminates by trigger** (§4.2): on `push: main` it requires `HEAD` to be an **ancestor of** `origin/main`; on `workflow_dispatch` it requires **equality**. Both selection shapes end their range at `origin/main`, never `HEAD`. *Verify:* five cases, **all with a milestone pending** — push/ancestor ⇒ publishes; push/diverged ⇒ exits non-zero, no append recorded; dispatch/off-main ⇒ exits non-zero, no append; dispatch/on-main ⇒ publishes; **plus off-main with NO milestone pending ⇒ publishes the dashboard normally, exit 0** (the guard is append-scoped, §4.2 — this is the case the version-ref criterion depends on). **The push/ancestor case is the one that matters**: a plain equality guard fails it, and that is exactly the state `concurrency` queuing produces on two back-to-back merges. Catches the silent-gap path too — an off-main append advances the watermark past commits not yet on `main`, so those entries fall before the anchor when they do merge and are never appended.
 - [ ] **[CI]** Case-study content selection is **shape-aware, primary = post-#146**: added files under `dev-docs/history/` via `git diff --name-status --diff-filter=A <last_stamp>..origin/main -- dev-docs/history/`, excluding that directory's `README.md` (an index, not an entry); **fallback** = added `## ` blocks in `dev-docs/history.md` when the directory does not exist. And **no code path parses a version string out of a history heading**. *Verify:* a fixture per shape, so whichever of #146 / no-#146 lands is covered, plus the README-exclusion case. *Verify:* paired — positive (selection matches a fixture range) + negative (no version regex over headings).
 - [ ] **[CI]** The case-study range anchor is a **per-append stamp block**, never the dashboard's stamp and never the case-study page's first block. *Verify:* paired — positive (the anchor is read from the newest append-stamp among the page's children) + negative (no code path reads the dashboard page for a range).
 - [ ] **[CI]** The case-study append-stamp block is written **last**, after a read-back of the entry blocks. *Verify:* paired — positive (recorded request order puts the stamp write after the entry batches and after their read-back) + negative (**a failure injected after the first entry batch leaves no advanced watermark**, and the next append's range still includes every entry the interrupted run dropped). This is the permanent-silent-data-loss path; ordering, not presence, is the property.
@@ -664,6 +674,7 @@ The publisher loses ~40 lines; the stamp is untouched; it can be added later wit
 - [ ] **[CI]** `.github/workflows/notion-publish.yml` exists as a **separate workflow from `ci.yml`**, triggered on `push: branches: [main]` **and** `workflow_dispatch`, with `permissions: contents: read`, `concurrency.group: notion-publish` and **`cancel-in-progress: false`**, and `actions/checkout@v4` with `fetch-depth: 0`. *Verify:* parse the yml and assert each field. Every one is load-bearing per §4.1.1 — least privilege, serialised appends, and resolvable history respectively.
 - [ ] **[CI, not PRE-SHIP — a later edit can silently undo it]** **No `${{ secrets.` expression appears inside any `run:` body** in the workflow; every secret reaches a step through `env:`. *Verify:* paired — negative (parse the yml, assert zero `secrets.` references within any `run:` scalar) + positive (both the guard step and the publish step declare `NOTION_TOKEN` under `env:`). **This is a security assertion, not style:** Actions interpolates `${{ }}` into the script file it writes to the runner's disk before executing it, so an inlined secret puts the token's plaintext in a file — the exact failure mode this design exists to remove structurally, and the one §6.2 claims is impossible.
 - [ ] **[CI]** The workflow runs on **no** `pull_request` trigger, so a publish failure can never block a PR or gate a merge. *Verify:* paired — negative (`pull_request` absent from `on:`) + positive (`push`/`main` present), since the negative alone is satisfiable by deleting the triggers.
+- [ ] **[CI]** **Either setup input missing ⇒ announced non-failure**: the guard names *which* input(s) are absent in `$GITHUB_STEP_SUMMARY` and exits **0**, for all three partial states (neither / token only / variable only). *Verify:* three cases, each asserting the summary names exactly the missing input(s). Covers the default transient state of every real setup, per §4.1.2.
 - [ ] **[CI]** **Unset `NOTION_TOKEN` ⇒ announced non-failure**: a `$GITHUB_STEP_SUMMARY` line naming the missing secret, exit **0**. *Verify:* paired — positive (the notice text is emitted) + negative (**the guard tests the secret only** and does not wrap or swallow a publisher error; injecting a publisher failure *with* the secret set still exits 1). Without the negative half the guard is a blanket try/except wearing a hat.
 - [ ] **[CI]** The token is read only from the environment and never written to disk, logged, or interpolated into a raised/printed string. *Verify:* paired — negative (run every §4.4 failure case with a sentinel token; assert the sentinel appears in no stderr and no exception message) + positive (the `Authorization` header is built from it).
 - [ ] **[POST-OPEN — checked after the PR opens, not before]** The **`notion-publish-evals`** job in `ci.yml` (distinct from the `notion-publish` *workflow*, which never runs on `pull_request`) actually runs and exits 0 on the real `pull_request` event, with `origin/main` resolving. *Verify:* read the check run. Separated from the yml-shape criterion above because this is the half that can only be true after the PR exists.
