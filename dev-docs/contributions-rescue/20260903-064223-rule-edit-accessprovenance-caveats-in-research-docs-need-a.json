@@ -1,0 +1,34 @@
+{
+  "id": "20260903-064223-rule-edit-accessprovenance-caveats-in-research-docs-need-a",
+  "schema_version": 1,
+  "created_utc": "2026-09-03T06:42:23.392317+00:00",
+  "status": "queued",
+  "provenance": {
+    "project_slug": "flow",
+    "pr": "conductor/spike-designmd-investigation-vercel-agentic-design-guidance",
+    "branch": "conductor/spike-designmd-investigation-vercel-agentic-design-guidance",
+    "session_id": "288ea1c5-2af0-4048-9b7a-7853d461ca0e"
+  },
+  "source_type": "error",
+  "artifact_kind": "rule-edit",
+  "lesson": {
+    "summary": "Access/provenance caveats in research docs need a re-check trigger, not just a warning",
+    "synthesized_rule": "A research doc that records an ACCESS limitation (blocked domain, rate limit, unavailable tool) must pair it with a re-check trigger, because the limitation is usually temporary while the degraded claims it produced are permanent. A stale access caveat silently keeps every claim that routed around it unverified, and makes the cheap fix look expensive. On reading such a caveat, re-test the access before trusting the workaround.",
+    "target_hint": ".claude/rules/documentation.md § Recorded rejections (adjacent new subsection)"
+  },
+  "evidence": {
+    "window_path": "(not committed - raw transcript window, see README)",
+    "evidence_strength": "direct-quote",
+    "lesson_hash": "sha256:6f4f57a741f997a90f8789b1e8e439af5c9a61b8db35db1fdedf3d7eaf0b383a",
+    "window_path_original_basename": "20260903-064223-accessprovenance-caveats-in-research-docs-need-a.window.jsonl"
+  },
+  "signals": {
+    "source_type": "error",
+    "source_weight": 0.6,
+    "evidence_strength": "direct-quote",
+    "evidence_weight": 1.0,
+    "recurrence_count": 1,
+    "sanitization_clean": null
+  },
+  "confidence": 0.6
+}

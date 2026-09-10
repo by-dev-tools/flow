@@ -39,6 +39,10 @@ Each is accurate as of its date and is **not** maintained afterward. Read the St
 | [`research/dynamic-workflows-alignment-2026-06.md`](research/dynamic-workflows-alignment-2026-06.md) | 2026-06 | Architecture-alignment layer; companion to the above |
 | [`research/visual-verification-blueprint-2026-06.md`](research/visual-verification-blueprint-2026-06.md) | 2026-06 | **Largely implemented** — the V2/V3 Deliverable-quality track shipped across v1.6.0–v1.8.1 |
 
+### Also: `dev-docs/contributions-rescue/` (temporary)
+
+Three lesson-contribution queue records rescued from an ephemeral cloud workspace on 2026-09-04, before the FB-0101 flush mechanism existed. **Expected to be deleted** once they are drained or dismissed by `/flow:contribute` — see that directory's README for the deletion criterion. Nothing should be taught to read from it.
+
 ### Also: repo-root `research/`
 
 A **second** research location exists outside `dev-docs/`, added by #104. It is deliberately quarantined (exploratory notes not being pursued, kept greppable without touching any tracked surface), so it is not governed by the Rules below — but it is listed here so it is findable rather than buried.

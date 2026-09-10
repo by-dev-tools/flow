@@ -608,6 +608,74 @@ python3 "$S/harvest_lesson.py" mark --marker-file "$MARKER"
 
 Print one line — `[analyze] N findings: P project-local, F flow-generalizable, D dropped (noise/low-confidence)` (or the pre-scan skip line). Never silent.
 
+**Step 4c.iv — Flush the queue into the PR so it survives teardown (FB-0101).**
+
+The queue lives in user-scope storage (`contributionsQueuePath`). That is right on a persistent
+machine, and the cross-project contract *requires* it to sit outside any one project tree. But on an
+**ephemeral host** — a cloud workspace, a disposable CI container — the filesystem is destroyed at
+teardown and every queued lesson dies with it, unread. Flush makes the PR carry them; git and GitHub
+are durable by construction.
+
+```sh
+# Full records -> committed to the branch; bounded manifest -> a FILE Step 7 reads.
+# The manifest is persisted, NOT held in a shell variable: Step 7 is a separate Bash
+# invocation ~340 lines later, so shell state does not survive -- and `MANIFEST` is
+# already taken there by the DRAFT manifest path. Hence LESSON_MANIFEST + a file, the
+# same cross-step idiom $FLOW_SCRATCH/triage.json uses.
+FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "⚠️ [flush] not in a git repo — skipping." >&2; FLOW_ROOT=""; }
+if [ -n "$FLOW_ROOT" ]; then
+  FLOW_SCRATCH="$FLOW_ROOT/.flow"; mkdir -p "$FLOW_SCRATCH"
+  FLUSH_DIR=".flow-lessons"
+  LESSON_MANIFEST="$FLOW_SCRATCH/lesson-manifest.md"
+  # stderr is NOT swallowed: `[flush] wrote N record(s)` is this step's positive
+  # assertion, and .claude/rules/general.md forbids a bare 2>/dev/null with no
+  # WARN branch. stdout is strictly the manifest (empty queue -> empty stdout).
+  python3 "$S/harvest_lesson.py" flush --out-dir "$FLUSH_DIR" > "$LESSON_MANIFEST"
+  if [ -s "$LESSON_MANIFEST" ]; then
+    # NO -f: a consumer who gitignored `.flow*` did so deliberately, and force-adding
+    # would override that choice to publish lessons into their repo. Silent failure is
+    # equally wrong, so assert the add landed and say so loudly when it did not.
+    git add "$FLUSH_DIR" 2>/dev/null || true
+    if [ -z "$(git diff --cached --name-only -- "$FLUSH_DIR")" ]; then
+      echo "⚠️ [flush] wrote records to $FLUSH_DIR but NOTHING staged — they will NOT ride this PR." >&2
+      echo "   Most likely this path is gitignored. That may be deliberate; if so, the flush cannot" >&2
+      echo "   help on this host and the local queue remains the only copy. To opt in, un-ignore it." >&2
+    else
+      echo "[flush] staged $(git diff --cached --name-only -- "$FLUSH_DIR" | wc -l) record(s) from $FLUSH_DIR"
+    fi
+  else
+    rm -f "$LESSON_MANIFEST"   # empty queue: leave no stale file for Step 7 to inline
+    echo "[flush] queue empty — nothing to flush"
+  fi
+fi
+```
+
+**Step 7 consumes it.** `$LESSON_MANIFEST` carries its own `<!-- flow:lesson-flush:begin/end -->`
+markers, so Step 7 **replaces the region between those markers with the file's contents, or appends
+the file if no region is present** — never wraps it in a second pair, and never appends a duplicate
+block on a re-ship. If the file is absent, there is nothing to inline. Read-back-verify the body
+write like any other (FB-0067). **This marker is what `gh search prs` matches**, so a body that never
+receives it silently disables `/flow:contribute`'s cross-repo recovery (Step 2 input 3).
+
+**Why the split — full records committed, only a manifest in the body.** A queued record is ~1.6 KB
+of JSON; GitHub caps a PR body at 65,536 characters. Dumping full records inline overflows at **~37
+records** — i.e. precisely when the queue has been accumulating longest and the loss would be worst.
+The manifest row is ~104 bytes, so the same body holds ~600. Full fidelity lives in the committed
+files, where there is no ceiling at all.
+
+**This is a workaround for a storage defect, not a second store.** Nothing may be taught to read from
+`$FLUSH_DIR` as a primary source — the local queue remains authoritative wherever it survives, and
+`/flow:contribute` treats the flushed copy strictly as a fallback (Step 2, input 3).
+
+**Deletion criterion (FB-0088):** delete Step 4c.iv, `harvest_lesson.py flush`, and `/flow:contribute`
+Step 2 input 3 when **either** flow no longer runs on ephemeral hosts, **or** `contributionsQueuePath`
+defaults to durable storage — either makes the flush redundant. Also delete if, after two months of
+ephemeral-host use, the flush has carried **zero** lessons that the local queue did not already
+deliver — that would mean teardown loss was never the real failure and this is pure ceremony.
+**That number is measurable, not rhetorical:** `/flow:contribute` Step 2 input 3 prints
+`[drain] N of M flushed records were flush-only recoveries` into every contribution PR body, so the
+window can be answered from PR history alone.
+
 **Flow-repo nudge.** If `pwd` is the flow checkout (`flow.config.json.flowRepoPath`) and the queue is non-empty, also print `[contribute] N queued contribution(s) — run /flow:contribute to open the PR`.
 
 ## 5. Update project docs
@@ -1094,6 +1162,14 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
 > **After the create, read-back-verify (FB-0067).** `gh pr create` is unaffected by the projectCards deprecation, but a create can still land a body you didn't intend (a truncated `--body-file`, a race). Re-fetch and assert before handing off: source the helper and call `flow_verify_pr_write "$N"` — with `--forbid "🚫 NOT READY TO MERGE" --want-draft false` when `verdict == READY`, or `--expect "🚫 NOT READY TO MERGE" --want-draft true` otherwise. **Key on the verdict, not on manifest emptiness** — they diverge exactly in the case this change introduces: waive every non-`verify-build` entry and the manifest file is still non-empty while `verdict` is `READY` and `render-manifest` returns nothing, so an emptiness-keyed assertion would demand a manifest that is correctly absent and wedge Step 7. A mismatch means the body↔draft state on GitHub contradicts the manifest decision — fix it before Step 8, don't hand off a PR you never confirmed.
 
 - Short title (under 70 chars).
+- **Harvested-lesson manifest (FB-0101).** If `$FLOW_ROOT/.flow/lesson-manifest.md` exists and is
+  non-empty, inline its contents into the body. It carries its own
+  `<!-- flow:lesson-flush:begin -->` / `<!-- flow:lesson-flush:end -->` markers — **replace the
+  region between them if present, else append**; never add a second marker pair. Place it after
+  `## Flow run`. **This is load-bearing:** the marker is what `/flow:contribute` Step 2 input 3
+  matches with `gh search prs`, so a body that never receives it silently disables cross-repo
+  lesson recovery — the whole reason the flush is not merely a local directory.
+
 - Body — if `verdict != READY`, prepend this block before `## Summary` (render it; see below):
   **Do NOT hand-author this block — render it** (`lib/manifest-triage.py render-manifest`, Step 7a.6). Hand-authoring is how the engineer shorthand got there, and the renderer is what guarantees each item carries its plain-language triple. Its shape:
   ```markdown
