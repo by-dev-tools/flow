@@ -13,7 +13,7 @@ therefore worth pinning deterministically + idempotently:
                      source. Accepts a single file OR a fragmented directory
                      (one file per release) — see `_read`.
 
-  (clear-reservation was REMOVED in v1.39.0 alongside `reserved-feedback-numbers.md`.
+  (clear-reservation was REMOVED in v1.40.0 alongside `reserved-feedback-numbers.md`.
    With one file per feedback entry, an FB-number collision IS a filename collision,
    which git reports as a both-added conflict — a mechanical, unmissable check that
    replaces a protocol depending on author memory. Leaving the subcommand behind
@@ -54,7 +54,7 @@ def _read(path: str) -> str | None:
             if f.is_file() and f.name != "README.md" and not f.name.startswith("_")
         ]
         # An EMPTY directory is not the same as a corpus with no matching version.
-        # Returning "" here would make the check report "no v1.39.0 entry" when the
+        # Returning "" here would make the check report "no v1.40.0 entry" when the
         # truth is "there are no entries at all" — a misdiagnosis that sends the
         # reader to write an entry rather than to fix a broken migration.
         return "\n".join(parts) if parts else None

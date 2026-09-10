@@ -1,6 +1,6 @@
-## 2026-09-06 — Fragment the append-only docs to one file per entry, and kill the silent doc-slot fallback (v1.39.0, FB-0101/FB-0102) — SAFETY
+## 2026-09-06 — Fragment the append-only docs to one file per entry, and kill the silent doc-slot fallback (v1.40.0, FB-0101/FB-0102) — SAFETY
 
-**Branch:** `conductor/fragment-append-only-docs-one-file-per-entry` · **SHA:** [this commit] · **Version:** v1.37.0 → v1.39.0
+**Branch:** `conductor/fragment-append-only-docs-one-file-per-entry` · **SHA:** [this commit] · **Version:** v1.37.0 → v1.40.0
 
 **What was built.** `dev-docs/history.md` (3408 lines), `dev-docs/feedback.md` (1402) and `CHANGELOG.md` (656) became `dev-docs/history/`, `dev-docs/feedback/` and `changelog/` — **245 fragments, one file per entry** (106 / 84 / 55) plus a README each. `flow.config.json`'s `historyPath`, `feedbackPath` and new `changelogPath` point at the directories. `dev-docs/reserved-feedback-numbers.md` was deleted. Every doc-slot reader was hoisted onto one new shared resolver, `plugins/flow/lib/resolve-doc-slot.sh`. `changelogPath` was declared in the schema (33 → 34 slots). New eval `run_doc_slot_resolution_evals.py`, CI-wired.
 
@@ -69,7 +69,7 @@ no registry at all. That is the **fourth** FB collision in this batch of work; t
 recorded six historical renumberings before this one.
 
 After this PR, that failure is structural rather than procedural: a duplicate FB number is a duplicate **filename**, so
-git reports a both-added conflict at write time and cannot auto-merge it. The renumber to FB-0101/FB-0102/v1.39.0 was
+git reports a both-added conflict at write time and cannot auto-merge it. The renumber to FB-0101/FB-0102/v1.40.0 was
 re-derived from ground truth (`origin/main` at v1.37.0/FB-0099, #145 holding FB-0100/v1.38.0) rather than from either
 party's assertion, and all three old tokens had zero occurrences in `origin/main` — so the sweep provably touched only
 lines this branch introduced.

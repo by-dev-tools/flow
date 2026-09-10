@@ -20,7 +20,7 @@ Covers:
   cd 2 — changelog-check: absent version in a directory corpus → exit 1.
   cd 3 — changelog-check: prefix anchoring holds for directories too.
   cd 4 — changelog-check: EMPTY directory → exit 2, distinct from absent-entry.
-  cr-removed 1 — clear-reservation subcommand is gone (v1.39.0), helper still runs.
+  cr-removed 1 — clear-reservation subcommand is gone (v1.40.0), helper still runs.
   skill 1 — SKILL.md: merged-state gate is BLOCKING + fail-loud, edits nothing.
   skill 2 — SKILL.md: no-match discovery is a WARN, not a silent no-op.
   skill 3 — SKILL.md: late visual-history distill reuses §5c / insert-visual-history.py.
@@ -139,7 +139,7 @@ with tempfile.TemporaryDirectory() as d:
     rc, out, err = run("changelog-check", str(empty), "--version", "1.0.0")
     check("cd 4", rc == 2, f"empty directory must be exit 2, distinct from absent-entry (rc={rc})")
 
-# ---- clear-reservation is GONE (v1.39.0) ----
+# ---- clear-reservation is GONE (v1.40.0) ----
 # Paired assertion, per .claude/rules/general.md item 3: asserting only that the
 # subcommand is absent would also pass if the whole helper were deleted. Assert the
 # removal AND that the helper still works.

@@ -498,7 +498,7 @@ Add new entries to the configured feedback doc following the FB-XXXX format. Inc
 
 **One file per entry (FB-0101).** If the slot resolves to a **directory**, write a NEW FILE — never append to a rollup, and never create one. Filename: `FB-XXXX-<kebab-slug-of-the-headline>.md`, with the `### FB-XXXX: ...` heading kept INSIDE the file. There is deliberately no index file to update: `ls` is the index, and a committed index would recreate the very merge conflict one-file-per-entry removes (every entry would append a line to it). If the slot resolves to a single `.md` file, append as before — both shapes are supported, and `${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh` tells you which one you have.
 
-**Claiming the number.** There is no reservations file (deleted in v1.39.0). Creating and pushing the entry file IS the claim: a racing branch gets a both-added filename conflict, which git cannot auto-merge and no protocol can forget. Push it early, before you invest in cross-file `FB-XXXX` references.
+**Claiming the number.** There is no reservations file (deleted in v1.40.0). Creating and pushing the entry file IS the claim: a racing branch gets a both-added filename conflict, which git cannot auto-merge and no protocol can forget. Push it early, before you invest in cross-file `FB-XXXX` references.
 
 **Read verify-build findings buffer (if verify-build ran at Step 2).** When Step 2's `Skill("flow:verify-build")` invocation completed (ran, not skipped), read the structured findings at the path resolved from `flow.config.json.verifyFindingsPath` (default `.flow/verify-findings.json`). The buffer's JSON shape is documented at `${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/findings-schema.json` with a canonical example at `findings-example.json`.
 
@@ -705,7 +705,7 @@ The history entry above is backward-looking. The roadmap "Now" and plan "Current
 - **`flow.config.json.planPath`** (default `dev-docs/plan.md`):
   - Update "Current Focus" to the real current version + state.
   - Move shipped items from "Active Work Items" → "Recently Completed" (keep last 3–5); clear stale "Handoff Notes".
-- **Reservations:** nothing to clear. `reserved-feedback-numbers.md` was deleted in v1.39.0. With one file per feedback entry, the entry file *is* the reservation: it lands with the PR and needs no separate sweep, which removes the "reservation lingers past merge" gap this step existed to patch (and repeatedly failed to — six renumbering incidents are recorded in that file's own audit trail).
+- **Reservations:** nothing to clear. `reserved-feedback-numbers.md` was deleted in v1.40.0. With one file per feedback entry, the entry file *is* the reservation: it lands with the PR and needs no separate sweep, which removes the "reservation lingers past merge" gap this step existed to patch (and repeatedly failed to — six renumbering incidents are recorded in that file's own audit trail).
 - **Project-declared status surfaces (`flow.config.json.statusDocs`):** the two docs above are the surfaces flow knows about by name. A project may declare *additional* forward-looking status surfaces — e.g. a `CLAUDE.md` or `README.md` phase/status line that auto-loads into every session and silently rots after a sub-PR merges. Reconcile each one's fenced region to the just-shipped reality (you have that context — same as for "Current Focus"):
 
   ```sh
