@@ -106,7 +106,7 @@ with tempfile.TemporaryDirectory() as d:
     check("cc 4", rc == 2, f"missing file should be exit 2 (rc={rc})")
 
 # ---- changelog-check against a FRAGMENTED (directory) changelogPath ----
-# FB-0101: `changelogPath` may point at a DIRECTORY of one-file-per-release
+# FB-0102: `changelogPath` may point at a DIRECTORY of one-file-per-release
 # fragments. The SKILL used to guard this whole check with `[ -f "$CHANGELOG" ]`,
 # which is FALSE on a directory — so the currency check became a silent no-op that
 # never ran and never said so. These are POSITIVE assertions (a verdict is produced

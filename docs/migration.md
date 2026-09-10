@@ -286,6 +286,12 @@ short enough to restate:
    claiming one identity is the signal, not noise. Flow's own migration hit two, both
    pre-existing merge damage nobody had noticed.
 6. **Repoint the slot, then run `/flow:doctor`.** It reports the entry count per slot.
+7. **Re-run the census at every rebase, against the branch you will merge into.** Steps 3-4 verify against the source
+   *as it was when you ran the fragmenter*, which stops being true the moment anyone else merges. Any entry that lands
+   upstream after your run has no fragment, and it will disappear on merge — silently, with a clean parse. Diff each
+   source doc against the default branch and fragment anything new. Flow's own migration lost six entries this way
+   across two merges before the re-run census caught them; a one-shot verification of a moving target is a
+   verification of the past.
 
 **Two gotchas, both real:**
 

@@ -47,7 +47,7 @@ from pathlib import Path
 # Second group captures the words through "slot"/"slots" so survivor messages can render
 # them instead of Python's repr() (which would print a literal "\n" for a wrapped match).
 #
-# WORD-tolerant too (FB-0101). FB-0079 made this wrap-tolerant after `all 30\n  slots`
+# WORD-tolerant too (FB-0102). FB-0079 made this wrap-tolerant after `all 30\n  slots`
 # slipped a line-oriented grep; the generalization it missed is that flow's own prose
 # also writes an adjective between the number and the noun — "all 33 schema slots",
 # "34 config slots". A stale `33 schema slots` sat in doctor/SKILL.md through this very

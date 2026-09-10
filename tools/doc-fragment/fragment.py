@@ -123,6 +123,24 @@ def slice_source(text: str, g: Grammar):
     """Return (non_entry_slices, entries) where entries is a list of
     (start, end, ident, heading_line). Slices tile the source exactly."""
     marks = [(m.start(), m) for m in g.heading_re.finditer(text)]
+
+    # history.md carries TWO entry shapes because the doc was restructured mid-life:
+    # newer entries are `## YYYY-MM-DD - Title`, older ones are `### Title` + a
+    # `**Date:**` line, and the older block lives below a `## Entries` marker. An H3 is
+    # therefore only an ENTRY below that marker; above it, an H3 is a SUB-HEADING inside
+    # a newer H2 entry.
+    #
+    # The original migration did not hit this because no H2 entry then contained an H3.
+    # #145's entry does ("### The class, not the instance"), and the tool mis-sliced it
+    # into three fragments -- silently, since byte conservation still holds when you cut
+    # one entry into pieces. Caught only because a later census crashed on the piece with
+    # no `**Date:**` line. The census is what made a silent mis-slice loud; the guard
+    # below is what stops it happening.
+    if g.name == "history":
+        m_entries = re.search(r"^## Entries\s*$", text, re.M)
+        cut = m_entries.start() if m_entries else len(text)
+        marks = [(pos, m) for pos, m in marks
+                 if m.group(0).startswith("## ") or pos > cut]
     if not marks:
         raise SystemExit(f"[fragment] no entries matched the '{g.name}' grammar — refusing to write.")
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 # resolve-doc-slot.sh -- the ONE way a flow surface resolves a doc-path config slot.
 #
-# WHY THIS EXISTS (FB-0101/FB-0102). Every doc-slot reader used to inline its own
+# WHY THIS EXISTS (FB-0102/FB-0103). Every doc-slot reader used to inline its own
 # `[ -f "$X" ] && echo "$X" || echo "(no ... doc at $X)"`. Three properties made that
 # a latent bug factory:
 #

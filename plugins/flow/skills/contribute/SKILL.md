@@ -86,7 +86,7 @@ This is the data a future auto-merge rung trains its threshold on (deferred — 
    ```sh
    python3 "$SCRIPTS/contribution_store.py" list   # pending entries, sorted by confidence
    ```
-2. **Flushed lessons from ephemeral hosts** (FB-0101 — *fallback only*): a ship on a cloud workspace
+2. **Flushed lessons from ephemeral hosts** (FB-0102 — *fallback only*): a ship on a cloud workspace
    flushes its queue into the PR (ship Step 4c.iv), because that workspace's user-scope queue dies at
    teardown. Discover them **cross-repo** — `gh search prs` indexes PR bodies and reaches private
    repos the token can read, which is what makes the cross-project contract survive teardown:
@@ -113,7 +113,7 @@ This is the data a future auto-merge rung trains its threshold on (deferred — 
 
    **Count flush-only recoveries, and carry the number into the contribution PR body:**
    `[drain] N of M flushed records were flush-only recoveries (absent from the local queue)`.
-   This is the instrument FB-0101's third deletion criterion depends on — without it, "the flush has
+   This is the instrument FB-0102's third deletion criterion depends on — without it, "the flush has
    carried zero lessons the local queue did not already deliver" is unanswerable, and an unfalsifiable
    deletion criterion is decoration (the exact failure FB-0088 exists to prevent). With it, the
    question is answerable from PR history alone: grep the contribution PRs over the window; all-zero

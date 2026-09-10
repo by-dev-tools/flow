@@ -3,7 +3,7 @@
 ## Current Focus
 
 **▶ SHIPPING (this branch, `conductor/spike-agentsmd-vs-skills-packaging-evals`, v1.37.0 unchanged): SPIKE — AGENTS.md vs skill-shaped packaging.** Docs-only (new `dev-docs/research/2026-09-agents-md-vs-skills.md` + one `dev-docs/README.md` index row); zero `plugins/flow/**` touched, no version bump. Answers "is flow's architecture wrong given Vercel's 'AGENTS.md outperforms skills' post?" **Recommendation: proceed — change no packaging, fix the loading.** The headline doesn't survive its own evidence (the results figure contradicts the tables at n=11, single run; the winner is a `CLAUDE.md`; ≥3 uncontrolled variables), SkillsBench (9,396 trajectories) runs the other way, and correctly scoped the finding lands on 1 of flow's 22 skills. **But three human-approved experiments found a bigger bug than the question:** E1 measured that `paths:` on a `SKILL.md` never activates → flow's four rule-skills have not loaded for any consumer since v1.33.0 (third FB-0085-class instance, second created by Phase 00 itself). Routed to roadmap § Now as **S0** (fix + upgrade `/flow:doctor` Check 3.2 from "registered" to "activates"; guardrail: do NOT close by deleting `paths:` — the FB-0077 shape). Also routed: **S2** (`exploration`'s globs reach 1 of 4 consumer repos, § Next), **E2** (`log-disagreement` capture rate, inconclusive → § Exploration), **S1** (hoist `ship`'s auto-invoke predicate out of `description:`, § Exploration), and an **AB Step 1b** correction (`harness_audit.py:157` counts the 85 KB `workflow.md` as always-loaded when nothing loads it — ~3× overcount, live bug in merged #136). See `dev-docs/history/2026-09-04-spike-agents-md-vs-skill-shaped-packaging-is-flow-s-architec.md`.
-**▶ Active (this branch, `conductor/fragment-append-only-docs-one-file-per-entry`, v1.40.0, FB-0101/FB-0102): fragment the append-only docs to one file per entry + kill the silent doc-slot fallback.** `history.md` / `feedback.md` / `CHANGELOG.md` → 245 one-file-per-entry fragments across `dev-docs/history/`, `dev-docs/feedback/` and `changelog/`; `plan.md` + `roadmap.md` deliberately untouched (edited in place, and they feed the Spec-walk parser). All ten doc-slot readers hoisted onto the new loud `plugins/flow/lib/resolve-doc-slot.sh`; `changelogPath` declared (33 → 34 slots); `reserved-feedback-numbers.md` deleted. Byte conservation proved from disk by an independent reassembler on all three docs. See the "PR — Fragment the append-only docs" block below for the full Spec-walk and the four resolved open calls.
+**▶ Active (this branch, `conductor/fragment-append-only-docs-one-file-per-entry`, v1.40.0, FB-0102/FB-0103): fragment the append-only docs to one file per entry + kill the silent doc-slot fallback.** `history.md` / `feedback.md` / `CHANGELOG.md` → 245 one-file-per-entry fragments across `dev-docs/history/`, `dev-docs/feedback/` and `changelog/`; `plan.md` + `roadmap.md` deliberately untouched (edited in place, and they feed the Spec-walk parser). All ten doc-slot readers hoisted onto the new loud `plugins/flow/lib/resolve-doc-slot.sh`; `changelogPath` declared (33 → 34 slots); `reserved-feedback-numbers.md` deleted. Byte conservation proved from disk by an independent reassembler on all three docs. See the "PR — Fragment the append-only docs" block below for the full Spec-walk and the four resolved open calls.
 
 **▶ Active (this branch, `conductor/ship-spike-audits-its-own-skips-gate-machinery`, v1.38.0, FB-0100): `/flow:ship-spike` audits its own skips.** Spike mode was the skip-heaviest path in the workflow and the only one that audited none of its skips — `/flow:ship` invokes five reviewers then `/flow:audit-skips`; ship-spike invoked one, and its only mention of the audit was the admission that it never called it (#140 shipped five unaudited skips). Adds ship-spike Step 2a (the same stamped repo-local handoff + `Skill("flow:audit-skips")`), runs security + a11y in spike mode (the disposability rationale covers code *quality*, not a permanent commit's secrets or a pattern a human approves on a prototype), makes the engine refuse `spike`/`tiny` as a skip reason for every stage outside a closed two-member allowlist (`{simplify, staff-review}`), adds a `preflight` stage and `plan_mode` evidence, and fixes `allowed-tools` missing `Skill` (a second inert-gate shape). Human decided both open calls at the plan gate; the `preflight`-row scope stayed spike-only **conditional on** the drift-pin genuinely covering the new row — verified, which required strengthening the pin from a string grep to a behavioural engine join. See the "PR — ship-spike audits its own skips" block below.
 
@@ -27,7 +27,7 @@
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
 
-## PR — Fragment the append-only docs to one file per entry + kill the silent doc-slot fallback (this branch, `conductor/fragment-append-only-docs-one-file-per-entry`, FB-0101/FB-0102, v1.40.0, EXECUTED — shipping)
+## PR — Fragment the append-only docs to one file per entry + kill the silent doc-slot fallback (this branch, `conductor/fragment-append-only-docs-one-file-per-entry`, FB-0102/FB-0103, v1.40.0, EXECUTED — shipping)
 
 **Restated request.** Implement an already-approved design decision: fragment `dev-docs/history.md`, `dev-docs/feedback.md` and `CHANGELOG.md` into one file per entry (towncrier / changesets pattern), so the dominant source of merge conflicts stops existing. Config slots point at the **directory**, never at a committed rollup (a committed rollup recreates the exact conflict being removed — load-bearing, not a preference). Delete `dev-docs/reserved-feedback-numbers.md`, because with one file per entry an FB-number collision *is* a filename collision. Leave `plan.md` and `roadmap.md` alone — they are edit-in-place, they feed the positional Spec-walk parser, and their current shape is what makes them readable as current state. No git union merge driver (tested and rejected upstream: GitHub ignores user-defined `.gitattributes` for PR mergeability, and union is actively unsafe on edit-in-place files). Additionally record two feedback entries the design session asked for. **Stop at the plan gate.** Never merge.
 
@@ -35,7 +35,7 @@
 
 **Version:** v1.40.0. `main` is at v1.37.0 (`478fe17`, #142 merged). Open PRs #143 and #144 are docs/spike and claim no bump. Re-verify at rebase.
 
-**FB numbers:** FB-0101 (framing correction) + FB-0102 (silent-deletion class). **Renumbered once, mid-ship:** drafted as FB-0100/FB-0101, but PR #145 (`/flow:ship-spike` audits its own skips) was open, MERGEABLE and claiming FB-0100 *and* v1.38.0. Caught by the human reading the numbers, not by any mechanical check — which is the fourth FB collision in this batch of work and the sharpest possible argument for the part of this PR that deletes `dev-docs/reserved-feedback-numbers.md`: after fragmentation a duplicate number is a duplicate **filename**, so git would have reported a both-added conflict at write time instead. Re-derived from ground truth rather than trusting either message: `origin/main` shows v1.37.0 / FB-0099, #145 holds FB-0100 / v1.38.0, so the next free values are FB-0101, FB-0102 and v1.40.0. All three tokens had **zero** occurrences in `origin/main`, so the sweep touched only lines this branch added. Re-verify at rebase — #145 may merge first.
+**FB numbers:** FB-0102 (framing correction) + FB-0103 (silent-deletion class). **Renumbered once, mid-ship:** drafted as FB-0100/FB-0102, but PR #145 (`/flow:ship-spike` audits its own skips) was open, MERGEABLE and claiming FB-0100 *and* v1.38.0. Caught by the human reading the numbers, not by any mechanical check — which is the fourth FB collision in this batch of work and the sharpest possible argument for the part of this PR that deletes `dev-docs/reserved-feedback-numbers.md`: after fragmentation a duplicate number is a duplicate **filename**, so git would have reported a both-added conflict at write time instead. Re-derived from ground truth rather than trusting either message: `origin/main` shows v1.37.0 / FB-0099, #145 holds FB-0100 / v1.38.0, so the next free values are FB-0102, FB-0103 and v1.40.0. All three tokens had **zero** occurrences in `origin/main`, so the sweep touched only lines this branch added. Re-verify at rebase — #145 may merge first.
 
 ---
 
@@ -152,7 +152,7 @@ The reassembler used by check 1 is deleted after the migration. Keeping it aroun
 `dev-docs/reserved-feedback-numbers.md` is deleted. The decision calls the replacement "strictly better, and free." I checked that claim rather than repeating it, and it holds — but for a slightly different reason than stated:
 
 - The file's own argument for existing is that it is a **claim-time** defence (early push ⇒ conflict before either branch invests in cross-file `FB-XXXX` references), whereas a filename collision is **merge-time**. That would be a real regression in timing.
-- Except the replacement recovers claim-time too, for free: with one file per entry, *claiming is pushing an empty `dev-docs/feedback/FB-0101-<slug>.md`*. Same early-push race detection, but the artifact is the entry itself rather than a line in a second file.
+- Except the replacement recovers claim-time too, for free: with one file per entry, *claiming is pushing an empty `dev-docs/feedback/FB-0102-<slug>.md`*. Same early-push race detection, but the artifact is the entry itself rather than a line in a second file.
 - And the reliability is genuinely better: the current file records **six separate renumbering incidents** (FB-0047, FB-0061, FB-0073, FB-0078/0079, FB-0080/0081, FB-0092→0093→0095). Its conflict surface is a free-form log that git auto-merges happily — the protocol depended on author memory, which is the FB-0010 headline class. A both-added filename conflict cannot be auto-merged and cannot be forgotten.
 
 **Consequence that must ship in the same PR:** deleting the file makes `land/SKILL.md:347` (`[ -f "$RESV" ] && … clear-reservation`) a permanent silent no-op — a *new* instance of the exact class this PR exists to kill.
@@ -183,7 +183,7 @@ New `plugins/flow/evals/run_doc_slot_resolution_evals.py`, wired into `.github/w
 
 ### 7. Spec-walk
 
-- [x] Re-read version + FB high-water at rebase; confirm v1.40.0 and FB-0101/FB-0102 still free against `main` and every open PR.
+- [x] Re-read version + FB high-water at rebase; confirm v1.40.0 and FB-0102/FB-0103 still free against `main` and every open PR.
 - [x] `plugins/flow/lib/resolve-doc-slot.sh` — **six**-state resolver (FILE / DIR / DIR-scaffolded / ⚠️EMPTY / ⚠️MISSING-but-set / quiet-unset-default), two-tier `${CLAUDE_PLUGIN_ROOT}` → `plugins/flow/` path fallback, `⚠️` if the resolver itself is unfindable. **Corrected from the drafted plan:** the draft claimed "semver-aware ordering for changelog dirs" — there is no semver logic in the resolver and none was needed; ordering is `ls -v`, documented in `changelog/README.md`. The `/simplify` altitude lens caught the box describing a feature the code does not have. The sixth state (scaffolded) was added in the same pass — see the doctor line below for why.
 - [x] All **8** doc-slot context preludes converted to call it: `security-review:35,36`, `accessibility-review:35,36`, `staff-review:34,35,36`, `verify-build:37`. The four not repointed by this decision (`specPath`, `designLanguagePath`, `planPath`) are converted too — the latent bug is fixed once, not left armed.
 - [x] `land/SKILL.md:295` CHANGELOG-currency block made directory-aware; `land-helpers.py changelog-check` accepts a directory and resolves `vX.Y.Z.md`.
@@ -202,9 +202,46 @@ New `plugins/flow/evals/run_doc_slot_resolution_evals.py`, wired into `.github/w
 - [x] `template/base/core-docs/` + `bootstrap.sh` (`template/base/bootstrap.sh:151` glob) updated so a fresh project scaffolds directories, not files.
 - [x] Consumer-facing docs updated: `plugins/flow/docs/workflow.md` (slot table L586/L590, §"Continuous improvement"), `docs/migration.md`, `docs/upgrade.md` (an existing consumer's migration path), `README.md`, `CLAUDE.md` repo-layout tables.
 - [x] `dev-docs/README.md` index updated for the new directories.
-- [x] FB-0101 (append-only vs edited-in-place; reference count ≠ coupling; existence-testing readers are the third category) + FB-0102 (silent-deletion class, with the FB-0072 and F11 artifacts as evidence) written as fragments.
+- [x] FB-0102 (append-only vs edited-in-place; reference count ≠ coupling; existence-testing readers are the third category) + FB-0103 (silent-deletion class, with the FB-0072 and F11 artifacts as evidence) written as fragments.
 - [x] History fragment, `dev-docs/plan.md` (this block), `dev-docs/roadmap.md` Now headline, `changelog/v1.40.0.md`.
 - [x] Full eval suite green (`ci.yml` evals + security + dev-docs jobs).
+**Declared post-approval (7 from `/flow:audit-coverage`, + 1 from the rebase).** These behaviours were added DURING review — `/simplify`, `/flow:staff-review`
+and `/flow:security-review` each found real defects, and fixing them changed behaviour this plan did not describe.
+`/flow:audit-coverage` flagged all seven as undeclared. The orchestrator declared them rather than routing to the
+human, on the reasoning that the code is identical under declare-vs-waive so the call is documentation placement, not
+substance — and that declaring records verification which already exists rather than authoring a bar to clear. Every
+one has a passing mechanical check, named inline.
+
+- [x] **SECURITY — the cwd-relative helper-resolution tier is GATED on a flow-checkout marker** (a `plugin.json`
+      naming `flow`). Ungated, a repository *under review* supplies the file `sh` executes whenever
+      `CLAUDE_PLUGIN_ROOT` is unset, and `sh <file>` ignores the exec bit — auto-firing on the four cold-read
+      reviewers, `/flow:security-review` included. Flow's own dogfooding still resolves; a consumer or hostile repo
+      gets the loud not-found branch. *Verified:* `sec 1` / `sec 2` (paired, so deleting the fallback cannot satisfy
+      it); exploit reproduced end-to-end, then confirmed closed.
+- [x] **CONSUMER-VISIBLE — `skills/documentation` activates on `**/history/*.md` + `**/feedback/*.md` as well as the
+      single-file globs.** For an upgrader: nothing changes unless they fragment; if they do, the entry-format rules
+      keep auto-loading (without this they would silently stop), and the rules now also fire on any unrelated
+      `history/` or `feedback/` directory in their repo. *Verified:* 4 paired glob checks, red-verified.
+- [x] Seventh resolver state: a SET slot pointing at an existing **zero-byte file** resolves loud, not
+      `FILE (0 lines)` — the truncated-by-merge case FB-0103 documents. Unset slot at that path stays quiet.
+      *Verified:* `state 7b`.
+- [x] `changelogPath` added to `/flow:doctor` Check 2.4's `DOC_SLOTS`, so the newest doc-path slot is not silently
+      excluded from the coverage claim FB-0098 shipped to make honest. *Verified:* `cov doctor-changelogPath`.
+- [x] `.gitignore` un-ignores each committed `tools/` package while KEEPING generated artifacts ignored
+      (`tools/**/samples*`, `__pycache__/`, re-excluded AFTER the negations — ordering is load-bearing).
+      *Verified:* `git check-ignore` both spellings + `run_shadow_sampler_evals.py` (CI-wired) staying green.
+- [x] `slot_count_scan.py` tolerates up to two interposed words ("33 schema slots"), so a stale count with an
+      adjective fails instead of reporting green. *Verified:* `cov slot-scan-word-tolerant` + a no-false-positive twin.
+- [x] The reference-doc directory skip list is exactly `{history, handoffs, research}`, asserted per-directory rather
+      than only for `history`. *Verified:* `cov skip-dir` ×3.
+
+**The eighth is not one of audit-coverage's seven** — it came out of the rebase, after two real losses:
+
+- [x] **Post-fork census** — re-diff each source doc against `origin/main` at rebase and fragment anything that landed
+      since the fragmentation run. Not in the original plan; added after two real losses (#145's FB-0100 and #147's
+      FB-0101, plus two changelog releases and two history entries). *Verified:* census reconciles at **0 missing**
+      across all three docs against current `main`.
+
 - [ ] `/flow:ship`.
 
 ---
@@ -219,9 +256,9 @@ New `plugins/flow/evals/run_doc_slot_resolution_evals.py`, wired into `.github/w
 
 **Files touched (est.):** `plugins/flow/lib/resolve-doc-slot.sh` (new), 5 reviewer/verify `SKILL.md`s, `land/SKILL.md` + `land/lib/land-helpers.py`, `ship/SKILL.md`, `ship-spike/SKILL.md`, `doctor/SKILL.md`, `schema/flow.config.schema.json`, `evals/run_doc_slot_resolution_evals.py` (new) + `run_land_evals.py`, `.github/workflows/ci.yml`, `tools/doc-fragment/fragment.py` (new), `template/base/*`, `flow.config.json`, `docs/{migration,upgrade}.md`, `plugins/flow/docs/workflow.md`, `README.md`, `CLAUDE.md`, and the three doc migrations (~240 fragments + 3 READMEs, 3 deletions).
 
-**▶ EXECUTED, shipping (this branch, `conductor/spike-designmd-investigation-vercel-agentic-design-guidance`, v1.39.0, FB-0101): harvested lessons survive an ephemeral workspace.** The contribution queue lives in user-scope storage that dies at cloud-workspace teardown — so in that environment the single-source bar stops *deferring* weak signals and starts *destroying* them (`recurrence_count` is pinned at 1 forever). Fix the storage, not the bar: ship/ship-spike Step 4c.iv flushes the queue into the PR (full records committed; **bounded** manifest in the body — inline records overflow GitHub's 65,536-char cap at ~37, measured). `/flow:contribute` gains a subordinate cross-repo recovery input. Orchestrator seat gets an **instruction**, not a mechanism. Marker (AB.1b) and memory (§ Exploration) deliberately NOT unified — three stores, three scopes. See the "PR — Ephemeral-host lesson durability" block below.
+**▶ EXECUTED, shipping (this branch, `conductor/spike-designmd-investigation-vercel-agentic-design-guidance`, v1.39.0, FB-0102): harvested lessons survive an ephemeral workspace.** The contribution queue lives in user-scope storage that dies at cloud-workspace teardown — so in that environment the single-source bar stops *deferring* weak signals and starts *destroying* them (`recurrence_count` is pinned at 1 forever). Fix the storage, not the bar: ship/ship-spike Step 4c.iv flushes the queue into the PR (full records committed; **bounded** manifest in the body — inline records overflow GitHub's 65,536-char cap at ~37, measured). `/flow:contribute` gains a subordinate cross-repo recovery input. Orchestrator seat gets an **instruction**, not a mechanism. Marker (AB.1b) and memory (§ Exploration) deliberately NOT unified — three stores, three scopes. See the "PR — Ephemeral-host lesson durability" block below.
 
-## PR — Ephemeral-host lesson durability: queue flush + orchestrator close-out (this branch, FB-0101, v1.39.0, EXECUTED — shipping)
+## PR — Ephemeral-host lesson durability: queue flush + orchestrator close-out (this branch, FB-0102, v1.39.0, EXECUTED — shipping)
 
 **Mode:** feature (script + two skill steps + one drain input + docs + eval). `platform: library` ⇒ `/flow:verify-build` self-skips; no browser-UI files in the diff ⇒ security/a11y self-skip on file patterns.
 
@@ -231,7 +268,7 @@ New `plugins/flow/evals/run_doc_slot_resolution_evals.py`, wired into `.github/w
 - [x] `/flow:ship` + `/flow:ship-spike` Step 4c.iv wired identically (the consistency is the value). *Verified:* both files, same block.
 - [x] `/flow:contribute` Step 2 input 3 — cross-repo recovery via `gh search prs`, local queue takes precedence, eventual-consistency caveat stated.
 - [x] Orchestrator close-out in `dev-docs/workflow.md`, resolved through `feedbackPath` (survives the fragmentation sibling).
-- [x] FB-0101 written + number reserved; roadmap § Exploration for memory; AB.1b left to own the marker.
+- [x] FB-0102 written + number reserved; roadmap § Exploration for memory; AB.1b left to own the marker.
 - [x] Eval CI-wired (FB-0056: an un-wired eval provides zero standing protection).
 - [x] Version 1.37.0 → **1.39.0** (1.38.0 claimed by open #145) across `plugin.json` + `marketplace.json`; no stale refs.
 

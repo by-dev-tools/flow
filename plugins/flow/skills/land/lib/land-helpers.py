@@ -36,7 +36,7 @@ def _read(path: str) -> str | None:
     """Read a changelog source that is EITHER a single file or a fragmented
     directory (one file per release).
 
-    FB-0101: `changelogPath` may now point at a directory. The caller used to guard
+    FB-0102: `changelogPath` may now point at a directory. The caller used to guard
     this whole check with `[ -f "$CHANGELOG" ]`, which is FALSE on a directory — so
     a directory-valued slot made the currency check a silent no-op: it never ran and
     never said so. That is the same class as FB-0082, and it is worse here than at

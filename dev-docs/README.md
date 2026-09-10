@@ -41,7 +41,7 @@ Each is accurate as of its date and is **not** maintained afterward. Read the St
 
 ### Also: `dev-docs/contributions-rescue/` (temporary)
 
-Three lesson-contribution queue records rescued from an ephemeral cloud workspace on 2026-09-04, before the FB-0101 flush mechanism existed. **Expected to be deleted** once they are drained or dismissed by `/flow:contribute` — see that directory's README for the deletion criterion. Nothing should be taught to read from it.
+Three lesson-contribution queue records rescued from an ephemeral cloud workspace on 2026-09-04, before the FB-0102 flush mechanism existed. **Expected to be deleted** once they are drained or dismissed by `/flow:contribute` — see that directory's README for the deletion criterion. Nothing should be taught to read from it.
 
 ### Also: repo-root `research/`
 

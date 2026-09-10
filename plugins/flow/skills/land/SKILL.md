@@ -250,7 +250,7 @@ case "$HEADREF" in
     HEADREF="" ;;
 esac
 PAT="#${N}\b"; [ -n "$HEADREF" ] && PAT="${PAT}|${HEADREF}"
-# `-r` (FB-0101): $HISTORY may be a DIRECTORY of one-file-per-entry fragments.
+# `-r` (FB-0102): $HISTORY may be a DIRECTORY of one-file-per-entry fragments.
 # Plain `grep` on a directory emits "Is a directory" to stderr and contributes no
 # matches, so the history half of this sweep would silently drop out while the
 # roadmap/plan halves still matched -- a PARTIAL result that looks like a whole
@@ -299,7 +299,7 @@ CHANGELOG=$(jq -r '.changelogPath // "CHANGELOG.md"' flow.config.json 2>/dev/nul
 # Resolve the shipped version from the manifest the merge updated.
 VSRC=""; for c in plugins/flow/.claude-plugin/plugin.json .claude-plugin/plugin.json package.json; do [ -f "$c" ] && { VSRC="$c"; break; }; done
 VER=$(jq -r '.version // empty' "$VSRC" 2>/dev/null)
-# NOT `[ -f "$CHANGELOG" ]` (FB-0101). `changelogPath` may point at a DIRECTORY --
+# NOT `[ -f "$CHANGELOG" ]` (FB-0102). `changelogPath` may point at a DIRECTORY --
 # flow's own does, and one-file-per-release is the recommended shape -- and `-f` is
 # FALSE on a directory, which made this entire block a SILENT no-op: the currency
 # check never ran and never said so. `-e` covers both; the helper itself resolves

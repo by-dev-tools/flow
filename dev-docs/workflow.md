@@ -44,7 +44,7 @@ Use `/clear` between agent phases to keep context small.
 2. Domain/Testing Agent: apply the corrected approach
 3. Docs Agent: document feedback in feedback.md, update history.md
 
-## Orchestrator close-out — record your own lessons as they land (FB-0101)
+## Orchestrator close-out — record your own lessons as they land (FB-0102)
 
 **Who this is for:** the coordinating seat — the session that dispatches workers, reviews their PRs
 and holds the merge gate. Not the workers.
@@ -60,7 +60,7 @@ project's feedback doc** as `FB-XXXX` entries (claim the number in the reservati
 land them as a small docs PR like any other change.
 
 **Do it when the lesson lands, not at archive time.** "Before archiving" is the obvious trigger and
-it is the wrong one: FB-0101 records the human archiving six workspaces in one day without checking
+it is the wrong one: FB-0102 records the human archiving six workspaces in one day without checking
 any of them, which is exactly the failure this section exists to prevent — a close-out step that
 fires only at close-out inherits the same miss. Write the entry in the same session the lesson
 appears, while the evidence is still in context.

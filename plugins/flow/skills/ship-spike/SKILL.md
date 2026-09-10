@@ -321,7 +321,7 @@ A docs-only spike — the common case — rules clean here without noise: those 
 
 The point of a spike is the learning, not the code. The history entry (path from `flow.config.json.historyPath`; default `dev-docs/history.md`) is the canonical artifact.
 
-**One file per entry (FB-0101).** If the slot resolves to a **directory**, write a NEW FILE — never append to a rollup, and never create one. Filename: `YYYY-MM-DD-<kebab-slug-of-the-title>.md`, with the `## YYYY-MM-DD — Title` heading kept INSIDE the file. There is deliberately no index file to update: `ls` is the index, and a committed index would recreate the very merge conflict one-file-per-entry removes (every entry would append a line to it). If the slot resolves to a single `.md` file, append as before — both shapes are supported, and `${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh` tells you which one you have.
+**One file per entry (FB-0102).** If the slot resolves to a **directory**, write a NEW FILE — never append to a rollup, and never create one. Filename: `YYYY-MM-DD-<kebab-slug-of-the-title>.md`, with the `## YYYY-MM-DD — Title` heading kept INSIDE the file. There is deliberately no index file to update: `ls` is the index, and a committed index would recreate the very merge conflict one-file-per-entry removes (every entry would append a line to it). If the slot resolves to a single `.md` file, append as before — both shapes are supported, and `${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh` tells you which one you have.
 
 Add an entry with:
 
@@ -417,7 +417,7 @@ python3 "$S/harvest_lesson.py" mark --marker-file "$MARKER"
 
 Print one line — `[analyze] N findings: P project-local, F flow-generalizable, D dropped (noise/low-confidence)` (or the pre-scan skip line). Never silent.
 
-**Step 4c.iv — Flush the queue into the PR so it survives teardown (FB-0101).**
+**Step 4c.iv — Flush the queue into the PR so it survives teardown (FB-0102).**
 
 The queue lives in user-scope storage (`contributionsQueuePath`). That is right on a persistent
 machine, and the cross-project contract *requires* it to sit outside any one project tree. But on an
@@ -556,7 +556,7 @@ produced; `—` when routine. Resolve every `<...>` placeholder before publishin
 ## Full writeup
 See the history doc entry "Spike: <title>".
 
-<!-- If $FLOW_ROOT/.flow/lesson-manifest.md exists and is non-empty, inline it HERE (FB-0101).
+<!-- If $FLOW_ROOT/.flow/lesson-manifest.md exists and is non-empty, inline it HERE (FB-0102).
      It carries its own flow:lesson-flush markers — replace the region if present, else append.
      The marker is what /flow:contribute matches via `gh search prs`; omitting it silently
      disables cross-repo lesson recovery. -->

@@ -58,7 +58,7 @@ every private-repo token (`health-tracker`, `ripe`, `music-app`, `byamron`, `por
 ## Deletion criterion (FB-0088)
 
 **Superseded in the same PR that created it.** `/flow:ship` + `/flow:ship-spike` Step 4c.iv now
-flush the queue automatically (`harvest_lesson.py flush`, FB-0101), so a future teardown does not
+flush the queue automatically (`harvest_lesson.py flush`, FB-0102), so a future teardown does not
 need a manual rescue. This directory is the *one* hand-made instance that motivated the mechanism.
 
 **Delete this entire directory when these three records have been drained or explicitly dismissed by

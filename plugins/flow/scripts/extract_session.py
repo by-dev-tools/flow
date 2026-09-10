@@ -40,7 +40,7 @@ DEFAULT_REFERENCE_SKIP_NAMES = {
     "roadmap.md",
 }
 
-# FB-0101: the skip above is BY FILENAME, which is a prohibition satisfiable by
+# FB-0102: the skip above is BY FILENAME, which is a prohibition satisfiable by
 # deletion. Once history.md is fragmented into a `history/` directory the
 # "history.md" entry matches nothing -- it silently stops protecting anything while
 # still looking like a guard -- and any widening of `referenceGlob` would flood the
@@ -451,7 +451,7 @@ def gather_reference_docs(
                 continue
         if resolved.name in skip_names:
             continue
-        # Directory-level skip (FB-0101). The name-based skip above stops
+        # Directory-level skip (FB-0102). The name-based skip above stops
         # protecting anything the moment a skipped doc becomes a directory of
         # fragments, and `history/2026-*.md` would otherwise flood the reference
         # set. Checked against the path's parts relative to cwd, so a top-level

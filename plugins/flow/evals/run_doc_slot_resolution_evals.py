@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression harness for doc-slot resolution (FB-0101).
+"""Regression harness for doc-slot resolution (FB-0102).
 
 THE BUG THIS PINS. Every doc-slot reader used to inline its own
 `[ -f "$X" ] && echo "$X" || echo "(no ... doc at $X)"`. Three properties made that
@@ -304,7 +304,7 @@ with tempfile.TemporaryDirectory() as d:
 
     # state 7 — a SET slot pointing at a ZERO-BYTE file. Loud, for the same reason the
     # empty directory is loud: the slot resolves to no context. This is the state every
-    # un-migrated consumer sits in (the schema defaults are single files), and FB-0102's
+    # un-migrated consumer sits in (the schema defaults are single files), and FB-0103's
     # thesis is that a merge can silently empty a doc.
     (w / "docs" / "truncated.md").write_text("")
     out = run_resolver(w, "planPath", "docs/plan.md")

@@ -22,11 +22,11 @@ Needs an **option decision at a human gate** (ascending cost): **(a)** confirm-a
 
 Canonical: `research/2026-08-23-flow-cloud-workflow-plan.md`. One orchestrator workspace per repo spawns + drives implementation workspaces (each running the flow loop); the human works from the orchestrator seat, keeping the plan-approval + merge gates. **Three fronts:** D1 prototype-first gate (Phase 0 + Phase 1 shipped; Phase 2 next); the cloud workflow (`toolchain` manifest-kind keystone -> orchestrator dispatch, §5 execution sequence); model selection for spawned workspaces (measurement-first, item M). Shipped #122 / #124 (land-elimination §4.5) / #126 (PHASE0 sweep fix) / #128 (D1 Phase 0) / this D1 Phase 1 PR; orchestration proven end-to-end 2026-08-25 via the `conductor` CLI. **M** (per-subagent model routing) and **AB** (attention-budget audit) — the 2026-08-14 Anthropic-canon items (FB-0084) — fold into this program: M is front (3); AB stays scoped in § Next. Both remain detailed in § Next below.
 
-**Plugin at v1.40.0 (this PR — fragment the append-only docs to one file per entry, and kill the silent doc-slot fallback; FB-0101/FB-0102). `dev-docs/history.md` / `dev-docs/feedback.md` / `CHANGELOG.md` became `dev-docs/history/` (106), `dev-docs/feedback/` (84) and `changelog/` (55) — 245 fragments, one file per entry, no rollup and no index (both would recreate the conflict being removed; `ls` is the index). `plan.md` and `roadmap.md` are deliberately untouched: they are edited in place, not appended to, and they feed the positional Spec-walk parser. New shared `plugins/flow/lib/resolve-doc-slot.sh` replaces ten inline `[ -f "$X" ]` doc-slot readers — `[ -f ]` is false on a directory and the fallback was silent, so a misconfigured slot looked exactly like a project that has none (the FB-0082 class). `changelogPath` finally declared in the schema (33 → 34). `reserved-feedback-numbers.md` deleted: a duplicate FB number is now a duplicate filename. Two live merge-damaged entries found in `main` by the migration and **preserved, not repaired** — see `dev-docs/history/2026-09-06-fragment-append-only-docs-one-file-per-entry.md`.)** Recently shipped: **v1.37.0 (`/flow:doctor` slot-coverage honesty + design-language template, FB-0098).**
+**Plugin at v1.40.0 (this PR — fragment the append-only docs to one file per entry, and kill the silent doc-slot fallback; FB-0102/FB-0103). `dev-docs/history.md` / `dev-docs/feedback.md` / `CHANGELOG.md` became `dev-docs/history/` (106), `dev-docs/feedback/` (84) and `changelog/` (55) — 245 fragments, one file per entry, no rollup and no index (both would recreate the conflict being removed; `ls` is the index). `plan.md` and `roadmap.md` are deliberately untouched: they are edited in place, not appended to, and they feed the positional Spec-walk parser. New shared `plugins/flow/lib/resolve-doc-slot.sh` replaces ten inline `[ -f "$X" ]` doc-slot readers — `[ -f ]` is false on a directory and the fallback was silent, so a misconfigured slot looked exactly like a project that has none (the FB-0082 class). `changelogPath` finally declared in the schema (33 → 34). `reserved-feedback-numbers.md` deleted: a duplicate FB number is now a duplicate filename. Two live merge-damaged entries found in `main` by the migration and **preserved, not repaired** — see `dev-docs/history/2026-09-06-fragment-append-only-docs-one-file-per-entry.md`.)** Recently shipped: **v1.37.0 (`/flow:doctor` slot-coverage honesty + design-language template, FB-0098).**
 
 **Plugin at v1.37.0 (this PR — `/flow:doctor` slot-coverage honesty + design-language template, FB-0098: Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source, not by editing any project's config. New `template/base/core-docs/design-language.md` (shape only). Doctor's frontmatter no longer over-promises "all 33 slots have sensible values." See `dev-docs/history.md` 2026-09-03.)** Recently shipped: **v1.36.0 (`/flow:doctor` Check 2.5's slot-count guard hoisted to the shared, wrap-tolerant predicate flow runs on itself; FB-0096).**
 
-**Plugin at v1.39.0 (shipped — SAFETY: harvested lessons now survive an ephemeral workspace. The lesson-contribution queue lives in user-scope storage that a cloud workspace destroys at teardown, so in that environment the source-diversity bar stopped *deferring* weak signals and started *destroying* them — `recurrence_count` pinned at 1 forever. `/flow:ship` + `/flow:ship-spike` Step 4c.iv now flush the queue into the PR: full records committed, a bounded manifest in the body (inline records overflow GitHub's 65,536-char cap at ~37, measured). Scoped to the CURRENT project only — the queue is cross-project by design, so an unfiltered flush would publish one project's internals into another's public repo. `/flow:contribute` gains a subordinate cross-repo recovery input, constrained to `--author "@me" --merged`. The orchestrator seat gets an instruction, not a mechanism. The harness-audit marker (AB.1b) and the memory corpus are deliberately NOT unified with it — three stores, three scopes; FB-0101.)** Recently shipped: **v1.37.0 (shipped #141 — `/flow:doctor` slot-coverage honesty + design-language template, FB-0098: Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source, not by editing any project's config. New `template/base/core-docs/design-language.md` (shape only). Doctor's frontmatter no longer over-promises "all 33 slots have sensible values." See `dev-docs/history.md` 2026-09-03.)** Recently shipped: **v1.36.0 (`/flow:doctor` Check 2.5's slot-count guard hoisted to the shared, wrap-tolerant predicate flow runs on itself; FB-0096).**
+**Plugin at v1.39.0 (shipped — SAFETY: harvested lessons now survive an ephemeral workspace. The lesson-contribution queue lives in user-scope storage that a cloud workspace destroys at teardown, so in that environment the source-diversity bar stopped *deferring* weak signals and started *destroying* them — `recurrence_count` pinned at 1 forever. `/flow:ship` + `/flow:ship-spike` Step 4c.iv now flush the queue into the PR: full records committed, a bounded manifest in the body (inline records overflow GitHub's 65,536-char cap at ~37, measured). Scoped to the CURRENT project only — the queue is cross-project by design, so an unfiltered flush would publish one project's internals into another's public repo. `/flow:contribute` gains a subordinate cross-repo recovery input, constrained to `--author "@me" --merged`. The orchestrator seat gets an instruction, not a mechanism. The harness-audit marker (AB.1b) and the memory corpus are deliberately NOT unified with it — three stores, three scopes; FB-0102.)** Recently shipped: **v1.37.0 (shipped #141 — `/flow:doctor` slot-coverage honesty + design-language template, FB-0098: Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source, not by editing any project's config. New `template/base/core-docs/design-language.md` (shape only). Doctor's frontmatter no longer over-promises "all 33 slots have sensible values." See `dev-docs/history.md` 2026-09-03.)** Recently shipped: **v1.36.0 (`/flow:doctor` Check 2.5's slot-count guard hoisted to the shared, wrap-tolerant predicate flow runs on itself; FB-0096).**
 
 **Plugin at v1.38.0 (this PR — `/flow:ship-spike` audits its own skips, FB-0100: spike mode was the skip-heaviest path in the workflow and the only one that audited none of its skips. Adds ship-spike Step 2a (`/flow:audit-skips` over the same stamped repo-local handoff `/flow:ship` writes), runs security + a11y in spike mode — the disposability rationale covers code *quality*, not a permanent commit's secrets nor an a11y pattern a human approves on a prototype (D1's own thesis) — and makes the engine REFUSE `spike`/`tiny` as a skip reason for every stage outside a closed two-member allowlist (`{simplify, staff-review}`) — so `verify-build`, the behavioral gate, is covered by the rule rather than by whoever remembered to list it — since a mode-declared blanket skip is unauditable by construction. Fourth recorded instance of the gate-that-does-not-fire-where-most-needed class (FB-0082, FB-0085, FB-0077). See `dev-docs/history.md` 2026-09-03.)** Recently shipped: **#142 (existing-repo design-language migration brief, FB-0099 — docs-only, no version bump), v1.37.0 (`/flow:doctor` slot-coverage honesty + design-language template, FB-0098), v1.36.0 (`/flow:doctor` Check 2.5's slot-count guard hoisted to the shared, wrap-tolerant predicate; FB-0096).**
 
@@ -237,7 +237,7 @@ Shape and cost are unchanged from the original capture (~3 one-line writes + one
 
 `exploration`'s `src|app|lib|packages/**` match **0 files** in `health-tracker` (0/515), `ripe` (0/98), `music-app` (0/92), and **0 in flow's own repo**; only `portfolio` matches (56/237). Three of four consumer repos are Swift/iOS with no lowercase `src`/`app`/`lib`/`packages` root, and `health-tracker`'s capitalized `App/` doesn't match `app/**`. E1 makes this **moot today** (no skill's `paths:` fires at all), but it means the fix is **two-part**: correcting activation alone would leave `exploration` dead in 75% of the fleet. Merges with the already-queued config-driven `paths:` item — cheapest shape is a per-project `paths:` from `flow.config.json`, or an added `**/*.swift` / capitalized-root pattern. **Surfaces when:** S0 lands (fix them together — `exploration` is dead either way until activation is restored).
 
-### Deferred from the doc-fragmentation PR (v1.40.0, FB-0101/FB-0102)
+### Deferred from the doc-fragmentation PR (v1.40.0, FB-0102/FB-0103)
 
 Routed here rather than left in a PR body — all four were raised by `/flow:staff-review`
 lenses and consciously deferred, not missed.
@@ -772,7 +772,7 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 
 ## § Exploration
 
-### Step 4c.iv has no ephemerality predicate — it commits `.flow-lessons/` on every host (FB-0101, staff-review UX lens)
+### Step 4c.iv has no ephemerality predicate — it commits `.flow-lessons/` on every host (FB-0102, staff-review UX lens)
 
 **Surfaces when:** a consumer notices `.flow-lessons/` accumulating in their repo, OR AB.1b (the
 harness-audit marker) is picked up — same root cause, adjacent subsystem.
@@ -784,22 +784,22 @@ on (there is no reliable "am I ephemeral?" signal — a container check is a pro
 and whether records should be *removed* post-drain or left as history. Both are design calls, not
 copy fixes, which is why this is Exploration rather than a scheduled fix.
 
-### Recurrence is only counted along the axis the store indexes (FB-0101 #2, staff-review push-further lens)
+### Recurrence is only counted along the axis the store indexes (FB-0102 #2, staff-review push-further lens)
 
 **Surfaces when:** a third instance of a user-scope-store-on-ephemeral-host defect appears; OR AB.1b
 is picked up; OR anyone edits `contribution_store.py`'s dedup logic or the source-diversity bar.
 
-FB-0101 #2 establishes that the pairing which justified the whole fix — the harness-audit marker
+FB-0102 #2 establishes that the pairing which justified the whole fix — the harness-audit marker
 (2026-08-27) and the contributions queue (a week later) — was invisible to every mechanism flow has,
 because `dedup` keys on `lesson_hash` **within one store**. The doc's conclusion is "cross-subsystem
 recurrence has to be looked for by hand," which is a standing manual obligation with no re-entry
-point. **Not a request for a mechanism** (that would be the queue subsystem FB-0101 forbids). The
+point. **Not a request for a mechanism** (that would be the queue subsystem FB-0102 forbids). The
 open question is whether this is even representable without a second store — probably not — or
 whether the honest answer is a *review-time question* (`plan-critic`/`auditor` asking "is this root
 cause already recorded against a different subsystem?") against docs that already exist, needing no
 new storage.
 
-### The manifest is bounded per-row but not in total (FB-0101, staff-review engineer lens)
+### The manifest is bounded per-row but not in total (FB-0102, staff-review engineer lens)
 
 **Surfaces when:** a queue exceeds ~450 records, OR the ephemerality predicate above is designed.
 
@@ -817,14 +817,14 @@ skeleton) is picked up — **the PR-body lesson manifest belongs in that same en
 
 `dev-docs/design-language.md` is scoped to the verify-build HTML report *only* (correctly — that
 scope was just re-confirmed). But flow's highest-traffic human surfaces are **PR-body blocks and
-console lines**, and three of the four staff-review blockers on FB-0101 were copy defects with no doc
+console lines**, and three of the four staff-review blockers on FB-0102 were copy defects with no doc
 to arbitrate them. `manifest-triage.py`'s "What this means / What I need from you / What happens
 then" is already a de-facto standard; writing it down would give the next block a grounding doc
 instead of a reviewer.
 
 
 
-### The memory corpus is entirely non-functional on ephemeral hosts (FB-0101)
+### The memory corpus is entirely non-functional on ephemeral hosts (FB-0102)
 
 **Surfaces when:** anyone asks why failure-memory never seems to fire in cloud workspaces, OR the
 harness-audit marker fix (AB.1b) is picked up — same root cause, adjacent subsystem.
@@ -835,7 +835,7 @@ teardown. This is not degradation — on an ephemeral host the memory system has
 to read, so every guardrail built on it is inert there. `/flow:ship` § 4b spends its corpus-health,
 source-diversity and audit-due steps on a corpus that is always empty.
 
-**Deliberately not fixed with the FB-0101 queue flush**, and the reason is the point: the three
+**Deliberately not fixed with the FB-0102 queue flush**, and the reason is the point: the three
 affected stores do **not** share a substrate. The contributions queue is *cross-project* (fixed by
 flushing into the PR); the harness-audit marker is *flow-repo-only* (git-backed, filed as AB.1b); the
 memory corpus is *per-project* and sits at a **harness-owned path flow does not control**. Unifying

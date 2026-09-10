@@ -1,4 +1,4 @@
-## 2026-09-06 — Fragment the append-only docs to one file per entry, and kill the silent doc-slot fallback (v1.40.0, FB-0101/FB-0102) — SAFETY
+## 2026-09-06 — Fragment the append-only docs to one file per entry, and kill the silent doc-slot fallback (v1.40.0, FB-0102/FB-0103) — SAFETY
 
 **Branch:** `conductor/fragment-append-only-docs-one-file-per-entry` · **SHA:** [this commit] · **Version:** v1.37.0 → v1.40.0
 
@@ -62,14 +62,14 @@ Pinned by `sec 1` / `sec 2` in the eval, paired so deleting the fallback cannot 
 pre-existing sites are named in `roadmap.md` § Next for the same treatment.
 
 **The migration was validated by the bug it removes, once more, while being built.** These numbers were drafted as
-FB-0100/FB-0101 with v1.38.0, all three confirmed free at the time. PR #145 then opened claiming FB-0100 *and*
+FB-0100/FB-0102 with v1.38.0, all three confirmed free at the time. PR #145 then opened claiming FB-0100 *and*
 v1.38.0, and the collision was caught **by a human reading the numbers** — no check fired, because
 `reserved-feedback-numbers.md` only catches a race when both branches remember to claim early, and a version bump has
 no registry at all. That is the **fourth** FB collision in this batch of work; the file's own audit trail already
 recorded six historical renumberings before this one.
 
 After this PR, that failure is structural rather than procedural: a duplicate FB number is a duplicate **filename**, so
-git reports a both-added conflict at write time and cannot auto-merge it. The renumber to FB-0101/FB-0102/v1.40.0 was
+git reports a both-added conflict at write time and cannot auto-merge it. The renumber to FB-0102/FB-0103/v1.40.0 was
 re-derived from ground truth (`origin/main` at v1.37.0/FB-0099, #145 holding FB-0100/v1.38.0) rather than from either
 party's assertion, and all three old tokens had zero occurrences in `origin/main` — so the sweep provably touched only
 lines this branch introduced.
