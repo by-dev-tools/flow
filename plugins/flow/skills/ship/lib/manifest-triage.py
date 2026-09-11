@@ -206,10 +206,10 @@ KIND_COPY: dict[str, dict[str, str]] = {
     # mechanical signal to retry against).
     "vacuous-criterion": {
         "clears_when": "rewrite the criterion in the plan's Spec-walk block to name an observable output/state/error path, then re-run /flow:verify-build and confirm the flag is gone",
-        "means": "This acceptance criterion doesn't name anything an observer could check — it just claims the behavior 'works' or is 'correct'.",
+        "means": "This test criterion doesn't name anything an observer could check — it just claims the behavior 'works' or is 'correct'.",
         "needs_you": "Approve the more specific criterion I drafted, or tell me to ship with it as-is.",
-        "waive_cost": "this behavior's only declared bar stays too vague for a PASS against it to mean anything",
-        "why": "I can propose a specific rewrite, but declaring my own criterion specific enough is the same self-grading problem coverage has",
+        "waive_cost": "this behavior ships verified against a test that can't actually fail",
+        "why": "I can propose a specific rewrite, but declaring my own test coverage sufficient is the same self-grading problem",
     },
     "skip-audit": {
         "clears_when": "re-run the named stage, then re-run /flow:audit-skips and confirm LEGITIMATE",

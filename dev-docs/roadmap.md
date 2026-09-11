@@ -774,6 +774,12 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 
 ## § Exploration
 
+### No copy-consistency check over `manifest-triage.py`'s `KIND_COPY` table (FB-0104, staff-review UX lens)
+
+**Surfaces when:** the next kind is added to `KIND_COPY` (it's grown to 10 across several PRs — `toolchain`, `skip-audit`, `status-surface`, `visual-deliverable`, `vacuous-criterion` all landed in recent history per the file's own comments), or a copy inconsistency is spotted in a dogfood.
+
+Each new `KIND_COPY` entry is hand-matched against its 9 neighbors by whoever writes it, with no lint enforcing tone/term consistency. The `vacuous-criterion` entry's own first draft shipped with three small drifts a human/lens had to catch by eye: a `why` field naming a sibling kind (`coverage`) by internal identifier — the exact "engineer shorthand" the table's doc comment says these fields exist to eliminate; a `waive_cost` phrased two abstraction levels removed from its siblings' concrete-consequence pattern; and inconsistent terminology ("acceptance criterion" vs. `coverage`'s "test criterion") between two kinds presented everywhere else as a matched pair. `run_manifest_triage_evals.py` checks structural contract (every kind has every field, round-trips, `len(KIND_COPY) == 10`) but not copy quality. A cheap, mechanical partial fix exists (general.md's "grep first" discipline already used elsewhere in this repo): assert no `KIND_COPY[k]` value contains another kind's literal name as a substring — would have caught the `why`/`coverage` drift, though not the phrasing-abstraction or terminology drift, which are judgment calls a lint can't make. Not scheduled — the fix-shape (lint vs. a style guide vs. nothing) is itself the open question.
+
 ### Step 4c.iv has no ephemerality predicate — it commits `.flow-lessons/` on every host (FB-0102, staff-review UX lens)
 
 **Surfaces when:** a consumer notices `.flow-lessons/` accumulating in their repo, OR AB.1b (the

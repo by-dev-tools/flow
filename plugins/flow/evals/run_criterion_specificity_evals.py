@@ -69,6 +69,7 @@ EXPECTED_VACUOUS = {
     "Search behaves as expected",
     "Auth flow works",
     "Login is correct",
+    "Rate limiting works correctly → verify: manual QA",
 }
 EXPECTED_SPECIFIC = {
     "Returns 429 when rate limit exceeded",
@@ -77,18 +78,32 @@ EXPECTED_SPECIFIC = {
     "Config table documents every flag",
     "`GET /users/:id` returns 404 for an unknown id",
     "Returns a session token and works correctly",
+    "Retries back off exponentially, capped at 5 attempts → verify: test_retry_backoff",
 }
 # The one case among EXPECTED_SPECIFIC that exercises the AND-NOT branch: its
 # trailing clause DOES match the vacuous-predicate regex, and it's unflagged
 # only because the concrete-signal escape hatch fires too.
 AND_NOT_BRANCH_CASE = "Returns a session token and works correctly"
 
+# The pin-marker interaction (FB-0104 staff-review finding): a vacuous
+# criterion doesn't stop being vacuous just because it's pinned per this
+# repo's own FB-0068 convention ("<claim> -> verify: <method>"). An earlier
+# draft's escape hatch included the pin arrow itself, so EVERY pinned
+# criterion -- the dominant real-world population, since every Spec-walk
+# checkbox in this repo is pinned -- silently defeated the checker. This is
+# the exact counter-example the docstring/history/workflow.md cite as proof
+# the check composes with walk-pin-lint.py; it must actually fire.
+PINNED_VACUOUS_CASE = "Rate limiting works correctly → verify: manual QA"
+# The matching negative: pinning must not itself manufacture a false positive
+# on a criterion that was already specific.
+PINNED_SPECIFIC_CASE = "Retries back off exponentially, capped at 5 attempts → verify: test_retry_backoff"
+
 
 def test_mixed_fixture() -> None:
     rc, out, _ = run([str(FIXTURES / "mixed.json")])
     check("mixed-exit", rc == 0, f"exit {rc}")
     data = json.loads(out)
-    check("mixed-total", data["total"] == 10, data)
+    check("mixed-total", data["total"] == 12, data)
     flagged = {v["criterion"] for v in data["vacuous"]}
     check("mixed-flagged-set", flagged == EXPECTED_VACUOUS,
           f"flagged={flagged} expected={EXPECTED_VACUOUS}")
@@ -110,6 +125,22 @@ def test_and_not_branch_exercised() -> None:
     check("and-not-exit", rc == 0, f"exit {rc}")
     data = json.loads(out)
     check("and-not-unflagged", data["vacuous"] == [], data)
+
+
+def test_pin_marker_interaction() -> None:
+    """FB-0104 staff-review finding: pinning a criterion per this repo's own
+    FB-0068 convention ("<claim> -> verify: <method>") must NOT itself launder
+    a vacuous claim into a pass, and must NOT itself manufacture a false
+    positive on an already-specific claim. Both directions asserted
+    explicitly -- this is the exact counter-example the docstring/history/
+    workflow.md cite as proof the check composes with walk-pin-lint.py, so it
+    must actually hold, not just read as though it does."""
+    rc, out, _ = run(stdin=json.dumps({"criteria": [PINNED_VACUOUS_CASE, PINNED_SPECIFIC_CASE]}))
+    check("pin-exit", rc == 0, f"exit {rc}")
+    data = json.loads(out)
+    flagged = {v["criterion"] for v in data["vacuous"]}
+    check("pin-vacuous-still-flagged-when-pinned", PINNED_VACUOUS_CASE in flagged, flagged)
+    check("pin-specific-not-falsely-flagged-when-pinned", PINNED_SPECIFIC_CASE not in flagged, flagged)
     check("and-not-specific-count", data["specific_count"] == 1, data)
 
 
@@ -156,6 +187,7 @@ def main() -> int:
     for fn in [
         test_mixed_fixture,
         test_and_not_branch_exercised,
+        test_pin_marker_interaction,
         test_empty_criteria,
         test_empty_stdin,
         test_malformed_json,

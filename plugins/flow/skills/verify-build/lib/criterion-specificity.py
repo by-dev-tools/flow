@@ -76,21 +76,57 @@ _VACUOUS_PREDICATE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Escape hatch: ANY of these, matched ANYWHERE in the criterion, suppresses
-# the flag -- a quoted/backticked literal, a digit, a pin-marker arrow, or a
-# named-observable verb/noun. Any one of these signals a concrete, checkable
-# predicate even when the sentence also happens to end in a generic phrase
-# (e.g. "Returns a session token and works correctly").
+# Escape hatch: ANY of these, matched ANYWHERE in the criterion's CLAIM portion
+# (see _strip_pin_suffix below), suppresses the flag -- a quoted/backticked
+# literal, a digit, or a named-observable verb/noun. Any one of these signals a
+# concrete, checkable predicate even when the sentence also happens to end in a
+# generic phrase (e.g. "Returns a session token and works correctly").
+#
+# Deliberately does NOT include the pin-marker arrow (-> / →). An earlier
+# draft did, reasoning "an arrow points at a concrete artifact" -- but this
+# repo's OWN Spec-walk convention (FB-0068, walk-pin-lint.py's PIN_MARKERS)
+# appends a pin annotation AFTER the claim ("Rate limiting works correctly ->
+# verify: manual QA"), so the arrow is a VERIFICATION-METHOD marker, not a
+# claim-specificity signal -- and every pinned criterion in this repo, the
+# dominant real-world population, would have silently defeated the checker.
+# Caught by /flow:staff-review's staff-engineer lens against the checker's own
+# documented counter-example. See _strip_pin_suffix for the actual fix: the pin
+# suffix is removed before either regex runs, so the CLAIM alone is judged --
+# consistent with the walk-pin-lint split (that script judges the method; this
+# one judges the claim).
 _CONCRETE_SIGNAL_RE = re.compile(
     r"`[^`]+`"
     r"|\"[^\"]+\"|'[^']+'"
     r"|\d"
-    r"|→|->"
     r"|\b(returns?|throws?|raises?|logs?|displays?|renders?|shows?|equals?"
     r"|matches?|contains?|rejects?|redirects?|status\s*code|exception|error"
     r"|null|true|false)\b",
     re.IGNORECASE,
 )
+
+# A pin-marker suffix, per walk-pin-lint.py's PIN_MARKERS vocabulary (not
+# imported -- that script has no shared-library shape, unlike walk_extract.py;
+# keep the two lists in sync by hand if either changes). Matched from the
+# FIRST occurrence onward and stripped, so "<claim> -> verify: <method>"
+# judges only "<claim>". Accepted residual: a marker word used mid-sentence
+# ahead of more genuine claim text (rare; the observed convention places the
+# marker at the very end) would over-strip -- same precision-over-recall
+# posture as the rest of this heuristic.
+_PIN_SUFFIX_RE = re.compile(
+    r"\s*(?:→|->|\bpinned\s+by\b|\bverify:|\bverified\s+by\b)\s*.*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_pin_suffix(text: str) -> str:
+    """Remove a trailing pin-marker annotation so the heuristic judges the
+    CLAIM, not the verification method appended after it. Also strips the
+    separator punctuation typically left dangling right before the marker
+    ("...correct — verified by QA", "...expected, pinned by testFoo") --
+    without this, the leftover comma/dash defeats the end-anchored predicate
+    regex just as surely as the un-stripped suffix did."""
+    claim = _PIN_SUFFIX_RE.sub("", text)
+    return claim.strip(" \t,;:—–-")
 
 
 def is_vacuous(criterion: str) -> tuple[bool, str]:
@@ -98,12 +134,19 @@ def is_vacuous(criterion: str) -> tuple[bool, str]:
     text = (criterion or "").strip()
     if not text:
         return False, ""
-    if _CONCRETE_SIGNAL_RE.search(text):
+    claim = _strip_pin_suffix(text)
+    if not claim:
+        # The whole criterion WAS a pin marker with no claim before it --
+        # degenerate input; nothing to judge, so don't flag.
         return False, ""
-    if _VACUOUS_PREDICATE_RE.search(text):
+    if _CONCRETE_SIGNAL_RE.search(claim):
+        return False, ""
+    m = _VACUOUS_PREDICATE_RE.search(claim)
+    if m:
         return True, (
-            "no observable predicate -- no named output, state, value, or "
-            "error path, just a generic success claim"
+            f"no observable predicate -- matched generic phrase "
+            f"{m.group(0).strip()!r}; name an output, state, value, or "
+            f"error path instead"
         )
     return False, ""
 
