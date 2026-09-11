@@ -21,7 +21,7 @@ Pins three things the FB-0098 PR changed:
               merely mentions the right thing is not the same as a check that
               DOES the right thing (the same principle `run_role_slot_evals.py`
               already applies to Check 2.11).
-  honesty   — doctor's frontmatter no longer claims "all 33 slots have
+  honesty   — doctor's frontmatter no longer claims "all N slots have
               sensible values" bare; it cites every check number the slot
               classification in Check 2.4's own prose assigns a slot to. This
               is the fan-out-omission class the PR exists to fix, so the
@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -98,9 +99,19 @@ def check(cid, ok, detail=""):
 
 
 def run_block(block, cwd, config):
-    """Execute Check 2.4's real extracted shell block against a real temp repo."""
+    """Execute Check 2.4's real extracted shell block against a real temp repo.
+
+    CLAUDE_PLUGIN_ROOT is set to this checkout's plugin root because Check 2.4 now
+    resolves doc slots by CALLING `lib/resolve-doc-slot.sh` (FB-0102) rather than
+    re-deriving the ladder inline. Running it in a bare temp dir with no reachable
+    plugin root would exercise the "reinstall the flow plugin" branch, not the check
+    — and a consumer running /flow:doctor always has the plugin installed, so the
+    unreachable-resolver case is not the condition worth pinning here (its own loud
+    WARN is asserted separately below).
+    """
     (Path(cwd) / "flow.config.json").write_text(json.dumps(config))
-    proc = subprocess.run(["sh", "-c", block], cwd=cwd,
+    env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(PLUGIN_ROOT))
+    proc = subprocess.run(["sh", "-c", block], cwd=cwd, env=env,
                            capture_output=True, text=True, timeout=10)
     return proc.stdout
 
@@ -205,6 +216,23 @@ def main():
                   f"[PASS] {slot}:" in out,
                   f"expected a PASS for {slot} with dev-docs/ scaffolded; got:\n{out}")
 
+    # Resolver unreachable — Check 2.4 must say so LOUDLY, not silently report clean.
+    # run_block()'s docstring says this case is "asserted separately below"; this is
+    # that assertion, so the claim is true rather than merely stated. Paired both ways:
+    # the WARN must appear AND no PASS may be emitted, so a check that degraded to
+    # "everything is fine" over a missing helper cannot slip through.
+    with tempfile.TemporaryDirectory() as td:
+        (Path(td) / "flow.config.json").write_text(json.dumps({"uiSurface": True}))
+        env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(Path(td) / "no-such-plugin-root"))
+        out = subprocess.run(["sh", "-c", block], cwd=td, env=env,
+                             capture_output=True, text=True, timeout=10).stdout
+        check("exec-5-loud-when-resolver-missing",
+              "cannot check" in out and "resolve-doc-slot.sh not found" in out,
+              f"an unreachable resolver must WARN loudly; got:\n{out}")
+        check("exec-5b-no-false-pass-when-resolver-missing",
+              "[PASS]" not in out,
+              f"an unreachable resolver must not yield any PASS; got:\n{out}")
+
     # uiSurface: false — designLanguagePath is explicitly N/A, not WARNed, and
     # not required (no dev-docs/design-language.md on disk in this temp repo).
     with tempfile.TemporaryDirectory() as td:
@@ -222,11 +250,15 @@ def main():
 
     # The specific bad phrase (contiguous, whitespace-tolerant since the YAML
     # `>` block scalar folds newlines to spaces at parse time but the raw text
-    # here still has them) — NOT a bare "33" anywhere, since the honest
-    # replacement legitimately says "not all 33 of the schema's slots".
-    check("honesty-1-no-bare-all-33-claim",
-          re.search(r"all 33\s+slots have sensible values", frontmatter) is None,
-          "frontmatter must not claim 'all 33 slots have sensible values' bare")
+    # here still has them) — NOT a bare count claim anywhere, since the honest
+    # replacement legitimately says "not all N of the schema's slots".
+    # Slot-count-agnostic (FB-0102): pinning the literal 33 made this assertion
+    # fail open the moment a slot was added — it would stop matching the forbidden
+    # string for the WRONG reason (the number changed), not because the claim was
+    # removed. `\d+` keeps it testing the claim rather than the count.
+    check("honesty-1-no-bare-all-N-claim",
+          re.search(r"all \d+\s+slots have sensible values", frontmatter) is None,
+          "frontmatter must not claim 'all N slots have sensible values' bare")
     for num in EXPECTED_CITED_CHECKS:
         check(f"honesty-2-cites-check-{num}",
               num in frontmatter,

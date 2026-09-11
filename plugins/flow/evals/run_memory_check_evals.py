@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Eval harness for `tools/memory/check.mjs --dead` (roadmap #3, memory-effectiveness
-instrumentation — reduced scope: `--dead` only, see dev-docs/history.md for the scope cut).
+instrumentation — reduced scope: `--dead` only, see dev-docs/history/ for the scope cut).
 
 `--dead` mechanically surfaces failure-pattern memory entries with no Fire-log activity
 (falling back to First-seen, then file mtime) in N days (default 60), so `/flow:ship` § 4b.vi's

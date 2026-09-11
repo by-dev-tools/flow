@@ -19,7 +19,7 @@ You are running the flow ship-spike pipeline for a spike-mode PR. **Never merge.
 - Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — using built-in defaults)"`
 - Default branch (PR base): !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
 - Current branch: !`git branch --show-current`
-- History doc path: !`cat flow.config.json 2>/dev/null | jq -r '.historyPath // "dev-docs/history.md"' 2>/dev/null || echo "dev-docs/history.md"`
+- History doc: !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && R=plugins/flow/lib/resolve-doc-slot.sh; }; [ -f "$R" ] && sh "$R" historyPath dev-docs/history.md || echo "⚠️ [resolve-doc-slot] not found — historyPath was NOT resolved, so this run has NO historyPath context. Reinstall the flow plugin."`
 - Plan doc path: !`cat flow.config.json 2>/dev/null | jq -r '.planPath // "dev-docs/plan.md"' 2>/dev/null || echo "dev-docs/plan.md"`
 
 ## Pre-condition
@@ -57,7 +57,7 @@ Identical shape to `/flow:ship` Step 1.5 — the consistency itself is the value
 
 ### 1a. Stale-base check (BLOCKING)
 
-Same gate as `/flow:ship` Step 1a — spike branches diff vs the default branch too, and a stale spike base produces phantom-deletion noise that obscures the actual research-question answer. See `dev-docs/feedback.md` FB-0008. See `/flow:ship` Step 1a for the rationale on the `[ -z ]` guards (the `||` pipe form silently fails on empty stdout).
+Same gate as `/flow:ship` Step 1a — spike branches diff vs the default branch too, and a stale spike base produces phantom-deletion noise that obscures the actual research-question answer. See `dev-docs/feedback/` FB-0008. See `/flow:ship` Step 1a for the rationale on the `[ -z ]` guards (the `||` pipe form silently fails on empty stdout).
 
 ```sh
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
@@ -319,7 +319,11 @@ A docs-only spike — the common case — rules clean here without noise: those 
 
 ## 3. Write the history entry — the entry IS the deliverable
 
-The point of a spike is the learning, not the code. The history doc entry (path from `flow.config.json.historyPath`; default `dev-docs/history.md`) is the canonical artifact. Add an entry (newest first) with:
+The point of a spike is the learning, not the code. The history entry (path from `flow.config.json.historyPath`; default `dev-docs/history.md`) is the canonical artifact.
+
+**One file per entry (FB-0102).** If the slot resolves to a **directory**, write a NEW FILE — never append to a rollup, and never create one. Filename: `YYYY-MM-DD-<kebab-slug-of-the-title>.md`, with the `## YYYY-MM-DD — Title` heading kept INSIDE the file. There is deliberately no index file to update: `ls` is the index, and a committed index would recreate the very merge conflict one-file-per-entry removes (every entry would append a line to it). If the slot resolves to a single `.md` file, append as before — both shapes are supported, and `${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh` tells you which one you have.
+
+Add an entry with:
 
 ```markdown
 ### Spike: <one-line title>
@@ -413,7 +417,7 @@ python3 "$S/harvest_lesson.py" mark --marker-file "$MARKER"
 
 Print one line — `[analyze] N findings: P project-local, F flow-generalizable, D dropped (noise/low-confidence)` (or the pre-scan skip line). Never silent.
 
-**Step 4c.iv — Flush the queue into the PR so it survives teardown (FB-0101).**
+**Step 4c.iv — Flush the queue into the PR so it survives teardown (FB-0102).**
 
 The queue lives in user-scope storage (`contributionsQueuePath`). That is right on a persistent
 machine, and the cross-project contract *requires* it to sit outside any one project tree. But on an
@@ -552,7 +556,7 @@ produced; `—` when routine. Resolve every `<...>` placeholder before publishin
 ## Full writeup
 See the history doc entry "Spike: <title>".
 
-<!-- If $FLOW_ROOT/.flow/lesson-manifest.md exists and is non-empty, inline it HERE (FB-0101).
+<!-- If $FLOW_ROOT/.flow/lesson-manifest.md exists and is non-empty, inline it HERE (FB-0102).
      It carries its own flow:lesson-flush markers — replace the region if present, else append.
      The marker is what /flow:contribute matches via `gh search prs`; omitting it silently
      disables cross-repo lesson recovery. -->
@@ -601,9 +605,9 @@ Output the PR URL and the recommendation (proceed / pivot / abandon). The user m
 | `flow.config.json.sourceFilePatterns` | covers common source/config extensions | Step 1c (docs-only early-exit) |
 | `flow.config.json.typecheckCmd` | unset → loud warning | Step 2 (post-1c one-shot typecheck) |
 | `flow.config.json.uiSurface` | `true` | Step 2.1 (`/flow:accessibility-review` self-skip) + Step 2a (audit of that skip) |
-| `flow.config.json.historyPath` | `dev-docs/history.md` | Step 3 (spike entry — THE deliverable) |
+| `flow.config.json.historyPath` | `dev-docs/history.md` | Step 3 (spike entry — THE deliverable) — file or one-file-per-entry directory |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 2a (the audit checks the `audit-coverage` `no Spec-walk` claim against the plan, and reads its declared **Mode** as evidence for the spike rows) + Step 5 (move to Recently Completed) |
-| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4 (contradiction check; not written to) |
+| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Step 4 (contradiction check; not written to) — file or one-file-per-entry directory |
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Step 5 (next-PR scope if proceed) |
 | `flow.config.json.lastHarvestedPath` | `~/.claude/plugins/data/flow/contributions/last_harvested.json` | Step 4c (lesson-harvest watermark; only new transcript since last harvest is analyzed) |
 | `flow.config.json.contributionsQueuePath` | `~/.claude/plugins/data/flow/contributions` | Step 4c (enqueue target) + `/flow:contribute` (drain source) |

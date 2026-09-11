@@ -28,7 +28,7 @@ Three properties must all hold. Cases that satisfy fewer should be dropped.
 
 3. **Distinct from the original criterion.** Verifying the original criterion must not automatically verify the adversarial case. If the criterion is "user can submit valid input and see a success message," the case "submit valid input twice in quick succession; only one record should be created" is distinct; the case "submit valid input and verify success message" is a restatement (not distinct).
 
-## Reward-hacking guards (binding — per `dev-docs/feedback.md` FB-0012(c))
+## Reward-hacking guards (binding — per `dev-docs/feedback/` FB-0012(c))
 
 Adversarial cases must NOT be solvable by:
 

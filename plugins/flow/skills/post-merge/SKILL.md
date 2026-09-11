@@ -189,7 +189,7 @@ that; it just stops this close-out from asking the human to do what it can do it
 Capture the feedback from the window ship couldn't see — your merge-gate review → iterate
 → merge comments on THIS branch since the last ship. **v1 writes only user-scope stores**
 (agent memory + the `/flow:contribute` queue), reusing the exact machinery `/flow:ship`
-Step 4b/4c already uses. It does **NOT** write the repo `feedbackPath` doc (`dev-docs/feedback.md`)
+Step 4b/4c already uses. It does **NOT** write the repo `feedbackPath` doc (`dev-docs/feedback/`)
 — that would mean committing an `FB-XXXX` to a just-merged branch; deferred to v1b (the
 transcript-timestamp watermark + an FB-inbox). **Content-match dedup** makes an overlapping
 window safe: a lesson ship already captured re-matches its existing entry and appends a

@@ -34,7 +34,7 @@ Skip if `flow.config.json.verifyEnabled` is `false` (project-wide opt-out) or `f
 
 - Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — using built-in defaults)"`
 - Default branch: !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
-- Plan doc: !`PLAN=$(cat flow.config.json 2>/dev/null | jq -r '.planPath // empty'); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"; [ -f "$PLAN" ] && echo "$PLAN" || echo "(no plan doc at $PLAN)"`
+- Plan doc: !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && R=plugins/flow/lib/resolve-doc-slot.sh; }; [ -f "$R" ] && sh "$R" planPath dev-docs/plan.md || echo "⚠️ [resolve-doc-slot] not found — planPath was NOT resolved, so this run has NO planPath context. Reinstall the flow plugin."`
 - Verify enabled: !`cat flow.config.json 2>/dev/null | jq -r 'if .verifyEnabled == false then "false" else "true" end'`
 - Project run skill: !`ls -d .claude/skills/run-*/ 2>/dev/null | head -1 || echo "(none — heuristic launch only)"`
 
@@ -261,7 +261,7 @@ Compute the visual-significance verdict **once, here**, via the shared helper �
 ```sh
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then VS="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/visual-significance.py"; else VS="plugins/flow/skills/verify-build/lib/visual-significance.py"; fi
 PLAN_PATH=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN_PATH" ] && PLAN_PATH="dev-docs/plan.md"
-PLAN_ARG=""; [ -f "$PLAN_PATH" ] && PLAN_ARG="--plan $PLAN_PATH"
+PLAN_ARG=""; { [ -f "$PLAN_PATH" ] && PLAN_ARG="--plan $PLAN_PATH"; } || echo "⚠️ [verify-build] no plan doc at $PLAN_PATH — running WITHOUT plan context. This is NOT the same as \"the plan declares no criteria\": check flow.config.json.planPath." >&2
 # Add --flag-significant --flag-reason "<why>" ONLY if you (the agent) judge the change
 # visually significant beyond what the file-pattern heuristic catches (e.g. a canvas/WebGL
 # render path with no .css/.tsx edit). The helper records the flag + reason as evidence.
@@ -498,5 +498,5 @@ The explicit `--assets-dir <report dir>` matches §5a's persist path (`<dirname(
 | `flow.config.json.uiSurface` | `true` | Step 2c (visual-significance gate 1, via `lib/visual-significance.py`) |
 | `flow.config.json.visualFilePatterns` | falls back to `uiFilePatterns` | Step 2c (visual-significance heuristic) — scopes the "does it DRAW?" question only |
 | `flow.config.json.uiFilePatterns` | UI extensions | Step 2c fallback when `visualFilePatterns` is unset |
-| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Read by `/flow:ship` Step 4a (not by verify-build directly) |
+| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Read by `/flow:ship` Step 4a (not by verify-build directly) — file or one-file-per-entry directory |
 

@@ -86,7 +86,7 @@ This is the data a future auto-merge rung trains its threshold on (deferred — 
    ```sh
    python3 "$SCRIPTS/contribution_store.py" list   # pending entries, sorted by confidence
    ```
-2. **Flushed lessons from ephemeral hosts** (FB-0101 — *fallback only*): a ship on a cloud workspace
+2. **Flushed lessons from ephemeral hosts** (FB-0102 — *fallback only*): a ship on a cloud workspace
    flushes its queue into the PR (ship Step 4c.iv), because that workspace's user-scope queue dies at
    teardown. Discover them **cross-repo** — `gh search prs` indexes PR bodies and reaches private
    repos the token can read, which is what makes the cross-project contract survive teardown:
@@ -113,7 +113,7 @@ This is the data a future auto-merge rung trains its threshold on (deferred — 
 
    **Count flush-only recoveries, and carry the number into the contribution PR body:**
    `[drain] N of M flushed records were flush-only recoveries (absent from the local queue)`.
-   This is the instrument FB-0101's third deletion criterion depends on — without it, "the flush has
+   This is the instrument FB-0102's third deletion criterion depends on — without it, "the flush has
    carried zero lessons the local queue did not already deliver" is unanswerable, and an unfalsifiable
    deletion criterion is decoration (the exact failure FB-0088 exists to prevent). With it, the
    question is answerable from PR history alone: grep the contribution PRs over the window; all-zero
@@ -137,7 +137,7 @@ python3 "$SCRIPTS/contribution_store.py" dedup --lesson-hash "<hash>"
 # previously-dismissed lesson (do NOT drop — see the re-examine rule below)
 ```
 
-Also drop **already-encoded** lessons: grep `dev-docs/feedback.md` and the candidate's target artifact for the synthesized rule; on a match, `dismiss` it with reason `already-encoded` and skip.
+Also drop **already-encoded** lessons: grep `dev-docs/feedback/` and the candidate's target artifact for the synthesized rule; on a match, `dismiss` it with reason `already-encoded` and skip.
 
 **An `already-encoded` dismissal must reproduce the symptom, not reason from the fix.** A grep hit — or an argument that the target "already shares the hardened helper / was covered by PR #N" — establishes that *some* fix exists, not that *this* failure mode is gone. Before dismissing, construct the smallest input that would exhibit the reported symptom and confirm it no longer occurs; if you cannot cheaply construct one, HOLD rather than dismiss. (Dogfood: a `Visual-walk` cross-PR grab was dismissed as already-encoded because both walk parsers share `walk_extract.py`'s first-block scoping — that shared scoping was the *cause*, since selection is per-label and the two can land in different PRs' sections. A short repro plan would have caught it; instead it took an independent recurrence from a second project.) A **recurrence of a previously-dismissed lesson is strong evidence the dismissal was wrong** — re-examine it from scratch rather than re-applying the earlier reasoning. `dedup` reports this mechanically as **exit 4** (distinct from exit 3 "already queued"), with the prior dismissal's reason and date on stderr: treat exit 4 as *re-open with the prior reason as the thing to disprove*, never as a drop. Re-dismissing after an exit 4 requires the symptom repro above — a second wrong dismissal should cost more than the first.
 
@@ -168,7 +168,7 @@ python3 "$SCRIPTS/contribution_store.py" score "<entry.json>" --write   # writes
 
 For each auto-included entry, apply the edit by `artifact_kind`:
 
-- `fb-entry` → a new `FB-XXXX` in `dev-docs/feedback.md` (claim the number in `dev-docs/reserved-feedback-numbers.md` FIRST, per its protocol).
+- `fb-entry` → a new `FB-XXXX` **file** under `flow.config.json.feedbackPath` (`FB-XXXX-<slug>.md`; flow's own repo uses `dev-docs/feedback/`). Claiming an FB number = **pushing the file**: create `FB-XXXX-<slug>.md` under the feedback directory and push it before investing in cross-file references. A racing branch hits a both-added filename conflict, which git cannot auto-merge. There is no reservations file — it was deleted in v1.40.0, because a filename collision detects the same race mechanically. If the slot still points at a single `.md` file, append to it as before.
 - `rule-edit` / `new-check` → the named rule / doctor or ship check.
 - `reviewer-prompt` → a scoped edit to `auditor.md` / `plan-critic.md` / the staff lens.
 - `eval-fixture` / any reviewer-prompt change → **draft a companion eval fixture** under `plugins/flow/evals/fixtures/` (reuse the disagreement `.jsonl` window where available) and **wire its harness into `.github/workflows/ci.yml`** (CI enumerates harnesses explicitly — an unwired harness gives zero protection). Prompt changes are code changes (CLAUDE.md): no reviewer-prompt edit ships without a fixture.

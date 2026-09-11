@@ -2,6 +2,9 @@
 
 ## Current Focus
 
+**▶ SHIPPING (this branch, `conductor/spike-agentsmd-vs-skills-packaging-evals`, v1.37.0 unchanged): SPIKE — AGENTS.md vs skill-shaped packaging.** Docs-only (new `dev-docs/research/2026-09-agents-md-vs-skills.md` + one `dev-docs/README.md` index row); zero `plugins/flow/**` touched, no version bump. Answers "is flow's architecture wrong given Vercel's 'AGENTS.md outperforms skills' post?" **Recommendation: proceed — change no packaging, fix the loading.** The headline doesn't survive its own evidence (the results figure contradicts the tables at n=11, single run; the winner is a `CLAUDE.md`; ≥3 uncontrolled variables), SkillsBench (9,396 trajectories) runs the other way, and correctly scoped the finding lands on 1 of flow's 22 skills. **But three human-approved experiments found a bigger bug than the question:** E1 measured that `paths:` on a `SKILL.md` never activates → flow's four rule-skills have not loaded for any consumer since v1.33.0 (third FB-0085-class instance, second created by Phase 00 itself). Routed to roadmap § Now as **S0** (fix + upgrade `/flow:doctor` Check 3.2 from "registered" to "activates"; guardrail: do NOT close by deleting `paths:` — the FB-0077 shape). Also routed: **S2** (`exploration`'s globs reach 1 of 4 consumer repos, § Next), **E2** (`log-disagreement` capture rate, inconclusive → § Exploration), **S1** (hoist `ship`'s auto-invoke predicate out of `description:`, § Exploration), and an **AB Step 1b** correction (`harness_audit.py:157` counts the 85 KB `workflow.md` as always-loaded when nothing loads it — ~3× overcount, live bug in merged #136). See `dev-docs/history/2026-09-04-spike-agents-md-vs-skill-shaped-packaging-is-flow-s-architec.md`.
+**▶ Active (this branch, `conductor/fragment-append-only-docs-one-file-per-entry`, v1.40.0, FB-0102/FB-0103): fragment the append-only docs to one file per entry + kill the silent doc-slot fallback.** `history.md` / `feedback.md` / `CHANGELOG.md` → 245 one-file-per-entry fragments across `dev-docs/history/`, `dev-docs/feedback/` and `changelog/`; `plan.md` + `roadmap.md` deliberately untouched (edited in place, and they feed the Spec-walk parser). All ten doc-slot readers hoisted onto the new loud `plugins/flow/lib/resolve-doc-slot.sh`; `changelogPath` declared (33 → 34 slots); `reserved-feedback-numbers.md` deleted. Byte conservation proved from disk by an independent reassembler on all three docs. See the "PR — Fragment the append-only docs" block below for the full Spec-walk and the four resolved open calls.
+
 **▶ Active (this branch, `conductor/ship-spike-audits-its-own-skips-gate-machinery`, v1.38.0, FB-0100): `/flow:ship-spike` audits its own skips.** Spike mode was the skip-heaviest path in the workflow and the only one that audited none of its skips — `/flow:ship` invokes five reviewers then `/flow:audit-skips`; ship-spike invoked one, and its only mention of the audit was the admission that it never called it (#140 shipped five unaudited skips). Adds ship-spike Step 2a (the same stamped repo-local handoff + `Skill("flow:audit-skips")`), runs security + a11y in spike mode (the disposability rationale covers code *quality*, not a permanent commit's secrets or a pattern a human approves on a prototype), makes the engine refuse `spike`/`tiny` as a skip reason for every stage outside a closed two-member allowlist (`{simplify, staff-review}`), adds a `preflight` stage and `plan_mode` evidence, and fixes `allowed-tools` missing `Skill` (a second inert-gate shape). Human decided both open calls at the plan gate; the `preflight`-row scope stayed spike-only **conditional on** the drift-pin genuinely covering the new row — verified, which required strengthening the pin from a string grep to a behavioural engine join. See the "PR — ship-spike audits its own skips" block below.
 
 **▶ Shipped (merged #142, v1.37.0 unchanged — docs-only): existing-repo design-language migration brief (FB-0099).** Dev-docs-only, no plugin artifacts touched, no version bump — plugin stays at v1.37.0. New `dev-docs/design-language-migration-brief.md` — a portable prompt to audit an *existing* repo's design-language doc against the five shape rules from `dev-docs/research/2026-09-design-md-investigation.md`, propose additions in that repo's own vocabulary, and stop (never edit unilaterally). Mirror of the now-merged sibling `#141` (`template/base/core-docs/design-language.md`, the scaffold for *new* repos) — wording kept character-for-character identical to `#141`'s shipped rule descriptions per FB-0099; re-confirmed against `#141`'s merged `main` content at this branch's rebase (v1.36.0 → v1.37.0), no drift. See the "PR — Design-language migration brief" block below for the full account, and `dev-docs/history.md` 2026-09-03.
@@ -24,9 +27,238 @@
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
 
-**▶ EXECUTED, shipping (this branch, `conductor/spike-designmd-investigation-vercel-agentic-design-guidance`, v1.39.0, FB-0101): harvested lessons survive an ephemeral workspace.** The contribution queue lives in user-scope storage that dies at cloud-workspace teardown — so in that environment the single-source bar stops *deferring* weak signals and starts *destroying* them (`recurrence_count` is pinned at 1 forever). Fix the storage, not the bar: ship/ship-spike Step 4c.iv flushes the queue into the PR (full records committed; **bounded** manifest in the body — inline records overflow GitHub's 65,536-char cap at ~37, measured). `/flow:contribute` gains a subordinate cross-repo recovery input. Orchestrator seat gets an **instruction**, not a mechanism. Marker (AB.1b) and memory (§ Exploration) deliberately NOT unified — three stores, three scopes. See the "PR — Ephemeral-host lesson durability" block below.
+## PR — Fragment the append-only docs to one file per entry + kill the silent doc-slot fallback (this branch, `conductor/fragment-append-only-docs-one-file-per-entry`, FB-0102/FB-0103, v1.40.0, EXECUTED — shipping)
 
-## PR — Ephemeral-host lesson durability: queue flush + orchestrator close-out (this branch, FB-0101, v1.39.0, EXECUTED — shipping)
+**Restated request.** Implement an already-approved design decision: fragment `dev-docs/history.md`, `dev-docs/feedback.md` and `CHANGELOG.md` into one file per entry (towncrier / changesets pattern), so the dominant source of merge conflicts stops existing. Config slots point at the **directory**, never at a committed rollup (a committed rollup recreates the exact conflict being removed — load-bearing, not a preference). Delete `dev-docs/reserved-feedback-numbers.md`, because with one file per entry an FB-number collision *is* a filename collision. Leave `plan.md` and `roadmap.md` alone — they are edit-in-place, they feed the positional Spec-walk parser, and their current shape is what makes them readable as current state. No git union merge driver (tested and rejected upstream: GitHub ignores user-defined `.gitattributes` for PR mergeability, and union is actively unsafe on edit-in-place files). Additionally record two feedback entries the design session asked for. **Stop at the plan gate.** Never merge.
+
+**Mode:** feature (shipped plugin surface changes: schema, 8 skill preludes, `land`, a new shared lib, a new eval) + a dev-docs migration.
+
+**Version:** v1.40.0. `main` is at v1.37.0 (`478fe17`, #142 merged). Open PRs #143 and #144 are docs/spike and claim no bump. Re-verify at rebase.
+
+**FB numbers:** FB-0102 (framing correction) + FB-0103 (silent-deletion class). **Renumbered once, mid-ship:** drafted as FB-0100/FB-0102, but PR #145 (`/flow:ship-spike` audits its own skips) was open, MERGEABLE and claiming FB-0100 *and* v1.38.0. Caught by the human reading the numbers, not by any mechanical check — which is the fourth FB collision in this batch of work and the sharpest possible argument for the part of this PR that deletes `dev-docs/reserved-feedback-numbers.md`: after fragmentation a duplicate number is a duplicate **filename**, so git would have reported a both-added conflict at write time instead. Re-derived from ground truth rather than trusting either message: `origin/main` shows v1.37.0 / FB-0099, #145 holds FB-0100 / v1.38.0, so the next free values are FB-0102, FB-0103 and v1.40.0. All three tokens had **zero** occurrences in `origin/main`, so the sweep touched only lines this branch added. Re-verify at rebase — #145 may merge first.
+
+---
+
+### 1. The correction I was told to handle, and what I found when I swept it myself
+
+The decision's "ZERO parser changes" claim is wrong, and the addendum's wider sweep is confirmed independently. Verified facts:
+
+- **Structural parsers are genuinely clean.** `plugins/flow/skills/verify-build/lib/extract-criteria.py` and `walk_extract.py` parse the **plan** doc only (`walk_extract.py:343` — `plan_path = Path(argv[1])`). Neither mentions history, feedback or changelog. Confirmed by grep, not by assumption.
+- **`historyPath` is genuinely clean.** Zero `-f` / `-e` tests anywhere in the repo. It is the one slot that can be repointed at a directory as-is.
+- **Four sites break** under directory-valued slots — three context preludes plus `land:295`:
+  | Site | Slot | Failure |
+  |---|---|---|
+  | `skills/security-review/SKILL.md:36` | `feedbackPath` | prints `(no feedback doc at …)`; reviewer runs context-blind |
+  | `skills/accessibility-review/SKILL.md:36` | `feedbackPath` | same |
+  | `skills/staff-review/SKILL.md:36` | `feedbackPath` | same |
+  | `skills/land/SKILL.md:295` | `changelogPath` | **worse**: `if [ -n "$VER" ] && [ -f "$CHANGELOG" ]` makes the whole CHANGELOG-currency block a silent no-op — the check never runs and never says so |
+- **Five more sites carry the identical latent bug** on slots this decision does not repoint: `staff-review:34` + `security-review:35` (`specPath`), `staff-review:35` + `accessibility-review:35` (`designLanguagePath`), `verify-build:37` (`planPath`). They are correct today only because those slots happen to be files.
+- **`referenceGlob` silently loses the entire FB corpus** — found by `/flow:critique-plan` on this plan, which is the fifth failing surface and the one I had missed. `flow.config.json:13` sets `referenceGlob: "dev-docs/*.md"`, and `scripts/extract_session.py:37` skips only `history.md` / `plan.md` / `roadmap.md` — so **`dev-docs/feedback.md` is currently a reference document** for `/flow:critique-plan` and `/flow:review-brief`. Moving the entries to `dev-docs/feedback/FB-*.md` takes them out of `dev-docs/*.md`. The FB-0082 zero-resolution warning (`extract_session.py:479`) will **not** fire, because `README.md`, `spec.md`, `workflow.md` and `design-language.md` still resolve — so the critic keeps citing rules while silently unable to cite any FB rule. That is a quieter recurrence of FB-0082 than the one this PR exists to prevent, on the skill that just caught it. `--reference-glob` is `action="append"` (repeatable, **not** comma-split) and `critique-plan/SKILL.md:43` passes exactly one, so the slot holds one pattern today. Fix: comma-split the slot in the skill into repeated flags (backward-compatible — a pattern with no comma is unchanged), and set flow's own slot to `dev-docs/*.md,dev-docs/feedback/*.md`. **Not** `dev-docs/**/*.md`, which would drag in the whole of `handoffs/` and `research/`.
+- **`DEFAULT_REFERENCE_SKIP_NAMES` becomes a prohibition satisfiable by deletion.** It skips by *filename*; after fragmentation `history.md` does not exist, so that entry is inert, and any future widening of the glob would flood the reference set with ~101 history fragments. Make the skip directory-aware (skip anything under the resolved `historyPath`) in the same edit.
+- **`changelogPath` is read but never declared.** `land/SKILL.md:291` reads `jq -r '.changelogPath // "CHANGELOG.md"'` and documents it in its own slot table, but it is absent from `schema/flow.config.schema.json.properties` (33 slots, none of them `changelogPath`). Already a known defect — `dev-docs/roadmap.md:878` names it. It becomes load-bearing here: repointing a slot that consumers cannot discover from the schema is not a shippable state.
+- **The loud form is already precedented in this repo.** `skills/ship/SKILL.md:764` does exactly the right thing today: `[ -f "$F" ] || echo "⚠️ [status-docs] $F (from planPath/roadmapPath) not found — … check the config slot." >&2`. I am not inventing a shape; I am extending flow's own.
+
+**Total: five breaking surfaces, not four** — three reviewer preludes (`feedbackPath`), `land:295` (`changelogPath`), and `referenceGlob` (the plan-critic's own reference corpus) — plus **five latent** sites on slots this decision does not repoint, and **five** functional readers that degrade with no message at all. This is FB-0082 (`/flow:critique-plan` went document-blind when `referenceGlob` matched nothing, invisibly) about to recur on three reviewers, `land`, and `/flow:critique-plan` itself, at once. The fifth surface was found by running `/flow:critique-plan` on this plan — which is the loop working, and is also why the count in an earlier draft of this section was wrong.
+
+---
+
+### 2. Recommendation on the resolution shape — **(a), directory-valued slots + one shared, loud resolver.** Confidence: **HIGH.**
+
+Every doc-slot context prelude stops doing its own inline `[ -f ]` and calls one shipped helper, `plugins/flow/lib/resolve-doc-slot.sh`, which resolves a slot to one of five explicit states and is loud on three of them:
+
+```
+FILE  <path> (N lines)                        # legacy single file — unchanged behaviour
+DIR   <path> (N entries) — read with: cat <path>/*.md
+⚠️  EMPTY <path> — directory exists but holds no entries; a fragmentation migration
+    probably failed. This review is running WITHOUT <slot> context.
+⚠️  MISSING <path> — <slot> is SET in flow.config.json but resolves to nothing.
+    This review is running WITHOUT <slot> context. Fix the slot or create the doc.
+(no <slot> doc at <path> — unset slot, default path, project may legitimately have none)
+```
+
+The fifth line is the only quiet one, and it is quiet because it is the only case that is genuinely ambiguous with "this project has none." An **explicitly set** slot that resolves to nothing is never quiet again. That is the addendum's requirement, and it fixes the four breaking sites *and* the four latent ones in the same edit — which is the point: patching four and calling it done leaves the bug armed for whoever repoints `specPath` next.
+
+**Why not (b), a generated-and-gitignored rollup.** I considered it seriously and it fails on the exact question the addendum asked — *what happens on a fresh clone before anything has generated it*:
+
+1. **Nothing has generated it, and the reader is a `!` bash prelude.** To guarantee the file exists you must generate it *inside* the prelude — so three reviewers and `land` would each **write to the working tree** during what is currently pure context resolution. New side effect, in the read-only half of the pipeline.
+2. **The generator can fail** (no `python3`, read-only FS, sandbox). When it does, `[ -f ]` is false and you are back to the identical silent bug, now with more moving parts between the cause and the symptom.
+3. **CI, fresh clones, and any consumer who never ran a flow skill have no rollup.** `/flow:doctor`'s doc-slot existence loop (`doctor/SKILL.md:262`) would `[WARN]` on a path that is *correct*. So doctor has to learn about the rollup anyway — (b) does not spare readers the knowledge, it just relocates it and adds an artifact.
+4. **Two artifacts that can silently disagree.** A stale rollup is undetectable without a hash check. That is a fresh FB-0010 fan-out contradiction introduced by the fix for a fan-out contradiction.
+5. **Decisively: (b) preserves `[ -f ]`, and `[ -f ]` is the defect.** It would make `feedbackPath` and `changelogPath` work while leaving `specPath`, `designLanguagePath` and `planPath` silently broken for the next person. It buys compatibility by declining to fix the bug.
+
+**Cost of (a), stated honestly.** Three costs, all accepted:
+- A prelude that shells out to `${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh` is more fragile than an inline one-liner if `CLAUDE_PLUGIN_ROOT` is unset. Mitigated with the two-tier fallback this repo already uses (`critique-plan:54`, `ship:130`) — and if the resolver itself cannot be found, the prelude prints `⚠️` rather than degrading to the silent inline form. A missing resolver must not be indistinguishable from a resolved slot.
+- Readers now `cat dir/*.md` instead of `Read file`. Same token cost; the resolver emits the exact command so no reader has to infer it.
+- Reading order inverts (`ls` sorts oldest-first for date-prefixed history). Handled by filename convention, below.
+
+**Browsing without a rollup.** `ls dev-docs/feedback/` *is* the index — generated by the filesystem, zero conflict surface. A committed index file would recreate the conflict just as surely as a committed rollup (every new entry appends a line), so there is none.
+
+---
+
+### 3. Open calls — recommendation, confidence, justification
+
+**Open call 1 — NOT among the four the human answered; proceeding on my recommendation, flagged in the PR body as trivially reversible.** `CHANGELOG.md` is the one file with an external-audience convention. Keep a pointer stub at the root?**
+- *Recommendation:* **yes — keep `CHANGELOG.md` as a 3-line pointer stub** ("Entries live in `changelog/`, one file per release; newest: …" without the "newest" part, so it is fully static). Entries move to `changelog/vX.Y.Z.md`.
+- *Confidence:* **MEDIUM-HIGH.** A stub is edit-in-place and holds no entries, so it is not a rollup and cannot recreate the conflict. But it is still a file two branches *could* touch, so it is not free — it is cheap. The alternative (delete `CHANGELOG.md` outright) is cleaner mechanically and worse for a consumer who lands on the repo root looking for the conventional filename.
+- *Justification:* the decision forbids a committed **rollup** — a file containing the entries. A stub containing no entries is a different object. If you would rather have zero root-level residue, say so and I will delete it.
+
+**Open call 2 — RESOLVED (human took the ALTERNATIVE, not my recommendation): preserve both, repair nothing.** Two entries in `main` are already merge-damaged. I found both while sweeping, and they are the empirical case for this whole PR:
+- `dev-docs/feedback.md:383` is a **bare `### FB-0072:` heading with no body**, immediately followed by `### FB-0075`. The real FB-0072 with its body sits at line 428. Provenance: #80 wrote FB-0072; #83/#84/#85 each touched that region; a clean auto-merge kept the heading and dropped the body. Nobody noticed.
+- `dev-docs/history.md:1104` and `:1115` are the **same F11 entry twice with different bodies** (differing md5). #114 and #115 both added it at slightly different offsets; git auto-merged both, cleanly.
+- Both produce **filename collisions** at fragmentation, so the fragmenter will refuse to write — which is the collision detection working on day one, on damage that has been invisible in `main` for weeks.
+- *Human decision:* **preserve both as two fragments; delete and repair nothing in this PR.** Rationale given: at MEDIUM confidence, with a reversible and an irreversible option both available, take the reversible one — preserving costs a duplicate fragment someone merges in thirty seconds, deleting costs content nobody can recover. The judgment is **scheduled, not lost**: both are named as a follow-up in the PR body.
+- *Consequence for the tool:* collision **refusal stays the default** — that is the permanent property, and any future collision still hard-stops. This migration's two known collisions are admitted through a per-case `--disambiguate <basename>` allowlist that must **name each colliding basename explicitly**; admitted pairs get `-a` / `-b` suffixes. A global `--force` flag is deliberately not built: it would let a future migration paper over an unknown collision, which is the failure this whole PR exists to remove.
+
+**Open call 3 — RESOLVED (as recommended): `changelogPath` must be declared in the schema (33 → 34 slots). Fold in the read-site↔schema join check too?**
+- *Recommendation:* **declare the slot; do NOT build the general join check in this PR.**
+- *Confidence:* **HIGH** on declaring (mandatory — a slot consumers cannot discover cannot be repointed), **HIGH** on deferring the join check (it is roadmap item "0c" with its own design, and building it here is scope drift).
+- *Justification:* `34 slots` is an FB-0010 fan-out value. I will run `git grep -nE '3[0-9] slots'` and fix every survivor in the same commit, which is the discipline `.claude/rules/general.md` requires, without absorbing an unrelated roadmap item.
+
+**Open call 4 — RESOLVED (as recommended): repoint the existing slots rather than add new ones.**
+- *Recommendation:* **repoint the existing `historyPath` / `feedbackPath` / `changelogPath` slots**; the resolver accepts file-or-directory for all of them.
+- *Confidence:* **HIGH.**
+- *Justification:* new slots would double the fan-out and force every consumer to migrate on a flag day. Repointing keeps existing single-file consumers working unchanged — the resolver's `FILE` branch is their path — and lets them fragment when they choose. Backward compatibility is not optional here: flow is installed in other repos.
+
+---
+
+### 4. Migration — scripted, with a byte-level and an entry-level accounting
+
+One-shot tool at `tools/doc-fragment/fragment.py` (dev infra under `tools/`, **not** shipped — consumers who want to fragment get instructions in `docs/migration.md`, not a rollup generator sitting in the plugin where someone will eventually commit its output).
+
+Per-file shapes, all verified by reading the actual files:
+
+| Source | Entry heading | Fragments | Non-entry content |
+|---|---|---|---|
+| `dev-docs/history.md` (3408 lines) | 36 × `## YYYY-MM-DD — Title` (top block) + ~70 × `### Title` + `**Date:**` (below `## Entries`) | `dev-docs/history/YYYY-MM-DD-slug.md` | header (L1-5), `## How to Write an Entry` (L1070), `## Entries` marker → `dev-docs/history/README.md` |
+| `dev-docs/feedback.md` (1402 lines) | 87 × `### FB-XXXX — …` | `dev-docs/feedback/FB-XXXX-slug.md` | header, `## How to Write an Entry` (L144), `## Entries` (L169) → `dev-docs/feedback/README.md` |
+| `CHANGELOG.md` (656 lines) | 55 × `## vX.Y.Z — DATE` | `changelog/vX.Y.Z.md` | header + `## Notes on versioning` (L652) → `changelog/README.md` |
+
+**Verification — three independent mechanical checks, run in the PR and recorded in `history.md`:**
+
+1. **Byte conservation (order-free, strongest).** The fragmenter slices the original rather than re-rendering it. Assert `sha256(concat(slices in original order)) == sha256(original)` and `sum(len(slice)) == len(original)`. Nothing lost, nothing duplicated, no whitespace drift. This is the "byte-level accounting, not eyeballing" the brief asked for.
+2. **Entry census (semantic).** `count(entry fragments) == count(entry headings in original)`, and `set(identifiers in fragments) == set(identifiers in original)` — FB ids for feedback, versions for changelog, date+title for history. Catches a heading swallowed into a neighbour's body, which check 1 alone would not.
+3. **Collision refusal.** Two entries mapping to one filename ⇒ the tool prints every collision and writes nothing. This is what surfaces the two damaged entries in § open call 2. Per that call's resolution, the two *known* collisions are admitted via an explicit per-basename `--disambiguate` allowlist (`-a`/`-b` suffixes); everything else still hard-stops.
+
+**Deletion criterion for the reassembler (stated explicitly, per the human's instruction):** `tools/doc-fragment/reassemble.py` exists solely to prove check 1 during this migration. It is deleted in the same PR, once the three sha256 values are recorded in the history entry. Keeping it would leave a rollup generator in the tree, and a rollup generator in the tree eventually becomes a committed rollup — the one outcome the decision forbids.
+
+The reassembler used by check 1 is deleted after the migration. Keeping it around is an invitation to commit its output, which is the one thing the decision forbids.
+
+**History reading order.** `ls dev-docs/history/` sorts oldest-first (date prefix), inverting today's newest-first. `ls -r` restores it; `dev-docs/history/README.md` says so. For `changelog/`, lexical sort puts `v1.10.0` before `v1.9.0` — `ls -v` or the semver parse in the resolver handles it, and the README says so.
+
+---
+
+### 5. The reservations file, honestly
+
+`dev-docs/reserved-feedback-numbers.md` is deleted. The decision calls the replacement "strictly better, and free." I checked that claim rather than repeating it, and it holds — but for a slightly different reason than stated:
+
+- The file's own argument for existing is that it is a **claim-time** defence (early push ⇒ conflict before either branch invests in cross-file `FB-XXXX` references), whereas a filename collision is **merge-time**. That would be a real regression in timing.
+- Except the replacement recovers claim-time too, for free: with one file per entry, *claiming is pushing an empty `dev-docs/feedback/FB-0102-<slug>.md`*. Same early-push race detection, but the artifact is the entry itself rather than a line in a second file.
+- And the reliability is genuinely better: the current file records **six separate renumbering incidents** (FB-0047, FB-0061, FB-0073, FB-0078/0079, FB-0080/0081, FB-0092→0093→0095). Its conflict surface is a free-form log that git auto-merges happily — the protocol depended on author memory, which is the FB-0010 headline class. A both-added filename conflict cannot be auto-merged and cannot be forgotten.
+
+**Consequence that must ship in the same PR:** deleting the file makes `land/SKILL.md:347` (`[ -f "$RESV" ] && … clear-reservation`) a permanent silent no-op — a *new* instance of the exact class this PR exists to kill.
+
+`git grep -l reserved-feedback-numbers` returns **14 files**, and `/flow:critique-plan` correctly flagged that my first survivor list was short. The complete set, classified (grep first, edit second — `.claude/rules/general.md` § Consistency discipline item 2):
+
+*Must change (7):* `plugins/flow/skills/land/SKILL.md` (§6 removed), `plugins/flow/skills/land/lib/land-helpers.py` (`clear-reservation` subcommand removed), `plugins/flow/evals/run_land_evals.py` (its 5 `cr` cases removed), `plugins/flow/skills/contribute/SKILL.md:132` (**shipped artifact** — instructs consumers to "claim the number in `dev-docs/reserved-feedback-numbers.md` FIRST"), `plugins/flow/skills/ship/SKILL.md` (Step 5a reservation sweep), `.claude/skills/ship/SKILL.md:27` (dev-side `/ship` mirror), `CLAUDE.md:116` (Core Documents row — a *different* table from the repo-layout one my first Spec-walk named).
+
+*Also update (2):* `dev-docs/README.md:21` (index row), `dev-docs/plan.md` (this block).
+
+*Leave as-is (5):* `dev-docs/feedback.md`, `dev-docs/history.md`, `dev-docs/research/dynamic-workflows-2026-05.md`, `dev-docs/research/visual-verification-blueprint-2026-06.md`, `dev-docs/handoffs/pr-q-verify-build-plan.md` — these are the **historical record**; they describe what was true when written and must not be retro-edited. The research/handoff docs carry `Status:` lines for exactly this.
+
+---
+
+### 6. The mechanical check (general.md rule 3 — a negative assertion alone is satisfiable by deletion)
+
+New `plugins/flow/evals/run_doc_slot_resolution_evals.py`, wired into `.github/workflows/ci.yml` (the `evals` job already asserts the harness↔runner join, so an unwired harness fails CI). Negative **paired with** positive, per the rule:
+
+**Scope call on the five *functional* doc-slot readers (raised by `/flow:critique-plan`).** Beyond the 8 context preludes there are five sites that test a doc-slot variable to build a CLI argument, and four of them say **nothing at all** on failure: `verify-build:264` and `audit-skips:136` (`PLAN_ARG=""; [ -f "$PLAN" ] && PLAN_ARG="--plan $PLAN"`), `ship:831` and `ship:954` (same shape), and `audit-coverage:57` (falls back to `{"criteria": [], "warnings": ["no plan at $PLAN"]}` — warned, but into a JSON field, not to the operator). *Recommendation:* **convert all five to loud, but do NOT route them through the resolver.** *Confidence:* **HIGH.** *Justification:* these are argv-construction sites, not "resolve a path for a human reader" — pushing them through a five-state text resolver is the wrong shape and would couple `--plan` construction to display formatting. They get a `>&2` `⚠️` branch instead. The request's requirement is that a reader cannot *silently* degrade to "no doc"; that is satisfied by loudness, not by uniform plumbing. Leaving them silent while §2 claims "fixed once, not left armed" would be the incoherence the critic named — so they ship in this PR, in the negative assertion below.
+
+- **Negative (repo-wide, not prelude-scoped):** in any shipped `SKILL.md`, every `[ -f "$X" ]` where `X` is a doc-slot-derived variable (`PLAN`, `PLAN_PATH`, `PLAN_P`, `FB`, `SPEC`, `DL`, `CHANGELOG`, `HISTORY`, `RESV`) must appear on a line that also contains `⚠️` **or** `resolve-doc-slot`. Prelude-scoped was the critic's REDIRECT: it would go green over a repo that still degrades silently at the other five sites. Greppable, and it covers all 13 remaining sites.
+- **Positive (the pairing, so deleting the line cannot satisfy the check):** each of the **8** known doc-slot context preludes — `security-review` ×2, `accessibility-review` ×2, `staff-review` ×3, `verify-build` ×1 — **must** contain a `resolve-doc-slot` invocation naming its slot. Deleting a prelude fails the positive; keeping the old silent form fails the negative. Both worlds are red.
+- **Positive, runtime:** execute the resolver against four fixtures — a directory with 3 entries (must emit the count and the `cat` command, and must **not** contain the string `no feedback doc`), a single file (`FILE` form), an explicitly-set missing path (must emit `⚠️`), and an **empty** directory (must emit `⚠️ EMPTY`, distinct from `MISSING` — an empty dir after migration is a bug, not "this project has none").
+- **Positive, `land`:** the CHANGELOG-currency block must run against a directory-valued `changelogPath` and produce a verdict. Assert the verdict, not the absence of an error.
+- **Slot declaration:** `changelogPath ∈ schema.properties`, and the documented slot count matches `schema.properties | length`.
+
+---
+
+### 7. Spec-walk
+
+- [x] Re-read version + FB high-water at rebase; confirm v1.40.0 and FB-0102/FB-0103 still free against `main` and every open PR.
+- [x] `plugins/flow/lib/resolve-doc-slot.sh` — **six**-state resolver (FILE / DIR / DIR-scaffolded / ⚠️EMPTY / ⚠️MISSING-but-set / quiet-unset-default), two-tier `${CLAUDE_PLUGIN_ROOT}` → `plugins/flow/` path fallback, `⚠️` if the resolver itself is unfindable. **Corrected from the drafted plan:** the draft claimed "semver-aware ordering for changelog dirs" — there is no semver logic in the resolver and none was needed; ordering is `ls -v`, documented in `changelog/README.md`. The `/simplify` altitude lens caught the box describing a feature the code does not have. The sixth state (scaffolded) was added in the same pass — see the doctor line below for why.
+- [x] All **8** doc-slot context preludes converted to call it: `security-review:35,36`, `accessibility-review:35,36`, `staff-review:34,35,36`, `verify-build:37`. The four not repointed by this decision (`specPath`, `designLanguagePath`, `planPath`) are converted too — the latent bug is fixed once, not left armed.
+- [x] `land/SKILL.md:295` CHANGELOG-currency block made directory-aware; `land-helpers.py changelog-check` accepts a directory and resolves `vX.Y.Z.md`.
+- [x] `changelogPath` declared in `schema/flow.config.schema.json` (33 → 34); `git grep -nE '3[0-9] slots'` run and every survivor fixed in the same commit.
+- [x] `tools/doc-fragment/fragment.py` written (collision refusal default + explicit per-basename `--disambiguate`); **nothing in the durable record repaired or deleted**; the two damaged entries preserved as `-a`/`-b` fragments and named as a follow-up in the PR body.
+- [x] Byte-conservation sha256 check passes for all three; entry census passes for all three; both recorded in the history fragment. Reassembler deleted in this PR (deletion criterion stated in §4).
+- [x] PR body states exactly what changed in `/flow:land` and why — a sibling dispatch is building a Notion surface hooked at `/flow:land`, and `land:295` is one of the breaking sites, so that worker must be able to rebase onto this rather than collide.
+- [x] `dev-docs/history/`, `dev-docs/feedback/`, `changelog/` created with their `README.md`s; `dev-docs/history.md`, `dev-docs/feedback.md` deleted; `CHANGELOG.md` reduced to a pointer stub (pending open call 1).
+- [x] `flow.config.json` repointed: `historyPath` → `dev-docs/history`, `feedbackPath` → `dev-docs/feedback`, `changelogPath` → `changelog`.
+- [x] `dev-docs/reserved-feedback-numbers.md` deleted and all **7** must-change survivors updated (§5 list): `land/SKILL.md` §6, `land-helpers.py clear-reservation`, `run_land_evals.py` cr-cases, `contribute/SKILL.md:132`, `ship/SKILL.md` Step 5a, `.claude/skills/ship/SKILL.md:27`, `CLAUDE.md:116`. `git grep -l reserved-feedback-numbers` re-run before staging; only the 5 historical-record files survive.
+- [x] The five functional doc-slot readers made loud on `>&2`: `verify-build:264`, `audit-skips:136`, `ship:831`, `ship:954`, `audit-coverage:57`.
+- [x] `referenceGlob` fixed so the FB corpus survives fragmentation: comma-split the slot into repeated `--reference-glob` flags in `critique-plan/SKILL.md:43` (and `review-brief`), set flow's own slot to `dev-docs/*.md,dev-docs/feedback/*.md`, and make `extract_session.py`'s `DEFAULT_REFERENCE_SKIP_NAMES` directory-aware rather than filename-only.
+- [x] `run_doc_slot_resolution_evals.py` written (repo-wide negative + the positives, incl. a runtime assertion that a fragmented `feedbackPath` still yields FB entries in the rendered `## Reference documents` section) and wired into `ci.yml`.
+- [x] Writers taught to write one file per entry: `/flow:ship` Steps 4a + 5, `/flow:ship-spike` Step 3, `/flow:land` Steps 2/3/4.
+- [x] `/flow:doctor` doc-slot loop (`SKILL.md:262`) made directory-aware — `[ -f "$P" ]` becomes a genuine `resolve-doc-slot.sh` call, so doctor cannot WARN on a correct directory-valued slot **and cannot disagree with the reviewers**. **This box was checked prematurely once.** The first cut re-derived the whole ladder inline instead of delegating, and drifted from the resolver within the same session: doctor gained a scaffolded-README carve-out the resolver lacked, so one identical on-disk state produced `[PASS]` in doctor and `⚠️ EMPTY` in every reviewer prelude — two copies of one predicate disagreeing, inside the PR that exists to kill that class. Both the reuse and altitude `/simplify` lenses caught it by reading this line against the code. Doctor now delegates; the predicate has one home.
+- [x] `template/base/core-docs/` + `bootstrap.sh` (`template/base/bootstrap.sh:151` glob) updated so a fresh project scaffolds directories, not files.
+- [x] Consumer-facing docs updated: `plugins/flow/docs/workflow.md` (slot table L586/L590, §"Continuous improvement"), `docs/migration.md`, `docs/upgrade.md` (an existing consumer's migration path), `README.md`, `CLAUDE.md` repo-layout tables.
+- [x] `dev-docs/README.md` index updated for the new directories.
+- [x] FB-0102 (append-only vs edited-in-place; reference count ≠ coupling; existence-testing readers are the third category) + FB-0103 (silent-deletion class, with the FB-0072 and F11 artifacts as evidence) written as fragments.
+- [x] History fragment, `dev-docs/plan.md` (this block), `dev-docs/roadmap.md` Now headline, `changelog/v1.40.0.md`.
+- [x] Full eval suite green (`ci.yml` evals + security + dev-docs jobs).
+**Declared post-approval (7 from `/flow:audit-coverage`, + 1 from the rebase).** These behaviours were added DURING review — `/simplify`, `/flow:staff-review`
+and `/flow:security-review` each found real defects, and fixing them changed behaviour this plan did not describe.
+`/flow:audit-coverage` flagged all seven as undeclared. The orchestrator declared them rather than routing to the
+human, on the reasoning that the code is identical under declare-vs-waive so the call is documentation placement, not
+substance — and that declaring records verification which already exists rather than authoring a bar to clear. Every
+one has a passing mechanical check, named inline.
+
+- [x] **SECURITY — the cwd-relative helper-resolution tier is GATED on a flow-checkout marker** (a `plugin.json`
+      naming `flow`). Ungated, a repository *under review* supplies the file `sh` executes whenever
+      `CLAUDE_PLUGIN_ROOT` is unset, and `sh <file>` ignores the exec bit — auto-firing on the four cold-read
+      reviewers, `/flow:security-review` included. Flow's own dogfooding still resolves; a consumer or hostile repo
+      gets the loud not-found branch. *Verified:* `sec 1` / `sec 2` (paired, so deleting the fallback cannot satisfy
+      it); exploit reproduced end-to-end, then confirmed closed.
+- [x] **CONSUMER-VISIBLE — `skills/documentation` activates on `**/history/*.md` + `**/feedback/*.md` as well as the
+      single-file globs.** For an upgrader: nothing changes unless they fragment; if they do, the entry-format rules
+      keep auto-loading (without this they would silently stop), and the rules now also fire on any unrelated
+      `history/` or `feedback/` directory in their repo. *Verified:* 4 paired glob checks, red-verified.
+- [x] Seventh resolver state: a SET slot pointing at an existing **zero-byte file** resolves loud, not
+      `FILE (0 lines)` — the truncated-by-merge case FB-0103 documents. Unset slot at that path stays quiet.
+      *Verified:* `state 7b`.
+- [x] `changelogPath` added to `/flow:doctor` Check 2.4's `DOC_SLOTS`, so the newest doc-path slot is not silently
+      excluded from the coverage claim FB-0098 shipped to make honest. *Verified:* `cov doctor-changelogPath`.
+- [x] `.gitignore` un-ignores each committed `tools/` package while KEEPING generated artifacts ignored
+      (`tools/**/samples*`, `__pycache__/`, re-excluded AFTER the negations — ordering is load-bearing).
+      *Verified:* `git check-ignore` both spellings + `run_shadow_sampler_evals.py` (CI-wired) staying green.
+- [x] `slot_count_scan.py` tolerates up to two interposed words ("33 schema slots"), so a stale count with an
+      adjective fails instead of reporting green. *Verified:* `cov slot-scan-word-tolerant` + a no-false-positive twin.
+- [x] The reference-doc directory skip list is exactly `{history, handoffs, research}`, asserted per-directory rather
+      than only for `history`. *Verified:* `cov skip-dir` ×3.
+
+**The eighth is not one of audit-coverage's seven** — it came out of the rebase, after two real losses:
+
+- [x] **Post-fork census** — re-diff each source doc against `origin/main` at rebase and fragment anything that landed
+      since the fragmentation run. Not in the original plan; added after two real losses (#145's FB-0100 and #147's
+      FB-0101, plus two changelog releases and two history entries). *Verified:* census reconciles at **0 missing**
+      across all three docs against current `main`.
+
+- [ ] `/flow:ship`.
+
+---
+
+### 8. Deliberately not touched
+
+- **`dev-docs/plan.md` and `dev-docs/roadmap.md`** — decision item 3. Edit-in-place, feed the positional Spec-walk parser (`walk_extract.py`), and their current shape is what makes them readable as current state. Their conflicts are accepted.
+- **No `.gitattributes` merge driver** — decision item 4, tested and rejected upstream.
+- **No committed rollup, and no committed index** — both recreate the conflict. `ls` is the index.
+- **The read-site↔schema join check** (roadmap "0c") — declared `changelogPath` only; the general check is its own PR.
+- **`specPath` / `designLanguagePath` / `planPath` slots stay file-valued** — only their *readers* are hardened. Fragmenting them is not this decision.
+
+**Files touched (est.):** `plugins/flow/lib/resolve-doc-slot.sh` (new), 5 reviewer/verify `SKILL.md`s, `land/SKILL.md` + `land/lib/land-helpers.py`, `ship/SKILL.md`, `ship-spike/SKILL.md`, `doctor/SKILL.md`, `schema/flow.config.schema.json`, `evals/run_doc_slot_resolution_evals.py` (new) + `run_land_evals.py`, `.github/workflows/ci.yml`, `tools/doc-fragment/fragment.py` (new), `template/base/*`, `flow.config.json`, `docs/{migration,upgrade}.md`, `plugins/flow/docs/workflow.md`, `README.md`, `CLAUDE.md`, and the three doc migrations (~240 fragments + 3 READMEs, 3 deletions).
+
+**▶ EXECUTED, shipping (this branch, `conductor/spike-designmd-investigation-vercel-agentic-design-guidance`, v1.39.0, FB-0102): harvested lessons survive an ephemeral workspace.** The contribution queue lives in user-scope storage that dies at cloud-workspace teardown — so in that environment the single-source bar stops *deferring* weak signals and starts *destroying* them (`recurrence_count` is pinned at 1 forever). Fix the storage, not the bar: ship/ship-spike Step 4c.iv flushes the queue into the PR (full records committed; **bounded** manifest in the body — inline records overflow GitHub's 65,536-char cap at ~37, measured). `/flow:contribute` gains a subordinate cross-repo recovery input. Orchestrator seat gets an **instruction**, not a mechanism. Marker (AB.1b) and memory (§ Exploration) deliberately NOT unified — three stores, three scopes. See the "PR — Ephemeral-host lesson durability" block below.
+
+## PR — Ephemeral-host lesson durability: queue flush + orchestrator close-out (this branch, FB-0102, v1.39.0, EXECUTED — shipping)
 
 **Mode:** feature (script + two skill steps + one drain input + docs + eval). `platform: library` ⇒ `/flow:verify-build` self-skips; no browser-UI files in the diff ⇒ security/a11y self-skip on file patterns.
 
@@ -36,7 +268,7 @@
 - [x] `/flow:ship` + `/flow:ship-spike` Step 4c.iv wired identically (the consistency is the value). *Verified:* both files, same block.
 - [x] `/flow:contribute` Step 2 input 3 — cross-repo recovery via `gh search prs`, local queue takes precedence, eventual-consistency caveat stated.
 - [x] Orchestrator close-out in `dev-docs/workflow.md`, resolved through `feedbackPath` (survives the fragmentation sibling).
-- [x] FB-0101 written + number reserved; roadmap § Exploration for memory; AB.1b left to own the marker.
+- [x] FB-0102 written + number reserved; roadmap § Exploration for memory; AB.1b left to own the marker.
 - [x] Eval CI-wired (FB-0056: an un-wired eval provides zero standing protection).
 - [x] Version 1.37.0 → **1.39.0** (1.38.0 claimed by open #145) across `plugin.json` + `marketplace.json`; no stale refs.
 

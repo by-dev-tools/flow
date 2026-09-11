@@ -52,7 +52,7 @@ Once those are confirmed:
 
   Plus, if not already done at user-scope: `/plugin marketplace add by-dev-tools/flow && /plugin install flow@flow`.
 
-  **Verify the install actually took** (two checks, both must pass — silent failure on either is a real consumer footgun per `dev-docs/feedback.md` FB-0005):
+  **Verify the install actually took** (two checks, both must pass — silent failure on either is a real consumer footgun per `dev-docs/feedback/` FB-0005):
 
   ```
   /plugin marketplace list | grep -E '^flow($|[[:space:]])'   # must return a line — word-anchored so a sibling marketplace doesn't false-positive
@@ -99,7 +99,7 @@ You should see BOTH `/staff-review` (your local) AND `/flow:staff-review` (plugi
 
 ### Smoke test
 
-Invoke `/flow:staff-review` on this PR's own diff (the install + config + CLAUDE.md edit). All 4 lenses should spawn; output should match the documented BLOCKER/NIT/FOLLOW-UP/EXPLORATION shape. Any rough edges: capture in **flow's** `dev-docs/feedback.md` via a follow-up PR in flow's repo — NOT in your project's feedback.md (plugin feedback belongs to plugin's dev-tracking).
+Invoke `/flow:staff-review` on this PR's own diff (the install + config + CLAUDE.md edit). All 4 lenses should spawn; output should match the documented BLOCKER/NIT/FOLLOW-UP/EXPLORATION shape. Any rough edges: capture in **flow's** `dev-docs/feedback/` (a new `FB-XXXX-<slug>.md`) via a follow-up PR in flow's repo — NOT in your project's feedback.md (plugin feedback belongs to plugin's dev-tracking).
 
 Open the Stage 1 PR against `main`. Don't merge — let the user merge.
 
@@ -132,7 +132,7 @@ Open the Stage 1 PR against `main`. Don't merge — let the user merge.
   **Note for verify-build:** run `/run-skill-generator` once before this stage if you haven't (one-time per-project setup that scaffolds `.claude/skills/run-<name>/`). Without it, `/flow:verify-build` falls back to heuristic launch and may return Unknown verdicts, which BLOCK ship per FB-0011. `/flow:doctor` Check 5.3 surfaces this prerequisite.
   11. STOP.
 
-- **Capture every rough edge** in flow's `dev-docs/feedback.md` via a follow-up flow PR. This is the load-bearing output.
+- **Capture every rough edge** in flow's `dev-docs/feedback/` via a follow-up flow PR. This is the load-bearing output.
 
 - **Do NOT fix flow bugs as part of Stage 1.5.** Fixes happen as follow-up PRs in flow, not bundled here. Stage 1.5 is a clean test surface.
 
@@ -250,6 +250,60 @@ In `core-docs/plan.md`: move any "Flow migration" Active Work Item to Recently C
 After migration completes, picking up new flow versions follows the same 2-command ritual every consumer uses. See [`docs/upgrade.md`](upgrade.md).
 
 ---
+
+## Optional — fragmenting an append-only doc into one file per entry
+
+**Entirely optional, and orthogonal to the three stages above.** Every doc-path slot
+accepts a single `.md` file *or* a directory of one-file-per-entry fragments, and the
+schema defaults are still single files. A project that never does this keeps working
+exactly as before, forever. `bootstrap.sh` scaffolds directories for *new* projects
+because that is the better default going forward — not because the file shape is
+deprecated.
+
+**Why you might.** `history`, `feedback` and `CHANGELOG` are append-only: every PR adds
+an entry at the same insertion point, so every concurrent PR collides there. One file
+per entry removes the shared line. It also removes a quieter failure — a clean
+auto-merge can drop an entry with no conflict markers and a clean parse, and nothing
+downstream can tell. A merge cannot silently drop a *file*.
+
+**The method matters more than any script.** Flow's own migration used a one-shot tool
+(`tools/doc-fragment/fragment.py` in the flow checkout — dev infra, deliberately not
+shipped, because a rollup generator living in the plugin is how a committed rollup
+eventually happens). You do not need it. What you need is the discipline, which is
+short enough to restate:
+
+1. **Split at the entry heading level** — whatever your doc uses (`## vX.Y.Z`,
+   `### FB-XXXX`, `## YYYY-MM-DD — Title`). Keep that heading *inside* the fragment.
+2. **Write verbatim slices, un-normalised.** Do not tidy trailing newlines on the way
+   out. Normalising makes the next step impossible to state honestly.
+3. **Prove it with an independent reader.** Concatenate the fragments back *from disk*
+   in source order and compare `sha256` against the original. A tool that checks its own
+   in-memory work proves only that it agrees with itself.
+4. **Census the identifiers.** Byte conservation cannot catch a heading swallowed into a
+   neighbour's body — every byte is still present, in the wrong fragment. Compare the
+   *set* of entry IDs found by re-parsing the written files against the source's.
+5. **Treat a filename collision as a hard stop, never an auto-rename.** Two entries
+   claiming one identity is the signal, not noise. Flow's own migration hit two, both
+   pre-existing merge damage nobody had noticed.
+6. **Repoint the slot, then run `/flow:doctor`.** It reports the entry count per slot.
+7. **Re-run the census at every rebase, against the branch you will merge into.** Steps 3-4 verify against the source
+   *as it was when you ran the fragmenter*, which stops being true the moment anyone else merges. Any entry that lands
+   upstream after your run has no fragment, and it will disappear on merge — silently, with a clean parse. Diff each
+   source doc against the default branch and fragment anything new. Flow's own migration lost six entries this way
+   across two merges before the re-run census caught them; a one-shot verification of a moving target is a
+   verification of the past.
+
+**Two gotchas, both real:**
+
+- **`referenceGlob` does not follow you into the subdirectory.** The feedback corpus is a
+  reference document for `/flow:critique-plan`. If you fragment `feedbackPath`, add the
+  directory to the slot as well — it accepts a comma-separated list:
+  `"referenceGlob": "core-docs/*.md,core-docs/feedback/*.md"`. Miss this and every FB rule
+  silently drops out of the critic's context **without** the zero-resolution warning
+  firing, because your other reference docs still resolve.
+- **Do not add an index or a rollup file.** Either recreates the exact conflict you just
+  removed, because every new entry appends a line to it. `ls` is the index (`ls -r` for
+  newest-first on date-prefixed entries, `ls -v` for version-named ones).
 
 ## Troubleshooting
 

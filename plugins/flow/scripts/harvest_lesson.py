@@ -238,7 +238,7 @@ def cmd_mark(args) -> int:
 
 
 # ---------------------------------------------------------------------------
-# flush (FB-0101) -- durability for ephemeral hosts.
+# flush (FB-0102) -- durability for ephemeral hosts.
 #
 # The queue lives in user-scope storage (contributionsQueuePath). That is correct
 # on a persistent machine and correct for the cross-project contract, but on an
@@ -246,7 +246,7 @@ def cmd_mark(args) -> int:
 # queued lesson with it. `flush` writes the queued records to a path INSIDE the
 # repo so the PR carries them -- git is durable by construction.
 #
-# Two outputs, deliberately split (see FB-0101 "the 37-record ceiling"):
+# Two outputs, deliberately split (see FB-0102 "the 37-record ceiling"):
 #   * --out-dir  : full records, committed to the branch. No size ceiling.
 #   * stdout     : a BOUNDED manifest (one short row per record) for the PR body.
 # Putting full JSON in the PR body overflows GitHub's 65,536-char limit at ~37

@@ -17,18 +17,18 @@ You are auditing recent changes against project standards. This runs in an isola
 - Run `git diff main..HEAD --name-only` to list changed files
 - Run `git log --oneline main..HEAD` for commit history
 - Read `CLAUDE.md` for project standards and the plugin-vs-dev boundary
-- Read `dev-docs/feedback.md` for documented rules and past corrections
+- Read `dev-docs/feedback/` for documented rules and past corrections
 - Read `dev-docs/spec.md` for the canonical feature list and known limitations
 
 ## 2. Check documentation completeness
 
-- Does `dev-docs/history.md` have entries for the changes? Are they complete (what, why, tradeoffs)?
+- Does `dev-docs/history/` have entries for the changes? Are they complete (what, why, tradeoffs)?
 - Does `dev-docs/plan.md` reflect the current state?
-- Were any user corrections made that aren't captured in `dev-docs/feedback.md`?
+- Were any user corrections made that aren't captured in `dev-docs/feedback/`?
 
 ## 3. Check against feedback rules
 
-For each entry in `dev-docs/feedback.md`, check if the recent changes violate any synthesized rules. Flag violations.
+For each entry in `dev-docs/feedback/`, check if the recent changes violate any synthesized rules. Flag violations.
 
 ## 4. Check plugin quality bar (from CLAUDE.md)
 

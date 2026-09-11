@@ -40,6 +40,14 @@ DEFAULT_REFERENCE_SKIP_NAMES = {
     "roadmap.md",
 }
 
+# FB-0102: the skip above is BY FILENAME, which is a prohibition satisfiable by
+# deletion. Once history.md is fragmented into a `history/` directory the
+# "history.md" entry matches nothing -- it silently stops protecting anything while
+# still looking like a guard -- and any widening of `referenceGlob` would flood the
+# reference set with ~106 history fragments. Skip by DIRECTORY too, so the guard
+# survives the file becoming a directory.
+DEFAULT_REFERENCE_SKIP_DIRS = {"history", "handoffs", "research"}
+
 ARTIFACT_EXTENSIONS = (
     "md", "py", "ts", "tsx", "js", "jsx", "swift", "go", "rs",
     "json", "yaml", "yml", "toml", "css", "scss", "html",
@@ -376,6 +384,7 @@ def gather_reference_docs(
     globs: list[str],
     skip_names: set[str],
     allow_external_paths: bool = False,
+    skip_dirs: set[str] | None = None,
 ) -> list[tuple[str, str]]:
     """Return ordered (display_path, contents) tuples for reference docs.
 
@@ -396,6 +405,8 @@ def gather_reference_docs(
     boundary. Out-of-cwd paths fail loudly with a stderr message, not
     silently.
     """
+    if skip_dirs is None:
+        skip_dirs = DEFAULT_REFERENCE_SKIP_DIRS
     cwd = Path.cwd().resolve()
     candidates: list[Path] = []
     for p in paths:
@@ -425,10 +436,13 @@ def gather_reference_docs(
             continue
         seen.add(resolved)
         # cwd-constraint: reject paths outside cwd unless explicitly allowed.
+        rel = None
+        try:
+            rel = resolved.relative_to(cwd)
+        except ValueError:
+            pass
         if not allow_external_paths:
-            try:
-                resolved.relative_to(cwd)
-            except ValueError:
+            if rel is None:
                 sys.stderr.write(
                     f"extract_session: rejecting reference path outside cwd: {resolved}\n"
                     f"  cwd={cwd}\n"
@@ -437,16 +451,21 @@ def gather_reference_docs(
                 continue
         if resolved.name in skip_names:
             continue
+        # Directory-level skip (FB-0102). The name-based skip above stops
+        # protecting anything the moment a skipped doc becomes a directory of
+        # fragments, and `history/2026-*.md` would otherwise flood the reference
+        # set. Checked against the path's parts relative to cwd, so a top-level
+        # `research/` is skipped without also skipping a `docs/x/research-notes.md`.
+        rel_parts = rel.parent.parts if rel is not None else ()
+        if any(part in skip_dirs for part in rel_parts):
+            continue
         if not resolved.is_file():
             continue
         try:
             text = resolved.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        try:
-            display = str(resolved.relative_to(cwd))
-        except ValueError:
-            display = str(resolved)
+        display = str(rel) if rel is not None else str(resolved)
         if len(text) > REFERENCE_DOC_CHAR_CAP:
             original = len(text)
             text = (
@@ -923,7 +942,12 @@ def main() -> int:
         "--reference-glob",
         action="append",
         default=[],
-        help="glob pattern for reference docs (can be repeated, e.g. core-docs/*.md)",
+        help="glob pattern for reference docs. Repeatable, AND comma-separated "
+             "(e.g. 'core-docs/*.md,core-docs/feedback/*.md'). The comma form exists "
+             "because flow.config.json.referenceGlob is a single string slot: once a "
+             "reference doc is fragmented into a directory it needs a second pattern, "
+             "and splitting here keeps that logic in one testable place instead of "
+             "duplicating a shell IFS-splitting one-liner into every calling skill.",
     )
     ap.add_argument(
         "--allow-external-paths",
@@ -948,11 +972,12 @@ def main() -> int:
         )
         return 2
     ref_paths = [p.strip() for p in args.reference_paths.split(",") if p.strip()]
+    ref_globs = [g.strip() for spec in args.reference_glob for g in spec.split(",") if g.strip()]
     sys.stdout.write(run(
         args.mode,
         args.session_file,
         ref_paths,
-        args.reference_glob,
+        ref_globs,
         allow_external_paths=args.allow_external_paths,
         plan_file=args.plan_file,
     ))

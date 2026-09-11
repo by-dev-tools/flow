@@ -138,7 +138,7 @@ elif [ -f "$STAGES" ] && [ "$STAMP_STATUS" != "ok" ] && [ -n "$STAMP_STATUS" ]; 
     "$(printf '%s' "$STAMP_REASON" | jq -Rs . 2>/dev/null || printf '"handoff stamp did not match this workspace"')" \
     "$(printf '%s' "$STAGES" | jq -Rs . 2>/dev/null || printf '"(handoff path; jq unavailable)"')"
 elif [ -f "$STAGES" ]; then
-  PLAN_ARG=""; [ -f "$PLAN" ] && PLAN_ARG="--plan $PLAN"
+  PLAN_ARG=""; { [ -f "$PLAN" ] && PLAN_ARG="--plan $PLAN"; } || echo "⚠️ [audit-skips] no plan doc at $PLAN — running WITHOUT plan context. This is NOT the same as \"the plan declares no criteria\": check flow.config.json.planPath." >&2
   # Capture stderr (do NOT 2>/dev/null it away) so an engine failure on a PRESENT handoff is
   # diagnosable. Distinguish that failure from the absent-handoff no-op below via a dedicated
   # engine_error field: a present-but-unreadable handoff is NOT "nothing to audit" -- the

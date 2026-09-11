@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression evals for `harvest_lesson.py flush` (FB-0101).
+"""Regression evals for `harvest_lesson.py flush` (FB-0102).
 
 The flush exists because the contribution queue lives in user-scope storage that
 does NOT survive an ephemeral cloud workspace. These checks pin the properties
@@ -76,7 +76,7 @@ def make_record(store, idx, summary=None, slug=None, session="sess-abc"):
 
 
 def main():
-    print("== lesson-flush evals (FB-0101) ==")
+    print("== lesson-flush evals (FB-0102) ==")
 
     # 1. Absent store -> clean no-op, exit 0. A ship must never die on this.
     with tempfile.TemporaryDirectory() as td:

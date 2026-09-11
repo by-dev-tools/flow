@@ -9,12 +9,17 @@ therefore worth pinning deterministically + idempotently:
 
   changelog-check  — does the CHANGELOG carry a `## v<version>` entry? (the FLOW-1
                      gap that let v1.10.0 merge with no changelog line). exit 0 if
-                     present, 1 if missing (caller WARNs), 2 on a missing file.
+                     present, 1 if missing (caller WARNs), 2 on a missing/empty
+                     source. Accepts a single file OR a fragmented directory
+                     (one file per release) — see `_read`.
 
-  clear-reservation — strike a shipped `FB-XXXX` (or `VH-XXXX`) reservation line
-                     from reserved-feedback-numbers.md. Idempotent: removing an
-                     absent id is a clean no-op (exit 0), never an error — so a
-                     re-run of /flow:land can't fail on an already-cleared number.
+  (clear-reservation was REMOVED in v1.40.0 alongside `reserved-feedback-numbers.md`.
+   With one file per feedback entry, an FB-number collision IS a filename collision,
+   which git reports as a both-added conflict — a mechanical, unmissable check that
+   replaces a protocol depending on author memory. Leaving the subcommand behind
+   would have made it a permanent silent no-op: the caller guarded it with
+   `[ -f "$RESV" ]` on a file that no longer exists, so it would have looked healthy
+   forever while doing nothing. That is the exact class this release removes.)
 
 Stdlib only. Run: python3 land-helpers.py <subcommand> ...
 """
@@ -28,20 +33,46 @@ from pathlib import Path
 
 
 def _read(path: str) -> str | None:
+    """Read a changelog source that is EITHER a single file or a fragmented
+    directory (one file per release).
+
+    FB-0102: `changelogPath` may now point at a directory. The caller used to guard
+    this whole check with `[ -f "$CHANGELOG" ]`, which is FALSE on a directory — so
+    a directory-valued slot made the currency check a silent no-op: it never ran and
+    never said so. That is the same class as FB-0082, and it is worse here than at
+    the reviewer preludes, because the reviewers at least printed something.
+    """
     p = Path(path)
-    if not p.is_file():
-        return None
-    return p.read_text()
+    if p.is_file():
+        return p.read_text()
+    if p.is_dir():
+        # Concatenate the release fragments. Order is irrelevant — the caller only
+        # asks whether a `## vX.Y.Z` heading exists anywhere in the corpus.
+        parts = [
+            f.read_text()
+            for f in sorted(p.glob("*.md"))
+            if f.is_file() and f.name != "README.md" and not f.name.startswith("_")
+        ]
+        # An EMPTY directory is not the same as a corpus with no matching version.
+        # Returning "" here would make the check report "no v1.40.0 entry" when the
+        # truth is "there are no entries at all" — a misdiagnosis that sends the
+        # reader to write an entry rather than to fix a broken migration.
+        return "\n".join(parts) if parts else None
+    return None
 
 
 def changelog_check(args) -> int:
     """exit 0: `## v<version>` present. 1: absent (WARN). 2: file missing/unreadable."""
     text = _read(args.changelog)
     if text is None:
-        sys.stderr.write(
-            f"[land] changelog-check: file not found at {args.changelog} — "
-            f"cannot verify currency.\n"
+        p = Path(args.changelog)
+        detail = (
+            f"directory {args.changelog} holds no release fragments (a fragmentation "
+            f"migration probably failed halfway)"
+            if p.is_dir()
+            else f"file not found at {args.changelog}"
         )
+        sys.stderr.write(f"[land] changelog-check: {detail} — cannot verify currency.\n")
         return 2
     ver = args.version.lstrip("vV")
     # Match a heading line `## vX.Y.Z` (allow a trailing " — date"/" (...)" etc.).
@@ -59,52 +90,6 @@ def changelog_check(args) -> int:
     return 1
 
 
-def clear_reservation(args) -> int:
-    """Remove reservation lines naming <id> from the reserved-numbers file.
-
-    A reservation line is any line mentioning the id token (e.g. `FB-0061` or
-    `VH-0008`), matched on a word boundary so `FB-005` never strikes `FB-0061`.
-    Idempotent: zero matches → clean no-op, exit 0.
-    """
-    text = _read(args.file)
-    if text is None:
-        sys.stderr.write(
-            f"[land] clear-reservation: file not found at {args.file} — "
-            f"nothing to clear (no reservations file).\n"
-        )
-        # Absent reservations file is not an error for land — many repos never
-        # pre-reserve. Clean no-op.
-        return 0
-    token = args.id
-    if not re.fullmatch(r"(FB|VH)-\d{1,6}", token):
-        sys.stderr.write(
-            f"[land] clear-reservation: '{token}' is not a FB-/VH- id; refusing to "
-            f"strike lines on an unconstrained match.\n"
-        )
-        return 2
-    # Match a RESERVATION BULLET only — a list item that OPENS with the id — not any line
-    # mentioning it. The previous `search` form removed every occurrence, so clearing one
-    # shipped number also deleted the audit-trail entries that cite it: this file's whole
-    # second half is institutional memory about past collisions, and a land run silently
-    # destroyed three of those entries before this was caught (dogfooded on #88). An
-    # audit-trail line opens with its date (`- **2026-08-11** — ...`), so anchoring on
-    # `- **<id>**` separates the two without needing to parse section headings.
-    # Bold is optional: real files write `- **FB-0082** — …`, older ones `- FB-0013 (PR P)`.
-    # The anchor that matters is that the bullet OPENS with the id; an audit-trail entry
-    # opens with its date (`- **2026-08-11** — …`), so it can never match.
-    tok_re = re.compile(r"^\s*[-*]\s+\*{0,2}" + re.escape(token) + r"\b")
-    kept, removed = [], []
-    for line in text.splitlines(keepends=True):
-        (removed if tok_re.search(line) else kept).append(line)
-    if not removed:
-        print(f"[land] clear-reservation: no reservation line for {token} (already clear).")
-        return 0
-    Path(args.file).write_text("".join(kept))
-    for line in removed:
-        print(f"[land] clear-reservation: removed — {line.rstrip()}")
-    return 0
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="land-helpers.py")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -113,11 +98,6 @@ def main(argv=None) -> int:
     cc.add_argument("changelog")
     cc.add_argument("--version", required=True)
     cc.set_defaults(func=changelog_check)
-
-    cr = sub.add_parser("clear-reservation")
-    cr.add_argument("file")
-    cr.add_argument("--id", required=True)
-    cr.set_defaults(func=clear_reservation)
 
     args = parser.parse_args(argv)
     return args.func(args)

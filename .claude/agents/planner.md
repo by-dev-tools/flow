@@ -14,7 +14,7 @@ Before proceeding, read:
 - `CLAUDE.md`
 - `dev-docs/plan.md`
 - `dev-docs/spec.md` (for the canonical feature list and audit categories)
-- `dev-docs/feedback.md` (for relevant past corrections)
+- `dev-docs/feedback/` (one file per entry; `cat dev-docs/feedback/*.md` for relevant past corrections)
 
 ## How to work
 

@@ -22,7 +22,11 @@ Needs an **option decision at a human gate** (ascending cost): **(a)** confirm-a
 
 Canonical: `research/2026-08-23-flow-cloud-workflow-plan.md`. One orchestrator workspace per repo spawns + drives implementation workspaces (each running the flow loop); the human works from the orchestrator seat, keeping the plan-approval + merge gates. **Three fronts:** D1 prototype-first gate (Phase 0 + Phase 1 shipped; Phase 2 next); the cloud workflow (`toolchain` manifest-kind keystone -> orchestrator dispatch, §5 execution sequence); model selection for spawned workspaces (measurement-first, item M). Shipped #122 / #124 (land-elimination §4.5) / #126 (PHASE0 sweep fix) / #128 (D1 Phase 0) / this D1 Phase 1 PR; orchestration proven end-to-end 2026-08-25 via the `conductor` CLI. **M** (per-subagent model routing) and **AB** (attention-budget audit) — the 2026-08-14 Anthropic-canon items (FB-0084) — fold into this program: M is front (3); AB stays scoped in § Next. Both remain detailed in § Next below.
 
-**Plugin at v1.39.0 (shipped — SAFETY: harvested lessons now survive an ephemeral workspace. The lesson-contribution queue lives in user-scope storage that a cloud workspace destroys at teardown, so in that environment the source-diversity bar stopped *deferring* weak signals and started *destroying* them — `recurrence_count` pinned at 1 forever. `/flow:ship` + `/flow:ship-spike` Step 4c.iv now flush the queue into the PR: full records committed, a bounded manifest in the body (inline records overflow GitHub's 65,536-char cap at ~37, measured). Scoped to the CURRENT project only — the queue is cross-project by design, so an unfiltered flush would publish one project's internals into another's public repo. `/flow:contribute` gains a subordinate cross-repo recovery input, constrained to `--author "@me" --merged`. The orchestrator seat gets an instruction, not a mechanism. The harness-audit marker (AB.1b) and the memory corpus are deliberately NOT unified with it — three stores, three scopes; FB-0101.)** Recently shipped: **v1.37.0 (shipped #141 — `/flow:doctor` slot-coverage honesty + design-language template, FB-0098: Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source, not by editing any project's config. New `template/base/core-docs/design-language.md` (shape only). Doctor's frontmatter no longer over-promises "all 33 slots have sensible values." See `dev-docs/history.md` 2026-09-03.)** Recently shipped: **v1.36.0 (`/flow:doctor` Check 2.5's slot-count guard hoisted to the shared, wrap-tolerant predicate flow runs on itself; FB-0096).**
+**Plugin at v1.40.0 (this PR — fragment the append-only docs to one file per entry, and kill the silent doc-slot fallback; FB-0102/FB-0103). `dev-docs/history.md` / `dev-docs/feedback.md` / `CHANGELOG.md` became `dev-docs/history/` (106), `dev-docs/feedback/` (84) and `changelog/` (55) — 245 fragments, one file per entry, no rollup and no index (both would recreate the conflict being removed; `ls` is the index). `plan.md` and `roadmap.md` are deliberately untouched: they are edited in place, not appended to, and they feed the positional Spec-walk parser. New shared `plugins/flow/lib/resolve-doc-slot.sh` replaces ten inline `[ -f "$X" ]` doc-slot readers — `[ -f ]` is false on a directory and the fallback was silent, so a misconfigured slot looked exactly like a project that has none (the FB-0082 class). `changelogPath` finally declared in the schema (33 → 34). `reserved-feedback-numbers.md` deleted: a duplicate FB number is now a duplicate filename. Two live merge-damaged entries found in `main` by the migration and **preserved, not repaired** — see `dev-docs/history/2026-09-06-fragment-append-only-docs-one-file-per-entry.md`.)** Recently shipped: **v1.37.0 (`/flow:doctor` slot-coverage honesty + design-language template, FB-0098).**
+
+**Plugin at v1.37.0 (this PR — `/flow:doctor` slot-coverage honesty + design-language template, FB-0098: Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source, not by editing any project's config. New `template/base/core-docs/design-language.md` (shape only). Doctor's frontmatter no longer over-promises "all 33 slots have sensible values." See `dev-docs/history.md` 2026-09-03.)** Recently shipped: **v1.36.0 (`/flow:doctor` Check 2.5's slot-count guard hoisted to the shared, wrap-tolerant predicate flow runs on itself; FB-0096).**
+
+**Plugin at v1.39.0 (shipped — SAFETY: harvested lessons now survive an ephemeral workspace. The lesson-contribution queue lives in user-scope storage that a cloud workspace destroys at teardown, so in that environment the source-diversity bar stopped *deferring* weak signals and started *destroying* them — `recurrence_count` pinned at 1 forever. `/flow:ship` + `/flow:ship-spike` Step 4c.iv now flush the queue into the PR: full records committed, a bounded manifest in the body (inline records overflow GitHub's 65,536-char cap at ~37, measured). Scoped to the CURRENT project only — the queue is cross-project by design, so an unfiltered flush would publish one project's internals into another's public repo. `/flow:contribute` gains a subordinate cross-repo recovery input, constrained to `--author "@me" --merged`. The orchestrator seat gets an instruction, not a mechanism. The harness-audit marker (AB.1b) and the memory corpus are deliberately NOT unified with it — three stores, three scopes; FB-0102.)** Recently shipped: **v1.37.0 (shipped #141 — `/flow:doctor` slot-coverage honesty + design-language template, FB-0098: Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source, not by editing any project's config. New `template/base/core-docs/design-language.md` (shape only). Doctor's frontmatter no longer over-promises "all 33 slots have sensible values." See `dev-docs/history.md` 2026-09-03.)** Recently shipped: **v1.36.0 (`/flow:doctor` Check 2.5's slot-count guard hoisted to the shared, wrap-tolerant predicate flow runs on itself; FB-0096).**
 
 **Plugin at v1.38.0 (this PR — `/flow:ship-spike` audits its own skips, FB-0100: spike mode was the skip-heaviest path in the workflow and the only one that audited none of its skips. Adds ship-spike Step 2a (`/flow:audit-skips` over the same stamped repo-local handoff `/flow:ship` writes), runs security + a11y in spike mode — the disposability rationale covers code *quality*, not a permanent commit's secrets nor an a11y pattern a human approves on a prototype (D1's own thesis) — and makes the engine REFUSE `spike`/`tiny` as a skip reason for every stage outside a closed two-member allowlist (`{simplify, staff-review}`) — so `verify-build`, the behavioral gate, is covered by the rule rather than by whoever remembered to list it — since a mode-declared blanket skip is unauditable by construction. Fourth recorded instance of the gate-that-does-not-fire-where-most-needed class (FB-0082, FB-0085, FB-0077). See `dev-docs/history.md` 2026-09-03.)** Recently shipped: **#142 (existing-repo design-language migration brief, FB-0099 — docs-only, no version bump), v1.37.0 (`/flow:doctor` slot-coverage honesty + design-language template, FB-0098), v1.36.0 (`/flow:doctor` Check 2.5's slot-count guard hoisted to the shared, wrap-tolerant predicate; FB-0096).**
 
@@ -232,6 +236,63 @@ Shape and cost are unchanged from the original capture (~3 one-line writes + one
 ### S2 — `exploration`'s globs reach 1 of 4 consumer repos (E3, `research/2026-09-agents-md-vs-skills.md` §5.3) — bundle with S0 (2026-09-04)
 
 `exploration`'s `src|app|lib|packages/**` match **0 files** in `health-tracker` (0/515), `ripe` (0/98), `music-app` (0/92), and **0 in flow's own repo**; only `portfolio` matches (56/237). Three of four consumer repos are Swift/iOS with no lowercase `src`/`app`/`lib`/`packages` root, and `health-tracker`'s capitalized `App/` doesn't match `app/**`. E1 makes this **moot today** (no skill's `paths:` fires at all), but it means the fix is **two-part**: correcting activation alone would leave `exploration` dead in 75% of the fleet. Merges with the already-queued config-driven `paths:` item — cheapest shape is a per-project `paths:` from `flow.config.json`, or an added `**/*.swift` / capitalized-root pattern. **Surfaces when:** S0 lands (fix them together — `exploration` is dead either way until activation is restored).
+
+### Deferred from the doc-fragmentation PR (v1.40.0, FB-0102/FB-0103)
+
+Routed here rather than left in a PR body — all four were raised by `/flow:staff-review`
+lenses and consciously deferred, not missed.
+
+1. **Prose-as-API: `/flow:doctor` string-matches the resolver's human-readable output.**
+   `doctor/SKILL.md` does `case "$RES" in "DIR "*"(scaffolded, no entries yet)"*) …`,
+   keying on words inside a sentence written to be *read*. The repo already solves this
+   properly elsewhere — `skills/ship/lib/manifest_contract.py` gives the emitter and the
+   detector one shared marker definition; `status-docs.py entries` emits `<marker>\t<path>`;
+   `slot_count_scan.py` uses exit codes. Rewording the resolver's display text silently
+   flips a doctor `[PASS]` to a wrong `[WARN]`. *Shape:* a structured first field
+   (`STATE\tpath\tn`) or exit codes, with the state tokens defined once. Touches the
+   resolver, doctor, and two eval harnesses — which is why it isn't in v1.40.0. Same
+   "unverified contract between two files" family as the `${CLAUDE_PLUGIN_ROOT}`-reference
+   linter already queued below, and a good candidate to land with it.
+
+2. **The entry-file predicate (`*.md` minus `README.md` minus `_*`) is stated twice, in two
+   languages, and the `_*` convention is documented nowhere.** `resolve-doc-slot.sh` (shell
+   `find`) and `land/lib/land-helpers.py` (Python `glob`). `manifest_contract.py`'s
+   treatment doesn't transfer cleanly — that's Python↔Python, this is sh↔Python — so the
+   honest shape is a **behavioural** join: one eval fixture directory both implementations
+   must count identically, plus one sentence naming the `_*` rule in the three directory
+   READMEs.
+
+3. **The two-tier helper-resolution idiom is ungated at its PRE-EXISTING sites (security).**
+   `R="${CLAUDE_PLUGIN_ROOT}/lib/x.sh"; [ -f "$R" ] || R="plugins/flow/lib/x.sh"` — the second
+   tier is relative to the **working directory**, i.e. to the repository under review, so with
+   `CLAUDE_PLUGIN_ROOT` unset a caller `sh`-executes a file that repo controls (and `sh <file>`
+   ignores the exec bit, so plain text suffices). v1.40.0 gated every `resolve-doc-slot.sh` call
+   site on a flow-checkout marker and pinned it (`sec 1`/`sec 2`), but the **other** helpers
+   resolved this way were out of that PR's scope and remain ungated — `manifest-triage.py`
+   (8 sites in `ship`), `extract_session.py` (`critique-plan`, `review-brief`),
+   `rigor-marker.py`, `status-docs.py`, `verify-pr-body.sh`, `render-test-plan.py`,
+   `visual-significance.py`, `insert-visual-history.py`. Most sit in human-invoked step bodies
+   rather than auto-firing preludes, which is why they rank below the reviewer preludes that
+   were fixed — but the class is identical. *Shape:* one shared `flow_resolve_helper` shell
+   function carrying the gate once, or the same inline marker test at each site, plus a
+   repo-wide eval assertion generalising `sec 1` beyond `resolve-doc-slot.sh`. Found by
+   `/flow:security-review` on the v1.40.0 diff.
+
+4. **`skip_dirs` doesn't apply under `--allow-external-paths`.** In
+   `scripts/extract_session.py`, `rel` is `None` exactly when a path is outside cwd and
+   external paths are permitted, so the directory skip is bypassed there while the
+   name-based skip still applies. An asymmetry rather than a hole, but it's the
+   "guard stops applying on one branch" shape. Needs a decision on what a directory skip
+   means for a path with no cwd-relative form.
+
+5. **The two preserved merge-damaged entries need an owner.** `dev-docs/feedback/FB-0072-*-a.md`
+   / `-b.md` (a heading whose body a merge dropped) and
+   `dev-docs/history/2026-08-15-f11-*-a.md` / `-b.md` (the same entry twice with different
+   bodies). Preserving over repairing was the right call at migration time — reversible
+   beats irreversible at MEDIUM confidence — but "resolve it whenever someone has the
+   context", recorded only in a README paragraph, is how it becomes permanent. Each is a
+   thirty-second merge for someone with the context.
+
 
 **`docs/first-pr.md`'s auto-loading-rules claim asks a first-time reader to take it on faith (from `/flow:staff-review` UX lens, v1.33.0).** Post-Phase-00, `docs/first-pr.md:208` correctly says "Edit `plan.md` → the `plan-discipline` rule-skill injects" — but a first-PR reader has no inline way to *verify* that claim themselves, at the exact moment this PR fixes a bug where the equivalent claim was false for every consumer for a long time. **Shape:** point the sentence at `/flow:doctor` Check 3.2 (the loader-verification mechanism this PR built) so a reader can confirm it rather than trust it. Cheap, single-line. **Surfaces when:** `docs/first-pr.md` is next touched.
 
@@ -711,7 +772,7 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 
 ## § Exploration
 
-### Step 4c.iv has no ephemerality predicate — it commits `.flow-lessons/` on every host (FB-0101, staff-review UX lens)
+### Step 4c.iv has no ephemerality predicate — it commits `.flow-lessons/` on every host (FB-0102, staff-review UX lens)
 
 **Surfaces when:** a consumer notices `.flow-lessons/` accumulating in their repo, OR AB.1b (the
 harness-audit marker) is picked up — same root cause, adjacent subsystem.
@@ -723,22 +784,22 @@ on (there is no reliable "am I ephemeral?" signal — a container check is a pro
 and whether records should be *removed* post-drain or left as history. Both are design calls, not
 copy fixes, which is why this is Exploration rather than a scheduled fix.
 
-### Recurrence is only counted along the axis the store indexes (FB-0101 #2, staff-review push-further lens)
+### Recurrence is only counted along the axis the store indexes (FB-0102 #2, staff-review push-further lens)
 
 **Surfaces when:** a third instance of a user-scope-store-on-ephemeral-host defect appears; OR AB.1b
 is picked up; OR anyone edits `contribution_store.py`'s dedup logic or the source-diversity bar.
 
-FB-0101 #2 establishes that the pairing which justified the whole fix — the harness-audit marker
+FB-0102 #2 establishes that the pairing which justified the whole fix — the harness-audit marker
 (2026-08-27) and the contributions queue (a week later) — was invisible to every mechanism flow has,
 because `dedup` keys on `lesson_hash` **within one store**. The doc's conclusion is "cross-subsystem
 recurrence has to be looked for by hand," which is a standing manual obligation with no re-entry
-point. **Not a request for a mechanism** (that would be the queue subsystem FB-0101 forbids). The
+point. **Not a request for a mechanism** (that would be the queue subsystem FB-0102 forbids). The
 open question is whether this is even representable without a second store — probably not — or
 whether the honest answer is a *review-time question* (`plan-critic`/`auditor` asking "is this root
 cause already recorded against a different subsystem?") against docs that already exist, needing no
 new storage.
 
-### The manifest is bounded per-row but not in total (FB-0101, staff-review engineer lens)
+### The manifest is bounded per-row but not in total (FB-0102, staff-review engineer lens)
 
 **Surfaces when:** a queue exceeds ~450 records, OR the ephemerality predicate above is designed.
 
@@ -756,14 +817,14 @@ skeleton) is picked up — **the PR-body lesson manifest belongs in that same en
 
 `dev-docs/design-language.md` is scoped to the verify-build HTML report *only* (correctly — that
 scope was just re-confirmed). But flow's highest-traffic human surfaces are **PR-body blocks and
-console lines**, and three of the four staff-review blockers on FB-0101 were copy defects with no doc
+console lines**, and three of the four staff-review blockers on FB-0102 were copy defects with no doc
 to arbitrate them. `manifest-triage.py`'s "What this means / What I need from you / What happens
 then" is already a de-facto standard; writing it down would give the next block a grounding doc
 instead of a reviewer.
 
 
 
-### The memory corpus is entirely non-functional on ephemeral hosts (FB-0101)
+### The memory corpus is entirely non-functional on ephemeral hosts (FB-0102)
 
 **Surfaces when:** anyone asks why failure-memory never seems to fire in cloud workspaces, OR the
 harness-audit marker fix (AB.1b) is picked up — same root cause, adjacent subsystem.
@@ -774,7 +835,7 @@ teardown. This is not degradation — on an ephemeral host the memory system has
 to read, so every guardrail built on it is inert there. `/flow:ship` § 4b spends its corpus-health,
 source-diversity and audit-due steps on a corpus that is always empty.
 
-**Deliberately not fixed with the FB-0101 queue flush**, and the reason is the point: the three
+**Deliberately not fixed with the FB-0102 queue flush**, and the reason is the point: the three
 affected stores do **not** share a substrate. The contributions queue is *cross-project* (fixed by
 flushing into the PR); the harness-audit marker is *flow-repo-only* (git-backed, filed as AB.1b); the
 memory corpus is *per-project* and sits at a **harness-owned path flow does not control**. Unifying
@@ -1011,10 +1072,10 @@ The `TRUNCATED` warning worked exactly as designed (FB-0010: pair every cap with
 
 FB-0074's rule ("a contract split across two files with nothing checking the join degrades silently") has more members in this repo than the three fixed in v1.22.0. Two concrete ones, both in the neighbourhood the new `skill-composition-lint.py` already occupies:
 
-1. **A slot can be read but never declared.** `skills/land/SKILL.md:219` reads `jq -r '.changelogPath // "CHANGELOG.md"'` and documents it in its own slot table, but `changelogPath` is **absent from the schema's `properties`**. A consumer reading the schema to learn what's configurable never learns it exists, so it silently falls back forever — indistinguishable from "I chose the default." The sharp part: **doctor Check 2.5 already exists as an FB-0010 fan-out check and PASSES**, because it compares the documented "30 slots" count against `schema.properties | length` — one half of the join against the other half of the *same* half. The ~28 actual read sites are never consulted. A green check over an incomplete join is worse than no check.
+1. **A slot can be read but never declared.** ✅ **The `changelogPath` instance is FIXED in v1.40.0** — the slot is now declared in the schema (33 → 34), because repointing it at a one-file-per-release directory required consumers to be able to discover it. The *general* read-site↔schema join check below is still unbuilt, and is still worth building: declaring one slot by hand does not stop the next one. Original finding: `skills/land/SKILL.md:219` reads `jq -r '.changelogPath // "CHANGELOG.md"'` and documents it in its own slot table, but `changelogPath` is **absent from the schema's `properties`**. A consumer reading the schema to learn what's configurable never learns it exists, so it silently falls back forever — indistinguishable from "I chose the default." The sharp part: **doctor Check 2.5 already exists as an FB-0010 fan-out check and PASSES**, because it compares the documented "30 slots" count against `schema.properties | length` — one half of the join against the other half of the *same* half. The ~28 actual read sites are never consulted. A green check over an incomplete join is worse than no check.
 2. **`${CLAUDE_PLUGIN_ROOT}/...` references are unverified.** 38 distinct ones across `plugins/flow/**` (all resolve today), nearly every one paired with a `2>/dev/null || echo '{...}'` fallback. Rename or move a lib and the caller degrades into its fallback JSON on every run — exactly what `Skill("flow:land")` did for two releases.
 
-**Shape:** one script mirroring `skill-composition-lint.py` (same `[name] VERB — reason` output, same 0/1/2 exit codes), two assertions — (a) every `flow.config.json` read site's slot ∈ `schema.properties`, with the documented "N slots" count derived *after* that assertion passes (fold into Check 2.5 so the count can no longer pass over a hole); (b) every literal `${CLAUDE_PLUGIN_ROOT}/<path>` resolves under `plugins/flow/`, with an allowlist for template fragments (`agents/lens-`, `tools/memory/.memory-dir`). Ship `changelogPath` into the schema as the first fixture (31 slots — with the FB-0010 grep across `workflow.md` / `plugin.json` / `marketplace.json` / doctor, since the count is itself a fan-out value).
+**Shape:** one script mirroring `skill-composition-lint.py` (same `[name] VERB — reason` output, same 0/1/2 exit codes), two assertions — (a) every `flow.config.json` read site's slot ∈ `schema.properties`, with the documented "N slots" count derived *after* that assertion passes (fold into Check 2.5 so the count can no longer pass over a hole); (b) every literal `${CLAUDE_PLUGIN_ROOT}/<path>` resolves under `plugins/flow/`, with an allowlist for template fragments (`agents/lens-`, `tools/memory/.memory-dir`). ~~Ship `changelogPath` into the schema as the first fixture~~ (done in v1.40.0; the count is now 34 slots, not the 31 this entry predicted — with the FB-0010 grep across `workflow.md` / `plugin.json` / `marketplace.json` / doctor, since the count is itself a fan-out value).
 
 ### Stamp the resolved repo root into the skip-audit handoff, don't just print it *(FB-0074 residual)*
 **Surfaces when:** the § Exploration "forked-skill handoff transport" question resolves, OR `skills/audit-skips/lib/skip-audit-checks.py::read_buffer` is next touched.

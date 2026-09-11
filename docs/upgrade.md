@@ -2,7 +2,7 @@
 
 How to pick up new flow versions in a project where flow is already installed.
 
-**Per-version what-changed:** [`CHANGELOG.md`](../CHANGELOG.md) at repo root.
+**Per-version what-changed:** [`changelog/`](../changelog/) — one file per release (`vX.Y.Z.md`); `ls -v changelog/` lists them in order.
 
 ## TL;DR — keep flow current automatically
 
@@ -39,7 +39,7 @@ Prefer to update manually? **One command:**
 
 | Trigger | Action |
 |---|---|
-| **Major bump (`x.0.0`)** — e.g., `1.x → 2.0` | **Run before next session.** Read `CHANGELOG.md`'s "Breaking changes:" block first. |
+| **Major bump (`x.0.0`)** — e.g., `1.x → 2.0` | **Run before next session.** Read the new release's `changelog/vX.Y.Z.md` "Breaking changes:" block first. |
 | **Minor bump (`1.x.0`)** — new user-visible skills/surface | **Run before next session** in projects where you'll use the new surface. |
 | **Patch bump (`1.2.x → 1.2.y`)** | **Optional.** Batch them — flow's discipline is additive at patch level. Run when CHANGELOG mentions something you want, OR weekly as hygiene. |
 | **`/flow:doctor` reports `[FAIL]`/`[WARN]` you don't recognize** | Run — your installed plugin may be older than your `flow.config.json` expects. |
@@ -112,10 +112,12 @@ Two possibilities:
 
 ### Upgrade brought a breaking change you didn't expect
 
-Flow follows semver. Major bumps (`x.0.0`) are reserved for breaking changes and are called out in CHANGELOG.md with an explicit "Breaking changes:" block. Minor bumps (`1.y.0`) add user-visible surface. Patch bumps (`1.2.x`) follow flow's discipline of additive-only changes — but verify each upgrade with `/flow:doctor` regardless; the discipline is enforced by lens-staff-engineer + Check 2.5 + author care, not by tooling.
+**Want the one-file-per-entry doc shape?** It is optional and there is no deadline — single-file docs stay supported and the schema defaults are still files. See [`migration.md` § "Optional — fragmenting an append-only doc"](migration.md#optional--fragmenting-an-append-only-doc-into-one-file-per-entry) for the method and the two gotchas.
+
+Flow follows semver. Major bumps (`x.0.0`) are reserved for breaking changes and are called out in the release's `changelog/vX.Y.Z.md` with an explicit "Breaking changes:" block. Minor bumps (`1.y.0`) add user-visible surface. Patch bumps (`1.2.x`) follow flow's discipline of additive-only changes — but verify each upgrade with `/flow:doctor` regardless; the discipline is enforced by lens-staff-engineer + Check 2.5 + author care, not by tooling.
 
 If a patch upgrade DOES break something, **that's a bug, not a feature**. File an issue at https://github.com/by-dev-tools/flow/issues with:
-- The version you upgraded from + to (read from CHANGELOG.md headers).
+- The version you upgraded from + to (read from the `changelog/vX.Y.Z.md` filenames).
 - The `/flow:doctor` output (full).
 - The first command that misbehaved.
 
@@ -165,6 +167,6 @@ If you've installed flow at **project-scope** (custom workflow — `.claude/sett
 
 - **How to install flow for the first time** — see [`docs/bootstrap.md`](bootstrap.md).
 - **How to migrate an existing project to flow** — see [`docs/migration.md`](migration.md).
-- **What's new in each version** — see [`CHANGELOG.md`](../CHANGELOG.md).
+- **What's new in each version** — see [`changelog/`](../changelog/).
 - **How the workflow loop works** — see [`plugins/flow/docs/workflow.md`](../plugins/flow/docs/workflow.md) or run `/flow:workflow-help`.
 - **How to extend or modify flow** — see [`dev-docs/`](../dev-docs/) (plugin's own development tracking).

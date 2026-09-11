@@ -1,0 +1,9 @@
+### FB-0034: Ship-time blockers resolve to {auto-fix in-tree | draft-PR + NOT-READY manifest} by resolution-confidence — escalation routes INTO the merge gate, never a silent proceed or a hard mid-loop halt
+**Date:** 2026-06-01
+**Source:** user direction (managed-autonomy confidence conversation)
+
+**What was said:** JTBD — the loop should run autonomously and "shouldn't stop arbitrarily unless it's for a good reason that we outlined in the workflow." On the risk: "are there cases (like security issues discovered in ship flow) where there is reasonable uncertainty about which way to proceed, that could result in a best-effort open PR that isn't ready to merge?" — yes; and an unresolved blocker should surface *at* a designed gate, not halt the loop or ship a not-ready-looking PR.
+
+**Synthesized rule:** Every ship-time reviewer BLOCKER carries a **resolution-confidence** tag orthogonal to severity: `[auto-fixable]` (one clear, mechanically-verifiable fix) or `[decision-required]` (multiple valid fixes / out-of-repo action / un-auto-fixable). **Default to `[decision-required]` when unsure** (FB-0011 ESCALATE-by-default). `/flow:ship` routes auto-fixable → fix in-tree; decision-required (and non-converging verify-build regressions) → a **draft PR + pinned `🚫 NOT READY TO MERGE` manifest**. Three outcomes only — auto-fix, draft-route, or follow-up — **never a silent proceed and never a hard mid-loop halt.** The draft is the mechanical NOT-READY signal the human merge gate trusts; the manifest is the human-readable one. The escalation routes *into* an existing gate (merge), not a new one — this is the operational form of the two-gate thesis (the only human gates are plan approval + merge; automatic escalations route into them).
+
+**Applies to:** `/flow:security-review`, `/flow:accessibility-review`, `/flow:verify-build`, `/flow:ship` Step 2/7, future reviewers, autonomous-gate design, the two-gate model

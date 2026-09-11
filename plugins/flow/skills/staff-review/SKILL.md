@@ -31,9 +31,9 @@ The source of truth is the workspace diff vs the project's default branch, **not
 - Default branch (diff base): !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
 - Current branch: !`git branch --show-current`
 - Review lenses enabled: !`cat flow.config.json 2>/dev/null | jq -r '.reviewLenses // ["staff-engineer","ux-designer","design-engineer","push-further"] | join(",")' 2>/dev/null || echo "staff-engineer,ux-designer,design-engineer,push-further"`
-- Spec doc: !`SPEC=$(cat flow.config.json 2>/dev/null | jq -r '.specPath // empty'); [ -z "$SPEC" ] && SPEC="dev-docs/spec.md"; [ -f "$SPEC" ] && echo "$SPEC" || echo "(no spec doc at $SPEC)"`
-- Design-language doc: !`DL=$(cat flow.config.json 2>/dev/null | jq -r '.designLanguagePath // empty'); [ -z "$DL" ] && DL="dev-docs/design-language.md"; [ -f "$DL" ] && echo "$DL" || echo "(no design-language doc at $DL — many projects don't have one)"`
-- Feedback doc: !`FB=$(cat flow.config.json 2>/dev/null | jq -r '.feedbackPath // empty'); [ -z "$FB" ] && FB="dev-docs/feedback.md"; [ -f "$FB" ] && echo "$FB" || echo "(no feedback doc at $FB)"`
+- Spec doc: !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && R=plugins/flow/lib/resolve-doc-slot.sh; }; [ -f "$R" ] && sh "$R" specPath dev-docs/spec.md || echo "⚠️ [resolve-doc-slot] not found — specPath was NOT resolved, so this run has NO specPath context. Reinstall the flow plugin."`
+- Design-language doc: !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && R=plugins/flow/lib/resolve-doc-slot.sh; }; [ -f "$R" ] && sh "$R" designLanguagePath dev-docs/design-language.md || echo "⚠️ [resolve-doc-slot] not found — designLanguagePath was NOT resolved, so this run has NO designLanguagePath context. Reinstall the flow plugin."`
+- Feedback doc: !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && R=plugins/flow/lib/resolve-doc-slot.sh; }; [ -f "$R" ] && sh "$R" feedbackPath dev-docs/feedback.md || echo "⚠️ [resolve-doc-slot] not found — feedbackPath was NOT resolved, so this run has NO feedbackPath context. Reinstall the flow plugin."`
 
 ## When to invoke
 
@@ -82,7 +82,7 @@ fi
 
 ### 1a. Stale-base check (BLOCKING)
 
-Same gate as `/flow:ship` Step 1a — staff-review reads the diff vs the default branch as its source of truth, so a stale base produces phantom-deletion findings that burn 4 lens spawns surfacing what's really just "rebase first." See `dev-docs/feedback.md` FB-0008 for the dogfood discovery + `/flow:ship` Step 1a for the rationale on the `[ -z ]` guards.
+Same gate as `/flow:ship` Step 1a — staff-review reads the diff vs the default branch as its source of truth, so a stale base produces phantom-deletion findings that burn 4 lens spawns surfacing what's really just "rebase first." See `dev-docs/feedback/` FB-0008 for the dogfood discovery + `/flow:ship` Step 1a for the rationale on the `[ -z ]` guards.
 
 ```sh
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
@@ -288,7 +288,7 @@ Do not `gh pr merge`. Do not approve. Tell the user the work is ready for their 
 | `flow.config.json.typecheckCmd` | unset → loud warning | Step 5 (post-fix re-check) |
 | `flow.config.json.specPath` | `dev-docs/spec.md` | Project context |
 | `flow.config.json.designLanguagePath` | `dev-docs/design-language.md` | Project context (lens grounding) |
-| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Project context |
+| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Project context — file or one-file-per-entry directory |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 6 (FOLLOW-UP routing) |
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Step 6 (FOLLOW-UP / EXPLORATION routing) |
 

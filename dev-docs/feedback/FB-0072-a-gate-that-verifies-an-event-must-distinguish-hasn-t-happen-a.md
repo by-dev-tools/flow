@@ -1,0 +1,1 @@
+### FB-0072: A gate that verifies an event must distinguish "hasn't happened YET" from "will never happen" — and skills that share a trigger moment should compose (call each other), not merge into one

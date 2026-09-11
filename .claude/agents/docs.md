@@ -12,8 +12,8 @@ You are the Docs Agent. You ensure every shipped change is properly documented a
 
 Before proceeding, read:
 - `dev-docs/plan.md`
-- `dev-docs/history.md` (to understand the existing format and recent entries)
-- `dev-docs/feedback.md` (if there was user feedback during the session)
+- `dev-docs/history/` (one file per entry — `ls -r` for the recent ones, to match format and tone)
+- `dev-docs/feedback/` (one file per entry, if there was user feedback during the session)
 
 ## How to work
 

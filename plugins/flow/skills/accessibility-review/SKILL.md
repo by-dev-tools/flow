@@ -32,8 +32,8 @@ Skip if the diff is non-UI (data layer, build config, doc-only).
 - Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — using built-in defaults)"`
 - UI surface declared: !`cat flow.config.json 2>/dev/null | jq -r 'if .uiSurface == false then "FALSE (skip a11y review)" else "TRUE (run review)" end' 2>/dev/null || echo "TRUE (default — no flow.config.json found)"`
 - Default branch: !`git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || cat flow.config.json 2>/dev/null | jq -r '.defaultBranch // "main"' 2>/dev/null || echo "main"`
-- Design-language doc (for context): !`DL=$(cat flow.config.json 2>/dev/null | jq -r '.designLanguagePath // empty'); [ -z "$DL" ] && DL="dev-docs/design-language.md"; [ -f "$DL" ] && echo "$DL" || echo "(no design-language doc at $DL — many projects don't have one)"`
-- Feedback doc (for context): !`FB=$(cat flow.config.json 2>/dev/null | jq -r '.feedbackPath // empty'); [ -z "$FB" ] && FB="dev-docs/feedback.md"; [ -f "$FB" ] && echo "$FB" || echo "(no feedback doc at $FB)"`
+- Design-language doc (for context): !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && R=plugins/flow/lib/resolve-doc-slot.sh; }; [ -f "$R" ] && sh "$R" designLanguagePath dev-docs/design-language.md || echo "⚠️ [resolve-doc-slot] not found — designLanguagePath was NOT resolved, so this run has NO designLanguagePath context. Reinstall the flow plugin."`
+- Feedback doc (for context): !`R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && R=plugins/flow/lib/resolve-doc-slot.sh; }; [ -f "$R" ] && sh "$R" feedbackPath dev-docs/feedback.md || echo "⚠️ [resolve-doc-slot] not found — feedbackPath was NOT resolved, so this run has NO feedbackPath context. Reinstall the flow plugin."`
 
 ## 0. Preflight — `jq` required (BLOCKING)
 
@@ -255,6 +255,6 @@ Same convention as `/flow:security-review`: standalone → user; via `/flow:ship
 | `flow.config.json.defaultBranch` | `git symbolic-ref` → `main` | Step 1 (diff base) |
 | `flow.config.json.typecheckCmd` | unset → loud warning | Step 4 (post-fix re-check) |
 | `flow.config.json.designLanguagePath` | `dev-docs/design-language.md` | Project context (optional doc) |
-| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Project context |
+| `flow.config.json.feedbackPath` | `dev-docs/feedback.md` | Project context — file or one-file-per-entry directory |
 | `flow.config.json.roadmapPath` | `dev-docs/roadmap.md` | Step 4 (FOLLOW-UP routing) |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 4 (FOLLOW-UP routing) |

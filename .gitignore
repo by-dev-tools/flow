@@ -6,8 +6,27 @@
 __pycache__/
 *.pyc
 
-# Local prototypes + diagnostics (generated; not plugin surface)
-tools/
+# Local prototypes + diagnostics (generated; not plugin surface).
+#
+# NOT a blanket ignore any more. `tools/` also holds committed dev-tooling packages
+# that CI actually runs (model-measure, harness_audit), so the blanket rule was
+# already contradicted by 9 tracked files — and it silently swallowed a NEW package
+# on `git add -A`, because a gitignore only applies to untracked paths and therefore
+# fails quietly and invisibly for exactly the person adding something. Each committed
+# package is un-ignored explicitly; a new one MUST be added here or it will be dropped
+# from the commit without a word. (.claude/rules/general.md, silent-skip class.)
+tools/*
+!tools/model-measure/
+!tools/harness_audit/
+!tools/doc-fragment/
+# ...but the GENERATED artifacts inside those packages stay ignored. Last matching
+# pattern wins, so these must come after the negations above. `samples/` holds
+# shadow-sampler logs containing session-transcript excerpts: un-ignoring them made
+# them stageable by `git add -A`, and run_shadow_sampler_evals.py (CI-wired) asserts
+# they are ignored — so the first cut of this rule turned CI red AND widened what a
+# careless `git add` could commit.
+tools/**/samples*
+tools/**/__pycache__/
 
 # Rendered verify-build report (served by .claude/launch.json; regenerated per run)
 .flow/

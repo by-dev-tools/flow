@@ -225,4 +225,4 @@ You review the PR. CI runs (your project's `.github/workflows/ci.yml` from the b
 - Read `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` end-to-end. The 11-step loop has rationale, gate semantics, spike/tiny modes, and feedback-loop discipline that this walkthrough only touched.
 - Configure `core-docs/design-language.md` if your project ships UI. It's load-bearing for `/flow:staff-review`'s UX + design-engineer + push-further lenses.
 - Optionally enable the opt-in PreToolUse hooks from `${CLAUDE_PLUGIN_ROOT}/hooks/default-hooks.json` (sensitive-file write blocker + path-validation warn) — merge into your `.claude/settings.json`.
-- File any rough edges to flow's `dev-docs/feedback.md` via a follow-up PR in `by-dev-tools/flow`. Real-consumer signal is how the plugin compounds quality.
+- File any rough edges to flow's `dev-docs/feedback/` via a follow-up PR in `by-dev-tools/flow`. Real-consumer signal is how the plugin compounds quality.

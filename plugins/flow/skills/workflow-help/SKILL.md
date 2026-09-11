@@ -67,11 +67,12 @@ Below are the project's flow.config.json values (with built-in defaults shown fo
 |---|---|---|---|
 | `defaultBranch` | _(see Project context above)_ | discovered via `git symbolic-ref` then literal `main` | `/flow:ship`, `/flow:ship-spike`, `/flow:staff-review` |
 | `typecheckCmd` | _(see Project context)_ | unset → loud `⚠️` warning | `/flow:ship`, `/flow:ship-spike`, `/flow:staff-review` |
-| `historyPath` | _(see Project context)_ | `dev-docs/history.md` | `/flow:ship`, `/flow:ship-spike` |
+| `historyPath` | _(see Project context)_ | `dev-docs/history.md` — file or one-file-per-entry directory | `/flow:ship`, `/flow:ship-spike` |
 | `planPath` | _(see Project context)_ | `dev-docs/plan.md` | `/flow:ship`, `/flow:staff-review`, planner agent |
 | `roadmapPath` | _(see Project context)_ | `dev-docs/roadmap.md` | `/flow:ship`, `/flow:staff-review` |
 | `specPath` | _(see Project context)_ | `dev-docs/spec.md` | `/flow:ship`, `/flow:security-review`, planner agent |
-| `feedbackPath` | _(see Project context)_ | `dev-docs/feedback.md` | `/flow:ship`, every reviewer (context) |
+| `feedbackPath` | _(see Project context)_ | `dev-docs/feedback.md` — file or one-file-per-entry directory | `/flow:ship`, every reviewer (context) |
+| `changelogPath` | _(see Project context)_ | `CHANGELOG.md` — file or one-file-per-release directory | `/flow:land` step 4 |
 | `designLanguagePath` | _(see Project context)_ | `dev-docs/design-language.md` | `/flow:staff-review`, `/flow:accessibility-review` |
 | `referenceGlob` | _(see Project context)_ | `core-docs/*.md` (or override per project) | `/flow:critique-plan` |
 | `uiSurface` | _(see Project context)_ | `true` | `/flow:accessibility-review` (skip-early if false) |

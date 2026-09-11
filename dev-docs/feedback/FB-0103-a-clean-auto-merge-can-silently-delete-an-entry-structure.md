@@ -1,0 +1,45 @@
+### FB-0103 — A clean auto-merge can silently DELETE an entry; prefer structure that makes the deletion visible over discipline that asks people to notice
+
+**Date:** 2026-09-06
+**Source:** user direction (the silent-deletion class, raised in the doc-fragmentation design session) + two live artifacts found in `main` while implementing it
+
+**What was said.** A CHANGELOG entry was once silently deleted by a **clean auto-merge** — no conflict markers, no parse error, valid markdown out the other end. Nothing in the pipeline could have caught it, because nothing was wrong in any way a tool could see: git merged two append-only edits at the same insertion point and the arithmetic came out short. One-file-per-entry structurally prevents this. A text merge can drop *lines*; it cannot silently drop a *file*. Deleting a file shows up in the diff as a file deletion, which is impossible to miss.
+
+**Confirmed with two artifacts sitting in `main` at the time of writing** — the fragmentation tool found both on its first run, and neither had ever been noticed:
+
+1. **`feedback.md` carried a bare `### FB-0072:` heading with no body**, immediately followed by `### FB-0075`. The real FB-0072 lived 45 lines further down. Provenance: #80 wrote FB-0072; #83, #84 and #85 each touched that region; a clean auto-merge kept the heading and dropped the body.
+2. **`history.md` carried the same F11 entry twice with different bodies** (differing md5). #114 and #115 each added it at a slightly different offset, and git auto-merged *both*, cleanly.
+
+Neither is a hypothetical. Both survived every gate this repo has — CI, four staff-review lenses, `/flow:doctor`, the auditor — for weeks, because every one of those gates was looking at text that parsed fine.
+
+**Synthesized rule (1) — this is the same family as "a prohibition satisfiable by deletion."** `.claude/rules/general.md` item 3 warns that a negative assertion passes in two opposite worlds: the contract honored, or the contract removed. Silent deletion is that shape applied to *content* rather than *checks* — the artifact after the loss is indistinguishable from a legitimate artifact, so nothing downstream can tell. The defense is the same in both cases: **make the two worlds structurally different, rather than asking a reader to spot the difference.** A missing file is a different world from a present one. A missing line is not.
+
+**Synthesized rule (2) — prefer mechanical detection over protocol discipline, and check the timing claim honestly.** `dev-docs/reserved-feedback-numbers.md` was deleted in the same change. It existed to prevent FB-number collisions and it *records six separate renumbering incidents in its own audit trail* — it did not prevent the cost, it documented it, because its conflict surface was a free-form log git merges happily and its protocol depended on author memory. With one file per entry, a duplicate number IS a duplicate filename, which git reports as a both-added conflict: unmissable, un-auto-mergeable, zero discipline required. The one honest objection — that a registry is a *claim-time* defense while a filename collision is *merge-time* — does not survive contact: **claiming a number is now pushing the file**, which is the same early-push race detection with the entry itself as the artifact instead of a line in a second file.
+
+**Synthesized rule (3) — when a migration surfaces damage, prefer the reversible resolution and schedule the judgment.** Both damaged entries were **preserved as `-a`/`-b` fragments, not repaired.** The user's reasoning, which generalizes: when a reversible option and an irreversible one are both available at MEDIUM confidence, take the reversible one — preserving costs a duplicate file someone merges in thirty seconds; deleting costs content nobody can recover. The judgment gets *scheduled* (named as a follow-up, and in each directory's README) rather than *lost*. The fragmenter enforces this shape: filename collision is a **hard stop** by default, and the two known cases are admitted one at a time by explicit `--disambiguate <basename>`. There is deliberately no global `--force`, which would let a future migration paper over an *unknown* collision — the exact failure the tool exists to surface.
+
+**Live instance, during this very PR.** These two entries were drafted as FB-0100/FB-0102 against a confirmed-free
+high-water. A concurrently-open PR then claimed FB-0100 and the same version, and a **human caught it by eye** — the
+registry did not, because it only fires when both branches remember to claim early, and nothing at all guards a version
+bump. Fourth collision in one batch of work, against a file whose own audit trail already recorded six. The point is
+not that the protocol was violated; it is that a protocol which depends on everyone remembering has no failure mode
+except silence. A filename cannot be forgotten.
+
+**Second mechanism, found at rebase: a migration's census goes stale the moment the branch forks.** The accounting
+that proved this migration lossless compared the fragments against *the source file as it existed when the fragmenter
+ran*. Anything landing on `main` after that is outside the comparison entirely — not a missed check, a check whose
+frame of reference expires. It cost real entries: #145's FB-0100, #147's FB-0101, two changelog releases and two
+history entries had no fragment and would have vanished on merge, silently and with a clean parse, exactly as this
+entry describes. The orchestrator caught the first by eye; a re-run census caught the rest.
+
+**Synthesized rule (4) — re-run the census against `origin/main` at every rebase, not once at migration time.** For
+any migration that converts a file whose upstream keeps moving, "I verified nothing was lost" has an implicit *as of
+when*. Make it explicit and re-run it: diff each source doc against current `main` and convert anything new. The
+generalization beyond fragmentation: **a one-shot verification of a moving target is a verification of the past.**
+
+**Third instance of the numbering half, same week.** These two entries were drafted FB-0100/FB-0101, renumbered to
+FB-0101/FB-0102 when #145 took FB-0100, then to FB-0102/FB-0103 when #147 took FB-0101. Five collisions in one batch,
+none caught by the registry. After this PR the collision is a both-added filename conflict — and at the rebase above
+it *was* visible as two files with the same number and different slugs, which is precisely the intended behaviour.
+
+**Applies to:** any append-only artifact edited by more than one branch; any decision between "add a check" and "change the structure so the failure cannot occur"; any migration that uncovers pre-existing damage. Corollary worth stating plainly: **"it merged cleanly" is not evidence that nothing was lost.**
