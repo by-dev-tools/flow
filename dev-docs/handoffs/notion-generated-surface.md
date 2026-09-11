@@ -1,6 +1,8 @@
-# Handoff — generated, read-only Notion surface (PLAN GATE, NOT APPROVED)
+# Handoff — generated, read-only Notion surface (PLAN GATE — PARKED, NOT APPROVED, NOT EXECUTED)
 
-> **Status: 🟠 DRAFT — awaiting the human plan gate. NOT approved, NOT started.**
+> **Status: 🅿️ PARKED at the plan gate, by Ben's direction. NOT approved, NOT started, and NOT to be executed for now.**
+>
+> *"notion is not a blocker for this plan — it's a nice to have, but it's completely extra in terms of the prototype gate and orchestrator model."* — Ben. Consistent with this design's own safety property: generated, read-only, nothing in git depends on it, so it can land late or never. **Open calls, recommendations and their SHIPS-OR-PAPERWORK classification live in `dev-docs/plan.md` under "PR — Notion read-only generated surface".**
 > **No implementation has been executed.** No `tools/notion-publish/`, no
 > `.github/workflows/notion-publish.yml`, no plugin artifact exists. **One
 > protocol action HAS been taken:** FB-0103 is reserved and pushed (`84fcbd1`),
@@ -11,10 +13,13 @@
 > workspace — per `dev-docs/README.md` § Handoffs, check this banner before
 > treating it as active.
 >
-> **Five open calls in §10 need a human decision before any execution** (calls 1, 3 and 5
-> are RESOLVED — 1 and 5 by the design change, 3 by Ben's restated decision — not by this gate) — including **Open call 8**, which
-> asks whether a *second* dispatch is building this same feature. That one is
-> blocking: if it is an independent worker, the whole feature could be built twice.
+> **Four open calls need a decision — none blocking.** Calls 1, 3, 5 and 8 are
+> RESOLVED (1 and 5 by the design change, 3 by Ben's restated decision, 8 by
+> orchestrator verification that no second dispatch exists). The remaining four —
+> 2, 4, 6, 7 — are written up with recommendations, confidences and a
+> SHIPS-OR-PAPERWORK classification in `dev-docs/plan.md`. The only blocking
+> *dependency* is Ben's Notion setup, which is explicitly low-priority: park it,
+> do not chase it.
 > The recommendation in §2 is: **ship nothing to the plugin** — 100% repo-local
 > dev tooling, zero `plugins/flow/**` changes, no version bump.
 
@@ -585,8 +590,9 @@ The publisher loses ~40 lines; the stamp is untouched; it can be added later wit
 **Confidence: MEDIUM-HIGH.**
 **Justification:** every [CI]/[LOCAL]/[PRE-SHIP] criterion is satisfiable with zero Notion contact — deliberate, since no token belongs in CI, but it means CI can be fully green over a tool that has never authenticated. The alternative is to block the PR on your §5 setup, which puts a merge behind a manual step outside the repo. I'd rather merge the offline-verified tool with the gap stated in the PR body than either wait or, worse, let a green Spec-walk imply verification it doesn't have. **If you'd rather I hold the PR until one live publish succeeds, say so** — I'll do the setup walkthrough with you first and check the box for real.
 
-**Open call 8 — is the "second Notion dispatch" this workspace, or an independent worker? (BLOCKING — could duplicate the entire feature.)**
-**Recommendation:** it is this workspace; proceed. **Confidence: MEDIUM** — evidence-based but not confirmable from inside the sandbox.
+**Open call 8 — RESOLVED by orchestrator verification: there is no second dispatch. Not blocking, not open.**
+Verified from outside the sandbox (which is what I could not do): exactly one Notion workspace exists (`afed36c6`, this one) and exactly one Notion branch is on origin (`conductor/notion-read-only-generated-surface @ e30dd9c7`), both mine. Nothing else is building this; no race. My own evidence pointed the same way at MEDIUM confidence — I could see no other Notion branch, but could not see unpushed workspaces. Superseded reasoning follows.
+**Superseded recommendation:** it is this workspace; proceed. **Confidence at the time: MEDIUM.**
 **Justification:** this session's dispatch notes name a sibling "building a read-only Notion surface hooked at `/flow:land`", which describes this feature. Evidence, re-run at this rebase against the **current** PR set and written into all three sites in one edit: `git ls-remote --heads origin | grep -ci notion` returns **1** — this branch — and the three open PRs (**#145** ship-spike skip auditing, **#146** doc fragmentation, **#147** harvested-lessons SAFETY) include **no** Notion-surface PR. #144 has merged. So it is almost certainly this workspace described back to me. **But I cannot see workspaces that have not pushed a branch**, which is exactly the state this workspace was in for its first several hours. If an independent worker exists, §2 reason 4's "zero collision" premise is untested against the one dispatch that would collide on the *entire feature*, and the two designs already differ on the load-bearing point: "hooked at `/flow:land`" versus this plan's CI-on-merge-to-main invocation (§4.1) — Open call 1's manual `/publish-state` is superseded and is *not* this plan's side of the comparison. **One check on your side settles it.** If independent: settle ownership and which invocation design wins before either side executes.
 
 **Open call 4 — hardening the secret-blocking hook (§6.2).**

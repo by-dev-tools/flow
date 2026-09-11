@@ -11,6 +11,8 @@
 
 **▶ SHIPPING (this branch, `conductor/spike-agentsmd-vs-skills-packaging-evals`, v1.37.0 unchanged): SPIKE — AGENTS.md vs skill-shaped packaging.** Docs-only (new `dev-docs/research/2026-09-agents-md-vs-skills.md` + one `dev-docs/README.md` index row); zero `plugins/flow/**` touched, no version bump. Answers "is flow's architecture wrong given Vercel's 'AGENTS.md outperforms skills' post?" **Recommendation: proceed — change no packaging, fix the loading.** The headline doesn't survive its own evidence (the results figure contradicts the tables at n=11, single run; the winner is a `CLAUDE.md`; ≥3 uncontrolled variables), SkillsBench (9,396 trajectories) runs the other way, and correctly scoped the finding lands on 1 of flow's 22 skills. **But three human-approved experiments found a bigger bug than the question:** E1 measured that `paths:` on a `SKILL.md` never activates → flow's four rule-skills have not loaded for any consumer since v1.33.0 (third FB-0085-class instance, second created by Phase 00 itself). Routed to roadmap § Now as **S0** (fix + upgrade `/flow:doctor` Check 3.2 from "registered" to "activates"; guardrail: do NOT close by deleting `paths:` — the FB-0077 shape). Also routed: **S2** (`exploration`'s globs reach 1 of 4 consumer repos, § Next), **E2** (`log-disagreement` capture rate, inconclusive → § Exploration), **S1** (hoist `ship`'s auto-invoke predicate out of `description:`, § Exploration), and an **AB Step 1b** correction (`harness_audit.py:157` counts the 85 KB `workflow.md` as always-loaded when nothing loads it — ~3× overcount, live bug in merged #136). See `dev-docs/history.md` 2026-09-04.
 
+**🅿️ PARKED (this branch, `conductor/notion-read-only-generated-surface`, FB-0103, v1.37.0 unchanged): Notion read-only generated surface.** Plan complete and at the gate; **not executed, and not to be.** Ben: *"notion is not a blocker for this plan — it's a nice to have, but it's completely extra in terms of the prototype gate and orchestrator model."* Trio Step 3 and the vacuous-criterion check are on the critical path; this is not. Four open calls are recorded with recommendations, confidences and a SHIPS-OR-PAPERWORK classification in the "PR — Notion read-only generated surface" block below — **none blocking**; the only blocking dependency is Ben's Notion setup, which is explicitly low-priority and should be parked rather than chased. Full plan: `dev-docs/handoffs/notion-generated-surface.md`.
+
 **▶ EXECUTED, shipping (this branch, `conductor/design-language-migration-brief-existing-repos`, v1.37.0 unchanged): existing-repo design-language migration brief (FB-0099).** Dev-docs-only, no plugin artifacts touched, no version bump — plugin stays at v1.37.0. New `dev-docs/design-language-migration-brief.md` — a portable prompt to audit an *existing* repo's design-language doc against the five shape rules from `dev-docs/research/2026-09-design-md-investigation.md`, propose additions in that repo's own vocabulary, and stop (never edit unilaterally). Mirror of the now-merged sibling `#141` (`template/base/core-docs/design-language.md`, the scaffold for *new* repos) — wording kept character-for-character identical to `#141`'s shipped rule descriptions per FB-0099; re-confirmed against `#141`'s merged `main` content at this branch's rebase (v1.36.0 → v1.37.0), no drift. See the "PR — Design-language migration brief" block below for the full account, and `dev-docs/history.md` 2026-09-03.
 
 **▶ Shipped (merged #141, v1.37.0, FB-0098): `/flow:doctor` slot-coverage honesty + design-language template.** Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its actual root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source. New `template/base/core-docs/design-language.md` (shape only: Axioms, Anti-patterns, Priority order, Tokens, Coverage gaps). Doctor's frontmatter no longer over-promises "all 33 slots." See the "PR — Doctor slot-coverage honesty" block below for the full Spec-walk.
@@ -284,6 +286,51 @@ one has a passing mechanical check, named inline.
 2. **Body size — this CHANGED the design.** Records ~1,596 B; cap 65,536; ~37 records overflow. Split into committed records + ~104 B manifest rows. *Had this been deferred, the mechanism would have failed exactly when the queue mattered most.*
 
 **Deliberately NOT done:** the harness-audit marker fix (AB.1b owns it), the memory fix (§ Exploration), any change to the source-diversity bar, a `/flow:harvest` skill, or unifying the three stores.
+
+## PR — Notion read-only generated surface (this branch, `conductor/notion-read-only-generated-surface`, FB-0103, v1.37.0 unchanged, **PARKED AT THE PLAN GATE — do not execute**)
+
+**Status: 🅿️ PARKED, by Ben's direction.** *"notion is not a blocker for this plan — it's a nice to have, but it's completely extra in terms of the prototype gate and orchestrator model."* Consistent with the design's own safety property: the surface is generated, read-only, and nothing in git depends on it, so it can land late or never without affecting anything else. Trio Step 3 and the vacuous-criterion check are on the critical path; this is not, and every concurrent worker draws on one shared five-hour rate window.
+
+Nothing past the plan gate has been executed. No `tools/notion-publish/`, no `.github/workflows/notion-publish.yml`, no plugin artifact. The full plan — design, verified API facts, ~60 acceptance criteria — is at [`dev-docs/handoffs/notion-generated-surface.md`](handoffs/notion-generated-surface.md). One protocol action was taken: FB-0103 reserved and pushed (`84fcbd1`), because the reservation protocol requires claiming a number *before* investing in cross-file references and the handoff already carried eleven.
+
+**Shape:** regeneration runs in GitHub Actions on merge to `main` (`.github/workflows/notion-publish.yml`, `push: main` + `workflow_dispatch`, `permissions: contents: read`, concurrency queued, `fetch-depth: 0`). The token is an Actions secret and never touches a workspace. Recommendation on the three-surface question: **ship nothing** — 100% repo-local dev tooling, zero `plugins/flow/**` changes, third row beside `tools/model-measure/` and `tools/harness_audit/`.
+
+### Open calls
+
+**Nothing is blocking a decision from the orchestrator.** The one call that was blocking — whether a second dispatch was building the same feature — is **RESOLVED**: verified, exactly one Notion workspace (`afed36c6`) and one Notion branch on origin (`conductor/notion-read-only-generated-surface @ e30dd9c7`), both mine. No race.
+
+The only blocking *dependency* is Ben's setup (integration + `NOTION_TOKEN` secret + parent page ID), and per his own priority statement that is **explicitly low-priority — park it, do not chase him for it.** Nothing else waits on it: every criterion except the `[LIVE]` box is satisfiable with zero Notion contact.
+
+OPEN CALL 2: Should a case-study append fire when the minor version changes (`1.37.x` → `1.38.0`), or on a hand-tagged milestone?
+  Options: minor-version bump (mechanical, already maintained in `plugin.json`) vs hand-tagged milestones
+  Recommendation: minor-version bump, confidence med-high
+  If wrong: the case study accumulates at the wrong rhythm — too often (every minor) or, if a hand-maintained tag list goes stale, never. Recoverable by changing one predicate; the page is append-only, so a wrong cadence leaves extra sections rather than corrupting anything.
+  SHIPS-OR-PAPERWORK: **behaviour, but of an unshipped tool.** It changes when the generator appends to Ben's private Notion page. No consumer-visible surface, no gate verdict, no `plugins/flow/**` byte.
+
+OPEN CALL 6: Does rendering the per-PR history log verbatim actually satisfy "the progression narrative" the approved decision asked for?
+  Options: (A) render the `history.md` entries added across the range, verbatim; (B) render only their headings plus the version delta — a spine, not a transcript; (C) render a human-authored `dev-docs/case-study.md` Ben writes at milestones
+  Recommendation: (A) for v1, confidence **low-med** — this is the weakest recommendation in the plan
+  If wrong: the case-study page reads as a concatenated changelog rather than a narrative, and the "progression" framing is unmet. Cheap to change later: it is a rendering choice over a source that already exists, and the page is append-only, so a later switch changes future sections without rewriting past ones. (C) is most faithful and costs Ben a writing step per milestone.
+  SHIPS-OR-PAPERWORK: **behaviour, but of an unshipped tool** — same class as call 2. It changes what the generated page contains, nothing else.
+
+OPEN CALL 4: Fold the secret-blocking hook hardening (a Bash matcher + a commit-time scan) into this PR, or route it to `roadmap.md` § Exploration?
+  Options: fold in vs route to § Exploration
+  Recommendation: route to § Exploration, confidence high on the scope call, med on urgency
+  If wrong: a genuine pre-existing gap stays open — the hook is filename-based, so it would not catch a token pasted into a normal `.md` or `.py`, and there is no pre-commit scan. This plan does not lean on it (the token is never in a file at all, which is structural rather than detective), so the gap does not affect this work; it affects every future session equally, exactly as it does today.
+  SHIPS-OR-PAPERWORK: **paperwork as recommended** — it is a routing decision, and the recommendation is to build nothing. If reversed it becomes behaviour: a hook that can block commits in this repo.
+
+OPEN CALL 7: Merge the eventual PR verified offline-only, with the `[LIVE]` box visibly unchecked, or hold it until one real publish succeeds?
+  Options: merge offline-verified, `[LIVE]` unchecked and stated in the PR body, vs hold for a live publish
+  Recommendation: merge offline-verified **when the work eventually resumes**, confidence med-high
+  If wrong: a tool merges having never authenticated, created a page, or uploaded a file. Bounded: it is invoked only by its own workflow, publishes only to Ben's Notion, and a failure is a red run on `main` that blocks no PR and gates no merge.
+  Recommendation is currently **moot — the PR is parked**, so nothing merges either way. Recorded so the call does not have to be rediscovered when the work resumes.
+  SHIPS-OR-PAPERWORK: **gate verdict** — it decides whether a PR merges with a Spec-walk box unchecked. The only one of the four that touches a gate. Dormant while parked.
+
+**Resolved without a decision needed** (recorded so they are not re-litigated): call 1 (invocation coupling) and call 5 (`--check`) were dissolved by Ben's GitHub-Actions design change rather than decided; call 3 (PAT vs OAuth) by his restated instruction that he creates the integration with read-comments granted at OAuth time; call 8 (duplicate dispatch) by the orchestrator's verification above.
+
+### Resume conditions
+
+Pick this up when Notion becomes worth a slot, or when Ben has done the setup and wants the surface live. Nothing decays in the meantime: the plan is SHA-stamped to its own branch, the FB number is claimed, and the two facts most likely to drift — the FB/version high-water and #146's doc-fragmentation shape — both have re-derivation instructions in the handoff's §0 mechanics table.
 
 ## PR — Doctor slot-coverage honesty + design-language template (this branch, `conductor/doctor-slot-loop-coverage-design-language-template`, FB-0098, v1.37.0, EXECUTED — shipping)
 
