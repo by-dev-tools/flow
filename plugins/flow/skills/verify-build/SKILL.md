@@ -309,10 +309,14 @@ if [ ! -f "$PLAN" ]; then
   echo "[verify-build] no plan at $PLAN — no-plan fallback (see Step 2; mode already set)." >&2
 fi
 
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PLAN"
+CRITERIA_JSON=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py" "$PLAN")
+echo "$CRITERIA_JSON"
+echo "$CRITERIA_JSON" | python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/criterion-specificity.py"
 ```
 
 `extract-criteria.py` emits one criterion per `- [ ]` checkbox under the **active** `**Spec-walk:**` heading. Heading match is robust (V2.1): it recognizes the canonical `**Spec-walk:**`, a qualified `**Spec-walk (PR 1c — shipped):**`, and a markdown `### Spec-walk` — the old strict matcher silently missed non-canonical active headings. When a plan carries several Spec-walk blocks (flow's own multi-PR plan.md; a consumer retaining shipped blocks), **only the first (active) block is extracted**, and a loud warning names the others. Convention: **author the active PR's plan at the top**; retained blocks below are ignored and need no heading qualification (this replaces the old author-memory "qualify retained headings" convention). If no Spec-walk block is found at all, it emits a warning + the run takes the **no-plan fallback** (Step 2: source-touching → §2b judged path over diff-derived criteria; docs-only → §2a smoke path) — note this no longer disables visual capture (§5a is decoupled).
+
+**Criterion-specificity heuristic (closes the over-broad-declaration seam `/flow:audit-coverage` leaves open).** `criterion-specificity.py` consumes `extract-criteria.py`'s own output — no plan-parsing logic is duplicated — and flags any criterion with no observable predicate (no named output/state/value/error path, just a generic "works" / "correctly" / "as expected" claim). Deterministic regex, never an LLM judgment: a downstream bounded-retry loop needs a mechanical signal, and judge prose is reward-hackable. Distinct from `/flow:critique-plan`'s `walk-pin-lint.py` (FB-0068): that lint asks, at plan-critique time over the whole document, "is a verification *method* named?"; this asks, at extraction time over the active block only, "is the criterion's own claim falsifiable?" A criterion can satisfy one and fail the other (`"Rate limiting works correctly → verify: manual QA"` is pinned but vacuous; `"Retries back off exponentially, capped at 5 attempts"` is unpinned but not vacuous) — they compose, they don't overlap. Carry its `vacuous` list forward to Step 8's `metadata.vacuous_criteria_found` field; `/flow:ship` Step 2 routes each flagged criterion to a `[vacuous-criterion]` draft-manifest entry.
 
 ## 4. Adversarial transformation
 
@@ -409,7 +413,7 @@ Write structured JSON to `flow.config.json.verifyFindingsPath` (default `.flow/v
 The schema pins these properties (binding — consumers depend on them):
 
 - **`schema_version`**: `"1.0"` (bumps only on breaking changes; additive changes do not bump).
-- **`metadata`**: branch, head SHA short, plugin version, platform hint (`web`/`ios`/`android`/`tauri`/`cli`/`library`/`none`/`unknown`), verify budget used + overrun flag, **`spike_mode`** (explicit `/flow:ship-spike` ONLY), **`no_plan_fallback`** (Step 2 triggers 2/3 — no governing plan), **`visual_significant`** (the §2c verdict — the ONE authoritative value downstream steps read) + **`visual_signals`** (the evidence lines behind it). Stamp both from `<repo-root>/.flow/visual-significance.json` (written at §2c).
+- **`metadata`**: branch, head SHA short, plugin version, platform hint (`web`/`ios`/`android`/`tauri`/`cli`/`library`/`none`/`unknown`), verify budget used + overrun flag, **`spike_mode`** (explicit `/flow:ship-spike` ONLY), **`no_plan_fallback`** (Step 2 triggers 2/3 — no governing plan), **`vacuous_criteria_found`** (Step 3's `criterion-specificity.py` output — verbatim text of each declared criterion with no observable predicate; empty/absent when none were flagged), **`visual_significant`** (the §2c verdict — the ONE authoritative value downstream steps read) + **`visual_signals`** (the evidence lines behind it). Stamp both from `<repo-root>/.flow/visual-significance.json` (written at §2c).
 - **`overall_verdict`**: `"PASS"` / `"FAIL"` / `"Unknown"` — aggregated per Step 7.
 - **`exit_code`**: `0` (PASS) or `1` (FAIL or Unknown). Pins the gate-blocking contract.
 - **`criteria[]`**: per-criterion entries with `text`, **`provenance`** (see next bullet), `adversarial_cases`, `observations[]` (each with `type` discriminator: `screenshot` | `a11y_snapshot` | `network` | `console` | `log` | `stdout` | `exit_code` | `narrative`), `verdicts.{correctness,regression,scope-creep}` (each with verdict + exactly-2 evidence quotes + notes), and per-criterion `aggregated_verdict`.
