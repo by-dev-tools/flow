@@ -1,0 +1,20 @@
+{
+  "criteria": [
+    "Rate limiting works correctly",
+    "Search behaves as expected",
+    "Auth flow works",
+    "Login is correct",
+    "Returns 429 when rate limit exceeded",
+    "Displays a retry toast on sync failure",
+    "Retries back off exponentially, capped at 5 attempts",
+    "Config table documents every flag",
+    "`GET /users/:id` returns 404 for an unknown id",
+    "Returns a session token and works correctly",
+    "Rate limiting works correctly → verify: manual QA",
+    "Retries back off exponentially, capped at 5 attempts → verify: test_retry_backoff"
+  ],
+  "source_path": "fixture",
+  "source_heading": "**Spec-walk:**",
+  "block_count": 1,
+  "warnings": []
+}

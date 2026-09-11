@@ -73,6 +73,7 @@ jobs:
       - run: python3 plugins/flow/evals/run_review_brief_evals.py
       - run: python3 plugins/flow/evals/run_design_language_scaffold_evals.py
       - run: python3 plugins/flow/evals/run_lesson_flush_evals.py
+      - run: python3 plugins/flow/evals/run_criterion_specificity_evals.py
 
   dev-docs:
     name: dev-docs index

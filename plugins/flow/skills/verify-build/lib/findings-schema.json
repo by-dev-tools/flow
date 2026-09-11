@@ -64,6 +64,11 @@
           "type": "array",
           "items": {"type": "string"},
           "description": "Human-readable evidence lines behind `visual_significant` (the WHY: which UI/asset files matched, whether an override fired, whether a refactor was excluded). Surfaced in the ship log + the skip-audit. Additive in schema_version 1.0."
+        },
+        "vacuous_criteria_found": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Verbatim text of each declared Spec-walk criterion Step 3's deterministic `lib/criterion-specificity.py` flagged as having no observable predicate (e.g. 'Rate limiting works correctly' — no named output/state/value/error path). Empty or absent when none were flagged. Consumed by /flow:ship Step 2: a non-empty list routes one `[vacuous-criterion]` draft-manifest entry per criterion (the over-broad-declaration seam /flow:audit-coverage's presence-only check leaves open — this is verify-build's criterion-QUALITY axis, not coverage's criterion-PRESENCE one). A deterministic heuristic, never an LLM judgment. Additive in schema_version 1.0; older consumers ignore it."
         }
       },
       "additionalProperties": false

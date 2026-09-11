@@ -18,7 +18,7 @@ them WRONG and /flow:critique-plan or /flow:audit-plan caught it:
     reconstruction could otherwise subtract a real blocker)
   * an unrecognized verb goes blocked for security/a11y, ask elsewhere, auto never
 
-Also pins the producer-line contract: every one of the 9 producer sites' real
+Also pins the producer-line contract: every one of the 10 producer sites' real
 prescribed line must round-trip through `parse` yielding a kind, an in-vocabulary
 verb, and a confidence value — and the rendered manifest must stay coherent with
 lib/pr-coherence.py (the FB-0067 invariant this must not disturb).
@@ -28,6 +28,7 @@ Stdlib only. No git/gh dependency.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import subprocess
@@ -44,6 +45,19 @@ A11Y_SKILL = HERE.parent / "skills" / "accessibility-review" / "SKILL.md"
 FIXTURE = HERE / "fixtures" / "resolution-confidence-routing" / "expected" / "ship-routing.md"
 
 _failures: list[str] = []
+
+
+def _load_triage():
+    """Load manifest-triage.py by path (hyphenated name isn't importable).
+
+    Reused so the KIND_COPY/KINDS count assertion below reads the SAME table the
+    engine actually runs against, not a hand-copied literal that could silently
+    diverge from it.
+    """
+    spec = importlib.util.spec_from_file_location("manifest_triage", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def expect(label: str, got, want, ctx: str = "") -> None:
@@ -121,6 +135,7 @@ TABLE_CASES = [
     ("verify-build", "regression fix", "ask", "FB-0012's bounded retry already spent"),
     ("verify-build", "declare + fence", "ask", "no_plan_fallback: agent must not self-declare"),
     ("coverage", "declare + fence", "ask", "never auto-add the criterion (SKILL.md:272)"),
+    ("vacuous-criterion", "declare + fence", "ask", "never self-declare the rewrite specific enough — coverage's self-grading problem, one level up"),
     ("status-surface", "reconcile", "ask", "never silently rewrite an un-fenced doc (SKILL.md:585)"),
     ("security", "design decision", "ask", "competing valid fixes escalate (FB-0011)"),
     ("a11y", "design decision", "ask", "competing valid fixes escalate (FB-0011)"),
@@ -417,7 +432,8 @@ def test_clears_when(td: str) -> None:
     st = fresh_state(td)
     b = body(*[line(k, "f", "re-run") for k in
                ("rigor", "security", "a11y", "verify-build", "coverage",
-                "skip-audit", "status-surface", "visual-deliverable", "toolchain")])
+                "skip-audit", "status-surface", "visual-deliverable", "toolchain",
+                "vacuous-criterion")])
     r = classify(b, st)
     expect("every kind carries a clears_when re-check",
            all(e.get("clears_when") for e in r["entries"]), True)
@@ -495,7 +511,7 @@ def test_toolchain_kind(td: str) -> None:
 
 
 def test_producer_lines() -> None:
-    print("\n[contract] all 9 producer sites round-trip through parse")
+    print("\n[contract] all 10 producer sites round-trip through parse")
     src = SHIP_SKILL.read_text(encoding="utf-8")
     # Producer sites write the line as an inline-code TEMPLATE (no leading "- ");
     # the dash appears when it is rendered into the PR body. Normalize the template
@@ -523,15 +539,29 @@ def test_producer_lines() -> None:
             expect_true(f"[{e['kind']}] template carries a confidence slot",
                         bool(e["confidence"]), json.dumps(e))
 
-    expect("every one of the 9 kinds is prescribed by a producer site",
+    expect("every one of the 10 kinds is prescribed by a producer site",
            sorted(kinds_seen),
            ["a11y", "coverage", "rigor", "security", "skip-audit",
-            "status-surface", "toolchain", "verify-build", "visual-deliverable"])
+            "status-surface", "toolchain", "vacuous-criterion", "verify-build",
+            "visual-deliverable"])
+
+    # PAIRED positive assertion (general.md rule 3): a bare "9 producer sites" ->
+    # "10 producer sites" text sweep is satisfiable by DELETING the count language
+    # instead of updating it — the same shape that let FB-0074 satisfy a
+    # negative-only lint by deleting the feature it protected, undetected for four
+    # releases. This reads KIND_COPY/KINDS from the running engine itself (not a
+    # copied literal), so the count can only go green by the table actually having
+    # 10 kinds — not by prose merely claiming it does.
+    triage = _load_triage()
+    expect("KIND_COPY carries exactly 10 kinds", len(triage.KIND_COPY), 10)
+    expect("KINDS (derived from KIND_COPY) carries exactly 10 kinds", len(triage.KINDS), 10)
+    expect_true("vacuous-criterion is one of them", "vacuous-criterion" in triage.KINDS,
+                sorted(triage.KINDS))
 
     # PAIRED with the equality above, and not redundant with it. `kinds_seen` is the
     # UNION of the `add-entry --kind` harvest and the inline-code template harvest,
     # so a Step 2a.3 bullet written in the template form every neighbouring bullet
-    # uses would balance the 9 on its own — the equality cannot tell the validated
+    # uses would balance the 10 on its own — the equality cannot tell the validated
     # write path from the hand-composed line it exists to forbid. This can.
     # `add-entry` PRINTS the line; it does not write it. A producer bullet without the
     # `>> "$(… manifest-path …)"` redirect therefore emits to stdout, Step 7a.5 classifies

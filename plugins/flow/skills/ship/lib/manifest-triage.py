@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic draft-manifest triage engine (FB-0075).
 
-`/flow:ship` accumulates a draft manifest from 9 producer sites, and its draft
+`/flow:ship` accumulates a draft manifest from 10 producer sites, and its draft
 decision was unconditional: manifest non-empty => `gh pr create --draft`. Three
 unlike populations therefore reached the human identically -- items the agent
 could resolve itself, genuine decisions written in engineer shorthand, and items
@@ -194,6 +194,22 @@ KIND_COPY: dict[str, dict[str, str]] = {
         "needs_you": "Approve the criterion I drafted, or tell me to ship without covering it.",
         "waive_cost": "this behavior ships with nothing verifying it",
         "why": "I can write the test criterion, but declaring my own work covered is me grading my own homework",
+    },
+    # The sibling gap `coverage` leaves open: coverage checks criterion
+    # PRESENCE (is there one?), this checks criterion QUALITY (is the one
+    # that's there falsifiable?). A criterion so vague it plausibly maps to
+    # the changed hunk ("Rate limiting works correctly") satisfies coverage
+    # and lets verify-build judge it PASS against equally vague narration --
+    # the FB-0047/0048 self-attestation escape, one level up. Emitted by
+    # /flow:verify-build Step 3's deterministic criterion-specificity.py
+    # heuristic (never an LLM judgment -- a future bounded-retry loop needs a
+    # mechanical signal to retry against).
+    "vacuous-criterion": {
+        "clears_when": "rewrite the criterion in the plan's Spec-walk block to name an observable output/state/error path, then re-run /flow:verify-build and confirm the flag is gone",
+        "means": "This test criterion doesn't name anything an observer could check — it just claims the behavior 'works' or is 'correct'.",
+        "needs_you": "Approve the more specific criterion I drafted, or tell me to ship with it as-is.",
+        "waive_cost": "this behavior ships verified against a test that can't actually fail",
+        "why": "I can propose a specific rewrite, but declaring my own test coverage sufficient is the same self-grading problem",
     },
     "skip-audit": {
         "clears_when": "re-run the named stage, then re-run /flow:audit-skips and confirm LEGITIMATE",
