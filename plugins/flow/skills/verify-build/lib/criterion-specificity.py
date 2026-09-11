@@ -60,23 +60,19 @@ import json
 import re
 import sys
 
-# Trailing-clause match: a generic success-predicate verb, optionally followed
-# by a generic adverb, anchored to the END of the (stripped) criterion. This
-# mirrors the roadmap's own named vocabulary ("works"/"correctly"/"as
-# expected") with a small, bounded generalization (functions/behaves/performs;
-# properly/as intended) -- narrow enough that CONCRETE_SIGNAL_RE, not
-# vocabulary breadth, is what actually protects precision.
+# Trailing-clause match, anchored to the END of the (stripped) criterion: either
+# a generic success-predicate verb with an optional generic adverb ("works
+# correctly"), or the "is/remains/stays correct" phrasing family ("Login is
+# correct"). One alternation, one end-anchor, so the anchor logic (and any
+# future change to it) lives in exactly one place. Mirrors the roadmap's own
+# named vocabulary ("works"/"correctly"/"as expected") with a small, bounded
+# generalization -- narrow enough that CONCRETE_SIGNAL_RE, not vocabulary
+# breadth, is what actually protects precision.
 _VACUOUS_PREDICATE_RE = re.compile(
-    r"\b(works|functions|behaves|performs)\b"
-    r"(\s+(correctly|properly|as\s+expected|as\s+intended))?"
-    r"\s*\.?\s*$",
-    re.IGNORECASE,
-)
-
-# A second small pattern for the "is/remains/stays correct" phrasing family
-# ("Login is correct"), same end-anchoring.
-_CORRECTNESS_ONLY_RE = re.compile(
-    r"\b(is|remains|stays)\s+(correct|accurate|valid|fine|ok|okay)\s*\.?\s*$",
+    r"\b(?:"
+    r"(?:works|functions|behaves|performs)(?:\s+(?:correctly|properly|as\s+expected|as\s+intended))?"
+    r"|(?:is|remains|stays)\s+(?:correct|accurate|valid|fine|ok|okay)"
+    r")\s*\.?\s*$",
     re.IGNORECASE,
 )
 
@@ -104,7 +100,7 @@ def is_vacuous(criterion: str) -> tuple[bool, str]:
         return False, ""
     if _CONCRETE_SIGNAL_RE.search(text):
         return False, ""
-    if _VACUOUS_PREDICATE_RE.search(text) or _CORRECTNESS_ONLY_RE.search(text):
+    if _VACUOUS_PREDICATE_RE.search(text):
         return True, (
             "no observable predicate -- no named output, state, value, or "
             "error path, just a generic success claim"
