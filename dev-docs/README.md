@@ -51,6 +51,7 @@ A **second** research location exists outside `dev-docs/`, added by #104. It is 
 |---|---|
 | [`research/2026-08-14-cloud-ios-simulator-limrun.md`](../research/2026-08-14-cloud-ios-simulator-limrun.md) | ⏸️ **Parked** — cloud iOS simulators (Limrun + alternatives) for agent workflows. Not being pursued |
 | [`research/2026-08-23-flow-cloud-workflow-plan.md`](../research/2026-08-23-flow-cloud-workflow-plan.md) | ⭐ **CANONICAL cloud-workflow plan** — consolidates the 08-22 research + the Trio tiered cloud/local plan; one pipeline with environment-keyed placement, PR+label verify queue, the `toolchain` manifest kind as keystone. Where docs disagree, this one wins |
+| [`research/orchestrator-field-manual.md`](../research/orchestrator-field-manual.md) | **LIVING — operational companion to the canonical plan** — the five measurement traps that each produced a confident wrong answer, the standing resolve-vs-escalate calls, and the presentation rules the human has stated directly. Exists because every item was previously held as a *sandbox-local* memory file and passed forward only in the transient succession brief, which §4.9's disposability invariant cannot survive. Carries a per-row deletion criterion |
 | [`research/2026-08-22-conductor-orchestration.md`](../research/2026-08-22-conductor-orchestration.md) | 🟡 **Partially superseded** — §2 facts + cost model remain authoritative (cited as `[F#]` by the canonical plan); §8 design + §10.1 ledger superseded by the 08-23 plan |
 
 ## Handoffs — per-PR execution plans
