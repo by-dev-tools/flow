@@ -1,7 +1,7 @@
 # 2026-09-12 — Worker→orchestrator ping protocol, ships-or-paperwork test, and succession re-addressing
 
 - **Date:** 2026-09-12
-- **Branch:** `orchestrator-ping-protocol-and-succession-readdressing`
+- **Branch:** `orchestrator-ping-protocol-and-succession`
 - **Commit / PR reference:** [this commit]
 
 ## What was done
