@@ -660,6 +660,17 @@ worker, is the plan sound, is decision B reason-conditioned — stays the agent'
 **compose** the backend + the existing flow skills (`/flow:ship`, `/flow:critique-plan`, …),
 never reimplement them.
 
+**Where the empirical input lives.** The checklists above are the *design*; the operational
+residue — the measurement traps that have each produced a confident wrong answer, the standing
+resolve-vs-escalate calls, and the presentation rules the human has stated directly — is
+`research/orchestrator-field-manual.md`. It is separated from this doc deliberately: it is a
+living, high-churn list with a per-row deletion criterion, whereas this section is a stable
+spec. `/flow:orchestrate` and `/flow:gate` should be built to *subsume* its rows (each row dies
+when a mechanical check covers it), not to restate them. It exists at all because those items
+were previously held as sandbox-local memory files and passed forward only inside the transient
+succession brief — recoverable from neither GitHub nor the Conductor API, which is precisely the
+failure §4.9's disposability invariant names.
+
 ## 5. Execution sequence
 
 | # | Step | Where | State |
