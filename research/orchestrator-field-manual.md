@@ -37,20 +37,29 @@ back clean while two workers were rate-limited.
 | T5 | **Ground-truth sweeps that read `origin/main` do not see open branches** | A worker re-derived its FB number from `main` correctly and still collided with three numbers claimed on an open PR branch | Sweep `git ls-remote` / `gh pr list` as well. Observed live at succession-3 boot — the fifth FB collision in this program |
 
 **The shell-composition trap is not a beginner error, and priming does not prevent it.** T6
-fired **three times in the single session that created this file**, among agents who had each
-just finished reasoning about that exact hazard: [#148](https://github.com/by-dev-tools/flow/pull/148)'s
-heredoc delimiter collision (which is why the add-entry fast follow exists at all), an
-orchestrator message that silently dropped a word from a quoted source comment, and a worker's
-`git commit -m` whose backticked command names were *substituted and run* — invoking the very
-plugin-update command that session had just agreed to defer. It failed harmlessly only because
-the substitution stripped the argument.
+fired **four times in the single session that created this file**, among agents who had each
+just finished reasoning about that exact hazard:
 
-Note the escalation across the three: refuted design → silent data loss → unintended execution.
-And note what they have in common — every author was maximally primed. This is the strongest
+1. [#148](https://github.com/by-dev-tools/flow/pull/148)'s heredoc delimiter collision — a
+   **refuted design**, and the reason the add-entry fast follow exists at all.
+2. An orchestrator message quoting a source comment: backticks substituted, a word silently
+   vanished — **silent data loss**.
+3. A worker's `git commit -m` with backticked command names: substituted and *run*, invoking
+   the plugin-update command that session had just agreed to defer — **unintended execution**.
+   Harmless only because the substitution stripped its argument.
+4. That same worker's message **reporting instance 3** — mangled by instance 3's own bug.
+
+Note the escalation across the first three: refuted design → silent data loss → unintended
+execution. Then note the fourth, which is the whole argument in one event: **the report of the
+failure was destroyed by the failure it was reporting.** A hazard that corrupts its own incident
+report cannot be managed by attention, because attention is exactly what it consumes and then
+eats.
+
+Note also what all four share — every author was maximally primed. This is the strongest
 available argument that the fix belongs in the *interface* rather than in author discipline, and
-it is worth citing when that tradeoff comes up, because it is first-hand rather than theoretical.
-**Standing rule for this seat: compose every worker message and commit body via a file
-(`--message-file`, `git commit -F`), never as a quoted shell argument.**
+it is first-hand rather than theoretical. **Standing rule for this seat: compose every worker
+message and commit body via a file (`--message-file`, `git commit -F`), never as a quoted shell
+argument.**
 
 **Capability claims expire.** A ⚠️/OPEN marker plus a stated resolution cost is an
 instruction to run the test, not a conclusion to inherit. A prior seat told the human that
