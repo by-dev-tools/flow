@@ -33,7 +33,24 @@ back clean while two workers were rate-limited.
 | T2 | **A rate-limited worker never wakes itself and cannot ping you** | `Status: idle` — indistinguishable between "waiting at a gate" and "died hours ago" | Poll the **`Updated` timestamp**, not the status. `conductor session status <id>` exposes it. This is §4.8 rule 6's named known gap |
 | T3 | **Never read git state while a git command is still running** | Reading mid-rebase on #138 showed commits apparently dropped | Wait for the command to exit. Nothing was lost; the false conclusion was one step from a destructive force-push |
 | T4 | **Keep-both conflict resolution preserves content, not ordering** — and is correct *only* for append-only content | A blanket keep-both on #146 duplicated JSON keys and resurrected three deliberately-deleted files | Distinguish *deleted-by-this-branch* (`git log --diff-filter=D main..branch`) from *added-to-main-after-fork* before resolving |
+| T6 | **Composing a message or commit body as a double-quoted shell string executes its backticks and `$(...)`** | A quoted source comment lost a word; a `git commit -m` with backticked command names actually *invoked* one | Use `--message-file` / `git commit -F` with a heredoc-written file. Never put prose you did not author into a shell word |
 | T5 | **Ground-truth sweeps that read `origin/main` do not see open branches** | A worker re-derived its FB number from `main` correctly and still collided with three numbers claimed on an open PR branch | Sweep `git ls-remote` / `gh pr list` as well. Observed live at succession-3 boot — the fifth FB collision in this program |
+
+**The shell-composition trap is not a beginner error, and priming does not prevent it.** T6
+fired **three times in the single session that created this file**, among agents who had each
+just finished reasoning about that exact hazard: [#148](https://github.com/by-dev-tools/flow/pull/148)'s
+heredoc delimiter collision (which is why the add-entry fast follow exists at all), an
+orchestrator message that silently dropped a word from a quoted source comment, and a worker's
+`git commit -m` whose backticked command names were *substituted and run* — invoking the very
+plugin-update command that session had just agreed to defer. It failed harmlessly only because
+the substitution stripped the argument.
+
+Note the escalation across the three: refuted design → silent data loss → unintended execution.
+And note what they have in common — every author was maximally primed. This is the strongest
+available argument that the fix belongs in the *interface* rather than in author discipline, and
+it is worth citing when that tradeoff comes up, because it is first-hand rather than theoretical.
+**Standing rule for this seat: compose every worker message and commit body via a file
+(`--message-file`, `git commit -F`), never as a quoted shell argument.**
 
 **Capability claims expire.** A ⚠️/OPEN marker plus a stated resolution cost is an
 instruction to run the test, not a conclusion to inherit. A prior seat told the human that
