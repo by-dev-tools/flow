@@ -68,6 +68,17 @@ approval authority is the human's, the interaction surface stays the orchestrato
   specifically inside status tables, which is exactly where the cost is highest.
 - **One message per worker.** A batched message with per-worker sections got the wrong
   instruction read by the wrong worker.
+
+  **The misroute is undetectable from both ends, and the delay is unbounded.** The wrong
+  recipient silently absorbs an instruction that was never theirs; the intended worker simply
+  never receives one and has nothing to notice the absence of. Observed: a succession-2
+  "vacuous-criterion approved to execute" instruction landed in the *Notion* workspace and
+  surfaced only at the succession-3 boot — a fortnight later, and only because that worker
+  volunteered it while reporting something else. It cost nothing **by luck**: the correct
+  worker held its own copy and shipped the work as
+  [#148](https://github.com/by-dev-tools/flow/pull/148). Treat the one-message-per-worker rule
+  as load-bearing rather than tidy, and when a worker reports an instruction that is not its
+  own, always resolve where the *intended* recipient ended up — do not assume a duplicate.
 - **Large text blocks read worse than an agent assumes.** Stated directly: a verbose
   orchestrator recreates the exact attention cost the seat exists to remove (§1 requirement 5).
 
