@@ -2,6 +2,33 @@
 
 ## Current Focus
 
+**▶ STATE AS OF 2026-09-12 — `main` is v1.41.0, zero open flow PRs, orchestrator seat rotating.**
+Read this block first; everything below it is per-branch narrative from work that has since merged,
+kept for the reasoning but **not** a statement of what is active. (That residue is itself the
+FB-0102 problem — `plan.md` is edited in place, so #146's fragmentation deliberately did not touch
+it, and stale "Active (this branch)" headers accumulate. Cleaning it is unclaimed work, not this
+pass's scope.)
+
+- **Shipping now (this branch):** orchestrator ping protocol + ships-or-paperwork test + succession
+  re-addressing → canonical plan §4.8 rules 6–7 and §4.9 wind-down step 4 (FB-0105/FB-0106).
+  Docs-only, no version bump.
+- **In flight elsewhere:** the `manifest-triage add-entry` file/stdin interface fast follow
+  (workspace `29316ef2`) — the systemic half of #148's narrow shell-quoting fix.
+- **Blocked on hardware, not on a decision:** `health-tracker#116` carries a `[toolchain]` manifest
+  entry and needs a Mac `/verify-queue` sweep. Its `[security]` entry was waived 2026-09-12 with
+  the reasoning recorded; a marketplace-source pin is on that repo's roadmap as a follow-up.
+- **Known gap, unfixed by design:** a rate-limited worker cannot ping the orchestrator, so silent
+  workers still need a periodic sweep (§4.8 rule 6).
+- **⚠ LIVE BUG, unclaimed (found 2026-09-12 during a pre-archive check):** #147's queue flush
+  (`cmd_flush`) shipped in v1.39.0, but cloud workspaces run the **installed** plugin, which is
+  pinned at **1.29.0** — so `cmd_flush` does not exist there. The one workspace that flushed
+  succeeded only because it invoked the code from its own working tree. Every other workspace's
+  harvested lessons are therefore still **non-durable**, and the fix that was supposed to prevent
+  exactly that loss has never run in the environment it was written for. This is another instance
+  of the FB-0085 class — shipped, believed effective, never loading — and it means **pre-archive
+  checks must export the queue manually rather than trusting the flush**. `/flow:contribute` has
+  also never been run against the accumulated queue.
+
 **▶ EXECUTED, shipping (this branch, `conductor/vacuous-criterion-check-criterion-quality`, FB-0104, v1.41.0): Vacuous-criterion check — close the over-broad-declaration seam.** Deterministic (non-LLM) heuristic in `extract-criteria.py`'s consumer path (`/flow:verify-build` Step 3) that flags Spec-walk criteria with no observable predicate ("Rate limiting works correctly"), routed to the existing draft manifest as a 10th `[vacuous-criterion]` kind (mirrors `coverage`'s `ask`-class routing, reuses its `declare + fence` verb). `walk-pin-lint.py` does NOT already cover this (confirmed by full read — it checks whether a verification *method* is named, not whether the criterion's own claim is falsifiable; proved complementary with a counter-example in each direction). `/flow:critique-plan` caught and fixed 3 real issues across 3 passes at the plan gate — most notably that the first draft's "worked negatives" fixture cases never exercised the heuristic's own AND-NOT escape-hatch branch (a vacuous test inside a vacuous-criterion checker). Both open calls resolved by the orchestrator (reuse `declare + fence`; match whatever the 9 sibling kinds do for the `workflow.md` paragraph). Renumbered FB-0102 → FB-0104 and v1.40.0 → v1.41.0 at this rebase (main advanced to v1.40.0/FB-0103 via #146 while this plan sat at the gate). **`/flow:staff-review`'s staff-engineer lens then caught a real BLOCKER at ship time** — the flagship documented counter-example was empirically false; every pinned criterion in this repo was structurally unflaggable — fixed before shipping (see the history entry). `/flow:security-review` flagged one decision-required finding on the new producer bullet (untrusted plan text in an agent-composed shell argument). Human decision at the merge gate: fix per-site (option (a)), not accept-as-is — propagating a shape just identified as unsafe is how a class spreads (two instances is a coincidence, three is a pattern). The systemic interface fix across the other ~9 producer sites is a dispatched fast follow (roadmap § Next), not scope here. See the "PR — Vacuous-criterion check" block below.
 
 **▶ SHIPPING (this branch, `conductor/spike-agentsmd-vs-skills-packaging-evals`, v1.37.0 unchanged): SPIKE — AGENTS.md vs skill-shaped packaging.** Docs-only (new `dev-docs/research/2026-09-agents-md-vs-skills.md` + one `dev-docs/README.md` index row); zero `plugins/flow/**` touched, no version bump. Answers "is flow's architecture wrong given Vercel's 'AGENTS.md outperforms skills' post?" **Recommendation: proceed — change no packaging, fix the loading.** The headline doesn't survive its own evidence (the results figure contradicts the tables at n=11, single run; the winner is a `CLAUDE.md`; ≥3 uncontrolled variables), SkillsBench (9,396 trajectories) runs the other way, and correctly scoped the finding lands on 1 of flow's 22 skills. **But three human-approved experiments found a bigger bug than the question:** E1 measured that `paths:` on a `SKILL.md` never activates → flow's four rule-skills have not loaded for any consumer since v1.33.0 (third FB-0085-class instance, second created by Phase 00 itself). Routed to roadmap § Now as **S0** (fix + upgrade `/flow:doctor` Check 3.2 from "registered" to "activates"; guardrail: do NOT close by deleting `paths:` — the FB-0077 shape). Also routed: **S2** (`exploration`'s globs reach 1 of 4 consumer repos, § Next), **E2** (`log-disagreement` capture rate, inconclusive → § Exploration), **S1** (hoist `ship`'s auto-invoke predicate out of `description:`, § Exploration), and an **AB Step 1b** correction (`harness_audit.py:157` counts the 85 KB `workflow.md` as always-loaded when nothing loads it — ~3× overcount, live bug in merged #136). See `dev-docs/history/2026-09-04-spike-agents-md-vs-skill-shaped-packaging-is-flow-s-architec.md`.
