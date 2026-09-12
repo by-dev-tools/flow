@@ -68,8 +68,8 @@ pass's scope.)
 
 **FB number corrected after a collision — FB-0105 → FB-0108.** The first sweep read `origin/main` only, which
 is correct procedure but blind to open branches: #149 (`orchestrator-ping-protocol-and-succession`, open,
-gates green) already claims **FB-0105, FB-0106 and FB-0107**. It was pushed first and is ready, so it keeps
-them. Verified independently rather than taken on trust — sweeping `dev-docs/feedback/` across *every* remote
+gates green) already claimed **FB-0105, FB-0106 and FB-0107**; it has since **merged** as `a156228`, which
+settles the claim permanently rather than provisionally. Verified independently rather than taken on trust — sweeping `dev-docs/feedback/` across *every* remote
 head puts the high-water at FB-0107, so FB-0108 is the next free value. This is the fourth FB collision in
 this batch of work and exactly the failure the #146 block describes; it is also the strongest possible
 argument for that PR's deletion of `reserved-feedback-numbers.md`, since after fragmentation a duplicate
