@@ -9,6 +9,20 @@ FB-0102 problem — `plan.md` is edited in place, so #146's fragmentation delibe
 it, and stale "Active (this branch)" headers accumulate. Cleaning it is unclaimed work, not this
 pass's scope.)
 
+- **▶ PLAN GATE — AWAITING APPROVAL (branch `conductor/dogfood-version-honesty-fb-0107`, v1.43.0,
+  FB-0107 amended in place): dogfooding tells the truth about which version of itself it ran.** The
+  installed plugin in a cloud workspace is **1.29.0** against a `main` at 1.41.0, so every flow PR's
+  ship pipeline has been reviewing the *previous* release. Measured resolution rule, new:
+  **everything Claude Code resolves comes from the installed tree; everything the Bash tool resolves
+  comes from the working tree** — `CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls and set in
+  `!`-preprocessor blocks, so SKILL.md prose + agent prompts + `!`-block scripts ran at 1.29.0 while
+  the 32 fenced-block libs ran from the checkout. One run, two versions. Ships a four-row provenance
+  report in the PR body (installed / marketplace HEAD / fenced-block libs / `!`-block scripts) plus a
+  ported health-tracker#116 SessionStart updater. `/flow:critique-plan` returned 7 findings, all
+  accepted, two of which changed the design (split drift predicate; fourth row). v1.42.0/FB-0108 are
+  claimed by the add-entry branch, so this took v1.43.0. **Not executed — stopped at the plan gate.**
+  See the "PR — Dogfooding version honesty" block below.
+
 - **Shipping now (this branch):** orchestrator ping protocol + ships-or-paperwork test + succession
   re-addressing → canonical plan §4.8 rules 6–7 and §4.9 wind-down step 4 (FB-0105/FB-0106).
   Docs-only, no version bump.
@@ -55,6 +69,433 @@ pass's scope.)
 **▶ EXECUTED, shipping (this branch, `conductor/phase-00-rules-as-skills-hooks-fix-fb-0085`): Phase 00 — fix two shipped-but-never-loading flow features (rules→skills, hooks declaration; FB-0085), v1.33.0.** Standalone prerequisite from `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` §17/Phase 00, independent of any Codex/Cursor porting work. Plan approved with both escalated decisions accepted as recommended (00b hooks stay opt-in; 00c one-time content sync + explicit sync-note, not a full merge; 00d no bootstrap.sh change). Executed: skill count 17→21 (`claude plugin details` confirms live), full eval suite green, `/flow:critique-plan` findings fixed pre-execution. See the "PR — Phase 00" block below for the full Spec-walk + confidence verdicts, and `dev-docs/history.md` 2026-08-27 for the shipped write-up.
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
+
+## PR — Dogfooding version honesty (this branch, `conductor/dogfood-version-honesty-fb-0107`, FB-0107, v1.43.0, PLAN GATE)
+
+**Branch:** `conductor/dogfood-version-honesty-fb-0107`
+**Base:** rebased onto `origin/main` @ `a156228` (#149) — **v1.41.0**, FB high-water **FB-0107**.
+**Version claim: `v1.43.0`.** v1.42.0/FB-0108 are claimed by
+`conductor/add-entry-interface-file-stdin-input-shell-injection-fix` (verified: its `plan.md` claims
+both; at the plan gate, unmerged). Zero open PRs. Per the standing rule I took the next free minor
+without asking.
+**FB claim: none — this amends `FB-0107` in place,** because the measurement below *corrects that
+entry's own stated premise*, and a correction to a fact belongs in the file that holds the fact.
+FB-0109 is free if the gate prefers a separate entry.
+
+**Revision 2** — rewritten after `/flow:critique-plan` returned 7 findings (3 BLOCKER, 2 REDIRECT,
+2 FOLLOW-UP). **All 7 accepted, none disputed.** Two changed the design, not just the prose: the
+drift predicate is now split in two (Issue 3) and there is a fourth reported row (Issue 5). The
+critique run also *answered* my open call 1 — details in §0.
+
+---
+
+## 0. The measurement — and the critique run that completed it
+
+I was handed an unproven claim: libs resolve **installed-first, checkout-as-fallback**, so a *new*
+lib runs fresh while a *modified* lib silently uses the stale installed copy. The honest verdict is
+**partially confirmed, partially refuted — and the axis is not new-vs-modified at all.**
+
+### 0.1 What I measured
+
+| # | Measurement | Command / evidence | Result |
+|---|---|---|---|
+| 1 | Installed version | `cat ~/.claude/plugins/installed_plugins.json` | **1.29.0**, `installPath …/cache/flow/flow/1.29.0`, `gitCommitSha cf783ac`, `installedAt 2026-08-19` |
+| 2 | Branch-declared version | `plugins/flow/.claude-plugin/plugin.json` | **1.41.0** at rebase (→ 1.43.0 in this PR); the 12-release gap FB-0107 reports |
+| 3 | **Marketplace HEAD** — the third number | `git -C ~/.claude/plugins/marketplaces/flow log -1` + its `marketplace.json` | **1.29.0** @ `cf783ac`. The *source clone* is pinned too, so `/plugin install` alone would have looked like a fix and changed nothing |
+| 4 | `CLAUDE_PLUGIN_ROOT` in a **Bash-tool** call | `echo "[${CLAUDE_PLUGIN_ROOT:-UNSET}]"` | **`UNSET`** |
+| 5 | The repo already knew #4, in four places | `ship/SKILL.md:362,472,1282`; `run_scratch_isolation_evals.py:277,330`; `doctor/SKILL.md:282`; `roadmap.md:278,311` | all state "`CLAUDE_PLUGIN_ROOT` is unset in Bash-tool fenced blocks" |
+| 6 | Lib call sites, classified | `grep -rn CLAUDE_PLUGIN_ROOT plugins/flow/skills/` | **144** refs; **32** carry a same-line checkout fallback; the rest are bare |
+| 7 | Surface inventory drift | `ls` installed vs checkout `skills/` + `agents/` | **5 skills** (`documentation`, `exploration`, `general`, `plan-discipline`, `review-brief`) and **1 agent** (`lens-experience`) exist in the branch and **not in 1.29.0** |
+| 8 | **`!`-preprocessor blocks resolve INSTALLED** — measured by the `/flow:critique-plan` run on revision 1 of this plan | the critique reported its injected `## Reference documents` section resolved **zero** documents. Diagnostic: `flow.config.json.referenceGlob` is the comma-joined `dev-docs/*.md,dev-docs/feedback/*.md`; the checkout's `extract_session.py:975` comma-splits it (`for g in spec.split(",")`), and 1.29.0's copy does not (confirmed: one `split(",")` in the whole installed file, on `reference_paths`, not on the glob). Zero matches is therefore the signature of the **1.29.0** script | `!`-blocks → **installed** |
+
+### 0.2 The honest resolution map — the axis is *which executor resolved the path*
+
+Measurements 4 and 8 together give a clean rule, and it is not the one in the hypothesis:
+
+> **Everything Claude Code itself resolves comes from the installed tree. Everything the Bash tool
+> resolves comes from the working tree.** `CLAUDE_PLUGIN_ROOT` is set in the first context and unset
+> in the second, so the *same* `${CLAUDE_PLUGIN_ROOT}/…` string means different files depending on who
+> expands it.
+
+| Surface | Resolved by | Actual source today |
+|---|---|---|
+| `/flow:*` SKILL.md orchestration prose | skill registry | **1.29.0 — stale** |
+| `flow:*` agent prompts (auditor, plan-critic, 4 lenses, skip-auditor) | agent registry | **1.29.0 — stale** |
+| Scripts called from `!`-preprocessor blocks | Claude Code's expander; `CPR` **set** | **1.29.0 — stale** |
+| 5 skills + 1 agent absent from 1.29.0 | not registered | **neither — silently unavailable** |
+| Libs from fenced Bash blocks **with** a fallback (32 sites) | Bash tool; `CPR` **unset** → 2nd arm | **working tree — fresh** |
+| Bare `${CPR}/…` *executable* refs in fenced blocks, no fallback | Bash tool; expands to `/skills/…` | **hard failure**, not staleness |
+
+**Verdict on the hypothesis, stated plainly.** *Confirmed* for `!`-blocks: `CPR` is set there, so the
+installed copy wins even for a script this branch modified — and because `audit-plan:13` and
+`critique-plan:43` carry **no** fallback, a script *added* by a branch hard-fails there rather than
+falling back. *Refuted* for fenced blocks: `CPR` is unset, so all 32 fallback sites resolve to the
+checkout uniformly, new and modified alike. **The hypothesised consequence survives and is worse than
+predicted:** one run draws from two versions, so a single "plugin version" line would be *wrong*, not
+merely ambiguous — and it would be wrong in the opposite direction, reporting 1.29.0 while v1.41
+engines were in fact executing.
+
+**Measurement 8 is itself a live FB-0107 instance, caught in the act.** The critique that audited this
+plan ran document-blind — structurally unable to cite a project rule — because it executed a
+14-release-old script. It said so, loaded the docs by hand, and returned 7 real findings anyway. Had
+it silently returned "APPROVED," I would have had a confident pass from a reviewer that never read the
+rules. That is the confidence-inverting shape FB-0107 names, and it happened during this PR's own plan
+gate.
+
+### 0.3 Explicitly NOT proposing working-tree-global
+
+Confirming, and my analysis did not drift there. The three stated reasons hold, and measurement 7 adds
+a fourth that is now concrete: the *only* way to observe that 5 skills and an agent silently fail to
+register is to compare against an installed tree. Bypass installation and that class becomes
+unobservable by construction — the FB-0085 blinding, measured rather than hypothesised. The fix is to
+**make the version explicit and visible**, not to force a resolution order.
+
+---
+
+## 1. Scope
+
+### Item 1 — per-surface provenance in the PR body *(the load-bearing piece)*
+
+**New:** `plugins/flow/skills/ship/lib/plugin-provenance.py` (stdlib only). One deterministic engine,
+three consumers (ship, ship-spike, the item-2 hook) — the predicate lives in exactly one place. This
+is the `/flow:doctor` lesson applied up front: doctor's first cut re-derived a predicate inline and
+the two copies disagreed inside a single commit.
+
+Subcommands: `report` (markdown rows + a drift block) and `report --json`
+(`{installed, marketplace_head, branch, libs, preprocessor, surface_drift, report_drift, update_available}`).
+
+It measures, each with **distinct** states — FB-0082's rule, never collapse `absent` / `malformed` /
+`plugin-absent` / `ok` into one "unknown":
+
+1. **installed** — version, `gitCommitSha`, installPath from `~/.claude/plugins/installed_plugins.json`.
+2. **marketplace_head** — version from the marketplace clone. The third number; measurement 3 is why.
+3. **branch** — from `plugins/flow/.claude-plugin/plugin.json`, **gated on the cwd actually being the
+   flow checkout** (`marketplace.json` with `"name": "flow"`). A consumer project reports
+   `not_flow_checkout` — a normal state, not an error. Same trust gate roadmap:311 asks for; I do not
+   read a version out of an arbitrary reviewed repo.
+4. **libs** / **preprocessor** — the two executor arms from §0.2, reported separately.
+5. **surface_drift** — skills/agents in the checkout but absent from the installed tree, and the
+   converse. The row that catches "the skill this PR ships does not exist in the version that
+   reviewed it."
+
+**FOUR labelled rows, named — never a count, and never an unlabelled "plugin version"** (Issue 5: a
+pinned count is itself a fan-out value, and revision 1's count was already stale). The row *set* is
+the contract; each row is asserted by its label:
+
+```
+| Flow — installed version (ran the skills, agents + !-blocks) | 1.29.0 | ⚠️ DRIFT: this branch declares 1.43.0 (14 releases). The prose and reviewers that ran this pipeline are NOT this branch. |
+| Flow — marketplace HEAD (what an update would fetch)         | 1.29.0 | ⚠️ clone pinned at cf783ac — `plugin update` alone would NOT move it; the marketplace needs refreshing first. |
+| Flow — helper libs, fenced Bash blocks                       | working tree | ⚠️ MIXED PROVENANCE: v1.43 engines driven by 1.29.0 prose. |
+| Flow — scripts via !-preprocessor blocks                     | installed (1.29.0) | ⚠️ a script this branch MODIFIED did not run here (CLAUDE_PLUGIN_ROOT is set in this context). |
+```
+
+Each row also has an affirmative form — **load-bearing per FB-0010 clause 3**, since a warning alone
+is a negative assertion satisfiable by deleting the row:
+
+```
+| Flow — installed version (…)              | 1.43.0 | ✓ matches this branch |
+| Flow — marketplace HEAD (…)               | 1.43.0 | ✓ current |
+| Flow — helper libs, fenced Bash blocks     | installed tree (1.43.0) | ✓ same version as the prose |
+| Flow — scripts via !-preprocessor blocks   | installed (1.43.0) | ✓ same version as the prose |
+```
+
+**On the floor concept — adopted as a decision, rejected as a constant.** health-tracker#116 declares
+a hard floor (`≥ 1.32.0`, the release that added the `toolchain` kind) because it is a *consumer*: its
+dependency on flow machinery is a fixed point it can name. Flow is not. Flow's floor moves every
+release, so a literal `FLOW_MIN=` here would be a fan-out value wrong one release after it is written
+— the FB-0010 clause-2 shape exactly. **Flow's floor IS its branch-declared version by construction,
+so the row says "this branch declares" rather than inventing a second number that shadows the first.**
+
+**Report, do not gate — a deliberate call.** Drift does not route to the NOT-READY manifest and does
+not block ship. Gating would halt every flow PR until its workspace updated, and the brief's own
+reasoning says a *stable* reviewer is partly a feature. The ask was to convert a silent failure into a
+self-reporting one.
+
+**Deletion criterion (FB-0088).** Removable when both hold: (a) `claude plugin update` no longer
+documents "restart required" — i.e. an in-session reload exists, so "current" and "what this session
+is running" stop being different facts; and (b) `CLAUDE_PLUGIN_ROOT` resolves identically in the Bash
+tool and the `!`-expander, collapsing §0.2's two executor arms into one. Until then nothing else can
+say which version graded the PR.
+
+### Item 2 — keep flow's own dev workspaces current *(a PORT, not a design)*
+
+**Reference implementation read in full before writing anything:** `byamron/health-tracker` PR **#116**,
+branch `conductor/step-3-cloud-placement-verify-queue-trio`, file `.claude/hooks/session-start.sh`
+(fetched via `gh api`, read as source — not summarised from the PR body).
+
+**New:** `.claude/hooks/flow-plugin-currency.sh` + a second `SessionStart` entry in
+`.claude/settings.json` (project-dev infra, not shipped — correct surface per the three-surface rule;
+that file already carries one SessionStart hook, the contribution-queue nudge).
+
+**Properties ported verbatim, each because #116 earned it:**
+
+1. **`set -euo pipefail`**, and **all output to stderr** (`{ … } 1>&2`) so the hook never injects text
+   into the session context.
+2. **`marketplace add … || marketplace update … || true`, then `install || true`, then `update` with NO
+   `|| true`.** #116 documents the measured reason and it is the most important line: *`install` is a
+   no-op on an already-installed plugin* — it prints "already installed" and leaves the pinned version
+   in place. A cloud sandbox at 1.29.0 stayed there through `marketplace update` + `install` and moved
+   only via `update`. That is a live A/B independently corroborating my measurement 3, and it is why
+   the marketplace refresh is required rather than optional.
+3. **An update FAILURE is loud, never swallowed.** Carried with its rationale, because the routing is
+   right that this cuts against the hook: auto-update is a real if small security escalation — more
+   hosts now pull automatically. The mitigation is that a failed pull cannot read as a clean run, so a
+   hijacked or unreachable marketplace stays visible. **A silent-on-failure auto-updater is strictly
+   worse than none, because it manufactures confidence about the version — the FB-0107 failure shape,
+   one level up.** Every *other* line is best-effort on purpose (a fresh container may have no
+   marketplace); `claude plugin update` gets an explicit `if ! …; then` block printing a ⚠️ naming
+   what may be stale and what to check. Also FB-0010 clause 1: no `|| true` without a paired positive
+   assertion or warning.
+4. **`claude plugin list`** at the end, so the transcript carries the resulting version.
+5. **Gate on ground truth, not an environment variable.** #116's gate was `CLAUDE_CODE_REMOTE != true`,
+   which silently no-op'd in a Conductor sandbox where that var is *unset* — the FB-0085 shape again.
+
+**What changes in the port — the gate, and the predicate.**
+
+- *The gate.* #116 asks "is this a host that cannot build the iOS project?" Flow has no toolchain; the
+  question here is *is this the flow checkout?* — `.claude-plugin/marketplace.json` with
+  `"name": "flow"`. It therefore runs on **every** host that opens the flow repo, Mac included. For a
+  consumer, auto-updating a developer's user-scope install is a side effect to avoid; for flow, the
+  installed plugin **is the artifact under development** and its staleness is the bug. Named, not assumed.
+- *The predicate — Issue 3, the critique's best catch.* Revision 1 had the hook fire on the report's
+  drift verdict. But `report_drift` is *installed ≠ branch-declared*, and a flow feature branch
+  declares an unreleased minor by construction — so on the only checkout the hook is gated to run in,
+  it would be **permanently true**: the silent fast path unreachable, an update attempted every session
+  start, and the warning still firing after a fully successful update (1.41.0 installed vs 1.43.0
+  declared). A permanent warning is indistinguishable from the real staleness signal. **So the
+  predicate is split, and the engine exposes both:**
+  - `report_drift` = installed ≠ branch-declared → what the **PR body** reports. "Did this branch's
+    code run?"
+  - `update_available` = installed ≠ marketplace HEAD → what the **hook** acts on. "Is there a
+    *released* version I do not have?" Reaches a genuine in-sync state on a dev branch, so the silent
+    fast path is real.
+
+**One addition over #116:** the hook asks the item-1 engine for `update_available` rather than
+re-deriving any comparison. One predicate, one place.
+
+**Why item 2 is not a substitute for item 1, and both were asked for together.** `claude plugin update`
+documents *"restart required to apply."* The hook makes the **next** session current and does nothing
+for the current one. It converges; it does not fix. On any session that starts stale — which is every
+session that matters here — only the report can say what actually ran.
+
+**Deletion criterion (FB-0088, Issue 6).** Removable when Claude Code refreshes plugin marketplaces at
+session start natively, **or** when flow's dev workspaces are provisioned from the checkout rather than
+from an image with a pinned `~/.claude/plugins` (either removes the skew this hook exists to close).
+
+### Item 3 — roadmap only, NOT built
+
+A `dev-docs/roadmap.md` § Next entry: for PRs touching `plugins/flow/**`, require one explicit
+checkout-run of the changed surface, recorded in the PR — with the reasoning (item 1 reports *which*
+version ran; it does not make the new version run, which needs a deliberate second execution) and an
+explicit "not implemented here." Measurement 8 becomes its motivating example.
+
+### Out of scope, named
+
+- **`/flow:doctor`.** FB-0107 calls it the natural home for an installed-vs-repo check and it is, but
+  the brief scoped items 1+2 and doctor is already routed as an S0-adjacent item. The engine I am
+  adding is what doctor would call, so that follow-up gets cheaper.
+- **The ~110 bare `${CLAUDE_PLUGIN_ROOT}` refs / the 15-site fallback hardening** — pre-existing, on
+  the roadmap at lines 311 and 1088. Measurements 6 and 8 are new evidence for both; I will add the
+  evidence to those entries and not widen this PR into them. Measurement 8 in particular upgrades
+  roadmap:1094's concern: `audit-plan`/`critique-plan`'s fallback-less `!`-blocks do not merely
+  "degrade into fallback JSON," they run a *stale* script silently.
+
+---
+
+## 2. Confidence verdicts
+
+Per `plugins/flow/docs/workflow.md:488-507` — one block per load-bearing assumption, where
+load-bearing means *would I plan a different feature if this flipped?*
+
+**Assumption:** `!`-preprocessor blocks resolve helper scripts from the **installed** tree, while
+fenced Bash blocks resolve from the working tree.
+**Confidence:** HIGH.
+**Why:** measured twice, from opposite directions. `CLAUDE_PLUGIN_ROOT` is empirically `UNSET` in a
+Bash-tool call (measurement 4), corroborated by four independent in-repo assertions (5). For the
+`!`-arm, the `/flow:critique-plan` run on revision 1 resolved zero reference documents, and I
+confirmed the cause independently: the checkout's `extract_session.py:975` comma-splits
+`--reference-glob` and 1.29.0's copy does not, against a comma-joined `referenceGlob` — so zero
+matches is the 1.29.0 signature specifically (measurement 8).
+**If it flips:** the four-row design collapses to two or three rows and the `!`-row is wrong rather
+than merely redundant. It would not change items 2 or 3.
+
+**Assumption:** `installed ≠ marketplace HEAD` is the right predicate for the updater, and
+`installed ≠ branch-declared` the right one for the report.
+**Confidence:** HIGH.
+**Why:** derived, not assumed. A feature branch declares an unreleased version by construction, so the
+branch comparison is permanently true in the only place the hook runs (Issue 3); the marketplace
+comparison is the only one that can reach a real in-sync state there. Both endpoints are directly
+measured (1, 2, 3).
+**If it flips:** the hook either never fires or fires forever — the two failure modes Issue 3
+identified. This is the assumption most worth attacking at the gate; it is why the predicate is
+exposed as two named JSON fields rather than one `drift` boolean.
+
+**Assumption:** health-tracker#116's reported 1.29.0 → 1.41.0 before/after in a live cloud workspace
+is real, so item 2 is a port of a proven shape rather than a new design.
+**Confidence:** MEDIUM.
+**Why:** I read the hook *source* directly via `gh api` and its central mechanical claim — `install` is
+a no-op, only `update` moves a pinned version — is independently corroborated by my measurement 3
+(the marketplace clone is pinned, so install had nothing newer to serve). The **before/after itself I
+did not reproduce**; it is #116's measurement, reported in its PR body, and the history entry will
+attribute it that way rather than restate it as a flow finding.
+**If it flips:** the ported shape still stands on its own mechanics (the `install`-is-a-no-op fact is
+what the design depends on, and that one *is* corroborated here), but "proven in a real workspace"
+drops out of the changelog. I will verify it directly per §5 open call 2, which converts this to HIGH
+or refutes it.
+
+**Assumption:** reporting drift, rather than gating on it, is what was asked for.
+**Confidence:** HIGH.
+**Why:** the brief says the value is that it "converts a silent failure into a self-reporting one,"
+and separately argues the stale-reviewer property is partly desirable. Both point away from a blocker.
+**If it flips:** a 10th manifest kind, mirroring `coverage`'s `ask`-class routing. Cheap to add later;
+expensive to unwind if wrong, which is why it is not in this PR.
+
+---
+
+## 3. Files touched
+
+| File | Change |
+|---|---|
+| `plugins/flow/skills/ship/lib/plugin-provenance.py` | **NEW** — the engine |
+| `plugins/flow/skills/ship/SKILL.md` | Step 7 render block + the 4 table rows |
+| `plugins/flow/skills/ship-spike/SKILL.md` | same block + same 4 rows (two-sided, per the FB-0100 lesson) |
+| `plugins/flow/evals/run_plugin_provenance_evals.py` | **NEW** — CI-wired |
+| `plugins/flow/evals/fixtures/plugin-provenance/*.json` | **NEW** fixtures, incl. `this-workspace-20260912.json` (§4) |
+| `.github/workflows/ci.yml` | wire the eval |
+| `.claude/hooks/flow-plugin-currency.sh` | **NEW** — dev infra; ported from health-tracker#116 |
+| `.claude/settings.json` | register the SessionStart hook |
+| `plugins/flow/.claude-plugin/plugin.json` | 1.41.0 → 1.43.0 |
+| `.claude-plugin/marketplace.json` | 1.41.0 → 1.43.0 (**two** occurrences) |
+| `changelog/v1.43.0.md` | **NEW** |
+| `dev-docs/history/2026-09-12-dogfood-version-provenance.md` | **NEW** |
+| `dev-docs/feedback/FB-0107-*.md` | measured-correction amendment (§0.2 supersedes "the diff … is inert") |
+| `dev-docs/plan.md` | state line + this PR block |
+| `dev-docs/roadmap.md` | v1.43.0 line + item-3 entry + measurement 6/8 evidence into lines 311/1088/1094 |
+| `plugins/flow/docs/workflow.md` | the §0.2 resolution rule + the FB-0085 standing question |
+| `CLAUDE.md` | correct the dogfooding claim |
+
+**Plan-gate checks already run on this document (all clean):** `extract-criteria.py` → 19 criteria in
+1 block, no warnings; `walk-pin-lint.py` → `clean — 19/19 checkboxes carry a named pin`;
+`criterion-specificity.py` → `0 vacuous / 19 specific`. Revision 1 failed the first of those outright
+(0 criteria extracted) and the second for all 19 — both caught before the gate, not after.
+
+**FB-0010 fan-out sweep, before staging:** `git grep -nE '1\.41\.0'` — 7 hits mapped; 3 are version
+declarations I change, 4 are historical prose that must **keep** saying 1.41.0. No config slot added,
+so the documented **34 slots** count is untouched — verified, not assumed. `grep -c 'run_.*_evals'` in
+`ci.yml` before/after to confirm the harness is actually wired.
+
+---
+
+## 4. Verification — and what CI can and cannot assert *(Issue 4)*
+
+Revision 1 pinned acceptance criteria to mutable host state that this PR's own hook, and §5 open call
+2, are designed to *destroy* — and that a CI runner never has at all, since no installed flow tree
+exists there. Fixed by splitting the evidence into two kinds, and by ordering the work:
+
+1. **Capture first.** Before registering the hook and before any real update, run
+   `plugin-provenance.py report --json` and commit its verbatim output as
+   `evals/fixtures/plugin-provenance/this-workspace-20260912.json`. The measured ground truth becomes
+   an immutable artifact instead of a re-runnable claim.
+2. **CI-assertable criteria** run the engine against committed fixtures with a synthetic `HOME` and a
+   mutated `CLAUDE_PLUGIN_ROOT` (the `run_design_language_scaffold_evals.py` pattern) — no dependence
+   on host state. These are the behavioral pin.
+3. **One-shot observation, now down to exactly one criterion.** Running the pin lint on revision 2
+   exposed something better than the fix Issue 4 asked for: every hook behaviour I had planned to
+   evidence with a *pasted transcript* is in fact scriptable — a synthetic `HOME`, a fixture, and a
+   PATH-shim `claude` that logs its invocations cover the fast path, the loud failure, the dry run and
+   the degradation cases. So those moved into the CI-assertable group as real regression pins instead
+   of one-shot prose. What genuinely cannot be re-run is the captured ground truth itself, and its
+   evidence is the **committed fixture**, not a transcript.
+
+**`/flow:verify-build` will self-skip on this PR, and the skip is declared here rather than discovered
+later *(Issue 7)*.** `flow.config.json` sets `"platform": "library"` — verified by reading it — which
+is a documented skip condition (`workflow.md:274`). So **the CI-wired eval harness is the behavioral
+gate**, not a supplement to one, and the Test plan will render the manual-verification fallback. The
+reason is stated so `/flow:audit-skips` reads a declared reason rather than an unexplained absence,
+and so ship's auto-advance predicate correctly refuses to fire without an explicit "ship it."
+
+**The one thing I cannot dogfood, stated up front.** The SKILL.md half of this change will not execute
+during its own ship — ship's prose comes from 1.29.0 (measurement 1). I will therefore run
+`plugin-provenance.py report` by hand and paste its verbatim output into the PR body as substitute
+evidence, labelled as such. That gap is precisely what item 3 exists to close, and this PR is its
+first worked example.
+
+---
+
+## 5. Tradeoffs recorded now (for the history entry)
+
+1. **Report vs gate (item 1)** — rejected a 10th manifest kind; see the confidence verdict.
+2. **Four labelled rows vs one number** — measurements 4/8 show one run draws from two versions and
+   measurement 3 shows a third, independently stale number.
+3. **Row set as a named list, not a count** — a pinned count is itself a fan-out value, and revision
+   1's was already stale by the time the critique read it.
+4. **Floor derived, not constant** — see item 1.
+5. **Two predicates, not one `drift` boolean** — Issue 3.
+6. **Auto-update is a real if small security escalation.** Accepted with #116's loud-failure
+   mitigation ported. Recorded rather than waved past because it is "risk"-class under the
+   autonomous-work guardrails; the brief authorized it explicitly, so I am proceeding and naming it,
+   not asking again.
+7. **The hook runs on Macs too** — for flow, the installed plugin is the artifact under development.
+
+---
+
+**Spec-walk:**
+
+*CI-assertable — fixture-driven, synthetic `HOME` + PATH shims, no host-state dependence. This is the behavioral pin.*
+
+- [ ] `plugin-provenance.py report --json` returns four **distinct** `installed.state` values across four fixtures: file-missing, malformed JSON, `flow@flow` key absent, empty version array — FB-0082's rule that states are never collapsed. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_installed_states` over the four `plugins/flow/evals/fixtures/plugin-provenance/installed-*.json` fixtures
+- [ ] `libs` reports `checkout` when `CLAUDE_PLUGIN_ROOT` is unset and `installed` when it is set to a tree containing the probe lib. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_executor_arms`, a mutated-env eval following `run_design_language_scaffold_evals.py`
+- [ ] `preprocessor` reports `installed` whenever `CLAUDE_PLUGIN_ROOT` resolves, mirroring measurement 8. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_executor_arms` (same eval, second arm)
+- [ ] `report` emits one row per **named** label — installed / marketplace HEAD / fenced-block libs / `!`-block scripts — asserted by label presence, never by row count, and the bare unlabelled phrase "plugin version" never appears. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_row_labels`, a grep-style eval asserting all four labels present and the bare phrase absent
+- [ ] Each of the four rows renders an affirmative `✓` form when in sync **and** a `⚠️` form when not — the positive is what stops the negative being satisfiable by deleting the row (FB-0010 clause 3). → `plugins/flow/evals/run_plugin_provenance_evals.py::test_both_polarities`, two fixture runs per row
+- [ ] `report_drift` is true iff installed ≠ branch-declared, `update_available` is true iff installed ≠ marketplace HEAD, and they are computed independently — pinned by a fixture where they **disagree** (installed == marketplace HEAD, branch ahead: the live dev-branch case Issue 3 identified). → `plugins/flow/evals/run_plugin_provenance_evals.py::test_split_predicates` over the `plugins/flow/evals/fixtures/plugin-provenance/branch-ahead-marketplace-insync.json` fixture
+- [ ] `report` exits 0 and prints a ⚠️-bearing row — never a traceback, never empty — for each of: `installed_plugins.json` absent, malformed, `flow@flow` missing, marketplace clone absent. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_graceful_degradation`, four fixture runs asserting exit 0 and non-empty output
+- [ ] `plugin-provenance.py` reports `branch.state == "not_flow_checkout"` and reads no version when the cwd is not the flow checkout. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_decoy_repo_refused`, an eval running the engine in a temp dir holding a decoy `plugin.json` and asserting the decoy version is absent from the report
+- [ ] Both `ship/SKILL.md` and `ship-spike/SKILL.md` carry all four row labels **and** a call to `plugin-provenance.py` — a one-sided pin on a two-sided duplication is not a pin (the FB-0100 lesson). → `plugins/flow/evals/run_plugin_provenance_evals.py::test_contracts`, looping BOTH skill files
+- [ ] `.claude/hooks/flow-plugin-currency.sh` sources its verdict from `plugin-provenance.py` and contains no second version comparison. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_hook_single_predicate`, a grep-based eval
+- [ ] In the hook, `claude plugin update` is the **only** `claude plugin` invocation not suffixed `|| true`, and it sits inside an `if ! …; then` block printing a ⚠️ — paired positive and negative assertions, per FB-0010 clause 3. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_hook_loud_failure`, a grep-based eval asserting both halves
+- [ ] Executed with `FLOW_CURRENCY_DRY_RUN=1`, the hook prints the before-state and the "restart required" caveat to **stderr**, leaves stdout empty, and exits 0. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_hook_dry_run`, an eval capturing the two streams separately against a fixture
+- [ ] The hook exits 0 — never non-zero, never silent — and prints a ⚠️ when `claude` is absent from PATH and when the provenance engine is missing; a session start must not be wedged. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_hook_degrades_safely`, an eval with a scrubbed PATH and the engine moved aside
+- [ ] The hook exits 0 with no output and attempts **no** update when run outside the flow checkout, and when `update_available` is false. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_hook_fast_path`, an eval using a PATH-shim `claude` that logs invocations, asserting an empty log
+- [ ] A failing `claude plugin update` produces the loud ⚠️ naming what may be stale, and the hook still exits 0. → `plugins/flow/evals/run_plugin_provenance_evals.py::test_hook_loud_failure`, same eval driving a PATH-shim `claude` that exits 1 on `update`
+- [ ] The new harness is wired into `.github/workflows/ci.yml` and the full local suite still passes. → the `.github/workflows/ci.yml` diff, plus a run of every `plugins/flow/evals/run_*_evals.py` reporting exit 0
+- [ ] Item 3 appears on the roadmap as an explicit not-implemented follow-up, and the diff contains no code implementing a checkout-run requirement. → the `dev-docs/roadmap.md` § Next entry and the `git diff origin/main...HEAD` review
+- [ ] After the FB-0010 sweep, `git grep -nE '1\.41\.0'` returns only the 4 intentional historical-prose hits, with the 3 version-declaration sites at 1.43.0. → the recorded `git grep` sweep output in `dev-docs/history/2026-09-12-dogfood-version-provenance.md`
+
+*One-shot workspace observation — the evidence is a committed fixture, explicitly NOT a reviewer re-run (Issue 4).*
+
+- [ ] The captured fixture records `installed.version == "1.29.0"`, `marketplace_head.version == "1.29.0"`, `branch.version == "1.43.0"`, `libs == "checkout"`, `preprocessor == "installed"`, and `surface_drift` listing exactly the 5 skills and 1 agent from measurement 7. → the committed `plugins/flow/evals/fixtures/plugin-provenance/this-workspace-20260912.json` fixture, diffed against §0.1's independently-measured table
+
+---
+
+## 6. Open calls for the gate
+
+1. **~~`!`-block resolution is unmeasured~~ — RESOLVED by the critique run.** They resolve
+   **installed** (measurement 8). A fourth labelled row is now in the design. No decision needed.
+2. **When to run the real update.** Running `claude plugin update` mid-session would overwrite the
+   1.29.0 tree this session is executing from and destroy the live drift evidence.
+   **Recommendation: capture the fixture (§4 step 1), test the hook in dry-run, ship, and run the real
+   update only after `/flow:ship` completes** — which also converts the MEDIUM confidence verdict on
+   #116's before/after into a direct observation. **Confidence: high.** The only thing lost is one
+   session of "the updater really installs"; the alternative risks breaking the pipeline mid-flight
+   for no evidentiary gain. Flagged rather than decided silently because it mutates my own running
+   environment.
+3. **Gate authority, for the record.** This diff touches `plugins/flow/skills/ship/**` — gate
+   machinery, a `sensitivePaths` red under canonical §4.8 — so the plan gate is **Ben's, not the
+   orchestrator's**, even though the other three axes are green (reversible, no one-way door, low
+   taste). Per §4.8 rule 5 the interaction surface stays your seat; naming who owns the approval, not
+   routing around you.
+
+
+
+> **Placement is deliberate, not cosmetic.** `walk_extract.py` extracts only the **first**
+> `**Spec-walk:**` block in a document (measured: 60 blocks in this file, warning names line 344
+> as the one it would take). The active PR block therefore has to sit above the historical ones,
+> or `/flow:verify-build` and `/flow:audit-coverage` silently grade a merged PR's criteria. This is
+> the same class the plan-critic caught as Issue 1, one level up — hence the roadmap item about
+> positional selection.
+
+---
 
 ## PR — Fragment the append-only docs to one file per entry + kill the silent doc-slot fallback (this branch, `conductor/fragment-append-only-docs-one-file-per-entry`, FB-0102/FB-0103, v1.40.0, EXECUTED — shipping)
 
