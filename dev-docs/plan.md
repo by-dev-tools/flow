@@ -108,6 +108,83 @@ lib runs fresh while a *modified* lib silently uses the stale installed copy. Th
 | 7 | Surface inventory drift | `ls` installed vs checkout `skills/` + `agents/` | **5 skills** (`documentation`, `exploration`, `general`, `plan-discipline`, `review-brief`) and **1 agent** (`lens-experience`) exist in the branch and **not in 1.29.0** |
 | 8 | **`!`-preprocessor blocks resolve INSTALLED** — measured by the `/flow:critique-plan` run on revision 1 of this plan | the critique reported its injected `## Reference documents` section resolved **zero** documents. Diagnostic: `flow.config.json.referenceGlob` is the comma-joined `dev-docs/*.md,dev-docs/feedback/*.md`; the checkout's `extract_session.py:975` comma-splits it (`for g in spec.split(",")`), and 1.29.0's copy does not (confirmed: one `split(",")` in the whole installed file, on `reference_paths`, not on the glob). Zero matches is therefore the signature of the **1.29.0** script | `!`-blocks → **installed** |
 
+### 0.1b Raw evidence snapshot — captured at the plan gate, before any update
+
+**Why it is here and not in a fixture.** The `report --json` fixture named in §4 is *derived*; these
+are the **source** inputs it derives from, and they are the perishable thing. Capturing only the
+engine's output would have made the evidence unreproducible if the engine's schema changed during
+implementation, and the engine does not exist yet — building it is gated. So the raw inputs are
+committed now, in the plan document, and the fixture is regenerated from this state at execution time.
+
+Captured before registering the hook and before any `claude plugin update`, per the approved
+sequencing (capture → dry-run → ship → update).
+
+```text
+CAPTURED: 2026-09-12T05:51:02Z  host: Linux x86_64  cwd: /home/vercel-sandbox/flow
+branch: conductor/dogfood-version-honesty-fb-0107  head: 06e8860
+
+--- 1. installed_plugins.json (verbatim) ---
+{
+  "version": 2,
+  "plugins": {
+    "flow@flow": [
+      {
+        "scope": "user",
+        "installPath": "/home/vercel-sandbox/.claude/plugins/cache/flow/flow/1.29.0",
+        "version": "1.29.0",
+        "installedAt": "2026-08-19T04:51:32.300Z",
+        "lastUpdated": "2026-08-19T04:51:32.300Z",
+        "gitCommitSha": "cf783ac282a49f41a32918e866f3a046e66bcbd2"
+      }
+    ]
+  }
+}
+--- 2. installed tree plugin.json version ---
+1.29.0
+--- 3. marketplace clone (the THIRD number) ---
+clone git head: cf783ac docs: land #114 #115 — post-merge currency (#117)
+clone marketplace.json metadata.version: 1.29.0
+clone plugins[0].version:               1.29.0
+--- 4. branch-declared version ---
+1.41.0
+--- 5. CLAUDE_PLUGIN_ROOT in a Bash-tool call ---
+CLAUDE_PLUGIN_ROOT=[UNSET]
+PATH contains installed bin: yes
+--- 6. skills inventory ---
+installed (17): accessibility-review audit-completion audit-coverage audit-plan audit-skips contribute critique-plan doctor land log-disagreement post-merge security-review ship ship-spike staff-review verify-build workflow-help 
+checkout  (22): accessibility-review audit-completion audit-coverage audit-plan audit-skips contribute critique-plan doctor documentation exploration general land log-disagreement plan-discipline post-merge review-brief security-review ship ship-spike staff-review verify-build workflow-help 
+in checkout, NOT installed: documentation exploration general plan-discipline review-brief 
+in installed, NOT checkout: 
+--- 7. agents inventory ---
+in checkout, NOT installed: lens-experience.md 
+in installed, NOT checkout: 
+--- 8. the !-block staleness proof (measurement 8) ---
+flow.config.json referenceGlob: 'dev-docs/*.md,dev-docs/feedback/*.md'
+checkout  extract_session.py splits the glob: 1 site(s)
+installed extract_session.py splits the glob: 0 site(s)
+checkout  --reference-glob help: Repeatable, AND comma-separated 
+--- 9. lib fallback-site census ---
+total CLAUDE_PLUGIN_ROOT refs in skills/: 144
+with a same-line checkout fallback:      32
+without a fallback:                      112
+  [NOTE] the first run of this line reported 144/144 -- a self-inflicted false
+  positive: run from the repo root, `grep -c 'plugins/flow'` matched each hit's
+  own FILENAME PREFIX, not the line's content. Corrected by stripping
+  `^plugins/flow/<file>:<lineno>:` before matching, and cross-checked by running
+  the grep from inside plugins/flow/ where the prefix cannot match. Both methods
+  now agree: 144 / 32 / 112.
+--- 10. ship SKILL.md divergence ---
+installed: 1370 lines | checkout: 1509 lines
+```
+
+**One correction, self-caught during capture.** The fallback census first printed `144/144`. That was
+a false positive of my own making: run from the repo root, `grep -c 'plugins/flow'` matched each hit's
+own *filename prefix* rather than the line's content. The real figures are **144 refs / 32 with a
+same-line checkout fallback / 112 without**, now cross-checked by two methods that cannot share the
+error. The original §0.1 measurement 6 was taken from inside `plugins/flow/` and was correct; only the
+capture line was wrong. Recording it because a provenance PR that quietly fixed its own miscount would
+be the wrong PR to do that in.
+
 ### 0.2 The honest resolution map — the axis is *which executor resolved the path*
 
 Measurements 4 and 8 together give a clean rule, and it is not the one in the hypothesis:
