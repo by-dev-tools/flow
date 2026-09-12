@@ -441,7 +441,7 @@ template so workers surface gate decisions this way without being asked.)
 **Communication contract — decide first, escalate second, stay legible (2026-08-26, FB-0092).**
 The orchestrator's actual product is attention (§1 Requirement 5); an orchestrator that relays
 everything verbatim recreates the exact cost the seat exists to remove — the human can read less
-dense text, per unit time, than the agent that's summarizing for them. Four rules govern every
+dense text, per unit time, than the agent that's summarizing for them. Seven rules govern every
 message the orchestrator sends the human, not only gate escalations:
 
 1. **Decide within scope, don't just relay.** Inside the plan-gate/merge-gate green quadrants
@@ -465,6 +465,32 @@ message the orchestrator sends the human, not only gate escalations:
    workspaces to keep N workstreams moving — that is the attention cost the seat exists to
    remove, and routing approvals through worker chats reintroduces it in full. (User direction,
    2026-08-27.)
+6. **Workers ping the orchestrator when they finish or stall — the orchestrator does not poll.**
+   The naive shape has the human periodically asking the orchestrator "are the workers blocked?",
+   which just moves the polling loop up one level instead of removing it; the human is still the
+   thing that notices. So the dispatch brief instructs every worker to send a one-line message
+   back to the orchestrator session (`conductor message create --session <orchestrator> --message
+   "<one line>"`) on completion, on a blocking question, and on a stall — and the orchestrator
+   reacts to pings rather than sweeping. [✅ 2026-09-11 dogfood: ~9 pings across five workers;
+   completion and blocking-question pings both fired unprompted.]
+
+   **Known gap — a rate-limited worker cannot ping.** The failure this protocol most needs to
+   report is the one it cannot: a worker that has exhausted the shared five-hour window has no
+   turn in which to send the message, so silence is ambiguous between "still working", "done and
+   forgot", and "stalled hours ago". A ping protocol therefore *reduces* sweeps but may not
+   eliminate them, and an orchestrator that treats silence as progress will sit on a dead worker.
+   Until a backstop exists (a time-since-last-activity check is the cheap one —
+   `conductor session status` exposes `Updated`), the orchestrator still owes a periodic sweep of
+   *silent* workers specifically. Do not let the protocol's existence be mistaken for coverage.
+
+7. **Classify ships-or-paperwork before escalating.** Before surfacing any decision, ask whether
+   the choice changes behaviour, a consumer surface, or a gate verdict — or only *where something
+   gets written*. If the code is identical either way and the question is documentation placement,
+   wording, or which doc an entry lands in, that is the orchestrator's call and escalating it
+   spends the human's attention on a null result. This rule was earned: an escalation of a
+   "declare vs waive" choice on #146 turned out to produce a byte-identical diff either way, and
+   the human's response was to ask what was actually needed of them. The test is cheap, so run it
+   every time.
 
 This governs `/flow:orchestrate`/`/flow:spawn`/`/flow:handoff`/`/flow:gate` (§4.10): each must be
 built to apply these rules to its own human-facing output, not leave them as an unenforced
@@ -545,6 +571,14 @@ by construction:
    orchestrator spawns its successor with the brief as the first message
    (`conductor workspace create --name orchestrator --message-file <brief>`); the brief lands
    in the successor's transcript, consumed once at boot.
+4. **Re-address the ping channel.** §4.8 rule 6 has every live worker pinging a *session ID* —
+   the outgoing orchestrator's. That ID dies with the seat, so a rotation silently breaks the
+   one channel that tells the new orchestrator a worker is blocked, and the failure is invisible:
+   pings go nowhere and the successor reads the resulting silence as "nothing needs me." The
+   successor's **first action**, before any other work, is therefore to re-derive the live worker
+   list and broadcast its own session ID to each one. The brief must say so explicitly — this is
+   the one handoff step that cannot be left to inference, because nothing about the successor's
+   environment reveals that the channel is stale.
 
 **The succession brief points, it does not duplicate** (so it stays tiny and cannot rot):
 
