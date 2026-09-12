@@ -59,13 +59,29 @@ pass's scope.)
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
 
-## PR — `add-entry` takes untrusted text off the command line entirely (SAFETY, v1.42.0, FB-0105)
+## PR — `add-entry` takes untrusted text off the command line entirely (SAFETY, v1.42.0, FB-0108)
 
 **Branch:** `conductor/add-entry-interface-file-stdin-input-shell-injection-fix`
 **Mode:** feature (shipped plugin surface: a CLI contract change + every producer site in `ship/SKILL.md`)
-**Base: REBASED — `origin/main` @ `acaa818` (#148 merged 2026-09-11, v1.41.0).** Re-derived from ground
-truth, not from an earlier draft of this line: `plugin.json` reads `1.41.0`, FB high-water on `main` is
-**FB-0104**, `changelog/` tops out at `v1.41.0`. So this PR is **v1.42.0 / FB-0105**. Every `ship/SKILL.md`
+**Base: REBASED — `origin/main` @ `acaa818` (#148 merged 2026-09-11, v1.41.0). Version `v1.42.0`, feedback
+`FB-0108`.**
+
+**FB number corrected after a collision — FB-0105 → FB-0108.** The first sweep read `origin/main` only, which
+is correct procedure but blind to open branches: #149 (`orchestrator-ping-protocol-and-succession`, open,
+gates green) already claims **FB-0105, FB-0106 and FB-0107**. It was pushed first and is ready, so it keeps
+them. Verified independently rather than taken on trust — sweeping `dev-docs/feedback/` across *every* remote
+head puts the high-water at FB-0107, so FB-0108 is the next free value. This is the fourth FB collision in
+this batch of work and exactly the failure the #146 block describes; it is also the strongest possible
+argument for that PR's deletion of `reserved-feedback-numbers.md`, since after fragmentation a duplicate
+number is a duplicate **filename** that git reports as a both-added conflict at write time.
+
+> **STANDING RULE (applies at every future rebase, not just this one).** Re-read `origin/main` **and**
+> `git ls-remote` / `gh pr list` for open branches. If either is at or above the claim, take the next free
+> value and re-sweep immediately — don't ask, just do it and say so in one line. A sweep that reads only the
+> default branch cannot see a claim that has not merged yet, which is precisely where collisions live.
+
+**Version `v1.42.0` re-verified the same way:** #149 is docs-only and stays at `1.41.0`, and no `changelog/`
+entry above `v1.41.0` exists on any remote head. Free. Every `ship/SKILL.md`
 line number cited below was **re-verified against merged `main`** after the rebase — the merge was clean and
 all six producer sites sit at the same lines they did on the `pr148` ref. Nothing is pushed; no commits exist
 on this branch.
@@ -74,7 +90,7 @@ safety-critical surface, changes error handling, and adds input normalization).
 
 ---
 
-## Restated request
+### Restated request
 
 `/flow:security-review` on #148 found that `manifest-triage.py add-entry` takes `--finding`/`--resolution` as
 raw argv, and that producer sites in `ship/SKILL.md` tell the agent to compose that command with
@@ -89,7 +105,7 @@ nothing. **Stop at the plan gate. Never merge.**
 
 ---
 
-## What #148 proved, and what it cost — the load-bearing input to this design
+### What #148 proved, and what it cost — the load-bearing input to this design
 
 #148's **first** attempt used a quoted heredoc (`<<'FLOWEOF'`) to capture the criterion. That closes the
 quote / backtick / `$(...)` vectors and looks correct. An adversarial re-check found it is **not**: the
@@ -115,7 +131,7 @@ path.* **That block is this PR's deletion target — a real one, not an empty ch
 
 ---
 
-## Ground truth — the grep, run first (both briefed numbers are wrong, differently)
+### Ground truth — the grep, run first (both briefed numbers are wrong, differently)
 
 On **`pr148`** (the base this rebases onto), via `git grep`:
 
@@ -142,9 +158,9 @@ interface.** Your brief said treat every survivor as in-scope; I am surfacing ra
 
 ---
 
-## Design
+### Design
 
-### D1. `--finding-file` / `--resolution-file` take a PATH. No stdin, no `-`, no heredoc.
+#### D1. `--finding-file` / `--resolution-file` take a PATH. No stdin, no `-`, no heredoc.
 
 - `add-entry` gains `--finding-file` **and** `--resolution-file`.
 - `record-attempt` and `waive` gain `--finding-file` only — they declare no `--resolution` and write a record
@@ -155,7 +171,7 @@ interface.** Your brief said treat every survivor as in-scope; I am surfacing ra
   remove. Offering stdin would be offering the refuted path back. The evals write real temp files (they
   already use `tempfile`); production uses the Write tool.
 
-### D2. The producer template — the whole thing
+#### D2. The producer template — the whole thing
 
 **Two Bash calls with a Write tool between them — because a Write cannot happen inside a shell block, and
 shell variables do not survive between Bash tool calls.** An earlier revision of this plan had one block with
@@ -224,7 +240,7 @@ two sites in `ship/SKILL.md` name the same finding-file path.
 on top.
 Not free — but the only per-site *reasoning* is deleted, and reasoning is the part that rots.
 
-### D3. The argv forms are REMOVED, with a loud named rejection arm — **decided by you, not open**
+#### D3. The argv forms are REMOVED, with a loud named rejection arm — **decided by you, not open**
 
 > *"The interface fix is supposed to make the NEXT call site safe by construction, so a future caller cannot
 > reintroduce the injection by passing raw argv. If what you have built still accepts raw argv as an
@@ -252,7 +268,7 @@ told the new spelling.
 exits 2 and writes nothing either way, so a producer that never checks `$?` still silently drops a blocker.
 Pre-existing (a bad `--kind` does the same today) and orthogonal. → roadmap § Next, **not absorbed**.
 
-### D4. Newlines — and only newlines — are collapsed
+#### D4. Newlines — and only newlines — are collapsed
 
 The manifest is one entry per line. The engine collapses each newline run (and the horizontal whitespace
 hugging it) to one space. **Nothing else is touched:** a tab or double space passes through byte-identically,
@@ -261,7 +277,7 @@ breaks on, so this stays a fix and does not become a silent reflow of already-co
 
 **Why collapse, not reject:** reject → exit 2 → D3's silent-drop path, on ordinary well-meant input.
 
-### D5. The read path refuses a symlink (CWE-59)
+#### D5. The read path refuses a symlink (CWE-59)
 
 `--finding-file`/`--resolution-file` refuse a symlinked **file**, mirroring the refusal already in this same
 file at `:314-316` (`d.is_symlink()` → BLOCKER), which covers the containing **directory**. Both halves are
@@ -283,7 +299,7 @@ untouched. Same class ship-spike `:249` documents at length.
 
 ---
 
-## Verification — attack it, don't read it (FB-0105's lesson, applied)
+### Verification — attack it, don't read it (FB-0108's lesson, applied)
 
 > *"Reading the code is not the same as running it."* #148 found its hole only by attacking its own fix.
 
@@ -328,7 +344,7 @@ exits 2 on the rejection arm. The red half proves the shell hazard, not the CLI'
 
 ---
 
-## Scope — in
+### Scope — in
 
 1. `manifest-triage.py`: D1 flags; **the new `scratch-path --name …` subcommand** (repeated `--name`,
    resolves via `_repo_scratch`, unlinks each target before printing — gated on Open call 7); the engine-side
@@ -350,10 +366,10 @@ exits 2 on the rejection arm. The red half proves the shell hazard, not the CLI'
    `test_producer_lines`.
 5. Docs: `SAFETY:`-marked history entry naming what changed (argv path removed, exit-2 arms added, newline
    normalization, symlink refusal) and what was **preserved** (`--kind`/`--needs` validation, line shape,
-   fingerprint stability); `FB-0105-*.md`; `changelog/v1.42.0.md`; version bump ×3; plan.md; close #148's
+   fingerprint stability); `FB-0108-*.md`; `changelog/v1.42.0.md`; version bump ×3; plan.md; close #148's
    roadmap § Next item — this PR is it.
 
-## Scope — out (named, so each is a decision and not an omission)
+### Scope — out (named, so each is a decision and not an omission)
 
 - **`ship-spike/SKILL.md`** — grepped: no manifest, nothing to migrate.
 - **The 13 inline templates** — **conditionally out, pending Open call 0.** If you route them in, this PR
@@ -368,7 +384,7 @@ exits 2 on the rejection arm. The red half proves the shell hazard, not the CLI'
   exist specifically so the template cannot smuggle this in.**
 - **`parse_entries`' separator fragility** — P7 tests it; if it finds a defect I report it, not fix it here.
 
-## Constraints held (from the brief), each with its proof
+### Constraints held (from the brief), each with its proof
 
 - `--kind`/`--needs` closed-vocabulary validation **unchanged in behaviour** → the `bogus`-kind (`:203`) and
   `frobnicate`-verb (`:205`) cases are **re-pointed to `--finding-file`, not left unedited**. Left unedited
@@ -383,7 +399,7 @@ exits 2 on the rejection arm. The red half proves the shell hazard, not the CLI'
 
 ---
 
-## Deletion criterion (the brief's item 3)
+### Deletion criterion (the brief's item 3)
 
 Belt-and-braces left in place forever is how a codebase accumulates instructions nobody can explain. Not done
 until:
@@ -400,7 +416,7 @@ until:
 4. Paired **positively**: ≥1 `add-entry`, ≥1 `record-attempt`, ≥1 `waive` command site exists and each uses
    `--finding-file`. A pure prohibition would be satisfiable by deleting the producer (`general.md` § 3).
 
-## Spec-walk
+### Spec-walk
 
 - [ ] Each of P1–P13 behaves as its row states, **executed** through `/bin/sh -c`, not reasoned about.
       → verify: `run_manifest_triage_evals.py`, new `[injection]` section.
@@ -442,7 +458,7 @@ until:
       very drift this PR is about).
 - [ ] The PR body names P1–P13 verbatim, each with what it attacked and what happened.
 
-## Assumptions
+### Assumptions
 
 **A1 — no caller outside this repo. HIGH.** Private lib, no PATH, no manifest reference; `git grep` proves
 it. *If it flips:* exit 2 + the rejection arm's message — loud, immediate, self-documenting.
@@ -458,7 +474,7 @@ cannot move one. That is a fact about the existing code, not an assumption; the 
 **A4 — #148 merges first. HIGH** (`isDraft: false`, `MERGEABLE`, and the brief says so). *If it slips:* I
 hold rather than race; the base and the deletion target both come from it.
 
-## Deletion tells
+### Deletion tells
 
 If every producer ever reads its finding from an upstream JSON artifact instead of composing it, the
 file-path flags become plumbing with no threat behind them. Tell: no Write-tool-to-scratch instruction
@@ -466,7 +482,7 @@ remains in `ship/SKILL.md`.
 
 ---
 
-## Open calls for the human
+### Open calls for the human
 
 **0. THE BIG ONE — do the 13 inline template sites come into this PR? SHIPS either way; it roughly doubles
 the diff.** Your brief said "treat every survivor as in-scope for this change, not a follow-up." The grep
@@ -484,9 +500,13 @@ reading, and under it the interface fix never reaches those 13.
   producer-site conversion PR with a safety fix inside it. That is a real objection and it is why this is
   yours, not mine.
 - **Confidence: MEDIUM.** The brief is unambiguous about survivors; I am much less sure the resulting PR is
-  one you want to review in a single pass. A defensible middle: ship the 6 now, and open the 13-site
-  conversion as an immediate follow-up PR that inherits the interface this one builds — sequenced, not
-  deferred indefinitely. Say the word and I will take any of the three.
+  one you want to review in a single pass.
+- **⏳ ORCHESTRATOR RECOMMENDS: bring all 13 in, as TWO COMMITS on this one branch** — commit 1 = interface +
+  the 6 mechanical sites + evals; commit 2 = the 13 template conversions. **I agree, and it is better than any
+  of the three options I offered**, none of which had this shape: it keeps single-pass reviewability, makes
+  commit 2 independently revertable, and avoids both splitting the PR and deferring the survivors a second
+  time. If commit 2 turns out to be wrong, `git revert` leaves a complete, shippable safety fix behind.
+- **Status: awaiting the human at the plan gate.** Execution of the 13 has NOT started.
 
 
 **1. ~~Remove the argv flags, or keep them alongside?~~ RESOLVED by your design note — remove.** Kept here
@@ -495,22 +515,24 @@ removal converts a quoting hazard into a louder version of the pre-existing
 silent-drop-on-nonzero-exit hazard (a producer that never checks `$?` drops a blocker). That class is
 pre-existing, orthogonal, and routed to roadmap § Next — not absorbed.
 
-**2. No stdin/`-` affordance at all. SHIPS.** Recommended: omit it. **Confidence: HIGH** — from a Bash call,
+**2. ~~No stdin/`-` affordance at all.~~ ✅ APPROVED as recommended — omit it.** Original reasoning retained:
+from a Bash call,
 stdin can only be fed by a heredoc or a quoted string, the two mechanisms #148 refuted. Offering it would
 re-open the door the moment someone finds it convenient. Cost: the evals write temp files instead of piping.
 
-**3. Newline-only collapse (D4). SHIPS — new behaviour, but only on input argv breaks on today.**
-Recommended: newlines only. **Confidence: HIGH** — rejecting routes ordinary input into the silent-drop path;
+**3. ~~Newline-only collapse (D4).~~ ✅ APPROVED as recommended — newlines ONLY, explicitly not widened to
+all whitespace; P12 stands as the paired negative.** **Confidence: HIGH** — rejecting routes ordinary input into the silent-drop path;
 widening to all whitespace would silently reflow findings that compose correctly today, which a safety
 refactor has no business doing. P12 is its paired negative.
 
-**4. Symlink refusal on the read path (D5). SHIPS — a new failure mode where none existed.** Recommended:
-refuse. **Confidence: HIGH** — mirrors `:314-316` in the same file; `.flow/` is checkout-plantable. The new
+**4. ~~Symlink refusal on the read path (D5).~~ ✅ APPROVED as recommended — refuse.** **Confidence: HIGH** — mirrors `:314-316` in the same file; `.flow/` is checkout-plantable. The new
 way to fail is a loud exit 2 on a file nobody legitimately symlinks.
 
-**7. `scratch-path` UNLINKS whatever sits at its target before returning the path. SHIPS — the only
-destructive change in this plan, so it is yours under `general.md` § Autonomous work guardrails item 2
-(Permanence).** Recommended: do it. **Confidence: MEDIUM** — high that it is *correct*, lower that you want an
+**7. `scratch-path` UNLINKS whatever sits at its target before returning the path. ⏳ ESCALATED TO THE PLAN
+GATE — rides with Open call 0.** The only destructive change in this plan, so it is the human's under
+`general.md` § Autonomous work guardrails item 2 (Permanence), and `manifest-triage.py` + `ship/SKILL.md` are
+`sensitivePaths` under canonical §4.8, so the plan gate is his regardless. **Orchestrator recommends
+approval**; I concur. **Confidence: MEDIUM** — high that it is *correct*, lower that anyone wants an
 unconditional delete shipped without it being said out loud, which is why it is here and not buried in D5.
 
 **What bounds the deletion, precisely:** the path is always `_repo_scratch`'s computed
@@ -522,17 +544,17 @@ planted symlink and clobbers the victim *before* any read-time guard can run, an
 Write tool. The alternative — refuse instead of unlink — turns a plantable file into a permanent wedge of the
 ship pipeline, a worse failure than deleting scratch flow owns.
 
-**5. FB-0105. PAPERWORK.** Two lessons, yours and #148's, and they are the same lesson at two altitudes:
+**5. ~~Write the FB entry.~~ ✅ APPROVED — write it as `FB-0108`, with the two-altitudes framing below.** Two lessons, yours and #148's, and they are the same lesson at two altitudes:
 *a fix whose correctness depends on every future author remembering is a convention, not a fix — fix the
 interface*; and *reading the code is not the same as running it: a fix that looks correct is not verified
 until you attack it.* With FB-0098 (`core-docs/`) and #148's heredoc as the two prior instances.
 Recommended: write it. **Confidence: HIGH.** Pure docs.
 
-**6. If P5 or P7 lands a real defect in the pre-existing parser. SHIPS if fixed — but I propose PAPERWORK.**
-Recommended: report it in the PR body + roadmap, don't fix it here. **Confidence: MEDIUM** — a finding that
-can forge a manifest entry or close the fence is arguably urgent, and you may well want it fixed on the spot.
-Tell me which, and I will honour it. I would rather surface the question now than discover it mid-execution
-and decide alone.
+**6. ~~If P5 or P7 lands a real defect in the pre-existing parser.~~ ✅ RESOLVED — STANDING INSTRUCTION.**
+Report it in the PR body, route it to roadmap, **do not fix it in this PR**, and **ping the orchestrator the
+moment it fires**. A forgeable manifest entry or a closable fence is gate machinery, so the disposition is the
+human's call — but his attention is not spent on it before we know whether it fires. If it fires it is
+escalated as its own decision.
 
 ---
 
