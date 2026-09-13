@@ -318,6 +318,27 @@ that the human reads a truncated question, not that a blocker bypasses the gate.
 its fence marker and its field separator. A round-trip test asks *"does my input survive?"*; these ask *"can my
 input impersonate the mechanism?"* Only the second question generates these payloads, and it is only asked by
 someone attacking the mechanism they chose rather than confirming the happy path (FB-0108 rule 3).
+### `/flow:ship`'s commit template hardcodes a model version — every consumer not on that model gets a wrong attribution *(found while verifying an FB-0107 claim, v1.43.0; NOT fixed there — unrelated scope)*
+
+`plugins/flow/skills/ship/SKILL.md` Step 6 instructs: *"End with: `Co-Authored-By: Claude Opus 4.7 (1M
+context)`"*. That is a **hardcoded model version in a shipped artifact**. Every consumer running a
+different model gets a factually wrong co-author trailer in their git history, and the line rots silently
+on each model release — there is no gate that would notice.
+
+**Found by accident, which is the interesting part.** It surfaced while checking whether the line differed
+between the installed 1.29.0 tree and the checkout (it does not — it is stale in both, i.e. on `main`). So
+it is *not* an FB-0107 instance, and v1.43.0 deliberately did not absorb it.
+
+**Shape:** either drop the model name entirely (the trailer's value is "an agent co-authored this", not
+which one), or resolve it from the runtime rather than the prose. Dropping it is probably right: flow
+cannot know which model a consumer runs, and a project-agnostic artifact should not guess. If a slot is
+wanted, it is a `flow.config.json` slot — but that adds a 35th slot for a cosmetic line, which likely
+fails the FB-0056 "delta over the simpler option" test.
+
+**It is already a 3-site fan-out** (FB-0010 clause 2), measured: `skills/ship/SKILL.md:1011`,
+`skills/ship-spike/SKILL.md:505`, `docs/workflow.md:222`. Grep before editing — `git grep -n 'Claude Opus'
+-- plugins/` — and expect the count to have grown by the time anyone picks this up.
+
 ### Require one explicit checkout-run of the changed surface for PRs touching `plugins/flow/**` — **NOT BUILT, filed deliberately** (FB-0107, from the v1.43.0 provenance PR)
 
 v1.43.0 made the version **visible**; it did not make the new version **run**. Those are different
