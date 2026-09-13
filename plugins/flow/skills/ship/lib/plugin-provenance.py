@@ -117,6 +117,9 @@ def read_installed(home: Path) -> dict:
     return {
         "state": "ok",
         "version": str(ver),
+        # A dual user+project install resolves first-wins; say so rather than
+        # presenting an arbitrary pick as the answer.
+        "entry_count": len(entries),
         "install_path": e.get("installPath"),
         "git_sha": (e.get("gitCommitSha") or "")[:7] or None,
         "installed_at": e.get("installedAt"),
@@ -305,13 +308,42 @@ def surface_drift(installed: dict, root: Path) -> dict:
         inst = _names(ipath / sub, suffix)
         chk = _names(root / CHECKOUT_PLUGIN / sub, suffix)
         if inst is None or chk is None:
+            # NOT state "ok" with empty lists. That made "I could not check whether your
+            # new skills were invocable" render identically to "they all were" -- the
+            # collapse this module's docstring forbids, and the emptied lists then
+            # suppressed the callout entirely.
             out[f"{kind}_missing_from_installed"] = []
             out[f"{kind}_missing_from_checkout"] = []
-            out.setdefault("warnings", []).append(f"{kind}: a tree was unreadable")
+            out["state"] = "partially_unreadable"
+            out.setdefault("unreadable", []).append(kind)
             continue
         out[f"{kind}_missing_from_installed"] = sorted(chk - inst)
         out[f"{kind}_missing_from_checkout"] = sorted(inst - chk)
     return out
+
+
+def _is_rule_skill(root: Path, name: str) -> bool:
+    """True when a skill AUTO-LOADS on matching paths rather than being invoked.
+
+    The marker is a `paths:` key in the SKILL.md frontmatter -- a plain frontmatter
+    read, never a judgment call. This distinction matters because the two kinds fail
+    DIFFERENTLY when absent from the installed tree, and reporting only the milder
+    consequence is what render_block did before: for a command skill the failure is
+    "you cannot invoke it"; for a rule-skill NOTHING invokes it, so the failure is
+    that the rules meant to govern the run were never loaded. Attaching the command
+    consequence to a rule-skill states something simply untrue of it.
+    """
+    f = root / CHECKOUT_PLUGIN / "skills" / name / "SKILL.md"
+    try:
+        head = f.read_text(encoding="utf-8")[:2000]
+    except (OSError, UnicodeDecodeError):
+        return False
+    # Frontmatter only: stop at the closing fence so a `paths:` mentioned in prose
+    # cannot promote a command skill.
+    if head.startswith("---"):
+        end = head.find("\n---", 3)
+        head = head[:end] if end != -1 else head
+    return bool(re.search(r"^\s*paths\s*:", head, re.MULTILINE))
 
 
 def _names(d: Path, suffix: str) -> set[str] | None:
@@ -386,18 +418,43 @@ def collect(home: Path, root: Path, plugin_root: str | None) -> dict:
 # without its pair, and deleting the protected feature turned it green for four
 # releases.
 
-L_INSTALLED = "Flow — installed version (ran the skills, agents + `!`-blocks)"
-L_MARKET = "Flow — marketplace HEAD (what an update would fetch)"
-L_LIBS = "Flow — helper libs, fenced Bash blocks"
-L_PRE = "Flow — scripts via `!`-preprocessor blocks"
-# THE row contract, in one place. Four sites carry these strings: this renderer, the
-# eval harness, ship/SKILL.md and ship-spike/SKILL.md. The harness imports this tuple
-# (importlib, the run_manifest_triage_evals.py pattern for a hyphenated script) rather
-# than re-typing it, and then asserts the two SKILL.md copies match it -- so a reworded
-# label is changed HERE and the docs are machine-checked against it. Re-typing it in the
-# harness would mean editing the harness to match a new wording silently stops pinning
-# this renderer at all: FB-0010 clause 2, with the test as the thing that drifts.
+# Plain-language reason per unreadable state. FB-0082 keeps the STATES distinct in
+# code; without this map every one of them rendered behind the same sentence plus an
+# opaque token like `(registry_absent)`, so to the reader they WERE one state -- the
+# same rule violated one layer up, in the copy. And FB-0075's bar for this surface is
+# a reader who is not an engineer.
+_REASON = {
+    "registry_absent": "Claude Code has no plugin registry on this machine",
+    "registry_malformed": "the plugin registry file is corrupt",
+    "plugin_absent": "the registry exists but flow is not installed in it",
+    "no_versions": "flow is listed in the registry but records no version",
+    "clone_absent": "flow's marketplace has never been downloaded here",
+    "clone_malformed": "the downloaded marketplace file is corrupt",
+    "no_version": "the marketplace file records no version",
+    "manifest_absent": "this branch has no flow plugin manifest",
+    "manifest_malformed": "this branch's flow plugin manifest is corrupt",
+}
+
+
+def _why(state: str | None) -> str:
+    return _REASON.get(state or "", f"an unrecognised problem ({state})")
+
+
+L_INSTALLED = "Flow version that ran this pipeline"
+L_MARKET = "Latest released version available to this machine"
+L_LIBS = "Helper scripts — which copy ran"
+L_PRE = "Scripts Claude Code ran for itself"
 ROW_LABELS = (L_INSTALLED, L_MARKET, L_LIBS, L_PRE)
+
+# The remedy footnote, emitted ONCE under the table when anything warns. Six warning
+# states used to state a problem and stop; a reader who cannot act on a warning learns
+# only to ignore it.
+REMEDY = (
+    "> To re-run these gates against this branch's own code: "
+    "`claude plugin marketplace update flow && claude plugin update flow@flow`, "
+    "restart Claude Code, then re-run `/flow:ship`. "
+    "**Nothing here blocks this merge** — these rows report, they do not gate."
+)
 
 
 def _row(label: str, value: str, note: str) -> str:
@@ -410,85 +467,158 @@ def _paren(base: str, extra: str | None, tick: str = "") -> str:
     return f"{base} ({tick}{extra}{tick})" if extra else base
 
 
+def _stale(d: dict) -> bool:
+    """Is the install genuinely behind RELEASED versions?
+
+    This is the severity discriminator, and picking it correctly is the whole
+    difference between a signal and noise. `update_available` is the WRONG test here,
+    though it is the intuitive one: in the very case this file exists to expose --
+    1.29.0 installed, twelve releases behind, with the marketplace clone pinned at the
+    same stale commit -- there is nothing newer to fetch LOCALLY, so
+    `update_available` is False. Keying severity on it would render the flagship
+    failure as informational.
+
+    `release_gap` is the honest test. A flow feature branch declares the next,
+    unreleased minor, so a gap of 1 against a fully current install is the EXPECTED
+    steady state of every branch and must not warn -- this module's own rule is that
+    "a permanent warning is indistinguishable from the real staleness signal this
+    exists to surface", and an earlier draft warned on all four rows of every healthy
+    PR, violating it at the render while honouring it in the predicate. A gap above 1
+    means releases exist that this install does not have.
+    """
+    gap = d.get("release_gap")
+    return bool(d.get("report_drift")) and (gap is None or gap > 1)
+
+
 def render_rows(d: dict) -> list[str]:
     inst, mkt, br = d["installed"], d["marketplace_head"], d["branch"]
     libs, pre = d["libs"], d["preprocessor"]
+    stale = _stale(d)
     rows = []
 
-    # -- installed
+    # -- what actually ran
     if inst.get("state") == "ok":
         val = _paren(inst["version"], inst.get("git_sha"), "`")
-        if d["report_drift"] is True:
+        if d["report_drift"] is True and stale:
             gap = d.get("release_gap")
-            gap_txt = f" ({gap} release{'s' if gap != 1 else ''})" if gap else ""
-            note = (f"⚠️ DRIFT: this branch declares {br.get('version')}{gap_txt}. "
-                    "The prose and reviewers that ran this pipeline are NOT this branch.")
+            gap_txt = f", {gap} releases back" if gap else ""
+            note = (f"⚠️ NOT this branch{gap_txt}. This branch declares "
+                    f"{br.get('version')}, so the skill instructions and reviewers that "
+                    "ran here are an older release. Updating cannot fix THIS run — "
+                    "`plugin update` applies on restart, so re-running ship in a NEW "
+                    "session is what regenerates these rows.")
+        elif d["report_drift"] is True:
+            note = (f"ℹ️ expected — this branch declares {br.get('version')}, which is not "
+                    "released yet, and the install is otherwise current.")
         elif d["report_drift"] is False:
             note = "✓ matches this branch"
         elif br.get("state") == "not_flow_checkout":
-            note = "✓ installed and running (no in-repo copy to compare against)"
+            note = "✓ installed and running"
         else:
-            note = f"⚠️ cannot compare — branch manifest: {br.get('state')}"
+            note = f"⚠️ cannot compare — {_why(br.get('state'))}"
     else:
-        val = "UNDETERMINED"
-        note = (f"⚠️ the installed version could NOT be read ({inst['state']}). "
-                "Do not assume this run was current; check `claude plugin list`.")
+        val = "UNKNOWN"
+        note = (f"⚠️ could not be read: {_why(inst.get('state'))}. Do not assume this run "
+                "was current; check `claude plugin list`.")
     rows.append(_row(L_INSTALLED, val, note))
 
-    # -- marketplace HEAD
+    # -- latest released
     if mkt.get("state") == "ok":
         val = _paren(mkt["version"], mkt.get("git_sha"), "`")
         if d["update_available"] is True:
-            note = ("⚠️ differs from the installed version — an update is available and "
-                    "has not been applied.")
-        elif d["update_available"] is False and d["report_drift"] is True:
-            note = ("⚠️ the clone is pinned at the installed version — `plugin install` "
-                    "alone would NOT move it; the marketplace needs refreshing first.")
+            note = "⚠️ newer than what ran — an update is available and was not applied."
+        elif d["update_available"] is False and stale:
+            # Claim "pinned" only when the two commits actually MATCH. Pinning is not
+            # locally inferable in general (there is no remote signal here), so an
+            # unevidenced assertion would send the reader to run a refresh that may
+            # change nothing. With matching shas the claim is grounded.
+            same = (inst.get("git_sha") and inst.get("git_sha") == mkt.get("git_sha"))
+            if same:
+                note = ("⚠️ the downloaded marketplace sits at the same old commit as the "
+                        "install, so `plugin install` alone will not move it — refresh the "
+                        "marketplace first.")
+            else:
+                note = ("⚠️ no newer release is available locally, yet the install is behind "
+                        "this branch — refresh the marketplace before concluding it is current.")
         elif d["update_available"] is False:
-            note = "✓ current"
+            note = "✓ current — nothing newer to fetch"
         else:
-            note = "⚠️ cannot compare against the installed version"
+            note = f"⚠️ cannot compare — {_why(mkt.get('state'))}"
     else:
-        val = "UNDETERMINED"
-        note = f"⚠️ the marketplace clone could NOT be read ({mkt['state']})."
+        val = "UNKNOWN"
+        note = f"⚠️ could not be read: {_why(mkt.get('state'))}."
     rows.append(_row(L_MARKET, val, note))
 
-    # -- fenced-block libs
+    # -- fenced-block helper scripts
     if libs.get("state") == "installed":
-        v = libs.get("version")
-        rows.append(_row(L_LIBS, _paren("installed tree", v),
-                         "✓ same version as the prose"))
+        rows.append(_row(L_LIBS, _paren("the installed copy", libs.get("version")),
+                         "✓ same version as the skill instructions"))
     elif libs.get("state") == "checkout":
-        note = ("⚠️ MIXED PROVENANCE: the libs ran from the working tree while the prose "
-                "came from the installed version above — one run, two versions."
-                if d["mixed_provenance"] else
-                "✓ resolved from the working tree (`CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls)")
-        rows.append(_row(L_LIBS, "working tree", note))
+        note = ("⚠️ TWO VERSIONS IN ONE RUN: these ran from your working tree while the "
+                "skill instructions above came from the older installed copy."
+                if d["mixed_provenance"] and stale else
+                "✓ ran from your working tree")
+        rows.append(_row(L_LIBS, "your working tree", note))
     else:
-        rows.append(_row(L_LIBS, "UNRESOLVED",
-                         "⚠️ neither the installed tree nor the checkout served the probe lib — "
-                         "helper calls in this run would have hard-failed."))
+        rows.append(_row(L_LIBS, "NOT FOUND",
+                         "⚠️ the helper script this check looks for was in neither the "
+                         "installed copy nor this checkout, so helper calls in this run "
+                         "may not have resolved."))
 
-    # -- !-preprocessor blocks
+    # -- !-preprocessor scripts
     if pre.get("state") == "installed":
-        v = pre.get("version")
-        if d["report_drift"] is True:
-            note = ("⚠️ a script this branch MODIFIED did not run here — "
-                    "`CLAUDE_PLUGIN_ROOT` IS set in this context, so the installed copy won.")
+        if d["report_drift"] is True and stale:
+            note = ("⚠️ these came from the older installed copy, so any such script this "
+                    "branch changed would not have run here.")
         else:
-            note = "✓ same version as the prose"
-        rows.append(_row(L_PRE, _paren("installed", v), note))
+            note = "✓ same version as the skill instructions"
+        rows.append(_row(L_PRE, _paren("the installed copy", pre.get("version")), note))
     else:
-        rows.append(_row(L_PRE, "UNDETERMINED",
-                         f"⚠️ the installed tree could not be read ({pre.get('reason')}), so "
-                         "`!`-block resolution is unknown."))
+        rows.append(_row(L_PRE, "UNKNOWN",
+                         f"⚠️ could not be determined: {_why(pre.get('reason'))}."))
     return rows
 
 
-def render_block(d: dict) -> str:
-    """The un-invocable-surface callout. Only emitted when there is something to
-    say, but when it IS emitted it names every surface -- a truncated list would
-    be a quieter version of the failure being reported.
+L_SURFACES = "New skills + agents — were they available"
+
+
+def render_surface_row(d: dict) -> str:
+    """A labelled row for the surface-inventory dimension when it could not be checked.
+
+    Without this, `state` of `unknown` / `install_path_missing` / `partially_unreadable`
+    produced NO output anywhere, so "I could not check whether your new skills were
+    invocable" was indistinguishable from "they all were". The healthy and
+    drift-detected cases stay in render_block; this row exists for the
+    could-not-tell cases, which previously had no surface at all.
+    """
+    sd = d.get("surface_drift") or {}
+    st = sd.get("state")
+    if st == "ok" and not sd.get("unreadable"):
+        return ""
+    if st == "not_flow_checkout":
+        return ""
+    why = {
+        "unknown": "the registry records no install location",
+        "install_path_missing": "the recorded install location does not exist",
+        "partially_unreadable": "a skills/agents directory could not be read "
+                                f"({', '.join(sd.get('unreadable') or [])})",
+    }.get(st, f"an unrecognised problem ({st})")
+    return _row(L_SURFACES, "UNKNOWN",
+                f"⚠️ could not be checked: {why}. This is NOT the same as 'all of this "
+                "branch's skills and agents were available'.")
+
+
+def render_remedy(rows: list[str]) -> str:
+    """The remedy footnote, once, only when something warned."""
+    return REMEDY if any("⚠️" in r for r in rows) else ""
+
+
+def render_block(d: dict, root: Path) -> str:
+    """The un-invocable-surface callout, split by how each surface FAILS.
+
+    Only emitted when there is something to say, but when it IS emitted it names
+    every surface -- a truncated list would be a quieter version of the failure being
+    reported.
     """
     sd = d.get("surface_drift") or {}
     if sd.get("state") != "ok":
@@ -498,17 +628,29 @@ def render_block(d: dict) -> str:
     if not ms and not ma:
         return ""
     iv = d["installed"].get("version", "the installed version")
-    out = [
-        "<!-- flow:provenance -->",
-        f"**⚠️ Surfaces this branch declares that were NOT INVOCABLE in this run** "
-        f"(absent from {iv}, so the runtime has no tool for them — a model asked to "
-        f"run one would wrongly conclude it does not exist):",
-        "",
-    ]
-    if ms:
-        out.append("- Skills: " + ", ".join(f"`{s}`" for s in ms))
+
+    rules, commands = [], []
+    for name in ms:
+        (rules if _is_rule_skill(root, name) else commands).append(name)
+
+    out = ["<!-- flow:provenance -->",
+           f"**⚠️ Surfaces this branch declares that were ABSENT from {iv}, so they took no "
+           f"part in this run:**", ""]
+    if rules:
+        out.append(
+            "- **Rule-skills that did NOT load — this run was not governed by them.** "
+            + ", ".join(f"`{s}`" for s in rules)
+            + ". These auto-load on matching paths rather than being invoked, so nothing "
+              "reports their absence: the rules simply were not applied.")
+    if commands:
+        out.append(
+            "- **Skills that were not invocable.** " + ", ".join(f"`{s}`" for s in commands)
+            + ". The runtime has no tool for them, so a model asked to run one would "
+              "wrongly conclude it does not exist.")
     if ma:
-        out.append("- Agents: " + ", ".join(f"`{a}`" for a in ma))
+        out.append(
+            "- **Agents that were not spawnable.** " + ", ".join(f"`{a}`" for a in ma)
+            + ". A reviewer lens or helper this branch adds could not have run.")
     out += ["", "<!-- /flow:provenance -->"]
     return "\n".join(out)
 
@@ -546,8 +688,16 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(data, indent=2, sort_keys=True))
         return 0
 
-    print("\n".join(render_rows(data)))
-    block = render_block(data)
+    rows = render_rows(data)
+    surface_row = render_surface_row(data)
+    if surface_row:
+        rows.append(surface_row)
+    print("\n".join(rows))
+    remedy = render_remedy(rows)
+    if remedy:
+        print()
+        print(remedy)
+    block = render_block(data, root)
     if block:
         print()
         print(block)

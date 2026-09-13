@@ -42,6 +42,24 @@ SPIKE = FLOW / "skills" / "ship-spike" / "SKILL.md"
 FIXTURES = HERE / "fixtures" / "plugin-provenance"
 CAPTURE = FIXTURES / "this-workspace-20260912.json"
 
+
+def live_branch_version() -> str:
+    """The version the live checkout declares.
+
+    The hook resolves its own root (it must — that is the point of it), so any test
+    driving the hook with `cwd=REPO` compares against THIS file, not a fixture. Pinning
+    a fixture version against it is a time bomb: every release PR bumps plugin.json, so
+    the next bump made `report_drift` true and a "must be silent" assertion fail on a
+    test that has nothing to do with versions. FB-0010 clause 2 — read the live value
+    rather than re-stating it.
+    """
+    try:
+        return json.loads(
+            (REPO / "plugins" / "flow" / ".claude-plugin" / "plugin.json")
+            .read_text(encoding="utf-8"))["version"]
+    except (OSError, KeyError, json.JSONDecodeError):
+        return "0.0.0"
+
 # Imported, NOT re-typed. The row contract has four sites (engine, this harness, and
 # the two SKILL.md copies); re-typing it here would mean that editing this file to match
 # a reworded label silently stops pinning the engine's renderer at all -- FB-0010 clause
@@ -51,6 +69,12 @@ _spec = importlib.util.spec_from_file_location("plugin_provenance", ENGINE)
 _engine = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_engine)
 ROW_LABELS = _engine.ROW_LABELS
+# A floor, so the `for lab in ROW_LABELS` loops below cannot go VACUOUS if the tuple is
+# ever emptied or trimmed — four tests would silently become no-ops while still printing
+# PASS (FB-0104's vacuous-criterion class, FB-0010 clause 3). Asserted as
+# self-consistency against the renderer, not as a pinned count.
+assert len(ROW_LABELS) >= 4 and all(ROW_LABELS), \
+    f"ROW_LABELS must be non-empty and hold every row label; got {ROW_LABELS!r}"
 
 failures: list[str] = []
 checks = 0
@@ -317,6 +341,147 @@ def test_both_polarities():
         check("⚠️" not in crow, f"clean run: row {lab!r} must NOT warn, got {crow!r}")
 
 
+def test_healthy_run_does_not_cry_wolf():
+    """The EXPECTED steady state of every flow branch must not warn.
+
+    A flow feature branch declares the next, unreleased minor, so `report_drift` is
+    true on every branch by construction. An earlier draft keyed the ⚠️ on that, which
+    made all four rows warn on every healthy PR forever -- violating the engine's own
+    stated rule ("a permanent warning is indistinguishable from the real staleness
+    signal this exists to surface") at the render while honouring it in the predicate.
+    A reader who sees four warnings on twenty consecutive PRs stops reading them, and
+    then the genuine 14-release gap arrives looking exactly like healthy.
+
+    The discriminator is `release_gap`, NOT `update_available` -- and that distinction
+    is the point of this test. In the real failure this engine exists to expose, the
+    marketplace clone was pinned at the same stale commit as the install, so
+    `update_available` was FALSE. Keying severity on it would render the flagship
+    failure as informational. Both directions are asserted below, because either one
+    alone passes on a renderer that is uniformly quiet or uniformly loud.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        inst = make_install_tree(td / "h", ["ship"], ["auditor"])
+        # HEALTHY: install == marketplace == latest release; branch one minor ahead.
+        healthy = make_home(td / "h", registry("1.42.0", install_path=str(inst)),
+                            marketplace_json("1.42.0"))
+        root = make_root(td / "h", "1.43.0", skills=["ship"], agents=["auditor"])
+        _, out = run(healthy, root, as_json=False, plugin_root=str(inst))
+        d = jrun(healthy, root, plugin_root=str(inst))
+    check(d.get("report_drift") is True,
+          "the healthy branch case must still REPORT drift in JSON — the fix is about "
+          "severity in the render, not about hiding the fact")
+    check(d.get("release_gap") == 1, f"healthy gap must be 1, got {d.get('release_gap')}")
+    check("⚠️" not in out,
+          f"a current install one unreleased minor behind must NOT warn, got:\n{out}")
+    check("ℹ️" in out, "the expected-unreleased case must be stated, not silently dropped")
+    check("not released yet" in out,
+          "the informational note must say WHY it is expected")
+    check("claude plugin marketplace update" not in out,
+          "no remedy footnote on a healthy run — there is nothing to remedy")
+
+    # STALE, with update_available FALSE (the real 1.29.0 shape: clone pinned too).
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        inst = make_install_tree(td / "s", ["ship"], ["auditor"])
+        stale = make_home(td / "s", registry("1.29.0", install_path=str(inst)),
+                          marketplace_json("1.29.0"))
+        root = make_root(td / "s", "1.43.0", skills=["ship"], agents=["auditor"])
+        d2 = jrun(stale, root)
+        _, out2 = run(stale, root, as_json=False)
+    check(d2.get("update_available") is False,
+          "this fixture's whole point: nothing newer to fetch LOCALLY, yet 14 releases behind")
+    check("⚠️" in out2,
+          f"a 14-release gap MUST warn even though update_available is False:\n{out2}")
+    check("claude plugin marketplace update" in out2,
+          "a warning run must carry the remedy footnote — a warning a reader cannot act "
+          "on teaches them to ignore warnings")
+    check("restart" in out2.lower(),
+          "the drift note must say updating cannot fix THIS run")
+
+
+def test_no_internal_state_leaks_to_the_reader():
+    """No raw state identifier reaches the rendered report.
+
+    FB-0082 keeps `registry_absent` / `registry_malformed` / `plugin_absent` /
+    `no_versions` DISTINCT in code. An earlier draft rendered all four behind one
+    sentence plus the raw token, so to a reader they WERE one state -- the same rule
+    violated one layer up, in the copy. FB-0075 sets the bar for this surface: plain
+    language for a reader who is not an engineer.
+    """
+    raw = ("registry_absent", "registry_malformed", "plugin_absent", "no_versions",
+           "clone_absent", "clone_malformed", "not_flow_checkout")
+    seen_sentences = set()
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        root = make_root(td, "1.43.0")
+        for name in ("installed-missing.json", "installed-malformed.json",
+                     "installed-nokey.json", "installed-empty.json",
+                     "clone-absent.json"):
+            home, _ = home_from_fixture(td / name.replace(".", "_"), name)
+            _, out = run(home, root, as_json=False)
+            for tok in raw:
+                check(tok not in out,
+                      f"{name}: raw state {tok!r} must not reach the reader — map it to "
+                      f"a plain sentence")
+            first = next((l for l in out.splitlines() if "⚠️" in l), "")
+            seen_sentences.add(first.split("|")[-2].strip() if "|" in first else first)
+    # POSITIVE pair: the plain sentences must actually DIFFER per state, or the map has
+    # merely renamed one collapsed message.
+    check(len(seen_sentences) >= 4,
+          f"the unreadable states must render DISTINCT sentences, got "
+          f"{len(seen_sentences)}: {seen_sentences}")
+
+
+def test_callout_splits_rule_skills_from_command_skills():
+    """An absent rule-skill and an absent command skill fail DIFFERENTLY.
+
+    A rule-skill auto-loads on matching paths; nothing invokes it, so "a model asked to
+    run one would conclude it does not exist" is simply untrue of it. Its real
+    consequence is stronger: the rules meant to govern the run were never applied. An
+    earlier draft attached only the milder consequence, to a live list in which four of
+    five entries were rule-skills.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        inst = make_install_tree(td, ["ship"], ["auditor"])
+        home = make_home(td, registry("1.29.0", install_path=str(inst)),
+                         marketplace_json("1.29.0"))
+        root = make_root(td, "1.43.0", skills=["ship", "a-rule", "a-command"],
+                         agents=["auditor"])
+        # a-rule carries `paths:` in frontmatter; a-command does not.
+        sk = root / "plugins" / "flow" / "skills"
+        (sk / "a-rule" / "SKILL.md").write_text(
+            "---\nname: a-rule\npaths:\n  - '**/*.py'\n---\nbody\n")
+        (sk / "a-command" / "SKILL.md").write_text(
+            "---\nname: a-command\ndescription: does a thing\n---\nbody\n")
+        _, out = run(home, root, as_json=False)
+    check("Rule-skills that did NOT load" in out,
+          f"the callout must name the rule-skill failure mode:\n{out}")
+    check("not governed by them" in out,
+          "the rule-skill consequence must be that the run was ungoverned")
+    check("a-rule" in out and "a-command" in out, "both skills must be listed")
+    rule_line = next((l for l in out.splitlines() if "Rule-skills" in l), "")
+    cmd_line = next((l for l in out.splitlines() if "not invocable" in l), "")
+    check("a-rule" in rule_line and "a-command" not in rule_line,
+          f"a-rule belongs in the rule-skill bullet only, got {rule_line!r}")
+    check("a-command" in cmd_line and "a-rule" not in cmd_line,
+          f"a-command belongs in the command bullet only, got {cmd_line!r}")
+    # NEGATIVE pair: a `paths:` in PROSE must not promote a command skill.
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        inst = make_install_tree(td, ["ship"], [])
+        root = make_root(td, "1.43.0", skills=["ship", "prose-only"])
+        (root / "plugins" / "flow" / "skills" / "prose-only" / "SKILL.md").write_text(
+            "---\nname: prose-only\n---\nSome body text mentioning paths: nope\n")
+        _, out2 = run(make_home(td, registry("1.29.0", install_path=str(inst)),
+                                marketplace_json("1.29.0")), root, as_json=False)
+    check("prose-only" in out2, "the skill must still be listed")
+    rl = next((l for l in out2.splitlines() if "Rule-skills" in l), "")
+    check("prose-only" not in rl,
+          "a `paths:` in prose must not promote a command skill to rule-skill")
+
+
 def test_graceful_degradation():
     """Never a traceback, never an empty report -- always a labelled row saying what
     could not be determined. A provenance reporter that crashes fails a ship over a
@@ -561,7 +726,10 @@ def test_hook_fast_path():
         drive = _hook_driver(td)
         other = td / "other"
         other.mkdir()
-        home, _ = home_from_fixture(td / "s1", "fully-in-sync.json")
+        # Built from the LIVE declared version, not a fixture, so a release bump
+        # cannot turn "a current install must be silent" red.
+        live = live_branch_version()
+        home = make_home(td / "s1", registry(live), marketplace_json(live))
 
         rc, so, se, calls = drive(home, cwd=other)
         check(rc == 0 and so == "" and se == "" and calls == [],
@@ -599,7 +767,8 @@ def test_hook_dry_run():
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
         drive = _hook_driver(td)
-        home, _ = home_from_fixture(td, "fully-in-sync.json")
+        live = live_branch_version()
+        home = make_home(td, registry(live), marketplace_json(live))
         rc, so, se, calls = drive(home, cwd=REPO, dry=True)
     check(rc == 0 and so == "", f"dry run: rc={rc} stdout={so!r}")
     check("dry-run" in se, "dry run must announce itself")
@@ -721,6 +890,9 @@ def test_ci_wired():
 
 def main() -> int:
     for fn in (test_installed_states, test_executor_arms, test_split_predicates,
+               test_healthy_run_does_not_cry_wolf,
+               test_no_internal_state_leaks_to_the_reader,
+               test_callout_splits_rule_skills_from_command_skills,
                test_row_labels, test_both_polarities, test_graceful_degradation,
                test_decoy_repo_refused, test_surface_drift, test_contracts,
                test_hook_single_predicate, test_hook_loud_failure,

@@ -12,7 +12,7 @@
 # `claude plugin update` documents "restart required to apply", so this makes the
 # NEXT session current and does nothing for this one. It converges; it does not
 # fix. That is precisely why the provenance REPORT in the PR body (the four
-# `## Flow run` rows from skills/ship/lib/plugin-provenance.py) is the
+# version rows rendered by skills/ship/lib/plugin-provenance.py) is the
 # load-bearing half of FB-0107 and this hook is the backstop — on any session
 # that starts stale, only the report can say what actually ran.
 #
@@ -168,7 +168,7 @@ EOF
         echo "   so a 'False' here may only mean the local clone is pinned too)" >&2
         cc plugin update flow@flow
         echo "[flow-currency] NOTE: 'restart required to apply' — a real run would leave THIS" >&2
-        echo "   session on $INST. The PR body's '## Flow run' provenance rows report what ran." >&2
+        echo "   session on $INST. The PR body's version rows report what actually ran." >&2
         exit 0
     fi
 
@@ -183,7 +183,8 @@ EOF
         if [ "$RDRIFT" = "True" ]; then
             echo "[flow-currency] installed flow $INST is current with the marketplace, but this" >&2
             echo "   branch declares $BR — the /flow:* skills and reviewers in THIS session run" >&2
-            echo "   $INST, not your working tree. Check the PR's '## Flow run' provenance rows." >&2
+            echo "   $INST, not your working tree. Check the PR's version rows, which name" >&2
+            echo "   what ran. Restart Claude Code if this session will run any /flow:* command." >&2
         fi
         exit 0
     fi
@@ -217,7 +218,8 @@ EOF
           | python3 -c "import json,sys;print((json.load(sys.stdin).get('installed') or {}).get('version',''))" 2>/dev/null)
     echo "[flow-currency] installed flow: $INST → ${NEW:-unknown}" >&2
     echo "[flow-currency] NOTE: 'restart required to apply' — THIS session still runs" >&2
-    echo "   $INST. The PR body's '## Flow run' provenance rows report what actually ran." >&2
+    echo "   $INST. The PR body's version rows report what actually ran." >&2
+    echo "   → Restart Claude Code now if this session will run any /flow:* command." >&2
     # No trailing `claude plugin list`: it was a ~380ms CLI boot whose output merely
     # restated the "$INST → $NEW" line immediately above, which the engine already
     # sourced from the registry. #116 prints it because it has no engine to ask.

@@ -351,6 +351,21 @@ A filled `## Flow run` for a docs-only change on a library project (no UI surfac
 | Visual deliverable (§7a) | n/a (not visually significant) | — |
 | Doc synthesis | ✓ | history + plan + CHANGELOG |
 
+### Which flow version ran this pipeline
+
+| Surface | Came from | What that means |
+|---|---|---|
+| Flow version that ran this pipeline | 1.43.0 (`a1b2c3d`) | ✓ matches this branch |
+| Latest released version available to this machine | 1.43.0 | ✓ current — nothing newer to fetch |
+| Helper scripts — which copy ran | the installed copy (1.43.0) | ✓ same version as the skill instructions |
+| Scripts Claude Code ran for itself | the installed copy (1.43.0) | ✓ same version as the skill instructions |
+
+Rendered by `skills/ship/lib/plugin-provenance.py` — never hand-authored, and shown here because an
+example that omitted these rows would teach a model to drop them. On a stale install they carry `⚠️`
+plus a one-line remedy footnote, and a callout naming any skill or agent this branch declares that the
+installed copy did not have. See § "Which version of flow is running? Not the one in your working tree".
+
+
 Note the skipped rows: each names *why* it skipped, so the reader sees a legitimate config/mode skip rather than wondering whether a gate was missed — and `/flow:audit-skips` is the gate that *confirms* those skips are legitimate rather than self-certified. (`/flow:audit-skips` always runs — it audits the OTHERS' skips, so it never skips itself; on this docs-only library PR it rules every skip legitimate without noise.)
 
 ### A draft PR is a last resort, not a deliverable (FB-0075)

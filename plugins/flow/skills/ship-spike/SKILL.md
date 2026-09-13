@@ -552,17 +552,24 @@ produced; `—` when routine. Resolve every `<...>` placeholder before publishin
 | /flow:verify-build | <✓ / skipped (reason)> | <3-check spike-rubric result / —> |
 | /flow:audit-coverage | skipped (no Spec-walk) | — |
 | /flow:audit-skips | ✓ | <all N stage skips legitimate / N should-re-run + what the user decided> |
-| Flow — installed version (ran the skills, agents + `!`-blocks) | {{provenance}} | {{provenance}} |
-| Flow — marketplace HEAD (what an update would fetch) | {{provenance}} | {{provenance}} |
-| Flow — helper libs, fenced Bash blocks | {{provenance}} | {{provenance}} |
-| Flow — scripts via `!`-preprocessor blocks | {{provenance}} | {{provenance}} |
+
+### Which flow version ran this pipeline
+
+| Surface | Came from | What that means |
+|---|---|---|
+| Flow version that ran this pipeline | {{provenance}} | {{provenance}} |
+| Latest released version available to this machine | {{provenance}} | {{provenance}} |
+| Helper scripts — which copy ran | {{provenance}} | {{provenance}} |
+| Scripts Claude Code ran for itself | {{provenance}} | {{provenance}} |
+
+{{provenance-footnote-and-callout}}
 
 **Render those four rows — do NOT hand-author them (FB-0107).** A spike PR needs this *more*
 than a full ship, not less: a spike's deliverable is the history entry, i.e. a claim about what
 was learned, and "which version produced that learning" is part of the claim. A `/flow:*` skill
-invoked from a repo does not run that repo's working tree — Claude Code resolves it from the
-**installed** marketplace plugin, measured at 1.29.0 in flow's own workspace against a `main` at
-1.41.0.
+invoked from a repo does not execute that repo's working tree — Claude Code resolves it from the
+**installed** plugin, so a stale install means the pipeline that reviewed the spike is an older
+release than the spike.
 
 Four rows and not one version number, because one run draws from two versions: **everything
 Claude Code resolves comes from the installed tree; everything the Bash tool resolves comes from
@@ -575,12 +582,19 @@ if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/l
 else
   PROV="plugins/flow/skills/ship/lib/plugin-provenance.py"
 fi
-[ -f "$PROV" ] || echo "⚠️ [provenance] reporter not found at $PROV — the ## Flow run version rows CANNOT be rendered. Replace all four with: 'UNDETERMINED | ⚠️ provenance reporter absent; which flow version ran is UNKNOWN'. Reinstall the flow plugin, or run from the flow checkout." >&2
-[ -f "$PROV" ] && python3 "$PROV" report
+# if/else, NOT `[ -f ] && python3` — with `&&` the guard is the LAST command on the
+# warn-and-continue path, so it exits non-zero and the tool call reports failure right
+# after prose promising this must never fail a ship.
+if [ -f "$PROV" ]; then
+  python3 "$PROV" report
+else
+  echo "⚠️ [provenance] reporter not found at $PROV — the version rows CANNOT be rendered. Replace all four with: 'UNKNOWN | ⚠️ provenance reporter absent; which flow version ran is UNKNOWN'. Reinstall the flow plugin, or run from the flow checkout." >&2
+fi
 ```
 
-Paste its stdout verbatim over the four `{{provenance}}` rows, and any
-`<!-- flow:provenance -->` block below the table. Reports; never gates.
+Paste its stdout verbatim: the rows in place of the `{{provenance}}` rows, and anything after
+them (a remedy footnote and any `<!-- flow:provenance -->` block) in place of
+`{{provenance-footnote-and-callout}}`. Reports; never gates.
 
 ## Full writeup
 See the history doc entry "Spike: <title>".

@@ -1506,10 +1506,17 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
   | Doc synthesis | ✓ | <docs updated> |
   | Status surface (§5a.5) | <✓ / skipped (status unchanged)> | <N candidates scanned, none drifted / draft: <path> stale ("<quote>") / —> |
   | Visual history (§5c) | <✓ / skipped (reason)> | <curated entry: "<decision>" / hand-authored (visual_significant) / skipped (uiSurface:false · no load-bearing visual decision) / —> |
-  | Flow — installed version (ran the skills, agents + `!`-blocks) | {{provenance}} | {{provenance}} |
-  | Flow — marketplace HEAD (what an update would fetch) | {{provenance}} | {{provenance}} |
-  | Flow — helper libs, fenced Bash blocks | {{provenance}} | {{provenance}} |
-  | Flow — scripts via `!`-preprocessor blocks | {{provenance}} | {{provenance}} |
+
+  ### Which flow version ran this pipeline
+
+  | Surface | Came from | What that means |
+  |---|---|---|
+  | Flow version that ran this pipeline | {{provenance}} | {{provenance}} |
+  | Latest released version available to this machine | {{provenance}} | {{provenance}} |
+  | Helper scripts — which copy ran | {{provenance}} | {{provenance}} |
+  | Scripts Claude Code ran for itself | {{provenance}} | {{provenance}} |
+
+  {{provenance-footnote-and-callout}}
 
   If a not-ready blockers block is present above, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here.
   <!-- Never write the literal 🚫 sentinel in this sentence. `pr-coherence.py::has_manifest`
@@ -1554,22 +1561,21 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
   python3 "$RTP" "$BUF"
   ```
 
-  **Render the four `## Flow run` provenance rows — do NOT hand-author them either (FB-0107).**
-  A `/flow:*` skill invoked from a repo does not run that repo's working tree: Claude Code
-  resolves the skill from the **installed** marketplace plugin. Measured in flow's own
-  workspace, the installed plugin was **1.29.0** against a `main` at 1.41.0 — a twelve-release
-  gap no gate noticed, so every flow PR's ship pipeline was reviewing the *previous* release
-  while everyone involved believed otherwise. The rows convert that silent failure into a
-  self-reporting one.
+  **Render the "Which flow version ran this pipeline" rows — do NOT hand-author them (FB-0107).**
+  A `/flow:*` skill invoked from a repo does not execute that repo's working tree: Claude Code
+  resolves the skill from the **installed** plugin. So if the installed version is behind the
+  checkout, the pipeline that just reviewed a change is an older release than the change — and
+  nothing else in the PR says so.
 
-  There are **four** rows and not one version number, because one run genuinely draws from two
-  versions. The measured rule: **everything Claude Code resolves comes from the installed tree;
+  There are **four** rows rather than one version number, because one run can draw from two
+  versions at once. The rule: **everything Claude Code resolves comes from the installed copy;
   everything the Bash tool resolves comes from the working tree.** `CLAUDE_PLUGIN_ROOT` is unset
   in Bash-tool calls and set in `!`-preprocessor blocks, so the same `${CLAUDE_PLUGIN_ROOT}/…`
-  string names different files depending on who expands it. A single "plugin version" line would
-  not merely be ambiguous — it would be **wrong**, reporting the installed version while the
-  fresh engines were in fact executing. Do not let a reviewer compress these back to one row for
-  tidiness; the ambiguity is the thing being removed.
+  string names different files depending on who expands it. A single version line would be
+  **wrong**, not merely ambiguous — it would report the installed version while fresh helper
+  scripts were in fact executing. Do not compress these back to one row for tidiness; the
+  ambiguity is the thing being removed. (Flow's own dogfooding is where this was measured; see
+  `dev-docs/feedback/FB-0107-*` in the flow repo for that history.)
 
   ```sh
   # Same installed-else-checkout fallback every other helper call in this skill uses. The
@@ -1584,15 +1590,22 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
   # hand-written), a missing provenance reporter must not fail a ship. Losing the report is a
   # loss of INFORMATION about the run, not a loss of a gate — but it is never silent, because a
   # blank provenance row would read as "nothing to report" when the truth is "could not tell".
-  [ -f "$PROV" ] || echo "⚠️ [provenance] reporter not found at $PROV — the ## Flow run version rows CANNOT be rendered. Replace all four with: 'UNDETERMINED | ⚠️ provenance reporter absent; which flow version ran is UNKNOWN'. Reinstall the flow plugin, or run from the flow checkout." >&2
-  [ -f "$PROV" ] && python3 "$PROV" report
+  # if/else, NOT `[ -f ] && python3` — with `&&` the guard is the LAST command on the
+  # warn-and-continue path, so it exits non-zero and the tool call reports failure right
+  # after prose promising this must never fail a ship.
+  if [ -f "$PROV" ]; then
+    python3 "$PROV" report
+  else
+    echo "⚠️ [provenance] reporter not found at $PROV — the version rows CANNOT be rendered. Replace all four with: 'UNKNOWN | ⚠️ provenance reporter absent; which flow version ran is UNKNOWN'. Reinstall the flow plugin, or run from the flow checkout." >&2
+  fi
   ```
 
-  Paste its stdout verbatim over the four `{{provenance}}` rows. If it emits a
-  `<!-- flow:provenance -->` block as well, paste that **below the table** — it names the skills
-  and agents this branch declares that were *not invocable at all* in this run, which is a harder
-  failure than staleness: the runtime has no tool for them, so a model asked to run one concludes
-  the skill does not exist.
+  Paste its stdout verbatim: the four table rows in place of the `{{provenance}}` rows, and
+  anything after them (a remedy footnote, and a `<!-- flow:provenance -->` block) in place of
+  `{{provenance-footnote-and-callout}}`. That block names surfaces this branch declares that were
+  absent from the installed copy, split by how each one fails: an absent **rule-skill** never
+  loads, so the rules meant to govern the run were simply not applied; an absent **command skill**
+  cannot be invoked at all.
 
   **This reports; it never gates.** Drift does not route to the draft manifest and does not block
   a ship. A *stable* reviewer is partly a feature — a ship pipeline with a bug that skips a

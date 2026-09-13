@@ -92,8 +92,7 @@ are absent from the installed tree. **Scope that claim precisely:** a listing di
 drift, not a loading bug — a surface present in both trees can still fail to register, and only the
 runtime's registered set would show that. So the argument against working-tree-global rests mainly on
 the other two reasons, which stand alone: it would make `/flow:ship` grade its own homework, and a branch
-that breaks ship could not ship itself. It would also make `/flow:ship` grade its own homework, and a branch that breaks ship
-could not ship itself. A *stable* reviewer is partly a feature. So: make the version explicit and
+that breaks ship could not ship itself. A *stable* reviewer is partly a feature. So: make the version explicit and
 visible; do not force a resolution order.
 
 **Also corrected:** "the natural home for an installed-vs-repo version check" is not only

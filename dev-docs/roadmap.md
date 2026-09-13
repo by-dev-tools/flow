@@ -319,6 +319,35 @@ its fence marker and its field separator. A round-trip test asks *"does my input
 input impersonate the mechanism?"* Only the second question generates these payloads, and it is only asked by
 someone attacking the mechanism they chose rather than confirming the happy path (FB-0108 rule 3).
 ### `/flow:ship`'s commit template hardcodes a model version — every consumer not on that model gets a wrong attribution *(found while verifying an FB-0107 claim, v1.43.0; NOT fixed there — unrelated scope)*
+### Three deferred from the v1.43.0 provenance PR's staff-review (FB-0107)
+
+1. **"Is the marketplace clone pinned?" is not answerable from local data.** The PR-body row now
+   claims pinning only when `marketplace_head.git_sha == installed.git_sha`, which is evidence-backed
+   but narrow — a clone can be stale without the shas matching. A real answer needs a remote signal
+   (`git ls-remote` against the clone's origin, or the registry's `lastUpdated` vs a fetch time). Until
+   then the row says "refresh the marketplace before concluding it is current", which is honest and
+   weaker than the claim it replaced. *Surfaces when:* touching `plugin-provenance.py`'s `L_MARKET` row.
+
+2. **The hook's tests couple to live repo state.** `test_hook_fast_path` / `test_hook_dry_run` /
+   `test_hook_degrades_safely` / `test_hook_field_parse_no_shift` drive the hook with `cwd=REPO`,
+   because the hook resolves its own root by design. The *version* coupling was a real time bomb and is
+   fixed (the fixtures now read the live `plugin.json` rather than restating it — every release bump
+   would otherwise have failed a "must be silent" assertion). But the live repo's **skills/agents
+   inventory** is still in scope for those runs. A test-only root override on the hook, pointed at a
+   synthetic checkout, is the contained fix. *Surfaces when:* touching
+   `run_plugin_provenance_evals.py`'s hook tests, and **before the next release bump**.
+
+3. **Drop the "latest released version" row from the PR body, keeping all three numbers in `--json`
+   (declined, recorded).** `update_available` is actor-facing — the SessionStart hook is what branches
+   on it — and on a clean run the row renders "✓ current", which tells a merge-gate reader nothing
+   about which version graded the PR. Its whole reviewer-facing payload is one clause that could fold
+   into the drift note. **Declined deliberately:** the approved shape for FB-0107 was three labelled
+   numbers rendered as four rows, on the explicit ground that an unlabelled or collapsed version
+   report is the ambiguity the PR existed to remove — and the marketplace number is exactly what
+   revealed that `plugin install` alone would not have fixed the original failure. This is a legibility
+   bet, not a defect, and reversing it should be a deliberate decision rather than a tidy-up.
+   *Surfaces when:* `ROW_LABELS` changes, or `/flow:doctor` grows the full three-number view.
+
 ### Gate the flow-currency `SessionStart` hook to `startup|resume` — it currently re-runs on every `/clear` and every auto-compact *(from /simplify's efficiency lens on the v1.43.0 provenance PR; NOT taken there — unverified)*
 
 `.claude/settings.json`'s `SessionStart` entries declare no `matcher`, so the currency hook (and the
