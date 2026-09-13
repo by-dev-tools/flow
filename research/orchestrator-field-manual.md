@@ -161,3 +161,49 @@ depending on an author remembering to demote.
   is **never** pasted into chat or into any file. The repo's secret-blocking hook is
   filename-based only (`*.env*`, `*credentials*`, `*secret*`) and will not catch a token
   sitting in an ordinary `.md` or `.py`.
+
+## 5. README currency — a standing debt with a per-feature release condition
+
+`README.md` is the user-facing marketplace/install/use doc and it has **not** been reconciled
+against the 2026-08 cloud-workflow program. Ben's standing direction (2026-08-27): **draft the
+changes now, implement each one only when its feature has actually landed and the claim is true.**
+Shipping a README that describes unbuilt behaviour is precisely the class Phase 00 exists to fix, so
+a batched end-of-program rewrite is the wrong shape — fold each correction into the ship that makes
+it true (canonical §4.5/§4.6: no standalone docs-only land PR).
+
+**One claim on `main` is false right now**, and it is the reason this section exists rather than a
+roadmap line. Verified verbatim at `a156228`, 2026-09-13:
+
+```
+README.md:86: - **4 auto-loading rules** that attach by file path — workflow discipline, plan requirements, doc format, exploration triggers.
+```
+
+The AGENTS.md spike's E1 measured that `paths:` on a `SKILL.md` **never activates**. Those four
+rules have therefore not loaded for any consumer since v1.33.0, while the README has advertised them
+the whole time. Do **not** fix the line on its own: **S0 decides the wording.** If S0 makes the rules
+load, the claim becomes true and needs no edit; if it cannot, the claim needs correcting. Editing now
+means guessing which, and rewriting twice. This is the FB-0085 class surfacing in user-facing copy —
+shipped, advertised, never loading.
+
+**Owed updates, each gated on its feature landing:**
+
+- **`toolchain` manifest kind** (shipped [#132](https://github.com/by-dev-tools/flow/pull/132),
+  v1.32.0) — the loop/gate description never mentions that a change can be honestly "verifiable in
+  principle, but not on this host," which drafts the PR rather than green-ticking it. **Landed; safe
+  to write now.** This is the only one currently unblocked.
+- **`README.md:86` / the four rules** — blocked on S0, as above.
+- **Orchestrator skill suite** (§4.10 — `/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`,
+  `/flow:gate`) — decided, not built. The skill list needs these **only once they ship**.
+- **D1 prototype-first gate** — changes where the first human gate sits for designer-role projects.
+  The README describes the current plan-approval gate; revisit after D1 Phases 1–2.
+
+**Correction to an earlier version of this debt:** a previous seat carried "17 skills / 9 agents /
+33 slots" as owed countable claims requiring an FB-0010 fan-out sweep. Measured 2026-09-13:
+`README.md` and `.claude-plugin/marketplace.json` on `main` carry **no** such countable claims, and
+the real counts are **22 skills / 10 agents**. **That item is closed — do not re-open it.** Recorded
+here because an inherited to-do that turns out not to exist costs a future seat the same
+investigation twice.
+
+**Deletion criterion (FB-0088):** delete this section when every gated item above has either shipped
+its README edit or been dropped with a reason — i.e. when the README makes no claim about the
+cloud-workflow program that is not true on `main`.
