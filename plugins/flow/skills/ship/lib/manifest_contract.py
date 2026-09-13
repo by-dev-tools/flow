@@ -52,23 +52,31 @@ def slug(branch: str) -> str:
 
 
 def _fence_bounds(lines: list[str]) -> tuple[int | None, int | None]:
-    """Indices of the OPEN fence line and the first CLOSE fence line after it.
+    """Indices of the OPEN fence line and the LAST CLOSE fence line after it.
 
     A fence counts only when it is ALONE ON ITS OWN LINE, which is exactly how
     the emitter writes it (`manifest-triage.py` builds the block as a list of
     lines with the two fences as their own elements). Matching the marker as a
     bare substring instead is what made the region truncatable from inside an
     entry — see `extract_manifest_region` below.
+
+    **LAST close, not first.** With first-close, a doc-style example that quotes
+    both markers on their own lines *above* the real manifest captures the region
+    and the real entries vanish — fewer entries, the unsafe direction. Taking the
+    last close can only ever widen the region, so the parser sees more candidate
+    entries, never fewer. Measured both ways; first-close erased a live
+    `[verify-build]` blocker in that arrangement.
     """
     open_i: int | None = None
+    close_i: int | None = None
     for i, raw in enumerate(lines):
         stripped = raw.strip()
         if open_i is None:
             if stripped == MANIFEST_OPEN:
                 open_i = i
         elif stripped == MANIFEST_CLOSE:
-            return open_i, i
-    return open_i, None
+            close_i = i
+    return open_i, close_i
 
 
 def extract_manifest_region(text: str) -> str:
@@ -104,17 +112,31 @@ def extract_manifest_region(text: str) -> str:
 
     **Honest boundary.** Line-anchoring closes the mid-line case, which is the
     reachable one: a marker quoted inside prose is never alone on its line. It
-    does NOT close a finding that embeds a *newline* followed by a bare marker.
-    That half is closed at write time by the newline collapse in `add-entry`
-    (FB-0108), not here. Fixing only what this layer can honestly fix, and
-    naming the rest, rather than implying a seal.
+    does NOT close a finding that embeds a real `\n` followed by a bare marker —
+    that half is closed at write time, by the newline collapse the FB-0108 branch
+    adds to `add-entry`; there is no write-time layer on *this* branch yet, so
+    say "will be closed", not "is closed".
+
+    An earlier revision of this docstring claimed a newline was the **only**
+    residual. That was false and a staff-engineer review caught it: `splitlines()`
+    treats eight further code points as line boundaries, and all eight defeated
+    the fix. Hence `split("\n")` above. The lesson is the one this repo keeps
+    re-learning — a boundary claim is only as narrow as the API you used to
+    compute it, and "only X remains" is a measurement, not a reading.
 
     **Failure direction is deliberate.** If the fences are not found
     line-anchored, this returns the whole text — the same as "fences absent" —
     so the parser sees MORE candidate entries, never fewer. Degrading toward
     not-ready is the safe direction for a merge gate.
     """
-    lines = text.splitlines()
+    # split("\n") — NEVER str.splitlines(). splitlines() breaks on EIGHT more
+    # boundaries (\x0b \x0c \x1c \x1d \x1e \x85 \u2028 \u2029), so a finding
+    # carrying any of them around a bare marker still truncated the region and
+    # still erased a live [verify-build] blocker — measured, all eight. No
+    # "newline collapse" at write time strips \u2028 or \x0c, so both layers
+    # missed them. `pr-coherence.py` already had this right; this diverged from
+    # an in-repo precedent that had the property.
+    lines = text.replace("\r\n", "\n").split("\n")
     open_i, close_i = _fence_bounds(lines)
     if open_i is not None and close_i is not None:
         return "\n".join(lines[open_i + 1 : close_i])

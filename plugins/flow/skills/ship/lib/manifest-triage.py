@@ -420,7 +420,14 @@ def parse_entries(body: str) -> list[dict[str, Any]]:
     text = extract_manifest_region(body or "")
 
     entries: list[dict[str, Any]] = []
-    for raw in text.splitlines():
+    # split("\n"), NOT splitlines() — same reason as manifest_contract's fence scan,
+    # and this is the layer that call sits directly above. splitlines() breaks on eight
+    # further code points (\x0b \x0c \x1c \x1d \x1e \x85 \u2028 \u2029), so an entry
+    # whose FINDING TEXT carried any of them was split into two fragments, neither
+    # matched _LINE_RE, and the entry was silently dropped — erasing a live
+    # [verify-build] blocker exactly like the fence bug upstream. Fixing the extractor
+    # alone left this reachable: the region was clean and its consumer re-broke it.
+    for raw in text.replace("\r\n", "\n").split("\n"):
         m = _LINE_RE.match(raw)
         if not m:
             continue

@@ -26,11 +26,18 @@
 
   Three things worth separating, because they generalize past this bug:
 
-  1. **Two layers, and each must state what it cannot reach.** Line anchoring closes the mid-line
-     case. It does **not** close a finding embedding a newline followed by a bare marker — that is
-     closed at write time by FB-0108's newline collapse. Neither layer is a seal; the PR says so
-     rather than implying otherwise, because "the class is closed" is the claim that stops the next
-     person looking.
+  1. **A boundary claim is only as narrow as the API you used to compute it.** The first version of
+     this fix used `str.splitlines()` and asserted — in the docstring, the changelog, the FB entry
+     and the plan — that a newline was the **only** remaining residual. A staff-engineer review
+     refuted it by measurement: `splitlines()` breaks on eight further code points, and all eight
+     still erased the blocker. The sibling detector `pr-coherence.py` already split on `\n`; the fix
+     had diverged from an in-repo precedent that was correct.
+
+     Note the shape of the error, because it is the interesting part. The claim was not sloppy —
+     it named a specific residual and routed it to a specific owner. It was *stated from reading
+     the code rather than from running it*, which is the exact failure FB-0108 exists to name, made
+     by the fix written to close FB-0108's sibling. "Only X remains" is a measurement, never a
+     reading.
   2. **Degrade toward the gate, not past it.** If the fences are not found line-anchored, the parser
      now returns the whole text, so it sees *more* candidate entries, never fewer. A merge gate that
      fails open is worse than one that fails noisy.

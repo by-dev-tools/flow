@@ -104,9 +104,10 @@ changelog high-water v1.42.0 both sit on the FB-0108 branch, and v1.43.0 is clai
 version-honesty branch, so this takes **FB-0109 / v1.44.0**. Claimed mechanically (the FB file and
 `changelog/v1.44.0.md` are pushed), not in prose — FB-0103.
 
-**Scope — in:** `manifest_contract.py` (line-anchored fences + a `_fence_bounds` helper); a
-`[fence-injection]` section in `run_manifest_triage_evals.py`; FB-0109; changelog; version bump ×3;
-history entry.
+**Scope — in:** `manifest_contract.py` (line-anchored fences + a `_fence_bounds` helper);
+**`manifest-triage.py`'s `parse_entries`**, which re-split the fixed region with the very API the
+fix forbids — same erasure, one layer down, found by the push-further lens; a `[fence-injection]`
+section in `run_manifest_triage_evals.py`; FB-0109; changelog; version bump ×3; history entry.
 
 **Scope — out, named:** the **write-time rejection** of a marker-bearing finding. It belongs in
 `_read_text_arg`, which the FB-0108 branch is actively rewriting; doing it here guarantees a conflict
@@ -128,8 +129,21 @@ had the property this fix relies on.
       assertion above. → verify: same section, positive-pairing case.
 - [x] Fail-safe direction: a body with **no** fences still parses its entries, so the parser degrades
       toward *more* blockers, never fewer. → verify: same section, loose case.
-- [x] **The section goes RED on the pre-fix module** — executed, three failures — and green after.
-      A regression test never observed failing is a claim (FB-0104). → verify: ran both ways.
+- [x] A marker fenced by any of the eight non-`\n` boundaries `str.splitlines()` honours
+      (`\x0b \x0c \x1c \x1d \x1e \x85 \u2028 \u2029`) cannot become the region's close.
+      → verify: `[fence-injection]` separator cases, on an UNCLOSED-fence body so the last-close
+      rule cannot rescue them and the split choice is genuinely isolated.
+- [x] A fence pair appearing ABOVE the real manifest cannot hide the real entries (last-close, not
+      first-close). → verify: same section, preceded case.
+- [x] An OPEN fence with no CLOSE falls back to scanning the whole body. → verify: unclosed case.
+- [x] A CRLF body parses identically. → verify: crlf case.
+- [x] An entry whose OWN finding text carries one of the eight boundaries is not dropped by
+      `parse_entries` (the consumer of the fixed region). The separator cases above put the
+      separator around the *marker* and assert a clean `[verify-build]` line survives, so they
+      never exercised this. → verify: `[fence-injection]` (a2) cases; mutation-isolated at 5
+      failures against reverting `parse_entries` alone.
+- [x] **Mutation-tested against three builds** — 12 failures on pre-fix `main`, 8 on a
+      `splitlines()`-only build, green on the fix (FB-0104). → verify: ran all three.
 - [x] The test reads the fence literals from the **engine's own module**, so a marker rename cannot
       leave it green against a stale copy (FB-0010 clause 2).
 - [x] `run_manifest_triage_evals.py` and `run_pr_coherence_evals.py` both green.
