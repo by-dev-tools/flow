@@ -2,8 +2,9 @@
 
 ## Current Focus
 
-**▶ STATE AS OF 2026-09-12 — `main` is v1.41.0 @ `a156228`; #149 merged; orchestrator seat rotated (succession 3).**
-Read this block first; everything below it is per-branch narrative from work that has since merged,
+**▶ EXECUTED, shipping (this branch, `fix-manifest-fence-injection`, FB-0109, v1.44.0): SAFETY — a manifest entry can no longer close the manifest fence.** 
+
+**▶ STATE AS OF 2026-09-15 — `main` is v1.42.0 @ `6efaad3`; #152 merged (FB-0108, the write-side half); #150 and #151 open; orchestrator seat rotated (succession 3).**Read this block first; everything below it is per-branch narrative from work that has since merged,
 kept for the reasoning but **not** a statement of what is active. (That residue is itself the
 FB-0102 problem — `plan.md` is edited in place, so #146's fragmentation deliberately did not touch
 it, and stale "Active (this branch)" headers accumulate. Cleaning it is unclaimed work, not this
@@ -58,6 +59,54 @@ pass's scope.)
 **▶ EXECUTED, shipping (this branch, `conductor/phase-00-rules-as-skills-hooks-fix-fb-0085`): Phase 00 — fix two shipped-but-never-loading flow features (rules→skills, hooks declaration; FB-0085), v1.33.0.** Standalone prerequisite from `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` §17/Phase 00, independent of any Codex/Cursor porting work. Plan approved with both escalated decisions accepted as recommended (00b hooks stay opt-in; 00c one-time content sync + explicit sync-note, not a full merge; 00d no bootstrap.sh change). Executed: skill count 17→21 (`claude plugin details` confirms live), full eval suite green, `/flow:critique-plan` findings fixed pre-execution. See the "PR — Phase 00" block below for the full Spec-walk + confidence verdicts, and `dev-docs/history.md` 2026-08-27 for the shipped write-up.
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
+
+## PR — manifest fence injection (`fix-manifest-fence-injection`, FB-0109, v1.44.0)
+
+**Mode:** feature (bugfix on shipped plugin surface). **Base:** `origin/main` @ `a156228`.
+**Version/FB re-derived across every remote head, not just `main`** — FB high-water FB-0108 and
+changelog high-water v1.42.0 both sit on the FB-0108 branch, and v1.43.0 is claimed by the
+version-honesty branch, so this takes **FB-0109 / v1.44.0**. Claimed mechanically (the FB file and
+`changelog/v1.44.0.md` are pushed), not in prose — FB-0103.
+
+**Scope — in:** `manifest_contract.py` (line-anchored fences + a `_fence_bounds` helper); a
+`[fence-injection]` section in `run_manifest_triage_evals.py`; FB-0109; changelog; version bump ×3;
+history entry.
+
+**Scope — out, named:** the **write-time rejection** of a marker-bearing finding. It belongs in
+`_read_text_arg`, which the FB-0108 branch is actively rewriting; doing it here guarantees a conflict
+in one function across two PRs. Flagged to that branch to add at rebase, where it is three lines in
+code it owns. Also out: any change to the fence *literals* or to the emitter — the producer already
+had the property this fix relies on.
+
+**Spec-walk:**
+
+- [x] A finding containing the closing marker **mid-line** no longer truncates the region; both
+      entries parse and the `[verify-build]` blocker survives.
+      → verify: `run_manifest_triage_evals.py` `[fence-injection]`, attack case.
+- [x] A prose quote of **both** markers inside a finding (the `roadmap.md:720` shape) is inert.
+      → verify: same section, reachability case.
+- [x] Control: the same body without the marker parses identically — the fix changes nothing for
+      honest input. → verify: same section, control case.
+- [x] **Paired positive (general.md rule 3):** fence scoping still *works* — an entry-shaped line
+      **outside** the fence is still ignored. Without this, deleting fence scoping satisfies every
+      assertion above. → verify: same section, positive-pairing case.
+- [x] Fail-safe direction: a body with **no** fences still parses its entries, so the parser degrades
+      toward *more* blockers, never fewer. → verify: same section, loose case.
+- [x] **The section goes RED on the pre-fix module** — executed, three failures — and green after.
+      A regression test never observed failing is a claim (FB-0104). → verify: ran both ways.
+- [x] The test reads the fence literals from the **engine's own module**, so a marker rename cannot
+      leave it green against a stale copy (FB-0010 clause 2).
+- [x] `run_manifest_triage_evals.py` and `run_pr_coherence_evals.py` both green.
+- [x] Version sweep clean: no surviving `"version": "1.41.0"` declaration; three sites at 1.44.0.
+
+**Assumptions.** **A1 — the emitter always writes each fence alone on its own line. HIGH**, and
+mechanically so: `manifest-triage.py` builds the block as a list of lines with each fence as its own
+element. *If it flips:* the fences stop being found line-anchored and the parser returns the whole
+body — more entries, never fewer, so the failure is toward not-ready.
+
+**Honest limitation, stated in the code and the changelog:** this does not close a finding that
+embeds a **newline** followed by a bare marker. FB-0108's newline collapse closes that at write time.
+Two layers, neither a seal.
 
 ## PR — `add-entry` takes untrusted text off the command line entirely (SAFETY, v1.42.0, FB-0108)
 
