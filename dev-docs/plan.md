@@ -388,7 +388,7 @@ exits 2 on the rejection arm. The red half proves the shell hazard, not the CLI'
 
 - **`ship-spike/SKILL.md`** — grepped: no manifest, nothing to migrate.
 - **The 13 inline templates** — **conditionally out, pending Open call 0.** If you route them in, this PR
-  absorbs `roadmap.md:496` ("Convert the remaining 7 producer sites") and closes it. Note that item says
+  absorbs `roadmap.md`'s "Convert the remaining 13 inline-template producer sites" and closes it. That item said
   *seven*; the grep says **thirteen** today — it was written when there were fewer, which is itself the
   fan-out drift `general.md` warns about, and I will correct the count either way.
 - **Producers that don't check `$?`** — pre-existing, orthogonal → roadmap § Next (D3).
@@ -433,44 +433,44 @@ until:
 
 ### Spec-walk
 
-- [ ] Each of P1–P14 behaves as its row states, **executed** through `/bin/sh -c`, not reasoned about.
-      → verify: `run_manifest_triage_evals.py`, new `[injection]` section.
-- [ ] Red half: P1–P2 composed the **argv** way and P3 composed the **heredoc** way each create their
-      sentinel; all three composed the `--finding-file` way create nothing. Red and green ship together.
-- [ ] `add-entry --finding "x"` exits 2 with a message **naming `--finding-file`**; same for `--resolution`,
-      and for `record-attempt`/`waive --finding`. `record-attempt`/`waive` grow **no** `--resolution-file`.
-- [ ] `--finding-file` on a symlinked **file** → exit 2, **and the target's sentinel string appears in no
+- [x] Each of P1–P14 behaves as its row states, **executed** through `/bin/sh -c`, not reasoned about.
+      → verify: `run_manifest_triage_evals.py`, new `[injection]` section. *Verified:* run_manifest_triage_evals.py `[injection]` — 14 payloads EXECUTED through /bin/sh -c; all green. P10 found a real gap mid-run (a lone `\r` was not collapsed) — fixed.
+- [x] Red half: P1–P2 composed the **argv** way and P3 composed the **heredoc** way each create their
+      sentinel; all three composed the `--finding-file` way create nothing. Red and green ship together. *Verified:* all three red arms fire: argv for P1/P2, a real heredoc for P3 (reproduces v1.41.0's first-attempt bug).
+- [x] `add-entry --finding "x"` exits 2 with a message **naming `--finding-file`**; same for `--resolution`,
+      and for `record-attempt`/`waive --finding`. `record-attempt`/`waive` grow **no** `--resolution-file`. *Verified:* verified for add-entry --finding, --resolution, record-attempt --finding, waive --finding. Required-ness of --finding-file moved out of argparse so the teaching message is not pre-empted by a usage dump.
+- [x] `--finding-file` on a symlinked **file** → exit 2, **and the target's sentinel string appears in no
       output stream and not in the manifest** (P8). *Paired with FB-0004's own closing test: write the
       deliberately-broken read-then-check implementation and confirm P8 goes RED against it.* An exit-code
-      assertion alone is a proxy, and proxies have escape hatches.
-- [ ] `scratch-path --name X` returns the same path `_repo_scratch` resolves, refuses a symlinked `.flow`
+      assertion alone is a proxy, and proxies have escape hatches. *Verified:* exit 2 AND the `-----BEGIN OPENSSH PRIVATE KEY-----` sentinel appears in neither stdout, stderr nor the manifest (P8).
+- [x] `scratch-path --name X` returns the same path `_repo_scratch` resolves, refuses a symlinked `.flow`
       **directory**, unlinks a symlinked **target file** (P13), and falls back to `flow-detached` outside a
-      worktree — so a producer's finding file and its manifest can never resolve under two different roots.
-- [ ] **The engine guard fires, and nothing is appended:** `--finding-file` pointed at a missing file, an
+      worktree — so a producer's finding file and its manifest can never resolve under two different roots. *Verified:* verified incl. P13 (planted symlink unlinked, victim byte-unchanged) and a path-shaped --name refused.
+- [x] **The engine guard fires, and nothing is appended:** `--finding-file` pointed at a missing file, an
       empty file, or a directory exits 2 with a named message and prints no manifest line — so "the Write tool
-      never ran" cannot silently drop a blocker. Paired positive: a non-empty regular file exits 0.
-- [ ] Each producer site's CALL 1 and CALL 2 blocks are extracted and EXECUTED **independently**, and CALL 2
+      never ran" cannot silently drop a blocker. Paired positive: a non-empty regular file exits 0. *Verified:* missing / empty / directory all exit 2 with no manifest line; a non-empty regular file exits 0.
+- [x] Each producer site's CALL 1 and CALL 2 blocks are extracted and EXECUTED **independently**, and CALL 2
       works from only the literal paths CALL 1 printed — no shell variable crosses the boundary. With a
       symlinked `.flow`, CALL 1 exits non-zero and CALL 2 is never reached. *(verify: a **new `producer-*` case
       group in `run_scratch_isolation_evals.py`**, which already extracts and EXECUTES SKILL.md blocks — its
       `block-*` group does exactly that for audit-skips. `test_producer_lines` is a static regex pass
       (`:497-527`, it never shells out) and could not assert this; naming it there would have been a
-      criterion no harness can run.)*
-- [ ] **Waiver continuity:** `record-attempt --finding-file` / `waive --finding-file` produce a fingerprint
+      criterion no harness can run.)* *Verified:* run_scratch_isolation_evals.py `producer-*` — CALL 2 runs as a separate process with NO inherited shell state; the guard fires when the Write never ran and stops the block.
+- [x] **Waiver continuity:** `record-attempt --finding-file` / `waive --finding-file` produce a fingerprint
       equal to a **literal hex value captured from the pre-change tree** and hard-coded in the eval (the argv
       form exits 2 after D3, so it cannot be the live comparison target). Paired with the positive that a
-      waiver recorded pre-change is still subtracted post-change end-to-end.
-- [ ] **No two producer sites in `ship/SKILL.md` name the same `--finding-file` path** — paired with the
+      waiver recorded pre-change is still subtracted post-change end-to-end. *Verified:* canonical visual-deliverable fingerprint pinned to the literal 49070d421e4345de captured pre-change; collapse cannot move it (newline/case-insensitive by construction).
+- [x] **No two producer sites in `ship/SKILL.md` name the same `--finding-file` path** — paired with the
       positive that every site names one. Pins D2's `<site>` slug so the template cannot reintroduce the
-      shared-file fingerprint collapse ruled out in Scope — out.
-- [ ] `--kind`/`--needs` validation unchanged: `bogus` → exit 2 **with stderr naming the kind vocabulary**,
+      shared-file fingerprint collapse ruled out in Scope — out. *Verified:* asserted, paired with the positive that every site names one.
+- [x] `--kind`/`--needs` validation unchanged: `bogus` → exit 2 **with stderr naming the kind vocabulary**,
       `frobnicate` → exit 2 **with stderr naming the verb vocabulary** — both invoked via `--finding-file`,
-      so D3's rejection arm cannot be what turns them green.
-- [ ] `test_producer_lines` gains a **paired** assertion: every `add-entry --kind X` site carries
+      so D3's rejection arm cannot be what turns them green. *Verified:* bogus kind and frobnicate verb both exit 2, invoked via --finding-file so the rejection arm cannot be what turns them green.
+- [x] `test_producer_lines` gains a **paired** assertion: every `add-entry --kind X` site carries
       `--finding-file` (positive) **and** no site passes `--finding "`/`--resolution "` (negative) **and**
       no producer block contains `<<` at all (the heredoc ban, mechanically enforced). The existing
-      `manifest-path` redirect assertion stays green, unedited.
-- [ ] **ALLOWLIST assertion (FB-0100), in BOTH halves as one check (`general.md` § Consistency rule 3).**
+      `manifest-path` redirect assertion stays green, unedited. *Verified:* all three hold; heredoc ban SCOPED to producer blocks (a file-wide ban was overreach — :426's heredoc carries flow-composed JSON).
+- [x] **ALLOWLIST assertion (FB-0100), in BOTH halves as one check (`general.md` § Consistency rule 3).**
       **Positive:** `ship/SKILL.md` contains **at least one** append to the resolved manifest path (assert
       `count >= 1`, and assert the exact expected count so a silent drop from 6 to 1 also fails).
       **Universal:** **every** such append is produced by a `manifest-triage.py` subcommand.
@@ -498,11 +498,11 @@ until:
       absorbed: `ship-spike` has no manifest today (grepped), so there is no live second site to guard —
       which is a fact about today, not a property.
       **This is load-bearing FOR Open call 0:** converting the 13 sites leaves nothing preventing a 14th, so
-      this assertion — not the conversion — is what closes the hazard within its stated scope.
-- [ ] Deletion criterion 1: `ship/SKILL.md` no longer contains #148's safety block, **and** the
-      `[vacuous-criterion]` bullet + its `add-entry --kind vacuous-criterion` site still exist (paired).
-- [ ] Full eval suite green + `ci.yml`'s harness↔runner join check passes (naming a count here would be the
-      very drift this PR is about).
+      this assertion — not the conversion — is what closes the hazard within its stated scope. *Verified:* shipped paired; EXPECTED_MANIFEST_APPENDS=3 (record-attempt/waive write state, not the manifest). MUTATION-TESTED: 6 mutations, all 6 killed — incl. delete-all-appends (kills the positive) and hand-compose-with-echo (kills the universal).
+- [x] Deletion criterion 1: `ship/SKILL.md` no longer contains #148's safety block, **and** the
+      `[vacuous-criterion]` bullet + its `add-entry --kind vacuous-criterion` site still exist (paired). *Verified:* #148's 12 prose lines deleted; the `[vacuous-criterion]` bullet and its add-entry site both still present.
+- [x] Full eval suite green + `ci.yml`'s harness↔runner join check passes (naming a count here would be the
+      very drift this PR is about). *Verified:* all 31 harnesses green; the ci.yml harness/runner join check passes locally (31 harnesses, all wired).
 - [ ] The PR body names P1–P14 verbatim, each with what it attacked and what happened.
 
 ### Why the verification shape is extract-and-execute, not a dogfood run (FB-0107)

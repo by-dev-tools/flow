@@ -54,7 +54,9 @@ Safety invariants encoded here (each has an eval case in
 
 Subcommands (stdlib only):
 
-    add-entry      --kind K --finding F --needs V [--resolution R] [--attempted]
+    add-entry      --kind K --needs V --finding-file PATH [--resolution-file PATH]
+                                        [--attempted]
+    scratch-path   --name NAME [--name NAME ...]   (resolve + sanitize, then print)
     parse          --body-file PATH|-
     classify       --entries-file PATH|-  [--state-file PATH] [--body-file PATH]
     render-manifest  --entries-file PATH|-
@@ -62,15 +64,35 @@ Subcommands (stdlib only):
     init-run       --branch B          (truncate the manifest for a fresh run)
     manifest-path  --branch B
     init-state     --branch B [--path PATH]
-    record-attempt --branch B --kind K --finding F [--path PATH]
-    waive          --branch B --kind K --finding F [--path PATH]
+    record-attempt --branch B --kind K --finding-file PATH [--path PATH]
+    waive          --branch B --kind K --finding-file PATH [--path PATH]
     state          --branch B [--path PATH] [--body-file PATH]
 
 Exit codes are the contract the shell keys on; keep them stable:
 
     0  success
     2  malformed input (unparseable entries, unknown kind/verb on `add-entry`,
-       an unwritable MANIFEST path on `init-run`)
+       an unwritable MANIFEST path on `init-run`, a missing/empty/non-regular/
+       symlinked --finding-file or --resolution-file, or the REMOVED raw-argv
+       `--finding`/`--resolution` flags)
+
+Why the free-text fields arrive as a FILE PATH and never as argv (FB-0108):
+`--finding` and `--resolution` carry model-composed text derived from untrusted
+sources -- a plan-authored Spec-walk criterion, a reviewer finding, a status
+doc's stale line. Every producer site is prose an agent follows, so any argv
+spelling means the agent splices that text into a shell word. The narrow fix
+(quote it carefully at each site) is a convention: it depends on every future
+author remembering. Passing a path instead closes the door, because the bytes
+travel file -> open() -> str and never enter a shell word at all.
+
+Heredocs and separator sentinels do NOT solve this and are not offered: every
+text-based boundary can appear inside the text. A `<<'FLOWEOF'` heredoc is
+terminated early by a payload containing a bare `FLOWEOF` line, which hands the
+remainder to the shell as commands -- measured, not theorised (v1.41.0's first
+attempt shipped exactly that shape and was caught by attacking it). There is
+likewise no `-`/stdin affordance, because from a Bash tool call the only way to
+feed stdin is a heredoc or a quoted string: offering it would re-offer the
+refuted path.
     3  `waive` only: the waiver WAS recorded, but its (kind, finding) fingerprint
        matches no entry on the current manifest -- including when no manifest
        exists at all (usually a mistyped --finding, or the wrong --branch) -- so
@@ -730,6 +752,90 @@ def _read(path: str) -> str:
         return fh.read()
 
 
+# Collapse each run of newlines -- and only the horizontal whitespace hugging it --
+# to a single space. The manifest is one entry per line, and a heredoc-free file can
+# legitimately hold a multi-line finding, so a newline must be joined rather than
+# rejected: rejecting would exit 2, and a producer whose `add-entry` exits 2 appends
+# nothing, i.e. it would DROP a blocker on ordinary well-meant input (FB-0062's
+# failure-open shape). Deliberately NOT `\s+ -> " "`: a tab or a double space inside
+# a finding is passed through byte-identically, exactly as the old argv path did.
+# Widening it would silently reflow text that composes correctly today, which is a
+# behaviour change a safety refactor has no business making.
+# A LONE \r counts, not just \r\n and \n. Found by payload P10: `\r?\n` leaves a bare
+# carriage return untouched, and a bare CR is a line break to plenty of consumers (and to
+# Python's own universal-newline decoding), so it could split a manifest entry in two
+# exactly like a \n. Still strictly newline-class — a tab or double space is untouched.
+_NEWLINE_RUN_RE = re.compile(r"[ \t]*(?:\r\n|\r|\n)+[ \t]*")
+
+
+def _collapse_newlines(text: str) -> str:
+    return _NEWLINE_RUN_RE.sub(" ", text)
+
+
+def _read_text_arg(path: str, flag: str) -> str:
+    """Read a free-text field from a file, refusing every unsafe shape LOUDLY.
+
+    Every refusal here exits 2 rather than degrading, and the producer templates
+    pair their `add-entry` call with `|| exit 1` so a refusal cannot be mistaken
+    for "no entry was owed" (FB-0062). The guard lives in the ENGINE and not in
+    shell prose because a shell guard can be stranded in the wrong Bash tool call
+    -- the Write that creates this file happens between two Bash calls, so shell
+    variables do not survive to the call that runs `add-entry`.
+    """
+    p = Path(path)
+    # CWE-59, read side. `.flow/` is git-checkout-plantable, so `finding.txt` can be
+    # a symlink to ~/.ssh/id_rsa or .git/config; reading through it would splice that
+    # content into a PR body. Mirrors the write-side refusal in `_repo_scratch`.
+    # Checked BEFORE any read, and the message never echoes the file's content --
+    # a BLOCKER message that interpolated the offending bytes would leak while
+    # reporting the leak (FB-0004: assert on what would leak, not on a proxy).
+    if p.is_symlink():
+        print(f"BLOCKER: {flag} {path} is a symlink -- refusing to read flow scratch "
+              f"through it (CWE-59). Write the text to a real file.", file=sys.stderr)
+        raise SystemExit(2)
+    if not p.exists():
+        print(f"BLOCKER: {flag} {path} does not exist. Write the text there with the "
+              f"Write tool FIRST, then run this command. Nothing was recorded.",
+              file=sys.stderr)
+        raise SystemExit(2)
+    if not p.is_file():
+        print(f"BLOCKER: {flag} {path} is not a regular file. Nothing was recorded.",
+              file=sys.stderr)
+        raise SystemExit(2)
+    raw = p.read_text(encoding="utf-8", errors="replace")
+    if not raw.strip():
+        # An empty file is the signature of "the Write tool never ran" -- the one
+        # failure a shell `[ -n "$VAR" ]` guard cannot see at all.
+        print(f"BLOCKER: {flag} {path} is empty. The text was never written, so there "
+              f"is nothing to record -- and an empty finding would reach the human as "
+              f"a blank question. Nothing was recorded.", file=sys.stderr)
+        raise SystemExit(2)
+    return _collapse_newlines(raw.strip())
+
+
+def _reject_argv_text(args: Any, *names: str) -> None:
+    """Refuse the REMOVED raw-argv free-text flags with a message that teaches.
+
+    Kept declared rather than deleted so a stale copy-paste -- flow's own
+    dev-docs/history/ entries contain literal invocations in the old argv spelling,
+    and agents read history docs -- is told the new spelling instead
+    of handed an argparse usage dump. This is NOT an equal-status path: there is
+    no flag, env var or fallback by which argv text reaches the manifest.
+    """
+    for name in names:
+        if getattr(args, name.replace("-", "_"), None) is not None:
+            print(
+                f"BLOCKER: --{name} was REMOVED (FB-0108). Free text must arrive as a "
+                f"FILE PATH, not a shell argument: untrusted text spliced into a shell "
+                f"word can break out of it, and no quoting convention survives every "
+                f"future author. Use --{name}-file PATH instead -- write the raw text "
+                f"there with the Write tool (never a heredoc: a payload containing the "
+                f"delimiter escapes it), then pass the path. "
+                f"`scratch-path --name <slug>` resolves a safe path for you.",
+                file=sys.stderr)
+            raise SystemExit(2)
+
+
 def _load_entries(path: str) -> list[dict[str, Any]]:
     # A missing manifest file is the COMMON case — no producer fired, so there is
     # nothing to triage. That is an empty manifest, not an error. (`parse` keeps
@@ -783,16 +889,41 @@ def main(argv: list[str] | None = None) -> int:
         p = sub.add_parser(name)
         p.add_argument("--branch", required=True)
         p.add_argument("--kind", required=True)
-        p.add_argument("--finding", required=True)
+        p.add_argument("--finding-file")   # see add-entry: checked after the reject arm
+        # REMOVED (FB-0108) -- same rejection arm as `add-entry`. These two take the
+        # SAME untrusted finding text (it must fingerprint-match a manifest entry), so
+        # leaving argv here would leave the hazard at the site that needs the exact
+        # same bytes. No --resolution/--resolution-file: neither subcommand has ever
+        # had a resolution field, and the record they write carries only
+        # fingerprint/kind/finding.
+        p.add_argument("--finding", default=None, help=argparse.SUPPRESS)
         p.add_argument("--path")
 
     p = sub.add_parser("add-entry")
     p.add_argument("--kind", required=True)
-    p.add_argument("--finding", required=True)
     p.add_argument("--needs", required=True)
-    p.add_argument("--resolution", default="")
+    # NOT argparse-required: `--finding` alone must reach `_reject_argv_text`'s
+    # teaching message, and argparse's "the following arguments are required"
+    # usage dump would pre-empt it on exactly the stale-copy-paste case the arm
+    # exists for. Absence is enforced below, after the rejection arm runs.
+    p.add_argument("--finding-file")
+    p.add_argument("--resolution-file")
+    # REMOVED (FB-0108), kept declared only to reject with a message that teaches.
+    # default=None is load-bearing: `_reject_argv_text` keys on "not None", so an
+    # empty-string default would make `--finding ""` indistinguishable from absent.
+    p.add_argument("--finding", default=None, help=argparse.SUPPRESS)
+    p.add_argument("--resolution", default=None, help=argparse.SUPPRESS)
     p.add_argument("--confidence", default="decision-required")
     p.add_argument("--attempted", action="store_true")
+
+    # Resolve + sanitize scratch paths, then print one per line. Repeated --name so a
+    # producer gets its finding and resolution paths from ONE call: two calls would
+    # invite the agent to reuse one path for both, and `record-attempt`/`add-entry` at
+    # the visual-deliverable site pass deliberately DIFFERENT text whose fingerprints
+    # must not collapse (classify() reads `fp in attempted_fps` to pick the entry's
+    # class, so a shared path would silently change a verdict).
+    p = sub.add_parser("scratch-path")
+    p.add_argument("--name", action="append", required=True)
 
     p = sub.add_parser("state")
     p.add_argument("--branch", required=True)
@@ -801,23 +932,58 @@ def main(argv: list[str] | None = None) -> int:
 
     args = ap.parse_args(argv)
 
+    if args.cmd == "scratch-path":
+        # Unlink each target BEFORE printing. Order is load-bearing: the caller's
+        # Write happens after this returns, so unlinking here removes a planted
+        # symlink instead of writing THROUGH it. A read-time check cannot help --
+        # by then the victim file has already been clobbered, and the Write tool is
+        # not flow's to gate. Unconditional `unlink` is safe because every path here
+        # is engine-computed ephemeral scratch the caller is about to rewrite; it is
+        # never caller-supplied (only a --name slug is). Same idiom as ship-spike's
+        # `rm -f "$STAGES" "$STAGES.tmp"`, for the same CWE-59 sub-case.
+        for name in args.name:
+            if "/" in name or "\\" in name or name in ("", ".", ".."):
+                print(f"BLOCKER: --name {name!r} must be a bare filename, not a path.",
+                      file=sys.stderr)
+                return 2
+            target = Path(_repo_scratch(name))
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                print(f"BLOCKER: could not clear {target}: {exc}", file=sys.stderr)
+                return 2
+            print(target)
+        return 0
+
     if args.cmd == "add-entry":
         # One place owns the line shape. Producers name their values; they never
         # hand-compose the em-dash format, so there is nothing for a parser to
         # defensively un-mangle later. Validate against the closed vocabularies
         # at WRITE time rather than fail-safing at classify time.
+        #
+        # The argv rejection runs FIRST, before vocabulary validation, so a stale
+        # copy-paste is told the real problem (the removed flag) rather than a
+        # confusing downstream one.
+        _reject_argv_text(args, "finding", "resolution")
+        if not args.finding_file:
+            print("BLOCKER: add-entry requires --finding-file PATH.", file=sys.stderr)
+            return 2
         if args.kind not in KINDS:
             print(f"unknown kind {args.kind!r}; expected one of {', '.join(KINDS)}", file=sys.stderr)
             return 2
         if args.needs not in VERBS:
             print(f"unknown needs verb {args.needs!r}; expected one of {', '.join(VERBS)}", file=sys.stderr)
             return 2
-        finding = args.finding.strip()
+        finding = _read_text_arg(args.finding_file, "--finding-file")
+        resolution = (_read_text_arg(args.resolution_file, "--resolution-file")
+                      if args.resolution_file else "")
         if args.attempted:
             finding = f"{finding} ({ATTEMPTED_MARKER})"
         print(f"- [{args.kind}] {finding} — needs: {args.needs}"
               f" — confidence: {args.confidence}"
-              f" — candidate resolutions: {args.resolution or '(none drafted)'}")
+              f" — candidate resolutions: {resolution or '(none drafted)'}")
         return 0
 
     if args.cmd == "parse":
@@ -869,10 +1035,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd in ("record-attempt", "waive"):
+        _reject_argv_text(args, "finding")
+        if not args.finding_file:
+            print(f"BLOCKER: {args.cmd} requires --finding-file PATH.", file=sys.stderr)
+            return 2
+        finding = _read_text_arg(args.finding_file, "--finding-file")
+        # Fingerprint stability across this change is load-bearing: a waiver the
+        # human gave BEFORE it must still subtract its entry after. It holds
+        # mechanically, not by luck -- `_fingerprint` already normalises with
+        # `re.sub(r"\s+", " ", ...).lower()`, so it is newline- and case-insensitive
+        # and `_collapse_newlines` cannot move it. Pinned against a literal hex
+        # value captured from the pre-change tree in the eval harness.
         rec = {
-            "fingerprint": _fingerprint(args.kind, args.finding),
+            "fingerprint": _fingerprint(args.kind, finding),
             "kind": args.kind,
-            "finding": args.finding,
+            "finding": finding,
         }
         key = "attempts" if args.cmd == "record-attempt" else "waivers"
 
@@ -899,7 +1076,7 @@ def main(argv: list[str] | None = None) -> int:
                 missing_note = " (no manifest file at that path — check --branch)"
             if rec["fingerprint"] not in fps:
                 print(f"⚠️ [manifest-triage] no entry on {mp} matches [{args.kind}] "
-                      f"{args.finding!r}{missing_note} — the waiver was recorded but will "
+                      f"{finding!r}{missing_note} — the waiver was recorded but will "
                       "subtract nothing. Check the finding text matches verbatim.",
                       file=sys.stderr)
                 return 3

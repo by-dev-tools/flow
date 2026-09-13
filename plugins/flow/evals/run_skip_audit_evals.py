@@ -29,6 +29,18 @@ import sys
 import tempfile
 from pathlib import Path
 
+
+def _txt(d, content: str) -> str:
+    """Free text reaches add-entry/record-attempt/waive as a FILE PATH, never as raw
+    argv (FB-0108). These calls use a list argv so they never had shell exposure, but
+    the flags are gone, and an eval exercising a path production no longer uses is a
+    weaker eval."""
+    f = tempfile.NamedTemporaryFile("w", suffix=".txt", dir=str(d), delete=False,
+                                    encoding="utf-8")
+    f.write(content)
+    f.close()
+    return f.name
+
 HERE = Path(__file__).parent
 SCRIPT = HERE.parent / "skills" / "audit-skips" / "lib" / "skip-audit-checks.py"
 
@@ -566,9 +578,9 @@ def main() -> int:
             e2e = Path(tmp) / "e2e-entries.md"
             add = subprocess.run([sys.executable, str(mt), "add-entry",
                                   "--kind", e2e_kind,
-                                  "--finding", "verify-build could not run on this host",
+                                  "--finding-file", _txt(tmp, "verify-build could not run on this host"),
                                   "--needs", "re-run", "--confidence", "decision-required",
-                                  "--resolution", "re-run where the toolchain exists"],
+                                  "--resolution-file", _txt(tmp, "re-run where the toolchain exists")],
                                  capture_output=True, text=True)
             e2e.write_text(add.stdout, encoding="utf-8")
             st_p = Path(tmp) / "e2e-state.json"

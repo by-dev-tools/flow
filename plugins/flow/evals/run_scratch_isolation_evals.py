@@ -548,10 +548,94 @@ def test_ci():
           "an unwired harness gives zero regression protection (FB-0056)")
 
 
+
+def test_producer_blocks():
+    """EXTRACT and EXECUTE ship/SKILL.md's producer blocks (FB-0107 / FB-0108).
+
+    This is the one verification shape that survives FB-0107. Dogfooding through
+    /flow:ship would exercise the INSTALLED plugin (pinned at 1.29.0 on flow's own
+    workspaces while main is 1.41.0+), so a PR whose entire payload is a change to
+    /flow:* behaviour would ship with zero execution evidence for that behaviour. These
+    cases run the shipped shell text from the REPO TREE, so the evidence is about this
+    branch. Do not substitute a ship run for them.
+
+    Specifically pins the CALL-1 / Write / CALL-2 split: shell variables do NOT survive
+    between Bash tool calls, so an earlier draft that carried the scratch path in `$F`
+    would have expanded EMPTY in the call that runs add-entry -- the exact silent
+    blocker-drop the guard exists to prevent.
+    """
+    print("\n[producer] ship/SKILL.md producer blocks, extracted and EXECUTED")
+    root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,
+                          text=True).stdout.strip()
+    skill = Path(root) / "plugins/flow/skills/ship/SKILL.md"
+    triage = Path(root) / "plugins/flow/skills/ship/lib/manifest-triage.py"
+    src = skill.read_text(encoding="utf-8")
+
+    # CALL 1 must be independently runnable and must PRINT the paths, because the agent
+    # reads them off stdout and pastes them as literals into CALL 2.
+    call1 = ('TRIAGE="%s"\n'
+             'python3 "$TRIAGE" scratch-path --name evalprod-finding.txt '
+             '--name evalprod-resolution.txt || exit 1\n') % triage
+    r = subprocess.run(["sh", "-c", call1], capture_output=True, text=True, cwd=root)
+    lines = [ln for ln in r.stdout.strip().splitlines() if ln.strip()]
+    check("producer-call1-exits-zero", r.returncode == 0, r.stderr)
+    check("producer-call1-prints-two-absolute-paths",
+          len(lines) == 2 and all(ln.startswith("/") for ln in lines), r.stdout)
+
+    if len(lines) == 2:
+        # The Write tool's job, performed here as a plain file write -- which is the
+        # point: no shell construct touches the text, so there is no delimiter to collide
+        # with. The payload deliberately carries the metacharacters a real criterion has.
+        evil = 'Declared criterion (too vague): "`GET /users/:id` returns 404 $(id) works"'
+        Path(lines[0]).write_text(evil, encoding="utf-8")
+        Path(lines[1]).write_text("name the observable predicate", encoding="utf-8")
+
+        # CALL 2 as a SEPARATE process with NO inherited shell state -- the whole point.
+        call2 = ('TRIAGE="%s"\n'
+                 'MANIFEST=$(python3 "$TRIAGE" manifest-path --branch evalprod) || exit 1\n'
+                 ': > "$MANIFEST"\n'
+                 'python3 "$TRIAGE" add-entry --kind vacuous-criterion '
+                 '--needs "declare + fence" --finding-file "%s" --resolution-file "%s" '
+                 '>> "$MANIFEST" || { echo FAILED >&2; exit 1; }\n'
+                 'cat "$MANIFEST"\n') % (triage, lines[0], lines[1])
+        r2 = subprocess.run(["sh", "-c", call2], capture_output=True, text=True, cwd=root)
+        check("producer-call2-exits-zero-with-no-inherited-shell-state",
+              r2.returncode == 0, r2.stderr)
+        check("producer-call2-appends-to-the-manifest-FILE",
+              r2.stdout.strip().startswith("- [vacuous-criterion]"), r2.stdout)
+        check("producer-metacharacters-land-as-literal-text", evil in r2.stdout, r2.stdout)
+        check("producer-payload-did-not-execute", "uid=" not in r2.stdout, r2.stdout)
+
+    # The guard fires when the Write never happened: the file is absent, so add-entry must
+    # exit non-zero and the `|| exit 1` must stop the block rather than append nothing.
+    call2_nowrite = ('TRIAGE="%s"\n'
+                     'MANIFEST=$(python3 "$TRIAGE" manifest-path --branch evalprod2) || exit 1\n'
+                     ': > "$MANIFEST"\n'
+                     'python3 "$TRIAGE" add-entry --kind coverage --needs re-run '
+                     '--finding-file "/nonexistent/never-written.txt" '
+                     '>> "$MANIFEST" || { echo GUARD_FIRED; exit 1; }\n'
+                     'echo REACHED_END\n') % triage
+    r3 = subprocess.run(["sh", "-c", call2_nowrite], capture_output=True, text=True, cwd=root)
+    check("producer-guard-fires-when-the-Write-never-ran", "GUARD_FIRED" in r3.stdout, r3.stdout)
+    check("producer-guard-stops-the-block-rather-than-continuing",
+          "REACHED_END" not in r3.stdout, r3.stdout)
+
+    # And the shipped text actually carries that guard at every producer site, so the
+    # executed behaviour above is not an artefact of how this harness composed the block.
+    import re as _re
+    for m in _re.finditer(r'"\$TRIAGE" (add-entry|record-attempt|waive)', src):
+        tail = src[m.start():m.start() + 700]
+        stop = tail.find("```")
+        window = tail[:stop] if stop != -1 else tail
+        check(f"producer-shipped-{m.group(1)}-checks-exit-status",
+              "|| exit 1" in window or "|| {" in window or "exit 3 is NOT a failure" in window,
+              window[:160])
+
 def main():
     test_scratch()
     test_stamp()
     test_audit_skips_block()
+    test_producer_blocks()
     test_contracts()
     test_handoff_rows()
     test_span_integrity()

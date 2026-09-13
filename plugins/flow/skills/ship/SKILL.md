@@ -286,32 +286,46 @@ Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, `/flo
 - **`/flow:verify-build` `metadata.no_plan_fallback: true` on a source-touching diff** → a draft-manifest entry in the canonical line shape (Step 2): `[verify-build] ran without a governing plan (no **Spec-walk:** block) — needs: declare + fence — confidence: decision-required — candidate resolutions: <the criteria you DRAFTED, for the human to approve into the Spec-walk block>`. The verdicts may be real (the §2b judged path produces genuine `adversarial-judged` PASSes over diff-derived criteria), but a plan was *expected* and absent: a production diff shouldn't reach a ready PR via the no-plan path. Resolve by declaring the criteria in the plan's `**Spec-walk:**` block (so the next run is full mode) or waiving at the merge gate. A docs-only no-plan run (smoke path) does not route here.
 - **`/flow:verify-build` `metadata.vacuous_criteria_found: [...]` non-empty** → one draft-manifest entry PER flagged criterion, in the canonical line shape (Step 2): `[vacuous-criterion] Declared criterion (too vague): "<the criterion, verbatim>" — needs: declare + fence — confidence: decision-required — candidate resolutions: <a specific rewrite you DRAFTED — naming the concrete output/state/error path — drafting it is your job; declaring it sufficient is not>`. The "Declared criterion (too vague):" prefix + quotes matter — the finding text renders as the headline of a numbered question at Step 8, and an un-prefixed, unquoted vague claim ("Rate limiting works correctly") momentarily reads as the agent asserting something true rather than flagging it as too vague to mean anything. This is the sibling gap `/flow:audit-coverage` leaves open: coverage checks whether a criterion exists at all (presence); `criterion-specificity.py` (run inside verify-build Step 3, deterministic — never an LLM judgment) checks whether the one declared is falsifiable (quality). A criterion so vague it plausibly maps to the changed hunk satisfies coverage and lets verify-build judge it PASS against equally vague narration — this closes that composition. Resolve by rewriting the criterion in the plan's `**Spec-walk:**` block to name an observable predicate, then re-run verify-build, or waive at the merge gate.
 
-  **The criterion text is untrusted (plan-author-controlled) — do not splice it into the shell command text you compose, and do not carry it through a shell heredoc (security-review, FB-0104).** A well-formed, non-adversarial criterion is *expected* to contain backticks/quotes (`criterion-specificity.py`'s own escape hatch treats them as a specificity signal — e.g. `` `GET /users/:id` returns 404... ``), so a criterion containing `"` / `` ` `` / `$(...)` is the *common* case, not an edge case. Splicing it directly into a double-quoted `--finding "..."` argument lets an embedded quote close the string early and hand the rest to the shell. **A heredoc does not fix this either** — its delimiter is a fixed, guessable string (e.g. `FLOWEOF`), and a criterion containing a line that happens to equal it terminates the heredoc early, handing everything after to the shell as ordinary commands (verified: a criterion body containing a bare `FLOWEOF` line followed by a shell command executes that command). Use the **Write tool**, not shell text, to capture it — Write copies bytes to a file with no shell parsing of the content at all, so there is no delimiter for anything to collide with:
   ```sh
-  # 1. Use the Write tool to write the raw criterion text (untrusted, verbatim, no
-  #    prefix/quoting added) to this scratch file — never a shell heredoc.
-  FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-  SCRATCH="$FLOW_ROOT/.flow/vacuous-finding.txt"
-  # 2. Reference the file's contents via a double-quoted command substitution. This
-  #    is safe regardless of what the file contains (embedded quotes, backticks,
-  #    $(...), even a line that looks like a heredoc delimiter) — "$(cat ...)"
-  #    passes the byte content as one argv element without re-parsing it as shell
-  #    syntax, the same safety property as "$VAR" (verified against all of the
-  #    above, including the delimiter-collision case the heredoc form missed).
-  python3 "$TRIAGE" add-entry --kind vacuous-criterion \
-    --finding "Declared criterion (too vague): \"$(cat "$SCRATCH")\"" --needs "declare + fence" \
-    --resolution "<the specific rewrite you drafted>" >> "$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)")"
+  TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+  python3 "$TRIAGE" scratch-path --name vacuous-criterion-finding.txt --name vacuous-criterion-resolution.txt || exit 1
   ```
-  This mirrors the audit-skips stamp's `jq -n --arg` shape one level further than a heredoc can: capture the untrusted value through a channel with **no text-based boundary to collide with at all**, not merely one that's harder to hit.
+  Then **Write tool**: the first path gets `Declared criterion (too vague): "<the criterion, verbatim>"`; the second gets the specific rewrite you drafted. Never a heredoc (Step 2).
+  ```sh
+  MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
+  python3 "$TRIAGE" add-entry --kind vacuous-criterion --needs "declare + fence" \
+    --finding-file "<first path>" --resolution-file "<second path>" \
+    >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — this vacuous-criterion entry was NOT recorded." >&2; exit 1; }
+  ```
+  The invocation is spelled out here rather than pointing at Step 2's template, deliberately: a producer an author must assemble from a distant template is a producer that drifts (FB-0075), and the prescribed examples are what an agent actually copies.
+
+  **Why the criterion text never touches a command line — this is the site the rule was written for.** The criterion is plan-author-controlled, and `criterion-specificity.py`'s own escape hatch treats backticks and quotes as *specificity signals*, so a criterion containing `"`, `` ` `` or `$(...)` is the **common** case here, not an edge case (its canonical "specific" example is `` `GET /users/:id` returns 404… ``). v1.41.0 first tried a quoted heredoc and it was **measurably wrong**: the delimiter is a fixed, guessable string, so a criterion containing a bare `FLOWEOF` line terminates the heredoc early and hands everything after it to the shell as commands. Every text-based boundary can appear inside the text, which is why the interface takes a **path** and no heredoc appears anywhere in this file.
 - **FOLLOW-UP** → Step 3 routing.
 
-**How a producer writes an entry — never hand-compose the line.** The line shape lives in exactly one place (`lib/manifest-triage.py add-entry`), which validates `--kind` and `--needs` against the closed vocabularies at write time and appends to the run's manifest file. Hand-composing an em-dash format across 8 sites is how four of them drifted off-vocabulary before FB-0075:
+**How a producer writes an entry — never hand-compose the line, and never put the text on a command line.** The line shape lives in exactly one place (`lib/manifest-triage.py add-entry`), which validates `--kind` and `--needs` against the closed vocabularies at write time. Hand-composing an em-dash format across 8 sites is how four of them drifted off-vocabulary before FB-0075.
+
+**The finding and resolution arrive as a FILE PATH, never as a shell argument (FB-0108).** They carry untrusted text — a plan-authored criterion, a reviewer's finding, a status doc's stale line — and a quoting convention that every future author must remember is not a fix. Three Bash calls with a **Write tool** between the first and the third; shell variables do NOT survive between Bash tool calls, so the paths are re-stated as literals rather than carried in `$F`.
 
 ```sh
+# CALL 1 — resolve + sanitize the two scratch paths. Prints one absolute path per line.
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
-python3 "$TRIAGE" add-entry --kind <kind> --finding "<finding>" --needs "<verb>" \
-  --resolution "<the resolution you drafted>" >> "$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)")"
+python3 "$TRIAGE" scratch-path --name <kind>-finding.txt --name <kind>-resolution.txt || exit 1
 ```
+
+Then **use the Write tool** to write the raw finding to the first path and the resolution to the second — verbatim, no prefix, no added quoting, no shell. **Never a heredoc and never a quoted string:** every text-based boundary can appear inside the text, so a payload containing the delimiter escapes it (measured — see the note at the `[vacuous-criterion]` site).
+
+```sh
+# CALL 2 — paste the two paths CALL 1 printed, as literals.
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
+python3 "$TRIAGE" add-entry --kind <kind> --needs "<verb>" \
+  --finding-file "<first path from CALL 1>" --resolution-file "<second path from CALL 1>" \
+  >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — this entry was NOT recorded. Do not proceed to Step 7a.5." >&2; exit 1; }
+```
+
+**The `|| exit 1` is not decoration.** `add-entry` exits 2 on an unknown `--kind`/`--needs`, a missing or empty finding file (i.e. the Write never ran), or a symlinked one — and an unchecked failure appends nothing, so Step 7a.5 would classify an **empty** manifest, the verdict would be `READY`, and §7a.6 would open a **non-draft** PR over an unresolved blocker. That is a gate going quiet precisely when the risk is highest (FB-0062). A producer that cannot record its entry must stop, not continue.
+
+`--kind` and `--needs` stay as ordinary arguments: both come from closed vocabularies the engine validates at write time, so neither is attacker-controlled.
 
 The manifest is that file — append to it as each producer fires, rather than carrying 8 lines in your context from §1.0a to §7a.5. The `--kind`/`--needs` values each producer passes are named at its own site below.
 
@@ -463,11 +477,16 @@ jq . "$STAGES" >/dev/null 2>&1 || { echo "⚠️ BLOCKER: the handoff at $STAGES
      ```sh
      TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
      BRANCH=$(git branch --show-current)
+     python3 "$TRIAGE" scratch-path --name toolchain-finding.txt --name toolchain-resolution.txt || exit 1
+     # Then WRITE TOOL: the first path gets "verify-build could not run: this machine has
+     # none of the tools an <platform> build needs (<the binaries the engine named>), so
+     # nothing was built or exercised"; the second gets "re-run /flow:verify-build on a
+     # machine that has the toolchain". Never a heredoc (Step 2).
+     MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH") || exit 1
      python3 "$TRIAGE" add-entry --kind toolchain \
-       --finding "verify-build could not run: this machine has none of the tools an <platform> build needs (<the binaries the engine named>), so nothing was built or exercised" \
        --needs re-run --confidence decision-required \
-       --resolution "re-run /flow:verify-build on a machine that has the toolchain" \
-       >> "$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")"
+       --finding-file "<first path>" --resolution-file "<second path>" \
+       >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the toolchain entry was NOT recorded." >&2; exit 1; }
      ```
      **The `>>` redirect is the whole point** — `add-entry` validates and PRINTS the line, it does not write it. Without the redirect the entry goes to stdout, Step 7a.5 classifies an empty manifest, the verdict is `READY`, and §7a.6 opens a **non-draft** PR: a validated-unverifiable skip reaching a ready PR with no behavioral gate, which is exactly what this bullet exists to prevent. Same reason the `TRIAGE` fallback is not optional: `CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls, so a bare `${CLAUDE_PLUGIN_ROOT}/…` path fails outright in the flow repo itself.
      Then continue. The entry makes the triage verdict `≠ READY`, so §7a.6 opens a **draft** through machinery that already exists — no special-casing there. Do **not** re-invoke verify-build: re-running a stage on a host that cannot run it is the wasted cycle this whole path removes.
@@ -1107,17 +1126,28 @@ fi
 
 ```sh
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
-python3 "$TRIAGE" record-attempt --branch "$BRANCH" --kind visual-deliverable --finding "<the finding text, verbatim>"
+# The finding text must fingerprint-match the manifest entry below, so it arrives the
+# same way: a file, never a shell argument. Note the DISTINCT slug — this site and the
+# add-entry site below pass deliberately DIFFERENT text, and sharing one path would
+# collapse their fingerprints, which classify() reads to pick the entry's class.
+python3 "$TRIAGE" scratch-path --name visual-attempt-finding.txt || exit 1
+# Then WRITE TOOL: that path gets the finding text, verbatim.
+python3 "$TRIAGE" record-attempt --branch "$BRANCH" --kind visual-deliverable \
+  --finding-file "<the path printed above>" || { echo "⚠️ BLOCKER: record-attempt failed — the attempt was NOT recorded, so Step 7a.5 may re-attempt instead of asking." >&2; exit 1; }
 ```
 
 If the re-assert now passes, there is no manifest entry and nothing reaches the human. If it still fails, **add to the draft manifest via `add-entry`** (Step 2 — never hand-compose the line; `add-entry` validates `--kind`/`--needs` at write time):
 
 ```sh
+python3 "$TRIAGE" scratch-path --name visual-deliverable-finding.txt --name visual-deliverable-resolution.txt || exit 1
+# Then WRITE TOOL: first path gets "<plain language: this change is visible in the app and
+# <named artifact(s)> is missing>"; second gets "re-run /flow:verify-build to capture
+# frames, and/or hand-author the visual-history entry (Step 5c)".
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH") || exit 1
 python3 "$TRIAGE" add-entry --kind visual-deliverable \
-  --finding "<plain language: this change is visible in the app and <named artifact(s)> is missing>" \
   --needs re-run \
-  --resolution "re-run /flow:verify-build to capture frames, and/or hand-author the visual-history entry (Step 5c)" \
-  >> "$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")"
+  --finding-file "<first path>" --resolution-file "<second path>" \
+  >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the visual-deliverable entry was NOT recorded." >&2; exit 1; }
 ``` Because the attempt is recorded, Step 7a.5 classifies it `ask` rather than re-attempting — it becomes a question, not a silent second try. Because the walkthrough is **ephemeral/local (not committed)**, also record its local path in the PR-body handoff (the `## Flow run` table's visual row + the closing line) so the human can open it at the merge gate: `Walkthrough (local, uncommitted): <verifyReportPath>`.
 
 ### 7a.5. Manifest triage — a draft PR is a last resort, not a deliverable (FB-0075)
@@ -1468,7 +1498,19 @@ python3 "$TRIAGE" render-decisions --entries-file "$MANIFEST" --state-file "$STA
 
 Each `ask` entry becomes one numbered question carrying: what it means in plain language, the resolution **you drafted**, your recommendation first with its reasoning, what you already tried, and — on every entry except `verify-build` — "waive and ship as-is". Each `blocked` entry goes in a separate "needs you outside this session" list, never phrased as a question and never offered a waiver.
 
-**When the user answers, resolve it immediately via the Step 7c reconcile fast-path** — apply the answer, record any waiver (`manifest-triage.py waive`), recompute, re-render, and `gh pr ready` once the verdict is `READY`. Not a hand-edit, and not a second full ship run. A `verify-build` entry is the one exception: a waiver on it is recorded and the PR stays a draft — if the user accepts the risk, they mark it ready themselves.
+**When the user answers, resolve it immediately via the Step 7c reconcile fast-path** — apply the answer, record any waiver, recompute, re-render, and `gh pr ready` once the verdict is `READY`. A waiver is honored only on an exact `(kind, finding)` fingerprint match, so the finding text must arrive verbatim — which means it arrives as a **file**, exactly like every other producer (Step 2):
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+python3 "$TRIAGE" scratch-path --name waive-finding.txt || exit 1
+# Then WRITE TOOL: that path gets the entry's finding text, copied verbatim from the
+# manifest line being waived. Never a heredoc, never a quoted argument (Step 2).
+python3 "$TRIAGE" waive --branch "$(git branch --show-current)" --kind <kind> \
+  --finding-file "<the path printed above>"
+# exit 3 is NOT a failure: the waiver was recorded but matches no current entry —
+# check the finding text is verbatim, or that --branch is right.
+```
+ Not a hand-edit, and not a second full ship run. A `verify-build` entry is the one exception: a waiver on it is recorded and the PR stays a draft — if the user accepts the risk, they mark it ready themselves.
 
 If nobody answers (an unattended autonomous-loop run), nothing is wedged: the draft stands, and its manifest is now written so the next action is an approval rather than authoring.
 

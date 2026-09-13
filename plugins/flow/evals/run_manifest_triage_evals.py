@@ -72,9 +72,49 @@ def expect_true(label: str, cond: bool, ctx: str = "") -> None:
     expect(label, bool(cond), True, ctx)
 
 
+_TXT = 0
+
+
+def txt(content: str) -> str:
+    """Write a free-text field to a real file and return its path (FB-0108).
+
+    `add-entry`/`record-attempt`/`waive` take --finding-file/--resolution-file, not raw
+    argv. These calls go through subprocess with a LIST argv, so they never had shell
+    exposure -- but they are migrated anyway, deliberately: an eval that exercises a
+    path production no longer uses is a weaker eval, and the argv flags are gone.
+    """
+    global _TXT
+    _TXT += 1
+    d = Path(tempfile.mkdtemp())
+    f = d / f"field-{_TXT}.txt"
+    f.write_text(content, encoding="utf-8")
+    return str(f)
+
+
 def run(args: list[str]) -> tuple[int, str]:
     proc = subprocess.run([sys.executable, str(SCRIPT), *args], capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr
+
+
+def _engine():
+    """Import the engine under test, for assertions that must use ITS normaliser rather
+    than a hand-typed expectation (a parallel Python twin is how an earlier harness in
+    this repo passed while production was broken)."""
+    import importlib.util
+    sys.path.insert(0, str(SCRIPT.parent))
+    spec = importlib.util.spec_from_file_location("_mt_under_test", SCRIPT)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+_ENGINE = _engine()
+MANIFEST_CLOSE = _ENGINE.MANIFEST_CLOSE
+_collapse = _ENGINE._collapse_newlines
+
+
+def _fingerprint_of(kind: str, finding: str) -> str:
+    return _ENGINE._fingerprint(kind, finding)
 
 
 def line(kind: str, finding: str, needs: str, conf: str = "decision-required",
@@ -189,8 +229,9 @@ def test_failsafes(td: str) -> None:
 
 def test_add_entry(td: str) -> None:
     print("\n[writer] add-entry owns the line shape and validates at write time")
-    rc, out = run(["add-entry", "--kind", "coverage", "--finding", "5 undeclared behaviors",
-                   "--needs", "declare + fence", "--resolution", "declare each in the Spec-walk block"])
+    rc, out = run(["add-entry", "--kind", "coverage", "--finding-file", txt("5 undeclared behaviors"),
+                   "--needs", "declare + fence",
+                   "--resolution-file", txt("declare each in the Spec-walk block")])
     expect("add-entry exits 0 on a valid entry", rc, 0, out)
     with tempfile.TemporaryDirectory() as td2:
         f = Path(td2) / "l.md"
@@ -200,12 +241,12 @@ def test_add_entry(td: str) -> None:
     expect("its output round-trips through parse", (e["kind"], e["needs"]), ("coverage", "declare + fence"))
     expect_true("and carries the drafted resolution", "Spec-walk" in e["drafted_resolution"], parsed)
 
-    rc, out = run(["add-entry", "--kind", "bogus", "--finding", "x", "--needs", "re-run"])
+    rc, out = run(["add-entry", "--kind", "bogus", "--finding-file", txt("x"), "--needs", "re-run"])
     expect("an unknown kind is rejected at WRITE time, not fail-safed at classify", rc, 2, out)
-    rc, out = run(["add-entry", "--kind", "coverage", "--finding", "x", "--needs", "frobnicate"])
+    rc, out = run(["add-entry", "--kind", "coverage", "--finding-file", txt("x"), "--needs", "frobnicate"])
     expect("an off-vocabulary needs verb is rejected at write time", rc, 2, out)
 
-    rc, out = run(["add-entry", "--kind", "visual-deliverable", "--finding", "missing walkthrough",
+    rc, out = run(["add-entry", "--kind", "visual-deliverable", "--finding-file", txt("missing walkthrough"),
                    "--needs", "re-run", "--attempted"])
     expect_true("--attempted stamps the marker so the demotion survives a re-render",
                 "already-attempted" in out, out)
@@ -325,7 +366,7 @@ def test_attempt_demotion(td: str) -> None:
     expect("before the attempt ⇒ auto", by_kind(classify(b, st, branch="demote"), "visual-deliverable")["class"], "auto")
 
     rc, out = run(["record-attempt", "--branch", "demote", "--path", str(st),
-                   "--kind", "visual-deliverable", "--finding", "missing walkthrough"])
+                   "--kind", "visual-deliverable", "--finding-file", txt("missing walkthrough")])
     expect("record-attempt exits 0", rc, 0, out)
 
     r = classify(b, st, branch="demote")
@@ -359,7 +400,7 @@ def test_residual_definition(td: str) -> None:
 
     # Waive the waivable one — it leaves the residual set.
     run(["waive", "--branch", "resid", "--path", str(st),
-         "--kind", "coverage", "--finding", "5 undeclared behaviors"])
+         "--kind", "coverage", "--finding-file", txt("5 undeclared behaviors")])
     r = classify(b, st, branch="resid")
     expect("a waived, waivable entry leaves the residual set", len(r["residual"]), 3)
     expect("and is reported as waived (never silently dropped)", len(r["waived"]), 1)
@@ -376,7 +417,7 @@ def test_verify_build_invariant(td: str) -> None:
     expect("a verify-build entry is not waivable", e["waivable"], False)
 
     run(["waive", "--branch", "vb", "--path", str(st),
-         "--kind", "verify-build", "--finding", "criterion 3 FAIL"])
+         "--kind", "verify-build", "--finding-file", txt("criterion 3 FAIL")])
     r = classify(b, st, branch="vb")
     e = by_kind(r, "verify-build")
     expect("waiving it is RECORDED", e["waived"], True)
@@ -400,7 +441,7 @@ def test_waiver_fingerprint(td: str) -> None:
     st = fresh_state(td, "fp")
     b = body(line("coverage", "5 undeclared behaviors", "declare + fence"))
     run(["waive", "--branch", "fp", "--path", str(st),
-         "--kind", "coverage", "--finding", "5 undeclared behaviors"])
+         "--kind", "coverage", "--finding-file", txt("5 undeclared behaviors")])
     r = classify(b, st, branch="fp")
     expect("exact match ⇒ subtracted", len(r["residual"]), 0)
     expect("and the verdict is READY once nothing uncleared remains", r["verdict"], "READY")
@@ -464,7 +505,7 @@ def test_toolchain_kind(td: str) -> None:
 
     # CHECK_ONLY: a human's say-so cannot clear it — only a passing check can.
     rc, _ = run(["waive", "--branch", "toolchainbranch", "--kind", "toolchain",
-                 "--finding", "verify-build could not run: no Apple toolchain here",
+                 "--finding-file", txt("verify-build could not run: no Apple toolchain here"),
                  "--path", str(st)])
     r = classify(b, st, branch="toolchainbranch")
     e = by_kind(r, "toolchain")
@@ -476,9 +517,9 @@ def test_toolchain_kind(td: str) -> None:
     # add-entry accepts it at WRITE time (the kind is in the allow-list), and the
     # line it writes round-trips through the strict parser.
     rc, out = run(["add-entry", "--kind", "toolchain",
-                   "--finding", "verify-build could not run: no Apple toolchain here",
+                   "--finding-file", txt("verify-build could not run: no Apple toolchain here"),
                    "--needs", "re-run", "--confidence", "decision-required",
-                   "--resolution", "re-run on a machine that has the toolchain"])
+                   "--resolution-file", txt("re-run on a machine that has the toolchain")])
     expect("add-entry --kind toolchain is accepted at write time", rc, 0, out)
     with tempfile.TemporaryDirectory() as td2:
         f = Path(td2) / "l.md"
@@ -509,6 +550,181 @@ def test_toolchain_kind(td: str) -> None:
         expect(f"pr-coherence on the toolchain block, --is-draft {is_draft} ⇒ exit {want}",
                proc.returncode, want, proc.stdout + proc.stderr)
 
+
+# Every shape that can append to the run's manifest. Kept as ONE list so the allowlist
+# has a single definition of "an append" — two copies would be the fan-out contradiction
+# this whole PR is about.
+_APPEND_RE = re.compile(r'^[^\n#]*>>\s*"?\$(?:MANIFEST|\(python3 "\$TRIAGE" manifest-path[^\n]*)', re.M)
+
+# The producer sites that legitimately append, counted so a silent DROP fails too — a
+# bare `>= 1` would pass if three of the four vanished. FOUR, not six: `record-attempt`
+# and `waive` write the STATE file, not the manifest, so they are producers of free text
+# (and carry --finding-file) without being appends.
+EXPECTED_MANIFEST_APPENDS = 4
+
+
+def _manifest_appends(src: str) -> list[str]:
+    return [ln.strip() for ln in _APPEND_RE.findall(src)] or [
+        ln.strip() for ln in src.splitlines()
+        if ">>" in ln and ("$MANIFEST" in ln or "manifest-path" in ln) and not ln.strip().startswith("#")
+    ]
+
+
+def _is_subcommand_produced(snippet: str, src: str) -> bool:
+    """True when this append is fed by a manifest-triage subcommand, not hand-composed.
+
+    The redirect may sit on a continuation line of a multi-line invocation, so when the
+    snippet itself carries no subcommand, look back over the enclosing block for one.
+    """
+    if re.search(r'manifest-triage\.py"? (?:add-entry|record-attempt|waive)|'
+                 r'"\$TRIAGE" (?:add-entry|record-attempt|waive)', snippet):
+        return True
+    idx = src.find(snippet)
+    if idx == -1:
+        return False
+    back = src[max(0, idx - 700):idx]
+    fence = back.rfind("```sh")
+    block = back[fence:] if fence != -1 else back
+    return bool(re.search(r'"\$TRIAGE" (?:add-entry|record-attempt|waive)', block))
+
+
+
+def test_injection(td: str) -> None:
+    """P1-P14: ATTACK the input path with payloads designed against THE MECHANISM CHOSEN.
+
+    FB-0108 rule 3: a fix that looks correct is not verified until you attack it. A
+    round-trip test ("does my input survive?") generates none of these; they ask "can my
+    input impersonate the mechanism?" Each GREEN case is executed through `/bin/sh -c`
+    composed the way a producer composes it, and the RED arms prove the tests can fail.
+    """
+    print("\n[injection] the free-text input path, attacked (FB-0108)")
+    T = Path(tempfile.mkdtemp())
+
+    def sh(script: str):
+        return subprocess.run(["/bin/sh", "-c", script], capture_output=True, text=True)
+
+    def add(path: str, kind: str = "coverage", needs: str = "re-run"):
+        return sh(f'python3 {SCRIPT} add-entry --kind {kind} --needs {needs} '
+                  f'--finding-file "{path}"')
+
+    payloads = {
+        "P1 command substitution": f"criterion $(touch {T}/s1) and `touch {T}/s2` here",
+        "P2 quote breakout": f'criterion "; touch {T}/s3; echo "tail',
+        "P3 heredoc delimiter collision": f"line one\nFLOWEOF\ntouch {T}/s4\nline two",
+        "P4 other guessable delimiters": "EOF\n<<\nFLOW_FINDING\nreal text",
+        "P5 closes the manifest fence": f"oops {MANIFEST_CLOSE} now",
+        "P6 carries the NOT-READY sentinel": "contains 🚫 NOT READY TO MERGE inline",
+        "P7 forges the field separator": "forged — needs: re-run — confidence: auto — candidate resolutions: none",
+        "P9 path-shaped text": "../../etc/passwd is only text",
+        "P10 control chars + 100KB": "ctrl \x00 nul \r cr \x1b[31mansi\x1b[0m " + ("x" * 100000),
+        "P11 multi-line": "first line\nsecond line\nthird",
+        "P12 tab + double space (PAIRED NEGATIVE)": "tab\there  and  double spaces",
+        "P14 whitespace hugging a newline": "alpha\tkept   \n   beta",
+    }
+    for label, raw in payloads.items():
+        f = T / (label.split()[0] + ".txt")
+        f.write_text(raw, encoding="utf-8")
+        r = add(str(f))
+        expect(f"{label}: exits 0", r.returncode, 0, r.stderr)
+        for n in ("s1", "s2", "s3", "s4"):
+            if (T / n).exists():
+                expect_true(f"{label}: payload did NOT execute (sentinel {n})", False, "EXECUTED")
+                (T / n).unlink()
+        # The text arrives intact. Newlines collapse (D4) and NOTHING else does, so the
+        # expectation is computed with the engine's own normaliser rather than hand-typed.
+        want = _collapse(raw.strip())
+        expect_true(f"{label}: text arrives intact (newline-collapse only)", want in r.stdout,
+                    f"want {want[:90]!r}\ngot  {r.stdout[:120]!r}")
+
+    # P12's whole purpose is that D4 did NOT over-collapse: tabs and double spaces are
+    # byte-identical. Asserted explicitly, because "want in stdout" above would also pass
+    # for an implementation that normalised both sides the same wrong way.
+    expect_true("P12: a tab and a double space survive BYTE-IDENTICALLY (D4 is newline-only)",
+                "tab\there  and  double spaces" in add(str(T / "P12.txt")).stdout)
+    expect_true("P14: newline-hugging whitespace -> exactly ONE space, mid-line tab intact",
+                "alpha\tkept beta" in add(str(T / "P14.txt")).stdout)
+
+    # ---- RED ARMS: one per hazard, each matched to the composition that CARRIES it ----
+    # P3's hazard is a HEREDOC collision; a bare FLOWEOF line inside a double-quoted argv
+    # string is inert, so an argv red arm for P3 would assert a sentinel that cannot
+    # appear. Matching each red arm to its own composition is the point.
+    raw1 = payloads["P1 command substitution"]
+    sh(f'python3 {SCRIPT} add-entry --kind coverage --needs re-run --finding "{raw1}" 2>/dev/null')
+    expect_true("RED (argv): P1's $(...) and backticks DID execute — the test can fail",
+                (T / "s1").exists() and (T / "s2").exists())
+    for n in ("s1", "s2"):
+        (T / n).unlink(missing_ok=True)
+    raw2 = payloads["P2 quote breakout"]
+    sh(f'python3 {SCRIPT} add-entry --kind coverage --needs re-run --finding "{raw2}" 2>/dev/null')
+    expect_true("RED (argv): P2's quote breakout DID execute", (T / "s3").exists())
+    (T / "s3").unlink(missing_ok=True)
+    sh("cat <<'FLOWEOF'\n" + payloads["P3 heredoc delimiter collision"].replace("\\n", "\n") + "\nFLOWEOF\n")
+    expect_true("RED (heredoc): P3's delimiter collision DID execute — v1.41.0's own first-attempt bug",
+                (T / "s4").exists())
+    (T / "s4").unlink(missing_ok=True)
+
+    # ---- P8: assert on what a real LEAK would emit, never on a proxy (FB-0004) ----
+    secret = T / "secret"
+    secret.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAsecret\n", encoding="utf-8")
+    link = T / "P8link"
+    link.symlink_to(secret)
+    r = add(str(link))
+    expect("P8 symlink: exits 2", r.returncode, 2, r.stderr)
+    expect_true("P8 symlink: the KEY SENTINEL appears in neither stdout nor stderr "
+                "(an exit-code assertion is a proxy — a read-then-check impl would pass it)",
+                "BEGIN OPENSSH PRIVATE KEY" not in (r.stdout + r.stderr), r.stdout + r.stderr)
+    expect("P8 symlink: no manifest line emitted at all", r.stdout.strip(), "")
+
+    # ---- the engine-side guard: the Write tool never ran (FB-0062) ----
+    empty = T / "empty.txt"
+    empty.write_text("", encoding="utf-8")
+    r = add(str(empty))
+    expect("an EMPTY finding file exits 2 (the Write never ran)", r.returncode, 2, r.stderr)
+    expect("...and emits no manifest line", r.stdout.strip(), "")
+    r = add(str(T / "does-not-exist.txt"))
+    expect("a MISSING finding file exits 2", r.returncode, 2, r.stderr)
+    r = add(str(T))
+    expect("a DIRECTORY as --finding-file exits 2", r.returncode, 2, r.stderr)
+
+    # ---- the removed argv flags: closed door, not an equal-status path ----
+    for cmd, extra in (("add-entry --kind coverage --needs re-run", "--finding x"),
+                       ("add-entry --kind coverage --needs re-run", "--resolution x"),
+                       ("record-attempt --branch b --kind coverage", "--finding x"),
+                       ("waive --branch b --kind coverage", "--finding x")):
+        r = sh(f"python3 {SCRIPT} {cmd} {extra}")
+        flag = extra.split()[0]
+        expect(f"`{flag}` is REMOVED: {cmd.split()[0]} exits 2", r.returncode, 2, r.stdout + r.stderr)
+        expect_true(f"...and the message names the replacement `{flag}-file`",
+                    f"{flag}-file" in (r.stdout + r.stderr), r.stdout + r.stderr)
+
+    # ---- P13: WRITE-side CWE-59. scratch-path unlinks rather than writing through ----
+    victim = T / "victim"
+    victim.write_text("DO NOT CLOBBER", encoding="utf-8")
+    root = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                          capture_output=True, text=True).stdout.strip()
+    planted = Path(root) / ".flow" / "evaltest-p13.txt"
+    planted.parent.mkdir(parents=True, exist_ok=True)
+    if planted.exists() or planted.is_symlink():
+        planted.unlink()
+    planted.symlink_to(victim)
+    r = sh(f"python3 {SCRIPT} scratch-path --name evaltest-p13.txt")
+    expect("P13 scratch-path: exits 0", r.returncode, 0, r.stderr)
+    expect_true("P13: the planted SYMLINK is gone — unlinked, not written through",
+                not planted.is_symlink())
+    expect("P13: the victim file is BYTE-UNCHANGED", victim.read_text(), "DO NOT CLOBBER")
+    expect("P13: the printed path is the engine-computed scratch path",
+           r.stdout.strip(), str(planted))
+    planted.unlink(missing_ok=True)
+    r = sh(f"python3 {SCRIPT} scratch-path --name ../escape.txt")
+    expect("scratch-path refuses a path-shaped --name", r.returncode, 2, r.stdout + r.stderr)
+
+    # ---- waiver continuity: a waiver given BEFORE this change must still subtract ----
+    # Pinned against a literal hex captured from the PRE-change tree. The argv form exits
+    # 2 now, so it cannot be the live comparison target.
+    expect("the canonical visual-deliverable fingerprint is UNCHANGED by this refactor",
+           _fingerprint_of("visual-deliverable", "missing walkthrough"), "49070d421e4345de")
+    expect("fingerprints are newline- and case-insensitive, so D4's collapse cannot move one",
+           _fingerprint_of("coverage", "a b"), _fingerprint_of("coverage", "A\nB"))
 
 def test_producer_lines() -> None:
     print("\n[contract] all 10 producer sites round-trip through parse")
@@ -561,24 +777,107 @@ def test_producer_lines() -> None:
     # PAIRED with the equality above, and not redundant with it. `kinds_seen` is the
     # UNION of the `add-entry --kind` harvest and the inline-code template harvest,
     # so a Step 2a.3 bullet written in the template form every neighbouring bullet
-    # uses would balance the 10 on its own — the equality cannot tell the validated
+    # uses would balance the 9 on its own — the equality cannot tell the validated
     # write path from the hand-composed line it exists to forbid. This can.
-    # `add-entry` PRINTS the line; it does not write it. A producer bullet without the
-    # `>> "$(… manifest-path …)"` redirect therefore emits to stdout, Step 7a.5 classifies
-    # an EMPTY manifest, and the PR opens READY — the precise failure every one of these
-    # producers exists to prevent. A staff-review lens caught exactly that in the toolchain
-    # bullet; `test_producer_lines`' kind harvest could not, because a redirect-less
-    # invocation matches `add-entry --kind ([a-z0-9-]+)` identically. This closes the class,
-    # not just the instance.
+    #
+    # ============================ THE ALLOWLIST (FB-0100) ============================
+    # BOTH HALVES, ONE CHECK. The universal ("every append is subcommand-produced") is
+    # vacuously TRUE at zero append sites, so on its own DELETING THE PRODUCERS turns it
+    # green — the FB-0077 shape verbatim (`skill-does-not-CALL-land` went green over a
+    # deleted feature for four releases because nobody paired it). The positive half is
+    # what makes it a check. Both are mutation-tested below.
+    #
+    # An ALLOWLIST and not a denylist of bad spellings: assertions keyed on `--finding "`,
+    # `--resolution "` or `<<` all pass for a hand-composed
+    # `echo "[security] … — needs: …" >> "$MANIFEST"`, which is the actual residual hazard.
+    # Keying on "what produces the append" fails closed on anything added later.
+    #
+    # SCOPE, stated because it is easy to over-read: this is a STATIC TEXT check over
+    # ship/SKILL.md only. It cannot see an append composed in another file, one emitted by
+    # a script SKILL.md invokes, or one built from a runtime variable. The class is closed
+    # for ship/SKILL.md and nowhere else (roadmap § Next carries the widening).
+    appends = _manifest_appends(src)
+    expect("POSITIVE: ship/SKILL.md appends to the manifest at exactly the expected sites",
+           len(appends), EXPECTED_MANIFEST_APPENDS,
+           "a silent drop in producer count is as much a regression as a bad one: "
+           f"found {len(appends)} -> {appends}")
+    expect_true("POSITIVE: at least one manifest append exists (the universal below is "
+                "vacuous without this — deleting every producer would satisfy it)",
+                len(appends) >= 1, str(appends))
+    for snippet in appends:
+        expect_true(f"UNIVERSAL: the append `{snippet[:46]}…` is produced by a manifest-triage "
+                    "subcommand", _is_subcommand_produced(snippet, src),
+                    "every line appending to the manifest path must be fed by "
+                    "`manifest-triage.py <subcommand>` — a hand-composed `echo \"[kind] …\" >>` "
+                    "bypasses --kind/--needs validation AND re-opens the shell-injection path")
+
+    # `add-entry` PRINTS the line; it does not write it. A producer whose append is not
+    # wired to the resolved manifest path emits to stdout, Step 7a.5 classifies an EMPTY
+    # manifest, and the PR opens READY — the precise failure every producer exists to
+    # prevent. Checked over a WINDOW AROUND the call, not only after it: the migrated
+    # form assigns `MANIFEST=$(… manifest-path …)` on the line BEFORE the call (FB-0108),
+    # so a forward-only scan reports a false failure.
     for m in re.finditer(r"add-entry --kind ([a-z0-9-]+)", src):
+        lo = max(0, m.start() - 600)
         tail = src[m.start():m.start() + 900]
         stop = tail.find("```")
-        window = tail[:stop] if stop != -1 else tail
+        window = src[lo:m.start()] + (tail[:stop] if stop != -1 else tail)
         expect_true(f"the `{m.group(1)}` add-entry site redirects into the manifest file",
                     "manifest-path" in window,
-                    "an add-entry with no `>> \"$(… manifest-path --branch …)\"` prints the "
+                    "an add-entry with no `>> \"$(… manifest-path --branch …)\"` (or a "
+                    "`MANIFEST=$(… manifest-path …)` assignment it redirects to) prints the "
                     "entry to stdout and leaves the manifest empty ⇒ verdict READY ⇒ a "
                     "non-draft PR over an unresolved blocker")
+
+    # FB-0062: a producer that cannot record its entry must STOP. add-entry exits 2 on an
+    # unknown kind/verb, a missing/empty finding file (the Write never ran) or a symlinked
+    # one; unchecked, the append silently does nothing and Step 7a.5 classifies an empty
+    # manifest. The gate would go quietest on exactly the malformed input this exists for.
+    for m in re.finditer(r"(add-entry|record-attempt|waive) --", src):
+        tail = src[m.start():m.start() + 700]
+        stop = tail.find("```")
+        window = tail[:stop] if stop != -1 else tail
+        expect_true(f"the `{m.group(1)}` call checks its exit status (FB-0062 failure-open)",
+                    "|| exit 1" in window or "|| {" in window or "exit 3 is NOT a failure" in window,
+                    "an unchecked producer failure appends nothing and the PR opens READY")
+
+    # FB-0108: no free text on a command line, and no heredoc anywhere in this file. The
+    # heredoc ban is not stylistic — a payload containing the delimiter escapes it, which
+    # is how v1.41.0's first attempt broke. Negative, PAIRED with the positive that every
+    # producer names a --finding-file.
+    expect("NEGATIVE: no producer passes free text as a raw shell argument",
+           re.findall(r'--(?:finding|resolution) "', src), [])
+    # Scoped to PRODUCER blocks, deliberately — a file-wide heredoc ban would be
+    # overreach and would fail on a legitimate use. `ship/SKILL.md` has exactly one other
+    # heredoc (`cat > "$STAGES" <<'EOF'`, the audit-skips stage stamp), and it carries
+    # flow-COMPOSED JSON rather than untrusted free text — its one interpolated value is
+    # already spliced with `jq -n --arg` precisely because a branch name may contain a
+    # quote. The hazard this bans is a heredoc carrying UNTRUSTED text, where a payload
+    # containing the delimiter escapes it (v1.41.0's first attempt).
+    for m in re.finditer(r'"\$TRIAGE" (?:add-entry|record-attempt|waive)', src):
+        lo = max(0, m.start() - 900)
+        back = src[lo:m.start()]
+        fence = back.rfind("```sh")
+        block = (back[fence:] if fence != -1 else back) + src[m.start():m.start() + 500]
+        expect("NEGATIVE: no heredoc inside a producer block (delimiter collision, FB-0108)",
+               re.findall(r"<<-?'?\w", block), [],
+               "a heredoc carrying untrusted text is escaped by a payload containing its "
+               "own delimiter — the measured failure of v1.41.0's first attempt")
+    for m in re.finditer(r"(add-entry|record-attempt|waive) --", src):
+        tail = src[m.start():m.start() + 700]
+        stop = tail.find("```")
+        window = tail[:stop] if stop != -1 else tail
+        expect_true(f"POSITIVE: the `{m.group(1)}` call names a --finding-file",
+                    "--finding-file" in window, window[:200])
+
+    # Distinct scratch slugs. `record-attempt` and `add-entry` at the visual-deliverable
+    # site pass deliberately DIFFERENT text whose fingerprints must not collapse —
+    # classify() reads `fp in attempted_fps` to pick the entry's class, so one shared
+    # path would silently change a verdict.
+    slugs = re.findall(r"--name ([a-z0-9-]+\.txt)", src)
+    expect_true("POSITIVE: producer sites request scratch paths by slug", len(slugs) >= 1, str(slugs))
+    expect("no two producer sites share a scratch slug (fingerprint collapse)",
+           sorted(set(slugs)), sorted(slugs), str(slugs))
 
     expect_true("the toolchain producer prescribes the VALIDATED write path, not a template line",
                 "add-entry --kind toolchain" in src,
@@ -808,6 +1107,7 @@ def main() -> int:
         test_table(td)
         test_failsafes(td)
         test_add_entry(td)
+        test_injection(td)
         test_manifest_lifecycle(td)
         test_prescribed_sequence(td)
         test_auto_renders_as_question(td)
