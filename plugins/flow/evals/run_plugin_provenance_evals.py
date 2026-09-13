@@ -78,6 +78,26 @@ def make_home(td: Path, installed: dict | str | None, marketplace: str | None) -
     return home
 
 
+def load_fixture(name: str) -> dict:
+    """Fixtures are COMMITTED FILES, not inline dicts.
+
+    The set of worlds an assertion covers is itself the contract -- "the four
+    unreadable-registry states stay distinct" is a claim about which four -- so it
+    belongs somewhere a human can read it without reverse-engineering this
+    harness. Each fixture also carries its own `_comment` explaining why that
+    world matters, and several carry an `expect` block asserted verbatim below.
+    """
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def home_from_fixture(td: Path, name: str) -> tuple[Path, dict]:
+    fx = load_fixture(name)
+    reg = fx.get("registry_raw") if "registry_raw" in fx else fx.get("registry")
+    mkt = fx.get("marketplace")
+    home = make_home(td, reg, json.dumps(mkt) if mkt is not None else None)
+    return home, fx
+
+
 def registry(version: str, install_path: str = "/nonexistent") -> dict:
     return {"version": 2, "plugins": {"flow@flow": [
         {"scope": "user", "installPath": install_path, "version": version,
@@ -154,34 +174,29 @@ def test_installed_states():
     """The four unreadable-registry states stay DISTINCT (FB-0082).
 
     Collapsing them into one "unknown" is how a configuration failure reads as
-    "this project simply has none of that" — the silent-skip class. An empty
-    resolution is a failure, not an empty set.
+    "this project simply has none of that" -- the silent-skip class. An empty
+    resolution is a failure, not an empty set. Driven by the four committed
+    `installed-*.json` fixtures so the covered set is readable.
     """
     seen = {}
-    cases = {
-        "missing": None,
-        "malformed": "{not json at all",
-        "nokey": {"version": 2, "plugins": {"other@x": [{"version": "1.0.0"}]}},
-        "empty": {"version": 2, "plugins": {"flow@flow": []}},
-    }
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
         root = make_root(td, "1.43.0")
-        for name, reg in cases.items():
-            home = make_home(td / name, reg, marketplace_json("1.43.0"))
+        for name in ("installed-missing.json", "installed-malformed.json",
+                     "installed-nokey.json", "installed-empty.json"):
+            home, _ = home_from_fixture(td / name.replace(".", "_"), name)
             d = jrun(home, root)
             seen[name] = (d.get("installed") or {}).get("state")
     check(len(set(seen.values())) == 4,
           f"the 4 unreadable-registry states must be DISTINCT, got {seen}")
     check(all(v for v in seen.values()), f"every state must be named, got {seen}")
-    # POSITIVE pair: the healthy state must also be reachable and distinct from
-    # all four. A test that only proves failures differ passes in a world where
-    # the engine can no longer report success (FB-0010 clause 3).
+    # POSITIVE pair: the healthy state must be reachable and distinct from all
+    # four. A test that only proves failures differ passes in a world where the
+    # engine can no longer report success at all (FB-0010 clause 3).
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
-        d = jrun(make_home(td, registry("1.43.0"), marketplace_json("1.43.0")),
-                 make_root(td, "1.43.0"))
-        ok = (d.get("installed") or {}).get("state")
+        home, _ = home_from_fixture(td, "fully-in-sync.json")
+        ok = (jrun(home, make_root(td, "1.43.0")).get("installed") or {}).get("state")
     check(ok == "ok", f"a healthy registry must report state 'ok', got {ok!r}")
     check(ok not in seen.values(), "'ok' must differ from every failure state")
 
@@ -230,44 +245,27 @@ def test_executor_arms():
 def test_split_predicates():
     """report_drift and update_available must be computed INDEPENDENTLY.
 
-    Pinned by the case that actually occurred (critique finding 1): the branch is
-    12 releases ahead while the marketplace clone is pinned at the installed
-    version. Collapsing these into one boolean makes an updater fire forever on
-    any feature branch, because a branch declares an unreleased version by
-    construction.
+    Driven by four committed fixtures, each asserted against its OWN `expect`
+    block -- so the expected values live next to the world that produces them and
+    a reader can see the disagreement case without running anything.
+
+    The load-bearing one is `branch-ahead-marketplace-insync`: the case that
+    actually occurred. Collapsing these predicates into one boolean makes an
+    updater fire forever on any feature branch, because a branch declares an
+    unreleased version by construction.
     """
-    with tempfile.TemporaryDirectory() as t:
-        td = Path(t)
-        # branch ahead, marketplace in sync with install -> report yes, update no
-        d = jrun(make_home(td / "a", registry("1.29.0"), marketplace_json("1.29.0")),
-                 make_root(td / "a", "1.41.0"))
-        check(d.get("report_drift") is True,
-              f"branch 1.41.0 vs installed 1.29.0 must be report_drift=True, got {d.get('report_drift')}")
-        check(d.get("update_available") is False,
-              f"marketplace pinned at the installed version must be update_available=False, "
-              f"got {d.get('update_available')}")
-        check(d.get("release_gap") == 12, f"release gap must be 12, got {d.get('release_gap')}")
-
-        # marketplace ahead -> update yes
-        d2 = jrun(make_home(td / "b", registry("1.29.0"), marketplace_json("1.41.0")),
-                  make_root(td / "b", "1.41.0"))
-        check(d2.get("update_available") is True,
-              "marketplace ahead of the install must be update_available=True")
-
-        # fully in sync -> both false (the POSITIVE pair)
-        d3 = jrun(make_home(td / "c", registry("1.43.0"), marketplace_json("1.43.0")),
-                  make_root(td / "c", "1.43.0"))
-        check(d3.get("report_drift") is False and d3.get("update_available") is False,
-              f"a fully in-sync world must be False/False, got "
-              f"{d3.get('report_drift')}/{d3.get('update_available')}")
-
-        # undeterminable must be None, NOT False -- "could not tell" and "they
-        # match" have to stay distinguishable or an unreadable registry reads as
-        # a clean run, which is FB-0107's own confidence-inverting shape.
-        d4 = jrun(make_home(td / "d", None, None), make_root(td / "d", "1.43.0"))
-        check(d4.get("report_drift") is None and d4.get("update_available") is None,
-              f"unreadable sources must yield None (not False), got "
-              f"{d4.get('report_drift')}/{d4.get('update_available')}")
+    for name in ("branch-ahead-marketplace-insync.json", "fully-in-sync.json",
+                 "marketplace-ahead.json", "clone-absent.json"):
+        with tempfile.TemporaryDirectory() as t:
+            td = Path(t)
+            home, fx = home_from_fixture(td, name)
+            d = jrun(home, make_root(td, fx.get("branch_version", "1.43.0")))
+        for field, want in (fx.get("expect") or {}).items():
+            got = d.get(field)
+            check(got is want if want is None or isinstance(want, bool) else got == want,
+                  f"{name}: {field} must be {want!r}, got {got!r}")
+    check(bool((load_fixture("branch-ahead-marketplace-insync.json").get("expect") or {})),
+          "the disagreement fixture must declare an expect block, or it asserts nothing")
 
 
 def test_row_labels():
@@ -470,81 +468,134 @@ def test_hook_loud_failure():
     check(txt.rstrip().endswith("exit 0"), "the hook must end with `exit 0`")
 
 
-def test_hook_behaviour():
-    """Drive the hook with a PATH-shim `claude` that logs its invocations."""
-    if not HOOK.exists():
-        check(False, "hook script missing")
-        return
+def _hook_driver(td: Path):
+    """Shared PATH-shim `claude` that LOGS its invocations, so 'attempted no
+    update' is asserted against a real call log rather than inferred from output.
+    """
+    shim = td / "bin"
+    shim.mkdir(exist_ok=True)
+    log = td / "calls.log"
+    (shim / "claude").write_text(
+        "#!/bin/bash\necho \"claude $*\" >> %s\n"
+        "case \"$*\" in\n"
+        "  'plugin update'*) [ \"$FAIL_UPDATE\" = 1 ] && exit 1 ; exit 0 ;;\n"
+        "  *) exit 0 ;;\nesac\n" % log)
+    (shim / "claude").chmod(0o755)
+
+    def drive(home: Path, *, cwd: Path, fail: bool = False, dry: bool = False,
+              strip_path: bool = False, hide_engine: bool = False):
+        log.write_text("")
+        if strip_path:
+            # Drop only the directories that PROVIDE `claude`, keeping bash and
+            # python3 reachable. A blanket PATH wipe would test "the harness
+            # cannot start" rather than "the hook handles an absent claude" --
+            # a green-looking test of the wrong thing.
+            path = os.pathsep.join(
+                d for d in os.environ["PATH"].split(os.pathsep)
+                if d and not os.path.exists(os.path.join(d, "claude")))
+        else:
+            path = f"{shim}{os.pathsep}{os.environ['PATH']}"
+        env = dict(os.environ, PATH=path, HOME=str(home))
+        if fail:
+            env["FAIL_UPDATE"] = "1"
+        if dry:
+            env["FLOW_CURRENCY_DRY_RUN"] = "1"
+        run_cwd = cwd
+        if hide_engine:
+            # A checkout that IS flow but has no engine: the hook must say it
+            # cannot tell, not assume "current".
+            run_cwd = td / "noengine"
+            (run_cwd / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+            (run_cwd / ".claude-plugin" / "marketplace.json").write_text(marketplace_json("1.0.0"))
+        p = subprocess.run(["bash", str(HOOK)], capture_output=True, text=True,
+                           env=env, cwd=str(run_cwd))
+        calls = [l for l in log.read_text().splitlines() if l.strip()]
+        return p.returncode, p.stdout, p.stderr, calls
+
+    return drive
+
+
+def test_hook_fast_path():
+    """Outside the flow checkout, and when already current, the hook does nothing.
+
+    "Attempted no update" is asserted against the shim's CALL LOG, not inferred
+    from quiet output -- silence and inaction are different claims.
+    """
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
-        shim = td / "bin"
-        shim.mkdir()
-        log = td / "calls.log"
-        (shim / "claude").write_text(
-            "#!/bin/bash\necho \"claude $*\" >> %s\n"
-            "case \"$*\" in\n"
-            "  'plugin update'*) [ \"$FAIL_UPDATE\" = 1 ] && exit 1 ; exit 0 ;;\n"
-            "  *) exit 0 ;;\nesac\n" % log)
-        (shim / "claude").chmod(0o755)
-
-        def drive(home: Path, *, cwd: Path, fail: bool = False,
-                  dry: bool = False) -> tuple[int, str, str, list[str]]:
-            log.write_text("")
-            env = dict(os.environ, PATH=f"{shim}:{os.environ['PATH']}", HOME=str(home))
-            if fail:
-                env["FAIL_UPDATE"] = "1"
-            if dry:
-                env["FLOW_CURRENCY_DRY_RUN"] = "1"
-            p = subprocess.run(["bash", str(HOOK)], capture_output=True, text=True,
-                               env=env, cwd=str(cwd))
-            calls = [l for l in log.read_text().splitlines() if l.strip()]
-            return p.returncode, p.stdout, p.stderr, calls
-
-        # -- the gate: not the flow checkout -> silent, no calls
+        drive = _hook_driver(td)
         other = td / "other"
         other.mkdir()
-        rc, so, se, calls = drive(make_home(td / "h0", registry("1.0.0"),
-                                            marketplace_json("1.0.0")), cwd=other)
+        home, _ = home_from_fixture(td / "s1", "fully-in-sync.json")
+
+        rc, so, se, calls = drive(home, cwd=other)
         check(rc == 0 and so == "" and se == "" and calls == [],
               f"outside the flow checkout the hook must do nothing, got rc={rc} "
               f"out={so!r} err={se!r} calls={calls}")
 
-        # -- fast path: install == marketplace HEAD -> NO plugin update
-        rc, so, se, calls = drive(make_home(td / "h1", registry("1.43.0"),
-                                            marketplace_json("1.43.0")), cwd=REPO)
+        rc, so, se, calls = drive(home, cwd=REPO)
         check(rc == 0, f"fast path must exit 0, got {rc}")
         check(so == "", f"the hook must never write to stdout, got {so!r}")
         check(se == "", f"a current install must be silent, got {se!r}")
         check(not any("plugin update" in c for c in calls),
               f"a current install must attempt NO plugin update, got {calls}")
 
-        # -- update available -> it updates, and says the restart caveat
-        rc, so, se, calls = drive(make_home(td / "h2", registry("1.29.0"),
-                                            marketplace_json("1.43.0")), cwd=REPO)
-        check(rc == 0, f"update path must exit 0, got {rc}")
-        check(so == "", f"the hook must never write to stdout, got {so!r}")
+        # POSITIVE pair: with an update genuinely available it MUST act -- else
+        # "attempted no update" would pass in a world where it never updates.
+        home2, _ = home_from_fixture(td / "s2", "marketplace-ahead.json")
+        rc, so, se, calls = drive(home2, cwd=REPO)
+        check(rc == 0 and so == "", f"update path: rc={rc} stdout={so!r}")
         check(any("plugin update flow@flow" in c for c in calls),
               f"an available update must be applied, got {calls}")
         check("restart required" in se,
               "the hook must state that THIS session is not fixed by the update")
 
-        # -- a failing update is LOUD and still exits 0
-        rc, so, se, calls = drive(make_home(td / "h3", registry("1.29.0"),
-                                            marketplace_json("1.43.0")),
-                                  cwd=REPO, fail=True)
+
+def test_hook_dry_run():
+    """FLOW_CURRENCY_DRY_RUN mutates nothing and is NOT silent even when current.
+
+    The dry run exists because the real update is not freely re-runnable in the
+    workspace where the evidence lives -- applying it destroys the only record of
+    the stale state. It reports unconditionally: without the clone refresh the
+    comparison is computed against possibly-pinned local data, so a silent exit
+    is the one output a dry run must never produce, being indistinguishable from
+    "verified current".
+    """
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        drive = _hook_driver(td)
+        home, _ = home_from_fixture(td, "fully-in-sync.json")
+        rc, so, se, calls = drive(home, cwd=REPO, dry=True)
+    check(rc == 0 and so == "", f"dry run: rc={rc} stdout={so!r}")
+    check("dry-run" in se, "dry run must announce itself")
+    check(calls == [], f"dry run must invoke NOTHING, got {calls}")
+    check("restart required" in se, "dry run must still surface the restart caveat")
+
+
+def test_hook_degrades_safely():
+    """Absent `claude`, absent engine, and a failing update: loud, and exit 0.
+
+    A session start must never be wedged, and it must never be quietly wrong.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        drive = _hook_driver(td)
+        home, _ = home_from_fixture(td / "d1", "marketplace-ahead.json")
+
+        rc, so, se, calls = drive(home, cwd=REPO, fail=True)
         check(rc == 0, f"a failed update must still exit 0, got {rc}")
         check("FAILED" in se and "Do NOT assume" in se,
               f"a failed update must be loud, got {se!r}")
 
-        # -- dry run mutates nothing, and is NOT silent even when 'current'
-        rc, so, se, calls = drive(make_home(td / "h4", registry("1.43.0"),
-                                            marketplace_json("1.43.0")),
-                                  cwd=REPO, dry=True)
-        check(rc == 0 and so == "", f"dry run: rc={rc} stdout={so!r}")
-        check("dry-run" in se, "dry run must announce itself")
-        check(calls == [], f"dry run must invoke NOTHING, got {calls}")
-        check("restart required" in se,
-              "dry run must still surface the restart caveat")
+        rc, so, se, calls = drive(home, cwd=REPO, strip_path=True)
+        check(rc == 0, f"absent claude must still exit 0, got {rc}")
+        check("not on PATH" in se, f"absent claude must be loud, got {se!r}")
+        check(calls == [], "absent claude must invoke nothing")
+
+        rc, so, se, calls = drive(home, cwd=REPO, hide_engine=True)
+        check(rc == 0, f"absent engine must still exit 0, got {rc}")
+        check("provenance engine missing" in se or "cannot tell" in se,
+              f"absent engine must say it cannot tell, got {se!r}")
 
 
 def test_capture_fixture():
@@ -597,7 +648,8 @@ def main() -> int:
                test_row_labels, test_both_polarities, test_graceful_degradation,
                test_decoy_repo_refused, test_surface_drift, test_contracts,
                test_hook_single_predicate, test_hook_loud_failure,
-               test_hook_behaviour, test_capture_fixture, test_ci_wired):
+               test_hook_fast_path, test_hook_dry_run,
+               test_hook_degrades_safely, test_capture_fixture, test_ci_wired):
         try:
             fn()
         except Exception as exc:  # noqa: BLE001

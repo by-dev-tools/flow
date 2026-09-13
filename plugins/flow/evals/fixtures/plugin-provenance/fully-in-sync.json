@@ -1,0 +1,34 @@
+{
+  "_comment": "The POSITIVE pair for the file above: everything aligned. Both predicates False. Without this, an engine that hardcoded report_drift=True would pass every other assertion here (FB-0010 clause 3).",
+  "registry": {
+    "version": 2,
+    "plugins": {
+      "flow@flow": [
+        {
+          "scope": "user",
+          "installPath": "/nonexistent",
+          "version": "1.43.0",
+          "gitCommitSha": "abcdef1234567890"
+        }
+      ]
+    }
+  },
+  "marketplace": {
+    "name": "flow",
+    "metadata": {
+      "version": "1.43.0"
+    },
+    "plugins": [
+      {
+        "name": "flow",
+        "version": "1.43.0"
+      }
+    ]
+  },
+  "branch_version": "1.43.0",
+  "expect": {
+    "report_drift": false,
+    "update_available": false,
+    "release_gap": 0
+  }
+}

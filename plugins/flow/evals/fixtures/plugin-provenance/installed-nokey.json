@@ -1,0 +1,25 @@
+{
+  "_comment": "Valid registry, but no flow@flow entry. Expect state=plugin_absent -- flow is not installed, which is NOT the same as the registry being unreadable.",
+  "registry": {
+    "version": 2,
+    "plugins": {
+      "other@x": [
+        {
+          "version": "1.0.0"
+        }
+      ]
+    }
+  },
+  "marketplace": {
+    "name": "flow",
+    "metadata": {
+      "version": "1.43.0"
+    },
+    "plugins": [
+      {
+        "name": "flow",
+        "version": "1.43.0"
+      }
+    ]
+  }
+}

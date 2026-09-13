@@ -30,6 +30,7 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/contribute/SKILL.md` | `/flow:contribute` — drains the lesson-harvest queue + disagreement store into a draft PR back to flow (FB-0059) |
 | `plugins/flow/skills/audit-skips/SKILL.md` | `/flow:audit-skips` — skip-legitimacy audit at `/flow:ship` Step 2a **and `/flow:ship-spike` Step 2a**; deterministic engine in `lib/skip-audit-checks.py` (FB-0062) |
 | `plugins/flow/skills/verify-build/lib/visual-significance.py` | Shared visual-significance predicate, reused by verify-build + ship (FB-0062) |
+| `plugins/flow/skills/ship/lib/plugin-provenance.py` | Which flow version actually ran this pipeline — four labelled `## Flow run` rows, reused by ship/ship-spike (FB-0107) |
 | `plugins/flow/skills/ship/lib/pr-coherence.py` | Deterministic PR body↔draft coherence + read-back engine, reused by ship/doctor/land (FB-0067) |
 | `plugins/flow/skills/ship/lib/manifest_contract.py` | Shared NOT-READY manifest markers — one definition for the emitter (manifest-triage) and the detector (pr-coherence) |
 | `plugins/flow/skills/ship/lib/manifest-triage.py` | Deterministic draft-manifest triage: classifies each blocker auto/ask/blocked, renders the plain-language NOT-READY block + the Step 8 decision list (FB-0075) |
@@ -73,7 +74,8 @@ These files help Claude sessions develop and maintain this repo. Not part of the
 | `.claude/agents/` | Project-dev agents (planner, domain, testing, docs) for building flow |
 | `.claude/skills/` | Project-dev workflows (`/ship`, `/preship`) for shipping flow PRs |
 | `.claude/rules/` | Auto-loading scoped rules (safety, general, documentation) |
-| `.claude/settings.json` | Hooks (secret blocking) |
+| `.claude/settings.json` | Hooks (secret blocking, contribution-queue nudge, flow-plugin currency) |
+| `.claude/hooks/flow-plugin-currency.sh` | `SessionStart`: keeps this workspace's **installed** flow plugin current, so dogfooding is not reviewing an old release (FB-0107; ported from health-tracker#116) |
 | `.context/` | Per-session scratch |
 | `tools/model-measure/` | Per-subagent token/model measurement harness reading Claude Code session transcripts (roadmap item M, FB-0083/FB-0089) -- dev tooling, no shipped `/flow:*` skill invokes it |
 | `tools/harness_audit/` | Periodic harness-weight audit mechanism: cadence gate + always-loaded/invoked-per-use surface inventory (roadmap item AB, Step 1, FB-0095) -- dev tooling, no shipped `/flow:*` skill invokes it |
@@ -135,9 +137,20 @@ Dev-side slash commands: `/ship` (project-dev push + PR), `/preship` (standards 
 
 1. **Read before writing.** Check `dev-docs/plan.md` for current focus and `dev-docs/feedback/` for past corrections.
 2. **Respect the three-surface boundary.** Changes to plugin artifacts (`plugins/flow/*`, `.claude-plugin/marketplace.json`, `README.md`) change user-visible behavior. Changes under `dev-docs/` are dev-tracking only. Changes under `.claude/` or `tools/` are project-dev infra. Never mix.
-3. **Prompt changes are code changes.** The reviewer prompts at `plugins/flow/agents/{auditor,plan-critic}.md` and the new `plugins/flow/skills/ship/SKILL.md` are deployed surface. Treat edits like edits to a deployed service: write an eval fixture first (where applicable), update `dev-docs/history/`, tune deliberately.
-4. **Follow the rules.** `.claude/rules/` auto-loads safety and documentation discipline when you touch matching files.
-5. **Never re-implement a bundled Claude Code skill; compose with it instead.** `/simplify`, `/batch`, `/debug`, `/loop`, `/claude-api` are native — reference them directly. What's forbidden is *duplicating* a bundled skill's behavior (parroting Anthropic's maintenance, which drifts from it). What's permitted and preferred is a thin wrapper that **invokes** the bundled skill and adds flow-specific value — config-slot resolution, a gate contract, feedback routing, in-flow orchestration (the FB-0015 delegating-wrapper shape; e.g. `/flow:verify-build` over bundled `/verify`, `/flow:ship` chaining its reviewers). If a proposed skill would only duplicate a bundled one with no added value, drop it and reference the native skill instead.
+3. **Dogfooding does NOT run this working tree — check the provenance rows (FB-0107).** When you
+   invoke `/flow:ship` here, Claude Code resolves the skill from the **installed** marketplace plugin,
+   not from `plugins/flow/`. Measured 2026-09-12: the install was **1.29.0** against a `main` at
+   1.41.0, so twelve releases of skill changes had been reviewed by their *predecessor*. The rule:
+   **everything Claude Code resolves comes from the installed tree; everything the Bash tool resolves
+   comes from the working tree** — `CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls and set in
+   `!`-preprocessor blocks. So a ship run's prose is installed-version while its fenced-block libs are
+   yours, and any skill or agent you *add* is not registered at all. **Read the four `## Flow run`
+   provenance rows before treating a green pipeline as evidence about your change**, and expect the
+   `SessionStart` currency hook to converge the *next* session, never the current one (`plugin update`
+   requires a restart).
+4. **Prompt changes are code changes.** The reviewer prompts at `plugins/flow/agents/{auditor,plan-critic}.md` and the new `plugins/flow/skills/ship/SKILL.md` are deployed surface. Treat edits like edits to a deployed service: write an eval fixture first (where applicable), update `dev-docs/history/`, tune deliberately.
+5. **Follow the rules.** `.claude/rules/` auto-loads safety and documentation discipline when you touch matching files.
+6. **Never re-implement a bundled Claude Code skill; compose with it instead.** `/simplify`, `/batch`, `/debug`, `/loop`, `/claude-api` are native — reference them directly. What's forbidden is *duplicating* a bundled skill's behavior (parroting Anthropic's maintenance, which drifts from it). What's permitted and preferred is a thin wrapper that **invokes** the bundled skill and adds flow-specific value — config-slot resolution, a gate contract, feedback routing, in-flow orchestration (the FB-0015 delegating-wrapper shape; e.g. `/flow:verify-build` over bundled `/verify`, `/flow:ship` chaining its reviewers). If a proposed skill would only duplicate a bundled one with no added value, drop it and reference the native skill instead.
 
 ## Quality Bar
 
