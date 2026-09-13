@@ -72,7 +72,10 @@ def expect_true(label: str, cond: bool, ctx: str = "") -> None:
     expect(label, bool(cond), True, ctx)
 
 
-_TXT = 0
+# ONE temp dir for the whole run, not one per call: `mkdtemp()` per call leaked a
+# directory at each of the call sites below and the counter was redundant with it.
+_TXT_DIR = Path(tempfile.mkdtemp(prefix="flow-eval-fields-"))
+_TXT_N = 0
 
 
 def txt(content: str) -> str:
@@ -83,10 +86,9 @@ def txt(content: str) -> str:
     exposure -- but they are migrated anyway, deliberately: an eval that exercises a
     path production no longer uses is a weaker eval, and the argv flags are gone.
     """
-    global _TXT
-    _TXT += 1
-    d = Path(tempfile.mkdtemp())
-    f = d / f"field-{_TXT}.txt"
+    global _TXT_N
+    _TXT_N += 1
+    f = _TXT_DIR / f"field-{_TXT_N}.txt"
     f.write_text(content, encoding="utf-8")
     return str(f)
 
@@ -96,19 +98,13 @@ def run(args: list[str]) -> tuple[int, str]:
     return proc.returncode, proc.stdout + proc.stderr
 
 
-def _engine():
-    """Import the engine under test, for assertions that must use ITS normaliser rather
-    than a hand-typed expectation (a parallel Python twin is how an earlier harness in
-    this repo passed while production was broken)."""
-    import importlib.util
-    sys.path.insert(0, str(SCRIPT.parent))
-    spec = importlib.util.spec_from_file_location("_mt_under_test", SCRIPT)
-    m = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m)
-    return m
-
-
-_ENGINE = _engine()
+# The engine under test, loaded ONCE via the existing `_load_triage` (a second loader
+# exec'd it under a second module name, so KINDS/KIND_COPY existed as two independent
+# objects and `_load_triage`'s "the SAME table the engine runs against" promise was only
+# half-true). Assertions below deliberately use the engine's OWN normaliser rather than a
+# hand-typed expectation — a parallel Python twin is how an earlier harness here passed
+# while production was broken.
+_ENGINE = _load_triage()
 MANIFEST_CLOSE = _ENGINE.MANIFEST_CLOSE
 _collapse = _ENGINE._collapse_newlines
 
@@ -551,43 +547,31 @@ def test_toolchain_kind(td: str) -> None:
                proc.returncode, want, proc.stdout + proc.stderr)
 
 
-# Every shape that can append to the run's manifest. Kept as ONE list so the allowlist
-# has a single definition of "an append" — two copies would be the fan-out contradiction
-# this whole PR is about.
-_APPEND_RE = re.compile(r'^[^\n#]*>>\s*"?\$(?:MANIFEST|\(python3 "\$TRIAGE" manifest-path[^\n]*)', re.M)
-
-# The producer sites that legitimately append, counted so a silent DROP fails too — a
-# bare `>= 1` would pass if most of the 16 vanished. 16 appends, not 16 `add-entry`
-# mentions — several sites share the canonical block, and: `record-attempt`
-# and `waive` write the STATE file, not the manifest, so they are producers of free text
-# (and carry --finding-file) without being appends.
-EXPECTED_MANIFEST_APPENDS = 16
-
-
-def _manifest_appends(src: str) -> list[str]:
-    return [ln.strip() for ln in _APPEND_RE.findall(src)] or [
-        ln.strip() for ln in src.splitlines()
-        if ">>" in ln and ("$MANIFEST" in ln or "manifest-path" in ln) and not ln.strip().startswith("#")
-    ]
+# A producer block is a fenced ```sh block. That IS the real boundary, so the checks below
+# scope to it instead of guessing a character window around a match. Three earlier helpers
+# (_APPEND_RE / _manifest_appends / _is_subcommand_produced) and a hand-maintained count
+# lived here and were deleted, because they were BROKEN in a way worth recording:
+#
+#   Every producer's redirect is the byte-identical string `>> "$MANIFEST"`, so
+#   `src.find(snippet)` returned the SAME index for all 16 of them -- every "universal"
+#   assertion re-inspected the first block, 15 were vacuous, and a hand-composed
+#   `echo "[coverage] ... " >> "$MANIFEST"` block passed the allowlist outright. Only the
+#   hardcoded count noticed, and a count is not the check. Measured, not supposed.
+#
+# That is the same shape this PR exists to fix -- an assertion that looks universal and
+# quantifies over one thing -- reproduced inside the assertion written to fix it.
+def _producer_blocks(src: str) -> list[str]:
+    return re.findall(r"```sh\n.*?```", src, re.S)
 
 
-def _is_subcommand_produced(snippet: str, src: str) -> bool:
-    """True when this append is fed by a manifest-triage subcommand, not hand-composed.
+def _appending_blocks(src: str) -> list[str]:
+    """Blocks that append to the run's manifest. ONE definition, no fallback branch.
 
-    The redirect may sit on a continuation line of a multi-line invocation, so when the
-    snippet itself carries no subcommand, look back over the enclosing block for one.
+    An `or [...]` looser-filter fallback used to sit here; it could only fire when the
+    primary returned zero, i.e. exactly when it had gone stale, so its only effect would
+    have been to convert a loud regression into a silent pass (FB-0010 silent-skip).
     """
-    if re.search(r'manifest-triage\.py"? (?:add-entry|record-attempt|waive)|'
-                 r'"\$TRIAGE" (?:add-entry|record-attempt|waive)', snippet):
-        return True
-    idx = src.find(snippet)
-    if idx == -1:
-        return False
-    back = src[max(0, idx - 700):idx]
-    fence = back.rfind("```sh")
-    block = back[fence:] if fence != -1 else back
-    return bool(re.search(r'"\$TRIAGE" (?:add-entry|record-attempt|waive)', block))
-
+    return [b for b in _producer_blocks(src) if ">>" in b and "$MANIFEST" in b]
 
 
 def test_injection(td: str) -> None:
@@ -599,7 +583,12 @@ def test_injection(td: str) -> None:
     composed the way a producer composes it, and the RED arms prove the tests can fail.
     """
     print("\n[injection] the free-text input path, attacked (FB-0108)")
-    T = Path(tempfile.mkdtemp())
+    # Scoped to main()'s TemporaryDirectory rather than its own mkdtemp: an un-cleaned dir
+    # here persisted a file containing `-----BEGIN OPENSSH PRIVATE KEY-----`, a dangling
+    # symlink and a 100KB payload after EVERY run, accumulating monotonically. A harness
+    # that attacks a secret-leak path should not leave the bait on disk.
+    T = Path(td) / "injection"
+    T.mkdir(parents=True, exist_ok=True)
 
     def sh(script: str):
         return subprocess.run(["/bin/sh", "-c", script], capture_output=True, text=True)
@@ -622,10 +611,12 @@ def test_injection(td: str) -> None:
         "P12 tab + double space (PAIRED NEGATIVE)": "tab\there  and  double spaces",
         "P14 whitespace hugging a newline": "alpha\tkept   \n   beta",
     }
+    outs: dict[str, str] = {}
     for label, raw in payloads.items():
         f = T / (label.split()[0] + ".txt")
         f.write_text(raw, encoding="utf-8")
         r = add(str(f))
+        outs[label.split()[0]] = r.stdout
         expect(f"{label}: exits 0", r.returncode, 0, r.stderr)
         for n in ("s1", "s2", "s3", "s4"):
             if (T / n).exists():
@@ -637,13 +628,33 @@ def test_injection(td: str) -> None:
         expect_true(f"{label}: text arrives intact (newline-collapse only)", want in r.stdout,
                     f"want {want[:90]!r}\ngot  {r.stdout[:120]!r}")
 
+    # P15 — EVERY character `str.splitlines()` breaks on, because that is what
+    # `parse_entries` consumes the manifest with. Eight of these eleven were untested and
+    # U+2028 was a LIVE failure-open: one physical line appended, ZERO entries parsed,
+    # verdict READY over a [verify-build] blocker. Asserting the whole set (not a sample)
+    # is what stops the enumeration drifting from the parser's definition again.
+    for lbl, ch in (("newline", "\n"), ("CR", "\r"), ("CRLF", "\r\n"), ("vtab", "\v"),
+                    ("formfeed", "\f"), ("FS", "\x1c"), ("GS", "\x1d"), ("RS", "\x1e"),
+                    ("NEL", "\x85"), ("LS-U+2028", "\u2028"), ("PS-U+2029", "\u2029")):
+        f = T / "P15.txt"
+        f.write_text(f"alpha{ch}beta", encoding="utf-8")
+        r = add(str(f))
+        expect(f"P15 {lbl}: collapses to one space", "alpha beta" in r.stdout, True, repr(r.stdout))
+        mf = T / "P15-manifest.md"
+        mf.write_text(r.stdout, encoding="utf-8")
+        _rc, parsed = run(["parse", "--body-file", str(mf)])
+        expect(f"P15 {lbl}: the entry still PARSES (a break here erased it before)",
+               len(json.loads(parsed)["entries"]), 1, parsed)
+
     # P12's whole purpose is that D4 did NOT over-collapse: tabs and double spaces are
     # byte-identical. Asserted explicitly, because "want in stdout" above would also pass
     # for an implementation that normalised both sides the same wrong way.
+    # Assert against the stdout the loop already captured — re-running `add` here spawned
+    # the identical command twice. The cached output came from the same `/bin/sh -c` run.
     expect_true("P12: a tab and a double space survive BYTE-IDENTICALLY (D4 is newline-only)",
-                "tab\there  and  double spaces" in add(str(T / "P12.txt")).stdout)
+                "tab\there  and  double spaces" in outs["P12"], repr(outs["P12"]))
     expect_true("P14: newline-hugging whitespace -> exactly ONE space, mid-line tab intact",
-                "alpha\tkept beta" in add(str(T / "P14.txt")).stdout)
+                "alpha\tkept beta" in outs["P14"], repr(outs["P14"]))
 
     # ---- RED ARMS: one per hazard, each matched to the composition that CARRIES it ----
     # P3's hazard is a HEREDOC collision; a bare FLOWEOF line inside a double-quoted argv
@@ -752,11 +763,13 @@ def test_producer_lines() -> None:
                 "without this — deleting every producer would satisfy it)",
                 len(re.findall(r"add-entry --kind", src)) >= 10,
                 str(sorted(kinds_seen)))
-    expect("POSITIVE: every kind in KINDS is prescribed by an add-entry site — the "
-           "template harvest is gone, so this equality now has ONE source",
-           sorted(k for k in kinds_seen if k != "<kind>"),
-           ["a11y", "coverage", "rigor", "security", "skip-audit", "status-surface",
-            "toolchain", "vacuous-criterion", "verify-build", "visual-deliverable"])
+    # Sourced from the ENGINE, never a hand-copied literal: `_load_triage`'s docstring
+    # promises exactly this ("the SAME table the engine actually runs against"), and an
+    # earlier revision of this check had pasted the 10 names in by hand — the drift this
+    # whole PR is about, in the assertion policing it.
+    expect("POSITIVE: every kind in the engine's KINDS is prescribed by an add-entry site",
+           sorted(k for k in kinds_seen if not k.startswith("<")),
+           sorted(_ENGINE.KINDS))
 
     # Every producer block must RESOLVE $TRIAGE. A skill `sh` block is potentially its own
     # Bash call, and an unset $TRIAGE expands to empty -> `python3 "" add-entry` -> the
@@ -768,79 +781,120 @@ def test_producer_lines() -> None:
                         "empty and the entry is silently lost)",
                         "TRIAGE=" in blk, blk[:200])
 
-    appends = _manifest_appends(src)
-    expect("POSITIVE: ship/SKILL.md appends to the manifest at exactly the expected sites",
-           len(appends), EXPECTED_MANIFEST_APPENDS,
-           "a silent drop in producer count is as much a regression as a bad one: "
-           f"found {len(appends)} -> {appends}")
-    expect_true("POSITIVE: at least one manifest append exists (the universal below is "
-                "vacuous without this — deleting every producer would satisfy it)",
-                len(appends) >= 1, str(appends))
-    for snippet in appends:
-        expect_true(f"UNIVERSAL: the append `{snippet[:46]}…` is produced by a manifest-triage "
-                    "subcommand", _is_subcommand_produced(snippet, src),
-                    "every line appending to the manifest path must be fed by "
-                    "`manifest-triage.py <subcommand>` — a hand-composed `echo \"[kind] …\" >>` "
-                    "bypasses --kind/--needs validation AND re-opens the shell-injection path")
+    # ============================ THE ALLOWLIST (FB-0100) ============================
+    # BOTH HALVES, ONE CHECK, and now block-scoped so the universal actually quantifies
+    # over every site. The universal alone is vacuously true at zero append sites, so on
+    # its own DELETING THE PRODUCERS turns it green -- the FB-0077 shape. The positive half
+    # is what makes it a check.
+    #
+    # An ALLOWLIST and not a denylist of bad spellings: assertions keyed on `--finding "`,
+    # `--resolution "` or `<<` all pass for a hand-composed
+    # `echo "[security] ... " >> "$MANIFEST"`, which is the actual residual hazard. Keying
+    # on "what produces the append" fails closed on anything added later.
+    #
+    # SCOPE, stated because it is easy to over-read: a STATIC TEXT check over ship/SKILL.md
+    # only. It cannot see an append composed in another file, one emitted by a script
+    # SKILL.md invokes, or one built from a runtime variable. The class is closed for
+    # ship/SKILL.md and nowhere else (roadmap § Next carries the widening).
+    appending = _appending_blocks(src)
+    expect_true("POSITIVE: at least one block appends to the manifest (the universal below "
+                "is vacuous without this -- deleting every producer would satisfy it)",
+                len(appending) >= 1, f"found {len(appending)}")
+    for i, blk in enumerate(appending):
+        kinds = re.findall(r"add-entry --kind ([a-z0-9<>-]+)", blk) or ["?"]
+        expect_true(f"UNIVERSAL: the append in the `{kinds[0]}` block is produced by a "
+                    f"manifest-triage subcommand (block {i + 1}/{len(appending)})",
+                    bool(re.search(r'"\$TRIAGE" (?:add-entry|record-attempt|waive)', blk)),
+                    "every block appending to the manifest path must be fed by "
+                    "`manifest-triage.py <subcommand>` -- a hand-composed "
+                    "`echo \"[kind] ...\" >>` bypasses --kind/--needs validation AND "
+                    "re-opens the shell-injection path:\n" + blk[:300])
 
-    # `add-entry` PRINTS the line; it does not write it. A producer whose append is not
-    # wired to the resolved manifest path emits to stdout, Step 7a.5 classifies an EMPTY
-    # manifest, and the PR opens READY — the precise failure every producer exists to
-    # prevent. Checked over a WINDOW AROUND the call, not only after it: the migrated
-    # form assigns `MANIFEST=$(… manifest-path …)` on the line BEFORE the call (FB-0108),
-    # so a forward-only scan reports a false failure.
-    for m in re.finditer(r"add-entry --kind ([a-z0-9-]+)", src):
-        lo = max(0, m.start() - 600)
-        tail = src[m.start():m.start() + 900]
-        stop = tail.find("```")
-        window = src[lo:m.start()] + (tail[:stop] if stop != -1 else tail)
-        expect_true(f"the `{m.group(1)}` add-entry site redirects into the manifest file",
-                    "manifest-path" in window,
-                    "an add-entry with no `>> \"$(… manifest-path --branch …)\"` (or a "
-                    "`MANIFEST=$(… manifest-path …)` assignment it redirects to) prints the "
-                    "entry to stdout and leaves the manifest empty ⇒ verdict READY ⇒ a "
-                    "non-draft PR over an unresolved blocker")
+    # Per-block contract, all on the SAME boundary (three earlier loops each guessed a
+    # different character window -- 600-back/900-fwd, 700-fwd, 900-back/500-fwd -- around
+    # the same thing). The fence is the boundary; stop guessing.
+    for blk in _producer_blocks(src):
+        if not re.search(r'"\$TRIAGE" (?:add-entry|record-attempt|waive)', blk):
+            continue
+        cmd = re.search(r'"\$TRIAGE" (add-entry|record-attempt|waive)', blk).group(1)
+        label = (re.findall(r"--kind ([a-z0-9<>-]+)", blk) or [cmd])[0]
+        # `add-entry` PRINTS the line; it does not write it. A producer whose append is not
+        # wired to the resolved manifest path emits to stdout, Step 7a.5 classifies an EMPTY
+        # manifest, and the PR opens READY -- the precise failure every producer prevents.
+        if cmd == "add-entry":
+            expect_true(f"[{label}] the add-entry block redirects into the manifest file",
+                        "manifest-path" in blk or "$MANIFEST" in blk, blk[:220])
+        # FB-0062: a producer that cannot record its entry must STOP. add-entry exits 2 on
+        # an unknown kind/verb, a missing/empty finding file (the Write never ran) or a
+        # symlinked one; unchecked, the append silently does nothing.
+        expect_true(f"[{label}] the {cmd} call checks its exit status (FB-0062 failure-open)",
+                    "|| exit 1" in blk or "|| {" in blk or "exit 3 is NOT a failure" in blk,
+                    blk[:220])
+        # FB-0108: free text arrives as a path, and no heredoc -- a payload containing the
+        # delimiter escapes it (v1.41.0's measured first-attempt failure).
+        expect_true(f"[{label}] the {cmd} call names a --finding-file", "--finding-file" in blk,
+                    blk[:220])
+        expect(f"[{label}] no heredoc in this producer block (delimiter collision)",
+               re.findall(r"<<-?'?\w", blk), [])
+        # Every block that uses $TRIAGE must RESOLVE it: a skill `sh` block is potentially
+        # its own Bash call, and an unset $TRIAGE expands to empty -> `python3 "" add-entry`
+        # -> the entry is silently lost (FB-0009 unset-is-fatal at every new site).
+        expect_true(f"[{label}] the block RESOLVES $TRIAGE (unset expands empty, entry lost)",
+                    "TRIAGE=" in blk, blk[:220])
 
-    # FB-0062: a producer that cannot record its entry must STOP. add-entry exits 2 on an
-    # unknown kind/verb, a missing/empty finding file (the Write never ran) or a symlinked
-    # one; unchecked, the append silently does nothing and Step 7a.5 classifies an empty
-    # manifest. The gate would go quietest on exactly the malformed input this exists for.
-    for m in re.finditer(r"(add-entry|record-attempt|waive) --", src):
-        tail = src[m.start():m.start() + 700]
-        stop = tail.find("```")
-        window = tail[:stop] if stop != -1 else tail
-        expect_true(f"the `{m.group(1)}` call checks its exit status (FB-0062 failure-open)",
-                    "|| exit 1" in window or "|| {" in window or "exit 3 is NOT a failure" in window,
-                    "an unchecked producer failure appends nothing and the PR opens READY")
+    # E: the allowlist's sub-case (a) — an append in ANOTHER file — is NOT beyond a static
+    # check, so it should not be filed under "honest limit". Sweep every shipped SKILL.md
+    # and assert ship/SKILL.md is the only one that appends to a manifest. Fails closed the
+    # day a second producer file appears; the plan's stated reason for deferring it
+    # ("ship-spike has no manifest today, grepped") is the author-memory grep general.md
+    # § Consistency item 2 forbids relying on. Correct today is the point.
+    skills_dir = HERE.parent / "skills"
+    appenders = sorted(
+        str(f.relative_to(HERE.parent))
+        for f in skills_dir.rglob("SKILL.md")
+        if _appending_blocks(f.read_text(encoding="utf-8"))
+    )
+    expect("ship/SKILL.md is the ONLY shipped skill that appends to the manifest "
+           "(a second one would be outside the allowlist's reach)",
+           appenders, ["skills/ship/SKILL.md"],
+           "a new appending skill must either be added to this assertion WITH its own "
+           "allowlist coverage, or it ships unguarded")
 
-    # FB-0108: no free text on a command line, and no heredoc anywhere in this file. The
-    # heredoc ban is not stylistic — a payload containing the delimiter escapes it, which
-    # is how v1.41.0's first attempt broke. Negative, PAIRED with the positive that every
-    # producer names a --finding-file.
-    expect("NEGATIVE: no producer passes free text as a raw shell argument",
-           re.findall(r'--(?:finding|resolution) "', src), [])
-    # Scoped to PRODUCER blocks, deliberately — a file-wide heredoc ban would be
-    # overreach and would fail on a legitimate use. `ship/SKILL.md` has exactly one other
-    # heredoc (`cat > "$STAGES" <<'EOF'`, the audit-skips stage stamp), and it carries
-    # flow-COMPOSED JSON rather than untrusted free text — its one interpolated value is
-    # already spliced with `jq -n --arg` precisely because a branch name may contain a
-    # quote. The hazard this bans is a heredoc carrying UNTRUSTED text, where a payload
-    # containing the delimiter escapes it (v1.41.0's first attempt).
-    for m in re.finditer(r'"\$TRIAGE" (?:add-entry|record-attempt|waive)', src):
-        lo = max(0, m.start() - 900)
-        back = src[lo:m.start()]
-        fence = back.rfind("```sh")
-        block = (back[fence:] if fence != -1 else back) + src[m.start():m.start() + 500]
-        expect("NEGATIVE: no heredoc inside a producer block (delimiter collision, FB-0108)",
-               re.findall(r"<<-?'?\w", block), [],
-               "a heredoc carrying untrusted text is escaped by a payload containing its "
-               "own delimiter — the measured failure of v1.41.0's first attempt")
-    for m in re.finditer(r"(add-entry|record-attempt|waive) --", src):
-        tail = src[m.start():m.start() + 700]
-        stop = tail.find("```")
-        window = tail[:stop] if stop != -1 else tail
-        expect_true(f"POSITIVE: the `{m.group(1)}` call names a --finding-file",
-                    "--finding-file" in window, window[:200])
+    # Every placeholder path a producer passes must be one `scratch-path --name` actually
+    # RESOLVES. Not cosmetic: 12 of the converted blocks shipped referencing a bare
+    # relative filename with no resolution call, so an agent copying the block verbatim
+    # writes `security-finding.txt` into CWD (the repo root) — which (a) bypasses
+    # `scratch-path`'s pre-Write unlink, the CWE-59 write-side defense a read-time check
+    # provably cannot reach, and (b) lands OUTSIDE `.flow/.gitignore`, so Step 6's "stage
+    # code + docs together" could COMMIT a raw reviewer finding. This turns "remember to
+    # go run CALL 1" into a CI failure.
+    ph = set(re.findall(r'--(?:finding|resolution)-file "<([a-z0-9-]+\.txt)>"', src))
+    nm = set(re.findall(r"--name ([a-z0-9-]+\.txt)", src))
+    expect_true("POSITIVE: producer blocks reference scratch placeholders at all",
+                len(ph) >= 1, str(sorted(ph)))
+    expect("every --finding-file/--resolution-file placeholder is resolved by a "
+           "`scratch-path --name` in the same file", sorted(ph - nm), [],
+           "an unresolved placeholder is a bare relative path: it lands in CWD, skips the "
+           "write-side symlink unlink, and is not gitignored")
+    # The resolution must be ADJACENT to the call that consumes it — the CALL 1 block that
+    # `--name`s a slug must be one of the two blocks immediately preceding the CALL 2 block
+    # that passes it. NOT "in the same block": the Write tool runs between them and a Write
+    # cannot happen inside a shell block, so a single-block form can never succeed (it
+    # shipped that way for one revision and the extracted-execution test in
+    # run_scratch_isolation_evals.py caught it). Adjacency is the real contract — it is what
+    # keeps the resolution out of a distant template (FB-0075) without demanding an
+    # impossible shape.
+    blks = _producer_blocks(src)
+    for i, blk in enumerate(blks):
+        blk_ph = re.findall(r'--(?:finding|resolution)-file "<([a-z0-9-]+\.txt)>"', blk)
+        if not blk_ph:
+            continue
+        near = set()
+        for prev in blks[max(0, i - 2):i + 1]:
+            near |= set(re.findall(r"--name ([a-z0-9-]+\.txt)", prev))
+        label = (re.findall(r"--kind ([a-z0-9<>-]+)", blk) or ["?"])[0]
+        expect(f"[{label}] its scratch paths are resolved in an ADJACENT CALL-1 block, not a "
+               f"distant template", sorted(set(blk_ph) - near), [], blk[:260])
 
     # Distinct scratch slugs. `record-attempt` and `add-entry` at the visual-deliverable
     # site pass deliberately DIFFERENT text whose fingerprints must not collapse —

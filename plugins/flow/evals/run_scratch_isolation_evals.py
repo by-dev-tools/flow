@@ -553,83 +553,111 @@ def test_producer_blocks():
     """EXTRACT and EXECUTE ship/SKILL.md's producer blocks (FB-0107 / FB-0108).
 
     This is the one verification shape that survives FB-0107. Dogfooding through
-    /flow:ship would exercise the INSTALLED plugin (pinned at 1.29.0 on flow's own
-    workspaces while main is 1.41.0+), so a PR whose entire payload is a change to
-    /flow:* behaviour would ship with zero execution evidence for that behaviour. These
-    cases run the shipped shell text from the REPO TREE, so the evidence is about this
-    branch. Do not substitute a ship run for them.
+    /flow:ship exercises the INSTALLED plugin (pinned at 1.29.0 on flow's own workspaces
+    while main is 1.41.0+), so a PR whose entire payload is a change to /flow:* behaviour
+    would ship with zero execution evidence for that behaviour. These cases run the shipped
+    shell text from the REPO TREE, so the evidence is about this branch.
 
-    Specifically pins the CALL-1 / Write / CALL-2 split: shell variables do NOT survive
-    between Bash tool calls, so an earlier draft that carried the scratch path in `$F`
-    would have expanded EMPTY in the call that runs add-entry -- the exact silent
-    blocker-drop the guard exists to prevent.
+    EXTRACTED, not retyped. An earlier version of this test docstringed itself "extract and
+    execute" and then reproduced the block as Python string literals, so a drift in the
+    shipped text -- a changed redirect, a dropped scratch-path, a reordered call -- left the
+    EXECUTED test green. That is the parallel-twin hazard this repo names twice already
+    (`resolve_via_shell`'s docstring here, and `_load_triage`'s in the sibling harness). The
+    block under test is now read off disk and only its `<placeholder>` slots substituted.
     """
-    print("\n[producer] ship/SKILL.md producer blocks, extracted and EXECUTED")
-    root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,
-                          text=True).stdout.strip()
-    skill = Path(root) / "plugins/flow/skills/ship/SKILL.md"
-    triage = Path(root) / "plugins/flow/skills/ship/lib/manifest-triage.py"
-    src = skill.read_text(encoding="utf-8")
+    print("\n[producer] ship/SKILL.md producer blocks, EXTRACTED from disk and EXECUTED")
+    root = FLOW.parent.parent
+    triage = FLOW / "skills" / "ship" / "lib" / "manifest-triage.py"
+    src = SHIP_SKILL.read_text(encoding="utf-8")
 
-    # CALL 1 must be independently runnable and must PRINT the paths, because the agent
-    # reads them off stdout and pastes them as literals into CALL 2.
-    call1 = ('TRIAGE="%s"\n'
-             'python3 "$TRIAGE" scratch-path --name evalprod-finding.txt '
-             '--name evalprod-resolution.txt || exit 1\n') % triage
-    r = subprocess.run(["sh", "-c", call1], capture_output=True, text=True, cwd=root)
-    lines = [ln for ln in r.stdout.strip().splitlines() if ln.strip()]
-    check("producer-call1-exits-zero", r.returncode == 0, r.stderr)
-    check("producer-call1-prints-two-absolute-paths",
-          len(lines) == 2 and all(ln.startswith("/") for ln in lines), r.stdout)
+    # Pair a CALL-1 block (scratch-path) with the CALL-2 block that consumes it. The split
+    # across two blocks IS the contract: the Write tool runs between them, and a Write
+    # cannot happen inside a shell block. An earlier single-block form could never succeed
+    # -- scratch-path unlinks its targets, then add-entry read them in the same block with
+    # no Write in between -- and this test found that only because it executes the shipped
+    # text instead of a retyped twin.
+    fenced = re.findall(r"```sh\n(.*?)```", src, re.S)
+    pair = None
+    for i, blk in enumerate(fenced):
+        if "scratch-path" not in blk:
+            continue
+        for nxt in fenced[i + 1:i + 3]:
+            if "add-entry" in nxt and "--finding-file" in nxt:
+                pair = (blk, nxt)
+                break
+        if pair:
+            break
+    check("producer-CALL1-CALL2-pair-found", pair is not None,
+          "no scratch-path block is followed by an add-entry block")
+    if pair is None:
+        return
+    call1, call2 = pair
 
-    if len(lines) == 2:
-        # The Write tool's job, performed here as a plain file write -- which is the
-        # point: no shell construct touches the text, so there is no delimiter to collide
-        # with. The payload deliberately carries the metacharacters a real criterion has.
+    def prep(script):
+        script = script.replace('"${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"',
+                                f'"{triage}"')
+        script = re.sub(r'--branch "\$\(git branch --show-current\)"', '--branch evalprod', script)
+        return re.sub(r'--branch "\$BRANCH"', '--branch evalprod', script)
+
+    names = re.findall(r"--name ([a-z0-9-]+\.txt)", call1)
+    check("producer-CALL1-names-its-slugs", len(names) >= 1, str(names))
+    scratch = root / ".flow"
+    man = scratch / "manifest-evalprod.md"
+    man.unlink(missing_ok=True)
+
+    # CALL 2 WITHOUT the Write: the shipped `|| exit 1` must stop it and append nothing.
+    for n in names:
+        (scratch / n).unlink(missing_ok=True)
+    r1 = subprocess.run(["sh", "-c", prep(call2) + "\necho REACHED_END\n"],
+                        capture_output=True, text=True, cwd=str(root))
+    check("producer-CALL2-STOPS-when-the-Write-never-ran", r1.returncode != 0, r1.stdout + r1.stderr)
+    check("producer-CALL2-does-not-reach-its-end", "REACHED_END" not in r1.stdout, r1.stdout)
+    check("producer-nothing-appended-on-that-path",
+          not man.exists() or not man.read_text(encoding="utf-8").strip(),
+          man.read_text(encoding="utf-8") if man.exists() else "(absent)")
+
+    # CALL 1 -> Write -> CALL 2, each its OWN process with no inherited shell state.
+    r2 = subprocess.run(["sh", "-c", prep(call1)], capture_output=True, text=True, cwd=str(root))
+    check("producer-CALL1-exits-zero", r2.returncode == 0, r2.stderr)
+    paths = [ln for ln in r2.stdout.split() if ln.startswith("/")]
+    check("producer-CALL1-prints-absolute-paths", len(paths) == len(names), r2.stdout)
+    if len(paths) == len(names):
         evil = 'Declared criterion (too vague): "`GET /users/:id` returns 404 $(id) works"'
-        Path(lines[0]).write_text(evil, encoding="utf-8")
-        Path(lines[1]).write_text("name the observable predicate", encoding="utf-8")
+        Path(paths[0]).write_text(evil, encoding="utf-8")
+        for extra in paths[1:]:
+            Path(extra).write_text("name the observable predicate", encoding="utf-8")
+        man.unlink(missing_ok=True)
+        # Substitute the `<slug.txt>` placeholders with the paths CALL 1 actually printed —
+        # that substitution IS what the agent does when it pastes them, and it is the only
+        # thing this test is allowed to fill in. Everything else is the shipped text.
+        c2 = prep(call2)
+        for n, real in zip(names, paths):
+            c2 = c2.replace(f'"<{n}>"', f'"{real}"')
+        check("producer-CALL2-has-no-unsubstituted-placeholder-left", "<" not in c2.split("add-entry")[1],
+              c2)
+        r3 = subprocess.run(["sh", "-c", c2], capture_output=True, text=True, cwd=str(root))
+        check("producer-CALL2-succeeds-once-the-Write-happened", r3.returncode == 0,
+              r3.stdout + r3.stderr)
+        body = man.read_text(encoding="utf-8") if man.exists() else ""
+        check("producer-appended-to-the-manifest-FILE", body.strip().startswith("- ["), body)
+        check("producer-metacharacters-land-as-literal-text", evil in body, body)
+        check("producer-payload-did-not-execute", "uid=" not in body + r3.stdout, body + r3.stdout)
 
-        # CALL 2 as a SEPARATE process with NO inherited shell state -- the whole point.
-        call2 = ('TRIAGE="%s"\n'
-                 'MANIFEST=$(python3 "$TRIAGE" manifest-path --branch evalprod) || exit 1\n'
-                 ': > "$MANIFEST"\n'
-                 'python3 "$TRIAGE" add-entry --kind vacuous-criterion '
-                 '--needs "declare + fence" --finding-file "%s" --resolution-file "%s" '
-                 '>> "$MANIFEST" || { echo FAILED >&2; exit 1; }\n'
-                 'cat "$MANIFEST"\n') % (triage, lines[0], lines[1])
-        r2 = subprocess.run(["sh", "-c", call2], capture_output=True, text=True, cwd=root)
-        check("producer-call2-exits-zero-with-no-inherited-shell-state",
-              r2.returncode == 0, r2.stderr)
-        check("producer-call2-appends-to-the-manifest-FILE",
-              r2.stdout.strip().startswith("- [vacuous-criterion]"), r2.stdout)
-        check("producer-metacharacters-land-as-literal-text", evil in r2.stdout, r2.stdout)
-        check("producer-payload-did-not-execute", "uid=" not in r2.stdout, r2.stdout)
+    man.unlink(missing_ok=True)
+    (scratch / "manifest-evalprod2.md").unlink(missing_ok=True)
+    for n in names:
+        (scratch / n).unlink(missing_ok=True)
 
-    # The guard fires when the Write never happened: the file is absent, so add-entry must
-    # exit non-zero and the `|| exit 1` must stop the block rather than append nothing.
-    call2_nowrite = ('TRIAGE="%s"\n'
-                     'MANIFEST=$(python3 "$TRIAGE" manifest-path --branch evalprod2) || exit 1\n'
-                     ': > "$MANIFEST"\n'
-                     'python3 "$TRIAGE" add-entry --kind coverage --needs re-run '
-                     '--finding-file "/nonexistent/never-written.txt" '
-                     '>> "$MANIFEST" || { echo GUARD_FIRED; exit 1; }\n'
-                     'echo REACHED_END\n') % triage
-    r3 = subprocess.run(["sh", "-c", call2_nowrite], capture_output=True, text=True, cwd=root)
-    check("producer-guard-fires-when-the-Write-never-ran", "GUARD_FIRED" in r3.stdout, r3.stdout)
-    check("producer-guard-stops-the-block-rather-than-continuing",
-          "REACHED_END" not in r3.stdout, r3.stdout)
-
-    # And the shipped text actually carries that guard at every producer site, so the
-    # executed behaviour above is not an artefact of how this harness composed the block.
-    import re as _re
-    for m in _re.finditer(r'"\$TRIAGE" (add-entry|record-attempt|waive)', src):
+    # And the shipped text carries the guard at every producer site, so the executed
+    # behaviour above is not an artefact of which block this test happened to pick.
+    for m in re.finditer(r'"\$TRIAGE" (add-entry|record-attempt|waive)', src):
         tail = src[m.start():m.start() + 700]
         stop = tail.find("```")
         window = tail[:stop] if stop != -1 else tail
         check(f"producer-shipped-{m.group(1)}-checks-exit-status",
               "|| exit 1" in window or "|| {" in window or "exit 3 is NOT a failure" in window,
               window[:160])
+
 
 def main():
     test_scratch()

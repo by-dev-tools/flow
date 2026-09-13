@@ -105,6 +105,51 @@ rather than what the rendered line looks like. The requirement survives; the cop
 *Revert note:* commit 2 is the only commit that also edits this history entry, so reverting it drops three
 bullets above that describe commit-1 findings. One line to re-add; the safety fix itself is unaffected.
 
+**What `/simplify`'s four lenses caught — and one of them was a shape this PR could not have
+shipped.** All four ran against the full diff; every finding below was reproduced before being fixed.
+
+- **The allowlist was BYPASSABLE, and its universal was vacuous 15 times out of 16.** Every producer's
+  redirect is the byte-identical string `>> "$MANIFEST"`, so the helper's `src.find(snippet)` returned
+  the *same index* for all 16 — every "universal" assertion re-inspected the first block. A
+  hand-composed `echo "[coverage] … " >> "$MANIFEST"` block passed the allowlist outright; only the
+  hardcoded count noticed, and a count is not the check. **That is this PR's own thesis reproduced
+  inside the assertion written to enforce it** — an assertion that looks universal and quantifies over
+  one thing. Rebuilt on the fenced-block boundary (the *real* boundary), which also collapsed eight
+  ad-hoc character-window scans into one and made every failure name its site.
+- **12 producer sites referenced a scratch path nothing resolved.** The compact conversion form in
+  commit 2 dropped the `scratch-path` call, leaving `--finding-file "<security-finding.txt>"` — a bare
+  *relative* filename. An agent copying that writes into CWD, which bypasses `scratch-path`'s pre-Write
+  unlink (the CWE-59 write-side defense a read-time check provably cannot reach) and lands outside
+  `.flow/.gitignore`, so Step 6 could **commit a raw reviewer finding**. Now inlined at all 12, pinned
+  by an eval that fails when a placeholder has no adjacent `--name`.
+- **A single-block producer shape that could never succeed.** Worse than the above and found only by
+  *executing* the shipped text: `scratch-path` unlinks its targets, and the Write tool cannot run
+  between two lines of one shell block — so `add-entry` always read an absent file and the `|| exit 1`
+  always fired. 15 blocks split into CALL 1 / Write / CALL 2. The assertion that had demanded
+  "resolves IN-BLOCK" was itself written for the broken shape and now checks **adjacency** instead.
+- **`_collapse_newlines` enumerated 3 of the 11 characters its own consumer splits on.** `parse_entries`
+  reads the manifest with `str.splitlines()`. Measured: a finding containing U+2028 appended one
+  physical line, parsed to **zero** entries, and `classify` returned **READY** over a live
+  `[verify-build]` blocker — the exact failure-open the function exists to prevent, through a hole left
+  by hand-enumerating a set Python already defines. Now derived from `splitlines()` itself, so the two
+  cannot drift; payload P15 asserts all eleven.
+- **The rejection arm moved to the declaration site** — a custom `argparse.Action` instead of a manual
+  call at two handlers plus a `default=None` sentinel plus a hand-rolled re-implementation of
+  `required=True`. Three coordinated special cases collapsed into one, `--finding-file` is
+  `required=True` again, and it now fails **closed** for a future subcommand that declares the flag and
+  forgets to call a rejector.
+- Also: the cross-file sweep the plan had filed under "honest limit" is one line and now exists (no
+  other shipped `SKILL.md` may append to a manifest); a leaked temp dir that persisted a fake private
+  key, a dangling symlink and a 100 KB payload after **every** run is gone; a duplicate engine loader,
+  two redundant subprocess spawns, a dead `or [...]` fallback whose only effect would have been to turn
+  a loud regression into a silent pass, and a hand-copied 10-name kind list (now `_ENGINE.KINDS`).
+
+**Three mutation "survivors" that were no-op mutation strings, not weak checks.** Each time, the
+literal I substituted did not match the file, so nothing was mutated and the harness correctly stayed
+green. "Mutation survived" and "mutation did not apply" render identically in a pass/fail line — FB-0104
+pointed at the mutation harness itself. Every one was re-tested by constructing the mutation
+programmatically; all then killed.
+
 **Verification.** `run_manifest_triage_evals.py` gains a `[injection]` section: 14 payloads executed through
 `/bin/sh -c`, with red arms matched per hazard (argv for command substitution and quote breakout; a real
 heredoc for the delimiter collision, reproducing v1.41.0's own first-attempt bug). P8 asserts the

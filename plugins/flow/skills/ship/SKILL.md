@@ -120,6 +120,13 @@ Resolve the two scratch paths and **Write** the finding + resolution into them f
 
 ```sh
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+python3 "$TRIAGE" scratch-path --name rigor-finding.txt --name rigor-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 # rigor-finding.txt ← why the /simplify + staff-review evidence is unresolvable for this source, in plain language
 # rigor-resolution.txt ← what would make it resolvable, and what you already tried
 MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
@@ -292,14 +299,28 @@ Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, `/flo
 **draft manifest**.   Resolve the two scratch paths and **Write** the finding + resolution into them first — Step 2's canonical form, in this same step. Then:
   ```sh
   TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+  python3 "$TRIAGE" scratch-path --name security-finding.txt --name security-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
+  TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
   # security-finding.txt ← the reviewer's finding, in plain language
   # security-resolution.txt ← the reviewer's candidate fixes, and the human input each needs
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind security --needs "<secret rotation | dep vetting | design decision>" \
     --finding-file "<security-finding.txt>" --resolution-file "<security-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the security entry was NOT recorded." >&2; exit 1; }
-  ```
+```
   ```sh
+  TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+  python3 "$TRIAGE" scratch-path --name a11y-finding.txt --name a11y-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
   TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
   # a11y-finding.txt ← the reviewer's finding, in plain language
   # a11y-resolution.txt ← the reviewer's candidate fixes, and the human input each needs
@@ -307,11 +328,18 @@ Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, `/flo
   python3 "$TRIAGE" add-entry --kind a11y --needs "<design decision | dep vetting>" \
     --finding-file "<a11y-finding.txt>" --resolution-file "<a11y-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the a11y entry was NOT recorded." >&2; exit 1; }
-  ```
+```
   The loop keeps going. Step 7a.5 triages it: `secret rotation`/`dep vetting` need an action outside this session (a genuine draft); anything else becomes a question the human answers at the Step 8 hand-off.
 - **`/flow:audit-coverage` `ISSUE · Undeclared change`** → each uncovered behavior is an entry on the draft manifest in the canonical line shape (Step 2):
   Resolve the two scratch paths and **Write** the finding + resolution into them first — Step 2's canonical form, in this same step. Then:
   ```sh
+  TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+  python3 "$TRIAGE" scratch-path --name coverage-finding.txt --name coverage-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
   TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
   # coverage-finding.txt ← the uncovered behavior, in plain language
   # coverage-resolution.txt ← the criterion you DRAFTED for the plan's Spec-walk block — drafting it is your job, declaring it is not
@@ -319,11 +347,18 @@ Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, `/flo
   python3 "$TRIAGE" add-entry --kind coverage --needs "declare + fence" \
     --finding-file "<coverage-finding.txt>" --resolution-file "<coverage-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the coverage entry was NOT recorded." >&2; exit 1; }
-  ```
+```
   Do NOT auto-add the criterion yourself — that is the agent grading its own homework; the resolution is to declare the criterion in the plan's `**Spec-walk:**` block and let `/flow:verify-build` verify it (or the human waives it at the merge gate). A clean `No issues flagged.` adds nothing.
 - **`/flow:verify-build` `metadata.no_plan_fallback: true` on a source-touching diff** → a draft-manifest entry.
   Resolve the two scratch paths and **Write** the finding + resolution into them first — Step 2's canonical form, in this same step. Then:
   ```sh
+  TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+  python3 "$TRIAGE" scratch-path --name verify-build-noplan-finding.txt --name verify-build-noplan-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
   TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
   # verify-build-noplan-finding.txt ← ran without a governing plan (no Spec-walk block), in plain language
   # verify-build-noplan-resolution.txt ← the criteria you DRAFTED, for the human to approve into the Spec-walk block
@@ -331,7 +366,7 @@ Sequentially invoke `/flow:security-review`, `/flow:accessibility-review`, `/flo
   python3 "$TRIAGE" add-entry --kind verify-build --needs "declare + fence" \
     --finding-file "<verify-build-noplan-finding.txt>" --resolution-file "<verify-build-noplan-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the verify-build entry was NOT recorded." >&2; exit 1; }
-  ```
+```
   The verdicts may be real (the §2b judged path produces genuine `adversarial-judged` PASSes over diff-derived criteria), but a plan was *expected* and absent: a production diff shouldn't reach a ready PR via the no-plan path. Resolve by declaring the criteria in the plan's `**Spec-walk:**` block (so the next run is full mode) or waiving at the merge gate. A docs-only no-plan run (smoke path) does not route here.
 - **`/flow:verify-build` `metadata.vacuous_criteria_found: [...]` non-empty** → one draft-manifest entry PER flagged criterion, in the canonical line shape (Step 2): the finding file must open with `Declared criterion (too vague): "<the criterion, verbatim>"` — prefix and quotes included. The "Declared criterion (too vague):" prefix + quotes matter — the finding text renders as the headline of a numbered question at Step 8, and an un-prefixed, unquoted vague claim ("Rate limiting works correctly") momentarily reads as the agent asserting something true rather than flagging it as too vague to mean anything. This is the sibling gap `/flow:audit-coverage` leaves open: coverage checks whether a criterion exists at all (presence); `criterion-specificity.py` (run inside verify-build Step 3, deterministic — never an LLM judgment) checks whether the one declared is falsifiable (quality). A criterion so vague it plausibly maps to the changed hunk satisfies coverage and lets verify-build judge it PASS against equally vague narration — this closes that composition. Resolve by rewriting the criterion in the plan's `**Spec-walk:**` block to name an observable predicate, then re-run verify-build, or waive at the merge gate.
 
@@ -414,6 +449,13 @@ Example: `Final-pass reviews: security=ran (3 NITs, 1 FOLLOW-UP), accessibility=
 1. Attempt the FB-0012 bounded mechanical fix (≤3, oscillation-checked, same contract as Step 1c — loop only on the verify-build exit code, never on judge prose). Re-run verify-build.
 2. If it converges to PASS → continue.
 3. If it does NOT converge → add an entry to the **draft manifest** in the canonical line shape (Step 2): Resolve the two scratch paths and **Write** the finding + resolution into them first (Step 2's canonical three-call form — the text never enters a shell word). Then:
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+python3 "$TRIAGE" scratch-path --name verify-build-regression-finding.txt --name verify-build-regression-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
 
 ```sh
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
@@ -530,14 +572,28 @@ jq . "$STAGES" >/dev/null 2>&1 || { echo "⚠️ BLOCKER: the handoff at $STAGES
 
   ```sh
   TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+  python3 "$TRIAGE" scratch-path --name skip-audit-root-finding.txt --name skip-audit-root-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
+  TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
   # skip-audit-root-finding.txt ← the gate never looked at this repo — say which root it did look at
   # skip-audit-root-resolution.txt ← re-run from the repo root
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind skip-audit --needs "re-run" \
     --finding-file "<skip-audit-root-finding.txt>" --resolution-file "<skip-audit-root-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the skip-audit entry was NOT recorded." >&2; exit 1; }
-  ```
+```
 ), **never** a clean pass: an unanchored fork validates every unverifiable skip as LEGITIMATE, so its confident "all legitimate" is exactly the output you must not trust. If it instead reports an **`engine_error`** (the handoff was present but `skip-audit-checks.py` failed on it — the engine now exits non-zero on a malformed/unreadable report rather than collapsing to a silent `stages:[]`), treat that as a `[decision-required]` draft-manifest entry (Resolve the two scratch paths and **Write** the finding + resolution into them first (Step 2's canonical three-call form — the text never enters a shell word). Then:
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+python3 "$TRIAGE" scratch-path --name skip-audit-engine-finding.txt --name skip-audit-engine-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
 
 ```sh
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
@@ -556,17 +612,31 @@ python3 "$TRIAGE" add-entry --kind skip-audit --needs "human-waive" \
 
   ```sh
   TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+  python3 "$TRIAGE" scratch-path --name skip-audit-stage-finding.txt --name skip-audit-stage-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
+  TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
   # skip-audit-stage-finding.txt ← the stage name and the reason its skip could not be justified against the diff
   # skip-audit-stage-resolution.txt ← re-run the named stage, or declare it, or human-waive
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind skip-audit --needs "<re-run | declare | human-waive>" \
     --finding-file "<skip-audit-stage-finding.txt>" --resolution-file "<skip-audit-stage-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the skip-audit entry was NOT recorded." >&2; exit 1; }
-  ```
+```
 ). The PR opens as a draft (Step 7).
    - **`⚠️ SKIP-AUDIT COULD NOT VERIFY …` (`stamp_unverifiable`)** → the stamp checker itself could not run (missing helper, no `python3`/`jq`). Do **not** re-run 2a.1 — that cannot fix a toolchain problem. Add a **`[decision-required]`** entry (Resolve the two scratch paths and **Write** the finding + resolution into them first (Step 2's canonical three-call form — the text never enters a shell word). Then:
 
   ```sh
+  TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+  python3 "$TRIAGE" scratch-path --name skip-audit-unverified-finding.txt --name skip-audit-unverified-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
   TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
   # skip-audit-unverified-finding.txt ← flow could not verify the handoff belongs to this workspace, so NO stage skip was checked
   # skip-audit-unverified-resolution.txt ← re-run ship Step 2a.1 from this workspace
@@ -574,11 +644,18 @@ python3 "$TRIAGE" add-entry --kind skip-audit --needs "human-waive" \
   python3 "$TRIAGE" add-entry --kind skip-audit --needs "re-run" \
     --finding-file "<skip-audit-unverified-finding.txt>" --resolution-file "<skip-audit-unverified-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the skip-audit entry was NOT recorded." >&2; exit 1; }
-  ```
+```
 ).
    - **`⚠️ SKIP-AUDIT REFUSED …` (`stamp_error`)** → the handoff present at the scratch path did not belong to this repo/branch/HEAD, so the gate did **not** run. Re-run 2a.1 to rewrite the handoff and re-invoke the skill **once**. If it refuses again, add a **`[decision-required]`** entry (Resolve the two scratch paths and **Write** the finding + resolution into them first (Step 2's canonical three-call form — the text never enters a shell word). Then:
 
   ```sh
+  TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+  python3 "$TRIAGE" scratch-path --name skip-audit-foreign-finding.txt --name skip-audit-foreign-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
   TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
   # skip-audit-foreign-finding.txt ← the skip-check refused a handoff from another workspace — name the reason, and say plainly that NO stage skip was checked
   # skip-audit-foreign-resolution.txt ← re-run ship Step 2a.1 in this workspace
@@ -586,7 +663,7 @@ python3 "$TRIAGE" add-entry --kind skip-audit --needs "human-waive" \
   python3 "$TRIAGE" add-entry --kind skip-audit --needs "re-run" \
     --finding-file "<skip-audit-foreign-finding.txt>" --resolution-file "<skip-audit-foreign-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the skip-audit entry was NOT recorded." >&2; exit 1; }
-  ```
+```
 ). Never record this as `all-legitimate`.
    - **`SKIP-AUDIT: no stage report to audit` on a run you launched from 2a.1** → you *did* write a handoff, so an "absent" verdict means the fork could not see it — the transport regression FB-0082 fixed. Treat it exactly like `stamp_error` above; do **not** proceed as if the skips were audited.
    - **`LEGITIMATE · manifest: <kind>`** → the skip was honest **and** the check still never ran, so this is **not** a clean pass. The engine — not you — decided it owes the PR an entry (today the only kind is `toolchain`: a validated toolchain absence on this host). Add it through the validated write path, never a hand-composed line:
@@ -594,6 +671,12 @@ python3 "$TRIAGE" add-entry --kind skip-audit --needs "human-waive" \
      TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
      BRANCH=$(git branch --show-current)
      python3 "$TRIAGE" scratch-path --name toolchain-finding.txt --name toolchain-resolution.txt || exit 1
+```
+
+   Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
+     TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
      # Then WRITE TOOL: the first path gets "verify-build could not run: this machine has
      # none of the tools an <platform> build needs (<the binaries the engine named>), so
      # nothing was built or exercised"; the second gets "re-run /flow:verify-build on a
@@ -603,7 +686,7 @@ python3 "$TRIAGE" add-entry --kind skip-audit --needs "human-waive" \
        --needs re-run --confidence decision-required \
        --finding-file "<first path>" --resolution-file "<second path>" \
        >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the toolchain entry was NOT recorded." >&2; exit 1; }
-     ```
+```
      **The `>>` redirect is the whole point** — `add-entry` validates and PRINTS the line, it does not write it. Without the redirect the entry goes to stdout, Step 7a.5 classifies an empty manifest, the verdict is `READY`, and §7a.6 opens a **non-draft** PR: a validated-unverifiable skip reaching a ready PR with no behavioral gate, which is exactly what this bullet exists to prevent. Same reason the `TRIAGE` fallback is not optional: `CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls, so a bare `${CLAUDE_PLUGIN_ROOT}/…` path fails outright in the flow repo itself.
      Then continue. The entry makes the triage verdict `≠ READY`, so §7a.6 opens a **draft** through machinery that already exists — no special-casing there. Do **not** re-invoke verify-build: re-running a stage on a host that cannot run it is the wasted cycle this whole path removes.
    - **All `LEGITIMATE`, and none carrying a `manifest:` field** → emit a one-line confirmation (`skip-audit: all N stage skips legitimate`) and proceed. The qualifier is load-bearing: an unqualified "all legitimate → proceed" is exactly how a validated-but-unverifiable skip would reach a **ready** PR with no behavioral gate.
@@ -929,13 +1012,20 @@ fi
 
   ```sh
   TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+  python3 "$TRIAGE" scratch-path --name status-surface-finding.txt --name status-surface-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
+  TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
   # status-surface-finding.txt ← the path plus the stale forward-looking claim quoted VERBATIM — the Write tool puts it in the file, never in a shell word; this is the producer FB-0108 exists for, since the quote is doc text flow does not control
   # status-surface-resolution.txt ← the corrected line you DRAFTED verbatim for the human to approve — or declare it in statusDocs and fence the region so it auto-reconciles every ship, or human-waive
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind status-surface --needs reconcile \
     --finding-file "<status-surface-finding.txt>" --resolution-file "<status-surface-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the status-surface entry was NOT recorded." >&2; exit 1; }
-  ```
+```
 
   Do **not** silently rewrite the un-fenced doc — the draft item **is** the "propose before editing" proposal (many CLAUDE.mds forbid silent edits; the fix is the human's call, or an opt-in to Tier 2). If the human resolves it in-session by fencing + declaring the surface, it becomes Tier 2 and 5a reconciles it on the next ship.
 - **No candidate drifted (or the scan found 0 undeclared candidates)** → emit the explicit skip line (never a silent pass): `[status-surface] N candidates scanned, none drifted` (take N from the scan header).
@@ -1258,6 +1348,12 @@ TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE
 # add-entry site below pass deliberately DIFFERENT text, and sharing one path would
 # collapse their fingerprints, which classify() reads to pick the entry's class.
 python3 "$TRIAGE" scratch-path --name visual-attempt-finding.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 # Then WRITE TOOL: that path gets the finding text, verbatim.
 python3 "$TRIAGE" record-attempt --branch "$BRANCH" --kind visual-deliverable \
   --finding-file "<the path printed above>" || { echo "⚠️ BLOCKER: record-attempt failed — the attempt was NOT recorded, so Step 7a.5 may re-attempt instead of asking." >&2; exit 1; }
@@ -1268,6 +1364,12 @@ If the re-assert now passes, there is no manifest entry and nothing reaches the 
 ```sh
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 python3 "$TRIAGE" scratch-path --name visual-deliverable-finding.txt --name visual-deliverable-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution to the second — verbatim, no added quoting, never a heredoc. Then, as a SEPARATE Bash call (shell state does not survive between calls, so `$TRIAGE` is re-resolved):
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 # Then WRITE TOOL: first path gets "<plain language: this change is visible in the app and
 # <named artifact(s)> is missing>"; second gets "re-run /flow:verify-build to capture
 # frames, and/or hand-author the visual-history entry (Step 5c)".

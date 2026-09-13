@@ -761,15 +761,29 @@ def _read(path: str) -> str:
 # a finding is passed through byte-identically, exactly as the old argv path did.
 # Widening it would silently reflow text that composes correctly today, which is a
 # behaviour change a safety refactor has no business making.
-# A LONE \r counts, not just \r\n and \n. Found by payload P10: `\r?\n` leaves a bare
-# carriage return untouched, and a bare CR is a line break to plenty of consumers (and to
-# Python's own universal-newline decoding), so it could split a manifest entry in two
-# exactly like a \n. Still strictly newline-class — a tab or double space is untouched.
-_NEWLINE_RUN_RE = re.compile(r"[ \t]*(?:\r\n|\r|\n)+[ \t]*")
-
-
+# Collapse every line break to a single space, plus the horizontal whitespace hugging it.
+# The manifest is one entry per line, and a file-delivered finding can legitimately be
+# multi-line, so a break must be JOINED rather than rejected: rejecting exits 2, and a
+# producer whose add-entry exits 2 appends nothing, i.e. it would DROP a blocker on
+# ordinary well-meant input (FB-0062's failure-open shape).
+#
+# DERIVED from the consumer's own definition, not hand-enumerated. `parse_entries` reads
+# the manifest via `str.splitlines()`, which breaks on ELEVEN characters -- \n \r \r\n
+# \v \f \x1c \x1d \x1e \x85 \u2028 \u2029 -- so a regex listing only the first three
+# left eight holes. Measured, not theorised: a finding containing U+2028 (which arrives in
+# text pasted from web/JS sources, and the [status-surface] producer quotes doc text
+# verbatim) appended ONE physical line, then parsed to ZERO entries, and `classify`
+# returned verdict READY over a live [verify-build] blocker -- the exact failure-open this
+# function exists to prevent, reached through the surviving hole. Using splitlines() here
+# means "what is a line break" has ONE source of truth shared with the parser, and the two
+# cannot drift.
+#
+# Deliberately NOT a general whitespace collapse: a tab or a double space inside a finding
+# passes through byte-identically, exactly as the old argv path did. The invariant is "one
+# entry per LINE", so only the line-break class needs touching; widening it would reflow
+# text that composes correctly today for no safety gain.
 def _collapse_newlines(text: str) -> str:
-    return _NEWLINE_RUN_RE.sub(" ", text)
+    return " ".join(seg.strip(" \t") for seg in text.splitlines()).strip()
 
 
 def _read_text_arg(path: str, flag: str) -> str:
@@ -813,27 +827,42 @@ def _read_text_arg(path: str, flag: str) -> str:
     return _collapse_newlines(raw.strip())
 
 
-def _reject_argv_text(args: Any, *names: str) -> None:
-    """Refuse the REMOVED raw-argv free-text flags with a message that teaches.
+class _RemovedTextFlag(argparse.Action):
+    """Refuse a REMOVED raw-argv free-text flag, at the DECLARATION site.
 
     Kept declared rather than deleted so a stale copy-paste -- flow's own
-    dev-docs/history/ entries contain literal invocations in the old argv spelling,
-    and agents read history docs -- is told the new spelling instead
-    of handed an argparse usage dump. This is NOT an equal-status path: there is
-    no flag, env var or fallback by which argv text reaches the manifest.
+    dev-docs/history/ entries carry literal invocations in the old argv spelling, and
+    agents read history docs -- is told the new spelling instead of handed an argparse
+    usage dump. This is NOT an equal-status path: there is no flag, env var or fallback
+    by which argv text reaches the manifest.
+
+    An Action rather than a manual check in each handler, because the manual form needed
+    three coordinated special cases -- a call at every handler, a `default=None` sentinel,
+    and a hand-rolled re-implementation of `required=True` (the real one had to be dropped
+    so argparse's required-check could not pre-empt the teaching message). All three
+    collapse here: the Action fires DURING parsing, before the required-check, so
+    `--finding-file` goes back to `required=True`. It also fails CLOSED for a future
+    subcommand that declares the flag and forgets to call a rejector -- which the manual
+    shape did not.
     """
-    for name in names:
-        if getattr(args, name.replace("-", "_"), None) is not None:
-            print(
-                f"BLOCKER: --{name} was REMOVED (FB-0108). Free text must arrive as a "
-                f"FILE PATH, not a shell argument: untrusted text spliced into a shell "
-                f"word can break out of it, and no quoting convention survives every "
-                f"future author. Use --{name}-file PATH instead -- write the raw text "
-                f"there with the Write tool (never a heredoc: a payload containing the "
-                f"delimiter escapes it), then pass the path. "
-                f"`scratch-path --name <slug>` resolves a safe path for you.",
-                file=sys.stderr)
-            raise SystemExit(2)
+
+    def __init__(self, option_strings, dest, **kw):
+        kw["nargs"] = "?"
+        kw["help"] = argparse.SUPPRESS
+        super().__init__(option_strings, dest, **kw)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        name = (option_string or "").lstrip("-")
+        print(
+            f"BLOCKER: --{name} was REMOVED (FB-0108). Free text must arrive as a "
+            f"FILE PATH, not a shell argument: untrusted text spliced into a shell "
+            f"word can break out of it, and no quoting convention survives every "
+            f"future author. Use --{name}-file PATH instead -- write the raw text "
+            f"there with the Write tool (never a heredoc: a payload containing the "
+            f"delimiter escapes it), then pass the path. "
+            f"`scratch-path --name <slug>` resolves a safe path for you.",
+            file=sys.stderr)
+        raise SystemExit(2)
 
 
 def _load_entries(path: str) -> list[dict[str, Any]]:
@@ -889,30 +918,27 @@ def main(argv: list[str] | None = None) -> int:
         p = sub.add_parser(name)
         p.add_argument("--branch", required=True)
         p.add_argument("--kind", required=True)
-        p.add_argument("--finding-file")   # see add-entry: checked after the reject arm
+        p.add_argument("--finding-file", required=True)
         # REMOVED (FB-0108) -- same rejection arm as `add-entry`. These two take the
         # SAME untrusted finding text (it must fingerprint-match a manifest entry), so
         # leaving argv here would leave the hazard at the site that needs the exact
         # same bytes. No --resolution/--resolution-file: neither subcommand has ever
         # had a resolution field, and the record they write carries only
         # fingerprint/kind/finding.
-        p.add_argument("--finding", default=None, help=argparse.SUPPRESS)
+        p.add_argument("--finding", action=_RemovedTextFlag)
         p.add_argument("--path")
 
     p = sub.add_parser("add-entry")
     p.add_argument("--kind", required=True)
     p.add_argument("--needs", required=True)
-    # NOT argparse-required: `--finding` alone must reach `_reject_argv_text`'s
-    # teaching message, and argparse's "the following arguments are required"
-    # usage dump would pre-empt it on exactly the stale-copy-paste case the arm
-    # exists for. Absence is enforced below, after the rejection arm runs.
-    p.add_argument("--finding-file")
+    # required=True is safe again: the removed flags reject during PARSING (see
+    # _RemovedTextFlag), so argparse's required-check can no longer pre-empt the
+    # teaching message.
+    p.add_argument("--finding-file", required=True)
     p.add_argument("--resolution-file")
-    # REMOVED (FB-0108), kept declared only to reject with a message that teaches.
-    # default=None is load-bearing: `_reject_argv_text` keys on "not None", so an
-    # empty-string default would make an empty-valued flag indistinguishable from absent.
-    p.add_argument("--finding", default=None, help=argparse.SUPPRESS)
-    p.add_argument("--resolution", default=None, help=argparse.SUPPRESS)
+    # REMOVED (FB-0108), declared only to reject with a message that teaches.
+    p.add_argument("--finding", action=_RemovedTextFlag)
+    p.add_argument("--resolution", action=_RemovedTextFlag)
     p.add_argument("--confidence", default="decision-required")
     p.add_argument("--attempted", action="store_true")
 
@@ -963,13 +989,6 @@ def main(argv: list[str] | None = None) -> int:
         # defensively un-mangle later. Validate against the closed vocabularies
         # at WRITE time rather than fail-safing at classify time.
         #
-        # The argv rejection runs FIRST, before vocabulary validation, so a stale
-        # copy-paste is told the real problem (the removed flag) rather than a
-        # confusing downstream one.
-        _reject_argv_text(args, "finding", "resolution")
-        if not args.finding_file:
-            print("BLOCKER: add-entry requires --finding-file PATH.", file=sys.stderr)
-            return 2
         if args.kind not in KINDS:
             print(f"unknown kind {args.kind!r}; expected one of {', '.join(KINDS)}", file=sys.stderr)
             return 2
@@ -1035,10 +1054,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd in ("record-attempt", "waive"):
-        _reject_argv_text(args, "finding")
-        if not args.finding_file:
-            print(f"BLOCKER: {args.cmd} requires --finding-file PATH.", file=sys.stderr)
-            return 2
         finding = _read_text_arg(args.finding_file, "--finding-file")
         # Fingerprint stability across this change is load-bearing: a waiver the
         # human gave BEFORE it must still subtract its entry after. It holds
