@@ -139,14 +139,26 @@ cc() {
     # ONE interpreter start, not four. The previous shape spawned python3 per field
     # and computed INST/MKT/BR before the silent-exit branch below, so three of the
     # four spawns were pure waste on the common (already-current) path.
+    #
+    # The delimiter is `|`, NOT a tab, and that is load-bearing rather than taste.
+    # Tab is an IFS *whitespace* character, so `read` collapses runs of it and an
+    # EMPTY field silently vanishes -- shifting every later field left. Reproduced:
+    # with a malformed registry (no installed version) the fields shifted by one and
+    # the warning below reported the MARKETPLACE version as the installed one. The
+    # predicate itself was unaffected (it is field 1), so this was cosmetic -- but
+    # printing a shifted version number inside a diagnostic about version confusion
+    # is the worst possible place for it. A non-whitespace IFS preserves empty fields.
+    # Values are sanitised of the delimiter on the python side so a version string
+    # can never re-introduce the shift.
     FIELDS=$(printf '%s' "$PROV" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
-g = lambda k: (d.get(k) or {}).get("version") or ""
-print("\t".join([str(d.get("update_available")), str(d.get("report_drift")),
-                 g("installed"), g("marketplace_head"), g("branch")]))' 2>/dev/null)
+def g(k):
+    return str((d.get(k) or {}).get("version") or "").replace("|", "")
+print("|".join([str(d.get("update_available")), str(d.get("report_drift")),
+                g("installed"), g("marketplace_head"), g("branch")]))' 2>/dev/null)
     # Still reads the predicate FROM the engine -- no version comparison in shell.
-    IFS="$(printf '\t')" read -r AVAIL RDRIFT INST MKT BR <<EOF
+    IFS='|' read -r AVAIL RDRIFT INST MKT BR <<EOF
 $FIELDS
 EOF
 
@@ -176,8 +188,10 @@ EOF
         exit 0
     fi
     if [ "$AVAIL" != "True" ]; then
-        echo "⚠️ [flow-currency] could not compare installed ($INST) against marketplace" >&2
-        echo "   HEAD ($MKT) — 'is an update available' is UNKNOWN, not 'no'." >&2
+        echo "⚠️ [flow-currency] could not compare installed (${INST:-unreadable}) against" >&2
+        echo "   marketplace HEAD (${MKT:-unreadable}) — whether an update exists is UNKNOWN," >&2
+        echo "   which is NOT the same as 'no'. Run 'claude plugin list' before relying on the" >&2
+        echo "   /flow:* machinery being current." >&2
         exit 0
     fi
 

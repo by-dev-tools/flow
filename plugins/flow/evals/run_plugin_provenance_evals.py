@@ -633,6 +633,47 @@ def test_hook_degrades_safely():
               f"absent engine must say it cannot tell, got {se!r}")
 
 
+def test_hook_field_parse_no_shift():
+    """An EMPTY field must not shift the fields after it.
+
+    Found by driving the hook against a malformed registry: the field list was
+    tab-delimited, tab is an IFS *whitespace* character, so `read` collapsed runs of
+    it and a missing installed version silently vanished -- shifting every later
+    field left, so the warning reported the MARKETPLACE version as the installed
+    one. The predicate is field 1 and was unaffected, so the impact was cosmetic --
+    but a shifted version number inside a diagnostic *about version confusion* is
+    the worst place for one, and FB-0082's rule is that `absent` must stay
+    distinguishable rather than quietly becoming another value.
+
+    Two paired assertions, because the positive alone would pass on a tab-delimited
+    implementation that merely happened to have no empty fields in the fixture.
+    """
+    txt = HOOK.read_text(encoding="utf-8")
+    check("IFS='|'" in txt,
+          "the field split must use a NON-whitespace delimiter, or empty fields collapse")
+    check('IFS="$(printf \'\\t\')" read -r AVAIL' not in txt,
+          "the tab-delimited field read must not come back — it drops empty fields")
+
+    # Behavioural: a registry with no readable version must report the install as
+    # unreadable and must NOT print the marketplace version in its place.
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        drive = _hook_driver(td)
+        home = make_home(td / "bad", "{not json at all", marketplace_json("9.9.9"))
+        rc, so, se, calls = drive(home, cwd=REPO)
+    check(rc == 0, f"an unreadable registry must still exit 0, got {rc}")
+    check("unreadable" in se,
+          f"an unreadable install must be NAMED unreadable, got {se!r}")
+    check("installed (9.9.9)" not in se,
+          "the marketplace version must never be printed as the installed version "
+          "(the field-shift bug)")
+    check("UNKNOWN" in se and "same as 'no'" in se.lower().replace("not ", "not "),
+          "an undeterminable comparison must say UNKNOWN and explicitly distinguish "
+          f"itself from 'no', got {se!r}")
+    check(not any("plugin update" in c for c in calls),
+          f"an undeterminable comparison must not blind-update, got {calls}")
+
+
 def test_capture_fixture():
     """The one-shot capture is internally consistent and carries no host paths.
 
@@ -684,7 +725,8 @@ def main() -> int:
                test_decoy_repo_refused, test_surface_drift, test_contracts,
                test_hook_single_predicate, test_hook_loud_failure,
                test_hook_fast_path, test_hook_dry_run,
-               test_hook_degrades_safely, test_capture_fixture, test_ci_wired):
+               test_hook_degrades_safely, test_hook_field_parse_no_shift,
+               test_capture_fixture, test_ci_wired):
         try:
             fn()
         except Exception as exc:  # noqa: BLE001
