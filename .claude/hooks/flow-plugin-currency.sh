@@ -23,6 +23,20 @@
 #
 # Idempotent, non-interactive, and it NEVER exits non-zero — a network blip must
 # not wedge a session start.
+#
+# COST, stated rather than hidden (measured; /simplify efficiency lens). One
+# `claude plugin` CLI boot is ~379 ms on a cloud sandbox, and the clone refresh
+# below is unconditional, so this adds roughly 1-3 s of blocking session start.
+# Two optimisations were identified and deliberately NOT taken here — both are on
+# the roadmap with their reasoning:
+#   1. `"matcher": "startup|resume"` in settings.json, so this stops re-running on
+#      every `/clear` and auto-compact (same process, where the update provably
+#      cannot apply anyway). Not taken because SessionStart matcher support could
+#      not be verified locally, and shipping an unverified declaration is the exact
+#      FB-0085 class the PR that added this file was about.
+#   2. A freshness gate on the clone's `.git` mtime. Not taken because it adds a
+#      time-based staleness gate to the mechanism that exists to prevent silent
+#      staleness — a wrong default reintroduces the bug.
 set -uo pipefail
 
 # ---------------------------------------------------------------- the gate
@@ -39,8 +53,12 @@ set -uo pipefail
 # Here the question is "is this the flow checkout?", and the answer runs on every
 # host including a Mac — because for flow the installed plugin IS the artifact
 # under development, and its staleness is the bug.
-[ -f .claude-plugin/marketplace.json ] || exit 0
-grep -q '"name"[[:space:]]*:[[:space:]]*"flow"' .claude-plugin/marketplace.json 2>/dev/null || exit 0
+# Deliberately the SAME marker + spelling as the 12 existing shipped call sites
+# (staff-review x3, a11y x2, security x2, land x2, verify-build, ship-spike, doctor)
+# and the one run_doc_slot_resolution_evals.py pins. A third spelling over a
+# different file would be invisible to the check that guards this predicate.
+[ -f plugins/flow/.claude-plugin/plugin.json ] || exit 0
+grep -q '"name"[[:space:]]*:[[:space:]]*"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null || exit 0
 
 ENGINE="plugins/flow/skills/ship/lib/plugin-provenance.py"
 
@@ -95,8 +113,13 @@ cc() {
     # this whole PR exists to remove.
     if [ "$DRY" = "1" ]; then
         cc plugin marketplace update flow
-    elif ! claude plugin marketplace add by-dev-tools/flow >/dev/null 2>&1 \
-         && ! claude plugin marketplace update flow >/dev/null 2>&1; then
+    elif ! claude plugin marketplace update flow >/dev/null 2>&1 \
+         && ! claude plugin marketplace add by-dev-tools/flow >/dev/null 2>&1; then
+        # `update` first, `add` second: on every non-fresh host `add` fails and
+        # `update` is the real path, so trying `add` first bought one guaranteed-
+        # wasted ~380ms CLI boot per session. Identical semantics (both attempted,
+        # warning only when both fail); the rare fresh-container path eats the
+        # extra call instead of the common one.
         echo "⚠️ [flow-currency] could NOT refresh the flow marketplace clone (offline, or" >&2
         echo "   the source is unreachable). Any 'already current' verdict below is computed" >&2
         echo "   against a possibly stale clone — treat the installed version as UNVERIFIED." >&2
@@ -113,13 +136,19 @@ cc() {
     # first cut at a shared predicate re-derived it inline and the two copies
     # disagreed inside a single commit, producing [PASS] in one surface and a ⚠️
     # in another for one identical on-disk state.
-    read_field() { printf '%s' "$PROV" | python3 -c "import json,sys;print(json.load(sys.stdin).get('$1'))" 2>/dev/null; }
-    read_nested() { printf '%s' "$PROV" | python3 -c "import json,sys;print((json.load(sys.stdin).get('$1') or {}).get('$2',''))" 2>/dev/null; }
-
-    AVAIL=$(read_field update_available)
-    INST=$(read_nested installed version)
-    MKT=$(read_nested marketplace_head version)
-    BR=$(read_nested branch version)
+    # ONE interpreter start, not four. The previous shape spawned python3 per field
+    # and computed INST/MKT/BR before the silent-exit branch below, so three of the
+    # four spawns were pure waste on the common (already-current) path.
+    FIELDS=$(printf '%s' "$PROV" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+g = lambda k: (d.get(k) or {}).get("version") or ""
+print("\t".join([str(d.get("update_available")), str(d.get("report_drift")),
+                 g("installed"), g("marketplace_head"), g("branch")]))' 2>/dev/null)
+    # Still reads the predicate FROM the engine -- no version comparison in shell.
+    IFS="$(printf '\t')" read -r AVAIL RDRIFT INST MKT BR <<EOF
+$FIELDS
+EOF
 
     if [ "$DRY" = "1" ]; then
         echo "[flow-currency] installed flow $INST · marketplace HEAD $MKT · this branch declares $BR" >&2
@@ -132,12 +161,18 @@ cc() {
     fi
 
     if [ "$AVAIL" = "False" ]; then
-        # Genuinely current against the refreshed clone. Silent: a session start
-        # is not the place for a line that always prints. Note this is the
-        # REPORT-vs-UPDATE split doing its job — `report_drift` may still be true
-        # here (a feature branch declares an unreleased version by construction),
-        # and keying the updater on THAT would make this branch print a warning
-        # forever, including after a fully successful update.
+        # Genuinely current against the refreshed clone, so no update is attempted.
+        # But the two predicates are not one: `report_drift` can still be TRUE here
+        # (a feature branch declares an unreleased version by construction — the
+        # steady state of every flow branch), and this hook is the ONLY in-session
+        # surface resolved from the CHECKOUT rather than the stale install. So it is
+        # the only thing that can say so on a session whose installed ship prose is
+        # too old to carry the provenance rows at all. Report; never act on it.
+        if [ "$RDRIFT" = "True" ]; then
+            echo "[flow-currency] installed flow $INST is current with the marketplace, but this" >&2
+            echo "   branch declares $BR — the /flow:* skills and reviewers in THIS session run" >&2
+            echo "   $INST, not your working tree. Check the PR's '## Flow run' provenance rows." >&2
+        fi
         exit 0
     fi
     if [ "$AVAIL" != "True" ]; then
@@ -169,7 +204,9 @@ cc() {
     echo "[flow-currency] installed flow: $INST → ${NEW:-unknown}" >&2
     echo "[flow-currency] NOTE: 'restart required to apply' — THIS session still runs" >&2
     echo "   $INST. The PR body's '## Flow run' provenance rows report what actually ran." >&2
-    claude plugin list 2>/dev/null || true
+    # No trailing `claude plugin list`: it was a ~380ms CLI boot whose output merely
+    # restated the "$INST → $NEW" line immediately above, which the engine already
+    # sourced from the registry. #116 prints it because it has no engine to ask.
 } 1>&2
 
 exit 0

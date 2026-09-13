@@ -73,12 +73,12 @@ crashes teaches the operator nothing and one that prints a blank row is worse.
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import os
 import re
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 PROBE_LIB = "skills/ship/lib/manifest-triage.py"
@@ -162,20 +162,38 @@ def _git_sha(root: Path) -> str | None:
     return out.stdout.strip() or None
 
 
-def is_flow_checkout(root: Path) -> bool:
+@lru_cache(maxsize=8)
+def _is_flow_checkout(root_str: str) -> bool:
     """Ground truth, not an environment variable (the FB-0085 lesson).
 
     Also the trust boundary roadmap:311 asks for: without this gate the reader
     would happily report a version out of ANY reviewed repository that happens to
     ship a `plugins/flow/.claude-plugin/plugin.json`.
+
+    The marker is `plugins/flow/.claude-plugin/plugin.json` naming flow, which is
+    deliberately the SAME spelling the 12 existing shipped call sites use
+    (staff-review x3, accessibility-review x2, security-review x2, land x2,
+    verify-build, ship-spike, doctor) and the one `run_doc_slot_resolution_evals.py`
+    pins. A third spelling over a different marker file would be invisible to the
+    check that guards this predicate -- and roadmap:309 already tracks collapsing
+    these into one gated helper, so a new variant adds a site to that backlog
+    instead of joining it. It is also the file the version is then read from, so
+    gate and read agree by construction.
+
+    Cached: `read_branch` and `surface_drift` each ask independently, and this is
+    otherwise a repeated read + regex of the same bytes within one `collect()`.
     """
-    mf = root / ".claude-plugin" / "marketplace.json"
-    if not mf.exists():
+    pj = Path(root_str) / CHECKOUT_PLUGIN / ".claude-plugin" / "plugin.json"
+    if not pj.exists():
         return False
     try:
-        return bool(re.search(r'"name"\s*:\s*"flow"', mf.read_text(encoding="utf-8")))
+        return bool(re.search(r'"name"\s*:\s*"flow"', pj.read_text(encoding="utf-8")))
     except (OSError, UnicodeDecodeError):
         return False
+
+
+def is_flow_checkout(root: Path) -> bool:
+    return _is_flow_checkout(str(root))
 
 
 def read_branch(root: Path) -> dict:
@@ -204,10 +222,25 @@ def resolve_libs(plugin_root: str | None, root: Path, installed: dict) -> dict:
         X="${CLAUDE_PLUGIN_ROOT}/skills/..."; [ -f "$X" ] || X="plugins/flow/skills/..."
 
     Written installed-first, but `CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls,
-    so in the flow checkout it EXECUTES checkout-only. 32 of the 144
-    `${CLAUDE_PLUGIN_ROOT}` references in the skills carry this fallback; the
-    other 112 are bare, and a bare one in a fenced block expands to `/skills/...`
-    and hard-fails rather than going stale.
+    so in the flow checkout it EXECUTES checkout-only. Many `${CLAUDE_PLUGIN_ROOT}`
+    reference sites in the skills carry this fallback and many are bare; a bare one
+    in a FENCED block expands to `/skills/...` and hard-fails rather than going
+    stale, while a bare one in a `!`-block is fine because `CPR` is set there.
+
+    No count is stated here on purpose. An earlier draft asserted "32 of 144", and
+    it was wrong twice over: the classifier was a LINE-local grep for a
+    BLOCK-scoped property (a correctly-guarded multi-line ladder, e.g.
+    `critique-plan/SKILL.md`'s pin lint, counts as bare), and it did not split by
+    executor context -- the very axis this file establishes -- so it conflated
+    harmless `!`-block bare refs with fenced-block ones that hard-fail. It was also
+    a fan-out constant across five files that went stale inside one PR (144 on
+    `main`, 164 at that PR's own HEAD). Measure it when you need it, with the
+    executor context, and do not carve the answer into prose:
+    `git grep -n 'CLAUDE_PLUGIN_ROOT' -- plugins/flow/skills/`.
+
+    WHAT THE PROBE ESTABLISHES, precisely: it resolves ONE file (`PROBE_LIB`), so
+    the row reports which arm the ladder fires for a site that HAS a fallback. It
+    is not a survey of every helper call, and a bare-ref site is not covered by it.
     """
     if plugin_root:
         cand = Path(plugin_root) / PROBE_LIB
@@ -245,10 +278,19 @@ def surface_drift(installed: dict, root: Path) -> dict:
     have -- i.e. NOT INVOCABLE at all in this run, which is a harder failure than
     staleness: a model asked to run one concludes the skill does not exist.
 
-    This is also the reason "just always run from the working tree" is the wrong
-    blanket fix: comparing against an installed tree is the ONLY way to observe
-    a packaging/loading bug, so bypassing installation makes the whole class
-    unobservable rather than fixed.
+    SCOPE, stated precisely because an earlier draft over-claimed it: this compares
+    two directory LISTINGS, so what it detects is INVENTORY drift -- a surface the
+    branch declares that the stale install simply does not contain. It does NOT
+    detect a loading bug (the `paths:`-never-activates class): a surface can be
+    present in both trees and still fail to register, and this check would call
+    that clean. Observing THAT needs the runtime's registered set, which is the
+    routed doctor "registered vs activates" upgrade, not a listing diff.
+
+    So the honest version of the argument against "just always run from the working
+    tree" rests on the other two reasons, which do hold on their own: it would make
+    `/flow:ship` grade its own homework, and a branch that breaks ship could not
+    ship itself. Inventory drift is a real thing this reports; it is not the whole
+    packaging class.
     """
     ip = installed.get("install_path")
     if installed.get("state") != "ok" or not ip:
@@ -348,11 +390,24 @@ L_INSTALLED = "Flow — installed version (ran the skills, agents + `!`-blocks)"
 L_MARKET = "Flow — marketplace HEAD (what an update would fetch)"
 L_LIBS = "Flow — helper libs, fenced Bash blocks"
 L_PRE = "Flow — scripts via `!`-preprocessor blocks"
+# THE row contract, in one place. Four sites carry these strings: this renderer, the
+# eval harness, ship/SKILL.md and ship-spike/SKILL.md. The harness imports this tuple
+# (importlib, the run_manifest_triage_evals.py pattern for a hyphenated script) rather
+# than re-typing it, and then asserts the two SKILL.md copies match it -- so a reworded
+# label is changed HERE and the docs are machine-checked against it. Re-typing it in the
+# harness would mean editing the harness to match a new wording silently stops pinning
+# this renderer at all: FB-0010 clause 2, with the test as the thing that drifts.
 ROW_LABELS = (L_INSTALLED, L_MARKET, L_LIBS, L_PRE)
 
 
 def _row(label: str, value: str, note: str) -> str:
     return f"| {label} | {value} | {note} |"
+
+
+def _paren(base: str, extra: str | None, tick: str = "") -> str:
+    """`base (extra)` when extra is present, else `base`. Four rows need this and
+    two of them were spelling it as a nested f-string."""
+    return f"{base} ({tick}{extra}{tick})" if extra else base
 
 
 def render_rows(d: dict) -> list[str]:
@@ -362,7 +417,7 @@ def render_rows(d: dict) -> list[str]:
 
     # -- installed
     if inst.get("state") == "ok":
-        val = inst["version"] + (f" (`{inst['git_sha']}`)" if inst.get("git_sha") else "")
+        val = _paren(inst["version"], inst.get("git_sha"), "`")
         if d["report_drift"] is True:
             gap = d.get("release_gap")
             gap_txt = f" ({gap} release{'s' if gap != 1 else ''})" if gap else ""
@@ -382,7 +437,7 @@ def render_rows(d: dict) -> list[str]:
 
     # -- marketplace HEAD
     if mkt.get("state") == "ok":
-        val = mkt["version"] + (f" (`{mkt['git_sha']}`)" if mkt.get("git_sha") else "")
+        val = _paren(mkt["version"], mkt.get("git_sha"), "`")
         if d["update_available"] is True:
             note = ("⚠️ differs from the installed version — an update is available and "
                     "has not been applied.")
@@ -401,7 +456,7 @@ def render_rows(d: dict) -> list[str]:
     # -- fenced-block libs
     if libs.get("state") == "installed":
         v = libs.get("version")
-        rows.append(_row(L_LIBS, f"installed tree{f' ({v})' if v else ''}",
+        rows.append(_row(L_LIBS, _paren("installed tree", v),
                          "✓ same version as the prose"))
     elif libs.get("state") == "checkout":
         note = ("⚠️ MIXED PROVENANCE: the libs ran from the working tree while the prose "
@@ -422,7 +477,7 @@ def render_rows(d: dict) -> list[str]:
                     "`CLAUDE_PLUGIN_ROOT` IS set in this context, so the installed copy won.")
         else:
             note = "✓ same version as the prose"
-        rows.append(_row(L_PRE, f"installed{f' ({v})' if v else ''}", note))
+        rows.append(_row(L_PRE, _paren("installed", v), note))
     else:
         rows.append(_row(L_PRE, "UNDETERMINED",
                          f"⚠️ the installed tree could not be read ({pre.get('reason')}), so "

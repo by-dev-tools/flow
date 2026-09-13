@@ -24,6 +24,7 @@ green over its absence for four releases.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -41,12 +42,15 @@ SPIKE = FLOW / "skills" / "ship-spike" / "SKILL.md"
 FIXTURES = HERE / "fixtures" / "plugin-provenance"
 CAPTURE = FIXTURES / "this-workspace-20260912.json"
 
-ROW_LABELS = (
-    "Flow — installed version (ran the skills, agents + `!`-blocks)",
-    "Flow — marketplace HEAD (what an update would fetch)",
-    "Flow — helper libs, fenced Bash blocks",
-    "Flow — scripts via `!`-preprocessor blocks",
-)
+# Imported, NOT re-typed. The row contract has four sites (engine, this harness, and
+# the two SKILL.md copies); re-typing it here would mean that editing this file to match
+# a reworded label silently stops pinning the engine's renderer at all -- FB-0010 clause
+# 2, with the test as the thing that drifts. importlib because the engine's filename is
+# hyphenated (the run_manifest_triage_evals.py pattern for exactly this).
+_spec = importlib.util.spec_from_file_location("plugin_provenance", ENGINE)
+_engine = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_engine)
+ROW_LABELS = _engine.ROW_LABELS
 
 failures: list[str] = []
 checks = 0
@@ -113,16 +117,17 @@ def make_root(td: Path, branch_version: str | None, *, flow_marker: bool = True,
               skills: list[str] | None = None, agents: list[str] | None = None) -> Path:
     root = td / "root"
     (root / ".claude-plugin").mkdir(parents=True, exist_ok=True)
-    if flow_marker:
-        (root / ".claude-plugin" / "marketplace.json").write_text(marketplace_json("0.0.0"))
-    else:
-        (root / ".claude-plugin" / "marketplace.json").write_text(
-            json.dumps({"name": "not-flow", "plugins": []}))
+    (root / ".claude-plugin" / "marketplace.json").write_text(marketplace_json("0.0.0"))
     pf = root / "plugins" / "flow"
     (pf / ".claude-plugin").mkdir(parents=True, exist_ok=True)
     if branch_version:
+        # `flow_marker` controls the file the predicate ACTUALLY reads: the marker and
+        # the version source are the same file by design, so a repo whose
+        # plugins/flow/.claude-plugin/plugin.json does not name flow is not a flow
+        # checkout and its version is never read.
+        name = "flow" if flow_marker else "some-other-plugin"
         (pf / ".claude-plugin" / "plugin.json").write_text(
-            json.dumps({"name": "flow", "version": branch_version}))
+            json.dumps({"name": name, "version": branch_version}))
     probe = pf / "skills" / "ship" / "lib"
     probe.mkdir(parents=True, exist_ok=True)
     (probe / "manifest-triage.py").write_text("# probe\n")
@@ -264,7 +269,7 @@ def test_split_predicates():
             got = d.get(field)
             check(got is want if want is None or isinstance(want, bool) else got == want,
                   f"{name}: {field} must be {want!r}, got {got!r}")
-    check(bool((load_fixture("branch-ahead-marketplace-insync.json").get("expect") or {})),
+    check(bool(load_fixture("branch-ahead-marketplace-insync.json").get("expect")),
           "the disagreement fixture must declare an expect block, or it asserts nothing")
 
 
@@ -313,21 +318,22 @@ def test_both_polarities():
 
 
 def test_graceful_degradation():
-    """Never a traceback, never an empty report — always a labelled row saying
-    what could not be determined. A provenance reporter that crashes fails a ship
-    over a documentation line; one that prints a blank row is worse, because
-    blank reads as 'nothing to report' when the truth is 'could not tell'."""
-    cases = {
-        "registry absent": (None, marketplace_json("1.43.0")),
-        "registry malformed": ("{{{", marketplace_json("1.43.0")),
-        "plugin absent": ({"version": 2, "plugins": {}}, marketplace_json("1.43.0")),
-        "clone absent": (registry("1.29.0"), None),
-    }
+    """Never a traceback, never an empty report -- always a labelled row saying what
+    could not be determined. A provenance reporter that crashes fails a ship over a
+    documentation line; one that prints a blank row is worse, because blank reads as
+    "nothing to report" when the truth is "could not tell".
+
+    Driven by the committed fixtures rather than a second inline copy of the same
+    worlds -- the harness's own principle, and it picks up `installed-empty.json`
+    (the `no_versions` world) which the inline version never rendered.
+    """
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
         root = make_root(td, "1.43.0")
-        for name, (reg, mkt) in cases.items():
-            home = make_home(td / name.replace(" ", "_"), reg, mkt)
+        for name in ("installed-missing.json", "installed-malformed.json",
+                     "installed-nokey.json", "installed-empty.json",
+                     "clone-absent.json"):
+            home, _ = home_from_fixture(td / name.replace(".", "_"), name)
             rc, out = run(home, root, as_json=False)
             check(rc == 0, f"{name}: must exit 0, got {rc}")
             check(out.strip() != "", f"{name}: must not print an empty report")
@@ -338,18 +344,30 @@ def test_graceful_degradation():
 
 
 def test_decoy_repo_refused():
-    """A repo that is not the flow checkout gets no version read out of it.
+    """A repo whose flow plugin manifest does not name flow gets no version read.
 
-    The trust boundary roadmap:311 asks for. Without the ground-truth gate this
-    reader would happily report a version out of ANY reviewed repository that
-    ships a plugins/flow/.claude-plugin/plugin.json.
+    WHAT THIS ESTABLISHES, and what it does not. The marker is
+    `plugins/flow/.claude-plugin/plugin.json` naming flow -- the same spelling the 12
+    existing shipped call sites use. So a reviewed repo that ships no such manifest,
+    or one naming a different plugin, is correctly refused: that is what is asserted
+    below.
+
+    It does NOT establish that a FORGED manifest is distinguished. A hostile repo can
+    commit `plugins/flow/.claude-plugin/plugin.json` with `"name": "flow"` and this
+    reader will report its version. That is a pre-existing limitation of the marker
+    idiom across all 13 sites, not something this engine introduced, and roadmap:309
+    already tracks the real fix (gate on `git config --get remote.origin.url` rather
+    than on a committed file's contents). Stated here rather than left implied,
+    because a test named "decoy refused" would otherwise imply a guarantee the marker
+    cannot give. The exposure is bounded: this engine only READS a version string, it
+    never executes anything from the reviewed repo.
     """
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
         decoy = make_root(td, "9.9.9", flow_marker=False)
-        d = jrun(make_home(td, registry("1.29.0"), marketplace_json("1.29.0")), decoy)
-        rc, out = run(make_home(td, registry("1.29.0"), marketplace_json("1.29.0")),
-                      decoy, as_json=False)
+        home = make_home(td, registry("1.29.0"), marketplace_json("1.29.0"))
+        d = jrun(home, decoy)
+        rc, out = run(home, decoy, as_json=False)
     check((d.get("branch") or {}).get("state") == "not_flow_checkout",
           f"a non-flow checkout must report not_flow_checkout, got {d.get('branch')}")
     check("9.9.9" not in json.dumps(d), "the decoy version must never be read")
@@ -417,6 +435,15 @@ def test_contracts():
               f"{name}/SKILL.md must carry the checkout fallback for the engine path")
 
 
+def hook_body() -> list[str]:
+    """The hook's non-comment lines. Two contract tests need this; the hook
+    deliberately NAMES forbidden patterns in comments (e.g. CLAUDE_CODE_REMOTE,
+    explaining that gating on it is the bug #116 fixed), so a check that scanned the
+    whole file would forbid documenting the hazard."""
+    return [l for l in HOOK.read_text(encoding="utf-8").splitlines()
+            if not l.strip().startswith("#")]
+
+
 def test_hook_single_predicate():
     """The hook asks the engine; it does not re-derive the comparison.
 
@@ -427,8 +454,11 @@ def test_hook_single_predicate():
     txt = HOOK.read_text(encoding="utf-8")
     check("plugin-provenance.py" in txt, "the hook must call the provenance engine")
     check("update_available" in txt, "the hook must read update_available from the engine")
-    # It must NOT compare version strings itself.
-    body = "\n".join(l for l in txt.splitlines() if not l.strip().startswith("#"))
+    check("report_drift" in txt,
+          "the hook must also READ report_drift — it is the only in-session surface "
+          "resolved from the checkout, so the only one that can report drift on a "
+          "session whose installed prose is too old to")
+    body = "\n".join(hook_body())
     check('"$INST" = "$MKT"' not in body and '"$INST" != "$MKT"' not in body,
           "the hook must not compare versions itself — one predicate, one place")
 
@@ -443,7 +473,7 @@ def test_hook_loud_failure():
     one level up. Ported from health-tracker#116 with its rationale.
     """
     txt = HOOK.read_text(encoding="utf-8")
-    body = [l for l in txt.splitlines() if not l.strip().startswith("#")]
+    body = hook_body()
     upd = [l for l in body if "plugin update flow@flow" in l]
     check(bool(upd), "the hook must invoke `plugin update flow@flow`")
     # POSITIVE: the failure branch and its warning exist.
@@ -456,8 +486,10 @@ def test_hook_loud_failure():
         check("|| true" not in l,
               f"the update must NOT be suffixed `|| true`: {l.strip()!r}")
     # The gate is ground truth, not an env var (the FB-0085 lesson).
-    check("marketplace.json" in txt and '"name"' in txt,
-          "the hook must gate on the repo marker, not on an environment variable")
+    check("plugins/flow/.claude-plugin/plugin.json" in txt and '"name"' in txt,
+          "the hook must gate on the repo marker file — and on the SAME spelling the 12 "
+          "existing shipped sites use, or it is invisible to the eval that guards this "
+          "predicate")
     # Against the non-comment BODY: the hook deliberately NAMES this variable in a
     # comment, explaining that gating on it is the bug #116 fixed. A check that
     # forbade the string outright would forbid documenting the hazard, which is
@@ -502,11 +534,14 @@ def _hook_driver(td: Path):
             env["FLOW_CURRENCY_DRY_RUN"] = "1"
         run_cwd = cwd
         if hide_engine:
-            # A checkout that IS flow but has no engine: the hook must say it
-            # cannot tell, not assume "current".
+            # A checkout that IS flow but has no engine: the hook must say it cannot
+            # tell, not assume "current". It must satisfy the hook's gate (the flow
+            # plugin manifest naming flow) while lacking the engine — otherwise the
+            # hook exits at the gate and this asserts nothing.
             run_cwd = td / "noengine"
-            (run_cwd / ".claude-plugin").mkdir(parents=True, exist_ok=True)
-            (run_cwd / ".claude-plugin" / "marketplace.json").write_text(marketplace_json("1.0.0"))
+            (run_cwd / "plugins" / "flow" / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+            (run_cwd / "plugins" / "flow" / ".claude-plugin" / "plugin.json").write_text(
+                json.dumps({"name": "flow", "version": "1.43.0"}))
         p = subprocess.run(["bash", str(HOOK)], capture_output=True, text=True,
                            env=env, cwd=str(run_cwd))
         calls = [l for l in log.read_text().splitlines() if l.strip()]

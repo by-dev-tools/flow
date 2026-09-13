@@ -118,8 +118,14 @@ the follow-up that closes this, filed on the roadmap and deliberately not built 
   from that point went through a file.
 - **A self-inflicted miscount, caught and recorded rather than quietly fixed.** The lib-fallback
   census first printed 144/144 because, run from the repo root, the content grep matched each hit's
-  own *filename prefix*. Real figures 144 / 32 / 112, cross-checked by two methods that cannot share
-  the error.
+  own *filename prefix*. Cross-checked two ways and corrected — and then `/simplify`'s altitude lens
+  showed the *corrected* number was also wrong, on two further axes: a line-local grep for a
+  block-scoped property miscounts a correctly-guarded multi-line ladder as bare, and the census never
+  split by executor context, which is the very axis this PR establishes (a bare ref in a `!`-block is
+  harmless; only a fenced-block one hard-fails). It was also a fan-out constant in five files that went
+  stale inside this PR — 144 on `main`, 164 at this HEAD. **So the numbers were removed rather than
+  re-corrected a third time**, replaced by the grep command. Three attempts at one count is the
+  argument for not carving counts into prose at all.
 
 
 ### FB-0010 version sweep — recorded, not asserted

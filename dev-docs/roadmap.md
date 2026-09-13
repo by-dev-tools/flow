@@ -319,6 +319,37 @@ its fence marker and its field separator. A round-trip test asks *"does my input
 input impersonate the mechanism?"* Only the second question generates these payloads, and it is only asked by
 someone attacking the mechanism they chose rather than confirming the happy path (FB-0108 rule 3).
 ### `/flow:ship`'s commit template hardcodes a model version — every consumer not on that model gets a wrong attribution *(found while verifying an FB-0107 claim, v1.43.0; NOT fixed there — unrelated scope)*
+### Gate the flow-currency `SessionStart` hook to `startup|resume` — it currently re-runs on every `/clear` and every auto-compact *(from /simplify's efficiency lens on the v1.43.0 provenance PR; NOT taken there — unverified)*
+
+`.claude/settings.json`'s `SessionStart` entries declare no `matcher`, so the currency hook (and the
+older contribution-queue nudge) fire on `clear` and `compact` as well as `startup`/`resume`. For the
+currency hook that is pure waste: `clear` and `compact` stay in the **same OS process**, where the
+hook's own comment correctly says the update provably cannot apply ("restart required"), and the clone
+was already refreshed at startup in that process. Measured cost of one `claude plugin` CLI boot on a
+cloud sandbox: **379 ms**; the hook makes up to three such calls plus a git fetch, so ~1–3 s of blocking
+session start, re-paid on every clear and every compact in a long session.
+
+**Why v1.43.0 did not take it, and this is the interesting part.** The proposed fix is
+`"matcher": "startup|resume"` — but **no `SessionStart` matcher exists anywhere in this repo or the
+plugin to copy**, the only matcher precedent is a `PreToolUse` tool-name matcher, and I could not verify
+locally that `SessionStart` honours `matcher` at all. If it does not, adding the key either silently
+does nothing (misleading) or suppresses the hook entirely (the FB-0085 class: a declaration that never
+activates, which is precisely what that PR was about). **Shipping an unverified declaration in the PR
+whose thesis is "does this actually load in the environment it targets?" was not defensible**, so the
+per-session price is documented in the hook instead.
+
+**Shape:** verify first — against Claude Code's hook documentation or an empirical two-session test
+(add the matcher, confirm the hook still fires on a real restart and stops firing on `/clear`) — then
+apply to the currency hook. Consider the contribution-queue hook separately: it is a cheap grep with no
+network, so the matcher matters far less there, and changing both at once would make a failed
+verification harder to attribute.
+
+**Also on the table, cheaper and independent:** a freshness gate on the clone's `.git` mtime (skip the
+refresh if fetched within N hours) would cut the same cost without touching matchers. Deliberately not
+taken either: it adds a time-based staleness gate to the mechanism that exists to *prevent* silent
+staleness, so a wrong default reintroduces the exact bug. If taken, the default on a missing or
+unreadable `.git` **must** be "refresh" (FB-0010 clause 1), and an eval must pin that branch.
+
 ### A model name is hardcoded in FOUR shipped artifacts and they have ALREADY DRIFTED APART — one contract value, four files, 4.7 vs 4.8 *(found while verifying an unrelated FB-0107 claim, v1.43.0; deliberately NOT fixed there)*
 
 **The defect is not that the number is stale. It is that a shipped artifact names a model at all — four
@@ -386,10 +417,17 @@ ship first precisely so there is data on how often, and in what shape, the drift
 needs a design rather than an improvisation.
 
 **Related:** the two roadmap entries below on `${CLAUDE_PLUGIN_ROOT}` reference hardening now have new
-evidence from the same measurement — **144** references across the skills, only **32** carrying a
-checkout fallback, **112** bare. A bare one in a fenced Bash block expands to `/skills/…` and
-hard-fails rather than going stale; a bare one in a `!`-block silently runs the *installed* copy, which
-upgrades the concern recorded there ("degrades into fallback JSON") to something quieter and worse.
+a new distinction from the same measurement, which should be applied before anyone
+sizes this work: **classify by executor context, and per block rather than per line.** A bare
+`${CLAUDE_PLUGIN_ROOT}` ref in a **fenced Bash block** expands to `/skills/…` and hard-fails; the same
+bare ref in a **`!`-preprocessor block** resolves fine, because `CPR` is set there — so the two are not
+one population. And the guard is block-scoped: a correctly-guarded multi-line ladder (e.g.
+`critique-plan/SKILL.md`'s pin lint) has no same-line fallback and a line-local grep miscounts it as
+bare. v1.43.0 initially asserted a "32 of 144" split that was wrong on both axes *and* went stale inside
+its own PR (144 on `main`, 164 at its HEAD), so no count is recorded here on purpose — it is a fan-out
+constant. Measure it when you need it: `git grep -n 'CLAUDE_PLUGIN_ROOT' -- plugins/flow/skills/`.
+The `!`-block case does add a genuinely new concern to the entry below: a bare ref there silently runs
+the *installed* copy, which is quieter than the "degrades into fallback JSON" failure recorded there.
 
 
 ### `add-entry --finding`/`--resolution` embeds untrusted, agent-composed text as a raw shell argument — 1 of ~9 remaining producer sites fixed narrowly; the interface-level fix is a dispatched fast follow (from /flow:security-review, vacuous-criterion PR — FB-0104)

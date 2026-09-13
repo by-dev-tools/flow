@@ -60,8 +60,9 @@ names different files depending on who expands it:
 |---|---|---|
 | SKILL.md prose, agent prompts | Claude Code's registries | **installed — stale** |
 | Scripts in `!`-preprocessor blocks | Claude Code's expander (`CPR` set) | **installed — stale** |
-| Helper libs in fenced Bash blocks (32 of 144 ref sites carry the fallback) | Bash tool (`CPR` unset) | **working tree — fresh** |
-| Bare `${CPR}/…` executables in fenced blocks (the other 112) | Bash tool | **hard failure**, not staleness |
+| Helper libs in fenced Bash blocks that carry the installed-else-checkout fallback | Bash tool (`CPR` unset) | **working tree — fresh** |
+| Bare `${CPR}/…` executables in fenced blocks | Bash tool | **hard failure**, not staleness |
+| Bare `${CPR}/…` in a `!`-block | Claude Code's expander (`CPR` set) | **installed** — resolves fine |
 | Skills/agents absent from the installed tree | not registered | **neither — no tool exists** |
 
 Three consequences the original entry did not have:
@@ -86,9 +87,12 @@ so, loaded the docs by hand, and returned 7 real findings anyway. **Had it inste
 
 **Why the fix is a report and not "always run from the working tree."** That reads as the obvious
 answer and it is wrong as a blanket rule. Comparing against an installed tree is the *only* way to
-observe a packaging/loading bug — this branch found **5 skills and 1 agent** that exist in the
-checkout and are not registered at all, which is unobservable by construction if you bypass
-installation. It would also make `/flow:ship` grade its own homework, and a branch that breaks ship
+observe a packaging/loading bug — this branch found **5 skills and 1 agent** that exist in the checkout and
+are absent from the installed tree. **Scope that claim precisely:** a listing diff detects *inventory*
+drift, not a loading bug — a surface present in both trees can still fail to register, and only the
+runtime's registered set would show that. So the argument against working-tree-global rests mainly on
+the other two reasons, which stand alone: it would make `/flow:ship` grade its own homework, and a branch
+that breaks ship could not ship itself. It would also make `/flow:ship` grade its own homework, and a branch that breaks ship
 could not ship itself. A *stable* reviewer is partly a feature. So: make the version explicit and
 visible; do not force a resolution order.
 
