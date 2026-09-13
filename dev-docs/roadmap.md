@@ -319,25 +319,45 @@ its fence marker and its field separator. A round-trip test asks *"does my input
 input impersonate the mechanism?"* Only the second question generates these payloads, and it is only asked by
 someone attacking the mechanism they chose rather than confirming the happy path (FB-0108 rule 3).
 ### `/flow:ship`'s commit template hardcodes a model version — every consumer not on that model gets a wrong attribution *(found while verifying an FB-0107 claim, v1.43.0; NOT fixed there — unrelated scope)*
+### A model name is hardcoded in FOUR shipped artifacts and they have ALREADY DRIFTED APART — one contract value, four files, 4.7 vs 4.8 *(found while verifying an unrelated FB-0107 claim, v1.43.0; deliberately NOT fixed there)*
 
-`plugins/flow/skills/ship/SKILL.md` Step 6 instructs: *"End with: `Co-Authored-By: Claude Opus 4.7 (1M
-context)`"*. That is a **hardcoded model version in a shipped artifact**. Every consumer running a
-different model gets a factually wrong co-author trailer in their git history, and the line rots silently
-on each model release — there is no gate that would notice.
+**The defect is not that the number is stale. It is that a shipped artifact names a model at all — four
+times — and the four no longer agree.** This is FB-0010 clause 2 realized inside the plugin's own
+artifacts: a change updated three sites and missed the fourth, and nothing noticed.
 
-**Found by accident, which is the interesting part.** It surfaced while checking whether the line differed
-between the installed 1.29.0 tree and the checkout (it does not — it is stale in both, i.e. on `main`). So
-it is *not* an FB-0107 instance, and v1.43.0 deliberately did not absorb it.
+Measured on `origin/main` (line numbers are main's; `workflow.md` shifts to 222 on any branch that edits it):
 
-**Shape:** either drop the model name entirely (the trailer's value is "an agent co-authored this", not
-which one), or resolve it from the runtime rather than the prose. Dropping it is probably right: flow
-cannot know which model a consumer runs, and a project-agnostic artifact should not guess. If a slot is
-wanted, it is a `flow.config.json` slot — but that adds a 35th slot for a cosmetic line, which likely
-fails the FB-0056 "delta over the simpler option" test.
+```
+plugins/flow/docs/workflow.md:189            Co-Authored-By: Claude Opus 4.7 (1M context)
+plugins/flow/skills/ship/SKILL.md:1011       Co-Authored-By: Claude Opus 4.7 (1M context)
+plugins/flow/skills/ship-spike/SKILL.md:505  Co-Authored-By: Claude Opus 4.7 (1M context)
+plugins/flow/skills/land/SKILL.md:366        Co-Authored-By: Claude Opus 4.8          ← drifted
+```
 
-**It is already a 3-site fan-out** (FB-0010 clause 2), measured: `skills/ship/SKILL.md:1011`,
-`skills/ship-spike/SKILL.md:505`, `docs/workflow.md:222`. Grep before editing — `git grep -n 'Claude Opus'
--- plugins/` — and expect the count to have grown by the time anyone picks this up.
+**The drift is two-dimensional, which makes it worse than a version skew.** `land` diverges on the model
+number *and* silently drops the ` (1M context)` suffix the other three carry. So a project running flow
+gets one trailer from `/flow:ship` and a different one from `/flow:land` — in the same repo, on the same
+PR, one after the other.
+
+**And all four are wrong for any current consumer regardless,** since the current line is the Claude 5
+family. A template that names a model must be updated on every model release, in every file carrying it,
+forever. The drift above is the proof that nobody will.
+
+**Why this is not cosmetic.** It writes a factually false statement into a consumer's permanent git
+history, and it violates the project-agnostic quality bar in CLAUDE.md — flow cannot know which model a
+consumer runs, so a shipped artifact must not assert one.
+
+**Shape — a design call for the fix, not for this filing.** The likely right answer is that the template
+should not name a model at all: the trailer's value is "an agent co-authored this", not which one. A
+`flow.config.json` slot is the obvious alternative and probably wrong — a 35th slot for a cosmetic line
+almost certainly fails FB-0056's "delta over the simpler option" test. Whatever is chosen, fix **all
+four** in one commit and grep broadly first: `git grep -nE 'Co-Authored-By: Claude [A-Za-z]+ [0-9]' --
+plugins/`. **Not** `git grep 'Claude Opus 4.7'` — that is the grep that found only three of the four and
+is how this entry was initially under-reported.
+
+**Found by accident**, while checking whether the line differed between the installed 1.29.0 tree and the
+checkout. It does not — it is stale in both, i.e. on `main` — so it is **not** an FB-0107 instance and
+v1.43.0 correctly did not absorb it.
 
 ### Require one explicit checkout-run of the changed surface for PRs touching `plugins/flow/**` — **NOT BUILT, filed deliberately** (FB-0107, from the v1.43.0 provenance PR)
 
