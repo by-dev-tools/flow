@@ -42,9 +42,20 @@ marker — belongs in `_read_text_arg`, the validation function the FB-0108 bran
 parallel. Doing it here would have guaranteed a conflict in one function across two PRs. It is
 flagged to that branch to add at rebase, where it is three lines in code that branch owns.
 
-**Named residual, not an implied seal.** This does not close a finding that embeds a newline
-followed by a bare marker; FB-0108's newline collapse does. The docstring says so. "The class is
-closed" is the sentence that stops the next person looking.
+**Named residual, not an implied seal — and the first version got the residual WRONG.** The fix
+originally used `str.splitlines()` and claimed a newline was the only remaining vector, in four
+places. `/flow:staff-review`'s staff-engineer lens refuted it by measurement: `splitlines()` breaks
+on eight further code points (`\x0b \x0c \x1c \x1d \x1e \x85 \u2028 \u2029`), each of which still
+erased the `[verify-build]` blocker, and no write-time newline collapse strips `\u2028` or `\x0c`.
+Fixed to `text.replace("\r\n", "\n").split("\n")` — which is what the sibling `pr-coherence.py`
+already did, so the first version had diverged from a correct in-repo precedent.
+
+The same review caught that **first**-close was the unsafe direction: a doc-style example quoting
+both markers above the real manifest captured the region and the real entries vanished. Now
+**last**-close, which can only widen.
+
+The residual that genuinely remains is a real `\n` before a bare marker, and there is no write-time
+layer on this branch to close it — so the docs say "will be closed" by the FB-0108 branch, not "is".
 
 **Fallback direction chosen for the gate.** If the fences are not found line-anchored, the whole
 text is returned — the "fences absent" path — so the parser sees *more* candidate entries, never
@@ -54,8 +65,14 @@ fewer. A merge gate degrading toward not-ready is the safe direction.
 
 - New `[fence-injection]` eval: the attack, a `roadmap.md`-style prose quote of both markers, a
   control, and the no-fence fail-safe.
-- **Mutation-tested both ways.** Run against the pre-fix module the section goes **red with three
-  failures**; green after. A regression test never observed failing is a claim (FB-0104).
+- **Mutation-tested against three builds:** **12 failures** on pre-fix `main`, **8** on a
+  `splitlines()`-only build, green on the fix. A regression test never observed failing is a claim
+  (FB-0104).
+- **The first revision of the eval did not catch its own bug.** Its separator cases used a body with
+  a real close fence — under which the last-close rule rescues the entry independently — so they
+  went green against a `splitlines()` build while *naming* the split choice. Rebuilt to use an
+  **unclosed** fence, which isolates the property; that build now yields the 8 failures above. This
+  is the "mutation survived vs mutation never applied" trap, hit and corrected in the same pass.
 - **Paired positive** per `.claude/rules/general.md` § Consistency rule 3: every attack assertion
   above is satisfiable by deleting fence scoping entirely, so the section also asserts scoping still
   *works* — an entry-shaped line outside the fence stays ignored. Without that half, "delete the

@@ -1411,6 +1411,67 @@ def test_fence_injection() -> None:
     loose = parsed("- [security] no fences anywhere here — needs: fix")
     expect("a body with no fences still parses its entries", kinds(loose), ["security"])
 
+    # --- Regressions caught by staff-review on this very PR. Each one ERASED the
+    # [verify-build] blocker against the first version of the fix; all three are
+    # measured, not reasoned about.
+
+    # (a) str.splitlines() breaks on EIGHT more boundaries than "\n", so a finding
+    # carrying any of them around a bare marker could make that marker the region's
+    # close. NOTE THE SHAPE: this body has NO real close fence. That is deliberate
+    # and load-bearing — with a real close present, fix (b)'s last-close rule
+    # independently rescues the entry, so a closed-fence body passes even under
+    # splitlines() and would NOT isolate this property. An earlier revision of this
+    # eval made exactly that mistake: it went green against a splitlines() build and
+    # was therefore not a regression test for the thing it named. Measured, then
+    # rebuilt.
+    for label, sep in (("FORMFEED", "\x0c"), ("VTAB", "\x0b"), ("FS", "\x1c"),
+                       ("GS", "\x1d"), ("RS", "\x1e"), ("NEL", "\x85"),
+                       ("LINE-SEP", "\u2028"), ("PARA-SEP", "\u2029")):
+        got = parsed("\n".join([
+            MANIFEST_OPEN,
+            f"- [status-surface] stale{sep}{MANIFEST_CLOSE}{sep}tail — needs: declare",
+            "- [verify-build] gate did not pass — needs: re-run"]))
+        expect_true(f"a marker fenced by {label} cannot become the region's close",
+                    any(e["kind"] == "verify-build" for e in got), f"{label}: {got}")
+
+    # (a2) The SAME boundary hazard one layer down: parse_entries re-splits the
+    # region. The (a) cases put separators around the MARKER and assert a clean
+    # verify-build line survives — so they never exercise a separator inside the
+    # surviving line, and this stayed reachable after the extractor was fixed.
+    # Found by the push-further lens on this PR.
+    for label, sep in (("FORMFEED", "\x0c"), ("NEL", "\x85"), ("LINE-SEP", "\u2028"),
+                       ("VTAB", "\x0b"), ("PARA-SEP", "\u2029")):
+        got = parsed("\n".join([
+            f"## {MANIFEST_HEADING}", MANIFEST_OPEN,
+            "- [status-surface] ordinary — needs: declare",
+            f"- [verify-build] gate{sep}did not pass — needs: re-run", MANIFEST_CLOSE]))
+        expect_true(f"an entry whose own text carries {label} is not dropped",
+                    any(e["kind"] == "verify-build" for e in got), f"{label}: {got}")
+
+    # (b) LAST close, not first. A doc-style example quoting both markers on their
+    # own lines ABOVE the real manifest captured the region under first-close, and
+    # the real entries vanished — fewer entries, the unsafe direction.
+    preceded = parsed("\n".join([
+        "Docs: here is an example block", "",
+        MANIFEST_OPEN, "- [example] quoted in prose — needs: declare", MANIFEST_CLOSE, "",
+        f"## {MANIFEST_HEADING}", MANIFEST_OPEN,
+        "- [status-surface] the real one — needs: declare",
+        "- [verify-build] gate did not pass — needs: re-run", MANIFEST_CLOSE]))
+    expect_true("a fence pair ABOVE the manifest cannot hide the real entries",
+                any(e["kind"] == "verify-build" for e in preceded), str(preceded))
+
+    # (c) An OPEN fence with no CLOSE — the one _fence_bounds branch with no cover.
+    # Documented to fall back to scanning the whole text; nothing asserted it.
+    unclosed = parsed("\n".join([
+        MANIFEST_OPEN, "- [status-surface] a — needs: declare",
+        "- [verify-build] b — needs: re-run"]))
+    expect("an unclosed fence falls back to scanning the whole body",
+           kinds(unclosed), ["status-surface", "verify-build"])
+
+    # (d) CRLF bodies (what `gh pr view` can return) still parse.
+    crlf = parsed(body("an ordinary stale claim").replace("\n", "\r\n"))
+    expect("a CRLF body parses identically", kinds(crlf), ["status-surface", "verify-build"])
+
 
 def main() -> int:
     print("manifest-triage evals (FB-0075)")
