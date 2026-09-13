@@ -57,10 +57,53 @@ door has to be closed, not merely joined by a safe one"* — so the flags are re
   config/version pairing did not. A document-aware re-run then found five corpus-dependent findings, two of
   them blockers: FB-0062 (the failure-open producers above) and FB-0004 (payload P8 asserted on an exit code,
   a proxy, where a read-then-check implementation would pass having already read the secret).
+- **A gate that exists and never runs.** `--finding-file` was first declared `required=True`, so
+  argparse's "the following arguments are required" usage dump fired *before* `_reject_argv_text` could
+  run — on exactly the stale-copy-paste case the rejection arm exists to serve. The arm would have
+  shipped present, tested, and useless: the FB-0085 class this program keeps finding. **The arm only
+  teaches if it actually runs.** Required-ness moved out of argparse and enforced after the arm.
+- **A quiet downgrade, caught in the final sweep.** The first migration of the `[vacuous-criterion]`
+  site replaced #148's *literal* invocation with "compose it exactly as Step 2 shows" — the prose-pointer
+  form `roadmap.md` criticises and which this very change exists to remove. Five sites strengthened, the
+  sixth weakened, in one commit. That is the shape where a refactor's *average* improves while its worst
+  case regresses, and the average is what gets reported. Literal block restored.
+- **A ban that keyed on the spelling rather than the hazard.** The heredoc ban was first written
+  file-wide, which would have failed `cat > "$STAGES" <<'EOF'` — flow-*composed* JSON whose one
+  interpolated value already goes through `jq -n --arg`, carrying no untrusted text and gaining nothing
+  from the ban. Keying on `<<` instead of on "untrusted text reaching a shell" is the denylist-versus-
+  allowlist error this same PR corrects elsewhere. Scoped to producer blocks.
 - **The orchestrator caught the allowlist shipping as a bare universal** — vacuously true at zero append
   sites, so deleting the producers would have turned it green. The FB-0077 shape, in the very check proposed
   as the thing that closes the class, one commit after citing that rule approvingly about other code. Now
   paired and mutation-tested: six mutations, all killed.
+
+**Commit 2 — the 13 inline templates (separable, and deliberately so).** Shipped as its own commit on the
+same branch so it can be reverted alone, leaving a complete safety fix behind. All 13 producer bullets that
+prescribed a *rendered manifest line* (`[security] <the reviewer's finding> — needs: …`) now prescribe an
+`add-entry` **invocation** instead. The hazard was never the line's wording — it was that a rendered line is
+something an agent hand-composes, which bypasses `--kind`/`--needs` validation *and* puts untrusted text back
+in a shell word. `roadmap.md` said it plainly and was ignored for four releases: "the examples are what an
+agent copies."
+
+With zero templates left, `test_producer_lines` is **tightened to forbid the template form outright** rather
+than accept either. It previously accepted both "by design", which was the defect: the prose said "never
+hand-compose the line" while the prescribed examples showed a hand-composable line — two places, one contract
+(FB-0074). The kind-coverage equality now has ONE source instead of a union of two harvests, so it can no
+longer be satisfied by a template-form bullet. Paired with the positive that the invocations exist and cover
+every kind, because forbidding templates is otherwise satisfiable by deleting every producer.
+
+Two things surfaced while converting, neither planned. **(1)** 14 of the new blocks referenced `$TRIAGE`
+without resolving it. A skill `sh` block is potentially its own Bash call, so an unset `$TRIAGE` expands to
+empty, `python3 "" add-entry` fails, and the entry is silently lost — the FB-0009 unset-is-fatal shape
+replicated at 14 new sites. Every block now carries the resolution, and an eval asserts it (mutation-tested:
+removing one resolution turns the harness red). **(2)** The `[vacuous-criterion]` bullet's rendered line was
+the last template standing, and #148 had good reason for its wording — the `Declared criterion (too vague):`
+prefix changes how the finding reads to a human. Keeping it as the one exception would have made the tightened
+check exception-ridden on its first day, so the guidance was rewritten to describe what goes *in the file*
+rather than what the rendered line looks like. The requirement survives; the copyable hazard does not.
+
+*Revert note:* commit 2 is the only commit that also edits this history entry, so reverting it drops three
+bullets above that describe commit-1 findings. One line to re-add; the safety fix itself is unaffected.
 
 **Verification.** `run_manifest_triage_evals.py` gains a `[injection]` section: 14 payloads executed through
 `/bin/sh -c`, with red arms matched per hazard (argv for command substitution and quote breakout; a real

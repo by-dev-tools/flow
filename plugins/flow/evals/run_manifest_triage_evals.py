@@ -557,10 +557,11 @@ def test_toolchain_kind(td: str) -> None:
 _APPEND_RE = re.compile(r'^[^\n#]*>>\s*"?\$(?:MANIFEST|\(python3 "\$TRIAGE" manifest-path[^\n]*)', re.M)
 
 # The producer sites that legitimately append, counted so a silent DROP fails too — a
-# bare `>= 1` would pass if three of the four vanished. FOUR, not six: `record-attempt`
+# bare `>= 1` would pass if most of the 16 vanished. 16 appends, not 16 `add-entry`
+# mentions — several sites share the canonical block, and: `record-attempt`
 # and `waive` write the STATE file, not the manifest, so they are producers of free text
 # (and carry --finding-file) without being appends.
-EXPECTED_MANIFEST_APPENDS = 4
+EXPECTED_MANIFEST_APPENDS = 16
 
 
 def _manifest_appends(src: str) -> list[str]:
@@ -727,75 +728,46 @@ def test_injection(td: str) -> None:
            _fingerprint_of("coverage", "a b"), _fingerprint_of("coverage", "A\nB"))
 
 def test_producer_lines() -> None:
-    print("\n[contract] all 10 producer sites round-trip through parse")
+    print("\n[contract] every producer prescribes the VALIDATED add-entry form — no templates")
     src = SHIP_SKILL.read_text(encoding="utf-8")
-    # Producer sites write the line as an inline-code TEMPLATE (no leading "- ");
-    # the dash appears when it is rendered into the PR body. Normalize the template
-    # to a rendered line so the strict parser is exercised on the real text.
+
+    # TIGHTENED (v1.42.0). This check used to accept EITHER an inline-code line template
+    # or an `add-entry --kind X` invocation, "by design", with the conversion left as a
+    # roadmap follow-up. Accepting both was the defect: Step 2's prose says "never
+    # hand-compose the line" while the prescribed EXAMPLES showed a hand-composable line,
+    # and the examples are what an agent copies (FB-0075 / FB-0074, two-places-one-contract).
+    # All 13 template sites are now invocations, so the template form is FORBIDDEN outright.
     templates = re.findall(r"`(\[[a-z0-9|-]+\][^\n`]*?—\s*needs:[^\n`]*)`", src)
-    expect_true("at least 8 prescribed producer lines found in SKILL.md",
-                len(templates) >= 8, f"found {len(templates)}")
+    expect("NEGATIVE: no producer prescribes a hand-composable manifest LINE any more",
+           templates, [],
+           "a rendered `[kind] … — needs: …` example is a line an agent will compose by "
+           "hand — which bypasses --kind/--needs validation AND puts untrusted text back "
+           "in a shell word. Prescribe `add-entry` instead.")
 
-    # A producer may prescribe its entry either as an inline-code line TEMPLATE or
-    # as an `add-entry --kind X` invocation (the newer, validated mechanism — see
-    # Step 2). Both satisfy the contract "every kind is prescribed somewhere";
-    # collect from both. Converting the remaining template sites to `add-entry` is
-    # a roadmap follow-up, not a correctness gap.
-    kinds_seen: set[str] = set(re.findall(r"add-entry --kind ([a-z0-9-]+)", src))
-    for tpl in templates:
-        with tempfile.TemporaryDirectory() as td:
-            f = Path(td) / "l.md"
-            f.write_text("- " + tpl, encoding="utf-8")
-            rc, out = run(["parse", "--body-file", str(f)])
-        expect_true(f"prescribed line parses: {tpl[:48]}…", rc == 0, out)
-        for e in json.loads(out)["entries"]:
-            # A template may name an alternation, e.g. [security|a11y].
-            for k in e["kind"].split("|"):
-                kinds_seen.add(k)
-            expect_true(f"[{e['kind']}] template carries a confidence slot",
-                        bool(e["confidence"]), json.dumps(e))
+    # PAIRED with that negative (general.md rule 3): forbidding templates is satisfiable by
+    # deleting every producer, so the positive half asserts the invocations exist, number
+    # what they should, and cover every kind in the closed vocabulary.
+    kinds_seen = set(re.findall(r"add-entry --kind ([a-z0-9-]+)", src))
+    expect_true("POSITIVE: the producer invocations exist (the negative above is vacuous "
+                "without this — deleting every producer would satisfy it)",
+                len(re.findall(r"add-entry --kind", src)) >= 10,
+                str(sorted(kinds_seen)))
+    expect("POSITIVE: every kind in KINDS is prescribed by an add-entry site — the "
+           "template harvest is gone, so this equality now has ONE source",
+           sorted(k for k in kinds_seen if k != "<kind>"),
+           ["a11y", "coverage", "rigor", "security", "skip-audit", "status-surface",
+            "toolchain", "vacuous-criterion", "verify-build", "visual-deliverable"])
 
-    expect("every one of the 10 kinds is prescribed by a producer site",
-           sorted(kinds_seen),
-           ["a11y", "coverage", "rigor", "security", "skip-audit",
-            "status-surface", "toolchain", "vacuous-criterion", "verify-build",
-            "visual-deliverable"])
+    # Every producer block must RESOLVE $TRIAGE. A skill `sh` block is potentially its own
+    # Bash call, and an unset $TRIAGE expands to empty -> `python3 "" add-entry` -> the
+    # entry is silently lost, which is the FB-0009 unset-is-fatal / FB-0010 silent-skip
+    # shape at 16 new sites.
+    for blk in re.findall(r"```sh\n.*?```", src, re.S):
+        if '"$TRIAGE"' in blk:
+            expect_true("every sh block using $TRIAGE also RESOLVES it (unset expands to "
+                        "empty and the entry is silently lost)",
+                        "TRIAGE=" in blk, blk[:200])
 
-    # PAIRED positive assertion (general.md rule 3): a bare "9 producer sites" ->
-    # "10 producer sites" text sweep is satisfiable by DELETING the count language
-    # instead of updating it — the same shape that let FB-0074 satisfy a
-    # negative-only lint by deleting the feature it protected, undetected for four
-    # releases. This reads KIND_COPY/KINDS from the running engine itself (not a
-    # copied literal), so the count can only go green by the table actually having
-    # 10 kinds — not by prose merely claiming it does.
-    triage = _load_triage()
-    expect("KIND_COPY carries exactly 10 kinds", len(triage.KIND_COPY), 10)
-    expect("KINDS (derived from KIND_COPY) carries exactly 10 kinds", len(triage.KINDS), 10)
-    expect_true("vacuous-criterion is one of them", "vacuous-criterion" in triage.KINDS,
-                sorted(triage.KINDS))
-
-    # PAIRED with the equality above, and not redundant with it. `kinds_seen` is the
-    # UNION of the `add-entry --kind` harvest and the inline-code template harvest,
-    # so a Step 2a.3 bullet written in the template form every neighbouring bullet
-    # uses would balance the 9 on its own — the equality cannot tell the validated
-    # write path from the hand-composed line it exists to forbid. This can.
-    #
-    # ============================ THE ALLOWLIST (FB-0100) ============================
-    # BOTH HALVES, ONE CHECK. The universal ("every append is subcommand-produced") is
-    # vacuously TRUE at zero append sites, so on its own DELETING THE PRODUCERS turns it
-    # green — the FB-0077 shape verbatim (`skill-does-not-CALL-land` went green over a
-    # deleted feature for four releases because nobody paired it). The positive half is
-    # what makes it a check. Both are mutation-tested below.
-    #
-    # An ALLOWLIST and not a denylist of bad spellings: assertions keyed on `--finding "`,
-    # `--resolution "` or `<<` all pass for a hand-composed
-    # `echo "[security] … — needs: …" >> "$MANIFEST"`, which is the actual residual hazard.
-    # Keying on "what produces the append" fails closed on anything added later.
-    #
-    # SCOPE, stated because it is easy to over-read: this is a STATIC TEXT check over
-    # ship/SKILL.md only. It cannot see an append composed in another file, one emitted by
-    # a script SKILL.md invokes, or one built from a runtime variable. The class is closed
-    # for ship/SKILL.md and nowhere else (roadmap § Next carries the widening).
     appends = _manifest_appends(src)
     expect("POSITIVE: ship/SKILL.md appends to the manifest at exactly the expected sites",
            len(appends), EXPECTED_MANIFEST_APPENDS,

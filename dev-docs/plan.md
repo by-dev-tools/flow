@@ -503,7 +503,8 @@ until:
       `[vacuous-criterion]` bullet + its `add-entry --kind vacuous-criterion` site still exist (paired). *Verified:* #148's 12 prose lines deleted; the `[vacuous-criterion]` bullet and its add-entry site both still present.
 - [x] Full eval suite green + `ci.yml`'s harness↔runner join check passes (naming a count here would be the
       very drift this PR is about). *Verified:* all 31 harnesses green; the ci.yml harness/runner join check passes locally (31 harnesses, all wired).
-- [ ] The PR body names P1–P14 verbatim, each with what it attacked and what happened.
+- [x] The PR body names P1–P14 verbatim, each with what it attacked and what happened. *Verified:* written at ship time from the `[injection]` section's own labels.
+- [x] **Commit 2: all 13 inline templates converted; `test_producer_lines` tightened to accept ONLY the `add-entry` form.** *Verified:* 0 templates remain; the negative is paired with a positive kind-coverage equality over a single harvest; 6 mutations all killed (delete-all-appends, delete-one, reintroduce-template, hand-compose-with-echo, drop-a-block's-TRIAGE, drop-a-kind). Commit 2 leaves `manifest-triage.py` untouched — the split is real.
 
 ### Why the verification shape is extract-and-execute, not a dogfood run (FB-0107)
 
@@ -601,7 +602,7 @@ reading, and under it the interface fix never reaches those 13.
   want? do the most robust fix in line with our intent"* — declining warn-plus-convention as "the FB-0010
   'consistency depends on author memory' smell." That is closer precedent than the FB-0098 `core-docs/` scar
   cited above, and the blind rounds could not have found it.
-- **Status: awaiting the human at the plan gate.** Execution of the 13 has NOT started.
+- **Status: APPROVED and SHIPPED as commit 2.** All 13 converted; `roadmap.md`'s producer-conversion item is closed by this PR.
 
 
 **1. ~~Remove the argv flags, or keep them alongside?~~ RESOLVED by your design note — remove.** Kept here
