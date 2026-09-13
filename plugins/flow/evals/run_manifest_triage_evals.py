@@ -1345,6 +1345,73 @@ def test_malformed() -> None:
         expect("prose with no manifest ⇒ zero entries", json.loads(out)["entries"], [])
 
 
+def test_fence_injection() -> None:
+    """FB-0109 — an entry's finding text must not be able to close the fence.
+
+    Red-green pair, both halves required. `extract_manifest_region` used to find
+    the closing fence as a bare substring anywhere in the body, so a finding that
+    CONTAINED the closing marker truncated the region at itself and every entry
+    after it disappeared from the parse — a NOT-READY PR with its behavioural-gate
+    blocker silently erased.
+    """
+    print("\n[fence-injection] a finding cannot close the fence from inside an entry (FB-0109)")
+
+    # Read the fence literals from the engine's own module rather than retyping
+    # them — same reason `_load_triage` exists for KIND_COPY. A hand-copied marker
+    # here would keep passing after a marker rename, which is the FB-0010 fan-out
+    # shape this file already guards against elsewhere.
+    _m = _load_triage()
+    MANIFEST_OPEN, MANIFEST_CLOSE = _m.MANIFEST_OPEN, _m.MANIFEST_CLOSE
+    MANIFEST_HEADING = _m.MANIFEST_HEADING
+
+    def body(first_finding: str | None) -> str:
+        rows = []
+        if first_finding is not None:
+            rows.append(f"- [status-surface] {first_finding} — needs: declare — confidence: ask")
+        rows.append("- [verify-build] gate did not pass — needs: re-run — confidence: ask")
+        return "\n".join([f"## {MANIFEST_HEADING}", MANIFEST_OPEN, *rows, MANIFEST_CLOSE,
+                           "", "## Notes", "- [security] prose OUTSIDE the fence — needs: fix"])
+
+    def parsed(text: str) -> list[dict]:
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "body.md"
+            f.write_text(text, encoding="utf-8")
+            rc, out = run(["parse", "--body-file", str(f)])
+            expect("parse exits clean", rc, 0, out)
+            return json.loads(out)["entries"]
+
+    kinds = lambda es: [e["kind"] for e in es]
+
+    # CONTROL — the honest body. Establishes what "both entries" looks like.
+    control = parsed(body("an ordinary stale claim"))
+    expect("control: both entries parse", kinds(control), ["status-surface", "verify-build"])
+
+    # THE ATTACK — the closing marker inside a finding, mid-line.
+    attacked = parsed(body(f"stale line {MANIFEST_CLOSE} trailing text"))
+    expect("a mid-line closing marker does NOT truncate the region",
+           kinds(attacked), ["status-surface", "verify-build"])
+    expect_true("the verify-build blocker survives an injected marker",
+                any(e["kind"] == "verify-build" for e in attacked), str(attacked))
+
+    # REACHABILITY — the exact prose shape already committed at dev-docs/roadmap.md,
+    # quotable verbatim into a [status-surface] finding with no attacker involved.
+    quoted = parsed(body(f"a paired delimiter ({MANIFEST_OPEN} ... {MANIFEST_CLOSE}) designed to be parsed"))
+    expect("a roadmap-style prose quote of BOTH markers is inert",
+           kinds(quoted), ["status-surface", "verify-build"])
+
+    # POSITIVE PAIRING (general.md rule 3). The three assertions above are all
+    # satisfiable by deleting fence scoping entirely — every entry would parse,
+    # including the attacked ones. This is the half that forbids that "fix":
+    # prose outside the fence must still be ignored.
+    expect_true("fence scoping still WORKS — an entry-shaped line outside the fence is ignored",
+                all(e["kind"] != "security" for e in control), str(control))
+
+    # Fail-safe direction: no fences at all ⇒ whole body scanned, never a silent
+    # empty parse. Degrading toward MORE blockers is the safe way for a merge gate.
+    loose = parsed("- [security] no fences anywhere here — needs: fix")
+    expect("a body with no fences still parses its entries", kinds(loose), ["security"])
+
+
 def main() -> int:
     print("manifest-triage evals (FB-0075)")
     with tempfile.TemporaryDirectory() as td:
@@ -1369,6 +1436,7 @@ def main() -> int:
     test_reviewer_prose()
     test_fixture_normalized()
     test_malformed()
+    test_fence_injection()
 
     print()
     # Remove the field files written into the real repo .flow/ — it is the one directory

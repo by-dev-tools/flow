@@ -51,13 +51,71 @@ def slug(branch: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "-", branch or "detached")
 
 
+def _fence_bounds(lines: list[str]) -> tuple[int | None, int | None]:
+    """Indices of the OPEN fence line and the first CLOSE fence line after it.
+
+    A fence counts only when it is ALONE ON ITS OWN LINE, which is exactly how
+    the emitter writes it (`manifest-triage.py` builds the block as a list of
+    lines with the two fences as their own elements). Matching the marker as a
+    bare substring instead is what made the region truncatable from inside an
+    entry — see `extract_manifest_region` below.
+    """
+    open_i: int | None = None
+    for i, raw in enumerate(lines):
+        stripped = raw.strip()
+        if open_i is None:
+            if stripped == MANIFEST_OPEN:
+                open_i = i
+        elif stripped == MANIFEST_CLOSE:
+            return open_i, i
+    return open_i, None
+
+
 def extract_manifest_region(text: str) -> str:
     """Return the text between the manifest fences, or the whole text if the
     fences are absent.
 
     Scoping to the fences is what keeps prose elsewhere in a PR body — a
     changelog bullet, a quoted example — from being read as a live entry.
+
+    **The fences are matched line-anchored, and that is load-bearing.** This
+    previously did `text.split(MANIFEST_OPEN, 1)[1].split(MANIFEST_CLOSE, 1)[0]`
+    — take everything up to the FIRST closing marker anywhere in the text. An
+    entry whose *finding text* contained the closing marker therefore ended the
+    region early, and every entry after it vanished from the parse. Measured on
+    the pre-fix tree: a body carrying one marker-bearing entry followed by a real
+    `[verify-build]` blocker parsed with the verify-build blocker **absent**, so
+    a NOT-READY PR read as READY and shipped with no behavioural gate. That is
+    the precise outcome this whole mechanism exists to prevent.
+
+    **Reachability, stated precisely** (an earlier framing of this overstated it
+    and was corrected by measurement). `[status-surface]` findings quote a
+    verbatim line from a *scanned candidate* — `CLAUDE.md`, `AGENTS.md`,
+    `README.md`, `GEMINI.md`, `.cursorrules`,
+    `.github/copilot-instructions.md`. None of those carries the marker today, so
+    the self-trigger does **not** fire on the current tree. `dev-docs/roadmap.md`
+    does carry the literal marker in prose, but it is the *reference* the scan
+    compares against, not a scanned candidate.
+
+    So: **a latent self-trigger, one docs commit from live** — `README.md`
+    already discusses the not-ready manifest, so a README that gains the literal
+    marker while documenting the sentinel arms it with no adversary involved.
+    Stronger than "crafted payload", weaker than "reachable now".
+
+    **Honest boundary.** Line-anchoring closes the mid-line case, which is the
+    reachable one: a marker quoted inside prose is never alone on its line. It
+    does NOT close a finding that embeds a *newline* followed by a bare marker.
+    That half is closed at write time by the newline collapse in `add-entry`
+    (FB-0108), not here. Fixing only what this layer can honestly fix, and
+    naming the rest, rather than implying a seal.
+
+    **Failure direction is deliberate.** If the fences are not found
+    line-anchored, this returns the whole text — the same as "fences absent" —
+    so the parser sees MORE candidate entries, never fewer. Degrading toward
+    not-ready is the safe direction for a merge gate.
     """
-    if MANIFEST_OPEN in text and MANIFEST_CLOSE in text:
-        return text.split(MANIFEST_OPEN, 1)[1].split(MANIFEST_CLOSE, 1)[0]
+    lines = text.splitlines()
+    open_i, close_i = _fence_bounds(lines)
+    if open_i is not None and close_i is not None:
+        return "\n".join(lines[open_i + 1 : close_i])
     return text
