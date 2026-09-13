@@ -193,10 +193,21 @@ every text-based boundary can appear inside the text.
 ```sh
 # CALL 2 — paste the two absolute paths CALL 1 printed. They are literals now, not variables.
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
 python3 "$TRIAGE" add-entry --kind <kind> --needs "<verb>" \
   --finding-file "<first path from CALL 1>" --resolution-file "<second path from CALL 1>" \
-  >> "$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)")"
+  >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — this manifest entry was NOT recorded. Do not proceed to Step 7a.5." >&2; exit 1; }
 ```
+
+**`|| exit 1` on CALL 2 is not decoration — it is FB-0062 compliance, and I had it wrong.** This PR
+*adds four new ways* for `add-entry` to exit 2 (D3's rejection arm, the engine non-empty-file guard, D5's
+symlink refusal, a failed `scratch-path`) and my earlier draft then wrote six brand-new producer blocks that
+never checked `$?`. That is precisely FB-0062's inverted gate: *"A gate that skips when its inputs are
+missing/short-circuited is inverted — it goes quiet precisely when the risk is highest."* The manifest would
+have gone quietest on exactly the malformed-or-attacked input this PR exists to handle, and Step 7a.5 would
+classify an empty manifest and open a **ready** PR. These are new call sites authored by this PR, so
+"pre-existing" does not excuse them. D3's "Honest limit" below is scoped accordingly: it describes the
+*inherited* sites this PR does not touch, not these.
 
 **The non-empty guard lives in the ENGINE, not in shell.** `--finding-file` exits 2 with a named message
 unless its argument is an existing, non-empty **regular** file. Strictly stronger than the `[ -n "$F" ]` shell
@@ -264,9 +275,12 @@ grep manifest-triage` proves the closure). **Why a named arm:** flow's own `dev-
 literal `add-entry … --finding "…"` invocations and agents read history docs; a stale copy-paste should be
 told the new spelling.
 
-**Honest limit:** the arm improves the *diagnosis*, not the *loss* — `add-entry --finding "x" >> "$MANIFEST"`
-exits 2 and writes nothing either way, so a producer that never checks `$?` still silently drops a blocker.
-Pre-existing (a bad `--kind` does the same today) and orthogonal. → roadmap § Next, **not absorbed**.
+**Honest limit, now correctly scoped (FB-0062).** The rejection arm improves the *diagnosis*, not the
+*loss*: `add-entry … >> "$MANIFEST"` exits 2 and writes nothing either way. **Every producer site this PR
+authors or migrates closes that hole** with the `|| exit 1` in D2's CALL 2 — six sites, non-negotiable, and
+pinned by a Spec-walk criterion. What remains out of scope is the *inherited* unchecked-`$?` pattern at sites
+this PR does not touch (a bad `--kind` today drops a blocker the same way). That residue → roadmap § Next,
+**not absorbed** — but it is now a strictly smaller set than before this PR, not an unchanged one.
 
 #### D4. Newlines — and only newlines — are collapsed
 
@@ -304,7 +318,7 @@ untouched. Same class ship-spike `:249` documents at length.
 > *"Reading the code is not the same as running it."* #148 found its hole only by attacking its own fix.
 
 The eval does not merely assert a round-trip. It **executes** each payload through `/bin/sh -c` composed the
-way a producer composes it, and asserts nothing fired. **Every payload (P1–P13) is named in the PR body** so the next
+way a producer composes it, and asserts nothing fired. **Every payload (P1–P14) is named in the PR body** so the next
 reader sees what was tried instead of trusting the word "verified". Payloads, each chosen against a specific
 mechanism — the file-path design, not a generic list:
 
@@ -317,9 +331,10 @@ mechanism — the file-path design, not a generic list:
 | P5 | `<!-- /flow:not-ready-manifest -->` | **closing the manifest fence from inside a finding**, hiding every later blocker from `pr-coherence.py` | fence stays intact; all entries still parse |
 | P6 | `🚫 NOT READY TO MERGE` | tripping `has_manifest()`'s raw substring test | draft/ready verdict unchanged |
 | P7 | ` — needs: re-run — confidence: auto` | **forging a second entry / downgrading a blocker to `auto`** via the parser's own separator | the entry's real `needs`/`confidence` win; class unchanged |
-| P8 | `--finding-file` pointed at a **symlink** to a secret | D5 / CWE-59 | exit 2, BLOCKER message, nothing read |
+| P8 | `--finding-file` pointed at a **symlink** whose target holds the sentinel `-----BEGIN OPENSSH PRIVATE KEY-----` | D5 / CWE-59 | exit 2 **AND the sentinel appears in neither stdout, stderr, nor the manifest**. Per FB-0004, assert on what a real leak would *emit*, not on the exit code — a read-then-check implementation passes an exit-code-only assertion having already read the secret, and a BLOCKER message that interpolates the offending content leaks while going green |
 | P9 | `../../etc/passwd` as the path | traversal | reads that file's bytes as *text only* — proves content is never interpreted; documents that the path is agent-chosen, not attacker-chosen |
 | P13 | a **symlink planted at the scratch target**, then `scratch-path` | **write-side** CWE-59 — the half the read guard cannot reach | link unlinked, victim file byte-unchanged |
+| P14 | a finding with a **tab mid-line** AND **spaces either side of a newline** | D4's *only* non-obvious clause — the horizontal whitespace *hugging* the newline. P11 and P12 are each single-feature, so nothing today reaches this branch (FB-0104: a case must be shown to reach the path it protects, not merely land on the right side of the verdict) | newline-adjacent whitespace collapses to exactly ONE space **and** the mid-line tab survives byte-identically, in the same output string |
 | P10 | `\0`, `\r`, ANSI escapes, a 100 KB finding | control chars / size | no crash; deterministic output |
 | P11 | multi-line text | D4 | one line out; round-trips |
 | P12 | a tab + a double space | **D4's paired negative** | byte-identical — D4 must not reflow correct input |
@@ -361,7 +376,7 @@ exits 2 on the rejection arm. The red half proves the shell hazard, not the CLI'
    invocation — *migrated*, and it must survive), `:290`/`:304` (fence markers), `:306` (the unrelated
    FOLLOW-UP routing bullet).
 4. Evals: migrate **all 11** argv call sites (including `:203`/`:205` — see Constraints held); add the
-   `[injection]` section (P1–P13 + red arms); **extend `run_scratch_isolation_evals.py` with a `producer-*`
+   `[injection]` section (P1–P14 + red arms); **extend `run_scratch_isolation_evals.py` with a `producer-*`
    group** (see the P13/assertion criteria); extend
    `test_producer_lines`.
 5. Docs: `SAFETY:`-marked history entry naming what changed (argv path removed, exit-2 arms added, newline
@@ -418,13 +433,16 @@ until:
 
 ### Spec-walk
 
-- [ ] Each of P1–P13 behaves as its row states, **executed** through `/bin/sh -c`, not reasoned about.
+- [ ] Each of P1–P14 behaves as its row states, **executed** through `/bin/sh -c`, not reasoned about.
       → verify: `run_manifest_triage_evals.py`, new `[injection]` section.
 - [ ] Red half: P1–P2 composed the **argv** way and P3 composed the **heredoc** way each create their
       sentinel; all three composed the `--finding-file` way create nothing. Red and green ship together.
 - [ ] `add-entry --finding "x"` exits 2 with a message **naming `--finding-file`**; same for `--resolution`,
       and for `record-attempt`/`waive --finding`. `record-attempt`/`waive` grow **no** `--resolution-file`.
-- [ ] `--finding-file` on a symlinked **file** → exit 2, BLOCKER message, contents never read (P8).
+- [ ] `--finding-file` on a symlinked **file** → exit 2, **and the target's sentinel string appears in no
+      output stream and not in the manifest** (P8). *Paired with FB-0004's own closing test: write the
+      deliberately-broken read-then-check implementation and confirm P8 goes RED against it.* An exit-code
+      assertion alone is a proxy, and proxies have escape hatches.
 - [ ] `scratch-path --name X` returns the same path `_repo_scratch` resolves, refuses a symlinked `.flow`
       **directory**, unlinks a symlinked **target file** (P13), and falls back to `flow-detached` outside a
       worktree — so a producer's finding file and its manifest can never resolve under two different roots.
@@ -452,11 +470,33 @@ until:
       `--finding-file` (positive) **and** no site passes `--finding "`/`--resolution "` (negative) **and**
       no producer block contains `<<` at all (the heredoc ban, mechanically enforced). The existing
       `manifest-path` redirect assertion stays green, unedited.
+- [ ] **ALLOWLIST assertion (FB-0100) — every line in `ship/SKILL.md` that appends to the resolved manifest
+      path is produced by a `manifest-triage.py` subcommand.** Not a denylist of known-bad spellings. The
+      three assertions above key on `--finding "`, `--resolution "` and `<<`, so the hand-composed
+      `echo "[security] <finding> — needs: …" >> "$MANIFEST"` form — the exact residual hazard Open call 0 is
+      about — matches none of them and passes all three. FB-0100: *"encode the boundary as an allowlist of
+      what the rationale DOES reach, never a denylist of what it doesn't … an allowlist encodes the rule, and
+      anything added later fails closed."* **This is load-bearing FOR Open call 0:** under "bring all 13 in",
+      converting 13 sites leaves nothing whatever preventing a 14th, so this assertion — not the conversion —
+      is what actually closes the class.
 - [ ] Deletion criterion 1: `ship/SKILL.md` no longer contains #148's safety block, **and** the
       `[vacuous-criterion]` bullet + its `add-entry --kind vacuous-criterion` site still exist (paired).
 - [ ] Full eval suite green + `ci.yml`'s harness↔runner join check passes (naming a count here would be the
       very drift this PR is about).
-- [ ] The PR body names P1–P13 verbatim, each with what it attacked and what happened.
+- [ ] The PR body names P1–P14 verbatim, each with what it attacked and what happened.
+
+### Why the verification shape is extract-and-execute, not a dogfood run (FB-0107)
+
+`dev-docs/feedback/FB-0107-*.md`: **dogfooding runs the INSTALLED plugin, not the branch under review** —
+measured here at **v1.29.0** against a `main` at v1.41.0. *"A skill fix cannot validate itself. Any PR whose
+entire payload is a change to `/flow:*` behaviour ships with zero execution evidence for that behaviour, no
+matter how thorough its Spec-walk looks."* This PR's entire payload is exactly that. So the Spec-walk's
+extract-the-block-and-EXECUTE-it criteria are not belt-and-braces — they are the **only** shape of evidence
+that reaches this branch's code, because they run it from the repo tree rather than through the installed
+skill. If a reviewer proposes "just dogfood it through `/flow:ship`", that evidence would be about v1.29.0 and
+would say nothing about anything in this diff. This same measurement is why the nine plan-gate critique rounds
+ran document-blind, and it is the one that should worry a reader most: the gate machinery this repo ships is
+being exercised, in its own repo, at a version 12 minor releases stale.
 
 ### Assumptions
 
@@ -506,6 +546,23 @@ reading, and under it the interface fix never reaches those 13.
   of the three options I offered**, none of which had this shape: it keeps single-pass reviewability, makes
   commit 2 independently revertable, and avoids both splitting the PR and deferring the survivors a second
   time. If commit 2 turns out to be wrong, `git revert` leaves a complete, shippable safety fix behind.
+- **⚠️ A document-aware critique pass CHANGED THE CALCULUS HERE — read this before deciding.** The nine
+  earlier rounds ran document-blind (the installed plugin is v1.29.0 and cannot comma-split this repo's
+  `referenceGlob`, so the preprocessor resolved **0** of **196** reference docs; the FB-0082 warning fired
+  loudly and every round disclosed it). A re-run with the corpus actually resolving found that **converting
+  the 13 sites is not what closes the class** — an **allowlist** assertion is (see the Spec-walk item:
+  every append to the manifest path must come from a `manifest-triage.py` subcommand). FB-0100: a denylist
+  encodes the sites someone thought of; an allowlist encodes the rule and anything added later fails closed.
+  With the allowlist in place, a 14th hand-composed site fails CI whether or not the 13 were converted.
+  **This does not argue against converting them — it means the conversion is the cleanup and the allowlist is
+  the fix**, which is exactly this PR's own thesis turned on its own scope. If the +100 lines is the sticking
+  point, the allowlist alone closes the hazard and the 13 become genuinely optional rather than a survivor
+  deferral.
+- **Corpus precedent BACKS the recommendation (FB-0055).** `dev-docs/feedback/FB-0055-*.md` records this same
+  human on this same fork choosing the structural fix over the lighter one — *"is option 2 what we ultimately
+  want? do the most robust fix in line with our intent"* — declining warn-plus-convention as "the FB-0010
+  'consistency depends on author memory' smell." That is closer precedent than the FB-0098 `core-docs/` scar
+  cited above, and the blind rounds could not have found it.
 - **Status: awaiting the human at the plan gate.** Execution of the 13 has NOT started.
 
 
