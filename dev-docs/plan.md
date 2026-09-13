@@ -470,15 +470,35 @@ until:
       `--finding-file` (positive) **and** no site passes `--finding "`/`--resolution "` (negative) **and**
       no producer block contains `<<` at all (the heredoc ban, mechanically enforced). The existing
       `manifest-path` redirect assertion stays green, unedited.
-- [ ] **ALLOWLIST assertion (FB-0100) — every line in `ship/SKILL.md` that appends to the resolved manifest
-      path is produced by a `manifest-triage.py` subcommand.** Not a denylist of known-bad spellings. The
-      three assertions above key on `--finding "`, `--resolution "` and `<<`, so the hand-composed
+- [ ] **ALLOWLIST assertion (FB-0100), in BOTH halves as one check (`general.md` § Consistency rule 3).**
+      **Positive:** `ship/SKILL.md` contains **at least one** append to the resolved manifest path (assert
+      `count >= 1`, and assert the exact expected count so a silent drop from 6 to 1 also fails).
+      **Universal:** **every** such append is produced by a `manifest-triage.py` subcommand.
+      The universal alone is vacuously true at zero append sites, so *deleting the producers would turn it
+      green* — the FB-0077 shape verbatim (`skill-does-not-CALL-land` went green over a deleted feature for
+      four releases because nobody paired it). An earlier revision of this plan shipped the bare universal;
+      this is the fix. Not a denylist of known-bad spellings: the three assertions above key on
+      `--finding "`, `--resolution "` and `<<`, so the hand-composed
       `echo "[security] <finding> — needs: …" >> "$MANIFEST"` form — the exact residual hazard Open call 0 is
       about — matches none of them and passes all three. FB-0100: *"encode the boundary as an allowlist of
       what the rationale DOES reach, never a denylist of what it doesn't … an allowlist encodes the rule, and
-      anything added later fails closed."* **This is load-bearing FOR Open call 0:** under "bring all 13 in",
-      converting 13 sites leaves nothing whatever preventing a 14th, so this assertion — not the conversion —
-      is what actually closes the class.
+      anything added later fails closed."*
+      **Mutation-test it, don't trust it** (FB-0104 rule 3: a documented counter-example is a claim until
+      executed): delete one producer's redirect → the *universal* must go red; delete **all** of them → the
+      *positive* must go red. Both mutations are run and recorded, or the pairing is itself unverified.
+
+      **THE HONEST BOUNDARY — what this check does NOT reach.** It is a **static text check over
+      `ship/SKILL.md` only**. It cannot see: (a) an append composed in a *different* file — `ship-spike`,
+      `land`, `audit-skips`, or a future skill; (b) an append emitted by a *script* that `ship/SKILL.md`
+      invokes, since the redirect would live in the script's source, not in the skill text; (c) an append
+      built at runtime from a variable the static scan cannot resolve. **So the class is closed for
+      `ship/SKILL.md` and for nothing else.** Stated here because the next author will otherwise read
+      "allowlist" as "sealed" — and the check's own scope is exactly the kind of contract that drifts
+      silently. Widening it to every skill that can write a manifest entry is roadmap § Next, named, not
+      absorbed: `ship-spike` has no manifest today (grepped), so there is no live second site to guard —
+      which is a fact about today, not a property.
+      **This is load-bearing FOR Open call 0:** converting the 13 sites leaves nothing preventing a 14th, so
+      this assertion — not the conversion — is what closes the hazard within its stated scope.
 - [ ] Deletion criterion 1: `ship/SKILL.md` no longer contains #148's safety block, **and** the
       `[vacuous-criterion]` bullet + its `add-entry --kind vacuous-criterion` site still exist (paired).
 - [ ] Full eval suite green + `ci.yml`'s harness↔runner join check passes (naming a count here would be the
@@ -495,8 +515,26 @@ extract-the-block-and-EXECUTE-it criteria are not belt-and-braces — they are t
 that reaches this branch's code, because they run it from the repo tree rather than through the installed
 skill. If a reviewer proposes "just dogfood it through `/flow:ship`", that evidence would be about v1.29.0 and
 would say nothing about anything in this diff. This same measurement is why the nine plan-gate critique rounds
-ran document-blind, and it is the one that should worry a reader most: the gate machinery this repo ships is
-being exercised, in its own repo, at a version 12 minor releases stale.
+ran document-blind.
+
+**Blast radius, corrected — it is narrower than "every worker", and the narrowing is the interesting part.**
+I first wrote that every `/flow:*` verdict in this program is evidence about v1.29.0. That overstates it.
+Measured: **flow's own workspaces** are at 1.29.0 (this one, and the version-honesty worker's, each confirmed
+on two independent paths) — so both flow-repo workers' gate verdicts are evidence about v1.29.0.
+**`health-tracker`'s workspace is not:** #116 went 1.29.0 → 1.41.0, moved by the session-start hook fix that
+PR ships, so that consumer's verdicts are evidence about `main`. **The defect is specific to flow's own repo
+— the dogfooding repo — and the consumer project already fixed it for itself.**
+
+That asymmetry is now a **named pattern with two independent instances, not a coincidence**: (1) the
+laundered-PASS hazard — `health-tracker#116` built an assert-block step that bounces its sweep when the
+active plan block is not hoisted, on the stated grounds that "a gate that verifies the wrong criteria is
+worse than one that admits it did not run", while the plugin repo that *ships the parser* has no equivalent
+guard and 56 active Spec-walk blocks; (2) this one — the consumer moved itself to 1.41.0 while the repo that
+publishes 1.41.0 still runs its own gates at 1.29.0. **In both cases the consumer hardened against a hazard
+the plugin repo still carries.** Not this PR's scope, and routed separately — recorded here because it is the
+strongest available evidence for this PR's own thesis at the level of the project rather than the function:
+correctness that depends on each author remembering is a convention, and flow is currently the repo least
+protected by its own machinery.
 
 ### Assumptions
 
