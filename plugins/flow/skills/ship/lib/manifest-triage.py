@@ -910,7 +910,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--resolution-file")
     # REMOVED (FB-0108), kept declared only to reject with a message that teaches.
     # default=None is load-bearing: `_reject_argv_text` keys on "not None", so an
-    # empty-string default would make `--finding ""` indistinguishable from absent.
+    # empty-string default would make an empty-valued flag indistinguishable from absent.
     p.add_argument("--finding", default=None, help=argparse.SUPPRESS)
     p.add_argument("--resolution", default=None, help=argparse.SUPPRESS)
     p.add_argument("--confidence", default="decision-required")
