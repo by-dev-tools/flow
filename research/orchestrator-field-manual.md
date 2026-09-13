@@ -87,6 +87,49 @@ the recurring cases that policy does not name explicitly, settled once here.
 Note that escalating still means deciding *in the orchestrator seat* (§4.8 rule 5): the
 approval authority is the human's, the interaction surface stays the orchestrator.
 
+## 2a. Live finding — the demote qualifier has no producer (2026-09-13)
+
+`walk_extract.py` selects the **first non-demoted Spec-walk heading**, where demoted means the
+heading carries `(shipped)` / `(merged …)` / `(demoted)`. Four consumers read that qualifier —
+`walk_extract`, `extract-criteria`, `extract-visual-states`, `visual-significance`.
+
+**Nothing in flow writes it.** `/flow:land` flips *status-line* references to `merged (#N)` and
+moves items to "Recently shipped"; its `SKILL.md` contains zero occurrences of `demote` or
+`Spec-walk`. `ship`'s only `demote` is manifest-entry classification (`auto` → `ask`),
+unrelated. So the qualifier is hand-written or not at all — a **fifth FB-0085-class instance**
+(read by four consumers, produced by none), and it is the root cause of the laundered-PASS
+hazard below.
+
+Measured on `origin/main` 2026-09-13 (corrected figures — an earlier orchestrator count of
+"35 of 60 PR blocks" was wrong on both the unit and the heading type):
+
+| | count |
+|---|---|
+| `## PR —` blocks | 31 |
+| **Spec-walk headings** | **59** |
+| Spec-walk headings demoted | **3** |
+| **active** (what the parser chooses among) | **56** |
+
+The winner on `main` is the **merged** vacuous-criterion block ([#148](https://github.com/by-dev-tools/flow/pull/148)).
+So a plan block appended below it inherits a shipped PR's checkboxes, and
+`/flow:verify-build` + `/flow:audit-coverage` grade the new diff against already-passed criteria
+and report green.
+
+**Two traps inside this one.** First, demoting the `## PR —` heading buys nothing — the parser
+reads the *Spec-walk* line; on `main`, 7 PR headings carry a merged/shipped qualifier and 3 of
+those still have an unqualified Spec-walk block beneath. The place authors naturally update is
+not the place the parser reads. Second, **running `/flow:land` does not fix this** and would
+make it look fixed — the confidence-inverting shape again. Land is still worth running for its
+actual job (status lines, roadmap, CHANGELOG currency); it is simply not this fix.
+
+The strongest remedy on offer is the one the *consumer* project already built:
+[health-tracker#116](https://github.com/byamron/health-tracker/pull/116)'s `assert-block`, which
+refuses to verify unless the selected block is the current PR's — failing loudly instead of
+depending on an author remembering to demote.
+
+**Deletion criterion:** delete this section when a producer writes the qualifier, or when an
+`assert-block` equivalent ships in flow and the selection can no longer be silently wrong.
+
 ## 3. Presentation rules the human has stated directly
 
 - **Always hyperlink PR numbers** — `[#149](https://github.com/by-dev-tools/flow/pull/149)`,
