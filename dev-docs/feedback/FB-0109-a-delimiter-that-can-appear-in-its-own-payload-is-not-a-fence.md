@@ -57,7 +57,25 @@
      Its failure direction is inverted — a body that merely *mentions* the sentinel wedges a clean
      ship rather than passing a dirty one — which is probably why it stayed invisible while three
      passes hunted bypasses. **When a mechanism has N structural tokens, enumerate all N before
-     writing "the residual is X."** Here N was 3 and every revision assumed 2.
+     writing "the residual is X."** Here N turned out to be **4**, and this sentence itself first
+     shipped saying 3 — the rule's own count was wrong in the revision that introduced the rule,
+     which is as clean a demonstration as it is likely to get. The four: the two fences, the
+     `🚫 NOT READY TO MERGE` heading, and — sharpest — **`_LINE_RE`'s field separators**.
+
+     The fourth is the one that matters most and was found last. `classify()` derives an entry's
+     class from its `needs` verb (`manifest-triage.py:569`, `_class_for(kind, e.get("needs"))`)
+     and derives `waivable` from that class (`:584`). So forging a separator inside free text
+     rewrites both: `--needs reconcile` forges class **auto** — the one class that triggers a
+     silent re-run → commit → push — and `--kind security --needs "secret rotation"` moves a
+     leaked-secret item from **blocked/not-waivable** to **ask/waivable**, one-word-waivable from
+     bytes the attacker supplied.
+
+     **Why three passes missed it is the transferable part:** it was dismissed as LOW on a
+     measurement of the *adjacent* field. The reasoning "`classify()` keys on `kind`, not on the
+     parsed `confidence`" is true and irrelevant — the load-bearing field is `needs`, and nobody
+     tested it. Twice on this work a severity call was wrong for exactly that reason. **Measuring
+     the field next to the load-bearing one produces a confident, wrong, and cheap-to-believe
+     answer.**
 
 - **Applies to:** `plugins/flow/skills/ship/lib/manifest_contract.py` (fixed here);
   `pr-coherence.py::has_manifest`'s unanchored match on the third token (owned by the FB-0108
