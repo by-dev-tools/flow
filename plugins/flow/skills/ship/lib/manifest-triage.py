@@ -329,6 +329,10 @@ def _fingerprint(kind: str, finding: str) -> str:
     return hashlib.sha256(f"{kind}\x00{norm}".encode("utf-8")).hexdigest()[:16]
 
 
+# Only producer field files. Load-bearing: `scratch-path` UNLINKS what it names.
+_SCRATCH_NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]*\.txt")
+
+
 def _repo_scratch(name: str) -> str:
     """Repo-local scratch path (FB-0082), replacing the old global /tmp default.
 
@@ -351,7 +355,10 @@ def _repo_scratch(name: str) -> str:
     d = Path(root) / ".flow"
     # CWE-59: never write scratch through a symlink (same refusal as the shell sites).
     if d.is_symlink():
-        raise SystemExit(f"BLOCKER: {d} is a symlink -- refusing to write flow scratch through it.")
+        print(f"BLOCKER: {d} is a symlink -- refusing to write flow scratch through it "
+              f"(CWE-59): writes would land outside the repo. Replace it with a real "
+              f"directory. Nothing was recorded.", file=sys.stderr)
+        raise SystemExit(2)
     d.mkdir(parents=True, exist_ok=True)
     ign = d / ".gitignore"
     if not ign.exists():
@@ -797,6 +804,25 @@ def _read_text_arg(path: str, flag: str) -> str:
     variables do not survive to the call that runs `add-entry`.
     """
     p = Path(path)
+    # CONFINEMENT, before any other check. The write side (`scratch-path`) confines to
+    # `_repo_scratch`, refuses path-shaped `--name`, and unlinks plants pre-Write; the read
+    # side confined nothing, so `--finding-file /etc/passwd` read it and spliced the content
+    # into the manifest -> the PR body. That is the same outcome the symlink refusal below
+    # exists to prevent, reachable by naming the file directly instead of linking to it.
+    # `resolve()` closes three holes at once: arbitrary-path read, `..` traversal, and a
+    # PARENT-directory symlink (`p.is_symlink()` is only one component deep, so
+    # `.flow/evil/ -> ~/.ssh` walked straight through it).
+    try:
+        rp = p.resolve()
+    except OSError:
+        rp = p
+    allowed = Path(_repo_scratch("x")).parent.resolve()
+    if rp.parent != allowed:
+        print(f"BLOCKER: {flag} {path} is outside flow's scratch directory ({allowed}). "
+              f"Producer field files must come from `scratch-path --name <slug>`, which "
+              f"resolves a confined path for you -- reading an arbitrary path would splice "
+              f"its contents into the PR body. Nothing was recorded.", file=sys.stderr)
+        raise SystemExit(2)
     # CWE-59, read side. `.flow/` is git-checkout-plantable, so `finding.txt` can be
     # a symlink to ~/.ssh/id_rsa or .git/config; reading through it would splice that
     # content into a PR body. Mirrors the write-side refusal in `_repo_scratch`.
@@ -967,9 +993,18 @@ def main(argv: list[str] | None = None) -> int:
         # is engine-computed ephemeral scratch the caller is about to rewrite; it is
         # never caller-supplied (only a --name slug is). Same idiom as ship-spike's
         # `rm -f "$STAGES" "$STAGES.tmp"`, for the same CWE-59 sub-case.
+        # ALLOWLIST, not a denylist. The first version enumerated bad shapes ("/", "..")
+        # and therefore accepted `--name .gitignore` and `--name manifest-<branch>.md` --
+        # and since this subcommand UNLINKS its target before printing, either would have
+        # deleted flow's own self-ignore or the run manifest. A denylist in the PR whose
+        # thesis is "encode the rule, not the exceptions" (FB-0100). This pattern admits
+        # only producer field files, so anything added later fails closed.
         for name in args.name:
-            if "/" in name or "\\" in name or name in ("", ".", ".."):
-                print(f"BLOCKER: --name {name!r} must be a bare filename, not a path.",
+            if not _SCRATCH_NAME_RE.fullmatch(name):
+                print(f"BLOCKER: --name {name!r} is not a producer field file. Pass a bare "
+                      f"slug matching {_SCRATCH_NAME_RE.pattern} -- e.g. "
+                      f"--name security-finding.txt. (This subcommand CLEARS the file it "
+                      f"names, so the pattern is an allowlist, not a style rule.)",
                       file=sys.stderr)
                 return 2
             target = Path(_repo_scratch(name))
@@ -1023,6 +1058,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "manifest-path":
+        # FAIL CLOSED on an empty branch. It used to return `manifest-detached.md` at exit
+        # 0, which is precisely what converted a `--branch "$BRANCH"` read across a Bash-call
+        # boundary from a loud error into a silent gate bypass: the producer appended to a
+        # file Step 7a.5 never reads, `|| exit 1` passed, the real manifest stayed empty, and
+        # the verdict came back READY over an unresolved blocker.
+        if not args.branch.strip():
+            print("BLOCKER: manifest-path --branch is empty. A producer that appends to the "
+                  "resulting path writes to a manifest nothing reads, so the run's verdict "
+                  "would come back READY over an unresolved blocker. Pass "
+                  '--branch "$(git branch --show-current)".', file=sys.stderr)
+            return 2
         print(_default_manifest_path(args.branch))
         return 0
 

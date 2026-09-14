@@ -72,9 +72,12 @@ def expect_true(label: str, cond: bool, ctx: str = "") -> None:
     expect(label, bool(cond), True, ctx)
 
 
-# ONE temp dir for the whole run, not one per call: `mkdtemp()` per call leaked a
-# directory at each of the call sites below and the counter was redundant with it.
-_TXT_DIR = Path(tempfile.mkdtemp(prefix="flow-eval-fields-"))
+# Field files live in the engine's OWN confined scratch dir, because `_read_text_arg` now
+# refuses any path outside it. That is deliberate rather than a workaround: it means these
+# call sites exercise the same confined path production uses, instead of a temp dir no
+# producer could ever pass. (Previously each call did its own `mkdtemp()`, leaking a
+# directory per call.)
+_TXT_DIR = None
 _TXT_N = 0
 
 
@@ -86,9 +89,12 @@ def txt(content: str) -> str:
     exposure -- but they are migrated anyway, deliberately: an eval that exercises a
     path production no longer uses is a weaker eval, and the argv flags are gone.
     """
-    global _TXT_N
+    global _TXT_N, _TXT_DIR
+    if _TXT_DIR is None:   # lazy: _ENGINE is defined below this helper
+        _TXT_DIR = Path(_ENGINE._repo_scratch("x")).parent
+        _TXT_DIR.mkdir(parents=True, exist_ok=True)
     _TXT_N += 1
-    f = _TXT_DIR / f"field-{_TXT_N}.txt"
+    f = _TXT_DIR / f"evalfield-{_TXT_N}.txt"
     f.write_text(content, encoding="utf-8")
     return str(f)
 
@@ -583,12 +589,26 @@ def test_injection(td: str) -> None:
     composed the way a producer composes it, and the RED arms prove the tests can fail.
     """
     print("\n[injection] the free-text input path, attacked (FB-0108)")
-    # Scoped to main()'s TemporaryDirectory rather than its own mkdtemp: an un-cleaned dir
-    # here persisted a file containing `-----BEGIN OPENSSH PRIVATE KEY-----`, a dangling
-    # symlink and a 100KB payload after EVERY run, accumulating monotonically. A harness
-    # that attacks a secret-leak path should not leave the bait on disk.
-    T = Path(td) / "injection"
+    # Payload files must live in the engine's CONFINED scratch dir — `_read_text_arg`
+    # refuses anything outside it, and a payload the engine would reject for its LOCATION
+    # cannot test what its CONTENT does. They are explicitly removed at the end of this
+    # function: an earlier version used its own mkdtemp and left a file containing
+    # `-----BEGIN OPENSSH PRIVATE KEY-----`, a dangling symlink and a 100KB payload on disk
+    # after EVERY run. A harness that attacks a secret-leak path must not leave the bait.
+    T = Path(_ENGINE._repo_scratch("x")).parent
     T.mkdir(parents=True, exist_ok=True)
+    _made: list[Path] = []
+
+    def pay(slug: str, body: str) -> Path:
+        f = T / f"evalpay-{slug}.txt"
+        f.write_text(body, encoding="utf-8")
+        _made.append(f)
+        return f
+
+    # Anything needing to live OUTSIDE the confinement (P17's arbitrary-path case) goes in
+    # the run's TemporaryDirectory, which main() cleans up.
+    OUT = Path(td) / "outside"
+    OUT.mkdir(parents=True, exist_ok=True)
 
     def sh(script: str):
         return subprocess.run(["/bin/sh", "-c", script], capture_output=True, text=True)
@@ -613,10 +633,9 @@ def test_injection(td: str) -> None:
     }
     outs: dict[str, str] = {}
     for label, raw in payloads.items():
-        f = T / (label.split()[0] + ".txt")
-        f.write_text(raw, encoding="utf-8")
+        f = pay(label.split()[0].lower(), raw)
         r = add(str(f))
-        outs[label.split()[0]] = r.stdout
+        outs[label.split()[0].lower()] = r.stdout
         expect(f"{label}: exits 0", r.returncode, 0, r.stderr)
         for n in ("s1", "s2", "s3", "s4"):
             if (T / n).exists():
@@ -636,11 +655,10 @@ def test_injection(td: str) -> None:
     for lbl, ch in (("newline", "\n"), ("CR", "\r"), ("CRLF", "\r\n"), ("vtab", "\v"),
                     ("formfeed", "\f"), ("FS", "\x1c"), ("GS", "\x1d"), ("RS", "\x1e"),
                     ("NEL", "\x85"), ("LS-U+2028", "\u2028"), ("PS-U+2029", "\u2029")):
-        f = T / "P15.txt"
-        f.write_text(f"alpha{ch}beta", encoding="utf-8")
+        f = pay("p15", f"alpha{ch}beta")
         r = add(str(f))
         expect(f"P15 {lbl}: collapses to one space", "alpha beta" in r.stdout, True, repr(r.stdout))
-        mf = T / "P15-manifest.md"
+        mf = Path(td) / "P15-manifest.md"
         mf.write_text(r.stdout, encoding="utf-8")
         _rc, parsed = run(["parse", "--body-file", str(mf)])
         expect(f"P15 {lbl}: the entry still PARSES (a break here erased it before)",
@@ -652,9 +670,9 @@ def test_injection(td: str) -> None:
     # Assert against the stdout the loop already captured — re-running `add` here spawned
     # the identical command twice. The cached output came from the same `/bin/sh -c` run.
     expect_true("P12: a tab and a double space survive BYTE-IDENTICALLY (D4 is newline-only)",
-                "tab\there  and  double spaces" in outs["P12"], repr(outs["P12"]))
+                "tab\there  and  double spaces" in outs["p12"], repr(outs["p12"]))
     expect_true("P14: newline-hugging whitespace -> exactly ONE space, mid-line tab intact",
-                "alpha\tkept beta" in outs["P14"], repr(outs["P14"]))
+                "alpha\tkept beta" in outs["p14"], repr(outs["p14"]))
 
     # ---- RED ARMS: one per hazard, each matched to the composition that CARRIES it ----
     # P3's hazard is a HEREDOC collision; a bare FLOWEOF line inside a double-quoted argv
@@ -676,9 +694,10 @@ def test_injection(td: str) -> None:
     (T / "s4").unlink(missing_ok=True)
 
     # ---- P8: assert on what a real LEAK would emit, never on a proxy (FB-0004) ----
-    secret = T / "secret"
+    secret = pay("p8secret", "")
     secret.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAsecret\n", encoding="utf-8")
-    link = T / "P8link"
+    link = T / "evalpay-p8link.txt"
+    _made.append(link)
     link.symlink_to(secret)
     r = add(str(link))
     expect("P8 symlink: exits 2", r.returncode, 2, r.stderr)
@@ -688,12 +707,11 @@ def test_injection(td: str) -> None:
     expect("P8 symlink: no manifest line emitted at all", r.stdout.strip(), "")
 
     # ---- the engine-side guard: the Write tool never ran (FB-0062) ----
-    empty = T / "empty.txt"
-    empty.write_text("", encoding="utf-8")
+    empty = pay("empty", " ")
     r = add(str(empty))
     expect("an EMPTY finding file exits 2 (the Write never ran)", r.returncode, 2, r.stderr)
     expect("...and emits no manifest line", r.stdout.strip(), "")
-    r = add(str(T / "does-not-exist.txt"))
+    r = add(str(T / "evalpay-absent.txt"))
     expect("a MISSING finding file exits 2", r.returncode, 2, r.stderr)
     r = add(str(T))
     expect("a DIRECTORY as --finding-file exits 2", r.returncode, 2, r.stderr)
@@ -709,8 +727,47 @@ def test_injection(td: str) -> None:
         expect_true(f"...and the message names the replacement `{flag}-file`",
                     f"{flag}-file" in (r.stdout + r.stderr), r.stdout + r.stderr)
 
+    # P17 — CONFINEMENT. The read side used to accept ANY path, so naming a secret file
+    # directly spliced its contents into the manifest and thence the PR body: the same
+    # outcome P8's symlink refusal exists to prevent, reached without a symlink. And
+    # `p.is_symlink()` is one component deep, so a PARENT-directory symlink walked through.
+    outside = OUT / "outside-secret.txt"
+    outside.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nCANARY\n", encoding="utf-8")
+    r = add(str(outside))
+    expect("P17 arbitrary path outside flow scratch: exits 2", r.returncode, 2, r.stderr)
+    expect_true("P17: the secret's content appears in NEITHER stream (assert on the leak, "
+                "not the exit code)",
+                "BEGIN OPENSSH PRIVATE KEY" not in (r.stdout + r.stderr) and "CANARY" not in
+                (r.stdout + r.stderr), r.stdout + r.stderr)
+    expect("P17: no manifest line emitted", r.stdout.strip(), "")
+    par = OUT / "parentlink"
+    tgt = OUT / "realdir"
+    tgt.mkdir(exist_ok=True)
+    (tgt / "f.txt").write_text("through a parent symlink", encoding="utf-8")
+    if not par.exists():
+        par.symlink_to(tgt)
+    r = add(str(par / "f.txt"))
+    expect("P17 PARENT-directory symlink: exits 2 (is_symlink alone is one component deep)",
+           r.returncode, 2, r.stderr)
+
+    # P18 — `scratch-path --name` is an ALLOWLIST. The first version was a denylist and
+    # therefore accepted `.gitignore` and `manifest-<branch>.md`; since scratch-path UNLINKS,
+    # either would have deleted flow's own self-ignore or the run manifest.
+    for bad in (".gitignore", "manifest-foo.md", "../escape.txt", "Finding.TXT", "x.txt.bak"):
+        rb = sh(f'python3 {SCRIPT} scratch-path --name "{bad}"')
+        expect(f"P18 scratch-path refuses --name {bad!r}", rb.returncode, 2, rb.stdout + rb.stderr)
+    rb = sh(f"python3 {SCRIPT} scratch-path --name legit-finding.txt")
+    expect("P18 POSITIVE: a producer field slug is accepted", rb.returncode, 0, rb.stderr)
+
+    # P19 — manifest-path fails CLOSED on an empty branch. Returning `manifest-detached.md`
+    # at exit 0 is what turned a `--branch "$BRANCH"` read across a Bash-call boundary from a
+    # loud error into a silent gate bypass.
+    rb = sh(f'python3 {SCRIPT} manifest-path --branch ""')
+    expect("P19 manifest-path --branch '': exits 2, does not silently retarget", rb.returncode, 2,
+           rb.stdout + rb.stderr)
+
     # ---- P13: WRITE-side CWE-59. scratch-path unlinks rather than writing through ----
-    victim = T / "victim"
+    victim = OUT / "victim"
     victim.write_text("DO NOT CLOBBER", encoding="utf-8")
     root = subprocess.run(["git", "rev-parse", "--show-toplevel"],
                           capture_output=True, text=True).stdout.strip()
@@ -737,6 +794,13 @@ def test_injection(td: str) -> None:
            _fingerprint_of("visual-deliverable", "missing walkthrough"), "49070d421e4345de")
     expect("fingerprints are newline- and case-insensitive, so D4's collapse cannot move one",
            _fingerprint_of("coverage", "a b"), _fingerprint_of("coverage", "A\nB"))
+
+    # Remove every payload file this function wrote. The secret-bearing ones especially.
+    for f in _made:
+        try:
+            f.unlink()
+        except OSError:
+            pass
 
 def test_producer_lines() -> None:
     print("\n[contract] every producer prescribes the VALIDATED add-entry form — no templates")
@@ -827,9 +891,12 @@ def test_producer_lines() -> None:
         # FB-0062: a producer that cannot record its entry must STOP. add-entry exits 2 on
         # an unknown kind/verb, a missing/empty finding file (the Write never ran) or a
         # symlinked one; unchecked, the append silently does nothing.
-        expect_true(f"[{label}] the {cmd} call checks its exit status (FB-0062 failure-open)",
-                    "|| exit 1" in blk or "|| {" in blk or "exit 3 is NOT a failure" in blk,
-                    blk[:220])
+        # Keyed on a REAL guard, never on prose. The literal "exit 3 is NOT a failure"
+        # used to satisfy this, which is how the waive site shipped with no guard at all —
+        # an assertion satisfiable by a comment is not an assertion.
+        expect_true(f"[{label}] the {cmd} call checks its exit status with a real guard, not "
+                    f"a comment (FB-0062 failure-open)",
+                    "|| exit 1" in blk or "|| {" in blk or 'RC" -eq' in blk, blk[:260])
         # FB-0108: free text arrives as a path, and no heredoc -- a payload containing the
         # delimiter escapes it (v1.41.0's measured first-attempt failure).
         expect_true(f"[{label}] the {cmd} call names a --finding-file", "--finding-file" in blk,
@@ -868,7 +935,22 @@ def test_producer_lines() -> None:
     # provably cannot reach, and (b) lands OUTSIDE `.flow/.gitignore`, so Step 6's "stage
     # code + docs together" could COMMIT a raw reviewer finding. This turns "remember to
     # go run CALL 1" into a CI failure.
-    ph = set(re.findall(r'--(?:finding|resolution)-file "<([a-z0-9-]+\.txt)>"', src))
+    # EVERY placeholder form, not just the `<slug.txt>` spelling. Six sites spelled it
+    # `<first path>` / `<the path printed above>` and were silently exempt from this check
+    # AND the adjacency one below — the no-match branch was the happy path, which is exactly
+    # the shape that produced the 12-unresolved-site bug this check exists to catch.
+    all_ph = re.findall(r'--(?:finding|resolution)-file "(<[^>]+>)"', src)
+    expect_true("POSITIVE: producer blocks reference scratch placeholders at all",
+                len(all_ph) >= 1, str(sorted(set(all_ph))))
+    # A placeholder must name a slug an adjacent --name resolves, OR describe the resolved
+    # path in the canonical words. Anything else is a new spelling that would slip the check.
+    CANON = re.compile(r"^<absolute path CALL 1 printed(,| for) [^>]*>$|^<the absolute path CALL 1 printed>$")
+    odd = sorted({x for x in all_ph if not CANON.match(x) and not re.match(r"^<[a-z0-9-]+\.txt>$", x)})
+    expect("every --finding-file/--resolution-file placeholder uses ONE canonical spelling",
+           odd, [],
+           "a new spelling is exempt from the resolution + adjacency checks below, which is "
+           "how 12 sites shipped referencing a path nothing resolved")
+    ph = set(re.findall(r'--(?:finding|resolution)-file "<[^>]*?([a-z0-9-]+\.txt)>"', src))
     nm = set(re.findall(r"--name ([a-z0-9-]+\.txt)", src))
     expect_true("POSITIVE: producer blocks reference scratch placeholders at all",
                 len(ph) >= 1, str(sorted(ph)))
@@ -886,7 +968,7 @@ def test_producer_lines() -> None:
     # impossible shape.
     blks = _producer_blocks(src)
     for i, blk in enumerate(blks):
-        blk_ph = re.findall(r'--(?:finding|resolution)-file "<([a-z0-9-]+\.txt)>"', blk)
+        blk_ph = re.findall(r'--(?:finding|resolution)-file "<[^>]*?([a-z0-9-]+\.txt)>"', blk)
         if not blk_ph:
             continue
         near = set()

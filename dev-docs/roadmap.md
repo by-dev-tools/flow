@@ -209,6 +209,31 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### The `already-attempted` marker is a third member of the "impersonate the parser's vocabulary" family — and it MUTATES the finding (from /flow:staff-review push-further, v1.42.0)
+
+**Origin:** `/flow:staff-review` push-further lens on the FB-0108 branch. **Not fixed there** — it is a
+parse-side defect and a sibling branch owns that layer. **Surfaces when:** `parse_entries` or
+`ATTEMPTED_MARKER` is next touched, or a fourth reader of the finding text is added.
+
+`parse_entries` reads a **third** thing out of the finding by bare substring —
+`attempted = ATTEMPTED_MARKER in finding` — and then `re.sub`s it out, **rewriting** the finding.
+Measured: a finding reading `"walkthrough (already-attempted earlier) is missing"` parses to
+`finding="walkthrough is missing"` with `already_attempted=true` and class `ask`. Ordinary prose (a
+resolution note legitimately saying "already attempted") therefore silently deletes a phrase the human
+reads **and** moves the fingerprint — so `waive --finding-file` / `record-attempt --finding-file` fed the
+*same file* compute a different hash than the parsed entry. That is the one invariant v1.42.0 pins as
+load-bearing ("a waiver given before must still subtract after"), and its pin only covers newline/case
+normalisation, so the paren-strip is invisible to it.
+
+Same structural shape as the `splitlines()` bug that PR fixed: the answer to *"what does the consumer
+read out of this text?"* was derived from one call site instead of from the consumer. There are exactly
+three (fence marker, field separator, attempted marker) and the roadmap entries enumerate two.
+**Shape:** anchor the strip to the emitter's exact suffix `f" ({ATTEMPTED_MARKER})"` rather than a
+substring test, so only text *this engine wrote* can set the flag; add a payload asserting
+`fingerprint(kind, raw) == parse(line).fingerprint` and `already_attempted is False` when `--attempted`
+was not passed. Coordinate with the parse-side branch.
+
+
 ### SAFETY: a manifest finding containing the close marker ERASES the rest of the manifest — verdict flips to READY (found by the v1.42.0 payload suite; NOT fixed there)
 
 **Origin:** payload P5 of the FB-0108 adversarial suite, run at the v1.42.0 plan gate. **Deliberately not fixed

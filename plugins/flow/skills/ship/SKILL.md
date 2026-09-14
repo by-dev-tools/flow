@@ -131,7 +131,7 @@ TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE
 # rigor-resolution.txt ← what would make it resolvable, and what you already tried
 MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
 python3 "$TRIAGE" add-entry --kind rigor --needs human-waive \
-  --finding-file "<rigor-finding.txt>" --resolution-file "<rigor-resolution.txt>" \
+  --finding-file "<absolute path CALL 1 printed for rigor-finding.txt>" --resolution-file "<absolute path CALL 1 printed for rigor-resolution.txt>" \
   >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the rigor entry was NOT recorded." >&2; exit 1; }
 ```
 . This keeps the gating
@@ -310,7 +310,7 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
   # security-resolution.txt ← the reviewer's candidate fixes, and the human input each needs
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind security --needs "<secret rotation | dep vetting | design decision>" \
-    --finding-file "<security-finding.txt>" --resolution-file "<security-resolution.txt>" \
+    --finding-file "<absolute path CALL 1 printed for security-finding.txt>" --resolution-file "<absolute path CALL 1 printed for security-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the security entry was NOT recorded." >&2; exit 1; }
 ```
   ```sh
@@ -326,7 +326,7 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
   # a11y-resolution.txt ← the reviewer's candidate fixes, and the human input each needs
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind a11y --needs "<design decision | dep vetting>" \
-    --finding-file "<a11y-finding.txt>" --resolution-file "<a11y-resolution.txt>" \
+    --finding-file "<absolute path CALL 1 printed for a11y-finding.txt>" --resolution-file "<absolute path CALL 1 printed for a11y-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the a11y entry was NOT recorded." >&2; exit 1; }
 ```
   The loop keeps going. Step 7a.5 triages it: `secret rotation`/`dep vetting` need an action outside this session (a genuine draft); anything else becomes a question the human answers at the Step 8 hand-off.
@@ -345,7 +345,7 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
   # coverage-resolution.txt ← the criterion you DRAFTED for the plan's Spec-walk block — drafting it is your job, declaring it is not
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind coverage --needs "declare + fence" \
-    --finding-file "<coverage-finding.txt>" --resolution-file "<coverage-resolution.txt>" \
+    --finding-file "<absolute path CALL 1 printed for coverage-finding.txt>" --resolution-file "<absolute path CALL 1 printed for coverage-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the coverage entry was NOT recorded." >&2; exit 1; }
 ```
   Do NOT auto-add the criterion yourself — that is the agent grading its own homework; the resolution is to declare the criterion in the plan's `**Spec-walk:**` block and let `/flow:verify-build` verify it (or the human waives it at the merge gate). A clean `No issues flagged.` adds nothing.
@@ -364,7 +364,7 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
   # verify-build-noplan-resolution.txt ← the criteria you DRAFTED, for the human to approve into the Spec-walk block
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind verify-build --needs "declare + fence" \
-    --finding-file "<verify-build-noplan-finding.txt>" --resolution-file "<verify-build-noplan-resolution.txt>" \
+    --finding-file "<absolute path CALL 1 printed for verify-build-noplan-finding.txt>" --resolution-file "<absolute path CALL 1 printed for verify-build-noplan-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the verify-build entry was NOT recorded." >&2; exit 1; }
 ```
   The verdicts may be real (the §2b judged path produces genuine `adversarial-judged` PASSes over diff-derived criteria), but a plan was *expected* and absent: a production diff shouldn't reach a ready PR via the no-plan path. Resolve by declaring the criteria in the plan's `**Spec-walk:**` block (so the next run is full mode) or waiving at the merge gate. A docs-only no-plan run (smoke path) does not route here.
@@ -379,7 +379,7 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
   TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind vacuous-criterion --needs "declare + fence" \
-    --finding-file "<first path>" --resolution-file "<second path>" \
+    --finding-file "<absolute path CALL 1 printed, 1st>" --resolution-file "<absolute path CALL 1 printed, 2nd>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — this vacuous-criterion entry was NOT recorded." >&2; exit 1; }
   ```
   The invocation is spelled out here rather than pointing at Step 2's template, deliberately: a producer an author must assemble from a distant template is a producer that drifts (FB-0075), and the prescribed examples are what an agent actually copies.
@@ -404,7 +404,7 @@ Then **use the Write tool** to write the raw finding to the first path and the r
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
 python3 "$TRIAGE" add-entry --kind <kind> --needs "<verb>" \
-  --finding-file "<first path from CALL 1>" --resolution-file "<second path from CALL 1>" \
+  --finding-file "<absolute path CALL 1 printed, 1st>" --resolution-file "<absolute path CALL 1 printed, 2nd>" \
   >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — this entry was NOT recorded. Do not proceed to Step 7a.5." >&2; exit 1; }
 ```
 
@@ -414,7 +414,7 @@ python3 "$TRIAGE" add-entry --kind <kind> --needs "<verb>" \
 
 The manifest is that file — append to it as each producer fires, rather than carrying 8 lines in your context from §1.0a to §7a.5. The `--kind`/`--needs` values each producer passes are named at its own site below.
 
-**Write `--finding` and `--resolution` in plain language.** They are rendered verbatim to a human who has not read the diff — `--finding` becomes the headline of a numbered question at Step 8. "criterion 3 FAIL/Unknown unresolved" and "visually-significant change is missing the rendered walkthrough" are the shorthand this whole step exists to remove; "the offline-retry behaviour didn't hold up when I ran it" and "this change is visible in the app and no screenshots were captured" say the same thing to the person who has to answer. No internal vocabulary (Spec-walk, buffer, HEAD, manifest, verdict, criterion N), no FB-XXXX.
+**Write the `--finding-file` and `--resolution-file` CONTENT in plain language.** They are rendered verbatim to a human who has not read the diff — the finding text becomes the headline of a numbered question at Step 8. "criterion 3 FAIL/Unknown unresolved" and "visually-significant change is missing the rendered walkthrough" are the shorthand this whole step exists to remove; "the offline-retry behaviour didn't hold up when I ran it" and "this change is visible in the app and no screenshots were captured" say the same thing to the person who has to answer. No internal vocabulary (Spec-walk, buffer, HEAD, manifest, verdict, criterion N), no FB-XXXX.
 
 The draft manifest starts empty. Anything added to it makes the eventual PR a **draft** (Step 7). This is how an unresolved blocker reaches the human at the merge gate they were hitting anyway, instead of halting the loop or shipping a merge-ready-looking PR that isn't ready.
 
@@ -463,7 +463,7 @@ TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE
 # verify-build-regression-resolution.txt ← what you already tried, and the different approach you would take next
 MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
 python3 "$TRIAGE" add-entry --kind verify-build --needs "regression fix" \
-  --finding-file "<verify-build-regression-finding.txt>" --resolution-file "<verify-build-regression-resolution.txt>" \
+  --finding-file "<absolute path CALL 1 printed for verify-build-regression-finding.txt>" --resolution-file "<absolute path CALL 1 printed for verify-build-regression-resolution.txt>" \
   >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the verify-build entry was NOT recorded." >&2; exit 1; }
 ```
  — then continue to Step 3. The PR opens as a **draft** (Step 7) — never a merge-ready PR on a non-PASS build.
@@ -583,7 +583,7 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
   # skip-audit-root-resolution.txt ← re-run from the repo root
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind skip-audit --needs "re-run" \
-    --finding-file "<skip-audit-root-finding.txt>" --resolution-file "<skip-audit-root-resolution.txt>" \
+    --finding-file "<absolute path CALL 1 printed for skip-audit-root-finding.txt>" --resolution-file "<absolute path CALL 1 printed for skip-audit-root-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the skip-audit entry was NOT recorded." >&2; exit 1; }
 ```
 ), **never** a clean pass: an unanchored fork validates every unverifiable skip as LEGITIMATE, so its confident "all legitimate" is exactly the output you must not trust. If it instead reports an **`engine_error`** (the handoff was present but `skip-audit-checks.py` failed on it — the engine now exits non-zero on a malformed/unreadable report rather than collapsing to a silent `stages:[]`), treat that as a `[decision-required]` draft-manifest entry (Resolve the two scratch paths and **Write** the finding + resolution into them first (Step 2's canonical three-call form — the text never enters a shell word). Then:
@@ -601,7 +601,7 @@ TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE
 # skip-audit-engine-resolution.txt ← fix the engine input, or human-waive
 MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
 python3 "$TRIAGE" add-entry --kind skip-audit --needs "human-waive" \
-  --finding-file "<skip-audit-engine-finding.txt>" --resolution-file "<skip-audit-engine-resolution.txt>" \
+  --finding-file "<absolute path CALL 1 printed for skip-audit-engine-finding.txt>" --resolution-file "<absolute path CALL 1 printed for skip-audit-engine-resolution.txt>" \
   >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the skip-audit entry was NOT recorded." >&2; exit 1; }
 ```
 ), **never** a clean pass. (A `no stage report` result when you DID write a handoff at 2a.1 is **not** benign and is no longer a known limitation: FB-0082 moved the handoff to a repo-local `.flow/` path both sides can see, so an absent handoff there means the transport broke again. Route it exactly like `stamp_error` — see 2a.3 — never as a clean pass.)
@@ -623,7 +623,7 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
   # skip-audit-stage-resolution.txt ← re-run the named stage, or declare it, or human-waive
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind skip-audit --needs "<re-run | declare | human-waive>" \
-    --finding-file "<skip-audit-stage-finding.txt>" --resolution-file "<skip-audit-stage-resolution.txt>" \
+    --finding-file "<absolute path CALL 1 printed for skip-audit-stage-finding.txt>" --resolution-file "<absolute path CALL 1 printed for skip-audit-stage-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the skip-audit entry was NOT recorded." >&2; exit 1; }
 ```
 ). The PR opens as a draft (Step 7).
@@ -642,7 +642,7 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
   # skip-audit-unverified-resolution.txt ← re-run ship Step 2a.1 from this workspace
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind skip-audit --needs "re-run" \
-    --finding-file "<skip-audit-unverified-finding.txt>" --resolution-file "<skip-audit-unverified-resolution.txt>" \
+    --finding-file "<absolute path CALL 1 printed for skip-audit-unverified-finding.txt>" --resolution-file "<absolute path CALL 1 printed for skip-audit-unverified-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the skip-audit entry was NOT recorded." >&2; exit 1; }
 ```
 ).
@@ -661,7 +661,7 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
   # skip-audit-foreign-resolution.txt ← re-run ship Step 2a.1 in this workspace
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind skip-audit --needs "re-run" \
-    --finding-file "<skip-audit-foreign-finding.txt>" --resolution-file "<skip-audit-foreign-resolution.txt>" \
+    --finding-file "<absolute path CALL 1 printed for skip-audit-foreign-finding.txt>" --resolution-file "<absolute path CALL 1 printed for skip-audit-foreign-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the skip-audit entry was NOT recorded." >&2; exit 1; }
 ```
 ). Never record this as `all-legitimate`.
@@ -677,14 +677,10 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
 
 ```sh
      TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
-     # Then WRITE TOOL: the first path gets "verify-build could not run: this machine has
-     # none of the tools an <platform> build needs (<the binaries the engine named>), so
-     # nothing was built or exercised"; the second gets "re-run /flow:verify-build on a
-     # machine that has the toolchain". Never a heredoc (Step 2).
-     MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH") || exit 1
+     MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
      python3 "$TRIAGE" add-entry --kind toolchain \
        --needs re-run --confidence decision-required \
-       --finding-file "<first path>" --resolution-file "<second path>" \
+       --finding-file "<absolute path CALL 1 printed, 1st>" --resolution-file "<absolute path CALL 1 printed, 2nd>" \
        >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the toolchain entry was NOT recorded." >&2; exit 1; }
 ```
      **The `>>` redirect is the whole point** — `add-entry` validates and PRINTS the line, it does not write it. Without the redirect the entry goes to stdout, Step 7a.5 classifies an empty manifest, the verdict is `READY`, and §7a.6 opens a **non-draft** PR: a validated-unverifiable skip reaching a ready PR with no behavioral gate, which is exactly what this bullet exists to prevent. Same reason the `TRIAGE` fallback is not optional: `CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls, so a bare `${CLAUDE_PLUGIN_ROOT}/…` path fails outright in the flow repo itself.
@@ -1023,7 +1019,7 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
   # status-surface-resolution.txt ← the corrected line you DRAFTED verbatim for the human to approve — or declare it in statusDocs and fence the region so it auto-reconciles every ship, or human-waive
   MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
   python3 "$TRIAGE" add-entry --kind status-surface --needs reconcile \
-    --finding-file "<status-surface-finding.txt>" --resolution-file "<status-surface-resolution.txt>" \
+    --finding-file "<absolute path CALL 1 printed for status-surface-finding.txt>" --resolution-file "<absolute path CALL 1 printed for status-surface-resolution.txt>" \
     >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the status-surface entry was NOT recorded." >&2; exit 1; }
 ```
 
@@ -1354,9 +1350,8 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
 
 ```sh
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
-# Then WRITE TOOL: that path gets the finding text, verbatim.
-python3 "$TRIAGE" record-attempt --branch "$BRANCH" --kind visual-deliverable \
-  --finding-file "<the path printed above>" || { echo "⚠️ BLOCKER: record-attempt failed — the attempt was NOT recorded, so Step 7a.5 may re-attempt instead of asking." >&2; exit 1; }
+python3 "$TRIAGE" record-attempt --branch "$(git branch --show-current)" --kind visual-deliverable \
+  --finding-file "<the absolute path CALL 1 printed>" || { echo "⚠️ BLOCKER: record-attempt failed — the attempt was NOT recorded, so Step 7a.5 may re-attempt instead of asking." >&2; exit 1; }
 ```
 
 If the re-assert now passes, there is no manifest entry and nothing reaches the human. If it still fails, **add to the draft manifest via `add-entry`** (Step 2 — never hand-compose the line; `add-entry` validates `--kind`/`--needs` at write time):
@@ -1370,13 +1365,10 @@ Now **use the Write tool** to write the raw finding to the first path printed ab
 
 ```sh
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
-# Then WRITE TOOL: first path gets "<plain language: this change is visible in the app and
-# <named artifact(s)> is missing>"; second gets "re-run /flow:verify-build to capture
-# frames, and/or hand-author the visual-history entry (Step 5c)".
-MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH") || exit 1
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)") || exit 1
 python3 "$TRIAGE" add-entry --kind visual-deliverable \
   --needs re-run \
-  --finding-file "<first path>" --resolution-file "<second path>" \
+  --finding-file "<absolute path CALL 1 printed, 1st>" --resolution-file "<absolute path CALL 1 printed, 2nd>" \
   >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the visual-deliverable entry was NOT recorded." >&2; exit 1; }
 ``` Because the attempt is recorded, Step 7a.5 classifies it `ask` rather than re-attempting — it becomes a question, not a silent second try. Because the walkthrough is **ephemeral/local (not committed)**, also record its local path in the PR-body handoff (the `## Flow run` table's visual row + the closing line) so the human can open it at the merge gate: `Walkthrough (local, uncommitted): <verifyReportPath>`.
 
@@ -1392,7 +1384,7 @@ Classify the manifest each producer appended to (the branch-scoped file `manifes
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 BRANCH=$(git branch --show-current)
 STATE=$(python3 "$TRIAGE" init-state --branch "$BRANCH")   # cache; the PR body is the durable record
-MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)")
 # A MISSING manifest file is the common case — no producer fired, nothing to triage.
 # classify treats that as an empty manifest and returns READY; it is not an error.
 # Repo-local like every other flow scratch artifact (FB-0082): /tmp is one global
@@ -1436,7 +1428,7 @@ Three classes come back:
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 BRANCH=$(git branch --show-current)
 STATE=$(python3 "$TRIAGE" state-path --branch "$BRANCH")
-MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)")
 python3 "$TRIAGE" render-manifest --entries-file "$MANIFEST" --state-file "$STATE" --branch "$BRANCH"
 ```
 
@@ -1717,7 +1709,7 @@ Invoke it as a scoped `/flow:ship` (state "reconcile the PR body to current gate
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 BRANCH=$(git branch --show-current)
 STATE=$(python3 "$TRIAGE" state-path --branch "$BRANCH")
-MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$BRANCH")
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)")
 BODY_ARG=""
 if [ -n "${N:-}" ]; then
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then . "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"; else . "plugins/flow/skills/ship/lib/verify-pr-body.sh"; fi
@@ -1733,12 +1725,18 @@ Each `ask` entry becomes one numbered question carrying: what it means in plain 
 ```sh
 TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 python3 "$TRIAGE" scratch-path --name waive-finding.txt || exit 1
-# Then WRITE TOOL: that path gets the entry's finding text, copied verbatim from the
-# manifest line being waived. Never a heredoc, never a quoted argument (Step 2).
+```
+
+Now **use the Write tool** to write the entry's finding text — copied verbatim from the manifest line being waived — to the ONE path printed above. (`waive` has no resolution field, so this site resolves a single path.) Never a heredoc, never a quoted argument (Step 2). Then, as a SEPARATE Bash call:
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
 python3 "$TRIAGE" waive --branch "$(git branch --show-current)" --kind <kind> \
-  --finding-file "<the path printed above>"
-# exit 3 is NOT a failure: the waiver was recorded but matches no current entry —
-# check the finding text is verbatim, or that --branch is right.
+  --finding-file "<the absolute path CALL 1 printed>"; RC=$?
+# exit 2 IS a failure (the file was missing/empty/symlinked — nothing was recorded): stop.
+# exit 3 is NOT: the waiver WAS recorded but matches no current entry — check the finding
+# text is verbatim, or that --branch is right.
+[ "$RC" -eq 0 ] || [ "$RC" -eq 3 ] || { echo "⚠️ BLOCKER: waive failed (exit $RC) — the waiver was NOT recorded." >&2; exit 1; }
 ```
  Not a hand-edit, and not a second full ship run. A `verify-build` entry is the one exception: a waiver on it is recorded and the PR stays a draft — if the user accepts the risk, they mark it ready themselves.
 

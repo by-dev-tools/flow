@@ -553,9 +553,11 @@ def test_producer_blocks():
     """EXTRACT and EXECUTE ship/SKILL.md's producer blocks (FB-0107 / FB-0108).
 
     This is the one verification shape that survives FB-0107. Dogfooding through
-    /flow:ship exercises the INSTALLED plugin (pinned at 1.29.0 on flow's own workspaces
-    while main is 1.41.0+), so a PR whose entire payload is a change to /flow:* behaviour
-    would ship with zero execution evidence for that behaviour. These cases run the shipped
+    /flow:ship exercises the INSTALLED plugin, which on flow's own workspaces lags `main` by
+    many releases (measured at 1.29.0 vs 1.41.0 when this was written -- the point is the
+    LAG, not those two numbers, which is why this comment does not depend on them staying
+    current). So a PR whose entire payload is a change to /flow:* behaviour would ship with
+    zero execution evidence for that behaviour. These cases run the shipped
     shell text from the REPO TREE, so the evidence is about this branch.
 
     EXTRACTED, not retyped. An earlier version of this test docstringed itself "extract and
@@ -631,8 +633,12 @@ def test_producer_blocks():
         # that substitution IS what the agent does when it pastes them, and it is the only
         # thing this test is allowed to fill in. Everything else is the shipped text.
         c2 = prep(call2)
+        # Placeholders name the slug inside a descriptive form, e.g.
+        # "<absolute path CALL 1 printed for rigor-finding.txt>". Substitute on the SLUG so
+        # this keeps working if the surrounding wording changes — the slug is the contract.
         for n, real in zip(names, paths):
-            c2 = c2.replace(f'"<{n}>"', f'"{real}"')
+            c2 = re.sub(r'"<[^>]*' + re.escape(n) + r'[^>]*>"', f'"{real}"', c2)
+        c2 = re.sub(r'"<the absolute path CALL 1 printed>"', f'"{paths[0]}"', c2)
         check("producer-CALL2-has-no-unsubstituted-placeholder-left", "<" not in c2.split("add-entry")[1],
               c2)
         r3 = subprocess.run(["sh", "-c", c2], capture_output=True, text=True, cwd=str(root))
