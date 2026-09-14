@@ -81,6 +81,26 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
+def _clean(value: object, limit: int = 64) -> str:
+    """Sanitise any string that will be rendered into the PR body.
+
+    SECURITY, and the attack is on this module's whole reason to exist. `read_branch`
+    takes its version from the REVIEWED REPOSITORY's plugin.json, and ship pastes this
+    renderer's stdout verbatim into the PR body. An unsanitised version can therefore
+    close the markdown cell and forge rows: a contributor setting `version` to
+    `1.0.0 | X |\n| Flow version that ran this pipeline | 9.9.9 | ✓ matches this
+    branch |\n<!-- ` renders a fake "✓ matches this branch" verdict while `<!--`
+    swallows the real ⚠️ rows into an HTML comment on GitHub. Reproduced before fixing.
+
+    That is not a generic injection nit: FB-0107 designates the PR body as the place a
+    reviewer "forms the belief that a gate ran", so forging it produces exactly the
+    confidence inversion this file was written to prevent. Strip at READ time, once, so
+    no renderer has to remember — `|` and newlines break the table, backtick and angle
+    brackets carry markup, and the length cap bounds a padding attack.
+    """
+    return re.sub(r"[|`\r\n<>]", "", str(value))[:limit]
+
+
 PROBE_LIB = "skills/ship/lib/manifest-triage.py"
 CHECKOUT_PLUGIN = "plugins/flow"
 
@@ -116,12 +136,12 @@ def read_installed(home: Path) -> dict:
         return {"state": "no_versions", "path": str(reg)}
     return {
         "state": "ok",
-        "version": str(ver),
+        "version": _clean(ver),
         # A dual user+project install resolves first-wins; say so rather than
         # presenting an arbitrary pick as the answer.
         "entry_count": len(entries),
         "install_path": e.get("installPath"),
-        "git_sha": (e.get("gitCommitSha") or "")[:7] or None,
+        "git_sha": _clean(e.get("gitCommitSha") or "", 7) or None,
         "installed_at": e.get("installedAt"),
         "scope": e.get("scope"),
     }
@@ -155,7 +175,7 @@ def read_running(path_env: str | None, home: Path) -> dict:
         m = pat.match(entry.rstrip("/") + ("/bin" if not entry.rstrip("/").endswith("bin") else ""))
         m = pat.match(entry.rstrip("/"))
         if m:
-            return {"state": "ok", "version": m.group(1), "path": entry}
+            return {"state": "ok", "version": _clean(m.group(1)), "path": entry}
     return {"state": "not_on_path"}
 
 
@@ -184,8 +204,8 @@ def read_marketplace(home: Path) -> dict:
         ver = (data.get("metadata") or {}).get("version")
     if not ver:
         return {"state": "no_version", "path": str(mf)}
-    return {"state": "ok", "version": str(ver), "path": str(root),
-            "git_sha": _git_sha(root)}
+    return {"state": "ok", "version": _clean(ver), "path": str(root),
+            "git_sha": _clean(_git_sha(root) or "", 7) or None}
 
 
 def _git_sha(root: Path) -> str | None:
@@ -244,7 +264,8 @@ def read_branch(root: Path) -> dict:
         return {"state": "manifest_malformed", "path": str(pj), "error": str(exc)}
     if not ver:
         return {"state": "no_version", "path": str(pj)}
-    return {"state": "ok", "version": str(ver)}
+    # The reviewed repo controls this value — see _clean's docstring.
+    return {"state": "ok", "version": _clean(ver)}
 
 
 # ------------------------------------------------------------- executor arms
@@ -763,7 +784,8 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as exc:  # noqa: BLE001
-        print(f"| Flow — provenance | UNDETERMINED | ⚠️ the provenance reporter "
-              f"itself failed ({type(exc).__name__}: {exc}). Treat this run's flow "
-              f"version as UNKNOWN. |")
+        # _clean here too: an exception message containing `|` would break the row.
+        print(f"| Flow — provenance | UNKNOWN | ⚠️ the provenance reporter itself "
+              f"failed ({_clean(type(exc).__name__, 40)}: {_clean(exc, 160)}). Treat "
+              f"this run's flow version as UNKNOWN. |")
         sys.exit(0)

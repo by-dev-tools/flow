@@ -60,7 +60,35 @@ set -uo pipefail
 [ -f plugins/flow/.claude-plugin/plugin.json ] || exit 0
 grep -q '"name"[[:space:]]*:[[:space:]]*"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null || exit 0
 
-ENGINE="plugins/flow/skills/ship/lib/plugin-provenance.py"
+# SECURITY: resolve the engine from the INSTALLED tree ONLY — never from the checkout.
+#
+# This hook fires automatically at SessionStart with no approval prompt, and the
+# approved string in settings.json does not change when repo content does. So a
+# checkout-resolved engine would mean `gh pr checkout <external-PR>` + a new session =
+# arbitrary code execution as the user, from a contributor's branch. Flow takes
+# external PRs, so that is a live path, not a hypothetical.
+#
+# A currency check has no legitimate reason to run the branch under review: the
+# question it asks ("is the INSTALLED plugin current?") is answered entirely by the
+# installed tree and the registry. If the engine is not installed, warn and exit —
+# degrading to the checkout copy is precisely the move that creates the hole.
+#
+# Consumers are unaffected either way: `.claude/` is project-dev infra and is not part
+# of the published plugin (the marketplace entry's source is ./plugins/flow).
+ENGINE=""
+_reg="$HOME/.claude/plugins/installed_plugins.json"
+if [ -f "$_reg" ]; then
+    _ip=$(python3 -c "
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    e=(d.get('plugins') or {}).get('flow@flow') or []
+    print(e[0].get('installPath','') if e and isinstance(e[0],dict) else '')
+except Exception:
+    print('')" "$_reg" 2>/dev/null)
+    [ -n "$_ip" ] && [ -f "$_ip/skills/ship/lib/plugin-provenance.py" ] \
+        && ENGINE="$_ip/skills/ship/lib/plugin-provenance.py"
+fi
 
 # FLOW_CURRENCY_DRY_RUN=1 inspects the decision WITHOUT mutating anything: no
 # clone refresh, no install. It exists because the update is not freely
@@ -88,9 +116,14 @@ cc() {
         echo "   refreshed from here. Do NOT assume the /flow:* machinery is current." >&2
         exit 0
     fi
-    if [ ! -f "$ENGINE" ]; then
-        echo "⚠️ [flow-currency] provenance engine missing at $ENGINE — cannot tell which" >&2
-        echo "   flow version is installed, so cannot tell whether an update is needed." >&2
+    if [ -z "$ENGINE" ] || [ ! -f "$ENGINE" ]; then
+        echo "[flow-currency] the installed flow plugin predates the provenance engine" >&2
+        echo "   (added in v1.43.0), so this currency check is inactive until a version" >&2
+        echo "   carrying it is installed: claude plugin marketplace update flow && \\" >&2
+        echo "   claude plugin update flow@flow" >&2
+        echo "   Deliberately NOT falling back to this checkout's copy — this hook fires with" >&2
+        echo "   no approval prompt, so running repo code here would make checking out an" >&2
+        echo "   untrusted branch equivalent to executing it." >&2
         exit 0
     fi
 

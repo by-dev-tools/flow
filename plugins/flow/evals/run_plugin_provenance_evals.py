@@ -672,6 +672,67 @@ def hook_body() -> list[str]:
             if not l.strip().startswith("#")]
 
 
+def test_hook_never_executes_the_checkout():
+    """The SessionStart hook must resolve its engine from the INSTALLED tree only.
+
+    SECURITY. This hook fires automatically with no approval prompt, and the approved
+    command string in settings.json does not change when repo content does. A
+    checkout-resolved engine would therefore make `gh pr checkout <external-PR>` plus a
+    new session equal arbitrary code execution as the user — and flow takes external
+    PRs, so that is a live path.
+
+    Paired assertions (FB-0010 clause 3): the negative alone would pass on a hook that
+    resolves no engine at all.
+    """
+    body = "\n".join(hook_body())
+    check("installed_plugins.json" in body,
+          "the hook must resolve the engine via the installed-plugin registry")
+    check("installPath" in body,
+          "the engine path must come from the registry's installPath, not from the repo")
+    # NEGATIVE: no repo-relative engine path in executable code.
+    check("plugins/flow/skills/ship/lib/plugin-provenance.py" not in body,
+          "the hook must NOT name a checkout-relative engine path in executable code — "
+          "that is the arbitrary-code-execution path")
+    check("NOT falling back" in HOOK.read_text(encoding="utf-8"),
+          "the refusal must be explained where the next maintainer will read it")
+
+
+def test_version_string_cannot_forge_the_table():
+    """A reviewed repo cannot inject markdown into the provenance table.
+
+    The version in `plugins/flow/.claude-plugin/plugin.json` is controlled by the
+    repository under review, and ship pastes this renderer's stdout verbatim into the
+    PR body. Unsanitised, a contributor could close the cell and render a forged
+    "✓ matches this branch" row while `<!--` swallowed the real warnings into an HTML
+    comment — reproduced before the fix. FB-0107 designates the PR body as where a
+    reviewer forms the belief that a gate ran, so forging it is the confidence
+    inversion this whole module exists to prevent.
+    """
+    payload = ("1.0.0 | X |\n| Flow version that ran this pipeline | 9.9.9 | "
+               "✓ matches this branch |\n<!-- ")
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        root = make_root(td, "1.0.0")
+        (root / "plugins" / "flow" / ".claude-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "flow", "version": payload}))
+        home = make_home(td, registry("1.29.0"), marketplace_json("1.29.0"))
+        rc, out = run(home, root, as_json=False)
+        d = jrun(home, root)
+    check(rc == 0, "a hostile version string must not crash the reporter")
+    check("<!--" not in out, "the payload must not open an HTML comment")
+    check("| 9.9.9 |" not in out, "the payload must not forge a table row")
+    rows = [l for l in out.splitlines() if l.startswith("|")]
+    labelled = [l for l in rows if any(lab in l for lab in ROW_LABELS)
+                or "New skills + agents" in l]
+    check(len(rows) == len(labelled),
+          f"every rendered row must carry a known label; got {len(rows)} rows, "
+          f"{len(labelled)} labelled:\n{out}")
+    check("|" not in (d.get("branch") or {}).get("version", ""),
+          "the delimiter must be stripped at READ time, not just at render time")
+    check("\n" not in (d.get("branch") or {}).get("version", ""),
+          "newlines must be stripped at read time")
+
+
 def test_hook_single_predicate():
     """The hook asks the engine; it does not re-derive the comparison.
 
@@ -726,6 +787,23 @@ def test_hook_loud_failure():
           "the env-var gate is the bug #116 fixed — do not reintroduce it in executable code")
     # It must never wedge a session start.
     check(txt.rstrip().endswith("exit 0"), "the hook must end with `exit 0`")
+
+
+def make_home_with_engine(td: Path, version: str, mkt_version: str) -> Path:
+    """A synthetic HOME whose INSTALLED tree actually contains the engine.
+
+    Required since the hook was hardened to resolve its engine only from the installed
+    plugin (never from the checkout — see test_hook_never_executes_the_checkout). A
+    fixture without an installed engine now exercises the refusal path, not the
+    behaviour under test, so the two must be built differently and deliberately.
+    """
+    inst = td / "cachetree"
+    lib = inst / "skills" / "ship" / "lib"
+    lib.mkdir(parents=True, exist_ok=True)
+    (lib / "plugin-provenance.py").write_text(ENGINE.read_text(encoding="utf-8"))
+    (lib / "manifest-triage.py").write_text("# probe\n")
+    return make_home(td, registry(version, install_path=str(inst)),
+                     marketplace_json(mkt_version))
 
 
 def _hook_driver(td: Path):
@@ -792,7 +870,7 @@ def test_hook_fast_path():
         # Built from the LIVE declared version, not a fixture, so a release bump
         # cannot turn "a current install must be silent" red.
         live = live_branch_version()
-        home = make_home(td / "s1", registry(live), marketplace_json(live))
+        home = make_home_with_engine(td / "s1", live, live)
 
         rc, so, se, calls = drive(home, cwd=other)
         check(rc == 0 and so == "" and se == "" and calls == [],
@@ -808,7 +886,7 @@ def test_hook_fast_path():
 
         # POSITIVE pair: with an update genuinely available it MUST act -- else
         # "attempted no update" would pass in a world where it never updates.
-        home2, _ = home_from_fixture(td / "s2", "marketplace-ahead.json")
+        home2 = make_home_with_engine(td / "s2", "1.29.0", "1.43.0")
         rc, so, se, calls = drive(home2, cwd=REPO)
         check(rc == 0 and so == "", f"update path: rc={rc} stdout={so!r}")
         check(any("plugin update flow@flow" in c for c in calls),
@@ -831,7 +909,7 @@ def test_hook_dry_run():
         td = Path(t)
         drive = _hook_driver(td)
         live = live_branch_version()
-        home = make_home(td, registry(live), marketplace_json(live))
+        home = make_home_with_engine(td, live, live)
         rc, so, se, calls = drive(home, cwd=REPO, dry=True)
     check(rc == 0 and so == "", f"dry run: rc={rc} stdout={so!r}")
     check("dry-run" in se, "dry run must announce itself")
@@ -847,7 +925,7 @@ def test_hook_degrades_safely():
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
         drive = _hook_driver(td)
-        home, _ = home_from_fixture(td / "d1", "marketplace-ahead.json")
+        home = make_home_with_engine(td / "d1", "1.29.0", "1.43.0")
 
         rc, so, se, calls = drive(home, cwd=REPO, fail=True)
         check(rc == 0, f"a failed update must still exit 0, got {rc}")
@@ -859,10 +937,15 @@ def test_hook_degrades_safely():
         check("not on PATH" in se, f"absent claude must be loud, got {se!r}")
         check(calls == [], "absent claude must invoke nothing")
 
-        rc, so, se, calls = drive(home, cwd=REPO, hide_engine=True)
-        check(rc == 0, f"absent engine must still exit 0, got {rc}")
-        check("provenance engine missing" in se or "cannot tell" in se,
-              f"absent engine must say it cannot tell, got {se!r}")
+        # No engine in the INSTALLED tree: the hook must refuse rather than fall back
+        # to the checkout copy, and must say why.
+        bare = make_home(td / "d2", registry("1.29.0"), marketplace_json("1.43.0"))
+        rc, so, se, calls = drive(bare, cwd=REPO)
+        check(rc == 0, f"absent installed engine must still exit 0, got {rc}")
+        check("NOT falling back" in se,
+              f"absent installed engine must refuse the checkout copy loudly, got {se!r}")
+        check(not any("plugin update" in c for c in calls),
+              "with no engine the hook must not blind-update")
 
 
 def test_hook_field_parse_no_shift():
@@ -891,7 +974,17 @@ def test_hook_field_parse_no_shift():
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
         drive = _hook_driver(td)
-        home = make_home(td / "bad", "{not json at all", marketplace_json("9.9.9"))
+        # A PARSEABLE registry whose entry records no version: installPath still
+        # resolves (so the hook finds the installed engine and reaches the field
+        # parse), while `installed.version` comes back empty — the exact empty-field
+        # case. A corrupt registry cannot be used here: the hook would fail to resolve
+        # installPath and refuse before parsing anything, testing the refusal path
+        # instead of the parse.
+        home = make_home_with_engine(td / "bad", "1.29.0", "9.9.9")
+        reg = home / ".claude" / "plugins" / "installed_plugins.json"
+        d = json.loads(reg.read_text())
+        d["plugins"]["flow@flow"][0].pop("version")
+        reg.write_text(json.dumps(d))
         rc, so, se, calls = drive(home, cwd=REPO)
     check(rc == 0, f"an unreadable registry must still exit 0, got {rc}")
     check("unreadable" in se,
@@ -960,6 +1053,8 @@ def main() -> int:
                test_row_labels, test_both_polarities, test_graceful_degradation,
                test_decoy_repo_refused, test_surface_drift, test_contracts,
                test_hook_single_predicate, test_hook_loud_failure,
+               test_hook_never_executes_the_checkout,
+               test_version_string_cannot_forge_the_table,
                test_hook_fast_path, test_hook_dry_run,
                test_hook_degrades_safely, test_hook_field_parse_no_shift,
                test_capture_fixture, test_ci_wired):

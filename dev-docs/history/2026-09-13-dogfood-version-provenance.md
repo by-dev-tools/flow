@@ -44,7 +44,7 @@ to another workspace whose PR rested on "9 rounds of `/flow:critique-plan`".
    branch-declared), both executor arms, surface-inventory drift, and two independent predicates.
 2. Four rows in `ship` and `ship-spike`, plus the un-invocable-surface callout.
 3. `.claude/hooks/flow-plugin-currency.sh` (dev infra, not shipped) — ported from health-tracker#116.
-4. `run_plugin_provenance_evals.py`, 215 checks, CI-wired.
+4. `run_plugin_provenance_evals.py`, 227 checks, CI-wired.
 
 ### Tradeoffs
 
@@ -196,6 +196,33 @@ asserted as its positive pair so "fell back to the registry" can never be silent
 defect in its own implementation. A gate that reports on the wrong artifact is worse
 than no gate, and "the wrong artifact" included this engine's own primary output.
 
+### `/flow:security-review` found two real BLOCKERs, one of which forged this PR's own verdict
+
+**1. A hostile version string could forge the provenance table.** The version in
+`plugins/flow/.claude-plugin/plugin.json` is controlled by the repository under review, and ship pastes
+the renderer's stdout verbatim into the PR body. Reproduced before fixing: a contributor setting
+`version` to `1.0.0 | X |\n| Flow version that ran this pipeline | 9.9.9 | ✓ matches this branch |\n<!-- `
+rendered a **forged "✓ matches this branch" row** while `<!--` swallowed the real ⚠️ rows into an HTML
+comment. FB-0107 designates the PR body as exactly where a reviewer forms the belief that a gate ran —
+so forging it produces the confidence inversion this module was written to prevent, from inside the
+module. Fixed by sanitising at READ time (`_clean`: strips `| \` \r \n < >`, caps length) across all
+three version readers and the last-resort exception handler. Pinned with a payload fixture asserting
+every rendered row carries a known label.
+
+**2. The SessionStart hook executed repo-tracked, branch-rewritable code.** `settings.json` ran
+`bash .claude/hooks/…`, which ran `python3 plugins/flow/…/plugin-provenance.py` — both rewritable by any
+branch. So `gh pr checkout <external-PR>` plus a new session was arbitrary code execution as the user,
+with no approval prompt, because the *approved string* in `settings.json` never changes when repo
+content does. Flow takes external PRs, so this was live. Notably every prior hook in that file is fully
+inline — greps and echoes — and this diff was the first to point an auto-firing hook at repo content.
+Consumers were never exposed (`.claude/` is dev-infra; the published surface is `plugins/flow/`).
+Fixed for the engine layer: it now resolves **only** from the installed tree via the registry's
+`installPath`, and **refuses to fall back to the checkout**, loudly. A currency check has no business
+executing the branch under review. The residual — the hook script itself is branch-rewritable — is a
+threat-model decision and is routed to the PR's draft manifest rather than decided unilaterally.
+
+Third time in this PR that its own thesis caught a defect in its own implementation.
+
 ### Deletion criteria (FB-0088)
 
 - **The engine + rows:** removable when (a) `claude plugin update` no longer requires a restart, so
@@ -208,6 +235,6 @@ than no gate, and "the wrong artifact" included this engine's own primary output
 - **The plan.md placement note:** removable once `/flow:land` demotes the stale blocks, which makes
   the positional hazard non-latent and the workaround unnecessary rather than wrong.
 
-**Verification:** `run_plugin_provenance_evals.py` 215 checks; full suite 31 harnesses green.
+**Verification:** `run_plugin_provenance_evals.py` 227 checks; full suite 31 harnesses green.
 `/flow:verify-build` self-skips (`platform: library`), so this harness **is** the behavioural gate,
 not a supplement to one — declared here so `/flow:audit-skips` reads a stated reason.
