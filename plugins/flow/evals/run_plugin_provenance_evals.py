@@ -341,6 +341,69 @@ def test_both_polarities():
         check("⚠️" not in crow, f"clean run: row {lab!r} must NOT warn, got {crow!r}")
 
 
+def test_running_version_beats_the_registry():
+    """What RAN is read from PATH, not from the registry — they can disagree.
+
+    Found live, in this engine's own ship run. `claude plugin update` rewrites the
+    registry immediately but "requires a restart to apply", so a session that started
+    before the update keeps executing the OLD tree while the registry advertises the
+    new one. Observed: registry 1.41.0, session still running 1.29.0, both version
+    directories present in the cache. The headline row — labelled "the version that
+    ran this pipeline" — was reporting a version that had not run: exactly the failure
+    this module exists to prevent, reproduced inside it.
+
+    PATH is the reliable signal because Claude Code prepends the resolved plugin's
+    `bin` directory at session start, pinning it to what the process actually loaded.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        home = make_home(td, registry("1.41.0"), marketplace_json("1.41.0"))
+        root = make_root(td, "1.43.0")
+        binp = home / ".claude" / "plugins" / "cache" / "flow" / "flow" / "1.29.0" / "bin"
+        binp.mkdir(parents=True, exist_ok=True)
+        env_path = f"{binp}{os.pathsep}/usr/bin"
+
+        def with_path(as_json):
+            env = dict(os.environ, PATH=env_path, HOME=str(home))
+            env.pop("CLAUDE_PLUGIN_ROOT", None)
+            cmd = [sys.executable, str(ENGINE), "report", "--home", str(home),
+                   "--root", str(root)] + (["--json"] if as_json else [])
+            return subprocess.run(cmd, capture_output=True, text=True, env=env,
+                                  cwd=str(root)).stdout
+
+        d = json.loads(with_path(True))
+        out = with_path(False)
+
+    check(d.get("ran_version") == "1.29.0",
+          f"the RUNNING version must come from PATH, got {d.get('ran_version')!r}")
+    check(d.get("ran_version_source") == "PATH",
+          f"source must be PATH when derivable, got {d.get('ran_version_source')!r}")
+    check((d.get("installed") or {}).get("version") == "1.41.0",
+          "the registry value must still be reported — both facts matter")
+    check(d.get("restart_pending") is True,
+          "a registry/PATH disagreement IS the restart-pending state and must be named")
+    check(d.get("release_gap") == 14,
+          f"the gap must measure what RAN against the branch, got {d.get('release_gap')}")
+    check("1.29.0" in out.splitlines()[0],
+          f"the headline row must show the version that RAN:\n{out.splitlines()[0]}")
+    check("NOT applied" in out,
+          "the installed-but-unapplied update must be stated, not silently dropped")
+
+    # POSITIVE pair: with no plugin bin on PATH the engine falls back to the registry
+    # and SAYS it did, rather than silently reporting a version it cannot source.
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        home = make_home(td, registry("1.41.0"), marketplace_json("1.41.0"))
+        root = make_root(td, "1.43.0")
+        d2 = jrun(home, root)
+    check(d2.get("ran_version") == "1.41.0",
+          "with no PATH signal, fall back to the registry")
+    check(d2.get("ran_version_source") == "registry",
+          f"the fallback must be LABELLED, got {d2.get('ran_version_source')!r}")
+    check(d2.get("restart_pending") is False,
+          "no disagreement is possible when there is only one source")
+
+
 def test_healthy_run_does_not_cry_wolf():
     """The EXPECTED steady state of every flow branch must not warn.
 
@@ -890,6 +953,7 @@ def test_ci_wired():
 
 def main() -> int:
     for fn in (test_installed_states, test_executor_arms, test_split_predicates,
+               test_running_version_beats_the_registry,
                test_healthy_run_does_not_cry_wolf,
                test_no_internal_state_leaks_to_the_reader,
                test_callout_splits_rule_skills_from_command_skills,

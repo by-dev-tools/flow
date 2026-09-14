@@ -44,7 +44,7 @@ to another workspace whose PR rested on "9 rounds of `/flow:critique-plan`".
    branch-declared), both executor arms, surface-inventory drift, and two independent predicates.
 2. Four rows in `ship` and `ship-spike`, plus the un-invocable-surface callout.
 3. `.claude/hooks/flow-plugin-currency.sh` (dev infra, not shipped) — ported from health-tracker#116.
-4. `run_plugin_provenance_evals.py`, 128 checks, CI-wired.
+4. `run_plugin_provenance_evals.py`, 215 checks, CI-wired.
 
 ### Tradeoffs
 
@@ -169,6 +169,33 @@ declaration sites. That is the same error the plan-critic caught as Issue 5 ("ex
 committed again by the same author in a different file, which is a decent argument for pinning the
 protected property instead of a number.
 
+### The engine's own headline row was wrong, and the bug found it
+
+Caught during the ship run itself, ~11 hours after the rest of this work. A
+`claude plugin update` had landed in the interim: the registry advertised **1.41.0**,
+both version directories sat in the cache, and the session was **still executing
+1.29.0** — because `plugin update` "requires a restart to apply", the property this PR
+documents in three places.
+
+So the engine, which read the registry, reported *1.41.0* in a row labelled **"the
+version that ran this pipeline"** — naming a version that had not run. That is the
+precise failure this module exists to prevent, reproduced inside it, and no test caught
+it because every fixture had only one source of truth.
+
+**The fix is a better signal.** Claude Code prepends the resolved plugin's `bin`
+directory to `PATH` at session start, so the version embedded there is pinned to what
+the process actually loaded and cannot be moved by a later update. The engine now reads
+PATH first, falls back to the registry, **labels which source it used**, and reports a
+PATH/registry disagreement as the restart-pending state it is ("an update to 1.41.0 is
+installed but NOT applied"). `release_gap` and `report_drift` key on what ran, not on
+what is registered — which is why this run correctly reads 14 releases back rather than
+2. Pinned by `test_running_version_beats_the_registry`, with the no-PATH fallback
+asserted as its positive pair so "fell back to the registry" can never be silent.
+
+**Worth stating plainly:** this is the third time in one PR that its own thesis caught a
+defect in its own implementation. A gate that reports on the wrong artifact is worse
+than no gate, and "the wrong artifact" included this engine's own primary output.
+
 ### Deletion criteria (FB-0088)
 
 - **The engine + rows:** removable when (a) `claude plugin update` no longer requires a restart, so
@@ -181,6 +208,6 @@ protected property instead of a number.
 - **The plan.md placement note:** removable once `/flow:land` demotes the stale blocks, which makes
   the positional hazard non-latent and the workaround unnecessary rather than wrong.
 
-**Verification:** `run_plugin_provenance_evals.py` 128 checks; full suite 31 harnesses green.
+**Verification:** `run_plugin_provenance_evals.py` 215 checks; full suite 31 harnesses green.
 `/flow:verify-build` self-skips (`platform: library`), so this harness **is** the behavioural gate,
 not a supplement to one — declared here so `/flow:audit-skips` reads a stated reason.

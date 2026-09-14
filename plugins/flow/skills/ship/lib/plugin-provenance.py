@@ -127,6 +127,38 @@ def read_installed(home: Path) -> dict:
     }
 
 
+def read_running(path_env: str | None, home: Path) -> dict:
+    """The version THIS SESSION actually loaded — ground truth, not the registry.
+
+    Found the hard way, live, in this engine's own ship run. The registry
+    (`installed_plugins.json`) records what is installed *now*; a `claude plugin
+    update` rewrites it immediately but "requires a restart to apply", so a session
+    that started before the update keeps running the OLD tree while the registry
+    advertises the new one. Observed: registry 1.41.0, session still executing
+    1.29.0, both version directories present in the cache.
+
+    That made the headline row -- literally labelled "the version that ran this
+    pipeline" -- report a version that had not run. Precisely the failure this whole
+    module exists to prevent, reproduced inside it.
+
+    The reliable signal is PATH. Claude Code prepends the resolved plugin's `bin`
+    directory at session start, so the version embedded there is pinned to what this
+    process actually loaded and cannot be moved by a later update. Best-effort: a
+    plugin with no `bin/` never appears on PATH, so callers fall back to the registry
+    and must say which one they used.
+    """
+    if not path_env:
+        return {"state": "no_path"}
+    root = str((home / ".claude" / "plugins" / "cache").resolve())
+    pat = re.compile(re.escape(root) + r"/[^/]+/[^/]+/([^/]+)/bin/?$")
+    for entry in path_env.split(os.pathsep):
+        m = pat.match(entry.rstrip("/") + ("/bin" if not entry.rstrip("/").endswith("bin") else ""))
+        m = pat.match(entry.rstrip("/"))
+        if m:
+            return {"state": "ok", "version": m.group(1), "path": entry}
+    return {"state": "not_on_path"}
+
+
 def read_marketplace(home: Path) -> dict:
     """What an update would fetch.
 
@@ -379,24 +411,34 @@ def _minor_delta(a: str | None, b: str | None) -> int | None:
 
 def collect(home: Path, root: Path, plugin_root: str | None) -> dict:
     installed = read_installed(home)
+    running = read_running(os.environ.get("PATH"), home)
     marketplace = read_marketplace(home)
     branch = read_branch(root)
     libs = resolve_libs(plugin_root, root, installed)
     pre = resolve_preprocessor(installed)
     drift_surfaces = surface_drift(installed, root)
 
-    iv = installed.get("version") if installed.get("state") == "ok" else None
+    rv = running.get("version") if running.get("state") == "ok" else None
+    reg_v = installed.get("version") if installed.get("state") == "ok" else None
+    # What RAN takes precedence over what is registered. When they disagree an update
+    # has landed but not been applied -- the restart-pending state.
+    iv = rv or reg_v
+    restart_pending = bool(rv and reg_v and rv != reg_v)
     bv = branch.get("version") if branch.get("state") == "ok" else None
     mv = marketplace.get("version") if marketplace.get("state") == "ok" else None
 
     # Both predicates are None-when-undeterminable, NOT False. "I could not tell"
     # and "they match" must stay distinguishable, or an unreadable registry reads
     # as a clean run -- the exact confidence-inverting shape of FB-0107.
-    report_drift = None if (iv is None or bv is None) else (iv != bv)
+    report_drift = None if (iv is None or bv is None) else (iv != bv)  # iv = what RAN
     update_available = None if (iv is None or mv is None) else (iv != mv)
 
     return {
         "installed": installed,
+        "running": running,
+        "ran_version": iv,
+        "ran_version_source": ("PATH" if rv else ("registry" if reg_v else None)),
+        "restart_pending": restart_pending,
         "marketplace_head": marketplace,
         "branch": branch,
         "libs": libs,
@@ -497,8 +539,17 @@ def render_rows(d: dict) -> list[str]:
     rows = []
 
     # -- what actually ran
-    if inst.get("state") == "ok":
-        val = _paren(inst["version"], inst.get("git_sha"), "`")
+    ran = d.get("ran_version")
+    if ran:
+        # Show the version that RAN, with its sha only when that came from the
+        # registry (the PATH signal carries no sha).
+        val = (_paren(inst["version"], inst.get("git_sha"), "`")
+               if d.get("ran_version_source") == "registry" else ran)
+        pending = ""
+        if d.get("restart_pending"):
+            pending = (f" **An update to {inst.get('version')} is installed but NOT applied** — "
+                       "it takes effect on restart, so this session still ran "
+                       f"{ran}.")
         if d["report_drift"] is True and stale:
             gap = d.get("release_gap")
             gap_txt = f", {gap} releases back" if gap else ""
@@ -506,14 +557,14 @@ def render_rows(d: dict) -> list[str]:
                     f"{br.get('version')}, so the skill instructions and reviewers that "
                     "ran here are an older release. Updating cannot fix THIS run — "
                     "`plugin update` applies on restart, so re-running ship in a NEW "
-                    "session is what regenerates these rows.")
+                    "session is what regenerates these rows." + pending)
         elif d["report_drift"] is True:
             note = (f"ℹ️ expected — this branch declares {br.get('version')}, which is not "
-                    "released yet, and the install is otherwise current.")
+                    "released yet, and the install is otherwise current." + pending)
         elif d["report_drift"] is False:
-            note = "✓ matches this branch"
+            note = ("✓ matches this branch" + pending) if not pending else ("⚠️" + pending)
         elif br.get("state") == "not_flow_checkout":
-            note = "✓ installed and running"
+            note = ("✓ installed and running" + pending) if not pending else ("⚠️" + pending)
         else:
             note = f"⚠️ cannot compare — {_why(br.get('state'))}"
     else:
