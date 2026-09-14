@@ -78,7 +78,30 @@ also untouched. Rationale: every later phase is justified by these
 numbers, and right now they come from an orchestrator running `wc -c` by hand. A program
 whose evidence is not reproducible is not measurable at the end.
 
-**Phase 2 — orchestrator operating discipline (docs only, free).**
+**Phase 2 — orchestrator operating discipline, INCLUDING model routing (docs only, free).**
+
+*Scope change, Ben 2026-09-14.* An earlier revision deferred model routing to roadmap M at
+**HIGH** confidence. That was wrong, and the error was a conflation: roadmap M is about
+*verifying that `model:` frontmatter actually routes* — a measurement harness with no CLI entry
+point, genuinely a build. **The orchestrator's procedure for CHOOSING a model at dispatch is a
+decision rule requiring no new machinery**, and it is codifiable today. Deferring both because
+one is expensive was silent narrowing of the more valuable half.
+
+Ben's framing, which also corrects this plan's posture: *"we shouldn't sacrifice legitimate
+parallel workers just to stretch out usage … but we also shouldn't be afraid to use a powerful
+model when necessary and valuable."* The goal is **to stop the rate window being the binding
+constraint, not to ration under it.** Right-sizing, not conserving. Holding back a worker that
+has real work trades throughput — the scarce thing — for tokens, the cheap thing.
+
+Codified 2026-09-14 in `research/orchestrator-field-manual.md` § 6: the routing table, the
+"effort is a bigger lever than tier" rule, the start-one-tier-down escalation rule, the hard
+floor that gate machinery is never routed down (a wrong answer there fails *silently*), and the
+FB-0091 requirement to log `model · effort · why` at every dispatch. **The measured gap it
+closes: 4 of 4 live workers were `opus-5-1m`, including a parked one, and no dispatch in this
+program had logged a routing rationale.** Phase 2 lifts that into canonical §4.3 and it becomes
+the spec `/flow:spawn` is built from.
+
+**Also in Phase 2, unchanged:**
 Codify in `research/orchestrator-field-manual.md` + canonical §4.8: **the orchestrator seat
 dispatches, it does not implement.** Evidence: this seat ran >24h in ONE session doing
 orchestration + succession + doc authoring + a full implementation PR with two lens spawns,
@@ -108,16 +131,6 @@ seen four approved phases, one reading Open call 1 would have seen three.)*
 - **Touching `ship/SKILL.md`'s content in Phases 1–3.** It is gate machinery and it has an
   in-flight PR (FB-0108, +272 lines). Any edit collides.
 - **Re-pointing `flow.config.json` slots, or any consumer-visible contract change.**
-- **Model routing (the user's area (c)) — DEFERRED to roadmap M, and this is an explicit
-  narrowing decision, not an omission.** Recommendation: keep it out. **Confidence: HIGH.**
-  Justification: verifying that a subagent's `model:` frontmatter actually routes is a
-  *measurement* PR, and `roadmap.md:366` records that `shadow_sampler.py`'s real-invocation
-  path has no CLI entry point at all — so it is a build, not a check. `roadmap.md:368` further
-  states that routing any subagent off Opus "remains a separate, future, data-gated decision."
-  Bundling that into a weight-reduction program would put an unbuilt measurement harness on the
-  critical path of three small PRs. Phase 2's "set model/effort at dispatch, never mid-session"
-  does NOT discharge this — that is the article's prompt-cache hygiene item (#9/#17), a
-  different concern from whether routing works at all.
 - **`/compact`, `/clear`, `@`-notation, `/context` discipline.** These are the article's
   cheapest wins (#1, #2, #3, #10) but they are *Ben's* session habits, not repo changes.
   Named here so they are not silently dropped; they belong in a one-page operator note, not
