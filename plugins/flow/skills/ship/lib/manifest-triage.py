@@ -351,7 +351,20 @@ def _repo_scratch(name: str) -> str:
     except (OSError, subprocess.SubprocessError):
         root = ""
     if not root:
-        return str(Path(tempfile.gettempdir()) / "flow-detached" / name)
+        # The no-worktree fallback carries the SAME guards as the repo branch. It used to
+        # have neither, and `scratch-path` now `unlink()`s what it resolves -- so on a shared
+        # runner a pre-created `/tmp/flow-detached -> /home/victim/dir` symlink turned a
+        # producer's CALL 1 into a delete-plus-write in someone else's directory
+        # (CWE-377/CWE-59). Low reachability (`/flow:ship` always runs inside a worktree),
+        # but the unlink is what gave it teeth, so the guard ships with the unlink.
+        d = Path(tempfile.gettempdir()) / "flow-detached"
+        if d.is_symlink():
+            print(f"BLOCKER: {d} is a symlink -- refusing to write flow scratch through it "
+                  f"(CWE-59): writes would land outside the temp dir. Remove it, or run "
+                  f"inside a git worktree. Nothing was recorded.", file=sys.stderr)
+            raise SystemExit(2)
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d / name)
     d = Path(root) / ".flow"
     # CWE-59: never write scratch through a symlink (same refusal as the shell sites).
     if d.is_symlink():
@@ -793,6 +806,34 @@ def _collapse_newlines(text: str) -> str:
     return " ".join(seg.strip(" \t") for seg in text.splitlines()).strip()
 
 
+# The consumer's grammar has THREE structural layers, not one. `_collapse_newlines` defangs the
+# line break (derived from `splitlines()`, the parser's own definition). The other two are the
+# region fences: `extract_manifest_region` slices between the FIRST open marker and the FIRST
+# close marker, and the same function parses both the manifest file and a PR body. So a finding
+# carrying those literals erases every entry after it -- measured: a `[coverage]` entry whose
+# text held both markers, followed by a live `[verify-build]` blocker, classified to verdict
+# READY with ZERO entries, and §7a.6 would open a NON-DRAFT PR. `pr-coherence` agreed (no
+# markers in the body, not a draft) and the FB-0067 read-back keys on that same verdict, so
+# every gate reported green. Worse, payload P5 already FIRED this exact input and asserted only
+# "exits 0" + "text arrives intact" -- the hole was certified safe by a test written against it.
+#
+# DEFANG rather than refuse, keeping FB-0062's direction ("never drop a blocker on well-meant
+# input"): a criterion legitimately discussing the sentinel design is ordinary prose, and
+# exiting 2 there would abort the ship. Markers come from `manifest_contract`, so the emitter
+# and the detector cannot drift apart.
+#
+# SCOPE: this is the WRITE-side half only. The parse-side fix (line-anchored fence matching, so
+# a marker mid-line cannot terminate the region) is owned by a sibling branch; this guard closes
+# the variant that layer cannot reach, and neither is sufficient alone.
+_FENCE_DEFANGED = "[flow-fence]"
+
+
+def _defang_fences(text: str) -> str:
+    for marker in (MANIFEST_OPEN, MANIFEST_CLOSE):
+        text = text.replace(marker, _FENCE_DEFANGED)
+    return text
+
+
 def _read_text_arg(path: str, flag: str) -> str:
     """Read a free-text field from a file, refusing every unsafe shape LOUDLY.
 
@@ -817,11 +858,20 @@ def _read_text_arg(path: str, flag: str) -> str:
     except OSError:
         rp = p
     allowed = Path(_repo_scratch("x")).parent.resolve()
-    if rp.parent != allowed:
-        print(f"BLOCKER: {flag} {path} is outside flow's scratch directory ({allowed}). "
-              f"Producer field files must come from `scratch-path --name <slug>`, which "
-              f"resolves a confined path for you -- reading an arbitrary path would splice "
-              f"its contents into the PR body. Nothing was recorded.", file=sys.stderr)
+    # NAME as well as directory. `.flow/` is not only producer scratch -- it also parks
+    # `verify-findings.json` (verify-build's captured run output, which can carry app stdout
+    # and env), `sec-diff.patch` / `staff-diff.patch` (the entire diff), and the rendered
+    # report. A directory-level check let a producer publish a NEIGHBOUR into the PR body by
+    # naming it -- the same outcome the symlink and confinement guards exist to stop, reached
+    # without leaving the trusted directory. The write side already restricts `--name` to this
+    # pattern; the read side must agree, or one contract has two disagreeing halves (FB-0074).
+    if rp.parent != allowed or not _SCRATCH_NAME_RE.fullmatch(rp.name):
+        print(f"BLOCKER: {flag} {path} is not a producer field file in flow's scratch "
+              f"directory ({allowed}, name matching {_SCRATCH_NAME_RE.pattern}). Producer "
+              f"field files must come from `scratch-path --name <slug>`, which resolves a "
+              f"confined path for you -- reading any other path, INCLUDING a neighbour in "
+              f"that same directory such as verify-findings.json or sec-diff.patch, would "
+              f"splice its contents into the PR body. Nothing was recorded.", file=sys.stderr)
         raise SystemExit(2)
     # CWE-59, read side. `.flow/` is git-checkout-plantable, so `finding.txt` can be
     # a symlink to ~/.ssh/id_rsa or .git/config; reading through it would splice that
@@ -850,7 +900,7 @@ def _read_text_arg(path: str, flag: str) -> str:
               f"is nothing to record -- and an empty finding would reach the human as "
               f"a blank question. Nothing was recorded.", file=sys.stderr)
         raise SystemExit(2)
-    return _collapse_newlines(raw.strip())
+    return _defang_fences(_collapse_newlines(raw.strip()))
 
 
 class _RemovedTextFlag(argparse.Action):
@@ -933,6 +983,9 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("manifest-path")
     p.add_argument("--branch", required=True)
+    # Opt-in for a deliberate detached-HEAD read. Producers never pass it, so an unset
+    # variable still fails loud; a caller that means it can still resolve the path.
+    p.add_argument("--allow-detached", action="store_true")
 
     p = sub.add_parser("state-path")
     p.add_argument("--branch", required=True)
@@ -1063,11 +1116,23 @@ def main(argv: list[str] | None = None) -> int:
         # boundary from a loud error into a silent gate bypass: the producer appended to a
         # file Step 7a.5 never reads, `|| exit 1` passed, the real manifest stayed empty, and
         # the verdict came back READY over an unresolved blocker.
-        if not args.branch.strip():
-            print("BLOCKER: manifest-path --branch is empty. A producer that appends to the "
-                  "resulting path writes to a manifest nothing reads, so the run's verdict "
-                  "would come back READY over an unresolved blocker. Pass "
-                  '--branch "$(git branch --show-current)".', file=sys.stderr)
+        if not args.branch.strip() and not args.allow_detached:
+            # FAIL CLOSED, with an explicit opt-in for the one legitimate empty case.
+            #
+            # The bug this guards was never "detached HEAD" -- on a genuinely detached HEAD
+            # the producer AND the reader both resolved `manifest-detached.md`, which is
+            # coherent. The bug was a producer resolving DETACHED while the reader resolved
+            # REAL, caused by `--branch "$BRANCH"` read across a Bash-call boundary where the
+            # variable was set in a different call and expanded empty. The engine cannot tell
+            # those two apart from the value alone, so it distinguishes them by INTENT:
+            # an unset variable never passes --allow-detached, a deliberate detached read can.
+            print("BLOCKER: manifest-path --branch is empty. This is almost always an unset "
+                  "shell variable read across a Bash-call boundary -- and a producer that "
+                  "appends to the resulting path writes to a manifest the reader never "
+                  "resolves, so the run's verdict comes back READY over an unresolved "
+                  'blocker. Pass --branch "$(git branch --show-current)". If you genuinely '
+                  "mean the detached-HEAD manifest, say so with --allow-detached.",
+                  file=sys.stderr)
             return 2
         print(_default_manifest_path(args.branch))
         return 0

@@ -79,6 +79,7 @@ def expect_true(label: str, cond: bool, ctx: str = "") -> None:
 # directory per call.)
 _TXT_DIR = None
 _TXT_N = 0
+_TXT_MADE: list[Path] = []
 
 
 def txt(content: str) -> str:
@@ -96,6 +97,7 @@ def txt(content: str) -> str:
     _TXT_N += 1
     f = _TXT_DIR / f"evalfield-{_TXT_N}.txt"
     f.write_text(content, encoding="utf-8")
+    _TXT_MADE.append(f)   # cleaned in main(); .flow/ is the one dir the engine TRUSTS
     return str(f)
 
 
@@ -112,6 +114,7 @@ def run(args: list[str]) -> tuple[int, str]:
 # while production was broken.
 _ENGINE = _load_triage()
 MANIFEST_CLOSE = _ENGINE.MANIFEST_CLOSE
+MANIFEST_OPEN = _ENGINE.MANIFEST_OPEN
 _collapse = _ENGINE._collapse_newlines
 
 
@@ -617,6 +620,11 @@ def test_injection(td: str) -> None:
         return sh(f'python3 {SCRIPT} add-entry --kind {kind} --needs {needs} '
                   f'--finding-file "{path}"')
 
+    def _fenced(tmpdir, body: str) -> Path:
+        f = Path(tmpdir) / "fenced-body.md"
+        f.write_text(f"{MANIFEST_OPEN}\n{body}\n{MANIFEST_CLOSE}\n", encoding="utf-8")
+        return f
+
     payloads = {
         "P1 command substitution": f"criterion $(touch {T}/s1) and `touch {T}/s2` here",
         "P2 quote breakout": f'criterion "; touch {T}/s3; echo "tail',
@@ -641,11 +649,48 @@ def test_injection(td: str) -> None:
             if (T / n).exists():
                 expect_true(f"{label}: payload did NOT execute (sentinel {n})", False, "EXECUTED")
                 (T / n).unlink()
-        # The text arrives intact. Newlines collapse (D4) and NOTHING else does, so the
-        # expectation is computed with the engine's own normaliser rather than hand-typed.
-        want = _collapse(raw.strip())
-        expect_true(f"{label}: text arrives intact (newline-collapse only)", want in r.stdout,
-                    f"want {want[:90]!r}\ngot  {r.stdout[:120]!r}")
+        # The text arrives intact EXCEPT for the two deliberate normalisations, and the
+        # expectation is computed with the engine's OWN transforms rather than hand-typed —
+        # a hand-typed expectation is how P5 came to assert "arrives intact" for a payload
+        # whose whole danger was that it DID arrive intact.
+        want = _ENGINE._defang_fences(_collapse(raw.strip()))
+        expect_true(f"{label}: text arrives intact (newline-collapse + fence-defang only)",
+                    want in r.stdout, f"want {want[:90]!r}\ngot  {r.stdout[:120]!r}")
+        if MANIFEST_OPEN in raw or MANIFEST_CLOSE in raw:
+            # PAIRED: defanging is not cosmetic — assert the live marker is GONE from the
+            # composed line, which is what stops it terminating the region downstream.
+            expect_true(f"{label}: the live region marker is DEFANGED in the manifest line",
+                        MANIFEST_OPEN not in r.stdout and MANIFEST_CLOSE not in r.stdout,
+                        r.stdout)
+
+    # P5/P6 CONSEQUENCE — the whole point, and the half that was missing. These payloads
+    # already FIRED and asserted only "exits 0" + "text arrives intact", so the hole was
+    # certified safe by a test written against it: a finding carrying the region fences
+    # erased every entry after it, `classify` returned READY over a live [verify-build]
+    # blocker, and §7a.6 would have opened a NON-DRAFT PR. Arrival is not the property;
+    # what the CONSUMER then sees is.
+    for lbl, poison in (("both fences", f"retry path {MANIFEST_OPEN}{MANIFEST_CLOSE} ok"),
+                        ("close fence only", f"retry path {MANIFEST_CLOSE} ok"),
+                        ("open fence only", f"retry path {MANIFEST_OPEN} ok"),
+                        ("NOT-READY sentinel", "carries 🚫 NOT READY TO MERGE inline")):
+        fp = pay("fence", poison)
+        first = add(str(fp))
+        expect(f"P5/P6 {lbl}: the poisoned entry is accepted", first.returncode, 0, first.stderr)
+        gp = pay("fencereal", "the build failed on the offline-retry criterion")
+        second = add(str(gp), kind="verify-build", needs='"regression fix"')
+        expect(f"P5/P6 {lbl}: the real blocker is accepted", second.returncode, 0, second.stderr)
+        man = Path(td) / f"fence-{lbl.replace(' ', '-')}.md"
+        man.write_text(first.stdout + second.stdout, encoding="utf-8")
+        rc_c, out_c = run(["classify", "--entries-file", str(man), "--branch", "fencetest"])
+        res = json.loads(out_c)
+        expect(f"P5/P6 {lbl}: BOTH entries survive the region parse (the poison must not "
+               f"erase the one after it)", len(res["entries"]), 2, out_c)
+        expect(f"P5/P6 {lbl}: verdict is NOT READY — a live verify-build blocker is present",
+               res["verdict"] != "READY", True, out_c)
+        # And the same body rendered inside a real fenced region still parses both.
+        rc_p, parsed = run(["parse", "--body-file", str(_fenced(td, first.stdout + second.stdout))])
+        expect(f"P5/P6 {lbl}: both entries parse from a FENCED body too",
+               len(json.loads(parsed)["entries"]), 2, parsed)
 
     # P15 — EVERY character `str.splitlines()` breaks on, because that is what
     # `parse_entries` consumes the manifest with. Eight of these eleven were untested and
@@ -750,6 +795,18 @@ def test_injection(td: str) -> None:
     expect("P17 PARENT-directory symlink: exits 2 (is_symlink alone is one component deep)",
            r.returncode, 2, r.stderr)
 
+    # P20 — a NEIGHBOUR in the trusted scratch dir. `.flow/` also parks verify-findings.json
+    # (captured app stdout/env), sec-diff.patch and staff-diff.patch (the whole diff). A
+    # directory-level confinement let a producer publish one into the PR body by naming it.
+    neighbour = Path(_ENGINE._repo_scratch("verify-findings-probe.json"))
+    neighbour.write_text("AWS_SECRET=AKIAFAKE123 from app console output\n", encoding="utf-8")
+    r = add(str(neighbour))
+    expect("P20 a .flow NEIGHBOUR (non-slug name) is refused", r.returncode, 2, r.stderr)
+    expect_true("P20: its content appears in neither stream",
+                "AKIAFAKE123" not in (r.stdout + r.stderr), r.stdout + r.stderr)
+    expect("P20: no manifest line emitted", r.stdout.strip(), "")
+    neighbour.unlink(missing_ok=True)
+
     # P18 — `scratch-path --name` is an ALLOWLIST. The first version was a denylist and
     # therefore accepted `.gitignore` and `manifest-<branch>.md`; since scratch-path UNLINKS,
     # either would have deleted flow's own self-ignore or the run manifest.
@@ -765,6 +822,18 @@ def test_injection(td: str) -> None:
     rb = sh(f'python3 {SCRIPT} manifest-path --branch ""')
     expect("P19 manifest-path --branch '': exits 2, does not silently retarget", rb.returncode, 2,
            rb.stdout + rb.stderr)
+    expect("P19: and prints NO path (a path on stdout would still be appended to)",
+           rb.stdout.strip(), "")
+    # PAIRED positive: the guard must not break a DELIBERATE detached read, only an unset
+    # variable. Without this half, "fails closed" is satisfiable by refusing every caller.
+    rb = sh(f'python3 {SCRIPT} manifest-path --branch "" --allow-detached')
+    expect("P19 POSITIVE: --allow-detached still resolves the detached manifest", rb.returncode, 0,
+           rb.stdout + rb.stderr)
+    expect_true("P19 POSITIVE: ...and it is the detached path", "detached" in rb.stdout, rb.stdout)
+    rb = sh(f'python3 {SCRIPT} manifest-path --branch "realbranch"')
+    expect("P19 POSITIVE: a real branch resolves unchanged", rb.returncode, 0, rb.stderr)
+    expect_true("P19 POSITIVE: ...to its own branch-scoped path",
+                "manifest-realbranch" in rb.stdout, rb.stdout)
 
     # ---- P13: WRITE-side CWE-59. scratch-path unlinks rather than writing through ----
     victim = OUT / "victim"
@@ -1235,6 +1304,14 @@ def main() -> int:
     test_malformed()
 
     print()
+    # Remove the field files written into the real repo .flow/ — it is the one directory
+    # `_read_text_arg` treats as trusted, so the harness must not leave residue there.
+    for f in _TXT_MADE:
+        try:
+            f.unlink()
+        except OSError:
+            pass
+
     if _failures:
         print(f"FAILED: {len(_failures)} eval(s): {', '.join(_failures)}")
         return 1

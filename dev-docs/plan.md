@@ -448,7 +448,10 @@ until:
       worktree — so a producer's finding file and its manifest can never resolve under two different roots. *Verified:* verified incl. P13 (planted symlink unlinked, victim byte-unchanged) and a path-shaped --name refused.
 - [x] **The engine guard fires, and nothing is appended:** `--finding-file` pointed at a missing file, an
       empty file, or a directory exits 2 with a named message and prints no manifest line — so "the Write tool
-      never ran" cannot silently drop a blocker. Paired positive: a non-empty regular file exits 0. *Verified:* missing / empty / directory all exit 2 with no manifest line; a non-empty regular file exits 0.
+      never ran" cannot silently drop a blocker. Paired positive: a non-empty regular file **that
+      `scratch-path` resolved** exits 0 — the location qualifier is load-bearing since the
+      confinement criterion below, and without it a tester would write the file wherever convenient
+      and never discover the rule. *Verified:* missing / empty / directory all exit 2 with no manifest line; a non-empty regular file exits 0.
 - [x] Each producer site's CALL 1 and CALL 2 blocks are extracted and EXECUTED **independently**, and CALL 2
       works from only the literal paths CALL 1 printed — no shell variable crosses the boundary. With a
       symlinked `.flow`, CALL 1 exits non-zero and CALL 2 is never reached. *(verify: a **new `producer-*` case
@@ -504,6 +507,49 @@ until:
 - [x] Full eval suite green + `ci.yml`'s harness↔runner join check passes (naming a count here would be the
       very drift this PR is about). *Verified:* all 31 harnesses green; the ci.yml harness/runner join check passes locally (31 harnesses, all wired).
 - [x] The PR body names P1–P14 verbatim, each with what it attacked and what happened. *Verified:* written at ship time from the `[injection]` section's own labels.
+- [x] **The consumer's region fences are DEFANGED on the way in.** A finding containing
+      `<!-- flow:not-ready-manifest -->` / its closing form lands with the live markers replaced,
+      and — the property that matters — a poisoned entry followed by a real `[verify-build]` blocker
+      still classifies to **2 entries and a non-READY verdict**. Asserted for all four variants
+      (both fences, close only, open only, the NOT-READY sentinel) and from a fenced body too.
+      *Found by `/flow:security-review`, and it had been CERTIFIED SAFE by my own payload P5*,
+      which fired this exact input and asserted only "exits 0" + "text arrives intact" — arrival
+      was never the property; what the consumer then sees is. Measured before the fix: verdict
+      READY, zero entries, over a live blocker, with `pr-coherence` and the FB-0067 read-back both
+      agreeing because they key on that same verdict. **Scope:** write side only; the parse-side
+      line-anchored fix is a sibling branch's, and neither is sufficient alone. *Verified:* P5/P6
+      consequence rows + mutation (removing the defang turns 6 assertions red).
+- [x] **`--finding-file`/`--resolution-file` are CONFINED to flow's scratch directory.** A path whose
+      resolved parent is not `.flow` **or whose name is not a producer slug** exits 2, the target's content appears in neither stream nor the
+      manifest, and no line is emitted — for an arbitrary absolute path, a `..` traversal, AND a path
+      reached through a symlinked **parent directory** (`p.is_symlink()` is only one component deep,
+      so the parent case walked straight through it). **Paired positive:** a file `scratch-path`
+      resolved exits 0. *Declared after `/flow:audit-coverage` flagged it* — the eval (P17) already
+      existed, so this was a declaration gap, not a verification gap. *Why it matters:* without it,
+      naming a secret file directly reproduced the exact outcome the symlink refusal exists to
+      prevent — its contents spliced into the manifest and thence the PR body — without using a
+      symlink at all. **Name-level, not just directory-level:** `.flow/` also parks
+      `verify-findings.json` (captured app stdout/env), `sec-diff.patch` and `staff-diff.patch` (the
+      whole diff), so a directory-only check let a producer publish a NEIGHBOUR into the PR body by
+      naming it. *Verified:* P17 + P20, both directions, mutation-tested.
+- [x] **`scratch-path --name` is an ALLOWLIST (`[a-z0-9][a-z0-9-]*\.txt`), not a denylist.** Refuses
+      `.gitignore`, `manifest-<branch>.md`, `Finding.TXT`, `x.txt.bak`, `../escape.txt`; accepts a
+      producer slug. **The victim file is byte-unchanged after a refusal.** *Load-bearing because this
+      subcommand UNLINKS what it resolves:* the first version was a denylist enumerating `/` and `..`,
+      so `--name .gitignore` passed and deleted flow's own self-ignore (verified by doing it). A
+      denylist in the PR whose thesis is "encode the rule, not the exceptions". *Declared after
+      `/flow:audit-coverage` flagged it;* eval P18 already existed. *Verified:* P18.
+- [x] **`manifest-path` fails CLOSED on an empty `--branch`, and the detached-HEAD case is an
+      explicit opt-in.** `--branch ""` exits 2 and prints NO path; `--branch "" --allow-detached`
+      resolves `manifest-detached.md`; a real branch resolves byte-identically to before.
+      *Declared after `/flow:audit-coverage` flagged it as an undeclared change* — it is a new exit
+      code on an existing subcommand and it changes what a producer block does on detached HEAD.
+      **Disposition, stated because the audit asked for it:** the bug being guarded was never
+      "detached HEAD" (there, producer and reader both resolve `manifest-detached.md` — coherent);
+      it was producer-resolves-detached while reader-resolves-REAL, caused by a `--branch "$BRANCH"`
+      read across a Bash-call boundary. The engine cannot tell those apart from the value, so it
+      distinguishes them by INTENT: an unset variable never passes `--allow-detached`. A deliberate
+      detached read still works. *Verified:* payload P19 + the positive opt-in case.
 - [x] **Commit 2: all 13 inline templates converted; `test_producer_lines` tightened to accept ONLY the `add-entry` form.** *Verified:* 0 templates remain; the negative is paired with a positive kind-coverage equality over a single harvest; 6 mutations all killed (delete-all-appends, delete-one, reintroduce-template, hand-compose-with-echo, drop-a-block's-TRIAGE, drop-a-kind). Commit 2 leaves `manifest-triage.py` untouched — the split is real.
 
 ### Why the verification shape is extract-and-execute, not a dogfood run (FB-0107)
