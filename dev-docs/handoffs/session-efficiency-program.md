@@ -196,8 +196,57 @@ worker's main session and are carried through every later turn.
   at Step 8; and flow has been bitten twice by fork boundaries already (FB-0074 root
   resolution, FB-0082 `/tmp` transport). Moving gate machinery across a fork boundary
   re-enters that hazard class for a token saving we have not yet measured.
-- **The cheaper 80%:** Phases 1–3 first, then re-measure. If ship is still dominant, do it
-  deliberately with the transport hazard designed for, not as an efficiency afterthought.
+- **The cheaper 80%:** Phases 1–3 first, then re-measure.
+
+### Phase 4 — the decision gate, and what makes it answerable
+
+**Ben, 2026-09-14: "don't move it yet, but prepare things to move in that direction. Does the
+plan have a path to it?" The honest answer was NO — the plan had a deferral with a vague
+re-measure trigger, not a path. This section is the fix.**
+
+The decision is not currently *deferred*; it is **unanswerable**, because three things are
+unknown. Name them and the decision becomes a calculation rather than a judgement call.
+
+**Precondition A — the pure/impure inventory. This is the missing piece.**
+Ship's steps divide into those that CAN cross a fork boundary and those that cannot:
+
+| | examples | can it fork? |
+|---|---|---|
+| **Pure** — read, judge, report | the four reviewers, `audit-skips`, `audit-coverage`, manifest classification/triage, the doc-currency *checks* | yes — and four of these already do |
+| **Impure** — side effects the parent owns | `git commit`, `gh pr create`, body/draft writes, the Step 8 human hand-off | no |
+
+Nobody has inventoried which steps are which, or how many of ship's ~40,700 tokens sit on
+each side. **If the pure fraction is ~70%, moving is a large win; if it is ~20%, the hazard is
+not worth it.** That single number decides Phase 4, and producing it is a read of one file —
+Phase 1's tooling can emit it per-section once it already walks the fences.
+
+**Precondition B — is the fork boundary actually safe now?**
+Flow has been bitten twice here: FB-0074 (a forked skill could not resolve the repo root and
+validated every unverifiable skip as LEGITIMATE) and FB-0082 (a fork could not see the `/tmp`
+handoff the parent wrote, silently disabling the skip gate from v1.13.0). Both have fixes —
+repo-local `.flow/`, the `flow_stamp` refusal — and **ship already forks four reviewers
+successfully today, which is the working precedent.** What is NOT established is whether
+ship's own *orchestration* can fork, which is a different question because it writes. Needs an
+audit of the remaining gaps, not a guess.
+
+**Precondition C — a measured baseline.** Phase 1 delivers this. Without it the payoff is
+unfalsifiable.
+
+**And the part that answers "prepare things to move in that direction":**
+
+> **Phase 3 IS the rehearsal.** Extracting `doctor`'s 67% `sh` to `lib/*.sh` is the low-stakes
+> version of exactly the move ship would need — a skill delegating its mechanics to invoked
+> scripts rather than carrying them inline. It forces us to solve the eval-coupling problem
+> (two suites index `doctor`'s fences by heading) which is the *same* coupling ship would hit,
+> on a diagnostic where a mistake costs a re-run instead of a bad merge gate.
+
+So Phase 3 is not merely a parallel efficiency win; it is the de-risking step. That reframing
+is why the phases are ordered as they are, and it should survive into execution: **if Phase 3
+turns out to be hard, that is the strongest available evidence that Phase 4 should not be
+attempted** — and learning it on `doctor` is the cheap way to learn it.
+
+**Phase 4 is authorized only when A, B and C are all in hand, and is re-presented at the plan
+gate with the pure-fraction number attached.** Not before.
 
 **2. Do Phases 1–3 ship as three PRs or one?** Recommended: three. Confidence: HIGH. They have
 different blast radii (a dev-tool bugfix, a docs change, and a refactor of a shipped skill)
