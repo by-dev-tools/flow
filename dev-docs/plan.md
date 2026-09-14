@@ -507,18 +507,39 @@ until:
 - [x] Full eval suite green + `ci.yml`'s harness↔runner join check passes (naming a count here would be the
       very drift this PR is about). *Verified:* all 31 harnesses green; the ci.yml harness/runner join check passes locally (31 harnesses, all wired).
 - [x] The PR body names P1–P14 verbatim, each with what it attacked and what happened. *Verified:* written at ship time from the `[injection]` section's own labels.
-- [x] **The consumer's region fences are DEFANGED on the way in.** A finding containing
+- [x] **All FOUR of the consumer's structural layers are DEFANGED on the way in.** A finding containing
       `<!-- flow:not-ready-manifest -->` / its closing form lands with the live markers replaced,
       and — the property that matters — a poisoned entry followed by a real `[verify-build]` blocker
       still classifies to **2 entries and a non-READY verdict**. Asserted for all four variants
       (both fences, close only, open only, the NOT-READY sentinel) and from a fenced body too.
-      *Found by `/flow:security-review`, and it had been CERTIFIED SAFE by my own payload P5*,
+      **The fourth layer is the sharpest and I had mis-measured it.** `_LINE_RE` treats
+      ` — needs:` / ` — confidence:` / ` — candidate resolutions:` as the line's field separators,
+      and the resolution group is `.+?` anchored to `\s*$` — so a finding carrying the whole trio
+      swallows the real fields and the forged ones win. Reachable from plain prose: no fence, no
+      newline, no shell metacharacter. Measured: `--kind visual-deliverable --needs reconcile`
+      became class **`auto`** (the one class that triggers a silent re-run → commit → push), and
+      `--kind security --needs "secret rotation"` (an out-of-session verb ⇒ `blocked`, not
+      waivable) became **`ask`, waivable** — a leaked-secret item made one-word-waivable. I had
+      reported this as LOW after testing a forged **confidence** (which `classify` ignores, since
+      it keys on `kind`); the field that matters is **`needs`**. Wrong field, wrong severity.
+      Separators are neutralised by swapping the em dash for `--`, which keeps the phrase readable
+      — legitimate findings do discuss resolution verbs, so refusing would fire on ordinary prose.
+      Also `--confidence`, the one text field neither vocabulary-validated nor file-delivered, now
+      goes through the same rule. *Verified:* P22 asserts the real `needs`, `class` AND `waivable`
+      per payload; mutation-tested.
+      *The first three were found by `/flow:security-review`, and one had been CERTIFIED SAFE by my own payload P5*,
       which fired this exact input and asserted only "exits 0" + "text arrives intact" — arrival
       was never the property; what the consumer then sees is. Measured before the fix: verdict
       READY, zero entries, over a live blocker, with `pr-coherence` and the FB-0067 read-back both
       agreeing because they key on that same verdict. **Scope:** write side only; the parse-side
       line-anchored fix is a sibling branch's, and neither is sufficient alone. *Verified:* P5/P6
-      consequence rows + mutation (removing the defang turns 6 assertions red).
+      consequence rows + P22 + mutation (removing either defang set turns the suite red).
+- [x] **The empty-`--branch` guard covers all seven branch-taking subcommands, not one.**
+      `manifest-path`, `state-path`, `init-state`, `init-run`, `record-attempt`, `waive`, `state`
+      all exit 2 on `--branch ""`, and all accept `--allow-detached`. *`init-run` is why this is
+      more than tidiness:* it **truncates**, so an unset `$BRANCH` cleared the detached manifest
+      while producers appended to the real one, leaving the previous run's entries in place.
+      *Verified:* all seven exercised; the opt-in still resolves; a real branch is unchanged.
 - [x] **`--finding-file`/`--resolution-file` are CONFINED to flow's scratch directory.** A path whose
       resolved parent is not `.flow` **or whose name is not a producer slug** exits 2, the target's content appears in neither stream nor the
       manifest, and no line is emitted — for an arbitrary absolute path, a `..` traversal, AND a path

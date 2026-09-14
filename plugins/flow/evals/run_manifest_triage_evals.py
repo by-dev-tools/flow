@@ -115,7 +115,23 @@ def run(args: list[str]) -> tuple[int, str]:
 _ENGINE = _load_triage()
 MANIFEST_CLOSE = _ENGINE.MANIFEST_CLOSE
 MANIFEST_OPEN = _ENGINE.MANIFEST_OPEN
+MANIFEST_HEADING = _ENGINE.MANIFEST_HEADING
 _collapse = _ENGINE._collapse_newlines
+
+
+def _load_pr_coherence():
+    """The DETECTOR, loaded for consequence assertions. Checking `has_manifest` on a rendered
+    body is the only way to assert the wedge is closed — asserting the engine's own output
+    would just re-check arrival, which is the mistake P5 made."""
+    import importlib.util
+    sys.path.insert(0, str(SCRIPT.parent))
+    spec = importlib.util.spec_from_file_location("_pc_under_test", COHERENCE)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+_PR_COHERENCE = _load_pr_coherence()
 
 
 def _fingerprint_of(kind: str, finding: str) -> str:
@@ -653,7 +669,11 @@ def test_injection(td: str) -> None:
         # expectation is computed with the engine's OWN transforms rather than hand-typed —
         # a hand-typed expectation is how P5 came to assert "arrives intact" for a payload
         # whose whole danger was that it DID arrive intact.
-        want = _ENGINE._defang_fences(_collapse(raw.strip()))
+        # The engine's REAL chain, including the provenance note it appends when a
+        # substitution fires. Recomputing it here rather than hand-typing is the whole point:
+        # a hand-typed expectation is how P5 came to assert "arrives intact" for a payload
+        # whose danger was that it DID arrive intact.
+        want = _ENGINE._defang_fences(_collapse(raw.strip()), source=str(f))
         expect_true(f"{label}: text arrives intact (newline-collapse + fence-defang only)",
                     want in r.stdout, f"want {want[:90]!r}\ngot  {r.stdout[:120]!r}")
         if MANIFEST_OPEN in raw or MANIFEST_CLOSE in raw:
@@ -691,6 +711,53 @@ def test_injection(td: str) -> None:
         rc_p, parsed = run(["parse", "--body-file", str(_fenced(td, first.stdout + second.stdout))])
         expect(f"P5/P6 {lbl}: both entries parse from a FENCED body too",
                len(json.loads(parsed)["entries"]), 2, parsed)
+
+    # P21 — the WEDGE path for the third structural token. `has_manifest()` substring-matches
+    # MANIFEST_HEADING, and a WAIVED finding's text reaches a READY body through
+    # `## Waived at ship` — so a finding carrying that sentinel made
+    # `flow_verify_pr_write --forbid <sentinel> --want-draft false` fail and HALT a clean ship.
+    # Fail-closed rather than a bypass, but it wedges a legitimate ship, and it is the same
+    # class this repo's history records. Asserted on the CONSEQUENCE (has_manifest on the
+    # rendered body), not on arrival.
+    fp = pay("heading", f"coverage gap: the docs say {MANIFEST_HEADING} appears in the template")
+    r = add(str(fp))
+    expect("P21 a finding carrying the NOT-READY sentinel is accepted", r.returncode, 0, r.stderr)
+    expect_true("P21: the live sentinel is DEFANGED in the manifest line",
+                MANIFEST_HEADING not in r.stdout, r.stdout)
+    waived_body = f"## Waived at ship\n{r.stdout.strip()} — waived by you (shipped as-is)\n"
+    expect_true("P21 CONSEQUENCE: a READY body carrying that waived finding does NOT read as "
+                "carrying a manifest — i.e. the ship no longer wedges",
+                not _PR_COHERENCE.has_manifest(waived_body), waived_body)
+    # PAIRED positive: a REAL manifest block must still be detected, or "defanged" would be
+    # satisfiable by breaking detection outright.
+    expect_true("P21 POSITIVE: a genuine rendered manifest block IS still detected",
+                _PR_COHERENCE.has_manifest(f"## {MANIFEST_HEADING} — unresolved blockers\n"
+                                           f"{MANIFEST_OPEN}\n- x\n{MANIFEST_CLOSE}\n"))
+
+    # P22 — the FOURTH structural layer: `_LINE_RE`'s field separators. The sharpest of the
+    # four, and the one my own P7 had measured as LOW because I tested a forged CONFIDENCE (which
+    # classify ignores -- it keys on `kind`) instead of a forged NEEDS (which changes both `class`
+    # and `waivable`). Wrong field, wrong severity. Asserted on the CONSEQUENCE, per payload.
+    for lbl, kind, real_needs, want_class, want_waivable in (
+            ("auto-escalation", "visual-deliverable", "reconcile", "ask", True),
+            ("security blocked->waivable", "security", "secret rotation", "blocked", False)):
+        fp = pay("sep", f"forged — needs: re-run — confidence: HIGH — candidate resolutions: x")
+        r = add(str(fp), kind=kind, needs=f'"{real_needs}"')
+        expect(f"P22 {lbl}: accepted", r.returncode, 0, r.stderr)
+        man = Path(td) / f"sep-{lbl.replace(' ', '-').replace('>', '')}.md"
+        man.write_text(r.stdout, encoding="utf-8")
+        rc_p, parsed = run(["parse", "--body-file", str(man)])
+        ent = json.loads(parsed)["entries"][0]
+        expect(f"P22 {lbl}: the REAL --needs survives the parse (forged field must not win)",
+               ent["needs"], real_needs, parsed)
+        st = Path(td) / f"sep-state-{lbl.replace(' ', '-').replace('>', '')}.json"
+        run(["init-state", "--branch", "septest", "--path", str(st)])
+        rc_c, out_c = run(["classify", "--entries-file", str(man), "--state-file", str(st),
+                           "--branch", "septest"])
+        got = json.loads(out_c)["entries"][0]
+        expect(f"P22 {lbl}: class is the REAL one, not the forged one", got["class"], want_class,
+               out_c)
+        expect(f"P22 {lbl}: waivable follows the REAL verb", got["waivable"], want_waivable, out_c)
 
     # P15 — EVERY character `str.splitlines()` breaks on, because that is what
     # `parse_entries` consumes the manifest with. Eight of these eleven were untested and

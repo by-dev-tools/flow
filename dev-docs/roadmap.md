@@ -209,6 +209,42 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### DERIVE the defanged-token set from the parser instead of hand-keeping it (from /flow:staff-review push-further, v1.42.0)
+
+**Origin:** push-further lens, FB-0108 branch. **Surfaces when:** a fifth structural token is added,
+or `_LINE_RE` / `manifest_contract.py` is next touched. **Not taken in v1.42.0** because the right
+shape means defining the field vocabulary in `manifest_contract.py` and compiling `_LINE_RE` from it
+— and a sibling branch owned that file this cycle, so two branches would collide.
+
+v1.42.0 defangs four structural layers (both region fences, the NOT-READY heading, and the three
+field separators). They are a **hand-kept dict**, and the history of this one PR is that the set was
+believed complete at one, then two, then three, then four — each time by a different reader, never by
+the author. That is the FB-0010 fan-out shape: a contract value in two places with nothing asserting
+the join. **Shape:** export `FIELD_SEPS` from `manifest_contract`, compile `_LINE_RE` FROM those
+literals, and export `STRUCTURAL_TOKENS = (MANIFEST_OPEN, MANIFEST_CLOSE, MANIFEST_HEADING) +
+FIELD_SEPS` as the single thing the defang iterates — so adding a field to the line grammar defangs
+it by construction. **Named costs:** (a) the replacement must stay readable, since legitimate findings
+discuss resolution verbs; (b) `ATTEMPTED_MARKER` is a fifth token (regex-stripped from the finding) and
+needs the same audit or an explicit exemption — it is separately roadmapped; (c) sequence after the
+sibling parse-side fix so a `FIELD_SEPS`-derived `_LINE_RE` does not contradict it.
+
+### Make "this assertion reaches a verdict" a harness-enforced property (from /flow:staff-review push-further, v1.42.0)
+
+**Surfaces when:** a payload is added to `run_manifest_triage_evals.py::test_injection`.
+
+The arrival-vs-consequence miss has now recurred three times on one branch — P5 asserting "text
+arrives intact" for a payload whose danger was that it *did* arrive intact; the allowlist universal
+that quantified over one block; the mutation strings that did not apply. Each fix was hand-added and
+each is author-memory: the next payload inherits only the loop's arrival assertion and nothing
+notices. **Shape:** split the vocabulary — keep `expect`/`expect_true` for arrival, add
+`expect_consequence()` used only for assertions computed from a DOWNSTREAM consumer (`classify`'s
+verdict/class/waivable, `pr-coherence.has_manifest`, `parse` output); record both into a per-payload
+map; then gate in `main()` that every payload key has a `consequence` entry, failing with "payload
+<label> asserts arrival only — name what the consumer then sees." That is this repo's paired-assertion
+discipline aimed at the harness rather than the engine. **Real cost is the back-fill**, not the gate:
+several payloads are arrival-only today and the gate would surface them all at once.
+
+
 ### The `already-attempted` marker is a third member of the "impersonate the parser's vocabulary" family — and it MUTATES the finding (from /flow:staff-review push-further, v1.42.0)
 
 **Origin:** `/flow:staff-review` push-further lens on the FB-0108 branch. **Not fixed there** — it is a

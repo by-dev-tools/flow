@@ -360,8 +360,11 @@ def _repo_scratch(name: str) -> str:
         d = Path(tempfile.gettempdir()) / "flow-detached"
         if d.is_symlink():
             print(f"BLOCKER: {d} is a symlink -- refusing to write flow scratch through it "
-                  f"(CWE-59): writes would land outside the temp dir. Remove it, or run "
-                  f"inside a git worktree. Nothing was recorded.", file=sys.stderr)
+                  f"(CWE-59). This path is UNLINKED before it is written, so following the link "
+                  f"would DELETE and then overwrite a file in whatever directory it points at "
+                  f"-- on a shared runner, someone else's. Run inside a git worktree (flow then "
+                  f"uses the repo's own .flow/); or remove the symlink if it is yours. Nothing "
+                  f"was recorded.", file=sys.stderr)
             raise SystemExit(2)
         d.mkdir(parents=True, exist_ok=True)
         return str(d / name)
@@ -825,12 +828,63 @@ def _collapse_newlines(text: str) -> str:
 # SCOPE: this is the WRITE-side half only. The parse-side fix (line-anchored fence matching, so
 # a marker mid-line cannot terminate the region) is owned by a sibling branch; this guard closes
 # the variant that layer cannot reach, and neither is sufficient alone.
-_FENCE_DEFANGED = "[flow-fence]"
+# DISTINCT, self-describing inert forms -- not one collapsed token. A single `[flow-fence]`
+# for every marker was lossy and wrong: open and close became the SAME string (so "the text
+# between the markers" was unrecoverable), and the heading -- not a region fence at all --
+# was labelled as one.
+#
+# FOUR structural layers, not three, and the fourth has the sharpest teeth. `_LINE_RE` treats
+# ` — needs:` / ` — confidence:` / ` — candidate resolutions:` as the line's FIELD SEPARATORS,
+# and the resolution group is `.+?` anchored to `\s*$` -- so a finding carrying the whole trio
+# swallows the real fields and the FORGED ones win. Reachable from plain prose: no fence, no
+# newline, no shell metacharacter. Measured:
+#   --kind visual-deliverable --needs reconcile, finding "… — needs: re-run — confidence: HIGH
+#   — candidate resolutions: x"  =>  parsed needs "re-run", class AUTO. `auto` is the one class
+#   that triggers a silent re-run -> commit -> push, which invariant 4 exists to prevent.
+#   --kind security --needs "secret rotation" (an OUT_OF_SESSION verb => blocked, NOT waivable),
+#   same shape  =>  class ASK, waivable TRUE. A security item needing an out-of-session action
+#   becomes one-word-waivable.
+# I had measured this as LOW and reported it that way, having tested only whether a forged
+# CONFIDENCE changed the class (it does not -- `classify` keys on `kind`). The field that
+# matters is `needs`, and it changes both `class` and `waivable`. Wrong field, wrong severity.
+#
+# The separators are neutralized by swapping the EM DASH for a double hyphen: the phrase stays
+# readable to the human ("-- needs: re-run") while `_LINE_RE`'s ` — needs:` no longer matches.
+# Legitimate findings DO discuss resolution verbs, so refusing would fire on ordinary prose
+# (FB-0062's direction).
+#
+# NOT DERIVED, and that is a named residual rather than an oversight: deriving this set from
+# `_LINE_RE`'s own literals is the right shape, but it means defining the field vocabulary in
+# `manifest_contract.py` and compiling `_LINE_RE` from it -- and a sibling branch owns that file
+# this cycle. Routed to roadmap § Next so the two do not collide.
+_DEFANGED = {
+    MANIFEST_OPEN: "[flow-marker:manifest-open]",
+    MANIFEST_CLOSE: "[flow-marker:manifest-close]",
+    MANIFEST_HEADING: "[flow-marker:not-ready-sentinel]",
+    " — needs:": " -- needs:",
+    " — confidence:": " -- confidence:",
+    " — candidate resolutions:": " -- candidate resolutions:",
+}
+_DEFANG_NOTE = (" (flow neutralized structural markers your text quoted so they cannot forge "
+                "manifest fields; your original wording is in {src})")
 
 
-def _defang_fences(text: str) -> str:
-    for marker in (MANIFEST_OPEN, MANIFEST_CLOSE):
-        text = text.replace(marker, _FENCE_DEFANGED)
+def _defang_fences(text: str, source: str = "") -> str:
+    """Neutralize every token the CONSUMER treats as structural, and say so if any fired.
+
+    Not a refusal: a criterion legitimately discussing the sentinel design or a resolution verb
+    is ordinary prose, and exiting 2 there would abort the ship (FB-0062). But the result is
+    rendered verbatim as a human's question headline, so a silent substitution reads as flow
+    having eaten their text -- the note turns that into "flow told me what it did, and where
+    the original is."
+    """
+    fired = False
+    for marker, inert in _DEFANGED.items():
+        if marker in text:
+            text = text.replace(marker, inert)
+            fired = True
+    if fired:
+        text += _DEFANG_NOTE.format(src=source or "the finding file")
     return text
 
 
@@ -866,11 +920,13 @@ def _read_text_arg(path: str, flag: str) -> str:
     # without leaving the trusted directory. The write side already restricts `--name` to this
     # pattern; the read side must agree, or one contract has two disagreeing halves (FB-0074).
     if rp.parent != allowed or not _SCRATCH_NAME_RE.fullmatch(rp.name):
-        print(f"BLOCKER: {flag} {path} is not a producer field file in flow's scratch "
-              f"directory ({allowed}, name matching {_SCRATCH_NAME_RE.pattern}). Producer "
-              f"field files must come from `scratch-path --name <slug>`, which resolves a "
-              f"confined path for you -- reading any other path, INCLUDING a neighbour in "
-              f"that same directory such as verify-findings.json or sec-diff.patch, would "
+        # `{path!r}` not `{path}`: caller-controlled, may carry control characters that would
+        # print straight to the terminal. Matches the --name refusal's convention.
+        print(f"BLOCKER: {flag} {path!r} is not a producer field file. Call "
+              f"`scratch-path --name <slug>` and pass the path it prints -- e.g. "
+              f"`--name security-finding.txt`. It must sit in {allowed} with a name matching "
+              f"{_SCRATCH_NAME_RE.pattern}. Reading any other path -- INCLUDING a neighbour in "
+              f"that same directory, such as verify-findings.json or sec-diff.patch -- would "
               f"splice its contents into the PR body. Nothing was recorded.", file=sys.stderr)
         raise SystemExit(2)
     # CWE-59, read side. `.flow/` is git-checkout-plantable, so `finding.txt` can be
@@ -900,7 +956,7 @@ def _read_text_arg(path: str, flag: str) -> str:
               f"is nothing to record -- and an empty finding would reach the human as "
               f"a blank question. Nothing was recorded.", file=sys.stderr)
         raise SystemExit(2)
-    return _defang_fences(_collapse_newlines(raw.strip()))
+    return _defang_fences(_collapse_newlines(raw.strip()), source=path)
 
 
 class _RemovedTextFlag(argparse.Action):
@@ -979,6 +1035,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("init-state")
     p.add_argument("--branch", required=True)
+    p.add_argument("--allow-detached", action="store_true")
     p.add_argument("--path")
 
     p = sub.add_parser("manifest-path")
@@ -989,13 +1046,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("state-path")
     p.add_argument("--branch", required=True)
+    p.add_argument("--allow-detached", action="store_true")
 
     p = sub.add_parser("init-run")
     p.add_argument("--branch", required=True)
+    p.add_argument("--allow-detached", action="store_true")
 
     for name in ("record-attempt", "waive"):
         p = sub.add_parser(name)
         p.add_argument("--branch", required=True)
+        p.add_argument("--allow-detached", action="store_true")
         p.add_argument("--kind", required=True)
         p.add_argument("--finding-file", required=True)
         # REMOVED (FB-0108) -- same rejection arm as `add-entry`. These two take the
@@ -1032,6 +1092,7 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("state")
     p.add_argument("--branch", required=True)
+    p.add_argument("--allow-detached", action="store_true")
     p.add_argument("--path")
     p.add_argument("--body-file")
 
@@ -1088,8 +1149,12 @@ def main(argv: list[str] | None = None) -> int:
                       if args.resolution_file else "")
         if args.attempted:
             finding = f"{finding} ({ATTEMPTED_MARKER})"
+        # `--confidence` is the one text field that is neither vocabulary-validated (like
+        # --kind/--needs) nor file-delivered (like the two free-text fields), so it went in raw.
+        # Only literal values ship today, but it is one call away from the same rule.
+        confidence = _defang_fences(_collapse_newlines(args.confidence))
         print(f"- [{args.kind}] {finding} — needs: {args.needs}"
-              f" — confidence: {args.confidence}"
+              f" — confidence: {confidence}"
               f" — candidate resolutions: {resolution or '(none drafted)'}")
         return 0
 
@@ -1110,30 +1175,27 @@ def main(argv: list[str] | None = None) -> int:
             print(render_decisions(result))
         return 0
 
+    # The empty-branch guard applies to EVERY branch-taking subcommand, not just manifest-path.
+    # `init-run` is the one that made this more than tidiness: it TRUNCATES, so an unset $BRANCH
+    # clears the detached manifest while producers append to the real one, leaving last run's
+    # entries in place. The rest mostly fail safe (a lost waiver is not subtracted), but one
+    # contract should not hold at one of seven call sites (FB-0010 fan-out).
+    if getattr(args, "branch", None) is not None and not args.branch.strip() \
+            and not getattr(args, "allow_detached", False):
+        print(f"BLOCKER: {args.cmd} --branch is empty. This is almost always an unset shell "
+              f'variable read across a Bash-call boundary. Pass --branch "$(git branch '
+              f'--show-current)". To tell the two cases apart, RUN that command: if it prints a '
+              f"branch name your variable was empty and your HEAD is fine -- fix the variable. "
+              f"Only if it prints nothing are you genuinely detached, and only then does "
+              f"--allow-detached apply.", file=sys.stderr)
+        return 2
+
     if args.cmd == "manifest-path":
         # FAIL CLOSED on an empty branch. It used to return `manifest-detached.md` at exit
         # 0, which is precisely what converted a `--branch "$BRANCH"` read across a Bash-call
         # boundary from a loud error into a silent gate bypass: the producer appended to a
         # file Step 7a.5 never reads, `|| exit 1` passed, the real manifest stayed empty, and
         # the verdict came back READY over an unresolved blocker.
-        if not args.branch.strip() and not args.allow_detached:
-            # FAIL CLOSED, with an explicit opt-in for the one legitimate empty case.
-            #
-            # The bug this guards was never "detached HEAD" -- on a genuinely detached HEAD
-            # the producer AND the reader both resolved `manifest-detached.md`, which is
-            # coherent. The bug was a producer resolving DETACHED while the reader resolved
-            # REAL, caused by `--branch "$BRANCH"` read across a Bash-call boundary where the
-            # variable was set in a different call and expanded empty. The engine cannot tell
-            # those two apart from the value alone, so it distinguishes them by INTENT:
-            # an unset variable never passes --allow-detached, a deliberate detached read can.
-            print("BLOCKER: manifest-path --branch is empty. This is almost always an unset "
-                  "shell variable read across a Bash-call boundary -- and a producer that "
-                  "appends to the resulting path writes to a manifest the reader never "
-                  "resolves, so the run's verdict comes back READY over an unresolved "
-                  'blocker. Pass --branch "$(git branch --show-current)". If you genuinely '
-                  "mean the detached-HEAD manifest, say so with --allow-detached.",
-                  file=sys.stderr)
-            return 2
         print(_default_manifest_path(args.branch))
         return 0
 

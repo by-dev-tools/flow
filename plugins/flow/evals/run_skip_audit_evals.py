@@ -41,6 +41,9 @@ def _scratch_dir(mt_path):
     return d
 
 
+_SKIP_MADE: list = []
+
+
 def _txt(d, content: str) -> str:
     """Free text reaches add-entry/record-attempt/waive as a FILE PATH, never as raw
     argv (FB-0108). These calls use a list argv so they never had shell exposure, but
@@ -949,6 +952,13 @@ def main() -> int:
                                capture_output=True, text=True, check=False)
         check("valid-empty-report-exits-zero", proc2.returncode == 0, f"rc={proc2.returncode}")
 
+    # `.flow/` is the one directory the engine TRUSTS as a field-file source, so leave no
+    # residue there. Also sweeps stragglers from an interrupted earlier run.
+    for _f in list(_SKIP_MADE):
+        try:
+            _f.unlink()
+        except OSError:
+            pass
     print(f"\n{total - fails}/{total} checks passed.")
     return 1 if fails else 0
 
