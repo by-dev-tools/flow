@@ -51,7 +51,17 @@
      manifest. Stronger than "crafted payload", weaker than "reachable now", and the distinction was
      only found by someone re-running the check instead of repeating the sentence.
 
-- **Applies to:** `plugins/flow/skills/ship/lib/manifest_contract.py` (fixed here); FB-0108's
+  4. **Count the tokens before claiming the class.** This entry's first two revisions each named
+     a residual too narrowly, and a third token was found later by someone else: `has_manifest()`
+     substring-matches BOTH the fence marker and the `🚫 NOT READY TO MERGE` heading, unanchored.
+     Its failure direction is inverted — a body that merely *mentions* the sentinel wedges a clean
+     ship rather than passing a dirty one — which is probably why it stayed invisible while three
+     passes hunted bypasses. **When a mechanism has N structural tokens, enumerate all N before
+     writing "the residual is X."** Here N was 3 and every revision assumed 2.
+
+- **Applies to:** `plugins/flow/skills/ship/lib/manifest_contract.py` (fixed here);
+  `pr-coherence.py::has_manifest`'s unanchored match on the third token (owned by the FB-0108
+  branch, write-side defang); FB-0108's
   write-time half; any future machine-readable region flow delimits in human-editable text — the
   question to ask at design time is "can the payload spell my delimiter?", and if yes the answer is
   an anchor, not a longer delimiter.
