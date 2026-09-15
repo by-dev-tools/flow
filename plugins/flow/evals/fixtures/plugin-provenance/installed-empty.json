@@ -1,0 +1,21 @@
+{
+  "_comment": "flow@flow present with an EMPTY version array. Expect state=no_versions -- the registry knows about flow but records no version, which a naive reader would happily report as None.",
+  "registry": {
+    "version": 2,
+    "plugins": {
+      "flow@flow": []
+    }
+  },
+  "marketplace": {
+    "name": "flow",
+    "metadata": {
+      "version": "1.43.0"
+    },
+    "plugins": [
+      {
+        "name": "flow",
+        "version": "1.43.0"
+      }
+    ]
+  }
+}

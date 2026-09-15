@@ -1,0 +1,16 @@
+{
+  "_comment": "installed_plugins.json present but not valid JSON. Expect state=registry_malformed -- distinct from absent, because a truncated write is a different problem from a missing install.",
+  "registry_raw": "{not json at all",
+  "marketplace": {
+    "name": "flow",
+    "metadata": {
+      "version": "1.43.0"
+    },
+    "plugins": [
+      {
+        "name": "flow",
+        "version": "1.43.0"
+      }
+    ]
+  }
+}

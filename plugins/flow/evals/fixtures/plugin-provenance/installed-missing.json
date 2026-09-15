@@ -1,0 +1,16 @@
+{
+  "_comment": "installed_plugins.json ABSENT. Expect state=registry_absent. A fresh host that never installed flow.",
+  "registry": null,
+  "marketplace": {
+    "name": "flow",
+    "metadata": {
+      "version": "1.43.0"
+    },
+    "plugins": [
+      {
+        "name": "flow",
+        "version": "1.43.0"
+      }
+    ]
+  }
+}

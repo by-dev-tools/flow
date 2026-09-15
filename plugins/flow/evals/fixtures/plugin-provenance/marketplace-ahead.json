@@ -1,0 +1,33 @@
+{
+  "_comment": "A released update exists and is not installed. update_available True -- the only shape that should make the currency hook act.",
+  "registry": {
+    "version": 2,
+    "plugins": {
+      "flow@flow": [
+        {
+          "scope": "user",
+          "installPath": "/nonexistent",
+          "version": "1.29.0",
+          "gitCommitSha": "abcdef1234567890"
+        }
+      ]
+    }
+  },
+  "marketplace": {
+    "name": "flow",
+    "metadata": {
+      "version": "1.41.0"
+    },
+    "plugins": [
+      {
+        "name": "flow",
+        "version": "1.41.0"
+      }
+    ]
+  },
+  "branch_version": "1.41.0",
+  "expect": {
+    "report_drift": true,
+    "update_available": true
+  }
+}

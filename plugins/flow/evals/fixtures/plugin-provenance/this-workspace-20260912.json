@@ -1,0 +1,66 @@
+{
+  "_comment": [
+    "ONE-SHOT CAPTURE of real host state, taken at the FB-0107 plan gate on",
+    "2026-09-12 BEFORE the session-start hook was registered and BEFORE any",
+    "`claude plugin update` ran. This is the perishable artifact: the workspace",
+    "it was taken in updates itself from here on, and a CI runner has no",
+    "~/.claude/plugins at all, so this state cannot be re-observed by a reviewer.",
+    "Its role is to pin the ENGINE's reading of the twelve-release skew that",
+    "FB-0107 reports, against the independently-measured table in the PR body.",
+    "It is deliberately NOT a synthetic fixture: the other files in this",
+    "directory are, and they are what the behavioural assertions run against.",
+    "Absolute paths scrubbed -- they are host-specific and are not what this pins."
+  ],
+  "captured_utc": "2026-09-12T05:51:02Z",
+  "captured_by": "plugins/flow/skills/ship/lib/plugin-provenance.py report --json",
+  "host": "Conductor cloud workspace (Vercel sandbox, Amazon Linux 2023, x86_64)",
+  "note_on_predicates": "report_drift is TRUE while update_available is FALSE. This is the live case critique finding (1) predicted and the reason the two predicates are not one boolean: the marketplace CLONE is pinned at the same stale commit as the install, so there is nothing newer to fetch locally, while the branch is 12 releases ahead. A single `drift` flag could not express this.",
+  "provenance": {
+    "branch": {
+      "state": "ok",
+      "version": "1.41.0"
+    },
+    "installed": {
+      "git_sha": "cf783ac",
+      "install_path": "<scrubbed>",
+      "installed_at": "2026-08-19T04:51:32.300Z",
+      "scope": "user",
+      "state": "ok",
+      "version": "1.29.0"
+    },
+    "libs": {
+      "probe": "<scrubbed>",
+      "state": "checkout"
+    },
+    "marketplace_head": {
+      "git_sha": "cf783ac",
+      "path": "<scrubbed>",
+      "state": "ok",
+      "version": "1.29.0"
+    },
+    "mixed_provenance": true,
+    "preprocessor": {
+      "basis": "measured-rule:FB-0107",
+      "state": "installed",
+      "version": "1.29.0"
+    },
+    "release_gap": 12,
+    "report_drift": true,
+    "surface_drift": {
+      "agents_missing_from_checkout": [],
+      "agents_missing_from_installed": [
+        "lens-experience"
+      ],
+      "skills_missing_from_checkout": [],
+      "skills_missing_from_installed": [
+        "documentation",
+        "exploration",
+        "general",
+        "plan-discipline",
+        "review-brief"
+      ],
+      "state": "ok"
+    },
+    "update_available": false
+  }
+}

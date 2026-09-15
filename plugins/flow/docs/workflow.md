@@ -79,6 +79,39 @@ Claude Code bundles several native skills out of the box. Flow does **not re-imp
 
 Where flow *does* add value — config-slot resolution, a gate-shaped contract, feedback routing, in-flow orchestration — it **composes** rather than duplicates: a thin wrapper that *invokes* the bundled skill and layers flow's value on top. `/flow:verify-build` wraps bundled `/verify` this way; `/flow:ship` chains its reviewers the way Anthropic's own team chains `/code-review` → `/simplify` → `/verify`. Composition is the pattern; re-implementation is the anti-pattern.
 
+### Which version of flow is running? Not the one in your working tree (FB-0107)
+
+A `/flow:*` skill invoked from a repo does **not** execute that repo's working tree. Claude Code
+resolves the skill from the **installed** marketplace plugin. That is almost always what you want as a
+consumer — but if you are *developing* flow, or vendoring a patched copy, it means the change you are
+looking at is not the change that ran.
+
+The measured rule, because one run genuinely draws from two versions:
+
+> **Everything Claude Code resolves comes from the INSTALLED tree. Everything the Bash tool resolves
+> comes from the WORKING TREE.**
+
+`CLAUDE_PLUGIN_ROOT` is unset in Bash-tool calls and set in `!`-preprocessor blocks, so the same
+`${CLAUDE_PLUGIN_ROOT}/…` string names different files depending on who expanded it. SKILL.md prose,
+agent prompts and `!`-block scripts come from the installed tree; fenced-block helper libs that carry
+the `[ -f "$X" ] || X="plugins/flow/…"` fallback come from the checkout. A bare `${CLAUDE_PLUGIN_ROOT}`
+path in a fenced block resolves to `/skills/…` and **hard-fails** rather than going stale.
+
+`/flow:ship` and `/flow:ship-spike` therefore report **four labelled rows** in the PR's `## Flow run`
+table — installed version, marketplace HEAD, where the libs resolved from, where `!`-block scripts
+resolved from — plus a callout naming any skill or agent your checkout declares that the installed
+version does not have (those are not stale, they are **absent**: the runtime has no tool for them, and
+a model asked to run one will conclude the skill does not exist). This **reports and never gates**: a
+stable reviewer is partly a feature, since a ship pipeline with a bug that skips a reviewer should not
+be the thing running its own ship.
+
+**Worth internalising as a standing question, not a one-off fix.** This was the fourth member of a
+class — shipped, believed effective, never actually loading — after rules-as-skills `paths:` never
+activating, a hooks declaration that was never read, and a skill whose globs reached 1 of 4 repos. So
+add it to the checklist: **"does this actually load and run in the environment it targets?"** A gate
+that reports on the wrong artifact is worse than a missing gate, because it manufactures the belief
+that the check happened.
+
 **For consumers extending flow:** plugin-managed skills are overwritten on every plugin update, so you can never safely edit a bundled or flow skill *in place* to add behavior — the edit is lost on the next update. Chain instead: build your own prefixed wrapper skill that invokes the original and then your addition. Chaining is the only extension pattern that survives a plugin update.
 
 When this doc references one of the bundled skills by name, treat it as the native bundled skill. Everything else with a `/flow:` prefix is flow-provided.
@@ -317,6 +350,21 @@ A filled `## Flow run` for a docs-only change on a library project (no UI surfac
 | /flow:audit-skips | ✓ | all 7 stages legitimate (5 skipped, 2 ran) |
 | Visual deliverable (§7a) | n/a (not visually significant) | — |
 | Doc synthesis | ✓ | history + plan + CHANGELOG |
+
+### Which flow version ran this pipeline
+
+| Surface | Came from | What that means |
+|---|---|---|
+| Flow version that ran this pipeline | 1.43.0 (`a1b2c3d`) | ✓ matches this branch |
+| Latest released version available to this machine | 1.43.0 | ✓ current — nothing newer to fetch |
+| Helper scripts — which copy ran | the installed copy (1.43.0) | ✓ same version as the skill instructions |
+| Scripts Claude Code ran for itself | the installed copy (1.43.0) | ✓ same version as the skill instructions |
+
+Rendered by `skills/ship/lib/plugin-provenance.py` — never hand-authored, and shown here because an
+example that omitted these rows would teach a model to drop them. On a stale install they carry `⚠️`
+plus a one-line remedy footnote, and a callout naming any skill or agent this branch declares that the
+installed copy did not have. See § "Which version of flow is running? Not the one in your working tree".
+
 
 Note the skipped rows: each names *why* it skipped, so the reader sees a legitimate config/mode skip rather than wondering whether a gate was missed — and `/flow:audit-skips` is the gate that *confirms* those skips are legitimate rather than self-certified. (`/flow:audit-skips` always runs — it audits the OTHERS' skips, so it never skips itself; on this docs-only library PR it rules every skip legitimate without noise.)
 
