@@ -21,6 +21,15 @@
 # provisioned from the checkout rather than from an image with a pinned
 # ~/.claude/plugins. Either removes the skew this exists to close.
 #
+# ⚠️ THIS SCRIPT IS A REPO FILE AND RUNS AUTOMATICALLY AT SESSION START.
+# Checking out someone else's branch therefore runs THEIR copy of this file, with no
+# approval prompt. That residual is accepted and documented in CONTRIBUTING.md, which
+# also records the measurement behind the decision: a hash-check fix was attempted and
+# abandoned because a changed `settings.json` hook command string was measured to
+# execute with NO re-approval, so the check would have enforced nothing. What IS
+# mitigated is below — this script resolves its engine only from the INSTALLED plugin
+# and never from the checkout.
+#
 # Idempotent, non-interactive, and it NEVER exits non-zero — a network blip must
 # not wedge a session start.
 #

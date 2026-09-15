@@ -75,7 +75,8 @@ These files help Claude sessions develop and maintain this repo. Not part of the
 | `.claude/skills/` | Project-dev workflows (`/ship`, `/preship`) for shipping flow PRs |
 | `.claude/rules/` | Auto-loading scoped rules (safety, general, documentation) |
 | `.claude/settings.json` | Hooks (secret blocking, contribution-queue nudge, flow-plugin currency) |
-| `.claude/hooks/flow-plugin-currency.sh` | `SessionStart`: keeps this workspace's **installed** flow plugin current, so dogfooding is not reviewing an old release (FB-0107; ported from health-tracker#116) |
+| `.claude/hooks/flow-plugin-currency.sh` | `SessionStart`: keeps this workspace's **installed** flow plugin current, so dogfooding is not reviewing an old release (FB-0107; ported from health-tracker#116). **Runs automatically — see `CONTRIBUTING.md`: checking out an untrusted branch here runs that branch's copy of this script** |
+| `CONTRIBUTING.md` | Contributor-facing warning that `gh pr checkout` in this repo executes the branch, + the measurement behind that decision |
 | `.context/` | Per-session scratch |
 | `tools/model-measure/` | Per-subagent token/model measurement harness reading Claude Code session transcripts (roadmap item M, FB-0083/FB-0089) -- dev tooling, no shipped `/flow:*` skill invokes it |
 | `tools/harness_audit/` | Periodic harness-weight audit mechanism: cadence gate + always-loaded/invoked-per-use surface inventory (roadmap item AB, Step 1, FB-0095) -- dev tooling, no shipped `/flow:*` skill invokes it |

@@ -223,6 +223,51 @@ threat-model decision and is routed to the PR's draft manifest rather than decid
 
 Third time in this PR that its own thesis caught a defect in its own implementation.
 
+### The hook-RCE decision: (c) was chosen, attempted, and abandoned on a measurement
+
+The human ruled for **option (c)** — hash-check the hook script from inside the `settings.json`
+command string — over the (a) I had recommended, and the reasoning corrected a distinction my writeup
+missed. My argument for (a) was that flow's maintainers already run checked-out code constantly via
+`/flow:ship`. True, and true *because of this PR's own finding* that the lib fallback resolves from
+the working tree. But `/flow:ship` is **deliberate and human-initiated**; a `SessionStart` hook is
+**automatic**. The hook converts "check out a PR to read its diff" — a common, low-intent action —
+into "execute that PR". That is the gap (a) leaves open, and it is a real one.
+
+The ruling came with a non-negotiable condition: **verify the assumption first.** Both (b) and (c)
+rest on Claude Code re-prompting for approval when a `settings.json` hook command string changes. I
+had asserted that; neither of us had tested it. If false, (c) closes nothing while looking like it
+closes something — the FB-0085 class, and worse than (a), which is at least honest about its residual.
+
+**Measured, and the answer was no.** Three observations:
+
+1. The repo's existing `PreToolUse` hook **executed and blocked a Write** while `~/.claude.json`
+   recorded `allowedTools: []`, `hasTrustDialogAccepted: false`, and **no hook-approval key at any
+   depth**. Hooks run here with no approval state at all.
+2. In a brand-new project directory, a **first-ever** hook command string **ran** — no prompt, no
+   approval record created afterwards.
+3. The command string was then **changed** in that same project, and the new one **ran**, with no
+   re-approval.
+
+There is no stored approval for a change-detector to compare against, so the mechanism (c) depends on
+does not exist in the environment measured.
+
+**One honest limit, which is why this is (a) and not a refutation of (c).** That measurement was
+taken in a sandboxed, non-interactive cloud workspace. The *threat* case is a maintainer on an
+interactive machine, and I could not observe an interactive session here. The binary is packed and
+not greppable — verified, rather than inferred from a zero result: `strings` finds zero occurrences of
+`PreToolUse` and `SessionStart` too, which must be present for hooks to work at all, so a zero hit on
+"hook approval" is a measurement artifact and not evidence.
+
+So the disposition is the one the ruling specified for an unverifiable control: **take (a), document
+it, and say why (c) was abandoned.** `CONTRIBUTING.md` (new) carries the contributor-facing warning,
+what is and is not mitigated, and the exact 30-second experiment that would make (c) viable — edit a
+hook command string on an interactive machine and see whether approval is requested. If it re-prompts
+there, (c) should be built.
+
+**What IS fixed, and it is the larger half:** the hook no longer executes any *other* repo file. It
+resolves the provenance engine solely from the installed tree via the registry's `installPath` and
+refuses, loudly, to fall back to the checkout.
+
 ### Deletion criteria (FB-0088)
 
 - **The engine + rows:** removable when (a) `claude plugin update` no longer requires a restart, so
