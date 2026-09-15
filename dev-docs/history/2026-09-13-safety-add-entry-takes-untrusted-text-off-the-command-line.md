@@ -1,0 +1,182 @@
+## 2026-09-13 — SAFETY: `add-entry` takes untrusted text off the command line entirely (v1.42.0, FB-0108)
+
+**What was done.** `/flow:security-review` on #148 found that `manifest-triage.py add-entry` took
+`--finding`/`--resolution` as raw argv while every producer site in `ship/SKILL.md` told the executing agent
+to compose that command with attacker-influenceable text inside it. #148 shipped a narrow per-site fix; this
+is the interface half. `add-entry`, `record-attempt` and `waive` now take `--finding-file` /
+`--resolution-file` only; the argv flags are **removed**, kept declared solely to exit 2 with a message
+naming the replacement. New `scratch-path --name …` resolves (and unlinks) producer scratch paths. The
+non-empty/regular/non-symlink guard lives in the engine. All six producer sites migrated, the 12 lines of
+#148's per-site safety prose deleted, and 11 eval call sites moved onto the file path.
+
+**SAFETY markers — what changed, what was preserved.** *Modified:* the free-text input path (argv → file
+path); error handling (four new exit-2 arms: removed-flag rejection, missing/empty/non-regular file,
+symlinked file, failed `scratch-path`); input normalization (newline-only collapse, including a lone `\r`).
+*Added:* write-side symlink unlink in `scratch-path`; `|| exit 1` at every producer site. *Preserved,
+asserted by unedited tests:* `--kind`/`--needs` closed-vocabulary validation at write time; the manifest
+line shape; everything `pr-coherence.py` reads; and fingerprint stability — a waiver recorded before this
+change still subtracts its entry, pinned against a literal hex (`49070d421e4345de`) captured pre-change.
+
+**Why the interface and not the call sites.** Correctness that depends on every future author remembering is
+a convention, not a fix. The repo's scar is FB-0098: `/flow:doctor` defaulted doc-path slots to `core-docs/`
+while the schema and 16 other call sites said `dev-docs/`. The human stated the bar precisely — *"the unsafe
+door has to be closed, not merely joined by a safe one"* — so the flags are removed rather than deprecated.
+
+**Tradeoffs.**
+
+- **Removed the argv flags rather than keeping both.** Keeping them means the interface still *offers* the
+  unsafe path. The cost is that removal converts a quoting hazard into a louder version of the pre-existing
+  unchecked-`$?` hazard; that is why every producer site this PR touches now carries `|| exit 1`, and why
+  the *inherited* unchecked sites are named in roadmap § Next rather than silently inherited.
+- **No stdin/`-` affordance.** From a Bash call, stdin can only be fed by a heredoc or a quoted string —
+  the two mechanisms this exists to remove. Offering it would re-offer the refuted path. Cost: the evals
+  write real temp files.
+- **Newlines only, not all whitespace.** Widening would silently reflow findings that compose correctly
+  today. P12 is its paired negative.
+- **Collapse rather than reject on a multi-line finding.** Rejecting routes ordinary well-meant input into
+  the exit-2-appends-nothing path, i.e. it would drop a blocker (FB-0062).
+- **`scratch-path` unlinks unconditionally.** The path is always engine-computed `.flow/<slug>` and never
+  caller-supplied; `.flow/` is gitignored ephemeral scratch flow rewrites every run. Refusing instead would
+  turn a plantable file into a permanent wedge of the ship pipeline. Idiom taken verbatim from
+  `ship-spike/SKILL.md:253`. Escalated and approved at the plan gate as the one destructive change.
+- **The allowlist is scoped to `ship/SKILL.md`.** Named explicitly rather than implied, because "allowlist"
+  reads as "sealed": it cannot see an append in another file, one emitted by a script `SKILL.md` invokes, or
+  one built from a runtime variable.
+
+**What the review process caught that the author did not.**
+
+- **Nine rounds of `/flow:critique-plan` at the plan gate**, which refuted three successive designs: two
+  heredoc variants and a separator sentinel, all killed by the same property — every text-based boundary can
+  appear inside the text. Also caught a shared-scratch-file scheme that would have collapsed the
+  `record-attempt`/`add-entry` fingerprints and thereby changed manifest classification, and a template
+  carrying the scratch path in `$F` across a Write tool call, where shell variables do not survive.
+- **Those nine rounds ran DOCUMENT-BLIND**, and measuring it was the most useful thing done in the pass. The
+  installed plugin is v1.29.0, which cannot comma-split this repo's `referenceGlob` (the comma form #146
+  introduced when `feedback.md` was fragmented), so the preprocessor resolved **0 of 196** reference
+  documents. The FB-0082 warning fired loudly and every round disclosed it — the guard worked; the
+  config/version pairing did not. A document-aware re-run then found five corpus-dependent findings, two of
+  them blockers: FB-0062 (the failure-open producers above) and FB-0004 (payload P8 asserted on an exit code,
+  a proxy, where a read-then-check implementation would pass having already read the secret).
+- **A gate that exists and never runs.** `--finding-file` was first declared `required=True`, so
+  argparse's "the following arguments are required" usage dump fired *before* `_reject_argv_text` could
+  run — on exactly the stale-copy-paste case the rejection arm exists to serve. The arm would have
+  shipped present, tested, and useless: the FB-0085 class this program keeps finding. **The arm only
+  teaches if it actually runs.** Required-ness moved out of argparse and enforced after the arm.
+- **A quiet downgrade, caught in the final sweep.** The first migration of the `[vacuous-criterion]`
+  site replaced #148's *literal* invocation with "compose it exactly as Step 2 shows" — the prose-pointer
+  form `roadmap.md` criticises and which this very change exists to remove. Five sites strengthened, the
+  sixth weakened, in one commit. That is the shape where a refactor's *average* improves while its worst
+  case regresses, and the average is what gets reported. Literal block restored.
+- **A ban that keyed on the spelling rather than the hazard.** The heredoc ban was first written
+  file-wide, which would have failed `cat > "$STAGES" <<'EOF'` — flow-*composed* JSON whose one
+  interpolated value already goes through `jq -n --arg`, carrying no untrusted text and gaining nothing
+  from the ban. Keying on `<<` instead of on "untrusted text reaching a shell" is the denylist-versus-
+  allowlist error this same PR corrects elsewhere. Scoped to producer blocks.
+- **The orchestrator caught the allowlist shipping as a bare universal** — vacuously true at zero append
+  sites, so deleting the producers would have turned it green. The FB-0077 shape, in the very check proposed
+  as the thing that closes the class, one commit after citing that rule approvingly about other code. Now
+  paired and mutation-tested: six mutations, all killed.
+
+**Commit 2 — the 13 inline templates (separable, and deliberately so).** Shipped as its own commit on the
+same branch so it can be reverted alone, leaving a complete safety fix behind. All 13 producer bullets that
+prescribed a *rendered manifest line* (`[security] <the reviewer's finding> — needs: …`) now prescribe an
+`add-entry` **invocation** instead. The hazard was never the line's wording — it was that a rendered line is
+something an agent hand-composes, which bypasses `--kind`/`--needs` validation *and* puts untrusted text back
+in a shell word. `roadmap.md` said it plainly and was ignored for four releases: "the examples are what an
+agent copies."
+
+With zero templates left, `test_producer_lines` is **tightened to forbid the template form outright** rather
+than accept either. It previously accepted both "by design", which was the defect: the prose said "never
+hand-compose the line" while the prescribed examples showed a hand-composable line — two places, one contract
+(FB-0074). The kind-coverage equality now has ONE source instead of a union of two harvests, so it can no
+longer be satisfied by a template-form bullet. Paired with the positive that the invocations exist and cover
+every kind, because forbidding templates is otherwise satisfiable by deleting every producer.
+
+Two things surfaced while converting, neither planned. **(1)** 14 of the new blocks referenced `$TRIAGE`
+without resolving it. A skill `sh` block is potentially its own Bash call, so an unset `$TRIAGE` expands to
+empty, `python3 "" add-entry` fails, and the entry is silently lost — the FB-0009 unset-is-fatal shape
+replicated at 14 new sites. Every block now carries the resolution, and an eval asserts it (mutation-tested:
+removing one resolution turns the harness red). **(2)** The `[vacuous-criterion]` bullet's rendered line was
+the last template standing, and #148 had good reason for its wording — the `Declared criterion (too vague):`
+prefix changes how the finding reads to a human. Keeping it as the one exception would have made the tightened
+check exception-ridden on its first day, so the guidance was rewritten to describe what goes *in the file*
+rather than what the rendered line looks like. The requirement survives; the copyable hazard does not.
+
+*Revert note:* commit 2 is the only commit that also edits this history entry, so reverting it drops three
+bullets above that describe commit-1 findings. One line to re-add; the safety fix itself is unaffected.
+
+**What `/simplify`'s four lenses caught — and one of them was a shape this PR could not have
+shipped.** All four ran against the full diff; every finding below was reproduced before being fixed.
+
+- **The allowlist was BYPASSABLE, and its universal was vacuous 15 times out of 16.** Every producer's
+  redirect is the byte-identical string `>> "$MANIFEST"`, so the helper's `src.find(snippet)` returned
+  the *same index* for all 16 — every "universal" assertion re-inspected the first block. A
+  hand-composed `echo "[coverage] … " >> "$MANIFEST"` block passed the allowlist outright; only the
+  hardcoded count noticed, and a count is not the check. **That is this PR's own thesis reproduced
+  inside the assertion written to enforce it** — an assertion that looks universal and quantifies over
+  one thing. Rebuilt on the fenced-block boundary (the *real* boundary), which also collapsed eight
+  ad-hoc character-window scans into one and made every failure name its site.
+- **12 producer sites referenced a scratch path nothing resolved.** The compact conversion form in
+  commit 2 dropped the `scratch-path` call, leaving `--finding-file "<security-finding.txt>"` — a bare
+  *relative* filename. An agent copying that writes into CWD, which bypasses `scratch-path`'s pre-Write
+  unlink (the CWE-59 write-side defense a read-time check provably cannot reach) and lands outside
+  `.flow/.gitignore`, so Step 6 could **commit a raw reviewer finding**. Now inlined at all 12, pinned
+  by an eval that fails when a placeholder has no adjacent `--name`.
+- **A single-block producer shape that could never succeed.** Worse than the above and found only by
+  *executing* the shipped text: `scratch-path` unlinks its targets, and the Write tool cannot run
+  between two lines of one shell block — so `add-entry` always read an absent file and the `|| exit 1`
+  always fired. 15 blocks split into CALL 1 / Write / CALL 2. The assertion that had demanded
+  "resolves IN-BLOCK" was itself written for the broken shape and now checks **adjacency** instead.
+- **`_collapse_newlines` enumerated 3 of the 11 characters its own consumer splits on.** `parse_entries`
+  reads the manifest with `str.splitlines()`. Measured: a finding containing U+2028 appended one
+  physical line, parsed to **zero** entries, and `classify` returned **READY** over a live
+  `[verify-build]` blocker — the exact failure-open the function exists to prevent, through a hole left
+  by hand-enumerating a set Python already defines. Now derived from `splitlines()` itself, so the two
+  cannot drift; payload P15 asserts all eleven.
+- **The rejection arm moved to the declaration site** — a custom `argparse.Action` instead of a manual
+  call at two handlers plus a `default=None` sentinel plus a hand-rolled re-implementation of
+  `required=True`. Three coordinated special cases collapsed into one, `--finding-file` is
+  `required=True` again, and it now fails **closed** for a future subcommand that declares the flag and
+  forgets to call a rejector.
+- Also: the cross-file sweep the plan had filed under "honest limit" is one line and now exists (no
+  other shipped `SKILL.md` may append to a manifest); a leaked temp dir that persisted a fake private
+  key, a dangling symlink and a 100 KB payload after **every** run is gone; a duplicate engine loader,
+  two redundant subprocess spawns, a dead `or [...]` fallback whose only effect would have been to turn
+  a loud regression into a silent pass, and a hand-copied 10-name kind list (now `_ENGINE.KINDS`).
+
+**Three mutation "survivors" that were no-op mutation strings, not weak checks.** Each time, the
+literal I substituted did not match the file, so nothing was mutated and the harness correctly stayed
+green. "Mutation survived" and "mutation did not apply" render identically in a pass/fail line — FB-0104
+pointed at the mutation harness itself. Every one was re-tested by constructing the mutation
+programmatically; all then killed.
+
+**Verification.** `run_manifest_triage_evals.py` gains a `[injection]` section: 14 payloads executed through
+`/bin/sh -c`, with red arms matched per hazard (argv for command substitution and quote breakout; a real
+heredoc for the delimiter collision, reproducing v1.41.0's own first-attempt bug). P8 asserts the
+`-----BEGIN OPENSSH PRIVATE KEY-----` sentinel appears in neither stdout nor stderr nor the manifest.
+`run_scratch_isolation_evals.py` gains a `producer-*` group that extracts and **executes** CALL 1 and CALL 2
+as separate processes with no inherited shell state — the one evidence shape that survives FB-0107, since
+dogfooding would exercise v1.29.0. Six mutation tests confirm each new assertion can fail. All 31 harnesses
+green; `ci.yml`'s harness/runner join passes.
+
+**Payload P10 found a real gap mid-implementation:** `[ \t]*(?:\r?\n)+[ \t]*` left a lone `\r` untouched, and
+a bare CR is a line break to plenty of consumers, so it could split a manifest entry exactly like `\n`.
+Fixed to `(?:\r\n|\r|\n)+`. Found by attacking, not by reading.
+
+**Two pre-existing parser defects found and NOT fixed** (approved scope was the input path; both recorded in
+roadmap § Next with measurements). **P5, severe:** `manifest_contract.py`'s
+`.split(MANIFEST_CLOSE, 1)[0]` truncates at the first close marker, so a finding containing that literal
+erases every later entry — measured on `origin/main`, 2 entries → 0 and verdict `DECIDE` → **`READY`**, i.e.
+a non-draft PR over an erased behavioural gate. It is a **latent self-trigger one docs commit from live**: the
+marker already sits in ordinary prose at `dev-docs/roadmap.md:720`, and the `[status-surface]` producer
+quotes verbatim status-doc lines into findings — it does not fire today only because `roadmap.md` is not in
+`statusSurfaceCandidates` and none of the six defaults currently contains the marker, though `README.md`
+already discusses the manifest. **P7, low:** the field separator can be forged, truncating the finding the
+human reads; it does **not** downgrade classification, because `classify()` keys on `kind` and not on the
+parsed `confidence` — verified across four kinds, correcting a stronger claim made before measuring.
+
+**Why a round-trip test would have found neither.** Both attack the parser's *own vocabulary* — its fence
+marker and its field separator. A round-trip test asks "does my input survive?"; these ask "can my input
+impersonate the mechanism?" Only the second question generates the payloads, and it is only asked by someone
+attacking the mechanism they chose rather than confirming the happy path. That is the reusable lesson, and it
+is worth more than the two bugs.

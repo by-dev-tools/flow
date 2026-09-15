@@ -54,7 +54,9 @@ Safety invariants encoded here (each has an eval case in
 
 Subcommands (stdlib only):
 
-    add-entry      --kind K --finding F --needs V [--resolution R] [--attempted]
+    add-entry      --kind K --needs V --finding-file PATH [--resolution-file PATH]
+                                        [--attempted]
+    scratch-path   --name NAME [--name NAME ...]   (resolve + sanitize, then print)
     parse          --body-file PATH|-
     classify       --entries-file PATH|-  [--state-file PATH] [--body-file PATH]
     render-manifest  --entries-file PATH|-
@@ -62,15 +64,35 @@ Subcommands (stdlib only):
     init-run       --branch B          (truncate the manifest for a fresh run)
     manifest-path  --branch B
     init-state     --branch B [--path PATH]
-    record-attempt --branch B --kind K --finding F [--path PATH]
-    waive          --branch B --kind K --finding F [--path PATH]
+    record-attempt --branch B --kind K --finding-file PATH [--path PATH]
+    waive          --branch B --kind K --finding-file PATH [--path PATH]
     state          --branch B [--path PATH] [--body-file PATH]
 
 Exit codes are the contract the shell keys on; keep them stable:
 
     0  success
     2  malformed input (unparseable entries, unknown kind/verb on `add-entry`,
-       an unwritable MANIFEST path on `init-run`)
+       an unwritable MANIFEST path on `init-run`, a missing/empty/non-regular/
+       symlinked --finding-file or --resolution-file, or the REMOVED raw-argv
+       `--finding`/`--resolution` flags)
+
+Why the free-text fields arrive as a FILE PATH and never as argv (FB-0108):
+`--finding` and `--resolution` carry model-composed text derived from untrusted
+sources -- a plan-authored Spec-walk criterion, a reviewer finding, a status
+doc's stale line. Every producer site is prose an agent follows, so any argv
+spelling means the agent splices that text into a shell word. The narrow fix
+(quote it carefully at each site) is a convention: it depends on every future
+author remembering. Passing a path instead closes the door, because the bytes
+travel file -> open() -> str and never enter a shell word at all.
+
+Heredocs and separator sentinels do NOT solve this and are not offered: every
+text-based boundary can appear inside the text. A `<<'FLOWEOF'` heredoc is
+terminated early by a payload containing a bare `FLOWEOF` line, which hands the
+remainder to the shell as commands -- measured, not theorised (v1.41.0's first
+attempt shipped exactly that shape and was caught by attacking it). There is
+likewise no `-`/stdin affordance, because from a Bash tool call the only way to
+feed stdin is a heredoc or a quoted string: offering it would re-offer the
+refuted path.
     3  `waive` only: the waiver WAS recorded, but its (kind, finding) fingerprint
        matches no entry on the current manifest -- including when no manifest
        exists at all (usually a mistyped --finding, or the wrong --branch) -- so
@@ -307,6 +329,10 @@ def _fingerprint(kind: str, finding: str) -> str:
     return hashlib.sha256(f"{kind}\x00{norm}".encode("utf-8")).hexdigest()[:16]
 
 
+# Only producer field files. Load-bearing: `scratch-path` UNLINKS what it names.
+_SCRATCH_NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]*\.txt")
+
+
 def _repo_scratch(name: str) -> str:
     """Repo-local scratch path (FB-0082), replacing the old global /tmp default.
 
@@ -325,11 +351,30 @@ def _repo_scratch(name: str) -> str:
     except (OSError, subprocess.SubprocessError):
         root = ""
     if not root:
-        return str(Path(tempfile.gettempdir()) / "flow-detached" / name)
+        # The no-worktree fallback carries the SAME guards as the repo branch. It used to
+        # have neither, and `scratch-path` now `unlink()`s what it resolves -- so on a shared
+        # runner a pre-created `/tmp/flow-detached -> /home/victim/dir` symlink turned a
+        # producer's CALL 1 into a delete-plus-write in someone else's directory
+        # (CWE-377/CWE-59). Low reachability (`/flow:ship` always runs inside a worktree),
+        # but the unlink is what gave it teeth, so the guard ships with the unlink.
+        d = Path(tempfile.gettempdir()) / "flow-detached"
+        if d.is_symlink():
+            print(f"BLOCKER: {d} is a symlink -- refusing to write flow scratch through it "
+                  f"(CWE-59). This path is UNLINKED before it is written, so following the link "
+                  f"would DELETE and then overwrite a file in whatever directory it points at "
+                  f"-- on a shared runner, someone else's. Run inside a git worktree (flow then "
+                  f"uses the repo's own .flow/); or remove the symlink if it is yours. Nothing "
+                  f"was recorded.", file=sys.stderr)
+            raise SystemExit(2)
+        d.mkdir(parents=True, exist_ok=True)
+        return str(d / name)
     d = Path(root) / ".flow"
     # CWE-59: never write scratch through a symlink (same refusal as the shell sites).
     if d.is_symlink():
-        raise SystemExit(f"BLOCKER: {d} is a symlink -- refusing to write flow scratch through it.")
+        print(f"BLOCKER: {d} is a symlink -- refusing to write flow scratch through it "
+              f"(CWE-59): writes would land outside the repo. Replace it with a real "
+              f"directory. Nothing was recorded.", file=sys.stderr)
+        raise SystemExit(2)
     d.mkdir(parents=True, exist_ok=True)
     ign = d / ".gitignore"
     if not ign.exists():
@@ -730,6 +775,228 @@ def _read(path: str) -> str:
         return fh.read()
 
 
+# Collapse each run of newlines -- and only the horizontal whitespace hugging it --
+# to a single space. The manifest is one entry per line, and a heredoc-free file can
+# legitimately hold a multi-line finding, so a newline must be joined rather than
+# rejected: rejecting would exit 2, and a producer whose `add-entry` exits 2 appends
+# nothing, i.e. it would DROP a blocker on ordinary well-meant input (FB-0062's
+# failure-open shape). Deliberately NOT `\s+ -> " "`: a tab or a double space inside
+# a finding is passed through byte-identically, exactly as the old argv path did.
+# Widening it would silently reflow text that composes correctly today, which is a
+# behaviour change a safety refactor has no business making.
+# Collapse every line break to a single space, plus the horizontal whitespace hugging it.
+# The manifest is one entry per line, and a file-delivered finding can legitimately be
+# multi-line, so a break must be JOINED rather than rejected: rejecting exits 2, and a
+# producer whose add-entry exits 2 appends nothing, i.e. it would DROP a blocker on
+# ordinary well-meant input (FB-0062's failure-open shape).
+#
+# DERIVED from the consumer's own definition, not hand-enumerated. `parse_entries` reads
+# the manifest via `str.splitlines()`, which breaks on ELEVEN characters -- \n \r \r\n
+# \v \f \x1c \x1d \x1e \x85 \u2028 \u2029 -- so a regex listing only the first three
+# left eight holes. Measured, not theorised: a finding containing U+2028 (which arrives in
+# text pasted from web/JS sources, and the [status-surface] producer quotes doc text
+# verbatim) appended ONE physical line, then parsed to ZERO entries, and `classify`
+# returned verdict READY over a live [verify-build] blocker -- the exact failure-open this
+# function exists to prevent, reached through the surviving hole. Using splitlines() here
+# means "what is a line break" has ONE source of truth shared with the parser, and the two
+# cannot drift.
+#
+# Deliberately NOT a general whitespace collapse: a tab or a double space inside a finding
+# passes through byte-identically, exactly as the old argv path did. The invariant is "one
+# entry per LINE", so only the line-break class needs touching; widening it would reflow
+# text that composes correctly today for no safety gain.
+def _collapse_newlines(text: str) -> str:
+    return " ".join(seg.strip(" \t") for seg in text.splitlines()).strip()
+
+
+# The consumer's grammar has THREE structural layers, not one. `_collapse_newlines` defangs the
+# line break (derived from `splitlines()`, the parser's own definition). The other two are the
+# region fences: `extract_manifest_region` slices between the FIRST open marker and the FIRST
+# close marker, and the same function parses both the manifest file and a PR body. So a finding
+# carrying those literals erases every entry after it -- measured: a `[coverage]` entry whose
+# text held both markers, followed by a live `[verify-build]` blocker, classified to verdict
+# READY with ZERO entries, and §7a.6 would open a NON-DRAFT PR. `pr-coherence` agreed (no
+# markers in the body, not a draft) and the FB-0067 read-back keys on that same verdict, so
+# every gate reported green. Worse, payload P5 already FIRED this exact input and asserted only
+# "exits 0" + "text arrives intact" -- the hole was certified safe by a test written against it.
+#
+# DEFANG rather than refuse, keeping FB-0062's direction ("never drop a blocker on well-meant
+# input"): a criterion legitimately discussing the sentinel design is ordinary prose, and
+# exiting 2 there would abort the ship. Markers come from `manifest_contract`, so the emitter
+# and the detector cannot drift apart.
+#
+# SCOPE: this is the WRITE-side half only. The parse-side fix (line-anchored fence matching, so
+# a marker mid-line cannot terminate the region) is owned by a sibling branch; this guard closes
+# the variant that layer cannot reach, and neither is sufficient alone.
+# DISTINCT, self-describing inert forms -- not one collapsed token. A single `[flow-fence]`
+# for every marker was lossy and wrong: open and close became the SAME string (so "the text
+# between the markers" was unrecoverable), and the heading -- not a region fence at all --
+# was labelled as one.
+#
+# FOUR structural layers, not three, and the fourth has the sharpest teeth. `_LINE_RE` treats
+# ` — needs:` / ` — confidence:` / ` — candidate resolutions:` as the line's FIELD SEPARATORS,
+# and the resolution group is `.+?` anchored to `\s*$` -- so a finding carrying the whole trio
+# swallows the real fields and the FORGED ones win. Reachable from plain prose: no fence, no
+# newline, no shell metacharacter. Measured:
+#   --kind visual-deliverable --needs reconcile, finding "… — needs: re-run — confidence: HIGH
+#   — candidate resolutions: x"  =>  parsed needs "re-run", class AUTO. `auto` is the one class
+#   that triggers a silent re-run -> commit -> push, which invariant 4 exists to prevent.
+#   --kind security --needs "secret rotation" (an OUT_OF_SESSION verb => blocked, NOT waivable),
+#   same shape  =>  class ASK, waivable TRUE. A security item needing an out-of-session action
+#   becomes one-word-waivable.
+# I had measured this as LOW and reported it that way, having tested only whether a forged
+# CONFIDENCE changed the class (it does not -- `classify` keys on `kind`). The field that
+# matters is `needs`, and it changes both `class` and `waivable`. Wrong field, wrong severity.
+#
+# The separators are neutralized by swapping the EM DASH for a double hyphen: the phrase stays
+# readable to the human ("-- needs: re-run") while `_LINE_RE`'s ` — needs:` no longer matches.
+# Legitimate findings DO discuss resolution verbs, so refusing would fire on ordinary prose
+# (FB-0062's direction).
+#
+# NOT DERIVED, and that is a named residual rather than an oversight: deriving this set from
+# `_LINE_RE`'s own literals is the right shape, but it means defining the field vocabulary in
+# `manifest_contract.py` and compiling `_LINE_RE` from it -- and a sibling branch owns that file
+# this cycle. Routed to roadmap § Next so the two do not collide.
+_DEFANGED = {
+    MANIFEST_OPEN: "[flow-marker:manifest-open]",
+    MANIFEST_CLOSE: "[flow-marker:manifest-close]",
+    MANIFEST_HEADING: "[flow-marker:not-ready-sentinel]",
+    " — needs:": " -- needs:",
+    " — confidence:": " -- confidence:",
+    " — candidate resolutions:": " -- candidate resolutions:",
+}
+_DEFANG_NOTE = (" (flow neutralized structural markers your text quoted so they cannot forge "
+                "manifest fields; your original wording is in {src})")
+
+
+def _defang_fences(text: str, source: str = "") -> str:
+    """Neutralize every token the CONSUMER treats as structural, and say so if any fired.
+
+    Not a refusal: a criterion legitimately discussing the sentinel design or a resolution verb
+    is ordinary prose, and exiting 2 there would abort the ship (FB-0062). But the result is
+    rendered verbatim as a human's question headline, so a silent substitution reads as flow
+    having eaten their text -- the note turns that into "flow told me what it did, and where
+    the original is."
+    """
+    fired = False
+    for marker, inert in _DEFANGED.items():
+        if marker in text:
+            text = text.replace(marker, inert)
+            fired = True
+    if fired:
+        text += _DEFANG_NOTE.format(src=source or "the finding file")
+    return text
+
+
+def _read_text_arg(path: str, flag: str) -> str:
+    """Read a free-text field from a file, refusing every unsafe shape LOUDLY.
+
+    Every refusal here exits 2 rather than degrading, and the producer templates
+    pair their `add-entry` call with `|| exit 1` so a refusal cannot be mistaken
+    for "no entry was owed" (FB-0062). The guard lives in the ENGINE and not in
+    shell prose because a shell guard can be stranded in the wrong Bash tool call
+    -- the Write that creates this file happens between two Bash calls, so shell
+    variables do not survive to the call that runs `add-entry`.
+    """
+    p = Path(path)
+    # CONFINEMENT, before any other check. The write side (`scratch-path`) confines to
+    # `_repo_scratch`, refuses path-shaped `--name`, and unlinks plants pre-Write; the read
+    # side confined nothing, so `--finding-file /etc/passwd` read it and spliced the content
+    # into the manifest -> the PR body. That is the same outcome the symlink refusal below
+    # exists to prevent, reachable by naming the file directly instead of linking to it.
+    # `resolve()` closes three holes at once: arbitrary-path read, `..` traversal, and a
+    # PARENT-directory symlink (`p.is_symlink()` is only one component deep, so
+    # `.flow/evil/ -> ~/.ssh` walked straight through it).
+    try:
+        rp = p.resolve()
+    except OSError:
+        rp = p
+    allowed = Path(_repo_scratch("x")).parent.resolve()
+    # NAME as well as directory. `.flow/` is not only producer scratch -- it also parks
+    # `verify-findings.json` (verify-build's captured run output, which can carry app stdout
+    # and env), `sec-diff.patch` / `staff-diff.patch` (the entire diff), and the rendered
+    # report. A directory-level check let a producer publish a NEIGHBOUR into the PR body by
+    # naming it -- the same outcome the symlink and confinement guards exist to stop, reached
+    # without leaving the trusted directory. The write side already restricts `--name` to this
+    # pattern; the read side must agree, or one contract has two disagreeing halves (FB-0074).
+    if rp.parent != allowed or not _SCRATCH_NAME_RE.fullmatch(rp.name):
+        # `{path!r}` not `{path}`: caller-controlled, may carry control characters that would
+        # print straight to the terminal. Matches the --name refusal's convention.
+        print(f"BLOCKER: {flag} {path!r} is not a producer field file. Call "
+              f"`scratch-path --name <slug>` and pass the path it prints -- e.g. "
+              f"`--name security-finding.txt`. It must sit in {allowed} with a name matching "
+              f"{_SCRATCH_NAME_RE.pattern}. Reading any other path -- INCLUDING a neighbour in "
+              f"that same directory, such as verify-findings.json or sec-diff.patch -- would "
+              f"splice its contents into the PR body. Nothing was recorded.", file=sys.stderr)
+        raise SystemExit(2)
+    # CWE-59, read side. `.flow/` is git-checkout-plantable, so `finding.txt` can be
+    # a symlink to ~/.ssh/id_rsa or .git/config; reading through it would splice that
+    # content into a PR body. Mirrors the write-side refusal in `_repo_scratch`.
+    # Checked BEFORE any read, and the message never echoes the file's content --
+    # a BLOCKER message that interpolated the offending bytes would leak while
+    # reporting the leak (FB-0004: assert on what would leak, not on a proxy).
+    if p.is_symlink():
+        print(f"BLOCKER: {flag} {path} is a symlink -- refusing to read flow scratch "
+              f"through it (CWE-59). Write the text to a real file.", file=sys.stderr)
+        raise SystemExit(2)
+    if not p.exists():
+        print(f"BLOCKER: {flag} {path} does not exist. Write the text there with the "
+              f"Write tool FIRST, then run this command. Nothing was recorded.",
+              file=sys.stderr)
+        raise SystemExit(2)
+    if not p.is_file():
+        print(f"BLOCKER: {flag} {path} is not a regular file. Nothing was recorded.",
+              file=sys.stderr)
+        raise SystemExit(2)
+    raw = p.read_text(encoding="utf-8", errors="replace")
+    if not raw.strip():
+        # An empty file is the signature of "the Write tool never ran" -- the one
+        # failure a shell `[ -n "$VAR" ]` guard cannot see at all.
+        print(f"BLOCKER: {flag} {path} is empty. The text was never written, so there "
+              f"is nothing to record -- and an empty finding would reach the human as "
+              f"a blank question. Nothing was recorded.", file=sys.stderr)
+        raise SystemExit(2)
+    return _defang_fences(_collapse_newlines(raw.strip()), source=path)
+
+
+class _RemovedTextFlag(argparse.Action):
+    """Refuse a REMOVED raw-argv free-text flag, at the DECLARATION site.
+
+    Kept declared rather than deleted so a stale copy-paste -- flow's own
+    dev-docs/history/ entries carry literal invocations in the old argv spelling, and
+    agents read history docs -- is told the new spelling instead of handed an argparse
+    usage dump. This is NOT an equal-status path: there is no flag, env var or fallback
+    by which argv text reaches the manifest.
+
+    An Action rather than a manual check in each handler, because the manual form needed
+    three coordinated special cases -- a call at every handler, a `default=None` sentinel,
+    and a hand-rolled re-implementation of `required=True` (the real one had to be dropped
+    so argparse's required-check could not pre-empt the teaching message). All three
+    collapse here: the Action fires DURING parsing, before the required-check, so
+    `--finding-file` goes back to `required=True`. It also fails CLOSED for a future
+    subcommand that declares the flag and forgets to call a rejector -- which the manual
+    shape did not.
+    """
+
+    def __init__(self, option_strings, dest, **kw):
+        kw["nargs"] = "?"
+        kw["help"] = argparse.SUPPRESS
+        super().__init__(option_strings, dest, **kw)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        name = (option_string or "").lstrip("-")
+        print(
+            f"BLOCKER: --{name} was REMOVED (FB-0108). Free text must arrive as a "
+            f"FILE PATH, not a shell argument: untrusted text spliced into a shell "
+            f"word can break out of it, and no quoting convention survives every "
+            f"future author. Use --{name}-file PATH instead -- write the raw text "
+            f"there with the Write tool (never a heredoc: a payload containing the "
+            f"delimiter escapes it), then pass the path. "
+            f"`scratch-path --name <slug>` resolves a safe path for you.",
+            file=sys.stderr)
+        raise SystemExit(2)
+
+
 def _load_entries(path: str) -> list[dict[str, Any]]:
     # A missing manifest file is the COMMON case — no producer fired, so there is
     # nothing to triage. That is an empty manifest, not an error. (`parse` keeps
@@ -768,56 +1035,127 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("init-state")
     p.add_argument("--branch", required=True)
+    p.add_argument("--allow-detached", action="store_true")
     p.add_argument("--path")
 
     p = sub.add_parser("manifest-path")
     p.add_argument("--branch", required=True)
+    # Opt-in for a deliberate detached-HEAD read. Producers never pass it, so an unset
+    # variable still fails loud; a caller that means it can still resolve the path.
+    p.add_argument("--allow-detached", action="store_true")
 
     p = sub.add_parser("state-path")
     p.add_argument("--branch", required=True)
+    p.add_argument("--allow-detached", action="store_true")
 
     p = sub.add_parser("init-run")
     p.add_argument("--branch", required=True)
+    p.add_argument("--allow-detached", action="store_true")
 
     for name in ("record-attempt", "waive"):
         p = sub.add_parser(name)
         p.add_argument("--branch", required=True)
+        p.add_argument("--allow-detached", action="store_true")
         p.add_argument("--kind", required=True)
-        p.add_argument("--finding", required=True)
+        p.add_argument("--finding-file", required=True)
+        # REMOVED (FB-0108) -- same rejection arm as `add-entry`. These two take the
+        # SAME untrusted finding text (it must fingerprint-match a manifest entry), so
+        # leaving argv here would leave the hazard at the site that needs the exact
+        # same bytes. No --resolution/--resolution-file: neither subcommand has ever
+        # had a resolution field, and the record they write carries only
+        # fingerprint/kind/finding.
+        p.add_argument("--finding", action=_RemovedTextFlag)
         p.add_argument("--path")
 
     p = sub.add_parser("add-entry")
     p.add_argument("--kind", required=True)
-    p.add_argument("--finding", required=True)
     p.add_argument("--needs", required=True)
-    p.add_argument("--resolution", default="")
+    # required=True is safe again: the removed flags reject during PARSING (see
+    # _RemovedTextFlag), so argparse's required-check can no longer pre-empt the
+    # teaching message.
+    p.add_argument("--finding-file", required=True)
+    p.add_argument("--resolution-file")
+    # REMOVED (FB-0108), declared only to reject with a message that teaches.
+    p.add_argument("--finding", action=_RemovedTextFlag)
+    p.add_argument("--resolution", action=_RemovedTextFlag)
     p.add_argument("--confidence", default="decision-required")
     p.add_argument("--attempted", action="store_true")
 
+    # Resolve + sanitize scratch paths, then print one per line. Repeated --name so a
+    # producer gets its finding and resolution paths from ONE call: two calls would
+    # invite the agent to reuse one path for both, and `record-attempt`/`add-entry` at
+    # the visual-deliverable site pass deliberately DIFFERENT text whose fingerprints
+    # must not collapse (classify() reads `fp in attempted_fps` to pick the entry's
+    # class, so a shared path would silently change a verdict).
+    p = sub.add_parser("scratch-path")
+    p.add_argument("--name", action="append", required=True)
+
     p = sub.add_parser("state")
     p.add_argument("--branch", required=True)
+    p.add_argument("--allow-detached", action="store_true")
     p.add_argument("--path")
     p.add_argument("--body-file")
 
     args = ap.parse_args(argv)
+
+    if args.cmd == "scratch-path":
+        # Unlink each target BEFORE printing. Order is load-bearing: the caller's
+        # Write happens after this returns, so unlinking here removes a planted
+        # symlink instead of writing THROUGH it. A read-time check cannot help --
+        # by then the victim file has already been clobbered, and the Write tool is
+        # not flow's to gate. Unconditional `unlink` is safe because every path here
+        # is engine-computed ephemeral scratch the caller is about to rewrite; it is
+        # never caller-supplied (only a --name slug is). Same idiom as ship-spike's
+        # `rm -f "$STAGES" "$STAGES.tmp"`, for the same CWE-59 sub-case.
+        # ALLOWLIST, not a denylist. The first version enumerated bad shapes ("/", "..")
+        # and therefore accepted `--name .gitignore` and `--name manifest-<branch>.md` --
+        # and since this subcommand UNLINKS its target before printing, either would have
+        # deleted flow's own self-ignore or the run manifest. A denylist in the PR whose
+        # thesis is "encode the rule, not the exceptions" (FB-0100). This pattern admits
+        # only producer field files, so anything added later fails closed.
+        for name in args.name:
+            if not _SCRATCH_NAME_RE.fullmatch(name):
+                print(f"BLOCKER: --name {name!r} is not a producer field file. Pass a bare "
+                      f"slug matching {_SCRATCH_NAME_RE.pattern} -- e.g. "
+                      f"--name security-finding.txt. (This subcommand CLEARS the file it "
+                      f"names, so the pattern is an allowlist, not a style rule.)",
+                      file=sys.stderr)
+                return 2
+            target = Path(_repo_scratch(name))
+            try:
+                target.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                print(f"BLOCKER: could not clear {target}: {exc}", file=sys.stderr)
+                return 2
+            print(target)
+        return 0
 
     if args.cmd == "add-entry":
         # One place owns the line shape. Producers name their values; they never
         # hand-compose the em-dash format, so there is nothing for a parser to
         # defensively un-mangle later. Validate against the closed vocabularies
         # at WRITE time rather than fail-safing at classify time.
+        #
         if args.kind not in KINDS:
             print(f"unknown kind {args.kind!r}; expected one of {', '.join(KINDS)}", file=sys.stderr)
             return 2
         if args.needs not in VERBS:
             print(f"unknown needs verb {args.needs!r}; expected one of {', '.join(VERBS)}", file=sys.stderr)
             return 2
-        finding = args.finding.strip()
+        finding = _read_text_arg(args.finding_file, "--finding-file")
+        resolution = (_read_text_arg(args.resolution_file, "--resolution-file")
+                      if args.resolution_file else "")
         if args.attempted:
             finding = f"{finding} ({ATTEMPTED_MARKER})"
+        # `--confidence` is the one text field that is neither vocabulary-validated (like
+        # --kind/--needs) nor file-delivered (like the two free-text fields), so it went in raw.
+        # Only literal values ship today, but it is one call away from the same rule.
+        confidence = _defang_fences(_collapse_newlines(args.confidence))
         print(f"- [{args.kind}] {finding} — needs: {args.needs}"
-              f" — confidence: {args.confidence}"
-              f" — candidate resolutions: {args.resolution or '(none drafted)'}")
+              f" — confidence: {confidence}"
+              f" — candidate resolutions: {resolution or '(none drafted)'}")
         return 0
 
     if args.cmd == "parse":
@@ -837,7 +1175,27 @@ def main(argv: list[str] | None = None) -> int:
             print(render_decisions(result))
         return 0
 
+    # The empty-branch guard applies to EVERY branch-taking subcommand, not just manifest-path.
+    # `init-run` is the one that made this more than tidiness: it TRUNCATES, so an unset $BRANCH
+    # clears the detached manifest while producers append to the real one, leaving last run's
+    # entries in place. The rest mostly fail safe (a lost waiver is not subtracted), but one
+    # contract should not hold at one of seven call sites (FB-0010 fan-out).
+    if getattr(args, "branch", None) is not None and not args.branch.strip() \
+            and not getattr(args, "allow_detached", False):
+        print(f"BLOCKER: {args.cmd} --branch is empty. This is almost always an unset shell "
+              f'variable read across a Bash-call boundary. Pass --branch "$(git branch '
+              f'--show-current)". To tell the two cases apart, RUN that command: if it prints a '
+              f"branch name your variable was empty and your HEAD is fine -- fix the variable. "
+              f"Only if it prints nothing are you genuinely detached, and only then does "
+              f"--allow-detached apply.", file=sys.stderr)
+        return 2
+
     if args.cmd == "manifest-path":
+        # FAIL CLOSED on an empty branch. It used to return `manifest-detached.md` at exit
+        # 0, which is precisely what converted a `--branch "$BRANCH"` read across a Bash-call
+        # boundary from a loud error into a silent gate bypass: the producer appended to a
+        # file Step 7a.5 never reads, `|| exit 1` passed, the real manifest stayed empty, and
+        # the verdict came back READY over an unresolved blocker.
         print(_default_manifest_path(args.branch))
         return 0
 
@@ -869,10 +1227,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd in ("record-attempt", "waive"):
+        finding = _read_text_arg(args.finding_file, "--finding-file")
+        # Fingerprint stability across this change is load-bearing: a waiver the
+        # human gave BEFORE it must still subtract its entry after. It holds
+        # mechanically, not by luck -- `_fingerprint` already normalises with
+        # `re.sub(r"\s+", " ", ...).lower()`, so it is newline- and case-insensitive
+        # and `_collapse_newlines` cannot move it. Pinned against a literal hex
+        # value captured from the pre-change tree in the eval harness.
         rec = {
-            "fingerprint": _fingerprint(args.kind, args.finding),
+            "fingerprint": _fingerprint(args.kind, finding),
             "kind": args.kind,
-            "finding": args.finding,
+            "finding": finding,
         }
         key = "attempts" if args.cmd == "record-attempt" else "waivers"
 
@@ -899,7 +1264,7 @@ def main(argv: list[str] | None = None) -> int:
                 missing_note = " (no manifest file at that path — check --branch)"
             if rec["fingerprint"] not in fps:
                 print(f"⚠️ [manifest-triage] no entry on {mp} matches [{args.kind}] "
-                      f"{args.finding!r}{missing_note} — the waiver was recorded but will "
+                      f"{finding!r}{missing_note} — the waiver was recorded but will "
                       "subtract nothing. Check the finding text matches verbatim.",
                       file=sys.stderr)
                 return 3

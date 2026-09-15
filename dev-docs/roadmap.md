@@ -209,6 +209,117 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### DERIVE the defanged-token set from the parser instead of hand-keeping it (from /flow:staff-review push-further, v1.42.0)
+
+**Origin:** push-further lens, FB-0108 branch. **Surfaces when:** a fifth structural token is added,
+or `_LINE_RE` / `manifest_contract.py` is next touched. **Not taken in v1.42.0** because the right
+shape means defining the field vocabulary in `manifest_contract.py` and compiling `_LINE_RE` from it
+— and a sibling branch owned that file this cycle, so two branches would collide.
+
+v1.42.0 defangs four structural layers (both region fences, the NOT-READY heading, and the three
+field separators). They are a **hand-kept dict**, and the history of this one PR is that the set was
+believed complete at one, then two, then three, then four — each time by a different reader, never by
+the author. That is the FB-0010 fan-out shape: a contract value in two places with nothing asserting
+the join. **Shape:** export `FIELD_SEPS` from `manifest_contract`, compile `_LINE_RE` FROM those
+literals, and export `STRUCTURAL_TOKENS = (MANIFEST_OPEN, MANIFEST_CLOSE, MANIFEST_HEADING) +
+FIELD_SEPS` as the single thing the defang iterates — so adding a field to the line grammar defangs
+it by construction. **Named costs:** (a) the replacement must stay readable, since legitimate findings
+discuss resolution verbs; (b) `ATTEMPTED_MARKER` is a fifth token (regex-stripped from the finding) and
+needs the same audit or an explicit exemption — it is separately roadmapped; (c) sequence after the
+sibling parse-side fix so a `FIELD_SEPS`-derived `_LINE_RE` does not contradict it.
+
+### Make "this assertion reaches a verdict" a harness-enforced property (from /flow:staff-review push-further, v1.42.0)
+
+**Surfaces when:** a payload is added to `run_manifest_triage_evals.py::test_injection`.
+
+The arrival-vs-consequence miss has now recurred three times on one branch — P5 asserting "text
+arrives intact" for a payload whose danger was that it *did* arrive intact; the allowlist universal
+that quantified over one block; the mutation strings that did not apply. Each fix was hand-added and
+each is author-memory: the next payload inherits only the loop's arrival assertion and nothing
+notices. **Shape:** split the vocabulary — keep `expect`/`expect_true` for arrival, add
+`expect_consequence()` used only for assertions computed from a DOWNSTREAM consumer (`classify`'s
+verdict/class/waivable, `pr-coherence.has_manifest`, `parse` output); record both into a per-payload
+map; then gate in `main()` that every payload key has a `consequence` entry, failing with "payload
+<label> asserts arrival only — name what the consumer then sees." That is this repo's paired-assertion
+discipline aimed at the harness rather than the engine. **Real cost is the back-fill**, not the gate:
+several payloads are arrival-only today and the gate would surface them all at once.
+
+
+### The `already-attempted` marker is a third member of the "impersonate the parser's vocabulary" family — and it MUTATES the finding (from /flow:staff-review push-further, v1.42.0)
+
+**Origin:** `/flow:staff-review` push-further lens on the FB-0108 branch. **Not fixed there** — it is a
+parse-side defect and a sibling branch owns that layer. **Surfaces when:** `parse_entries` or
+`ATTEMPTED_MARKER` is next touched, or a fourth reader of the finding text is added.
+
+`parse_entries` reads a **third** thing out of the finding by bare substring —
+`attempted = ATTEMPTED_MARKER in finding` — and then `re.sub`s it out, **rewriting** the finding.
+Measured: a finding reading `"walkthrough (already-attempted earlier) is missing"` parses to
+`finding="walkthrough is missing"` with `already_attempted=true` and class `ask`. Ordinary prose (a
+resolution note legitimately saying "already attempted") therefore silently deletes a phrase the human
+reads **and** moves the fingerprint — so `waive --finding-file` / `record-attempt --finding-file` fed the
+*same file* compute a different hash than the parsed entry. That is the one invariant v1.42.0 pins as
+load-bearing ("a waiver given before must still subtract after"), and its pin only covers newline/case
+normalisation, so the paren-strip is invisible to it.
+
+Same structural shape as the `splitlines()` bug that PR fixed: the answer to *"what does the consumer
+read out of this text?"* was derived from one call site instead of from the consumer. There are exactly
+three (fence marker, field separator, attempted marker) and the roadmap entries enumerate two.
+**Shape:** anchor the strip to the emitter's exact suffix `f" ({ATTEMPTED_MARKER})"` rather than a
+substring test, so only text *this engine wrote* can set the flag; add a payload asserting
+`fingerprint(kind, raw) == parse(line).fingerprint` and `already_attempted is False` when `--attempted`
+was not passed. Coordinate with the parse-side branch.
+
+
+### SAFETY: a manifest finding containing the close marker ERASES the rest of the manifest — verdict flips to READY (found by the v1.42.0 payload suite; NOT fixed there)
+
+**Origin:** payload P5 of the FB-0108 adversarial suite, run at the v1.42.0 plan gate. **Deliberately not fixed
+in v1.42.0** — it is a pre-existing defect in the *parser*, that PR's approved scope was the *input path*, and
+the human approved that scope explicitly. **Surfaces when:** any `statusSurfaceCandidates` doc acquires the
+literal close marker, or `manifest_contract.py` is next touched.
+
+`manifest_contract.py:62` reads `text.split(MANIFEST_OPEN, 1)[1].split(MANIFEST_CLOSE, 1)[0]` — everything up
+to the **first** close marker. So a manifest entry whose *finding text* contains the literal
+`<!-- /flow:not-ready-manifest -->` closes the region from inside itself, and **every entry after it is
+erased**. Measured against `origin/main`'s own module: a body holding one marker-carrying entry plus a real
+`[verify-build]` blocker parses to **0 entries**, verdict `DECIDE` → **`READY`**; the control with the marker
+removed parses 2 and stays `DECIDE`. `READY` means §7a.6 opens a **non-draft** PR over an erased behavioural
+gate — the exact outcome the manifest exists to prevent. It bites on the **PR-body parse** path (§7c reconcile
+step 0, `/flow:land`), not the producer-append path: the manifest *file* carries no fences.
+
+**Reachability, stated precisely — this is a LATENT SELF-TRIGGER, one docs commit from live, not an attack.**
+The marker already appears in ordinary committed prose at `dev-docs/roadmap.md:720`, in the sentence
+describing the sentinel design — so the payload is not exotic, it is what a doc about this feature naturally
+contains. The `[status-surface]` producer quotes a `"<verbatim quote>"` from a status doc straight into the
+finding, which is the mechanism that would weaponise it with nobody attacking anything. **It does not fire
+today**, for one reason only: `roadmap.md` is not in `statusSurfaceCandidates` (default `[CLAUDE.md, AGENTS.md,
+README.md, GEMINI.md, .cursorrules, .github/copilot-instructions.md]`) — it is the *reference* the 5a scan
+compares against, not a scanned candidate — and none of those six currently contains the marker (verified).
+But `README.md` already discusses the not-ready manifest, so a README that gains the literal marker while
+documenting the sentinel makes the trigger live: **one ordinary docs PR, no adversary.**
+
+**Shape of a fix (not prescriptive):** the emitter and the detector already share `manifest_contract.py`, so
+the fix belongs there — either refuse to emit a finding containing either marker (loud, at `add-entry` write
+time, which is cheap now that all free text funnels through one guard), or make the region parse tolerate a
+marker inside an entry body. Refusing at write time is probably right: it fails closed, at the one chokepoint,
+before the text is ever persisted. Pair any fix with the positive that a legitimate entry still parses
+(`general.md` rule 3).
+
+### `parse_entries`' field separator can be forged by a finding, truncating what the human reads (LOW — same suite, P7)
+
+Same origin and same non-fix rationale. `_LINE_RE`'s finding group is non-greedy up to the first ` — needs:`,
+so a finding containing ` — needs: … — confidence: … — candidate resolutions: …` forges those fields: the
+finding is truncated at the forged separator and the remainder lands in the resolution. **Severity is LOW and
+I over-stated it before measuring:** `classify()` keys on `kind`, **not** on the parsed `confidence`, so a
+forged `confidence: auto` does *not* downgrade the entry's class — verified across `status-surface`,
+`coverage`, `security` and `verify-build` (forged → `ask`, honest → `ask`, in all four). The residual harm is
+that the human reads a truncated question, not that a blocker bypasses the gate.
+
+**Why a round-trip test would never have found either.** Both are attacks on the **parser's own vocabulary** —
+its fence marker and its field separator. A round-trip test asks *"does my input survive?"*; these ask *"can my
+input impersonate the mechanism?"* Only the second question generates these payloads, and it is only asked by
+someone attacking the mechanism they chose rather than confirming the happy path (FB-0108 rule 3).
+
+
 ### `add-entry --finding`/`--resolution` embeds untrusted, agent-composed text as a raw shell argument — 1 of ~9 remaining producer sites fixed narrowly; the interface-level fix is a dispatched fast follow (from /flow:security-review, vacuous-criterion PR — FB-0104)
 
 **Origin:** `/flow:security-review`, run at `/flow:ship` Step 2 of the vacuous-criterion-check PR (#148). **Surfaces when:** the interface-level fix below lands (closes this entry), or a new `add-entry` producer site is added before then (a 10th instance of the shape).
@@ -503,11 +614,11 @@ Not decision-shaped yet: we don't know how much inline rationale is load-bearing
 
 `land/SKILL.md:116` — if `mktemp` fails, `BODYFILE` is empty and the `elif [ -z "$PC" ]` arm does not fire, so the BLOCKING coherence gate is skipped with no message at all. The FB-0010 silent-skip shape in a gate whose whole job is to block. One-line fix (guard on the empty `BODYFILE` with its own loud arm); outside this PR's file set.
 
-### Convert the remaining 7 producer sites to `add-entry` (from the FB-0075 integration review)
+### ✅ SHIPPED (v1.42.0, FB-0108) — Convert the remaining 13 inline-template producer sites to `add-entry` (from the FB-0075 integration review)
 
 **Surfaces when:** a producer's prescribed manifest line drifts off-vocabulary again, or `add-entry` gains a field.
 
-FB-0075 gave the manifest line ONE owner (`manifest-triage.py add-entry`, which validates `--kind`/`--needs` at write time) and Step 2 tells producers "never hand-compose the line" — but only the §7a visual-deliverable site was converted; the other seven still prescribe an inline-code template. That is the same two-places-one-contract shape FB-0074 is about: the prose rule and the prescribed examples disagree, and the examples are what an agent copies. Convert the seven, then tighten `run_manifest_triage_evals.py::test_producer_lines` to accept ONLY the `add-entry` form (it currently accepts both by design).
+FB-0075 gave the manifest line ONE owner (`manifest-triage.py add-entry`, which validates `--kind`/`--needs` at write time) and Step 2 tells producers "never hand-compose the line" — but only the §7a visual-deliverable site was converted; **13** others still prescribe an inline-code template (this entry said *seven* until v1.42.0 — the count was written when there were fewer and was never re-grepped, which is the very fan-out drift `general.md` § Consistency item 2 names). That is the same two-places-one-contract shape FB-0074 is about: the prose rule and the prescribed examples disagree, and the examples are what an agent copies. **Done in v1.42.0:** all 13 converted to `add-entry` invocations, and `run_manifest_triage_evals.py::test_producer_lines` now accepts ONLY the `add-entry` form — the template form is forbidden outright, paired with a positive kind-coverage equality over a single harvest so the negative is not satisfiable by deleting the producers. Shipped as its own commit on the FB-0108 branch so it could be reverted independently of the interface fix.
 
 ### Un-performed waivers have a durable record and no reader (from the FB-0075 staff-review)
 
