@@ -342,22 +342,24 @@ def test_split_warns_loudly_on_odd_fence_count(_tmp: Path) -> None:
     check("even fence count produces no warning", ha.compute_prose_shell_split("```sh\necho ok\n```\n")["warning"] == "")
 
 
-def test_split_report_matches_hand_measured_totals_exactly(_tmp: Path) -> None:
-    """The total char count per invoked skill must match hand-run `wc -c`
-    exactly -- that arm of the ±2% Spec-walk band has zero tolerance because
-    it doesn't depend on the counting rule at all, just correct file
-    reading."""
+def test_split_report_matches_live_file_totals_exactly(_tmp: Path) -> None:
+    """The total char count per invoked skill must match an independent
+    direct read of the file exactly -- that arm of the ±2% Spec-walk band has
+    zero tolerance because it doesn't depend on the counting rule at all,
+    just correct file reading. Compares against a live `Path.read_text()`
+    at test-run time, NOT a hardcoded literal: an earlier revision pinned
+    the plan's 2026-09-13 hand-measured byte counts directly, which broke
+    the very next time `ship/SKILL.md` legitimately grew (#152, FB-0108) --
+    the exact kind of drift a live comparison doesn't fall over on, and a
+    frozen literal has no way to distinguish from a real regression."""
+    watched_skills = ("ship", "doctor", "verify-build", "ship-spike")
     entries, _ = ha.resolve_invoked_surface_splits()
     by_path = {e["path"]: e for e in entries}
-    expected_totals = {
-        "plugins/flow/skills/ship/SKILL.md": 150_465,
-        "plugins/flow/skills/doctor/SKILL.md": 52_778,
-        "plugins/flow/skills/verify-build/SKILL.md": 57_839,
-        "plugins/flow/skills/ship-spike/SKILL.md": 52_588,
-    }
-    for path, expected in expected_totals.items():
+    for name in watched_skills:
+        path = f"plugins/flow/skills/{name}/SKILL.md"
+        live_chars = len((ha._REPO_ROOT / path).read_text(encoding="utf-8"))
         actual = by_path.get(path, {}).get("chars")
-        check(f"{path} total chars matches hand count exactly ({expected:,})", actual == expected, actual)
+        check(f"{path} total chars matches a live independent read ({live_chars:,})", actual == live_chars, actual)
 
 
 # --------------------------------------------------- ship/SKILL.md pure/impure sections
@@ -437,7 +439,7 @@ def main() -> int:
             test_split_comment_is_subset_of_shell,
             test_split_handles_closing_fence_with_trailing_prose,
             test_split_warns_loudly_on_odd_fence_count,
-            test_split_report_matches_hand_measured_totals_exactly,
+            test_split_report_matches_live_file_totals_exactly,
             test_ship_sections_have_no_unclassified_headings,
             test_ship_sections_classification_table_has_no_orphaned_keys,
             test_ship_sections_key_impure_steps_classified_impure,
