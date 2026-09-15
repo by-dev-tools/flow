@@ -167,12 +167,19 @@ def test_audit_due_unreachable_marker_sha_degrades_gracefully(tmp: Path) -> None
 # ---------------------------------------------------------------- surface resolution
 
 
-def test_always_loaded_includes_static_docs(root: Path) -> None:
+def test_always_loaded_excludes_workflow_and_keeps_the_rest(root: Path) -> None:
+    """PAIRED per .claude/rules/general.md Consistency-discipline rule 3:
+    a negative assertion alone ("workflow.md is excluded") passes in two
+    opposite worlds -- the entry was correctly removed (the fix), or
+    static_paths was emptied out entirely (a silent regression that would
+    also drop CLAUDE.md and the rules glob). The positive half closes that
+    seam. See run_split_report_and_mutation_arms below for the RED/RED
+    verification this pairing is designed to survive."""
     entries, warnings = ha.resolve_always_loaded_surfaces(repo_root=root)
     paths = {e["path"] for e in entries}
-    check("CLAUDE.md present in Class A", "CLAUDE.md" in paths, paths)
-    check("workflow.md present in Class A", "plugins/flow/docs/workflow.md" in paths, paths)
-    check(".claude/rules/safety.md present in Class A", ".claude/rules/safety.md" in paths, paths)
+    check("workflow.md excluded from Class A (nothing auto-loads it)", "plugins/flow/docs/workflow.md" not in paths, paths)
+    check("CLAUDE.md still present in Class A", "CLAUDE.md" in paths, paths)
+    check(".claude/rules/safety.md still present in Class A", ".claude/rules/safety.md" in paths, paths)
 
 
 def test_always_loaded_extracts_folded_description_only(root: Path) -> None:
@@ -228,7 +235,7 @@ def test_report_separates_classes_and_never_sums_them(root: Path) -> None:
 # file, start from empty) build their own below -- sharing would make their
 # assertions depend on run order.
 READ_ONLY_SURFACE_TESTS = [
-    test_always_loaded_includes_static_docs,
+    test_always_loaded_excludes_workflow_and_keeps_the_rest,
     test_always_loaded_extracts_folded_description_only,
     test_always_loaded_agent_description_extracted,
     test_always_loaded_missing_description_warns_not_crashes,
@@ -276,6 +283,140 @@ def test_audit_agent_prompt_protects_footgun_curated_safety(_tmp: Path) -> None:
     check("minimal-not-short guardrail present", "not \"short.\"" in text or "not \"short\"" in text)
 
 
+# --------------------------------------------------- prose/shell/comment split
+
+
+def test_split_untagged_and_markdown_fences_count_as_prose(_tmp: Path) -> None:
+    text = "prose before\n```\nnot shell\n```\nprose middle\n```markdown\nalso not shell\n```\nprose after\n"
+    split = ha.compute_prose_shell_split(text)
+    check("untagged + markdown fences contribute zero shell chars", split["shell"] == 0, split)
+    check("prose equals the whole document when no sh/bash fence exists", split["prose"] == split["total"], split)
+
+
+def test_split_sh_and_bash_fences_count_as_shell(_tmp: Path) -> None:
+    text = "prose\n```sh\necho hi\n```\nmore prose\n```bash\necho bye\n```\n"
+    split = ha.compute_prose_shell_split(text)
+    check(
+        "sh + bash fence content chars both counted as shell",
+        split["shell"] == len("echo hi\n") + len("echo bye\n"),
+        split,
+    )
+    check("prose is total minus shell", split["prose"] == split["total"] - split["shell"], split)
+
+
+def test_split_comment_is_subset_of_shell(_tmp: Path) -> None:
+    text = "```sh\n# a comment\necho hi\n# another\n```\n"
+    split = ha.compute_prose_shell_split(text)
+    check(
+        "comment chars are exactly the '#'-prefixed lines inside the shell block",
+        split["comment"] == len("# a comment\n") + len("# another\n"),
+        split,
+    )
+    check("comment is <= shell", split["comment"] <= split["shell"], split)
+
+
+def test_split_handles_closing_fence_with_trailing_prose(_tmp: Path) -> None:
+    """Regression for the real ship/SKILL.md Step 7a.5 block: a closing ```
+    fence can carry trailing prose on the SAME line (not clean CommonMark).
+    A regex anchored on the closer being alone on its line silently drops
+    that pair and swallows content into the NEXT fence match -- caught by
+    diffing this tool's ship totals against the plan's hand-measured
+    numbers during this PR; pinned here so it can't regress silently."""
+    text = "```sh\necho one\n``` trailing prose right after the fence\n```sh\necho two\n```\n"
+    split = ha.compute_prose_shell_split(text)
+    check(
+        "both sh blocks counted despite the first closer carrying trailing prose",
+        split["shell"] == len("echo one\n") + len("echo two\n"),
+        split,
+    )
+
+
+def test_split_warns_loudly_on_odd_fence_count(_tmp: Path) -> None:
+    """Regression: an unclosed fence must never silently drop the trailing
+    marker or flip open/close parity for the rest of the document -- it must
+    surface as a warning (FB-0010 silent-skip class), caught in staff-review
+    for this PR."""
+    text = "prose\n```sh\necho unclosed\n"
+    split = ha.compute_prose_shell_split(text)
+    check("odd fence count produces a non-empty warning", split["warning"] != "", split)
+    check("even fence count produces no warning", ha.compute_prose_shell_split("```sh\necho ok\n```\n")["warning"] == "")
+
+
+def test_split_report_matches_live_file_totals_exactly(_tmp: Path) -> None:
+    """The total char count per invoked skill must match an independent
+    direct read of the file exactly -- that arm of the ±2% Spec-walk band has
+    zero tolerance because it doesn't depend on the counting rule at all,
+    just correct file reading. Compares against a live `Path.read_text()`
+    at test-run time, NOT a hardcoded literal: an earlier revision pinned
+    the plan's 2026-09-13 hand-measured byte counts directly, which broke
+    the very next time `ship/SKILL.md` legitimately grew (#152, FB-0108) --
+    the exact kind of drift a live comparison doesn't fall over on, and a
+    frozen literal has no way to distinguish from a real regression."""
+    watched_skills = ("ship", "doctor", "verify-build", "ship-spike")
+    entries, _ = ha.resolve_invoked_surface_splits()
+    by_path = {e["path"]: e for e in entries}
+    for name in watched_skills:
+        path = f"plugins/flow/skills/{name}/SKILL.md"
+        live_chars = len((ha._REPO_ROOT / path).read_text(encoding="utf-8"))
+        actual = by_path.get(path, {}).get("chars")
+        check(f"{path} total chars matches a live independent read ({live_chars:,})", actual == live_chars, actual)
+
+
+# --------------------------------------------------- ship/SKILL.md pure/impure sections
+
+
+def test_ship_sections_have_no_unclassified_headings(_tmp: Path) -> None:
+    """If ship/SKILL.md grows or renames a `## ` step, the curated
+    classification table must be updated in the same PR -- an UNCLASSIFIED
+    heading here means the pure/impure ratio Phase 4 depends on silently
+    drifted out of sync with the shipped skill (the FB-0010 fan-out shape
+    applied to this table instead of a hardcoded path list)."""
+    entries, warnings = ha.resolve_ship_section_breakdown()
+    unclassified = [e["heading"] for e in entries if e["label"] == "UNCLASSIFIED"]
+    check("every ship/SKILL.md ## section is in the curated classification table", unclassified == [], unclassified)
+    check("no unclassified-heading warnings", warnings == [], warnings)
+
+
+def test_ship_sections_key_impure_steps_classified_impure(_tmp: Path) -> None:
+    entries, _ = ha.resolve_ship_section_breakdown()
+    by_heading = {e["heading"]: e["label"] for e in entries}
+    check("Step 6 (Commit) is IMPURE", by_heading.get("6. Commit") == "IMPURE", by_heading.get("6. Commit"))
+    check("Step 7 (Push and PR) is IMPURE", by_heading.get("7. Push and PR") == "IMPURE", by_heading.get("7. Push and PR"))
+    check("Step 8 (Hand off) is IMPURE", by_heading.get("8. Hand off") == "IMPURE", by_heading.get("8. Hand off"))
+    check(
+        "Step 2 (Final-pass reviews) is PURE",
+        by_heading.get("2. Final-pass reviews") == "PURE",
+        by_heading.get("2. Final-pass reviews"),
+    )
+
+
+def test_ship_sections_classification_table_has_no_orphaned_keys(_tmp: Path) -> None:
+    """Regression for the staff-engineer-lens catch during this PR's own ship:
+    a curated-table key that matches no extracted heading is dead code that
+    silently provides zero coverage (a stale "2a. ..." key expected to match
+    an h3 sub-heading _H2_RE can't see, from an earlier revision of this
+    table). The inverse of test_ship_sections_have_no_unclassified_headings."""
+    entries, warnings = ha.resolve_ship_section_breakdown()
+    matched = {e["heading"] for e in entries}
+    orphaned = set(ha.SHIP_SECTION_CLASSIFICATION) - matched
+    check("every classification-table key matches an actual ship/SKILL.md heading", orphaned == set(), orphaned)
+    check("no orphaned-entry warnings", not any("orphaned classification-table entry" in w for w in warnings), warnings)
+
+
+def test_ship_sections_chars_sum_to_file_total(_tmp: Path) -> None:
+    entries, _ = ha.resolve_ship_section_breakdown()
+    path = ha._REPO_ROOT / "plugins" / "flow" / "skills" / "ship" / "SKILL.md"
+    full_text = path.read_text(encoding="utf-8")
+    # Sections start at the first "## " heading; the frontmatter + intro
+    # paragraph before it are not attributed to any section by design.
+    preamble_chars = full_text.index("\n## ") + 1
+    check(
+        "sum of section chars + preamble equals the file's total chars",
+        sum(e["chars"] for e in entries) + preamble_chars == len(full_text),
+        (sum(e["chars"] for e in entries), preamble_chars, len(full_text)),
+    )
+
+
 # ---------------------------------------------------------------- runner
 
 
@@ -293,6 +434,16 @@ def main() -> int:
             test_invoked_surfaces_excludes_project_dev_skills,
             test_missing_surfaces_directory_warns_not_crashes,
             test_audit_agent_prompt_protects_footgun_curated_safety,
+            test_split_untagged_and_markdown_fences_count_as_prose,
+            test_split_sh_and_bash_fences_count_as_shell,
+            test_split_comment_is_subset_of_shell,
+            test_split_handles_closing_fence_with_trailing_prose,
+            test_split_warns_loudly_on_odd_fence_count,
+            test_split_report_matches_live_file_totals_exactly,
+            test_ship_sections_have_no_unclassified_headings,
+            test_ship_sections_classification_table_has_no_orphaned_keys,
+            test_ship_sections_key_impure_steps_classified_impure,
+            test_ship_sections_chars_sum_to_file_total,
         ]
         for test in mutating_tests:
             print(f"{test.__name__}:")
