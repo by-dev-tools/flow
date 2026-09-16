@@ -90,6 +90,8 @@ pass's scope.)
   of the FB-0085 class — shipped, believed effective, never loading — and it means **pre-archive
   checks must export the queue manually rather than trusting the flush**. `/flow:contribute` has
   also never been run against the accumulated queue.
+**▶ AT THE PLAN GATE (this branch, `conductor/track-b-d1-phase-2-prototype-gate`, v1.45.0, FB-0110/FB-0111): D1 Phase 2 — the prototype phase, human gate 1, and the loop re-order.** Implements `dev-docs/handoffs/d1-prototype-first-gate.md` § Phase 2 (FB-0081), unblocked by two human decisions Ben made 2026-09-16: §9.4's prototype medium (**HTML prototypes for the first build, web AND mobile**) and §9.2's proportionality trigger (**an explicit `mode: tiny`**, not a tuned size threshold). Ships `/flow:prototype` (the iterative prototype phase + gate-1 mechanics) over a deterministic `lib/prototype-gate.py` (trigger / artifact contract / approval capture + verify), re-orders `workflow.md`'s Step 2 into a two-path fork without renumbering Steps 3–11, and rewrites the Step 8/9 "not a third gate" argument as *replacement* rather than exception. The load-bearing invariant the whole PR is built around: **exactly one pre-execution human gate, always — prototype approval XOR plan approval, never both, never neither.** Also corrects a real sequencing defect in the handoff (§8's preamble gates Phase 2 on the §9.3 spike; §9.3's own resolution text gates Phase 3 — and the spike as specified *needs* a Phase-2 artifact, so the preamble's ordering is impossible). `/flow:critique-plan` returned **6 findings (1 BLOCKER, 2 REDIRECT, 3 FOLLOW-UP), all accepted, none disputed** — and two of them changed the design rather than the prose: the "a plan always exists" assertion is **pulled forward out of Phase 3** (without it, this PR would have removed the human plan gate while nothing asserted a plan was produced — FB-0080's exact condition, reintroduced by the PR that exists to close it), and the trigger's second arm becomes a **declared `Surface:` brief field** instead of the un-pinnable "the request is visual" judgment the first draft smuggled in one paragraph after rejecting un-pinnable judgment. See the "PR — D1 Phase 2" block below for the full Spec-walk, seven confidence verdicts, and seven open calls for the gate.
+
 **▶ SHIPPING (this branch, `conductor/add-entry-interface-file-stdin-input-shell-injection-fix`, v1.42.0, FB-0108): SAFETY — `add-entry` takes untrusted text off the command line entirely.** Fast follow to #148 (merged, v1.41.0), which made the *current* call sites safe by quoting. This closes the unsafe door instead of joining it with a safe one: `--finding`/`--resolution` stop accepting raw argv, the text arrives only as a file path written by the Write tool, and the non-empty guard moves into the engine where it cannot be stranded in the wrong Bash call. Rebased onto `a156228` (#149 merged); FB re-swept 0105 → **0108** after a collision with #149, v1.42.0 re-verified free. **9 rounds of `/flow:critique-plan` applied** — it killed every heredoc and separator design (delimiter collision, the same bug #148's first attempt hit), caught a fingerprint collapse that would have changed manifest classification, and caught a shell-variable template that cannot survive a Write tool call between two Bash invocations. **EXECUTED — both commits landed, shipping.** Awaiting the human on Open call 0 (do the 13 inline-template producer sites join this PR, as two commits on this branch?) and Open call 7 (`scratch-path` unlinking its target — the one destructive change). See the "PR — `add-entry` takes untrusted text off the command line" block below.
 
 **▶ EXECUTED, shipping (this branch, `conductor/vacuous-criterion-check-criterion-quality`, FB-0104, v1.41.0): Vacuous-criterion check — close the over-broad-declaration seam.** Deterministic (non-LLM) heuristic in `extract-criteria.py`'s consumer path (`/flow:verify-build` Step 3) that flags Spec-walk criteria with no observable predicate ("Rate limiting works correctly"), routed to the existing draft manifest as a 10th `[vacuous-criterion]` kind (mirrors `coverage`'s `ask`-class routing, reuses its `declare + fence` verb). `walk-pin-lint.py` does NOT already cover this (confirmed by full read — it checks whether a verification *method* is named, not whether the criterion's own claim is falsifiable; proved complementary with a counter-example in each direction). `/flow:critique-plan` caught and fixed 3 real issues across 3 passes at the plan gate — most notably that the first draft's "worked negatives" fixture cases never exercised the heuristic's own AND-NOT escape-hatch branch (a vacuous test inside a vacuous-criterion checker). Both open calls resolved by the orchestrator (reuse `declare + fence`; match whatever the 9 sibling kinds do for the `workflow.md` paragraph). Renumbered FB-0102 → FB-0104 and v1.40.0 → v1.41.0 at this rebase (main advanced to v1.40.0/FB-0103 via #146 while this plan sat at the gate). **`/flow:staff-review`'s staff-engineer lens then caught a real BLOCKER at ship time** — the flagship documented counter-example was empirically false; every pinned criterion in this repo was structurally unflaggable — fixed before shipping (see the history entry). `/flow:security-review` flagged one decision-required finding on the new producer bullet (untrusted plan text in an agent-composed shell argument). Human decision at the merge gate: fix per-site (option (a)), not accept-as-is — propagating a shape just identified as unsafe is how a class spreads (two instances is a coincidence, three is a pattern). The systemic interface fix across the other ~9 producer sites is a dispatched fast follow (roadmap § Next), not scope here. See the "PR — Vacuous-criterion check" block below.
@@ -118,6 +120,307 @@ pass's scope.)
 **▶ EXECUTED, shipping (this branch, `conductor/phase-00-rules-as-skills-hooks-fix-fb-0085`): Phase 00 — fix two shipped-but-never-loading flow features (rules→skills, hooks declaration; FB-0085), v1.33.0.** Standalone prerequisite from `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` §17/Phase 00, independent of any Codex/Cursor porting work. Plan approved with both escalated decisions accepted as recommended (00b hooks stay opt-in; 00c one-time content sync + explicit sync-note, not a full merge; 00d no bootstrap.sh change). Executed: skill count 17→21 (`claude plugin details` confirms live), full eval suite green, `/flow:critique-plan` findings fixed pre-execution. See the "PR — Phase 00" block below for the full Spec-walk + confidence verdicts, and `dev-docs/history.md` 2026-08-27 for the shipped write-up.
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
+
+## PR — D1 Phase 2: the prototype phase, human gate 1, and the loop re-order (this branch, `conductor/track-b-d1-phase-2-prototype-gate`, FB-0110/FB-0111, v1.45.0) — AT THE PLAN GATE
+
+**Mode:** feature
+**Branch:** `conductor/track-b-d1-phase-2-prototype-gate`
+**Base:** `origin/main` @ `32b27d1` (#151) — v1.43.0, FB high-water FB-0108.
+**Version claim: `v1.45.0`.** v1.44.0 + FB-0109 are claimed by the unmerged `origin/fix-manifest-fence-injection` (verified by reading its `plugin.json` and its `dev-docs/feedback/` tree; zero open PRs, so the branch sweep is the only signal available). Next free minor taken without asking, per the standing rule.
+**FB claim: `FB-0110` + `FB-0111`** — the two human decisions of 2026-09-16, one file each (see Open call 2 if you'd rather they were one).
+**Source of truth:** `dev-docs/handoffs/d1-prototype-first-gate.md` § Phase 2 + §7 + §9.2 + §9.4; `dev-docs/feedback/FB-0081-*` (definitive spec, user-directed); `dev-docs/feedback/FB-0080-*` (why this exists).
+
+---
+
+### 0. Goal
+
+For a UI-surface change, the human's first decision point becomes a **prototype** they can look at, not a plan they have to read. Phase 0 shipped the `role` slot; Phase 1 shipped the brief, its review orchestrator, and the experience lens. Phase 2 ships the thing those two were built toward: the **prototype phase**, **human gate 1**, and the **loop re-order** that makes the gate *move* rather than multiply.
+
+### 1. Scope
+
+**Scope (in)** — the handoff's four Phase-2 checkboxes, plus the two items deliberately deferred into this phase:
+
+1. The **prototype phase**: iterative, cheap, no ship pipeline / no evals / no doc synthesis; the agent produces an HTML prototype, self-evaluates it (held item [10]'s geometry-audit + fresh-eyes-taste read), and iterates before presenting.
+2. **Human gate 1 mechanics**: how the prototype is presented, and how approval is captured so that it is *checkable* rather than asserted.
+3. The **`workflow.md` re-order** of Steps 1–2 + the rewrite of the Step 8/9 "not a third gate" argument.
+4. **`plan-discipline` + `planner`** updated for the moved gate.
+5. **§9.2's proportionality trigger** — deferred out of Phase 1 into this phase, now decided as `mode: tiny`.
+6. **§9.4's feasibility guard** — the load-bearing mitigation the human's broader medium decision makes mandatory.
+7. **The "a plan always exists" mechanical assertion, pulled forward out of Phase 3** — see §2.5. A deliberate, surfaced scope adjustment, not drift: this PR is what *creates* the hazard that assertion exists to prevent, so it cannot ship without it.
+
+**Scope (out)** — named so the boundary is checkable, not assumed:
+
+- **Phase 3's auto-writer and machine gate** — the agent that drafts the technical plan after gate 1, and the clean / `[auto-fixable]` / `[decision-required]` review loop over it. Nothing in this PR implements either; the seam is left clean and the hand-off point is documented as *not built*, exactly the way Phase 1 documented Phase 2. **Phase 3's third box — "no plan produced is impossible" — does NOT stay out** (§2.5).
+- **The merge gate** and everything post-execution (`/flow:verify-build`, `/flow:ship`) — untouched.
+- **D4 / D5 / D6.**
+- **Renumbering the 11-step loop.** See §2.1.
+- **A new config slot.** The trigger reads `role`, `uiSurface`, `platform` — all existing.
+
+### 2. The four design calls, and why
+
+#### 2.1 "Re-order Steps 1–2" means Step 2 **forks**; it does not renumber the loop
+
+Taken literally, moving the plan after the prototype inserts steps and pushes `Execute` from 3 to 6-ish. That would be the worst FB-0010 fan-out this repo has ever shipped: "Step 8" alone is a named contract in `workflow.md`, `workflow-help`, `general`, `ship/SKILL.md`, `ship-spike`, `audit-skips`, the roadmap, and a dozen feedback entries.
+
+So the re-order lands **inside Step 2**, which keeps its number and becomes the *pre-execution gate* step with two paths:
+
+```
+ 2. Gate           CLASSIC path: write the plan → /flow:critique-plan → HUMAN GATE (plan approval)
+     (pre-exec)    PROTOTYPE-FIRST path (D1): design brief → /flow:review-brief → prototype,
+                   iteratively → HUMAN GATE 1 (prototype approval) → technical plan, machine-
+                   reviewed [Phase 3: auto-written + machine-gated — NOT BUILT]
+```
+
+This is truer to FB-0081 than a renumber would be, because FB-0081's claim is that the gate **moves** — same position in the loop, different artifact under it. **Step numbering is unchanged end to end.** Steps 1, 4–7 and 10–11 are byte-unchanged. **Steps 3, 8 and 9 change in prose only**: 8–9 are §1's third deliverable (the most contested paragraphs in the diff), and Step 3 gains the one sentence that invokes §2.5's `gate-execute` — called out rather than folded into a blanket "unchanged" claim, because the first draft of this plan claimed 3–11 unchanged while editing three of them.
+
+#### 2.2 The invariant: exactly one pre-execution human gate
+
+Both of §10's failure modes are two directions of one property, so this PR states it once, mechanically:
+
+> **`pre_execution_gate` ∈ {`prototype`, `plan`} — always exactly one.** Never both (that is the "three gates" ceremony this removes). Never neither (that is a gate silently deleted).
+
+`lib/prototype-gate.py trigger` returns that field on every path, and the eval asserts over the whole fixture matrix that each row yields exactly one value **and** that both values actually occur — the positive half that stops the assertion being satisfiable by deleting a branch (`.claude/rules/general.md` § Consistency discipline, clause 3).
+
+This also settles the interim question Phase 3's absence creates. Until Phase 3 ships, the technical plan written after gate 1 is reviewed by `/flow:critique-plan` + `/flow:audit-plan` and **does not get a second human gate** — the human already gated, at the prototype. Documented as a rule in `workflow.md`; no machinery built for it. See Open call 5.
+
+#### 2.3 The trigger, and the chicken-and-egg it has to solve
+
+Per Ben's decision, proportionality keys off an explicit **`mode: tiny`**, not a size heuristic. His reasoning, recorded because it generalizes: a size threshold is the FB-0010 shape — a tuned number that drifts and needs maintaining forever — and judgment can't be pinned by a fixture. `mode: tiny` is already in the loop's vocabulary, is *declared* rather than inferred, and is testable.
+
+But `mode` is declared **in the plan**, and on the D1 path the plan comes *after* the prototype. The trigger would be reading a field that does not exist yet.
+
+**Resolution: the brief declares the mode.** A `**Mode:**` line above the six content fields — the same shape a plan already uses (`plan-discipline` field 1), additive, renaming and renumbering nothing, so Phase 1's six eval-pinned field names survive untouched. The brief is the first artifact in the D1 loop, so it is the only place a pre-trigger declaration can live.
+
+**The same problem, one step over — and `/flow:critique-plan` caught me committing it.** The first draft of this plan rejected a size threshold because *judgment can't be pinned by a fixture*, and then put *"the request is visual"* into the trigger table as the other arming condition — an un-pinnable judgment, on a deterministic engine that cannot evaluate it, inside a table presented as deterministic. It can't be inferred either: before anything is built there is no diff, so `uiFilePatterns` has nothing to match. So it gets the identical treatment, for the identical reason:
+
+> The brief header declares **both**: `**Mode:** feature · **Surface:** visual`. `Surface` ∈ {`visual`, `non-visual`}. `role: designer` implies `visual` without the declaration.
+
+The engine parses both out of the brief; it accepts no free-floating `--visual-request` flag, so there is no path by which a per-run vibe reaches the trigger. Judgment still exists — someone decides what to write — but it is **declared, inspectable, and pinned by fixtures on both values**, which is the whole of what FB-0111 asks for. See confidence verdict A7.
+
+The resulting three paths:
+
+| Condition | Path | Pre-execution gate |
+|---|---|---|
+| (`role == designer` OR (`uiSurface != false` AND the brief declares `Surface: visual`)) AND `mode` ∈ {`feature`} | **prototype-first** | prototype approval |
+| same trigger conditions AND `mode: tiny` | **collapsed** — Clarify + brief, *no* review passes, *no* prototype (§7's collapse, content unchanged by Ben's decision) | plan approval |
+| otherwise — incl. `uiSurface: false`, a declared `Surface: non-visual`, `mode: spike` | **classic** — today's loop, byte-unchanged | plan approval |
+
+`mode: spike` routes to **classic** (Open call 3): a spike has its own reduced-rigor path and its own ship, and folding D1 into it would be a second, unrequested change to gate semantics.
+
+Fail direction: an absent/malformed brief or `flow.config.json` degrades to **classic** with a loud `[WARN]` — never a crash, and never a silent slide into prototype-first. Classic is the fail-safe because it is the path where the human still gates.
+
+#### 2.4 The feasibility read is asserted, not advisory (§9.4's guard)
+
+Ben chose HTML prototypes for the first build on **both web and mobile** — broader than the web-only option. The handoff names the risk that choice carries precisely: *"the gate approves a look that can't be built natively."* With an HTML proxy standing in for a native surface, infeasibility now surfaces **after** a look has been approved, which is the one thing the prototype-first ordering is supposed to prevent.
+
+So the mitigation stops being prose and becomes part of the artifact contract.
+
+**The rule is a complement, and it fails closed — not an enumeration.** The first draft required the feasibility read for `platform` ∈ {`ios`, `android`, `tauri`}, and `/flow:critique-plan` found the hole that leaves: `platform` is an **optional** slot whose documented default is *unset* (bundled `/run` autodetects). So the most common configuration — an iOS consumer who never set the slot — would produce an HTML prototype with no proxy disclosure and no feasibility block, `contract` would return `ok: true`, and gate 1 would approve a look whose buildability was never read. The §9.4 failure, reached through the default config, by an enumeration-as-complement that is itself the FB-0010 shape §2.3 rejects.
+
+> **The feasibility read is required unless `platform == "web"`.** Unset counts as non-web.
+
+Unset failing closed follows CLAUDE.md's standing rule for absent slots — *never silently no-op; print a loud warning* — and the remedy is one line: the contract's failure message for an unset `platform` names both exits (*set `platform` in `flow.config.json`, or declare the block*). A genuinely-web project that never set the slot pays one config line, once; the alternative is a native project silently skipping the only guard §9.4 has.
+
+When the read is required, the prototype **must** carry:
+
+- a **proxy disclosure** — one line stating this is an HTML proxy of a `<platform>` surface and that type rendering, motion, and system chrome will differ; and
+- a **Feasibility** block — one row per distinctive affordance in the prototype, each carrying a verdict from a closed set — `native-standard` | `native-custom` | `expensive` | `infeasible` — and a one-line reason naming the platform mechanism.
+
+`lib/prototype-gate.py contract` checks this deterministically, and `approve` **refuses to write an approval record when the contract fails**. That is what "asserted, not advisory" buys: a native prototype with no feasibility read cannot reach gate 1 at all. Every non-`native-standard` row is returned in `must_surface[]` so the gate-1 presentation cannot quietly omit the expensive ones.
+
+Per the deletion rule: the check asserts the block's **presence** *and* row-verdict validity together, so removing the Feasibility block fails rather than passes.
+
+#### 2.5 A plan must always exist — the assertion ships here, not in Phase 3
+
+§10's second make-or-break property is *"a plan must ALWAYS exist, mechanically asserted, because FB-0080 happened precisely because none was produced."* The handoff files that assertion under Phase 3, alongside the auto-writer it would check. **Leaving it there is wrong, and `/flow:critique-plan` caught it as a BLOCKER at this gate.**
+
+The reasoning: this PR removes the human plan gate from the prototype-first path **and ships that path live**. Phase 3 is gated on a spike that has not landed. So for every release between this one and Phase 3, the D1 path would have neither a human gate on the plan nor a mechanical assertion that a plan exists — **which is exactly FB-0080's condition**, reintroduced by the PR whose stated purpose is to close it. §2.2's invariant does not cover this: it constrains `pre_execution_gate`, which is about *which* gate, not about whether a plan was produced at all.
+
+So the assertion comes forward:
+
+> `prototype-gate.py gate-execute --plan <planPath>` returns `ok: false` when an approval record exists for this branch but the plan doc resolves **no active Spec-walk block**. Execute does not proceed past a `false`.
+
+**It has two call sites, because a guard nothing invokes is not a guard** (`/flow:critique-plan` caught the first draft shipping exactly that — a correct, fully-fixtured, never-called function described as a mechanical guarantee; the FB-0077 shape, in the PR that cites FB-0077):
+
+1. **`/flow:prototype`'s hand-off out of gate 1** — the precise owner of the transition, and the only path that can produce an approval record in the first place.
+2. **`workflow.md` Step 3's opening** — one sentence, so the guard is reachable from the canonical loop doc by a session that resumes past the skill in a fresh context.
+
+The check is conditional by construction: with no approval record it returns `ok: true` and costs nothing, so the classic path is unaffected. **Enforcement is prose-level** — the same level as every other step in this loop, and stated plainly rather than implied to be stronger. The backstop below it is unchanged: `/flow:ship`'s existing no-plan fallback still routes a source-touching diff with no plan to the judged path plus a `no_plan_fallback` draft.
+
+This is a check, not a writer — it builds none of Phase 3's auto-writing or machine-gating, so the scope-out line holds. It also builds almost nothing new: the active-block resolution is `walk_extract.py`, already shared by `extract-criteria.py`, `extract-visual-states.py`, `visual-significance.py` and `skip-audit-checks.py`. The handoff's Phase 3 box is amended in this PR to record that its third sub-item landed early, so the two docs cannot disagree about who owns it.
+
+**Restated invariant, now covering both halves of §10:** on every path, **exactly one pre-execution human gate** *and* **a plan exists before Execute**.
+
+### 3. Gate-1 mechanics
+
+**Presentation.** The prototype is an HTML file at `.flow/prototypes/<slug>/prototype.html`, presented with the existing `annotation-layer.html` partial injected before `</body>` — the same click-to-pin overlay `/flow:verify-build`'s report uses, referenced from its one source file, never copied. That is the surface the designer already named as the high-value moment (roadmap § Designer-signal track: *"the real valuable work happens when the flow agent gives me an html and I give feedback on it"*), and its "Copy notes" export is already a structured, per-element feedback block the next iteration round can act on directly.
+
+**`present` authors zero markup of its own — a deliberate design call, not an oversight.** The obvious shape was to render flow-authored chrome into the page (a feasibility banner above the prototype, a "what approval means" footer). That would make `prototype-gate.py` a **second browser-UI emitter alongside `render-report.py`** — which is inside `flow.config.json.uiFilePatterns` precisely because it emits browser UI — and shipping it outside that pattern would permanently exclude the new emitter from flow's own pattern-gated visual and a11y checks. That is the FB-0085/FB-0107 class: shipped, believed covered, never actually looked at.
+
+So `present` does exactly one thing to the HTML: insert the existing partial verbatim, byte-for-byte. **Every piece of flow-authored gate-1 chrome goes in the chat hand-off instead** — the feasibility summary (leading, whenever `must_surface[]` is non-empty: a look you can't afford must not be approved before its price is stated), what approval commits the human to, and how to send pinned feedback back. That is also where D5's message-budget thinking says a hand-off belongs. The property is pinned by a byte-diff fixture (output == input + the partial), so "flow authored no new browser UI here" is **checked**, not asserted — and `uiFilePatterns` correctly stays unextended.
+
+**Self-check before presenting** (held item [10]). One fresh-context fan-out, in a single tool message, against the rendered prototype: `flow:lens-design-engineer` (geometry, craft, palette, motion — the "geometry audit") and `flow:lens-ux-designer` (edge states, keyboard, a11y — the half the experience lens is documented as missing). The agent iterates on what they find, then presents. This runs **once per presentation**, not once per edit.
+
+This is deliberately *not* a verdict, and the distinction matters against FB-0066: FB-0066 forbids an implementer **self-certifying** shipped visual work from frames it read itself. The prototype self-check certifies nothing — the verdict at gate 1 is the human's. Its job is to raise the floor before spending the human's attention. `workflow.md` says this in as many words, so a future reader doesn't file it as a contradiction.
+
+**Approval capture.** `lib/prototype-gate.py approve` writes `.flow/prototypes/<slug>/approval.json` carrying: the prototype's sha256, the FB-0082 workspace stamp (`repo`/`branch`/`head`), the resolved platform, the contract verdict, and the human's **verbatim** approval quote. Three refusals, each paired with the positive it protects:
+
+- No quote file, or an empty one ⇒ refuse. (The agent cannot approve on the human's behalf.)
+- Contract not `ok` ⇒ refuse. (§2.4.)
+- `verify` fails on a sha256 mismatch ⇒ the prototype was edited after approval, so the record no longer describes what the human saw.
+
+The quote arrives **as a file path written by the Write tool, never as an argv string** — FB-0108's rule, applied at the first new interface since it landed. The engine exposes no `--quote` string flag at all; closing the unsafe door rather than adding a safe one beside it.
+
+### 4. The handoff's sequencing defect — resolved, not inherited
+
+`d1-prototype-first-gate.md` gates Phase 2 on §9.3's spike in **four** places — the Status banner (L5), §0 step 7 (L21), §8's preamble (L118), and §13's "Spike (before PR 3)" (L184), PR 3 being Phase 2 — while the two statements that gate it on **Phase 3** are both inside §9.3 itself (L151: *"Resolve by a spike BEFORE Phase 3"* and *"do not build Phase 3 until the spike clears"*). §13's PR-3 line (L185) is **not** a third Phase-3 citation: it gates PR 3 on §9.4 alone and says nothing about the spike. I was asked to sanity-check the orchestrator's read (§9.3 is right) rather than accept it. It is right, and there is a stronger argument than the one I was handed:
+
+> §9.3 specifies the spike as *"take **one real approved prototype**, auto-write its technical plan…"*. An approved prototype is Phase 2's output — the approval mechanism does not exist before it. So the spike as specified **depends on Phase 2**, and "run it before Phase 2" is not merely mis-ordered, it is unsatisfiable.
+
+The spike can and should proceed on a synthetic approved prototype (which is what the parallel spike worker is doing), but the dependency arrow points the other way from what the preamble claims. **Phase 2 is not blocked.** The four contradicting statements are corrected in this PR.
+
+The one genuine coupling that remains is prose, and it is mitigated by construction: if the spike concludes the auto-plan is too thin to anchor a machine gate, the technical plan needs a human gate, which would break the two-gate thesis and change what Phase 2's docs say about what comes *after* gate 1. So no shipped sentence in this PR asserts the machine gate as existing — Phase 3 is described as designed, unbuilt, and gated on §9.3, the same treatment Phase 1 gave Phase 2. See confidence verdict A1.
+
+### 5. Files touched
+
+**Plugin artifacts (user-visible):**
+- `plugins/flow/skills/prototype/SKILL.md` — new, `/flow:prototype`.
+- `plugins/flow/skills/prototype/lib/prototype-gate.py` — new; `trigger` / `contract` / `approve` / `verify` / `present` / `gate-execute` subcommands, stdlib only. Reuses `verify-build/lib/walk_extract.py` for active-block resolution.
+- `plugins/flow/docs/workflow.md` — Step 2 fork, the loop block, Step 8/9 rewrite, brief-template `**Mode:**` line, shipped-surface bullet, skills cheat-sheet row.
+- `plugins/flow/skills/workflow-help/SKILL.md` — the printed loop + the gate sentence.
+- `plugins/flow/skills/general/SKILL.md` — the two gate lines (24, 54).
+- `plugins/flow/skills/plan-discipline/SKILL.md` — the moved gate; a prototype-first plan anchors to an approval record.
+- `plugins/flow/agents/planner.md` — same.
+- `plugins/flow/agents/lens-design-engineer.md`, `lens-ux-designer.md` — Inputs generalized to accept a rendered artifact.
+- `plugins/flow/agents/lens-experience.md` — Lens A gains the accessibility/timing question (roadmap D3 FOLLOW-UP, explicitly assigned to Phase 2). Open call 1.
+- `plugins/flow/skills/doctor/SKILL.md` — Check 2.11: `role` now has a consumer (§7 FOLLOW-UP). Open call 1.
+- `plugins/flow/evals/run_prototype_gate_evals.py` + `fixtures/prototype-gate/` — new.
+- `plugins/flow/evals/run_review_brief_evals.py` + `fixtures/review-brief/brief_low_ambition.expected.txt` — extended.
+- `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` — 1.45.0.
+- `README.md` — surface list.
+- `.github/workflows/ci.yml` — wire the new harness.
+- `changelog/v1.45.0.md` — new.
+
+**Dev-tracking (not shipped):** `dev-docs/plan.md` (this block), `dev-docs/history/2026-09-16-*.md`, `dev-docs/feedback/FB-0110-*.md`, `dev-docs/feedback/FB-0111-*.md`, `dev-docs/roadmap.md` (D1/D2/D3 status + the durable-prototype-home follow-up), `dev-docs/handoffs/d1-prototype-first-gate.md` (§8 checkboxes + the §4 sequencing correction).
+
+**Visual-walk:** N/A — and this is a *checked* claim, not an assertion (§3, and `/flow:critique-plan` Issue 3 at this gate). Flow is `uiSurface: true`, but `uiFilePatterns` scopes its UI surface to `annotation-layer.html` / `visual-history-skeleton.html` / `render-report.py` / `insert-visual-history.py`. This diff touches none of them: the annotation layer is *referenced from its single source file*, never edited or copied, and `present` is pinned by a byte-diff fixture to author no markup of its own. Had `present` rendered flow-authored chrome into the page, it would have been a second browser-UI emitter and `uiFilePatterns` would have had to grow to cover it — the alternative that was considered and rejected in §3.
+
+---
+
+**Spec-walk:**
+
+*Every box below is pinned by `plugins/flow/evals/run_prototype_gate_evals.py` unless another harness is named. All checks are offline + stdlib, matching the existing convention.*
+
+**The trigger (§9.2 / FB-0111)**
+
+- [ ] `trigger` returns `pre_execution_gate: "prototype"` for `role: designer` + `mode: feature`, and for `role` unset + `uiSurface: true` + a visual request + `mode: feature`. → `test_trigger_prototype_arms`, two fixture rows
+- [ ] `trigger` returns `path: "collapsed"` + `pre_execution_gate: "plan"` when the trigger conditions hold but the brief declares `mode: tiny`, and still reports `brief_required: true` (§7's collapse is to Clarify + brief, not to nothing). → `test_trigger_collapse_tiny`
+- [ ] `trigger` returns `path: "classic"` + `pre_execution_gate: "plan"` for each of: `uiSurface: false`; a non-visual request with `role` unset; `role: engineer` on a non-visual request; `mode: spike`. → `test_trigger_classic_arms`, four fixture rows
+- [ ] Across the **whole** fixture matrix, every row yields exactly one `pre_execution_gate` value, **and** both values occur at least once — the positive half that makes the invariant unsatisfiable by deleting a branch. → `test_exactly_one_gate`
+- [ ] An absent brief, a malformed brief, and an absent/malformed `flow.config.json` each degrade to `path: "classic"` with a `[WARN]` in `reasons[]`, exit 0, valid JSON — never a crash, never a silent prototype-first. → `test_trigger_degrades`, four fixture runs
+- [ ] The brief template's `**Mode:**` + `**Surface:**` header is documented in `workflow.md` **and** all six original field names still resolve — an additive header, not a renumbering. → `run_review_brief_evals.py::test_workflow_template_fields`, extended
+- [ ] `trigger` reads `Surface` **from the brief** and the argument parser exposes **no** `--visual-request` (or equivalent) flag — paired halves, so the declared input cannot be bypassed by a caller-supplied judgment. → `test_surface_is_declared_only`
+- [ ] Both `Surface` values are exercised: `Surface: visual` + `role` unset + `uiSurface: true` ⇒ prototype-first; `Surface: non-visual` under otherwise-identical config ⇒ classic. A brief with no `Surface` line and `role` unset ⇒ classic + `[WARN]`; with `role: designer` ⇒ prototype-first without it. → `test_surface_arms`, four fixture rows
+
+**"A plan always exists" (§2.5 — pulled forward from Phase 3)**
+
+- [ ] `gate-execute` returns `ok: false`, naming the branch and the resolved `planPath`, when an approval record exists and the plan doc resolves no active Spec-walk block. → `test_gate_execute_blocks_missing_plan`
+- [ ] `gate-execute` returns `ok: true` when an active Spec-walk block resolves — the positive half, so the check is not satisfiable by a plan doc that merely exists and is empty. → `test_gate_execute_passes_with_plan`
+- [ ] `gate-execute` resolves the active block through the shared `walk_extract.py`, not a private parser — asserted by importing the same module the other four consumers import. → `test_gate_execute_uses_shared_parser`
+- [ ] An all-DEMOTED plan doc (every block belonging to a merged PR) reads as **no active block**, not as a pass — the v1.30.0 `all_demoted` lifecycle bug, in a fifth consumer. → `test_gate_execute_all_demoted`
+
+**The artifact contract (§9.4 / FB-0110)**
+
+- [ ] `contract` returns `ok: true` for an explicit `platform: web` prototype with no Feasibility block — the single exempt value, since there the prototype *is* the medium. → `test_contract_web_exempt`
+- [ ] `contract` returns `ok: false` naming the missing block for **every** other resolved value — `ios`, `android`, `tauri`, `cli`, `library`, `none`, **and `platform` unset** — asserted over the full enum plus the unset case, so the rule is the complement of `web` rather than a hand-kept list that a new enum value would silently escape. → `test_contract_requires_feasibility_unless_web`, seven fixture rows
+- [ ] The unset-`platform` failure message names **both** remedies (set the slot, or declare the block) — the loud-warning-on-absent-slot rule, not a silent no-op. → `test_contract_unset_platform_message`
+- [ ] `contract` returns `ok: false` when a Feasibility row carries a verdict outside the closed set `{native-standard, native-custom, expensive, infeasible}`, or none at all. → `test_contract_rows_need_verdicts`
+- [ ] `contract` returns `ok: false` when the proxy disclosure is absent on a non-web platform. → `test_contract_requires_proxy_disclosure`
+- [ ] `contract` returns `ok: true` for a complete native prototype **and** lists every non-`native-standard` row in `must_surface[]`, so the gate-1 presentation cannot omit the expensive ones. → `test_contract_native_complete`
+- [ ] Deleting the Feasibility block from a passing native fixture flips the verdict to `ok: false` — the presence assertion is paired with the row-validity prohibition. → `test_contract_deletion_not_green`
+
+**Gate-1 approval capture**
+
+- [ ] `approve` exits non-zero and writes **no** record when the quote file is absent, empty, or whitespace-only. → `test_approve_requires_quote`, three fixture runs
+- [ ] `approve` exits non-zero and writes no record when `contract` is not `ok`. → `test_approve_requires_contract`
+- [ ] A successful `approve` writes a record carrying the prototype sha256, `repo`/`branch`/`head` stamp, resolved platform, contract verdict, and the verbatim quote; `verify` returns `ok: true` for it. → `test_approve_record_shape`
+- [ ] `verify` returns `ok: false` with a distinct reason when the prototype file changed after approval (sha mismatch) and when the stamp disagrees with the current workspace — kept distinct, never collapsed. → `test_verify_detects_drift`, two fixture runs
+- [ ] The engine's argument parser exposes **no** `--quote` string flag (negative) **and** `--quote-file` is present and functional (positive) — FB-0108's interface rule, pinned on both halves. → `test_quote_file_only`
+
+**The skill**
+
+- [ ] `prototype/SKILL.md` names both self-check `subagent_type`s (`flow:lens-design-engineer`, `flow:lens-ux-designer`), states the one-tool-message fan-out, and names the annotation-layer injection path by its single source file. → `test_skill_composition`
+- [ ] `prototype/SKILL.md` states plainly that the skill never records approval on its own behalf, **and** documents the human-quote capture step that is the positive form of that prohibition. → `test_skill_never_self_approves`
+- [ ] `present` output is **byte-identical to its input plus the `annotation-layer.html` partial** — no flow-authored markup, so `uiFilePatterns` correctly stays unextended and "flow authored no new browser UI here" is checked rather than asserted (§3). → `test_present_authors_no_markup`, a byte-diff fixture
+- [ ] `present` reads the partial from `verify-build/lib/annotation-layer.html` — the one source file, never a copy — and degrades with a loud `[WARN]` (prototype still presented, read-only) if it is unreadable. → `test_present_single_source`, two fixture runs
+- [ ] `prototype/SKILL.md` states the no-ship-pipeline / no-evals / no-doc-synthesis property **and** names no `Skill("flow:ship")` / `Skill("flow:ship-spike")` / eval-harness / history-or-feedback-synthesis step — the PR's first declared deliverable, and the one property that stops the prototype phase re-acquiring the ceremony D1 removes. Paired with the positive assertion of the iterate-then-present loop, so it is not satisfiable by deleting the section (FB-0077's shape). → `test_prototype_phase_runs_no_pipeline`
+- [ ] `prototype/SKILL.md` carries the canonical BLOCKING jq guard shape. → `run_jq_guard_evals.py` (derives the guarded set from disk and executes each live guard under a jq-stripped PATH — no new fixture needed)
+- [ ] `prototype/SKILL.md` carries the canonical ROOT-anchor block. → `run_root_anchor_evals.py`
+- [ ] `/flow:prototype` composes no `disable-model-invocation: true` skill. → `run_skill_composition_evals.py`
+- [ ] Prototype scratch lives under repo-local `.flow/` with the symlink refusal + `.gitignore` seeding idiom. → `run_scratch_isolation_evals.py`
+
+**The docs (the FB-0010 fan-out this PR is most exposed to)**
+
+- [ ] `workflow.md` Step 2 documents both paths, each with exactly one human gate, and the loop ASCII block shows the fork. → `test_workflow_step2_fork`
+- [ ] The Step 8/9 prose **asserts the replacement argument** (a prototype-first run's authoritative human look happened at gate 1; Step 8 is still not a gate) **and** no longer asserts that visual sign-off can *only* fold into merge — both halves, since the negative alone would pass on a deleted paragraph. → `test_not_a_third_gate_rewrite`
+- [ ] The same gate sentence is consistent across `workflow.md`, `workflow-help/SKILL.md`, and `general/SKILL.md` — one contract in three files, checked at the join rather than by author memory. → `test_gate_language_fanout`, looping all three
+- [ ] `plan-discipline/SKILL.md` and `agents/planner.md` both state the moved gate and that a prototype-first plan anchors to an approval record — a one-sided pin on a two-sided duplication is not a pin (FB-0100). → `test_plan_surfaces_moved_gate`, looping both
+- [ ] `lens-design-engineer.md` and `lens-ux-designer.md` both state that the input may be a rendered artifact path rather than a diff, and both keep the FB-0082 workspace-identity rule. → `test_lens_inputs_generalized`, looping both
+- [ ] `lens-experience.md` Lens A carries an accessibility/timing question, and `brief_low_ambition.expected.txt` names the WCAG 2.2.1 concern its own fixture demonstrates. → `run_review_brief_evals.py`, extended
+- [ ] doctor Check 2.11 reports `role` as having a live consumer and names how to confirm the prototype-first path activated. → `test_doctor_role_has_consumer`
+- [ ] The new harness is wired into `.github/workflows/ci.yml` (the workflow's own harness/runner join-check passes) and every `plugins/flow/evals/run_*_evals.py` exits 0 locally. → the CI diff + a recorded full-suite run
+- [ ] FB-0010 declaration sweep: `git grep -nE "Plan approval|human-gated at Plan|two load-bearing"` has no survivor asserting a single unconditional plan gate; every survivor is enumerated by category in the history entry. → the sweep recorded in `dev-docs/history/2026-09-16-*.md`
+
+**The handoff**
+
+- [ ] `d1-prototype-first-gate.md`'s four Phase-2 checkboxes are checked with their verification named, and all four Phase-2-gates-on-§9.3 statements (Status banner, §0 step 7, §8 preamble, §13 "Spike (before PR 3)") are corrected to gate Phase 3, with §4's unsatisfiability argument recorded. → the diff
+
+---
+
+### 6. Confidence verdicts
+
+**A1. Phase 2 does not depend on §9.3's spike.**
+**Confidence:** MEDIUM. **Why:** §9.3's own resolution text and §13's PR-3 line both scope the spike to Phase 3, and the spike as specified consumes a Phase-2 artifact (an approved prototype), so the preamble's ordering is unsatisfiable — the dependency arrow points the other way. MEDIUM rather than HIGH because a *prose* coupling survives: if the spike concludes the auto-plan can't anchor a machine gate, what this PR says about what follows gate 1 needs revision. **If it flips:** the technical plan needs a human gate, which breaks the two-gate thesis and forces a re-derivation of the §2.2 invariant's second half. **Mitigation (by construction):** no shipped sentence asserts the machine gate exists; Phase 3 is described as designed, unbuilt, and gated on §9.3. **And, after this gate's BLOCKER, the mitigation is no longer only prose** — §2.5's `gate-execute` check means the interim state has a mechanical guarantee that a plan exists, so an unlanded Phase 3 degrades the *quality* of the plan review, never its *existence*. Resolves when the parallel spike lands.
+
+**A2. An HTML prototype is an adequate proxy for a native (iOS/Android) surface at gate 1.**
+**Confidence:** MEDIUM — **user-directed, not mine to relitigate.** **Why:** Ben chose it explicitly on 2026-09-16, broader than the web-only option that was recommended to him. **If it flips:** the gate approves a look that can't be built natively — the exact failure the handoff names. **Mitigation:** §2.4's asserted feasibility read + proxy disclosure, enforced by refusing to record approval when the contract fails. Declared MEDIUM so it surfaces at Step 8 rather than being quietly carried.
+
+**A3. `mode: tiny` is a workable proportionality trigger.**
+**Confidence:** HIGH. **Why:** user-directed; the value already exists in the loop's vocabulary, is declared rather than inferred, and is fixture-testable — the three properties a size threshold lacks. **If it flips:** the collapse either over- or under-fires, which shows up as ceremony on small changes; recoverable by changing one predicate.
+
+**A4. The brief can carry the `Mode` declaration without disturbing Phase 1's contract.**
+**Confidence:** HIGH. **Why:** the eval pins the six field *names* being present, not the absence of other lines; `plan-discipline` already uses exactly this header-above-fields shape. **If it flips:** the trigger needs its own declaration file, which is strictly worse (a second place to keep in sync).
+
+**A5. `lens-design-engineer` + `lens-ux-designer` can review a rendered prototype rather than a diff.**
+**Confidence:** MEDIUM. **Why:** their *hunts* map onto an HTML prototype almost exactly (CSS/DOM craft is their native material), but their Inputs sections hard-name a diff path, so this needs a small additive prompt edit to each. Precedent: `/flow:review-brief` re-scopes `auditor` + `plan-critic` from a transcript to a brief the same way. **If it flips:** a prototype-specific lens agent is needed (new agent + fixture), which is a contained follow-up, not a redesign. **Mitigation:** the edit is one additive sentence per agent, and both halves are pinned.
+
+**A7. Declaring `Surface` in the brief is enough to keep the trigger deterministic.**
+**Confidence:** MEDIUM. **Why:** it removes the judgment from the *engine* (fixture-pinnable on both values, no bypass flag) but not from the *author* — someone still writes `visual` or `non-visual`, and a mis-declaration silently picks the wrong gate. That is strictly better than an inferred verdict and is the same bargain `Mode` already makes, but it is not airtight. **If it flips** (authors routinely mis-declare): the trigger needs a cross-check — e.g. warn when `Surface: non-visual` is declared on a project whose `uiFilePatterns` are broad, or surface the resolved value in the gate hand-off so a mis-declaration is visible before the human commits. **Mitigation now:** the resolved `path`, `pre_execution_gate` and the `reasons[]` that produced them are printed in the gate-1 hand-off, so a wrong turn is legible at the moment it matters. A missing `Surface` line with `role` unset fails to **classic** — the status-quo human gate — not to prototype-first.
+
+**A6. Phase 2's behavior cannot be dogfooded in this repo.**
+**Confidence:** HIGH — this is a known limitation, not a risk. **Why:** §12 already says it; flow is `platform: library` with `uiFilePatterns` scoped to four files, so its own diffs never clear the trigger. **Consequence to hold:** every behavioral claim in this PR is pinned by fixtures only. The first real exercise is a consumer UI project, which is also where A2 gets tested against reality. Stated in the history entry rather than left to be discovered.
+
+---
+
+### 7. Risks
+
+- **The biggest risk is scope, not correctness.** Phase 2 is the largest of the four phases and touches the loop's most-referenced prose. The two mitigations are the no-renumber call (§2.1) and the three-file gate-language join check.
+- **Ephemeral prototype storage.** `.flow/` is gitignored, so an approved prototype does not survive workspace loss. Accepted for now (iteration is the point, and six rounds of churn should not be six commits), documented as an honest limitation, and filed to the roadmap as "a durable home for the approved prototype." Open call 4.
+- **The frame-integrity checklist is deliberately *not* wired in as must-pass.** It is written for captured frames and demands a per-edge description; applying it to source HTML is a different activity. Referenced as an optional strengthening where a browser is available. Naming this rather than silently skipping it, because "the geometry audit" could reasonably be read as requiring it.
+
+---
+
+### 8. Open calls for the gate
+
+1. **Two adjacent FOLLOW-UPs are explicitly assigned to "whoever picks up Phase 2" — in or out?** The `lens-experience` accessibility/timing question (roadmap § D3) and the doctor `role`-has-a-consumer bridge (handoff §7). **Recommendation: in.** Both are small, both become wrong the moment this PR makes the lens and the slot load-bearing, and both were assigned to this phase by name. **Confidence: high.** Cut them if you'd rather keep the diff tight; they are independently shippable.
+2. **Two FB entries or one?** FB-0110 (prototype medium + the feasibility guard) and FB-0111 (the trigger is declared, not measured) are genuinely different rules with different "How to apply." **Recommendation: two.** **Confidence: medium** — one file named "the two decisions that unblocked Phase 2" is also defensible.
+3. **`mode: spike` routes to classic** — a visual spike is arguably *already* a prototype, so this could go the other way. **Recommendation: classic**, because spike has its own rigor and ship path and folding D1 in is a second unrequested change. **Confidence: medium-high.**
+4. **Ephemeral `.flow/` prototype storage, with a roadmap follow-up for durability** — vs adding a `prototypePath` slot now (35th). **Recommendation: ephemeral + follow-up**, per scope discipline ("if something isn't needed yet, don't create it"); no consumer has asked for a committed prototype dir. **Confidence: medium.**
+5. **The interim rule: after gate 1, the technical plan gets NO second human gate** (machine review only) until Phase 3 ships. This is the call most likely to read as reduced rigor, so it is surfaced rather than buried. **Recommendation: as stated**, now that §2.5's `gate-execute` guarantees a plan exists — it is what "the gate moves" means, and the alternative rebuilds the ceremony D1 removes. **Confidence: medium-high** (raised from medium by the BLOCKER fix). This is also the call A1's flip would overturn.
+6. **Pulling Phase 3's "a plan always exists" assertion forward into this PR (§2.5).** A deliberate scope adjustment made in response to `/flow:critique-plan`'s BLOCKER, not silent absorption — flagging it because `.claude/rules/general.md` says new scope gets surfaced, not absorbed. **Recommendation: in.** A PR that removes a gate must ship the guard for the hazard it creates; the alternative is defaulting the prototype-first arm off until Phase 3, which ships the feature dark. **Confidence: high.**
+7. **A `**Surface:** visual|non-visual` declaration joins `**Mode:**` on the brief header (§2.3).** Also a response to the critique — without it the trigger's other arm is un-pinnable judgment, which is the thing FB-0111 exists to reject. It is a second additive brief header field. **Recommendation: in.** **Confidence: high** on the need, **medium** on the spelling (one header line with a `·` separator vs two lines).
+
+
 
 ## PR — The §4.10 orchestrator skill suite: `/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`, `/flow:gate` (this branch, `conductor/track-a-410-orchestrator-skill-suite`, FB-0110, v1.45.0, AT PR [#157](https://github.com/by-dev-tools/flow/pull/157))
 
