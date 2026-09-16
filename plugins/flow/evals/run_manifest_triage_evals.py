@@ -1393,8 +1393,14 @@ def test_fence_injection() -> None:
     expect_true("the verify-build blocker survives an injected marker",
                 any(e["kind"] == "verify-build" for e in attacked), str(attacked))
 
-    # REACHABILITY — the exact prose shape already committed at dev-docs/roadmap.md,
-    # quotable verbatim into a [status-surface] finding with no attacker involved.
+    # REACHABILITY — a latent self-trigger, one docs commit from live. Stated this way
+    # deliberately: an earlier revision said the payload was "already committed, no
+    # attacker required", citing dev-docs/roadmap.md. Measured, that is wrong —
+    # [status-surface] findings quote from SCANNED CANDIDATES (CLAUDE.md, AGENTS.md,
+    # README.md, GEMINI.md, .cursorrules, .github/copilot-instructions.md), none of which
+    # carries the marker; roadmap.md is the reference the scan compares against, not a
+    # candidate. The docstring, FB-0109 and the changelog were all corrected; this comment
+    # was the one site that kept the retracted claim (general.md § Consistency flavor 2).
     quoted = parsed(body(f"a paired delimiter ({MANIFEST_OPEN} ... {MANIFEST_CLOSE}) designed to be parsed"))
     expect("a roadmap-style prose quote of BOTH markers is inert",
            kinds(quoted), ["status-surface", "verify-build"])
@@ -1405,6 +1411,18 @@ def test_fence_injection() -> None:
     # prose outside the fence must still be ignored.
     expect_true("fence scoping still WORKS — an entry-shaped line outside the fence is ignored",
                 all(e["kind"] != "security" for e in control), str(control))
+
+    # The positive above uses a SINGLE fence pair, so it only proves scoping holds when
+    # there is exactly one region. Last-close deliberately widens across a trailing pair,
+    # so assert what actually remains true there: the real blocker still survives. Without
+    # this, "fence scoping works" reads as a stronger guarantee than the parser gives.
+    trailing = parsed("\n".join([
+        f"## {MANIFEST_HEADING}", MANIFEST_OPEN,
+        "- [verify-build] gate did not pass — needs: re-run", MANIFEST_CLOSE, "",
+        "Docs: a trailing example block", MANIFEST_OPEN,
+        "- [example] quoted in prose — needs: declare", MANIFEST_CLOSE]))
+    expect_true("a trailing fence pair cannot hide the real blocker (last-close widens)",
+                any(e["kind"] == "verify-build" for e in trailing), str(trailing))
 
     # Fail-safe direction: no fences at all ⇒ whole body scanned, never a silent
     # empty parse. Degrading toward MORE blockers is the safe way for a merge gate.
@@ -1439,14 +1457,41 @@ def test_fence_injection() -> None:
     # verify-build line survives — so they never exercise a separator inside the
     # surviving line, and this stayed reachable after the extractor was fixed.
     # Found by the push-further lens on this PR.
-    for label, sep in (("FORMFEED", "\x0c"), ("NEL", "\x85"), ("LINE-SEP", "\u2028"),
-                       ("VTAB", "\x0b"), ("PARA-SEP", "\u2029")):
+    for label, sep in (("FORMFEED", "\x0c"), ("VTAB", "\x0b"), ("FS", "\x1c"),
+                       ("GS", "\x1d"), ("RS", "\x1e"), ("NEL", "\x85"),
+                       ("LINE-SEP", "\u2028"), ("PARA-SEP", "\u2029")):
         got = parsed("\n".join([
             f"## {MANIFEST_HEADING}", MANIFEST_OPEN,
             "- [status-surface] ordinary — needs: declare",
             f"- [verify-build] gate{sep}did not pass — needs: re-run", MANIFEST_CLOSE]))
         expect_true(f"an entry whose own text carries {label} is not dropped",
                     any(e["kind"] == "verify-build" for e in got), f"{label}: {got}")
+
+    # (a3) The INVERSE of (a2), and the direction the first fix got backwards.
+    # (a2) protects an entry whose own text carries a separator; it is satisfied by
+    # split("\n") alone. But two entries JOINED by that same separator are then read
+    # as ONE physical line: _LINE_RE matches the first and swallows the second, so the
+    # [verify-build] blocker is erased — fewer entries, the unsafe direction, introduced
+    # by the fix itself. Worse than a drop: the survivor absorbs the victim's `needs`
+    # verb, which is the field classify() derives class and waivable from.
+    #
+    # (a2) and (a3) cannot both pass under a SINGLE split — that is the point of the
+    # pair, and why parse_entries takes the union of both line definitions. Deleting
+    # either case makes the other satisfiable by a one-line revert.
+    # RED against: parse_entries using either split alone.
+    # Found by /flow:staff-review's staff-engineer lens, measured against this tree.
+    for label, sep in (("FORMFEED", "\x0c"), ("VTAB", "\x0b"), ("FS", "\x1c"),
+                       ("GS", "\x1d"), ("RS", "\x1e"), ("NEL", "\x85"),
+                       ("LINE-SEP", "\u2028"), ("PARA-SEP", "\u2029"), ("CR", "\r")):
+        got = parsed("\n".join([
+            f"## {MANIFEST_HEADING}", MANIFEST_OPEN,
+            f"- [status-surface] a — needs: declare{sep}"
+            f"- [verify-build] gate did not pass — needs: re-run", MANIFEST_CLOSE]))
+        expect_true(f"two entries joined by {label} do not swallow the verify-build blocker",
+                    any(e["kind"] == "verify-build" for e in got), f"{label}: {got}")
+        expect_true(f"the entry joined by {label} keeps its own needs verb, unforged",
+                    all(e["needs"] == "re-run" for e in got if e["kind"] == "verify-build"),
+                    f"{label}: {got}")
 
     # (b) LAST close, not first. A doc-style example quoting both markers on their
     # own lines ABOVE the real manifest captured the region under first-close, and
@@ -1468,9 +1513,70 @@ def test_fence_injection() -> None:
     expect("an unclosed fence falls back to scanning the whole body",
            kinds(unclosed), ["status-surface", "verify-build"])
 
+    # (e) EMITTER <-> READER round trip. The whole fence scan rests on a PRODUCER
+    # property the docstring names as load-bearing — "a fence counts only when it is
+    # ALONE ON ITS OWN LINE, which is exactly how the emitter writes it". Nothing
+    # asserted that. Every body above is hand-built by this eval, so if `render_manifest`
+    # ever stopped putting each fence on its own line, the reader would silently fall
+    # back to whole-body scanning and every case above would stay green. That is a
+    # contract split across two functions with nothing checking the join — the FB-0010
+    # fan-out shape, and the positive pairing general.md rule 3 asks for, one layer out
+    # on the producer. Found by /flow:staff-review's push-further lens.
+    # RED against: render_manifest emitting either fence inline with other text.
+    rendered = _m.render_manifest({"residual": [
+        {"kind": "verify-build", "finding": "gate did not pass", "needs": "re-run",
+         "class": "blocked", "drafted_resolution": ""},
+        {"kind": "status-surface", "finding": "a surface drifted", "needs": "declare + fence",
+         "class": "ask", "drafted_resolution": ""},
+    ]})
+    rendered_lines = rendered.split("\n")
+    expect_true("the emitter writes the OPEN fence alone on its own line",
+                any(ln.strip() == MANIFEST_OPEN for ln in rendered_lines), rendered)
+    expect_true("the emitter writes the CLOSE fence alone on its own line",
+                any(ln.strip() == MANIFEST_CLOSE for ln in rendered_lines), rendered)
+    round_tripped = _m.parse_entries(rendered + "\n\n## Notes\n"
+                                     "- [security] prose OUTSIDE the fence — needs: fix")
+    expect("what the emitter renders, the reader parses back",
+           sorted(kinds(round_tripped)), ["status-surface", "verify-build"])
+
+    # (f) The widened region's HUMAN output must not lie. Everything above asserts machine
+    # output (`kinds(...)`); nothing rendered the block a person actually reads, which is why
+    # the generic copy claiming "A ship gate did not pass." for an unrecognized kind shipped
+    # green. A phantom entry is reachable precisely BECAUSE last-close widens, so the copy for
+    # it is this PR's responsibility, not a pre-existing wart.
+    # RED against: _means/_needs_you falling back to the generic gate copy for an unknown kind.
+    # Found by /flow:staff-review's UX lens.
+    phantom = _m.render_manifest({"residual": [
+        {"kind": "example", "finding": "quoted in prose", "needs": "declare",
+         "class": "ask", "drafted_resolution": ""}]})
+    expect_true("an unrecognized kind is NOT described as a failed ship gate",
+                "A ship gate did not pass." not in phantom, phantom)
+    expect_true("an unrecognized kind says it may be quoted text, not a real blocker",
+                "may be quoted text rather than a real blocker" in phantom, phantom)
+    # Paired positive (general.md rule 3): the two assertions above are satisfiable by
+    # deleting the generic copy outright. This forbids that — a REAL kind still gets its own
+    # specific sentence, and a real blocked gate still says so.
+    real = _m.render_manifest({"residual": [
+        {"kind": "verify-build", "finding": "gate did not pass", "needs": "re-run",
+         "class": "blocked", "drafted_resolution": ""}]})
+    expect_true("a recognized kind still renders its own specific copy",
+                "may be quoted text rather than a real blocker" not in real and len(real) > 0,
+                real)
+
     # (d) CRLF bodies (what `gh pr view` can return) still parse.
-    crlf = parsed(body("an ordinary stale claim").replace("\n", "\r\n"))
-    expect("a CRLF body parses identically", kinds(crlf), ["status-surface", "verify-build"])
+    #
+    # Called against the ENGINE directly, not through `parse --body-file`. `_read` opens
+    # in text mode with universal-newline translation, so a CRLF file is already LF by
+    # the time the parser sees it — routing this through a file asserts nothing about
+    # the `\r\n` handling it names, and passes with or without it. That is the vacuous
+    # shape this section exists to avoid; it was live here until staff-review measured
+    # it. RED against: removing the CRLF normalization in extract_manifest_region.
+    crlf_text = body("an ordinary stale claim").replace("\n", "\r\n")
+    expect("a CRLF body parses identically (engine-direct, no newline translation)",
+           kinds(_m.parse_entries(crlf_text)), ["status-surface", "verify-build"])
+    expect_true("the CRLF region is fence-scoped, not whole-body scanned",
+                all(e["kind"] != "security" for e in _m.parse_entries(crlf_text)),
+                str(_m.parse_entries(crlf_text)))
 
 
 def main() -> int:

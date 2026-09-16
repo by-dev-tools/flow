@@ -291,9 +291,12 @@ several payloads are arrival-only today and the gate would surface them all at o
 
 ### The `already-attempted` marker is a third member of the "impersonate the parser's vocabulary" family — and it MUTATES the finding (from /flow:staff-review push-further, v1.42.0)
 
-**Origin:** `/flow:staff-review` push-further lens on the FB-0108 branch. **Not fixed there** — it is a
-parse-side defect and a sibling branch owns that layer. **Surfaces when:** `parse_entries` or
-`ATTEMPTED_MARKER` is next touched, or a fourth reader of the finding text is added.
+**Origin:** `/flow:staff-review` push-further lens on the FB-0108 branch. **Still open.** The "a sibling
+branch owns that layer" pointer is spent: that branch was FB-0109/v1.44.0, it has touched `parse_entries`
+(union split), and it deliberately did **not** take this — the fence hazard and the `ATTEMPTED_MARKER`
+mutation are different defects that happen to share a function. **Surfaces when:** `ATTEMPTED_MARKER` is next
+touched, or a fourth reader of the finding text is added. Next toucher of `parse_entries` should take it
+rather than re-defer it — this is the second PR to pass through that function and leave it.
 
 `parse_entries` reads a **third** thing out of the finding by bare substring —
 `attempted = ATTEMPTED_MARKER in finding` — and then `re.sub`s it out, **rewriting** the finding.
@@ -314,7 +317,7 @@ substring test, so only text *this engine wrote* can set the flag; add a payload
 was not passed. Coordinate with the parse-side branch.
 
 
-### SAFETY: a manifest finding containing the close marker ERASES the rest of the manifest — verdict flips to READY (found by the v1.42.0 payload suite; NOT fixed there)
+### ✅ FIXED in v1.44.0 (FB-0109) — SAFETY: a manifest finding containing the close marker ERASES the rest of the manifest — verdict flips to READY (found by the v1.42.0 payload suite; not fixed there)
 
 **Origin:** payload P5 of the FB-0108 adversarial suite, run at the v1.42.0 plan gate. **Deliberately not fixed
 in v1.42.0** — it is a pre-existing defect in the *parser*, that PR's approved scope was the *input path*, and
@@ -341,12 +344,24 @@ compares against, not a scanned candidate — and none of those six currently co
 But `README.md` already discusses the not-ready manifest, so a README that gains the literal marker while
 documenting the sentinel makes the trigger live: **one ordinary docs PR, no adversary.**
 
-**Shape of a fix (not prescriptive):** the emitter and the detector already share `manifest_contract.py`, so
-the fix belongs there — either refuse to emit a finding containing either marker (loud, at `add-entry` write
-time, which is cheap now that all free text funnels through one guard), or make the region parse tolerate a
-marker inside an entry body. Refusing at write time is probably right: it fails closed, at the one chokepoint,
-before the text is ever persisted. Pair any fix with the positive that a legitimate entry still parses
-(`general.md` rule 3).
+**RESOLVED in v1.44.0 (FB-0109).** Both halves shipped, at different times and in different places:
+
+- **Write time** — v1.42.0 (FB-0108, #152) collapses newlines and defangs every structural marker in
+  `add-entry`, so text that funnels through that chokepoint can no longer carry a live marker at all.
+- **Parse time** — v1.44.0 matches both fences **line-anchored** and ends the region at the **last** close
+  (`manifest_contract._fence_bounds`), so a marker quoted mid-prose is inert. This is the half that covers a
+  body flow did not write (hand-edited on GitHub, or assembled outside `add-entry`) — which is why "refuse at
+  write time" alone, the shape this entry originally proposed, would not have been sufficient.
+
+The entry above records the *proposal* being wrong in an instructive way, so it is kept rather than deleted:
+refusing at write time fails closed only for text that passes through the guard, and the parse path exists
+precisely for text that did not. Paired positives shipped per `general.md` rule 3 (fence scoping still works;
+a recognized kind still renders its own copy; the emitter still writes each fence alone on its line).
+
+**One consequence worth carrying forward:** the obvious parse-side fix — applying the fence scan's
+`split("\n")` rule to the entry parser too — is *backwards*, and was caught only at ship review. See FB-0109
+rule 5: the two layers fail in opposite directions, so `parse_entries` takes the union of both line
+definitions. Anyone "cleaning up" that asymmetry reintroduces a blocker-erasing bug.
 
 ### `parse_entries`' field separator can be forged by a finding, truncating what the human reads (LOW — same suite, P7)
 
@@ -504,7 +519,10 @@ the *installed* copy, which is quieter than the "degrades into fallback JSON" fa
 
 **Delimiter-payload hardening (from `/flow:staff-review` + push-further on #FB-0109).** Three findings deferred from the fence-injection fix, none of them that PR's scope:
 
-- **A cross-branch residual tripwire.** `manifest_contract.extract_manifest_region`'s docstring, `FB-0109`, `changelog/v1.44.0.md` and `plan.md` all assert a fact about `add-entry`'s write-time newline collapse — which lives on the FB-0108 branch and cannot be verified from the branch that claims it. That is `general.md` § Consistency flavor 2 with the fan-out crossing a branch boundary, the one direction `git grep` cannot see. Fix: an eval that round-trips a real `\n` + bare marker and asserts the residual is **still open**, commented so that when FB-0108's collapse lands the assertion flips red and names the exact prose to delete. ~15 lines. **Value window closes when FB-0108 merges** — do it before then or not at all.
+- **A cross-branch residual tripwire — the window closed, and the predicted failure happened.** This item said four documents asserted a fact about `add-entry`'s write-time newline collapse that lived on the FB-0108 branch and could not be verified from the branch claiming it, and that the value window would close when FB-0108 merged. FB-0108 merged as **#152**, this branch rebased onto it, and all four claims became **false with no diff touching them** — caught at ship review, not by any mechanism. Recorded as FB-0109 rule 6. The tripwire as originally specified (assert the residual is *still open*) is now moot; the useful inversion is the opposite assertion — **an eval that round-trips a real `\n` + bare marker through `add-entry` and asserts the residual is CLOSED**, so that removing the write-side collapse or defang goes red and names the prose to update. That is the positive pairing `general.md` rule 3 asks for, on a claim that currently exists only as prose. ~15 lines, unclaimed.
+- **`pr-coherence.strip_fenced` splits on `splitlines()` and is exploitable in the same class — measured, reachability NOT established.** Deferred from the v1.44.0 staff-review (design-engineer lens). A body containing `U+2028` before a fence close makes `strip_fenced` return `unclosed=False`, and `test_plan_sections` then returns **only a decoy** — the real `## Test plan` with an unticked criterion is silently swallowed. CommonMark does not treat `U+2028` as a line break, so GitHub renders it as prose: the parser and the renderer disagree, which is the same defect shape as the 4-space-indent hardening already documented in that function's own docstring, and it defeats the "returns ALL matches, not the first" bypass defense stated directly below it. **Explicitly NOT the same as the `has_manifest()` residual** (which is owned by v1.42.0's write-side defang) — different function, different gate. Deliberately filed rather than fixed: asserting reachability would require knowing whether any producer can land `U+2028` in a PR body, and claiming it from a reading is the exact error FB-0109 records three times. **Surfaces when:** `pr-coherence.py` is next touched, or a producer is added that quotes external text into a PR body. First step is a measured reachability pass, not a patch.
+- **The parse output carries no signal that the fence scan widened.** Deferred from the v1.44.0 staff-review (UX lens). `parse --body-file` returns `{"entries": [...]}` and nothing distinguishing "parsed inside a clean fence pair" from "fences absent, scanned the whole body" from "open fence, no close". The fail-safe is safe but **silent**: a human seeing an entry they never declared has no sentence explaining why, and no downstream consumer (`pr-coherence.py`, `/flow:doctor`, `/flow:land`) can render one. v1.44.0 took the cheap half — an unrecognized kind now says it may be quoted text rather than claiming a ship gate failed — but that is copy, not signal. Proposal: a `scope` field (`"fenced" | "unclosed" | "absent"`) with `render_manifest` emitting one line when it is not `"fenced"`. Deferred because it changes the parse contract and its three consumers, which is wider than the one function v1.44.0 scoped itself to. Bundle with the `delimiter_payloads.py` extraction below — same horizon, same surface.
+- **`extract_manifest_region`'s return contract is asymmetric, which forces its consumer to re-split.** Deferred from the v1.44.0 staff-review (design-engineer lens). It returns *normalized* text on the fences-found path and the *raw* `text` on the fences-absent path, so `parse_entries` must renormalize — and both files now hand-roll their own line split with a paragraph of comment at each site. The obvious cleanup (one shared `_split_lines`) is **wrong as stated**, because v1.44.0 established that the two layers deliberately want opposite line definitions; a shared splitter would re-imply a single contract and invite exactly the regression that was just fixed. The honest version is to normalize on **both** return paths and name the two splitters distinctly (`_split_fence_scan` / the parser's union), so the contrast is legible rather than looking like drift. Low priority, easy to get wrong.
 - **`evals/fixtures/delimiter_payloads.py` + a fourth Consistency flavor.** The eight-boundary payload table currently lives inside one test function; instance #4 of this class will re-derive it or won't. Extract `hostile_variants(marker)` (marker mid-line, each of the eight `splitlines()` boundaries, CRLF, doubled fence pair above and below) and adopt the convention that **any reader of a machine-readable region flow delimits must run it against its own marker**. Pair with `general.md` § Consistency **flavor 4 — "Delimiter satisfiable by payload"**: a delimiter that can legally appear inside its own payload is not a delimiter; the answer is an anchor (line-anchored, length-prefixed, escaped), never a longer delimiter — verified against the payload set, not against a reading of the code. Dev-infra + eval surface, not a plugin artifact.
 - **`# RED against:` tags on regression assertions.** Every regression assertion names the single-hunk revert that makes it fail; if you cannot name one, the test is not isolating a property. This PR discovered the need the expensive way — its first eval revision went green against the broken build because a *second* fix independently rescued the payload shape, and a later revision hit the same trap again one layer down. The prose warning is already written into the eval; promoting it to a named tag is the difference between a lesson and a habit.
 

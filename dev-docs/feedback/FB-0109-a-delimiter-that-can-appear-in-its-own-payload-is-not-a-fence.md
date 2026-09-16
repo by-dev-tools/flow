@@ -30,8 +30,13 @@
      this fix used `str.splitlines()` and asserted — in the docstring, the changelog, the FB entry
      and the plan — that a newline was the **only** remaining residual. A staff-engineer review
      refuted it by measurement: `splitlines()` breaks on eight further code points, and all eight
-     still erased the blocker. The sibling detector `pr-coherence.py` already split on `\n`; the fix
-     had diverged from an in-repo precedent that was correct.
+     still erased the blocker.
+
+     The *correction* then shipped its own reading. It said the sibling detector
+     `pr-coherence.py` "already split on `\n`", so the fix had diverged from a correct in-repo
+     precedent. Measured, that module is **mixed**: one `split("\n")` site and two
+     `splitlines()` sites. A generalization drawn from one of three call sites, inside the very
+     entry whose headline rule forbids exactly that. Two readings, one paragraph apart.
 
      Note the shape of the error, because it is the interesting part. The claim was not sloppy —
      it named a specific residual and routed it to a specific owner. It was *stated from reading
@@ -77,7 +82,41 @@
      the field next to the load-bearing one produces a confident, wrong, and cheap-to-believe
      answer.**
 
-- **Applies to:** `plugins/flow/skills/ship/lib/manifest_contract.py` (fixed here);
+  5. **The same hazard at two layers can want OPPOSITE fixes, and "be consistent" is the
+     trap.** After the fence scan was fixed to `split("\n")`, the consumer six lines downstream
+     (`parse_entries`) was changed to match it — consistency, and backwards. The fence scan
+     wants the NARROWEST line definition, because the fewer things count as a fence the wider
+     the region and the more entries survive. The entry parser wants the WIDEST, because the
+     fewer things count as a line the fewer blockers it finds. Measured, each single split
+     erases a live `[verify-build]` blocker in the shape the other one handles:
+     `splitlines()` alone fragments an entry whose own text carries one of the eight code
+     points; `split("\n")` alone lets two entries *joined* by one of them be read as a single
+     line, where the first swallows the second **and absorbs its `needs` verb** — the field
+     `classify()` derives class and waivability from. The answer was the union of both,
+     deduped, which is a superset of each by construction rather than by test coverage.
+
+     The generalizable form: **before copying a fix from one layer to its neighbour, ask which
+     direction each layer fails in.** Two layers of one mechanism steering toward the same
+     safety property ("more blockers, never fewer") can need opposite implementations of the
+     same predicate. Uniformity looked like rigor and was the bug.
+
+  6. **A cross-branch claim goes stale without an edit, and `git grep` cannot see it.** Four
+     documents asserted "there is no write-time layer on this branch". FB-0108 merged as #152,
+     this branch rebased onto it, and all four became false with no diff touching them. Nothing
+     in the repo could detect it, because the contradiction spanned a branch boundary. Measured
+     after the rebase: `add-entry` now collapses the newline and defangs the marker, so the
+     residual is closed for text it writes and open only for bodies composed outside it.
+     **At every rebase, re-verify the claims that named another branch as an owner** — they are
+     the only assertions that can change truth value without a change to the file.
+
+  7. **A mutation that does not compile is a silent pass.** Re-measuring this entry's own
+     failure counts, the first harness applied mutations to a `.git`-less copy and produced a
+     `SyntaxError` in one variant; the eval crashed before its summary line, and the harness
+     scored it **zero failures** — indistinguishable from "the test suite tolerates the bug".
+     Every mutant must be compiled before its count is believed.
+
+- **Applies to:** `plugins/flow/skills/ship/lib/manifest_contract.py` and
+  `manifest-triage.py::parse_entries` (both fixed here);
   `pr-coherence.py::has_manifest`'s unanchored match on the third token (owned by the FB-0108
   branch, write-side defang); FB-0108's
   write-time half; any future machine-readable region flow delimits in human-editable text — the

@@ -2,9 +2,12 @@
 
 ## Current Focus
 
-**▶ EXECUTED, shipping (this branch, `fix-manifest-fence-injection`, FB-0109, v1.44.0): SAFETY — a manifest entry can no longer close the manifest fence.** 
+**▶ EXECUTED, shipping (this branch, `conductor/ship-fb-0109-manifest-fence-injection`, FB-0109, v1.44.0): SAFETY — a manifest entry can no longer close the manifest fence.**
 
-**▶ STATE AS OF 2026-09-15 — `main` is v1.42.0 @ `6efaad3`; #152 merged (FB-0108, the write-side half); #150 and #151 open; orchestrator seat rotated (succession 3).**Read this block first; everything below it is per-branch narrative from work that has since merged,
+
+**▶ STATE AS OF 2026-09-16 — `main` is v1.43.0 @ `32b27d1`; #150 (FB-0107, v1.43.0), #151 (harness-audit) and #152 (FB-0108, v1.42.0, the write-side half) are all merged; **zero open PRs**; orchestrator seat rotated (succession 3).**
+
+Read this block first; everything below it is per-branch narrative from work that has since merged,
 kept for the reasoning but **not** a statement of what is active. (That residue is itself the
 FB-0102 problem — `plan.md` is edited in place, so #146's fragmentation deliberately did not touch
 it, and stale "Active (this branch)" headers accumulate. Cleaning it is unclaimed work, not this
@@ -98,21 +101,25 @@ pass's scope.)
 
 ## PR — manifest fence injection (`fix-manifest-fence-injection`, FB-0109, v1.44.0)
 
-**Mode:** feature (bugfix on shipped plugin surface). **Base:** `origin/main` @ `a156228`.
-**Version/FB re-derived across every remote head, not just `main`** — FB high-water FB-0108 and
-changelog high-water v1.42.0 both sit on the FB-0108 branch, and v1.43.0 is claimed by the
-version-honesty branch, so this takes **FB-0109 / v1.44.0**. Claimed mechanically (the FB file and
+**Mode:** feature (bugfix on shipped plugin surface). **Base:** rebased onto `origin/main` @ `32b27d1` (#151), which carries v1.43.0 and FB-0108.
+**Version/FB re-derived at each rebase across every remote head, not just `main`** — and re-swept
+again on 2026-09-16 after #150/#151/#152 all merged. `main` now carries changelog high-water
+**v1.43.0** and FB high-water **FB-0108**, with **zero open PRs**, so **FB-0109 / v1.44.0** are
+free and unchanged from the original claim. Claimed mechanically (the FB file and
 `changelog/v1.44.0.md` are pushed), not in prose — FB-0103.
 
 **Scope — in:** `manifest_contract.py` (line-anchored fences + a `_fence_bounds` helper);
-**`manifest-triage.py`'s `parse_entries`**, which re-split the fixed region with the very API the
-fix forbids — same erasure, one layer down, found by the push-further lens; a `[fence-injection]`
-section in `run_manifest_triage_evals.py`; FB-0109; changelog; version bump ×3; history entry.
+**`manifest-triage.py`'s `parse_entries`**, which re-split the fixed region and then, in the first
+fix attempt, re-broke it in the OPPOSITE direction — now the union of both line definitions
+(staff-review BLOCKER); the unknown-kind render copy, since the widened region is what makes a
+phantom entry reachable at all (UX lens); a `[fence-injection]` section in
+`run_manifest_triage_evals.py`; FB-0109; changelog; version bump ×3; history entry.
 
 **Scope — out, named:** the **write-time rejection** of a marker-bearing finding. It belongs in
-`_read_text_arg`, which the FB-0108 branch is actively rewriting; doing it here guarantees a conflict
-in one function across two PRs. Flagged to that branch to add at rebase, where it is three lines in
-code it owns. Also out: any change to the fence *literals* or to the emitter — the producer already
+`_read_text_arg`, which FB-0108 owned; that branch has since **merged as #152**, so the write-time
+collapse + defang are now in this tree below us — verified end to end at this rebase rather than
+assumed. Nothing left to do here; the residual statement was rewritten from "will be closed" to
+what is actually true. Also out: any change to the fence *literals* or to the emitter — the producer already
 had the property this fix relies on.
 
 **Spec-walk:**
@@ -142,12 +149,49 @@ had the property this fix relies on.
       separator around the *marker* and assert a clean `[verify-build]` line survives, so they
       never exercised this. → verify: `[fence-injection]` (a2) cases; mutation-isolated at 5
       failures against reverting `parse_entries` alone.
-- [x] **Mutation-tested against three builds** — 12 failures on pre-fix `main`, 8 on a
-      `splitlines()`-only build, green on the fix (FB-0104). → verify: ran all three.
+- [x] **Mutation-tested against six builds**, re-measured against the FINAL eval: 17 failures on
+      pre-fix `main`, 13 with `splitlines()` at both layers, 8 with `split("\n")` alone in
+      `parse_entries`, 5 with `splitlines()` alone there, 1 with first-close, 0 on the fix
+      (FB-0104). The earlier "12 / 8 / 5" was measured against a smaller revision of the eval and
+      never re-measured; every mutant is now compiled before its count is believed, because a
+      `SyntaxError` mutant scores zero failures. → verify: ran all six.
 - [x] The test reads the fence literals from the **engine's own module**, so a marker rename cannot
       leave it green against a stale copy (FB-0010 clause 2).
 - [x] `run_manifest_triage_evals.py` and `run_pr_coherence_evals.py` both green.
-- [x] Version sweep clean: no surviving `"version": "1.41.0"` declaration; three sites at 1.44.0.
+- [x] Version sweep clean: no surviving `"version": "1.43.0"` declaration (the version this PR
+      supersedes — the criterion said 1.41.0, copied from a sibling branch's spec-walk); three live
+      sites at 1.44.0, and `.claude-plugin/marketplace.json` parses as JSON.
+      → verify: `git grep -nE '"version": "1\.4[0-3]\.0"'` returns only frozen provenance fixtures
+      and history entries; `python3 -c 'import json;json.load(open(...))'` on both manifests.
+
+- [x] **Two entries JOINED by one of the eight boundaries do not collapse into one, and the
+      second's `[verify-build]` blocker is not swallowed.** This is the INVERSE of the criterion
+      above, and the two cannot both hold under a single split — hence the union in
+      `parse_entries`. The surviving entry must also keep its own `needs` verb unforged, since
+      `classify()` derives class and waivability from it. → verify: `[fence-injection]` (a3)
+      cases, all nine separators, both assertions; mutation-isolated at 8 failures against
+      `split("\n")` alone and 5 against `splitlines()` alone.
+- [x] **The emitter's output round-trips through the reader.** The fence scan's correctness rests
+      on a producer property (each fence alone on its own line) that nothing asserted; if
+      `render_manifest` drifted, the reader would silently fall back to whole-body scanning and
+      every other case here would stay green. → verify: `[fence-injection]` (e), which asserts
+      both fences are alone on their line AND that the rendered entries parse back; goes red
+      against an emitter that inlines a fence.
+- [x] **A trailing fence pair cannot hide the real blocker.** The paired positive uses a single
+      fence pair, so it only proved scoping under one region; last-close deliberately widens
+      across a trailing pair. → verify: `[fence-injection]` trailing case.
+- [x] **The widened region does not make the PR body lie to the human.** An entry whose kind flow
+      does not recognize is reachable only through widening, and was rendered as "A ship gate did
+      not pass." → verify: `[fence-injection]` (f), plus its paired positive that a recognized
+      kind still renders its own specific copy.
+- [x] **The CRLF criterion is not vacuous.** Routed through `parse --body-file` it asserted
+      nothing — `_read` translates newlines before the parser sees them, so it passed with or
+      without the normalization it named. → verify: driven against the engine directly.
+- [x] **Residual claims re-verified against the rebased tree, not against a sibling branch.**
+      FB-0108 merged as #152 below this branch, so "there is no write-time layer" became false in
+      four documents with no diff touching them. → verify: measured `add-entry` end to end — a
+      finding of `"drifted\n<close-marker>\ntail"` emits one line with the marker inert and a
+      following `[verify-build]` blocker still parses; all four documents rewritten.
 
 **Assumptions.** **A1 — the emitter always writes each fence alone on its own line. HIGH**, and
 mechanically so: `manifest-triage.py` builds the block as a list of lines with each fence as its own

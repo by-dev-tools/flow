@@ -112,17 +112,44 @@ def extract_manifest_region(text: str) -> str:
 
     **Honest boundary.** Line-anchoring closes the mid-line case, which is the
     reachable one: a marker quoted inside prose is never alone on its line. It
-    does NOT close a finding that embeds a real `\n` followed by a bare marker —
-    that half is closed at write time, by the newline collapse the FB-0108 branch
-    adds to `add-entry`; there is no write-time layer on *this* branch yet, so
-    say "will be closed", not "is closed".
+    does NOT by itself close a finding that embeds a real `\n` followed by a bare
+    marker. That half is closed at WRITE time by `add-entry`'s newline collapse
+    and marker defang (FB-0108, v1.42.0), which is merged and sits below this
+    module in the same tree — measured end to end, not inferred from the sibling
+    branch: a finding of `"drifted\n<close-marker>\ntail"` written through
+    `add-entry` emits one physical line with the marker rewritten to an inert
+    token, and a following `[verify-build]` blocker still parses.
 
-    An earlier revision of this docstring claimed a newline was the **only**
-    residual. That was false and a staff-engineer review caught it: `splitlines()`
-    treats eight further code points as line boundaries, and all eight defeated
-    the fix. Hence `split("\n")` above. The lesson is the one this repo keeps
-    re-learning — a boundary claim is only as narrow as the API you used to
-    compute it, and "only X remains" is a measurement, not a reading.
+    So the two layers together cover the reachable paths, with one honest gap:
+    a body that did NOT come through `add-entry` — hand-edited on GitHub, or
+    assembled from sections the write guard never touched. For those, line
+    anchoring is the only layer, and a real newline before a bare marker still
+    ends the region early. Naming that precisely is the point; "closed" without
+    the qualifier would be the same overclaim this entry exists to record.
+
+    Two earlier revisions of this docstring got the residual wrong, in the same
+    direction, and both were caught by review rather than by the author:
+
+    1. It claimed a newline was the **only** residual. `splitlines()` treats eight
+       further code points as line boundaries, and all eight defeated the fix.
+       Hence `split("\n")` above.
+    2. It claimed `pr-coherence.py` "already split on `\n`", i.e. that this had
+       diverged from a correct in-repo precedent. Measured, that module is MIXED:
+       one `split("\n")` site and two `splitlines()` sites. The generalization
+       was drawn from one of three call sites.
+
+    The lesson is the one this repo keeps re-learning — a boundary claim is only
+    as narrow as the API you used to compute it, and "only X remains" is a
+    measurement, not a reading. Both revisions above were readings.
+
+    **The consumer wants the OPPOSITE rule, and that is not drift.** `split("\n")`
+    is right *here* because a narrower line definition finds FEWER fences, which
+    widens the region. It is wrong in `parse_entries`, where a narrower line
+    definition finds FEWER entries — two entries joined by one of the eight code
+    points are read as a single line and the second is swallowed, blocker and all.
+    That parser therefore takes the UNION of both splits. Same mechanism, opposite
+    direction, because both layers are steering toward "more blockers, never
+    fewer"; see the comment there before making the two "consistent."
 
     **Failure direction is deliberate.** If the fences are not found
     line-anchored, this returns the whole text — the same as "fences absent" —
@@ -133,9 +160,13 @@ def extract_manifest_region(text: str) -> str:
     # boundaries (\x0b \x0c \x1c \x1d \x1e \x85 \u2028 \u2029), so a finding
     # carrying any of them around a bare marker still truncated the region and
     # still erased a live [verify-build] blocker — measured, all eight. No
-    # "newline collapse" at write time strips \u2028 or \x0c, so both layers
-    # missed them. `pr-coherence.py` already had this right; this diverged from
-    # an in-repo precedent that had the property.
+    # "newline collapse" at write time strips \u2028 or \x0c, so the write-side
+    # NEWLINE collapse alone missed them (its sibling marker-defang does cover
+    # them, which is why the merged pair holds end to end).
+    #
+    # NOTE the asymmetry with `parse_entries`, which takes the UNION of this split
+    # and `splitlines()`. Narrow is safe HERE (fewer fences found => wider region)
+    # and unsafe THERE (fewer lines found => fewer blockers). Do not "unify" them.
     lines = text.replace("\r\n", "\n").split("\n")
     open_i, close_i = _fence_bounds(lines)
     if open_i is not None and close_i is not None:

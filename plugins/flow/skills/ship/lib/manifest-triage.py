@@ -305,11 +305,30 @@ def _copy(kind: str, field: str, fallback: str = "") -> str:
     return KIND_COPY.get(kind, {}).get(field, fallback)
 
 
+# An entry whose kind is not in KIND_COPY reaches the human ONLY through a widened region:
+# the fences were absent, unclosed, or a second pair pushed the last-close boundary out, so the
+# parser scanned text flow did not emit. That widening is deliberate and safe for a GATE (more
+# candidate blockers, never fewer -- FB-0109), but it means the reader can be shown a line
+# lifted out of ordinary prose. The generic copy asserted "A ship gate did not pass," which for
+# those entries is simply false: no gate ran, and the human was asked to adjudicate an item with
+# no origin and a one-word waive carrying no stated cost. Say what is actually known instead.
+_UNKNOWN_KIND_MEANS = (
+    "I found this line inside the manifest region but I don't recognize its kind, so I can't "
+    "tell you which gate it came from. It may be quoted text rather than a real blocker."
+)
+_UNKNOWN_KIND_NEEDS_YOU = (
+    "A look at the line itself: confirm whether it is a real blocker or prose that was swept "
+    "in, then tell me which."
+)
+
+
 def _needs_you(kind: str, cls: str) -> str:
     if cls == "blocked":
         blocked = _copy(kind, "blocked_needs_you")
         if blocked:
             return blocked
+    if kind not in KIND_COPY:
+        return _UNKNOWN_KIND_NEEDS_YOU
     return _copy(kind, "needs_you", "A decision on how to proceed.")
 
 
@@ -318,6 +337,8 @@ def _means(kind: str, cls: str) -> str:
         blocked = _copy(kind, "blocked_means")
         if blocked:
             return blocked
+    if kind not in KIND_COPY:
+        return _UNKNOWN_KIND_MEANS
     return _copy(kind, "means", "A ship gate did not pass.")
 
 
@@ -420,34 +441,69 @@ def parse_entries(body: str) -> list[dict[str, Any]]:
     text = extract_manifest_region(body or "")
 
     entries: list[dict[str, Any]] = []
-    # split("\n"), NOT splitlines() — same reason as manifest_contract's fence scan,
-    # and this is the layer that call sits directly above. splitlines() breaks on eight
-    # further code points (\x0b \x0c \x1c \x1d \x1e \x85 \u2028 \u2029), so an entry
-    # whose FINDING TEXT carried any of them was split into two fragments, neither
-    # matched _LINE_RE, and the entry was silently dropped — erasing a live
-    # [verify-build] blocker exactly like the fence bug upstream. Fixing the extractor
-    # alone left this reachable: the region was clean and its consumer re-broke it.
-    for raw in text.replace("\r\n", "\n").split("\n"):
-        m = _LINE_RE.match(raw)
-        if not m:
-            continue
-        kind = m.group("kind").strip()
-        finding = m.group("finding").strip()
-        # A rendered entry carries its already-attempted marker inline; strip it
-        # back out of the finding so the fingerprint is stable across renders.
-        attempted = ATTEMPTED_MARKER in finding
-        finding = re.sub(r"\s*\(" + ATTEMPTED_MARKER + r"[^)]*\)\s*", " ", finding).strip()
-        entries.append(
-            {
-                "kind": kind,
-                "finding": finding,
-                "needs": (m.group("needs") or "").strip(),
-                "confidence": (m.group("confidence") or "").strip(),
-                "drafted_resolution": (m.group("resolution") or "").strip(),
-                "already_attempted": attempted,
-                "fingerprint": _fingerprint(kind, finding),
-            }
-        )
+    seen: set[str] = set()
+
+    # UNION of both line definitions, deduped by fingerprint -- NOT either one alone.
+    #
+    # The two layers of this mechanism want OPPOSITE line definitions, and that is the
+    # whole subtlety. `extract_manifest_region` wants the NARROWEST (`split("\n")`): the
+    # fewer things count as a fence, the wider the region, the more entries survive. This
+    # parser wants the WIDEST: the more things count as a line, the more entries it finds.
+    # Applying the extractor's rule here -- which the first version of this fix did --
+    # looks consistent and is backwards, because "fewer lines" means "fewer blockers".
+    #
+    # Measured, both directions erase a live [verify-build] blocker, so neither split is
+    # safe alone (the eight code points splitlines() adds, plus a lone CR):
+    #   splitlines() alone -- an entry whose OWN finding text carries one of them is split
+    #     into two fragments, neither matches _LINE_RE, and the entry is silently DROPPED.
+    #   split("\n") alone -- two entries JOINED by one of them are read as a single
+    #     physical line, so _LINE_RE matches the first and swallows the second. Worse than
+    #     a drop: the survivor absorbs the victim's ` -- needs:` verb, and `needs` is the
+    #     field `classify()` derives `class` and `waivable` from, so a dropped blocker also
+    #     forges the field that decides whether a human ever sees it.
+    #
+    # The union can only ever widen: pass 1 keeps every entry the pre-fix parser found, and
+    # pass 2 adds any the narrow split finds that the wide one missed. So the result is a
+    # superset of BOTH prior behaviours by construction rather than by test coverage --
+    # the fail-safe direction this whole mechanism rests on (more candidate entries, never
+    # fewer). Note this is the opposite resolution to `_collapse_newlines`, which uses the
+    # WIDER splitlines() on the write side: collapsing more is safe there for the same
+    # reason parsing more is safe here. The two layers legitimately differ; they have not
+    # drifted.
+    #
+    # Order: splitlines() first, so a hostile joined pair renders as its two real entries
+    # before the merged artefact rather than after it.
+    wide = text.splitlines()
+    narrow = text.replace("\r\n", "\n").split("\n")
+    for is_second, lines in ((False, wide), (True, narrow)):
+        for raw in lines:
+            m = _LINE_RE.match(raw)
+            if not m:
+                continue
+            kind = m.group("kind").strip()
+            finding = m.group("finding").strip()
+            # A rendered entry carries its already-attempted marker inline; strip it
+            # back out of the finding so the fingerprint is stable across renders.
+            attempted = ATTEMPTED_MARKER in finding
+            finding = re.sub(r"\s*\(" + ATTEMPTED_MARKER + r"[^)]*\)\s*", " ", finding).strip()
+            fp = _fingerprint(kind, finding)
+            if is_second and fp in seen:
+                # The second pass contributes only what the first missed. Pass 1 is kept
+                # WHOLE -- including a genuinely duplicated line -- so the union is never
+                # narrower than the pre-fix parser on ordinary input.
+                continue
+            seen.add(fp)
+            entries.append(
+                {
+                    "kind": kind,
+                    "finding": finding,
+                    "needs": (m.group("needs") or "").strip(),
+                    "confidence": (m.group("confidence") or "").strip(),
+                    "drafted_resolution": (m.group("resolution") or "").strip(),
+                    "already_attempted": attempted,
+                    "fingerprint": fp,
+                }
+            )
     return entries
 
 
@@ -805,8 +861,15 @@ def _read(path: str) -> str:
 # verbatim) appended ONE physical line, then parsed to ZERO entries, and `classify`
 # returned verdict READY over a live [verify-build] blocker -- the exact failure-open this
 # function exists to prevent, reached through the surviving hole. Using splitlines() here
-# means "what is a line break" has ONE source of truth shared with the parser, and the two
-# cannot drift.
+# means this collapses a SUPERSET of what the parser will treat as a line break, which is the
+# safe direction on the write side: every break the parser could honour is already gone.
+#
+# It deliberately no longer matches the parser's own split, and that is not drift (FB-0109).
+# `parse_entries` takes the UNION of `splitlines()` and `split("\n")`, because the two layers
+# want opposite line definitions: collapsing MORE is safe when writing (fewer breaks survive
+# into a finding), and splitting MORE is safe when reading (more candidate blockers). An
+# earlier revision of this comment asserted the two shared one definition and "cannot drift";
+# that invariant was inverted, and a future author reasoning from it would reintroduce the bug.
 #
 # Deliberately NOT a general whitespace collapse: a tab or a double space inside a finding
 # passes through byte-identically, exactly as the old argv path did. The invariant is "one
@@ -818,11 +881,16 @@ def _collapse_newlines(text: str) -> str:
 
 # The consumer's grammar has THREE structural layers, not one. `_collapse_newlines` defangs the
 # line break (derived from `splitlines()`, the parser's own definition). The other two are the
-# region fences: `extract_manifest_region` slices between the FIRST open marker and the FIRST
-# close marker, and the same function parses both the manifest file and a PR body. So a finding
-# carrying those literals erases every entry after it -- measured: a `[coverage]` entry whose
-# text held both markers, followed by a live `[verify-build]` blocker, classified to verdict
-# READY with ZERO entries, and §7a.6 would open a NON-DRAFT PR. `pr-coherence` agreed (no
+# region fences. HISTORICAL, and fixed in v1.44.0 (FB-0109): `extract_manifest_region` used to
+# slice between the FIRST open marker and the FIRST close marker, as bare substrings, and the
+# same function parses both the manifest file and a PR body. So a finding carrying those
+# literals erased every entry after it -- measured: a `[coverage]` entry whose text held both
+# markers, followed by a live `[verify-build]` blocker, classified to verdict READY with ZERO
+# entries, and §7a.6 would open a NON-DRAFT PR.
+# It now matches both fences LINE-ANCHORED and ends the region at the LAST close
+# (`manifest_contract._fence_bounds`), so a marker quoted mid-prose is inert. This write-side
+# defang is still worth keeping: it is the layer that covers a finding carrying a real newline
+# before a bare marker, which line anchoring alone cannot reach. `pr-coherence` agreed (no
 # markers in the body, not a draft) and the FB-0067 read-back keys on that same verdict, so
 # every gate reported green. Worse, payload P5 already FIRED this exact input and asserted only
 # "exits 0" + "text arrives intact" -- the hole was certified safe by a test written against it.
@@ -832,9 +900,10 @@ def _collapse_newlines(text: str) -> str:
 # exiting 2 there would abort the ship. Markers come from `manifest_contract`, so the emitter
 # and the detector cannot drift apart.
 #
-# SCOPE: this is the WRITE-side half only. The parse-side fix (line-anchored fence matching, so
-# a marker mid-line cannot terminate the region) is owned by a sibling branch; this guard closes
-# the variant that layer cannot reach, and neither is sufficient alone.
+# SCOPE: this is the WRITE-side half only. The parse-side fix -- line-anchored fence matching
+# in `manifest_contract._fence_bounds`, plus the union split in `parse_entries` above -- landed
+# in v1.44.0 (FB-0109) and is now in this same tree; this guard closes the variant that layer
+# cannot reach (a real newline before a bare marker), and neither is sufficient alone.
 # DISTINCT, self-describing inert forms -- not one collapsed token. A single `[flow-fence]`
 # for every marker was lossy and wrong: open and close became the SAME string (so "the text
 # between the markers" was unrecoverable), and the heading -- not a region fence at all --

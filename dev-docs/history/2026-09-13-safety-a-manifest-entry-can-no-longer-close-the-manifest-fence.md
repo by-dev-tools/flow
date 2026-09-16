@@ -1,12 +1,21 @@
 # SAFETY: a manifest entry can no longer close the manifest fence (FB-0109, v1.44.0)
 
-**Date:** 2026-09-13 · **Branch:** `fix-manifest-fence-injection` · **Scope:** bugfix (shipped plugin surface)
+**Date:** 2026-09-13 (revised 2026-09-16 at ship) · **Branch:** `conductor/ship-fb-0109-manifest-fence-injection` · **Commit/PR:** [this range — PR pending push] · **Scope:** bugfix, SAFETY (shipped plugin surface: merge-gate parser)
 
 ## What changed
 
-`extract_manifest_region` in `plugins/flow/skills/ship/lib/manifest_contract.py` now matches both
-manifest fences **line-anchored** instead of as bare substrings. One function, plus a
-`[fence-injection]` section in `run_manifest_triage_evals.py`.
+Two functions, one layer apart, plus a `[fence-injection]` section in
+`run_manifest_triage_evals.py`:
+
+- `extract_manifest_region` (`plugins/flow/skills/ship/lib/manifest_contract.py`) matches both
+  manifest fences **line-anchored** instead of as bare substrings, and ends the region at the
+  **last** close rather than the first.
+- `parse_entries` (`plugins/flow/skills/ship/lib/manifest-triage.py`) consumes that region and
+  re-splits it. It now takes the **union** of `str.splitlines()` and `split("\n")`, deduped by
+  fingerprint.
+
+Also: an entry whose kind flow does not recognize — only reachable via the widened region — no
+longer renders copy claiming a ship gate failed.
 
 ## Why — the defect, measured not reasoned
 
@@ -37,25 +46,43 @@ alone on its own line, so the producer needed no change at all — the property 
 was reading it. A longer delimiter would have been the same bug with a lower probability, which is
 [#148](https://github.com/by-dev-tools/flow/pull/148)'s refuted heredoc all over again.
 
-**Only the parse half, deliberately.** The write-time half — rejecting a finding that contains a
-marker — belongs in `_read_text_arg`, the validation function the FB-0108 branch is rewriting in
-parallel. Doing it here would have guaranteed a conflict in one function across two PRs. It is
-flagged to that branch to add at rebase, where it is three lines in code that branch owns.
+**Only the parse half, deliberately.** The write-time half — defanging a finding that contains a
+marker — belongs in `_read_text_arg`, which FB-0108 was rewriting in parallel; doing it here would
+have guaranteed a conflict in one function across two PRs. That branch has since merged as
+**#152**, so the write-time half is now present in this tree rather than pending, and the two
+layers can be described together (see the residual note below).
 
 **Named residual, not an implied seal — and the first version got the residual WRONG.** The fix
 originally used `str.splitlines()` and claimed a newline was the only remaining vector, in four
 places. `/flow:staff-review`'s staff-engineer lens refuted it by measurement: `splitlines()` breaks
 on eight further code points (`\x0b \x0c \x1c \x1d \x1e \x85 \u2028 \u2029`), each of which still
 erased the `[verify-build]` blocker, and no write-time newline collapse strips `\u2028` or `\x0c`.
-Fixed to `text.replace("\r\n", "\n").split("\n")` — which is what the sibling `pr-coherence.py`
-already did, so the first version had diverged from a correct in-repo precedent.
+Fixed to `text.replace("\r\n", "\n").split("\n")`.
+
+That correction shipped alongside a second claim which was itself a reading: that
+`pr-coherence.py` "already split on `\n`", so the fix had diverged from a correct in-repo
+precedent. Measured, that module is **mixed** — one `split("\n")` site and two `splitlines()`
+sites. The generalization was drawn from one of three call sites, in the same document that names
+"only X remains is a measurement, never a reading" as its headline lesson. Corrected here and in
+the docstring.
 
 The same review caught that **first**-close was the unsafe direction: a doc-style example quoting
 both markers above the real manifest captured the region and the real entries vanished. Now
 **last**-close, which can only widen.
 
-The residual that genuinely remains is a real `\n` before a bare marker, and there is no write-time
-layer on this branch to close it — so the docs say "will be closed" by the FB-0108 branch, not "is".
+**The residual, restated after the rebase — and this is the third time on this one change that a
+claim was made by reading rather than running.** The entry above was written while FB-0108 was an
+unmerged sibling, so it said the `\n`-before-bare-marker residual had no write-time layer and the
+docs must say "will be closed". FB-0108 then merged as **#152**, this branch rebased onto it, and
+the claim became false without anyone editing it. Measured end to end on the rebased tree: a
+finding of `"drifted\n<close-marker>\ntail"` written through `add-entry` emits one physical line
+with the marker rewritten to an inert token, and a following `[verify-build]` blocker still parses.
+
+The honest statement is narrower than either version: for text written through `add-entry` the
+residual is closed by v1.42.0's collapse + defang; for a body that did NOT come through
+`add-entry` — hand-edited on GitHub, or assembled from sections the write guard never touched —
+line anchoring is the only layer and the residual stands. A cross-branch fan-out is the one
+direction `git grep` cannot see, which is exactly why it survived four documents.
 
 **Fallback direction chosen for the gate.** If the fences are not found line-anchored, the whole
 text is returned — the "fences absent" path — so the parser sees *more* candidate entries, never
@@ -64,19 +91,37 @@ fewer. A merge gate degrading toward not-ready is the safe direction.
 ## Verification
 
 - New `[fence-injection]` eval: the attack, a `roadmap.md`-style prose quote of both markers, a
-  control, and the no-fence fail-safe.
-- **Mutation-tested against three builds:** **12 failures** on pre-fix `main`, **8** on a
-  `splitlines()`-only build, green on the fix. A regression test never observed failing is a claim
-  (FB-0104).
+  control, the no-fence fail-safe, all eight separators around the marker, all eight *inside* a
+  single entry, all eight *joining* two entries, the preceding and trailing fence-pair cases, an
+  unclosed fence, a CRLF body driven against the engine directly (routed through a file it was
+  vacuous — `_read` translates newlines before the parser sees them), and an emitter↔reader round
+  trip asserting that what `render_manifest` writes, `parse_entries` reads back.
+- **Mutation-tested against six builds**, re-measured against the final eval: **17** failures on
+  pre-fix `main`, **13** with `splitlines()` at both layers, **8** with `split("\n")` alone in
+  `parse_entries`, **5** with `splitlines()` alone there, **1** with first-close instead of
+  last-close, **0** on the fix. A regression test never observed failing is a claim (FB-0104).
+
+  **The numbers in the first version of this entry were wrong** — it said 12 / 8 / 5. Those were
+  measured against an earlier, smaller revision of the eval and never re-measured after the
+  section grew, so the doc asserted a specific count that no build produced. The same fan-out
+  discipline that applies to a slot count applies to a measurement: re-run it, or do not quote it.
+  (The first re-measurement attempt was itself wrong in a way worth recording — the mutations were
+  applied to a `.git`-less copy and one of them introduced a `SyntaxError`, which the harness
+  reports as *zero failures*. A mutation that does not compile is a silent pass. The rerun compiles
+  every mutant before trusting its count.)
 - **The first revision of the eval did not catch its own bug.** Its separator cases used a body with
   a real close fence — under which the last-close rule rescues the entry independently — so they
   went green against a `splitlines()` build while *naming* the split choice. Rebuilt to use an
-  **unclosed** fence, which isolates the property; that build now yields the 8 failures above. This
-  is the "mutation survived vs mutation never applied" trap, hit and corrected in the same pass.
+  **unclosed** fence, which isolates the property. This is the "mutation survived vs mutation never
+  applied" trap, hit and corrected in the same pass — and then hit a second time, one layer down,
+  when the same section's entry-level cases passed under either split until the joined-pair case
+  was added.
 - **Paired positive** per `.claude/rules/general.md` § Consistency rule 3: every attack assertion
   above is satisfiable by deleting fence scoping entirely, so the section also asserts scoping still
   *works* — an entry-shaped line outside the fence stays ignored. Without that half, "delete the
-  fence" is a passing fix.
+  fence" is a passing fix. The same pairing was added for the unknown-kind copy (a recognized kind
+  must still render its own specific sentence) and for the emitter (each fence alone on its own
+  line), so neither is satisfiable by deletion either.
 - Fence literals are read from the engine's own module rather than retyped, so a marker rename
   cannot leave the test green against a stale copy.
 - `run_manifest_triage_evals.py` and `run_pr_coherence_evals.py` both green.
