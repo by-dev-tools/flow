@@ -301,25 +301,44 @@ DEFAULT_THEN = "I apply it, re-run the check that raised this, and mark the PR r
 BLOCKED_THEN = "Once you have done it outside this session, tell me and I re-check."
 
 
-def _copy(kind: str, field: str, fallback: str = "") -> str:
-    return KIND_COPY.get(kind, {}).get(field, fallback)
-
-
-# An entry whose kind is not in KIND_COPY reaches the human ONLY through a widened region:
+# An entry whose kind is NOT in KIND_COPY reaches the human ONLY through a widened region:
 # the fences were absent, unclosed, or a second pair pushed the last-close boundary out, so the
 # parser scanned text flow did not emit. That widening is deliberate and safe for a GATE (more
 # candidate blockers, never fewer -- FB-0109), but it means the reader can be shown a line
-# lifted out of ordinary prose. The generic copy asserted "A ship gate did not pass," which for
-# those entries is simply false: no gate ran, and the human was asked to adjudicate an item with
-# no origin and a one-word waive carrying no stated cost. Say what is actually known instead.
-_UNKNOWN_KIND_MEANS = (
-    "I found this line inside the manifest region but I don't recognize its kind, so I can't "
-    "tell you which gate it came from. It may be quoted text rather than a real blocker."
-)
-_UNKNOWN_KIND_NEEDS_YOU = (
-    "A look at the line itself: confirm whether it is a real blocker or prose that was swept "
-    "in, then tell me which."
-)
+# lifted out of ordinary prose. Every generic fallback then states something FALSE about it:
+# "A ship gate did not pass" (none ran), "re-run the check that produced this entry" (nothing
+# produced it), and a waive offered with no cost attached.
+#
+# So the unknown kind gets its own COPY TABLE, consulted by `_copy` itself rather than by an
+# `if kind not in KIND_COPY` branch at each call site. There are seven `_copy` sites; a
+# per-site branch would have reached two of them and left the other five lying, and the next
+# field needing an unknown-kind variant would cost a third branch. One table, one lookup.
+_UNKNOWN_COPY = {
+    # Deliberately does NOT say "inside the manifest region": on the fences-absent path
+    # there IS no region, and the parser cannot tell the reader which path it took. That
+    # distinction is a per-PARSE fact the parser currently discards; surfacing it properly
+    # is the `scope` field filed in roadmap § Next. Until then, claim only what is known.
+    "means": ("I don't recognize this line's kind, so I can't tell you which gate it came "
+              "from. It may be quoted text rather than a real blocker."),
+    "needs_you": ("A look at the line itself: confirm whether it is a real blocker or prose "
+                  "that was swept in, then tell me which."),
+    "clears_when": ("you tell me whether it is a real blocker -- no check produced it, so there "
+                    "is nothing for me to re-run"),
+    "why": "I can't attribute this line to a gate, so I have no reasoning of my own to offer",
+    "waive_cost": ("costs you nothing if it is quoted prose, and drops a real blocker if it is "
+                   "not -- which is exactly what I can't tell you"),
+}
+
+
+def _copy(kind: str, field: str, fallback: str = "") -> str:
+    """Copy for `kind`'s `field`, falling through UNKNOWN before the generic default.
+
+    The `_UNKNOWN_COPY` layer is what keeps a phantom entry (see above) from inheriting
+    prose that asserts a gate ran. A known kind never consults it.
+    """
+    if kind not in KIND_COPY:
+        return _UNKNOWN_COPY.get(field, fallback)
+    return KIND_COPY[kind].get(field, fallback)
 
 
 def _needs_you(kind: str, cls: str) -> str:
@@ -327,8 +346,8 @@ def _needs_you(kind: str, cls: str) -> str:
         blocked = _copy(kind, "blocked_needs_you")
         if blocked:
             return blocked
-    if kind not in KIND_COPY:
-        return _UNKNOWN_KIND_NEEDS_YOU
+    # The generic fallback is a schema backstop, reachable only if a KIND_COPY entry omits
+    # the field -- the unknown-kind case is handled inside _copy, above.
     return _copy(kind, "needs_you", "A decision on how to proceed.")
 
 
@@ -337,8 +356,6 @@ def _means(kind: str, cls: str) -> str:
         blocked = _copy(kind, "blocked_means")
         if blocked:
             return blocked
-    if kind not in KIND_COPY:
-        return _UNKNOWN_KIND_MEANS
     return _copy(kind, "means", "A ship gate did not pass.")
 
 
@@ -440,70 +457,47 @@ def parse_entries(body: str) -> list[dict[str, Any]]:
     """
     text = extract_manifest_region(body or "")
 
-    entries: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    def _entry(raw: str) -> dict[str, Any] | None:
+        m = _LINE_RE.match(raw)
+        if not m:
+            return None
+        kind = m.group("kind").strip()
+        finding = m.group("finding").strip()
+        # A rendered entry carries its already-attempted marker inline; strip it
+        # back out of the finding so the fingerprint is stable across renders.
+        attempted = ATTEMPTED_MARKER in finding
+        finding = re.sub(r"\s*\(" + ATTEMPTED_MARKER + r"[^)]*\)\s*", " ", finding).strip()
+        return {
+            "kind": kind,
+            "finding": finding,
+            "needs": (m.group("needs") or "").strip(),
+            "confidence": (m.group("confidence") or "").strip(),
+            "drafted_resolution": (m.group("resolution") or "").strip(),
+            "already_attempted": attempted,
+            "fingerprint": _fingerprint(kind, finding),
+        }
 
     # UNION of both line definitions, deduped by fingerprint -- NOT either one alone.
+    # Neither split is safe by itself: each erases a live [verify-build] blocker in the
+    # shape the other one handles (measured, FB-0109). The union is a superset of both by
+    # construction, which is the fail-safe direction -- more candidate entries, never fewer.
     #
-    # The two layers of this mechanism want OPPOSITE line definitions, and that is the
-    # whole subtlety. `extract_manifest_region` wants the NARROWEST (`split("\n")`): the
-    # fewer things count as a fence, the wider the region, the more entries survive. This
-    # parser wants the WIDEST: the more things count as a line, the more entries it finds.
-    # Applying the extractor's rule here -- which the first version of this fix did --
-    # looks consistent and is backwards, because "fewer lines" means "fewer blockers".
+    # WHY the two layers use DIFFERENT splits, and why making them "consistent" reintroduces
+    # the bug, is documented once in `manifest_contract.extract_manifest_region`'s docstring
+    # (§ "The consumer wants the OPPOSITE rule"). Read it before touching either. It lives
+    # there rather than here because three copies of that argument is how the previous
+    # version of this comment ended up asserting the inverted invariant (FB-0010 flavor 2).
     #
-    # Measured, both directions erase a live [verify-build] blocker, so neither split is
-    # safe alone (the eight code points splitlines() adds, plus a lone CR):
-    #   splitlines() alone -- an entry whose OWN finding text carries one of them is split
-    #     into two fragments, neither matches _LINE_RE, and the entry is silently DROPPED.
-    #   split("\n") alone -- two entries JOINED by one of them are read as a single
-    #     physical line, so _LINE_RE matches the first and swallows the second. Worse than
-    #     a drop: the survivor absorbs the victim's ` -- needs:` verb, and `needs` is the
-    #     field `classify()` derives `class` and `waivable` from, so a dropped blocker also
-    #     forges the field that decides whether a human ever sees it.
-    #
-    # The union can only ever widen: pass 1 keeps every entry the pre-fix parser found, and
-    # pass 2 adds any the narrow split finds that the wide one missed. So the result is a
-    # superset of BOTH prior behaviours by construction rather than by test coverage --
-    # the fail-safe direction this whole mechanism rests on (more candidate entries, never
-    # fewer). Note this is the opposite resolution to `_collapse_newlines`, which uses the
-    # WIDER splitlines() on the write side: collapsing more is safe there for the same
-    # reason parsing more is safe here. The two layers legitimately differ; they have not
-    # drifted.
-    #
-    # Order: splitlines() first, so a hostile joined pair renders as its two real entries
-    # before the merged artefact rather than after it.
-    wide = text.splitlines()
-    narrow = text.replace("\r\n", "\n").split("\n")
-    for is_second, lines in ((False, wide), (True, narrow)):
-        for raw in lines:
-            m = _LINE_RE.match(raw)
-            if not m:
-                continue
-            kind = m.group("kind").strip()
-            finding = m.group("finding").strip()
-            # A rendered entry carries its already-attempted marker inline; strip it
-            # back out of the finding so the fingerprint is stable across renders.
-            attempted = ATTEMPTED_MARKER in finding
-            finding = re.sub(r"\s*\(" + ATTEMPTED_MARKER + r"[^)]*\)\s*", " ", finding).strip()
-            fp = _fingerprint(kind, finding)
-            if is_second and fp in seen:
-                # The second pass contributes only what the first missed. Pass 1 is kept
-                # WHOLE -- including a genuinely duplicated line -- so the union is never
-                # narrower than the pre-fix parser on ordinary input.
-                continue
-            seen.add(fp)
-            entries.append(
-                {
-                    "kind": kind,
-                    "finding": finding,
-                    "needs": (m.group("needs") or "").strip(),
-                    "confidence": (m.group("confidence") or "").strip(),
-                    "drafted_resolution": (m.group("resolution") or "").strip(),
-                    "already_attempted": attempted,
-                    "fingerprint": fp,
-                }
-            )
+    # The WIDE split goes first and is kept WHOLE -- including a genuinely duplicated line --
+    # so the union is never narrower than the pre-fix parser on ordinary input. The narrow
+    # split then contributes only fingerprints the wide one missed. Both facts are structural
+    # here rather than carried in a pass-index flag.
+    entries: list[dict[str, Any]] = [e for e in map(_entry, text.splitlines()) if e]
+    seen = {e["fingerprint"] for e in entries}
+    for e in map(_entry, text.replace("\r\n", "\n").split("\n")):
+        if e and e["fingerprint"] not in seen:
+            seen.add(e["fingerprint"])
+            entries.append(e)
     return entries
 
 
@@ -864,12 +858,12 @@ def _read(path: str) -> str:
 # means this collapses a SUPERSET of what the parser will treat as a line break, which is the
 # safe direction on the write side: every break the parser could honour is already gone.
 #
-# It deliberately no longer matches the parser's own split, and that is not drift (FB-0109).
-# `parse_entries` takes the UNION of `splitlines()` and `split("\n")`, because the two layers
-# want opposite line definitions: collapsing MORE is safe when writing (fewer breaks survive
-# into a finding), and splitting MORE is safe when reading (more candidate blockers). An
-# earlier revision of this comment asserted the two shared one definition and "cannot drift";
-# that invariant was inverted, and a future author reasoning from it would reintroduce the bug.
+# It deliberately no longer matches the parser's own split, and that is NOT drift (FB-0109):
+# collapsing MORE is safe on the write side for the same reason parsing MORE is safe on the
+# read side. The full argument lives in `manifest_contract.extract_manifest_region`'s
+# docstring. An earlier revision of this comment asserted the two shared one definition and
+# "cannot drift" -- that invariant was inverted, and a future author reasoning from it would
+# reintroduce the bug.
 #
 # Deliberately NOT a general whitespace collapse: a tab or a double space inside a finding
 # passes through byte-identically, exactly as the old argv path did. The invariant is "one
@@ -937,10 +931,38 @@ _DEFANGED = {
     MANIFEST_OPEN: "[flow-marker:manifest-open]",
     MANIFEST_CLOSE: "[flow-marker:manifest-close]",
     MANIFEST_HEADING: "[flow-marker:not-ready-sentinel]",
-    " — needs:": " -- needs:",
-    " — confidence:": " -- confidence:",
-    " — candidate resolutions:": " -- candidate resolutions:",
 }
+
+# The FIELD separators are matched as a REGEX, not as literals, because `_LINE_RE` matches
+# them as a regex. That asymmetry was itself the bug (found by /flow:security-review on the
+# FB-0109 branch, measured end to end):
+#
+#   `_LINE_RE` reads the separator as `\s+—\s*needs:` -- a whitespace CLASS. The defang read
+#   it as the literal `" — needs:"` -- ONE SPACE. So a finding carrying a TAB or an NBSP
+#   before the em dash matched the parser and MISSED the defang. Measured: a `[security]`
+#   entry written with `--needs "secret rotation"` (an out-of-session verb => class `blocked`,
+#   NOT waivable) parsed as `needs='design decision'` => class `ask`, `waivable: True`, and
+#   the verdict moved BLOCKED -> DECIDE. A leaked-secret item became one-word-waivable from
+#   bytes the finding text supplied. Two spaces happened to be safe only by accident -- the
+#   literal is a substring of it -- which is the kind of coincidence that makes a literal
+#   look like it works.
+#
+# The rule this generalizes to is the one FB-0109 keeps re-learning one layer at a time:
+# **a defense must match on the same grammar its consumer parses with.** A literal guarding a
+# regex is not a guard, it is a sample of one.
+#
+# Direction is safe: widening the match defangs MORE prose, never less, and defanging is
+# already the chosen behaviour over refusal (FB-0062 -- a finding legitimately discussing a
+# resolution verb is ordinary prose and must not abort the ship). The em dash stays an em
+# dash; only the separator's own punctuation is swapped for a double hyphen, so the phrase
+# stays readable to the human ("-- needs: re-run").
+#
+# NOT derived from `_LINE_RE` itself: that means defining the field vocabulary in
+# `manifest_contract.py` and compiling `_LINE_RE` from it, which is the roadmapped
+# `FIELD_SEPS` item. Note for whoever takes it -- deriving the token SET is necessary but
+# NOT sufficient: the derivation must also make both sides agree on WHITESPACE, or the
+# compiled regex will keep accepting separators the defang never sees.
+_FIELD_SEP_RE = re.compile(r"\s+—\s*(needs|confidence|candidate resolutions?)\s*:")
 _DEFANG_NOTE = (" (flow neutralized structural markers your text quoted so they cannot forge "
                 "manifest fields; your original wording is in {src})")
 
@@ -959,6 +981,10 @@ def _defang_fences(text: str, source: str = "") -> str:
         if marker in text:
             text = text.replace(marker, inert)
             fired = True
+    # Field separators: same grammar the parser uses (see _FIELD_SEP_RE above).
+    text, n = _FIELD_SEP_RE.subn(lambda m: " -- " + m.group(1) + ":", text)
+    if n:
+        fired = True
     if fired:
         text += _DEFANG_NOTE.format(src=source or "the finding file")
     return text
