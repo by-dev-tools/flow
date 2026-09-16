@@ -9,6 +9,24 @@ FB-0102 problem — `plan.md` is edited in place, so #146's fragmentation delibe
 it, and stale "Active (this branch)" headers accumulate. Cleaning it is unclaimed work, not this
 pass's scope.)
 
+- **▶ EXECUTED, shipping (this branch, `conductor/spike-93-auto-plan-quality`, spike, docs-only, zero
+  `plugins/flow/**` touched): D1 §9.3 spike — is an auto-written technical plan good enough to anchor
+  the machine gate?** Resolved **MIXED**: auto-wrote a Spec-walk plan against the real approved
+  prototype the handoff itself names as its "reference case" (`annotation-layer.html`), then ran the
+  shipped vacuous-criterion checker (0/13 vacuous — clean), a live headless-Chrome dry-read (criteria
+  are genuinely testable, not Potemkin), a directly-spawned `flow:plan-critic` (2 BLOCKERs), and a
+  directly-spawned `flow:auditor` reproducing `/flow:audit-coverage`'s own task framing against the
+  prototype's real source in place of a diff (10 undeclared-behavior findings). A clean vacuity score
+  and a hollow coverage score, on the same plan, is the finding — the 3-reviewer pre-execution gate
+  the handoff specifies did not catch most of the completeness gap; `/flow:audit-coverage`'s judgment
+  (fed source instead of a diff) did. See `dev-docs/research/2026-09-16-d1-auto-plan-quality-spike.md`
+  (+ committed sibling evidence files) for the full account. **Note, not mine to resolve:** the
+  handoff itself disagrees with itself on what this spike gates — §0/§8 say "before Phase 2," §9.3's
+  own verdict text says "do not build Phase 3 until the spike clears." Per the orchestrator's
+  direction this run, Phase 2 (Track B, building in parallel) is NOT blocked by this spike; only
+  Phase 3 is. The handoff's own internal fan-out contradiction is flagged, not fixed — out of scope
+  per the dispatching brief ("do not modify the D1 handoff").
+
 - **▶ EXECUTED, shipping (branch `conductor/dogfood-version-honesty-fb-0107`, v1.43.0, FB-0107
   amended in place): dogfooding tells the truth about which version of itself it ran.** Approved by
   Ben at the plan gate (`plugins/flow/skills/ship/**` is `sensitivePaths` under canonical §4.8, so the
@@ -76,6 +94,28 @@ pass's scope.)
 **▶ EXECUTED, shipping (this branch, `conductor/phase-00-rules-as-skills-hooks-fix-fb-0085`): Phase 00 — fix two shipped-but-never-loading flow features (rules→skills, hooks declaration; FB-0085), v1.33.0.** Standalone prerequisite from `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` §17/Phase 00, independent of any Codex/Cursor porting work. Plan approved with both escalated decisions accepted as recommended (00b hooks stay opt-in; 00c one-time content sync + explicit sync-note, not a full merge; 00d no bootstrap.sh change). Executed: skill count 17→21 (`claude plugin details` confirms live), full eval suite green, `/flow:critique-plan` findings fixed pre-execution. See the "PR — Phase 00" block below for the full Spec-walk + confidence verdicts, and `dev-docs/history.md` 2026-08-27 for the shipped write-up.
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
+
+## PR — SPIKE: D1 §9.3 auto-plan-quality (this branch, `conductor/spike-93-auto-plan-quality`, EXECUTED — shipping)
+
+**Mode:** spike (research — the doc is the deliverable; no code was written to answer the question). `platform: library` ⇒ `/flow:verify-build` self-skips. Docs-only diff ⇒ mechanical preflight self-skips; `/simplify` + `/flow:staff-review` skipped per spike mode.
+
+**Disposability statement.** Nothing here ships as plugin code or gets kept behind a flag. The deliverable is `dev-docs/research/2026-09-16-d1-auto-plan-quality-spike.md` plus its two evidence sibling files; the scratch Chrome dry-read host page (`/tmp/dry-read-host.html`) is throwaway and not committed. The finding **gates Phase 3** of `dev-docs/handoffs/d1-prototype-first-gate.md` (§9.3 names this spike as the precondition); it does not touch Phase 2, which Track B is building in parallel and is unblocked by this.
+
+**Research question.** §9.3: is an agent auto-writing a Spec-walk technical plan, immediately after prototype approval and before any code exists, solid enough that the D1 machine gate (and downstream `/flow:audit-coverage` + `/flow:verify-build`) have something real to check — or is the gate a rubber stamp?
+
+**What was built.** No plugin code. Wrote a reconstructed design brief and a 13-item auto-plan against `plugins/flow/skills/verify-build/lib/annotation-layer.html` — the handoff's own named "reference case" (§3 step 4), a real artifact with six rounds of genuine human review (FB-0076) and a real shipped staff-review pass (PR #49). Ran four independent instruments against that one auto-plan: the shipped vacuous-criterion checker; a live headless-Chrome dry-read; a directly-spawned `flow:plan-critic`; a directly-spawned `flow:auditor` reproducing `/flow:audit-coverage`'s own task framing with the prototype's source substituted for a diff.
+
+**What we learned (short form; full doc for the argument, evidence files for the raw artifacts).**
+- **0/13 criteria vacuous** (`criterion-specificity.py`, deterministic) — the plan is clean on the axis that checker exists to police.
+- **10 undeclared real behaviors** found by the audit-coverage-framed pass against the same plan: the whole keyboard-only interaction path (WCAG 2.1.1, independently caught twice — once via the brief's own text by plan-critic, once via the code by the coverage pass), bulk delete-all, single delete, a second independently-persisted preference, pin-visibility toggle, panel open/close, per-row copy (distinct from the declared batch copy), a storage-quota-failure warning path, Escape's four-branch state machine, discard-on-empty-close.
+- **A clean vacuity score and a hollow coverage score, on the same plan, is the finding** — they measure genuinely different things, and a plan can ace one while failing the other.
+- **`flow:plan-critic` (direct spawn) found 2 BLOCKERs:** the plan's Files-touched section named a fictional path disconnected from the real approved prototype (internal incoherence — defeats the point of Step 6 being "against a design that survived contact"); the plan silently dropped a brief-mandated accessibility requirement (scope contraction).
+- **`flow:auditor` claim-check found 2 gaps neither mechanical checker can catch:** one criterion tested a component (the renderer) the plan's own Scope explicitly excluded and never inspected; one criterion's verify-method was vague relative to every sibling ("manual check" naming no target action) — `walk-pin-lint.py` only checks a marker is present, not the quality of what follows it.
+- **Methodological result, not a caveat:** did not invoke `/flow:critique-plan` as a skill — this repo's installed plugin (1.29.0) is already measured (`dev-docs/history/2026-09-13-dogfood-version-provenance.md`) to resolve zero reference docs via that path. Did not invoke `/flow:audit-coverage` as a skill either — its evidence block is diff-shaped and there is no diff pre-execution — but its *judgment* ("for each user-perceptible behavior change, check whether any declared criterion would cause someone to test it," `SKILL.md:130`) is diff-agnostic and transfers to a source tree with one substitution. That reframing (caught on review, not by me originally) matters for the recommendation below: it's cheaper than "build a new reviewer."
+
+**Recommendation (not this spike's call — routed to Ben/orchestrator):** the 3-reviewer pre-execution plan gate the handoff specifies (`auditor` + `plan-critic` + push-further, reading plan + brief only) does not reliably catch completeness gaps — it caught 1 of the 2 independently-found gap classes here, by luck of brief wording, not by design. `/flow:audit-coverage`'s existing judgment, fed the approved prototype's source as an alternate input mode instead of a diff, caught the rest and is not new prompt-engineering surface to maintain. Two live options: (a) add that non-diff input mode to `audit-coverage` and run it at the pre-execution gate; (b) accept coverage-hole detection only happens post-execution via the existing diff-mode `audit-coverage`, and scope Step 6's machine gate as form/coherence-only. Confidence on §9.3 stays where the handoff put it (LOW) — this spike did not flip it to HIGH; it confirmed the risk is real on at least one heavily-reviewed real prototype.
+
+**Files touched:** `dev-docs/research/2026-09-16-d1-auto-plan-quality-spike.md` (new), `dev-docs/research/2026-09-16-d1-auto-plan-quality-spike/{design-brief,auto-plan}.md` (new — evidence siblings, committed unmodified), `dev-docs/README.md` (research index row), `dev-docs/plan.md` (this entry). **No plugin artifacts changed** — no version bump, no manifest edit, no CHANGELOG entry. Zero agent `model:` changes. Does not modify `dev-docs/handoffs/d1-prototype-first-gate.md` — out of this spike's scope by the dispatching brief.
 
 ## PR — Dogfooding version honesty (this branch, `conductor/dogfood-version-honesty-fb-0107`, FB-0107, v1.43.0, EXECUTED — shipping)
 
