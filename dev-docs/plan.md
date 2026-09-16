@@ -13,6 +13,22 @@ FB-0102 problem — `plan.md` is edited in place, so #146's fragmentation delibe
 it, and stale "Active (this branch)" headers accumulate. Cleaning it is unclaimed work, not this
 pass's scope.)
 
+- **▶ AT THE PLAN GATE (this branch `conductor/track-a-410-orchestrator-skill-suite`, v1.45.0,
+  FB-0110): Track A — the §4.10 orchestrator skill suite.** `/flow:orchestrate`, `/flow:spawn`,
+  `/flow:handoff`, `/flow:gate` — all agent-invocable, host-abstracted behind a new
+  `dispatchBackend` command-template slot (+ `sensitivePaths`; schema 34 → 36). The suite
+  **transcribes** §4.8/§4.9/§4.10 and `research/orchestrator-field-manual.md` (which is on the
+  unmerged `orchestrator-field-manual` branch, not `main`) rather than designing anything: the
+  checklists are a week of hand-run orchestrator practice. Two deterministic engines only —
+  `gate-classify.py` (four-axis combination rule, eval-pinned truth table) and
+  `dispatch-backend.py` (T6/FB-0108-safe command rendering); the judgment stays the agent's.
+  Scope-out, named: no GitHub App identity, no auto-merge of any kind, no edits to
+  ship/manifest-triage/verify-build, no edits to the two research docs.
+  **Four open calls await the gate** — the brief's `--message` vs `--message-file` disagreement
+  between §10.2 and field-manual T6, which model table ships, merge-mode hard-wired to human at
+  the crawl rung, and who deletes the field manual's now-satisfied sections. See the "PR — The
+  §4.10 orchestrator skill suite" block below.
+
 - **▶ EXECUTED, shipping (this branch, `conductor/spike-93-auto-plan-quality`, spike, docs-only, zero
   `plugins/flow/**` touched): D1 §9.3 spike — is an auto-written technical plan good enough to anchor
   the machine gate?** Resolved **MIXED**: auto-wrote a Spec-walk plan against the real approved
@@ -98,6 +114,134 @@ pass's scope.)
 **▶ EXECUTED, shipping (this branch, `conductor/phase-00-rules-as-skills-hooks-fix-fb-0085`): Phase 00 — fix two shipped-but-never-loading flow features (rules→skills, hooks declaration; FB-0085), v1.33.0.** Standalone prerequisite from `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` §17/Phase 00, independent of any Codex/Cursor porting work. Plan approved with both escalated decisions accepted as recommended (00b hooks stay opt-in; 00c one-time content sync + explicit sync-note, not a full merge; 00d no bootstrap.sh change). Executed: skill count 17→21 (`claude plugin details` confirms live), full eval suite green, `/flow:critique-plan` findings fixed pre-execution. See the "PR — Phase 00" block below for the full Spec-walk + confidence verdicts, and `dev-docs/history.md` 2026-08-27 for the shipped write-up.
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
+
+## PR — The §4.10 orchestrator skill suite: `/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`, `/flow:gate` (this branch, `conductor/track-a-410-orchestrator-skill-suite`, FB-0110, v1.45.0, AT THE PLAN GATE)
+
+**Branch:** `conductor/track-a-410-orchestrator-skill-suite`
+**Base:** `origin/main` @ `32b27d1` (#151) — **v1.43.0**, `dev-docs/feedback/` high-water **FB-0108** on `main`.
+**Version claim: `v1.45.0`. FB claim: `FB-0110`.** Swept `origin/main` **and all 118 open branches** (T5 — a sweep that reads only `main` does not see open branches), not just `main`: `fix-manifest-fence-injection` (pushed 2026-09-15, no PR) already claims **v1.44.0 + FB-0109**. Per the field manual's self-healing rule the earlier push keeps its claim, so this block takes the next free pair. Zero open PRs repo-wide. Both claims are pushed **mechanically** on this branch (`plugin.json` version + the `FB-0110-*.md` file), not asserted in prose; re-swept at every rebase.
+
+**Mode:** feature. `platform: library` ⇒ `/flow:verify-build` self-skips on this repo; the diff touches no `uiFilePatterns` file ⇒ security/a11y self-skip on file patterns. **Routing (FB-0091): `opus-5-1m` · high** — `/flow:gate` implements the §4.8 gate-delegation policy, and a wrong version there auto-approves plans that should have escalated, silently. That is the `sensitivePaths` hard floor in the field manual §6, so the suite does not route down despite looking like "author four markdown files."
+
+### Source of truth — this is transcription, not design
+
+§4.8/§4.9/§4.10 and `research/orchestrator-field-manual.md` are a **written record of what an orchestrator seat has been doing by hand all week**, not a proposal. Every checklist below is lifted from one of them with a citation. Where I could not find the judgment already written down, the skill asks the agent rather than inventing a rule — that is §4.10's anti-bloat guardrail and the reason this PR ships ~0 new policy.
+
+**The field manual is not on `main`.** It lives on the unmerged branch `orchestrator-field-manual` (7 commits, no PR, last push 2026-09-13) and is referenced by `dev-docs/history/2026-09-13-*` as though it were durable. I read it from `git show origin/orchestrator-field-manual:research/orchestrator-field-manual.md`. **This matters for scope** — see open call 4.
+
+### OPEN CALLS — four, each with recommendation · confidence · justification (FB-0090), ships-or-paperwork classified first (§4.8 rule 7)
+
+**OPEN CALL 1 — the dispatch brief's ping line composes a shell string, which is the trap the field manual says never to fall into. [SHIPS — changes shipped copy every worker executes]**
+Canonical §10.2's Contract template says `conductor message create --session $X --message "<item-id> | <state> | …"`. Field manual T6's standing rule says compose **every** worker message and commit body via a file, never a quoted shell argument — measured firing four times in one session, the fourth destroying the report of the third. The two documents disagree about the exact line the brief tells a worker to run.
+- **Recommendation:** ship the field-manual form — the brief instructs `--message-file` (the first adapter supports it; verified `conductor message create --message-file <path>` exists, including `-` for stdin). The brief text itself is also written by the Write tool to a file and handed to the backend as `{messageFile}`, never interpolated into a shell word.
+- **Confidence: HIGH.** The disagreement is chronological, not substantive: §10.2 predates T6 by three weeks, and T6 was written *because* that shape kept failing. The shipped interface is also already moving this way (FB-0108 took untrusted text off `add-entry`'s command line for exactly this reason).
+- **Justification:** the worker's status line is agent-composed prose about the work — the highest-risk possible content for `"…"` interpolation, since it routinely contains backticks around command and file names. This is the one place where a wrong choice silently corrupts the channel the whole ping protocol depends on.
+
+**OPEN CALL 2 — which model-routing table ships in `/flow:spawn`? [PAPERWORK-ish, but I am not calling it: it changes what workers get dispatched as]**
+08-22 §6 (carried forward by canonical §4.3) and field manual §6 are the same table with two differences: §6-canonical has an extra row **`Adversarial second opinion | codex gpt-5.5 | high`** that the field manual drops, and labels the orchestrator row *"triage, relay, **ledger**"* where the field manual says *"triage, relay, **dispatch**"*.
+- **Recommendation:** ship the field manual's table verbatim (it is the later revision, and "ledger" is correct-by-deletion — §4.3 removed the ledger's state-tracking role), **plus** restore the `codex gpt-5.5` adversarial-second-opinion row.
+- **Confidence: MEDIUM** on the codex row, HIGH on the rest. The row's absence reads as trimming-for-focus rather than a decision, but I cannot tell from the text, and I am not willing to silently drop a routing option a seat has been offered.
+- **Justification:** the orchestrator/ledger wording is unambiguously superseded. The codex row is a real capability with no stated retraction; dropping it is a one-way loss of an option, restoring it costs one table row. If you removed it deliberately, say so and I drop it.
+
+**OPEN CALL 3 — `/flow:gate`'s merge mode at the crawl rung. [SHIPS — it is the difference between a skill that can approve a merge and one that cannot]**
+§4.8's rollout is explicit: **crawl (now) = orchestrator auto-approves only *plans*; every merge stays human**, and the walk rung is *earned by the audit log* and *gated on the GitHub App identity* — which this PR's scope explicitly excludes.
+- **Recommendation:** `/flow:gate` implements merge-mode classification (it computes and reports the docs-only / verified-PASS / else split, with the recommendation triple) but its merge verdict is **hard-wired to "human merges"** at this rung, with no slot to flip it. Widening to walk is a later PR that ships together with the App identity.
+- **Confidence: HIGH.**
+- **Justification:** a config slot that can turn on delegated merges *before* the App identity exists would let an agent merge under the human's own credential, destroying the only piece of provenance §4.8 says is required (`merged_by`). Shipping the classifier without the switch gets the whole audit-log benefit of the crawl rung (every call is classified and logged) at zero merge risk. This also keeps the skill honest: it classifies and formats, it never merges — asserted positively *and* negatively in the evals (general.md rule 3).
+
+**OPEN CALL 4 — the field manual's own deletion criteria fire when this suite ships, and the file is on a branch I do not own. [PAPERWORK — but it is cross-branch coordination, which is yours, not mine]**
+The manual states: § 1 traps die when `/flow:orchestrate` performs the sweep itself; § 2 dies when `/flow:gate` implements the four-axis classification; § 6 dies when `/flow:spawn` applies the table and emits `model·effort·why`. Shipping this suite therefore obsoletes three of its six sections — but the file exists only on `orchestrator-field-manual`, which is unmerged with no PR.
+- **Recommendation:** **this PR does not touch `research/orchestrator-field-manual.md` or `research/2026-08-23-flow-cloud-workflow-plan.md`.** The field-manual branch lands first (or concurrently) on its own; the section deletions ride *that* branch or a follow-up, citing this PR number.
+- **Confidence: HIGH.**
+- **Justification:** editing a file whose only copy is on someone else's unmerged branch guarantees a conflict on content I did not write, and the field manual branch also edits the canonical plan (11 lines). Two branches editing two shared research docs is the exact fan-out class `general.md` § Consistency warns about. The deletion criteria are satisfied by this PR either way — recording that in the history entry is enough for the next seat to act on.
+
+### Design
+
+**Host-agnosticism: `dispatchBackend` is a slot of *command templates*, not a name the plugin maps to hardcoded commands.** This is the established `typecheckCmd` / `preflightCmd` shape one level up — the plugin ships the *workflow*, the consumer's `flow.config.json` supplies the *mechanics*. Five verbs, each a string with `{}` placeholders:
+
+| verb | placeholders | used by | absent ⇒ |
+|---|---|---|---|
+| `listWorkers` | — | orchestrate (re-derive), spawn (admission), handoff | loud `⚠️`, degrade to read-only/manual |
+| `createWorker` | `{name}` `{messageFile}` | spawn, handoff (successor) | loud `⚠️`, emit the brief for manual paste |
+| `sendMessage` | `{session}` `{messageFile}` | orchestrate (re-address), spawn (follow-ups) | loud `⚠️`, emit the message for manual paste |
+| `workerStatus` | `{session}` | orchestrate (T2 silent sweep) | loud `⚠️`, T2 sweep reported as NOT PERFORMED |
+| `selfSession` | — | spawn/handoff (the ping address) | loud `⚠️`, ask the human for the id |
+
+The alternative — a backend *name* (`"conductor"`) that the plugin resolves to a built-in command table — was rejected: it puts host literals in shipped artifacts, which is the exact bar §4.10 says the adapter exists to preserve. Cost of the chosen shape: a consumer hand-writes five lines of config. `/flow:doctor` gets one new opt-in check so a malformed adapter is caught at setup rather than at dispatch.
+
+**`sensitivePaths` is a second new slot** (array of globs, documented defaults covering §4.8's named set: gate machinery, security/auth/secrets, persistence/migrations, the published config schema). It is *not* nested under `dispatchBackend` — it is gate policy, not backend mechanics, and it has **two consumers**: `/flow:gate`'s stakes axis and `/flow:spawn`'s "gate machinery never routes down" hard floor. One definition, two readers — the `manifest_contract.py` precedent, and the reason it is a shared lib rather than a string duplicated in two SKILL.md files. Schema goes **34 → 36 slots** (fan-out swept mechanically, not by memory).
+
+**Two deterministic engines; everything else is the agent's judgment.**
+- `skills/gate/lib/gate-classify.py` — takes the four axes (stakes computed mechanically from a changed-file list × `sensitivePaths`; reversible / taste / confidence supplied by the agent as declared values), applies the **combination rule** (all four green ⇒ approve; any red ⇒ escalate; prototype-attached carve-out ⇒ always human; merge mode ⇒ the three-branch rule, crawl-pinned to human), and renders the FB-0090 triple. The combination rule is where a silent wrong answer lives, so it is code with a truth table, not prose.
+- `skills/spawn/lib/dispatch-backend.py` — resolves the slot, validates required verbs, substitutes placeholders, and **refuses any substitution value containing shell metacharacters**; message bodies are only ever passed as a *path*. T6/FB-0108 applied at birth instead of retrofitted.
+
+Deliberately **not** built: a model-selection classifier. 08-22 §9 rules it out ("Never, in this form") and FB-0088 says procedures decay — so the routing table ships as *prose the agent reads and applies* in `/flow:spawn`, with only its one silently-failing rule (the gate-machinery floor) mechanized via the shared `sensitivePaths` predicate.
+
+### The four skills — each is a checklist over machinery that already exists
+
+All four: `disable-model-invocation: false` (agent-invocable — §4.10's instruct-not-remote-invoke requires it), and each applies §4.8 rules 1/3/4/7 to **its own** human-facing output.
+
+1. **`/flow:orchestrate`** (bootstrap / succession boot) — resolve backend → read canonical plan + `CLAUDE.md` + feedback *by slot* (`planPath`/`roadmapPath`/`feedbackPath`/`referenceGlob`; pointers, never duplicated) → **re-derive** live workers from `listWorkers` → ground-truth sweep that includes **open branches and open PRs**, not just `origin/main` (T5) → **silent-worker sweep on the `Updated` timestamp, not `Status`** (T2, §4.8 rule 6's named gap) → **re-address the ping channel first** on a succession boot, one message per worker (§4.9 step 4, field manual §3) → report ready under rule 4 (one decision, plus a one-line lay-of-the-land).
+2. **`/flow:spawn`** (dispatch) — admission control (remote branches + open PRs for the item; the **serialization note**: `plan`/`history`/`roadmap` are shared-by-construction so ships serialize and are never ownership-partitioned; hold the queue on a near-exhausted window) → route `model · effort · why` from the table, **floor enforced** for `sensitivePaths` work → render the §10.2 brief (≤30 lines, the 08-22 bloat tripwire) carrying the FB-0090 triple, stop-at-plan-gate, the ping contract addressed to `selfSession`, and the FB/version self-healing re-sweep rule → `createWorker` with `{messageFile}` → **instruct B's first action as a named flow skill**, which is the whole instruct-not-remote-invoke mechanism.
+3. **`/flow:handoff`** (succession) — §4.9's four steps: flush durable currency (**composes `/flow:ship`**, never reimplements it) → **inventory and externalize sandbox-local artifacts** (commit, or hand to the human) → generate the pointing-not-duplicating brief → deliver via `createWorker` → and the brief **must** carry the re-address instruction. Plus the §4.6 archive-safety check on the outgoing seat, **composing `post-merge/lib/merge-status.py archive-check`** rather than re-deriving git cleanliness. One mechanical refusal: a brief that names a path under the outgoing sandbox is **rejected**, because §4.9's whole invariant is that every reference must be reachable by a *different* sandbox.
+4. **`/flow:gate`** (classify + format) — plan mode and merge mode, over `gate-classify.py`. Runs the **ships-or-paperwork test first** (rule 7 — if the diff is byte-identical either way, it is the orchestrator's call and escalating it spends the human's attention on a null result), and when it does escalate, formats one decision at a time with recommendation/confidence/justification, pointing at the other open threads in one line. **It never merges** and never calls `gh pr merge`. Every auto-approval writes its four-axis classification into the PR block in `planPath` — the §4.8 crawl-rung audit log, in git, with no new maintained ledger (§4.6 forbids one).
+
+### Scope (in)
+
+0. **Claim mechanically first:** push `plugin.json` → `1.45.0` and `dev-docs/feedback/FB-0110-<slug>.md` on this branch. (Done at the plan gate — this block's claims are already pushed.)
+1. `plugins/flow/skills/orchestrate/SKILL.md` (NEW).
+2. `plugins/flow/skills/spawn/SKILL.md` + `lib/dispatch-backend.py` (NEW).
+3. `plugins/flow/skills/handoff/SKILL.md` (NEW).
+4. `plugins/flow/skills/gate/SKILL.md` + `lib/gate-classify.py` (NEW).
+5. `plugins/flow/schema/flow.config.schema.json`: `dispatchBackend` (object, 5 verb properties, documented) + `sensitivePaths` (array, documented defaults). 34 → 36 slots.
+6. `plugins/flow/evals/run_gate_evals.py` (NEW) + fixtures: the four-axis truth table incl. all-green and each single-red, the prototype carve-out, the three merge-mode branches, the crawl-rung pin, the escalation-format shape, malformed/empty input, **and** the paired positive+negative never-merge assertion.
+7. `plugins/flow/evals/run_dispatch_backend_evals.py` (NEW) + fixtures: slot resolution, missing-slot loud-warn (never silent no-op), missing-verb validation, placeholder substitution, shell-metacharacter refusal, and the assertion that a message body never reaches argv.
+8. `plugins/flow/evals/run_skill_composition_evals.py`: extend with (a) all four new skills assert `disable-model-invocation: false`, (b) a **host-literal check paired with its positive** — no host command literal in the four new skills/libs **and** each skill provably reads `dispatchBackend` (negative alone is satisfiable by deleting the feature).
+9. `.github/workflows/ci.yml`: wire both new harnesses (FB-0056 — an un-wired eval is zero standing protection).
+10. `/flow:doctor`: one opt-in check — if `dispatchBackend` is present, its five verbs parse and carry their required placeholders; WARN, never FAIL, and silent when the slot is absent.
+11. Registration fan-out, grep-first: `README.md` skill table + the agent/skill count sentence, `plugins/flow/docs/workflow.md` (intro skill list, catalog table, and the `34 slots` → `36 slots` claim), `plugins/flow/skills/workflow-help/SKILL.md` table, `template/base/CLAUDE.md.template` (`34 slots` → `36`).
+12. Doc currency: `changelog/v1.45.0.md`, `dev-docs/history/2026-09-16-*.md`, `dev-docs/roadmap.md` (§5 Step 4 / ACTIVE PROGRAM front 2), this plan block, `dev-docs/feedback/FB-0110-*.md`.
+13. Harness-weight report: run `tools/harness_audit/harness_audit.py --split` before ship and state the four new skills' measured sizes in the PR body — pass or fail.
+
+### Scope (out) — named, not implied
+
+- **The GitHub App merge identity** (§4.8 "Transparency") — explicitly excluded by the brief, and open call 3 depends on that exclusion.
+- **Auto-merge of any kind.** `/flow:gate` classifies and formats; it never merges.
+- **`ship` / `manifest-triage` / `verify-build`** — untouched. The suite composes them; the anti-bloat guardrail forbids reimplementing them, and they are `sensitivePaths`.
+- **`research/orchestrator-field-manual.md` and `research/2026-08-23-flow-cloud-workflow-plan.md`** — open call 4.
+- **`/flow:land`'s slot-gating** (§4.5 change 2) and the `#N`-not-SHA convention (§5 step 1a) — adjacent, separately sequenced, not this PR.
+- **A ledger, a state column, a poller, or a scheduler** — §4.4/§4.6 delete all four by name.
+- **Widening the gate policy beyond the crawl rung.**
+
+### Confidence verdicts
+
+- **The checklists transcribe existing documented practice** (every step above cites §4.3/§4.6/§4.8/§4.9/§10.2 or a field-manual section) — **HIGH**; read directly this session, not recalled.
+- **`dispatchBackend` as consumer-supplied command templates satisfies the no-host-literal bar** — **HIGH**. Verified `conductor` appears in shipped artifacts today only as narrative (a bug note, a workspace-path heuristic), never as a command; this design keeps it that way.
+- **Five verbs is the right cut of the backend surface** — **MEDIUM**. Derived from what the four skills actually call, but a sixth (archive/delete a workspace) may surface once `/flow:handoff` is used for real. Cheap to add; additive to the schema, no migration.
+- **`gate-classify.py`'s split between mechanical axes and agent-declared axes** — **MEDIUM-HIGH**. Stakes is mechanical (paths × globs); reversibility and taste genuinely are not, so the script takes them as declared inputs and pins only the combination rule. If this is wrong it is wrong in the safe direction (more escalation, not less), but say so if you want taste heuristics attempted.
+- **Two new slots rather than one nested object** — **HIGH** for discoverability; the cost is a wider `N slots` fan-out, which is mechanically swept, not remembered.
+
+### Size budget — stated up front because four always-available skills is real attention budget
+
+Class A (per-session, paid always) is **50,362 chars / 42 entries** on `main`; four new `description:` fields add ~1.6 KB ⇒ **~+3%**. Class B (per-invocation) target: **≤10 KB per skill, ≤35 KB for the suite** — for scale, `ship/SKILL.md` is 174,791 chars and `review-brief` (the nearest comparable: one skill, real orchestration, evals) is 11,460. If the suite lands over budget I will say so in the PR body with the measured numbers rather than let it through quietly.
+
+**Files touched:** `plugins/flow/skills/{orchestrate,spawn,handoff,gate}/SKILL.md` (NEW ×4), `plugins/flow/skills/spawn/lib/dispatch-backend.py` (NEW), `plugins/flow/skills/gate/lib/gate-classify.py` (NEW), `plugins/flow/schema/flow.config.schema.json`, `plugins/flow/evals/run_gate_evals.py` (NEW), `plugins/flow/evals/run_dispatch_backend_evals.py` (NEW), `plugins/flow/evals/fixtures/gate/**` (NEW), `plugins/flow/evals/fixtures/dispatch-backend/**` (NEW), `plugins/flow/evals/run_skill_composition_evals.py`, `plugins/flow/skills/doctor/SKILL.md`, `plugins/flow/skills/workflow-help/SKILL.md`, `plugins/flow/docs/workflow.md`, `README.md`, `template/base/CLAUDE.md.template`, `.github/workflows/ci.yml`, `plugins/flow/.claude-plugin/plugin.json`, `changelog/v1.45.0.md` (NEW), `dev-docs/history/2026-09-16-orchestrator-skill-suite.md` (NEW), `dev-docs/feedback/FB-0110-*.md` (NEW), `dev-docs/roadmap.md`, `dev-docs/plan.md`.
+
+**Spec-walk:**
+- [ ] All four skills exist with `disable-model-invocation: false` and `allowed-tools` sufficient for what their bodies actually call (no inert gate — the `ship-spike` missing-`Skill` class) → verify: eval `run_skill_composition_evals.py` new frontmatter assertions, plus a `claude plugin details` diff showing skill count 22 → 26.
+- [ ] `gate-classify.py` returns APPROVE only when all four axes are green, and ESCALATE on each single red axis, on the prototype carve-out, and on any unknown/missing axis value → verify: eval `run_gate_evals.py` truth-table fixtures — all-green, four single-red, carve-out, and a missing-axis case that must not default to approve.
+- [ ] Merge mode returns `human` for every input at the crawl rung — including a docs-only diff and a green `verify-build` PASS — while still reporting which branch it classified into → verify: eval `run_gate_evals.py` crawl-pin fixtures, asserting both the `human` verdict **and** the non-empty classification string (a verdict-only assertion would pass on a stub).
+- [ ] `/flow:gate` never merges: no `gh pr merge` / `gh api … /merge` token in the skill or its lib, **paired** with the positive assertion that the escalation-format path is present and reachable → verify: eval `run_gate_evals.py` paired assertion + a repo grep for the merge tokens (general.md rule 3 — the negative alone goes green if the feature is deleted).
+- [ ] Escalation output carries recommendation + confidence + justification, one decision at a time, and runs the ships-or-paperwork test before escalating → verify: eval `run_gate_evals.py` format-shape fixtures over a rendered escalation, asserting all three labels present and a paperwork-classified input returning "resolve, do not escalate."
+- [ ] `dispatch-backend.py` refuses a placeholder value containing `;`, `` ` ``, `$(`, `|`, `&`, newline, or a quote, and never places a message body on the command line → verify: eval `run_dispatch_backend_evals.py` metacharacter-refusal fixtures + an assertion that the rendered argv contains the message *path* and not its contents.
+- [ ] A missing or malformed `dispatchBackend` slot prints a loud `⚠️` and degrades to the documented manual path — it never silently no-ops → verify: eval `run_dispatch_backend_evals.py` absent-slot, empty-object, and missing-verb fixtures, each asserting non-empty stderr containing `⚠️` and a non-zero-information exit.
+- [ ] No host-command literal appears in the four new skills or their libs, **paired** with the positive assertion that each skill resolves `dispatchBackend` → verify: eval `run_skill_composition_evals.py` paired check (a repo grep for host literals + the positive slot-read assertion), red-verified by temporarily inserting a literal.
+- [ ] Schema declares `dispatchBackend` + `sensitivePaths`, parses, and every live `N slots` claim reads 36 → verify: eval assertion loading the schema and counting 36 properties, plus a `slot_count_scan.py` grep over shipped surfaces returning clean with `scanned > 0`.
+- [ ] `/flow:doctor`'s new check WARNs on a malformed adapter and is silent when the slot is absent → verify: eval running the doctor check against three temp-config fixtures (absent / malformed / valid), asserting silence-absent, WARN-malformed, PASS-valid.
+- [ ] Both new eval harnesses are CI-wired → verify: a grep of `.github/workflows/ci.yml` for both harness names returning non-empty, plus each eval's ON_DISK/IN_CI self-check.
+- [ ] Full existing suite stays green (31 harnesses) → verify: every eval harness under `plugins/flow/evals/` plus `run_harness_audit_evals.py` executed, pass counts reported.
+- [ ] Suite lands inside the stated size budget, or the overage is reported with numbers → verify: the `harness_audit.py --split` report run before ship; the four new rows and the Class A delta go in the PR body either way.
+- [ ] Registration fan-out complete with no survivors → verify: `git grep -nE "[0-9]+ slots?"` and a grep for each new skill name across `README.md`, `docs/workflow.md`, `workflow-help/SKILL.md`, `template/base/CLAUDE.md.template` — every live claim updated, historical narrative left alone per Check 2.5's convention.
 
 ## PR — manifest fence injection (`fix-manifest-fence-injection`, FB-0109, v1.44.0)
 
