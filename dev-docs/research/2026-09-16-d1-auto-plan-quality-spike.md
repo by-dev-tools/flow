@@ -1,6 +1,7 @@
 # D1 §9.3 spike — is an auto-written technical plan good enough to anchor the machine gate?
 
 **Date:** 2026-09-16 · **Mode:** spike (finding is the deliverable, no shipped code) · **Branch:** `conductor/spike-93-auto-plan-quality`
+**Status:** resolved — MIXED (n=1; see Verdict below). Point-in-time as of 2026-09-16, not maintained afterward.
 **Gates:** `dev-docs/handoffs/d1-prototype-first-gate.md` §9.3 — a LOW-confidence assumption rated an **automatic human gate**; Phase 3 (auto-write + machine-gate the technical plan) does not get built until this clears.
 **Evidence:** `dev-docs/research/2026-09-16-d1-auto-plan-quality-spike/design-brief.md`, `.../auto-plan.md` — the exact artifacts this finding is based on, committed unmodified so the reasoning below can be checked against them, not just trusted.
 
