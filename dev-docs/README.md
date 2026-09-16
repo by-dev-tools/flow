@@ -73,3 +73,5 @@ A **second** research location exists outside `dev-docs/`, added by #104. It is 
 2. **Every point-in-time doc carries a `Status:` line in its header** — and the status must be true *now*, not when it was written. A stale "in progress" is indistinguishable from a current one; that is the FB-0074 class.
 3. **Living docs are never archived**; point-in-time docs are never edited to stay current. If a research doc's conclusion is overturned, mark it superseded inline and point at what replaced it — don't silently rewrite history.
 4. **`spec.md` is the known-stale one.** Fix or retire it; don't add to it.
+
+**Repo-root docs that are not dev-docs but matter here:** [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — why checking out an untrusted branch in this repo executes it, and the measurement behind accepting that residual (FB-0107, v1.43.0).

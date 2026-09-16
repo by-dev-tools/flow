@@ -22,7 +22,7 @@ Needs an **option decision at a human gate** (ascending cost): **(a)** confirm-a
 
 Canonical: `research/2026-08-23-flow-cloud-workflow-plan.md`. One orchestrator workspace per repo spawns + drives implementation workspaces (each running the flow loop); the human works from the orchestrator seat, keeping the plan-approval + merge gates. **Three fronts:** D1 prototype-first gate (Phase 0 + Phase 1 shipped; Phase 2 next); the cloud workflow (`toolchain` manifest-kind keystone -> orchestrator dispatch, §5 execution sequence); model selection for spawned workspaces (measurement-first, item M). Shipped #122 / #124 (land-elimination §4.5) / #126 (PHASE0 sweep fix) / #128 (D1 Phase 0) / this D1 Phase 1 PR; orchestration proven end-to-end 2026-08-25 via the `conductor` CLI. **M** (per-subagent model routing) and **AB** (attention-budget audit) — the 2026-08-14 Anthropic-canon items (FB-0084) — fold into this program: M is front (3); AB stays scoped in § Next. Both remain detailed in § Next below.
 
-**Plugin at v1.41.0 (shipped [#148](https://github.com/by-dev-tools/flow/pull/148) — vacuous-criterion check: closes the over-broad-declaration seam `/flow:audit-coverage` leaves open. A new deterministic heuristic (`skills/verify-build/lib/criterion-specificity.py`, stdlib regex — never an LLM judgment) flags a declared Spec-walk criterion with no observable predicate ("Rate limiting works correctly"), including when it's pinned per this repo's own FB-0068 convention — a BLOCKER `/flow:staff-review` caught mid-ship, since the first draft's escape hatch treated the pin-marker arrow as a specificity signal and every pinned criterion (the entire real-world population) was structurally unflaggable. Routes to the existing draft manifest as a 10th `[vacuous-criterion]` `KIND_COPY` kind. `/flow:security-review` also flagged a decision-required finding on this PR's own new producer bullet — untrusted plan text embedded in an agent-composed shell argument — routed to that PR's own manifest + a systemic roadmap follow-up below; FB-0104).** Recently shipped: **v1.40.0 (shipped #146 — fragment the append-only docs to one file per entry, and kill the silent doc-slot fallback; FB-0102/FB-0103). `dev-docs/history.md` / `dev-docs/feedback.md` / `CHANGELOG.md` became `dev-docs/history/` (106), `dev-docs/feedback/` (84) and `changelog/` (55) — 245 fragments, one file per entry, no rollup and no index (both would recreate the conflict being removed; `ls` is the index). `plan.md` and `roadmap.md` are deliberately untouched: they are edited in place, not appended to, and they feed the positional Spec-walk parser. New shared `plugins/flow/lib/resolve-doc-slot.sh` replaces ten inline `[ -f "$X" ]` doc-slot readers — `[ -f ]` is false on a directory and the fallback was silent, so a misconfigured slot looked exactly like a project that has none (the FB-0082 class). `changelogPath` finally declared in the schema (33 → 34). `reserved-feedback-numbers.md` deleted: a duplicate FB number is now a duplicate filename. Two live merge-damaged entries found in `main` by the migration and **preserved, not repaired** — see `dev-docs/history/2026-09-06-fragment-append-only-docs-one-file-per-entry.md`.)** Recently shipped: **v1.37.0 (`/flow:doctor` slot-coverage honesty + design-language template, FB-0098).**
+**Plugin at v1.43.0 (shipped — the PR now reports which version of flow actually ran it. A `/flow:*` skill invoked from a repo does not run that repo's working tree: Claude Code resolves it from the *installed* plugin, measured at **1.29.0** against a `main` at 1.41.0 — twelve releases, noticed by nobody, found by accident in a pre-archive check. `/flow:ship` + `/flow:ship-spike` render **four labelled rows** from `skills/ship/lib/plugin-provenance.py`, because one run draws from two versions: everything Claude Code resolves comes from the installed tree, everything the Bash tool resolves comes from the working tree. A single version line would be *wrong*, not just ambiguous. Reports, never gates. Dev-side `SessionStart` currency hook ported from health-tracker#116 with its loud-failure property. The `!`-block half of the measurement was taken BY this PR's own `/flow:critique-plan` run, which was structurally unable to cite a project rule because it executed a 14-release-old `extract_session.py`; FB-0107 amended in place.)** Previously: **v1.41.0 (shipped [#148](https://github.com/by-dev-tools/flow/pull/148) — vacuous-criterion check: closes the over-broad-declaration seam `/flow:audit-coverage` leaves open. A new deterministic heuristic (`skills/verify-build/lib/criterion-specificity.py`, stdlib regex — never an LLM judgment) flags a declared Spec-walk criterion with no observable predicate ("Rate limiting works correctly"), including when it's pinned per this repo's own FB-0068 convention — a BLOCKER `/flow:staff-review` caught mid-ship, since the first draft's escape hatch treated the pin-marker arrow as a specificity signal and every pinned criterion (the entire real-world population) was structurally unflaggable. Routes to the existing draft manifest as a 10th `[vacuous-criterion]` `KIND_COPY` kind. `/flow:security-review` also flagged a decision-required finding on this PR's own new producer bullet — untrusted plan text embedded in an agent-composed shell argument — routed to that PR's own manifest + a systemic roadmap follow-up below; FB-0104).** Recently shipped: **v1.40.0 (shipped #146 — fragment the append-only docs to one file per entry, and kill the silent doc-slot fallback; FB-0102/FB-0103). `dev-docs/history.md` / `dev-docs/feedback.md` / `CHANGELOG.md` became `dev-docs/history/` (106), `dev-docs/feedback/` (84) and `changelog/` (55) — 245 fragments, one file per entry, no rollup and no index (both would recreate the conflict being removed; `ls` is the index). `plan.md` and `roadmap.md` are deliberately untouched: they are edited in place, not appended to, and they feed the positional Spec-walk parser. New shared `plugins/flow/lib/resolve-doc-slot.sh` replaces ten inline `[ -f "$X" ]` doc-slot readers — `[ -f ]` is false on a directory and the fallback was silent, so a misconfigured slot looked exactly like a project that has none (the FB-0082 class). `changelogPath` finally declared in the schema (33 → 34). `reserved-feedback-numbers.md` deleted: a duplicate FB number is now a duplicate filename. Two live merge-damaged entries found in `main` by the migration and **preserved, not repaired** — see `dev-docs/history/2026-09-06-fragment-append-only-docs-one-file-per-entry.md`.)** Recently shipped: **v1.37.0 (`/flow:doctor` slot-coverage honesty + design-language template, FB-0098).**
 
 **Plugin at v1.37.0 (this PR — `/flow:doctor` slot-coverage honesty + design-language template, FB-0098: Check 2.4 now checks `designLanguagePath` (gated on `uiSurface`); its root cause — a `core-docs/` default literal that was the sole outlier against the schema's declared `dev-docs/` default and 16 other call sites — is fixed at the source, not by editing any project's config. New `template/base/core-docs/design-language.md` (shape only). Doctor's frontmatter no longer over-promises "all 33 slots have sensible values." See `dev-docs/history.md` 2026-09-03.)** Recently shipped: **v1.36.0 (`/flow:doctor` Check 2.5's slot-count guard hoisted to the shared, wrap-tolerant predicate flow runs on itself; FB-0096).**
 
@@ -318,6 +318,145 @@ that the human reads a truncated question, not that a blocker bypasses the gate.
 its fence marker and its field separator. A round-trip test asks *"does my input survive?"*; these ask *"can my
 input impersonate the mechanism?"* Only the second question generates these payloads, and it is only asked by
 someone attacking the mechanism they chose rather than confirming the happy path (FB-0108 rule 3).
+### `/flow:ship`'s commit template hardcodes a model version — every consumer not on that model gets a wrong attribution *(found while verifying an FB-0107 claim, v1.43.0; NOT fixed there — unrelated scope)*
+### Three deferred from the v1.43.0 provenance PR's staff-review (FB-0107)
+
+1. **"Is the marketplace clone pinned?" is not answerable from local data.** The PR-body row now
+   claims pinning only when `marketplace_head.git_sha == installed.git_sha`, which is evidence-backed
+   but narrow — a clone can be stale without the shas matching. A real answer needs a remote signal
+   (`git ls-remote` against the clone's origin, or the registry's `lastUpdated` vs a fetch time). Until
+   then the row says "refresh the marketplace before concluding it is current", which is honest and
+   weaker than the claim it replaced. *Surfaces when:* touching `plugin-provenance.py`'s `L_MARKET` row.
+
+2. **The hook's tests couple to live repo state.** `test_hook_fast_path` / `test_hook_dry_run` /
+   `test_hook_degrades_safely` / `test_hook_field_parse_no_shift` drive the hook with `cwd=REPO`,
+   because the hook resolves its own root by design. The *version* coupling was a real time bomb and is
+   fixed (the fixtures now read the live `plugin.json` rather than restating it — every release bump
+   would otherwise have failed a "must be silent" assertion). But the live repo's **skills/agents
+   inventory** is still in scope for those runs. A test-only root override on the hook, pointed at a
+   synthetic checkout, is the contained fix. *Surfaces when:* touching
+   `run_plugin_provenance_evals.py`'s hook tests, and **before the next release bump**.
+
+3. **Drop the "latest released version" row from the PR body, keeping all three numbers in `--json`
+   (declined, recorded).** `update_available` is actor-facing — the SessionStart hook is what branches
+   on it — and on a clean run the row renders "✓ current", which tells a merge-gate reader nothing
+   about which version graded the PR. Its whole reviewer-facing payload is one clause that could fold
+   into the drift note. **Declined deliberately:** the approved shape for FB-0107 was three labelled
+   numbers rendered as four rows, on the explicit ground that an unlabelled or collapsed version
+   report is the ambiguity the PR existed to remove — and the marketplace number is exactly what
+   revealed that `plugin install` alone would not have fixed the original failure. This is a legibility
+   bet, not a defect, and reversing it should be a deliberate decision rather than a tidy-up.
+   *Surfaces when:* `ROW_LABELS` changes, or `/flow:doctor` grows the full three-number view.
+
+### Gate the flow-currency `SessionStart` hook to `startup|resume` — it currently re-runs on every `/clear` and every auto-compact *(from /simplify's efficiency lens on the v1.43.0 provenance PR; NOT taken there — unverified)*
+
+`.claude/settings.json`'s `SessionStart` entries declare no `matcher`, so the currency hook (and the
+older contribution-queue nudge) fire on `clear` and `compact` as well as `startup`/`resume`. For the
+currency hook that is pure waste: `clear` and `compact` stay in the **same OS process**, where the
+hook's own comment correctly says the update provably cannot apply ("restart required"), and the clone
+was already refreshed at startup in that process. Measured cost of one `claude plugin` CLI boot on a
+cloud sandbox: **379 ms**; the hook makes up to three such calls plus a git fetch, so ~1–3 s of blocking
+session start, re-paid on every clear and every compact in a long session.
+
+**Why v1.43.0 did not take it, and this is the interesting part.** The proposed fix is
+`"matcher": "startup|resume"` — but **no `SessionStart` matcher exists anywhere in this repo or the
+plugin to copy**, the only matcher precedent is a `PreToolUse` tool-name matcher, and I could not verify
+locally that `SessionStart` honours `matcher` at all. If it does not, adding the key either silently
+does nothing (misleading) or suppresses the hook entirely (the FB-0085 class: a declaration that never
+activates, which is precisely what that PR was about). **Shipping an unverified declaration in the PR
+whose thesis is "does this actually load in the environment it targets?" was not defensible**, so the
+per-session price is documented in the hook instead.
+
+**Shape:** verify first — against Claude Code's hook documentation or an empirical two-session test
+(add the matcher, confirm the hook still fires on a real restart and stops firing on `/clear`) — then
+apply to the currency hook. Consider the contribution-queue hook separately: it is a cheap grep with no
+network, so the matcher matters far less there, and changing both at once would make a failed
+verification harder to attribute.
+
+**Also on the table, cheaper and independent:** a freshness gate on the clone's `.git` mtime (skip the
+refresh if fetched within N hours) would cut the same cost without touching matchers. Deliberately not
+taken either: it adds a time-based staleness gate to the mechanism that exists to *prevent* silent
+staleness, so a wrong default reintroduces the exact bug. If taken, the default on a missing or
+unreadable `.git` **must** be "refresh" (FB-0010 clause 1), and an eval must pin that branch.
+
+### A model name is hardcoded in FOUR shipped artifacts and they have ALREADY DRIFTED APART — one contract value, four files, 4.7 vs 4.8 *(found while verifying an unrelated FB-0107 claim, v1.43.0; deliberately NOT fixed there)*
+
+**The defect is not that the number is stale. It is that a shipped artifact names a model at all — four
+times — and the four no longer agree.** This is FB-0010 clause 2 realized inside the plugin's own
+artifacts: a change updated three sites and missed the fourth, and nothing noticed.
+
+Measured on `origin/main` (line numbers are main's; `workflow.md` shifts to 222 on any branch that edits it):
+
+```
+plugins/flow/docs/workflow.md:189            Co-Authored-By: Claude Opus 4.7 (1M context)
+plugins/flow/skills/ship/SKILL.md:1011       Co-Authored-By: Claude Opus 4.7 (1M context)
+plugins/flow/skills/ship-spike/SKILL.md:505  Co-Authored-By: Claude Opus 4.7 (1M context)
+plugins/flow/skills/land/SKILL.md:366        Co-Authored-By: Claude Opus 4.8          ← drifted
+```
+
+**The drift is two-dimensional, which makes it worse than a version skew.** `land` diverges on the model
+number *and* silently drops the ` (1M context)` suffix the other three carry. So a project running flow
+gets one trailer from `/flow:ship` and a different one from `/flow:land` — in the same repo, on the same
+PR, one after the other.
+
+**And all four are wrong for any current consumer regardless,** since the current line is the Claude 5
+family. A template that names a model must be updated on every model release, in every file carrying it,
+forever. The drift above is the proof that nobody will.
+
+**Why this is not cosmetic.** It writes a factually false statement into a consumer's permanent git
+history, and it violates the project-agnostic quality bar in CLAUDE.md — flow cannot know which model a
+consumer runs, so a shipped artifact must not assert one.
+
+**Shape — a design call for the fix, not for this filing.** The likely right answer is that the template
+should not name a model at all: the trailer's value is "an agent co-authored this", not which one. A
+`flow.config.json` slot is the obvious alternative and probably wrong — a 35th slot for a cosmetic line
+almost certainly fails FB-0056's "delta over the simpler option" test. Whatever is chosen, fix **all
+four** in one commit and grep broadly first: `git grep -nE 'Co-Authored-By: Claude [A-Za-z]+ [0-9]' --
+plugins/`. **Not** `git grep 'Claude Opus 4.7'` — that is the grep that found only three of the four and
+is how this entry was initially under-reported.
+
+**Found by accident**, while checking whether the line differed between the installed 1.29.0 tree and the
+checkout. It does not — it is stale in both, i.e. on `main` — so it is **not** an FB-0107 instance and
+v1.43.0 correctly did not absorb it.
+
+### Require one explicit checkout-run of the changed surface for PRs touching `plugins/flow/**` — **NOT BUILT, filed deliberately** (FB-0107, from the v1.43.0 provenance PR)
+
+v1.43.0 made the version **visible**; it did not make the new version **run**. Those are different
+problems and conflating them is how the second one gets declared solved. The four `## Flow run` rows
+report that a PR's skill changes did not execute; nothing yet requires that they ever do.
+
+**The gap, concretely.** v1.43.0's own SKILL.md changes did not execute during its own ship, because
+ship's prose came from the installed 1.29.0. The engine was run by hand and its output pasted into the
+PR body as *substitute* evidence, labelled as such. That is honest but it is not a gate, and it relies
+on an author choosing to do it.
+
+**Shape:** for a diff touching `plugins/flow/**`, require a recorded run of the changed surface
+resolved from the checkout — `CLAUDE_PLUGIN_ROOT` pointed at `plugins/flow`, the affected skill or
+script invoked, its output committed or pasted — with the run's provenance rows showing
+`libs: installed` and `preprocessor: installed` against the *checkout* tree, so the record cannot be
+produced by a stale run.
+
+**Why it was not built with v1.43.0, and why that was the right call.** It is a new *gate*, not a
+report, and it needs a design decision the reporting PR had no basis to make: what counts as
+"exercised" for a change to prose rather than to code? A SKILL.md edit has no return value. Guess
+wrong and it becomes either unfalsifiable ceremony or a blocker on every flow PR. The report had to
+ship first precisely so there is data on how often, and in what shape, the drift actually bites.
+
+**Surfaces when:** any PR touching `plugins/flow/**` — i.e. most of them — which is exactly why it
+needs a design rather than an improvisation.
+
+**Related:** the two roadmap entries below on `${CLAUDE_PLUGIN_ROOT}` reference hardening now have new
+a new distinction from the same measurement, which should be applied before anyone
+sizes this work: **classify by executor context, and per block rather than per line.** A bare
+`${CLAUDE_PLUGIN_ROOT}` ref in a **fenced Bash block** expands to `/skills/…` and hard-fails; the same
+bare ref in a **`!`-preprocessor block** resolves fine, because `CPR` is set there — so the two are not
+one population. And the guard is block-scoped: a correctly-guarded multi-line ladder (e.g.
+`critique-plan/SKILL.md`'s pin lint) has no same-line fallback and a line-local grep miscounts it as
+bare. v1.43.0 initially asserted a "32 of 144" split that was wrong on both axes *and* went stale inside
+its own PR (144 on `main`, 164 at its HEAD), so no count is recorded here on purpose — it is a fan-out
+constant. Measure it when you need it: `git grep -n 'CLAUDE_PLUGIN_ROOT' -- plugins/flow/skills/`.
+The `!`-block case does add a genuinely new concern to the entry below: a bare ref there silently runs
+the *installed* copy, which is quieter than the "degrades into fallback JSON" failure recorded there.
 
 
 ### `add-entry --finding`/`--resolution` embeds untrusted, agent-composed text as a raw shell argument — 1 of ~9 remaining producer sites fixed narrowly; the interface-level fix is a dispatched fast follow (from /flow:security-review, vacuous-criterion PR — FB-0104)

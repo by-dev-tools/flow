@@ -1,0 +1,21 @@
+{
+  "_comment": "Install fine, marketplace clone missing. update_available must be None (cannot tell), NOT False -- 'could not tell' and 'they match' must stay distinguishable or an unreadable source reads as a clean run.",
+  "registry": {
+    "version": 2,
+    "plugins": {
+      "flow@flow": [
+        {
+          "scope": "user",
+          "installPath": "/nonexistent",
+          "version": "1.29.0",
+          "gitCommitSha": "abcdef1234567890"
+        }
+      ]
+    }
+  },
+  "marketplace": null,
+  "branch_version": "1.43.0",
+  "expect": {
+    "update_available": null
+  }
+}

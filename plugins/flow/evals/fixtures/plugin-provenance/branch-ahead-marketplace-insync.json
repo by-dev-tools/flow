@@ -1,0 +1,43 @@
+{
+  "_comment": [
+    "THE CASE THAT FORCED THE TWO-PREDICATE DESIGN (critique finding 1), and the",
+    "one that actually occurred -- see this-workspace-20260912.json.",
+    "The branch declares an UNRELEASED version while the marketplace clone is",
+    "pinned at the same commit as the install. So report_drift is TRUE (this",
+    "branch's code did not run) while update_available is FALSE (there is",
+    "nothing newer to fetch locally). Collapsing these into one boolean makes an",
+    "updater fire on every feature branch forever, including immediately after a",
+    "fully successful update."
+  ],
+  "registry": {
+    "version": 2,
+    "plugins": {
+      "flow@flow": [
+        {
+          "scope": "user",
+          "installPath": "/nonexistent",
+          "version": "1.29.0",
+          "gitCommitSha": "abcdef1234567890"
+        }
+      ]
+    }
+  },
+  "marketplace": {
+    "name": "flow",
+    "metadata": {
+      "version": "1.29.0"
+    },
+    "plugins": [
+      {
+        "name": "flow",
+        "version": "1.29.0"
+      }
+    ]
+  },
+  "branch_version": "1.41.0",
+  "expect": {
+    "report_drift": true,
+    "update_available": false,
+    "release_gap": 12
+  }
+}
