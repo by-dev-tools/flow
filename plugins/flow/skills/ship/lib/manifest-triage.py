@@ -489,14 +489,25 @@ def parse_entries(body: str) -> list[dict[str, Any]]:
     # version of this comment ended up asserting the inverted invariant (FB-0010 flavor 2).
     #
     # The WIDE split goes first and is kept WHOLE -- including a genuinely duplicated line --
-    # so the union is never narrower than the pre-fix parser on ordinary input. The narrow
-    # split then contributes only fingerprints the wide one missed. Both facts are structural
-    # here rather than carried in a pass-index flag.
+    # so the union is never narrower than the pre-fix parser on ordinary input. Both facts are
+    # structural here rather than carried in a pass-index flag.
+    #
+    # The dedupe key is (fingerprint, needs), NOT fingerprint alone. `_fingerprint` covers
+    # (kind, finding) only, so keying on it would silently discard a narrow-split-only line
+    # that agrees on kind+finding but carries a DIFFERENT `needs` -- and `needs` is the field
+    # `classify()` derives class and waivability from, i.e. exactly the field an attacker
+    # wants to change. Including it can only ever ADD an entry, never drop one, which is the
+    # direction this whole function is built around; on ordinary input both passes yield
+    # identical lines, so it changes nothing there. (/flow:security-review caught the
+    # narrower key.)
+    def _key(e: dict[str, Any]) -> tuple[str, str]:
+        return (e["fingerprint"], e["needs"])
+
     entries: list[dict[str, Any]] = [e for e in map(_entry, text.splitlines()) if e]
-    seen = {e["fingerprint"] for e in entries}
+    seen = {_key(e) for e in entries}
     for e in map(_entry, text.replace("\r\n", "\n").split("\n")):
-        if e and e["fingerprint"] not in seen:
-            seen.add(e["fingerprint"])
+        if e and _key(e) not in seen:
+            seen.add(_key(e))
             entries.append(e)
     return entries
 

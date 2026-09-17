@@ -14,8 +14,13 @@ Two functions, one layer apart, plus a `[fence-injection]` section in
   re-splits it. It now takes the **union** of `str.splitlines()` and `split("\n")`, deduped by
   fingerprint.
 
+- `_defang_fences` (same file) matches the manifest line's **field separators** with the parser's
+  own grammar (`_FIELD_SEP_RE`) instead of three literal strings. **Scope added at ship** — see the
+  tradeoff below.
+
 Also: an entry whose kind flow does not recognize — only reachable via the widened region — no
-longer renders copy claiming a ship gate failed.
+longer renders copy claiming a ship gate failed, and the unknown-kind copy is consulted inside
+`_copy` rather than by a branch at two of its seven call sites.
 
 ## Why — the defect, measured not reasoned
 
@@ -84,6 +89,27 @@ residual is closed by v1.42.0's collapse + defang; for a body that did NOT come 
 line anchoring is the only layer and the residual stands. A cross-branch fan-out is the one
 direction `git grep` cannot see, which is exactly why it survived four documents.
 
+**Scope added at ship, on a security finding — stated as a tradeoff, not smuggled.** The
+field-separator defang fix is not what this branch set out to do. `/flow:ship` Step 2's own
+`/flow:security-review` found it, measured it, and tagged it `[auto-fixable]`; the pipeline's
+prescribed routing for that tag is *fix in-tree and continue*, and the alternative — shipping a PR
+whose entire thesis is "close the merge-gate bypass" while leaving a measured, reachable bypass in
+the same file — is incoherent. It sits in its own commit so the merge gate can drop it without
+touching the rest.
+
+The defect: `_LINE_RE` matches a separator as `\s+—\s*needs:`, a whitespace **class**; the defang
+matched the literal `" — needs:"`, **one space**. A TAB or NBSP therefore matched the parser and
+missed the defang. Measured: `--kind security --needs "secret rotation"` (out-of-session verb ⇒
+class `blocked`, not waivable) parsed as `needs='design decision'` ⇒ `ask`, `waivable: True`,
+verdict BLOCKED → DECIDE.
+
+Two things make it more than a one-line fix, and both are recorded in FB-0109 rule 8. The existing
+`P22` separator test **passed while the hole was open** because it used a single space — the one
+shape the literal caught; two spaces were safe only because the literal is a substring of them. And
+the queued `FIELD_SEPS` roadmap item would **not** have closed it: that item derives the token
+*set*, and this was two matchers of different *shapes* over the same grammar. The roadmap entry has
+been amended to say so rather than left to imply coverage it never had.
+
 **Fallback direction chosen for the gate.** If the fences are not found line-anchored, the whole
 text is returned — the "fences absent" path — so the parser sees *more* candidate entries, never
 fewer. A merge gate degrading toward not-ready is the safe direction.
@@ -96,10 +122,11 @@ fewer. A merge gate degrading toward not-ready is the safe direction.
   unclosed fence, a CRLF body driven against the engine directly (routed through a file it was
   vacuous — `_read` translates newlines before the parser sees them), and an emitter↔reader round
   trip asserting that what `render_manifest` writes, `parse_entries` reads back.
-- **Mutation-tested against six builds**, re-measured against the final eval: **17** failures on
-  pre-fix `main`, **13** with `splitlines()` at both layers, **8** with `split("\n")` alone in
-  `parse_entries`, **5** with `splitlines()` alone there, **1** with first-close instead of
-  last-close, **0** on the fix. A regression test never observed failing is a claim (FB-0104).
+- **Mutation-tested against seven builds**, re-measured against the final eval: **21** failures on
+  the pre-fix extractor, **8** with the wide split alone, **8** with the narrow split alone, **9**
+  with the literal field-separator defang restored, **1** with first-close, **1** with the CRLF
+  normalization removed, **0** on the fix. A regression test never observed failing is a claim
+  (FB-0104).
 
   **The numbers in the first version of this entry were wrong** — it said 12 / 8 / 5. Those were
   measured against an earlier, smaller revision of the eval and never re-measured after the

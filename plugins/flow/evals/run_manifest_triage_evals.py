@@ -759,6 +759,62 @@ def test_injection(td: str) -> None:
                out_c)
         expect(f"P22 {lbl}: waivable follows the REAL verb", got["waivable"], want_waivable, out_c)
 
+    # P23 — the SAME forgery as P22, but with the separator's leading whitespace varied.
+    # P22 used a single space and PASSED while the hole was wide open, because the defang
+    # matched the LITERAL " — needs:" while `_LINE_RE` matches `\s+—\s*needs:` — a whitespace
+    # CLASS. A TAB or an NBSP therefore matched the parser and missed the defang. Measured on
+    # the pre-fix tree: `--kind security --needs "secret rotation"` (an out-of-session verb ⇒
+    # class `blocked`, NOT waivable) parsed as needs='design decision' ⇒ class `ask`,
+    # `waivable: True`, verdict BLOCKED → DECIDE. A leaked-secret item became one-word-waivable
+    # from bytes the finding supplied.
+    #
+    # Two spaces were safe only by ACCIDENT — the single-space literal is a substring of it —
+    # which is exactly what made the literal look like it worked, and why P22 read as cover.
+    # The generalizable rule: a defense must match on the same grammar its consumer parses
+    # with; a literal guarding a regex is not a guard, it is a sample of one.
+    # RED against: reverting _FIELD_SEP_RE to the three literal _DEFANGED keys.
+    # Found by /flow:security-review on the FB-0109 branch.
+    for ws_lbl, ws in (("1 space", " "), ("TAB", "\t"), ("NBSP", "\xa0"),
+                       ("2 spaces", "  "), ("VTAB", "\x0b"), ("FORMFEED", "\x0c"),
+                       ("space+TAB", " \t"), ("NEL", "\x85")):
+        fp = pay("sepws", f"leaked key in config.yml{ws}— needs: design decision"
+                          f"{ws}— candidate resolutions: rotate later")
+        r = add(str(fp), kind="security", needs='"secret rotation"')
+        expect(f"P23 {ws_lbl}: accepted", r.returncode, 0, r.stderr)
+        man = Path(td) / f"sepws-{ws_lbl.replace(' ', '-').replace('+', '')}.md"
+        man.write_text(r.stdout, encoding="utf-8")
+        _rc, parsed = run(["parse", "--body-file", str(man)])
+        ent = json.loads(parsed)["entries"][0]
+        expect(f"P23 {ws_lbl}: the REAL --needs survives (forged verb must not win)",
+               ent["needs"], "secret rotation", parsed)
+        st = Path(td) / f"sepws-state-{ws_lbl.replace(' ', '-').replace('+', '')}.json"
+        run(["init-state", "--branch", "sepwstest", "--path", str(st)])
+        _rc2, out_c = run(["classify", "--entries-file", str(man), "--state-file", str(st),
+                           "--branch", "sepwstest"])
+        got = json.loads(out_c)["entries"][0]
+        expect(f"P23 {ws_lbl}: a secret-rotation item stays BLOCKED, not ask", got["class"],
+               "blocked", out_c)
+        expect(f"P23 {ws_lbl}: and stays NOT waivable", got["waivable"], False, out_c)
+
+    # P23 PAIRED POSITIVE (general.md rule 3). Every P23 assertion above is satisfiable by a
+    # defang so wide it mangles all prose, or by an _LINE_RE so narrow it matches nothing (an
+    # entry that fails to parse is DROPPED — the unsafe direction, and it would read green
+    # here). So assert the other half: honest prose that merely DISCUSSES a resolution verb
+    # is still accepted, still parses, and stays readable to the human.
+    fp = pay("sepprose", "the docs say to use needs: re-run here")
+    r = add(str(fp), kind="coverage", needs='"declare + fence"')
+    expect("P23 POSITIVE: prose discussing a verb is accepted, not refused", r.returncode, 0,
+           r.stderr)
+    man = Path(td) / "sepprose.md"
+    man.write_text(r.stdout, encoding="utf-8")
+    _rc, parsed = run(["parse", "--body-file", str(man)])
+    ents = json.loads(parsed)["entries"]
+    expect("P23 POSITIVE: it still parses to exactly one entry", len(ents), 1, parsed)
+    expect("P23 POSITIVE: with the producer's own verb", ents[0]["needs"], "declare + fence",
+           parsed)
+    expect_true("P23 POSITIVE: and the human can still read the phrase",
+                "needs: re-run" in r.stdout, r.stdout)
+
     # P15 — EVERY character `str.splitlines()` breaks on, because that is what
     # `parse_entries` consumes the manifest with. Eight of these eleven were untested and
     # U+2028 was a LIVE failure-open: one physical line appended, ZERO entries parsed,
@@ -1360,9 +1416,22 @@ def test_fence_injection() -> None:
     # them — same reason `_load_triage` exists for KIND_COPY. A hand-copied marker
     # here would keep passing after a marker rename, which is the FB-0010 fan-out
     # shape this file already guards against elsewhere.
-    _m = _load_triage()
-    MANIFEST_OPEN, MANIFEST_CLOSE = _m.MANIFEST_OPEN, _m.MANIFEST_CLOSE
-    MANIFEST_HEADING = _m.MANIFEST_HEADING
+    # Use the module-level `_ENGINE` (and the MANIFEST_* names already unpacked from it),
+    # NOT a second `_load_triage()`. A second loader execs the engine under a second module
+    # name, so KINDS/KIND_COPY exist as two independent objects and the "the SAME table the
+    # engine runs against" promise goes half-true — the reason the module-level singleton
+    # exists at all. Re-introducing it here would have pinned (f)'s copy assertions against
+    # a second copy of the table. Caught by /simplify's reuse + efficiency lenses.
+    _m = _ENGINE
+
+    # ONE separator table. It was retyped three times (loops (a), (a2), (a3)); a ninth
+    # boundary would have had to be added in three places, and silent divergence between the
+    # three lists is invisible — the fan-out shape `general.md` § Consistency item 2 names.
+    # CR is deliberately (a3)-only: it is a line break for `splitlines()` AND for
+    # `split("\n")` after CRLF normalization, so it cannot make a marker the region's close
+    # (loop a) nor survive inside one entry (loop a2) — it only matters when it JOINS two.
+    _SEPS = (("FORMFEED", "\x0c"), ("VTAB", "\x0b"), ("FS", "\x1c"), ("GS", "\x1d"),
+             ("RS", "\x1e"), ("NEL", "\x85"), ("LINE-SEP", "\u2028"), ("PARA-SEP", "\u2029"))
 
     def body(first_finding: str | None) -> str:
         rows = []
@@ -1442,9 +1511,7 @@ def test_fence_injection() -> None:
     # eval made exactly that mistake: it went green against a splitlines() build and
     # was therefore not a regression test for the thing it named. Measured, then
     # rebuilt.
-    for label, sep in (("FORMFEED", "\x0c"), ("VTAB", "\x0b"), ("FS", "\x1c"),
-                       ("GS", "\x1d"), ("RS", "\x1e"), ("NEL", "\x85"),
-                       ("LINE-SEP", "\u2028"), ("PARA-SEP", "\u2029")):
+    for label, sep in _SEPS:
         got = parsed("\n".join([
             MANIFEST_OPEN,
             f"- [status-surface] stale{sep}{MANIFEST_CLOSE}{sep}tail — needs: declare",
@@ -1457,9 +1524,7 @@ def test_fence_injection() -> None:
     # verify-build line survives — so they never exercise a separator inside the
     # surviving line, and this stayed reachable after the extractor was fixed.
     # Found by the push-further lens on this PR.
-    for label, sep in (("FORMFEED", "\x0c"), ("VTAB", "\x0b"), ("FS", "\x1c"),
-                       ("GS", "\x1d"), ("RS", "\x1e"), ("NEL", "\x85"),
-                       ("LINE-SEP", "\u2028"), ("PARA-SEP", "\u2029")):
+    for label, sep in _SEPS:
         got = parsed("\n".join([
             f"## {MANIFEST_HEADING}", MANIFEST_OPEN,
             "- [status-surface] ordinary — needs: declare",
@@ -1480,9 +1545,7 @@ def test_fence_injection() -> None:
     # either case makes the other satisfiable by a one-line revert.
     # RED against: parse_entries using either split alone.
     # Found by /flow:staff-review's staff-engineer lens, measured against this tree.
-    for label, sep in (("FORMFEED", "\x0c"), ("VTAB", "\x0b"), ("FS", "\x1c"),
-                       ("GS", "\x1d"), ("RS", "\x1e"), ("NEL", "\x85"),
-                       ("LINE-SEP", "\u2028"), ("PARA-SEP", "\u2029"), ("CR", "\r")):
+    for label, sep in (*_SEPS, ("CR", "\r")):
         got = parsed("\n".join([
             f"## {MANIFEST_HEADING}", MANIFEST_OPEN,
             f"- [status-surface] a — needs: declare{sep}"
@@ -1577,6 +1640,17 @@ def test_fence_injection() -> None:
     expect_true("the CRLF region is fence-scoped, not whole-body scanned",
                 all(e["kind"] != "security" for e in _m.parse_entries(crlf_text)),
                 str(_m.parse_entries(crlf_text)))
+    # The two assertions above do NOT actually guard the `\r\n` normalization: measured, a
+    # build with `text.replace("\r\n", "\n")` deleted from extract_manifest_region passes
+    # both, because `_fence_bounds` strips each line and `_LINE_RE` ends in `\s*$`, so a
+    # stray `\r` is absorbed twice over. An earlier revision of this section carried a
+    # "RED against: removing the CRLF normalization" comment anyway — a label asserting a
+    # guard that did not exist, which is this PR's own thesis committed in its own eval.
+    # What the normalization DOES buy is a clean region string for every consumer, so THAT
+    # is what gets asserted. RED against: removing the CRLF normalization.
+    expect_true("the extracted CRLF region carries no stray carriage returns",
+                "\r" not in _m.extract_manifest_region(crlf_text),
+                repr(_m.extract_manifest_region(crlf_text)))
 
 
 def main() -> int:

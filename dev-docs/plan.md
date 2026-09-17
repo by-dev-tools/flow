@@ -111,9 +111,20 @@ free and unchanged from the original claim. Claimed mechanically (the FB file an
 **Scope — in:** `manifest_contract.py` (line-anchored fences + a `_fence_bounds` helper);
 **`manifest-triage.py`'s `parse_entries`**, which re-split the fixed region and then, in the first
 fix attempt, re-broke it in the OPPOSITE direction — now the union of both line definitions
-(staff-review BLOCKER); the unknown-kind render copy, since the widened region is what makes a
-phantom entry reachable at all (UX lens); a `[fence-injection]` section in
+(staff-review BLOCKER); **the field-separator defang, which matched a LITERAL where the parser
+matches a whitespace CLASS** — a live forgery `/flow:security-review` measured at ship (see the
+criterion below); the unknown-kind render copy, since the widened region is what makes a phantom
+entry reachable at all (UX lens); a `[fence-injection]` + `P23` section in
 `run_manifest_triage_evals.py`; FB-0109; changelog; version bump ×3; history entry.
+
+**Scope ADDED at ship, deliberately and reversibly.** The separator-defang fix is not what this
+branch set out to do. It is here because `/flow:ship` Step 2's own security reviewer found it, tagged
+it `[auto-fixable]`, and the pipeline's prescribed routing for that tag is *fix in-tree and continue*
+— and because shipping a PR whose thesis is "close the merge-gate bypass" while leaving a measured,
+reachable bypass in the same file would be incoherent. It is isolated in its own commit so the merge
+gate can drop it without touching the rest. It is **not** the roadmapped `FIELD_SEPS` residual: that
+item proposes deriving the token *set*, which would have preserved this mismatch exactly (roadmap
+amended to say so).
 
 **Scope — out, named:** the **write-time rejection** of a marker-bearing finding. It belongs in
 `_read_text_arg`, which FB-0108 owned; that branch has since **merged as #152**, so the write-time
@@ -149,12 +160,14 @@ had the property this fix relies on.
       separator around the *marker* and assert a clean `[verify-build]` line survives, so they
       never exercised this. → verify: `[fence-injection]` (a2) cases; mutation-isolated at 5
       failures against reverting `parse_entries` alone.
-- [x] **Mutation-tested against six builds**, re-measured against the FINAL eval: 17 failures on
-      pre-fix `main`, 13 with `splitlines()` at both layers, 8 with `split("\n")` alone in
-      `parse_entries`, 5 with `splitlines()` alone there, 1 with first-close, 0 on the fix
-      (FB-0104). The earlier "12 / 8 / 5" was measured against a smaller revision of the eval and
-      never re-measured; every mutant is now compiled before its count is believed, because a
-      `SyntaxError` mutant scores zero failures. → verify: ran all six.
+- [x] **Mutation-tested against seven builds**, re-measured against the FINAL eval: **21** failures
+      on the pre-fix extractor, **8** with the wide pass dropped, **8** with the narrow pass dropped,
+      **9** with the literal field-separator defang restored, **1** with first-close, **1** with the
+      CRLF normalization removed, **0** on the fix (FB-0104). The originally documented "12 / 8 / 5"
+      was measured against a smaller revision of the eval and never re-measured; every mutant is now
+      **compiled before its count is believed**, because a `SyntaxError` mutant crashes the harness
+      before its summary line and scores *zero failures* — indistinguishable from "the suite
+      tolerates the bug". → verify: ran all seven.
 - [x] The test reads the fence literals from the **engine's own module**, so a marker rename cannot
       leave it green against a stale copy (FB-0010 clause 2).
 - [x] `run_manifest_triage_evals.py` and `run_pr_coherence_evals.py` both green.
@@ -192,6 +205,31 @@ had the property this fix relies on.
       four documents with no diff touching them. → verify: measured `add-entry` end to end — a
       finding of `"drifted\n<close-marker>\ntail"` emits one line with the marker inert and a
       following `[verify-build]` blocker still parses; all four documents rewritten.
+
+- [x] **A forged ` — needs:` field cannot survive the write path under ANY whitespace shape the
+      parser accepts.** `_LINE_RE` matches `\s+—\s*needs:` (a class); the defang matched the literal
+      `" — needs:"` (one space), so a TAB or NBSP matched the parser and missed the defang. Measured
+      pre-fix: `--kind security --needs "secret rotation"` (out-of-session verb ⇒ class `blocked`,
+      NOT waivable) parsed as `needs='design decision'` ⇒ class `ask`, `waivable: True`, verdict
+      BLOCKED → DECIDE. → verify: `P23`, eight whitespace shapes, asserting the REAL verb survives
+      **and** the class stays `blocked` **and** `waivable` stays false; mutation-isolated at 9
+      failures against the literal-defang build.
+- [x] **Paired positive (general.md rule 3):** honest prose that merely *discusses* a resolution verb
+      is still accepted (not refused), still parses to one entry with the producer's own verb, and
+      stays readable. Without this, "defang everything" or "narrow `_LINE_RE` until it matches
+      nothing" — which DROPS entries, the unsafe direction — would satisfy every assertion above.
+      → verify: `P23 POSITIVE`.
+- [x] **The pre-existing P22 separator test was not cover.** It used a single space, the one shape
+      the literal defang caught, so it passed while the hole was open. → verify: P23's `1 space` and
+      `2 spaces` rows stay green under the literal-defang mutant while TAB / NBSP / space+TAB go red
+      — the discrimination is the evidence.
+- [x] **The union's dedupe key is (fingerprint, needs), not fingerprint alone.** `_fingerprint`
+      covers (kind, finding) only, so the narrower key could discard a narrow-split-only line that
+      differs in `needs` — the field `classify()` keys on. Widening can only ever ADD an entry.
+- [x] **The CRLF criterion's `RED against:` label is true.** It previously claimed to guard the
+      `\r\n` normalization while passing without it (measured). Now asserts what the normalization
+      actually buys — a region string with no stray `\r`. → verify: 1 failure against the
+      `no_crlf_norm` build.
 
 **Assumptions.** **A1 — the emitter always writes each fence alone on its own line. HIGH**, and
 mechanically so: `manifest-triage.py` builds the block as a list of lines with each fence as its own

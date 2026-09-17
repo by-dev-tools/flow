@@ -115,8 +115,43 @@
      scored it **zero failures** — indistinguishable from "the test suite tolerates the bug".
      Every mutant must be compiled before its count is believed.
 
-- **Applies to:** `plugins/flow/skills/ship/lib/manifest_contract.py` and
-  `manifest-triage.py::parse_entries` (both fixed here);
+  8. **A defense must match on the same grammar its consumer parses with.** The sharpest
+     instance of this entry's own headline rule, found by `/flow:security-review` at ship on
+     this very branch. The manifest line's field separators are defanged at write time so a
+     finding quoting one cannot forge the field — but the defang matched three **literal**
+     strings while `_LINE_RE` matches a **whitespace class** (`\s+—\s*needs:`). A TAB or an
+     NBSP before the em dash therefore matched the parser and missed the defang.
+
+     Measured: `--kind security --needs "secret rotation"` (an out-of-session verb ⇒ class
+     `blocked`, **not waivable**) parsed as `needs='design decision'` ⇒ class `ask`,
+     `waivable: True`, verdict BLOCKED → DECIDE. A leaked-secret item became
+     one-word-waivable from bytes the finding supplied.
+
+     Three things make this worth its own rule rather than a footnote to rule 4:
+
+     a. **The existing test passed while the hole was open, because it used the safe shape.**
+        `P22` already attacked the separator — with a single space, the one whitespace the
+        literal caught. Two spaces were safe only *by accident*: the one-space literal is a
+        substring of them. A payload suite that samples one whitespace shape of a class the
+        parser accepts is testing the sample, not the class.
+     b. **The roadmapped fix would not have closed it.** The queued `FIELD_SEPS` item proposes
+        deriving the token *set* so a fifth token cannot drift. This gap was not a missing
+        token — it was two matchers of **different shapes** over the same grammar, and
+        compiling `_LINE_RE` from a literal tuple would have preserved the mismatch exactly.
+        "We already have a roadmap item near this" is not the same as "this is covered."
+     c. **It falsified a boundary claim written the same day**, in this same document's
+        rule 6 spirit: the docstring had just been corrected to say the two layers "together
+        cover the reachable paths, with one honest gap — a body that did NOT come through
+        `add-entry`." A body that *did* come through `add-entry` was forgeable.
+
+     **Generalized:** when a guard and its consumer both recognize the same construct, they
+     must do it with the same matcher — share the pattern, not a literal drawn from it. A
+     literal guarding a regex is not a guard; it is a sample of one. And the direction to
+     widen in is the one that defangs more, never the one that matches less: narrowing the
+     *parser* instead would drop entries, which is the unsafe direction.
+
+- **Applies to:** `plugins/flow/skills/ship/lib/manifest_contract.py`,
+  `manifest-triage.py::parse_entries`, and `manifest-triage.py::_defang_fences` (all fixed here);
   `pr-coherence.py::has_manifest`'s unanchored match on the third token (owned by the FB-0108
   branch, write-side defang); FB-0108's
   write-time half; any future machine-readable region flow delimits in human-editable text — the
