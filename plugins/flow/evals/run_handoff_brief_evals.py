@@ -215,6 +215,36 @@ check("  ... and says why, naming the unmatched globs",
       and "db/migrations/**" in _out.get("reason", ""), _out.get("reason", ""))
 check("  ... and still reports which globs matched nothing",
       sorted(_out["globs_matching_nothing"]) == ["db/migrations/**", "src/auth/**"])
+check("  ... and names which of those are sensitive-SHAPED (not merely absent)",
+      sorted(_out["globs_matching_nothing_but_sensitive_shaped"]) == ["db/migrations/**", "src/auth/**"])
+
+# The other half, and the one the coverage audit demanded: greenfield is NOT a blanket
+# escalation. Flooring every not-yet-existing glob would be the over-spending failure
+# the routing policy names as explicitly as under-dispatching.
+(_repo / "globs.txt").write_text("docs/guides/**\nsrc/ui/**\n", encoding="utf-8")
+_r = _sp.run([sys.executable, str(SP_LIB), "--globs-file", "globs.txt"],
+             cwd=str(_repo), capture_output=True, text=True)
+_o = json.loads(_r.stdout)
+check("greenfield globs that name NO sensitive area do NOT escalate "
+      "(a floor that fires on all new work is a ban, not a floor)",
+      _o["sensitive"] is False, _r.stdout[:200])
+check("  ... and they are still reported as matching nothing, so the caller can see why",
+      sorted(_o["globs_matching_nothing"]) == ["docs/guides/**", "src/ui/**"]
+      and _o["globs_matching_nothing_but_sensitive_shaped"] == [])
+
+# The predicate itself, both directions, so the rule is pinned independently of the CLI.
+for _g, _want in (("db/migrations/**", True), ("src/auth/**", True), (".github/workflows/**", True),
+                  ("api/schema/**", True), ("config/*.sql", True),
+                  ("docs/**", False), ("src/ui/**", False), ("notes/*.md", False)):
+    check(f"glob_names_sensitive_area({_g!r}) == {_want}",
+          SP.glob_names_sensitive_area(_g, DEF) is _want)
+# The stated residual, pinned so it is a decision on the record rather than a surprise:
+# a broad glob answers False, and the plan gate's stakes axis is what catches it later.
+check("a broad `src/**` answers False — the documented residual, caught downstream by "
+      "the gate's stakes axis over the ACTUAL changed files",
+      SP.glob_names_sensitive_area("src/**", DEF) is False)
+check("  ... and that same worker's actual auth file IS caught by the path entry point",
+      SP.classify(["src/auth/login.ts"], DEF)["sensitive"] is True)
 (_repo / "globs.txt").write_text("*.md\n", encoding="utf-8")
 _r = _sp.run([sys.executable, str(SP_LIB), "--globs-file", "globs.txt"],
              cwd=str(_repo), capture_output=True, text=True)
@@ -274,6 +304,28 @@ for pat in ("[unclosed", "a(b", "+++", "a{2,}", "\\", "(?i)secret"):
         check(f"pattern {pat!r} is handled literally, not crashed on", False, repr(exc))
 check("a literal-matching pattern still matches its literal",
       SP.classify(["a(b"], ["a(b"])["sensitive"] is True)
+print("\n§7a  the defaults are a FLOOR — a consumer list MERGES, it never replaces")
+# The one silent-narrowing path in a module whose thesis is that every uncertain path
+# escalates. A consumer adding one project entry must not lose .env/auth/migrations/CI.
+_narrow = TMP / "narrow.json"
+_narrow.write_text(json.dumps({"sensitivePaths": ["my/own/gate/**"]}), encoding="utf-8")
+_pats, _src, _w = SP.load_patterns(str(_narrow))
+check("a one-entry consumer list still carries every default",
+      all(d in _pats for d in DEF), f"missing: {[d for d in DEF if d not in _pats]}")
+check("  ... and the consumer's own entry too", "my/own/gate/**" in _pats)
+check("  ... and the source says so, so the caller can tell", _src == "config+defaults")
+check("a narrow consumer list does NOT drop auth coverage (the silent-narrowing bug)",
+      SP.classify(["src/auth/login.ts"], _pats)["sensitive"] is True)
+check("  ... nor migrations, nor .env, nor CI",
+      all(SP.classify([f], _pats)["sensitive"] is True
+          for f in ("db/migrations/1.sql", ".env", ".github/workflows/ci.yml")))
+check("the consumer's own entry is matched", SP.classify(["my/own/gate/x.py"], _pats)["sensitive"] is True)
+_dup = TMP / "dup.json"
+_dup.write_text(json.dumps({"sensitivePaths": ["**/auth/**", "extra/**"]}), encoding="utf-8")
+_pats2, _, _ = SP.load_patterns(str(_dup))
+check("a consumer restating a default does not duplicate it",
+      _pats2.count("**/auth/**") == 1 and "extra/**" in _pats2)
+
 cfgp = TMP / "empty-slot.json"; cfgp.write_text(json.dumps({"sensitivePaths": []}), encoding="utf-8")
 pats, src_, warns = SP.load_patterns(str(cfgp))
 check("an EMPTY sensitivePaths list falls back to defaults with a warning, rather than "
@@ -285,13 +337,42 @@ check("a non-list sensitivePaths falls back loudly", pats == DEF and warns and "
 pats, src_, warns = SP.load_patterns(str(TMP / "absent.json"))
 check("an ABSENT config is a silent, documented default (not a warning)",
       pats == DEF and src_ == "default" and warns == [])
+check("  ... and 'default' is distinguishable from 'config+defaults', so the audit line "
+      "can say which policy a verdict was reached under",
+      SP.load_patterns(str(_narrow))[1] != src_)
 proc = subprocess.run([sys.executable, str(SP_LIB), "--files-file", str(TMP / "nope.txt")],
                       capture_output=True, text=True)
 check("an unreadable file list ⇒ sensitive:true, with a warning",
       json.loads(proc.stdout)["sensitive"] is True and "⚠️" in proc.stderr)
 
+print("\n§7b  the policy protects its own surface, and refuses pathological patterns")
+# Without these two defaults the diff that WEAKENS the gate is itself low-stakes and
+# therefore auto-approvable: one green plan gate could edit the list deciding which
+# plan gates are green.
+for _f in ("flow.config.json", "sub/project/flow.config.json", ".flow/usage.tsv"):
+    check(f"{_f} is sensitive by default (the policy's own surface)",
+          SP.classify([_f], DEF)["sensitive"] is True)
+# ReDoS: repo-controlled globs reach the matcher. Measured non-terminating before the
+# bound; a gate that hangs never returns a verdict, which is worse than either answer.
+import time as _time
+for _bad, _label in (("*a*a*a*a*a*a*a*a*a*a*a*a*b", "nested-quantifier"),
+                     ("**/" * 10 + "x", "repeated **/")):
+    _t0 = _time.time()
+    _r = SP.classify(["a/" * 30 + "z.txt"], [_bad])
+    _el = _time.time() - _t0
+    check(f"a {_label} pattern is refused in bounded time (<1s)", _el < 1.0, f"{_el:.2f}s")
+    check(f"  ... and refusing classifies SENSITIVE, naming the pattern ({_label})",
+          _r["sensitive"] is True and _r.get("unsafe_patterns"), json.dumps(_r)[:160])
+check("an ordinary pattern is NOT refused as pathological",
+      "unsafe_patterns" not in SP.classify(["src/auth/x.ts"], DEF))
+check("collapsing repeated `**/` preserves meaning",
+      SP.classify(["a/b/c/x.sql"], ["**/**/**/*.sql"])["sensitive"] is True)
+
 print("\n§8  the defaults are project-agnostic")
 blob = json.dumps(DEF)
+# `.flow/` and `flow.config.json` ARE named, deliberately: they exist in every flow
+# consumer, so they are generic to the plugin rather than specific to THIS project.
+# What must not appear is a path only flow-the-repo has.
 for tok in ("plugins/flow", "manifest-triage", "skip-audit", "verify-build", "pr-coherence", "dev-docs"):
     check(f"defaults name no flow-specific path {tok!r} (that belongs in a project's own config)",
           tok not in blob)

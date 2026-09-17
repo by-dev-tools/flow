@@ -26,9 +26,13 @@ the home for cross-skill contracts.
 degraded path in this module returns *sensitive* rather than *not sensitive*: an
 unreadable changed-file list, an unreadable owned-glob list, a repo whose index
 cannot be read, an EMPTY input on either side ("asked about nothing" is not
-"nothing is sensitive"), **and an owned glob that matches nothing yet** (the greenfield
-one-way-door case — a worker dispatched to *create* migrations or auth owns a
-glob with no matches today, and that is precisely when the floor matters most). A malformed or empty `sensitivePaths` slot falls back to the
+"nothing is sensitive"), **and an owned glob that matches nothing yet *and
+names a sensitive area*** (the greenfield one-way-door case — a worker dispatched to
+*create* migrations or auth owns a glob with no matches today, and that is
+precisely when the floor matters most). Note the qualifier: a `docs/**` that does
+not exist yet is genuinely low-stakes, and escalating the whole greenfield class
+would be the over-spending failure the routing policy names as explicitly as it
+names under-dispatching. A malformed or empty `sensitivePaths` slot falls back to the
 documented defaults, loudly. A wrong "sensitive" costs one unnecessary human
 decision; a wrong "not sensitive" auto-approves a plan that should have
 escalated, or routes gate machinery to a cheap model — and both of those fail
@@ -100,7 +104,23 @@ DEFAULT_SENSITIVE_PATHS = [
     # and it does so without a symptom.
     ".github/workflows/**",
     ".github/actions/**",
+    # The policy's own surface. Without these, the diff that WEAKENS the gate is
+    # itself low-stakes and therefore auto-approvable — a single green plan gate
+    # could edit the list that decides which plan gates are green. Self-protection
+    # is not paranoia here; it is the one entry whose absence makes every other
+    # entry optional.
+    "**/flow.config.json",
+    "**/.flow/**",
 ]
+
+
+# Bounds on a consumer-supplied glob. These are ReDoS guards, not style limits: the
+# translated regex is matched against every candidate path, and repo-controlled input
+# reaches it. `*a*a*a…b` (nested quantifier alternation) did not terminate in 25s on a
+# 50-char path; ten adjacent `**/` groups took 1.3s and grow exponentially. A gate that
+# hangs is a gate that never returns a verdict, which is worse than either answer.
+_MAX_PATTERN_LEN = 200
+_MAX_WILDCARDS = 12
 
 
 def _glob_to_regex(pattern: str) -> str:
@@ -114,6 +134,9 @@ def _glob_to_regex(pattern: str) -> str:
     Supported: `**` (any number of path segments, including none), `*` (anything
     except `/`), `?` (one character except `/`). Everything else is literal.
     """
+    # Collapse runs of `**/` to one: `**/**/x` and `**/x` admit the same paths, but the
+    # first compiles to adjacent `(?:[^/]+/)*` groups whose backtracking multiplies.
+    pattern = re.sub(r"(?:\*\*/)+", "**/", pattern)
     out = []
     i = 0
     n = len(pattern)
@@ -142,6 +165,16 @@ def _glob_to_regex(pattern: str) -> str:
         out.append(re.escape(c))
         i += 1
     return r"\A" + "".join(out) + r"\Z"
+
+
+def _pattern_is_safe(pattern: str):
+    """(ok, reason). Refuse a pattern that could make matching pathological."""
+    if len(pattern) > _MAX_PATTERN_LEN:
+        return False, f"longer than {_MAX_PATTERN_LEN} chars"
+    wild = pattern.count("*") + pattern.count("?")
+    if wild > _MAX_WILDCARDS:
+        return False, f"contains {wild} wildcards (limit {_MAX_WILDCARDS})"
+    return True, ""
 
 
 def _normalize(path: str) -> str:
@@ -184,6 +217,22 @@ def load_patterns(config_path: str = "flow.config.json") -> tuple[list[str], str
         )
         return list(DEFAULT_SENSITIVE_PATHS), "default-after-error", warnings
     cleaned = [s.strip() for s in raw if s.strip()]
+    if cleaned:
+        # MERGE, do not replace. The defaults are a FLOOR, not a suggestion. Replacing
+        # them meant a consumer who added one project entry silently lost all sixteen
+        # shape-based protections — `.env`, auth, migrations, CI — and the gate's stakes
+        # axis then read green on an auth diff. That is the one silent-narrowing path in
+        # a module whose entire stated thesis is that every uncertain path escalates, and
+        # documenting it in the schema (the first attempt) does not make it safe: nobody
+        # reads a slot description while deleting a line from an array.
+        #
+        # Narrowing is not a capability worth having here. Over-flagging costs one
+        # unnecessary human decision; under-flagging costs the gate, silently. A project
+        # that genuinely wants a default relaxed can say so at the gate, where a human
+        # sees it, rather than by quietly shrinking a list.
+        merged = list(DEFAULT_SENSITIVE_PATHS)
+        merged.extend(p for p in cleaned if p not in merged)
+        return merged, "config+defaults", warnings
     if not cleaned:
         warnings.append(
             f"{PREFIX} ⚠️ flow.config.json.sensitivePaths is present but empty. An empty list "
@@ -227,6 +276,51 @@ def expand_globs(globs, tracked):
     return sorted(set(matched)), empty
 
 
+def glob_names_sensitive_area(glob: str, patterns) -> bool:
+    """Does this owned glob, *as declared*, name a sensitive area?
+
+    The greenfield question needs a real answer, not a blunt one. A worker dispatched
+    to CREATE files owns a glob matching nothing today, so the extensional check
+    ("what does it own now?") cannot see the work — but answering a flat "sensitive"
+    for every such glob floors *all* greenfield work to the top tier, which is the
+    over-spending failure the routing policy names as explicitly as under-dispatching.
+    `docs/**` and `db/migrations/**` are both empty on a fresh tree; they are not the
+    same question.
+
+    So the probe substitutes a NEUTRAL filler for each wildcard and asks whether the
+    resulting path is sensitive. `db/migrations/**` → `db/migrations/x` → sensitive.
+    `docs/**` → `docs/x` → not. This tests the glob's own literal structure, which is
+    exactly what `sensitivePaths` asks of a path.
+
+    **The deliberate residual, stated rather than hidden:** a broad glob like `src/**`
+    answers False even though a worker could later create `src/auth/`. Substituting
+    sensitive segments INTO wildcards instead would answer True for `src/**` — and
+    also for `docs/**`, and for every other `**` glob, because `**` admits any
+    segment. That check would be indistinguishable from the flat rule it replaced.
+    The residual is bounded rather than open: the plan gate's stakes axis re-evaluates
+    against the ACTUAL changed files before anything merges, so an over-broad
+    declaration that turns out to touch gate machinery is caught there. Routing is
+    the cheaper, earlier signal; the gate is the one that must not be wrong.
+    """
+    g = _normalize(glob)
+    try:
+        grx = re.compile(_glob_to_regex(g))
+    except re.error:  # pragma: no cover - _glob_to_regex escapes everything
+        return True
+    probes = set()
+    for depth in (1, 2):
+        probe = g.replace("**", "/".join(["x"] * depth))
+        probe = probe.replace("*", "x").replace("?", "x")
+        probe = re.sub(r"/+", "/", probe).strip("/")
+        if probe:
+            probes.add(probe)
+    for pat in patterns:
+        prx = re.compile(_glob_to_regex(_normalize(pat)))
+        for probe in probes:
+            if grx.match(probe) and prx.match(probe):
+                return True
+    return False
+
 def classify(paths, patterns) -> dict:
     """Return {'sensitive': bool, 'matches': [{'path','pattern'}...]}.
 
@@ -234,9 +328,18 @@ def classify(paths, patterns) -> dict:
     just the first, because the escalation text has to name *why* a diff is
     high-stakes and one reason is rarely the whole story.
     """
-    # No try/except: see the module docstring — every character outside the three
-    # wildcards is escaped, so translation cannot produce an invalid pattern.
-    compiled = [(pat, re.compile(_glob_to_regex(pat))) for pat in patterns]
+    # No try/except on compile: every character outside the three wildcards is escaped,
+    # so translation cannot produce an INVALID pattern. What it can produce is a
+    # pathological one, which is what `_pattern_is_safe` refuses — and refusing is the
+    # escalating direction, consistent with the rest of the module.
+    compiled = []
+    unsafe = []
+    for pat in patterns:
+        ok, reason = _pattern_is_safe(pat)
+        if not ok:
+            unsafe.append({"pattern": pat, "reason": reason})
+            continue
+        compiled.append((pat, re.compile(_glob_to_regex(pat))))
     matches = []
     for raw in paths:
         norm = _normalize(raw)
@@ -245,7 +348,19 @@ def classify(paths, patterns) -> dict:
         for pat, rx in compiled:
             if rx.match(norm):
                 matches.append({"path": norm, "pattern": pat})
-    return {"sensitive": bool(matches), "matches": matches}
+    result = {"sensitive": bool(matches), "matches": matches}
+    if unsafe:
+        # A refused pattern might have been the one protecting this diff, so the only
+        # honest answer is sensitive — and say which, so it can be fixed rather than
+        # silently tolerated.
+        result["sensitive"] = True
+        result["unsafe_patterns"] = unsafe
+        result["reason"] = (
+            "one or more sensitivePaths patterns were refused as pathological ("
+            + "; ".join(f"{u['pattern']!r}: {u['reason']}" for u in unsafe[:3])
+            + ") — classified sensitive rather than matched against a pattern that could hang the gate"
+        )
+    return result
 
 
 def _failsafe(source, reason):
@@ -350,7 +465,12 @@ def main(argv=None) -> int:
         result["pattern_source"] = source
         result["expanded_from_globs"] = len(expanded)
         result["globs_matching_nothing"] = empty
-        if empty and not result["sensitive"]:
+        # Only the unmatched globs that could REACH a sensitive pattern escalate.
+        # A `docs/**` that does not exist yet is genuinely low-stakes; a
+        # `db/migrations/**` that does not exist yet is the one-way door.
+        reaching = [g for g in empty if glob_names_sensitive_area(g, patterns)]
+        result["globs_matching_nothing_but_sensitive_shaped"] = reaching
+        if reaching and not result["sensitive"]:
             # A glob matching nothing TODAY is the greenfield case, and it is the
             # single likeliest way this predicate is asked about one-way-door work:
             # a worker dispatched to CREATE `db/migrations/**` or `src/auth/**` owns
@@ -365,10 +485,10 @@ def main(argv=None) -> int:
             # the weaker answer under the stronger question's name.
             result["sensitive"] = True
             result["reason"] = (
-                f"{len(empty)} owned glob(s) match no tracked file yet "
-                f"({', '.join(empty[:5])}) — the work may CREATE files under them, which "
-                f"cannot be evaluated from the current tree. Classified sensitive rather "
-                f"than guessed."
+                f"{len(reaching)} owned glob(s) match no tracked file yet but COULD admit a "
+                f"sensitive path ({', '.join(reaching[:5])}) — the work may CREATE files under "
+                f"them, which cannot be evaluated from the current tree. Classified sensitive "
+                f"rather than guessed."
             )
             print(f"{PREFIX} ⚠️ {result['reason']}", file=sys.stderr)
         print(json.dumps(result, indent=2))

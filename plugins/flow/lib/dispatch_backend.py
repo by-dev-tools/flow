@@ -112,6 +112,12 @@ _SAFE_VALUE_RE = re.compile(r"\A[A-Za-z0-9._/@:+=-]+\Z")
 # runtime value, but a template carrying a shell operator turns one rendered
 # command into two, and nothing downstream would report it.
 _TEMPLATE_FORBIDDEN = [";", "|", "&", "`", "$(", ">", "<", "\n", "\\"]
+# `~` is not a shell operator, so it is not forbidden — but `shlex.quote` single-quotes
+# it in the `command` field, so `cli --home ~/x` renders a LITERAL `~/x` the shell will
+# not expand. Silently different from what the author wrote, which is the one outcome
+# this module refuses to produce, so it is called out at validation rather than left to
+# surprise someone.
+_TEMPLATE_WARN = ["~"]
 
 
 def load_backend(config_path="flow.config.json"):
@@ -186,6 +192,13 @@ def validate(backend):
             # while this half stayed open. `render()` computes `found - values`; `validate`
             # must compute the same thing from the contract, or the two disagree about what
             # a valid template is.
+            for warn in _TEMPLATE_WARN:
+                if warn in tmpl:
+                    problems.append(
+                        f"template contains {warn!r}, which is NOT expanded — values are quoted, so "
+                        f"it renders literally and the shell will not expand it. Write the full path."
+                    )
+                    break
             extra = sorted(found - required)
             if extra:
                 problems.append(
@@ -201,6 +214,19 @@ def validate(backend):
                         f"become two, and nothing downstream would report it"
                     )
                     break
+            # Parse it the same way `render()` will. An unbalanced quote compiles fine,
+            # passes every check above, and then raises an uncaught ValueError at
+            # dispatch — the agent gets a traceback instead of the promised loud refusal
+            # with a manual fallback, i.e. the "dispatch silently did not happen" outcome.
+            # `check` and `render` must agree on what a valid template is, so they run
+            # the same parser.
+            try:
+                shlex.split(tmpl)
+            except ValueError as exc:
+                problems.append(
+                    f"template is not parseable as a command line ({exc}) — most likely an "
+                    f"unbalanced quote. It would fail at dispatch, not here."
+                )
             entry.update(state="ok" if not problems else "invalid", template=tmpl, problems=problems)
             if problems:
                 report["ok"] = False
@@ -271,7 +297,18 @@ def render(backend, verb, values):
                 f"would be read as a flag by the backend."
             )
     rendered = _PLACEHOLDER_RE.sub(lambda m: str(values[m.group(1)]), tmpl)
-    return shlex.split(rendered), None
+    try:
+        return shlex.split(rendered), None
+    except ValueError as exc:
+        # Never a traceback. Every other failure in this module returns the loud refusal
+        # plus the named manual fallback, and an unparseable template is not the one
+        # place to make the caller guess what happened.
+        return None, (
+            f"{PREFIX} ⚠️ refusing to render `{verb}`: the template is not parseable as a "
+            f"command line ({exc}) — most likely an unbalanced quote in "
+            f"flow.config.json.dispatchBackend. Do this by hand instead: {manual}. "
+            f"This step was NOT performed."
+        )
 
 
 def main(argv=None) -> int:

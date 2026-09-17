@@ -51,7 +51,13 @@ This sharpens the invariant to: recoverable from git, the backend, **or already-
 
 ## 3. Write the brief — it points, it does not duplicate
 
-Write with the **Write tool** to `.flow/succession-brief.md`. Three sections, and it stays tiny precisely because the first two layers flush continuously:
+Write with the **Write tool** to `.flow/succession-brief.md` — after the same scratch guard every other site uses:
+
+```sh
+[ -L .flow ] && { echo "⚠️ BLOCKER: .flow is a symlink — refusing to write scratch through it." >&2; exit 1; }
+mkdir -p .flow
+find .flow -maxdepth 1 -type l | grep -q . && { echo "⚠️ BLOCKER: .flow contains a symlink — refusing to write scratch." >&2; exit 1; }
+``` Three sections, and it stays tiny precisely because the first two layers flush continuously:
 
 ```markdown
 # Succession brief — <seat>

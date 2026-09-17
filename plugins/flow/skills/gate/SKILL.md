@@ -52,6 +52,13 @@ Format compliance is not the bar. An escalation can carry options, a recommendat
 # and `mkdir -p` would follow it, landing writes outside the repo.
 [ -L .flow ] && { echo "⚠️ BLOCKER: .flow is a symlink — refusing to write scratch through it." >&2; exit 1; }
 mkdir -p .flow
+# Guard the FILES too, not only the directory. An untrusted repo can commit
+# `.flow/<name>` as a tracked symlink to ~/.bashrc or ~/.claude/settings.json; `.flow`
+# itself is then a perfectly real directory git just created, so a directory-only check
+# passes and the redirect below follows the link — writing agent-composed text into an
+# attacker-chosen file. One check over the whole directory covers every write site here
+# and any added later.
+find .flow -maxdepth 1 -type l | grep -q . && { echo "⚠️ BLOCKER: .flow contains a symlink — refusing to write scratch (a committed .flow/<name> link would redirect this write outside the repo)." >&2; exit 1; }
 git diff --name-only origin/HEAD...HEAD > .flow/gate-files.txt 2>/dev/null
 python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/gate/lib/gate-classify.py" plan \
   --files-file .flow/gate-files.txt \
@@ -122,6 +129,13 @@ Write the JSON with the **Write tool** (`title`, `recommendation`, `confidence`,
 ```sh
 [ -L .flow ] && { echo "⚠️ BLOCKER: .flow is a symlink — refusing to write scratch through it." >&2; exit 1; }
 mkdir -p .flow
+# Guard the FILES too, not only the directory. An untrusted repo can commit
+# `.flow/<name>` as a tracked symlink to ~/.bashrc or ~/.claude/settings.json; `.flow`
+# itself is then a perfectly real directory git just created, so a directory-only check
+# passes and the redirect below follows the link — writing agent-composed text into an
+# attacker-chosen file. One check over the whole directory covers every write site here
+# and any added later.
+find .flow -maxdepth 1 -type l | grep -q . && { echo "⚠️ BLOCKER: .flow contains a symlink — refusing to write scratch (a committed .flow/<name> link would redirect this write outside the repo)." >&2; exit 1; }
 ```
 
 The renderer refuses to format an escalation that is missing the recommendation / confidence / justification triple, and refuses one with **no `originating_session`**. That second refusal is the one people skip: the seat is the single human-facing decision surface **in both directions**. An escalation is not finished when it is presented — it is finished when the human's answer has been **relayed back** to the worker that raised it, from this seat, via the backend's message verb. A human should never have to open N worker workspaces to keep N workstreams moving; that is the attention cost the seat exists to remove, and routing approvals through worker chats reintroduces it in full.

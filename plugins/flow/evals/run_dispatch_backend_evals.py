@@ -143,6 +143,23 @@ for op in (";", "|", "&", "`", "$("):
     r = D.validate({**GOOD, "listWorkers": f"xctl workspace list {op} rm -rf /"})
     check(f"a template containing {op!r} is invalid", not r["ok"])
 
+# check and render must agree on what a valid template is. An unbalanced quote
+# compiled fine, passed every check, and then raised an uncaught ValueError at
+# dispatch — a traceback instead of the promised refusal-with-manual-fallback, i.e.
+# the "dispatch silently did not happen" outcome every SKILL.md calls the worst one.
+_UNBAL = {**GOOD, "workerStatus": 'xctl session status "{session} --json'}
+check("an unbalanced quote FAILS validation rather than passing to dispatch",
+      not D.validate(_UNBAL)["ok"]
+      and any("not parseable" in pr for pr in D.validate(_UNBAL)["verbs"]["workerStatus"]["problems"]))
+_a, _e = D.render(_UNBAL, "workerStatus", {"session": "abc"})
+check("  ... and render refuses it cleanly instead of raising",
+      _a is None and _e and "⚠️" in _e and "not parseable" in _e, str(_e))
+check("  ... naming the manual fallback, like every other refusal",
+      "by hand" in (_e or ""))
+_TILDE = {**GOOD, "selfSession": "xctl session current --home ~/x"}
+check("a `~` in a template is flagged — quoting renders it literally, silently unlike "
+      "what the author wrote", not D.validate(_TILDE)["ok"])
+
 print("\n§3  safe rendering")
 argv, err = D.render(GOOD, "sendMessage", {"session": "abc-123", "messageFile": ".flow/msg.md"})
 check("sendMessage renders", err is None and argv is not None, str(err))

@@ -79,6 +79,13 @@ Fast mode is nearly always wrong for a worker: more speed at more cost, and nobo
 # skill get it; fixing one of two identical redirects is the fan-out class.
 [ -L .flow ] && { echo "⚠️ BLOCKER: .flow is a symlink — refusing to write scratch through it." >&2; exit 1; }
 mkdir -p .flow
+# Guard the FILES too, not only the directory. An untrusted repo can commit
+# `.flow/<name>` as a tracked symlink to ~/.bashrc or ~/.claude/settings.json; `.flow`
+# itself is then a perfectly real directory git just created, so a directory-only check
+# passes and the redirect below follows the link — writing agent-composed text into an
+# attacker-chosen file. One check over the whole directory covers every write site here
+# and any added later.
+find .flow -maxdepth 1 -type l | grep -q . && { echo "⚠️ BLOCKER: .flow contains a symlink — refusing to write scratch (a committed .flow/<name> link would redirect this write outside the repo)." >&2; exit 1; }
 printf '%s\n' <each glob this worker will own> > .flow/spawn-globs.txt
 python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/sensitive_paths.py" --globs-file .flow/spawn-globs.txt
 ```
@@ -95,6 +102,13 @@ Then do **both** of these — the brief line is what the worker sees, the record
 ```sh
 [ -L .flow ] && { echo "⚠️ BLOCKER: .flow is a symlink — refusing to write scratch through it." >&2; exit 1; }
 mkdir -p .flow
+# Guard the FILES too, not only the directory. An untrusted repo can commit
+# `.flow/<name>` as a tracked symlink to ~/.bashrc or ~/.claude/settings.json; `.flow`
+# itself is then a perfectly real directory git just created, so a directory-only check
+# passes and the redirect below follows the link — writing agent-composed text into an
+# attacker-chosen file. One check over the whole directory covers every write site here
+# and any added later.
+find .flow -maxdepth 1 -type l | grep -q . && { echo "⚠️ BLOCKER: .flow contains a symlink — refusing to write scratch (a committed .flow/<name> link would redirect this write outside the repo)." >&2; exit 1; }
 [ -s .flow/usage.tsv ] || printf 'date\titem\tmodel\teffort\twhy\towns\toutcome\n' > .flow/usage.tsv
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%d)" "<item>" "<model>" "<effort>" \
   "<one clause>" "<owned globs>" "pending" >> .flow/usage.tsv
@@ -160,6 +174,8 @@ python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/dispatch_backend.py" \
 ```
 
 Run the rendered command. The renderer refuses unsafe values rather than escaping them; if it refuses, fix the value — do not hand-edit the command.
+
+**Slugify every value you interpolate, BEFORE it reaches the command line.** The refusal above happens inside the renderer — which is one shell parse too late if you built the `--set` argument by pasting repo-derived text into this block. An item id, branch name or roadmap title taken from the repository is untrusted input; reduce it to `[A-Za-z0-9._-]` yourself and pass the reduced form. The same applies to the `usage.tsv` row's `<item>` and `<one clause>` fields, which are appended to a file, and to any `<worker-name>` derived from an issue title.
 
 ## 5. Instruct, don't remote-invoke
 
