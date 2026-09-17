@@ -318,15 +318,24 @@ _UNKNOWN_COPY = {
     # there IS no region, and the parser cannot tell the reader which path it took. That
     # distinction is a per-PARSE fact the parser currently discards; surfacing it properly
     # is the `scope` field filed in roadmap § Next. Until then, claim only what is known.
-    "means": ("I don't recognize this line's kind, so I can't tell you which gate it came "
-              "from. It may be quoted text rather than a real blocker."),
+    "means": ("I don't recognize the [tag] on this line, so I can't tell you which gate it "
+              "came from. It may be quoted text rather than a real blocker."),
     "needs_you": ("A look at the line itself: confirm whether it is a real blocker or prose "
                   "that was swept in, then tell me which."),
-    "clears_when": ("you tell me whether it is a real blocker -- no check produced it, so there "
-                    "is nothing for me to re-run"),
+    "clears_when": ("you tell me whether it is a real blocker — no check produced it, so "
+                    "there is nothing for me to re-run"),
     "why": "I can't attribute this line to a gate, so I have no reasoning of my own to offer",
     "waive_cost": ("costs you nothing if it is quoted prose, and drops a real blocker if it is "
-                   "not -- which is exactly what I can't tell you"),
+                   "not — which is exactly what I can't tell you"),
+    # REQUIRED, not optional. `_then()` falls through to DEFAULT_THEN without it, and
+    # `render_manifest` only prints a per-entry "What happens then" when it DIFFERS from the
+    # default -- so the block would say "I can't tell you which gate it came from" and then,
+    # two lines later, "I re-run the check that raised this". That is the same false-gate
+    # claim this table exists to remove, relocated from `means` into the blanket footer,
+    # where the footer's own hedge ("items that say otherwise above are the exceptions")
+    # cannot rescue it: nothing above CAN say otherwise without this key.
+    "then": ("If you tell me it is prose, I drop the line. There is no check here for me to "
+             "re-run."),
 }
 
 
@@ -436,9 +445,13 @@ def _default_manifest_path(branch: str) -> str:
 # parse
 # --------------------------------------------------------------------------
 
-# `- [kind] finding -- needs: verb -- confidence: axis -- candidate resolutions: ...`
-# Em-dash separated, matching the Step 7 body template. The finding is
-# non-greedy up to the first ` -- needs:` so an em dash inside the finding is safe.
+# `- [kind] finding — needs: verb — confidence: axis — candidate resolutions: ...`
+# Em-dash separated, matching the Step 7 body template. The example above uses REAL em dashes
+# deliberately: since v1.44.0 the double-hyphen form (`-- needs:`) is the INERT text
+# `_defang_fences` produces for a quoted separator, so writing the live grammar with `--`
+# showed the defanged form as if it were the real one.
+# The finding is non-greedy up to the first ` — needs:`, so an em dash inside the finding
+# is safe.
 _LINE_RE = re.compile(
     r"^\s*-\s*\[(?P<kind>[a-z0-9-]+)\]\s*"
     r"(?P<finding>.+?)"
@@ -477,7 +490,8 @@ def parse_entries(body: str) -> list[dict[str, Any]]:
             "fingerprint": _fingerprint(kind, finding),
         }
 
-    # UNION of both line definitions, deduped by fingerprint -- NOT either one alone.
+    # UNION of both line definitions, deduped on every field `classify()` reads (see `_key`
+    # below) -- NOT either split alone.
     # Neither split is safe by itself: each erases a live [verify-build] blocker in the
     # shape the other one handles (measured, FB-0109). The union is a superset of both by
     # construction, which is the fail-safe direction -- more candidate entries, never fewer.
@@ -500,8 +514,16 @@ def parse_entries(body: str) -> list[dict[str, Any]]:
     # direction this whole function is built around; on ordinary input both passes yield
     # identical lines, so it changes nothing there. (/flow:security-review caught the
     # narrower key.)
-    def _key(e: dict[str, Any]) -> tuple[str, str]:
-        return (e["fingerprint"], e["needs"])
+    def _key(e: dict[str, Any]) -> tuple[str, str, bool]:
+        # EVERY field `classify()` reads, so a collision can never discard an entry that
+        # would classify differently. `_class_for(kind, needs, attempted, ...)` reads three:
+        # kind+finding (inside the fingerprint), needs, and already_attempted. `needs` was
+        # added by /flow:security-review; `already_attempted` was still missing, and
+        # /flow:staff-review measured the consequence — a narrow-pass entry colliding on the
+        # shorter key was discarded WITH its attempted flag, so a `[visual-deliverable]` pair
+        # parsed to one entry at class `auto`, the single class that triggers a silent
+        # re-run -> commit -> push (invariant 4). Widening can only ever ADD an entry.
+        return (e["fingerprint"], e["needs"], e["already_attempted"])
 
     entries: list[dict[str, Any]] = [e for e in map(_entry, text.splitlines()) if e]
     seen = {_key(e) for e in entries}
@@ -800,10 +822,27 @@ def render_decisions(result: dict[str, Any]) -> str:
 
             options: list[str] = []
             rec = e.get("drafted_resolution", "")
-            if rec:
+            if rec and kind not in KIND_COPY:
+                # ATTRIBUTE, never endorse, when the kind is unrecognized. For those entries
+                # the `candidate resolutions:` field was lifted verbatim out of a line the
+                # region swept in -- i.e. text flow did not author and cannot vouch for. The
+                # endorsing form ("**My recommendation: X**" + "do that (recommended)") put
+                # flow's name on attacker-supplied prose while the very next clause withdrew
+                # it ("no reasoning of my own to offer"), which is both incoherent to read and
+                # the wrong default in this mechanism's own threat model.
+                out.append(f"   - The line proposes: *{rec}* — not mine. "
+                           f"{_copy(kind, 'why')}.")
+                options.append("do what the line says — your call, not my recommendation")
+                options.append("it's prose, not a blocker — drop the line")
+            elif rec:
                 why = _copy(kind, "why")
                 out.append(f"   - **My recommendation: {rec}**" + (f" — {why}." if why else ""))
                 options.append("do that (recommended)")
+            elif kind not in KIND_COPY:
+                # No proposal AND an unrecognized kind: the only useful answer is the one the
+                # `needs_you` copy actually asks for, which the generic option list omits.
+                out.append("   - I don't have a fix to propose for this one.")
+                options.append("it's prose, not a blocker — drop the line")
             else:
                 # No proposal means no "[a] do that" to point at. Asking someone to
                 # approve a placeholder is the round-trip this exists to remove.
@@ -871,8 +910,11 @@ def _read(path: str) -> str:
 #
 # It deliberately no longer matches the parser's own split, and that is NOT drift (FB-0109):
 # collapsing MORE is safe on the write side for the same reason parsing MORE is safe on the
-# read side. The full argument lives in `manifest_contract.extract_manifest_region`'s
-# docstring. An earlier revision of this comment asserted the two shared one definition and
+# read side. The READ-side half of that argument -- why `extract_manifest_region` and
+# `parse_entries` want opposite line definitions -- is owned by
+# `manifest_contract.extract_manifest_region`'s docstring, S "The consumer wants the
+# OPPOSITE rule". The write-side half is the sentence above; that docstring does not
+# make it, so do not go looking for it there. An earlier revision of this comment asserted the two shared one definition and
 # "cannot drift" -- that invariant was inverted, and a future author reasoning from it would
 # reintroduce the bug.
 #
@@ -885,7 +927,8 @@ def _collapse_newlines(text: str) -> str:
 
 
 # The consumer's grammar has THREE structural layers, not one. `_collapse_newlines` defangs the
-# line break (derived from `splitlines()`, the parser's own definition). The other two are the
+# line break (a SUPERSET of BOTH line definitions the parser uses -- see the union in
+# `parse_entries`; it is no longer "the parser's own definition", singular). The other two are the
 # region fences. HISTORICAL, and fixed in v1.44.0 (FB-0109): `extract_manifest_region` used to
 # slice between the FIRST open marker and the FIRST close marker, as bare substrings, and the
 # same function parses both the manifest file and a PR body. So a finding carrying those
@@ -914,7 +957,11 @@ def _collapse_newlines(text: str) -> str:
 # between the markers" was unrecoverable), and the heading -- not a region fence at all --
 # was labelled as one.
 #
-# FOUR structural layers, not three, and the fourth has the sharpest teeth. `_LINE_RE` treats
+# FIVE structural layers, and this one has the sharpest teeth. (The count has been revised
+# upward twice -- 3, then 4, then 5 -- which is itself the finding: the tokens found last
+# are the ones that fail SAFE, so hunting bypasses terminates the enumeration early. The
+# fifth, `ATTEMPTED_MARKER`, is measured and open -- roadmap S Next. See FB-0109 rule 4.)
+# `_LINE_RE` treats
 # ` — needs:` / ` — confidence:` / ` — candidate resolutions:` as the line's FIELD SEPARATORS,
 # and the resolution group is `.+?` anchored to `\s*$` -- so a finding carrying the whole trio
 # swallows the real fields and the FORGED ones win. Reachable from plain prose: no fence, no
@@ -965,8 +1012,15 @@ _DEFANGED = {
 # Direction is safe: widening the match defangs MORE prose, never less, and defanging is
 # already the chosen behaviour over refusal (FB-0062 -- a finding legitimately discussing a
 # resolution verb is ordinary prose and must not abort the ship). The em dash stays an em
-# dash; only the separator's own punctuation is swapped for a double hyphen, so the phrase
-# stays readable to the human ("-- needs: re-run").
+# A PROSE em dash stays an em dash (`"a — b"` passes through byte-identically); it is the
+# SEPARATOR's em dash that is swapped for a double hyphen, so the phrase stays readable to
+# the human ("-- needs: re-run").
+#
+# One documented side effect: `_FIELD_SEP_RE` matches `\s+` before the separator and emits a
+# single space, so a TAB immediately before ` — needs:` is normalized to a space. That is a
+# narrow, deliberate exception to the "not a general whitespace collapse" rule stated for
+# `_collapse_newlines` below -- it applies ONLY to the whitespace that is part of a matched
+# separator, never to whitespace inside the finding's prose.
 #
 # NOT derived from `_LINE_RE` itself: that means defining the field vocabulary in
 # `manifest_contract.py` and compiling `_LINE_RE` from it, which is the roadmapped
@@ -1265,7 +1319,7 @@ def main(argv: list[str] | None = None) -> int:
         # `--confidence` is the one text field that is neither vocabulary-validated (like
         # --kind/--needs) nor file-delivered (like the two free-text fields), so it went in raw.
         # Only literal values ship today, but it is one call away from the same rule.
-        confidence = _defang_fences(_collapse_newlines(args.confidence))
+        confidence = _defang_fences(_collapse_newlines(args.confidence), source="--confidence")
         print(f"- [{args.kind}] {finding} — needs: {args.needs}"
               f" — confidence: {confidence}"
               f" — candidate resolutions: {resolution or '(none drafted)'}")

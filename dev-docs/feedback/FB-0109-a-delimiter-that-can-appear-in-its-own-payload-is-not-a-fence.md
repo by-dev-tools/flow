@@ -62,10 +62,24 @@
      Its failure direction is inverted — a body that merely *mentions* the sentinel wedges a clean
      ship rather than passing a dirty one — which is probably why it stayed invisible while three
      passes hunted bypasses. **When a mechanism has N structural tokens, enumerate all N before
-     writing "the residual is X."** Here N turned out to be **4**, and this sentence itself first
-     shipped saying 3 — the rule's own count was wrong in the revision that introduced the rule,
-     which is as clean a demonstration as it is likely to get. The four: the two fences, the
-     `🚫 NOT READY TO MERGE` heading, and — sharpest — **`_LINE_RE`'s field separators**.
+     writing "the residual is X."** Here N turned out to be **5**, and the count in this very rule
+     has now been wrong **twice**: it shipped saying 3, was corrected to 4, and a
+     `/flow:staff-review` push-further pass measured a fifth before the branch merged. Two
+     corrections to a rule about counting is not irony — it is the evidence for the rule, and it
+     names the mechanism: **the tokens found last are the ones that fail SAFE.** The third wedges
+     a clean ship rather than passing a dirty one; the fifth reduces autonomy rather than
+     granting it. An enumeration driven by *hunting bypasses* therefore terminates early every
+     time, because the safe-direction tokens do not look like bugs. Enumerate by grepping every
+     site that matches a shared literal against parsed free text, not by asking which sites look
+     dangerous.
+
+     The five: the two fences; the `🚫 NOT READY TO MERGE` heading; **`_LINE_RE`'s field
+     separators** (sharpest — and note the fix for it was itself wrong at first, see rule 8); and
+     **`ATTEMPTED_MARKER`**, an unanchored substring test for the literal `already-attempted`
+     against free text, which flips a `[visual-deliverable]` entry from class `auto` to `ask`
+     from ordinary prose. The fifth is measured and **deliberately left open** — fail-safe
+     direction, and absorbing it would be the "we're already in here" reasoning rule 8b rejects.
+     Roadmap § Next, to be taken with the `FIELD_SEPS` derivation.
 
      The fourth is the one that matters most and was found last. `classify()` derives an entry's
      class from its `needs` verb (`manifest-triage.py:569`, `_class_for(kind, e.get("needs"))`)

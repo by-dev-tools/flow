@@ -11,8 +11,12 @@ Two functions, one layer apart, plus a `[fence-injection]` section in
   manifest fences **line-anchored** instead of as bare substrings, and ends the region at the
   **last** close rather than the first.
 - `parse_entries` (`plugins/flow/skills/ship/lib/manifest-triage.py`) consumes that region and
-  re-splits it. It now takes the **union** of `str.splitlines()` and `split("\n")`, deduped by
-  fingerprint.
+  re-splits it. It now takes the **union** of `str.splitlines()` and `split("\n")`, deduped on
+  every field the classifier reads — `(fingerprint, needs, already_attempted)`. The key grew
+  twice under review: `/flow:security-review` added `needs`, and `/flow:staff-review` then
+  measured that omitting `already_attempted` let a colliding entry be discarded *with its
+  flag*, landing at class `auto` — the one class that triggers a silent re-run → commit →
+  push. Widening the key can only ever add an entry, never drop one.
 
 - `_defang_fences` (same file) matches the manifest line's **field separators** with the parser's
   own grammar (`_FIELD_SEP_RE`) instead of three literal strings. **Scope added at ship** — see the

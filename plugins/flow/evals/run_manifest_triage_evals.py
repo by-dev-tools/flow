@@ -665,16 +665,15 @@ def test_injection(td: str) -> None:
             if (T / n).exists():
                 expect_true(f"{label}: payload did NOT execute (sentinel {n})", False, "EXECUTED")
                 (T / n).unlink()
-        # The text arrives intact EXCEPT for the two deliberate normalisations, and the
-        # expectation is computed with the engine's OWN transforms rather than hand-typed —
-        # a hand-typed expectation is how P5 came to assert "arrives intact" for a payload
-        # whose whole danger was that it DID arrive intact.
-        # The engine's REAL chain, including the provenance note it appends when a
-        # substitution fires. Recomputing it here rather than hand-typing is the whole point:
-        # a hand-typed expectation is how P5 came to assert "arrives intact" for a payload
-        # whose danger was that it DID arrive intact.
+        # The text arrives intact EXCEPT for the THREE deliberate normalisations —
+        # newline-collapse, fence-defang, and (since v1.44.0) field-separator defang — and the
+        # expectation is computed by running the engine's OWN chain rather than hand-typing it.
+        # That is the whole point: a hand-typed expectation is how P5 came to assert "arrives
+        # intact" for a payload whose entire danger was that it DID arrive intact. It also means
+        # this count cannot silently go stale — `want` picks up a fourth transform for free; only
+        # the prose above and the label below have to be re-read when one is added.
         want = _ENGINE._defang_fences(_collapse(raw.strip()), source=str(f))
-        expect_true(f"{label}: text arrives intact (newline-collapse + fence-defang only)",
+        expect_true(f"{label}: text arrives intact (newline-collapse + fence/field defang only)",
                     want in r.stdout, f"want {want[:90]!r}\ngot  {r.stdout[:120]!r}")
         if MANIFEST_OPEN in raw or MANIFEST_CLOSE in raw:
             # PAIRED: defanging is not cosmetic — assert the live marker is GONE from the
@@ -866,6 +865,18 @@ def test_injection(td: str) -> None:
     secret.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAsecret\n", encoding="utf-8")
     link = T / "evalpay-p8link.txt"
     _made.append(link)
+    # Clear a stale link before creating it, the same guard P13 below already uses. These
+    # payload files live in the repo's REAL `.flow/` (they must — `_read_text_arg` refuses
+    # any path outside it, so a payload rejected for its LOCATION cannot test its CONTENT),
+    # and the name is fixed. A run killed between here and the cleanup at the end of this
+    # function therefore leaves the symlink behind, and the NEXT run dies with an unhandled
+    # FileExistsError before a single assertion executes — red, but environmental, and
+    # indistinguishable at a glance from a real regression. Observed during the v1.44.0 ship:
+    # overlapping harness invocations produced three different failure sets, none of them a
+    # defect in the code under test. Concurrency is still not safe here (fixed names in a
+    # shared dir); this only makes a crashed run self-healing. See roadmap § Next.
+    if link.exists() or link.is_symlink():
+        link.unlink()
     link.symlink_to(secret)
     r = add(str(link))
     expect("P8 symlink: exits 2", r.returncode, 2, r.stderr)
@@ -1622,9 +1633,32 @@ def test_fence_injection() -> None:
     real = _m.render_manifest({"residual": [
         {"kind": "verify-build", "finding": "gate did not pass", "needs": "re-run",
          "class": "blocked", "drafted_resolution": ""}]})
-    expect_true("a recognized kind still renders its own specific copy",
-                "may be quoted text rather than a real blocker" not in real and len(real) > 0,
-                real)
+    # The two assertions above are BOTH negative ("the unknown copy is absent"), so they are
+    # satisfiable by deleting the real kind's copy entirely. The first version of this pairing
+    # asserted only `... not in real and len(real) > 0` — and `len(real) > 0` is guaranteed by
+    # the render template, so it carried no load: blanking KIND_COPY["verify-build"]["means"]
+    # left the whole suite green (measured by /flow:staff-review's design-engineer lens).
+    # A "paired positive" that a deletion satisfies is the very shape general.md § Consistency
+    # item 3 forbids, committed inside the eval that cites it. Assert the POSITIVE directly,
+    # reading the expected sentence from the engine's OWN table so a copy edit cannot leave
+    # this green against a stale literal.
+    # RED against: blanking or genericizing KIND_COPY["verify-build"]["blocked_means"|"means"].
+    #
+    # THE NON-EMPTINESS HALF IS LOAD-BEARING, and it took two tries to get right. Reading the
+    # expected sentence from the engine's own table defends against a RENAME (a hand-typed
+    # literal would go stale) but NOT against a DELETION: blank the table entry and
+    # `want_real` becomes "", which is `in` every string, so the assertion passes vacuously.
+    # Measured — the first fix for this hollow positive was itself hollow for exactly that
+    # reason. Reading the expectation from the thing under test and asserting only
+    # containment is a deletion-shaped blind spot; assert that the copy EXISTS first.
+    want_real = (_m.KIND_COPY["verify-build"].get("blocked_means")
+                 or _m.KIND_COPY["verify-build"].get("means") or "")
+    expect_true("verify-build actually HAS its own copy (a blank table entry must not pass)",
+                len(want_real.strip()) > 20, repr(want_real))
+    expect_true("a recognized kind renders its OWN sentence from KIND_COPY",
+                want_real in real, f"want {want_real!r}\ngot {real!r}")
+    expect_true("and is NOT given the unknown-kind copy",
+                "may be quoted text rather than a real blocker" not in real, real)
 
     # (d) CRLF bodies (what `gh pr view` can return) still parse.
     #
@@ -1632,8 +1666,10 @@ def test_fence_injection() -> None:
     # in text mode with universal-newline translation, so a CRLF file is already LF by
     # the time the parser sees it — routing this through a file asserts nothing about
     # the `\r\n` handling it names, and passes with or without it. That is the vacuous
-    # shape this section exists to avoid; it was live here until staff-review measured
-    # it. RED against: removing the CRLF normalization in extract_manifest_region.
+    # shape this section exists to avoid; it was live here until staff-review measured it.
+    # NO `RED against:` tag on these two DELIBERATELY — they assert that CRLF parses like
+    # LF, which is worth asserting, but they do NOT isolate the normalization (see the
+    # note below the assertions). Tagging them would be the false-label bug again.
     crlf_text = body("an ordinary stale claim").replace("\n", "\r\n")
     expect("a CRLF body parses identically (engine-direct, no newline translation)",
            kinds(_m.parse_entries(crlf_text)), ["status-surface", "verify-build"])
