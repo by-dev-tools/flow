@@ -294,3 +294,44 @@ everything else was too, by default rather than by decision.**
 **Deletion criterion:** delete this section when `/flow:spawn` (§4.10) applies the table and emits
 the `model·effort·why` line itself — at which point the procedure is executable rather than
 remembered, which is the whole point of §4.10.
+
+## 7. Presenting multiple open PRs — always state the queue order and why
+
+**Ben's standing direction, 2026-09-16:** whenever more than one PR is open, say explicitly whether
+they can be queued **at the same time**, or whether one will conflict so the others must be queued
+**later, after preparation**. Do not leave him to infer it from a list.
+
+This is not bookkeeping. Queuing two PRs that collide costs a merge-conflict resolution done under
+time pressure by whoever notices second — and `plan.md` conflicts are the class most likely to be
+resolved by a blind union, which produces two contradictory status blocks and a Spec-walk extractor
+that selects the wrong PR's criteria. The cheap moment to catch it is before the queue, not after.
+
+**How to determine it — measure, never predict from file names:**
+
+```sh
+A=$(gh pr view <n> --json files --jq '[.files[].path]|sort|.[]')
+B=$(gh pr view <m> --json files --jq '[.files[].path]|sort|.[]')
+comm -12 <(echo "$A") <(echo "$B")            # the ONLY possible conflict sites
+git merge-tree $(git merge-base $HA $HB) $HA $HB | grep -c '^<<<<<<<'   # 0 = clean
+```
+
+Disjoint file sets are a *guarantee* of no textual conflict, not an estimate. Overlap is not a
+guarantee of conflict — two PRs can add entries to different sections of one file and merge fine —
+so when they overlap, run the `merge-tree` simulation rather than assuming the worst.
+
+**Report it in one of three shapes, explicitly:**
+
+- **"Queue both now — disjoint file sets, merge simulation clean."**
+- **"Queue #A now; #B needs a rebase after it lands — they collide in `<file>`."** Name the file and
+  say who will do the rebase.
+- **"Queue #A only; #B is not ready for a reason unrelated to conflicts"** (red CI, an open decision).
+
+**The structural reason this keeps coming up in this repo:** the append-only docs were fragmented to
+one file per entry ([#146](https://github.com/by-dev-tools/flow/pull/146)), which removed the dominant
+conflict source — two PRs writing a history entry no longer touch the same file. What remains is
+`plan.md` and `roadmap.md`, both deliberately edited **in place**. So the practical rule of thumb,
+which the measurement should still confirm rather than replace: **two docs PRs usually merge clean;
+two PRs that both carry a plan block usually collide in `plan.md`.**
+
+**Deletion criterion:** delete this section when `/flow:orchestrate` computes and prints the queue
+order itself.
