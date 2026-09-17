@@ -19,9 +19,11 @@ pass's scope.)
   `dispatchBackend` command-template slot (+ `sensitivePaths`; schema 34 → 36). The suite
   **transcribes** §4.8/§4.9/§4.10 and `research/orchestrator-field-manual.md` (which is on the
   unmerged `orchestrator-field-manual` branch, not `main`) rather than designing anything: the
-  checklists are a week of hand-run orchestrator practice. Two deterministic engines only —
-  `gate-classify.py` (four-axis combination rule, eval-pinned truth table) and
-  `dispatch-backend.py` (T6/FB-0108-safe command rendering); the judgment stays the agent's.
+  checklists are a week of hand-run orchestrator practice. Four deterministic libs —
+  `gate-classify.py` (four-axis combination rule, eval-pinned truth table),
+  `dispatch-backend.py` (T6/FB-0108-safe command rendering), the shared
+  `lib/sensitive-paths.py` predicate, and `brief-check.py` (§4.9's reachability
+  invariant); the judgment stays the agent's.
   Scope-out, named: no GitHub App identity, no auto-merge of any kind, no edits to
   ship/manifest-triage/verify-build, no edits to the two research docs.
   **Four open calls await the gate** — the brief's `--message` vs `--message-file` disagreement
@@ -118,10 +120,12 @@ pass's scope.)
 ## PR — The §4.10 orchestrator skill suite: `/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`, `/flow:gate` (this branch, `conductor/track-a-410-orchestrator-skill-suite`, FB-0110, v1.45.0, AT THE PLAN GATE)
 
 **Branch:** `conductor/track-a-410-orchestrator-skill-suite`
-**Base:** `origin/main` @ `32b27d1` (#151) — **v1.43.0**, `dev-docs/feedback/` high-water **FB-0108** on `main`.
-**Version claim: `v1.45.0`. FB claim: `FB-0110`.** Swept `origin/main` **and all 118 open branches** (T5 — a sweep that reads only `main` does not see open branches), not just `main`: `fix-manifest-fence-injection` (pushed 2026-09-15, no PR) already claims **v1.44.0 + FB-0109**. Per the field manual's self-healing rule the earlier push keeps its claim, so this block takes the next free pair. Zero open PRs repo-wide. Both claims are pushed **mechanically** on this branch (`plugin.json` version + the `FB-0110-*.md` file), not asserted in prose; re-swept at every rebase.
+**Base:** rebased onto `origin/main` @ `65222e7` (#154) — **v1.43.0**, `dev-docs/feedback/` high-water **FB-0111** on `main` (#154 took FB-0111 while FB-0109/FB-0110 sat claimed on branches, so `main`'s high-water is above two live claims rather than contiguous with them).
+**Version claim: `v1.45.0`. FB claim: `FB-0110`.** Swept `origin/main` **and every open branch** (T5 — a sweep that reads only `main` does not see open branches). **Re-swept at this rebase (2026-09-17):** `conductor/ship-fb-0109-manifest-fence-injection` and `fix-manifest-fence-injection` hold **v1.44.0 + FB-0109**; `conductor/reviewer-verdict-context-conditional-fb-0111` and `main` hold **FB-0111**. **v1.45.0 and FB-0110 are held by this branch alone** — uncontested on `main` and on every open branch — so no renumber was needed. Per the field manual's self-healing rule the earlier push keeps its claim; if `ship-fb-0109` lands first at v1.44.0 this stays v1.45.0 unchanged. Both claims are pushed **mechanically** on this branch (`plugin.json` version + the `FB-0110-*.md` file), not asserted in prose; re-swept at every rebase.
 
 **Mode:** feature. `platform: library` ⇒ `/flow:verify-build` self-skips on this repo; the diff touches no `uiFilePatterns` file ⇒ `/flow:accessibility-review` self-skips. **`/flow:security-review` will NOT skip and must not** — it keys on `sourceFilePatterns` (which matches `.py`), and `dispatch-backend.py` is a shell-command renderer whose entire correctness claim *is* an injection boundary. It is the one genuinely security-sensitive file in this PR; the review runs over it with the metacharacter-refusal boundary as its focus. (Caught by `/flow:critique-plan` at the gate: the first draft of this line named the wrong skip predicate and would have produced exactly the `STATUS: SKIPPED` that `/flow:audit-skips` classifies SHOULD-RE-RUN.) **Routing (FB-0091): `opus-5-1m` · high** — `/flow:gate` implements the §4.8 gate-delegation policy, and a wrong version there auto-approves plans that should have escalated, silently. That is the `sensitivePaths` hard floor in the field manual §6, so the suite does not route down despite looking like "author four markdown files."
+
+**Merge order (orchestrator, 2026-09-17): S → A → B.** Three branches are in flight and all three edit `dev-docs/plan.md`; this branch (A) additionally collides with S (`conductor/ship-fb-0109-manifest-fence-injection`) in `plugin.json`. S goes first on urgency (a SAFETY fix for a bug live on `main`). This branch opens its PR without waiting for a slot — being open and rebased is what makes it queueable — and expects one rebase before merge, where `plan.md` is resolved **deliberately** (it is edited in place; a blind union produces two contradictory status blocks and an extractor that grades this work against someone else's criteria). This rebase already exercised that: both Current Focus bullets and both `## PR —` blocks were kept, mine ordered first, and each side confirmed surviving by grepping a distinctive string rather than by trusting the merge.
 
 ### Source of truth — this is transcription, not design
 
