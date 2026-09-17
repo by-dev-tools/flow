@@ -180,6 +180,20 @@ def validate(backend):
                 problems.append(
                     f"missing required placeholder(s) {', '.join('{%s}' % m for m in missing)}"
                 )
+            # Per-verb, not just global. A template naming a placeholder that IS in the
+            # vocabulary but is NOT supplied to THIS verb passed validation and then refused
+            # at render — byte-identical to the `{branch}` defect, which was closed globally
+            # while this half stayed open. `render()` computes `found - values`; `validate`
+            # must compute the same thing from the contract, or the two disagree about what
+            # a valid template is.
+            extra = sorted(found - required)
+            if extra:
+                problems.append(
+                    f"placeholder(s) {', '.join('{%s}' % e for e in extra)} are not supplied to "
+                    f"`{verb}` — nothing passes them, so this template validates here and then "
+                    f"refuses at dispatch. Required for this verb: "
+                    f"{', '.join('{%s}' % r for r in sorted(required)) or '(none)'}."
+                )
             for bad in _TEMPLATE_FORBIDDEN:
                 if bad in tmpl:
                     problems.append(
@@ -298,7 +312,12 @@ def main(argv=None) -> int:
         print(err, file=sys.stderr)
         print(json.dumps({"argv": None, "rendered": False, "verb": args.verb}, indent=2))
         return 1
-    print(json.dumps({"argv": argv_out, "command": " ".join(argv_out), "rendered": True, "verb": args.verb}, indent=2))
+    # `shlex.quote` per element, not `" ".join` — the join would drop the quoting shlex
+    # just resolved, so a template like `--label "my worker"` would render a `command`
+    # that is two shell arguments. Every SKILL.md says "run the rendered command", so this
+    # is the field an agent copies. (`shlex.join` is 3.8+; this repo targets 3.7.)
+    command = " ".join(shlex.quote(a) for a in argv_out)
+    print(json.dumps({"argv": argv_out, "command": command, "rendered": True, "verb": args.verb}, indent=2))
     return 0
 
 

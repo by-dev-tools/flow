@@ -25,7 +25,8 @@ the home for cross-skill contracts.
 **Fail-safe direction is toward escalation, and that is not an accident.** Every
 degraded path in this module returns *sensitive* rather than *not sensitive*: an
 unreadable changed-file list, an unreadable owned-glob list, a repo whose index
-cannot be read, **and an owned glob that matches nothing yet** (the greenfield
+cannot be read, an EMPTY input on either side ("asked about nothing" is not
+"nothing is sensitive"), **and an owned glob that matches nothing yet** (the greenfield
 one-way-door case — a worker dispatched to *create* migrations or auth owns a
 glob with no matches today, and that is precisely when the floor matters most). A malformed or empty `sensitivePaths` slot falls back to the
 documented defaults, loudly. A wrong "sensitive" costs one unnecessary human
@@ -247,6 +248,16 @@ def classify(paths, patterns) -> dict:
     return {"sensitive": bool(matches), "matches": matches}
 
 
+def _failsafe(source, reason):
+    """The one shape every degraded path emits. Written once because it was written
+    out three times and a fourth was about to be added."""
+    return {"sensitive": True, "matches": [], "pattern_source": source, "reason": reason}
+
+
+def _failsafe_msg(what):
+    return f"{PREFIX} ⚠️ {what}; classified SENSITIVE rather than guessed."
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         prog="sensitive_paths.py",
@@ -296,8 +307,7 @@ def main(argv=None) -> int:
                 f"routing floor applies rather than defaulting to low-stakes.",
                 file=sys.stderr,
             )
-            print(json.dumps({"sensitive": True, "matches": [],
-                              "pattern_source": source, "reason": "owned-glob list unreadable"}, indent=2))
+            print(json.dumps(_failsafe(source, "owned-glob list unreadable"), indent=2))
             return 0
         import subprocess  # local: this is the only path that needs the repo index
         try:
@@ -322,8 +332,18 @@ def main(argv=None) -> int:
                 f"expanded, so this is classified SENSITIVE rather than guessed.",
                 file=sys.stderr,
             )
-            print(json.dumps({"sensitive": True, "matches": [],
-                              "pattern_source": source, "reason": "git ls-files unavailable"}, indent=2))
+            print(json.dumps(_failsafe(source, "git ls-files unavailable"), indent=2))
+            return 0
+        if not globs:
+            # An EMPTY owned-glob set is not "this worker owns nothing sensitive" — it is
+            # "nobody told me what this worker owns." /flow:spawn's template writes the file
+            # with a `printf` whose substitution may not have happened, producing exactly
+            # this, and the result would route a worker with UNDECLARED scope down a tier.
+            # `gate-classify` already handles the sibling case correctly in-process ("no
+            # file list is not 'nothing is sensitive'"); the CLI must agree.
+            print(_failsafe_msg("owned-glob list is empty"), file=sys.stderr)
+            print(json.dumps(_failsafe(source, "owned-glob list is empty — asked about nothing, "
+                                              "classified sensitive rather than guessed"), indent=2))
             return 0
         expanded, empty = expand_globs(globs, tracked)
         result = classify(expanded, patterns)
@@ -362,15 +382,18 @@ def main(argv=None) -> int:
             f"decision reaches a human rather than defaulting to low-stakes.",
             file=sys.stderr,
         )
-        print(json.dumps({
-            "sensitive": True,
-            "matches": [],
-            "pattern_source": source,
-            "reason": "changed-file list unreadable",
-        }, indent=2))
+        print(json.dumps(_failsafe(source, "changed-file list unreadable"), indent=2))
         return 0
 
-    result = classify([ln for ln in raw.splitlines()], patterns)
+    files = [ln for ln in raw.splitlines() if ln.strip()]
+    if not files:
+        # Same rule on the files side: an empty changed-file list means the caller could
+        # not tell us what changed, not that nothing sensitive changed.
+        print(_failsafe_msg("changed-file list is empty"), file=sys.stderr)
+        print(json.dumps(_failsafe(source, "changed-file list is empty — asked about nothing, "
+                                           "classified sensitive rather than guessed"), indent=2))
+        return 0
+    result = classify(files, patterns)
     result["pattern_source"] = source
     print(json.dumps(result, indent=2))
     return 0

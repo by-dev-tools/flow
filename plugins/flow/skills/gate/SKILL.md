@@ -57,8 +57,10 @@ python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/gate/lib/gate-classify.py" p
   --files-file .flow/gate-files.txt \
   --reversible <yes|no> --confidence <high|medium|low> \
   --critique-verdict <approved|redirect|findings> --taste <low|high> \
-  [--prototype-attached]
+  [--prototype-attached] | tee .flow/gate-plan.json
 ```
+
+`tee` to `.flow/gate-plan.json` — that file is what step 2 reads back, and it is repo-local scratch (never committed). Without the redirect, step 2's `--plan-result` points at a path nothing wrote: it degrades *safely* (unreadable ⇒ axis unknown ⇒ non-delegable) and therefore silently, which is the shape this engine exists to refuse.
 
 | Axis | Green means | Why it is on the list |
 |---|---|---|
@@ -67,7 +69,7 @@ python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/gate/lib/gate-classify.py" p
 | **Confidence** | the plan's own verdict is HIGH **and** the plan critique returned APPROVED with no open MEDIUM/LOW assumption | reuses existing signal; introduces none |
 | **Taste** | a correct answer exists and is checkable by tests or critique | not a visual / UX / product call |
 
-**Carve-out, always human:** a plan gate with a **prototype attached**. The prototype *is* the high-taste artifact, so the other four axes do not get to override it.
+**Carve-out, always human:** a plan gate with a **prototype attached**. The prototype *is* the high-taste artifact, so the four axes do not get to override it.
 
 This is an extension of the existing autonomy bar and of "a positive PASS, not the absence of failure" — a policy over the gates the loop already has, not new machinery.
 
@@ -114,6 +116,13 @@ python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/gate/lib/gate-classify.py" f
 ```
 
 Write the JSON with the **Write tool** (`title`, `recommendation`, `confidence`, `justification`, `originating_session`, `other_threads[]`), never as a shell string — the justification is prose about code and routinely contains backticks.
+
+§4 is reachable without step 1 (merge mode and the rule-7 check both land here), so it needs the scratch preamble too — one of three guarded sites is not a guarded skill:
+
+```sh
+[ -L .flow ] && { echo "⚠️ BLOCKER: .flow is a symlink — refusing to write scratch through it." >&2; exit 1; }
+mkdir -p .flow
+```
 
 The renderer refuses to format an escalation that is missing the recommendation / confidence / justification triple, and refuses one with **no `originating_session`**. That second refusal is the one people skip: the seat is the single human-facing decision surface **in both directions**. An escalation is not finished when it is presented — it is finished when the human's answer has been **relayed back** to the worker that raised it, from this seat, via the backend's message verb. A human should never have to open N worker workspaces to keep N workstreams moving; that is the attention cost the seat exists to remove, and routing approvals through worker chats reintroduces it in full.
 

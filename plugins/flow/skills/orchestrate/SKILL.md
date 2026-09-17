@@ -10,7 +10,7 @@ description: >
   action of any orchestrator seat, and mandatory for a successor. Use on
   "/flow:orchestrate", "boot the orchestrator", "take over the seat".
 disable-model-invocation: false
-allowed-tools: Read, Grep, Glob, Bash, Write
+allowed-tools: Read, Grep, Glob, Bash, Write, Skill
 ---
 
 # Task: boot an orchestrator seat, and leave nothing for the next one to rediscover
@@ -72,11 +72,18 @@ A sweep that reads only the default branch **does not see open branches**, and t
 
 ## 4. Sweep for SILENT workers — by last activity, never by status
 
+> **If you are a successor, do step 5 first.** Until the ping channel is re-addressed every
+> worker is silent *by construction* — they have all been pinging an address that died with
+> the previous seat — so this sweep tells you nothing and will read every live worker as a
+> phantom stall. The steps cannot simply swap (re-address needs step 2's worker list), which
+> is why the interlock is stated rather than implied. The spec puts re-address first for
+> exactly this reason.
+
 Workers ping you when they finish or stall, so you react rather than poll. **But the failure this protocol most needs to report is the one it cannot:** a rate-limited worker has no turn in which to send anything. Its status reads `idle`, which is indistinguishable between "waiting at a gate", "done and forgot", and "died hours ago".
 
 So for each live worker, render `workerStatus` and read the **last-activity timestamp**. Flag anything quiet for materially longer than its work should take. Do not treat silence as progress, and do not let the ping protocol's existence be mistaken for coverage.
 
-## 5. Re-address the ping channel — FIRST, if you are a successor
+## 5. Re-address the ping channel — the successor's true first action (see step 4's note)
 
 Every live worker is pinging a session id. On a succession that id is the **outgoing** seat's, it died with the seat, and the failure is invisible from both ends: pings go nowhere and you read the resulting silence as "nothing needs me."
 
@@ -88,7 +95,7 @@ If `selfSession` is missing, **ask the human for the id** — do not skip the re
 
 ## 6. Load the gate policy
 
-Read the four-axis plan-gate policy and the merge-gate rule you will be applying (`/flow:gate` implements both; invoke it per decision rather than re-deriving the rule). Confirm `sensitivePaths` resolves:
+Do **not** re-derive the four-axis rule in prose — `/flow:gate` implements it, and re-deriving is exactly what that engine exists to replace. Invoke it per decision: `Skill("flow:gate")`. Confirm `sensitivePaths` resolves:
 
 ```sh
 # `--files-file /dev/null`, NOT `--print-defaults`: the latter returns before the
@@ -112,7 +119,14 @@ Report `pattern_source` in the ready line. `default` on a project that *believes
 Apply the communication rules to **this output**, which is the first thing the human reads from you:
 
 1. **Decide within scope; don't relay.** Anything inside the gate's green quadrant, you call. Escalate only what a red axis forces.
-2. **Classify ships-or-paperwork before escalating anything.** If the choice produces an identical diff either way and the question is documentation placement or wording, it is your call — escalating it spends the human's attention on a null result. Run `gate-classify.py ships-or-paperwork`; the test is cheap, so run it every time.
+2. **Classify ships-or-paperwork before escalating anything.** If the choice produces an identical diff either way and the question is documentation placement or wording, it is your call — escalating it spends the human's attention on a null result. Run it — in full, because the flags are what it classifies on:
+
+```sh
+python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/gate/lib/gate-classify.py" ships-or-paperwork \
+  --changes-behavior <yes|no> --changes-consumer-surface <yes|no> --changes-gate-verdict <yes|no>
+```
+
+An unstated axis counts as `yes`, so a bare call classifies `behavioral` and you escalate something you could have decided — fail-safe, but it spends the attention this test exists to save. The test is cheap; run it every time, with the flags.
 3. **One decision at a time.** Surface the single most pressing item, plus **one line** naming the other live threads and their state. Never a flat dump of unrelated asks; never silence about parallel threads either.
 4. **Progressive disclosure.** Lead with what is needed. Default to scannable-in-seconds; let the human pull detail by asking.
 5. **Every escalation carries recommendation + confidence + justification** and a return address, so the answer can be relayed back from this seat. The human should never have to ask for the confidence or the why, and should never have to open a worker workspace to unblock it.

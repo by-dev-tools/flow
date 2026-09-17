@@ -299,8 +299,11 @@ def ships_or_paperwork(changes_behavior=None, changes_consumer_surface=None, cha
     }
     # `green` here means "yes, it changes this" — so any yes/unknown ⇒ ships.
     ships = any(v in {"green", "unknown"} for v in axes.values())
+    # `behavioral`, not `ships` — the subcommand name is memorable and stays, but as an
+    # output VALUE "ships" reads as "route this to /flow:ship" rather than "this changes
+    # shipped behaviour."
     return {
-        "classification": "ships" if ships else "paperwork",
+        "classification": "behavioral" if ships else "paperwork",
         "axes": axes,
         "action": (
             "escalation is legitimate — this changes behaviour, a consumer surface, or a gate verdict"
@@ -330,10 +333,27 @@ def render_audit_line(result) -> str:
             axes[k]["why"] for k in result.get("red_axes", []) if k in axes
         )
     )
-    return f"GATE plan · verdict={result['verdict']} · {states} · {tail}"
+    # The pattern source belongs in the DURABLE line, not only in a stderr warning that
+    # dies with the turn. Without it the audit trail — "the record the rollout is earned
+    # with" — cannot distinguish green-against-this-project's-gate-machinery from
+    # green-against-the-defaults-because-the-slot-was-broken. The module invented
+    # `default-after-error` as a distinct state and then never let it reach the artifact
+    # that outlives the session.
+    src = result.get("pattern_source", "unknown")
+    if src == "default-after-error":
+        patterns = "patterns=⚠️ project sensitivePaths slot malformed, DEFAULTS used"
+    else:
+        patterns = f"patterns={src}"
+    return f"GATE plan · verdict={result['verdict']} · {states} · {patterns} · {tail}"
 
 
-def format_escalation(decision) -> str:
+def format_escalation(decision):
+    """Returns (rendered_text, ok). See `_format_escalation_text` for the contract."""
+    text = _format_escalation_text(decision)
+    return text, not text.startswith(PREFIX)
+
+
+def _format_escalation_text(decision) -> str:
     """Render one escalation per FB-0090 + §4.8 rules 3/4/5.
 
     Refuses (returns a BLOCKER string) when `originating_session` is absent,
@@ -351,7 +371,15 @@ def format_escalation(decision) -> str:
             f"FB-0090 requires the recommendation / confidence / justification triple by default — "
             f"the human should never have to ask for the confidence or the why."
         )
-    if not str(decision.get("originating_session", "")).strip():
+    origin = str(decision.get("originating_session", "")).strip()
+    if origin.lower() in {"self", "me", "here"}:
+        # A solo session — no orchestrator, the human IS the return address. /flow:gate is
+        # advertised with "can I approve this plan?", which is the most common phrasing in a
+        # session with no fleet at all; hard-refusing there is both alarming and unactionable
+        # for someone who is already standing where the answer goes.
+        decision = {**decision, "originating_session": "self"}
+        origin = "self"
+    if not origin:
         return (
             f"{PREFIX} ⚠️ BLOCKER: no originating_session. §4.8 rule 5 makes the seat the single "
             f"human-facing decision surface IN BOTH DIRECTIONS — without a return address the "
@@ -372,6 +400,12 @@ def format_escalation(decision) -> str:
     lines.append(f"- **Recommendation:** {str(decision['recommendation']).strip()}")
     lines.append(f"- **Confidence:** {conf}")
     lines.append(f"- **Why:** {str(decision['justification']).strip()}")
+    # The one precise machine-computed fact — WHICH axis tripped — reached the human
+    # only if the agent retyped it into `justification`. That is the same substitution
+    # this module refuses on its INPUT side (`--plan-result` over a retyped verdict);
+    # refusing it on the input and permitting it on the output would be half a rule.
+    for line in _axis_lines(decision.get("plan_result")):
+        lines.append(line)
     others = [str(o).strip() for o in (decision.get("other_threads") or []) if str(o).strip()]
     if others:
         # Rule 4: one decision at a time, plus a one-line lay-of-the-land — never
@@ -379,11 +413,31 @@ def format_escalation(decision) -> str:
         lines.append("")
         lines.append(f"Also live ({len(others)}), nothing needed from you on these: " + "; ".join(others) + ".")
     lines.append("")
-    lines.append(
-        f"_Answer here and it goes back to the worker ({str(decision['originating_session']).strip()}) "
-        f"from this seat — you never need to open its workspace._"
-    )
+    if origin == "self":
+        lines.append("_No worker to relay to — this decision is yours to make here._")
+    else:
+        lines.append(
+            f"_Answer here and it goes back to the worker ({origin}) "
+            f"from this seat — you never need to open its workspace._"
+        )
     return "\n".join(lines)
+
+
+def _axis_lines(plan_result):
+    """Verbatim `Escalated because:` line(s) from a plan-gate result, if one was passed.
+
+    Returns [] when absent or unusable — an escalation without the artifact is still a
+    valid escalation, it just carries the agent's prose instead of the engine's fact.
+    """
+    if not isinstance(plan_result, dict) or plan_result.get("gate") != "plan":
+        return []
+    if plan_result.get("carve_out"):
+        return ["- **Escalated because:** " + plan_result["carve_out"]]
+    axes = plan_result.get("axes") or {}
+    reds = [k for k in plan_result.get("red_axes", []) if k in axes]
+    if not reds:
+        return []
+    return ["- **Escalated because:** " + "; ".join(f"{k}={axes[k]['state']} — {axes[k]['why']}" for k in reds)]
 
 
 def _read_files(path):
@@ -433,6 +487,12 @@ def main(argv=None) -> int:
 
     f = sub.add_parser("format", help="render one escalation per FB-0090 + §4.8 rules 3/4/5")
     f.add_argument(
+        "--plan-result",
+        help="path to the JSON `gate-classify.py plan` emitted for this change. When given, "
+             "the rendered escalation carries the engine's own red-axis line verbatim instead "
+             "of relying on the agent to retype it into the justification.",
+    )
+    f.add_argument(
         "--decision-file", required=True,
         help="JSON: title, recommendation, confidence, justification, originating_session, "
              "other_threads[]. A FILE because the justification is agent-composed prose and "
@@ -467,9 +527,14 @@ def main(argv=None) -> int:
                 if isinstance(prior, dict) and prior.get("gate") == "plan":
                     plan_green = "yes" if prior.get("verdict") == "approve" else "no"
                 else:
-                    print(f"{PREFIX} ⚠️ --plan-result is not a plan-gate result; ignoring it.", file=sys.stderr)
+                    plan_green = None
+                    print(f"{PREFIX} ⚠️ --plan-result is not a plan-gate result; the plan-quadrant "
+                          f"axis is UNKNOWN (a retyped --plan-axes-green is not accepted as a "
+                          f"substitute once you asked for the artifact).", file=sys.stderr)
             except (OSError, ValueError) as exc:
-                print(f"{PREFIX} ⚠️ could not read --plan-result ({exc}); ignoring it.", file=sys.stderr)
+                plan_green = None
+                print(f"{PREFIX} ⚠️ could not read --plan-result ({exc}); the plan-quadrant axis "
+                      f"is UNKNOWN.", file=sys.stderr)
         print(json.dumps(classify_merge(
             diff_class=args.diff_class,
             verify_verdict=args.verify_verdict,
@@ -490,9 +555,18 @@ def main(argv=None) -> int:
         except (OSError, ValueError) as exc:
             print(f"{PREFIX} ⚠️ BLOCKER: could not read --decision-file ({exc}).", file=sys.stderr)
             return 2
-        rendered = format_escalation(decision if isinstance(decision, dict) else {})
+        decision = decision if isinstance(decision, dict) else {}
+        if args.plan_result:
+            try:
+                decision["plan_result"] = json.loads(Path(args.plan_result).read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                print(f"{PREFIX} ⚠️ could not read --plan-result ({exc}); the escalation will "
+                      f"carry the agent's justification without the engine's axis line.", file=sys.stderr)
+        rendered, ok = format_escalation(decision)
         print(rendered)
-        return 1 if "BLOCKER" in rendered else 0
+        # The flag, not a substring sniff of the rendered text: a perfectly valid
+        # escalation titled "Ship the BLOCKER fix?" rendered fine and exited 1.
+        return 0 if ok else 1
 
     # No trailing `return 2`: `add_subparsers(..., required=True)` makes argparse
     # exit 2 itself before reaching here, so a fallback would be unreachable.

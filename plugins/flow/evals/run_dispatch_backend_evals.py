@@ -128,6 +128,17 @@ check("every advertised placeholder is required by at least one verb (none valid
       f"advertised={sorted(D.KNOWN_PLACEHOLDERS)} supplied-by-a-verb={sorted(_suppliers)}")
 check("the report emits the vocabulary, so consumers read it from one definition",
       D.validate(GOOD)["known_placeholders"] == sorted(D.KNOWN_PLACEHOLDERS))
+# The per-verb half. A placeholder that IS in the global vocabulary but is NOT supplied
+# to THIS verb used to validate and then refuse at render — the same check-passes/
+# dispatch-fails shape as {branch}, closed globally while this half stayed open. The
+# assertion above pins the global property; this one pins what the comment claims.
+_r = D.validate({**GOOD, "listWorkers": "xctl workspace list --session {session}"})
+check("a KNOWN placeholder not supplied to THIS verb fails validation", not _r["ok"])
+check("  ... and the problem names the verb's actual required set",
+      any("not supplied to" in pr for pr in _r["verbs"]["listWorkers"]["problems"]),
+      json.dumps(_r["verbs"]["listWorkers"]["problems"]))
+_a, _e = D.render({**GOOD, "listWorkers": "xctl workspace list --session {session}"}, "listWorkers", {})
+check("  ... and render refuses the same template, so the two agree", _a is None and _e)
 for op in (";", "|", "&", "`", "$("):
     r = D.validate({**GOOD, "listWorkers": f"xctl workspace list {op} rm -rf /"})
     check(f"a template containing {op!r} is invalid", not r["ok"])
@@ -171,6 +182,16 @@ check("createWorker renders with a real brief path", err is None, str(err))
 flat = " ".join(argv or [])
 check("argv carries the PATH", str(body) in flat)
 check("argv does NOT carry the body's text", "whoami" not in flat and "backticks" not in flat)
+# `command` is the field every SKILL.md tells an agent to run, so it must survive a
+# template that quotes one of its own literals — a plain " ".join dropped the quoting
+# shlex had just resolved and turned one argument into two.
+QUOTED_LIT = {**GOOD, "createWorker": 'xctl workspace create --label "my worker" --name {name} --message-file {messageFile}'}
+argv, err = D.render(QUOTED_LIT, "createWorker", {"name": "w1", "messageFile": ".flow/b.md"})
+check("a quoted literal in the template stays ONE argv element", err is None and "my worker" in argv, str(argv))
+import shlex as _shlex
+_cmd = " ".join(_shlex.quote(a) for a in argv)
+check("  ... and `command` re-parses to the identical argv (quoting preserved)",
+      _shlex.split(_cmd) == argv, _cmd)
 check("no verb accepts a body-shaped placeholder",
       all("message}" not in t for t in GOOD.values()))
 src = LIB.read_text(encoding="utf-8")
@@ -211,9 +232,6 @@ for f in sorted((PLUGIN / "lib").glob("*.py")):
     txt = f.read_text(encoding="utf-8")
     for lit in HOST_LITERALS:
         check(f"{f.name} carries no host/roster literal {lit!r}", lit.lower() not in txt.lower())
-# 4 SKILL.md + 3 skill libs + the shared predicate. Asserted as an exact count,
-# not a floor: a floor goes green if a file is added, but also stays green if the
-# skill it belongs to is deleted and another grows a second lib.
 # 4 SKILL.md + 2 skill libs (gate, handoff) + 2 shared libs in plugins/flow/lib/.
 # An exact count, not a floor: a floor goes green when a file is added, but also
 # stays green when a skill is deleted and another grows a second lib.

@@ -7,7 +7,7 @@ description: >
   flow.config.json present + parses + matches the v1.2+ schema, no skill composes
   with a `disable-model-invocation` skill (a call the runtime rejects), the
   required, doc-path, and dependent slots have sensible values and their paths
-  exist on disk (not all 34 of the schema's slots — see Check 2.3/2.4/2.7/2.8/2.9/2.11
+  exist on disk (not all 36 of the schema's slots — see Check 2.3/2.4/2.7/2.8/2.9/2.11
   for exactly which; ephemeral paths created on first write and non-path config
   are intentionally excluded), any declared `statusDocs` status surfaces exist + are
   fenced, any undeclared `statusSurfaceCandidates` that carry status content are
@@ -840,7 +840,9 @@ else
     echo "$ADAPTER_OUT" | jq -r '.verbs | to_entries[] | select(.value.state != "ok") | "       - \(.key): \(.value.state) — \(.value.problems // [] | join("; "))"' 2>/dev/null \
       || echo "       (could not parse the adapter report; run the check above by hand)"
     echo "       Fix: each verb is a command template. Placeholders are a CLOSED set —"
-    echo "       $(echo \"$ADAPTER_OUT\" | jq -r '.known_placeholders | map(\"{\"+.+\"}\") | join(\" \")' 2>/dev/null || echo '{name} {messageFile} {session}'). There is no {message}: a brief or a"
+    PH=$(printf '%s' "$ADAPTER_OUT" | jq -r '[.known_placeholders[] | "{" + . + "}"] | join(" ")' 2>/dev/null)
+    [ -n "$PH" ] || PH="(could not read the vocabulary from the adapter report)"
+    echo "       $PH. There is no {message}: a brief or a"
     echo "       status line is agent-composed prose and travels as a PATH, never as an argument."
     echo "       Affected skills degrade to a documented manual step; they do not silently no-op."
   fi

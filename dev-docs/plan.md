@@ -30,7 +30,8 @@ pass's scope.)
   `/flow:critique-plan` rounds, 13 findings, all accepted**; the third ran against the real
   ~95-entry corpus after measuring that the first two had silently loaded **zero** reference
   documents, and it changed the design in five places. **Over the stated size budget and said so:**
-  37,597 chars vs ≤35 KB. See the "PR — The §4.10 orchestrator skill suite" block below.
+  45,886 chars vs ≤35 KB — see the size table in the PR block for the full trajectory and why
+  each increase was a review fix worth its bytes. See the "PR — The §4.10 orchestrator skill suite" block below.
 
 - **▶ EXECUTED, shipping (this branch, `conductor/spike-93-auto-plan-quality`, spike, docs-only, zero
   `plugins/flow/**` touched): D1 §9.3 spike — is an auto-written technical plan good enough to anchor
@@ -219,15 +220,17 @@ Stated at creation, each also shipping in its artifact's own header, and enumera
 
 ### Size — measured, and over budget; reported rather than quietly accepted
 
-| | budget stated at the gate | measured (final) |
+| | budget stated at the gate | **measured 2026-09-17 @ `fe2c640`+review (the one authoritative figure)** |
 |---|---|---|
-| Class A (per-session) | +~1.6 KB | **+3,291 chars (+6.5%)**, 50,362 → 53,653 across 42 → 46 entries |
-| Suite (Class B, per-invocation) | ≤35 KB | **41,993 chars — 20% over** |
-| Heaviest single skill | ≤10 KB | **`spawn` 12,502 chars — 25% over** |
+| Class A (per-session) | +~1.6 KB | **+3,318 chars (+6.6%)**, 50,362 → 53,680 across 42 → 46 entries |
+| Suite (Class B, per-invocation) | ≤35 KB | **45,886 chars — 31% over** |
+| Heaviest single skill | ≤10 KB | **`spawn` 12,991 chars — 30% over** |
 
-**It went further over during review, and that is the honest account.** A trim pass ran first (descriptions −25%, `spawn` −7%, taking the suite to 37,597). The `/simplify` round then *added* ~4.4 KB back, because four of its findings were correctness fixes with a byte cost: the shared doc-slot resolver prelude in two skills, the CWE-59 symlink refusal at three scratch-writing sites, `/flow:orchestrate`'s vacuous config check replaced with a real one, and `/flow:gate`'s `--plan-result` path. I took every one of them. Bytes were the right thing to spend there.
+**It grew during review, and that is the honest account rather than a regression.** The trajectory: 39,054 as first built → 37,597 after a deliberate trim (descriptions −25%, `spawn` −7%) → 41,993 after `/simplify` → **45,886 after `/flow:staff-review`**. Both increases are review findings with a byte cost, and every one of them was a correctness fix rather than prose: the shared doc-slot resolver prelude, CWE-59 symlink refusals at three scratch sites, `/flow:orchestrate`'s vacuous config check replaced with a real one, `/flow:gate`'s `--plan-result` path and its `.flow/gate-plan.json` redirect, the successor-sweep interlock, the skill-resolution assertion in the succession brief, and `Skill` reaching orchestrate's `allowed-tools`. **Reverting any of them to meet the budget would trade a measured defect for a number.**
 
-For scale: `ship/SKILL.md` is 174,791 chars and `review-brief` (the nearest comparable — one skill, real orchestration, its own evals) is 11,460, so `spawn` is in family rather than an outlier. **Flagged as a real judgment call, not a rounding error: if the seat wants the suite under 35 KB, the honest lever is dropping `/flow:handoff` to a later PR — not thinning the other three, and not reverting the review fixes that caused the overage.**
+For scale: `ship/SKILL.md` is 174,791 chars and `review-brief` — the nearest comparable, one skill with real orchestration and its own evals — is 11,460. So each individual skill is in family; it is the *count* of four that carries the total.
+
+**The lever, named and unchanged: drop `/flow:handoff` to a later PR.** That is 9,615 chars and would land the suite at 36,271 — still marginally over, and it is the only cut available that does not either thin the transcription this PR exists to deliver or undo a review fix. This is the seat's call, not mine; I am not making it silently.
 
 **Files touched:** `plugins/flow/skills/{orchestrate,spawn,handoff,gate}/SKILL.md` (NEW ×4), `plugins/flow/skills/gate/lib/gate-classify.py` (NEW), `plugins/flow/lib/dispatch_backend.py` (NEW), `plugins/flow/skills/handoff/lib/brief-check.py` (NEW), `plugins/flow/lib/sensitive_paths.py` (NEW), `plugins/flow/schema/flow.config.schema.json`, `flow.config.json`, `plugins/flow/evals/run_gate_evals.py` (NEW), `plugins/flow/evals/run_dispatch_backend_evals.py` (NEW), `plugins/flow/evals/run_handoff_brief_evals.py` (NEW), `plugins/flow/evals/run_merge_status_evals.py`, `plugins/flow/skills/doctor/SKILL.md`, `plugins/flow/skills/workflow-help/SKILL.md`, `plugins/flow/docs/workflow.md`, `README.md`, `template/base/CLAUDE.md.template`, `research/2026-08-22-conductor-orchestration.md`, `.github/workflows/ci.yml`, `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `changelog/v1.45.0.md` (NEW), `dev-docs/history/2026-09-17-orchestrator-skill-suite.md` (NEW), `dev-docs/feedback/FB-0110-*.md` (NEW), `dev-docs/roadmap.md`, `dev-docs/plan.md`.
 
@@ -269,7 +272,7 @@ Three of the four were quality passes; the fourth found a **fail-open in the rou
 - [x] All three new eval harnesses are CI-wired → verify: eval `run_gate_evals.py` §10 greps `.github/workflows/ci.yml` for each (FB-0056: an un-wired eval is zero standing protection).
 - [x] Full existing suite stays green, enumerated as a **set** rather than a remembered count → verify: every harness under `plugins/flow/evals/` plus those `ci.yml` wires outside it, all executed — **37/37 green**. Two fan-out survivors were caught this way and fixed in-branch (`run_merge_status_evals.py`'s hardcoded slot-count tripwire, `marketplace.json` version parity), which is exactly what the set-based form is for.
 - [x] §10.2's quoted `--message` form is corrected at the source, not just contradicted in code → verify: a grep for `--message "` across `research/` returns only the dated note explaining the removal; the template itself reads `--message-file`.
-- [x] Suite size measured and reported honestly, over budget or not → verify: the `harness_audit.py --split` report, run before ship; its four new rows and the Class A delta are in the table above and in the PR body. **It is over: 37,597 chars vs a stated ≤35 KB, `spawn` 12,010 vs ≤10 KB.** Reported, with the lever named.
+- [x] Suite size measured and reported honestly, over budget or not → verify: the `harness_audit.py --split` report, run after the review passes; its four rows and the Class A delta are in the size table above — which is the single authoritative measurement, deliberately not restated as a number here, because a figure duplicated into a `verify:` evidence line is the one most likely to go stale. **It is over, and the table says by how much.** Reported, with the lever named.
 - [ ] **After rebasing onto the merged field-manual branch**, § 1 / § 2 / § 6 are deleted from `research/orchestrator-field-manual.md` and each deletion cites this PR; the file's other sections are untouched → verify: a diff of that file showing exactly the three section removals, plus a grep confirming the remaining sections and the file's own deletion-criterion header survive (deleting the whole file would satisfy a naive "sections gone" check — general.md rule 3).
 - [x] Registration fan-out complete with no survivors → verify: grep for each new skill name across `README.md`, `docs/workflow.md`, `workflow-help/SKILL.md`, and a `[0-9]+ slots?` sweep across shipped surfaces; every live claim updated, the two `plan-critic.md` occurrences left alone (they are a worked example *of* a contradiction, not a claim about this schema).
 

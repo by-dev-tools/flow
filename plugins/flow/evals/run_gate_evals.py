@@ -200,31 +200,37 @@ r = G.ships_or_paperwork("no", "no", "no")
 check("no behavior/surface/gate change ⇒ paperwork ⇒ resolve yourself",
       r["classification"] == "paperwork" and "RESOLVE IT YOURSELF" in r["action"])
 for kw in (("yes", "no", "no"), ("no", "yes", "no"), ("no", "no", "yes")):
-    check(f"any yes {kw} ⇒ ships", G.ships_or_paperwork(*kw)["classification"] == "ships")
-check("UNKNOWN ⇒ ships (FB-0106 asymmetry: a wrong 'ships' costs a round trip, "
+    check(f"any yes {kw} ⇒ behavioral", G.ships_or_paperwork(*kw)["classification"] == "behavioral")
+check("UNKNOWN ⇒ behavioral (FB-0106 asymmetry: a wrong 'ships' costs a round trip, "
       "a wrong 'paperwork' is only catchable later)",
-      G.ships_or_paperwork(None, "no", "no")["classification"] == "ships")
+      G.ships_or_paperwork(None, "no", "no")["classification"] == "behavioral")
 
 print("\n§6  escalation format — FB-0090 triple + FB-0092 return address")
 base = dict(title="Pick A or B", recommendation="A", confidence="high",
             justification="B needs a migration", originating_session="sess-1")
-out = G.format_escalation(base)
+out, _ok = G.format_escalation(base)
 for label in ("**Recommendation:**", "**Confidence:**", "**Why:**"):
     check(f"rendered escalation carries {label}", label in out)
 check("rendered escalation names the return address", "sess-1" in out)
 check("rendered escalation promises the relay, not a workspace visit",
       "never need to open its workspace" in out)
+check("a valid decision whose TITLE contains 'BLOCKER' still reports ok "
+      "(the exit code is a flag, not a substring sniff of the output)",
+      G.format_escalation({**base, "title": "Ship the BLOCKER fix?"})[1] is True)
+check("a SOLO session (originating_session: self) formats instead of hard-refusing",
+      G.format_escalation({**base, "originating_session": "self"})[1] is True
+      and "yours to make here" in G.format_escalation({**base, "originating_session": "self"})[0])
 for missing in ("recommendation", "confidence", "justification"):
     d = dict(base); d[missing] = ""
     check(f"missing {missing} ⇒ BLOCKER, not a best-effort render",
-          "BLOCKER" in G.format_escalation(d) and missing in G.format_escalation(d))
+          "BLOCKER" in G.format_escalation(d)[0] and missing in G.format_escalation(d)[0] and G.format_escalation(d)[1] is False)
 d = dict(base); d["originating_session"] = ""
 check("missing originating_session ⇒ BLOCKER (rule 5's return leg has nowhere to go)",
-      "BLOCKER" in G.format_escalation(d) and "rule 5" in G.format_escalation(d))
+      "BLOCKER" in G.format_escalation(d)[0] and "rule 5" in G.format_escalation(d)[0])
 d = dict(base); d["confidence"] = "pretty sure"
-check("unparseable confidence ⇒ BLOCKER", "BLOCKER" in G.format_escalation(d))
+check("unparseable confidence ⇒ BLOCKER", "BLOCKER" in G.format_escalation(d)[0])
 d = dict(base); d["other_threads"] = ["#1 at gate", "#2 shipping"]
-out = G.format_escalation(d)
+out, _ok = G.format_escalation(d)
 check("other threads render as ONE line, not a second ask (rule 4)",
       "Also live (2)" in out and out.count("**Recommendation:**") == 1)
 
@@ -232,7 +238,7 @@ print("\n§7  malformed input degrades without crashing")
 for bad in ({}, {"recommendation": None}, {"confidence": 3}):
     try:
         check(f"format({bad}) returns a string rather than raising",
-              isinstance(G.format_escalation(bad), str))
+              isinstance(G.format_escalation(bad)[0], str))
     except Exception as exc:  # noqa: BLE001
         check(f"format({bad}) returns a string rather than raising", False, repr(exc))
 try:

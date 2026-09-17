@@ -222,6 +222,43 @@ check("a glob that DOES match, over non-sensitive files, is still not sensitive 
       "(the escalation is targeted, not blanket)",
       json.loads(_r.stdout)["sensitive"] is False, _r.stdout)
 
+print("\n§6b  EMPTY input is 'asked about nothing', not 'nothing is sensitive'")
+# Reachable in production: /flow:spawn's template writes the glob file with a printf
+# whose substitution may not have happened, yielding an empty file. A `false` there
+# routes a worker with UNDECLARED scope down a tier.
+_empty = TMP / "empty.txt"; _empty.write_text("\n  \n", encoding="utf-8")
+for _flag in ("--globs-file", "--files-file"):
+    _r = _sp.run([sys.executable, str(SP_LIB), _flag, str(_empty)], capture_output=True, text=True)
+    _o = json.loads(_r.stdout)
+    check(f"an empty {_flag} ⇒ SENSITIVE, not a clean pass", _o["sensitive"] is True, _r.stdout[:200])
+    check(f"  ... and says it was asked about nothing ({_flag})",
+          "asked about nothing" in _o.get("reason", "") and "⚠️" in _r.stderr)
+
+print("\n§6c  the durable-pointer POSITIVE is not satisfied by the template's own boilerplate")
+# The shipped brief template hardcodes "Re-derive: run the backend's listWorkers verb",
+# so while `re-derive`/`listWorkers`/`dispatchBackend` counted as durable pointers, an
+# unfilled skeleton passed clean — the positive half had the same two-worlds defect the
+# negative half is paired to fix.
+SKELETON = """# Succession brief — orchestrator
+
+## Read first
+
+## Live workers
+Re-derive: run the backend's listWorkers verb. Do NOT trust any list written here.
+
+## In flight
+
+## Your first action
+Re-address the ping channel: broadcast your own session id to every live worker.
+"""
+_r = B.check(SKELETON)
+check("the shipped skeleton with every slot UNFILLED fails", not _r["ok"],
+      json.dumps(_r["findings"])[:200])
+check("  ... specifically for having no durable pointer",
+      any(f["id"] == "no-durable-reference" for f in _r["findings"]))
+check("a runnable instruction is not counted as a pointer",
+      B.check("re-derive with listWorkers and dispatchBackend")["durable_references"] == [])
+
 print("\n§7  fail-safe direction — every degraded path classifies SENSITIVE")
 # Pattern translation escapes everything that is not a wildcard, so odd pattern
 # text is matched LITERALLY rather than crashing or silently matching nothing.

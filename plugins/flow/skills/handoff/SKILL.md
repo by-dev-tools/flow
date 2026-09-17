@@ -67,11 +67,20 @@ Re-derive: run the backend's listWorkers verb. Do NOT trust any list written her
 <the handful of threads and pending decisions not yet resolved — the only genuinely new content>
 
 ## Your first action
+FIRST, confirm `/flow:orchestrate` actually resolves in YOUR environment (e.g. `claude plugin
+details`, or attempt it and read the error). You run the plugin INSTALLED in your workspace,
+which may lag the branch that added a skill — and a skill added by an unmerged PR is not
+registered anywhere. If it does not resolve, say so immediately with "SKILL-ABSENT
+flow:orchestrate" and do the steps below by hand rather than improvising a substitute.
+
+THEN run /flow:orchestrate, whose first step is this:
 Re-address the ping channel. Every live worker is pinging MY session id, which dies with this
 seat. Get your own id (the backend's selfSession verb) and broadcast it — ONE message per
 worker, composed into a file. Nothing in your environment will reveal that the channel is
 stale; the symptom is silence, and silence reads as "nothing needs me".
 ```
+
+**The assertion is in the template, not in prose after it.** The brief file *is* the successor's first message, so an instruction that lives anywhere else has no delivery channel. And `/flow:orchestrate` is the likeliest skill in this suite to be missing from an installed tree, because it is the newest — which is exactly when a silent "command not found" reads as a quiet start rather than a failure.
 
 It is **generated at hand-off, not maintained**, and delivered through the backend rather than committed: a handoff is *live*, not durable currency, and committing it would add per-rotation PR churn plus a snapshot that is stale the instant it lands. A stale committed snapshot would be **worse** than re-deriving live.
 
@@ -99,7 +108,7 @@ python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/dispatch_backend.py" \
 
 Run the rendered command. If `createWorker` is missing, print the brief in full and tell the human to paste it — never let the handoff quietly not happen.
 
-Tell the successor to run `/flow:orchestrate` as its first action; that skill performs the re-address the brief describes.
+The brief's "Your first action" section already carries this, including the resolution assertion — do not restate it here as prose, which would have no delivery channel.
 
 ## 6. Archive-safety on the outgoing seat
 
@@ -118,4 +127,6 @@ Point 4 is the one that changes under an orchestrator: doc-currency stops being 
 
 ## 7. Report — one line, then stop
 
-State: what was flushed (or that nothing was pending), what was externalized and where each thing went, that the brief passed the check, the successor's name, and the archive verdict for this seat. Then end the turn. Do not keep working in a seat you have just handed over — two live seats messaging the same workers is the batched-message failure with extra steps.
+State: what was flushed (or that nothing was pending), what was externalized and where each thing went, that the brief passed the check, the successor's name, and the archive verdict for this seat.
+
+**If step 1 opened a flush PR, the archive verdict will be `🚫 not safe` and that is the expected outcome, not a failure** — condition 1 requires that PR merged, and you just opened it. Say so in the same breath, or the last line of a clean handoff reads as an error. The seat becomes archivable once the flush PR lands. Then end the turn. Do not keep working in a seat you have just handed over — two live seats messaging the same workers is the batched-message failure with extra steps.

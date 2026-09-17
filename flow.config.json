@@ -41,6 +41,7 @@
     "plugins/flow/skills/gate/**",
     "plugins/flow/lib/sensitive_paths.py",
     "plugins/flow/lib/dispatch_backend.py",
+    "plugins/flow/skills/handoff/lib/brief-check.py",
     "plugins/flow/scripts/sanitize_tokens.py"
   ]
 }

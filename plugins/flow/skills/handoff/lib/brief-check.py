@@ -62,12 +62,20 @@ SANDBOX_PATH_RES = [
 ]
 
 # Evidence that the brief points somewhere a different sandbox can reach.
+#
+# `dispatchBackend` / `listWorkers` / `re-derive` were here and were REMOVED, because
+# the shipped brief template hardcodes "Re-derive: run the backend's listWorkers verb"
+# into every brief it produces — so the positive half was satisfied by the INSTRUCTIONS
+# rather than by any content, and a skeleton with every slot left unfilled passed clean.
+# That is this repo's own Consistency rule 3 one turn further on: the rule says a
+# NEGATIVE assertion alone passes in two opposite worlds, and the positive paired with
+# it had the same defect — "the brief points somewhere reachable" or "the brief contains
+# the word re-derive", indistinguishable. A runnable instruction is not a pointer.
 DURABLE_RES = [
     (re.compile(r"https?://", re.I), "a URL"),
     (re.compile(r"\b(?:github|gh pr|gh issue|origin/|git ls-remote)\b", re.I), "GitHub / git remote state"),
     (re.compile(r"\b(?:delivered to the human|handed to the human|already surfaced|pasted to)\b", re.I),
      "content already delivered to the human"),
-    (re.compile(r"\{?\bdispatchBackend\b|\blistWorkers\b|re-derive\b", re.I), "a live backend query"),
 ]
 
 # §4.9 wind-down step 4. The successor's FIRST action is to broadcast its own

@@ -5,8 +5,8 @@ description: >
   route model + effort from the job-shape table and LOG THE WHY, render the
   dispatch brief, create the workspace through the dispatchBackend adapter with
   the brief as its first message, and instruct the new agent's first action as a
-  named flow skill. The routing floor is enforced, not suggested — work touching
-  sensitivePaths cannot be routed down. Use on "/flow:spawn", "dispatch a
+  named flow skill. Work touching sensitivePaths is floored to the top tier — the
+  predicate computes it for you rather than leaving it to memory. Use on "/flow:spawn", "dispatch a
   worker", "spin up a workspace for X". Never merges.
 disable-model-invocation: false
 allowed-tools: Read, Grep, Glob, Bash, Write
@@ -85,7 +85,7 @@ python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/sensitive_paths.py" --globs-fil
 
 Note `--globs-file`, not `--files-file`: you hold *owned globs*, the gate holds a *changed-file list*, and one predicate asked two different questions has two correct answers. So spawn's input is **normalised** (globs expanded against tracked files) rather than the predicate overloaded. A glob matching nothing today is reported loudly — "matches nothing yet" is not "nothing sensitive here".
 
-`sensitive: true` ⇒ **top tier, high effort, no exceptions.** A wrong answer in gate machinery fails *silently* — a mis-classifying gate passes bad work — which is the one error class where a cheaper model's savings are not worth having. This is the same predicate the plan gate uses for its stakes axis, deliberately.
+`sensitive: true` ⇒ **top tier, high effort, no exceptions.** The predicate computes the verdict; complying with it is still yours to do, so read the field rather than assuming the floor applied itself. A wrong answer in gate machinery fails *silently* — a mis-classifying gate passes bad work — which is the one error class where a cheaper model's savings are not worth having. This is the same predicate the plan gate uses for its stakes axis, deliberately.
 
 Then do **both** of these — the brief line is what the worker sees, the record is what you tune against:
 
@@ -108,7 +108,7 @@ This is not a ledger of live *state* — that is deleted by design, because stat
 
 ## 3. Render the brief — and keep it under ~30 lines
 
-Past ~30 lines, something in it belongs in the repo instead. Everything about *how to work* already lives in the project's `CLAUDE.md`, this plugin, and the auto-loading rules; restating it here is duplicated state that drifts.
+The fixed contract block below is ~20 lines before you write anything; keep **your** per-dispatch content (Outcome, Done means, You own, Context) under ~20 more. Past that, something in it belongs in the repo instead. Everything about *how to work* already lives in the project's `CLAUDE.md`, this plugin, and the auto-loading rules; restating it here is duplicated state that drifts.
 
 Write it with the **Write tool** to `.flow/brief-<item>.md`. Never compose it as a shell string.
 
@@ -126,15 +126,15 @@ model · effort · why: <tier/id> · <effort> · <one clause>
 
 ## You own
 write: <globs>
-do not touch: <globs>          # another worker holds these
+do not touch: <globs>          # omit this line entirely when no sibling holds anything
 ship slot: <held by you | held by <worker>; rebase when it lands>
 
 ## Context you can't get from the repo
 - <fact>                        # omit the section entirely when there are none
 
 ## Contract
-- Mode: feature. Run the full loop.
-- STOP at the plan gate: write the plan, push the branch, report, end your turn.
+- Mode: <feature | spike>. Run the loop for that mode.
+- <feature only> STOP at the plan gate: write the plan, push the branch, report, end your turn.
 - Surface every decision with a recommendation, a confidence (high/medium/low), and the
   justification. Never make me ask for the confidence or the why.
 - Claim any contested number (version, feedback id) MECHANICALLY by pushing the file, not in prose.
