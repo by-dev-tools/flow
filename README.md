@@ -100,6 +100,10 @@ The canonical reference — every step with its rationale, gate semantics, spike
 | `/flow:post-merge` | After you merge — "anything left, or safe to archive?" Confirms the merge (queue-safe), reconciles the docs, captures your merge-gate feedback, cleans up the branch, gives a safe-to-archive verdict |
 | `/flow:log-disagreement` | Fires on its own when you dispute a finding |
 | `/flow:review-brief` | Pre-prototype review of a design brief (D1 Phase 1): one extraction fanned to `auditor` + `plan-critic` + the new `lens-experience` agent, one triaged verdict. Standalone today — not yet wired into the loop |
+| `/flow:orchestrate` | Boot an orchestrator seat that drives several worker workspaces: re-derive who's live, sweep open branches and PRs, find workers that have gone *silent*, re-address the ping channel, load the gate policy |
+| `/flow:spawn` | Dispatch one worker — admission control, model/effort routing with the reason logged, the brief, and the workspace |
+| `/flow:handoff` | Rotate the orchestrator seat: flush what's durable, rescue anything that only exists in this sandbox, hand over a brief that's been checked for dead references |
+| `/flow:gate` | "Can I approve this, or does a human have to?" Classifies the decision on four axes and formats what escalates. Never merges |
 
 ## Boundaries & limitations
 

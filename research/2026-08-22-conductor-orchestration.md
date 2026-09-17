@@ -254,10 +254,22 @@ do not touch: <globs>          # another worker holds these
 ## Contract
 - Mode: feature. Run the flow loop.
 - STOP at the plan gate: write the plan, push the branch, report, end your turn.
-- Report: conductor message create --session $FLOW_ORCHESTRATOR_SESSION \
-    --message "<item-id> | <state> | <one line> | <what you need> | out=<output_tokens>"
+- Report: write the line to a file, then
+    conductor message create --session $FLOW_ORCHESTRATOR_SESSION --message-file <path>
+    Line shape: <item-id> | <state> | <one line> | <what you need> | out=<output_tokens>
 - Never create workspaces or sessions. Never merge.
 ```
+
+> **Corrected 2026-09-17 (shipped with `/flow:spawn`, §4.10).** This template previously read
+> `--message "<item-id> | …"` — a quoted shell string. It is now the `--message-file` form, and the
+> quoted form is removed rather than merely discouraged. Reason: the shell-composition hazard
+> (field manual T6) fired **four times in one session** among authors who had each just finished
+> reasoning about it — a refuted design, then silent data loss, then unintended execution, then the
+> report of the third mangled by the third. A worker's status line is agent-composed prose about
+> code and therefore routinely contains backticks around command and file names, which is the
+> highest-risk possible content to interpolate. `/flow:spawn` now emits the file form, so leaving
+> this template on the quoted form would have left the next reader to re-derive the conflict and
+> possibly resolve it the other way.
 
 The contract is four lines on purpose. Everything else about how to work already lives in
 CLAUDE.md, the flow plugin, and `.claude/rules/` — restating it here is duplicated state that

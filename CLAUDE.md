@@ -36,6 +36,14 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/ship/lib/manifest-triage.py` | Deterministic draft-manifest triage: classifies each blocker auto/ask/blocked, renders the plain-language NOT-READY block + the Step 8 decision list (FB-0075) |
 | `plugins/flow/skills/ship/lib/verify-pr-body.sh` | Sourced gh read-back helper: re-fetches a PR after any body/draft write + asserts it took (FB-0067) |
 | `plugins/flow/skills/ship/SKILL.md` | `/flow:ship` final-pass pipeline (Step 4c harvests flow-generalizable lessons) |
+| `plugins/flow/skills/orchestrate/SKILL.md` | `/flow:orchestrate` — boot/re-boot an orchestrator seat (FB-0110, §4.10) |
+| `plugins/flow/skills/spawn/SKILL.md` | `/flow:spawn` — dispatch one worker; `model · effort · why` routing, floored for `sensitivePaths` |
+| `plugins/flow/skills/handoff/SKILL.md` | `/flow:handoff` — orchestrator succession + archive safety (§4.9) |
+| `plugins/flow/skills/gate/SKILL.md` | `/flow:gate` — four-axis plan/merge gate classification (§4.8). **Classifies only; never merges** |
+| `plugins/flow/lib/sensitive_paths.py` | Shared stakes/routing-floor predicate — one definition, two readers (`gate-classify.py`, `/flow:spawn`) |
+| `plugins/flow/skills/gate/lib/gate-classify.py` | The §4.8 combination rule as a truth table; every undeclared axis escalates |
+| `plugins/flow/skills/spawn/lib/dispatch-backend.py` | `dispatchBackend` resolve/validate/render — closed placeholder set, refuses rather than escapes |
+| `plugins/flow/skills/handoff/lib/brief-check.py` | Succession-brief reachability check (§4.9), paired positive+negative |
 | `plugins/flow/scripts/extract_session.py` | Session preprocessing for the reviewers (+ harvest dialogue helper) |
 | `plugins/flow/scripts/bounding_logic.py` | User-message windowing |
 | `plugins/flow/scripts/log_disagreement.py` | Writes pushback records to user-scope storage |

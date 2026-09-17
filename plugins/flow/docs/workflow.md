@@ -19,9 +19,10 @@ Everything described in the loop below is shipped and installable today. The ful
 - **`/flow:contribute`** — drains the lesson-harvest queue (and the `log-disagreement` store) into a **draft** PR back to the flow plugin. The drain end of the self-improvement loop; run from the flow checkout, self-triggered, never merges (v1.11.0; see § "Contributing lessons back to flow").
 - **`/flow:land`** — post-merge, human-invoked: after *you* merge a PR, reconciles the forward docs to "merged (#N)" (the slot the open-PR ship couldn't), re-runs the visual-history distill if a blocked visual pass since completed, and opens a small `docs: land #N` PR. Closes the "at PR → merged never reconciles" gap. Never merges (v1.12.0). Independently invocable, and **called by `/flow:post-merge`** §3 (model-invocable since v1.25.0/FB-0077; kept from auto-firing by its own §1a merged-PR gate and §1b clean-tree gate) for its doc-currency step.
 - **`/flow:post-merge`** — post-merge, human-invoked: the "merged — anything left, or safe to archive?" close-out (v1.21.0, FB-0072). One command that (1) confirms the merge with a **merge-queue-safe** three-state gate (a queued-but-unlanded PR is *not merged yet* → polled, never a false failure; only a `CLOSED`-unmerged PR fails loud), (2) **calls `/flow:land`** for doc-currency, then holds the archive verdict at `🚫` until you merge the `docs: land #N` PR it opens, (3) synthesizes the merge-gate feedback window `/flow:ship` structurally can't see into user-scope memory + the `/flow:contribute` queue, (4) safe-deletes the merged branch, (5) prints a `✅ safe to archive` / `🚫 not safe` verdict. Never merges.
+- **`/flow:orchestrate`** / **`/flow:spawn`** / **`/flow:handoff`** / **`/flow:gate`** — the orchestrator suite, for running several worker workspaces from one seat. All four are **agent-invocable**, because a freshly-spawned worker has to be able to run them with no human in the loop. Host mechanics live behind the `dispatchBackend` config slot (five command templates you supply), so no host's CLI is named anywhere in the plugin. They wrap checklists and decision trees — **the judgment stays the agent's** — and compose the rest of the loop rather than reimplementing it. `/flow:gate` classifies and formats only: **it never merges.** See § "Running several workspaces from one seat".
 - **`/flow:workflow-help`** / **`/flow:doctor`** — onboarding (print the loop + resolved config) and setup verification.
 
-Plus the two reviewer subagents (`auditor`, `plan-critic`) the four staff-review lens agents, the D1 `lens-experience` agent (experience/ambition + push-further-on-quality, reached only through `/flow:review-brief`), the `planner` and `docs` context-isolation agents, the four portable rules (`general`, `plan-discipline`, `documentation`, `exploration` — path-activated skills, `user-invocable: false`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (34 slots), an **opt-in** default-hooks recipe (`hooks/default-hooks.json` — not auto-applied; consumers merge the hooks they want into their own `.claude/settings.json`), and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow references it directly rather than re-implementing it.
+Plus the two reviewer subagents (`auditor`, `plan-critic`) the four staff-review lens agents, the D1 `lens-experience` agent (experience/ambition + push-further-on-quality, reached only through `/flow:review-brief`), the `planner` and `docs` context-isolation agents, the four portable rules (`general`, `plan-discipline`, `documentation`, `exploration` — path-activated skills, `user-invocable: false`), the memory machinery (`tools/memory/check.mjs`), the `flow.config.json` JSON Schema (36 slots), an **opt-in** default-hooks recipe (`hooks/default-hooks.json` — not auto-applied; consumers merge the hooks they want into their own `.claude/settings.json`), and the template directory (`template/base/` + per-stack overlays). `/simplify` is bundled with Claude Code — flow references it directly rather than re-implementing it.
 
 ## What this workflow is (and isn't)
 
@@ -616,6 +617,34 @@ The six fields, in order:
 6. **Where this pushes past the literal request** — if anywhere; empty is a valid, honest answer.
 
 `/flow:review-brief` reviews a brief against these fields implicitly (via `auditor` + `plan-critic` + `lens-experience`); it does not currently enforce that all six are present as a mechanical gate.
+
+## Running several workspaces from one seat (the orchestrator suite)
+
+Optional, and only worth it above roughly three independent workstreams. Below that the relay just adds distance between you and the call.
+
+**The shape.** One workspace is the *orchestrator seat*; it spawns and directs the others, each of which runs the normal loop. You work from the seat. **The two gates do not move** — this does not add a third, and nothing here lets an agent merge. What changes is *who holds each gate*, as a function of the decision's properties: low-stakes reversible work stops costing your attention, while high-stakes, irreversible or taste-laden work still requires it.
+
+**The four skills, all agent-invocable.** `/flow:orchestrate` boots a seat. `/flow:spawn` dispatches one worker. `/flow:handoff` rotates the seat. `/flow:gate` classifies a decision and formats what escalates. They wrap the checklists; the judgment stays the agent's, and they compose the rest of the loop rather than reimplementing it.
+
+**Host mechanics live in `dispatchBackend`** — five command templates you supply (`listWorkers`, `createWorker`, `sendMessage`, `workerStatus`, `selfSession`), so no host's CLI appears anywhere in the plugin. Placeholders are a closed set: `{name}`, `{messageFile}`, `{session}`, `{branch}`. **There is no `{message}`** — a brief or a status line is agent-composed prose that routinely contains backticks, so message bodies travel as a *path*, never as a shell argument. A missing verb never silently no-ops: the skill prints a loud `⚠️` and names the manual step you must do instead.
+
+**One agent cannot run a skill inside another workspace.** The mechanism is *instruct, not remote-invoke*: `/flow:spawn` creates workspace B, and B's first message tells B to run a named skill, which B invokes in its own process. That is why these ship in the plugin (so B has them) and are agent-invocable (so B can run them unattended) — and why the brief has B **assert the skill actually resolves** before relying on it, since B runs its *installed* plugin, which may lag the branch that added the skill.
+
+**The plan gate delegates on four axes** — stakes (does the diff touch `sensitivePaths`?), reversibility, confidence, taste. All four green and the seat may approve; any one red, or any axis left *undeclared*, goes to you. A plan with a prototype attached is always yours: the prototype is the high-taste artifact.
+
+**The merge gate stays yours, entirely.** `/flow:gate` classifies which branch a merge falls into and reports whether it would be delegable later, but its verdict is `human` every time and no setting changes that. Delegated merges require a distinct merge identity so that *who merged* is recorded natively; until that exists, an agent merging would do so under your credential and erase the only provenance worth having.
+
+**Five rules govern anything the seat says to you**, because the seat's product is your attention and a verbose one recreates the cost it exists to remove:
+
+1. Decide inside the green quadrant; escalate only what a red axis forces.
+2. **Classify ships-or-paperwork first.** If the diff is identical either way and the question is where something gets written, it is the seat's call. Escalating it spends your attention on a null result.
+3. One decision at a time, plus one line naming the other live threads — never a flat dump, never silence about parallel work.
+4. Every escalation carries a recommendation, a confidence, and the justification. You should never have to ask for the confidence or the why.
+5. The seat is your single decision surface **in both directions**: it collects the decision, you answer *there*, and it relays the answer back to the worker. You should never open N worker workspaces to keep N workstreams moving.
+
+**Workers ping the seat; the seat does not poll.** Each brief tells its worker to report on completion, on a blocking question, and on a stall. **Known gap:** a rate-limited worker has no turn in which to ping, and its status is indistinguishable from "waiting at a gate". So `/flow:orchestrate` also sweeps *silent* workers by last-activity timestamp rather than status. Do not mistake the ping protocol for coverage.
+
+**The seat is disposable, and that is the point.** It holds no state that isn't recoverable from git hosting, the backend, or already delivered to you — so rotating it loses nothing. Rotate early and often rather than treating it as a vessel you are afraid to leave. `/flow:handoff` enforces the one step that has actually failed in practice: any artifact that exists *only* in the outgoing sandbox is committed or handed to you before the seat goes away, and the brief is mechanically rejected if it names a path the successor cannot reach.
 
 ## Skills cheat sheet
 

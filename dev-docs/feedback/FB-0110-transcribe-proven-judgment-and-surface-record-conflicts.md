@@ -35,10 +35,27 @@
   for FB/version numbers, and the resolution is identical: `git ls-remote` + open branches, never
   `main` alone, before concluding that something referenced is absent.
 
+  **Second corollary, measured this session — a reviewer that cannot load the record does not
+  fail, it succeeds differently.** `/flow:critique-plan` ran twice on this plan and resolved
+  **zero** reference documents both times (the installed plugin is 1.29.0, whose extractor does
+  not comma-split `referenceGlob`, and this repo's slot became comma-separated at #146). Both
+  rounds returned well-formed, genuinely useful findings — 8 between them, all accepted — because
+  the model re-read the rules off disk by hand. Nothing in the output looked degraded. A third
+  round, spawned directly against the ~95-entry corpus, then produced **8 further findings, every
+  one dependent on a specific FB entry or spec clause, and five of which changed the design.**
+
+  So the delta between "the critic has the corpus" and "the critic is improvising from memory" was
+  not *quality* — it was *reachability*: the blind rounds could only find what was visible inside
+  the plan document, and every finding that required knowing a rule elsewhere in the repo was
+  simply unreachable to them. **The lesson is that a silently-empty corpus is invisible from the
+  output**, so on anything rule-dependent (a gate, a policy, a shipped contract), verify the
+  reviewer actually loaded its sources rather than inferring it from the findings looking good.
+
 - **Applies to:** `/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`, `/flow:gate` (canonical §4.10)
   — each ships as a transcription of §4.3/§4.6/§4.8/§4.9/§10.2 plus the field manual, with the
   judgment left to the agent per §4.10's anti-bloat guardrail. Related: [[FB-0088]] (procedures
   decay — which is why the *table* ships as prose the agent applies, and only the silently-failing
   rule is mechanized), [[FB-0106]] (classify ships-or-paperwork before escalating — the conflicts
   above are "ships", which is why they are open calls rather than quiet decisions), and
-  [[FB-0090]] (recommendation + confidence + justification — the format each open call uses).
+  [[FB-0090]] (recommendation + confidence + justification — the format each open call uses), and
+  [[FB-0107]] (dogfooding runs the installed plugin — the mechanism behind the second corollary).

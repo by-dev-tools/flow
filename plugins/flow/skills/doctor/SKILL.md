@@ -229,7 +229,7 @@ Existence-checks the doc-path slots a fresh project is expected to scaffold: `pl
 
 The unset-slot fallback below builds `dev-docs/<slot>.md` — matching `flow.config.schema.json`'s own declared `default` for every doc-path slot, and the convention every *other* call site in the plugin already uses (16 sites across `ship`, `ship-spike`, `land`, `verify-build`, `staff-review`, `security-review`, `accessibility-review`, `audit-coverage`, `audit-skips`, `planner`, `docs` — all `dev-docs/`). Before FB-0098 this line was the *only* `core-docs/` outlier against that convention (FB-0098's own root cause, caught mid-fix: setting flow's own `flow.config.json` slots explicitly would have masked the symptom on this one dogfood repo while leaving the same false-WARN live for every other consumer with an unset slot — the fix belongs in the default, not the config).
 
-**This loop is deliberately not exhaustive over all 34 schema slots** — see the frontmatter for the honest scope claim. Not existence-checked here, on purpose:
+**This loop is deliberately not exhaustive over all 36 schema slots** — see the frontmatter for the honest scope claim. Not existence-checked here, on purpose:
 - `verifyFindingsPath`, `verifyReportPath`, `visualHistoryPath`, `lastHarvestedPath` — ephemeral or CREATED ON FIRST WRITE by design (not scaffolded by `bootstrap.sh`); a missing file is the correct steady state.
 - `statusDocs`, `statusSurfaceCandidates` (Check 2.7/2.9), `flowRepoPath`, `contributionsQueuePath` (Check 2.8) — path-shaped but already existence/coherence-checked by a different check (arrays or dev-tooling paths, not scalar doc paths).
 - `referenceGlob` — a glob, not a single path; a zero-match glob isn't inherently wrong.
@@ -665,6 +665,38 @@ else
         esac
       fi
     fi
+  fi
+fi
+```
+
+**Check 2.12 — `dispatchBackend` adapter shape (orchestrator suite, §4.10)**
+
+Validates the adapter the orchestrator suite (`/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`, `/flow:gate`) dispatches through. **Silent when the slot is absent** — most projects never orchestrate, and nagging them about an unused slot is noise. WARN, never FAIL, when it is present but malformed, because a broken adapter does not break the rest of the loop.
+
+Why it exists at all: a malformed adapter otherwise surfaces at *dispatch* time, which is the worst moment to discover it — mid-orchestration, with a worker that was supposed to be created and was not. Catching it at setup is the whole point (the shipped-but-never-loading class this repo keeps finding).
+
+**Deletion criterion (FB-0088):** delete when `dispatchBackend` goes, or when the schema can express the verb/placeholder contract well enough that schema validation subsumes this.
+
+```sh
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] dispatchBackend adapter — jq not on PATH (see Check 4.1)."
+elif [ ! -f flow.config.json ]; then
+  : # no config at all — Check 2.1 already reports it; the slot is optional anyway
+elif ! jq -e 'has("dispatchBackend")' flow.config.json >/dev/null 2>&1; then
+  : # deliberately silent: no adapter configured is the normal case, not a problem
+else
+  ADAPTER_OUT=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/spawn/lib/dispatch-backend.py" check 2>&1)
+  if echo "$ADAPTER_OUT" | grep -q '"ok": true'; then
+    NVERBS=$(echo "$ADAPTER_OUT" | jq -r '.configured // 0' 2>/dev/null || echo "?")
+    echo "[PASS] dispatchBackend: all $NVERBS verbs valid — orchestrator suite can dispatch"
+  else
+    echo "[WARN] dispatchBackend is present but incomplete or malformed."
+    echo "$ADAPTER_OUT" | jq -r '.verbs | to_entries[] | select(.value.state != "ok") | "       - \(.key): \(.value.state) — \(.value.problems // [] | join("; "))"' 2>/dev/null \
+      || echo "       (could not parse the adapter report; run the check above by hand)"
+    echo "       Fix: each verb is a command template. Placeholders are a CLOSED set —"
+    echo "       {name} {messageFile} {session} {branch}. There is no {message}: a brief or a"
+    echo "       status line is agent-composed prose and travels as a PATH, never as an argument."
+    echo "       Affected skills degrade to a documented manual step; they do not silently no-op."
   fi
 fi
 ```
