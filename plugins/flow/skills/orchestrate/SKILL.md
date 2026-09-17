@@ -68,6 +68,8 @@ gh pr list --state open --json number,title,headRefName,isDraft --limit 60 2>/de
   echo "[orchestrate] ⚠️ gh unavailable — open-PR state NOT swept; say so rather than assuming zero."
 ```
 
+**When a merge lands, message every affected worker to rebase — immediately, without being asked.** A merge invalidates every open branch that shares a file with it, and the workers holding those branches cannot see the merge until you tell them. This is a resolve-silently call, not an escalation: it needs no decision, only prompt relay.
+
 A sweep that reads only the default branch **does not see open branches**, and that gap has produced repeated version/feedback-number collisions: a worker re-derived its number from the default branch correctly and still collided with three numbers claimed on an open branch. Whatever contested resource this project serializes (version numbers, feedback IDs, doc slots), sweep both.
 
 ## 4. Sweep for SILENT workers — by last activity, never by status

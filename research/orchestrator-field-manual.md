@@ -14,9 +14,17 @@
 >   rotation re-learned these by being told, or by re-making the mistake. Writing them here
 >   is §4.9 wind-down step 2 applied to knowledge rather than to artifacts.
 > - **Deletion criterion** (§1 requirement 7): each trap below dies when a mechanical check
->   subsumes it. § 1 traps die when `/flow:orchestrate` performs the sweep itself; § 2 dies
->   when `/flow:gate` implements the §4.8 four-axis classification. Delete the row, not the
->   file, as each lands — an empty § is the signal to delete the file.
+>   subsumes it. Delete the row, not the file, as each lands — an empty § is the signal to
+>   delete the file.
+> - **Discharged 2026-09-17 by the §4.10 orchestrator skill suite (v1.45.0)**, which is the
+>   change that satisfies these criteria and therefore the change that deletes them:
+>   **§ 1 rows T2 and T5** (`/flow:orchestrate` performs both sweeps itself — last-activity
+>   rather than status, and open branches + open PRs rather than the default branch alone);
+>   **§ 2 entirely** (`/flow:gate` implements the §4.8 four-axis classification, the rule-7
+>   ships-or-paperwork pre-check, and rule 5's return leg); **§ 6 entirely** (`/flow:spawn`
+>   applies the routing table and emits the `model · effort · why` line, and records it).
+>   §§ 2a, 3, 4, 5, 7 are untouched: their criteria are unmet, and § 1's other rows survive
+>   because nothing in the suite subsumes them.
 
 ## 1. Measurement traps — each produced a confident wrong answer
 
@@ -30,11 +38,18 @@ back clean while two workers were rate-limited.
 | # | Trap | What it looked like | What to do instead |
 |---|---|---|---|
 | T1 | **`conductor sql` truncates long values** — and as of 2026-09-12 returns HTTP 503 (disabled sometime before that date) | A `substr(transcript, …, 500)` search returned clean while two workers sat rate-limited | Read transcripts in ~100–150 char chunks; never conclude ABSENT from one substring query |
-| T2 | **A rate-limited worker never wakes itself and cannot ping you** | `Status: idle` — indistinguishable between "waiting at a gate" and "died hours ago" | Poll the **`Updated` timestamp**, not the status. `conductor session status <id>` exposes it. This is §4.8 rule 6's named known gap |
 | T3 | **Never read git state while a git command is still running** | Reading mid-rebase on #138 showed commits apparently dropped | Wait for the command to exit. Nothing was lost; the false conclusion was one step from a destructive force-push |
 | T4 | **Keep-both conflict resolution preserves content, not ordering** — and is correct *only* for append-only content | A blanket keep-both on #146 duplicated JSON keys and resurrected three deliberately-deleted files | Distinguish *deleted-by-this-branch* (`git log --diff-filter=D main..branch`) from *added-to-main-after-fork* before resolving |
 | T6 | **Composing a message or commit body as a double-quoted shell string executes its backticks and `$(...)`** | A quoted source comment lost a word; a `git commit -m` with backticked command names actually *invoked* one | Use `--message-file` / `git commit -F` with a heredoc-written file. Never put prose you did not author into a shell word |
-| T5 | **Ground-truth sweeps that read `origin/main` do not see open branches** | A worker re-derived its FB number from `main` correctly and still collided with three numbers claimed on an open PR branch | Sweep `git ls-remote` / `gh pr list` as well. Observed live at succession-3 boot — the fifth FB collision in this program |
+
+**T2 and T5 were deleted on 2026-09-17** (the orchestrator skill suite, v1.45.0, branch
+`conductor/track-a-410-orchestrator-skill-suite`): `/flow:orchestrate` now performs both sweeps
+itself — step 4 polls each worker's last-activity timestamp rather than its status, and step 3
+sweeps `git ls-remote` + `gh pr list` rather than the default branch alone. Per this file's own
+deletion criterion, the row dies when a mechanical check subsumes it. **T1, T3, T4 and T6 remain
+because nothing in that suite subsumes them** — the dispatch adapter closes T6 for dispatch
+*messages* only, not for commit bodies or for any message composed outside it, so the standing
+rule below still stands.
 
 **The shell-composition trap is not a beginner error, and priming does not prevent it.** T6
 fired **four times in the single session that created this file**, among agents who had each
@@ -66,26 +81,6 @@ instruction to run the test, not a conclusion to inherit. A prior seat told the 
 cloud workspaces could not use `RunLocalCommand`, by reading §2.4's *working assumption* as a
 *finding*; the capability exists and the test took minutes. `.claude/rules/documentation.md`
 § "Recorded rejections" already says this — it applies to the plan's own provenance markers too.
-
-## 2. Standing calls — resolve silently vs escalate
-
-Canonical §4.8 gives the four-axis gate policy and the seven communication rules. These are
-the recurring cases that policy does not name explicitly, settled once here.
-
-**Resolve silently, do not ask** (§4.8 rule 1 + rule 7):
-
-- **Version-number and FB-number collisions between concurrent workers.** Assign
-  deterministically — the branch pushed first and closest to merge keeps its claim; the other
-  re-sweeps. Issue the **self-healing rule** with the assignment: *at every rebase, re-read
-  `origin/main` **and** open branches; if either is at or above your claim, take the next free
-  value and re-sweep immediately, without asking.*
-- **Stale or conflicting PRs after a merge.** Message each affected worker to rebase
-  immediately; do not wait to be asked.
-- **Stalled workers**, and everything about how work is sequenced between them.
-
-**Escalate** — merges, and high-stakes / high-taste / one-way-door / gate-machinery calls.
-Note that escalating still means deciding *in the orchestrator seat* (§4.8 rule 5): the
-approval authority is the human's, the interaction surface stays the orchestrator.
 
 ## 2a. Live finding — the demote qualifier has no producer (2026-09-13)
 
@@ -207,93 +202,6 @@ investigation twice.
 **Deletion criterion (FB-0088):** delete this section when every gated item above has either shipped
 its README edit or been dropped with a reason — i.e. when the README makes no claim about the
 cloud-workflow program that is not true on `main`.
-
-## 6. Model routing at dispatch — the procedure, not just the table
-
-**The table already exists** (`research/2026-08-22-conductor-orchestration.md` §6, carried
-forward by canonical §4.3) and **FB-0091** already says the orchestrator routes itself as
-deliberately as it routes workers. What did not exist is a seat that *runs* the procedure.
-Measured 2026-09-14: **4 of 4 live workers were `opus-5-1m`** — including a parked one doing
-nothing — and no dispatch in this program logged a `model·effort·why`. Specified, believed
-effective, never applied: the FB-0085 shape, one level up from code.
-
-### The framing, which is right-sizing and NOT rationing
-
-Ben's direction, 2026-09-14, and it inverts the emphasis a cost-anxious seat naturally takes:
-
-> *"In practice I don't think we should need to worry much about running into usage limits (we
-> shouldn't sacrifice legitimate parallel workers just to stretch out usage) and using the right
-> model for the job should help us make that reality. But we also shouldn't be afraid to use a
-> powerful model when necessary and valuable."*
-
-So the goal is **to stop the five-hour window being the binding constraint**, not to run fewer
-workers under it. Two failure modes, and the second is the one this seat has been committing:
-
-- **Over-spending** — everything on the top tier, which is where we are.
-- **Under-dispatching** — holding back a legitimate parallel worker to conserve budget. That is
-  the *wrong* economy: it trades throughput, the scarce thing, for tokens, the cheap thing.
-  Never decline a worker that has real work for budget reasons; right-size it instead.
-
-### The lever that matters most
-
-**Effort is a bigger lever than model tier.** Tier sets price *per token*; effort sets *how many
-tokens*. A strong model at low effort routinely costs less than a weak model at high effort,
-because a weak model flails and **flailing in an agentic loop is billed**. So the first question
-at dispatch is not "can this be cheaper?" but "what does this job actually need?"
-
-| Job | Model | Effort |
-|---|---|---|
-| Orchestrator — triage, relay, dispatch | `sonnet-4-6-1m` | low–medium |
-| Feature work, full flow loop | `opus-5-1m` | high |
-| One-way door / architecture / **gate machinery** | `opus-5-1m` or `fable-5` | xhigh–max |
-| Bug fix with a known repro + failing test | `sonnet-5-1m` | medium |
-| Docs, changelog, doc-currency | `sonnet-4-6-1m` | low |
-| Mechanical sweep — **non-flow only** | `haiku-4-5` | low |
-| Spike / research | `sonnet-5-1m` | medium–high |
-
-**Escalation rule — start one tier down, let evidence promote, re-dispatch rather than grind.**
-Flow already emits the promotion signals: a LOW-confidence assumption, a `/flow:critique-plan`
-REDIRECT, a `/flow:verify-build` Unknown, or two loops on one failure. **A stuck cheap worker
-burns more than a fresh strong one, and a fresh context is worth more than a persuaded one.**
-Promotion is a re-dispatch, never a mid-session switch — changing model or effort mid-conversation
-breaks the prompt cache and forces a full re-prefill.
-
-**Fast mode is nearly always wrong for a worker:** ~2.5× output speed at ~2× price, and nobody is
-watching an unattended worker.
-
-### The one hard floor
-
-**Gate machinery does not get routed down.** `ship` / `manifest-triage` / `skip-audit` /
-`verify-build` / `pr-coherence`, and the consumer-side G2 equivalents, stay top-tier at high
-effort. A wrong answer there fails *silently* — a mis-classifying gate passes bad work — which is
-the one error class where a cheaper model's savings are not worth having. This is the same
-`sensitivePaths` set §4.8 uses for the plan gate, deliberately.
-
-### What the orchestrator must do at dispatch
-
-1. Pick `model · effort` from the table.
-2. **Log the `why` in one line, in the dispatch brief itself.** FB-0091's requirement. Without
-   it there is no audit trail to tune against, which is why the table has gone unapplied.
-3. Re-check at promotion: if a signal fires, re-dispatch a *fresh* worker one tier up rather
-   than arguing with the stuck one.
-
-**Worked application — the three phases approved 2026-09-14.** None of them is Opus work, and
-saying so concretely is the point:
-
-| Phase | Job shape | Route | Why |
-|---|---|---|---|
-| 1 — `harness_audit.py:157` | bug fix, known repro, exact line | `sonnet-5-1m` · medium | `tools/`, not shipped; the bug is located and the fix is one list entry |
-| 2 — orchestrator discipline | docs only | `sonnet-4-6-1m` · low | prose into two existing docs, no code |
-| 3 — `doctor` shell extraction | refactor + eval rewrite | `sonnet-5-1m` · medium–high | mechanical, but it touches a shipped skill and two eval suites, so not the bottom tier |
-
-Contrast the current fleet, all correctly top-tier under this same table: add-entry (rewrites
-`manifest-triage`), version-honesty (edits `ship/**`), Trio (`/verify-queue`, the G2 gate) — all
-gate machinery, all `opus-5-1m`. **The problem was never that those three are Opus. It is that
-everything else was too, by default rather than by decision.**
-
-**Deletion criterion:** delete this section when `/flow:spawn` (§4.10) applies the table and emits
-the `model·effort·why` line itself — at which point the procedure is executable rather than
-remembered, which is the whole point of §4.10.
 
 ## 7. Presenting multiple open PRs — always state the queue order and why
 
