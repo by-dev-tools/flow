@@ -36,7 +36,19 @@ Four new agent-invocable skills for running several worker workspaces from one o
 
 ## Open, and not silently absorbed
 
-**The field manual's satisfied deletion criteria.** This PR satisfies three of them — §1's traps (`/flow:orchestrate` now performs the sweep), §2 (`/flow:gate` implements the four-axis classification), §6 (`/flow:spawn` applies the table and emits `model·effort·why`). The rule is that whoever satisfies a criterion deletes it in the same PR, otherwise the manual advertises as open a gap that is closed. **The file is on the unmerged `orchestrator-field-manual` branch**, so this PR cannot delete from it. The one satisfied criterion whose file *is* on `main` — §10.2's quoted `--message` template — is corrected here, with a dated note recording why the quoted form was removed rather than discouraged. The other three deletions are owed on that branch and were escalated rather than left to a cleanup pass.
+**The field manual's satisfied deletion criteria — owed here, sequenced behind a rebase.** This PR satisfies three of them:
+
+| Field-manual section | Satisfied by |
+|---|---|
+| **§ 1 — measurement traps** | `/flow:orchestrate` performs the sweep itself: T2's silent-worker sweep reads last-activity rather than status, T5's ground-truth sweep covers open branches and open PRs |
+| **§ 2 — standing calls (resolve vs escalate)** | `/flow:gate` implements the four-axis classification, the ships-or-paperwork pre-check, and the escalation format |
+| **§ 6 — model routing at dispatch** | `/flow:spawn` applies the table and emits the `model · effort · why` line, which § 6 names as its own deletion condition |
+
+The rule is that whoever satisfies a criterion deletes it in the same PR — otherwise the manual advertises as an open gap something that is closed, which is the same confidence-inverting shape one layer up. **That could not be done in the first pass: the file existed only on an unmerged branch**, and cherry-picking a 296-line doc this PR did not author would have broken the merge order and put two branches on two shared research docs. The correct fix was ordering, not scope: the field-manual branch ships first, this branch rebases onto it, and the three deletions land **here**, citing this PR — because this is the PR that satisfies the criteria. They deliberately do **not** ride the field-manual branch, which lands the doc as written; deleting there would remove descriptions of capabilities that have not merged yet. **The criteria fire when the suite lands, not when it is written.**
+
+This table is the backstop. If the ordering slips, it names the exact three sections so they cannot become an unclaimed cleanup pass.
+
+**The one criterion whose file was already on `main` is discharged here:** §10.2's dispatch-brief template in `research/2026-08-22-conductor-orchestration.md` now carries the `--message-file` form with a dated note recording that the quoted `--message "…"` form was **removed rather than discouraged**. Shipping the file form in `/flow:spawn` while the source doc still prescribed the quoted one would have left the next reader to re-derive the conflict and possibly resolve it the other way — a documented conflict fixed in code but not at the source is a landmine with a longer fuse.
 
 **The suite is over its stated size budget** — 37,597 chars against ≤35 KB, with `spawn` at 12,010 against ≤10 KB. One trim pass ran first (descriptions −25%, `spawn` −7%). Reported rather than quietly accepted, with the honest lever named: dropping `/flow:handoff` to a later PR, not thinning the other three.
 

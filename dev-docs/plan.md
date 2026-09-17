@@ -126,7 +126,7 @@ pass's scope.)
 
 **Mode:** feature. `platform: library` ⇒ `/flow:verify-build` self-skips on this repo; no `uiFilePatterns` file in the diff ⇒ `/flow:accessibility-review` self-skips. **`/flow:security-review` will NOT skip and must not** — it keys on `sourceFilePatterns`, which matches `.py`, and `dispatch-backend.py` is a command renderer whose entire correctness claim *is* an injection boundary. It is the one genuinely security-sensitive file here. (The first draft of this line named the wrong skip predicate and would have produced exactly the `STATUS: SKIPPED` that `/flow:audit-skips` classifies SHOULD-RE-RUN — caught by `/flow:critique-plan`.)
 
-**Merge order (orchestrator): S → A → B.** Three branches in flight, all editing `dev-docs/plan.md`; this branch (A) also collides with S in `plugin.json`. S goes first on urgency. This branch opened without waiting for a slot and expects one rebase before merge, where `plan.md` is resolved **deliberately** — it is edited in place, so a blind union produces two contradictory status blocks and an extractor that grades this work against someone else's criteria. The rebase onto #154 already exercised that: both Current Focus bullets and both `## PR —` blocks kept, this one ordered first, each side confirmed surviving by grepping a distinctive string rather than by trusting the merge.
+**Merge order (orchestrator, revised 2026-09-17): F + S together, then A, then B.** `F` = `orchestrator-field-manual`, measured disjoint from S (zero overlapping paths), so the two queue together ahead of this branch. **F must precede A** — this PR deletes sections from a file that has to exist on its base first (see open call 4). The other branches in flight all edit `dev-docs/plan.md`; this branch (A) also collides with S in `plugin.json`. This branch opened without waiting for a slot and expects one rebase before merge, where `plan.md` is resolved **deliberately** — it is edited in place, so a blind union produces two contradictory status blocks and an extractor that grades this work against someone else's criteria. The rebase onto #154 already exercised that: both Current Focus bullets and both `## PR —` blocks kept, this one ordered first, each side confirmed surviving by grepping a distinctive string rather than by trusting the merge.
 
 ### Source of truth — this is transcription, not design
 
@@ -142,7 +142,19 @@ The field manual is **not on `main`** — it lives on the unmerged `orchestrator
 
 **OC3 — merge mode at the crawl rung. RESOLVED as recommended: hard-wired to `human`, no slot.** `/flow:gate` computes and reports the three-branch classification and whether each would be delegable at the walk rung, but the verdict is a single literal in the source (asserted by eval) and no input changes it. A slot that could turn on delegated merges before the App identity exists would let an agent merge under the human's own credential, destroying the only provenance §4.8 requires.
 
-**OC4 — the field manual's satisfied deletion criteria. RESOLVED AGAINST my recommendation, and the orchestrator was right:** *whoever satisfies a deletion criterion deletes it, in the same PR that satisfies it* — otherwise the manual advertises as an open gap something that is now closed, which is the FB-0077 shape inverted. **Physical blocker, flagged not silently absorbed:** the file is on an unmerged branch, so this PR cannot delete sections of it. What this PR does instead: the §10.2 correction (the one satisfied criterion whose file *is* on `main`) ships here, and the history entry names the three field-manual sections whose criteria this PR satisfies (§1 traps → `/flow:orchestrate`'s sweep, §2 → `/flow:gate`, §6 → `/flow:spawn`) with the exact deletions owed, so they ride the field-manual branch rather than becoming an unclaimed cleanup pass. **Escalated to the orchestrator.**
+**OC4 — the field manual's satisfied deletion criteria. RESOLVED, and the resolution puts the deletions back in this PR, which is the rule working rather than an exception to it.**
+
+The rule the orchestrator stated — *whoever satisfies a deletion criterion deletes it, in the same PR that satisfies it* — is right, and I could not comply because `research/orchestrator-field-manual.md` existed only on the unmerged `orchestrator-field-manual` branch (eight commits, no PR since 2026-09-13). I refused to cherry-pick it: pulling a 296-line doc I did not write into this diff would have broken the merge order and given two branches two shared research docs to collide on.
+
+**The blocker was ordering, not design.** The orchestrator dispatched a worker to ship that branch and revised the queue so it lands ahead of this one. So:
+
+1. When the field-manual PR merges, **rebase onto it**.
+2. **Delete the three now-satisfied sections here**, citing this PR's number — because this is the PR that satisfies the criteria.
+3. **Not on the field-manual branch.** That branch lands the doc as written; deleting there would remove descriptions of capabilities that have not merged yet — premature in the opposite direction. **The criteria fire when this suite LANDS, not when it is written.**
+
+The three sections and what satisfies each: **§ 1 traps** → `/flow:orchestrate` performs the sweep itself (T2's silent-worker sweep by last-activity, T5's open-branch sweep); **§ 2 standing calls** → `/flow:gate` implements the four-axis classification; **§ 6 model routing at dispatch** → `/flow:spawn` applies the table and emits the `model · effort · why` line. They are recorded in the history entry as well as here — belt and braces, so that if the ordering slips they cannot become an unclaimed cleanup pass.
+
+**The one criterion whose file was already on `main` is done:** §10.2's quoted `--message` template in `research/2026-08-22-conductor-orchestration.md` now carries the `--message-file` form plus a dated note recording that the quoted form was **removed rather than discouraged**. That is the half of the instruction that outlives this PR — a documented conflict converted into a permanent fix instead of a local one.
 
 ### `/flow:critique-plan` — three rounds, 13 findings, all 13 accepted
 
@@ -185,14 +197,15 @@ Stated at creation, each also shipping in its artifact's own header, and enumera
 7. `/flow:doctor` Check 2.12 — adapter shape; silent when the slot is absent, WARN never FAIL when malformed.
 8. `research/2026-08-22-conductor-orchestration.md` §10.2 — the `--message-file` correction + the dated why-removed note.
 9. Registration fan-out, grep-first: `README.md`, `docs/workflow.md` (intro bullet, the new § "Running several workspaces from one seat", the `N slots` claim), `workflow-help/SKILL.md`, `template/base/CLAUDE.md.template`, `doctor/SKILL.md`'s own count, `run_merge_status_evals.py`'s slot-count tripwire, `marketplace.json` version parity.
-10. Doc currency: `changelog/v1.45.0.md`, `dev-docs/history/2026-09-17-*.md`, `dev-docs/roadmap.md`, this block, `dev-docs/feedback/FB-0110-*.md`.
+10. **After the rebase onto the merged field-manual branch:** delete § 1 (traps), § 2 (standing calls) and § 6 (model routing at dispatch) from `research/orchestrator-field-manual.md`, citing this PR — the three criteria this suite satisfies. Sequenced, not optional; recorded in the history entry as the backstop.
+11. Doc currency: `changelog/v1.45.0.md`, `dev-docs/history/2026-09-17-*.md`, `dev-docs/roadmap.md`, this block, `dev-docs/feedback/FB-0110-*.md`.
 
 ### Scope (out) — named
 
 - **The GitHub App merge identity** and **auto-merge of any kind.** `/flow:gate` classifies and formats; it never merges.
 - **`ship` / `manifest-triage` / `verify-build`** — untouched, and they are `sensitivePaths`.
 - **Ledger *state-tracking*** — a queue, status column, poller or scheduler. (Narrowed from "a ledger": §4.3's model/effort/why record survives and is now implemented — see the critique delta.)
-- **`research/orchestrator-field-manual.md` and `research/2026-08-23-flow-cloud-workflow-plan.md`** — open call 4.
+- **`research/2026-08-23-flow-cloud-workflow-plan.md`** — not edited here. (`research/orchestrator-field-manual.md` is no longer scope-out: its three satisfied sections are deleted in this PR **after** the rebase onto the field-manual branch — open call 4.)
 - **Widening the gate policy beyond the crawl rung.**
 - **Fixing the 1.29.0 install staleness** — reported to the orchestrator, explicitly not widened into.
 
@@ -238,6 +251,7 @@ One trim pass ran (descriptions −25%, `spawn` −7%) before measuring again. I
 - [x] Full existing suite stays green, enumerated as a **set** rather than a remembered count → verify: every harness under `plugins/flow/evals/` plus those `ci.yml` wires outside it, all executed — **37/37 green**. Two fan-out survivors were caught this way and fixed in-branch (`run_merge_status_evals.py`'s hardcoded slot-count tripwire, `marketplace.json` version parity), which is exactly what the set-based form is for.
 - [x] §10.2's quoted `--message` form is corrected at the source, not just contradicted in code → verify: a grep for `--message "` across `research/` returns only the dated note explaining the removal; the template itself reads `--message-file`.
 - [x] Suite size measured and reported honestly, over budget or not → verify: the `harness_audit.py --split` report, run before ship; its four new rows and the Class A delta are in the table above and in the PR body. **It is over: 37,597 chars vs a stated ≤35 KB, `spawn` 12,010 vs ≤10 KB.** Reported, with the lever named.
+- [ ] **After rebasing onto the merged field-manual branch**, § 1 / § 2 / § 6 are deleted from `research/orchestrator-field-manual.md` and each deletion cites this PR; the file's other sections are untouched → verify: a diff of that file showing exactly the three section removals, plus a grep confirming the remaining sections and the file's own deletion-criterion header survive (deleting the whole file would satisfy a naive "sections gone" check — general.md rule 3).
 - [x] Registration fan-out complete with no survivors → verify: grep for each new skill name across `README.md`, `docs/workflow.md`, `workflow-help/SKILL.md`, and a `[0-9]+ slots?` sweep across shipped surfaces; every live claim updated, the two `plan-critic.md` occurrences left alone (they are a worked example *of* a contradiction, not a claim about this schema).
 
 ## PR — manifest fence injection (`fix-manifest-fence-injection`, FB-0109, v1.44.0)
