@@ -209,6 +209,50 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### Four investigative-discipline lessons from the FB-0107 provenance PR, harvested by hand (2026-09-16)
+
+These reached no commit at ship time because **`/flow:ship` Step 4c never ran** — see the watermark item
+below. They are filed as short rules with their incidents cited, so each is checkable rather than
+folklore.
+
+1. **An empty contribution queue with an ABSENT WATERMARK is not a clean drain — it is proof the harvest
+   never ran.** Found at the FB-0107 pre-archive check: `contributions/` did not exist *and*
+   `last_harvested.json` was absent. The absent watermark is the tell, and it distinguishes two states a
+   reader will otherwise merge: "harvested, nothing qualified" versus "never harvested". The cause was
+   **an operator skip, not absent code** — the ship run went pre-flight → reviewers → PR creation, and
+   Step 4c sits inside the Steps 3–5 range that was skipped because the doc work had been done by hand.
+   That is a *different* failure from the one FB-0107 predicted (where the code was not present to run)
+   and more interesting: the code was present and simply never reached. **Shape:** `/flow:ship` Step 4c.iii
+   already advances the watermark on every path including the skip path — so a run that produces neither a
+   queue entry nor a watermark advance is detectable, and `/flow:audit-skips` is the natural place to
+   notice it. *Surfaces when:* touching Step 4c, `harvest_lesson.py`, or the skip audit.
+
+2. **Sanity-check a negative grep against a known-present positive before reporting it as evidence.**
+   During the FB-0107 hook-hardening verification, `strings` on the `claude` binary returned **zero**
+   hits for hook-approval terms — which looked like a finding. It was an artifact: the binary is packed,
+   and it returns zero for `PreToolUse` and `SessionStart` too, strings that *must* be present for hooks
+   to work at all. Reporting that zero would have sent a security decision the wrong way. **Rule:** before
+   a zero-hit result is evidence of absence, grep the same corpus for something you know is there. If the
+   control also returns zero, your tool cannot see the corpus and the result means nothing.
+   *Surfaces when:* any investigation whose conclusion rests on something *not* being found.
+
+3. **A count written into prose is a decaying fan-out — assert the protected property, never the number.**
+   The corollary FB-0010 clause 2 does not state. Hit twice in one PR: a `144 / 32 / 112` reference census
+   that was wrong on two axes *after* its first correction and went stale inside its own PR (144 on `main`,
+   164 at that PR's HEAD), and a Spec-walk criterion pinning "exactly THREE rows" while the same document
+   twelve paragraphs later reserved the right to add a fourth — caught by `/flow:critique-plan`. Both were
+   replaced by the *predicate*: assert every named label is present, and cite the grep rather than its
+   result. *Surfaces when:* writing any "N sites / N slots / N rows" claim into a doc or a test.
+
+4. **A tool that reports "what ran" must read a signal pinned at run start, not a mutable record.**
+   `plugin-provenance.py` read the plugin registry, which `claude plugin update` rewrites immediately even
+   though the update "requires a restart to apply" — so mid-session it reported a version that had not run,
+   in a row literally labelled *"the version that ran this pipeline"*. Fixed by reading `PATH`, which
+   carries the resolved plugin's `bin` directory pinned at session start. Recorded in
+   `dev-docs/history/2026-09-13-dogfood-version-provenance.md` as an incident; stated here as the rule.
+   *Surfaces when:* any reporter answers a question of the form "what is currently executing".
+
+
 ### DERIVE the defanged-token set from the parser instead of hand-keeping it (from /flow:staff-review push-further, v1.42.0)
 
 **Origin:** push-further lens, FB-0108 branch. **Surfaces when:** a fifth structural token is added,
