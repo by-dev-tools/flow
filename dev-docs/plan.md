@@ -119,7 +119,7 @@ pass's scope.)
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
 
-## PR — The §4.10 orchestrator skill suite: `/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`, `/flow:gate` (this branch, `conductor/track-a-410-orchestrator-skill-suite`, FB-0110, v1.45.0, EXECUTED — shipping)
+## PR — The §4.10 orchestrator skill suite: `/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`, `/flow:gate` (this branch, `conductor/track-a-410-orchestrator-skill-suite`, FB-0110, v1.45.0, AT PR [#157](https://github.com/by-dev-tools/flow/pull/157))
 
 **Branch:** `conductor/track-a-410-orchestrator-skill-suite`
 **Base:** rebased onto `origin/main` @ `65222e7` (#154) — **v1.43.0**, `dev-docs/feedback/` high-water **FB-0111** on `main` (#154 took FB-0111 while FB-0109/FB-0110 sat claimed on branches, so `main`'s high-water is above two live claims rather than contiguous with them).

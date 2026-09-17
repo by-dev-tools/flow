@@ -16,7 +16,7 @@
 > - **Deletion criterion** (§1 requirement 7): each trap below dies when a mechanical check
 >   subsumes it. Delete the row, not the file, as each lands — an empty § is the signal to
 >   delete the file.
-> - **Discharged 2026-09-17 by the §4.10 orchestrator skill suite (v1.45.0)**, which is the
+> - **Discharged 2026-09-17 by [#157](https://github.com/by-dev-tools/flow/pull/157)** — the §4.10 orchestrator skill suite (v1.45.0), which is the
 >   change that satisfies these criteria and therefore the change that deletes them:
 >   **§ 1 rows T2 and T5** (`/flow:orchestrate` performs both sweeps itself — last-activity
 >   rather than status, and open branches + open PRs rather than the default branch alone);
@@ -42,8 +42,8 @@ back clean while two workers were rate-limited.
 | T4 | **Keep-both conflict resolution preserves content, not ordering** — and is correct *only* for append-only content | A blanket keep-both on #146 duplicated JSON keys and resurrected three deliberately-deleted files | Distinguish *deleted-by-this-branch* (`git log --diff-filter=D main..branch`) from *added-to-main-after-fork* before resolving |
 | T6 | **Composing a message or commit body as a double-quoted shell string executes its backticks and `$(...)`** | A quoted source comment lost a word; a `git commit -m` with backticked command names actually *invoked* one | Use `--message-file` / `git commit -F` with a heredoc-written file. Never put prose you did not author into a shell word |
 
-**T2 and T5 were deleted on 2026-09-17** (the orchestrator skill suite, v1.45.0, branch
-`conductor/track-a-410-orchestrator-skill-suite`): `/flow:orchestrate` now performs both sweeps
+**T2 and T5 were deleted on 2026-09-17 by [#157](https://github.com/by-dev-tools/flow/pull/157)**
+(the orchestrator skill suite, v1.45.0): `/flow:orchestrate` now performs both sweeps
 itself — step 4 polls each worker's last-activity timestamp rather than its status, and step 3
 sweeps `git ls-remote` + `gh pr list` rather than the default branch alone. Per this file's own
 deletion criterion, the row dies when a mechanical check subsumes it. **T1, T3, T4 and T6 remain

@@ -1,6 +1,6 @@
 # The §4.10 orchestrator skill suite — `/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`, `/flow:gate`
 
-**Date:** 2026-09-17 · **Version:** v1.45.0 · **Feedback:** FB-0110 · **PR:** _(set at ship)_
+**Date:** 2026-09-17 · **Version:** v1.45.0 · **Feedback:** FB-0110 · **PR:** [#157](https://github.com/by-dev-tools/flow/pull/157)
 
 ## What shipped (user-facing)
 
