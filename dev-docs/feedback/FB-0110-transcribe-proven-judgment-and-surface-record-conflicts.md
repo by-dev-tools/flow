@@ -51,6 +51,15 @@
   output**, so on anything rule-dependent (a gate, a policy, a shipped contract), verify the
   reviewer actually loaded its sources rather than inferring it from the findings looking good.
 
+  **Third corollary — a citation by number is a contract with a document, and nothing greps it.**
+  This PR discharged three deletion criteria in `research/orchestrator-field-manual.md`, and two
+  shipped comments were left citing anchors it had just deleted (`field manual T2`, `§ 6`). Both
+  still *resolved* — to the tombstone paragraph naming the deletion — so nothing was broken, and
+  that is exactly why it was easy to miss: **a citation that resolves only to its own obituary has
+  stopped carrying the justification it was placed there to carry.** `general.md` § Consistency
+  already mandates grep-first for counts, names and version strings; doc anchors cited from code
+  are the same class and were not on the list. They are now.
+
 - **Applies to:** `/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`, `/flow:gate` (canonical §4.10)
   — each ships as a transcription of §4.3/§4.6/§4.8/§4.9/§10.2 plus the field manual, with the
   judgment left to the agent per §4.10's anti-bloat guardrail. Related: [[FB-0088]] (procedures

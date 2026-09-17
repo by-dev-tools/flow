@@ -160,6 +160,35 @@ _TILDE = {**GOOD, "selfSession": "xctl session current --home ~/x"}
 check("a `~` in a template is flagged — quoting renders it literally, silently unlike "
       "what the author wrote", not D.validate(_TILDE)["ok"])
 
+# THE STRUCTURAL ASSERTION. Three defects in one change shared one shape — a template
+# that validates and then refuses at dispatch — because `validate` re-derived `render`'s
+# predicate by hand each time. `validate` now closes by actually rendering with safe
+# dummies, so a FOURTH instance fails at check time by construction. This fixture pins
+# the property itself, not the three instances: for every template shape, check-clean
+# must imply render-succeeds.
+_HISTORICAL = {
+    "{branch}-class: a known placeholder on a verb that does not supply it":
+        {**GOOD, "listWorkers": "xctl workspace list --session {session}"},
+    "an unbalanced quote":
+        {**GOOD, "workerStatus": 'xctl session status "{session} --json'},
+    "an unknown placeholder":
+        {**GOOD, "sendMessage": "xctl m --session {session} --message-file {messageFile} --x {nope}"},
+}
+for _label, _bad in _HISTORICAL.items():
+    check(f"{_label} fails at CHECK time", not D.validate(_bad)["ok"])
+# The general property, over both clean and broken adapters: the two never disagree.
+for _label, _adapter in [("clean", GOOD)] + list(_HISTORICAL.items()):
+    _rep = D.validate(_adapter)
+    for _verb, _entry in _rep["verbs"].items():
+        if _entry.get("state") != "ok":
+            continue
+        _req = D.VERBS[_verb][0]
+        _a, _e = D.render(_adapter, _verb, {r: "x" for r in _req})
+        check(f"[{_label}] validate says `{_verb}` is ok ⇒ render succeeds "
+              f"(check-clean implies dispatchable)", _e is None, str(_e))
+check("a clean adapter still reports all five verbs configured — the closing assertion "
+      "must not reject valid templates", D.validate(GOOD)["configured"] == 5)
+
 print("\n§3  safe rendering")
 argv, err = D.render(GOOD, "sendMessage", {"session": "abc-123", "messageFile": ".flow/msg.md"})
 check("sendMessage renders", err is None and argv is not None, str(err))

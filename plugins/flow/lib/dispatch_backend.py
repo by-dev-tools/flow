@@ -92,7 +92,7 @@ VERBS = {
     ),
     "workerStatus": (
         {"session"},
-        "last-activity timestamp for the silent-worker sweep (field manual T2)",
+        "last-activity timestamp for the silent-worker sweep (field manual T2, discharged 2026-09-17 — this verb is what subsumed it)",
         "check each worker's last activity by hand; do NOT read `status`, which cannot "
         "distinguish 'waiting at a gate' from 'rate-limited hours ago'",
     ),
@@ -232,6 +232,33 @@ def validate(backend):
                 report["ok"] = False
             else:
                 report["configured"] += 1
+        # ---- The closing assertion, and the reason it exists ----
+        # Everything above re-derives, in parallel prose, the predicate `render()`
+        # computes for real. That fan-out has now produced THREE defects in one change,
+        # each the same shape — a template that validates here and refuses at dispatch:
+        # `{branch}` (render computed `found - values`; validate never asked), the
+        # per-verb placeholder gap (same expression, half-implemented), and an unbalanced
+        # quote (render's `shlex.split` raised; validate did not parse). The comments
+        # twice state the principle — "check and render must agree on what a valid
+        # template is" — and then implement it as two copies anyway. `general.md`
+        # § Consistency calls that fan-out contradiction, and its remedy is one
+        # definition, not careful mirrors.
+        #
+        # So: actually render it, with canonical safe dummies for this verb's required
+        # set. If render refuses a template validate called clean, THAT divergence is the
+        # finding — reported verbatim, so a fourth instance of the class fails at check
+        # time by construction rather than by someone remembering to mirror it.
+        if entry.get("state") == "ok":
+            _argv, _err = render(backend, verb, {r: "x" for r in required})
+            if _err is not None:
+                entry["state"] = "invalid"
+                entry.setdefault("problems", []).append(
+                    "validate() called this template clean but render() refuses it — "
+                    f"{_err.split('⚠️', 1)[-1].strip()} This divergence is itself the bug: "
+                    "the two must agree on what a valid template is."
+                )
+                report["ok"] = False
+                report["configured"] -= 1
         report["verbs"][verb] = entry
     return report
 

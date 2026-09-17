@@ -4,9 +4,11 @@
 Canonical cloud-workflow plan §4.8 makes "stakes" the first of four axes on the
 plan gate: a diff that touches `sensitivePaths` stays human because a wrong
 version there fails *silently*, is *exploitable*, or is a *one-way door*. The
-orchestrator field manual § 6 then names the identical set as the one hard floor
-on model routing — "gate machinery does not get routed down" — and says
-"deliberately" about the reuse.
+`/flow:spawn`'s routing table names the identical set as the one hard floor on
+model routing — "gate machinery does not get routed down" — and says "deliberately"
+about the reuse. (That argument originated in the orchestrator field manual § 6,
+which this suite discharged on 2026-09-17 by making the procedure executable; the
+floor now lives in the skill rather than in a doc a seat had to remember.)
 
 Two readers, therefore one definition:
 
