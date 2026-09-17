@@ -192,6 +192,36 @@ gate_src = (PLUGIN / "skills" / "gate" / "lib" / "gate-classify.py").read_text(e
 check("gate imports the shared predicate rather than copying the globs",
       "import sensitive_paths" in gate_src and "**/auth/**" not in gate_src)
 
+print("\n§6a  the greenfield case — an owned glob matching nothing is NOT 'nothing sensitive'")
+# The likeliest way this predicate is asked about one-way-door work: a worker
+# dispatched to CREATE migrations or auth owns a glob with no matches yet. Answering
+# `false` there was the module's one fail-OPEN, and /flow:spawn's floor reads the
+# machine-readable field, not the stderr line.
+import subprocess as _sp, tempfile as _tf, os as _os
+_repo = Path(_tf.mkdtemp(prefix="flow-greenfield-"))
+_sp.run(["git", "init", "-q", str(_repo)], check=False)
+(_repo / "README.md").write_text("hi\n", encoding="utf-8")
+_sp.run(["git", "-C", str(_repo), "add", "-A"], check=False)
+_sp.run(["git", "-C", str(_repo), "-c", "user.email=e@x", "-c", "user.name=n",
+         "commit", "-qm", "init"], check=False)
+(_repo / "globs.txt").write_text("db/migrations/**\nsrc/auth/**\n", encoding="utf-8")
+_r = _sp.run([sys.executable, str(SP_LIB), "--globs-file", "globs.txt"],
+             cwd=str(_repo), capture_output=True, text=True)
+_out = json.loads(_r.stdout)
+check("a worker owning db/migrations/** + src/auth/** in a repo with NEITHER yet ⇒ SENSITIVE",
+      _out["sensitive"] is True, json.dumps(_out))
+check("  ... and says why, naming the unmatched globs",
+      "match no tracked file yet" in _out.get("reason", "")
+      and "db/migrations/**" in _out.get("reason", ""), _out.get("reason", ""))
+check("  ... and still reports which globs matched nothing",
+      sorted(_out["globs_matching_nothing"]) == ["db/migrations/**", "src/auth/**"])
+(_repo / "globs.txt").write_text("*.md\n", encoding="utf-8")
+_r = _sp.run([sys.executable, str(SP_LIB), "--globs-file", "globs.txt"],
+             cwd=str(_repo), capture_output=True, text=True)
+check("a glob that DOES match, over non-sensitive files, is still not sensitive "
+      "(the escalation is targeted, not blanket)",
+      json.loads(_r.stdout)["sensitive"] is False, _r.stdout)
+
 print("\n§7  fail-safe direction — every degraded path classifies SENSITIVE")
 # Pattern translation escapes everything that is not a wildcard, so odd pattern
 # text is matched LITERALLY rather than crashing or silently matching nothing.

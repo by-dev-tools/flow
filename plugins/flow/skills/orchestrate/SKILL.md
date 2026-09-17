@@ -30,7 +30,7 @@ if [ -z "$ROOT" ] || ! cd "$ROOT" 2>/dev/null; then
   echo "[orchestrate] ROOT-UNRESOLVED — could not locate the repo from cwd $(pwd). Nothing below ran."
   exit 0
 fi
-LIB="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/spawn/lib/dispatch-backend.py"
+LIB="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/dispatch_backend.py"
 python3 "$LIB" check 2>&1 || true
 ```
 
@@ -38,7 +38,17 @@ Read the report. `slot_present: false` or any `absent`/`invalid` verb is **not**
 
 ## 1. Read the durable layer — by slot, and only the pointers
 
-Resolve `planPath`, `roadmapPath`, `feedbackPath`, `referenceGlob` from `flow.config.json` (defaults in the schema) and read: the project's canonical plan, `CLAUDE.md`, the feedback corpus, plan "Current Focus", roadmap "Now".
+Resolve the doc slots through the **shared resolver** — never by reading `flow.config.json` yourself. It is the one thing that knows a slot may point at a directory (`[ -f ]` is false on one) and that an unresolved slot must be loud, not silent:
+
+```sh
+R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && R=plugins/flow/lib/resolve-doc-slot.sh; }
+for SLOT in planPath:dev-docs/plan.md roadmapPath:dev-docs/roadmap.md feedbackPath:dev-docs/feedback.md; do
+  [ -f "$R" ] && sh "$R" "${SLOT%%:*}" "${SLOT#*:}" \
+    || echo "⚠️ [resolve-doc-slot] not found — ${SLOT%%:*} was NOT resolved, so this seat has NO ${SLOT%%:*} context. Reinstall the flow plugin."
+done
+```
+
+Then read: the project's canonical plan, `CLAUDE.md`, the feedback corpus, plan "Current Focus", roadmap "Now". **A seat that silently resolved nothing reads exactly like a project with no plan** — which is why the resolver is loud rather than defaulting.
 
 **Read them; do not copy them into your own notes.** Durable design lives in git and is re-readable by any successor; a summary you hold in session context is a snapshot that goes stale and dies with the seat. The whole disposability invariant is that you hold nothing that isn't recoverable from git, the backend, or already delivered to the human.
 
@@ -49,7 +59,10 @@ Render and run `listWorkers`. Live state is the backend's, not a document's: a d
 ## 3. Ground-truth sweep — open branches and open PRs, not just the default branch
 
 ```sh
-git fetch origin --prune -q 2>/dev/null
+# `ls-remote` is a ref-only round trip that asks the remote directly — no `git fetch`
+# first. A fetch here would download objects for every remote branch and then be read
+# by nothing, and it is most expensive on exactly the repo this skill is for: a fleet
+# with many live branches.
 git ls-remote --heads origin | sed 's|.*refs/heads/||'
 gh pr list --state open --json number,title,headRefName,isDraft --limit 60 2>/dev/null || \
   echo "[orchestrate] ⚠️ gh unavailable — open-PR state NOT swept; say so rather than assuming zero."
@@ -78,9 +91,21 @@ If `selfSession` is missing, **ask the human for the id** — do not skip the re
 Read the four-axis plan-gate policy and the merge-gate rule you will be applying (`/flow:gate` implements both; invoke it per decision rather than re-deriving the rule). Confirm `sensitivePaths` resolves:
 
 ```sh
-python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/sensitive_paths.py" --print-defaults >/dev/null && \
-  echo "[orchestrate] sensitivePaths predicate available"
+# `--files-file /dev/null`, NOT `--print-defaults`: the latter returns before the
+# config is ever read, so it proves the file is executable and nothing about THIS
+# project's slot — a present-but-malformed `sensitivePaths`, the one case the
+# predicate warns loudly about, would still print "available". And the `|| echo`
+# branch is load-bearing: a bare `&& echo` prints nothing on failure, which is the
+# silent-skip shape rather than a check.
+# Parsed with python3 rather than jq deliberately: python3 is already a hard
+# dependency of every lib this suite calls, and adding jq would oblige this skill
+# to carry the repo's BLOCKING jq guard for one cosmetic line.
+python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/sensitive_paths.py" --files-file /dev/null \
+  | python3 -c 'import json,sys; print("[orchestrate] sensitivePaths resolved from:", json.load(sys.stdin)["pattern_source"])' \
+  || echo "⚠️ [orchestrate] the sensitivePaths predicate is NOT available — the gate's stakes axis cannot be computed this session. Reinstall the flow plugin."
 ```
+
+Report `pattern_source` in the ready line. `default` on a project that *believes* it configured the slot is the interesting case, and it is invisible unless you say it.
 
 ## 7. Report ready — one decision, plus a one-line lay of the land
 

@@ -87,12 +87,18 @@ _YES = {"yes", "y", "true"}
 _NO = {"no", "n", "false"}
 
 
-def _tri(value, yes_is_green: bool = True):
-    """Normalise a declared axis to `green` / `red` / `unknown`.
+def _tri(value):
+    """Normalise a yes/no axis to `green` / `red` / `unknown`.
 
     `unknown` is returned for anything not explicitly recognised, including
-    None and the empty string. Callers treat `unknown` exactly like `red`; it
-    is kept distinct only so the report can say *why* an axis is red.
+    None, the empty string and non-string types. Callers treat `unknown`
+    exactly like `red`; it is kept distinct only so the report can say *why*
+    an axis is red.
+
+    There is deliberately no polarity flag. `ships_or_paperwork` is the one
+    caller that looks like it wants inversion, and it cannot use one — it needs
+    `unknown ⇒ ships`, which a polarity flag cannot express — so the flag would
+    have had no reachable call site.
     """
     if value is None:
         return "unknown"
@@ -100,10 +106,23 @@ def _tri(value, yes_is_green: bool = True):
     if not v:
         return "unknown"
     if v in _YES:
-        return "green" if yes_is_green else "red"
+        return "green"
     if v in _NO:
-        return "red" if yes_is_green else "green"
+        return "red"
     return "unknown"
+
+
+def _declared_axis(value, green_vocab, red_vocab, whys):
+    """One shape for 'normalise an agent-declared axis, attach a per-state why'.
+
+    Written once because there were two of them twenty lines apart in the same
+    function, in two different spellings — a third axis would otherwise force
+    the author to guess which one to copy.
+    """
+    v = str(value or "").strip().lower()
+    state = "green" if v in green_vocab else "red" if v in red_vocab else "unknown"
+    why = whys[state].format(value=repr(value)) if state == "unknown" else whys[state]
+    return {"state": state, "why": why}
 
 
 def _confidence_axis(confidence, critique_verdict):
@@ -151,34 +170,31 @@ def classify_plan(
         names = sorted({m["pattern"] for m in stakes_raw["matches"]})
         axes["stakes"] = {
             "state": "red",
-            "why": stakes_raw.get("reason")
-            or f"diff touches sensitivePaths ({', '.join(names)})",
+            # `sensitive_paths.classify()` returns only sensitive/matches — a
+            # "reason" is set exclusively by its CLI fail-safe paths, which this
+            # function never calls. An `or stakes_raw.get("reason")` here would
+            # read as a connected wire and never carry anything.
+            "why": f"diff touches sensitivePaths ({', '.join(names)})",
             "matches": stakes_raw["matches"],
         }
     else:
         axes["stakes"] = {"state": "green", "why": "diff touches no sensitivePaths entry"}
 
-    r = _tri(reversible)
-    axes["reversible"] = {
-        "state": r,
-        "why": {
-            "green": "a plain `git revert` fully undoes this — no migration, no external side effect",
-            "red": "declared NOT two-way-door (migration, released artifact, or other external side effect)",
-            "unknown": f"reversibility not declared (got {reversible!r})",
-        }[r],
-    }
+    axes["reversible"] = _declared_axis(reversible, _YES, _NO, {
+        "green": "a plain `git revert` fully undoes this — no migration, no external side effect",
+        "red": "declared NOT two-way-door (migration, released artifact, or other external side effect)",
+        "unknown": "reversibility not declared (got {value})",
+    })
 
     cstate, cwhy = _confidence_axis(confidence, critique_verdict)
     axes["confidence"] = {"state": cstate, "why": cwhy}
 
     # `taste` is stated as low/high; low is the green one.
-    t = str(taste or "").strip().lower()
-    if t in {"low"}:
-        axes["taste"] = {"state": "green", "why": "a correct answer exists and is checkable by tests/critique"}
-    elif t in {"high"}:
-        axes["taste"] = {"state": "red", "why": "this is a visual / UX / product call"}
-    else:
-        axes["taste"] = {"state": "unknown", "why": f"taste not declared (got {taste!r})"}
+    axes["taste"] = _declared_axis(taste, {"low"}, {"high"}, {
+        "green": "a correct answer exists and is checkable by tests/critique",
+        "red": "this is a visual / UX / product call",
+        "unknown": "taste not declared (got {value})",
+    })
 
     reds = [k for k, v in axes.items() if v["state"] != "green"]
 
@@ -209,8 +225,6 @@ def classify_merge(
     verify_verdict=None,
     confidence=None,
     plan_axes_green=None,
-    changed_files=None,
-    config_path="flow.config.json",
 ):
     """The merge gate. **Always returns `human` at the crawl rung** — and still
     reports which of §4.8's three branches the change falls into, because the
@@ -260,10 +274,11 @@ def classify_merge(
             "exist yet, so this verdict is not configurable."
         ),
     }
-    if changed_files:
-        patterns, source, _w = sensitive_paths.load_patterns(config_path)
-        result["stakes"] = sensitive_paths.classify(changed_files, patterns)
-        result["pattern_source"] = source
+    # No stakes axis here, deliberately: the merge gate keys on explicit
+    # VERIFIABILITY, and `plan_axes_green` already carries whether the change sat
+    # in the plan-gate green quadrant — which is where stakes was evaluated. A
+    # stakes block here had no caller: no SKILL.md passed a file list, `main()`
+    # passed [], and no eval asserted it. A promise with no call site is dead code.
     result["audit_line"] = render_audit_line(result)
     return result
 
@@ -403,8 +418,13 @@ def main(argv=None) -> int:
     m.add_argument("--verify-verdict", help="pass | fail | unknown | skipped")
     m.add_argument("--confidence", help="extremely-high | high | medium | low")
     m.add_argument("--plan-axes-green", help="yes | no — is this still in the plan-gate green quadrant?")
-    m.add_argument("--files-file")
-    m.add_argument("--config", default="flow.config.json")
+    m.add_argument(
+        "--plan-result",
+        help="path to the JSON `gate-classify.py plan` already emitted for this change. "
+             "Preferred over --plan-axes-green: retyping a verdict this same module computed "
+             "minutes earlier is an agent-authored string standing in for an artifact that "
+             "exists, inside a module whose whole thesis is that a wrong answer fails silently.",
+    )
 
     s = sub.add_parser("ships-or-paperwork", help="§4.8 rule 7 / FB-0106 pre-check, run BEFORE escalating")
     s.add_argument("--changes-behavior", help="yes | no")
@@ -437,13 +457,24 @@ def main(argv=None) -> int:
         return 0
 
     if args.cmd == "merge":
+        plan_green = args.plan_axes_green
+        if args.plan_result:
+            try:
+                prior = json.loads(Path(args.plan_result).read_text(encoding="utf-8"))
+                # Read the artifact, not the retyped claim. A malformed or
+                # non-plan file leaves plan_green as `None` ⇒ `unknown` ⇒ the
+                # non-delegable branch, which is the safe direction.
+                if isinstance(prior, dict) and prior.get("gate") == "plan":
+                    plan_green = "yes" if prior.get("verdict") == "approve" else "no"
+                else:
+                    print(f"{PREFIX} ⚠️ --plan-result is not a plan-gate result; ignoring it.", file=sys.stderr)
+            except (OSError, ValueError) as exc:
+                print(f"{PREFIX} ⚠️ could not read --plan-result ({exc}); ignoring it.", file=sys.stderr)
         print(json.dumps(classify_merge(
             diff_class=args.diff_class,
             verify_verdict=args.verify_verdict,
             confidence=args.confidence,
-            plan_axes_green=args.plan_axes_green,
-            changed_files=_read_files(args.files_file),
-            config_path=args.config,
+            plan_axes_green=plan_green,
         ), indent=2))
         return 0
 
@@ -463,7 +494,9 @@ def main(argv=None) -> int:
         print(rendered)
         return 1 if "BLOCKER" in rendered else 0
 
-    return 2
+    # No trailing `return 2`: `add_subparsers(..., required=True)` makes argparse
+    # exit 2 itself before reaching here, so a fallback would be unreachable.
+    raise AssertionError(f"unhandled subcommand {args.cmd!r}")  # pragma: no cover
 
 
 if __name__ == "__main__":

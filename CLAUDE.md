@@ -42,7 +42,7 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/gate/SKILL.md` | `/flow:gate` — four-axis plan/merge gate classification (§4.8). **Classifies only; never merges** |
 | `plugins/flow/lib/sensitive_paths.py` | Shared stakes/routing-floor predicate — one definition, two readers (`gate-classify.py`, `/flow:spawn`) |
 | `plugins/flow/skills/gate/lib/gate-classify.py` | The §4.8 combination rule as a truth table; every undeclared axis escalates |
-| `plugins/flow/skills/spawn/lib/dispatch-backend.py` | `dispatchBackend` resolve/validate/render — closed placeholder set, refuses rather than escapes |
+| `plugins/flow/lib/dispatch_backend.py` | `dispatchBackend` resolve/validate/render — closed placeholder set, refuses rather than escapes |
 | `plugins/flow/skills/handoff/lib/brief-check.py` | Succession-brief reachability check (§4.9), paired positive+negative |
 | `plugins/flow/scripts/extract_session.py` | Session preprocessing for the reviewers (+ harvest dialogue helper) |
 | `plugins/flow/scripts/bounding_logic.py` | User-message windowing |

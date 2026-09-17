@@ -7,43 +7,23 @@
     "defaultBranch": {
       "type": "string",
       "description": "The branch that PRs target and that diffs are computed against. If unset, flow resolves via `git symbolic-ref refs/remotes/origin/HEAD`, then falls back to the literal `main`.",
-      "examples": [
-        "main",
-        "trunk",
-        "develop"
-      ]
+      "examples": ["main", "trunk", "develop"]
     },
     "role": {
       "type": "string",
-      "enum": [
-        "designer",
-        "engineer"
-      ],
+      "enum": ["designer", "engineer"],
       "description": "Optional declaration of the human's role on this project, read by flow skills to decide what to escalate and how much technical detail to surface (the same change can be a technical detail to one role and a decision to another). Persistent, project-scoped config — set once, applies to every future session; not a per-message or per-session setting, and not something CLAUDE.md can express reliably since skills read this deterministically via `jq`, not by parsing prose. UNSET behavior (the default): classic behavior — no role-based branching anywhere in the loop, including the plan-gate. As of this schema version, no flow skill yet reads this slot (Phase 0 of the D1 'prototype-first gate' track, FB-0081) — it exists so that later phases (the prototype-first trigger for `designer`) have a slot to read without a breaking schema change. Setting it today is forward-compatible and has zero effect on current behavior.",
-      "examples": [
-        "designer",
-        "engineer"
-      ]
+      "examples": ["designer", "engineer"]
     },
     "typecheckCmd": {
       "type": "string",
       "description": "Shell command to run as the project's typecheck. Run via `sh -c` (NOT eval) by /flow:ship Step 3 (one-shot after reviewer fixes) and /flow:staff-review after applying review fixes. UNSET behavior: each invoking skill prints a loud ⚠️ warning, never silently no-ops. Project owns this string at the same trust level as package.json scripts or pre-commit hooks. Precedence vs `preflightCmd`: if both are set, BOTH run (preflightCmd at Step 1c with bounded retry; typecheckCmd at Step 3 one-shot after reviewer fixes). To use only one, set the other to empty or unset.",
-      "examples": [
-        "npm run typecheck",
-        "pnpm typecheck",
-        "tsc --noEmit",
-        "cargo check --workspace"
-      ]
+      "examples": ["npm run typecheck", "pnpm typecheck", "tsc --noEmit", "cargo check --workspace"]
     },
     "preflightCmd": {
       "type": "string",
       "description": "Shell command for the project's mechanical preflight (typecheck + lint + fast tests; project owns the composition). Run via `sh -c` (NOT eval) at /flow:ship Step 1c and /flow:ship-spike Step 1c, BEFORE the reviewers run. On non-zero exit, the skill enters a bounded-retry loop: fix the failure, re-run, up to N=3 total invocations, with oscillation detection via diff-hash (same diff at attempt N as a prior attempt aborts the loop). Invoked ONLY when the diff contains non-doc files (per `sourceFilePatterns`); docs-only PRs skip preflight entirely. UNSET behavior: each invoking skill prints a loud ⚠️ warning and proceeds, never silently no-ops. Project owns this string at the same trust level as `typecheckCmd`. Design rationale: per Anthropic's evaluator-optimizer guidance, agent loops must have mechanical stopping conditions and externally-verifiable success criteria; preflight script exit code is the only loop-exit signal flow trusts (reviewer outputs at Step 2 are deliberately single-pass to prevent reward hacking). See dev-docs/feedback.md FB-0011.",
-      "examples": [
-        "npm run preflight",
-        "npm run typecheck && npm run lint && npm test -- --bail",
-        "pnpm preflight",
-        "make preflight"
-      ]
+      "examples": ["npm run preflight", "npm run typecheck && npm run lint && npm test -- --bail", "pnpm preflight", "make preflight"]
     },
     "historyPath": {
       "type": "string",
@@ -84,11 +64,7 @@
       "type": "string",
       "description": "Glob pattern (relative to repo root) that /flow:critique-plan's preprocessor uses to load reference docs deterministically. Excludes history.md / plan.md / roadmap.md automatically (those churn too often to be reliable spec sources). Default: core-docs/*.md (the consumer-side convention). Flow's own repo overrides to dev-docs/*.md. Accepts a COMMA-SEPARATED list of patterns, each expanded independently (a single pattern with no comma behaves exactly as before). Use the list form when a reference doc is fragmented into a directory, e.g. 'core-docs/*.md,core-docs/feedback/*.md' -- NOT 'core-docs/**/*.md', which drags in every point-in-time research and handoff doc.",
       "default": "core-docs/*.md",
-      "examples": [
-        "core-docs/*.md",
-        "dev-docs/*.md",
-        "docs/**/*.md"
-      ]
+      "examples": ["core-docs/*.md", "dev-docs/*.md", "docs/**/*.md"]
     },
     "uiSurface": {
       "type": "boolean",
@@ -99,32 +75,13 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": [
-          "staff-engineer",
-          "ux-designer",
-          "design-engineer",
-          "push-further",
-          "uncommon-care"
-        ]
+        "enum": ["staff-engineer", "ux-designer", "design-engineer", "push-further", "uncommon-care"]
       },
       "description": "Which lens agents /flow:staff-review spawns in parallel. Default is the 4-lens baseline; opt-in 'uncommon-care' (deeper standalone lens) when flow ships it in a future version. Removing a lens means /flow:staff-review won't spawn it; document the reason in the project's plan doc.",
-      "default": [
-        "staff-engineer",
-        "ux-designer",
-        "design-engineer",
-        "push-further"
-      ],
+      "default": ["staff-engineer", "ux-designer", "design-engineer", "push-further"],
       "examples": [
-        [
-          "staff-engineer",
-          "ux-designer",
-          "design-engineer",
-          "push-further"
-        ],
-        [
-          "staff-engineer",
-          "push-further"
-        ]
+        ["staff-engineer", "ux-designer", "design-engineer", "push-further"],
+        ["staff-engineer", "push-further"]
       ]
     },
     "memoryHardCap": {
@@ -137,29 +94,13 @@
       "type": "string",
       "description": "Conventional prefix for feature branches (used by /flow:ship and /flow:ship-spike when they need to create a branch from main). Common values: 'claude/', 'feature/', 'fix/'. Empty string disables the prefix. Default: empty (flow doesn't add a prefix unless this is set).",
       "default": "",
-      "examples": [
-        "claude/",
-        "feature/",
-        "fix/"
-      ]
+      "examples": ["claude/", "feature/", "fix/"]
     },
     "platform": {
       "type": "string",
-      "enum": [
-        "web",
-        "ios",
-        "android",
-        "tauri",
-        "cli",
-        "library",
-        "none"
-      ],
+      "enum": ["web", "ios", "android", "tauri", "cli", "library", "none"],
       "description": "Optional project-platform hint consumed by /flow:verify-build for skip-path decisions. When set to 'library' or 'none', /flow:verify-build self-skips at Step 1.2 (no runnable target to verify). When unset (the default), bundled /run autodetects the platform via project structure (CLI / server / TUI / browser-driven / library) and /flow:verify-build accepts that autodetect. Set explicitly only when autodetect is wrong or you want the deterministic skip semantics for library/none. Toolchain-gated values (currently 'ios') additionally drive a third skip path: when EVERY binary that platform's build needs is missing from the host, /flow:verify-build self-skips rather than attempting a launch it cannot complete, and /flow:audit-skips validates that claim against the host before accepting it (routing a 'toolchain' entry to the draft manifest, so the PR still opens as a draft). Remaining enum values (web/android/tauri/cli) are informational hints rendered into findings-buffer metadata.platform_hint; they do NOT alter verify-build's launch behavior (bundled /run remains the authoritative launcher).",
-      "examples": [
-        "web",
-        "ios",
-        "library"
-      ]
+      "examples": ["web", "ios", "library"]
     },
     "verifyEnabled": {
       "type": "boolean",
@@ -170,10 +111,7 @@
       "type": "string",
       "description": "Path where /flow:verify-build Step 8 writes its structured findings buffer. /flow:ship Step 4a reads this path to derive candidate FB-XXXX entries (via source-diversity bar). Default '.flow/verify-findings.json' -- REPO-LOCAL (FB-0082), because the previous global-/tmp default was one filename shared by every project on the machine, so concurrent sessions on different repos read each other's buffers. Repo-local is unique per worktree by construction. '.flow/' self-ignores, so it never dirties the project's git status. Concurrent verify-build runs against the same path will clobber each other; single-run-per-ship is the v1 contract.",
       "default": ".flow/verify-findings.json",
-      "examples": [
-        ".flow/verify-findings.json",
-        ".flow/last-verify.json"
-      ]
+      "examples": [".flow/verify-findings.json", ".flow/last-verify.json"]
     },
     "verifyBudgetCalls": {
       "type": "integer",
@@ -185,19 +123,13 @@
       "type": "string",
       "description": "Path where /flow:verify-build renders its EPHEMERAL HTML walkthrough (the artifact the human opens at the merge gate) from the findings buffer, via lib/render-report.py. Default '.flow/verify-report.html' -- REPO-LOCAL (FB-0082, same cross-project collision as verifyFindingsPath); '.flow/' self-ignores so it is never committed (it is image-heavy and per-run; the durable visual record is a separate, curated artifact). Persisted screenshot frames are written to an 'assets/' dir alongside this path. Override to a project-local path only if you want the report preserved across boots for inspection. Regenerated every iteration; discarded after merge.",
       "default": ".flow/verify-report.html",
-      "examples": [
-        ".flow/verify-report.html",
-        ".flow/last-verify-report.html"
-      ]
+      "examples": [".flow/verify-report.html", ".flow/last-verify-report.html"]
     },
     "visualHistoryPath": {
       "type": "string",
       "description": "Path (relative to repo root) to the project's DURABLE visual record — the committed `visual-history.html` that is the picture companion to `historyPath`. Distinct from `verifyReportPath` (the ephemeral per-run report): this file is curated, decision-centric, reverse-chronological, and grows over the project's life. Written by /flow:ship's distill step (§ 5c): when `uiSurface` is true AND that run's verify-build buffer carried a load-bearing visual decision (a `grounding` entry that changed the user's read, or a resolved this-iteration `open_question`), the step authors ONE curated entry, copies the cited frames into a sibling `visual-history-assets/` dir, and inserts it via lib/insert-visual-history.py. CREATED ON FIRST WRITE from the bundled skeleton (skills/ship/lib/visual-history-skeleton.html) — NOT scaffolded by bootstrap.sh, so non-UI projects (`uiSurface:false`) never get an empty doc. The distill step self-skips (with an explicit reason) when `uiSurface` is false, verify-build was skipped, or no visual decision was load-bearing this run. Default: core-docs/visual-history.html (the consumer-side convention; flow's own repo is uiSurface:false and never writes it).",
       "default": "core-docs/visual-history.html",
-      "examples": [
-        "core-docs/visual-history.html",
-        "docs/visual-history.html"
-      ]
+      "examples": ["core-docs/visual-history.html", "docs/visual-history.html"]
     },
     "statusDocs": {
       "type": "array",
@@ -215,123 +147,63 @@
             "default": "flow:status"
           }
         },
-        "required": [
-          "path"
-        ],
+        "required": ["path"],
         "additionalProperties": false
       },
       "default": [],
-      "examples": [
-        [],
-        [
-          {
-            "path": "CLAUDE.md",
-            "marker": "flow:status"
-          },
-          {
-            "path": "README.md",
-            "marker": "flow:status"
-          }
-        ]
-      ]
+      "examples": [[], [{ "path": "CLAUDE.md", "marker": "flow:status" }, { "path": "README.md", "marker": "flow:status" }]]
     },
     "statusSurfaceCandidates": {
       "type": "array",
-      "items": {
-        "type": "string"
-      },
+      "items": { "type": "string" },
       "description": "Repo-root paths of well-known auto-loading agent-orientation docs that commonly carry forward-looking status. Used by /flow:ship Step 5a.5 + /flow:doctor to DISCOVER surfaces that SHOULD be declared in `statusDocs` but aren't — closing the adoption gap where an UNDECLARED orientation doc (the file a fresh agent reads first) silently goes stale after a merge, invisible to the whole doc-currency pipeline (Step 5a/5b + doctor Check 2.7 only see DECLARED surfaces). When a ship moves forward-looking status (plan Current Focus / roadmap Now changed vs base), Step 5a.5 scans each candidate that EXISTS and is NOT already declared, best-effort-judges whether it carries a stale 'next/upcoming/not-started/TODO' claim about work the just-reconciled plan/roadmap now marks shipped, and routes a flagged surface to the draft manifest (reconcile now, OR declare it in statusDocs + fence it, OR human-waive). It never silently rewrites an un-fenced human doc — discovery + draft-routing only; auto-reconcile stays gated behind the opt-in `statusDocs` fence (Tier 2). /flow:doctor warns (setup-time) about an undeclared candidate that carries status-looking content. The drift judgment — not the file list — is what holds false positives down, so keep this to conservative, genuinely auto-orienting files. Default: the six well-known orientation files below (so zero-config projects are covered); override to extend or narrow, or set to [] to opt out of discovery entirely.",
-      "default": [
-        "CLAUDE.md",
-        "AGENTS.md",
-        "README.md",
-        "GEMINI.md",
-        ".cursorrules",
-        ".github/copilot-instructions.md"
-      ],
-      "examples": [
-        [
-          "CLAUDE.md",
-          "AGENTS.md",
-          "README.md",
-          "GEMINI.md",
-          ".cursorrules",
-          ".github/copilot-instructions.md"
-        ],
-        [
-          "CLAUDE.md",
-          "docs/AGENT.md"
-        ],
-        []
-      ]
+      "default": ["CLAUDE.md", "AGENTS.md", "README.md", "GEMINI.md", ".cursorrules", ".github/copilot-instructions.md"],
+      "examples": [["CLAUDE.md", "AGENTS.md", "README.md", "GEMINI.md", ".cursorrules", ".github/copilot-instructions.md"], ["CLAUDE.md", "docs/AGENT.md"], []]
     },
     "rustWorkspaceDir": {
       "type": "string",
       "description": "(Tauri / Rust stacks only.) Directory containing the project's Rust workspace (Cargo.toml). Used by the tauri-rust-ts stack overlay's preflight runner to know where to run `cargo fmt`, `cargo clippy`, `cargo test`. Default: 'src-tauri' (the Tauri convention). Non-Tauri Rust projects typically set this to '.' (workspace at repo root) or to the workspace subdirectory.",
       "default": "src-tauri",
-      "examples": [
-        "src-tauri",
-        ".",
-        "crates"
-      ]
+      "examples": ["src-tauri", ".", "crates"]
     },
     "sourceFilePatterns": {
       "type": "string",
       "description": "Extended-regex pattern (passed to grep -E) matching source/config file paths in the diff. Used by /flow:security-review at Step 1 to early-exit when a diff contains no source files (e.g., docs-only PR). Default covers TS/JS/Python/Rust/Swift/Go/Ruby/Java/Kotlin/Shell + JSON/YAML/TOML + Terraform/SQL/proto/GraphQL + Dockerfile/Makefile literals (security-relevant config classes). Override for projects with non-standard file layouts (monorepos, language-specific source roots). Invalid regex falls back to default + emits loud warning rather than silently skipping the review.",
       "default": "\\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\\.|$)",
-      "examples": [
-        "\\.(ts|tsx|py)$",
-        "^(packages|services)/.+\\.(ts|js|py)$"
-      ]
+      "examples": ["\\.(ts|tsx|py)$", "^(packages|services)/.+\\.(ts|js|py)$"]
     },
     "uiFilePatterns": {
       "type": "string",
       "description": "SHARED FALLBACK for both UI-file gates. Extended-regex pattern (passed to grep -E) matching UI file paths in the diff. Two reviewers consume it — /flow:accessibility-review's Step 1 early-exit and /flow:verify-build's visual-significance predicate — and since FB-0079 each can be scoped independently via a11yFilePatterns / visualFilePatterns, which fall back to THIS slot when unset. Setting only this slot is the pre-split behavior, unchanged: both reviewers use it. Set it when one pattern genuinely answers both questions. You need the split when a file renders but has no screen-reader surface, or announces text but draws nothing — a persistence file inside a directory you had to include for a11y, or a mock-data file that decides a chart's shape. Default covers TSX/JSX/Vue/Svelte/Astro/MDX/CSS/SCSS/Sass/Less/HTML + njk/hbs/ejs templates (extension-only — the original path-prefix branch was redundant since any file matching the prefix-form also matched the extension-only form). Override to constrain to specific path roots (e.g., '^(apps/web|packages/ui)/.+\\.(tsx|css)$') or add non-standard extensions. Invalid regex falls back to default + emits a loud warning naming the offending slot.",
       "default": "\\.(tsx|jsx|vue|svelte|astro|mdx|css|scss|sass|less|html|njk|hbs|ejs)$",
-      "examples": [
-        "\\.(tsx|css)$",
-        "^(apps/web|packages/ui)/.+\\.(tsx|css)$"
-      ]
+      "examples": ["\\.(tsx|css)$", "^(apps/web|packages/ui)/.+\\.(tsx|css)$"]
     },
     "visualFilePatterns": {
       "type": "string",
       "description": "OPTIONAL per-consumer override for the VISUAL question only: 'does this change what the app DRAWS?' Consumed by /flow:verify-build's visual-significance predicate (skills/verify-build/lib/visual-significance.py) to decide whether a change requires visual deliverables — captured frames + a visual-history entry. Resolution: this slot → uiFilePatterns → the built-in default, so leaving it unset preserves pre-FB-0079 behavior exactly. Set it when a file renders but has no accessibility surface, or vice versa — the two sets are not the same set. Worked example (iOS/SwiftUI): a mock-data file that decides a chart's shape belongs HERE but not in a11yFilePatterns; a cache/persistence file sitting in a directory you had to include for a11y belongs in NEITHER, and excluding it here is the whole point of the split. Invalid regex falls back to the built-in default + emits a loud warning naming this slot.",
-      "examples": [
-        "(^|/)(App|Views|DesignSystem|Charts)/.*\\.swift$",
-        "^(apps/web|packages/ui)/.+\\.(tsx|css|svg)$"
-      ]
+      "examples": ["(^|/)(App|Views|DesignSystem|Charts)/.*\\.swift$", "^(apps/web|packages/ui)/.+\\.(tsx|css|svg)$"]
     },
     "a11yFilePatterns": {
       "type": "string",
       "description": "OPTIONAL per-consumer override for the ACCESSIBILITY question only: 'does this change something with an ACCESSIBILITY SURFACE?' Consumed by /flow:accessibility-review's Step 1 per-diff early exit, and by /flow:audit-skips when confirming whether a 'no UI in diff' a11y skip was legitimate (a skip is only ever audited against the pattern that reviewer itself used). Resolution: this slot → uiFilePatterns → the built-in default, so leaving it unset preserves pre-FB-0079 behavior exactly. Set it when a11y surface and render surface diverge. Worked example (iOS/SwiftUI): a store that builds the string VoiceOver announces belongs HERE even though it draws nothing; a mock-data file that only decides a chart's shape does not. Invalid regex falls back to the built-in default + emits a loud warning naming this slot.",
-      "examples": [
-        "(^|/)(App|Views|DesignSystem|Insight)/.*\\.swift$",
-        "^(apps/web|packages/ui)/.+\\.(tsx|mdx)$"
-      ]
+      "examples": ["(^|/)(App|Views|DesignSystem|Insight)/.*\\.swift$", "^(apps/web|packages/ui)/.+\\.(tsx|mdx)$"]
     },
     "flowRepoPath": {
       "type": "string",
       "description": "Absolute path to the local flow plugin checkout — the repo /flow:contribute opens contribution PRs against (FB-0059). The lesson-harvest loop runs in any project (/flow:ship + /flow:ship-spike Step 4c enqueues flow-generalizable lessons to user-scope storage); the drain (/flow:contribute) must run FROM this checkout because the contribution edits + PR target the flow repo, not the project being shipped. /flow:contribute refuses to run unless `pwd` resolves to this path (a clean one-line message, never a partial run). Unset disables the contribute drain (harvest still enqueues; nothing drains until you set this and run from the checkout). Set this on the machine where you maintain flow, to the repo root that contains `.claude-plugin/marketplace.json`.",
-      "examples": [
-        "/Users/you/dev/flow",
-        "/home/you/src/flow"
-      ]
+      "examples": ["/Users/you/dev/flow", "/home/you/src/flow"]
     },
     "contributionsQueuePath": {
       "type": "string",
       "description": "Storage root for the cross-project lesson-contribution queue (FB-0059). /flow:ship + /flow:ship-spike Step 4c enqueues flow-generalizable lessons here; /flow:contribute drains them. User-scope and cross-project by design (a lesson harvested in project A must be visible to a contribute run rooted in the flow checkout), so the default lives under ~/.claude — NOT in any project tree. Override only to relocate the queue (e.g. onto synced storage). The scripts also honor the FLOW_CONTRIB_DIR environment variable, which takes precedence and is used by the eval harness to redirect storage to a tempdir. Default: ~/.claude/plugins/data/flow/contributions.",
       "default": "~/.claude/plugins/data/flow/contributions",
-      "examples": [
-        "~/.claude/plugins/data/flow/contributions"
-      ]
+      "examples": ["~/.claude/plugins/data/flow/contributions"]
     },
     "lastHarvestedPath": {
       "type": "string",
       "description": "Path to the lesson-harvest watermark file (FB-0059) — a JSON map of session-id → record-count already harvested, so /flow:ship + /flow:ship-spike Step 4c only analyzes transcript turns added since the last harvest and re-shipping a branch never re-enqueues old lessons. User-scope (sits beside the queue). Default: ~/.claude/plugins/data/flow/contributions/last_harvested.json.",
       "default": "~/.claude/plugins/data/flow/contributions/last_harvested.json",
-      "examples": [
-        "~/.claude/plugins/data/flow/contributions/last_harvested.json"
-      ]
+      "examples": ["~/.claude/plugins/data/flow/contributions/last_harvested.json"]
     },
     "contributionThreshold": {
       "type": "number",
@@ -348,7 +220,7 @@
     },
     "dispatchBackend": {
       "type": "object",
-      "description": "Host adapter for the orchestrator skill suite (/flow:orchestrate, /flow:spawn, /flow:handoff, /flow:gate). Five COMMAND TEMPLATES this project supplies — the plugin ships the workflow, your config supplies the mechanics, exactly as typecheckCmd/preflightCmd already do one level down. This is what keeps the suite host-agnostic: no host's CLI is named anywhere in the plugin. Placeholders are a CLOSED vocabulary — {name}, {messageFile}, {session}, {branch} — and an unknown one is a hard error. There is deliberately NO {message}: a brief or a status line is agent-composed prose that routinely contains backticks, so message bodies travel as a PATH and only as a path (the shell-composition hazard that fired four times in one session; same principle as taking untrusted text off add-entry's command line). Substituted values are restricted to [A-Za-z0-9._/@:+=-] and refused, never escaped. Absent slot is NOT a silent no-op: each skill prints a loud warning and names the manual step you must perform instead. Deletion criterion: delete when a backend accepts structured input (JSON on stdin) for every verb, so there is no command string to render.",
+      "description": "Host adapter for the orchestrator skill suite (/flow:orchestrate, /flow:spawn, /flow:handoff, /flow:gate). Five COMMAND TEMPLATES this project supplies — the plugin ships the workflow, your config supplies the mechanics, exactly as typecheckCmd/preflightCmd already do one level down. This is what keeps the suite host-agnostic: no host's CLI is named anywhere in the plugin. Placeholders are a CLOSED vocabulary — {name}, {messageFile}, {session} — and an unknown one is a hard error. Every placeholder in it is supplied by a real call site, so a template cannot pass setup validation and then fail at dispatch time. There is deliberately NO {message}: a brief or a status line is agent-composed prose that routinely contains backticks, so message bodies travel as a PATH and only as a path (the shell-composition hazard that fired four times in one session; same principle as taking untrusted text off add-entry's command line). Substituted values are restricted to [A-Za-z0-9._/@:+=-] and refused, never escaped. Absent slot is NOT a silent no-op: each skill prints a loud warning and names the manual step you must perform instead. Deletion criterion: delete when a backend accepts structured input (JSON on stdin) for every verb, so there is no command string to render.",
       "properties": {
         "listWorkers": {
           "type": "string",
@@ -387,7 +259,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Globs marking work that must NOT be auto-approved and must NOT be routed to a cheap model. Two readers, one definition: /flow:gate's stakes axis (the first of the four plan-gate axes — a red stakes axis sends the plan to a human) and /flow:spawn's routing floor (gate machinery never routes down). The shared rationale is that a wrong version in these paths fails SILENTLY, is EXPLOITABLE, or is a ONE-WAY DOOR — the one error class where a cheaper model's savings or a saved human round-trip are not worth having. Defaults are deliberately shape-based and project-agnostic (secrets, auth, migrations, published schemas, CI workflows); YOUR project's own gate machinery is project-shaped knowledge and belongs here, not in the plugin. Supports **, * and ?; matched against repo-relative POSIX paths. Present-but-malformed or present-but-empty falls back to the defaults with a loud warning — an empty list would classify every diff as low-stakes. Every degraded path classifies SENSITIVE, because a wrong escalation costs one human decision while a wrong approval costs the gate. Deletion criterion: folded into a broader gate-policy object if a third consumer appears.",
+      "description": "Globs marking work that must NOT be auto-approved and must NOT be routed to a cheap model. Two readers, one definition: /flow:gate's stakes axis (the first of the four plan-gate axes — a red stakes axis sends the plan to a human) and /flow:spawn's routing floor (gate machinery never routes down). The shared rationale is that a wrong version in these paths fails SILENTLY, is EXPLOITABLE, or is a ONE-WAY DOOR — the one error class where a cheaper model's savings or a saved human round-trip are not worth having. Defaults are deliberately shape-based and project-agnostic (secrets, auth, migrations, published schemas, CI workflows); YOUR project's own gate machinery is project-shaped knowledge and belongs here, not in the plugin. Supports **, * and ?; matched against repo-relative POSIX paths. Present-but-malformed or present-but-empty falls back to the defaults with a loud warning — an empty list would classify every diff as low-stakes. Every degraded path classifies SENSITIVE, because a wrong escalation costs one human decision while a wrong approval costs the gate. Deletion criterion: folded into a broader gate-policy object if a third consumer appears. DIALECT NOTE, on the record deliberately: every OTHER file-matching slot in this schema (uiFilePatterns, visualFilePatterns, a11yFilePatterns, sourceFilePatterns) is an extended REGEX, while this one is GLOBS. The divergence is a legibility call — a security-relevant policy list a human audits at a glance reads better as `**/migrations/**` than as an escaped regex, and fnmatch is unusable here because its `*` crosses `/`. The cost is that this config file carries two pattern dialects; it is stated here so the next reader finds a decision rather than an inconsistency.",
       "default": [
         "**/.env",
         "**/.env.*",

@@ -142,7 +142,7 @@ cases = [
     (dict(), "anything-else", False),
 ]
 for kw, branch, delegable in cases:
-    r = G.classify_merge(config_path=str(PLAIN_CFG), **kw)
+    r = G.classify_merge(**kw)
     # NEGATIVE half — never anything but human.
     check(f"merge {branch} ({kw or 'no inputs'}) ⇒ verdict human", r["verdict"] == "human", json.dumps(r))
     # POSITIVE half — the classification is still produced. Without this, a stub
@@ -151,6 +151,29 @@ for kw, branch, delegable in cases:
           r["classification"] == branch and r["would_delegate_at_walk_rung"] is delegable
           and bool(r["why"]) and bool(r["audit_line"]),
           json.dumps({k: r.get(k) for k in ("classification", "would_delegate_at_walk_rung", "why")}))
+
+# --plan-result reads the artifact this same engine emitted, instead of a retyped
+# claim about it. Malformed input must fall through to `unknown` (non-delegable),
+# never to "green".
+_pr = Path(_TMP) / "plan-result.json"
+_pr.write_text(json.dumps(G.classify_plan(SAFE_FILES, **GREEN)), encoding="utf-8")
+_cmd = [sys.executable, str(GATE_LIB), "merge", "--diff-class", "code",
+        "--verify-verdict", "pass", "--confidence", "extremely-high", "--plan-result", str(_pr)]
+_r = json.loads(subprocess.run(_cmd, capture_output=True, text=True).stdout)
+check("--plan-result carrying an APPROVE plan ⇒ classified verified-code",
+      _r["classification"] == "verified-code" and _r["verdict"] == "human", json.dumps(_r)[:200])
+_pr.write_text(json.dumps(G.classify_plan(["src/auth/x.ts"], **GREEN)), encoding="utf-8")
+_r = json.loads(subprocess.run(_cmd, capture_output=True, text=True).stdout)
+check("--plan-result carrying an ESCALATE plan ⇒ NOT delegable",
+      _r["classification"] == "anything-else" and _r["would_delegate_at_walk_rung"] is False)
+_pr.write_text('{"not": "a plan"}', encoding="utf-8")
+_proc = subprocess.run(_cmd, capture_output=True, text=True)
+check("a non-plan --plan-result is ignored loudly and falls to the non-delegable branch",
+      json.loads(_proc.stdout)["classification"] == "anything-else" and "⚠️" in _proc.stderr)
+_r = json.loads(subprocess.run(_cmd[:-1] + [str(Path(_TMP) / "absent.json")],
+                               capture_output=True, text=True).stdout)
+check("an unreadable --plan-result is ignored and falls to the non-delegable branch",
+      _r["classification"] == "anything-else")
 
 check("rollout rung is crawl", G.ROLLOUT_RUNG == "crawl")
 src = GATE_LIB.read_text(encoding="utf-8")
@@ -251,7 +274,7 @@ ARTIFACTS = [
     PLUGIN / "skills" / "gate" / "SKILL.md",
     PLUGIN / "lib" / "sensitive_paths.py",
     PLUGIN / "skills" / "gate" / "lib" / "gate-classify.py",
-    PLUGIN / "skills" / "spawn" / "lib" / "dispatch-backend.py",
+    PLUGIN / "lib" / "dispatch_backend.py",
     PLUGIN / "skills" / "handoff" / "lib" / "brief-check.py",
     HERE / "run_gate_evals.py",
     HERE / "run_dispatch_backend_evals.py",
@@ -274,7 +297,11 @@ print("\n§10  registration + CI-wiring self-guards")
 ci = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 for h in ("run_gate_evals.py", "run_dispatch_backend_evals.py", "run_handoff_brief_evals.py"):
     check(f"{h} is wired into ci.yml (FB-0056: an un-wired eval is zero protection)", h in ci)
-check("schema carries 36 slots", len(schema["properties"]) == 36, str(len(schema["properties"])))
+# NOT a second "schema carries N slots" assertion — that one is canonical in
+# run_merge_status_evals.py, where it is PAIRED with the repo-wide wrap-tolerant
+# survivor scan. A duplicate literal here would break two harnesses on the next
+# slot addition, and it would sit in a .py file, outside slot_count_scan.py's
+# .md/.json/.sh scan set — invisible to the very scanner built for this fan-out.
 sp_spec = importlib.util.spec_from_file_location("sensitive_paths", PLUGIN / "lib" / "sensitive_paths.py")
 sp = importlib.util.module_from_spec(sp_spec); sp_spec.loader.exec_module(sp)
 check("schema's sensitivePaths default is byte-identical to the lib's",

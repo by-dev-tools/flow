@@ -25,7 +25,9 @@ the home for cross-skill contracts.
 **Fail-safe direction is toward escalation, and that is not an accident.** Every
 degraded path in this module returns *sensitive* rather than *not sensitive*: an
 unreadable changed-file list, an unreadable owned-glob list, a repo whose index
-cannot be read. A malformed or empty `sensitivePaths` slot falls back to the
+cannot be read, **and an owned glob that matches nothing yet** (the greenfield
+one-way-door case — a worker dispatched to *create* migrations or auth owns a
+glob with no matches today, and that is precisely when the floor matters most). A malformed or empty `sensitivePaths` slot falls back to the
 documented defaults, loudly. A wrong "sensitive" costs one unnecessary human
 decision; a wrong "not sensitive" auto-approves a plan that should have
 escalated, or routes gate machinery to a cheap model — and both of those fail
@@ -45,6 +47,11 @@ consumer is indirection, not sharing.
 
 Underscore-named so it is importable as a bare module (the house pattern of
 `ship/lib/manifest_contract.py` and `verify-build/lib/walk_extract.py`).
+
+Fixtures live in `evals/run_handoff_brief_evals.py` §§4–8 (both entry points, the
+routing floor and its negative, the fail-safe directions, and the project-agnosticism
+of the defaults) — named for its sibling subject, so look there rather than for a
+harness named after this file.
 
 Stdlib only. No side effects on import. Python 3.7+.
 """
@@ -294,9 +301,21 @@ def main(argv=None) -> int:
             return 0
         import subprocess  # local: this is the only path that needs the repo index
         try:
-            tracked = subprocess.run(
+            proc = subprocess.run(
                 ["git", "ls-files"], capture_output=True, text=True, timeout=60
-            ).stdout.splitlines()
+            )
+            # A non-zero exit does NOT raise, and the failure modes are quiet ones:
+            # not a repo, a dubious-ownership refusal, an unreadable index. Left
+            # unchecked, stdout is empty, every owned glob "matches nothing", and
+            # classify([]) returns sensitive:false — the module's stated fail-safe
+            # direction inverted, on the one path that feeds /flow:spawn's routing
+            # floor. Treat it exactly like the OSError below.
+            if proc.returncode != 0:
+                raise OSError(
+                    f"git ls-files exited {proc.returncode}: "
+                    f"{(proc.stderr or '').strip()[:200] or 'no stderr'}"
+                )
+            tracked = proc.stdout.splitlines()
         except (OSError, subprocess.SubprocessError) as exc:
             print(
                 f"{PREFIX} ⚠️ could not enumerate tracked files ({exc}); owned globs cannot be "
@@ -312,15 +331,26 @@ def main(argv=None) -> int:
         result["expanded_from_globs"] = len(expanded)
         result["globs_matching_nothing"] = empty
         if empty and not result["sensitive"]:
-            # Loud, not silent: a glob that matches nothing today may be the one
-            # that would have matched the sensitive file the worker is about to
-            # create. Reporting "not sensitive" without saying this would be a
-            # confident answer to a question we could not fully evaluate.
-            print(
-                f"{PREFIX} ⚠️ {len(empty)} owned glob(s) matched no tracked file "
-                f"({', '.join(empty[:5])}). The verdict below covers only what exists today.",
-                file=sys.stderr,
+            # A glob matching nothing TODAY is the greenfield case, and it is the
+            # single likeliest way this predicate is asked about one-way-door work:
+            # a worker dispatched to CREATE `db/migrations/**` or `src/auth/**` owns
+            # a glob that matches no tracked file yet. Answering `false` there is the
+            # one fail-OPEN this module would otherwise have — and `/flow:spawn`'s
+            # floor reads the machine-readable field, not the stderr line, so a
+            # warning alone would leave the guarantee resting on someone remembering.
+            #
+            # `expand_globs` silently converts spawn's INTENSIONAL question ("could
+            # this worker touch gate machinery?") into an extensional one ("what does
+            # it own today?"). When the two can diverge, say so instead of returning
+            # the weaker answer under the stronger question's name.
+            result["sensitive"] = True
+            result["reason"] = (
+                f"{len(empty)} owned glob(s) match no tracked file yet "
+                f"({', '.join(empty[:5])}) — the work may CREATE files under them, which "
+                f"cannot be evaluated from the current tree. Classified sensitive rather "
+                f"than guessed."
             )
+            print(f"{PREFIX} ⚠️ {result['reason']}", file=sys.stderr)
         print(json.dumps(result, indent=2))
         return 0
     try:

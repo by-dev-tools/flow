@@ -34,6 +34,24 @@ Four new agent-invocable skills for running several worker workspaces from one o
 
 **The new harnesses caught three real bugs in their own subjects**, which is the argument for writing them: `validate()` never stored its per-verb entries (so `/flow:doctor`'s report would have been empty); the gate classifier crashed on a non-string axis value (a gate that raises is a gate that did not run); and the host-literal sweep found a real `Conductor API` literal in `brief-check.py`'s docstring. A fourth finding was a *dead* fail-safe — "pattern failed to compile" could never fire, because translation escapes every literal — which was removed rather than kept. An unreachable fail-safe is dead code that reads like protection.
 
+## What `/simplify` caught — including the one defect that mattered
+
+Four parallel agents; 14 findings taken, 6 routed to the roadmap as cross-cutting refactors of files this PR does not own.
+
+**The fail-open.** `sensitive_paths.py` returned `sensitive: false` for an owned glob matching no tracked file — the *greenfield* case, and the likeliest way the predicate is asked about exactly the work the floor protects: a worker dispatched to **create** `db/migrations/**` or `src/auth/**` owns a glob with no matches today. `/flow:spawn` reads the machine-readable field, so the stderr warning that stood in its place left the guarantee resting on author memory. The deeper framing came from the reviewer and is the part worth keeping: `expand_globs` silently converts spawn's *intensional* question ("could this worker touch gate machinery?") into an *extensional* one ("what does it own today?") and returned the weaker answer under the stronger question's field name. Now classified sensitive with a stated reason, and the module's "every degraded path escalates" invariant is literally true instead of true-with-one-exception.
+
+**The placement contradiction.** `dispatch_backend.py` had five readers while filed under `skills/spawn/lib/` — contradicting, in the same commit, the argument `sensitive_paths.py` makes for its own placement in `plugins/flow/lib/`. The cost was already real rather than theoretical: flow's own `sensitivePaths` covered `skills/gate/**` and `lib/sensitive_paths.py` but **not** the module that decides which commands get executed. Moved and added to the list.
+
+**The check that passed and then failed.** `{branch}` sat in the closed placeholder vocabulary with no verb requiring it and no skill supplying it. A consumer template using it passed `/flow:doctor` Check 2.12 — printing "all 5 verbs valid" — and then refused at render with "no value supplied." That is exactly the check-passes/dispatch-fails class Check 2.12's own rationale says it exists to prevent. Removed; an eval now asserts every advertised placeholder is required by some verb, and doctor reads the vocabulary out of the report instead of restating it (it had been written out in three places).
+
+**Dead code deleted rather than kept:** `_tri`'s unused polarity flag, `classify_merge`'s entire stakes path (no SKILL.md passed a file list, `main()` passed `[]`, no eval asserted it), a `reason` fallback that could never carry anything, an unreachable `return 2`. Also `render()`'s `str.split()` → `shlex.split` (a quoted placeholder in a consumer's template produced an argument with the quotes still in it — an ad-hoc quoting decision inside the module whose argument is "refuse, don't escape").
+
+**Two silent-degradation sites.** Two skills resolved doc slots in prose rather than through `lib/resolve-doc-slot.sh` — and flow's own `feedbackPath` is a *directory*, so `[ -f ]` is false on it and an orchestrator booting in this repo would have read the feedback corpus as empty, quietly. And `/flow:orchestrate`'s `sensitivePaths` check was vacuous in both directions: `--print-defaults` returns before the config is read (so a malformed slot still printed "available"), and `&& echo` printed nothing on failure.
+
+**The fan-out that happened inside this PR.** `/flow:gate` got a `mkdir -p .flow` while `/flow:spawn`'s byte-identical redirect did not — one of two identical sites fixed, which is the class `.claude/rules/general.md` names. Both fixed, plus the CWE-59 symlink refusal every other scratch writer carries.
+
+**A diff-hygiene catch worth recording:** the schema change was 247 lines for two slots, because a JSON formatter expanded every inline array in the file — burying the real addition inside a path this PR itself declares sensitive. Rebuilt as additive-only: 61 inserted, 0 deleted.
+
 ## Open, and not silently absorbed
 
 **The field manual's satisfied deletion criteria — owed here, sequenced behind a rebase.** This PR satisfies three of them:

@@ -43,6 +43,15 @@ Format compliance is not the bar. An escalation can carry options, a recommendat
 ## 1. The plan gate — four axes, all four must be green
 
 ```sh
+# `mkdir -p` first: `2>/dev/null` covers git's stderr, not the SHELL's, so on a
+# checkout without .flow/ the redirect itself fails, the file is never written, and
+# the stakes axis reads `unknown`. That escalates — the safe direction — but it
+# escalates spuriously, which is the cost this skill exists to remove.
+# The symlink refusal is the same CWE-59 guard every other .flow writer carries:
+# `.flow` is an ordinary repo path, so an untrusted clone can ship it as a symlink
+# and `mkdir -p` would follow it, landing writes outside the repo.
+[ -L .flow ] && { echo "⚠️ BLOCKER: .flow is a symlink — refusing to write scratch through it." >&2; exit 1; }
+mkdir -p .flow
 git diff --name-only origin/HEAD...HEAD > .flow/gate-files.txt 2>/dev/null
 python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/gate/lib/gate-classify.py" plan \
   --files-file .flow/gate-files.txt \
@@ -69,8 +78,13 @@ A merge writes to the default branch, so it keys on something stricter than stak
 ```sh
 python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/gate/lib/gate-classify.py" merge \
   --diff-class <docs-only|code> --verify-verdict <pass|fail|unknown|skipped> \
-  --confidence <extremely-high|high|medium|low> --plan-axes-green <yes|no>
+  --confidence <extremely-high|high|medium|low> \
+  --plan-result .flow/gate-plan.json      # the JSON step 1 already emitted — prefer it
 ```
+
+**Pass `--plan-result`, not `--plan-axes-green`, whenever step 1 ran.** Retyping a verdict this same engine computed minutes ago is an agent-authored string standing in for an artifact that exists — inside the one module whose thesis is that a wrong answer fails silently. A malformed or non-plan file is ignored and leaves the axis `unknown`, which takes the non-delegable branch. (`--plan-axes-green` remains for the case where no plan-gate run exists.)
+
+The other merge inputs are still declared, and that is a known weakness rather than a design claim: a verification verdict in particular has a canonical per-HEAD artifact, and this repo's own skip-auditor already refuses a verdict whose artifact is absent. Reading the buffer directly is routed as a follow-up.
 
 Three branches: **docs-only** (no behavior to get wrong); **code with a real end-to-end verification** — a behavioral PASS, extremely-high confidence, and still inside the plan-gate green quadrant (the green run *is* the proof); and **anything else** — verification skipped or Unknown, or any red axis — which has no behavioral proof.
 
@@ -80,7 +94,15 @@ So this step's output is the **classification and the recommendation**, which is
 
 ## 3. Log the classification
 
-Every call — approved or escalated — writes its `audit_line` into the current PR block in the project's plan doc (`planPath`). That is the audit trail the rollout is earned with.
+Every call — approved or escalated — writes its `audit_line` into the current PR block in the project's plan doc. Resolve that path through the shared resolver, which handles a slot pointing at a directory and refuses to degrade silently:
+
+```sh
+R="${CLAUDE_PLUGIN_ROOT}/lib/resolve-doc-slot.sh"; [ -f "$R" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && R=plugins/flow/lib/resolve-doc-slot.sh; }
+[ -f "$R" ] && sh "$R" planPath dev-docs/plan.md \
+  || echo "⚠️ [resolve-doc-slot] not found — planPath was NOT resolved, so the gate decision has nowhere to be logged. Reinstall the flow plugin."
+```
+
+That is the audit trail the rollout is earned with.
 
 **In the plan doc, not a new store.** State that is duplicated into a maintained ledger goes stale: a dispatch ledger with a status column was measured wrong within minutes of being written. The plan doc is already reviewed, already in git, and already the place decisions are recorded.
 
@@ -99,7 +121,7 @@ When the human answers, relay it back yourself — that is the return leg, and i
 
 ```sh
 # Write the answer to a file first; it is prose about code and carries backticks.
-python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/spawn/lib/dispatch-backend.py" \
+python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/dispatch_backend.py" \
   render sendMessage --set session=<originating_session> --set messageFile=.flow/gate-answer.md
 ```
 

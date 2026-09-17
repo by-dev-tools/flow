@@ -23,7 +23,7 @@ allowed-tools: Read, Grep, Glob, Bash, Write
 ```sh
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null); { [ -n "$ROOT" ] && [ -d "$ROOT" ]; } || ROOT="${CLAUDE_PROJECT_DIR:-}"
 [ -n "$ROOT" ] && cd "$ROOT" || { echo "[spawn] ROOT-UNRESOLVED — nothing ran."; exit 0; }
-python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/spawn/lib/dispatch-backend.py" check 2>&1 || true
+python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/dispatch_backend.py" check 2>&1 || true
 ```
 
 If `createWorker` is absent or invalid, **stop and say so**: render the brief anyway, hand it to the human, and state plainly that no workspace was created. A dispatch that silently did not happen is the worst outcome available here.
@@ -31,7 +31,7 @@ If `createWorker` is absent or invalid, **stop and say so**: render the brief an
 ## 1. Admission control — before anything else
 
 ```sh
-git fetch origin --prune -q 2>/dev/null
+# Ref-only round trip; no `git fetch` first (its objects would be read by nothing).
 git ls-remote --heads origin | sed 's|.*refs/heads/||' | grep -i -- "<item-slug>" || echo "no branch for this item"
 gh pr list --state open --json number,title,headRefName --limit 60 2>/dev/null || \
   echo "[spawn] ⚠️ gh unavailable — open-PR check NOT performed; say so."
@@ -74,6 +74,11 @@ Fast mode is nearly always wrong for a worker: more speed at more cost, and nobo
 ### The one hard floor — enforced, not remembered
 
 ```sh
+# Same scratch preamble as every other .flow writer — the mkdir (the shell's own
+# redirect fails without it) and the CWE-59 symlink refusal. Both sites in this
+# skill get it; fixing one of two identical redirects is the fan-out class.
+[ -L .flow ] && { echo "⚠️ BLOCKER: .flow is a symlink — refusing to write scratch through it." >&2; exit 1; }
+mkdir -p .flow
 printf '%s\n' <each glob this worker will own> > .flow/spawn-globs.txt
 python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/sensitive_paths.py" --globs-file .flow/spawn-globs.txt
 ```
@@ -88,6 +93,7 @@ Then do **both** of these — the brief line is what the worker sees, the record
 2. Append one record per dispatch:
 
 ```sh
+[ -L .flow ] && { echo "⚠️ BLOCKER: .flow is a symlink — refusing to write scratch through it." >&2; exit 1; }
 mkdir -p .flow
 [ -s .flow/usage.tsv ] || printf 'date\titem\tmodel\teffort\twhy\towns\toutcome\n' > .flow/usage.tsv
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%d)" "<item>" "<model>" "<effort>" \
@@ -149,7 +155,7 @@ ship slot: <held by you | held by <worker>; rebase when it lands>
 ## 4. Create the workspace — brief as the first message
 
 ```sh
-python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/spawn/lib/dispatch-backend.py" \
+python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/dispatch_backend.py" \
   render createWorker --set name=<worker-name> --set messageFile=.flow/brief-<item>.md
 ```
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Eval harness for the `dispatchBackend` adapter (`skills/spawn/lib/dispatch-backend.py`).
+"""Eval harness for the `dispatchBackend` adapter (`plugins/flow/lib/dispatch_backend.py`).
 
 Two bug classes, both of which have live precedent in this repo.
 
@@ -28,7 +28,7 @@ fallback.
   §7  no host literal in the suite, PAIRED with the positive slot-read assertion
   §8  malformed input degrades without crashing
 
-**Deletion criterion (FB-0088):** delete with `dispatch-backend.py` — never
+**Deletion criterion (FB-0088):** delete with `dispatch_backend.py` — never
 before it.
 
 Stdlib only. No network. Run:
@@ -46,7 +46,7 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 PLUGIN = HERE.parent
-LIB = PLUGIN / "skills" / "spawn" / "lib" / "dispatch-backend.py"
+LIB = PLUGIN / "lib" / "dispatch_backend.py"
 SUITE = ("orchestrate", "spawn", "handoff", "gate")
 
 _failures: list[str] = []
@@ -117,6 +117,17 @@ check("a {message} placeholder is REJECTED, not escaped",
 check("the rejection explains the closed vocabulary",
       any("vocabulary is closed" in p for p in r["verbs"]["sendMessage"]["problems"]))
 check("{message} is not in the known vocabulary at all", "message" not in D.KNOWN_PLACEHOLDERS)
+# Every advertised placeholder must have a real supplier. One that validates and then
+# refuses at render is the check-passes/dispatch-fails class the doctor check exists
+# to prevent — `{branch}` was exactly that and was removed.
+_suppliers = set()
+for _req, _p, _m in D.VERBS.values():
+    _suppliers |= _req
+check("every advertised placeholder is required by at least one verb (none validates "
+      "then refuses at render)", D.KNOWN_PLACEHOLDERS == _suppliers,
+      f"advertised={sorted(D.KNOWN_PLACEHOLDERS)} supplied-by-a-verb={sorted(_suppliers)}")
+check("the report emits the vocabulary, so consumers read it from one definition",
+      D.validate(GOOD)["known_placeholders"] == sorted(D.KNOWN_PLACEHOLDERS))
 for op in (";", "|", "&", "`", "$("):
     r = D.validate({**GOOD, "listWorkers": f"xctl workspace list {op} rm -rf /"})
     check(f"a template containing {op!r} is invalid", not r["ok"])
@@ -128,6 +139,14 @@ check("rendered argv substitutes both placeholders",
       argv == "xctl message create --session abc-123 --message-file .flow/msg.md".split(), str(argv))
 argv, err = D.render(GOOD, "listWorkers", {})
 check("a no-placeholder verb renders with no values", err is None and argv[0] == "xctl")
+# A consumer may legitimately quote a placeholder in their own template. `str.split()`
+# would leave the quotes inside the argument and the backend would report file-not-found
+# on a path that exists; shlex is correct and the restricted charset cannot confuse it.
+QUOTED = {**GOOD, "sendMessage": 'xctl message create --session {session} --message-file "{messageFile}"'}
+argv, err = D.render(QUOTED, "sendMessage", {"session": "a1", "messageFile": ".flow/m.md"})
+check("a QUOTED placeholder in the consumer's template parses to a clean argument",
+      err is None and argv == ["xctl", "message", "create", "--session", "a1",
+                               "--message-file", ".flow/m.md"], str(argv))
 
 print("\n§4  refusal — metacharacters, quotes, spaces, leading dash")
 ATTACKS = [
@@ -187,7 +206,7 @@ for name in SUITE:
         for lit in HOST_LITERALS:
             check(f"{f.relative_to(PLUGIN)} carries no host/roster literal {lit!r}",
                   lit.lower() not in txt.lower())
-for f in [PLUGIN / "lib" / "sensitive_paths.py"]:
+for f in sorted((PLUGIN / "lib").glob("*.py")):
     scanned += 1
     txt = f.read_text(encoding="utf-8")
     for lit in HOST_LITERALS:
@@ -195,13 +214,16 @@ for f in [PLUGIN / "lib" / "sensitive_paths.py"]:
 # 4 SKILL.md + 3 skill libs + the shared predicate. Asserted as an exact count,
 # not a floor: a floor goes green if a file is added, but also stays green if the
 # skill it belongs to is deleted and another grows a second lib.
+# 4 SKILL.md + 2 skill libs (gate, handoff) + 2 shared libs in plugins/flow/lib/.
+# An exact count, not a floor: a floor goes green when a file is added, but also
+# stays green when a skill is deleted and another grows a second lib.
 check("the scan covered all 8 new shipped artifacts (an empty or partial sweep is a vacuous pass)",
       scanned == 8, str(scanned))
 # POSITIVE — without this, deleting the adapter entirely would turn every line above green.
 for name in SUITE:
     txt = (PLUGIN / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
     check(f"POSITIVE: {name} still reaches the backend or the shared predicate",
-          "dispatch-backend.py" in txt or "sensitive_paths.py" in txt)
+          "dispatch_backend.py" in txt or "sensitive_paths.py" in txt)
 check("POSITIVE: the adapter still defines all five verbs",
       set(D.VERBS) == {"listWorkers", "createWorker", "sendMessage", "workerStatus", "selfSession"})
 

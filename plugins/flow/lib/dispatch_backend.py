@@ -60,13 +60,18 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import sys
 from pathlib import Path
 
 PREFIX = "[dispatch-backend]"
 
-# The closed vocabulary. A template may use only these.
-KNOWN_PLACEHOLDERS = {"name", "messageFile", "session", "branch"}
+# The closed vocabulary. A template may use only these, and every one of them is
+# supplied by a real call site — a placeholder the schema advertises but nothing
+# supplies passes `check` and then fails at `render`, which is exactly the
+# check-passes/dispatch-fails class the doctor check exists to prevent. `{branch}`
+# was in this set with no required verb and no supplier, and was removed.
+KNOWN_PLACEHOLDERS = {"name", "messageFile", "session"}
 
 # Verb → (required placeholders, what it is for, what to do by hand if absent).
 VERBS = {
@@ -145,7 +150,11 @@ def load_backend(config_path="flow.config.json"):
 
 def validate(backend):
     """Return a per-verb report. Never raises."""
-    report = {"verbs": {}, "ok": True, "configured": 0}
+    # Emitted so consumers (doctor's remediation text, docs) read the vocabulary
+    # from the one definition rather than restating it — it was written out in
+    # three places, with nothing to catch a miss.
+    report = {"verbs": {}, "ok": True, "configured": 0,
+              "known_placeholders": sorted(KNOWN_PLACEHOLDERS)}
     for verb, (required, purpose, manual) in VERBS.items():
         tmpl = backend.get(verb)
         entry = {"purpose": purpose, "manual_fallback": manual}
@@ -190,9 +199,12 @@ def validate(backend):
 def render(backend, verb, values):
     """Return (argv, error). `argv` is None when the command cannot be rendered.
 
-    Deliberately returns a list as well as a joined string: every value has been
-    checked against `_SAFE_VALUE_RE`, so the joined form is safe to hand to a
-    shell, but a caller that can exec directly should prefer the list.
+    Split with `shlex`, not `str.split()`. Values are already restricted to a
+    charset shlex cannot misparse, but the TEMPLATE is the consumer's prose and may
+    legitimately quote a placeholder (`--message-file "{messageFile}"`) — a naive
+    split leaves the quotes inside the argument and the backend reports a
+    file-not-found on a path that exists. Refusing to remember an escape is this
+    module's whole argument; making an ad-hoc quoting decision here would undercut it.
     """
     if verb not in VERBS:
         return None, f"{PREFIX} ⚠️ unknown verb {verb!r}. Known: {', '.join(sorted(VERBS))}."
@@ -245,11 +257,11 @@ def render(backend, verb, values):
                 f"would be read as a flag by the backend."
             )
     rendered = _PLACEHOLDER_RE.sub(lambda m: str(values[m.group(1)]), tmpl)
-    return rendered.split(), None
+    return shlex.split(rendered), None
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="dispatch-backend.py", description=__doc__.split("\n")[0])
+    ap = argparse.ArgumentParser(prog="dispatch_backend.py", description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     c = sub.add_parser("check", help="validate the configured adapter (used by /flow:doctor)")

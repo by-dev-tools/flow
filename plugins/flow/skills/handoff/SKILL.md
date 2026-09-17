@@ -93,7 +93,7 @@ Fix and re-run until it passes. This is the rule that was written down and then 
 ## 5. Deliver it — as the successor's first message
 
 ```sh
-python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/spawn/lib/dispatch-backend.py" \
+python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/dispatch_backend.py" \
   render createWorker --set name=<successor-name> --set messageFile=.flow/succession-brief.md
 ```
 

@@ -669,38 +669,6 @@ else
 fi
 ```
 
-**Check 2.12 — `dispatchBackend` adapter shape (orchestrator suite, §4.10)**
-
-Validates the adapter the orchestrator suite (`/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`, `/flow:gate`) dispatches through. **Silent when the slot is absent** — most projects never orchestrate, and nagging them about an unused slot is noise. WARN, never FAIL, when it is present but malformed, because a broken adapter does not break the rest of the loop.
-
-Why it exists at all: a malformed adapter otherwise surfaces at *dispatch* time, which is the worst moment to discover it — mid-orchestration, with a worker that was supposed to be created and was not. Catching it at setup is the whole point (the shipped-but-never-loading class this repo keeps finding).
-
-**Deletion criterion (FB-0088):** delete when `dispatchBackend` goes, or when the schema can express the verb/placeholder contract well enough that schema validation subsumes this.
-
-```sh
-if ! command -v jq >/dev/null 2>&1; then
-  echo "[SKIP] dispatchBackend adapter — jq not on PATH (see Check 4.1)."
-elif [ ! -f flow.config.json ]; then
-  : # no config at all — Check 2.1 already reports it; the slot is optional anyway
-elif ! jq -e 'has("dispatchBackend")' flow.config.json >/dev/null 2>&1; then
-  : # deliberately silent: no adapter configured is the normal case, not a problem
-else
-  ADAPTER_OUT=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/spawn/lib/dispatch-backend.py" check 2>&1)
-  if echo "$ADAPTER_OUT" | grep -q '"ok": true'; then
-    NVERBS=$(echo "$ADAPTER_OUT" | jq -r '.configured // 0' 2>/dev/null || echo "?")
-    echo "[PASS] dispatchBackend: all $NVERBS verbs valid — orchestrator suite can dispatch"
-  else
-    echo "[WARN] dispatchBackend is present but incomplete or malformed."
-    echo "$ADAPTER_OUT" | jq -r '.verbs | to_entries[] | select(.value.state != "ok") | "       - \(.key): \(.value.state) — \(.value.problems // [] | join("; "))"' 2>/dev/null \
-      || echo "       (could not parse the adapter report; run the check above by hand)"
-    echo "       Fix: each verb is a command template. Placeholders are a CLOSED set —"
-    echo "       {name} {messageFile} {session} {branch}. There is no {message}: a brief or a"
-    echo "       status line is agent-composed prose and travels as a PATH, never as an argument."
-    echo "       Affected skills degrade to a documented manual step; they do not silently no-op."
-  fi
-fi
-```
-
 **Check 2.11 — `role` slot resolution (D1 prototype-first trigger dependency, FB-0081 Phase 0)**
 
 Reports the resolved `role` slot so a human can confirm it's set (or intentionally unset) without opening `flow.config.json`. This slot has no consumer yet (Phase 0 only — see `dev-docs/handoffs/d1-prototype-first-gate.md`); this check is informational, never a FAIL. A value outside the enum is warned, not silently accepted, since nothing enforces the schema's enum at runtime — a plain `jq` read of a typo'd value would otherwise report as if it resolved cleanly.
@@ -840,6 +808,41 @@ else
     echo "       launch recipe. Required for non-trivial projects (env files, DBs, multi-step builds,"
     echo "       non-standard scheme/package selection). Optional for simple Vite/CLI/Next-style apps."
     echo "       Set flow.config.json.verifyEnabled=false to opt out of verify-build entirely."
+  fi
+fi
+```
+
+**Check 2.12 — `dispatchBackend` adapter shape (orchestrator suite, §4.10)**
+
+Validates the adapter the orchestrator suite (`/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`, `/flow:gate`) dispatches through. **Silent when the slot is absent** — most projects never orchestrate, and nagging them about an unused slot is noise. WARN, never FAIL, when it is present but malformed, because a broken adapter does not break the rest of the loop.
+
+Why it exists at all: a malformed adapter otherwise surfaces at *dispatch* time, which is the worst moment to discover it — mid-orchestration, with a worker that was supposed to be created and was not. Catching it at setup is the whole point (the shipped-but-never-loading class this repo keeps finding).
+
+**Deletion criterion (FB-0088):** delete when `dispatchBackend` goes, or when the schema can express the verb/placeholder contract well enough that schema validation subsumes this.
+
+```sh
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] dispatchBackend adapter — jq not on PATH (see Check 4.1)."
+elif [ ! -f flow.config.json ]; then
+  : # no config at all — Check 2.1 already reports it; the slot is optional anyway
+elif ! jq -e 'has("dispatchBackend")' flow.config.json >/dev/null 2>&1; then
+  : # deliberately silent: no adapter configured is the normal case, not a problem
+else
+  # stdout ONLY — the lib writes its loud warning to stderr, and folding that into the
+  # capture makes the JSON unparseable in precisely the case that needs the detail
+  # (slot present but not an object: warns AND reports ok:false).
+  ADAPTER_OUT=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/dispatch_backend.py" check 2>/dev/null)
+  if echo "$ADAPTER_OUT" | jq -e '.ok' >/dev/null 2>&1; then
+    NVERBS=$(echo "$ADAPTER_OUT" | jq -r '.configured // 0' 2>/dev/null || echo "?")
+    echo "[PASS] dispatchBackend: all $NVERBS verbs valid — orchestrator suite can dispatch"
+  else
+    echo "[WARN] dispatchBackend is present but incomplete or malformed."
+    echo "$ADAPTER_OUT" | jq -r '.verbs | to_entries[] | select(.value.state != "ok") | "       - \(.key): \(.value.state) — \(.value.problems // [] | join("; "))"' 2>/dev/null \
+      || echo "       (could not parse the adapter report; run the check above by hand)"
+    echo "       Fix: each verb is a command template. Placeholders are a CLOSED set —"
+    echo "       $(echo \"$ADAPTER_OUT\" | jq -r '.known_placeholders | map(\"{\"+.+\"}\") | join(\" \")' 2>/dev/null || echo '{name} {messageFile} {session}'). There is no {message}: a brief or a"
+    echo "       status line is agent-composed prose and travels as a PATH, never as an argument."
+    echo "       Affected skills degrade to a documented manual step; they do not silently no-op."
   fi
 fi
 ```
