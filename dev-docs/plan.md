@@ -138,6 +138,8 @@ pass's scope.)
 | **FB-0110** | `origin/conductor/track-a-410-orchestrator-skill-suite` | `FB-0110-transcribe-proven-judgment-and-surface-record-conflicts.md` |
 | **FB-0111** | `origin/conductor/reviewer-verdict-context-conditional-fb-0111` (open PR **#154**) | `FB-0111-a-reviewers-verdict-must-be-conditional-on-its-own-context-r.md` |
 
+**Re-swept again at the 2026-09-17 rebase onto `65222e7`** (main moved: #151, #153, #154 all merged; main is v1.43.0, FB high-water **FB-0111**, which #154 landed). v1.46.0 / FB-0112 / FB-0113 re-verified free against every remote branch. The claim assumes the orchestrator's recommended merge order **S → A → B**: `ship-fb-0109-manifest-fence-injection` takes v1.44.0, `track-a-410-orchestrator-skill-suite` takes v1.45.0, this branch takes v1.46.0 — a clean sequence with no gap. If either lands out of order or drops its claim, re-sweep and take the next free minor rather than inheriting this number.
+
 v1.46.0, FB-0112 and FB-0113 verified free against **every** remote branch, not just the recently-touched ones. Two open PRs now exist (**#153** the §9.3 spike, **#154** the lesson harvest), so the "zero open PRs, therefore branches are the only signal" premise is retired. **Re-sweep again at rebase:** on a program running five-plus parallel workers, a claim sweep has a shelf life measured in hours, not days.
 **Source of truth:** `dev-docs/handoffs/d1-prototype-first-gate.md` § Phase 2 + §7 + §9.2 + §9.4; `dev-docs/feedback/FB-0081-*` (definitive spec, user-directed); `dev-docs/feedback/FB-0080-*` (why this exists).
 
@@ -405,7 +407,7 @@ The one genuine coupling that remains is prose, and it is mitigated by construct
 
 *Every box below is pinned by `plugins/flow/evals/run_prototype_gate_evals.py` unless another harness is named. All checks are offline + stdlib, matching the existing convention.*
 
-**The trigger (§9.2 / FB-0113)**
+*The trigger (§9.2 / FB-0113)*
 
 - [ ] `trigger` returns `pre_execution_gate: "prototype"` for `uiSurface: true` + `role: designer` + `Mode: feature`, and for `uiSurface: true` + `role` unset + a brief-declared **`Surface: visual`** + `Mode: feature`. (An earlier draft's second row said "a visual request" — the un-pinnable phrase §2.3 rejects — which would have had the fixture author a field the engine is forbidden to accept. The pinned contract and the design it pins must name the same input.) → `test_trigger_prototype_arms`, two fixture rows
 - [ ] `trigger` returns `path: "collapsed"` + `pre_execution_gate: "plan"` when the trigger conditions hold but the brief declares `Mode: tiny`, and still reports `brief_required: true` (§7's collapse is to Clarify + brief, not to nothing). → `test_trigger_collapse_tiny`
@@ -425,7 +427,7 @@ The one genuine coupling that remains is prose, and it is mitigated by construct
 - [ ] The **arming check** reads config only and returns a verdict with no brief present — the property that lets Step 2 choose a branch before the brief is written. → `test_arming_check_is_config_only`
 - [ ] Both `Surface` values are exercised: `Surface: visual` + `role` unset + `uiSurface: true` ⇒ prototype-first; `Surface: non-visual` under otherwise-identical config ⇒ classic. A brief with no `Surface` line and `role` unset ⇒ classic + `[WARN]`; with `role: designer` ⇒ prototype-first without it. → `test_surface_arms`, four fixture rows
 
-**"A plan always exists" (§2.5 — pulled forward from Phase 3)**
+*"A plan always exists" (§2.5 — pulled forward from Phase 3)*
 
 - [ ] `gate-execute` reads **only committed state** — the plan doc's `**Pre-execution gate:**` declaration and `**Prototype approved:**` digest — and makes **no** `trigger` call, so no verdict depends on gitignored `.flow/`. Asserted by running it with `.flow/` absent entirely. → `test_gate_execute_reads_committed_state_only`
 - [ ] `gate-execute` returns `ok: false`, naming the branch and the resolved `planPath`, when the plan doc declares `Pre-execution gate: prototype` and resolves **no active Spec-walk block**. → `test_gate_execute_blocks_missing_plan`
@@ -435,7 +437,7 @@ The one genuine coupling that remains is prose, and it is mitigated by construct
 - [ ] `gate-execute` resolves the active block through the shared `walk_extract.py`, not a private parser — asserted by importing the same module the other four consumers import. → `test_gate_execute_uses_shared_parser`
 - [ ] An all-DEMOTED plan doc (every block belonging to a merged PR) reads as **no active block**, not as a pass — the v1.30.0 `all_demoted` lifecycle bug, in a fifth consumer. → `test_gate_execute_all_demoted`
 
-**The artifact contract (§9.4 / FB-0112)**
+*The artifact contract (§9.4 / FB-0112)*
 
 - [ ] `contract` returns `ok: true` for an explicit `platform: web` prototype with no Feasibility block — the single exempt value, since there the prototype *is* the medium. → `test_contract_web_exempt`
 - [ ] `contract` returns `ok: true` for **`platform: library` + `uiSurface: true`** (flow's own config) when the block carries only the one-line browser-delivery declaration — the case that would otherwise make gate 1 unreachable in this repo. → `test_contract_browser_delivery_one_liner`
@@ -447,7 +449,7 @@ The one genuine coupling that remains is prose, and it is mitigated by construct
 - [ ] `contract` returns `ok: true` for a complete native prototype **and** lists every non-`native-standard` row in `must_surface[]`, so the gate-1 presentation cannot omit the expensive ones. → `test_contract_native_complete`
 - [ ] Deleting the Feasibility block from a passing native fixture flips the verdict to `ok: false` — the presence assertion is paired with the row-validity prohibition. → `test_contract_deletion_not_green`
 
-**Gate-1 approval capture**
+*Gate-1 approval capture*
 
 - [ ] `approve` exits non-zero and writes **no** record when the quote file is absent, empty, or whitespace-only. → `test_approve_requires_quote`, three fixture runs
 - [ ] `approve` exits non-zero and writes no record when `contract` is not `ok`. → `test_approve_requires_contract`
@@ -455,7 +457,7 @@ The one genuine coupling that remains is prose, and it is mitigated by construct
 - [ ] `verify` returns `ok: false` with a distinct reason when the prototype file changed after approval (sha mismatch) and when the stamp disagrees with the current workspace — kept distinct, never collapsed. → `test_verify_detects_drift`, two fixture runs
 - [ ] The engine's argument parser exposes **no** `--quote` string flag (negative) **and** `--quote-file` is present and functional (positive) — FB-0108's interface rule, pinned on both halves. → `test_quote_file_only`
 
-**The skill**
+*The skill*
 
 - [ ] `prototype/SKILL.md` names both self-check `subagent_type`s (`flow:lens-design-engineer`, `flow:lens-ux-designer`), states the one-tool-message fan-out, and names the annotation-layer injection path by its single source file. → `test_skill_composition`
 - [ ] `prototype/SKILL.md` calls `Skill("flow:review-brief")` **and passes the canonical brief path as its argument** — both halves, since the call alone would silently take review-brief's no-argument transcript branch, which is the state §2.3 rejects. → `test_composes_review_brief`
@@ -474,7 +476,7 @@ The one genuine coupling that remains is prose, and it is mitigated by construct
 - [ ] Prototype scratch lives under repo-local `.flow/` with the symlink refusal (CWE-59) + `.gitignore` seeding idiom + the `flow-detached` fallback literal. → `run_scratch_isolation_evals.py`, **with `("prototype", PROTOTYPE_SKILL)` appended to its `idiom_sites` list** — that list is hand-written (`run_scratch_isolation_evals.py:281`), not derived from disk, so without the edit this box passes while nothing ever reads `prototype/SKILL.md`. The harness's own comment names the hazard: *"a guard covering 3 of 6 sites is the exact fan-out-contradiction class this harness exists to prevent."*
 - [ ] `run_jq_guard_evals.py` picks `/flow:prototype` up **without** being edited — its `jq_using_skills()` derives from disk by matching `jq -[re]` + `flow.config.json` in the body, which the skill satisfies by reading `role`/`uiSurface`/`platform`. Asserted by checking the skill's name appears in the harness's derived target list at runtime, so "it's covered" is measured rather than assumed — the mistake the two boxes above made. → `test_jq_guard_covers_prototype`
 
-**The docs (the FB-0010 fan-out this PR is most exposed to)**
+*The docs (the FB-0010 fan-out this PR is most exposed to)*
 
 - [ ] `workflow.md` Step 2 documents both paths, each with exactly one human gate, and the loop ASCII block shows the fork. → `test_workflow_step2_fork`
 - [ ] The Step 8/9 prose **asserts the replacement argument** (a prototype-first run's authoritative human look happened at gate 1; Step 8 is still not a gate) **and** no longer asserts that visual sign-off can *only* fold into merge — both halves, since the negative alone would pass on a deleted paragraph. → `test_not_a_third_gate_rewrite`
@@ -500,12 +502,12 @@ The one genuine coupling that remains is prose, and it is mitigated by construct
   As with §5's other sweep, **the pattern is the contract and the list is only its current output**. No survivor asserts a single *unconditional* plan gate, and **every survivor is either corrected in this PR or carries a recorded reason it is deliberately unchanged** — correction or a stated exemption, never bare enumeration, since a list of known-wrong lines is not a fix. → the sweep recorded in `dev-docs/history/2026-09-16-*.md`
 - [ ] The mirrored gate sentence is consistent across **all three** copies — `plugins/flow/skills/general/SKILL.md`, `.claude/rules/general.md`, and `CLAUDE.md` — and `.claude/rules/general.md`'s header still declares the mirror relationship it depends on. → `test_mirrored_gate_sentence`, looping all three files
 
-**One real run, because A6 says there is one available (not fixtures-only)**
+*One real run, because A6 says there is one available (not fixtures-only)*
 
 - [ ] The front half runs end-to-end **in this repo**: a brief declaring `Surface: visual` + `Mode: feature` clears the trigger, `/flow:review-brief` runs, a prototype is produced and self-checked, `contract` passes via the one-line browser-delivery declaration (`platform: library`), and `approve` records a real human quote. The transcript of that run is recorded in the history entry. → the recorded run, cited by path; explicitly a **one-shot workspace observation**, not a reviewer re-run, and labelled as such (the shape `dev-docs/history/2026-09-13-dogfood-version-provenance.md` uses)
 - [ ] That run's own `trigger` JSON is committed as a fixture, so the live path and the eval matrix are pinned to the same engine output rather than agreeing by coincidence. → `fixtures/prototype-gate/this-workspace-*.json`
 
-**The handoff**
+*The handoff*
 
 - [ ] `d1-prototype-first-gate.md`'s four Phase-2 checkboxes are checked with their verification named, and all four Phase-2-gates-on-§9.3 statements (Status banner, §0 step 7, §8 preamble, §13 "Spike (before PR 3)") are corrected to gate Phase 3, with §4's unsatisfiability argument recorded. → the diff
 
