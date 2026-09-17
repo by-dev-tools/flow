@@ -85,6 +85,21 @@ print("\n§1  four-axis plan gate — all-green, each single-red, each undeclare
 r = G.classify_plan(SAFE_FILES, **GREEN)
 check("all four axes green ⇒ approve", r["verdict"] == "approve", json.dumps(r["red_axes"]))
 check("all-green audit line says so", "all four axes green" in r["audit_line"], r["audit_line"])
+check("the audit line carries every axis AND the pattern source — it is the DURABLE record, "
+      "and a stderr warning dies with the turn",
+      all(f"{k}=" in r["audit_line"] for k in ("stakes", "reversible", "confidence", "taste"))
+      and "patterns=default" in r["audit_line"], r["audit_line"])
+# A malformed project slot must be visible in the plan doc, not only on stderr: otherwise
+# the record cannot distinguish green-against-this-project's-machinery from
+# green-against-the-defaults-because-the-slot-was-broken.
+_BAD_CFG = Path(_TMP) / "bad-slot.json"
+_BAD_CFG.write_text(json.dumps({"sensitivePaths": "not-a-list"}), encoding="utf-8")
+_rb = G.classify_plan(SAFE_FILES, **{**GREEN, "config_path": str(_BAD_CFG)})
+check("a malformed sensitivePaths slot is NAMED in the audit line, not just on stderr",
+      "slot malformed" in _rb["audit_line"] and "DEFAULTS used" in _rb["audit_line"], _rb["audit_line"])
+check("  ... and it is distinguishable from a clean default run (a line that always says "
+      "`patterns=default` would fail this)",
+      _rb["audit_line"] != r["audit_line"] and _rb["pattern_source"] == "default-after-error")
 
 r = G.classify_plan(["src/auth/session.ts"], **GREEN)
 check("red stakes ⇒ escalate", r["verdict"] == "escalate" and r["red_axes"] == ["stakes"])
@@ -174,6 +189,14 @@ _r = json.loads(subprocess.run(_cmd[:-1] + [str(Path(_TMP) / "absent.json")],
                                capture_output=True, text=True).stdout)
 check("an unreadable --plan-result is ignored and falls to the non-delegable branch",
       _r["classification"] == "anything-else")
+# The load-bearing half: a bad artifact must NOT quietly fall back to the retyped value
+# the caller also passed. An implementation that kept --plan-axes-green would pass every
+# assertion above.
+_pr.write_text('{"not": "a plan"}', encoding="utf-8")
+_proc = subprocess.run(_cmd + ["--plan-axes-green", "yes"], capture_output=True, text=True)
+check("a non-plan --plan-result does NOT fall back to a retyped --plan-axes-green",
+      json.loads(_proc.stdout)["classification"] == "anything-else" and "⚠️" in _proc.stderr,
+      _proc.stdout[:160])
 
 check("rollout rung is crawl", G.ROLLOUT_RUNG == "crawl")
 src = GATE_LIB.read_text(encoding="utf-8")
@@ -217,9 +240,16 @@ check("rendered escalation promises the relay, not a workspace visit",
 check("a valid decision whose TITLE contains 'BLOCKER' still reports ok "
       "(the exit code is a flag, not a substring sniff of the output)",
       G.format_escalation({**base, "title": "Ship the BLOCKER fix?"})[1] is True)
-check("a SOLO session (originating_session: self) formats instead of hard-refusing",
-      G.format_escalation({**base, "originating_session": "self"})[1] is True
-      and "yours to make here" in G.format_escalation({**base, "originating_session": "self"})[0])
+for _lit in ("self", "me", "here", "SELF"):
+    _txt, _ok = G.format_escalation({**base, "originating_session": _lit})
+    check(f"a SOLO session (originating_session: {_lit!r}) formats instead of hard-refusing",
+          _ok is True and "No worker to relay to" in _txt, _txt[:120])
+# PAIRED with the refusal, so the accept and refuse halves cannot collapse into each other.
+check("  ... while a BLANK originating_session still refuses (the exception is the three "
+      "literals, not 'anything falsy')",
+      G.format_escalation({**base, "originating_session": "   "})[1] is False)
+check("  ... and a real session id still promises the relay",
+      "never need to open its workspace" in G.format_escalation(base)[0])
 for missing in ("recommendation", "confidence", "justification"):
     d = dict(base); d[missing] = ""
     check(f"missing {missing} ⇒ BLOCKER, not a best-effort render",
@@ -229,6 +259,20 @@ check("missing originating_session ⇒ BLOCKER (rule 5's return leg has nowhere 
       "BLOCKER" in G.format_escalation(d)[0] and "rule 5" in G.format_escalation(d)[0])
 d = dict(base); d["confidence"] = "pretty sure"
 check("unparseable confidence ⇒ BLOCKER", "BLOCKER" in G.format_escalation(d)[0])
+# The escalation must carry the engine's own red-axis fact, not the agent's retyping.
+_redr = G.classify_plan(["src/auth/x.ts"], **GREEN)
+_txt, _ok = G.format_escalation({**base, "plan_result": _redr})
+check("an escalation fed the plan result renders `Escalated because:` verbatim from the engine",
+      _ok and "**Escalated because:**" in _txt and "stakes=red" in _txt, _txt[:200])
+_cor = G.classify_plan(SAFE_FILES, prototype_attached=True, **GREEN)
+_txt2, _ = G.format_escalation({**base, "plan_result": _cor})
+check("  ... and the carve-out variant renders the carve-out text",
+      "**Escalated because:**" in _txt2 and "prototype" in _txt2)
+_txt3, _ok3 = G.format_escalation(base)
+check("  ... while an escalation WITHOUT the artifact still renders complete (three labels)",
+      _ok3 and all(l in _txt3 for l in ("**Recommendation:**", "**Confidence:**", "**Why:**"))
+      and "**Escalated because:**" not in _txt3)
+
 d = dict(base); d["other_threads"] = ["#1 at gate", "#2 shipping"]
 out, _ok = G.format_escalation(d)
 check("other threads render as ONE line, not a second ask (rule 4)",

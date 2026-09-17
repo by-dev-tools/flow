@@ -117,7 +117,7 @@ _TEMPLATE_FORBIDDEN = [";", "|", "&", "`", "$(", ">", "<", "\n", "\\"]
 # not expand. Silently different from what the author wrote, which is the one outcome
 # this module refuses to produce, so it is called out at validation rather than left to
 # surprise someone.
-_TEMPLATE_WARN = ["~"]
+_TEMPLATE_REJECT_UNEXPANDED = ["~/"]
 
 
 def load_backend(config_path="flow.config.json"):
@@ -192,7 +192,11 @@ def validate(backend):
             # while this half stayed open. `render()` computes `found - values`; `validate`
             # must compute the same thing from the contract, or the two disagree about what
             # a valid template is.
-            for warn in _TEMPLATE_WARN:
+            # `~/` (path-leading), not a bare `~` anywhere: a literal filename may
+            # legitimately contain one. Named REJECT rather than WARN because it does
+            # hard-fail validation — a name that undersells what the code does is how a
+            # reader learns to distrust the names.
+            for warn in _TEMPLATE_REJECT_UNEXPANDED:
                 if warn in tmpl:
                     problems.append(
                         f"template contains {warn!r}, which is NOT expanded — values are quoted, so "

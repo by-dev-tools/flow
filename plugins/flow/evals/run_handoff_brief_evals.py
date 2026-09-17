@@ -233,13 +233,29 @@ check("  ... and they are still reported as matching nothing, so the caller can 
       and _o["globs_matching_nothing_but_sensitive_shaped"] == [])
 
 # The predicate itself, both directions, so the rule is pinned independently of the CLI.
+# BARE-DIRECTORY forms are in this table deliberately. Every case here previously ended
+# in `/**` or a file wildcard, which is why a fail-open on the bare form survived a
+# coverage pass: the fixtures pinned one spelling of the input, and the bug lived in the
+# other. `src/auth` and `src/auth/**` name the same scope, and the bare form is the one a
+# human writes by hand.
 for _g, _want in (("db/migrations/**", True), ("src/auth/**", True), (".github/workflows/**", True),
                   ("api/schema/**", True), ("config/*.sql", True),
-                  ("docs/**", False), ("src/ui/**", False), ("notes/*.md", False)):
+                  ("src/auth", True), ("db/migrations", True), ("secrets", True),
+                  (".github/workflows", True), ("src/auth/", True),
+                  ("**", True), ("*", True), ("", True),
+                  ("docs/**", False), ("src/ui/**", False), ("notes/*.md", False),
+                  ("docs", False), ("src/ui", False)):
     check(f"glob_names_sensitive_area({_g!r}) == {_want}",
           SP.glob_names_sensitive_area(_g, DEF) is _want)
 # The stated residual, pinned so it is a decision on the record rather than a surprise:
 # a broad glob answers False, and the plan gate's stakes axis is what catches it later.
+# The extensional side had the same blindness: a bare directory is not itself a tracked
+# path, so matching it literally found nothing and reported the glob as empty.
+_tracked = ["src/auth/login.ts", "src/ui/Button.tsx", "docs/guide.md"]
+_exp, _empty = SP.expand_globs(["src/auth"], _tracked)
+check("a bare-directory glob expands to the files under it (not to nothing)",
+      _exp == ["src/auth/login.ts"] and _empty == [], f"{_exp} {_empty}")
+
 check("a broad `src/**` answers False — the documented residual, caught downstream by "
       "the gate's stakes axis over the ACTUAL changed files",
       SP.glob_names_sensitive_area("src/**", DEF) is False)
@@ -288,6 +304,10 @@ check("  ... specifically for having no durable pointer",
       any(f["id"] == "no-durable-reference" for f in _r["findings"]))
 check("a runnable instruction is not counted as a pointer",
       B.check("re-derive with listWorkers and dispatchBackend")["durable_references"] == [])
+# PAIRED: the same skeleton plus ONE real pointer passes. Without this half, the check
+# could be satisfied by rejecting every brief.
+_r2 = B.check(SKELETON.replace("## In flight\n", "## In flight\n- #12 at its plan gate: https://example.invalid/org/repo/pull/12\n"))
+check("  ... and the SAME skeleton plus one real pointer is accepted", _r2["ok"], json.dumps(_r2["findings"])[:200])
 
 print("\n§7  fail-safe direction — every degraded path classifies SENSITIVE")
 # Pattern translation escapes everything that is not a wildcard, so odd pattern
@@ -363,6 +383,16 @@ for _bad, _label in (("*a*a*a*a*a*a*a*a*a*a*a*a*b", "nested-quantifier"),
     check(f"a {_label} pattern is refused in bounded time (<1s)", _el < 1.0, f"{_el:.2f}s")
     check(f"  ... and refusing classifies SENSITIVE, naming the pattern ({_label})",
           _r["sensitive"] is True and _r.get("unsafe_patterns"), json.dumps(_r)[:160])
+# Pin the BUDGET, not the constant. `_MAX_WILDCARDS` was 12 and measured 54.9s on a
+# 40-char path — the bound admitted the exact shape it exists to refuse, because it was
+# set by eyeballing rather than by measuring. A wall-clock assertion cannot drift.
+_worst = "*a" * SP._MAX_WILDCARDS + "*b"
+_t0 = _time.time(); SP.classify(["a" * 60], [_worst]); _el = _time.time() - _t0
+check(f"the WORST pattern the bounds admit ({SP._MAX_WILDCARDS} wildcards) matches in "
+      f"under 0.5s — the budget, not the constant", _el < 0.5, f"{_el:.2f}s")
+check("every shipped default is comfortably inside the wildcard bound",
+      max(p.count("*") + p.count("?") for p in DEF) <= SP._MAX_WILDCARDS - 2)
+
 check("an ordinary pattern is NOT refused as pathological",
       "unsafe_patterns" not in SP.classify(["src/auth/x.ts"], DEF))
 check("collapsing repeated `**/` preserves meaning",

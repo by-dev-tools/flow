@@ -117,14 +117,7 @@ That is the audit trail the rollout is earned with.
 
 ## 4. Format what escalates — and give the answer somewhere to go
 
-```sh
-python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/gate/lib/gate-classify.py" format \
-  --decision-file .flow/gate-decision.json
-```
-
-Write the JSON with the **Write tool** (`title`, `recommendation`, `confidence`, `justification`, `originating_session`, `other_threads[]`), never as a shell string — the justification is prose about code and routinely contains backticks.
-
-§4 is reachable without step 1 (merge mode and the rule-7 check both land here), so it needs the scratch preamble too — one of three guarded sites is not a guarded skill:
+**Run this FIRST — before the Write tool call below, not after it.** §4 is reachable without step 1 (merge mode and the rule-7 check both land here), so it needs its own scratch preamble; and a guard placed after the write it protects is decoration. One of three guarded sites is not a guarded skill.
 
 ```sh
 [ -L .flow ] && { echo "⚠️ BLOCKER: .flow is a symlink — refusing to write scratch through it." >&2; exit 1; }
@@ -137,6 +130,13 @@ mkdir -p .flow
 # and any added later.
 find .flow -maxdepth 1 -type l | grep -q . && { echo "⚠️ BLOCKER: .flow contains a symlink — refusing to write scratch (a committed .flow/<name> link would redirect this write outside the repo)." >&2; exit 1; }
 ```
+
+```sh
+python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/gate/lib/gate-classify.py" format \
+  --decision-file .flow/gate-decision.json
+```
+
+Write the JSON with the **Write tool** (`title`, `recommendation`, `confidence`, `justification`, `originating_session`, `other_threads[]`), never as a shell string — the justification is prose about code and routinely contains backticks.
 
 The renderer refuses to format an escalation that is missing the recommendation / confidence / justification triple, and refuses one with **no `originating_session`**. That second refusal is the one people skip: the seat is the single human-facing decision surface **in both directions**. An escalation is not finished when it is presented — it is finished when the human's answer has been **relayed back** to the worker that raised it, from this seat, via the backend's message verb. A human should never have to open N worker workspaces to keep N workstreams moving; that is the attention cost the seat exists to remove, and routing approvals through worker chats reintroduces it in full.
 

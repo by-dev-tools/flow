@@ -88,6 +88,20 @@ The second caught the finding that matters most for how this repo works. `sensit
 
 **Both coverage passes reported the diff was truncated at the 60 KB cap**, so `brief-check.py` and part of `gate-classify.py` were not audited. Recorded rather than glossed: the declared criteria cover those files, but the coverage audit itself did not see them, and "the auditor did not look" is not "the auditor found nothing."
 
+## What the delta re-reviews and the scoped coverage pass caught
+
+The rigor gate refused the first ship attempt: `/flow:audit-skips` saw that the staff-review marker was stale, because the security and coverage fixes had moved the source *after* the review. That is the gate working — so the lenses re-ran over the delta, and found three more blockers plus five under-declarations.
+
+**The fail-open on the most natural way a human writes an owned path.** `glob_names_sensitive_area` probed by wildcard substitution only, so a bare directory — `src/auth`, `db/migrations`, `secrets`, `.github/workflows` — probed as itself, and `**/auth/**` compiles to `(?:[^/]+/)*auth/.*`, which needs a trailing segment. All of them answered `False`. **Worse than the documented greenfield residual**, because those directories are live and populated, and `expand_globs` missed them too (a directory is not itself a tracked path) — so both the extensional and the intensional check said "not sensitive." Fixing it introduced a second bug immediately: treating every wildcard-less glob as a directory broke `config/*.sql`, which is a *file* pattern compiled as `config/*.sql/**`. The resolution is that both spellings are generated and **each is matched against its own regex** — deriving one regex and probing the other was the actual mistake. The same missing-probe root cause also made a bare `**` answer `False`, so a worker owning the whole repository would not have been floored; closed by the same fix.
+
+**The ReDoS bound did not bound.** `_MAX_WILDCARDS = 12` admitted `*a*a*…*b` at exactly 12 wildcards and 24 characters — the precise shape the module's own comment cites as "did not terminate in 25s" — and the reviewer measured **54.9 s** on a single 40-char path, multiplied by every path in a changed-file set. The measured curve (8 → 0.41 s, 9 → 1.70 s, 10 → 6.08 s, 11 → 19.3 s, 12 → 54.9 s) shows the constant was chosen by eyeballing rather than by measuring. It is 6 now, and **the eval pins a wall-clock ceiling rather than the constant**, so it cannot drift back up.
+
+**A guard placed after the write it protects.** `/flow:gate` §4's scratch preamble sat *below* the Write-tool call it was meant to guard — and its own prose said "§4 is reachable without step 1, so it needs the scratch preamble too." An agent reading top-to-bottom on the merge-mode path would have written through a possibly-symlinked file before the guard ran.
+
+**And the scoped coverage pass — on two files nothing had ever audited — found five under-declarations.** The previous two passes both truncated at the 60 KB diff cap; re-running scoped to just those two files fit in 37 KB, which closed the gap for the price of one spawn. The sharpest finding was not a missing criterion but a **contradicting** one: criterion 6 declared that an escalation without a return address is *refused*, while the code accepts `self`/`me`/`here` for a solo session. An implementation that refused `self` alongside `""` would have passed criterion 6 exactly as written. Both are now declared, paired so the accept and refuse halves cannot collapse into each other.
+
+**The pattern worth naming across all of it:** the fixtures kept pinning one spelling of an input while the bug lived in the other. `glob_names_sensitive_area`'s table tested only trailing-wildcard globs — which is precisely why a bare-directory fail-open survived a coverage pass. That is the same shape as the brief-check positive being satisfied by its own boilerplate, one level down.
+
 ## Open, and not silently absorbed
 
 **The field manual's satisfied deletion criteria — owed here, sequenced behind a rebase.** This PR satisfies three of them:

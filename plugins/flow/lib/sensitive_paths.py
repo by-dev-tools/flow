@@ -112,6 +112,10 @@ DEFAULT_SENSITIVE_PATHS = [
     # is not paranoia here; it is the one entry whose absence makes every other
     # entry optional.
     "**/flow.config.json",
+    # Note `**/.flow/**` does its work through the GLOB entry point rather than the file
+    # one: a project that gitignores `.flow/` (flow's own scaffolding does) never sees it
+    # in a changed-file list. It still matters for a consumer who does not, and for any
+    # worker whose owned paths name it.
     "**/.flow/**",
 ]
 
@@ -122,7 +126,13 @@ DEFAULT_SENSITIVE_PATHS = [
 # 50-char path; ten adjacent `**/` groups took 1.3s and grow exponentially. A gate that
 # hangs is a gate that never returns a verdict, which is worse than either answer.
 _MAX_PATTERN_LEN = 200
-_MAX_WILDCARDS = 12
+# Measured on a 40-char path, `*a*a*…*b`: 8 wildcards 0.41s, 9 → 1.70s, 10 → 6.08s,
+# 11 → 19.3s, 12 → 54.9s (~3.5× per wildcard). A limit of 12 therefore ADMITTED the
+# exact shape this guard exists to refuse — the bound was set by eyeballing rather than
+# by measuring, and the eval now pins a wall-clock ceiling so it cannot drift back up.
+# 6 measures at ~0.02s and is far above any legitimate policy glob (the 18 defaults use
+# at most 3).
+_MAX_WILDCARDS = 6
 
 
 def _glob_to_regex(pattern: str) -> str:
@@ -235,7 +245,7 @@ def load_patterns(config_path: str = "flow.config.json") -> tuple[list[str], str
         merged = list(DEFAULT_SENSITIVE_PATHS)
         merged.extend(p for p in cleaned if p not in merged)
         return merged, "config+defaults", warnings
-    if not cleaned:
+    else:
         warnings.append(
             f"{PREFIX} ⚠️ flow.config.json.sensitivePaths is present but empty. An empty list "
             f"would classify EVERY diff as low-stakes, so it is treated as unset and the "
@@ -243,7 +253,6 @@ def load_patterns(config_path: str = "flow.config.json") -> tuple[list[str], str
             f"the plan and waive at the gate — do not express it as an empty slot."
         )
         return list(DEFAULT_SENSITIVE_PATHS), "default-after-error", warnings
-    return cleaned, "config", warnings
 
 
 def expand_globs(globs, tracked):
@@ -269,7 +278,13 @@ def expand_globs(globs, tracked):
         g = g.strip()
         if not g:
             continue
-        rx = re.compile(_glob_to_regex(_normalize(g)))
+        ng = _normalize(g)
+        # Same directory rule as the intensional probe: a bare `src/auth` owns
+        # `src/auth/**`, and matching it literally would find nothing (a directory is
+        # not a tracked path) and report the glob as empty.
+        if ng and not ng.endswith(("*", "?")):
+            ng = ng.rstrip("/") + "/**"
+        rx = re.compile(_glob_to_regex(ng))
         hits = [t for t in norm_tracked if rx.match(t)]
         if hits:
             matched.extend(hits)
@@ -305,23 +320,40 @@ def glob_names_sensitive_area(glob: str, patterns) -> bool:
     the cheaper, earlier signal; the gate is the one that must not be wrong.
     """
     g = _normalize(glob)
-    try:
-        grx = re.compile(_glob_to_regex(g))
-    except re.error:  # pragma: no cover - _glob_to_regex escapes everything
+    if not g or not g.strip("*?/"):
+        # An empty glob, or one made only of wildcards, names the WHOLE TREE — which
+        # necessarily includes every sensitive area. Owning the entire repository is the
+        # least low-stakes ownership there is.
         return True
-    probes = set()
-    for depth in (1, 2):
-        probe = g.replace("**", "/".join(["x"] * depth))
-        probe = probe.replace("*", "x").replace("?", "x")
-        probe = re.sub(r"/+", "/", probe).strip("/")
-        if probe:
-            probes.add(probe)
-    for pat in patterns:
-        prx = re.compile(_glob_to_regex(_normalize(pat)))
-        for probe in probes:
-            if grx.match(probe) and prx.match(probe):
+
+    # Two spellings of one scope. `src/auth` and `src/auth/**` name identical ownership,
+    # and the bare form is the one a human writes by hand — without it `src/auth`,
+    # `db/migrations`, `secrets` and `.github/workflows` all answered False, because
+    # `**/auth/**` compiles to `(?:[^/]+/)*auth/.*` and needs a trailing segment. Those
+    # directories are live and populated, and `expand_globs` misses them too (a directory
+    # is not itself a tracked path), so both checks said "not sensitive."
+    #
+    # But a bare form is not always a directory: `config/*.sql` is a file pattern. So both
+    # candidates are generated and **each is matched against its OWN regex**. Deriving one
+    # regex and probing the other is what broke `config/*.sql` — it was compiled as
+    # `config/*.sql/**`, which its own probe could never satisfy.
+    candidates = {g}
+    if not g.endswith(("*", "?")):
+        candidates.add(g.rstrip("/") + "/**")
+
+    compiled_pats = [re.compile(_glob_to_regex(_normalize(pat))) for pat in patterns]
+    for c in candidates:
+        crx = re.compile(_glob_to_regex(c))
+        for depth in (1, 2):
+            probe = c.replace("**", "/".join(["x"] * depth))
+            probe = probe.replace("*", "x").replace("?", "x")
+            probe = re.sub(r"/+", "/", probe).strip("/")
+            if not probe or not crx.match(probe):
+                continue
+            if any(prx.match(probe) for prx in compiled_pats):
                 return True
     return False
+
 
 def classify(paths, patterns) -> dict:
     """Return {'sensitive': bool, 'matches': [{'path','pattern'}...]}.
