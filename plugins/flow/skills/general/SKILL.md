@@ -42,6 +42,7 @@ Every plan declares one of three modes:
 - No dead code, commented-out code, unused imports, or placeholder files.
 - If something isn't needed yet, don't create it.
 - **New scope discovered mid-execution: surface to the user, don't silently absorb.** Update the plan with a fresh confidence verdict for the new assumption, get approval, then continue. This is the implicit human gate during Execute (workflow.md step 3).
+- **An orphaned rule earns its place on its own merits, not on homelessness.** When a doc section retires and leaves behind a rule nothing else covers, the test before adopting it into a skill is: *would you add this line to this skill if the doc it came from still existed?* If yes, add it. If no, it is being carried because it has nowhere else to go — and a skill that accumulates every retiring doc's orphans grows monotonically, one well-intentioned rescue at a time.
 
 ## Decision tracking
 

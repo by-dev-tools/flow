@@ -220,8 +220,23 @@ that selects the wrong PR's criteria. The cheap moment to catch it is before the
 A=$(gh pr view <n> --json files --jq '[.files[].path]|sort|.[]')
 B=$(gh pr view <m> --json files --jq '[.files[].path]|sort|.[]')
 comm -12 <(echo "$A") <(echo "$B")            # the ONLY possible conflict sites
-git merge-tree $(git merge-base $HA $HB) $HA $HB | grep -c '^<<<<<<<'   # 0 = clean
+git merge-tree --write-tree --name-only "$HA" "$HB" >/dev/null 2>&1
+# exit 0 = clean merge; exit 1 = conflicts, and the command NAMES the conflicting files on stdout
 ```
+
+**Corrected 2026-09-18 ([#157](https://github.com/by-dev-tools/flow/pull/157)); the previous
+recipe could never report a conflict.** It read
+`git merge-tree $(git merge-base …) $HA $HB | grep -c '^<<<<<<<'`, and **old-form `merge-tree`
+emits diff-prefixed markers — `+<<<<<<<`, not `<<<<<<<` at column 0** — so a column-anchored grep
+matched nothing for *every* pair and the count was always `0 = clean`. Proved on
+[#156](https://github.com/by-dev-tools/flow/pull/156) × [#157](https://github.com/by-dev-tools/flow/pull/157),
+which it called clean and which actually conflict in three files
+(`.claude-plugin/marketplace.json`, `dev-docs/plan.md`,
+`plugins/flow/.claude-plugin/plugin.json`). Do not "simplify" it back: this is
+`.claude/rules/general.md` § Consistency item 3 — a check satisfiable by construction — shipped
+inside the very tool built to answer the queueing question, in the section that says *measure,
+never predict*. The modern form reports through its **exit code**, which cannot be silently
+matched away, and names the conflicting files as a bonus.
 
 Disjoint file sets are a *guarantee* of no textual conflict, not an estimate. Overlap is not a
 guarantee of conflict — two PRs can add entries to different sections of one file and merge fine —
