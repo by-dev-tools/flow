@@ -665,16 +665,15 @@ def test_injection(td: str) -> None:
             if (T / n).exists():
                 expect_true(f"{label}: payload did NOT execute (sentinel {n})", False, "EXECUTED")
                 (T / n).unlink()
-        # The text arrives intact EXCEPT for the two deliberate normalisations, and the
-        # expectation is computed with the engine's OWN transforms rather than hand-typed —
-        # a hand-typed expectation is how P5 came to assert "arrives intact" for a payload
-        # whose whole danger was that it DID arrive intact.
-        # The engine's REAL chain, including the provenance note it appends when a
-        # substitution fires. Recomputing it here rather than hand-typing is the whole point:
-        # a hand-typed expectation is how P5 came to assert "arrives intact" for a payload
-        # whose danger was that it DID arrive intact.
+        # The text arrives intact EXCEPT for the THREE deliberate normalisations —
+        # newline-collapse, fence-defang, and (since v1.44.0) field-separator defang — and the
+        # expectation is computed by running the engine's OWN chain rather than hand-typing it.
+        # That is the whole point: a hand-typed expectation is how P5 came to assert "arrives
+        # intact" for a payload whose entire danger was that it DID arrive intact. It also means
+        # this count cannot silently go stale — `want` picks up a fourth transform for free; only
+        # the prose above and the label below have to be re-read when one is added.
         want = _ENGINE._defang_fences(_collapse(raw.strip()), source=str(f))
-        expect_true(f"{label}: text arrives intact (newline-collapse + fence-defang only)",
+        expect_true(f"{label}: text arrives intact (newline-collapse + fence/field defang only)",
                     want in r.stdout, f"want {want[:90]!r}\ngot  {r.stdout[:120]!r}")
         if MANIFEST_OPEN in raw or MANIFEST_CLOSE in raw:
             # PAIRED: defanging is not cosmetic — assert the live marker is GONE from the
@@ -759,6 +758,62 @@ def test_injection(td: str) -> None:
                out_c)
         expect(f"P22 {lbl}: waivable follows the REAL verb", got["waivable"], want_waivable, out_c)
 
+    # P23 — the SAME forgery as P22, but with the separator's leading whitespace varied.
+    # P22 used a single space and PASSED while the hole was wide open, because the defang
+    # matched the LITERAL " — needs:" while `_LINE_RE` matches `\s+—\s*needs:` — a whitespace
+    # CLASS. A TAB or an NBSP therefore matched the parser and missed the defang. Measured on
+    # the pre-fix tree: `--kind security --needs "secret rotation"` (an out-of-session verb ⇒
+    # class `blocked`, NOT waivable) parsed as needs='design decision' ⇒ class `ask`,
+    # `waivable: True`, verdict BLOCKED → DECIDE. A leaked-secret item became one-word-waivable
+    # from bytes the finding supplied.
+    #
+    # Two spaces were safe only by ACCIDENT — the single-space literal is a substring of it —
+    # which is exactly what made the literal look like it worked, and why P22 read as cover.
+    # The generalizable rule: a defense must match on the same grammar its consumer parses
+    # with; a literal guarding a regex is not a guard, it is a sample of one.
+    # RED against: reverting _FIELD_SEP_RE to the three literal _DEFANGED keys.
+    # Found by /flow:security-review on the FB-0109 branch.
+    for ws_lbl, ws in (("1 space", " "), ("TAB", "\t"), ("NBSP", "\xa0"),
+                       ("2 spaces", "  "), ("VTAB", "\x0b"), ("FORMFEED", "\x0c"),
+                       ("space+TAB", " \t"), ("NEL", "\x85")):
+        fp = pay("sepws", f"leaked key in config.yml{ws}— needs: design decision"
+                          f"{ws}— candidate resolutions: rotate later")
+        r = add(str(fp), kind="security", needs='"secret rotation"')
+        expect(f"P23 {ws_lbl}: accepted", r.returncode, 0, r.stderr)
+        man = Path(td) / f"sepws-{ws_lbl.replace(' ', '-').replace('+', '')}.md"
+        man.write_text(r.stdout, encoding="utf-8")
+        _rc, parsed = run(["parse", "--body-file", str(man)])
+        ent = json.loads(parsed)["entries"][0]
+        expect(f"P23 {ws_lbl}: the REAL --needs survives (forged verb must not win)",
+               ent["needs"], "secret rotation", parsed)
+        st = Path(td) / f"sepws-state-{ws_lbl.replace(' ', '-').replace('+', '')}.json"
+        run(["init-state", "--branch", "sepwstest", "--path", str(st)])
+        _rc2, out_c = run(["classify", "--entries-file", str(man), "--state-file", str(st),
+                           "--branch", "sepwstest"])
+        got = json.loads(out_c)["entries"][0]
+        expect(f"P23 {ws_lbl}: a secret-rotation item stays BLOCKED, not ask", got["class"],
+               "blocked", out_c)
+        expect(f"P23 {ws_lbl}: and stays NOT waivable", got["waivable"], False, out_c)
+
+    # P23 PAIRED POSITIVE (general.md rule 3). Every P23 assertion above is satisfiable by a
+    # defang so wide it mangles all prose, or by an _LINE_RE so narrow it matches nothing (an
+    # entry that fails to parse is DROPPED — the unsafe direction, and it would read green
+    # here). So assert the other half: honest prose that merely DISCUSSES a resolution verb
+    # is still accepted, still parses, and stays readable to the human.
+    fp = pay("sepprose", "the docs say to use needs: re-run here")
+    r = add(str(fp), kind="coverage", needs='"declare + fence"')
+    expect("P23 POSITIVE: prose discussing a verb is accepted, not refused", r.returncode, 0,
+           r.stderr)
+    man = Path(td) / "sepprose.md"
+    man.write_text(r.stdout, encoding="utf-8")
+    _rc, parsed = run(["parse", "--body-file", str(man)])
+    ents = json.loads(parsed)["entries"]
+    expect("P23 POSITIVE: it still parses to exactly one entry", len(ents), 1, parsed)
+    expect("P23 POSITIVE: with the producer's own verb", ents[0]["needs"], "declare + fence",
+           parsed)
+    expect_true("P23 POSITIVE: and the human can still read the phrase",
+                "needs: re-run" in r.stdout, r.stdout)
+
     # P15 — EVERY character `str.splitlines()` breaks on, because that is what
     # `parse_entries` consumes the manifest with. Eight of these eleven were untested and
     # U+2028 was a LIVE failure-open: one physical line appended, ZERO entries parsed,
@@ -810,6 +865,18 @@ def test_injection(td: str) -> None:
     secret.write_text("-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAsecret\n", encoding="utf-8")
     link = T / "evalpay-p8link.txt"
     _made.append(link)
+    # Clear a stale link before creating it, the same guard P13 below already uses. These
+    # payload files live in the repo's REAL `.flow/` (they must — `_read_text_arg` refuses
+    # any path outside it, so a payload rejected for its LOCATION cannot test its CONTENT),
+    # and the name is fixed. A run killed between here and the cleanup at the end of this
+    # function therefore leaves the symlink behind, and the NEXT run dies with an unhandled
+    # FileExistsError before a single assertion executes — red, but environmental, and
+    # indistinguishable at a glance from a real regression. Observed during the v1.44.0 ship:
+    # overlapping harness invocations produced three different failure sets, none of them a
+    # defect in the code under test. Concurrency is still not safe here (fixed names in a
+    # shared dir); this only makes a crashed run self-healing. See roadmap § Next.
+    if link.exists() or link.is_symlink():
+        link.unlink()
     link.symlink_to(secret)
     r = add(str(link))
     expect("P8 symlink: exits 2", r.returncode, 2, r.stderr)
@@ -1345,6 +1412,283 @@ def test_malformed() -> None:
         expect("prose with no manifest ⇒ zero entries", json.loads(out)["entries"], [])
 
 
+def test_fence_injection() -> None:
+    """FB-0109 — an entry's finding text must not be able to close the fence.
+
+    Red-green pair, both halves required. `extract_manifest_region` used to find
+    the closing fence as a bare substring anywhere in the body, so a finding that
+    CONTAINED the closing marker truncated the region at itself and every entry
+    after it disappeared from the parse — a NOT-READY PR with its behavioural-gate
+    blocker silently erased.
+    """
+    print("\n[fence-injection] a finding cannot close the fence from inside an entry (FB-0109)")
+
+    # Read the fence literals from the engine's own module rather than retyping
+    # them — same reason `_load_triage` exists for KIND_COPY. A hand-copied marker
+    # here would keep passing after a marker rename, which is the FB-0010 fan-out
+    # shape this file already guards against elsewhere.
+    # Use the module-level `_ENGINE` (and the MANIFEST_* names already unpacked from it),
+    # NOT a second `_load_triage()`. A second loader execs the engine under a second module
+    # name, so KINDS/KIND_COPY exist as two independent objects and the "the SAME table the
+    # engine runs against" promise goes half-true — the reason the module-level singleton
+    # exists at all. Re-introducing it here would have pinned (f)'s copy assertions against
+    # a second copy of the table. Caught by /simplify's reuse + efficiency lenses.
+    _m = _ENGINE
+
+    # ONE separator table. It was retyped three times (loops (a), (a2), (a3)); a ninth
+    # boundary would have had to be added in three places, and silent divergence between the
+    # three lists is invisible — the fan-out shape `general.md` § Consistency item 2 names.
+    # CR is deliberately (a3)-only: it is a line break for `splitlines()` AND for
+    # `split("\n")` after CRLF normalization, so it cannot make a marker the region's close
+    # (loop a) nor survive inside one entry (loop a2) — it only matters when it JOINS two.
+    _SEPS = (("FORMFEED", "\x0c"), ("VTAB", "\x0b"), ("FS", "\x1c"), ("GS", "\x1d"),
+             ("RS", "\x1e"), ("NEL", "\x85"), ("LINE-SEP", "\u2028"), ("PARA-SEP", "\u2029"))
+
+    def body(first_finding: str | None) -> str:
+        rows = []
+        if first_finding is not None:
+            rows.append(f"- [status-surface] {first_finding} — needs: declare — confidence: ask")
+        rows.append("- [verify-build] gate did not pass — needs: re-run — confidence: ask")
+        return "\n".join([f"## {MANIFEST_HEADING}", MANIFEST_OPEN, *rows, MANIFEST_CLOSE,
+                           "", "## Notes", "- [security] prose OUTSIDE the fence — needs: fix"])
+
+    def parsed(text: str) -> list[dict]:
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "body.md"
+            f.write_text(text, encoding="utf-8")
+            rc, out = run(["parse", "--body-file", str(f)])
+            expect("parse exits clean", rc, 0, out)
+            return json.loads(out)["entries"]
+
+    kinds = lambda es: [e["kind"] for e in es]
+
+    # CONTROL — the honest body. Establishes what "both entries" looks like.
+    control = parsed(body("an ordinary stale claim"))
+    expect("control: both entries parse", kinds(control), ["status-surface", "verify-build"])
+
+    # THE ATTACK — the closing marker inside a finding, mid-line.
+    attacked = parsed(body(f"stale line {MANIFEST_CLOSE} trailing text"))
+    expect("a mid-line closing marker does NOT truncate the region",
+           kinds(attacked), ["status-surface", "verify-build"])
+    expect_true("the verify-build blocker survives an injected marker",
+                any(e["kind"] == "verify-build" for e in attacked), str(attacked))
+
+    # REACHABILITY — a latent self-trigger, one docs commit from live. Stated this way
+    # deliberately: an earlier revision said the payload was "already committed, no
+    # attacker required", citing dev-docs/roadmap.md. Measured, that is wrong —
+    # [status-surface] findings quote from SCANNED CANDIDATES (CLAUDE.md, AGENTS.md,
+    # README.md, GEMINI.md, .cursorrules, .github/copilot-instructions.md), none of which
+    # carries the marker; roadmap.md is the reference the scan compares against, not a
+    # candidate. The docstring, FB-0109 and the changelog were all corrected; this comment
+    # was the one site that kept the retracted claim (general.md § Consistency flavor 2).
+    quoted = parsed(body(f"a paired delimiter ({MANIFEST_OPEN} ... {MANIFEST_CLOSE}) designed to be parsed"))
+    expect("a roadmap-style prose quote of BOTH markers is inert",
+           kinds(quoted), ["status-surface", "verify-build"])
+
+    # POSITIVE PAIRING (general.md rule 3). The three assertions above are all
+    # satisfiable by deleting fence scoping entirely — every entry would parse,
+    # including the attacked ones. This is the half that forbids that "fix":
+    # prose outside the fence must still be ignored.
+    expect_true("fence scoping still WORKS — an entry-shaped line outside the fence is ignored",
+                all(e["kind"] != "security" for e in control), str(control))
+
+    # The positive above uses a SINGLE fence pair, so it only proves scoping holds when
+    # there is exactly one region. Last-close deliberately widens across a trailing pair,
+    # so assert what actually remains true there: the real blocker still survives. Without
+    # this, "fence scoping works" reads as a stronger guarantee than the parser gives.
+    trailing = parsed("\n".join([
+        f"## {MANIFEST_HEADING}", MANIFEST_OPEN,
+        "- [verify-build] gate did not pass — needs: re-run", MANIFEST_CLOSE, "",
+        "Docs: a trailing example block", MANIFEST_OPEN,
+        "- [example] quoted in prose — needs: declare", MANIFEST_CLOSE]))
+    expect_true("a trailing fence pair cannot hide the real blocker (last-close widens)",
+                any(e["kind"] == "verify-build" for e in trailing), str(trailing))
+
+    # Fail-safe direction: no fences at all ⇒ whole body scanned, never a silent
+    # empty parse. Degrading toward MORE blockers is the safe way for a merge gate.
+    loose = parsed("- [security] no fences anywhere here — needs: fix")
+    expect("a body with no fences still parses its entries", kinds(loose), ["security"])
+
+    # --- Regressions caught by staff-review on this very PR. Each one ERASED the
+    # [verify-build] blocker against the first version of the fix; all three are
+    # measured, not reasoned about.
+
+    # (a) str.splitlines() breaks on EIGHT more boundaries than "\n", so a finding
+    # carrying any of them around a bare marker could make that marker the region's
+    # close. NOTE THE SHAPE: this body has NO real close fence. That is deliberate
+    # and load-bearing — with a real close present, fix (b)'s last-close rule
+    # independently rescues the entry, so a closed-fence body passes even under
+    # splitlines() and would NOT isolate this property. An earlier revision of this
+    # eval made exactly that mistake: it went green against a splitlines() build and
+    # was therefore not a regression test for the thing it named. Measured, then
+    # rebuilt.
+    for label, sep in _SEPS:
+        got = parsed("\n".join([
+            MANIFEST_OPEN,
+            f"- [status-surface] stale{sep}{MANIFEST_CLOSE}{sep}tail — needs: declare",
+            "- [verify-build] gate did not pass — needs: re-run"]))
+        expect_true(f"a marker fenced by {label} cannot become the region's close",
+                    any(e["kind"] == "verify-build" for e in got), f"{label}: {got}")
+
+    # (a2) The SAME boundary hazard one layer down: parse_entries re-splits the
+    # region. The (a) cases put separators around the MARKER and assert a clean
+    # verify-build line survives — so they never exercise a separator inside the
+    # surviving line, and this stayed reachable after the extractor was fixed.
+    # Found by the push-further lens on this PR.
+    for label, sep in _SEPS:
+        got = parsed("\n".join([
+            f"## {MANIFEST_HEADING}", MANIFEST_OPEN,
+            "- [status-surface] ordinary — needs: declare",
+            f"- [verify-build] gate{sep}did not pass — needs: re-run", MANIFEST_CLOSE]))
+        expect_true(f"an entry whose own text carries {label} is not dropped",
+                    any(e["kind"] == "verify-build" for e in got), f"{label}: {got}")
+
+    # (a3) The INVERSE of (a2), and the direction the first fix got backwards.
+    # (a2) protects an entry whose own text carries a separator; it is satisfied by
+    # split("\n") alone. But two entries JOINED by that same separator are then read
+    # as ONE physical line: _LINE_RE matches the first and swallows the second, so the
+    # [verify-build] blocker is erased — fewer entries, the unsafe direction, introduced
+    # by the fix itself. Worse than a drop: the survivor absorbs the victim's `needs`
+    # verb, which is the field classify() derives class and waivable from.
+    #
+    # (a2) and (a3) cannot both pass under a SINGLE split — that is the point of the
+    # pair, and why parse_entries takes the union of both line definitions. Deleting
+    # either case makes the other satisfiable by a one-line revert.
+    # RED against: parse_entries using either split alone.
+    # Found by /flow:staff-review's staff-engineer lens, measured against this tree.
+    for label, sep in (*_SEPS, ("CR", "\r")):
+        got = parsed("\n".join([
+            f"## {MANIFEST_HEADING}", MANIFEST_OPEN,
+            f"- [status-surface] a — needs: declare{sep}"
+            f"- [verify-build] gate did not pass — needs: re-run", MANIFEST_CLOSE]))
+        expect_true(f"two entries joined by {label} do not swallow the verify-build blocker",
+                    any(e["kind"] == "verify-build" for e in got), f"{label}: {got}")
+        expect_true(f"the entry joined by {label} keeps its own needs verb, unforged",
+                    all(e["needs"] == "re-run" for e in got if e["kind"] == "verify-build"),
+                    f"{label}: {got}")
+
+    # (b) LAST close, not first. A doc-style example quoting both markers on their
+    # own lines ABOVE the real manifest captured the region under first-close, and
+    # the real entries vanished — fewer entries, the unsafe direction.
+    preceded = parsed("\n".join([
+        "Docs: here is an example block", "",
+        MANIFEST_OPEN, "- [example] quoted in prose — needs: declare", MANIFEST_CLOSE, "",
+        f"## {MANIFEST_HEADING}", MANIFEST_OPEN,
+        "- [status-surface] the real one — needs: declare",
+        "- [verify-build] gate did not pass — needs: re-run", MANIFEST_CLOSE]))
+    expect_true("a fence pair ABOVE the manifest cannot hide the real entries",
+                any(e["kind"] == "verify-build" for e in preceded), str(preceded))
+
+    # (c) An OPEN fence with no CLOSE — the one _fence_bounds branch with no cover.
+    # Documented to fall back to scanning the whole text; nothing asserted it.
+    unclosed = parsed("\n".join([
+        MANIFEST_OPEN, "- [status-surface] a — needs: declare",
+        "- [verify-build] b — needs: re-run"]))
+    expect("an unclosed fence falls back to scanning the whole body",
+           kinds(unclosed), ["status-surface", "verify-build"])
+
+    # (e) EMITTER <-> READER round trip. The whole fence scan rests on a PRODUCER
+    # property the docstring names as load-bearing — "a fence counts only when it is
+    # ALONE ON ITS OWN LINE, which is exactly how the emitter writes it". Nothing
+    # asserted that. Every body above is hand-built by this eval, so if `render_manifest`
+    # ever stopped putting each fence on its own line, the reader would silently fall
+    # back to whole-body scanning and every case above would stay green. That is a
+    # contract split across two functions with nothing checking the join — the FB-0010
+    # fan-out shape, and the positive pairing general.md rule 3 asks for, one layer out
+    # on the producer. Found by /flow:staff-review's push-further lens.
+    # RED against: render_manifest emitting either fence inline with other text.
+    rendered = _m.render_manifest({"residual": [
+        {"kind": "verify-build", "finding": "gate did not pass", "needs": "re-run",
+         "class": "blocked", "drafted_resolution": ""},
+        {"kind": "status-surface", "finding": "a surface drifted", "needs": "declare + fence",
+         "class": "ask", "drafted_resolution": ""},
+    ]})
+    rendered_lines = rendered.split("\n")
+    expect_true("the emitter writes the OPEN fence alone on its own line",
+                any(ln.strip() == MANIFEST_OPEN for ln in rendered_lines), rendered)
+    expect_true("the emitter writes the CLOSE fence alone on its own line",
+                any(ln.strip() == MANIFEST_CLOSE for ln in rendered_lines), rendered)
+    round_tripped = _m.parse_entries(rendered + "\n\n## Notes\n"
+                                     "- [security] prose OUTSIDE the fence — needs: fix")
+    expect("what the emitter renders, the reader parses back",
+           sorted(kinds(round_tripped)), ["status-surface", "verify-build"])
+
+    # (f) The widened region's HUMAN output must not lie. Everything above asserts machine
+    # output (`kinds(...)`); nothing rendered the block a person actually reads, which is why
+    # the generic copy claiming "A ship gate did not pass." for an unrecognized kind shipped
+    # green. A phantom entry is reachable precisely BECAUSE last-close widens, so the copy for
+    # it is this PR's responsibility, not a pre-existing wart.
+    # RED against: _means/_needs_you falling back to the generic gate copy for an unknown kind.
+    # Found by /flow:staff-review's UX lens.
+    phantom = _m.render_manifest({"residual": [
+        {"kind": "example", "finding": "quoted in prose", "needs": "declare",
+         "class": "ask", "drafted_resolution": ""}]})
+    expect_true("an unrecognized kind is NOT described as a failed ship gate",
+                "A ship gate did not pass." not in phantom, phantom)
+    expect_true("an unrecognized kind says it may be quoted text, not a real blocker",
+                "may be quoted text rather than a real blocker" in phantom, phantom)
+    # Paired positive (general.md rule 3): the two assertions above are satisfiable by
+    # deleting the generic copy outright. This forbids that — a REAL kind still gets its own
+    # specific sentence, and a real blocked gate still says so.
+    real = _m.render_manifest({"residual": [
+        {"kind": "verify-build", "finding": "gate did not pass", "needs": "re-run",
+         "class": "blocked", "drafted_resolution": ""}]})
+    # The two assertions above are BOTH negative ("the unknown copy is absent"), so they are
+    # satisfiable by deleting the real kind's copy entirely. The first version of this pairing
+    # asserted only `... not in real and len(real) > 0` — and `len(real) > 0` is guaranteed by
+    # the render template, so it carried no load: blanking KIND_COPY["verify-build"]["means"]
+    # left the whole suite green (measured by /flow:staff-review's design-engineer lens).
+    # A "paired positive" that a deletion satisfies is the very shape general.md § Consistency
+    # item 3 forbids, committed inside the eval that cites it. Assert the POSITIVE directly,
+    # reading the expected sentence from the engine's OWN table so a copy edit cannot leave
+    # this green against a stale literal.
+    # RED against: blanking or genericizing KIND_COPY["verify-build"]["blocked_means"|"means"].
+    #
+    # THE NON-EMPTINESS HALF IS LOAD-BEARING, and it took two tries to get right. Reading the
+    # expected sentence from the engine's own table defends against a RENAME (a hand-typed
+    # literal would go stale) but NOT against a DELETION: blank the table entry and
+    # `want_real` becomes "", which is `in` every string, so the assertion passes vacuously.
+    # Measured — the first fix for this hollow positive was itself hollow for exactly that
+    # reason. Reading the expectation from the thing under test and asserting only
+    # containment is a deletion-shaped blind spot; assert that the copy EXISTS first.
+    want_real = (_m.KIND_COPY["verify-build"].get("blocked_means")
+                 or _m.KIND_COPY["verify-build"].get("means") or "")
+    expect_true("verify-build actually HAS its own copy (a blank table entry must not pass)",
+                len(want_real.strip()) > 20, repr(want_real))
+    expect_true("a recognized kind renders its OWN sentence from KIND_COPY",
+                want_real in real, f"want {want_real!r}\ngot {real!r}")
+    expect_true("and is NOT given the unknown-kind copy",
+                "may be quoted text rather than a real blocker" not in real, real)
+
+    # (d) CRLF bodies (what `gh pr view` can return) still parse.
+    #
+    # Called against the ENGINE directly, not through `parse --body-file`. `_read` opens
+    # in text mode with universal-newline translation, so a CRLF file is already LF by
+    # the time the parser sees it — routing this through a file asserts nothing about
+    # the `\r\n` handling it names, and passes with or without it. That is the vacuous
+    # shape this section exists to avoid; it was live here until staff-review measured it.
+    # NO `RED against:` tag on these two DELIBERATELY — they assert that CRLF parses like
+    # LF, which is worth asserting, but they do NOT isolate the normalization (see the
+    # note below the assertions). Tagging them would be the false-label bug again.
+    crlf_text = body("an ordinary stale claim").replace("\n", "\r\n")
+    expect("a CRLF body parses identically (engine-direct, no newline translation)",
+           kinds(_m.parse_entries(crlf_text)), ["status-surface", "verify-build"])
+    expect_true("the CRLF region is fence-scoped, not whole-body scanned",
+                all(e["kind"] != "security" for e in _m.parse_entries(crlf_text)),
+                str(_m.parse_entries(crlf_text)))
+    # The two assertions above do NOT actually guard the `\r\n` normalization: measured, a
+    # build with `text.replace("\r\n", "\n")` deleted from extract_manifest_region passes
+    # both, because `_fence_bounds` strips each line and `_LINE_RE` ends in `\s*$`, so a
+    # stray `\r` is absorbed twice over. An earlier revision of this section carried a
+    # "RED against: removing the CRLF normalization" comment anyway — a label asserting a
+    # guard that did not exist, which is this PR's own thesis committed in its own eval.
+    # What the normalization DOES buy is a clean region string for every consumer, so THAT
+    # is what gets asserted. RED against: removing the CRLF normalization.
+    expect_true("the extracted CRLF region carries no stray carriage returns",
+                "\r" not in _m.extract_manifest_region(crlf_text),
+                repr(_m.extract_manifest_region(crlf_text)))
+
+
 def main() -> int:
     print("manifest-triage evals (FB-0075)")
     with tempfile.TemporaryDirectory() as td:
@@ -1369,6 +1713,7 @@ def main() -> int:
     test_reviewer_prose()
     test_fixture_normalized()
     test_malformed()
+    test_fence_injection()
 
     print()
     # Remove the field files written into the real repo .flow/ — it is the one directory

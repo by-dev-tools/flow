@@ -2,7 +2,11 @@
 
 ## Current Focus
 
-**▶ STATE AS OF 2026-09-12 — `main` is v1.41.0 @ `a156228`; #149 merged; orchestrator seat rotated (succession 3).**
+**▶ EXECUTED, shipping (this branch, `conductor/ship-fb-0109-manifest-fence-injection`, FB-0109, v1.44.0): SAFETY — a manifest entry can no longer close the manifest fence.**
+
+
+**▶ STATE AS OF 2026-09-16 — `main` is v1.43.0 @ `32b27d1`; #150 (FB-0107, v1.43.0), #151 (harness-audit) and #152 (FB-0108, v1.42.0, the write-side half) are all merged; **zero open PRs**; orchestrator seat rotated (succession 3).**
+
 Read this block first; everything below it is per-branch narrative from work that has since merged,
 kept for the reasoning but **not** a statement of what is active. (That residue is itself the
 FB-0102 problem — `plan.md` is edited in place, so #146's fragmentation deliberately did not touch
@@ -94,6 +98,151 @@ pass's scope.)
 **▶ EXECUTED, shipping (this branch, `conductor/phase-00-rules-as-skills-hooks-fix-fb-0085`): Phase 00 — fix two shipped-but-never-loading flow features (rules→skills, hooks declaration; FB-0085), v1.33.0.** Standalone prerequisite from `dev-docs/handoffs/service-agnostic-roadmap-2026-07.md` §17/Phase 00, independent of any Codex/Cursor porting work. Plan approved with both escalated decisions accepted as recommended (00b hooks stay opt-in; 00c one-time content sync + explicit sync-note, not a full merge; 00d no bootstrap.sh change). Executed: skill count 17→21 (`claude plugin details` confirms live), full eval suite green, `/flow:critique-plan` findings fixed pre-execution. See the "PR — Phase 00" block below for the full Spec-walk + confidence verdicts, and `dev-docs/history.md` 2026-08-27 for the shipped write-up.
 
 **▶ Shipped (merged #140): SPIKE — agentic design-guidance investigation (Vercel `design.md` + public survey).** Research-only; the doc IS the deliverable. Answers "what should flow learn from Vercel's `design.md`, and what is anyone else doing on agentic *design-quality* output?" Conclusion: **build almost nothing** — the transferable material is a doc *shape*, not machinery. Ships with two independently-confirmed doc-currency fixes found in passing. Zero `plugins/flow/**` changes. See `dev-docs/research/2026-09-design-md-investigation.md`. This is the spike this branch's own PR (below) implements the S1+S2+S3 recommendation from.
+
+## PR — manifest fence injection (`fix-manifest-fence-injection`, FB-0109, v1.44.0)
+
+**Mode:** feature (bugfix on shipped plugin surface). **Base:** rebased onto `origin/main` @ `32b27d1` (#151), which carries v1.43.0 and FB-0108.
+**Version/FB re-derived at each rebase across every remote head, not just `main`** — and re-swept
+again on 2026-09-16 after #150/#151/#152 all merged. `main` now carries changelog high-water
+**v1.43.0** and FB high-water **FB-0108**, with **zero open PRs**, so **FB-0109 / v1.44.0** are
+free and unchanged from the original claim. Claimed mechanically (the FB file and
+`changelog/v1.44.0.md` are pushed), not in prose — FB-0103.
+
+**Scope — in:** `manifest_contract.py` (line-anchored fences + a `_fence_bounds` helper);
+**`manifest-triage.py`'s `parse_entries`**, which re-split the fixed region and then, in the first
+fix attempt, re-broke it in the OPPOSITE direction — now the union of both line definitions
+(staff-review BLOCKER); **the field-separator defang, which matched a LITERAL where the parser
+matches a whitespace CLASS** — a live forgery `/flow:security-review` measured at ship (see the
+criterion below); the unknown-kind render copy, since the widened region is what makes a phantom
+entry reachable at all (UX lens); a `[fence-injection]` + `P23` section in
+`run_manifest_triage_evals.py`; FB-0109; changelog; version bump ×3; history entry.
+
+**Scope ADDED at ship, deliberately and reversibly.** The separator-defang fix is not what this
+branch set out to do. It is here because `/flow:ship` Step 2's own security reviewer found it, tagged
+it `[auto-fixable]`, and the pipeline's prescribed routing for that tag is *fix in-tree and continue*
+— and because shipping a PR whose thesis is "close the merge-gate bypass" while leaving a measured,
+reachable bypass in the same file would be incoherent. It is isolated in its own commit so the merge
+gate can drop it without touching the rest. It is **not** the roadmapped `FIELD_SEPS` residual: that
+item proposes deriving the token *set*, which would have preserved this mismatch exactly (roadmap
+amended to say so).
+
+**Scope — out, named:** the **write-time rejection** of a marker-bearing finding. It belongs in
+`_read_text_arg`, which FB-0108 owned; that branch has since **merged as #152**, so the write-time
+collapse + defang are now in this tree below us — verified end to end at this rebase rather than
+assumed. Nothing left to do here; the residual statement was rewritten from "will be closed" to
+what is actually true. Also out: any change to the fence *literals* or to the emitter — the producer already
+had the property this fix relies on.
+
+**Spec-walk:**
+
+- [x] A finding containing the closing marker **mid-line** no longer truncates the region; both
+      entries parse and the `[verify-build]` blocker survives.
+      → verify: `run_manifest_triage_evals.py` `[fence-injection]`, attack case.
+- [x] A prose quote of **both** markers inside a finding (the `roadmap.md:720` shape) is inert.
+      → verify: same section, reachability case.
+- [x] Control: the same body without the marker parses identically — the fix changes nothing for
+      honest input. → verify: same section, control case.
+- [x] **Paired positive (general.md rule 3):** fence scoping still *works* — an entry-shaped line
+      **outside** the fence is still ignored. Without this, deleting fence scoping satisfies every
+      assertion above. → verify: same section, positive-pairing case.
+- [x] Fail-safe direction: a body with **no** fences still parses its entries, so the parser degrades
+      toward *more* blockers, never fewer. → verify: same section, loose case.
+- [x] A marker fenced by any of the eight non-`\n` boundaries `str.splitlines()` honours
+      (`\x0b \x0c \x1c \x1d \x1e \x85 \u2028 \u2029`) cannot become the region's close.
+      → verify: `[fence-injection]` separator cases, on an UNCLOSED-fence body so the last-close
+      rule cannot rescue them and the split choice is genuinely isolated.
+- [x] A fence pair appearing ABOVE the real manifest cannot hide the real entries (last-close, not
+      first-close). → verify: same section, preceded case.
+- [x] An OPEN fence with no CLOSE falls back to scanning the whole body. → verify: unclosed case.
+- [x] A CRLF body parses identically. → verify: crlf case.
+- [x] An entry whose OWN finding text carries one of the eight boundaries is not dropped by
+      `parse_entries` (the consumer of the fixed region). The separator cases above put the
+      separator around the *marker* and assert a clean `[verify-build]` line survives, so they
+      never exercised this. → verify: `[fence-injection]` (a2) cases; mutation-isolated at 5
+      failures against reverting `parse_entries` alone.
+- [x] **Mutation-tested against seven builds**, re-measured against the FINAL eval: **21** failures
+      on the pre-fix extractor, **8** with the wide pass dropped, **8** with the narrow pass dropped,
+      **9** with the literal field-separator defang restored, **1** with first-close, **1** with the
+      CRLF normalization removed, **0** on the fix (FB-0104). The originally documented "12 / 8 / 5"
+      was measured against a smaller revision of the eval and never re-measured; every mutant is now
+      **compiled before its count is believed**, because a `SyntaxError` mutant crashes the harness
+      before its summary line and scores *zero failures* — indistinguishable from "the suite
+      tolerates the bug". → verify: ran all seven.
+- [x] The test reads the fence literals from the **engine's own module**, so a marker rename cannot
+      leave it green against a stale copy (FB-0010 clause 2).
+- [x] `run_manifest_triage_evals.py` and `run_pr_coherence_evals.py` both green.
+- [x] Version sweep clean: no surviving `"version": "1.43.0"` declaration (the version this PR
+      supersedes — the criterion said 1.41.0, copied from a sibling branch's spec-walk); three live
+      sites at 1.44.0, and `.claude-plugin/marketplace.json` parses as JSON.
+      → verify: `git grep -nE '"version": "1\.4[0-3]\.0"'` returns only frozen provenance fixtures
+      and history entries; `python3 -c 'import json;json.load(open(...))'` on both manifests.
+
+- [x] **Two entries JOINED by one of the eight boundaries do not collapse into one, and the
+      second's `[verify-build]` blocker is not swallowed.** This is the INVERSE of the criterion
+      above, and the two cannot both hold under a single split — hence the union in
+      `parse_entries`. The surviving entry must also keep its own `needs` verb unforged, since
+      `classify()` derives class and waivability from it. → verify: `[fence-injection]` (a3)
+      cases, all nine separators, both assertions; mutation-isolated at 8 failures against
+      `split("\n")` alone and 5 against `splitlines()` alone.
+- [x] **The emitter's output round-trips through the reader.** The fence scan's correctness rests
+      on a producer property (each fence alone on its own line) that nothing asserted; if
+      `render_manifest` drifted, the reader would silently fall back to whole-body scanning and
+      every other case here would stay green. → verify: `[fence-injection]` (e), which asserts
+      both fences are alone on their line AND that the rendered entries parse back; goes red
+      against an emitter that inlines a fence.
+- [x] **A trailing fence pair cannot hide the real blocker.** The paired positive uses a single
+      fence pair, so it only proved scoping under one region; last-close deliberately widens
+      across a trailing pair. → verify: `[fence-injection]` trailing case.
+- [x] **The widened region does not make the PR body lie to the human.** An entry whose kind flow
+      does not recognize is reachable only through widening, and was rendered as "A ship gate did
+      not pass." → verify: `[fence-injection]` (f), plus its paired positive that a recognized
+      kind still renders its own specific copy.
+- [x] **The CRLF criterion is not vacuous.** Routed through `parse --body-file` it asserted
+      nothing — `_read` translates newlines before the parser sees them, so it passed with or
+      without the normalization it named. → verify: driven against the engine directly.
+- [x] **Residual claims re-verified against the rebased tree, not against a sibling branch.**
+      FB-0108 merged as #152 below this branch, so "there is no write-time layer" became false in
+      four documents with no diff touching them. → verify: measured `add-entry` end to end — a
+      finding of `"drifted\n<close-marker>\ntail"` emits one line with the marker inert and a
+      following `[verify-build]` blocker still parses; all four documents rewritten.
+
+- [x] **A forged ` — needs:` field cannot survive the write path under ANY whitespace shape the
+      parser accepts.** `_LINE_RE` matches `\s+—\s*needs:` (a class); the defang matched the literal
+      `" — needs:"` (one space), so a TAB or NBSP matched the parser and missed the defang. Measured
+      pre-fix: `--kind security --needs "secret rotation"` (out-of-session verb ⇒ class `blocked`,
+      NOT waivable) parsed as `needs='design decision'` ⇒ class `ask`, `waivable: True`, verdict
+      BLOCKED → DECIDE. → verify: `P23`, eight whitespace shapes, asserting the REAL verb survives
+      **and** the class stays `blocked` **and** `waivable` stays false; mutation-isolated at 9
+      failures against the literal-defang build.
+- [x] **Paired positive (general.md rule 3):** honest prose that merely *discusses* a resolution verb
+      is still accepted (not refused), still parses to one entry with the producer's own verb, and
+      stays readable. Without this, "defang everything" or "narrow `_LINE_RE` until it matches
+      nothing" — which DROPS entries, the unsafe direction — would satisfy every assertion above.
+      → verify: `P23 POSITIVE`.
+- [x] **The pre-existing P22 separator test was not cover.** It used a single space, the one shape
+      the literal defang caught, so it passed while the hole was open. → verify: P23's `1 space` and
+      `2 spaces` rows stay green under the literal-defang mutant while TAB / NBSP / space+TAB go red
+      — the discrimination is the evidence.
+- [x] **The union's dedupe key is (fingerprint, needs), not fingerprint alone.** `_fingerprint`
+      covers (kind, finding) only, so the narrower key could discard a narrow-split-only line that
+      differs in `needs` — the field `classify()` keys on. Widening can only ever ADD an entry.
+- [x] **The CRLF criterion's `RED against:` label is true.** It previously claimed to guard the
+      `\r\n` normalization while passing without it (measured). Now asserts what the normalization
+      actually buys — a region string with no stray `\r`. → verify: 1 failure against the
+      `no_crlf_norm` build.
+
+**Assumptions.** **A1 — the emitter always writes each fence alone on its own line. HIGH**, and
+mechanically so: `manifest-triage.py` builds the block as a list of lines with each fence as its own
+element. *If it flips:* the fences stop being found line-anchored and the parser returns the whole
+body — more entries, never fewer, so the failure is toward not-ready.
+
+**Honest limitation, stated in the code and the changelog:** this does not close a finding that
+embeds a **newline** followed by a bare marker. FB-0108's newline collapse closes that at write time.
+Two layers, neither a seal.
+
+---
+
+---
 
 ## PR — SPIKE: D1 §9.3 auto-plan-quality (this branch, `conductor/spike-93-auto-plan-quality`, EXECUTED — shipping)
 
