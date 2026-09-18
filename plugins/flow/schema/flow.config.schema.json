@@ -217,6 +217,69 @@
       "minimum": 0,
       "description": "How long /flow:post-merge's merge-detect gate (FB-0072) polls a still-OPEN PR before giving up gracefully. On a merge-queue / auto-merge repo there is a 1–2 min delay between clicking merge and the PR actually merging, so an immediate MERGED-or-fail check would false-fail every time. The gate is three-state: MERGED → proceed; CLOSED-unmerged → fail loud (terminal — running cleanup here would be wrong); OPEN → poll up to this many seconds, then a calm 'still queued, re-run once it lands' exit (never the terminal fail). A non-queue repo merges instantly, so the PR is already MERGED on the first check and the poll never engages — this slot only matters on queue/auto-merge repos. Set 0 for fail-fast (do not poll; an OPEN PR immediately yields the graceful 'not merged yet' exit). Default: 150.",
       "default": 150
+    },
+    "dispatchBackend": {
+      "type": "object",
+      "description": "Host adapter for the orchestrator skill suite (/flow:orchestrate, /flow:spawn, /flow:handoff, /flow:gate). Five COMMAND TEMPLATES this project supplies — the plugin ships the workflow, your config supplies the mechanics, exactly as typecheckCmd/preflightCmd already do one level down. This is what keeps the suite host-agnostic: no host's CLI is named anywhere in the plugin. Placeholders are a CLOSED vocabulary — {name}, {messageFile}, {session} — and an unknown one is a hard error. Every placeholder in it is supplied by a real call site, so a template cannot pass setup validation and then fail at dispatch time. There is deliberately NO {message}: a brief or a status line is agent-composed prose that routinely contains backticks, so message bodies travel as a PATH and only as a path (the shell-composition hazard that fired four times in one session; same principle as taking untrusted text off add-entry's command line). Substituted values are restricted to [A-Za-z0-9._/@:+=-] and refused, never escaped. Absent slot is NOT a silent no-op: each skill prints a loud warning and names the manual step you must perform instead. Deletion criterion: delete when a backend accepts structured input (JSON on stdin) for every verb, so there is no command string to render.",
+      "properties": {
+        "listWorkers": {
+          "type": "string",
+          "description": "Enumerate live workers. No placeholders. Used to RE-DERIVE live state (never a snapshot: a maintained status column was measured stale within minutes). Prefer a JSON-emitting form."
+        },
+        "createWorker": {
+          "type": "string",
+          "description": "Create a worker whose FIRST MESSAGE is the dispatch brief. Requires {name} and {messageFile}. This is the whole instruct-not-remote-invoke mechanism: an agent cannot reach into another workspace's process, so A creates B and B's first message instructs B to run a named flow skill locally."
+        },
+        "sendMessage": {
+          "type": "string",
+          "description": "Message an existing session. Requires {session} and {messageFile}. Carries the succession re-address broadcast, worker follow-ups, and the gate's relay of a human decision back to the worker that raised it."
+        },
+        "workerStatus": {
+          "type": "string",
+          "description": "Per-session status INCLUDING a last-activity timestamp. Requires {session}. The timestamp is the point: a rate-limited worker cannot ping and its status is indistinguishable from 'waiting at a gate', so the silent-worker sweep reads last-activity, never status."
+        },
+        "selfSession": {
+          "type": "string",
+          "description": "Print THIS seat's own session id. No placeholders. It is the return address workers ping, and the id a successor broadcasts at a succession boot. Absent ⇒ loud warning and ask the human; never a silent skip, because a failed re-address produces silence and silence reads as 'no worker needs anything'."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "listWorkers": "<your-host-cli> workspace list --json",
+          "createWorker": "<your-host-cli> workspace create --name {name} --message-file {messageFile}",
+          "sendMessage": "<your-host-cli> message create --session {session} --message-file {messageFile}",
+          "workerStatus": "<your-host-cli> session status {session} --json",
+          "selfSession": "<your-host-cli> session current --id"
+        }
+      ]
+    },
+    "sensitivePaths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Globs marking work that must NOT be auto-approved and must NOT be routed to a cheap model. Two readers, one definition: /flow:gate's stakes axis (the first of the four plan-gate axes — a red stakes axis sends the plan to a human) and /flow:spawn's routing floor (gate machinery never routes down). The shared rationale is that a wrong version in these paths fails SILENTLY, is EXPLOITABLE, or is a ONE-WAY DOOR — the one error class where a cheaper model's savings or a saved human round-trip are not worth having. Defaults are deliberately shape-based and project-agnostic (secrets, auth, migrations, published schemas, CI workflows); YOUR project's own gate machinery is project-shaped knowledge and belongs here, not in the plugin. The defaults are a FLOOR: whatever you set here is MERGED with them, never substituted for them. So you list only your own additions — you cannot accidentally narrow the policy by forgetting to copy a default, which would silently drop .env/auth/migrations/CI coverage and let the gate read green on an auth diff. Narrowing is deliberately not offered: over-flagging costs one unnecessary human decision, under-flagging costs the gate and does it silently. If a default genuinely does not apply to your project, waive it at the gate where a human sees it rather than by shrinking a list. Supports **, * and ?; matched against repo-relative POSIX paths. Present-but-malformed or present-but-empty falls back to the defaults with a loud warning — an empty list would classify every diff as low-stakes. Every degraded path classifies SENSITIVE, because a wrong escalation costs one human decision while a wrong approval costs the gate. Deletion criterion: folded into a broader gate-policy object if a third consumer appears. DIALECT NOTE, on the record deliberately: every OTHER file-matching slot in this schema (uiFilePatterns, visualFilePatterns, a11yFilePatterns, sourceFilePatterns) is an extended REGEX, while this one is GLOBS. The divergence is a legibility call — a security-relevant policy list a human audits at a glance reads better as `**/migrations/**` than as an escaped regex, and fnmatch is unusable here because its `*` crosses `/`. The cost is that this config file carries two pattern dialects; it is stated here so the next reader finds a decision rather than an inconsistency.",
+      "default": [
+        "**/.env",
+        "**/.env.*",
+        "**/secrets/**",
+        "**/*credentials*",
+        "**/*.pem",
+        "**/*.key",
+        "**/auth/**",
+        "**/authentication/**",
+        "**/authorization/**",
+        "**/migrations/**",
+        "**/migrate/**",
+        "**/*.sql",
+        "**/schema/**",
+        "**/*.schema.json",
+        ".github/workflows/**",
+        ".github/actions/**",
+        "**/flow.config.json",
+        "**/.flow/**"
+      ]
     }
   }
 }
