@@ -841,6 +841,48 @@ def test_review_brief_no_longer_unwired():
           "from inside the phase that just invoked it")
 
 
+def test_doctor_check_211_actually_runs():
+    """EXECUTE doctor's Check 2.11 shell, don't grep it.
+
+    Grepping a shipped shell guard lets the eval stay green while the shell
+    itself drifts — that is the premise of run_root_anchor_evals.py, and the
+    same argument applies here. This extracts the fenced block from
+    doctor/SKILL.md and runs it under fixture configs, so a syntax error or a
+    branch that stops firing turns the build red."""
+    src = DOCTOR.read_text(encoding="utf-8")
+    m = re.search(r"\*\*Check 2\.11.*?```sh\n(.*?)```", src, re.S)
+    check("doctor-211-block-extractable", m is not None,
+          "Check 2.11's fenced sh block must be findable to be executed")
+    if not m:
+        return
+    block = m.group(1)
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as tmp:
+        d = Path(tmp); (d / "check.sh").write_text(block, encoding="utf-8")
+        rc = subprocess.run(["sh", "-n", str(d / "check.sh")], capture_output=True, text=True)
+        check("doctor-211-syntax", rc.returncode == 0, f"sh -n failed: {rc.stderr[:200]}")
+
+        def run_with(cfg_text):
+            (d / "flow.config.json").write_text(cfg_text, encoding="utf-8")
+            p = subprocess.run(["sh", "check.sh"], cwd=str(d), capture_output=True, text=True)
+            return p.stdout
+
+        # Each branch must actually fire — an assertion suite that only ever
+        # exercises one config cannot tell a working check from a broken one.
+        out = run_with('{"role":"designer","uiSurface":true}')
+        check("doctor-211-designer-live", "LIVE" in out and "designer" in out)
+        out = run_with('{"role":"designer","uiSurface":false}')
+        check("doctor-211-veto-reported", "NOT AVAILABLE" in out)
+        check("doctor-211-veto-names-suppression", "SUPPRESSED" in out,
+              "a designer whose role is overridden must be told in doctor's output too, "
+              "not only in the engine's reasons[]")
+        out = run_with('{"role":"architect","uiSurface":true}')
+        check("doctor-211-out-of-enum-warns", "[WARN]" in out,
+              "a typo'd role must WARN, not read as resolved")
+        out = run_with('{"uiSurface":true}')
+        check("doctor-211-unset-role", "role unset" in out)
+
+
 def test_doctor_role_has_consumer():
     t = DOCTOR.read_text(encoding="utf-8")
     check("doctor-names-consumer", "/flow:prototype" in t)

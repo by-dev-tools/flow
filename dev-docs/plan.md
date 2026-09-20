@@ -825,6 +825,15 @@ The one genuine coupling that remains is prose, and it is mitigated by construct
   *Restated during execution, because the original was mis-specified.* It required `approve` to record "a real human quote" — but a human approving a prototype is a **usage event, not a deliverable of this PR**, and no Spec-walk box should be satisfiable only by asking someone to click something. Worse, writing a quote myself to tick the box is precisely the behavior the skill forbids in its one no-exception rule. The verifiable claim is that the machinery reaches gate 1 and then **stops** — which is what is now asserted, and what actually ran.
 - [x] That run's own `trigger` JSON is committed as a fixture, so the live path and the eval matrix are pinned to the same engine output rather than agreeing by coincidence. → `fixtures/prototype-gate/this-workspace-*.json`
 
+*Behavior changed by the `/simplify` pass (declared, because a fix without a criterion is a behavior verify-build never tests)*
+
+- [x] A `flow.config.json` that parses but is **not a JSON object** (`[]`, `"x"`) makes `arming` and `trigger` both fail closed to the classic plan gate, exit 0, and emit parseable JSON — never the AttributeError traceback that violated this module's own docstring. → `test_config_not_an_object_fails_closed`, two fixtures × both subcommands
+- [x] The browser-delivery one-line exit is an **allowlist** (`web`/`library`/`none`/`cli`/`tauri`), so a platform value added to the schema later cannot silently self-exempt from the §9.4 guard — the denylist shape this plan rejects for the feasibility rule itself. → `test_contract_browser_delivery_one_liner` + `test_contract_native_cannot_take_one_liner`
+- [x] `present` writes `prototype.presented.html` and leaves `prototype.html` **byte-identical**, so the sha `approve` records covers the artifact the human approved and not the injected layer; a second `present` produces identical bytes by construction. → `test_present_authors_no_markup` (source-unmodified assertion) + `test_present_single_source`
+- [x] `gate-execute` requires a **well-formed** digest — a sha-shaped token and a non-empty quote — not merely a line that starts with the marker. → `test_gate_execute_blocks_missing_digest`
+- [x] `verify` delegates the workspace-stamp comparison to `flow_scratch.check_stamp` (repo+branch+head, realpath-normalized) rather than comparing `branch` alone, and the hand-rolled `_git`/`_stamp` pair is **removed**, not shadowed. → `test_stamp_helpers_are_reused_not_reimplemented`, paired positive + negative
+- [x] Doctor's Check 2.11 shell is **executed** under five fixture configs, not grepped — a grepped shell guard stays green while the shipped shell drifts. → `test_doctor_check_211_actually_runs`
+
 *The handoff*
 
 - [x] `d1-prototype-first-gate.md`'s four Phase-2 checkboxes are checked with their verification named, and all four Phase-2-gates-on-§9.3 statements (Status banner, §0 step 7, §8 preamble, §13 "Spike (before PR 3)") are corrected to gate Phase 3, with §4's unsatisfiability argument recorded. → the diff
