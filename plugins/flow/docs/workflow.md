@@ -186,7 +186,7 @@ After approval the technical plan is written **against a design that survived co
 
 Write the plan to the configured plan doc under "Active Work Items". The plan **must include**:
 
-### Before activating a queued item — check for concurrent work
+#### Before activating a queued item — check for concurrent work
 
 If this plan **activates a queued roadmap/plan item** (as opposed to net-new work), first confirm no sibling workspace already picked it up. A full activation pass — plan draft + `/flow:critique-plan` run + a human gate attempt — built for an item another worktree is already carrying wastes both the reviewer runs and the human's gate attention. One sweep at activation start is enough — **lead with remote state, not the local worktree table**: on a cloud host (one isolated clone per workspace, not a linked worktree of a shared repo), `git worktree list` always shows only itself, which is byte-identical to "no concurrent work" whether or not it's true (the FB-0010 silent-skip shape — this sweep was fixed after that exact failure went unnoticed on cloud hosts). Remote-tracking branches and open PRs carry the real signal on every host:
 
@@ -199,7 +199,7 @@ git worktree list                                         # LOCAL-ONLY supplemen
 
 If any hit matches the item you're about to activate, coordinate or pick a different item rather than opening a duplicate. If `gh` fails or isn't available, say so explicitly rather than silently treating it as "no open PRs" — the branch evidence alone is a weaker signal, and a reader needs to know the PR check didn't run.
 
-### Required fields
+#### Required fields
 
 - **Mode** — one of `feature` (default, full loop), `spike` (exploratory), `tiny` (1–3 line fix).
 - **Goal** — 1–3 sentences in user terms.
@@ -210,7 +210,7 @@ If any hit matches the item you're about to activate, coordinate or pick a diffe
 - **Files touched** — anticipated paths.
 - **Visual-walk** *(UI changes only — gated on `flow.config.json.uiSurface` AND the diff actually touching UI; N/A under tiny and non-visual spikes, but a **visual/interaction spike** should declare one so `/flow:verify-build` §5a captures frames + renders the walkthrough — see § "Spike mode")* — declared visual/UX acceptance criteria, parallel to Spec-walk: each a checkable assertion naming a user-perceptible visual state and how it's checked. Cover static state, token/motion, AND interaction/a11y, not just the happy-path look (e.g. "empty/loading/error state renders correctly"; "primary button uses the accent token, not a hardcoded hex"; "enter motion ≤ 200ms"; "opening the dialog moves focus into it and Esc closes it"; "the submit control shows a loading state and is disabled while the request is in flight"), written against the design-language doc (`flow.config.json.designLanguagePath`). These are the **declared visual criteria** the agent dials in against at Step 8/9 and the human signs off on at the merge gate. Declaration only today — mechanical verification is a later link in the Deliverable-quality roadmap track.
 
-### After drafting, run `/flow:critique-plan`
+#### After drafting, run `/flow:critique-plan`
 
 **Run on EVERY plan — including docs-only ones.** The dogfood lesson from md-manager PR 4 (`dev-docs/feedback/` FB-0008 + FB-0033-style cross-repo discipline): skips compound. A docs-only PR's missing `/critique-plan` step is what surfaced the stale-base BLOCKER class. Diff-size is not a legitimate skip reason.
 
@@ -222,7 +222,7 @@ The plan-critic reviews the plan against the user's request and the reference do
 
 `/flow:critique-plan` is advisory; the workflow's actual enforcement is the human gate below.
 
-### Human gate
+#### Human gate (classic path)
 
 **User approves, redirects, or asks for revision. Claude does not start executing until the plan is approved.**
 
@@ -236,7 +236,7 @@ The critic informs the user's decision; it does not replace the human gate. **LO
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py gate-execute --plan <planPath>
 ```
 
-Do not proceed on `ok: false`. It reads **committed state only** — the plan doc's `**Pre-execution gate:**` declaration and `**Prototype approved:**` digest — so its verdict survives a lost workspace, and a `false` means either no approval digest or no active Spec-walk block: nothing approved, or nothing to build against. That is exactly FB-0080's condition, and this is the check that makes "no second human gate" defensible rather than conventional. On the classic path it returns `ok: true` immediately and costs nothing.
+Do not proceed on `ok: false`. It asserts that the plan doc carries a **well-formed** `**Prototype approved:**` digest (a sha-shaped token plus a non-empty verbatim quote) and an active Spec-walk block — evidence of an approval, not cryptographic proof of one: the sha cannot be re-verified because the artifact it hashes lives in gitignored `.flow/`. It reads **committed state only** — the plan doc's `**Pre-execution gate:**` declaration and `**Prototype approved:**` digest — so its verdict survives a lost workspace, and a `false` means either no approval digest or no active Spec-walk block: nothing approved, or nothing to build against. That is exactly FB-0080's condition, and this is the check that makes "no second human gate" defensible rather than conventional. On the classic path it returns `ok: true` immediately and costs nothing.
 
 Implement the approved plan against the spec-walk checkboxes. During execution:
 

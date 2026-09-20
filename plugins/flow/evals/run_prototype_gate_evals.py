@@ -191,6 +191,44 @@ def test_suppression_is_recorded():
           "a designer whose role is overridden must be TOLD, not silently reclassified")
 
 
+def test_config_not_an_object_fails_closed():
+    """A JSON document that PARSES but is not an object (`[]`, `"x"`) is malformed
+    for this purpose. Found by the /simplify reuse pass: without an isinstance
+    guard, `_ui_surface` raised AttributeError and the process exited 1 with a
+    traceback and NO JSON — violating the module docstring's promise that every
+    subcommand emits a parseable verdict. `toolchain.py` already carries this
+    guard; this reader shipped without it."""
+    for cfg in ("cfg-not-an-object.json", "cfg-json-string.json"):
+        rc, out, err = run("arming", "--config", fx(cfg))
+        check(f"config-nonobject-{cfg}-emits-json", out is not None,
+              f"must emit a parseable verdict, not a traceback; stderr={err[:160]}")
+        check(f"config-nonobject-{cfg}-exit0", rc == 0, f"exit {rc}")
+        check(f"config-nonobject-{cfg}-fails-closed", out and out.get("armed") is False,
+              "unreadable config means uiSurface is UNKNOWN — the D1 branch must not be "
+              "taken on a guess")
+        _, trg, _ = run("trigger", "--brief", fx("brief-visual-feature.md"), "--config", fx(cfg))
+        check(f"config-nonobject-{cfg}-trigger-classic",
+              trg and trg["path"] == "classic" and trg["pre_execution_gate"] == "plan",
+              "trigger and arming must not disagree about the same config")
+
+
+def test_stamp_helpers_are_reused_not_reimplemented():
+    """flow_scratch.current_stamp()/check_stamp() are the canonical pair (FB-0082).
+    An earlier draft hand-rolled both, strictly worse: 3 git subprocesses instead of
+    2, and a verify comparison on `branch` ALONE — so the same branch name in a
+    different clone verified clean, and a symlinked worktree was a false mismatch."""
+    src = ENGINE.read_text(encoding="utf-8")
+    check("engine-imports-flow-scratch", "import flow_scratch" in src)
+    check("engine-uses-current-stamp", "current_stamp(" in src)
+    check("engine-uses-check-stamp", "check_stamp(" in src,
+          "verify must delegate the comparison, not re-compare fields locally")
+    # Paired negative: the private re-implementation must be gone, or both exist
+    # and the reuse is decorative.
+    check("engine-has-no-private-git-helper",
+          "def _git(" not in src,
+          "the hand-rolled _git/_stamp pair must be REMOVED, not merely shadowed")
+
+
 def test_arming_is_config_only():
     """The arming check must answer without a brief — that is the whole reason
     it is split out of `trigger`. A single combined predicate could never decide
@@ -513,7 +551,13 @@ def test_present_authors_no_markup():
         before = f.read_text(encoding="utf-8")
         _, out, _ = run("present", "--file", str(f))
         check("present-injects", out and out["injected"] is True)
-        after = f.read_text(encoding="utf-8")
+        presented = f.with_suffix(".presented.html")
+        check("present-writes-separate-file", presented.is_file(),
+              "present must not mutate the source: `approve` hashes prototype.html, so "
+              "injecting in place made the recorded sha cover prototype+layer")
+        check("present-source-unmodified", f.read_text(encoding="utf-8") == before,
+              "the source is the thing the human approved — it stays byte-identical")
+        after = presented.read_text(encoding="utf-8")
         layer = LAYER.read_text(encoding="utf-8")
         i = before.rfind("</body>")
         expected = before[:i] + layer + before[i:]
@@ -530,9 +574,13 @@ def test_present_single_source():
         f = Path(tmp) / "prototype.html"
         shutil.copy(FIX / "prototype-minimal.html", f)
         run("present", "--file", str(f))
+        first = f.with_suffix(".presented.html").read_text(encoding="utf-8")
         _, again, _ = run("present", "--file", str(f))
-        check("present-idempotent", again and again["injected"] is False,
-              "a second present must not inject a second layer")
+        second = f.with_suffix(".presented.html").read_text(encoding="utf-8")
+        check("present-idempotent", first == second,
+              "a second present must produce the same bytes — idempotent BY CONSTRUCTION "
+              "now (it re-derives from an unmutated source), not by sniffing for an "
+              "already-injected layer, which was a bandaid for mutating in place")
 
 
 # ------------------------------------------------------------------- 6. docs
@@ -591,17 +639,31 @@ def test_gate_language_fanout():
     # `:!fixtures/` excludes test DATA. The seed survivor in there exists precisely
     # to prove this pattern fires (item 4); sweeping it would make the corpus check
     # permanently red over its own instrument-validation input.
+    # `:!` excludes test DATA and this harness itself. The seed survivor exists to
+    # prove the pattern fires (item 4); this file DEFINES the pattern and names the
+    # exemptions, so it necessarily contains the phrases. A detector quoting what it
+    # searches for is not a claim that a gate is unconditional.
     hits = _grep_hits(GATE_PAT, ["plugins/", "README.md", ".claude/", "CLAUDE.md",
-                                 ":!plugins/flow/evals/fixtures/"])
+                                 ":!plugins/flow/evals/fixtures/",
+                                 ":!plugins/flow/evals/run_prototype_gate_evals.py"])
     check("gate-sweep-found-something", len(hits) > 0,
           "a gate sweep returning nothing means the pattern broke, not that the corpus is clean")
+    # Verdict at HIT granularity, not file granularity. The earlier predicate was
+    # `"prototype" not in <whole file>`, so any file that mentioned prototype ANYWHERE
+    # passed — even if the matched sentence still read "human-gated at Plan and Merge".
+    # That is not "checked at the join", which is what this test claims to do.
     unverdicted = []
+    _cache = {}
     for line in hits:
-        path = line.split(":", 1)[0]
+        path, lineno = line.split(":", 2)[0], int(line.split(":", 2)[1])
         if path in GATE_EXEMPT:
             continue
-        txt = Path(ROOT / path).read_text(encoding="utf-8")
-        if "prototype" not in txt.lower():
+        lines = _cache.setdefault(path, (ROOT / path).read_text(encoding="utf-8").splitlines())
+        # The matched line plus its immediate neighbours — a sentence asserting a gate
+        # must account for BOTH shapes within its own paragraph, not three screens away.
+        lo, hi = max(0, lineno - 2), min(len(lines), lineno + 2)
+        para = " ".join(lines[lo:hi]).lower()
+        if "prototype" not in para:
             unverdicted.append(line)
     check("gate-language-all-verdicted", not unverdicted,
           "every file asserting a pre-execution gate must account for BOTH shapes "

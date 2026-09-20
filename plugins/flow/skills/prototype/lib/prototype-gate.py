@@ -68,10 +68,19 @@ SCHEMA_VERSION = 1
 # commonly ships (see the § 9.4 note in the module docstring's handoff ref).
 BROWSER_NATIVE_PLATFORM = "web"
 
-# Platforms that may NOT take the one-line browser-delivery exit below. These are
-# unambiguously proxied surfaces; letting an author declare their way out of the
-# only guard § 9.4 has would defeat it.
-ALWAYS_PROXY_PLATFORMS = {"ios", "android"}
+# Who may take the one-line browser-delivery exit — an ALLOWLIST, deliberately, and
+# this was a denylist (`{"ios","android"}`) until /simplify's altitude pass pointed
+# out it was the exact shape argued against eight lines above: an enumeration of
+# native platforms silently exempts any enum value added later. `react-native`,
+# `flutter`, `macos`, `electron` would each have been able to declare their way out
+# of the only guard § 9.4 has — the same hole the complement rule had just closed
+# for unset `platform`. Two rules about one question ("is this a proxy?") pointing
+# opposite ways.
+#
+# As an allowlist the default inverts: a platform nobody has thought about yet
+# CANNOT self-declare browser delivery, and adding one to the schema is a
+# deliberate act here rather than a silent exemption there.
+BROWSER_DELIVERY_ELIGIBLE = {"web", "library", "none", "cli", "tauri"}
 
 # Closed verdict set for a feasibility row. Open sets rot: a typo'd verdict would
 # otherwise read as a considered judgment.
@@ -82,13 +91,27 @@ FEASIBILITY_VERDICTS = ("native-standard", "native-custom", "expensive", "infeas
 # its price is stated.
 MUST_SURFACE_VERDICTS = tuple(v for v in FEASIBILITY_VERDICTS if v != "native-standard")
 
+# ONE wording, because the eval greps for the substring `SUPPRESS` and two
+# hand-written copies would drift without failing it.
+SUPPRESSED_MSG = ("role: designer is SUPPRESSED by uiSurface: false — a project that declares "
+                  "no UI surface has nothing to prototype. Recorded, never silently honored "
+                  "(same shape and resolution as visual-significance.py's gate 1).")
+
 SURFACE_VALUES = ("visual", "non-visual")
 MODE_VALUES = ("feature", "spike", "tiny")
 
 # Committed markers. `gate-execute` reads these and nothing else — see its
 # docstring for why the arming signal must survive the workspace.
 GATE_DECL_RE = re.compile(r"^\s*\*\*Pre-execution gate:\*\*\s*(?P<gate>[a-z-]+)\s*$", re.M)
-DIGEST_RE = re.compile(r"^\s*\*\*Prototype approved:\*\*\s*(?P<body>.+)$", re.M)
+# The digest line, parsed rather than merely detected. An earlier version captured
+# `body` and threw it away, so the guard asserted only that a line EXISTS — the agent
+# writes the line, the agent's guard checks the line is there. It now has to contain a
+# sha-shaped token and a non-empty quoted approval, which is the difference between
+# "a marker is present" and "the marker carries what it claims to".
+DIGEST_RE = re.compile(
+    r"^\s*\*\*Prototype approved:\*\*\s*`(?P<sha>[0-9a-f]{8,64})`\s*·\s*(?P<quote>\"[^\"]*\"|'[^']*')",
+    re.M,
+)
 
 # Brief header: `**Mode:** feature · **Surface:** visual` (either order, either
 # on one line or two — the separator is cosmetic, the declarations are not).
@@ -109,6 +132,8 @@ ANNOTATION_LAYER = (
 # --------------------------------------------------------------------------- helpers
 
 def _emit(obj) -> int:
+    # Injected here, not repeated at every return: a future path cannot forget it.
+    obj.setdefault("schema", SCHEMA_VERSION)
     json.dump(obj, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
     return 0
@@ -137,7 +162,21 @@ def _read_config(config_path):
         )
         return {}, warnings, "absent"
     try:
-        return json.loads(config_path.read_text(encoding="utf-8")), warnings, "ok"
+        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        # A JSON document that parses but is not an OBJECT (`[]`, `"x"`, `3`) is
+        # malformed FOR THIS PURPOSE. Without this guard `_ui_surface` raised
+        # AttributeError and the process exited 1 with a traceback and no JSON —
+        # violating this module's own docstring promise that every subcommand emits
+        # a parseable verdict. `toolchain.py` already carries the isinstance guard;
+        # this reader shipped without it.
+        if not isinstance(cfg, dict):
+            warnings.append(
+                "[WARN] config_malformed: flow.config.json at %s is valid JSON but not an "
+                "object (%s), so no slot can be read. Failing CLOSED to the classic plan gate."
+                % (config_path, type(cfg).__name__)
+            )
+            return {}, warnings, "malformed"
+        return cfg, warnings, "ok"
     except (ValueError, OSError) as exc:
         warnings.append(
             "[WARN] config_malformed: flow.config.json at %s is unreadable (%s), so "
@@ -151,7 +190,7 @@ def _ui_surface(cfg) -> bool:
     # Explicit `false` opts out; anything else (including absent) is true. The
     # `if x is False` form rather than `cfg.get("uiSurface", True)` mirrors
     # FB-0058's jq boolean-slot fix — a falsy-but-not-false value must not invert.
-    return False if cfg.get("uiSurface") is False else True
+    return cfg.get("uiSurface") is not False
 
 
 def _role(cfg):
@@ -164,22 +203,24 @@ def _platform(cfg):
     return p if isinstance(p, str) and p else None
 
 
-def _git(*args, cwd=None):
-    try:
-        out = subprocess.run(
-            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=10
-        )
-        return out.stdout.strip() if out.returncode == 0 else ""
-    except (OSError, subprocess.SubprocessError):
-        return ""
+def _flow_scratch():
+    """The canonical stamp helpers (FB-0082), imported rather than re-implemented.
+
+    An earlier draft hand-rolled `_git` + `_stamp` here. They were strictly worse
+    than what already shipped: three git subprocesses where `current_stamp()`
+    deliberately folds two into one `rev-parse --show-toplevel --short HEAD`, and
+    a `verify` comparison that checked only `branch` — so the same branch name in a
+    *different clone* verified clean, and a symlinked worktree (macOS `/var` →
+    `/private/var`) produced a spurious mismatch that `check_stamp()`'s realpath
+    normalization already handles. Re-implementing a helper whose own feedback ID
+    the copy was citing is the duplication this repo names most often."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent / "scripts"))
+    import flow_scratch
+    return flow_scratch
 
 
 def _stamp(root=None):
-    return {
-        "repo": _git("rev-parse", "--show-toplevel", cwd=root) or "",
-        "branch": _git("branch", "--show-current", cwd=root) or "",
-        "head": _git("rev-parse", "--short", "HEAD", cwd=root) or "",
-    }
+    return _flow_scratch().current_stamp(cwd=root)
 
 
 def _sha256(path: Path) -> str:
@@ -250,6 +291,15 @@ def cmd_arming(args) -> int:
     ui = _ui_surface(cfg)
     role = _role(cfg)
     reasons = list(warnings)
+    # Same fail-closed direction as `trigger`: an unreadable config means uiSurface
+    # is UNKNOWN, and the D1 branch must not be taken on a guess. Reported as
+    # not-armed rather than defaulted-armed, so the two subcommands cannot disagree
+    # about the same config.
+    if cfg_state == "malformed":
+        reasons.append("config_malformed — uiSurface unknown; the D1 branch is unavailable "
+                       "and Step 2 is the classic plan gate.")
+        return _emit({"armed": False, "ui_surface": None, "role": role,
+                      "brief_required": False, "config_state": cfg_state, "reasons": reasons})
     if ui:
         reasons.append("uiSurface is not false — the D1 branch is available.")
         if role == "designer":
@@ -260,17 +310,14 @@ def cmd_arming(args) -> int:
             "to prototype. The D1 branch is unavailable; Step 2 is the classic plan gate."
         )
         if role == "designer":
-            reasons.append(
-                "role: designer is SUPPRESSED by uiSurface: false — recorded, never "
-                "silently honored (same shape and resolution as visual-significance.py's gate 1)."
-            )
+            reasons.append(SUPPRESSED_MSG)
     return _emit({
         "armed": bool(ui),
         "ui_surface": ui,
         "role": role,
         "brief_required": bool(ui),
+        "config_state": cfg_state,
         "reasons": reasons,
-        "schema": SCHEMA_VERSION,
     })
 
 
@@ -296,8 +343,7 @@ def cmd_trigger(args) -> int:
             "ui_surface": ui,
             "config_state": cfg_state,
             "reasons": reasons,
-            "schema": SCHEMA_VERSION,
-        })
+            })
 
     # An unreadable config means uiSurface/role are UNKNOWN. Fail closed.
     if cfg_state == "malformed":
@@ -309,9 +355,7 @@ def cmd_trigger(args) -> int:
     # binds OUTSIDE the OR below — see the suppression note in cmd_arming.
     if not ui:
         if role == "designer":
-            reasons.append(
-                "role: designer SUPPRESSED by uiSurface: false — recorded, not silently dropped."
-            )
+            reasons.append(SUPPRESSED_MSG)
         return out("classic", "plan", "uiSurface: false vetoes prototype-first; the plan gate stands.")
 
     if brief_state != "ok":
@@ -345,8 +389,8 @@ def cmd_trigger(args) -> int:
 # --------------------------------------------------------------------------- contract
 
 def _feasibility_rows(text):
-    """Every `- <name> — <verdict> — <reason>` row under the Feasibility heading.
-    Returns (rows, unverdicted) where a row is (name, verdict)."""
+    """Every `- <affordance> — <verdict> — <reason>` row under the Feasibility
+    heading. Returns (rows, unverdicted); a row is (full line, verdict)."""
     rows, unverdicted = [], []
     m = FEASIBILITY_HEAD_RE.search(text)
     if not m:
@@ -357,16 +401,25 @@ def _feasibility_rows(text):
             break
         if not re.match(r"^\s*[-*+]\s+\S", line):
             continue
-        found = [v for v in FEASIBILITY_VERDICTS if re.search(r"\b%s\b" % re.escape(v), line)]
-        if found:
-            # Longest match wins so `native-custom` is not read as `native-standard`.
-            rows.append((line.strip(), sorted(found, key=len)[-1]))
+        m = re.search(r"\b(%s)\b" % "|".join(FEASIBILITY_VERDICTS), line)
+        if m:
+            rows.append((line.strip(), m.group(1)))
         else:
             unverdicted.append(line.strip())
     return rows, unverdicted
 
 
 def cmd_contract(args) -> int:
+    return _emit(_contract(Path(args.dir), args.config))
+
+
+def _contract(proto_dir: Path, config_path):
+    """The contract verdict as a dict. Split out so `approve` can call it
+    directly rather than re-invoking the CLI through a stdout capture — that
+    round-trip coupled a refusal path to `cmd_contract` emitting nothing but
+    JSON, so any stray print() would have broken `approve` rather than
+    `contract`."""
+    args = argparse.Namespace(dir=str(proto_dir), config=config_path)
     cfg, warnings, cfg_state = _read_config(args.config)
     platform = _platform(cfg)
     proto_dir = Path(args.dir)
@@ -376,8 +429,7 @@ def cmd_contract(args) -> int:
     if proto is None:
         return _emit({
             "ok": False, "platform": platform, "feasibility_required": None,
-            "must_surface": [], "schema": SCHEMA_VERSION,
-            "reasons": reasons + ["no prototype.html in %s — nothing to contract-check." % proto_dir],
+            "must_surface": [],             "reasons": reasons + ["no prototype.html in %s — nothing to contract-check." % proto_dir],
         })
 
     # The feasibility read lives in a SIBLING document, not inside the HTML.
@@ -394,16 +446,16 @@ def cmd_contract(args) -> int:
 
     required = platform != BROWSER_NATIVE_PLATFORM
     if not required:
-        return _emit({
+        return {
             "ok": True, "platform": platform, "feasibility_required": False,
-            "must_surface": [], "schema": SCHEMA_VERSION,
+            "must_surface": [],
             "reasons": reasons + [
                 "platform: web — the prototype IS the delivery medium, so the feasibility "
                 "read has nothing to proxy. The single exempt value."
             ],
-        })
+        }
 
-    has_block = feas.is_file() and bool(FEASIBILITY_HEAD_RE.search(text))
+    has_block = bool(FEASIBILITY_HEAD_RE.search(text))  # text is "" when the file is absent
     rows, unverdicted = _feasibility_rows(text)
     browser_delivery = bool(BROWSER_DELIVERY_RE.search(text))
     proxy_disclosed = bool(PROXY_DISCLOSURE_RE.search(text))
@@ -424,11 +476,12 @@ def cmd_contract(args) -> int:
             "is %s (non-web). Required unless platform == \"web\"." % (feas, platform or "unset")
         )
     else:
-        if browser_delivery and platform in ALWAYS_PROXY_PLATFORMS:  # noqa: SIM114
+        if browser_delivery and platform not in BROWSER_DELIVERY_ELIGIBLE:
             problems.append(
                 "the one-line browser-delivery declaration is NOT available to platform %s — "
-                "an unambiguously proxied surface cannot declare its way out of the only "
-                "guard § 9.4 has. Enumerate the affordances." % platform
+                "only %s may take it, and anything else is treated as a proxied surface that "
+                "cannot declare its way out of the only guard § 9.4 has. Enumerate the "
+                "affordances." % (platform or "unset", sorted(BROWSER_DELIVERY_ELIGIBLE))
             )
         elif browser_delivery:
             reasons.append(
@@ -451,7 +504,7 @@ def cmd_contract(args) -> int:
                 )
 
     must_surface = [r for r, v in rows if v in MUST_SURFACE_VERDICTS]
-    return _emit({
+    return {
         "ok": not problems,
         "platform": platform,
         "feasibility_path": str(feas),
@@ -462,8 +515,7 @@ def cmd_contract(args) -> int:
         "must_surface": must_surface,
         "problems": problems,
         "reasons": reasons,
-        "schema": SCHEMA_VERSION,
-    })
+    }
 
 
 # --------------------------------------------------------------------------- approve
@@ -504,19 +556,13 @@ def cmd_approve(args) -> int:
 
     # Re-run the contract rather than trusting a caller-passed verdict: a gate
     # that accepts "I already checked" is not a gate.
-    import io
-    from contextlib import redirect_stdout
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        cmd_contract(argparse.Namespace(dir=str(proto_dir), config=args.config))
-    contract = json.loads(buf.getvalue())
+    contract = _contract(proto_dir, args.config)
     if not contract.get("ok"):
         print("REFUSED: the prototype's contract does not pass, so gate 1 is unreachable.\n  %s"
               % "\n  ".join(contract.get("problems") or ["(no detail)"]), file=sys.stderr)
         return 2
 
     record = {
-        "schema": SCHEMA_VERSION,
         "prototype": proto.name,
         "sha256": _sha256(proto),
         "stamp": _stamp(),
@@ -536,7 +582,6 @@ def cmd_approve(args) -> int:
             "Gate 1 recorded. Add the digest line above to the plan doc — that committed "
             "line, not this .flow/ record, is what `gate-execute` reads (see its docstring)."
         ],
-        "schema": SCHEMA_VERSION,
     })
 
 
@@ -558,13 +603,11 @@ def cmd_verify(args) -> int:
     rec_path = proto_dir / "approval.json"
     problems = []
     if not rec_path.is_file():
-        return _emit({"ok": False, "schema": SCHEMA_VERSION,
-                      "problems": ["no approval.json in %s" % proto_dir]})
+        return _emit({"ok": False, "problems": ["no approval.json in %s" % proto_dir]})
     try:
         record = json.loads(rec_path.read_text(encoding="utf-8"))
     except ValueError:
-        return _emit({"ok": False, "schema": SCHEMA_VERSION,
-                      "problems": ["approval.json is malformed JSON"]})
+        return _emit({"ok": False, "problems": ["approval.json is malformed JSON"]})
 
     if not (record.get("approved_by_human_quote") or "").strip():
         problems.append("record carries no human approval quote")
@@ -582,11 +625,13 @@ def cmd_verify(args) -> int:
                 "longer describes what the human saw (recorded %s, on disk %s)"
                 % (str(record.get("sha256"))[:12], live[:12])
             )
-    now = _stamp()
-    was = record.get("stamp") or {}
-    if was.get("branch") and now.get("branch") and was["branch"] != now["branch"]:
-        problems.append("stamp branch MISMATCH — recorded on %r, now on %r (FB-0082)"
-                        % (was["branch"], now["branch"]))
+    # Delegate to flow_scratch.check_stamp rather than comparing fields here: it
+    # covers repo/branch/head (not just branch), realpath-normalizes the repo so a
+    # symlinked worktree is not a false mismatch, and refuses a non-string field
+    # instead of raising. check_stamp expects the stamp under `flow_stamp`.
+    ok_stamp, reason = _flow_scratch().check_stamp({"flow_stamp": record.get("stamp") or {}})
+    if not ok_stamp:
+        problems.append("workspace stamp MISMATCH — %s (FB-0082)" % reason)
     return _emit({"ok": not problems, "problems": problems,
                   "digest_line": render_digest(record), "schema": SCHEMA_VERSION})
 
@@ -615,25 +660,31 @@ def cmd_gate_execute(args) -> int:
     """
     plan_path = Path(args.plan)
     if not plan_path.is_file():
-        return _emit({"ok": False, "gate": None, "schema": SCHEMA_VERSION,
-                      "problems": ["plan doc not found at %s" % plan_path]})
+        return _emit({"ok": False, "gate": None, "problems": ["plan doc not found at %s" % plan_path]})
     text = plan_path.read_text(encoding="utf-8")
 
     m = GATE_DECL_RE.search(text)
     gate = m.group("gate") if m else None
+    digest_m = DIGEST_RE.search(text)
+    has_digest = digest_m is not None
     if gate != "prototype":
         return _emit({
-            "ok": True, "gate": gate, "has_digest": bool(DIGEST_RE.search(text)),
-            "spec_walk_items": None, "problems": [], "schema": SCHEMA_VERSION,
-            "reasons": ["plan doc declares no prototype gate — classic path, nothing to assert."],
+            "ok": True, "gate": gate, "has_digest": has_digest,
+            "spec_walk_items": None, "problems": [],             "reasons": ["plan doc declares no prototype gate — classic path, nothing to assert."],
         })
 
     problems = []
-    if not DIGEST_RE.search(text):
+    if not has_digest:
         problems.append(
-            "plan declares `Pre-execution gate: prototype` but carries NO `**Prototype "
-            "approved:**` digest. Either gate 1 never happened, or its record was lost with "
-            "the workspace — both mean no human has approved anything on this branch."
+            "plan declares `Pre-execution gate: prototype` but carries no WELL-FORMED "
+            "`**Prototype approved:**` digest (expected a `<sha>` token and a quoted verbatim "
+            "approval). Either gate 1 never happened, its record was lost with the workspace, "
+            "or the line was hand-written — all three mean no human approval is evidenced here."
+        )
+    elif not (digest_m.group("quote") or "").strip("\"'"):
+        problems.append(
+            "the `**Prototype approved:**` digest carries an EMPTY approval quote — a marker "
+            "shaped like an approval with nothing in it."
         )
 
     items = None
@@ -657,7 +708,7 @@ def cmd_gate_execute(args) -> int:
         problems.append("could not resolve the Spec-walk block via walk_extract (%s) — failing "
                         "CLOSED rather than assuming a plan exists." % exc.__class__.__name__)
 
-    return _emit({"ok": not problems, "gate": gate, "has_digest": bool(DIGEST_RE.search(text)),
+    return _emit({"ok": not problems, "gate": gate, "has_digest": has_digest,
                   "spec_walk_items": items, "problems": problems, "schema": SCHEMA_VERSION})
 
 
@@ -680,27 +731,31 @@ def cmd_present(args) -> int:
     if not proto.is_file():
         print("no prototype at %s" % proto, file=sys.stderr)
         return 2
+    # Write a SEPARATE presented file; never mutate the source. Injecting in place
+    # made the recorded sha cover "prototype + injected layer", and made a second
+    # present (after an iteration round) indistinguishable from a post-approval edit
+    # at `verify` — the string-sniff dedupe guard was a bandaid for that coupling.
+    # Source stays the thing approved; presentation is idempotent by construction.
+    presented = proto.with_suffix(".presented.html")
     html = proto.read_text(encoding="utf-8")
     warnings = []
     try:
         layer = ANNOTATION_LAYER.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, ValueError):  # ValueError = non-UTF-8 / corrupt partial
         return _emit({
-            "ok": True, "injected": False, "schema": SCHEMA_VERSION,
-            "reasons": ["[WARN] annotation layer unreadable at %s — prototype presented READ-ONLY. "
+            "ok": True, "injected": False,             "reasons": ["[WARN] annotation layer unreadable at %s — prototype presented READ-ONLY. "
                         "The human can still look; they just cannot pin comments." % ANNOTATION_LAYER],
         })
-    if "id=\"an-dock\"" in html or "an-dock" in html:
-        warnings.append("annotation layer already present — not injected twice.")
-        return _emit({"ok": True, "injected": False, "reasons": warnings, "schema": SCHEMA_VERSION})
-
     idx = html.rfind("</body>")
     out = (html[:idx] + layer + html[idx:]) if idx != -1 else (html + layer)
     if idx == -1:
         warnings.append("[WARN] no </body> found — layer appended at end of file.")
-    proto.write_text(out, encoding="utf-8")
+    presented.write_text(out, encoding="utf-8")
     return _emit({"ok": True, "injected": True, "bytes_added": len(out) - len(html),
-                  "source": str(ANNOTATION_LAYER), "reasons": warnings, "schema": SCHEMA_VERSION})
+                  "presented": str(presented), "source": str(ANNOTATION_LAYER),
+                  "reasons": warnings,
+                  "open_this": "Open %s — the source %s stays unmodified, and is what "
+                               "`approve` hashes." % (presented.name, proto.name)})
 
 
 # --------------------------------------------------------------------------- cli

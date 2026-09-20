@@ -118,7 +118,7 @@ Write `$PROTO_DIR/feasibility.md`. **Required unless `platform` is exactly `web`
 
 It lives in a sibling file, not inside the HTML: an HTML-comment-embedded block is invisible to the human looking at the rendered page — precisely the reader it exists to warn.
 
-**When the prototype IS the delivery medium** (browser-rendered UI — `platform: web`, or `library`/`none`/`cli`/`tauri` on a project whose surface is a webview), one line is the whole read:
+**When the prototype IS the delivery medium**, one line is the whole read. Eligible platforms are an **allowlist** — `web`, `library`, `none`, `cli`, `tauri` — so a platform value nobody has considered yet (a future `react-native`, `flutter`, `macos`, `electron`) **cannot** declare its way out of the guard; it is treated as a proxy until someone deliberately adds it here:
 
 ```markdown
 **Feasibility** — Delivery medium: browser (the prototype is the artifact, not a proxy). No native translation required.
@@ -132,7 +132,7 @@ It lives in a sibling file, not inside the HTML: an HTML-comment-embedded block 
 - <affordance> — native-standard | native-custom | expensive | infeasible — <reason naming the platform mechanism>
 ```
 
-Every row needs a verdict from that closed set. `contract` returns each non-`native-standard` row in `must_surface[]`, and **those rows lead your gate-1 message**: a look the human cannot afford must not be approved before its price is stated.
+`ios` and `android` are outside the allowlist above, so they always need the full read. Every row needs a verdict from that closed set. `contract` returns each non-`native-standard` row in `must_surface[]`, and **those rows lead your gate-1 message**: a look the human cannot afford must not be approved before its price is stated.
 
 ```sh
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py contract \
@@ -162,7 +162,7 @@ Give each the **absolute path** to `$PROTO_DIR/prototype.html`, the design-langu
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py present --file "$PROTO_DIR/prototype.html"
 ```
 
-This injects the existing click-to-pin annotation layer and **authors no markup of its own**. All flow-authored chrome goes in your chat message instead — which is also why the message has to carry it:
+This writes **`prototype.presented.html`** — the prototype plus the existing click-to-pin annotation layer, and **no markup of flow's own**. It does **not** modify `prototype.html`: the source stays byte-identical, because that is the file `approve` hashes and therefore the thing the human is approving. Give the human the *presented* path to open. All flow-authored chrome goes in your chat message instead — which is also why the message has to carry it:
 
 1. **The `file://` path**, so they can open it.
 2. **The feasibility summary**, leading, whenever `must_surface[]` is non-empty. Name each expensive/infeasible affordance and its cost.
@@ -217,4 +217,5 @@ Phase 3 (auto-writing the plan and machine-gating it) is **not built**; it is ga
 - **Never approve on the human's behalf.** The one rule with no exception.
 - **A `collapsed` or `classic` verdict is a success, not a failure.** Proportionality is a first-class constraint: three review passes and a prototype cost more than a small change is worth. Hand back cleanly.
 - **Don't skip the brief because the change "seems obviously visual."** The brief is where `Mode` and `Surface` are declared; skipping it leaves the trigger with nothing to read, and it fails closed to the classic plan gate.
-- **Don't edit the prototype after approval without re-approving.** `verify` detects it by sha256, and the record stops describing what the human actually saw.
+- **Don't edit the prototype after approval without re-approving.** `verify` detects it by sha256, and the record stops describing what the human actually saw. (Re-running `present` is safe — it writes a separate file and leaves the source alone.)
+- **The committed digest evidences an approval; it does not prove one.** `gate-execute` asserts the plan doc carries a well-formed `**Prototype approved:**` line — a sha-shaped token and a non-empty verbatim quote — plus an active Spec-walk. It cannot re-verify the sha, because the artifact it hashes lives in gitignored `.flow/`. So it is a real check against *the line being absent, empty, or hand-waved*, and not a cryptographic proof that a human looked. Say that honestly rather than implying more.
