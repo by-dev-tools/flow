@@ -111,9 +111,21 @@ CAP=60000
 # any kind, command substitution included -- and is the only form measured to neutralise it.
 # Every path guard below (containment, symlink, newline) runs on $SRC AFTER this point, so
 # without this capture they are all guards on an already-won shell.
-# TWO RESIDUALS, both named because neither is hypothetical:
-#  (a) a payload containing a line exactly equal to the delimiter escapes the heredoc -- hence
-#      the long unguessable delimiter rather than a tidy one;
+# THIS NARROWS THE SINK. IT DOES NOT CLOSE IT. Stated first because the earlier draft of this
+# comment claimed the opposite and was wrong:
+#  (a) A payload containing a line equal to the delimiter ESCAPES the heredoc and executes --
+#      verified, with a canary, against this exact block. The delimiter is a published literal
+#      in a world-readable shipped file, so "long and unguessable" is not a mitigation at all;
+#      it costs an attacker one extra payload line. Worse, the newline refusal below then fires
+#      and prints a correct-looking SOURCE-UNRESOLVED, so the run reads CLEAN after executing.
+#      NO static delimiter can fix this: the substitution happens before the shell parses, so
+#      lines 2..n of a multi-line payload always land at column 0 in some shell context. The
+#      real fix is for the argument to leave the block entirely, which is a house-idiom decision
+#      across four skills and is escalated, not taken here. Pinned as a KNOWN RESIDUAL by
+#      run_coverage_source_mode_evals.py so a future fix makes that pin fail loudly.
+#      What the capture DOES buy, measured: single-line payloads -- quote-break, command
+#      substitution, appended subshell, semicolon chain -- are all inert, and those are the
+#      forms every sibling skill is still fully exposed to.
 #  (b) the placeholder must appear EXACTLY ONCE in this block, and only inside the heredoc
 #      body. A second occurrence anywhere -- including in a comment -- is a live injection site,
 #      because a multi-line payload substituted into a comment leaves lines 2..n as executable

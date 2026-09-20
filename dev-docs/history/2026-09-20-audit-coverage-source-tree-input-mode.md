@@ -213,10 +213,26 @@ substitution site) and the block then rendered normally, so the output looked en
 refusal, `SOURCE-UNRESOLVED` — all operate on `$SRC`, i.e. after the shell has already run the payload. They
 were path guards on an already-won shell.
 
-**The fix**: a quoted-delimiter heredoc capture, the only form measured to neutralise every payload class
-(quote-break, command substitution, semicolon chain, appended subshell, multi-line). Two residuals are named in
-the block rather than assumed away:
-- a payload containing a line exactly equal to the delimiter escapes it — hence a long unguessable delimiter;
+**The mitigation — and it is a mitigation, not a fix.** A quoted-delimiter heredoc capture makes the
+substituted text literal to the shell, which neutralises every *single-line* payload class: quote-break,
+command substitution, appended subshell, semicolon chain. All measured inert with a filesystem canary.
+
+**But the re-review defeated it, and the correction matters more than the fix.** A payload containing a line
+equal to the delimiter escapes the capture and executes — verified with a canary against this exact block. The
+first version of this entry called the delimiter "long and unguessable"; that claim was worthless, because the
+delimiter is a published literal in a world-readable shipped file. It costs an attacker one extra payload line.
+And the newline refusal then fires *after* execution, printing a correct-looking `SOURCE-UNRESOLVED` — so the
+run reads clean, which is the exact "looked entirely clean to a reader" failure this entry describes for the
+original bug, reproduced by its own fix one commit later.
+
+**No static delimiter can close this.** Substitution happens before the shell parses, so lines 2..n of a
+multi-line payload always land at column 0 in some shell context. The real fix is for the argument to leave the
+`!` block entirely — a house-idiom decision across four skills, escalated rather than taken at ship time
+(security-sensitive, competing options of comparable merit, and it sets the idiom: all three FB-0011 triggers).
+It is pinned as a **KNOWN RESIDUAL in the eval, asserted in its true vulnerable state**, so the suite cannot
+print "all passed" over a live hole and a future fix makes the pin go red on purpose.
+
+Other residual named in the block:
 - **the placeholder must appear exactly once in the block, inside the heredoc.** A second occurrence *in a
   comment* is a live injection site, because a multi-line payload leaves lines 2..n as executable code. I
   introduced exactly that while writing the fix — three of the four occurrences were in the explanatory comment
@@ -277,7 +293,7 @@ the spike identified; the Phase-3 design decision (spike option (a) vs (b)) rema
 ## Files
 
 - `plugins/flow/skills/audit-coverage/SKILL.md` — the source block, the one-line diff-mode gate, mode-scoped prose
-- `plugins/flow/evals/run_coverage_source_mode_evals.py` — new, 79 checks, CI-wired
+- `plugins/flow/evals/run_coverage_source_mode_evals.py` — new, 81 checks, CI-wired
 - `plugins/flow/evals/fixtures/coverage_source_mode_undeclared_context{,.expected}.{md,txt}` + `ground_truth.yaml`
   — offline-validated fixture pair, the same tier as the three diff-mode coverage fixtures (it pins the
   assembled-context shape and the output schema; it does **not** demonstrate live LLM behavior)

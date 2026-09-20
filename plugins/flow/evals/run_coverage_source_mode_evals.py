@@ -58,6 +58,7 @@ SKILL = PLUGIN / "skills" / "audit-coverage" / "SKILL.md"
 PROTOTYPE = PLUGIN / "skills" / "verify-build" / "lib" / "annotation-layer.html"
 
 ARG_TOKEN = "$" + "ARGUMENTS"   # assembled, so this file is not itself a substitution site
+DELIM = "FLOW_ARG_CAPTURE_9f3a2c7e"   # the capture delimiter — published, hence the residual below
 
 _failures: list[str] = []
 
@@ -466,6 +467,27 @@ with tempfile.TemporaryDirectory() as td:
               not canary.exists(), f"EXECUTED — {canary} was created by the {label} payload")
     if canary.exists():
         canary.unlink()
+
+    # KNOWN RESIDUAL — PINNED, NOT HIDDEN. A payload containing a line equal to the heredoc
+    # delimiter escapes the capture and EXECUTES. This is asserted in its true (vulnerable)
+    # state deliberately: omitting it would let the suite print "all passed" over a live hole,
+    # which is the exact failure this file's docstring is about. When the argument finally
+    # leaves the block (the escalated house-idiom fix), THIS CHECK GOES RED — that is the
+    # point. Whoever fixes it: flip this to `not canary.exists()`, drop the residual language
+    # from SKILL.md and the history entry, and re-check the sibling skills.
+    if canary.exists():
+        canary.unlink()
+    run(SOURCE_BLOCK, r, arguments=(
+        f"weird.html\n{DELIM}\ntouch {canary}\ncat <<'{DELIM}'\nx"))
+    check("KNOWN RESIDUAL: a delimiter-collision payload still executes (documented, not fixed)",
+          canary.exists(),
+          "it no longer executes — the residual is CLOSED. Update this check, SKILL.md's "
+          "residual comment, and the history entry, then re-check the sibling skills.")
+    if canary.exists():
+        canary.unlink()
+    check("...and the residual is documented in the skill, not silently carried",
+          "THIS NARROWS THE SINK. IT DOES NOT CLOSE IT." in SKILL.read_text(encoding="utf-8"))
+
     # PAIRED POSITIVE: the canary mechanism itself works. Without this, a typo'd canary path
     # would make all six checks above pass for the wrong reason.
     subprocess.run(["sh", "-c", f"touch {canary}"], check=True)
