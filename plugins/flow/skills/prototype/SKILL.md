@@ -205,9 +205,9 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py gate-execut
 
 - `/flow:critique-plan` — scope drift, spec violation, incoherence.
 - `/flow:audit-plan` — unverified assumptions and recall.
-- `/flow:audit-coverage` **in prototype-source mode, once that mode ships** — completeness.
+- `/flow:audit-coverage` **in prototype-source mode, once that mode ships** — completeness, **best-effort**: measured at full precision but **variable recall** (two runs over one prototype found 10 and 5 of the same behavior set). It raises the bar; it does not guarantee completeness, and a gap it misses reaches Execute undeclared.
 
-**Be honest about which of those is live.** Until the source mode exists, this review is a **form and coherence check and explicitly not a completeness check** — the §9.3 spike measured this exact reviewer set catching 1 of 12 real coverage gaps, and the completeness backstop is the existing `/flow:audit-coverage` running post-execution against a real diff at `/flow:ship` Step 2. A gap is caught **late, not never**. Say that plainly rather than implying the plan was fully checked.
+**Be honest about which of those is live, and about what the live one is worth.** Until the source mode exists, this review is a **form and coherence check and explicitly not a completeness check** — the §9.3 spike measured this exact reviewer set catching 1 of 12 real coverage gaps. Once it ships, completeness is *raised*, not *assured*. Either way the backstop is the existing `/flow:audit-coverage` running post-execution against a real diff at `/flow:ship` Step 2, so a gap is caught **late, not never**. Say that plainly rather than implying the plan was fully checked — and note that the one guarantee here that is **not** judgment is `gate-execute`'s: a plan *exists*. That is mechanical, and with completeness only partly checked it carries more of the weight than it looks like it does.
 
 Phase 3 (auto-writing the plan and machine-gating it) is **not built**; it is gated on §9.3. Do not imply otherwise.
 
