@@ -1,0 +1,12 @@
+ISSUE · Undeclared change
+
+Claim:
+> Declared criteria: "Clicking an element while commenting mode is on opens a comment editor pinned to that element"; "Every control in the overlay chrome has an accessible name, and state changes are announced via a polite live region"
+
+Hunk: annotation-layer.html — `walkStep` / `walkDepth` / `focusWalkTarget` plus the `keydown` and `focusin` handlers implement a keyboard-only interaction path: Shift+Arrow walks the element tree to targets Tab cannot reach, and Enter opens the comment editor on the focused element.
+Why uncovered: the pin-creation criterion exercises clicking only, and the accessibility criterion covers accessible names and live-region announcements — neither would cause anyone to press a key to create a pin. No declared criterion exercises keyboard operability, so /flow:verify-build would never test it, on a prototype whose own comments cite WCAG 2.1.1.
+
+Suggested: Declare a Spec-walk criterion for the keyboard path (e.g. "With commenting mode on, Shift+Arrow moves the walk target and Enter opens the editor on it, with no pointer involved") and let /flow:verify-build verify it, or waive it at the merge gate.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

@@ -92,7 +92,7 @@ To customize: edit `flow.config.json` at the project root. The schema lives at `
 | `/flow:security-review` | Diff-focused security audit |
 | `/flow:accessibility-review` | Diff-focused WCAG 2.1 AA audit (skip if `uiSurface: false`) |
 | `/flow:verify-build` | Plan-driven behavioral gate: tests declared `**Spec-walk:**` criteria via bundled `/verify` |
-| `/flow:audit-coverage` | Coverage auditor: flags diff behavior no declared `**Spec-walk:**` criterion covers (under-declaration) |
+| `/flow:audit-coverage` | Coverage auditor: flags behavior no declared `**Spec-walk:**` criterion covers (under-declaration). No argument → the workspace diff; `<path>` → an approved prototype's source tree |
 | `/flow:ship` | Final-pass reviews → synthesize feedback → update docs → push → open PR |
 | `/flow:ship-spike` | Lightweight ship pipeline for `mode: spike` PRs |
 | `/flow:workflow-help` | (This skill) print the loop and project config |

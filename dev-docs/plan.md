@@ -2,6 +2,236 @@
 
 ## Current Focus
 
+**▶ EXECUTED, shipping (this branch, `conductor/d1-a-audit-coverage-source-input-mode`, v1.47.0): give `/flow:audit-coverage` a source-tree input mode.** All three plan-gate open calls resolved by the orchestrator under §4.8 (low-stakes, reversible, high-confidence, low-taste — rule 7: escalating them would spend the human's attention on null results). 48-check eval harness green; 36/36 harnesses green.
+
+**Provenance first (FB-0107, CLAUDE.md § How to Work 3).** Measured at plan time in this workspace:
+installed plugin **1.29.0** (`~/.claude/plugins/installed_plugins.json`, `gitCommitSha cf783ac`) against a
+working tree at **1.45.0** — **sixteen releases stale**. Consequence for this PR, stated before any green
+result is produced: `Skill("flow:audit-coverage")` in this session resolves **1.29.0's** SKILL.md and
+therefore **cannot exercise the mode this PR adds**. Every claim below is verified by running the
+extracted shell block from the *working tree* under the Bash tool, never by invoking the skill. The
+`## Flow run` provenance rows get read before the ship pipeline's verdicts are believed.
+
+**Why (measured, n=1).** `dev-docs/research/2026-09-16-d1-auto-plan-quality-spike.md` — D1's §9.3 spike.
+An auto-written Spec-walk plan scored **0/13 vacuous** (clean on the criterion-*quality* axis, confirmed
+testable by a live headless-Chrome dry-read) while **under-declaring 10 real behaviors against 13–14
+declared**, including an entire keyboard-only interaction path on a prototype whose own code cites
+WCAG 2.1.1. The mechanism: the pre-execution reviewers read the **plan** and the **brief**; *nothing reads
+the approved prototype's code*. `plan-critic` caught the keyboard gap only because that brief happened to
+name keyboard — luck, not design. What caught 10 of 12 gaps was a coverage-style pass over the
+prototype's **source**.
+
+**What this is, and what it deliberately is not.** `/flow:audit-coverage`'s **input** is diff-shaped
+(`SKILL.md:90` builds a file list from `git diff`). Its **judgment** is not diff-specific: *"for each
+user-perceptible behavior change, check whether any declared criterion would cause someone to test it"*
+(`:130`), scoped at `:129` to **"declared-vs-built completeness only, not criterion quality."** That axis
+is what found the gaps, and it is already written, already tuned, and already eval-backed. So this ships a
+**second input path** — feed it a source tree when there is no diff — and **reuses the judgment verbatim**.
+It is **not a fourth reviewer**: new judgment means new prompt surface to maintain and drift, and the spike
+already demonstrated the existing judgment works when handed source instead of a diff.
+
+**Hard requirement: standalone, today.** D1 Phase 3 does not exist. Track B's Phase 2 (in flight) carries an
+interim rule that invokes this **by hand** after human gate 1. So `/flow:audit-coverage <path>` must work on
+direct invocation with no Phase-3 machinery. Track B's interim safety depends on it.
+
+**Honest caveat, carried deliberately: n=1.** One prototype, one auto-plan, one pass per instrument — the
+spike says so itself ("It is not a statistical claim about auto-plan quality in general"). This plan is
+built on a single measured case. Shipping it is how we get n=2. Nothing below should be read as evidence
+that the under-declaration rate is *generally* ~50%.
+
+**Design — argument-gated, one skill, two evidence blocks.**
+
+`/flow:audit-coverage` (no argument) → today's diff mode, untouched. `/flow:audit-coverage <path>` → source
+mode. Gating on `$ARGUMENTS` is the same mechanism `/flow:audit-plan` already uses for its optional
+plan-file path, so it is an established shape in this plugin rather than a new one.
+
+- **Diff block (`SKILL.md:63–121`) keeps its body character-for-character**, with exactly one guard line
+  prepended (`[ -n "${ARGUMENTS:-}" ] && exit 0`). The PR diff for that block is therefore *one added line* —
+  reviewable by eye, which is the point.
+- **New source block**, emitting **nothing at all** in diff mode (guarded exit before any output), so the
+  rendered diff-mode prompt gains one self-explaining static heading and no content.
+- **Ordering constraint, found while planning:** in both blocks the root anchor must resolve *before*
+  the `$ARGUMENTS` early-exit. `run_root_anchor_evals.py` scenario 1 runs every extracted guard from a
+  non-repo cwd with `ARGUMENTS` unset and requires a distinct unresolved signal — an early-exit placed
+  above the anchor would return silence and fail it. Noted here so it does not cost an execution cycle.
+- **Criteria block (`:34–59`) is not edited at all.** The plan to compare against is still `planPath` — which
+  is exactly right for the standalone Track-B use, where the auto-written plan lives there.
+
+**Four things the source block must get right, each with a named failure it prevents:**
+
+1. **`SOURCE-UNRESOLVED` is its own outcome** (FB-0074, and brief requirement 1). A named path that is
+   missing, unreadable, resolves outside the repo root, or yields no readable file is **not** a clean pass and
+   **not** `SKIPPED`. "I found nothing to audit" and "I never looked" have opposite consequences; the user
+   *named a tree*, so an empty result means the input was wrong, never that the work is covered. Distinct line,
+   asserted non-confusable with the skip line — the same way `run_root_anchor_evals.py` asserts it for
+   `ROOT-UNRESOLVED`.
+2. **The default `sourceFilePatterns` would silently eat the reference case.** Measured: the shared default
+   (`SKILL.md:87`) matches `.ts|.js|.py|…` and **contains no `.html`** — so naively reusing it on
+   `annotation-layer.html` filters the prototype to nothing and renders a clean `SKIPPED`. That is exactly
+   the silent-skip-on-edge-case class (`general.md` § Consistency 1) and it would have made this feature
+   report "no undeclared changes" over a prototype it never read. Fix: a **single named file is taken
+   verbatim, never filtered**; a **directory** is walked with a prototype-oriented pattern set (html/css/js/
+   jsx/ts/tsx/vue/svelte + the existing source set), and an empty walk is `SOURCE-UNRESOLVED`-class.
+3. **The one known-positive case sits 805 bytes over the diff-mode cap.** Measured:
+   `annotation-layer.html` is **60,805 bytes**; the diff cap is **60,000** (`:101`). The evidence anchors for
+   the spike's ten findings land at bytes 22,515 → 59,809, with finding #1's `focusin` handler
+   (lines ~1146–1154) straddling the cap. Reusing 60,000 would clip the flagship WCAG finding's evidence.
+   Source mode therefore gets its own cap of **120,000 bytes**, paired with a `SOURCE-TRUNCATED` warning in
+   the same shape as the existing `TRUNCATED` line (never a silent swallow). Justification: a diff is
+   incremental, a source tree is the whole artifact. Cost is real and named — ~30k tokens worst case, at a
+   gate that runs once.
+4. **`$ARGUMENTS` is untrusted text entering a shell.** Quoted throughout; the resolved path must
+   `realpath` inside the repo root (so the mode cannot dump `/etc` into prompt context); the echoed path is
+   newline-stripped before printing, reusing the injection guard already at `:77`. This is the FB-0104
+   lesson applied at the new site rather than after the fact.
+
+**Validating against a case we KNOW is positive (`general.md` § Consistency item 4, new in #157).**
+A measurement that can only return "clean" is not a measurement. The decomposition that makes this honest:
+this PR builds an **input mode**, not judgment, so the claim under test is *"the assembled context contains
+the behavior evidence a reader would need"* — and the spike already established that the judgment finds
+10/10 given that context. The instrument test therefore runs the real block against the real
+`annotation-layer.html` and asserts **all ten** anchors from the spike's own table survive assembly
+(`walkStep`/`focusWalkTarget`, `an-wipe`, single-comment delete, `snapPreview`, show/hide-all, panel
+open/close, `oneNoteBlock`, the quota-warning branch, the Escape state machine, `dropEmpty`). It fails if a
+cap, a filter, or a path bug eats any of them — which is precisely how the 60,000-byte cap was caught while
+writing this plan. And the probe is itself validated against a deliberately truncated context that it must
+**fail**, so the probe cannot be a measurement that only returns clean either.
+
+**Spec-walk:**
+
+- [x] `/flow:audit-coverage` with **no argument** produces evidence output byte-identical to today's, and the
+      new source block emits **zero bytes** → verify: `run_coverage_source_mode_evals.py` §1 — in a temp repo
+      with a real behavior change, diff the extracted diff-block's stdout against the same block extracted
+      from `git show origin/main:…/SKILL.md`, asserting byte equality, **and** assert the source block's
+      stdout is empty. (Byte-equality against `origin/main` is a one-time PR-scoped measurement recorded in
+      the history entry; the durable CI assertion is the marker-shape + empty-source-block pair, because an
+      `origin/main` comparison stops meaning anything once this merges. Stated rather than glossed.)
+- [x] `/flow:ship` Step 2's invocation is **unchanged** — still `Skill("flow:audit-coverage")` with no
+      argument → verify: source grep asserting the ship Step 2 call site is argument-less **and** that
+      `ship/SKILL.md` and `ship-spike/SKILL.md` are otherwise untouched by this PR (`git diff --stat` shows
+      no entry for either).
+- [x] Source mode over a **single named file** reads it verbatim with no pattern filtering, so an `.html`
+      prototype is not silently filtered to nothing → verify: `run_coverage_source_mode_evals.py` §2 —
+      paired: the `.html` case assembles non-empty content **and** a **zero-byte** named file routes to
+      `SOURCE-UNRESOLVED` rather than a clean pass (acceptance is not unconditional).
+      **Pairing corrected during execution, and the correction matters.** The plan proposed pairing against a
+      named `.md` file. That is the wrong negative: refusing a named file *by extension* is the same
+      extension-list reasoning that produced the `.html` hole in the first place, so the plan's own pair would
+      have re-imported the bug it was written to catch. The honest pair is "acceptance is not unconditional"
+      (zero bytes ⇒ refuse), with the *filtering* claim tested where filtering actually happens — the directory
+      walk, criterion 4. Same scope, one assertion swapped for a sound one.
+      **And the swapped-in assertion immediately failed, on a real bug:** a zero-byte named file rendered the
+      full source-mode header over nothing and read as a clean pass. Fixed in the skill (a `TOTAL` byte check
+      before render); it would not have been found by the pairing the plan proposed.
+- [x] Source mode over a **directory** walks it with the prototype-oriented pattern set → verify: §3 —
+      a temp tree containing `index.html` + `app.js` + `notes.md` assembles the first two, omits the third,
+      and names every file it read in the rendered header.
+- [x] **`SOURCE-UNRESOLVED` is never `SKIPPED`** → verify: §4 — four inputs (missing path, path outside the
+      repo root, empty directory, unreadable file) each emit the `SOURCE-UNRESOLVED` line, **plus** a direct
+      distinctness assertion that the string is not a substring of, and shares no verdict token with, the
+      `[audit-coverage] SKIPPED` line — the same invariant `run_root_anchor_evals.py` pins for
+      `ROOT-UNRESOLVED`.
+- [x] **Paired negative (general.md § Consistency 3):** the skip line still *works* — a genuinely doc-only
+      **diff** in diff mode still renders `[audit-coverage] SKIPPED` → verify: §4b. Without this pair,
+      deleting the skip path entirely would satisfy every assertion above.
+- [x] **The known-positive instrument test:** the real `annotation-layer.html` assembles with **all ten**
+      spike-documented behavior anchors present → verify: §5 — ten literal anchor probes over the block's
+      actual stdout, each naming the finding number from the spike's table, **plus** the probe's own negative
+      control (the same probe run against a 60,000-byte-truncated context must FAIL, proving the probe can
+      return not-clean).
+- [x] The 120,000-byte source cap is **paired with a loud warning**, never a silent swallow → verify: §6 —
+      a synthetic 130KB tree emits `SOURCE-TRUNCATED` naming the cap, **and** a 10KB tree emits no such line
+      (a warning that always fires carries no information).
+- [x] `$ARGUMENTS` cannot escape the repo root or inject a verdict line into prompt context → verify: §7 —
+      `../../etc`, an absolute `/etc/passwd`, a path containing a newline, and a path with shell
+      metacharacters each refuse with `SOURCE-UNRESOLVED` and emit no `/etc` content; paired with an
+      ordinary path containing a space that is **accepted** (a guard that refuses everything is a ban).
+- [x] The root anchor covers the new block: `EXPECTED_GUARDS["audit-coverage"]` goes **2 → 3** and all four
+      `run_root_anchor_evals.py` scenarios pass for it → verify: `run_root_anchor_evals.py` green with the
+      updated exact count (it asserts an exact count, not a floor, precisely so a new un-guarded preamble
+      cannot slip through).
+- [x] Offline reviewer fixture pair in the existing coverage convention:
+      `coverage_source_mode_undeclared_context.md` + `.expected.txt` + a `ground_truth.yaml` case
+      (`mode: coverage`) whose expected finding is the undeclared keyboard-only path → verify:
+      `run_evals.py` green. **Scope of this evidence, stated plainly:** the three existing coverage fixtures
+      are *offline-validated* — they pin the assembled-context shape and the expected output schema, not live
+      LLM behavior. This one is the same, and is not claimed as proof the judgment fires.
+- [x] Docs move with the contract (`general.md` § Consistency 2 — grep first, edit second): skill
+      frontmatter description, `plugins/flow/docs/workflow.md` (the `:13` one-liner and the `:667` skill-table
+      row), `README.md` skill list, `plugin.json` → **1.47.0**, `changelog/v1.47.0.md`, `CHANGELOG.md`, a new
+      `dev-docs/history/2026-09-20-*.md` → verify: `git grep -nE 'audit-coverage'` over the docs surfaces
+      shows no survivor describing the skill as diff-only.
+
+
+**Measured at execution (what the plan asserted, and what actually came back):**
+
+- **Diff-mode byte-identity: CONFIRMED, twice, two ways.** One-time `origin/main` comparison — the diff block
+  and the criteria block both produce **byte-identical** output (355 bytes each) against a temp repo rendering a
+  real non-empty diff, so the equality is not the vacuous "both empty" kind. Durable CI form: §1 strips the mode-gate
+  lines back out of the shipped block and requires byte-identical stdout from both copies, which needs no git ref
+  and therefore keeps working after this merges. `ship/SKILL.md` and `ship-spike/SKILL.md` are untouched
+  (`git diff --stat` shows no entry for either).
+- **The known-positive instrument test: all ten spike anchors survive assembly**, the run is not a skip or an
+  unresolved, and it is not truncated at the shipped cap.
+- **Three real bugs the harness caught before any of this shipped**, all in the "reports clean over nothing" class
+  this feature exists to prevent: (1) a zero-byte named file rendering as a clean pass; (2) the probe's own negative
+  control passing because every anchor token appears early in the file — a probe that could not return not-clean,
+  fixed by clipping at a measured 57,000 bytes where finding 9 provably drops out; (3) the metacharacter assertion
+  failing on a *correct* refusal, because it searched for a literal the refusal message echoes back — an assertion
+  that could not distinguish refusal from execution, replaced with a filesystem side-effect canary.
+- **The 2x cap claim, stated at the precision it was measured.** The coarse token probe *survives* a 60,000-byte
+  clip (first occurrences are early in the file), so "the diff cap would have truncated the reference case" needed a
+  sharper instrument than the probe: the prototype's **third** `focusin` registration — the focus-restoration half of
+  the WCAG 2.1.1 path the spike cites at lines ~1146-1154 — sits at file byte 59,915 with its body running past
+  60,000, and is provably absent from a 60,000-byte clip. Asserted in bytes, not characters: the first version of
+  that check compared Python `str` slices against a shell `head -c` cap and passed by accident on a file carrying
+  non-ASCII punctuation. The unit was wrong, not the claim.
+- **Live joint test (authorized, one `flow:auditor` spawn): the end-to-end path WORKS, and the number is not 10.**
+  The joint — new input path feeding the existing judgment — was the one thing neither the instrument test nor the
+  spike had exercised. Fed the real source block's output plus the spike's 13-criterion auto-plan, a fresh auditor
+  returned **4 findings, all 4 real** (precision 4/4, zero false positives), covering **5 of the spike's 10
+  behaviors**: finding 1 (the flagship keyboard/WCAG gap) reproduced independently, plus snapPreview, show/hide-pins,
+  and bulk+single delete consolidated into one finding. **Not reproduced this run:** panel open/close, per-row copy,
+  the storage-quota warning, the Escape state machine, discard-on-empty-close. So: the mechanism is confirmed
+  end-to-end and re-found the gap that motivated the work, but **recall varied substantially between two runs of the
+  same judgment on the same artifact** (10 behaviors hand-run, 5 this run). That is a property of best-effort LLM
+  judgment, which this reviewer has always been documented as; it is recorded here rather than rounded up, because
+  "audit-coverage finds ~10 gaps on a prototype" is exactly the kind of claim that would harden into folklore.
+  **n=1 on each side, one prototype.** Shipping is how this gets to n=2.
+
+**Scope (out), named — from the dispatch brief, not softened:**
+- **No D1 Phase 3.** No auto-plan writing. No wiring into a Step 6 that does not exist.
+- **No change to `/flow:ship` Step 2 or `/flow:ship-spike`.** Diff-mode behaviour byte-identical (asserted above).
+- **No fourth reviewer, no new judgment prose.** The `What to check` section gains only mode-scoping for the
+  new not-clean outcomes; `:129`/`:130`'s judgment text is untouched.
+- **No edit to `dev-docs/handoffs/d1-prototype-first-gate.md`** — including its known §0/§8-vs-§9.3 self-
+  contradiction about whether the spike gates Phase 2 or Phase 3. Flagged by the spike, still not ours.
+- **Not resolving §9.3.** This closes the *mechanism* gap the spike identified; the Phase-3 design decision
+  (spike option (a) vs (b)) remains the orchestrator's.
+
+**Claims (swept before writing, per the standing rule):** FB high-water is **FB-0112** on `origin/main`, and a
+sweep of **all 60+ remote branches** shows nothing above 0112 pushed anywhere — Track B's FB-0113/0114 are
+held but unpushed, so this plan claims **no FB number**; if a correction arises mid-execution it takes
+**FB-0115**, pushed as the claim. Version **v1.47.0** (Track B holds v1.46.0). `main` is `f278aec`.
+
+**Open calls — all three resolved by the orchestrator, none escalated to Ben (§4.8 rule 7):**
+
+1. **Live judgment confirmation — YES, once.** Explicit authorization given for one `flow:auditor` spawn, on a
+   sharper rationale than "more evidence": the instrument test proves the *context*, the spike proved the
+   *judgment*, and neither had tested the **joint** — which is the actual deliverable. Run; result above, with
+   what it does not establish named.
+2. **Source cap — 120,000, DERIVED not hardcoded.** `SOURCE_CAP=$(( DIFF_CAP * 2 ))`, with the measurement in a
+   comment. A bare `120000` is an FB-0010 fan-out value: the day someone moves the diff cap, the relationship
+   breaks silently. Cross-checked against the diff block's own literal by §6, because a comment cannot hold two
+   shells together.
+3. **Directory walk — INCLUDE.** Decided against the § Scope-discipline default ("if it isn't needed yet, don't
+   create it") because **the directory is already the storage shape**: Track B puts prototypes at
+   `.flow/prototypes/<slug>/prototype.html`, so the natural first invocation passes a directory. Single-file-only
+   would make the first real caller either error or do the wrong thing, and widening an accepted-input contract on
+   a shipped reviewer later is more expensive than fifteen lines now.
+
+---
+
 **▶ EXECUTED, shipping (this branch, `conductor/ship-fb-0109-manifest-fence-injection`, FB-0109, v1.44.0): SAFETY — a manifest entry can no longer close the manifest fence.**
 
 

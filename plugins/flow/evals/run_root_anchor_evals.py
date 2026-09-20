@@ -48,7 +48,7 @@ _GUARD_RE = re.compile(
 
 # Guards expected per skill — an exact count, not a floor. A floor (>= 2) lets a future
 # preamble be added WITHOUT a guard and still pass.
-EXPECTED_GUARDS = {"audit-coverage": 2, "audit-skips": 2, "critique-plan": 1}
+EXPECTED_GUARDS = {"audit-coverage": 3, "audit-skips": 2, "critique-plan": 1}
 
 # `context: fork` skills that legitimately need NO root anchor, with the reason. An
 # exemption must be explicit — silence is what let this class hide in the first place.
