@@ -164,6 +164,8 @@ The goal: leave step 1 with enough shared understanding to plan without ambiguit
 | **Classic** (default) | everything else | a written plan |
 | **Prototype-first** (D1) | `uiSurface != false` **and** the brief declares `Surface: visual` (or `role: designer`) **and** `Mode` is not `tiny`/`spike` | a **prototype** |
 
+*("D1" is this track's name in flow's own roadmap — the work that moves the pre-execution gate for UI changes. You never need to know it to use flow; it appears here because the surfaces below cite it.)*
+
 **This is a move, not an addition.** Flow's thesis is two load-bearing human gates, and D1 replaces *plan-text approval* with *prototype approval* for UI work — it does not insert a third. The invariant, which `/flow:prototype`'s engine returns on every path: **exactly one pre-execution human gate, always — prototype approval XOR plan approval. Never both, never neither.** Plus: **a plan always exists before Execute**, asserted mechanically (see § 3).
 
 Why for UI work specifically: a designer reading a written plan is being asked to approve a description of a look. The approval that results is often not a real one — *"a lot of the messages I come to are too long and I don't really read them and I just end up approving anyway"* — and an approval that wasn't read launders an unreviewed decision as a reviewed one. A prototype is the artifact they can actually evaluate.

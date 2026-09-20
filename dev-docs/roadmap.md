@@ -159,6 +159,33 @@ The strongest argument for the orchestrator is **not** speed: today each skill r
 
 **FOLLOW-UP — DEFERRED at the Phase 2 plan gate (2026-09-20), still open.** Ben cut it from Phase 2 on scope discipline: the test applied was *"does this PR make the statement false?"*, and a new Lens-A question is a **feature addition to an agent prompt**, not a claim D1 Phase 2 invalidates (unlike the `role` doctor check and the brief word cap, which it does falsify and which shipped with it). Needs its own small PR: one new Lens-A question **plus** a re-authored fixture demonstrating it, per "prompt change = code change". **Surfaces when:** `lens-experience.md` is next touched, or a brief review misses an accessibility/timing concern in practice. Original finding follows. Lens A's question set (journey/edge-states/friction/feel) names no accessibility or timing dimension. The lens's own worked fixture (`brief_low_ambition.md`, a 5-second auto-dismissing undo link with no way to extend or disable the timer) is a near-perfect worked example of a WCAG 2.1 SC 2.2.1 (Timing Adjustable) concern the pinned expected output never names — it raises the ambition ceiling on reassurance/confidence grounds but misses the accessibility angle entirely. Real scope expansion (a new Lens-A question + a re-authored fixture demonstrating it, per this repo's own "prompt change = code change" rule), not something to fold into Phase 1 silently. Whoever picks up D1 Phase 2 (when the lens becomes load-bearing rather than standalone-only) should fold an explicit accessibility/timing question into Lens A before then.
 
+### D1c — Gate-1's hand-off is the last unrendered hand-off in the loop
+
+**Surfaces when:** D5 (message budget) is picked up — this is its first concrete consumer — or `/flow:prototype` § 8 is next touched.
+
+Raised by `/simplify`'s push-further lens on the Phase 2 PR. Everything mechanical around gate 1 is pinned (the digest is regex-parsed, `must_surface[]` is computed, `contract` and `approve` refuse, the brief carries a measured cap). The one artifact the human actually receives — the chat message with the `file://` path, the feasibility summary, what approval commits them to, and how to send feedback — is an instruction to the model to compose prose. v1.46.0 added a **~100-word budget** to it, which is the cheap half; the shape is still improvised.
+
+**The repo already has the idiom and does not use it here.** `ship/lib/manifest-triage.py::render_decisions()` renders the *merge* gate's hand-off deterministically ("questions first, never a bare PR URL"), and `/flow:review-brief` § 4 renders a numbered answerable list. Gate 1 is the most consequential of the three and the only one left unrendered.
+
+**Direction:** a `handoff` subcommand (or an extension of `present`'s JSON) emitting `handoff_lines[]` — the path, each `must_surface[]` row as `affordance — verdict — cost` (today `must_surface` returns the raw markdown line, so the agent re-parses prose the engine already parsed), one fixed sentence for what approval commits to, and the fixed feedback instruction. Step 8 becomes "paste these lines, add nothing above them", pinned by a byte-shape fixture the way `present` already is. ~40 lines. **Also note D5's own trigger fired and was not acted on:** it says *"Surfaces when: D2 lands, or any skill's hand-off format is next touched"* — v1.46.0 did both.
+
+### D1d — Gate 1 hands a human an artifact nothing has rendered — § Exploration candidate
+
+**Surfaces when:** the V-track's headless-capture gap closes, or `/flow:prototype` § 7 is next touched.
+
+Step 7 spawns two lenses "against the rendered prototype", but they receive a filesystem path and `Read` the source HTML. Step 8 injects the overlay and hands over a `file://` URL. **Between build and the human's first look, no process has rendered the page.** A prototype that throws on load presents to the designer as a blank page wearing an annotation dock — the least hospitable possible version of the moment this track exists for.
+
+Kept as exploration, not a concrete item, because `roadmap.md` § V-track records that headless capture is **broken in this environment** across three attempted routes, so a required render check has no shape to specify today. **Direction when it closes:** a one-frame load check at Step 7 — not a visual verdict, just *"it came up"*: no uncaught error, non-empty body. Distinct from the `frame-integrity-checklist.md` question the skill already considered and correctly declined (that checklist is written for captured frames; this is about whether the page comes up at all).
+
+### D1e — Four smaller D1 Phase 2 follow-ups
+
+**Surfaces when:** `/flow:prototype`, `prototype-gate.py`, or `verify-build/lib/annotation-layer.html` is next touched.
+
+- **A stale digest from a previous PR can satisfy a new prototype gate.** `GATE_DECL_RE` takes the *first* declaration in the plan doc and `DIGEST_RE` accepts a digest *anywhere* in it, with no binding between them and no check of the `head=`/`branch=` the digest already carries. Not live in this repo today (verified: zero survivors), but it bites on the second D1 PR in any repo with an append-style plan doc. Fix is a design call — scope to the active block via `walk_extract`, or assert `head=` against `git rev-parse` — not a one-liner. **Owner: whoever lands D1 Phase 3.**
+- **The annotation dock sits where mobile prototypes put their primary affordance.** `#an-dock` is `position: fixed; right: 20px; bottom: 20px` — harmless in its original home (the verify-build report has no fixed chrome), but `present` now aims the same partial at FAB- and tab-bar-shaped artifacts, so flow's own chrome can cover the exact element under review at gate 1. Real fix (reposition/collapse affordance, or a dock offset) edits the shared partial and would pull this into `verify-build`. **Interim, already shipped in v1.46.0:** Step 8's hand-off names the dock as flow's, not the prototype's.
+- **`design-language.md` still disclaims the surface this change made load-bearing.** It states the annotation overlay is *"deliberately outside this doc's scope and currently ungrounded"* — and that overlay is now the designer's only interaction at gate 1, while Step 7 hands both lens reviewers that same doc. v1.46.0 raises this item's priority rather than creating it.
+- **The feasibility line could live in `prototype.html` itself.** "Author zero markup" is the right call for the *engine* (a second browser-UI emitter outside `uiFilePatterns` would be permanently exempt from flow's own visual and a11y gates), and gate 1 correctly orders the feasibility summary first in chat. But the unexplored option creates no emitter: the **Step 5 author** places the feasibility line in the prototype, so flow ships no markup, the text lands in the human's field of view, and it falls inside the sha — the human then approves "this look, at this price". Worth a measured try; the current chat-only choice is reasoned but unmeasured.
+
 ### D1b — Three altitude findings from D1 Phase 2's /simplify pass, deliberately not fixed at ship
 
 **Surfaces when:** `/flow:prototype` or `prototype-gate.py` is next touched, or D1 Phase 3 is picked up (it should resolve B).
@@ -183,7 +210,7 @@ Prototype artifacts live in gitignored `.flow/prototypes/<branch>/`, so they do 
 
 ### D5 — Message budget for chat output
 
-**Surfaces when:** D2 lands (it should key off `role`), or any skill's hand-off format is next touched.
+**Surfaces when:** D2 lands (it should key off `role`), or any skill's hand-off format is next touched. **Both fired at v1.46.0** — D2 got its first consumer and gate 1 authored a new hand-off format — and D5 was not acted on beyond a ~100-word budget on that one message. See D1c for the concrete first consumer.
 
 *"Message budget is a good idea, but I don't want it to be too restrictive."* A soft cap on what the agent puts in chat at each hand-off, so the reports are short enough to actually be read. Deliberately soft — the failure mode of a hard cap is truncating the one thing that mattered. The `/flow:post-merge` §7 verdict-first change (v1.25.0) is the first instance of this shape: lead with the answer, detail below.
 

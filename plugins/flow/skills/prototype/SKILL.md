@@ -92,7 +92,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py trigger \
 | `collapsed` | **stop prototyping.** `Mode: tiny` — the surface does not earn a prototype. No review passes, no prototype. Hand back: the pre-execution gate is **plan approval**, unchanged |
 | `classic` | **stop.** Hand back to the classic plan gate, unchanged |
 
-Report the resolved `path`, `pre_execution_gate` and the `reasons[]` that produced them **in your hand-off message**. A mis-declared `Surface` is the one failure mode this design cannot prevent — surfacing the resolved values is what makes it visible to the human before they commit, rather than after.
+State the resolved gate in **one line** ("This is going to prototype approval, not plan approval — because …"), and keep the raw `reasons[]` available if they ask. A mis-declared `Surface` is the one failure mode this design cannot prevent, so the resolved value must be visible before they commit — but a four-sentence engine dump competes with the gate-1 budget below for the same scarce attention, and loses to it.
 
 ## 4. Review the brief before building anything
 
@@ -106,7 +106,12 @@ Resolve every `decision-required` finding **with the human** before prototyping.
 
 ## 5. Prototype — iteratively
 
+**Read `flow.config.json.designLanguagePath` before you write any markup.** Build against its tokens, hue tiers, radii and type scale. Step 7 hands that same doc to two reviewers who grade the result by it — using it as a rubric but not as a build input guarantees at least one rework round on every run, spending exactly the attention this phase exists to conserve. If the project has no such doc, **say so in the hand-off**: the prototype is then ungrounded and the human's eye is the only standard, which they should know before they look.
+
 Build an HTML prototype at `$PROTO_DIR/prototype.html`. Self-contained, no build step, openable via `file://`.
+
+- **Show the states the surface actually has** — empty, loading, error, focus — not only the happy path. Step 7's UX lens grades them, and a prototype that only shows the good case hides the decisions most worth a designer's opinion.
+- **Frame a mobile prototype at a realistic viewport.** FB-0113 makes HTML the first build medium for mobile too, so a desktop-width page can pass the feasibility read as an honest proxy while being a poor one. The feasibility read covers native *translation*; it does not cover viewport *fidelity*.
 
 **HTML for the first build on every platform, web and mobile alike** — a human decision (FB-0113), taken deliberately and broader than the web-only option. The cost it accepts is that infeasibility now surfaces *after* a look has been approved, which is exactly why Step 6 is not optional.
 
@@ -150,7 +155,7 @@ Spawn both in **one tool message**, fresh context, against the rendered prototyp
 | Design engineer | `flow:lens-design-engineer` | geometry, spacing rhythm, palette fidelity, motion quality, token use vs hardcoded values |
 | UX designer | `flow:lens-ux-designer` | empty/loading/error states, keyboard reachability, focus, contrast, copy |
 
-Give each the **absolute path** to `$PROTO_DIR/prototype.html`, the design-language doc path, and the workspace identity (`repo=… branch=… head=…`). Iterate on what they find, then present.
+Give each the **absolute path** to `$PROTO_DIR/prototype.html`, the design-language doc path, **`$PROTO_DIR/brief.md`**, and the workspace identity (`repo=… branch=… head=…`). The brief matters: it holds *Constraints* and *Deliberately excluded*, and without it the UX lens will flag states the brief deliberately scoped out — the same noise the "prototype under iteration" calibration exists to suppress, arriving through a different door. Iterate on what they find, then present.
 
 **This is not a verdict, and the distinction matters.** FB-0066 forbids an implementer *self-certifying* shipped visual work from frames it read itself. Nothing here is certified: the verdict at gate 1 is the **human's**. This pass exists to raise the floor before spending their attention. Run it once on the candidate you intend to present — not once per edit.
 
@@ -164,10 +169,14 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py present --f
 
 This writes **`prototype.presented.html`** — the prototype plus the existing click-to-pin annotation layer, and **no markup of flow's own**. It does **not** modify `prototype.html`: the source stays byte-identical, because that is the file `approve` hashes and therefore the thing the human is approving. Give the human the *presented* path to open. All flow-authored chrome goes in your chat message instead — which is also why the message has to carry it:
 
-1. **The `file://` path**, so they can open it.
+**Budget: ~100 words.** This is the one message the human is guaranteed to read, and the complaint this whole phase answers is *"the messages I come to are too long and I don't really read them and I just end up approving anyway."* A gate that relocates the reading burden instead of removing it has not fixed anything. Link first, costs next, everything else on request. Note the asymmetry this corrects: the brief — which only reviewer agents read — carries a hard ~80-word cap, so applying no budget here would have disciplined the artifact the robots read and exempted the one the human reads.
+
+1. **The `file://` path** to the file `present` names in `presented` — so they can open it. Mention that the small floating comment dock is **flow's**, not part of the design.
 2. **The feasibility summary**, leading, whenever `must_surface[]` is non-empty. Name each expensive/infeasible affordance and its cost.
 3. **What approval commits them to** — this look is what the technical plan gets written against.
-4. **How to send feedback** — pin comments on the page, press "Copy notes", paste back. Each iteration round re-enters Step 5.
+4. **How to send feedback** — click an element to pin a comment, press **"Copy all"**, paste back. Quote that label exactly; it is what the toolbar says. Each iteration round re-enters Step 5.
+
+**If `present` returned `injected: false`, say so and change the ask.** The overlay could not be loaded, so the page is view-only: tell them it takes no pins and ask for feedback in chat instead. Silently repeating "pin comments on the page" sends them clicking at a page that cannot respond, at the one moment their attention was budgeted for.
 
 **You may not approve on their behalf, under any circumstances.** There is no inference from silence, no "looks good so proceeding", no treating a stylistic remark as sign-off.
 
@@ -182,7 +191,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py approve \
 
 The quote arrives **only as a file path**. There is deliberately no `--quote` string flag: untrusted text does not belong on a command line (FB-0108), and this is the first new interface since that rule landed.
 
-Then **commit the two lines `approve` prints into the plan doc** (`flow.config.json.planPath`):
+`approve` prints **both** committed lines; paste them into the plan doc (`flow.config.json.planPath`) verbatim — `gate-execute` requires both:
 
 ```markdown
 **Pre-execution gate:** prototype

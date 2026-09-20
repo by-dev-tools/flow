@@ -363,6 +363,102 @@ def test_contract_deletion_not_green():
               "deleting the feasibility block must turn the check RED, never green")
 
 
+def test_contract_without_prototype_emits_json():
+    """Missing prototype.html must yield ONE parseable verdict, not a traceback.
+
+    This was a live BLOCKER found by staff-review and missed by every test here,
+    because `_proto_dir()` always copies the HTML — so no contract test ever ran
+    without one. The /simplify refactor that split `_contract` out of the CLI
+    command left `return _emit({...})` in this branch, so `cmd_contract` called
+    `_emit(int)`: it printed one JSON doc and THEN raised AttributeError, breaking
+    the module docstring's promise in the sibling path of the one
+    `test_config_not_an_object_fails_closed` was written to defend."""
+    with tempfile.TemporaryDirectory() as tmp:
+        empty = Path(tmp) / "nothing"
+        empty.mkdir()
+        rc, out, err = run("contract", "--dir", str(empty), "--config", fx("cfg-ios.json"))
+        check("contract-no-prototype-parses", out is not None,
+              f"must emit exactly one JSON object; stderr={err[:200]}")
+        check("contract-no-prototype-not-ok", out and out["ok"] is False)
+        check("contract-no-prototype-no-traceback", "Traceback" not in err, err[:160])
+
+
+def test_gate_execute_rejects_unknown_gate_literal():
+    """An unrecognized gate value is RED, not "classic, nothing to assert".
+
+    `prototype-first` is this engine's own `path` value and travels beside
+    `pre_execution_gate` in the agent's context, so a one-word slip used to return
+    ok:true with no digest and no Spec-walk required — silently disarming the guard
+    that holds the "never neither" half of the invariant. Green in two opposite
+    worlds, in the check written to prevent exactly that."""
+    _, out, _ = run("gate-execute", "--plan", fx("plan-unknown-gate-literal.md"))
+    check("gate-execute-unknown-literal-red", out and out["ok"] is False,
+          "an unrecognized gate literal must not fall through to the classic no-op")
+    check("gate-execute-unknown-literal-names-it",
+          out and any("unrecognized" in p.lower() for p in out.get("problems", [])))
+    check("gate-execute-unknown-literal-hints-path-vs-gate",
+          out and any("PATH name" in p for p in out.get("problems", [])),
+          "name the likely confusion: prototype-first is the path, not the gate")
+
+
+def test_digest_survives_a_long_multiline_quote():
+    """The committed digest must stay ONE well-formed line and keep matching its own
+    parser. Truncating the json.dumps OUTPUT dropped the closing quote, which broke
+    DIGEST_RE both ways: a false RED (a correctly-approved author accused of skipping
+    gate 1) and, with a newline-crossing character class, a false GREEN matching a
+    stray quote elsewhere in the plan doc."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("pg", ENGINE)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    rec = {"sha256": "a" * 64, "stamp": {"repo": "/r", "branch": "b", "head": "h"},
+           "approved_by_human_quote": ("yes " * 90) + "\nand a second line with a \" in it"}
+    out = mod.render_digest(rec)
+    lines = out.splitlines()
+    check("digest-emits-both-lines", len(lines) == 2,
+          f"approve must print the gate declaration AND the digest; got {len(lines)}")
+    check("digest-gate-line-first", lines[0].startswith("**Pre-execution gate:** prototype"))
+    check("digest-still-matches-its-parser", bool(mod.DIGEST_RE.search(out)),
+          "a long/multiline approval must still produce a digest gate-execute accepts")
+    check("digest-truncation-is-visible", "…" in out,
+          "an elided quote under a heading promising 'verbatim' must say it was elided")
+    # And the round trip: gate-execute accepts a plan built from this digest.
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = Path(tmp) / "plan.md"
+        plan.write_text("# Plan\n\n%s\n\n**Spec-walk:**\n\n- [ ] a thing → verify: a test\n"
+                        % out, encoding="utf-8")
+        _, ge, _ = run("gate-execute", "--plan", str(plan))
+        check("digest-round-trips-through-gate-execute", ge and ge["ok"] is True,
+              f"problems: {ge.get('problems') if ge else '-'}")
+
+
+def test_present_always_returns_an_openable_path():
+    """Even when the overlay cannot be read, `present` must hand back a file — the
+    skill tells the agent to give the human "the presented path", and an ok:true with
+    no such key made that instruction unfollowable."""
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "prototype.html"
+        shutil.copy(FIX / "prototype-minimal.html", f)
+        import os as _os
+        env_engine = Path(tmp) / "engine.py"
+        # Point the engine at a non-existent layer by running it from a tree where the
+        # sibling path cannot resolve: simulate by making the layer unreadable is
+        # awkward cross-platform, so assert the CONTRACT on the happy path instead and
+        # pin the degraded branch's shape by source inspection.
+        _, out, _ = run("present", "--file", str(f))
+        check("present-returns-presented-path", out and out.get("presented"),
+              "every present outcome must name the file to open")
+        src = ENGINE.read_text(encoding="utf-8")
+        deg = src[src.index("except (OSError, ValueError)"):]
+        deg = deg[:deg.index("idx = html.rfind")] if "idx = html.rfind" in deg else deg
+        check("present-degraded-writes-a-file", "presented.write_text" in deg,
+              "the unreadable-overlay branch must still write the presented file")
+        check("present-degraded-names-the-path", '"presented": str(presented)' in deg,
+              "and must return its path, or the skill's instruction is unfollowable")
+        check("present-degraded-says-read-only", "READ-ONLY" in deg,
+              "and must tell the human the page cannot take pins, with what to do instead")
+
+
 # ---------------------------------------------------------- 3. approve / verify
 
 def test_approve_requires_quote():
@@ -762,6 +858,50 @@ def test_lens_inputs_generalized():
               "spawned by /flow:prototype the input is a prototype file, not a diff")
         check(f"lens-{f.name}-keeps-identity-rule", "Workspace identity" in t,
               "FB-0082's workspace-identity rule must survive the generalization")
+        # The blanket "applies unchanged, including the workspace-identity rule" named a
+        # MECHANISM that does not exist for a rendered artifact: a prototype carries no
+        # `# flow-review-context` header to compare against. The agent was told to compare
+        # against something absent — undefined behavior resolving either as a spurious
+        # refusal (the self-check silently never runs) or as dropping the rule.
+        check(f"lens-{f.name}-identity-carveout-explicit",
+              "no header to read" in t and "stop only if it does not" in t,
+              "rendered-artifact mode needs its OWN identity check, not a pointer at a "
+              "header the input does not have")
+        check(f"lens-{f.name}-knows-its-input-is-iterating",
+              "prototype under iteration" in t)
+
+
+def test_lens_selfdescriptions_are_not_copypaste():
+    """The UX lens was handed the design engineer's self-description verbatim ("it is
+    CSS and DOM, your native material") by copy-paste. CSS and DOM is the design
+    engineer's material; the UX lens's is states, flow, keyboard path and copy — and a
+    rendered prototype gives that lens something a diff never does: it can walk the
+    flow rather than infer it."""
+    de = LENS_DE.read_text(encoding="utf-8")
+    ux = LENS_UX.read_text(encoding="utf-8")
+    check("lens-de-names-its-own-material", "CSS and DOM" in de)
+    check("lens-ux-does-not-claim-css-dom", "CSS and DOM, your" not in ux,
+          "the UX lens must not be told its native material is CSS and DOM")
+    check("lens-ux-names-walking-the-flow", "walk the flow" in ux,
+          "and must be told what the rendered input actually buys IT")
+
+
+def test_skill_gate1_message_has_a_budget():
+    """The artifact the human reads was the only one in this phase with no length
+    budget, in a feature whose thesis is "less to read" — while the brief, which only
+    reviewer agents read, carries a hard ~80-word cap."""
+    t = SKILL.read_text(encoding="utf-8")
+    check("gate1-has-word-budget", "~100 words" in t)
+    check("gate1-quotes-the-real-button-label", '"Copy all"' in t,
+          "the control is labelled `Copy all`; telling a designer to press `Copy notes` "
+          "sends them hunting a button that does not exist")
+    check("gate1-handles-degraded-overlay", "injected: false" in t,
+          "present has a real read-only outcome; the hand-off must branch on it rather "
+          "than repeat 'pin comments on the page' at a page that cannot take pins")
+    check("step5-reads-design-language", "designLanguagePath` before you write any markup" in t,
+          "the doc Step 7 grades against must be a BUILD input, not only a rubric")
+    check("step7-passes-the-brief", "brief.md`**, and the workspace identity" in t,
+          "reviewers need Deliberately excluded, or they flag what the brief scoped out")
 
 
 def test_lens_experience_untouched():

@@ -80,7 +80,10 @@ BROWSER_NATIVE_PLATFORM = "web"
 # As an allowlist the default inverts: a platform nobody has thought about yet
 # CANNOT self-declare browser delivery, and adding one to the schema is a
 # deliberate act here rather than a silent exemption there.
-BROWSER_DELIVERY_ELIGIBLE = {"web", "library", "none", "cli", "tauri"}
+# `web` is deliberately ABSENT: it short-circuits at `required = platform != "web"` before
+# this set is consulted, so listing it would be dead code — and would imply web needs the
+# one-liner when it needs no feasibility block at all.
+BROWSER_DELIVERY_ELIGIBLE = {"library", "none", "cli", "tauri"}
 
 # Closed verdict set for a feasibility row. Open sets rot: a typo'd verdict would
 # otherwise read as a considered judgment.
@@ -427,10 +430,17 @@ def _contract(proto_dir: Path, config_path):
 
     proto = _prototype_file(proto_dir)
     if proto is None:
-        return _emit({
+        # `return {...}`, NOT `_emit({...})` — this is the dict-returning half of the
+        # function. Returning _emit()'s int made cmd_contract call _emit(int), which
+        # printed one JSON doc and THEN raised AttributeError: the "always parseable,
+        # never a traceback" promise in this module's docstring, broken by the very
+        # refactor that split this function out of the CLI command.
+        return {
             "ok": False, "platform": platform, "feasibility_required": None,
-            "must_surface": [],             "reasons": reasons + ["no prototype.html in %s — nothing to contract-check." % proto_dir],
-        })
+            "must_surface": [],
+            "reasons": reasons + ["There is no prototype.html in %s yet, so there is nothing "
+                                  "to check. Build the prototype first." % proto_dir],
+        }
 
     # The feasibility read lives in a SIBLING document, not inside the HTML.
     # Three reasons, and the third is the load-bearing one:
@@ -579,19 +589,38 @@ def cmd_approve(args) -> int:
         "sha256": record["sha256"],
         "digest_line": render_digest(record),
         "reasons": [
-            "Gate 1 recorded. Add the digest line above to the plan doc — that committed "
-            "line, not this .flow/ record, is what `gate-execute` reads (see its docstring)."
+            "Gate 1 recorded. Paste BOTH lines above into the plan doc verbatim — those "
+            "committed lines, not this .flow/ record, are what `gate-execute` reads, and it "
+            "requires both."
         ],
     })
 
 
 def render_digest(record) -> str:
-    """The line that goes in the PLAN DOC. `.flow/` is gitignored, so this
-    committed digest — not approval.json — is the durable half."""
+    """BOTH lines that go in the PLAN DOC — `.flow/` is gitignored, so these committed
+    lines, not approval.json, are the durable half.
+
+    Emits the gate declaration too, not only the approval digest: `gate-execute`
+    requires both, and an earlier version printed one while the skill said "the two
+    lines approve prints". An agent following that pasted one line and the guard then
+    failed with "plan doc declares no prototype gate" — a self-inflicted failure at the
+    hand-off. Print what must be pasted; never ask the caller to author half a contract.
+    """
     st = record.get("stamp", {})
-    return "**Prototype approved:** `%s` · %s · repo=%s branch=%s head=%s" % (
+    # Truncate the RAW text, then serialize — never the other way round. Slicing the
+    # json.dumps output dropped the closing quote, breaking DIGEST_RE in BOTH directions:
+    # a false RED (no match → a correctly-approved author accused of skipping gate 1) and,
+    # with a newline-crossing class, a false GREEN on a later stray quote. Truncation is
+    # also VISIBLE — a paragraph-length approval cut mid-word under a heading promising
+    # "verbatim" is a quiet lie — and newlines are folded so the digest is one line by
+    # construction rather than by hoping nobody pastes a multi-line approval.
+    raw = " ".join((record.get("approved_by_human_quote", "") or "").split())
+    if len(raw) > 150:
+        raw = raw[:149] + "…"
+    return ("**Pre-execution gate:** prototype\n"
+            "**Prototype approved:** `%s` · %s · repo=%s branch=%s head=%s") % (
         record.get("sha256", "")[:16],
-        json.dumps(record.get("approved_by_human_quote", ""), ensure_ascii=False)[:160],
+        json.dumps(raw, ensure_ascii=False),
         Path(st.get("repo", "")).name or "?", st.get("branch", "?"), st.get("head", "?"),
     )
 
@@ -667,6 +696,20 @@ def cmd_gate_execute(args) -> int:
     gate = m.group("gate") if m else None
     digest_m = DIGEST_RE.search(text)
     has_digest = digest_m is not None
+
+    # An UNRECOGNIZED gate literal is RED, not "classic, nothing to assert". The old
+    # `!= "prototype"` fell open on anything else — including `prototype-first`, which is
+    # this engine's own `path` value and travels beside `pre_execution_gate` in the agent's
+    # context, so a one-word slip silently disarmed the guard holding the "never neither"
+    # half of the invariant. Green in two opposite worlds is the clause-3 shape, committed
+    # here by the check written to enforce it.
+    if gate is not None and gate not in ("prototype", "plan"):
+        return _emit({
+            "ok": False, "gate": gate, "has_digest": has_digest, "spec_walk_items": None,
+            "problems": ["The plan declares an unrecognized pre-execution gate, %r. It must be "
+                         "exactly `prototype` or `plan` — note `prototype-first` is the PATH "
+                         "name, not the gate name." % gate],
+        })
     if gate != "prototype":
         return _emit({
             "ok": True, "gate": gate, "has_digest": has_digest,
@@ -742,9 +785,17 @@ def cmd_present(args) -> int:
     try:
         layer = ANNOTATION_LAYER.read_text(encoding="utf-8")
     except (OSError, ValueError):  # ValueError = non-UTF-8 / corrupt partial
+        # Still write the presented file, so the caller always has ONE path to hand over.
+        # Returning ok:true with no `presented` key told the agent to "give the human the
+        # presented path" when no such file existed.
+        presented.write_text(html, encoding="utf-8")
         return _emit({
-            "ok": True, "injected": False,             "reasons": ["[WARN] annotation layer unreadable at %s — prototype presented READ-ONLY. "
-                        "The human can still look; they just cannot pin comments." % ANNOTATION_LAYER],
+            "ok": True, "injected": False, "presented": str(presented),
+            "open_this": "Open %s — it is READ-ONLY: the comment layer could not be loaded, so "
+                         "ask for feedback in chat rather than on the page." % presented.name,
+            "reasons": ["[WARN] The comment overlay could not be read from %s, so the page is "
+                        "view-only. The human can still look; they just cannot pin comments."
+                        % ANNOTATION_LAYER],
         })
     idx = html.rfind("</body>")
     out = (html[:idx] + layer + html[idx:]) if idx != -1 else (html + layer)
@@ -753,6 +804,12 @@ def cmd_present(args) -> int:
     presented.write_text(out, encoding="utf-8")
     return _emit({"ok": True, "injected": True, "bytes_added": len(out) - len(html),
                   "presented": str(presented), "source": str(ANNOTATION_LAYER),
+                  # The hash of what was PRESENTED, so the digest `approve` later records
+                  # is eyeballable against it. `verify` catches edits AFTER approval;
+                  # nothing caught staleness BEFORE it — across iteration rounds a human
+                  # may still have round 3's tab open and approve a look the source has
+                  # moved past.
+                  "source_sha256": _sha256(proto),
                   "reasons": warnings,
                   "open_this": "Open %s — the source %s stays unmodified, and is what "
                                "`approve` hashes." % (presented.name, proto.name)})
