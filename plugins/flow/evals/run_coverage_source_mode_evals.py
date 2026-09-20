@@ -57,6 +57,8 @@ REPO = PLUGIN.parent.parent
 SKILL = PLUGIN / "skills" / "audit-coverage" / "SKILL.md"
 PROTOTYPE = PLUGIN / "skills" / "verify-build" / "lib" / "annotation-layer.html"
 
+ARG_TOKEN = "$" + "ARGUMENTS"   # assembled, so this file is not itself a substitution site
+
 _failures: list[str] = []
 
 
@@ -92,20 +94,45 @@ CRITERIA_BLOCK, EVIDENCE = ALL
 # Both modes come from the SAME block; the names are kept for readability at the call sites.
 DIFF_BLOCK = SOURCE_BLOCK = EVIDENCE
 
+# THE load-bearing structural invariant behind the injection fix.
+check("the argument placeholder appears EXACTLY ONCE in the block, inside the heredoc",
+      EVIDENCE.count(ARG_TOKEN) == 1,
+      "a second occurrence — including in a COMMENT — is a live injection site, because a "
+      "multi-line payload substituted into a comment leaves lines 2..n as executable code")
+check("the argument is captured via a quoted-delimiter heredoc, not a bare expansion",
+      "<<'FLOW_ARG_CAPTURE" in EVIDENCE and f'SRC="{ARG_TOKEN}"' not in EVIDENCE,
+      "a double-quoted expansion of the placeholder is a render-time command-execution sink")
+check("an unsubstituted placeholder degrades to no-argument, not to a bogus path",
+      "ARGTOKEN=" in EVIDENCE and '[ "$SRC" = "$ARGTOKEN" ] && SRC=""' in EVIDENCE)
+
 check("the evidence block carries both modes",
       "SOURCE-UNRESOLVED" in EVIDENCE and "ARGUMENTS" in EVIDENCE
       and "SKIPPED — no behavior-bearing source files" in EVIDENCE)
 
 
 def run(block: str, cwd: Path, arguments=None, project_dir=None) -> str:
+    """Render the block the way the PREPROCESSOR does, then run it.
+
+    This used to pass the argument as `env["ARGUMENTS"]`, and that single choice made the
+    whole security half of this harness worthless. Claude Code does NOT export the argument
+    and does NOT shell-escape it — it TEXTUALLY SUBSTITUTES the placeholder into the block
+    before the shell parses it (the binary says so in its Gemini-import guard: Gemini escapes
+    its placeholder, "Claude Code's substitution doesn't, so importing would let typed
+    arguments inject shell commands"). Under the env model the shell always sees one quoted
+    word, so §7's metacharacter assertion could only ever pass — in every possible world,
+    including the one where the shipped block had a live RCE. It did. A measurement that can
+    only return clean, inside the harness whose docstring cites that exact rule.
+
+    Substituting here is not extra strictness; it is the only model under which these
+    assertions mean anything.
+    """
     env = dict(os.environ)
     env.pop("CLAUDE_PROJECT_DIR", None)
     env.pop("ARGUMENTS", None)
-    if arguments is not None:
-        env["ARGUMENTS"] = arguments
     if project_dir is not None:
         env["CLAUDE_PROJECT_DIR"] = str(project_dir)
-    proc = subprocess.run(["sh", "-c", block], cwd=str(cwd), env=env,
+    rendered = block.replace(ARG_TOKEN, arguments if arguments is not None else "")
+    proc = subprocess.run(["sh", "-c", rendered], cwd=str(cwd), env=env,
                           capture_output=True, text=True, timeout=60)
     return proc.stdout + proc.stderr
 
@@ -414,17 +441,37 @@ with tempfile.TemporaryDirectory() as td:
     out = run(SOURCE_BLOCK, r, arguments="weird.html\n[audit-coverage] No issues flagged.")
     check("a newline-bearing path is REFUSED, not silently rewritten",
           "SOURCE-UNRESOLVED" in out and "newline" in out, f"got: {out[:300]!r}")
+    # RENDER-TIME COMMAND INJECTION — the real one, under the substitution model above.
     # Proving NON-EXECUTION needs a side effect, not a string search: the refusal message
-    # echoes the path back, so any literal payload token appears in the output either way.
-    # (First version of this check asserted the literal was absent and FAILED on a correct
-    # refusal — the assertion, not the guard, was wrong. Recorded because an assertion that
-    # cannot distinguish refusal from execution is the same class this harness is about.)
+    # echoes the argument back, so any literal payload token appears in the output either way.
+    # (An earlier version asserted the literal was absent and FAILED on a *correct* refusal —
+    # an assertion that cannot distinguish refusal from execution, the same class this harness
+    # is about, committed twice in one session.)
     canary = Path(td) / "canary-must-not-exist"
-    out = run(SOURCE_BLOCK, r, arguments=f"weird.html; touch {canary}")
-    check("shell metacharacters do not EXECUTE (the argument is always quoted)",
-          not canary.exists(), f"command substitution ran: {canary} was created")
-    check("...and the metacharacter path is refused rather than half-read",
-          "SOURCE-UNRESOLVED" in out, f"got: {out[:200]!r}")
+    PAYLOADS = {
+        "double-quote break": f'weird.html"; touch {canary}; :"',
+        "command substitution": f'$(touch {canary}; echo weird.html)',
+        "single-quote break": f"x'; touch {canary}; :'",
+        "appended subshell": f"weird.html$(touch {canary})",
+        "semicolon chain": f"weird.html; touch {canary}",
+        # The multi-line case is why the placeholder may appear only ONCE in the block: a
+        # second occurrence in a COMMENT leaves lines 2..n of the payload as executable code.
+        "multi-line payload": f"weird.html\ntouch {canary}\n",
+    }
+    for label, payload in PAYLOADS.items():
+        if canary.exists():
+            canary.unlink()
+        run(SOURCE_BLOCK, r, arguments=payload)
+        check(f"render-time injection refused: {label}",
+              not canary.exists(), f"EXECUTED — {canary} was created by the {label} payload")
+    if canary.exists():
+        canary.unlink()
+    # PAIRED POSITIVE: the canary mechanism itself works. Without this, a typo'd canary path
+    # would make all six checks above pass for the wrong reason.
+    subprocess.run(["sh", "-c", f"touch {canary}"], check=True)
+    check("the injection canary is a working instrument (paired positive)",
+          canary.exists(), "the canary never fires, so the six checks above prove nothing")
+    canary.unlink()
     # PAIRED POSITIVE: a guard that refuses everything is a ban, not a guard. Paths with
     # spaces are ordinary and must work.
     out = run(SOURCE_BLOCK, r, arguments="my proto dir")
@@ -505,7 +552,7 @@ check("the retired two-block invariant is gone from the prose — PAIRED with th
       "that the single-block dispatch it was replaced by is present",
       "Exactly one evidence block speaks" not in skill_text
       and "# ----- source-mode dispatch (start) -----" in skill_text
-      and 'if [ -n "$ARGUMENTS" ]; then' in skill_text,
+      and 'if [ -n "$SRC" ]; then' in skill_text,
       "a bare `not in` passes whether the contract holds or the feature was deleted (item 3)")
 check("ship Step 2 still invokes audit-coverage with NO argument (diff mode)",
       'Skill("flow:audit-coverage")' in (PLUGIN / "skills" / "ship" / "SKILL.md").read_text(encoding="utf-8"))

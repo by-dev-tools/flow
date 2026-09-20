@@ -194,6 +194,68 @@ highest-traffic rendered surface. The staff lens also proposed a pointer comment
 naming its eval dependents — **declined here specifically**: that file is under `verify-build/**`, which is
 `sensitivePaths`, and touching it would change this PR's stakes classification for a comment.
 
+
+## `/flow:security-review` — a live RCE in the new mode, and the eval that certified it safe
+
+**The finding.** `$ARGUMENTS` is **textually substituted** into a `` !` `` block before the shell parses it,
+and is **not** shell-escaped. Claude Code says so itself, in the Gemini-command-import guard inside the shipped
+binary: Gemini escapes its placeholder inside a shell span, *"Claude Code's `$ARGUMENTS` substitution doesn't,
+so importing would let typed arguments inject shell commands."* I verified the string in the binary and
+reproduced the execution before acting on either.
+
+So `SRC="$ARGUMENTS"` — the obvious, house-idiomatic form, the one three sibling skills use — is a
+**render-time command-execution sink with no Bash-tool permission prompt**, bypassing the harness's entire
+command-approval gate. Quoting is not a defence: `$( )` expands inside double quotes. Measured on this block
+before the fix: an argument of `README.md"; echo "PWNED:$(id -un)"; :"` executed **twice** (once per
+substitution site) and the block then rendered normally, so the output looked entirely clean to a reader.
+
+**Every guard this PR had already added was downstream of it.** Containment, the symlink refusal, the newline
+refusal, `SOURCE-UNRESOLVED` — all operate on `$SRC`, i.e. after the shell has already run the payload. They
+were path guards on an already-won shell.
+
+**The fix**: a quoted-delimiter heredoc capture, the only form measured to neutralise every payload class
+(quote-break, command substitution, semicolon chain, appended subshell, multi-line). Two residuals are named in
+the block rather than assumed away:
+- a payload containing a line exactly equal to the delimiter escapes it — hence a long unguessable delimiter;
+- **the placeholder must appear exactly once in the block, inside the heredoc.** A second occurrence *in a
+  comment* is a live injection site, because a multi-line payload leaves lines 2..n as executable code. I
+  introduced exactly that while writing the fix — three of the four occurrences were in the explanatory comment
+  — and it is now an asserted invariant rather than a thing I must remember.
+
+Also handled: an unsubstituted placeholder (direct shell run, older host) previously would have yielded the
+literal token as a path; it now degrades to no-argument.
+
+## The part worth keeping: the harness certified the RCE as safe
+
+`run()` passed the argument as `env["ARGUMENTS"]`. Under that model the shell always sees one quoted word, so
+this assertion —
+
+```python
+check("shell metacharacters do not EXECUTE (the argument is always quoted)", not canary.exists(), ...)
+```
+
+— **could only ever pass, in every possible world, including the one where the shipped block had a live RCE.**
+It did. A measurement that can only return clean, inside the harness whose own docstring cites
+`.claude/rules/general.md` § Consistency item 4. And `dev-docs/plan.md`'s criterion *"`$ARGUMENTS` cannot escape
+the repo root or inject a verdict line"* was checked off on the strength of it.
+
+`run()` now renders the block the way the preprocessor does — textual substitution — so every assertion in the
+file is measured under the real model, and six injection payloads are asserted non-executing via a filesystem
+canary **paired with a positive that the canary itself fires**. Fixing the code without fixing the instrument
+would have reproduced the certification.
+
+**This is the third distinct instance of the same defect class in one PR**, which is the honest reason to think
+the rule is load-bearing rather than decorative: the probe that could not return not-clean, the distinctness
+check comparing two Python literals, and now the injection test that could not observe injection. In all three
+the *code* was fine or fixable; the *instrument* was the thing reporting green.
+
+**Systemic half, routed not fixed:** `/flow:audit-plan` (2 sites) and `/flow:critique-plan` (4 sites) have the
+same sink, reproduced. `/flow:review-brief` does **not** — its placeholder sits in a documentation code fence,
+not an executed span, correcting the security review's claim. Fixing two more shipped skills is a house-idiom
+decision across files outside this diff, so it is a `[security] decision-required` manifest entry plus a roadmap
+entry carrying the measured fix idiom — with the instrument half stated explicitly, because that is the half
+that gets forgotten.
+
 ## Provenance (FB-0107)
 
 Measured in this workspace before any verification was believed: **installed plugin 1.29.0** (`gitCommitSha
@@ -215,7 +277,7 @@ the spike identified; the Phase-3 design decision (spike option (a) vs (b)) rema
 ## Files
 
 - `plugins/flow/skills/audit-coverage/SKILL.md` — the source block, the one-line diff-mode gate, mode-scoped prose
-- `plugins/flow/evals/run_coverage_source_mode_evals.py` — new, 71 checks, CI-wired
+- `plugins/flow/evals/run_coverage_source_mode_evals.py` — new, 79 checks, CI-wired
 - `plugins/flow/evals/fixtures/coverage_source_mode_undeclared_context{,.expected}.{md,txt}` + `ground_truth.yaml`
   — offline-validated fixture pair, the same tier as the three diff-mode coverage fixtures (it pins the
   assembled-context shape and the output schema; it does **not** demonstrate live LLM behavior)

@@ -91,13 +91,45 @@ fi
 CAP=60000
 # ----- source-mode dispatch (start) -----
 # ONE evidence block, dispatching on the argument -- the same shape audit-plan, critique-plan and
-# review-brief already use for their optional path argument. A SECOND block was the first draft and
+# review-brief already use for their optional path argument (NOTE: those three still use the bare
+# unsafe form -- see the [security] manifest entry; fixing them is a house-idiom decision, not a
+# local edit). A SECOND block was the first draft and
 # was strictly worse: it duplicated the FB-0074 anchor a third time, forced a shared contract edit
 # (EXPECTED_GUARDS 2 -> 3), restated the cap in a shell that could not share the variable, and left
 # diff mode rendering an empty "approved source tree" heading. Everything below the dispatch is the
 # pre-existing diff-mode body, unchanged.
-if [ -n "$ARGUMENTS" ]; then
-  SRC="$ARGUMENTS"
+# CAPTURE THE ARGUMENT LITERALLY, BEFORE THE SHELL CAN INTERPRET IT.
+# The argument placeholder is TEXTUALLY SUBSTITUTED into this block by the preprocessor and is
+# NOT shell-escaped -- Claude Code says so in its own Gemini-import guard: Gemini shell-escapes
+# its placeholder inside a shell span, Claude Code's substitution does not, "so importing would
+# let typed arguments inject shell commands". So assigning the placeholder through an ordinary
+# double-quoted expansion is a render-time command-execution sink that runs with NO Bash-tool
+# permission prompt. Measured on this very block before the fix: an argument closing the quote
+# and appending a command executed it twice (once per site) and the block still rendered
+# normally afterwards, so the output looked entirely clean to a reader.
+# A quoted-delimiter heredoc makes the substituted text literal to the shell -- no expansion of
+# any kind, command substitution included -- and is the only form measured to neutralise it.
+# Every path guard below (containment, symlink, newline) runs on $SRC AFTER this point, so
+# without this capture they are all guards on an already-won shell.
+# TWO RESIDUALS, both named because neither is hypothetical:
+#  (a) a payload containing a line exactly equal to the delimiter escapes the heredoc -- hence
+#      the long unguessable delimiter rather than a tidy one;
+#  (b) the placeholder must appear EXACTLY ONCE in this block, and only inside the heredoc
+#      body. A second occurrence anywhere -- including in a comment -- is a live injection site,
+#      because a multi-line payload substituted into a comment leaves lines 2..n as executable
+#      code. That is why this comment describes the placeholder instead of spelling it, and why
+#      an eval asserts the one-occurrence invariant.
+SRC=$(cat <<'FLOW_ARG_CAPTURE_9f3a2c7e'
+$ARGUMENTS
+FLOW_ARG_CAPTURE_9f3a2c7e
+)
+# If the preprocessor did NOT substitute (direct shell run, older host), the capture yields the
+# literal token rather than empty -- which would send an argument-less run into source mode with
+# a nonsense path. Compare against a token assembled at runtime so this very line cannot match
+# the preprocessor's search string.
+ARGTOKEN='$'"ARGUMENTS"
+[ "$SRC" = "$ARGTOKEN" ] && SRC=""
+if [ -n "$SRC" ]; then
   ROOTP=$(pwd -P)
   # ONE definition of the not-a-clean-skip tail. It was copy-pasted at five exits, which is the
   # FB-0010 fan-out class inside the very file that argues against it: a wording fix applied to
@@ -190,7 +222,11 @@ if [ -n "$ARGUMENTS" ]; then
   # the diff rather than about what was consumed.) One path per line: space-joining renders a
   # prototype under "design mocks/" as two apparent entries, and this index is the reader's count.
   printf '[audit-coverage] files selected (%s):\n' "$(printf '%s\n' "$FILES" | wc -l | tr -d ' ')"
-  printf '%s\n' "$FILES" | while IFS= read -r f; do [ -n "$f" ] && printf '  %s\n' "$f"; done
+  # Strip CR/LF per entry: this index prints ABOVE the ----- source ----- delimiter, i.e. inside
+  # the zone the prose declares authoritative, and a git-checked-in filename may contain a
+  # newline. Each entry is already indented and $ROOTP-prefixed so attacker text cannot reach
+  # column 0, but defence-in-depth is one tr away.
+  printf '%s\n' "$FILES" | while IFS= read -r f; do [ -n "$f" ] && printf '  %s\n' "$(printf '%s' "$f" | tr -d '\n\r')"; done
   # Capture first so truncation is DETECTED rather than silently swallowed (FB-0010: pair every
   # cap with a warning). Iterate one path per line via while-read for the zsh word-splitting
   # reason documented in the diff block.

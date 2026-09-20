@@ -232,6 +232,37 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### SECURITY — the typed-argument placeholder is a render-time command-execution sink (found by `/flow:security-review`, v1.47.0)
+
+**Surfaces when:** any skill that takes a typed argument is next touched — or immediately, if someone has time.
+
+`$ARGUMENTS` is **textually substituted** into a `` !` `` block before the shell parses it, and is **not**
+shell-escaped. Claude Code states this itself, in the Gemini-command-import guard inside the shipped binary:
+Gemini escapes its placeholder inside a shell span, *"Claude Code's `$ARGUMENTS` substitution doesn't, so
+importing would let typed arguments inject shell commands."* So a bare `SRC="$ARGUMENTS"` runs whatever the
+argument contains, **at prompt-render time, with no Bash-tool permission prompt** — bypassing the harness's
+entire command-approval gate. Quoting does not help: `$( )` expands inside double quotes. (Backticks do not
+work, because one backtick truncates the single-backtick span — the FB-0010 note, providing accidental partial
+cover that is not a defence.)
+
+**Verified by reproduction, not inferred:** `/flow:audit-plan` (2 substitution sites) and `/flow:critique-plan`
+(4 sites) both execute an injected payload. **`/flow:review-brief` is NOT affected** — its placeholder sits in a
+documentation code fence, not an executed span; the security review's claim that it was is corrected here.
+
+`/flow:audit-coverage` was fixed in v1.47.0 with a **quoted-delimiter heredoc capture**, the only form measured
+to neutralise every payload class (quote-break, `$( )`, semicolon chain, multi-line). Two residuals were named
+rather than assumed away: a payload containing a line equal to the delimiter escapes (hence a long unguessable
+delimiter), and **the placeholder must appear exactly once in the block — a second occurrence in a *comment* is
+a live injection site**, because a multi-line payload leaves lines 2..n as executable code. That invariant is
+now asserted by an eval.
+
+**Two halves, and the second is the one that will be forgotten.** (1) Apply the capture to the two affected
+skills — ideally hoisted into one shared snippet, since this is a house idiom and not a local edit. (2) **Switch
+their evals to inject by SUBSTITUTION rather than `env["ARGUMENTS"]`.** Under the env model the shell always
+sees one quoted word, so a metacharacter assertion can only ever pass — which is exactly how v1.47.0's own
+harness certified a live RCE as safe, in the file whose docstring cites "a measurement that can only return
+clean is not a measurement." Fixing the code without fixing the instrument reproduces the certification.
+
 ### Source-mode hardening: forged control lines, and a plan the caller cannot name (`/flow:staff-review`, v1.47.0)
 
 **Surfaces when:** source mode gets its second caller (D1 Phase 2/3, or Track B's interim by-hand rule), or
