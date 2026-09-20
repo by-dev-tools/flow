@@ -42,7 +42,7 @@ If this exits non-zero, stop — report the message to the user and do not proce
 
 ## 1. Extract the brief + reference docs, stamp it to repo-local scratch — one extraction, reused verbatim by every reviewer
 
-Invoked with an argument (`/flow:review-brief <path>`), this reviews that brief **document** — it renders under the heading `## Plan under review (from file: <path>)` (the extractor's plan-file mode is deliberately generic; a design brief is reviewed the same way a queued plan document is). Without an argument, the extractor looks for the session's most recent plan-shaped assistant turn — D1's Step 2 (writing the brief) is not wired into the live loop yet (that's Phase 2), so this path is best-effort until then; a brief that doesn't start with a recognizable plan heading may not be found, and the output below will say so rather than silently reviewing the wrong thing.
+Invoked with an argument (`/flow:review-brief <path>`), this reviews that brief **document** — it renders under the heading `## Plan under review (from file: <path>)` (the extractor's plan-file mode is deliberately generic; a design brief is reviewed the same way a queued plan document is). Without an argument, the extractor looks for the session's most recent plan-shaped assistant turn. **`/flow:prototype` always passes the path explicitly** — it writes the brief to `.flow/prototypes/<branch>/brief.md` and hands that over — so the no-argument path is for direct human invocation only, and it is best-effort: a brief that doesn't start with a recognizable plan heading may not be found, and the output below will say so rather than silently reviewing the wrong thing.
 
 Run this via the `Bash` tool (same ROOT-anchor rationale as `critique-plan/SKILL.md`: a spec/design-language violation cannot be flagged without quoting the reference doc it violates, and this skill has no reliable inherited cwd). It also writes the extracted context to **repo-local `.flow/` scratch**, stamped with workspace identity — the same idiom `/flow:staff-review` uses for its diff file (FB-0082), for the same reason: three reviewers reading one file, not one copy-pasted into three prompts, is what makes "all three reviewed the same artifact" verifiable rather than merely asserted, and the stamp lets a reviewer detect a stale or foreign scratch file instead of silently reviewing the wrong brief.
 
@@ -96,7 +96,7 @@ Default to **decision-required** when a finding's tier is ambiguous — over-esc
 
 ## 4. Resolve
 
-- **All three reviewers clean** (`No issues flagged.` / `APPROVED` / `Ambition bar met.` + `Nothing to push...`): say so plainly and state `Brief cleared pre-prototype review — proceed to the prototype phase.` (D1 Phase 2 is not yet built in this repo; note that explicitly rather than implying a next skill exists.)
+- **All three reviewers clean** (`No issues flagged.` / `APPROVED` / `Ambition bar met.` + `Nothing to push...`): say so plainly and state `Brief cleared pre-prototype review — proceed to the prototype phase.` When `/flow:prototype` invoked you, it continues to its prototype step; when a human invoked you directly, tell them `/flow:prototype` is the skill that owns that step.
 - **Any decision-required finding(s):** render as a **numbered, answerable question list** — never as "see the findings above" or a document to go read (FB-0075's shape; mirrors how `/flow:ship` Step 8 hands off open decisions). One question per finding, each with: the reviewer + category, a one-line restatement of the conflict, and what a yes/no or short answer would resolve. Do not proceed to a proceed-recommendation while any decision-required item is open.
 - **Non-blocking findings** (FOLLOW-UP / push-further): list them separately, clearly labeled as non-blocking, so they aren't lost — but they never gate the "proceed" verdict.
 
@@ -117,7 +117,7 @@ DECISIONS NEEDED (answer to proceed)
 NON-BLOCKING (captured, not gating)
 - [reviewer/category] — [one line]
 
-VERDICT: [proceed to the prototype phase — not yet built, D1 Phase 2 | blocked on N decision(s) above]
+VERDICT: [proceed to the prototype phase (/flow:prototype) | blocked on N decision(s) above]
 ```
 
 ## Gotchas
@@ -125,4 +125,4 @@ VERDICT: [proceed to the prototype phase — not yet built, D1 Phase 2 | blocked
 - **Don't paraphrase a reviewer's finding when triaging it.** Quote enough of the original `ISSUE`/finding that the human can tell the question is grounded in something specific, not your summary of it.
 - **A brief with zero findings across all three is a legitimate, common outcome** for a well-scoped small change — don't manufacture a decision to look thorough.
 - **This skill never fixes the brief itself.** It reviews and triages; revising the brief in response to a decision is a separate turn, same as how `/flow:critique-plan` never edits the plan it critiques.
-- **Don't invoke the prototype phase.** It doesn't exist yet in this repo (D1 Phase 2). Say so plainly rather than gesturing at a next step that isn't shipped.
+- **Don't invoke `/flow:prototype` yourself.** It is your *caller*, not your callee — it invokes you at its Step 4 and resumes when you return. Calling back into it would recurse. Name it as the next step; let it run.

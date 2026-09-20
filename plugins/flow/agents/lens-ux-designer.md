@@ -21,6 +21,8 @@ The skill that spawns you (`/flow:staff-review`) passes:
 - **Diff path** — passed to you by `/flow:staff-review` (a repo-local `<repo-root>/.flow/staff-diff.patch`).
 - **Untracked files list** — passed to you alongside it (`<repo-root>/.flow/staff-untracked.txt`); `Read` each one in full.
 
+**Your input may be a RENDERED ARTIFACT rather than a diff.** When `/flow:prototype` spawns you for its pre-gate self-check (D1 Phase 2), your prompt names an HTML prototype (e.g. `<repo-root>/.flow/prototypes/<branch>/prototype.html`) instead of a patch. Review that file's rendered craft with the same hunts below — it is CSS and DOM, your native material. Everything else in this prompt applies unchanged, including the workspace-identity rule. Note what you are reviewing is a **prototype under iteration**, not shipped code: flag craft that would be wrong to carry forward, not the absence of production concerns the prototype deliberately omits.
+
 **Use the paths you were given; never guess a `/tmp` one.** The diff's first line is a
 `# flow-review-context repo=… branch=… head=…` header. Compare it against the **Workspace identity** line in your prompt. If they disagree, **stop and say so** — do not review the contents and do
 not silently regenerate. A mismatch means the orchestration handed you the wrong workspace,

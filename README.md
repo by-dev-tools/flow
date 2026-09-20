@@ -10,14 +10,16 @@ Install once and every project on your machine can use it.
 
 ## The loop
 
-The workflow is a progression of skills held together by two human gates. The skills (indented `↳`) fire in order on their own; the plain rows are the steps they attach to — including the two gates, which are the whole point and are not skills. Once you approve the plan, everything runs to the open PR without you.
+The workflow is a progression of skills held together by two human gates — one before anything is built, one before anything ships. The skills (indented `↳`) fire in order on their own; the plain rows are the steps they attach to — including the two gates, which are the whole point and are not skills. Once you approve the plan, everything runs to the open PR without you.
 
 | Step | What it does |
 |---|---|
 | **Clarify & plan** | Claude reads your source-of-truth docs, asks 2–4 questions, and writes a plan: a checkbox per requirement, a confidence rating per assumption. |
+| ↳ `/flow:prototype` | **UI work only.** Instead of asking you to approve a *description* of a look, Claude writes a short design brief, builds an HTML prototype, self-reviews it through two design lenses, and hands you the page with click-to-pin comments. This **replaces** gate 1 below — it does not add a gate. On a non-web target the prototype must also carry a feasibility read, so you never approve a look that can't be built. A small change declares `Mode: tiny` in its brief and skips straight to the plan. |
+| ↳ `/flow:review-brief` | Reviews that brief *before* anything is built — assumptions, scope drift, and whether the ambition is high enough — and returns questions you can answer, not a document to read. |
 | ↳ `/flow:critique-plan` | Checks the plan for scope drift, spec violations, and internal incoherence against your request and reference docs. A deterministic pinning lint also flags any Spec-walk checkbox that names no test or verification artifact. Pass a path (`/flow:critique-plan path/to/plan.md`) to review a queued plan **document** instead of the session's most recent plan. |
 | ↳ `/flow:audit-plan` | Checks the plan for unverified assumptions and recall ("we ruled this out" with no fresh read). Takes the same optional plan-file path argument. |
-| **Gate 1 · you approve the plan** | Nothing is built until you do. A low-confidence assumption forces a question here first. |
+| **Gate 1 · you approve the plan — or the prototype** | Nothing is built until you do. On UI work the thing you approve is the **prototype**, and the technical plan is written afterward against the design you signed off. Exactly one gate here either way. A low-confidence assumption forces a question first. |
 | **Execute** | Claude builds against the checkboxes, runs preflight (typecheck / build / test), and commits per phase. Pauses only if preflight is red. |
 | ↳ `/simplify` | Cold-reads the diff for duplication, dead code, and footguns; fixes in place. *(Built into Claude Code.)* |
 | ↳ `/flow:staff-review` | Four reviewers in parallel — engineer, UX, design-engineer, and a "push further" lens — triage findings and fix what's cheap. |
@@ -31,7 +33,7 @@ The workflow is a progression of skills held together by two human gates. The sk
 | ↳ `/flow:audit-skips` | Audits every stage skip for legitimacy — on the spike path too, which produces the most skips — a skip is trusted only if the diff/config backs it, and a "ran" claim only if its output artifact exists for HEAD. A self-certified short-circuit becomes a decision you answer at hand-off. |
 | **Gate 2 · you merge the PR** | Claude never runs `gh pr merge`. |
 
-So the autonomous path narrows to two touchpoints: **approve the plan → merge the PR.** The skills fire automatically *within a driven loop*, not from a cold "build me X" — see [automation boundaries](docs/automation-boundaries.md) for exactly what runs on its own.
+So the autonomous path narrows to two touchpoints: **approve the plan (or the prototype) → merge the PR.** The skills fire automatically *within a driven loop*, not from a cold "build me X" — see [automation boundaries](docs/automation-boundaries.md) for exactly what runs on its own.
 
 ## What the reviewers catch
 

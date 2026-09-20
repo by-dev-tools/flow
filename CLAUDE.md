@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A Claude Code plugin distributing the **managed-autonomy workflow**: an 11-step loop with two load-bearing human gates (plan approval, merge), a third automatic gate on LOW-confidence assumptions, and a feedback pipeline that compounds quality across sessions. Bundled into the same plugin are the skeptical reviewers (`auditor`, `plan-critic`) that audit sessions for unverified claims and critique plans for scope/spec/coherence misalignment — they're used together with the workflow skills 100% of the time, so separation only adds install friction.
+A Claude Code plugin distributing the **managed-autonomy workflow**: an 11-step loop with two load-bearing human gates (one pre-execution gate — plan approval, or **prototype** approval on D1's prototype-first path for UI work — and merge), a third automatic gate on LOW-confidence assumptions, and a feedback pipeline that compounds quality across sessions. Bundled into the same plugin are the skeptical reviewers (`auditor`, `plan-critic`) that audit sessions for unverified claims and critique plans for scope/spec/coherence misalignment — they're used together with the workflow skills 100% of the time, so separation only adds install friction.
 
 **Core thesis:** the most expensive errors in a session compound when (a) plans aren't critiqued before approval, (b) claims aren't audited before trust, and (c) the loop has no mechanical gates between intent and ship. Flow's contribution is a packaged loop + a passive skeptical layer, both project-agnostic, that any repo can adopt in ~10 minutes once PR 3 ships the template directory.
 
@@ -36,6 +36,8 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/ship/lib/manifest-triage.py` | Deterministic draft-manifest triage: classifies each blocker auto/ask/blocked, renders the plain-language NOT-READY block + the Step 8 decision list (FB-0075) |
 | `plugins/flow/skills/ship/lib/verify-pr-body.sh` | Sourced gh read-back helper: re-fetches a PR after any body/draft write + asserts it took (FB-0067) |
 | `plugins/flow/skills/ship/SKILL.md` | `/flow:ship` final-pass pipeline (Step 4c harvests flow-generalizable lessons) |
+| `plugins/flow/skills/prototype/SKILL.md` | `/flow:prototype` — D1's prototype phase + **human gate 1**; the pre-execution gate MOVES here for UI work (FB-0081/FB-0113/FB-0114) |
+| `plugins/flow/skills/prototype/lib/prototype-gate.py` | The D1 trigger, the §9.4 feasibility contract, gate-1 approval capture, and the "a plan always exists" assertion — one engine, committed-state-only where it matters |
 | `plugins/flow/skills/orchestrate/SKILL.md` | `/flow:orchestrate` — boot/re-boot an orchestrator seat (FB-0110, §4.10) |
 | `plugins/flow/skills/spawn/SKILL.md` | `/flow:spawn` — dispatch one worker; `model · effort · why` routing, floored for `sensitivePaths` |
 | `plugins/flow/skills/handoff/SKILL.md` | `/flow:handoff` — orchestrator succession + archive safety (§4.9) |
@@ -104,7 +106,7 @@ When you see `agents/` and `skills/` under `plugins/flow/`, those are **plugin a
 - **Evidence or silence.** If a claim can't be challenged with specific evidence from the session, don't flag it. "No issues flagged" / "APPROVED" is a valid output.
 - **Fixed output format.** Every reviewer pass returns the same structured shape so users and regression tests can parse it reliably.
 - **Narrow scope beats wide scope.** Four auditor categories + three plan-critic categories — not more.
-- **The loop is the product.** Bundling workflow skills (`/flow:ship` and the rest landing in PR 2) with the reviewers means the loop ships once and the human gate stays where it should — at plan approval and merge.
+- **The loop is the product.** Bundling workflow skills (`/flow:ship` and the rest landing in PR 2) with the reviewers means the loop ships once and the human gate stays where it should — one pre-execution gate (plan approval, or prototype approval for UI work under D1) and merge.
 - **Project-agnostic by default.** Every doc path, command, and default branch comes from `flow.config.json` slots with documented defaults. Never silently no-op on a missing slot: print a loud `⚠️` warning so consumers know.
 - **Feedback loop is load-bearing.** `DISAGREE.md` + auto-captured disagreements under `~/.claude/plugins/data/flow/disagreements/` are the source of prompt-tuning work and new eval cases.
 

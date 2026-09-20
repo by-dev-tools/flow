@@ -15,7 +15,7 @@ allowed-tools: Read, Grep, Glob, Bash, Write
 
 # Task: decide what you may decide, and make what's left cheap to answer
 
-Two human gates are the product: plan approval and merge. This skill does not remove either. It makes **who holds each one a function of the decision's properties**, so low-stakes reversible work stops costing human attention while high-stakes, irreversible or taste-laden work still requires it.
+Two human gates are the product: **one pre-execution gate** — plan approval, or **prototype approval** when `/flow:prototype` routes a UI change down D1's prototype-first path — and merge. Exactly one of the two shapes, never both and never neither. This skill does not remove either gate, and it does not decide *which shape* the pre-execution gate takes (`prototype-gate.py trigger` does); it decides **who holds** whichever one applies. It makes **who holds each one a function of the decision's properties**, so low-stakes reversible work stops costing human attention while high-stakes, irreversible or taste-laden work still requires it.
 
 **Why this is code and not a paragraph:** a wrong answer here fails *silently*. An axis mis-read as green auto-approves a plan that should have escalated, and nothing downstream reports it — the work just proceeds with one fewer human in the loop than the policy promised. So the combination rule is a truth table with fixtures, and **every undeclared axis counts as red.** There is no input meaning "couldn't tell, proceed anyway".
 

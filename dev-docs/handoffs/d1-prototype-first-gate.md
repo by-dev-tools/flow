@@ -2,7 +2,9 @@
 
 **Mode:** feature (large; restructures the front half of the loop) | **Priority:** high (the load-bearing item of the Designer-signal track) | **Horizon:** now-ish, user-directed 2026-08-17
 **Branch:** _(fresh — none yet)_
-**Status:** 🟡 **IN PROGRESS — Phase 0 + Phase 1 shipped; Phases 2–3 not started.** Design is settled (FB-0081 is the definitive spec, user-directed); this doc is the execution layer. §9.3's spike (auto-plan quality) and §9.4's human decision (prototype medium) still gate Phase 2. §9.2 (proportionality threshold) was deliberately deferred out of Phase 1 to Phase 2, when the trigger it gates actually exists — see the Phase 1 PR block in `dev-docs/plan.md`.
+**Status:** 🟡 **IN PROGRESS — Phases 0, 1 and 2 shipped; Phase 3 not started.** Design is settled (FB-0081 is the definitive spec, user-directed); this doc is the execution layer. **§9.3's spike gates Phase 3, NOT Phase 2** — see the correction note below. §9.4 (prototype medium) and §9.2 (proportionality trigger) were both decided by the human on 2026-09-16 and are implemented in Phase 2 (FB-0113, FB-0114).
+
+> **Correction (2026-09-20, Phase 2).** Four statements in this doc said §9.3's spike gated **Phase 2** — this Status line, §0 step 7, §8's preamble, and §13's "Spike (before PR 3)". They were wrong, and not merely mis-ordered: §9.3 specifies the spike as *"take **one real approved prototype**, auto-write its technical plan…"*, and an approved prototype is **Phase 2's output**. The spike therefore *depends on* Phase 2, so running it first is unsatisfiable as written. §9.3's own resolution text ("do not build **Phase 3** until the spike clears") was right all along. The merged spike (#153) reached the same conclusion independently. All four statements are corrected below.
 **Scope:** the front half of the flow loop (Clarify → Plan) for **UI-surface changes**. Does **not** touch the merge gate or `/flow:verify-build`.
 **Source of truth (read these, do not re-derive):** `dev-docs/feedback.md` **FB-0081** (the shape + every ordering decision, verbatim user direction), **FB-0080** (why this exists — the drift-with-no-anchor failure), **FB-0046** (the experience/ambition lens = D3), and `dev-docs/roadmap.md` § "Designer-signal track" (D1–D5).
 
@@ -18,7 +20,7 @@ You need nothing from the originating conversation. Read in this order:
 4. **§4 Decisions already made** — do not relitigate these; they are user-directed. Relitigating burns the human's time on settled questions.
 5. **§5 Substrate** — orchestrate the *agents*, do not merge the *skills*. This is the one architectural trap.
 6. **§8 Spec-walk** — the work as checkboxes, phased.
-7. **§9 Confidence verdicts** — two assumptions are MEDIUM/LOW and gate the build: the auto-written technical plan's quality (§9.3, needs a spike **before** committing to D1b) and the prototype medium for non-web surfaces (§9.4, a human decision). Resolve or escalate both before Phase 2.
+7. **§9 Confidence verdicts** — the auto-written technical plan's quality (§9.3) is LOW and gates **Phase 3**; the spike resolved MIXED (#153). The prototype medium (§9.4) and the proportionality trigger (§9.2) were human decisions, both taken 2026-09-16 and implemented in Phase 2 (FB-0113, FB-0114).
 
 **Prerequisite check before Phase 1:** confirm `/flow:critique-plan <path>` and `/flow:audit-plan <path>` still accept a plan-file argument (FB-0068, shipped v1.18.0) and that `extract_session.py --plan-file` still exists — the brief/plan review reuses exactly this. As of this writing both are present (`critique-plan/SKILL.md:43`, `extract_session.py:7`).
 
@@ -115,7 +117,7 @@ The pre-prototype phase (Steps 2–3) fires on the **same trigger as the prototy
 
 ## 8. Spec-walk (the work, phased)
 
-Phasing is dependency-ordered. **Do not start Phase 2 until §9.3's spike resolves** (auto-plan quality) and §9.4 is a human decision (prototype medium).
+Phasing is dependency-ordered. **§9.3's spike gates Phase 3, not Phase 2** (see the Status correction) — the spike consumes an approved prototype, which is Phase 2's output.
 
 ### Phase 0 — D2 role slot (small, unblocks the trigger) — ✅ SHIPPED (`conductor/d1-role-slot-phase-0-v1`; see `dev-docs/plan.md` "PR — D2 `role` config slot")
 - [x] Add `role` to `plugins/flow/schema/flow.config.schema.json` (enum incl. `designer`, `engineer`; optional; documented default = unset ⇒ classic behavior). Verify with a schema round-trip. *Verified:* `run_role_slot_evals.py` shape + roundtrip checks, wired into CI.
@@ -128,16 +130,17 @@ Phasing is dependency-ordered. **Do not start Phase 2 until §9.3's spike resolv
 - [x] Build the **pre-prototype review orchestrator** (Step 3): one extraction of the brief, fanned to `auditor` + `plan-critic` + `lens-experience` in one tool message, returning one triaged verdict (BLOCKER/decision-required routes to a human question per FB-0075; clean ⇒ proceed to prototype). Reuse `extract_session.py --plan-file` against the brief. *Verified:* `plugins/flow/skills/review-brief/SKILL.md`; `run_review_brief_evals.py`'s `skill-*` composition checks (all three `subagent_type`s named, both triage outcomes present, one-tool-message guarantee stated) + `extract-*` checks (real `extract_session.py --plan-file` invocation against both brief fixtures).
 - [x] Wire any new eval harness into `.github/workflows/ci.yml` (CI enumerates harnesses explicitly — an unwired harness gives zero protection). *Verified:* `run_review_brief_evals.py` added to the `evals` job; CI's own harness/runner join-check confirmed green locally.
 
-### Phase 2 — the prototype phase + human gate 1 + the loop re-ordering
-- [ ] Define the **prototype phase**: iterative, no ship pipeline/evals/doc-synthesis; the agent produces + self-evaluates an HTML prototype (fold in held item [10]'s geometry-audit + fresh-eyes-taste self-check) and iterates before presenting.
-- [ ] Define **human gate 1** mechanics: how the prototype is presented (served HTML? the verify-build report surface? a static file?) and how approval is captured.
-- [ ] Re-order `plugins/flow/docs/workflow.md` Steps 1–2 and rewrite the Step 8/9 "not a third gate" argument (FB-0081 says the objection is answered by *replacement*, not exception — update the prose so it no longer reads as forbidding a visual gate).
-- [ ] Update `plan-discipline.md` + `planner.md` for the moved gate.
+### Phase 2 — the prototype phase + human gate 1 + the loop re-ordering — ✅ SHIPPED (v1.46.0, FB-0113/FB-0114)
+- [x] Define the **prototype phase**: iterative, no ship pipeline/evals/doc-synthesis; the agent produces + self-evaluates an HTML prototype (held item [10]'s geometry-audit + fresh-eyes-taste self-check folded in as a two-lens fresh-context fan-out) and iterates before presenting. *Verified:* `/flow:prototype` Steps 5–7; `run_prototype_gate_evals.py::test_prototype_phase_runs_no_pipeline` (positive + negative paired), `::test_skill_composition`.
+- [x] Define **human gate 1** mechanics: the prototype is a `file://` HTML page with the existing `annotation-layer.html` injected (`present`, pinned byte-identical to input + partial); approval is captured by `approve` into `.flow/…/approval.json` **and** as two committed lines in the plan doc. *Verified:* `::test_present_authors_no_markup`, `::test_approve_*`, `::test_verify_detects_drift`.
+- [x] Re-order `workflow.md` Steps 1–2 and rewrite the Step 8/9 "not a third gate" argument by **replacement**. The re-order lands *inside* Step 2 (which forks) rather than renumbering the loop — "Step 8" is a named contract in a dozen files. *Verified:* `::test_workflow_step2_fork` (incl. a numbering-unchanged assertion), `::test_not_a_third_gate_rewrite` (positive + negative).
+- [x] Update `plan-discipline` + `planner.md` for the moved gate. *Verified:* `::test_plan_surfaces_moved_gate`, `::test_brief_mode_scoping_fanout` (both files, FB-0100's two-sided-pin rule).
+- [x] **Pulled forward out of Phase 3:** the "a plan always exists" mechanical assertion (`gate-execute`), because Phase 2 is what removes the human plan gate and a PR that creates a hazard ships its guard. *Verified:* `::test_gate_execute_*`, including the resumed-workspace case with `.flow/` absent.
 
 ### Phase 3 — auto-written technical plan + machine-gate
 - [ ] After gate 1, **auto-write the technical plan** (a real Spec-walk plan, against the approved prototype).
 - [ ] **Machine-gate it**: `auditor` + `plan-critic` + push-further-on-quality → clean ⇒ proceed; `[auto-fixable]` ⇒ fix + re-review once ⇒ proceed; `[decision-required]` ⇒ escalate as an answerable question. **Loop only on mechanical signals.**
-- [ ] Assert **"no plan produced" is impossible** on the D1 path (a mechanical check that a plan exists before Execute).
+- [x] ~~Assert **"no plan produced" is impossible** on the D1 path~~ — **landed early in Phase 2** (`prototype-gate.py gate-execute`), not here. Phase 2 removes the human plan gate, so the guard had to ship with the hazard rather than a release behind it. Recorded here so the two phases cannot disagree about who owns it.
 
 ## 9. Confidence verdicts (load-bearing assumptions)
 
@@ -181,8 +184,8 @@ A new optional config slot defaulting to classic behavior; additive. **If it fli
 ## 13. Suggested PR breakdown
 - **PR 1 (Phase 0):** D2 `role` slot — small, unblocks the trigger.
 - **PR 2 (Phase 1):** the experience/ambition lens agent + the design-brief template + the pre-prototype orchestrator. Self-contained; delivers the "review the brief" half.
-- **Spike (before PR 3):** §9.3 auto-plan quality. Ship as `mode: spike` — the finding is the deliverable.
-- **PR 3 (Phase 2):** the prototype phase + human gate 1 + the workflow re-ordering. Gated on §9.4 being decided.
+- **PR 3 (Phase 2):** the prototype phase + human gate 1 + the workflow re-ordering. Gated on §9.4 being decided. ✅ SHIPPED (v1.46.0).
+- **Spike (before PR 4):** §9.3 auto-plan quality. Ship as `mode: spike` — the finding is the deliverable. ✅ SHIPPED (#153, MIXED).
 - **PR 4 (Phase 3):** the auto-written technical plan + machine-gate + the "plan always exists" assertion.
 
 Keep each small; the proportionality lesson applies to the meta-work too.

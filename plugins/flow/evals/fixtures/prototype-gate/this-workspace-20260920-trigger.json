@@ -1,0 +1,15 @@
+{
+  "brief_required": true,
+  "brief_state": "ok",
+  "config_state": "ok",
+  "mode": "feature",
+  "path": "prototype-first",
+  "pre_execution_gate": "prototype",
+  "reasons": [
+    "uiSurface true + visual declared + Mode feature \u2014 the human's first gate is the prototype."
+  ],
+  "role": null,
+  "schema": 1,
+  "surface": "visual",
+  "ui_surface": true
+}

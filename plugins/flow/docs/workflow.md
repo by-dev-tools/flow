@@ -14,7 +14,8 @@ Everything described in the loop below is shipped and installable today. The ful
 - **`/flow:audit-skips`** — the skip-legitimacy auditor that runs after those four (ship Step 2a) **and in spike mode (`/flow:ship-spike` Step 2a)**, which is the path that produces the most skips. It accepts no stage skip on its own say-so: a skip is trusted only if the diff/config backs it, and a "ran" claim only if its canonical output artifact exists for HEAD. A self-certified short-circuit (e.g. a verify-build PASS with no fresh findings buffer) routes the PR to a draft. Also invocable standalone.
 - **`/flow:critique-plan`** — plan-critic pass over the most recent plan (scope drift, spec violation, internal incoherence). A deterministic pinning lint (`lib/walk-pin-lint.py`, reusing the shared `walk_extract` parser) also reports Spec-walk checkboxes that name no test or verification artifact — advisory input to the critic, which assigns severity only where a reference doc requires pinning. Pass a path (`/flow:critique-plan <plan.md>`) to review a queued plan **document** instead of the session's most recent plan; session context then degrades to best-effort with a loud standalone-review note (a legitimate invocation, not missing evidence).
 - **`/flow:audit-plan`** / **`/flow:audit-completion`** — auditor passes (unverified assumptions + recall; false-verification proxies). `/flow:audit-plan` takes the same optional plan-file path argument; on a standalone plan-document review, artifact read-status renders UNKNOWN (never UNREAD), so a merely-absent transcript can't mint false unverified-recall findings.
-- **`/flow:review-brief`** — D1 Phase 1's pre-prototype review: one extraction of a design brief, fanned to `auditor` + `plan-critic` + the new `lens-experience` (experience/ambition + push-further-on-quality) in one tool message, returning one triaged verdict. `decision-required` findings render as an answerable question list, never a document to read. Not yet wired to a live trigger or a prototype phase (D1 Phase 2) — standalone-invocable today, the same way `/flow:critique-plan <path>` is. See § "D1 design-brief template".
+- **`/flow:prototype`** — D1's prototype phase and **human gate 1**. For a UI-surface change the human's first decision point becomes a prototype they can look at rather than a plan they read. Writes the design brief, runs `/flow:review-brief` over it, builds and self-evaluates an HTML prototype, presents it with the click-to-pin annotation layer, and captures approval as a checkable record. Iterative by design — no ship pipeline, no evals, no doc synthesis. Never approves on the human's behalf. See § "2. Pre-execution gate".
+- **`/flow:review-brief`** — the pre-prototype review: one extraction of a design brief, fanned to `auditor` + `plan-critic` + `lens-experience` (experience/ambition + push-further-on-quality) in one tool message, returning one triaged verdict. `decision-required` findings render as an answerable question list, never a document to read. **Called by `/flow:prototype`** with the brief's path; also standalone-invocable, the same way `/flow:critique-plan <path>` is. See § "D1 design-brief template".
 - **`/flow:log-disagreement`** — auto-invoked feedback channel that captures user pushback on a finding for prompt-tuning input.
 - **`/flow:contribute`** — drains the lesson-harvest queue (and the `log-disagreement` store) into a **draft** PR back to the flow plugin. The drain end of the self-improvement loop; run from the flow checkout, self-triggered, never merges (v1.11.0; see § "Contributing lessons back to flow").
 - **`/flow:land`** — post-merge, human-invoked: after *you* merge a PR, reconciles the forward docs to "merged (#N)" (the slot the open-PR ship couldn't), re-runs the visual-history distill if a blocked visual pass since completed, and opens a small `docs: land #N` PR. Closes the "at PR → merged never reconciles" gap. Never merges (v1.12.0). Independently invocable, and **called by `/flow:post-merge`** §3 (model-invocable since v1.25.0/FB-0077; kept from auto-firing by its own §1a merged-PR gate and §1b clean-tree gate) for its doc-currency step.
@@ -26,7 +27,7 @@ Plus the two reviewer subagents (`auditor`, `plan-critic`) the four staff-review
 
 ## What this workflow is (and isn't)
 
-This is **hybrid managed autonomy**, not pure autonomous coding. The human stays in the loop at two load-bearing gates: (1) **Plan approval** before any code is written, and (2) **Merge** at the end. Between those, the agent operates with autonomy-friendly primitives — spec-walk checkboxes, confidence verdicts, preflight gates, `/simplify`, four-lens `/flow:staff-review` (engineer / UX designer / design engineer / push-further), agent self-feedback memory.
+This is **hybrid managed autonomy**, not pure autonomous coding. The human stays in the loop at two load-bearing gates: (1) **one pre-execution gate** before any code is written — **plan approval** on the classic path, or **prototype approval** on D1's prototype-first path for UI-surface work — and (2) **Merge** at the end. The pre-execution gate **moves** between those two shapes; it never doubles, and it is never absent (see § "2. Pre-execution gate"). Between those, the agent operates with autonomy-friendly primitives — spec-walk checkboxes, confidence verdicts, preflight gates, `/simplify`, four-lens `/flow:staff-review` (engineer / UX designer / design engineer / push-further), agent self-feedback memory.
 
 Confidence gates explicitly add a third gate when an assumption is LOW — surfacing a question that must be resolved before the plan can proceed. The implicit gate at Execute time (new scope discovered → re-plan → re-approve) is currently judgment-based, not enforced; extending the confidence-gate primitive into Execute and into `/flow:staff-review` BLOCKER triage is a roadmap item.
 
@@ -41,8 +42,13 @@ The user's request kicks the loop off (input, not a Claude step). From there:
 ```
  1. Clarify          read source-of-truth docs; surface conflicts; ask 2–4
                      targeted questions (or list assumptions if autonomous)
- 2. Plan             write a plan with spec-walk checkboxes + confidence
-                     verdict; run /flow:critique-plan; WAIT for human gate
+ 2. Pre-exec gate    ONE human gate, two shapes. CLASSIC: write a plan with
+        (gate)       spec-walk checkboxes + confidence verdict; run
+                     /flow:critique-plan; WAIT for human gate.
+                     PROTOTYPE-FIRST (D1, UI-surface work): design brief →
+                     /flow:review-brief → prototype, iteratively →
+                     WAIT for human gate 1 (prototype approval) → technical
+                     plan, machine-reviewed. See "2. Pre-execution gate".
  3. Execute          implement against the checkboxes; stay in scope
  4. Preflight        mechanical gates (typecheck/build/test + project
                      invariants) — MUST be green before /simplify runs
@@ -149,7 +155,28 @@ Then:
 
 The goal: leave step 1 with enough shared understanding to plan without ambiguity.
 
-## 2. Plan
+## 2. Pre-execution gate
+
+**One human gate, two shapes.** Which one you get is a property of the change, not a choice made per-run:
+
+| | When | What the human approves |
+|---|---|---|
+| **Classic** (default) | everything else | a written plan |
+| **Prototype-first** (D1) | `uiSurface != false` **and** the brief declares `Surface: visual` (or `role: designer`) **and** `Mode` is not `tiny`/`spike` | a **prototype** |
+
+**This is a move, not an addition.** Flow's thesis is two load-bearing human gates, and D1 replaces *plan-text approval* with *prototype approval* for UI work — it does not insert a third. The invariant, which `/flow:prototype`'s engine returns on every path: **exactly one pre-execution human gate, always — prototype approval XOR plan approval. Never both, never neither.** Plus: **a plan always exists before Execute**, asserted mechanically (see § 3).
+
+Why for UI work specifically: a designer reading a written plan is being asked to approve a description of a look. The approval that results is often not a real one — *"a lot of the messages I come to are too long and I don't really read them and I just end up approving anyway"* — and an approval that wasn't read launders an unreviewed decision as a reviewed one. A prototype is the artifact they can actually evaluate.
+
+### Prototype-first (D1)
+
+Run **`/flow:prototype`**. It writes the design brief (§ "D1 design-brief template"), runs `/flow:review-brief` over it, builds and self-evaluates an HTML prototype, presents it with the click-to-pin annotation layer, and captures approval as a checkable record. Iterative and cheap: **no ship pipeline, no evals, no doc synthesis**. Iteration is the point.
+
+After approval the technical plan is written **against a design that survived contact**, and gets **no second human gate** — the human already gated. It is machine-reviewed by `/flow:critique-plan` + `/flow:audit-plan`, and by `/flow:audit-coverage` in prototype-source mode once that mode ships. **Until it does, that review is a form-and-coherence check and explicitly NOT a completeness check** — the §9.3 spike measured this reviewer set catching 1 of 12 real coverage gaps — and the completeness backstop stays where it already is: `/flow:audit-coverage` against a real diff at `/flow:ship` Step 2. A coverage hole is caught **late, not never**. Phase 3 (auto-writing the plan and machine-gating it) is **not built**.
+
+**Proportionality is a first-class constraint.** A brief plus three review passes plus a prototype costs more than a small change is worth, so a brief declaring `Mode: tiny` **collapses** the phase: Clarify + brief, no review passes, no prototype, and the pre-execution gate stays at plan approval. In a brief, `Mode` scopes *this phase only* and is **not inherited by the technical plan**, which declares its own; `Mode: tiny` there means *"this surface doesn't earn a prototype"*, and relaxes nothing on the classic path.
+
+### Classic
 
 Write the plan to the configured plan doc under "Active Work Items". The plan **must include**:
 
@@ -196,6 +223,14 @@ The plan-critic reviews the plan against the user's request and the reference do
 The critic informs the user's decision; it does not replace the human gate. **LOW-confidence plans cannot proceed until the assumption is resolved by an explicit user answer** — see § "Confidence gates".
 
 ## 3. Execute
+
+**On the D1 prototype-first path, assert a plan exists before writing any code:**
+
+```sh
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py gate-execute --plan <planPath>
+```
+
+Do not proceed on `ok: false`. It reads **committed state only** — the plan doc's `**Pre-execution gate:**` declaration and `**Prototype approved:**` digest — so its verdict survives a lost workspace, and a `false` means either no approval digest or no active Spec-walk block: nothing approved, or nothing to build against. That is exactly FB-0080's condition, and this is the check that makes "no second human gate" defensible rather than conventional. On the classic path it returns `ok: true` immediately and costs nothing.
 
 Implement the approved plan against the spec-walk checkboxes. During execution:
 
@@ -273,7 +308,14 @@ Auto-advance into `/flow:ship` **only when ALL hold**:
 4. **A behavioral gate exists and returns PASS.** `/flow:verify-build` would return `overall_verdict: PASS` — a *positive* behavioral pass. **"verify-build didn't FAIL" is NOT sufficient, and skipped ≠ ready.** If verify-build is skipped (`verifyEnabled=false`, `platform=library|none`, a toolchain absent from this host, or a doc-only diff) there is **no** behavioral gate, so the predicate is **not** satisfied — those changes stop and present, requiring an explicit "ship it". (This is FB-0018: the readiness signal must be a positive PASS, never absence-of-failure.)
 5. **No unanswered `this-iteration` open question.** If verify-build's findings buffer carries an `open_questions[]` entry with `routing: this-iteration` that the human hasn't answered, the loop **stops and presents** it — it is a subjective/taste call only the human can make (distinct from an epistemic `Unknown`), and it mirrors an unresolved MEDIUM assumption. `future-planning` questions route to the roadmap and do NOT block. (V2: surfaced in the rendered walkthrough's "Open questions for you" block.)
 
-**This step is the discovery boundary.** Behavioral *and visual* dialing-in happens HERE (steps 8–9), before the ship decision — running verify-build to know it would PASS, observing the app, iterating on visual gaps. `/flow:ship` only *confirms* (re-runs verify-build as a regression check); it must not be where you first find out whether the thing works or looks right. **Visual sign-off folds into the merge gate, not a third gate:** the agent dials in visual quality against the plan's declared visual criteria — its **`Visual-walk`** block (§ 2 "Required fields") — pre-PR; the *authoritative* human visual sign-off happens at the merge gate via the PR preview (ship Step 8 invokes the project's dev-server/preview skill if one exists). If the agent's visual confidence is low, that's a `[decision-required]` finding → draft PR + manifest, same routing as any unresolvable blocker. So "dialed in before ship" = the agent's best pass pre-PR; the human's authoritative look stays at merge — two gates preserved.
+**This step is the discovery boundary.** Behavioral *and visual* dialing-in happens HERE (steps 8–9), before the ship decision — running verify-build to know it would PASS, observing the app, iterating on visual gaps. `/flow:ship` only *confirms* (re-runs verify-build as a regression check); it must not be where you first find out whether the thing works or looks right. **Step 8 is never a gate, on either path — but the reason differs, and the difference is the point.**
+
+This doc used to argue that visual sign-off must fold into the merge gate *"not a third gate."* That objection was right about the count and wrong about the remedy: the answer to "where does the human look at the pixels?" is **replacement, not exception**. D1 moves the pre-execution gate from plan-text to a prototype for UI work, so on that path the human's authoritative *look* has already happened — at gate 1, before anything was built, on the cheap artifact. Step 8 remains agent dial-in, and merge remains gate 2. Still two gates.
+
+- **Classic path:** the agent dials in visual quality against the plan's declared visual criteria — its **`Visual-walk`** block (§ 2 "Required fields") — pre-PR; the *authoritative* human visual sign-off happens at the merge gate via the PR preview (ship Step 8 invokes the project's dev-server/preview skill if one exists).
+- **Prototype-first path:** the authoritative look happened at gate 1. Step 8 confirms the build matches the approved prototype; it does not re-open the design question.
+
+Either way, if the agent's visual confidence is low that's a `[decision-required]` finding → draft PR + manifest, same routing as any unresolvable blocker. "Dialed in before ship" = the agent's best pass pre-PR. **Two gates, both paths — what changes is which artifact the human looked at, not how many times they were asked.**
 
 **Operator discipline — no self-certifying visual work from ad-hoc screenshots (FB-0066).** An implementing agent may **NOT** claim a UI change "verified" from screenshots it took and read *itself* during Execute. Ad-hoc Execute screenshots (the platform screenshot MCP fired inline while iterating) are for iterating — never for sign-off. The failure they invite is concrete: an implementer glancing at its own output pattern-matches "looks like the app" and waves through an obvious defect the frame plainly shows (a broken safe-area background, a seam, clipped text). A **visually-significant** change must route through `/flow:verify-build` §5a — a11y-gated capture → **fresh-context** judge → the fixed **frame-integrity checklist** (`lib/frame-integrity-checklist.md`) — before "verified" is claimed; that path removes the conflict of interest and forces a per-edge/per-corner description before any verdict. This extends the existing MANDATORY-capture gate's spirit: zero captured frames ⇒ `Unknown` (not PASS); **implementer-eyeballed frames ⇒ not a verdict at all.** Verify-build §5a is the only path to a visual verdict.
 
@@ -283,7 +325,7 @@ Even when the predicate holds, **stop and present** if any of FB-0011's escalati
 
 ### Auto-advance path
 
-When the predicate holds and the risk gate is clear, Claude invokes `/flow:ship` directly (Step 10) without waiting for "ship it". This is the autonomous-loop trigger — the loop runs unattended between the two load-bearing human gates (plan approval at Step 2, merge at Step 11). `/flow:ship`'s own mechanical gates (stale-base, Step 1c preflight, Step 2 verify-build confirmation) remain the safety net: a falsely-confident auto-advance produces a regression at ship's verify-build confirmation, which routes to a **draft PR + manifest** rather than a merge-ready PR — caught before the merge gate, never silently shipped.
+When the predicate holds and the risk gate is clear, Claude invokes `/flow:ship` directly (Step 10) without waiting for "ship it". This is the autonomous-loop trigger — the loop runs unattended between the two load-bearing human gates (the Step 2 pre-execution gate — plan approval, or prototype approval on the D1 path — and merge at Step 11). `/flow:ship`'s own mechanical gates (stale-base, Step 1c preflight, Step 2 verify-build confirmation) remain the safety net: a falsely-confident auto-advance produces a regression at ship's verify-build confirmation, which routes to a **draft PR + manifest** rather than a merge-ready PR — caught before the merge gate, never silently shipped.
 
 ### Stop-and-present path
 
@@ -601,11 +643,20 @@ If a `/flow:staff-review` or `/flow:ship` finding suggests a missing rule, write
 
 ---
 
-## D1 design-brief template (Phase 1 artifact — not wired into the loop yet)
+## D1 design-brief template
 
-`dev-docs/handoffs/d1-prototype-first-gate.md` (FB-0081) moves a UI change's first human gate from the plan to a prototype. Phase 1 ships the review half of that (`/flow:review-brief` + the `lens-experience` agent) and this template; it does **not** ship the trigger, the prototype phase, or the Step 1–2 re-ordering below — those are D1 Phase 2. Until then, a design brief is something you or the agent writes by hand and hands to `/flow:review-brief`, not something the loop produces automatically.
+`dev-docs/handoffs/d1-prototype-first-gate.md` (FB-0081) moves a UI change's first human gate from the plan to a prototype. **`/flow:prototype` produces the brief** — it writes it to `.flow/prototypes/<branch>/brief.md` at Step 2 of the loop, then hands that path to `/flow:review-brief`. You can still write one by hand and review it directly; the skill is what makes it part of the loop.
 
-A design brief is **short enough to read in about 20 seconds** — target **~80 words total** across all six fields (roughly one to two short sentences each; ≈250 words/minute × 20s). This is a documented guideline, not a mechanically-enforced cap in Phase 1 — nothing yet produces a brief for a cap to apply to. Whichever Phase 2 step ends up drafting briefs is the natural place to enforce it operationally.
+A design brief is **short enough to read in about 20 seconds** — target **~80 words total** across all six fields (roughly one to two short sentences each; ≈250 words/minute × 20s). **`/flow:prototype` is the step that drafts briefs, so it is where this is enforced** — as a `[WARN]`, never a block. The cap exists so the brief actually gets read; a brief that runs long is worth flagging and offering to tighten, not worth stopping a gate over.
+
+**The header declares the trigger's two inputs**, above the six content fields — the same shape a plan already uses for `Mode`:
+
+```markdown
+**Mode:** feature · **Surface:** visual
+```
+
+- **`Mode`** — `feature` | `spike` | `tiny`. In a brief this scopes **the pre-prototype phase only** and is **not inherited** by the technical plan, which declares its own. `Mode: tiny` here means *"this surface does not earn a prototype"* — a copy change, a spacing or token correction, a single-state tweak — and collapses the phase to Clarify + brief with the gate staying at plan approval. It relaxes **no** classic-path consequence of `tiny`.
+- **`Surface`** — `visual` | `non-visual`. `role: designer` implies `visual` when absent. Declared rather than inferred on purpose: before anything is built there is no diff, so nothing can be measured, and a per-run judgment would be an un-pinnable input deciding where a human gate sits.
 
 The six fields, in order:
 
@@ -616,7 +667,7 @@ The six fields, in order:
 5. **Deliberately excluded** — what's out, named explicitly (this is the field that would have caught FB-0080 — an accepted-but-unwritten item silently dropping out of scope).
 6. **Where this pushes past the literal request** — if anywhere; empty is a valid, honest answer.
 
-`/flow:review-brief` reviews a brief against these fields implicitly (via `auditor` + `plan-critic` + `lens-experience`); it does not currently enforce that all six are present as a mechanical gate.
+`/flow:review-brief` reviews a brief against these fields implicitly (via `auditor` + `plan-critic` + `lens-experience`); it does not enforce that all six are present as a mechanical gate. `/flow:prototype` invokes it with the brief's path as an argument at Step 4 of its own sequence.
 
 ## Running several workspaces from one seat (the orchestrator suite)
 
@@ -656,7 +707,8 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / HUMAN (you type it; ca
 | `/flow:doctor` | Setup PASS/FAIL/WARN punch-list | After bootstrap / when something feels off | BOTH | flow |
 | `/flow:critique-plan` | Critique plan vs. core-docs (scope drift / spec violation / internal incoherence) | At the plan gate within a driven loop (never cold-start); also typeable | BOTH | flow |
 | `/flow:audit-plan` | Audit plan for unverified assumptions and unverified recall | At the plan gate, complementary to `/flow:critique-plan` (never cold-start); also typeable | BOTH | flow |
-| `/flow:review-brief` | D1 Phase 1 pre-prototype review: one extraction fanned to `auditor` + `plan-critic` + `lens-experience`, one triaged verdict; `decision-required` → answerable question list | Standalone today (D1 Phase 2 wires a live trigger) | BOTH | flow |
+| `/flow:prototype` | D1 prototype phase + **human gate 1**: brief → `/flow:review-brief` → HTML prototype → two-lens self-check → present with the annotation layer → capture approval. No ship pipeline, no evals, no doc synthesis | Step 2, when the change is UI-surface and `Mode` is not `tiny`/`spike` | BOTH | flow |
+| `/flow:review-brief` | Pre-prototype review: one extraction fanned to `auditor` + `plan-critic` + `lens-experience`, one triaged verdict; `decision-required` → answerable question list | Step 2 of the prototype-first path (called by `/flow:prototype`); also typeable | BOTH | flow |
 | `/simplify` | Cold-read changed code for reuse, clarity, efficiency; fix in-tree | After commit, before staff-review | — | bundled (Claude Code) |
 | `/flow:staff-review` | Four-lens parallel review (engineer / UX / design-engineer / push-further) | After `/simplify`, before presenting | BOTH | flow |
 | `/flow:audit-completion` | Audit "done / fixed / ready" claims for false-verification proxies | At the present gate within a driven loop (never cold-start); also typeable | BOTH | flow |
@@ -684,7 +736,7 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / HUMAN (you type it; ca
 
 | Slot | Default | Used by |
 |---|---|---|
-| `role` | unset → classic plan gate | not yet consumed by any skill (Phase 0 of the D1 "prototype-first gate" track; a future trigger reads it) |
+| `role` | unset → classic plan gate | **`/flow:prototype`** (D1's pre-execution-gate trigger: `designer` implies `Surface: visual` when a brief omits it) |
 | `defaultBranch` | falls back to `git symbolic-ref refs/remotes/origin/HEAD`, then literal `main` | `/flow:ship` (NOTHING-TO-SHIP check, PR base) |
 | `typecheckCmd` | unset → loud warning, never silent | `/flow:ship` (post-fix re-check) |
 | `preflightCmd` | unset → consumer must wire (project-shaped); typical convention `node tools/preflight/check.mjs` | preflight step 4 |
@@ -703,7 +755,7 @@ Listed in loop order. **Invocation:** AUTO (self-fires) / HUMAN (you type it; ca
 
 Why two defaults: flow's *own* dev-tracking lives at `dev-docs/` (so `core-docs/` stays free as the name consumer-template scaffolding ships at). Consumer projects typically use `core-docs/`. The defaults bake that distinction in.
 
-**`role` (`designer` | `engineer`, unset by default).** Declares the human's role on the project so flow skills can decide what to escalate and how much technical detail to surface — the same change is a technical detail to an engineer and a decision to a designer. It is persistent, project-scoped config: set it once in `flow.config.json` and every future session reads it, rather than re-declaring it per conversation; it does not belong in `CLAUDE.md` because skills read config slots deterministically via `jq`, not by parsing prose. **As of this schema version, no skill reads `role` yet** — this slot is Phase 0 of the D1 "prototype-first gate" track (`dev-docs/roadmap.md` § Designer-signal track D1/D2, FB-0081): a later phase will read it (`designer` ⇒ the human's first gate moves from plan-text approval to prototype approval; `engineer`/unset ⇒ today's classic plan gate, unchanged). `/flow:doctor` reports the resolved value.
+**`role` (`designer` | `engineer`, unset by default).** Declares the human's role on the project so flow skills can decide what to escalate and how much technical detail to surface — the same change is a technical detail to an engineer and a decision to a designer. It is persistent, project-scoped config: set it once in `flow.config.json` and every future session reads it, rather than re-declaring it per conversation; it does not belong in `CLAUDE.md` because skills read config slots deterministically via `jq`, not by parsing prose. **`/flow:prototype` reads this slot** (D1 Phase 2): `designer` implies `Surface: visual` when a brief omits the declaration, so a designer's UI work routes to prototype approval without re-declaring it every time; `engineer`/unset ⇒ the classic plan gate unless a brief declares `Surface: visual` explicitly. **`uiSurface: false` vetoes regardless of `role`** — a project with no UI surface has nothing to prototype — and that override is *reported as suppressed* rather than silently dropped, so a config contradiction surfaces. `/flow:doctor` Check 2.11 reports the resolved value and whether the prototype-first path is live.
 
 **`/flow:verify-build` prerequisite:** `/flow:verify-build` wraps bundled `/verify`, which in turn invokes bundled `/run`. `/run` works best with a per-project launch recipe scaffolded by Anthropic's bundled `/run-skill-generator` at `.claude/skills/run-<name>/`. Without that recipe, heuristic launch may fail on projects with env files, databases, multi-step builds, or non-standard scheme/package selection (Anthropic's docs explicitly call out this limitation). After installing flow, run `/run-skill-generator` once per project; `/flow:doctor` Check 5.3 surfaces the gap if you skip it.
 

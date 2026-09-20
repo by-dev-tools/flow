@@ -669,9 +669,11 @@ else
 fi
 ```
 
-**Check 2.11 — `role` slot resolution (D1 prototype-first trigger dependency, FB-0081 Phase 0)**
+**Check 2.11 — `role` slot + is the prototype-first path actually live? (D1, FB-0081/FB-0113)**
 
-Reports the resolved `role` slot so a human can confirm it's set (or intentionally unset) without opening `flow.config.json`. This slot has no consumer yet (Phase 0 only — see `dev-docs/handoffs/d1-prototype-first-gate.md`); this check is informational, never a FAIL. A value outside the enum is warned, not silently accepted, since nothing enforces the schema's enum at runtime — a plain `jq` read of a typo'd value would otherwise report as if it resolved cleanly.
+Reports the resolved `role` **and whether D1's prototype-first gate can actually fire here** — because "I set `role: designer`" and "I can tell it's live" were two different questions with no bridge between them, and a slot that round-trips through config tells you nothing about whether any behavior changed.
+
+`/flow:prototype` consumes this slot: `designer` implies `Surface: visual` when a brief omits it. But **`uiSurface: false` vetoes the whole path regardless of `role`** — a project declaring no UI surface has nothing to prototype — so the check reports the *conjunction*, and says so when the two disagree rather than letting a designer believe a setting took effect that is being overridden. Informational, never a FAIL. A value outside the enum is warned, not silently accepted, since nothing enforces the schema's enum at runtime — a plain `jq` read of a typo'd value would otherwise report as if it resolved cleanly.
 
 ```sh
 if ! command -v jq >/dev/null 2>&1; then
@@ -681,11 +683,21 @@ elif [ ! -f flow.config.json ]; then
 elif jq -e . flow.config.json >/dev/null 2>&1; then
   ROLE=$(jq -r '.role // empty' flow.config.json)
   case "$ROLE" in
-    "") echo "[PASS] role unset — classic plan gate (no role-based behavior active yet)" ;;
-    designer|engineer) echo "[PASS] role: $ROLE (informational only — no flow skill reads this yet)" ;;
+    "") echo "[PASS] role unset — a brief must declare 'Surface: visual' explicitly to reach the prototype gate" ;;
+    designer|engineer) echo "[PASS] role: $ROLE (read by /flow:prototype)" ;;
     *) echo "[WARN] role: \"$ROLE\" is not a recognized value (expected 'designer' or 'engineer')"
        echo "       Fix: set flow.config.json's \"role\" to 'designer' or 'engineer', or unset it for classic behavior." ;;
   esac
+  # The conjunction, not just the slot: report whether the prototype-first path can fire.
+  UIS=$(jq -r 'if .uiSurface == false then "false" else "true" end' flow.config.json)
+  if [ "$UIS" = "false" ]; then
+    echo "[PASS] prototype-first path: NOT AVAILABLE — uiSurface is false, so there is no UI surface to prototype."
+    [ "$ROLE" = "designer" ] && echo "       Note: role: designer is SUPPRESSED by uiSurface: false. Reported, never silently honored."
+  elif [ "$ROLE" = "designer" ]; then
+    echo "[PASS] prototype-first path: LIVE — a brief with Mode: feature routes to prototype approval (Surface defaults to visual under role: designer)."
+  else
+    echo "[PASS] prototype-first path: AVAILABLE — reached when a brief declares 'Surface: visual' and Mode is not tiny/spike."
+  fi
 fi
 # else: flow.config.json exists but doesn't parse — Check 2.2 already reports this FAIL;
 # no duplicate/conflicting message here (same silent-defer convention as Checks 2.3/2.4).
