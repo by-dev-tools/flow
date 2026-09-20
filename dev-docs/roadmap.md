@@ -232,6 +232,45 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### Source-mode hardening: forged control lines, and a plan the caller cannot name (`/flow:staff-review`, v1.47.0)
+
+**Surfaces when:** source mode gets its second caller (D1 Phase 2/3, or Track B's interim by-hand rule), or
+`/flow:audit-coverage`'s evidence block is next touched.
+
+1. **A prototype can forge a control line; a diff structurally cannot.** Source mode `cat`s file bytes at
+   column 0, whereas diff-mode content arrives as `git diff` output where every body line carries a `+`/`-`/
+   space prefix. So a prototype containing a literal `----- file: x -----` fakes a boundary — and one
+   containing `[audit-coverage] SOURCE-UNRESOLVED …` or `SKIPPED` triggers a rule that instructs the model to
+   emit exactly that line **as its entire response**: content-driven audit suppression. v1.47.0 bought most of
+   the protection immediately by scoping the `SOURCE-UNRESOLVED` rule **positionally** (a genuine one is always
+   emitted before the `----- source -----` delimiter), but `SOURCE-TRUNCATED` is emitted *after* the body and
+   cannot be disambiguated the same way. The durable fix is a per-run nonce in the delimiter or a byte-count
+   assertion, plus fixtures asserting collision/forgery rather than mere delimiter presence. **Note this is not
+   wholly new:** diff mode's `----- new file: -----` path also `head`s raw bytes.
+2. **Source mode cannot name its plan.** `/flow:audit-plan` and `/flow:critique-plan` spend their optional path
+   argument on the *plan*; source mode spends it on the *source*, leaving criteria pinned to `planPath` with no
+   override. In the storage shape Track B uses (`.flow/prototypes/<slug>/`), several prototypes can be queued
+   against different plans — so the first real caller audits prototype A against whatever `planPath` currently
+   holds, and **stale criteria produce confidently wrong undeclared findings at a gate**. A second argument is a
+   contract change with its own eval surface, hence deferred rather than bolted on.
+3. **`SKIPPED — no declared Spec-walk criteria` is arguably the wrong outcome in source mode.** This PR's own
+   argument — someone who passes a path has asserted there *is* something to audit — applies just as forcefully
+   to the criteria side, but an empty criteria list in source mode still renders as a skip. Fixing it means
+   mode-scoping a branch v1.47.0 deliberately left untouched.
+
+### `designLanguagePath` has no entry for "the prompt as a rendered artifact" (`/flow:staff-review`, v1.47.0)
+
+**Surfaces when:** the design-language doc's coverage gap is next addressed, or any `!`-preprocessor evidence
+block is restructured.
+
+`dev-docs/design-language.md` governs the `/flow:verify-build` HTML report and explicitly scopes out its sibling
+browser surfaces. It says nothing about house conventions for `!`-preprocessor evidence blocks — delimiter
+grammar, header-line prefixing, mode labelling, truncation honesty — even though **those are flow's
+highest-traffic rendered surface by far**. Every design-engineering finding on v1.47.0 therefore rested on
+internal consistency with the diff-mode block rather than on a documented rule, which is the "degrades to
+opinion" failure mode. Extend the existing design-language coverage-gap item to cover prompt-artifact
+conventions.
+
 ### Hoist the eval-harness fixture trio into `eval_utils.py` (found by `/simplify` reuse lens, v1.47.0)
 
 **Surfaces when:** the next eval harness is written, or any fixture-repo assumption changes (a default-branch

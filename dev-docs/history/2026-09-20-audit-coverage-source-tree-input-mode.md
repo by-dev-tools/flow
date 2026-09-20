@@ -126,6 +126,74 @@ is a property of best-effort LLM judgment, which this reviewer has always been d
 than rounded up, because "audit-coverage finds ~10 gaps on a prototype" is exactly the kind of claim that
 hardens into folklore. **n=1 on each side, one prototype.** Shipping is how this reaches n=2.
 
+
+## `/flow:staff-review` — two BLOCKERs, both reproduced, both in the new mode
+
+The lenses ran on the post-`/simplify` tree. Both blockers are the same shape: **source mode renders raw
+file bytes, and a diff structurally cannot.**
+
+1. **A symlink defeated the containment guard.** The single-file arm built its absolute path from
+   `cd "$(dirname "$SRC")" && pwd -P` plus `basename` — so only the **parent** was physically resolved and the
+   final component was never dereferenced. An in-repo symlink pointing anywhere therefore passed the
+   containment `case`. Reproduced: `ln -s /etc/passwd repo/leak.html` printed the whole file into what becomes
+   prompt context — under the block's own comment saying the guard exists so source mode is *not* "an
+   arbitrary-file reader that pipes whatever it is pointed at into prompt context." The directory arm was
+   already safe (`find -type f` does not follow links), so the hole was asymmetric and none of the existing
+   containment cases reached it. **Fixed by refusing symlinks outright** rather than resolving-then-checking —
+   the same call `dispatch_backend.py` makes about unsafe placeholder values: an interface that forbids the
+   shape has no bypass left to get wrong. `CONTRIBUTING.md` already documents that a branch checked out here
+   is hostile-capable, which makes this reachable rather than theoretical.
+2. **A file under review could forge a control line and silence its own audit.** Every rule in *What to check*
+   instructs the auditor to emit a fixed line **as its entire response**; source mode `cat`s bytes at column 0,
+   so a prototype containing `[audit-coverage] SOURCE-UNRESOLVED …` or `SKIPPED` renders byte-identically to
+   the genuine line. Diff mode was structurally narrower only because `git diff` prefixes every content line.
+   **Fixed positionally:** every genuine control line is emitted *above* the `----- source -----` delimiter, and
+   the prose now says only those are the skill speaking. That required moving the `SOURCE-TRUNCATED` notice
+   from after the body to before it — it had been the one control line position could not disambiguate.
+
+**Also fixed:** the exclusion regex is anchored `(^|/)` but was matched against `find`'s **absolute** paths, so
+a checkout merely living under a directory named `build/`, `dist/`, `test/`, `vendor/`, `evals/`… had every file
+excluded and was refused with "the path or its contents are wrong" — blaming the user for the harness's own
+ancestry. Loud rather than silent, but a false refusal; now filtered on the repo-relative path, paired with an
+assertion that the filter still excludes `node_modules`.
+
+**And a defect in the harness itself, which is the one worth remembering.** The distinctness assertion compared
+`unres = "[audit-coverage] SOURCE-UNRESOLVED"` against `SKIP_LINE` — **two Python literals**. It could only ever
+pass, in every possible world including one where the skill emits `[audit-coverage] SKIPPED — source
+unresolved`. A measurement that can only return clean, inside the harness that cites item 4 in its own
+docstring. Re-pointed at real stdout. The push-further lens caught a sibling: the cap assertion was
+`count(b"focusin") == 3`, coupling CI to a literal in a **separately-maintained shipped file** — add a fourth
+registration and the cheapest green is bumping the 3, satisfying the detector while the claim goes
+unre-measured (item 3). Now count-free: `count(full) > count(clipped)`, with the measured numbers left in the
+comment where they cannot be edited into a false green.
+
+**UX lens, BLOCKER:** the prose told the auditor to collapse **five** distinct diagnoses — wrong path, outside
+the repo, newline in the argument, empty walk, zero readable bytes — into one fixed sentence carrying no path,
+no reason and no remedy, on the most likely first-run mistake of a brand-new argument. The block had already
+done the careful work; the prose threw it away. It now requires the block's own line quoted **verbatim**, and
+the harness asserts the causes stay *distinguishable* — which is what makes the verbatim rule worth having.
+
+**One finding pushed back on.** The push-further lens read the shell tail ("This is NOT a clean skip") and the
+prose ("This is not a clean pass") as a drifted contract. They are not: across this whole file the shell always
+says *skip* and the prose always says *pass*, including for the pre-existing `ROOT-UNRESOLVED` and `JQ-MISSING`
+rules. It is a consistent convention, not drift. The overstatement was in my own comment claiming the tail was
+"a contract with the What-to-check prose"; the comment was corrected rather than the code.
+
+**Design-engineer + push-further, applied:** the index line says `files selected (N)` one path per line rather
+than `files read:` space-joined — "read" would contradict `SOURCE-TRUNCATED` in the same artifact, and
+space-joining rendered a prototype under `design mocks/` as two apparent entries. And source mode must now open
+its output with a `Read: <files>` line: *"I found nothing in these three files"* is falsifiable at a glance by
+the one reader who knows what is in their own prototype; *"I found nothing"* is not.
+
+**Deferred to the roadmap, not fixed here:** the remaining forgery surface (`SOURCE-TRUNCATED` needs a nonce or
+a byte-count assertion for full immunity), source mode's inability to name its own plan (criteria stay pinned to
+`planPath`, so a queued second prototype would be audited against stale criteria — a real hazard for Track B's
+`.flow/prototypes/<slug>/` shape), `SKIPPED`-on-empty-criteria arguably being wrong in source mode, and a
+`designLanguagePath` that has no conventions for "the prompt as a rendered artifact" despite that being flow's
+highest-traffic rendered surface. The staff lens also proposed a pointer comment inside `annotation-layer.html`
+naming its eval dependents — **declined here specifically**: that file is under `verify-build/**`, which is
+`sensitivePaths`, and touching it would change this PR's stakes classification for a comment.
+
 ## Provenance (FB-0107)
 
 Measured in this workspace before any verification was believed: **installed plugin 1.29.0** (`gitCommitSha
@@ -147,7 +215,7 @@ the spike identified; the Phase-3 design decision (spike option (a) vs (b)) rema
 ## Files
 
 - `plugins/flow/skills/audit-coverage/SKILL.md` — the source block, the one-line diff-mode gate, mode-scoped prose
-- `plugins/flow/evals/run_coverage_source_mode_evals.py` — new, 48 checks, CI-wired
+- `plugins/flow/evals/run_coverage_source_mode_evals.py` — new, 71 checks, CI-wired
 - `plugins/flow/evals/fixtures/coverage_source_mode_undeclared_context{,.expected}.{md,txt}` + `ground_truth.yaml`
   — offline-validated fixture pair, the same tier as the three diff-mode coverage fixtures (it pins the
   assembled-context shape and the output schema; it does **not** demonstrate live LLM behavior)

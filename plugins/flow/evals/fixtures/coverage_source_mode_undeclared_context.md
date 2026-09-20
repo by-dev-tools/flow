@@ -22,7 +22,7 @@ spike's own hand-run plus one live confirmation recorded in the history entry: n
 
 {"criteria": ["Clicking an element while commenting mode is on opens a comment editor pinned to that element → verify: manual click-through in a browser.", "Commenting mode persists across reloads via `localStorage` and defaults to on → verify: toggle off, reload, confirm state survives.", "Selecting text never creates a pin → verify: manual check (drag-select a paragraph, confirm no editor opens).", "Every control in the overlay chrome has an accessible name, and state changes are announced via a polite live region → verify: manual check with a screen reader."], "source_path": "dev-docs/plan.md", "source_heading": "**Spec-walk:**", "warnings": []}
 
-## What was actually built — the workspace diff, or (source mode) the named source tree
+## What was actually built
 
 [audit-coverage] source mode — repo root: /repo
 [audit-coverage] approved source tree: /repo/prototypes/annotation-layer/annotation-layer.html
