@@ -45,11 +45,9 @@ that the under-declaration rate is *generally* ~50%.
 mode. Gating on `$ARGUMENTS` is the same mechanism `/flow:audit-plan` already uses for its optional
 plan-file path, so it is an established shape in this plugin rather than a new one.
 
-- **Diff block (`SKILL.md:63–121`) keeps its body character-for-character**, with exactly one guard line
-  prepended (`[ -n "${ARGUMENTS:-}" ] && exit 0`). The PR diff for that block is therefore *one added line* —
-  reviewable by eye, which is the point.
-- **New source block**, emitting **nothing at all** in diff mode (guarded exit before any output), so the
-  rendered diff-mode prompt gains one self-explaining static heading and no content.
+- **Diff body kept character-for-character.** *(Shape revised at `/simplify` — see "Reworked at /simplify"
+  below. The plan proposed a SECOND evidence block gated by one prepended line; what shipped is ONE evidence
+  block that dispatches internally on `$ARGUMENTS`, which is the house idiom and strictly subtractive.)*
 - **Ordering constraint, found while planning:** in both blocks the root anchor must resolve *before*
   the `$ARGUMENTS` early-exit. `run_root_anchor_evals.py` scenario 1 runs every extracted guard from a
   non-repo cwd with `ARGUMENTS` unset and requires a distinct unresolved signal — an early-exit placed
@@ -146,10 +144,12 @@ writing this plan. And the probe is itself validated against a deliberately trun
       `../../etc`, an absolute `/etc/passwd`, a path containing a newline, and a path with shell
       metacharacters each refuse with `SOURCE-UNRESOLVED` and emit no `/etc` content; paired with an
       ordinary path containing a space that is **accepted** (a guard that refuses everything is a ban).
-- [x] The root anchor covers the new block: `EXPECTED_GUARDS["audit-coverage"]` goes **2 → 3** and all four
-      `run_root_anchor_evals.py` scenarios pass for it → verify: `run_root_anchor_evals.py` green with the
-      updated exact count (it asserts an exact count, not a floor, precisely so a new un-guarded preamble
-      cannot slip through).
+- [x] The root anchor still covers every relative read → verify: `run_root_anchor_evals.py` green.
+      **Superseded by the `/simplify` rework, in the good direction:** the plan budgeted for
+      `EXPECTED_GUARDS["audit-coverage"]` **2 → 3**, i.e. editing a *shared* harness contract for a *local*
+      reason — a permanent footprint on a file the whole suite depends on. Merging the evidence blocks means
+      there is no third anchor to declare, the count stays **2**, and `run_root_anchor_evals.py` drops out of
+      this PR's diff entirely. The best version of a contract edit is the one you no longer need.
 - [x] Offline reviewer fixture pair in the existing coverage convention:
       `coverage_source_mode_undeclared_context.md` + `.expected.txt` + a `ground_truth.yaml` case
       (`mode: coverage`) whose expected finding is the undeclared keyboard-only path → verify:
@@ -198,6 +198,45 @@ writing this plan. And the probe is itself validated against a deliberately trun
   judgment, which this reviewer has always been documented as; it is recorded here rather than rounded up, because
   "audit-coverage finds ~10 gaps on a prototype" is exactly the kind of claim that would harden into folklore.
   **n=1 on each side, one prototype.** Shipping is how this gets to n=2.
+
+
+**Reworked at `/simplify` — the four lenses, and what they changed:**
+
+- **Altitude (the significant one): two evidence blocks where one would do.** The plan's shape — a *second*
+  `!` block gated by one prepended line — was one level too shallow, and every other `$ARGUMENTS` dual-mode
+  skill in this plugin (`audit-plan`, `critique-plan`, `review-brief`) already dispatches **inside one block**.
+  This PR would have been the first to answer "a skill gained a second input mode" with a second block. That
+  single choice generated all the rest of the machinery: a third copy of the FB-0074 anchor, the
+  `EXPECTED_GUARDS` 2 → 3 shared-contract edit, a restated `DIFF_CAP` in a shell that *cannot* share a
+  variable (plus a cross-check eval to hold the copies together), a prose invariant the LLM had to honor
+  ("exactly one evidence block speaks"), and an empty `## Approved source tree` heading rendered into every
+  diff-mode prompt. **Shipped instead:** one block, `if [ -n "$ARGUMENTS" ]; then <source>; exit 0; fi`, with
+  `CAP` hoisted above the dispatch so `SOURCE_CAP=$(( CAP * 2 ))` is a *genuinely shared variable*. Strictly
+  subtractive, re-verified byte-identical in diff mode against `origin/main`. **The cross-runtime-mirror
+  precedent cuts the other way here:** `verify-build/lib/file_patterns.py` keeps a jq mirror and checks it
+  mechanically because that duplication is *forced* — one contract, two languages. This one was not forced;
+  the block split created it. Removing a fan-out beats policing it.
+- **Simplification: five, all applied.** (1) Six of seven `PRE_GATE` filter clauses were **inert** — they
+  stripped shell *comments*, which produce no stdout, from a check that compares *output*; seven hand-copied
+  fragments with no failure signal if they drift. (2) An outside-path case was run twice. (3) **§7's
+  containment cases re-pinned §4's branch, and one label was false:** `../../etc` resolves to `<tmp>/etc`,
+  which does not exist, so it landed in the **missing-path** branch, not the containment branch its name
+  claimed — an assertion passing via a different branch than its name asserts is this PR's own subject one
+  level down, so it was removed rather than relabelled. (4) The `SOURCE-UNRESOLVED` tail was copy-pasted at
+  **five** exits — the FB-0010 fan-out class inside the file arguing against it — now one `unres()` helper.
+  (5) The file/dir question was asked twice against two different variables (`$SRC`, then `$ABS`), so nothing
+  forced the answers to agree; decided once as `KIND`.
+- **Reuse: three findings, all real, all routed to the roadmap rather than fixed here.** The new harness is
+  the **fifth** temp-git-repo builder and the **third** `` !` ``-span parser in `evals/`, and `eval_utils.py`
+  exists for exactly that. The hoist edits four harnesses outside this diff, so it is scope discipline, not
+  disagreement — and the roadmap entry says the uncomfortable part out loud: this PR *added* the fifth copy
+  while declining to pay the debt, and its copy is the most general one, hence the natural hoist target.
+- **Efficiency: nothing to flag, with measurements** (19 ms for the whole evidence block on the 60 KB
+  reference prototype; 0.5 s for the full harness). It also correctly refused the obvious "merge the two
+  reads" cleanup: `TOTAL` counts file *content* bytes while `BODY` interleaves `----- file: -----` headers, so
+  `BODY`'s count is never zero even when every file is empty — deriving one from the other would silently kill
+  the zero-readable-bytes guard that §2's paired negative exists to protect. Load-bearing separation, not
+  sloppiness.
 
 **Scope (out), named — from the dispatch brief, not softened:**
 - **No D1 Phase 3.** No auto-plan writing. No wiring into a Step 6 that does not exist.

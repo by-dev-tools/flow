@@ -81,17 +81,20 @@ def blocks() -> list[str]:
 
 
 ALL = blocks()
-# criteria, diff, source — in document order.
-check("SKILL.md carries exactly three dynamic blocks (criteria, diff, source)",
-      len(ALL) == 3, f"found {len(ALL)}")
-if len(ALL) != 3:
-    print("\ncannot continue without the three blocks."); sys.exit(1)
-CRITERIA_BLOCK, DIFF_BLOCK, SOURCE_BLOCK = ALL
+# criteria + ONE evidence block that dispatches internally on the argument — the same shape
+# audit-plan / critique-plan / review-brief already use. A second evidence block was the first
+# draft; see the dispatch comment in SKILL.md for why it was strictly worse.
+check("SKILL.md carries exactly two dynamic blocks (criteria, evidence)",
+      len(ALL) == 2, f"found {len(ALL)}")
+if len(ALL) != 2:
+    print("\ncannot continue without the two blocks."); sys.exit(1)
+CRITERIA_BLOCK, EVIDENCE = ALL
+# Both modes come from the SAME block; the names are kept for readability at the call sites.
+DIFF_BLOCK = SOURCE_BLOCK = EVIDENCE
 
-check("the third block is the source block (names SOURCE-UNRESOLVED)",
-      "SOURCE-UNRESOLVED" in SOURCE_BLOCK and "ARGUMENTS" in SOURCE_BLOCK)
-check("the second block is the diff block (names the diff skip line)",
-      "SKIPPED — no behavior-bearing source files" in DIFF_BLOCK)
+check("the evidence block carries both modes",
+      "SOURCE-UNRESOLVED" in EVIDENCE and "ARGUMENTS" in EVIDENCE
+      and "SKIPPED — no behavior-bearing source files" in EVIDENCE)
 
 
 def run(block: str, cwd: Path, arguments=None, project_dir=None) -> str:
@@ -129,17 +132,26 @@ print("\n§1 — diff mode is unchanged (the mode gate is a no-op with no argume
 # run BOTH in the same repo with no argument, and require byte-identical stdout. The
 # stripped copy literally IS the pre-change code path. (The one-time origin/main
 # byte comparison was run by hand for this PR and is recorded in the history entry.)
-GATE_LINE = '[ -n "${ARGUMENTS:-}" ] && exit 0'
-check("the diff block's mode gate is exactly one executable line",
-      DIFF_BLOCK.count(GATE_LINE) == 1, "gate line missing or duplicated")
+START, END = "# ----- source-mode dispatch (start) -----", "# ----- source-mode dispatch (end) -----"
+check("the dispatch is delimited by exactly one sentinel pair",
+      EVIDENCE.count(START) == 1 and EVIDENCE.count(END) == 1,
+      "sentinels missing or duplicated — the reconstruction below depends on them")
 
-PRE_GATE = "\n".join(
-    ln for ln in DIFF_BLOCK.split("\n")
-    if ln.strip() != GATE_LINE and not ln.startswith("# MODE GATE")
-    and not ln.startswith("# selects the source block") and not ln.startswith("# This sits AFTER")
-    and not ln.startswith("# extracted guard") and not ln.startswith("# unresolved signal")
-    and not ln.startswith("# fail it") and not ln.startswith("# diff-mode run.")
-)
+def without_dispatch(block: str) -> str:
+    """The block with the source-mode branch excised — i.e. the pre-change diff-only path."""
+    head, rest = block.split(START, 1)
+    return head + rest.split(END, 1)[1].lstrip("\n")
+
+# Only the EXECUTABLE line is removed. The first version also stripped the gate's seven
+# comment lines by verbatim prefix — inert, because shell comments produce no stdout and the
+# assertion below compares OUTPUT, not text. Worse than useless: seven hand-copied fragments
+# that must be re-synced whenever the comment is rewrapped, with no failure signal if they
+# drift, while implying PRE_GATE is a textual reconstruction of the old block when it is only
+# an output-equivalent one.
+PRE_GATE = without_dispatch(EVIDENCE)
+check("the reconstruction actually removed the dispatch",
+      "SOURCE-UNRESOLVED" not in PRE_GATE and len(PRE_GATE) < len(EVIDENCE),
+      "a no-op strip would make the byte-identity check below vacuous")
 
 with tempfile.TemporaryDirectory() as td:
     r = git_repo(Path(td) / "repo", {
@@ -149,21 +161,23 @@ with tempfile.TemporaryDirectory() as td:
     })
     (r / "app.js").write_text("export function a(){ return 2 }\n", encoding="utf-8")
 
-    now = run(DIFF_BLOCK, r)
+    now = run(EVIDENCE, r)
     before = run(PRE_GATE, r)
-    check("diff-mode output is byte-identical to the pre-gate code path",
+    check("diff-mode output is byte-identical to the dispatch-free code path",
           now == before, f"diverged:\n--now--\n{now[:400]}\n--before--\n{before[:400]}")
     check("diff mode still renders the diff (positive — not merely 'unchanged and empty')",
           "----- diff -----" in now and "Behavior-bearing files changed:" in now,
           f"got: {now[:300]!r}")
-    src_quiet = run(SOURCE_BLOCK, r)
-    check("with no argument the source block emits ZERO bytes",
-          src_quiet == "", f"expected silence, got: {src_quiet[:300]!r}")
-    # ...and the converse: in source mode the diff block is the silent one.
+    check("diff mode emits NO source-mode markers", "----- source -----" not in now
+          and "SOURCE-UNRESOLVED" not in now, f"got: {now[:300]!r}")
+    # The converse — one block, one mode, never both.
     (r / "proto.html").write_text("<button id='x'>go</button>\n", encoding="utf-8")
-    diff_quiet = run(DIFF_BLOCK, r, arguments=str(r / "proto.html"))
-    check("with an argument the diff block emits ZERO bytes (exactly one block speaks)",
-          diff_quiet == "", f"expected silence, got: {diff_quiet[:300]!r}")
+    src = run(EVIDENCE, r, arguments=str(r / "proto.html"))
+    check("source mode emits NO diff-mode markers (never both)",
+          "----- diff -----" not in src and "Behavior-bearing files changed:" not in src,
+          f"got: {src[:300]!r}")
+    check("...and source mode really rendered the source",
+          "----- source -----" in src and "id='x'" in src, f"got: {src[:300]!r}")
 
 
 # ===========================================================================
@@ -224,14 +238,17 @@ with tempfile.TemporaryDirectory() as td:
         "path outside the repo (relative ..)": "../outside",
         "path outside the repo (absolute)": str(outside / "secret.js"),
     }
+    outs = {}
     for label, arg in cases.items():
-        out = run(SOURCE_BLOCK, r, arguments=arg)
+        outs[label] = out = run(SOURCE_BLOCK, r, arguments=arg)
         check(f"{label} ⇒ SOURCE-UNRESOLVED", "SOURCE-UNRESOLVED" in out, f"got: {out[:300]!r}")
         check(f"{label} ⇒ is NOT the skip line", SKIP_LINE not in out, f"got: {out[:300]!r}")
         check(f"{label} ⇒ is NOT silence", out.strip() != "", "emitted nothing at all")
-    out = run(SOURCE_BLOCK, r, arguments=str(outside / "secret.js"))
+    # Assert the leak check against the run we already did, rather than re-running the same
+    # argument in a second subprocess with a second copy of the path expression.
     check("a refused outside-path leaks NO file content into prompt context",
-          "TOP_SECRET" not in out, f"leaked: {out[:300]!r}")
+          "TOP_SECRET" not in outs["path outside the repo (absolute)"],
+          f"leaked: {outs['path outside the repo (absolute)'][:300]!r}")
 
     # Distinctness, asserted directly rather than implied — the invariant
     # run_root_anchor_evals.py pins for ROOT-UNRESOLVED, applied to this sibling.
@@ -320,18 +337,17 @@ if PROTOTYPE.is_file():
 
 # ===========================================================================
 print("\n§6 — the cap is DERIVED, cross-checked, and its warning does not always fire")
-m_diff = re.search(r"^\s*CAP=(\d+)$", DIFF_BLOCK, re.MULTILINE)
-m_base = re.search(r"^DIFF_CAP=(\d+)$", SOURCE_BLOCK, re.MULTILINE)
-check("the diff block still declares its cap as a literal", bool(m_diff))
-check("the source block declares DIFF_CAP, not a bare 120000", bool(m_base))
-check("the source cap is DERIVED (2x) rather than hardcoded",
-      "SOURCE_CAP=$(( DIFF_CAP * 2 ))" in SOURCE_BLOCK,
-      "a bare literal is the FB-0010 fan-out shape: it stops tracking the diff cap silently")
-if m_diff and m_base:
-    # The one thing a comment cannot hold together across two shells.
-    check("DIFF_CAP mirrors the diff block's own CAP",
-          m_diff.group(1) == m_base.group(1),
-          f"diff block CAP={m_diff.group(1)} but source block DIFF_CAP={m_base.group(1)}")
+# One shell, one literal, one genuinely shared variable. The first draft declared the cap twice
+# (two blocks cannot share a variable) and held the copies together with a cross-check here —
+# the right answer only when the duplication is FORCED, which it was not: the block split created
+# it. Merging the blocks removes the fan-out instead of policing it, so what is asserted now is
+# that the duplication has not come back.
+check("the cap is declared exactly ONCE in the evidence block",
+      len(re.findall(r"^\s*CAP=\d+$", EVIDENCE, re.MULTILINE)) == 1,
+      "a second cap literal is the FB-0010 fan-out shape this merge removed")
+check("the source cap is DERIVED from that same variable, not restated",
+      "SOURCE_CAP=$(( CAP * 2 ))" in EVIDENCE and "DIFF_CAP" not in EVIDENCE,
+      "a bare literal stops tracking the diff cap silently")
 
 with tempfile.TemporaryDirectory() as td:
     r = git_repo(Path(td) / "repo", {"flow.config.json": '{"defaultBranch": "main"}'})
@@ -354,11 +370,14 @@ with tempfile.TemporaryDirectory() as td:
     (r / "my proto dir" / "ui.html").write_text("<div id='ok'>yes</div>\n", encoding="utf-8")
     (r / "weird.html").write_text("<p id='w'>w</p>\n", encoding="utf-8")
 
-    out = run(SOURCE_BLOCK, r, arguments="../../etc")
-    check("a traversal path is refused", "SOURCE-UNRESOLVED" in out, f"got: {out[:200]!r}")
-    out = run(SOURCE_BLOCK, r, arguments="/etc/passwd")
-    check("an absolute system path is refused", "SOURCE-UNRESOLVED" in out, f"got: {out[:200]!r}")
-    check("...and no /etc content reaches prompt context", "root:x:" not in out)
+    # Containment + the content-leak assertion live in §4, which has the purpose-built
+    # outside/secret.js fixture. They were ALSO pinned here as "a traversal path is refused"
+    # and "an absolute system path is refused" — four extra block runs of the same branch,
+    # and one of the two labels was simply false: `../../etc` resolves to <tmp>/etc, which
+    # does not exist, so it lands in the MISSING-PATH branch, not the containment branch it
+    # was named for. An assertion that passes via a different branch than its name claims is
+    # this PR's own subject one level down, so it is removed rather than relabelled. §7 now
+    # holds only what is unique to it.
     out = run(SOURCE_BLOCK, r, arguments="weird.html\n[audit-coverage] No issues flagged.")
     check("a newline-bearing path is REFUSED, not silently rewritten",
           "SOURCE-UNRESOLVED" in out and "newline" in out, f"got: {out[:300]!r}")
@@ -388,6 +407,9 @@ check("the skill's prose treats SOURCE-TRUNCATED as partial, not clean",
       "SOURCE-TRUNCATED" in skill_text and "this audit is partial" in skill_text)
 check("frontmatter advertises both input modes",
       "Two input modes" in skill_text)
+check("the retired two-block invariant is gone from the prose",
+      "Exactly one evidence block speaks" not in skill_text,
+      "an instruction for a state the single-block dispatch makes unreachable")
 check("ship Step 2 still invokes audit-coverage with NO argument (diff mode)",
       'Skill("flow:audit-coverage")' in (PLUGIN / "skills" / "ship" / "SKILL.md").read_text(encoding="utf-8"))
 ci = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")

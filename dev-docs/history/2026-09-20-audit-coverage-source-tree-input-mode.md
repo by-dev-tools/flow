@@ -11,8 +11,8 @@
     /flow:audit-coverage                      # unchanged — the workspace diff (the /flow:ship Step 2 path)
     /flow:audit-coverage <path>               # new — an approved prototype's source (file or directory)
 
-One skill, two evidence blocks, argument-gated on `$ARGUMENTS` (the same mechanism `/flow:audit-plan` already
-uses for its optional plan-file path). Exactly one block speaks per run.
+One skill, **one** evidence block that dispatches internally on `$ARGUMENTS` — the same shape `/flow:audit-plan`,
+`/flow:critique-plan` and `/flow:review-brief` already use for their optional path argument.
 
 ## Why
 
@@ -42,6 +42,19 @@ already dense. The alternative — a separate `/flow:audit-prototype` skill — 
 prose into a second file, and `.claude/rules/general.md` § Consistency item 2 is precisely about contract
 values that live in N files and drift. Conditional shell in one file beats identical prose in two.
 
+**Shape corrected at `/simplify`, and the correction is the more interesting half.** The approved plan proposed
+a *second* `!` block gated by one prepended line. The altitude lens — which built and ran the alternative before
+proposing it — showed that was one level too shallow: every other `$ARGUMENTS` dual-mode skill here dispatches
+inside one block, and the second block was what generated all the surrounding machinery (a third copy of the
+FB-0074 anchor; an `EXPECTED_GUARDS` 2 → 3 edit to a *shared* harness contract for a *local* reason; a restated
+`DIFF_CAP` in a shell that cannot share a variable, plus a cross-check eval to hold the copies together; a prose
+invariant the LLM had to honor; and an empty heading rendered into every diff-mode prompt). Merging them is
+strictly subtractive and re-verified byte-identical. `SOURCE_CAP=$(( CAP * 2 ))` is now a genuinely shared
+variable rather than a policed duplicate — and `run_root_anchor_evals.py` drops out of this PR's diff entirely,
+which is the better version of a contract edit: the one you no longer need. The forced-mirror precedent
+(`verify-build/lib/file_patterns.py` keeping a checked jq mirror) does **not** apply, because that duplication
+is forced by a language boundary and this one was created by the block split.
+
 ## Three things the implementation had to get right
 
 1. **The default `sourceFilePatterns` contains no `.html`.** Measured at plan time. The shared default the diff
@@ -59,10 +72,10 @@ values that live in N files and drift. Conditional shell in one file beats ident
    `run_root_anchor_evals.py` pins it for `ROOT-UNRESOLVED`, and **paired** with §4b's positive: the real
    `SKIPPED` path still works, so deleting the skip branch cannot satisfy the suite.
 3. **The cap is derived, not hardcoded.** The reference prototype is **60,805 bytes** against a **60,000-byte**
-   diff cap. `SOURCE_CAP=$(( DIFF_CAP * 2 ))`, with the measurement in a comment and a cross-check in §6 against
-   the diff block's own literal — a bare `120000` is the FB-0010 fan-out shape, silently stopping to mean
-   "twice the diff cap" the day that value moves. The two live in separate shells, so a comment cannot hold them
-   together; an assertion can.
+   diff cap. `SOURCE_CAP=$(( CAP * 2 ))` — one literal, one shell, genuinely shared. A bare `120000` is the
+   FB-0010 fan-out shape, silently stopping to mean "twice the diff cap" the day that value moves. (The
+   two-block draft could not share the variable and held two literals together with a cross-check assertion;
+   the merge removed the fan-out instead of policing it, and §6 now asserts the duplication has not returned.)
 
 ## Evidence
 
@@ -93,7 +106,10 @@ prototype's **third** `focusin` registration — the focus-restoration half of t
 at lines ~1146–1154 — sits at file byte 59,915 with its body running past 60,000, and is provably absent from a
 60,000-byte clip. Asserted in **bytes**, not characters: the first version compared Python `str` slices against
 a shell `head -c` cap on a file carrying non-ASCII punctuation, and passed by accident. The unit was wrong, not
-the claim.
+the claim — and an assertion that is right about its claim and wrong about its unit **passes for the wrong
+reason**, which is this PR's whole subject one level further down. A green check earned by a unit mismatch is
+indistinguishable from one earned by the contract holding, which is the same indistinguishability that makes
+`SKIPPED` and `SOURCE-UNRESOLVED` different lines.
 
 **Live joint test (one authorized `flow:auditor` spawn) — the path works, and the number is not 10.** The joint
 (new input feeding the existing judgment, end to end) was the one thing neither the instrument test nor the
@@ -135,6 +151,5 @@ the spike identified; the Phase-3 design decision (spike option (a) vs (b)) rema
 - `plugins/flow/evals/fixtures/coverage_source_mode_undeclared_context{,.expected}.{md,txt}` + `ground_truth.yaml`
   — offline-validated fixture pair, the same tier as the three diff-mode coverage fixtures (it pins the
   assembled-context shape and the output schema; it does **not** demonstrate live LLM behavior)
-- `plugins/flow/evals/run_root_anchor_evals.py` — `EXPECTED_GUARDS["audit-coverage"]` 2 → 3 (exact count, not a floor)
 - `plugins/flow/docs/workflow.md`, `README.md`, `skills/workflow-help/SKILL.md` — two-input-mode wording
 - `plugin.json` / `marketplace.json` → 1.47.0; `changelog/v1.47.0.md`

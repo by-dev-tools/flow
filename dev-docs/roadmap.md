@@ -232,6 +232,35 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### Hoist the eval-harness fixture trio into `eval_utils.py` (found by `/simplify` reuse lens, v1.47.0)
+
+**Surfaces when:** the next eval harness is written, or any fixture-repo assumption changes (a default-branch
+pin, a `user.name` requirement, an `update-ref origin/<branch>`).
+
+Three helpers are now independently defined across harnesses, and `run_coverage_source_mode_evals.py` (v1.47.0)
+made each count one worse — **it added the fifth copy while declining to pay the debt**, which is worth naming
+rather than quietly filing:
+
+1. **temp-git-repo builder** — 5 copies: `run_jq_guard_evals.py:107` (`git_repo`), `run_root_anchor_evals.py:108`
+   (`git_repo`), `run_scratch_isolation_evals.py:73` (`seed_repo`, whose own docstring says it mirrors
+   `run_merge_status_evals`), and the new one. The v1.47.0 copy is the **most general** of the set (takes a
+   `files: dict`, pins `-b main`), so it is the natural one to hoist rather than the one to add.
+2. **the `` !` `` dynamic-context span parser** — 3 copies with 3 different semantics
+   (`run_scratch_isolation_evals.py:93`, `run_jq_guard_evals.py:94`, and the new anchored variant). The span
+   delimiter is a live hazard here — one inner backtick truncates it (FB-0010, pinned by
+   `run_scratch_isolation_evals.py:508`) — so a change in how it is understood must currently be reconciled
+   across three regexes.
+3. **the block runner** — `run_block(block, cwd, env, timeout)`: the env-scrubbing list is the load-bearing
+   part (a harness that forgets to pop a var tests the developer's shell, not the block) and it is now stated
+   twice (`run_root_anchor_evals.py:96` and the new harness).
+
+`eval_utils.py` already owns the sibling concern (`fenced_block` for ```` ```sh ````) and its own docstring names
+this exact rationale: *"two eval harnesses independently defining the same parser is the exact FB-0010 fan-out
+class this repo's own consistency rule names, so it gets one home."* Deliberately deferred out of v1.47.0 because
+the fix edits four harnesses outside that PR's diff — scope discipline, not disagreement. **Not** on the list:
+the FB-0074 root anchor (a structurally un-shareable per-block idiom, ~20 sites) and `check()` (31 harnesses —
+repo convention).
+
 ### Four investigative-discipline lessons from the FB-0107 provenance PR, harvested by hand (2026-09-16)
 
 These reached no commit at ship time because **`/flow:ship` Step 4c never ran** — see the watermark item
