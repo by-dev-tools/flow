@@ -112,7 +112,14 @@ GATE_DECL_RE = re.compile(r"^\s*\*\*Pre-execution gate:\*\*\s*(?P<gate>[a-z-]+)\
 # sha-shaped token and a non-empty quoted approval, which is the difference between
 # "a marker is present" and "the marker carries what it claims to".
 DIGEST_RE = re.compile(
-    r"^\s*\*\*Prototype approved:\*\*\s*`(?P<sha>[0-9a-f]{8,64})`\s*·\s*(?P<quote>\"[^\"]*\"|'[^']*')",
+    # `[^"\n]`, not `[^"]`: a negated class crosses newlines, so a quote left unclosed by
+    # truncation matched ANY later `"` in the plan doc and reported mangled cross-line text
+    # as a well-formed digest. The trailing `(?P<tail>.*)$` is not decoration either — the
+    # stamp check reads `branch=` out of it, and without it group(0) stopped at the closing
+    # quote, so that check silently never fired: a guard that looked present and matched
+    # nothing.
+    r"^\s*\*\*Prototype approved:\*\*\s*`(?P<sha>[0-9a-f]{8,64})`\s*·\s*"
+    r"(?P<quote>\"[^\"\n]*\"|'[^'\n]*')(?P<tail>.*)$",
     re.M,
 )
 
@@ -123,8 +130,13 @@ SURFACE_RE = re.compile(r"\*\*Surface:\*\*\s*(?P<v>[A-Za-z-]+)")
 
 FEASIBILITY_HEAD_RE = re.compile(r"^\s*\*\*Feasibility\*\*", re.M | re.I)
 PROXY_DISCLOSURE_RE = re.compile(r"HTML proxy of an?\s+(?P<plat>[A-Za-z]+)\s+surface", re.I)
+# Per-LINE (re.M, no re.S). Under re.S this was `…browser\b.*?prototype is the artifact`
+# across the whole file, which is quadratic on a feasibility.md carrying many
+# "Delivery medium: browser" lines and no terminator — measured ~14s at 8k repeats.
+# A local hang of the agent's own run rather than a privilege crossing, but the
+# declaration is a single line by construction, so scanning the whole file bought nothing.
 BROWSER_DELIVERY_RE = re.compile(
-    r"Delivery medium:\s*browser\b.*?prototype is the artifact", re.I | re.S
+    r"^.*Delivery medium:\s*browser\b.*prototype is the artifact.*$", re.I | re.M
 )
 
 ANNOTATION_LAYER = (
@@ -230,6 +242,55 @@ def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     h.update(path.read_bytes())
     return h.hexdigest()
+
+
+def _safe_path(path: Path, what: str, base: Path) -> Path:
+    """Refuse a symlink, and refuse a path that escapes the directory it belongs to.
+
+    CWE-59. `.flow/` is an ordinary repo path with none of git's `.git` special-casing,
+    so a branch can COMMIT `.flow/prototypes/<branch>/prototype.presented.html` as a
+    symlink to `~/.ssh/authorized_keys` — tracked files are checked out regardless of
+    the `.gitignore` this skill writes — and the write lands on the attacker's target.
+    `gh pr checkout` here is documented as executing the branch, so the checkout IS the
+    attack step. The read side matters as much: a planted `approval-quote.txt ->
+    ~/.aws/credentials` splices up to 150 bytes of it into the COMMITTED plan-doc digest.
+
+    Confinement is to `base` — the directory the caller named — NOT to an absolute
+    `.flow/`. An earlier draft hardcoded the latter and refused every legitimate run
+    outside a repo (including this harness's tempdirs), which is a gate that fails
+    closed on its own users: security theatre that costs correctness. Symlink refusal is
+    what actually defeats the planted-link attack; `base` confinement is what stops
+    `../../..` traversal through the argument.
+
+    `skills/ship/lib/manifest-triage.py` already holds this standard for its producer
+    files; this is the same guard, not a new invention.
+    """
+    if path.is_symlink():
+        raise SecurityRefusal("%s is a symlink (%s) — refusing to follow it; a write or read "
+                              "through it lands wherever the link points (CWE-59)." % (what, path))
+    try:
+        resolved = path.resolve()
+        resolved.relative_to(base.resolve())
+    except ValueError:
+        raise SecurityRefusal("%s resolves to %s, outside %s — refusing to read or write "
+                              "outside the directory it belongs to." % (what, path.resolve(), base))
+    except SecurityRefusal:
+        raise
+    except Exception:  # noqa: BLE001 - an unresolvable path must not fail OPEN
+        raise SecurityRefusal("%s could not be confined to %s — refusing rather than acting on "
+                              "an unverified path." % (what, base))
+    # A symlinked ancestor inside `base` defeats a file-only check.
+    for parent in [resolved] + list(resolved.parents):
+        if parent == base.resolve():
+            break
+        if parent.is_symlink():
+            raise SecurityRefusal("%s sits under a symlinked directory (%s) — refusing "
+                                  "(CWE-59)." % (what, parent))
+    return path
+
+
+class SecurityRefusal(Exception):
+    """A path refused by _safe_path. Surfaced as a clean refusal, never a traceback."""
 
 
 def _prototype_file(proto_dir: Path):
@@ -553,7 +614,7 @@ def cmd_approve(args) -> int:
         print("REFUSED: no prototype.html in %s — nothing to approve." % proto_dir, file=sys.stderr)
         return 2
 
-    qp = Path(args.quote_file)
+    qp = _safe_path(Path(args.quote_file), "--quote-file", Path(args.quote_file).parent)
     if not qp.is_file():
         print("REFUSED: --quote-file %s does not exist. Gate 1 records the human's VERBATIM "
               "approval; an agent may not approve on their behalf." % qp, file=sys.stderr)
@@ -581,7 +642,7 @@ def cmd_approve(args) -> int:
         "must_surface": contract.get("must_surface", []),
         "approved_by_human_quote": quote,
     }
-    out = proto_dir / "approval.json"
+    out = _safe_path(proto_dir / "approval.json", "the approval record", proto_dir)
     out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return _emit({
         "ok": True,
@@ -667,6 +728,34 @@ def cmd_verify(args) -> int:
 
 # --------------------------------------------------------------------------- gate-execute
 
+def _active_region(text: str) -> str:
+    """Everything ABOVE the FIRST `Spec-walk` heading — the active PR's header block.
+
+    Bounding at the first heading, not the second, is load-bearing and an earlier draft
+    got it wrong. With the boundary at the SECOND heading, a retained PR's digest still
+    fell inside the region, because a retained section's `**Prototype approved:**` line
+    sits *above its own* Spec-walk: the layout is [active gate] [active Spec-walk]
+    [retained gate] [retained digest] [retained Spec-walk], so a second-heading boundary
+    swallows the retained digest and the bypass survived the fix. Verified by running the
+    attack, which is the only reason it was caught.
+
+    The contract this implies, and the skill states it: **the gate declaration and the
+    approval digest go ABOVE the active `Spec-walk` block.** That is where `approve`
+    prints them to be pasted and where every other plan header field already lives.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "verify-build" / "lib"))
+        import walk_extract
+        rx = walk_extract.heading_re("Spec-walk")
+    except Exception:  # noqa: BLE001 - never fail OPEN on an import problem
+        return text
+    lines = text.splitlines(keepends=True)
+    for i, ln in enumerate(lines):
+        if rx.match(ln):
+            return "".join(lines[:i])
+    return text
+
+
 def cmd_gate_execute(args) -> int:
     """"A plan must ALWAYS exist" (§ 2.5) — pulled forward out of Phase 3,
     because THIS PR is what removes the human plan gate from the D1 path, and a
@@ -690,11 +779,26 @@ def cmd_gate_execute(args) -> int:
     plan_path = Path(args.plan)
     if not plan_path.is_file():
         return _emit({"ok": False, "gate": None, "problems": ["plan doc not found at %s" % plan_path]})
-    text = plan_path.read_text(encoding="utf-8")
+    full_text = plan_path.read_text(encoding="utf-8")
 
-    m = GATE_DECL_RE.search(text)
+    # SCOPE THE MARKERS TO THE ACTIVE SECTION. This was the gate bypass: the
+    # Spec-walk half was correctly scoped to the FIRST (active) block, while the
+    # gate + digest halves used `search()` over the entire document. In this repo's
+    # own convention — active PR at the top, merged PRs retained below — the SECOND
+    # D1 PR would inherit the FIRST one's `**Prototype approved:**` line and
+    # `gate-execute` would return ok:true for work that never passed gate 1. No
+    # attacker required; a committed plan doc with a planted pair does it too.
+    # The reverse also bit: a retained `**Pre-execution gate:** plan` line above the
+    # active section routed to the classic no-op and skipped the plan-exists check
+    # entirely, so the guard asserted nothing at all.
+    # The MARKERS are read from the active header region; the Spec-walk BLOCK is
+    # extracted from the full document, because walk_extract does its own
+    # first-block scoping and needs the heading the region deliberately excludes.
+    header = _active_region(full_text)
+
+    m = GATE_DECL_RE.search(header)
     gate = m.group("gate") if m else None
-    digest_m = DIGEST_RE.search(text)
+    digest_m = DIGEST_RE.search(header)
     has_digest = digest_m is not None
 
     # An UNRECOGNIZED gate literal is RED, not "classic, nothing to assert". The old
@@ -724,11 +828,27 @@ def cmd_gate_execute(args) -> int:
             "approval). Either gate 1 never happened, its record was lost with the workspace, "
             "or the line was hand-written — all three mean no human approval is evidenced here."
         )
-    elif not (digest_m.group("quote") or "").strip("\"'"):
+    elif not (digest_m.group("quote") or "").strip("\"'").strip():
+        # `.strip()` after the quote-chars: `· "   "` is an empty approval wearing
+        # three spaces, and the un-stripped form passed this arm.
         problems.append(
             "the `**Prototype approved:**` digest carries an EMPTY approval quote — a marker "
             "shaped like an approval with nothing in it."
         )
+    else:
+        # A stamp that is rendered but never checked is decoration. FB-0082's rule —
+        # every handoff carries a stamp and readers refuse a mismatch loudly — was
+        # honored for .flow/approval.json and abandoned for the ONLY consumer of
+        # committed state, which is the one that survives the workspace.
+        want = _stamp()
+        bm = re.search(r"branch=(\S+)", digest_m.group("tail") or "")
+        got_branch = bm.group(1) if bm else ""
+        if got_branch and want.get("branch") and got_branch != want["branch"]:
+            problems.append(
+                "the approval digest was recorded on branch %r but this is %r — the approval "
+                "belongs to different work. Re-approve on this branch rather than inheriting "
+                "a digest." % (got_branch, want["branch"])
+            )
 
     items = None
     try:
@@ -738,7 +858,7 @@ def cmd_gate_execute(args) -> int:
         # wrapper itself, so passing "**Spec-walk:**" matches nothing and silently
         # reports zero criteria — which would fail this guard CLOSED on a plan that
         # does have a Spec-walk. Same argument the four sibling consumers pass.
-        block = walk_extract.extract_block(text, "Spec-walk")
+        block = walk_extract.extract_block(full_text, "Spec-walk")
         items = len(block.get("items") or [])
         if block.get("all_demoted"):
             problems.append(
@@ -779,7 +899,7 @@ def cmd_present(args) -> int:
     # present (after an iteration round) indistinguishable from a post-approval edit
     # at `verify` — the string-sniff dedupe guard was a bandaid for that coupling.
     # Source stays the thing approved; presentation is idempotent by construction.
-    presented = proto.with_suffix(".presented.html")
+    presented = _safe_path(proto.with_suffix(".presented.html"), "the presented file", proto.parent)
     html = proto.read_text(encoding="utf-8")
     warnings = []
     try:
@@ -855,7 +975,12 @@ def main(argv=None) -> int:
     pr.set_defaults(fn=cmd_present)
 
     args = ap.parse_args(argv)
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except SecurityRefusal as exc:
+        # A refusal is an outcome, not a crash: print it plainly and exit non-zero.
+        print("REFUSED: %s" % exc, file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

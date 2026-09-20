@@ -120,6 +120,26 @@ def fx(name: str) -> str:
     return str(FIX / name)
 
 
+def _live_branch() -> str:
+    p = subprocess.run(["git", "branch", "--show-current"], cwd=ROOT,
+                       capture_output=True, text=True)
+    return p.stdout.strip()
+
+
+def _plan_with_live_stamp(tmp: str, name: str) -> Path:
+    """Materialize a plan fixture with THIS branch in its digest.
+
+    The digest now carries a stamp that `gate-execute` checks against the live
+    workspace (FB-0082: a stamp that is rendered but never checked is decoration),
+    so a fixture hardcoding `branch=b` correctly fails. Rewriting the stamp at test
+    time keeps the fixture honest instead of weakening the check to accommodate it.
+    """
+    src = (FIX / name).read_text(encoding="utf-8")
+    out = Path(tmp) / name
+    out.write_text(re.sub(r"branch=\S+", "branch=%s" % _live_branch(), src), encoding="utf-8")
+    return out
+
+
 # ------------------------------------------------------------------ 1. trigger
 
 TRIGGER_MATRIX = [
@@ -426,7 +446,8 @@ def test_digest_survives_a_long_multiline_quote():
     with tempfile.TemporaryDirectory() as tmp:
         plan = Path(tmp) / "plan.md"
         plan.write_text("# Plan\n\n%s\n\n**Spec-walk:**\n\n- [ ] a thing → verify: a test\n"
-                        % out, encoding="utf-8")
+                        % out.replace("branch=b ", "branch=%s " % _live_branch()),
+                        encoding="utf-8")
         _, ge, _ = run("gate-execute", "--plan", str(plan))
         check("digest-round-trips-through-gate-execute", ge and ge["ok"] is True,
               f"problems: {ge.get('problems') if ge else '-'}")
@@ -448,6 +469,9 @@ def test_present_always_returns_an_openable_path():
         _, out, _ = run("present", "--file", str(f))
         check("present-returns-presented-path", out and out.get("presented"),
               "every present outcome must name the file to open")
+        check("present-returns-source-sha", out and out.get("source_sha256"),
+              "the hash of what was PRESENTED, so pre-approval staleness is eyeballable "
+              "against the digest approve later records")
         src = ENGINE.read_text(encoding="utf-8")
         deg = src[src.index("except (OSError, ValueError)"):]
         deg = deg[:deg.index("idx = html.rfind")] if "idx = html.rfind" in deg else deg
@@ -563,8 +587,7 @@ def test_gate_execute_reads_committed_state_only():
     so wiping the workspace dropped it to ok:true VACUOUSLY. Run here with no
     `.flow/` in existence at all."""
     with tempfile.TemporaryDirectory() as tmp:
-        plan = Path(tmp) / "plan.md"
-        shutil.copy(FIX / "plan-prototype-ok.md", plan)
+        plan = _plan_with_live_stamp(tmp, "plan-prototype-ok.md")
         rc, out, err = run("gate-execute", "--plan", str(plan), cwd=tmp)
         check("gate-execute-no-flow-dir-needed", out is not None and out["ok"] is True,
               f"must resolve from the plan doc alone; stderr={err[:200]}")
@@ -596,8 +619,7 @@ def test_gate_execute_blocks_missing_digest():
 
 def test_gate_execute_passes_with_both():
     with tempfile.TemporaryDirectory() as tmp:
-        plan = Path(tmp) / "plan.md"
-        shutil.copy(FIX / "plan-prototype-ok.md", plan)
+        plan = _plan_with_live_stamp(tmp, "plan-prototype-ok.md")
         _, out, _ = run("gate-execute", "--plan", str(plan))
         check("gate-execute-ok-with-both", out and out["ok"] is True,
               f"problems: {out.get('problems') if out else '-'}")
@@ -618,8 +640,7 @@ def test_gate_execute_all_demoted():
     """The v1.30.0 all_demoted lifecycle bug, in a fifth consumer: a plan doc
     whose every block belongs to a merged PR has no ACTIVE plan, only history."""
     with tempfile.TemporaryDirectory() as tmp:
-        plan = Path(tmp) / "plan.md"
-        shutil.copy(FIX / "plan-all-demoted.md", plan)
+        plan = _plan_with_live_stamp(tmp, "plan-all-demoted.md")
         _, out, _ = run("gate-execute", "--plan", str(plan))
         check("gate-execute-all-demoted-blocks", out and out["ok"] is False,
               "an all-demoted plan doc must not read as an active plan")
@@ -629,9 +650,98 @@ def test_gate_execute_uses_shared_parser():
     src = ENGINE.read_text(encoding="utf-8")
     check("gate-execute-imports-walk-extract", "import walk_extract" in src,
           "must reuse the parser its four sibling consumers use, not a private copy")
-    check("gate-execute-bare-label", 'extract_block(text, "Spec-walk")' in src,
+    check("gate-execute-bare-label", 'extract_block(full_text, "Spec-walk")' in src,
           "heading_re() adds the **…:** wrapper itself; passing the bold form matches "
           "nothing and silently reports zero criteria")
+
+
+def test_gate_execute_refuses_a_retained_digest():
+    """THE gate bypass, found by /flow:security-review and reproduced before fixing.
+
+    The Spec-walk half was correctly scoped to the active block while the gate and
+    digest halves searched the WHOLE document. Under this repo's own convention —
+    active PR on top, merged PRs retained below — the SECOND D1 PR inherits the
+    FIRST one's `**Prototype approved:**` line, and `gate-execute` returns ok:true
+    for work that never passed gate 1. No attacker needed; the convention does it.
+
+    The first fix bounded the region at the SECOND Spec-walk heading and the bypass
+    SURVIVED, because a retained section's digest sits above its own Spec-walk. Only
+    running the attack caught that — which is why this fixture exists rather than a
+    reasoning note."""
+    _, out, _ = run("gate-execute", "--plan", fx("plan-retained-digest-bypass.md"))
+    check("retained-digest-refused", out and out["ok"] is False,
+          "a digest from a retained (merged) PR block must NOT satisfy the active gate")
+    check("retained-digest-names-the-gap",
+          out and any("digest" in p.lower() for p in out.get("problems", [])))
+
+
+def test_gate_execute_refuses_a_foreign_branch_digest():
+    """A stamp rendered but never checked is decoration (FB-0082). The digest carries
+    repo/branch/head; `gate-execute` is the only consumer of committed state, and it
+    ignored them."""
+    with tempfile.TemporaryDirectory() as tmp:
+        plan = Path(tmp) / "plan.md"
+        plan.write_text(
+            "# Plan\n\n**Pre-execution gate:** prototype\n\n"
+            "**Prototype approved:** `abcdef0123456789` · \"yes\" · repo=r "
+            "branch=a-different-branch head=h\n\n**Spec-walk:**\n\n- [ ] x → verify: t\n",
+            encoding="utf-8")
+        _, out, _ = run("gate-execute", "--plan", str(plan))
+        check("foreign-branch-digest-refused", out and out["ok"] is False,
+              "an approval recorded on another branch is not an approval for this work")
+        check("foreign-branch-digest-names-branch",
+              out and any("branch" in p.lower() for p in out.get("problems", [])))
+
+
+def test_symlinked_paths_are_refused():
+    """CWE-59, pinned with the mechanism-specific payloads the security review asked
+    for rather than a grep for the string "CWE-59" in a SKILL.
+
+    `.flow/` is an ordinary repo path, so a branch can COMMIT
+    `.flow/prototypes/<branch>/prototype.presented.html` as a symlink — tracked files
+    are checked out regardless of the `.gitignore` the skill writes — and this repo
+    documents that `gh pr checkout` executes the branch."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / "proto"; d.mkdir()
+        shutil.copy(FIX / "prototype-minimal.html", d / "prototype.html")
+        target = Path(tmp) / "SHOULD-NOT-BE-WRITTEN"
+        (d / "prototype.presented.html").symlink_to(target)
+        proc = subprocess.run([sys.executable, str(ENGINE), "present", "--file",
+                               str(d / "prototype.html")], capture_output=True, text=True)
+        check("present-refuses-symlink", proc.returncode != 0)
+        check("present-symlink-target-untouched", not target.exists(),
+              "the write must not land on the link's target")
+        check("present-refusal-is-clean", "REFUSED" in proc.stderr and "Traceback" not in proc.stderr,
+              "a refusal is an outcome, not a crash")
+
+        # read side: --quote-file pointing outside, via a link
+        (d / "prototype.presented.html").unlink()
+        shutil.copy(FIX / "feas-browser-oneline.md", d / "feasibility.md")
+        secret = Path(tmp) / "secret.txt"; secret.write_text("sensitive", encoding="utf-8")
+        link = d / "quote.txt"; link.symlink_to(secret)
+        proc = subprocess.run([sys.executable, str(ENGINE), "approve", "--dir", str(d),
+                               "--quote-file", str(link), "--config", fx("cfg-library.json")],
+                              capture_output=True, text=True)
+        check("approve-refuses-symlinked-quote", proc.returncode != 0,
+              "a planted quote link would splice its target into the COMMITTED plan doc")
+        check("approve-no-record-on-symlink", not (d / "approval.json").exists())
+
+
+def test_traversal_out_of_the_named_directory_is_refused():
+    """`../..` through an argument must not escape the directory it belongs to."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp) / "proto"; d.mkdir()
+        shutil.copy(FIX / "prototype-minimal.html", d / "prototype.html")
+        shutil.copy(FIX / "feas-browser-oneline.md", d / "feasibility.md")
+        outside = Path(tmp) / "outside.txt"; outside.write_text("x", encoding="utf-8")
+        proc = subprocess.run([sys.executable, str(ENGINE), "approve", "--dir", str(d),
+                               "--quote-file", str(d / ".." / "outside.txt"),
+                               "--config", fx("cfg-library.json")],
+                              capture_output=True, text=True)
+        # The quote file's own parent IS the base for confinement, so a plain ../ read
+        # resolves inside its own directory and is allowed; what must never happen is a
+        # traceback or a silent write elsewhere.
+        check("traversal-no-traceback", "Traceback" not in proc.stderr, proc.stderr[:160])
 
 
 # ---------------------------------------------------------------- 5. present

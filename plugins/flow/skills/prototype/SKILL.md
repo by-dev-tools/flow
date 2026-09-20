@@ -191,7 +191,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py approve \
 
 The quote arrives **only as a file path**. There is deliberately no `--quote` string flag: untrusted text does not belong on a command line (FB-0108), and this is the first new interface since that rule landed.
 
-`approve` prints **both** committed lines; paste them into the plan doc (`flow.config.json.planPath`) verbatim — `gate-execute` requires both:
+`approve` prints **both** committed lines; paste them into the plan doc (`flow.config.json.planPath`) verbatim, **above the active `**Spec-walk:**` block** — `gate-execute` requires both, and it reads them only from the header region above that heading. That scoping is what stops a *retained* (merged) PR's approval digest lower in the same file from satisfying this PR's gate — a real bypass in a plan doc that keeps shipped blocks, which is the convention this repo and most flow consumers use:
 
 ```markdown
 **Pre-execution gate:** prototype
@@ -214,7 +214,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py gate-execut
 
 - `/flow:critique-plan` — scope drift, spec violation, incoherence.
 - `/flow:audit-plan` — unverified assumptions and recall.
-- `/flow:audit-coverage` **in prototype-source mode, once that mode ships** — completeness, **best-effort**: measured at full precision but **variable recall** (two runs over one prototype found 10 and 5 of the same behavior set). It raises the bar; it does not guarantee completeness, and a gap it misses reaches Execute undeclared.
+- `/flow:audit-coverage` **in prototype-source mode, once that mode ships** — completeness, **best-effort**. Four live runs of this judgment have found 10, 5, 0-of-5 and 2-of-5 of the gaps present, at full precision throughout; the 0-of-5 was in its long-standing **diff** mode, so the variance is a property of the judgment, not of the new input path. It raises the bar; it does not guarantee completeness. **And behaviour added after the plan is written — during `/simplify` and staff-review — is exactly the behaviour least likely to be declared**, so a gap can reach Execute undeclared even when the pass runs clean.
 
 **Be honest about which of those is live, and about what the live one is worth.** Until the source mode exists, this review is a **form and coherence check and explicitly not a completeness check** — the §9.3 spike measured this exact reviewer set catching 1 of 12 real coverage gaps. Once it ships, completeness is *raised*, not *assured*. Either way the backstop is the existing `/flow:audit-coverage` running post-execution against a real diff at `/flow:ship` Step 2, so a gap is caught **late, not never**. Say that plainly rather than implying the plan was fully checked — and note that the one guarantee here that is **not** judgment is `gate-execute`'s: a plan *exists*. That is mechanical, and with completeness only partly checked it carries more of the weight than it looks like it does.
 
