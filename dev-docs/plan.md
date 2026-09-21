@@ -156,6 +156,34 @@ writing this plan. And the probe is itself validated against a deliberately trun
       `run_evals.py` green. **Scope of this evidence, stated plainly:** the three existing coverage fixtures
       are *offline-validated* — they pin the assembled-context shape and the expected output schema, not live
       LLM behavior. This one is the same, and is not claimed as proof the judgment fires.
+- [x] **A named path that is a symlink is refused with `SOURCE-UNRESOLVED`, and its target's content never
+      reaches prompt context** → verify: `run_coverage_source_mode_evals.py` §7 — paired symlink-refusal + a
+      no-leak assertion over the real `/etc/passwd` reproduction.
+- [x] **Only control lines emitted above the `----- source -----` delimiter are authoritative; a forged status
+      line inside a reviewed file renders below it, as data** → verify: §7b — zone-split assertions, paired with
+      the positive that the forged text IS still rendered (if the content vanished the check would pass for the
+      wrong reason).
+- [x] **Exclusions are matched against the repo-relative path**, so a repo living under a directory named
+      `build/` still walks, and `node_modules` is still excluded → verify: §7c — paired ancestry + still-excludes.
+- [x] **The index line reads `files selected (N)`, one path per line**, and never claims "read" — which would
+      contradict a `SOURCE-TRUNCATED` warning in the same artifact → verify: §3.
+- [x] **Source-mode output opens with a `Read: <files>` line**, so a clean result is falsifiable by the person
+      who knows what is in their own prototype → verify: §8 prose assertion (the judgment is best-effort, so the
+      eval pins the *instruction*, not the model's compliance).
+
+      **These five were declared at the merge gate, not at plan time — and the route matters.** They cover
+      behaviour added during `/simplify` and `/flow:staff-review`, i.e. *after* the Spec-walk was written.
+      `/flow:audit-coverage` read the diff and returned **"No issues flagged"** over all of them; they were found
+      by hand. Rather than self-declare (Step 2: "never auto-add the criterion yourself — that is the agent
+      grading its own homework") each was routed to the draft manifest with the criterion **drafted**, and Ben
+      approved all five. The evals already existed and passed, so these document behaviour that is already
+      tested: waiving would not have saved work, it would have left the Spec-walk permanently understating the
+      PR while coverage read clean *by omission*.
+
+      **Nuance, so the record is not over-read:** flow is `platform: library`, so `/flow:verify-build`
+      self-skips here and declaring these produces **no behavioural test in this repo**. The evals are what test
+      them. The criterion's value is that coverage now goes clean *honestly* rather than by omission — not that
+      verify-build exercised anything.
 - [x] Docs move with the contract (`general.md` § Consistency 2 — grep first, edit second): skill
       frontmatter description, `plugins/flow/docs/workflow.md` (the `:13` one-liner and the `:667` skill-table
       row), `README.md` skill list, `plugin.json` → **1.47.0**, `changelog/v1.47.0.md`, `CHANGELOG.md`, a new

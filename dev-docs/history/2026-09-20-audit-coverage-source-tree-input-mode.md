@@ -272,6 +272,44 @@ decision across files outside this diff, so it is a `[security] decision-require
 entry carrying the measured fix idiom — with the instrument half stated explicitly, because that is the half
 that gets forgotten.
 
+
+## Resolved at the merge gate — seven decisions, and why each went the way it did
+
+**1–5, all five drafted criteria approved and declared.** They cover behaviour added during `/simplify` and
+`/flow:staff-review` — i.e. *after* the Spec-walk was written — which `/flow:audit-coverage` read and returned
+**"No issues flagged"** over. They were found by hand and routed rather than self-declared, per Step 2's rule
+that the agent never adds its own criterion.
+
+The reasoning for approving rather than waiving, recorded because "approved" alone would not be useful later:
+**the evals for all five already existed and passed**, so the criteria document behaviour that is already
+tested. Waiving would not have saved any work — it would have left the Spec-walk permanently understating what
+the PR did, while the coverage audit read clean *by omission*. Approving cost five lines and made the record
+match reality.
+
+**The nuance that keeps this from being over-read:** flow is `platform: library`, so `/flow:verify-build`
+self-skips here, and declaring these produces **no behavioural test in this repo**. The eval harness is what
+tests them. The criterion's value is that coverage now goes clean **honestly** rather than by omission — not
+that verify-build exercised anything. The PR's Test plan correctly takes the manual fallback for exactly this
+reason.
+
+**6–7, the security idiom: option B — accept the narrowed residual here, fix the idiom in its own PR.**
+The justification is this PR's own evidence rather than a preference: substitution precedes parsing, so no
+static delimiter can fix it, and the real fix is a house-idiom change across four skills and six sites.
+**Fanning out an untested pattern to six places is worse than fixing none** — and the strength of that claim is
+that *the first fix here was already defeated once by review*. That is measurement, not caution.
+
+What makes option B safe rather than merely convenient is the pin: the residual stays asserted **in its true
+vulnerable state**, so CI cannot print "all passed" over a live hole, and the dedicated fix makes that pin go
+red on purpose with instructions attached. A separate worker carries the idiom across all six exposed sites
+(`audit-plan` ×2, `critique-plan` ×4) and will pick up this site at its rebase.
+
+**A third corroboration arrived while clearing the manifest.** `manifest-triage.py` refused `--finding` *and*
+`--resolution` — FB-0108 removed both so free text must travel as a **file path**, and its refusal message names
+the heredoc-escape case explicitly. The repo's own interface refused this PR's unsafe shape three separate
+times while the PR was documenting that same shape. It also produced one more instance of the class: the first
+recompute returned `READY` **for the wrong reason**, because both `add-entry` calls had failed and the manifest
+was simply empty. Caught by checking `waived: 2` rather than trusting the verdict.
+
 ## Provenance (FB-0107)
 
 Measured in this workspace before any verification was believed: **installed plugin 1.29.0** (`gitCommitSha
