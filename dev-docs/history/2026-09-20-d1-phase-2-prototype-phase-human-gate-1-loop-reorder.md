@@ -1,4 +1,4 @@
-# D1 Phase 2 — the prototype phase, human gate 1, and the loop re-order (v1.46.0)
+# D1 Phase 2 — the prototype phase, human gate 1, and the loop re-order (v1.48.0)
 
 **Date:** 2026-09-20 · **Branch:** `conductor/track-b-d1-phase-2-prototype-gate` · **FB:** FB-0113, FB-0114 · **Implements:** `dev-docs/handoffs/d1-prototype-first-gate.md` § Phase 2 (FB-0081)
 
@@ -45,6 +45,12 @@ Until `/flow:audit-coverage` gains its prototype-**source** input mode (approved
 **The consequence is that the mechanical guarantee is the load-bearing one.** `gate-execute` asserting a plan *exists* is deterministic. Everything checking whether that plan is *complete* is judgment with variable recall. Pulling the existence assertion forward out of Phase 3 therefore carries more weight than it appeared to when it was approved — the harder of the two guarantees, and the only one that does not depend on a model noticing something.
 
 The spike measured an *auto*-written plan while this interim uses an *agent*-written one. That distinction is real in general and does not apply here: the spike auto-wrote its plan *in character as the D1 Step-6 agent*. Same agent, same context, same moment. The finding transfers.
+
+## The interim rule stopped being interim before this merged
+
+Written as a two-row table conditional on the §9.3 remediation landing. **It landed mid-flight**: #159 (v1.47.0) shipped option (a), `/flow:audit-coverage`'s source-tree input mode, while this branch sat at review. So the stronger row is **live, not conditional** — the post-gate-1 plan review is `/flow:critique-plan` + `/flow:audit-plan` + `/flow:audit-coverage` **in source mode**, pointed at the approved prototype's source, which is the code nothing else at that step reads.
+
+What did **not** change is the hedge. Completeness is *raised*, not *assured*, and the recall series is the argument rather than any single run.
 
 ## Verification
 
