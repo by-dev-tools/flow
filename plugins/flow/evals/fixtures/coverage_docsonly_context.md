@@ -9,6 +9,6 @@ there is no behavior to under-declare. See sibling `.expected.txt`.
 
 {"criteria": ["README documents the new config slot."], "source_path": "dev-docs/plan.md", "source_heading": "**Spec-walk:**", "warnings": []}
 
-## Workspace diff — source files changed vs the default branch
+## What was actually built
 
 [audit-coverage] SKIPPED — no behavior-bearing source files in the diff (doc/test/refactor-only vs origin/main).

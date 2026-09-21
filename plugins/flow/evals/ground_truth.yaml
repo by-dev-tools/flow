@@ -113,6 +113,15 @@
   required:
     - finding_count: 0
 
+- case_id: coverage_source_mode_undeclared_keyboard
+  fixture: fixtures/coverage_source_mode_undeclared_context.md
+  mode: coverage
+  reviewer: auditor
+  required:
+    - category: "Undeclared change"
+    - finding_count: 1
+    - claim_contains: "accessible name"
+
 - case_id: coverage_docsonly_skip
   fixture: fixtures/coverage_docsonly_context.md
   mode: coverage

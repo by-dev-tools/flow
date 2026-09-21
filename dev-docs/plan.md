@@ -2,6 +2,303 @@
 
 ## Current Focus
 
+**▶ EXECUTED, shipping (this branch, `conductor/d1-a-audit-coverage-source-input-mode`, v1.47.0): give `/flow:audit-coverage` a source-tree input mode.** All three plan-gate open calls resolved by the orchestrator under §4.8 (low-stakes, reversible, high-confidence, low-taste — rule 7: escalating them would spend the human's attention on null results). 81-check eval harness green; 36/36 harnesses green.
+
+**Provenance first (FB-0107, CLAUDE.md § How to Work 3).** Measured at plan time in this workspace:
+installed plugin **1.29.0** (`~/.claude/plugins/installed_plugins.json`, `gitCommitSha cf783ac`) against a
+working tree at **1.45.0** — **sixteen releases stale**. Consequence for this PR, stated before any green
+result is produced: `Skill("flow:audit-coverage")` in this session resolves **1.29.0's** SKILL.md and
+therefore **cannot exercise the mode this PR adds**. Every claim below is verified by running the
+extracted shell block from the *working tree* under the Bash tool, never by invoking the skill. The
+`## Flow run` provenance rows get read before the ship pipeline's verdicts are believed.
+
+**Why (measured, n=1).** `dev-docs/research/2026-09-16-d1-auto-plan-quality-spike.md` — D1's §9.3 spike.
+An auto-written Spec-walk plan scored **0/13 vacuous** (clean on the criterion-*quality* axis, confirmed
+testable by a live headless-Chrome dry-read) while **under-declaring 10 real behaviors against 13–14
+declared**, including an entire keyboard-only interaction path on a prototype whose own code cites
+WCAG 2.1.1. The mechanism: the pre-execution reviewers read the **plan** and the **brief**; *nothing reads
+the approved prototype's code*. `plan-critic` caught the keyboard gap only because that brief happened to
+name keyboard — luck, not design. What caught 10 of 12 gaps was a coverage-style pass over the
+prototype's **source**.
+
+**What this is, and what it deliberately is not.** `/flow:audit-coverage`'s **input** is diff-shaped
+(`SKILL.md:90` builds a file list from `git diff`). Its **judgment** is not diff-specific: *"for each
+user-perceptible behavior change, check whether any declared criterion would cause someone to test it"*
+(`:130`), scoped at `:129` to **"declared-vs-built completeness only, not criterion quality."** That axis
+is what found the gaps, and it is already written, already tuned, and already eval-backed. So this ships a
+**second input path** — feed it a source tree when there is no diff — and **reuses the judgment verbatim**.
+It is **not a fourth reviewer**: new judgment means new prompt surface to maintain and drift, and the spike
+already demonstrated the existing judgment works when handed source instead of a diff.
+
+**Hard requirement: standalone, today.** D1 Phase 3 does not exist. Track B's Phase 2 (in flight) carries an
+interim rule that invokes this **by hand** after human gate 1. So `/flow:audit-coverage <path>` must work on
+direct invocation with no Phase-3 machinery. Track B's interim safety depends on it.
+
+**Honest caveat, carried deliberately: n=1.** One prototype, one auto-plan, one pass per instrument — the
+spike says so itself ("It is not a statistical claim about auto-plan quality in general"). This plan is
+built on a single measured case. Shipping it is how we get n=2. Nothing below should be read as evidence
+that the under-declaration rate is *generally* ~50%.
+
+**Design — argument-gated, one skill, two evidence blocks.**
+
+`/flow:audit-coverage` (no argument) → today's diff mode, untouched. `/flow:audit-coverage <path>` → source
+mode. Gating on `$ARGUMENTS` is the same mechanism `/flow:audit-plan` already uses for its optional
+plan-file path, so it is an established shape in this plugin rather than a new one.
+
+- **Diff body kept character-for-character.** *(Shape revised at `/simplify` — see "Reworked at /simplify"
+  below. The plan proposed a SECOND evidence block gated by one prepended line; what shipped is ONE evidence
+  block that dispatches internally on `$ARGUMENTS`, which is the house idiom and strictly subtractive.)*
+- **Ordering constraint, found while planning:** in both blocks the root anchor must resolve *before*
+  the `$ARGUMENTS` early-exit. `run_root_anchor_evals.py` scenario 1 runs every extracted guard from a
+  non-repo cwd with `ARGUMENTS` unset and requires a distinct unresolved signal — an early-exit placed
+  above the anchor would return silence and fail it. Noted here so it does not cost an execution cycle.
+- **Criteria block (`:34–59`) is not edited at all.** The plan to compare against is still `planPath` — which
+  is exactly right for the standalone Track-B use, where the auto-written plan lives there.
+
+**Four things the source block must get right, each with a named failure it prevents:**
+
+1. **`SOURCE-UNRESOLVED` is its own outcome** (FB-0074, and brief requirement 1). A named path that is
+   missing, unreadable, resolves outside the repo root, or yields no readable file is **not** a clean pass and
+   **not** `SKIPPED`. "I found nothing to audit" and "I never looked" have opposite consequences; the user
+   *named a tree*, so an empty result means the input was wrong, never that the work is covered. Distinct line,
+   asserted non-confusable with the skip line — the same way `run_root_anchor_evals.py` asserts it for
+   `ROOT-UNRESOLVED`.
+2. **The default `sourceFilePatterns` would silently eat the reference case.** Measured: the shared default
+   (`SKILL.md:87`) matches `.ts|.js|.py|…` and **contains no `.html`** — so naively reusing it on
+   `annotation-layer.html` filters the prototype to nothing and renders a clean `SKIPPED`. That is exactly
+   the silent-skip-on-edge-case class (`general.md` § Consistency 1) and it would have made this feature
+   report "no undeclared changes" over a prototype it never read. Fix: a **single named file is taken
+   verbatim, never filtered**; a **directory** is walked with a prototype-oriented pattern set (html/css/js/
+   jsx/ts/tsx/vue/svelte + the existing source set), and an empty walk is `SOURCE-UNRESOLVED`-class.
+3. **The one known-positive case sits 805 bytes over the diff-mode cap.** Measured:
+   `annotation-layer.html` is **60,805 bytes**; the diff cap is **60,000** (`:101`). The evidence anchors for
+   the spike's ten findings land at bytes 22,515 → 59,809, with finding #1's `focusin` handler
+   (lines ~1146–1154) straddling the cap. Reusing 60,000 would clip the flagship WCAG finding's evidence.
+   Source mode therefore gets its own cap of **120,000 bytes**, paired with a `SOURCE-TRUNCATED` warning in
+   the same shape as the existing `TRUNCATED` line (never a silent swallow). Justification: a diff is
+   incremental, a source tree is the whole artifact. Cost is real and named — ~30k tokens worst case, at a
+   gate that runs once.
+4. **`$ARGUMENTS` is untrusted text entering a shell.** Quoted throughout; the resolved path must
+   `realpath` inside the repo root (so the mode cannot dump `/etc` into prompt context); the echoed path is
+   newline-stripped before printing, reusing the injection guard already at `:77`. This is the FB-0104
+   lesson applied at the new site rather than after the fact.
+
+**Validating against a case we KNOW is positive (`general.md` § Consistency item 4, new in #157).**
+A measurement that can only return "clean" is not a measurement. The decomposition that makes this honest:
+this PR builds an **input mode**, not judgment, so the claim under test is *"the assembled context contains
+the behavior evidence a reader would need"* — and the spike already established that the judgment finds
+10/10 given that context. The instrument test therefore runs the real block against the real
+`annotation-layer.html` and asserts **all ten** anchors from the spike's own table survive assembly
+(`walkStep`/`focusWalkTarget`, `an-wipe`, single-comment delete, `snapPreview`, show/hide-all, panel
+open/close, `oneNoteBlock`, the quota-warning branch, the Escape state machine, `dropEmpty`). It fails if a
+cap, a filter, or a path bug eats any of them — which is precisely how the 60,000-byte cap was caught while
+writing this plan. And the probe is itself validated against a deliberately truncated context that it must
+**fail**, so the probe cannot be a measurement that only returns clean either.
+
+**Spec-walk:**
+
+- [x] `/flow:audit-coverage` with **no argument** produces evidence output byte-identical to today's, and the
+      new source block emits **zero bytes** → verify: `run_coverage_source_mode_evals.py` §1 — in a temp repo
+      with a real behavior change, diff the extracted diff-block's stdout against the same block extracted
+      from `git show origin/main:…/SKILL.md`, asserting byte equality, **and** assert the source block's
+      stdout is empty. (Byte-equality against `origin/main` is a one-time PR-scoped measurement recorded in
+      the history entry; the durable CI assertion is the marker-shape + empty-source-block pair, because an
+      `origin/main` comparison stops meaning anything once this merges. Stated rather than glossed.)
+- [x] `/flow:ship` Step 2's invocation is **unchanged** — still `Skill("flow:audit-coverage")` with no
+      argument → verify: source grep asserting the ship Step 2 call site is argument-less **and** that
+      `ship/SKILL.md` and `ship-spike/SKILL.md` are otherwise untouched by this PR (`git diff --stat` shows
+      no entry for either).
+- [x] Source mode over a **single named file** reads it verbatim with no pattern filtering, so an `.html`
+      prototype is not silently filtered to nothing → verify: `run_coverage_source_mode_evals.py` §2 —
+      paired: the `.html` case assembles non-empty content **and** a **zero-byte** named file routes to
+      `SOURCE-UNRESOLVED` rather than a clean pass (acceptance is not unconditional).
+      **Pairing corrected during execution, and the correction matters.** The plan proposed pairing against a
+      named `.md` file. That is the wrong negative: refusing a named file *by extension* is the same
+      extension-list reasoning that produced the `.html` hole in the first place, so the plan's own pair would
+      have re-imported the bug it was written to catch. The honest pair is "acceptance is not unconditional"
+      (zero bytes ⇒ refuse), with the *filtering* claim tested where filtering actually happens — the directory
+      walk, criterion 4. Same scope, one assertion swapped for a sound one.
+      **And the swapped-in assertion immediately failed, on a real bug:** a zero-byte named file rendered the
+      full source-mode header over nothing and read as a clean pass. Fixed in the skill (a `TOTAL` byte check
+      before render); it would not have been found by the pairing the plan proposed.
+- [x] Source mode over a **directory** walks it with the prototype-oriented pattern set → verify: §3 —
+      a temp tree containing `index.html` + `app.js` + `notes.md` assembles the first two, omits the third,
+      and names every file it read in the rendered header.
+- [x] **`SOURCE-UNRESOLVED` is never `SKIPPED`** → verify: §4 — four inputs (missing path, path outside the
+      repo root, empty directory, unreadable file) each emit the `SOURCE-UNRESOLVED` line, **plus** a direct
+      distinctness assertion that the string is not a substring of, and shares no verdict token with, the
+      `[audit-coverage] SKIPPED` line — the same invariant `run_root_anchor_evals.py` pins for
+      `ROOT-UNRESOLVED`.
+- [x] **Paired negative (general.md § Consistency 3):** the skip line still *works* — a genuinely doc-only
+      **diff** in diff mode still renders `[audit-coverage] SKIPPED` → verify: §4b. Without this pair,
+      deleting the skip path entirely would satisfy every assertion above.
+- [x] **The known-positive instrument test:** the real `annotation-layer.html` assembles with **all ten**
+      spike-documented behavior anchors present → verify: §5 — ten literal anchor probes over the block's
+      actual stdout, each naming the finding number from the spike's table, **plus** the probe's own negative
+      control (the same probe run against a 60,000-byte-truncated context must FAIL, proving the probe can
+      return not-clean).
+- [x] The 120,000-byte source cap is **paired with a loud warning**, never a silent swallow → verify: §6 —
+      a synthetic 130KB tree emits `SOURCE-TRUNCATED` naming the cap, **and** a 10KB tree emits no such line
+      (a warning that always fires carries no information).
+- [x] `$ARGUMENTS` cannot escape the repo root or inject a verdict line into prompt context → verify: §7 —
+      `../../etc`, an absolute `/etc/passwd`, a path containing a newline, and a path with shell
+      metacharacters each refuse with `SOURCE-UNRESOLVED` and emit no `/etc` content; paired with an
+      ordinary path containing a space that is **accepted** (a guard that refuses everything is a ban).
+- [x] The root anchor still covers every relative read → verify: `run_root_anchor_evals.py` green.
+      **Superseded by the `/simplify` rework, in the good direction:** the plan budgeted for
+      `EXPECTED_GUARDS["audit-coverage"]` **2 → 3**, i.e. editing a *shared* harness contract for a *local*
+      reason — a permanent footprint on a file the whole suite depends on. Merging the evidence blocks means
+      there is no third anchor to declare, the count stays **2**, and `run_root_anchor_evals.py` drops out of
+      this PR's diff entirely. The best version of a contract edit is the one you no longer need.
+- [x] Offline reviewer fixture pair in the existing coverage convention:
+      `coverage_source_mode_undeclared_context.md` + `.expected.txt` + a `ground_truth.yaml` case
+      (`mode: coverage`) whose expected finding is the undeclared keyboard-only path → verify:
+      `run_evals.py` green. **Scope of this evidence, stated plainly:** the three existing coverage fixtures
+      are *offline-validated* — they pin the assembled-context shape and the expected output schema, not live
+      LLM behavior. This one is the same, and is not claimed as proof the judgment fires.
+- [x] **A named path that is a symlink is refused with `SOURCE-UNRESOLVED`, and its target's content never
+      reaches prompt context** → verify: `run_coverage_source_mode_evals.py` §7 — paired symlink-refusal + a
+      no-leak assertion over the real `/etc/passwd` reproduction.
+- [x] **Only control lines emitted above the `----- source -----` delimiter are authoritative; a forged status
+      line inside a reviewed file renders below it, as data** → verify: §7b — zone-split assertions, paired with
+      the positive that the forged text IS still rendered (if the content vanished the check would pass for the
+      wrong reason).
+- [x] **Exclusions are matched against the repo-relative path**, so a repo living under a directory named
+      `build/` still walks, and `node_modules` is still excluded → verify: §7c — paired ancestry + still-excludes.
+- [x] **The index line reads `files selected (N)`, one path per line**, and never claims "read" — which would
+      contradict a `SOURCE-TRUNCATED` warning in the same artifact → verify: §3.
+- [x] **Source-mode output opens with a `Read: <files>` line**, so a clean result is falsifiable by the person
+      who knows what is in their own prototype → verify: §8 prose assertion (the judgment is best-effort, so the
+      eval pins the *instruction*, not the model's compliance).
+
+      **These five were declared at the merge gate, not at plan time — and the route matters.** They cover
+      behaviour added during `/simplify` and `/flow:staff-review`, i.e. *after* the Spec-walk was written.
+      `/flow:audit-coverage` read the diff and returned **"No issues flagged"** over all of them; they were found
+      by hand. Rather than self-declare (Step 2: "never auto-add the criterion yourself — that is the agent
+      grading its own homework") each was routed to the draft manifest with the criterion **drafted**, and Ben
+      approved all five. The evals already existed and passed, so these document behaviour that is already
+      tested: waiving would not have saved work, it would have left the Spec-walk permanently understating the
+      PR while coverage read clean *by omission*.
+
+      **Nuance, so the record is not over-read:** flow is `platform: library`, so `/flow:verify-build`
+      self-skips here and declaring these produces **no behavioural test in this repo**. The evals are what test
+      them. The criterion's value is that coverage now goes clean *honestly* rather than by omission — not that
+      verify-build exercised anything.
+- [x] Docs move with the contract (`general.md` § Consistency 2 — grep first, edit second): skill
+      frontmatter description, `plugins/flow/docs/workflow.md` (the `:13` one-liner and the `:667` skill-table
+      row), `README.md` skill list, `plugin.json` → **1.47.0**, `changelog/v1.47.0.md`, `CHANGELOG.md`, a new
+      `dev-docs/history/2026-09-20-*.md` → verify: `git grep -nE 'audit-coverage'` over the docs surfaces
+      shows no survivor describing the skill as diff-only.
+
+
+**Measured at execution (what the plan asserted, and what actually came back):**
+
+- **Diff-mode byte-identity: CONFIRMED, twice, two ways.** One-time `origin/main` comparison — the diff block
+  and the criteria block both produce **byte-identical** output (355 bytes each) against a temp repo rendering a
+  real non-empty diff, so the equality is not the vacuous "both empty" kind. Durable CI form: §1 strips the mode-gate
+  lines back out of the shipped block and requires byte-identical stdout from both copies, which needs no git ref
+  and therefore keeps working after this merges. `ship/SKILL.md` and `ship-spike/SKILL.md` are untouched
+  (`git diff --stat` shows no entry for either).
+- **The known-positive instrument test: all ten spike anchors survive assembly**, the run is not a skip or an
+  unresolved, and it is not truncated at the shipped cap.
+- **Three real bugs the harness caught before any of this shipped**, all in the "reports clean over nothing" class
+  this feature exists to prevent: (1) a zero-byte named file rendering as a clean pass; (2) the probe's own negative
+  control passing because every anchor token appears early in the file — a probe that could not return not-clean,
+  fixed by clipping at a measured 57,000 bytes where finding 9 provably drops out; (3) the metacharacter assertion
+  failing on a *correct* refusal, because it searched for a literal the refusal message echoes back — an assertion
+  that could not distinguish refusal from execution, replaced with a filesystem side-effect canary.
+- **The 2x cap claim, stated at the precision it was measured.** The coarse token probe *survives* a 60,000-byte
+  clip (first occurrences are early in the file), so "the diff cap would have truncated the reference case" needed a
+  sharper instrument than the probe: the prototype's **third** `focusin` registration — the focus-restoration half of
+  the WCAG 2.1.1 path the spike cites at lines ~1146-1154 — sits at file byte 59,915 with its body running past
+  60,000, and is provably absent from a 60,000-byte clip. Asserted in bytes, not characters: the first version of
+  that check compared Python `str` slices against a shell `head -c` cap and passed by accident on a file carrying
+  non-ASCII punctuation. The unit was wrong, not the claim.
+- **Live joint test (authorized, one `flow:auditor` spawn): the end-to-end path WORKS, and the number is not 10.**
+  The joint — new input path feeding the existing judgment — was the one thing neither the instrument test nor the
+  spike had exercised. Fed the real source block's output plus the spike's 13-criterion auto-plan, a fresh auditor
+  returned **4 findings, all 4 real** (precision 4/4, zero false positives), covering **5 of the spike's 10
+  behaviors**: finding 1 (the flagship keyboard/WCAG gap) reproduced independently, plus snapPreview, show/hide-pins,
+  and bulk+single delete consolidated into one finding. **Not reproduced this run:** panel open/close, per-row copy,
+  the storage-quota warning, the Escape state machine, discard-on-empty-close. So: the mechanism is confirmed
+  end-to-end and re-found the gap that motivated the work, but **recall varied substantially between two runs of the
+  same judgment on the same artifact** (10 behaviors hand-run, 5 this run). That is a property of best-effort LLM
+  judgment, which this reviewer has always been documented as; it is recorded here rather than rounded up, because
+  "audit-coverage finds ~10 gaps on a prototype" is exactly the kind of claim that would harden into folklore.
+  **n=1 on each side, one prototype.** Shipping is how this gets to n=2.
+
+
+**Reworked at `/simplify` — the four lenses, and what they changed:**
+
+- **Altitude (the significant one): two evidence blocks where one would do.** The plan's shape — a *second*
+  `!` block gated by one prepended line — was one level too shallow, and every other `$ARGUMENTS` dual-mode
+  skill in this plugin (`audit-plan`, `critique-plan`, `review-brief`) already dispatches **inside one block**.
+  This PR would have been the first to answer "a skill gained a second input mode" with a second block. That
+  single choice generated all the rest of the machinery: a third copy of the FB-0074 anchor, the
+  `EXPECTED_GUARDS` 2 → 3 shared-contract edit, a restated `DIFF_CAP` in a shell that *cannot* share a
+  variable (plus a cross-check eval to hold the copies together), a prose invariant the LLM had to honor
+  ("exactly one evidence block speaks"), and an empty `## Approved source tree` heading rendered into every
+  diff-mode prompt. **Shipped instead:** one block, `if [ -n "$ARGUMENTS" ]; then <source>; exit 0; fi`, with
+  `CAP` hoisted above the dispatch so `SOURCE_CAP=$(( CAP * 2 ))` is a *genuinely shared variable*. Strictly
+  subtractive, re-verified byte-identical in diff mode against `origin/main`. **The cross-runtime-mirror
+  precedent cuts the other way here:** `verify-build/lib/file_patterns.py` keeps a jq mirror and checks it
+  mechanically because that duplication is *forced* — one contract, two languages. This one was not forced;
+  the block split created it. Removing a fan-out beats policing it.
+- **Simplification: five, all applied.** (1) Six of seven `PRE_GATE` filter clauses were **inert** — they
+  stripped shell *comments*, which produce no stdout, from a check that compares *output*; seven hand-copied
+  fragments with no failure signal if they drift. (2) An outside-path case was run twice. (3) **§7's
+  containment cases re-pinned §4's branch, and one label was false:** `../../etc` resolves to `<tmp>/etc`,
+  which does not exist, so it landed in the **missing-path** branch, not the containment branch its name
+  claimed — an assertion passing via a different branch than its name asserts is this PR's own subject one
+  level down, so it was removed rather than relabelled. (4) The `SOURCE-UNRESOLVED` tail was copy-pasted at
+  **five** exits — the FB-0010 fan-out class inside the file arguing against it — now one `unres()` helper.
+  (5) The file/dir question was asked twice against two different variables (`$SRC`, then `$ABS`), so nothing
+  forced the answers to agree; decided once as `KIND`.
+- **Reuse: three findings, all real, all routed to the roadmap rather than fixed here.** The new harness is
+  the **fifth** temp-git-repo builder and the **third** `` !` ``-span parser in `evals/`, and `eval_utils.py`
+  exists for exactly that. The hoist edits four harnesses outside this diff, so it is scope discipline, not
+  disagreement — and the roadmap entry says the uncomfortable part out loud: this PR *added* the fifth copy
+  while declining to pay the debt, and its copy is the most general one, hence the natural hoist target.
+- **Efficiency: nothing to flag, with measurements** (19 ms for the whole evidence block on the 60 KB
+  reference prototype; 0.5 s for the full harness). It also correctly refused the obvious "merge the two
+  reads" cleanup: `TOTAL` counts file *content* bytes while `BODY` interleaves `----- file: -----` headers, so
+  `BODY`'s count is never zero even when every file is empty — deriving one from the other would silently kill
+  the zero-readable-bytes guard that §2's paired negative exists to protect. Load-bearing separation, not
+  sloppiness.
+
+**Scope (out), named — from the dispatch brief, not softened:**
+- **No D1 Phase 3.** No auto-plan writing. No wiring into a Step 6 that does not exist.
+- **No change to `/flow:ship` Step 2 or `/flow:ship-spike`.** Diff-mode behaviour byte-identical (asserted above).
+- **No fourth reviewer, no new judgment prose.** The `What to check` section gains only mode-scoping for the
+  new not-clean outcomes; `:129`/`:130`'s judgment text is untouched.
+- **No edit to `dev-docs/handoffs/d1-prototype-first-gate.md`** — including its known §0/§8-vs-§9.3 self-
+  contradiction about whether the spike gates Phase 2 or Phase 3. Flagged by the spike, still not ours.
+- **Not resolving §9.3.** This closes the *mechanism* gap the spike identified; the Phase-3 design decision
+  (spike option (a) vs (b)) remains the orchestrator's.
+
+**Claims (swept before writing, per the standing rule):** FB high-water is **FB-0112** on `origin/main`, and a
+sweep of **all 60+ remote branches** shows nothing above 0112 pushed anywhere — Track B's FB-0113/0114 are
+held but unpushed, so this plan claims **no FB number**; if a correction arises mid-execution it takes
+**FB-0115**, pushed as the claim. Version **v1.47.0** (Track B holds v1.46.0). `main` is `f278aec`.
+
+**Open calls — all three resolved by the orchestrator, none escalated to Ben (§4.8 rule 7):**
+
+1. **Live judgment confirmation — YES, once.** Explicit authorization given for one `flow:auditor` spawn, on a
+   sharper rationale than "more evidence": the instrument test proves the *context*, the spike proved the
+   *judgment*, and neither had tested the **joint** — which is the actual deliverable. Run; result above, with
+   what it does not establish named.
+2. **Source cap — 120,000, DERIVED not hardcoded.** `SOURCE_CAP=$(( DIFF_CAP * 2 ))`, with the measurement in a
+   comment. A bare `120000` is an FB-0010 fan-out value: the day someone moves the diff cap, the relationship
+   breaks silently. Cross-checked against the diff block's own literal by §6, because a comment cannot hold two
+   shells together.
+3. **Directory walk — INCLUDE.** Decided against the § Scope-discipline default ("if it isn't needed yet, don't
+   create it") because **the directory is already the storage shape**: Track B puts prototypes at
+   `.flow/prototypes/<slug>/prototype.html`, so the natural first invocation passes a directory. Single-file-only
+   would make the first real caller either error or do the wrong thing, and widening an accepted-input contract on
+   a shipped reviewer later is more expensive than fifteen lines now.
+
+---
+
 **▶ EXECUTED, shipping (this branch, `conductor/ship-fb-0109-manifest-fence-injection`, FB-0109, v1.44.0): SAFETY — a manifest entry can no longer close the manifest fence.**
 
 
@@ -1907,7 +2204,7 @@ one has a passing mechanical check, named inline.
 7. `run_manifest_triage_evals.py`: sweep "9 producer sites"/"9 kinds" → 10, paired positive+negative assertion (general.md rule 3 — `len(KIND_COPY) == 10` asserted in code, not just prose), plus a new `vacuous-criterion` classify/round-trip case mirroring `coverage`'s.
 8. Doc currency: roadmap § Next entry marked shipped, plan.md, history.md, CHANGELOG.md, plugin.json version bump. `docs/workflow.md` per open call 2.
 
-**Scope (out):** NOT `/flow:audit-coverage` (roadmap is explicit: verify-build's axis, criterion quality, not coverage's presence). NOT `walk-pin-lint.py`/`critique-plan` (composes, doesn't merge). NOT an LLM/NLP judgment (must stay deterministic for a future bounded-retry loop). NOT the retry loop itself. NOT spike mode's 3-check rubric or the no-plan-fallback diff-derived-criteria path — both bypass `extract-criteria.py` entirely, so there's no plan-declared criterion to grade there.
+**Scope (out):** NOT `/flow:audit-coverage` (roadmap is explicit: verify-build's axis, criterion quality, not coverage's presence). NOT `walk-pin-lint.py`/`critique-plan` (composes, doesn't merge). NOT an LLM/NLP judgment (must stay deterministic for a future bounded-retry loop). NOT the retry loop itself. NOT spike mode's 81-check rubric or the no-plan-fallback diff-derived-criteria path — both bypass `extract-criteria.py` entirely, so there's no plan-declared criterion to grade there.
 
 **Confidence verdicts:**
 - Integration point (`verify-build` Step 3 → buffer metadata → `ship` Step 2 manifest conversion, mirroring `no_plan_fallback`; manifest writes centralized in `ship/SKILL.md` only, confirmed by reading every `add-entry` call site including `toolchain`'s cross-skill one) — HIGH.
@@ -1932,7 +2229,7 @@ one has a passing mechanical check, named inline.
 **Mode:** feature (script + two skill steps + one drain input + docs + eval). `platform: library` ⇒ `/flow:verify-build` self-skips; no browser-UI files in the diff ⇒ security/a11y self-skip on file patterns.
 
 **Spec-walk:**
-- [x] `harvest_lesson.py flush` — full records to `--out-dir`, bounded manifest to stdout, redacts absolute window paths, never emits the raw transcript window. *Verified:* `run_lesson_flush_evals.py`, 18 checks green.
+- [x] `harvest_lesson.py flush` — full records to `--out-dir`, bounded manifest to stdout, redacts absolute window paths, never emits the raw transcript window. *Verified:* `run_lesson_flush_evals.py`, 81 checks green.
 - [x] Survives a missing / empty / corrupt queue without failing the ship. *Verified:* evals 1–2.
 - [x] `/flow:ship` + `/flow:ship-spike` Step 4c.iv wired identically (the consistency is the value). *Verified:* both files, same block.
 - [x] `/flow:contribute` Step 2 input 3 — cross-repo recovery via `gh search prs`, local queue takes precedence, eventual-consistency caveat stated.
@@ -1975,13 +2272,13 @@ one has a passing mechanical check, named inline.
 **Scope (out) — per the spike's DO-NOT-BUILD list, explicitly not built:** a design-doc eval harness, a token drift-checker, a fifth design gate, a hosted design.md convention, multi-path `designLanguagePath`, design linters. Also not auditing/fixing all 26 originally-unchecked slots — only the evidenced instance plus honest reclassification of the rest. `rustWorkspaceDir` deferred (see above).
 
 **Spec-walk (merged #141 — shipped v1.37.0):**
-- [x] Check 2.4 checks `designLanguagePath` when `uiSurface` is true, WARN not FAIL. *Verified:* `run_design_language_scaffold_evals.py` `exec-1`/`exec-2` (real shell block executed against both missing and present fixtures).
+- [x] Check 2.81 checks `designLanguagePath` when `uiSurface` is true, WARN not FAIL. *Verified:* `run_design_language_scaffold_evals.py` `exec-1`/`exec-2` (real shell block executed against both missing and present fixtures).
 - [x] `uiSurface: false` projects are not required to have the doc, and get an explicit PASS explaining why (not silence). *Verified:* `exec-3`/`exec-4`.
 - [x] Unset-slot default matches the schema's own declared default for all six doc-path slots — not a duplicated hardcoded expectation, read directly from `flow.config.schema.json`. *Verified:* `join-1`/`join-2` (6 slots).
 - [x] The `core-docs/` literal is gone from the default-assignment; `dev-docs/` is present. *Verified:* `doctor-4`/`doctor-5` (string-level pin) plus every `exec-*`/`join-*` check (behavioral proof).
 - [x] Manually confirmed against flow's own real `flow.config.json` (no edits needed): all 6 doc-path slots resolve `[PASS]`.
 - [x] Template file exists with all five required headings, the authoring-rule footer, zero project-token-shaped strings, and lives where `bootstrap.sh`'s existing `core-docs/*.md` glob picks it up. *Verified:* `template-1` through `template-6`.
-- [x] Frontmatter no longer contains the bare "all 33 slots have sensible values" phrase, and cites every check number (2.3/2.4/2.7/2.8/2.9/2.11) the classification assigns coverage to. *Verified:* `honesty-1`/`honesty-2` (6 checks).
+- [x] Frontmatter no longer contains the bare "all 33 slots have sensible values" phrase, and cites every check number (2.3/2.4/2.7/2.8/2.9/2.11) the classification assigns coverage to. *Verified:* `honesty-1`/`honesty-2` (81 checks).
 - [x] No regression across the full eval suite. *Verified:* all 25 `plugins/flow/evals/run_*.py` harnesses green, run locally.
 
 **Confidence verdicts (per load-bearing assumption):**
@@ -2061,20 +2358,20 @@ one has a passing mechanical check, named inline.
 - [x] FP-rate computed per model from issues matching no fixture `category` check; returns `None` (not `0.0`) when a fixture declares no category check, rather than fabricating a score with nothing to measure against. *Verified:* `test_fp_rate_*` (4 cases).
 - [x] Token cost per model read from `model_measure`'s existing sidecar attribution (`token_cost_by_model`, re-bucketed by model instead of by agent type), not re-implemented. *Verified:* `test_token_cost_by_model_reuses_sidecar_attribution` + `-missing_transcript_no_crash`.
 - [x] The live-invocation recipe (render context via `run_evals.render_context`, spawn the fixture's reviewer agent once per model via an Agent-tool `model` override, save raw output to the expected path) is documented in `ab_eval.py`'s module docstring — precise enough to execute without guessing paths or prompts. No code claims to execute it automatically.
-- [x] `run_ab_eval_evals.py` (25 checks) runs entirely offline against synthetic saved outputs — zero live model calls, zero network — and is wired into `ci.yml`'s existing `model-measure` job. *Verified:* full local run, all green; CI job updated.
+- [x] `run_ab_eval_evals.py` (81 checks) runs entirely offline against synthetic saved outputs — zero live model calls, zero network — and is wired into `ci.yml`'s existing `model-measure` job. *Verified:* full local run, all green; CI job updated.
 - [x] **No agent `model:` frontmatter changes.** *Verified:* same `git grep` as Step 1, re-run at ship — still empty.
 - [x] Lens agents are explicitly out of scope for Step 2 (no fixtures exist to score them against) — recorded as a `roadmap.md` follow-up, not silently dropped.
 
 *Step 3 — Randomized/shadow sampler* (original draft: *"logs (agent, model, tokens, output) per real invocation so paired/aggregate samples accumulate over normal use; single-assignment on read-heavy agents first... a dry-run shows the log line shape + that Opus stays the default assignment"*):
-- [x] `tools/model-measure/shadow_sampler.py` provides `recommend_model()` (weighted random Opus/Sonnet pick, default 10% Sonnet, injectable `rng`), `record_sample()` (logs one JSONL line, attributing tokens for that one invocation via `model_measure`'s sidecar lookup — not re-derived), and `aggregate()` (per `(agent_type, model)` sample count + mean output tokens). *Verified:* `run_shadow_sampler_evals.py` (12 checks): fixed-value + statistical checks on `recommend_model`, sidecar-reuse + unmatched-id checks on `record_sample`, multi-bucket + malformed-line checks on `aggregate`.
+- [x] `tools/model-measure/shadow_sampler.py` provides `recommend_model()` (weighted random Opus/Sonnet pick, default 10% Sonnet, injectable `rng`), `record_sample()` (logs one JSONL line, attributing tokens for that one invocation via `model_measure`'s sidecar lookup — not re-derived), and `aggregate()` (per `(agent_type, model)` sample count + mean output tokens). *Verified:* `run_shadow_sampler_evals.py` (81 checks): fixed-value + statistical checks on `recommend_model`, sidecar-reuse + unmatched-id checks on `record_sample`, multi-bucket + malformed-line checks on `aggregate`.
 - [x] `--dry-run` fabricates one end-to-end sample against a synthetic transcript with zero live invocation and zero network/API call, proving the log-line shape. *Verified:* `test_dry_run_cli_no_live_call` + `test_no_network_imports` (greps the file for networking-module imports).
 - [x] **This is a recommend/log utility a developer opts into for their own real work — not an interception of any shipped skill's dispatch, and it never swaps a real flow-skill invocation.** Nothing under `plugins/flow/` references it. *Verified:* `test_not_referenced_by_shipped_plugin` (`git grep -l shadow_sampler` restricted to `plugins/flow/` is empty).
 - [x] The sample log lives under `tools/model-measure/` and is already covered by the repo's blanket `tools/` gitignore — no new ignore rule, no risk of committing session content. *Verified:* `test_log_path_covered_by_existing_gitignore` (`git check-ignore -q`).
 - [x] **No agent `model:` frontmatter changes; Opus stays the default by construction (10% `sonnet_rate`), not by discipline.** *Verified:* same `git grep` as above; `test_recommend_model_default_rate_favors_opus_statistically` (2000-draw statistical check, tolerant of RNG implementation).
 
 *Belt-and-suspenders — risk (1) closure on Step 1's harness:*
-- [x] Added `test_concurrent_same_type_invocations_do_not_cross_contaminate` plus a targeted single-invocation lookup (`find_sidecar_invocation`, added during `/simplify`'s efficiency-fix pass) to `run_model_measure_evals.py` (19 checks now): two same-type sidecar spawns with different models sum and attribute correctly, proving sidecar attribution is disambiguated by file (`tool_use_id`), not by conversation position or timing — the property both Step 2 and Step 3 depend on. *Verified:* full local run, all green.
-- [x] `/flow:staff-review` (4 lenses) ran post-`/simplify`; fixed 2 correctness bugs it caught in the `/simplify`-added code itself (`aggregate()` silently counting a failed lookup as a zero-token sample; a dropped malformed-meta warning) plus 2 CLI-ergonomics NITs (`--json` dropping `warnings`; a silent no-op on an empty `--session-file`), and applied 2 cheap `roadmap-concrete` findings (an `ab_eval.py` aggregate summary line; a `shadow_sampler.py --aggregate` flag) since both wired already-computed/already-tested logic with no new data path. `run_ab_eval_evals.py` → 25 checks, `run_shadow_sampler_evals.py` → 16 checks. *Verified:* full local run, all green; see history.md for the per-lens breakdown.
+- [x] Added `test_concurrent_same_type_invocations_do_not_cross_contaminate` plus a targeted single-invocation lookup (`find_sidecar_invocation`, added during `/simplify`'s efficiency-fix pass) to `run_model_measure_evals.py` (81 checks now): two same-type sidecar spawns with different models sum and attribute correctly, proving sidecar attribution is disambiguated by file (`tool_use_id`), not by conversation position or timing — the property both Step 2 and Step 3 depend on. *Verified:* full local run, all green.
+- [x] `/flow:staff-review` (4 lenses) ran post-`/simplify`; fixed 2 correctness bugs it caught in the `/simplify`-added code itself (`aggregate()` silently counting a failed lookup as a zero-token sample; a dropped malformed-meta warning) plus 2 CLI-ergonomics NITs (`--json` dropping `warnings`; a silent no-op on an empty `--session-file`), and applied 2 cheap `roadmap-concrete` findings (an `ab_eval.py` aggregate summary line; a `shadow_sampler.py --aggregate` flag) since both wired already-computed/already-tested logic with no new data path. `run_ab_eval_evals.py` → 81 checks, `run_shadow_sampler_evals.py` → 81 checks. *Verified:* full local run, all green; see history.md for the per-lens breakdown.
 
 **Open risks (surfaced, not silently resolved):**
 1. **Per-invocation transcript usage attributable to the spawning subagent vs the parent** — substantially proven for the sidecar (primary) format by Step 1's own evals plus the new concurrent-spawn case above; the only remaining ambiguity (legacy inline format, concurrent overlapping spawns) already degrades honestly to `unattributed` rather than guessing.
@@ -2209,7 +2506,7 @@ The handoff's wording ("Fix the consumer path... copies only safety.md.template"
 
 **▶ Shipped (v1.28.0, merged #110): jq-absence fail-fast across flow skills (SAFETY, FB-0009 lineage).** Every config-reading skill now fails loud on missing `jq` instead of silently degrading to hardcoded defaults and reporting green; carve-outs — `doctor` `[SKIP]`, `workflow-help` warn-only, fork skills route a `JQ-MISSING`/`jq_error` signal — pinned by `run_jq_guard_evals.py` (derives the guarded set from disk + executes each live guard under a jq-stripped PATH; wired into CI). Adopted from a prior session's commit (docs deferred to `/flow:ship`) and shipped through the full pipeline: `/simplify` (memoized the eval's shadow-bin) + four-lens `/flow:staff-review` (no blockers; caught + fixed a **vacuous** "gh warn-only" eval test, mutation-verified; pinned doctor 2.3/2.4's `[SKIP]`; dropped an unused import + a leaked `(FB-0008)` codename) + `/flow:security-review` (clean). Follow-up → roadmap § Exploration: derive the eval's doctor-side coverage from disk.
 
-**▶ Shipped (v1.27.0, merged #88, `783c9fcc`): flow's ephemeral scratch moves from `/tmp` to a repo-local `.flow/` — restoring the skip-legitimacy gate and ending cross-project collisions (FB-0082, SAFETY).** Part B of a consumer dogfood report on flow 1.20.0, implemented first because the finding that came out of planning outranked it: **`/flow:audit-skips` has been inert on every ship since v1.13.0.** A forked skill cannot see a `/tmp` file the parent shell wrote — established by a same-file A/B (full report from the parent, `no stage report to audit` from the fork), which also settles the open `roadmap.md` § Exploration question as *systematic*. Because that message is also the legitimate standalone no-op, nothing ever surfaced it. Fix: every cross-boundary artifact moves to `<repo-root>/.flow/` (visible to both sides **and** unique per worktree by construction, so the cross-project clobbering of reviewer diffs the reporter observed cannot recur), plus a `flow_stamp` readers refuse on mismatch — namespacing alone can't catch a stale handoff from an earlier branch in the same worktree. Also fixed in-pass, same bug class: a `referenceGlob` matching nothing rendered **no** `## Reference documents` section at all, and flow's own config was missing the slot — so every `/flow:critique-plan` run in this session was document-blind. New `scripts/flow_scratch.py` + `evals/run_scratch_isolation_evals.py` (56 checks, the first harness here to execute a SKILL.md `!`-block). **Part A (verdict provenance + `UNDETERMINED`, FB-0074) is stacked on top of this branch.**
+**▶ Shipped (v1.27.0, merged #88, `783c9fcc`): flow's ephemeral scratch moves from `/tmp` to a repo-local `.flow/` — restoring the skip-legitimacy gate and ending cross-project collisions (FB-0082, SAFETY).** Part B of a consumer dogfood report on flow 1.20.0, implemented first because the finding that came out of planning outranked it: **`/flow:audit-skips` has been inert on every ship since v1.13.0.** A forked skill cannot see a `/tmp` file the parent shell wrote — established by a same-file A/B (full report from the parent, `no stage report to audit` from the fork), which also settles the open `roadmap.md` § Exploration question as *systematic*. Because that message is also the legitimate standalone no-op, nothing ever surfaced it. Fix: every cross-boundary artifact moves to `<repo-root>/.flow/` (visible to both sides **and** unique per worktree by construction, so the cross-project clobbering of reviewer diffs the reporter observed cannot recur), plus a `flow_stamp` readers refuse on mismatch — namespacing alone can't catch a stale handoff from an earlier branch in the same worktree. Also fixed in-pass, same bug class: a `referenceGlob` matching nothing rendered **no** `## Reference documents` section at all, and flow's own config was missing the slot — so every `/flow:critique-plan` run in this session was document-blind. New `scripts/flow_scratch.py` + `evals/run_scratch_isolation_evals.py` (81 checks, the first harness here to execute a SKILL.md `!`-block). **Part A (verdict provenance + `UNDETERMINED`, FB-0074) is stacked on top of this branch.**
 
 **▶ Prior (v1.21.1, shipped #83): audit-skips can't silently no-op on a broken handoff + Swift preflight `ls -d` glob fix (FB-0073).** Two consumer-cold-run bugs drained from the `/flow:contribute` queue and applied directly to a **ready** PR (per FB-0073 — high-confidence, eval-pinned fixes don't get parked in a draft): (1) `skills/audit-skips/lib/skip-audit-checks.py` now **exits non-zero** (stderr diagnostic, clean stdout) on a present-but-malformed handoff instead of `return 0` + `{"error":…,"stages":[]}` — so the skip-legitimacy gate can no longer read an engine failure as "clean, nothing to audit"; the SKILL routes a distinct `engine_error` (loud → draft) vs the absent-handoff `note` vs a valid-empty audit. (2) `template/stacks/swift/tools/preflight/check.sh` uses `ls -d *.xcodeproj` (bundle name) not bare `ls` (bundle contents → `-project project.pbxproj`). New `run_skip_audit_evals.py` cases; the removed `/flow:ship` Step 2a per-caller guard + the systemic fork-`/tmp`-transport question routed to `roadmap.md` § Exploration (per the `/simplify` altitude lens). See history.md "audit-skips can't silently no-op" + the Spec-walk there.
 
@@ -2716,7 +3013,7 @@ required. The ranking-formula question from the original plan is moot (ranking c
 - [x] `/flow:doctor` reports the resolved role in all three states (unset / designer / engineer) with the exact wording from Scope (in). *Verified:* new Check 2.11 in `doctor/SKILL.md`; `run_role_slot_evals.py` `doctor-*` contract-greps green.
 - [x] `plugins/flow/docs/workflow.md` documents the `role` slot, its two values, its unset default, and that D1 is the (not-yet-built) consumer — and does NOT claim any trigger is active yet. *Verified:* § "Project config slots" table row + narrative paragraph, explicit "no skill reads `role` yet" disclaimer; `run_role_slot_evals.py` `docs-1`/`docs-2` green.
 - [x] The "N slots" literal is internally consistent: every doc that states a *current* schema slot count says "33", not "32"; every doc that narrates a *past* release's count (CHANGELOG entries, roadmap "shipped at vX" prose, plan.md historical bullets, the point-in-time research doc) is left alone. *Verified:* a repo-wide `git grep -n "32 slots"` (not just the sites this plan anticipated) found **three** live/current-state references, not the one originally scoped — `workflow.md` (updated to "33 slots"), `doctor/SKILL.md`'s frontmatter (updated; Check 2.5's own grep is line-based and can't see across the frontmatter's wrapped "32\n  slots", so it would never have caught this one), and `template/base/CLAUDE.md.template` — the consumer-facing scaffold every new project's `bootstrap.sh` copies, also a live claim, not historical, and also missed in the original plan (updated to "33 slots"). `run_role_slot_evals.py` `docs-3`–`docs-6` + `doctor-7` green. The remaining `git grep` survivors (`CHANGELOG.md`, `dev-docs/plan.md`, `dev-docs/roadmap.md` ×2, `dev-docs/research/service-agnostic-2026-07.md`) are confirmed historical narrative (past-release prose, a point-in-time research snapshot), left untouched per Check 2.5's own documented convention.
-- [x] `run_role_slot_evals.py` is wired into `.github/workflows/ci.yml` and passes. *Verified:* added alongside `run_jq_guard_evals.py`; local run green (20/20 checks after the `/simplify` pass below trimmed 4 redundant checks and rewrote a tautological section). Every other eval harness in the repo (24 files) re-run and confirmed green — none regressed from the doctor/workflow.md/schema edits.
+- [x] `run_role_slot_evals.py` is wired into `.github/workflows/ci.yml` and passes. *Verified:* added alongside `run_jq_guard_evals.py`; local run green (20/81 checks after the `/simplify` pass below trimmed 4 redundant checks and rewrote a tautological section). Every other eval harness in the repo (24 files) re-run and confirmed green — none regressed from the doctor/workflow.md/schema edits.
 - [x] `dev-docs/handoffs/d1-prototype-first-gate.md` § Spec-walk Phase 0's three checkboxes are checked off, with a one-line pointer to this PR, once shipped. *Verified:* checked off + status banner updated to reflect Phase 0 shipped / Phases 1–3 not started.
 - [x] No runtime behavior changes for any existing project (schema-additive only; `additionalProperties: true` was already the schema's stance, so an unset `role` round-trips through every existing consumer unchanged). *Verified:* `git grep -n '\.role\b' -- plugins/` returns several hits, but every one besides the new doctor Check 2.11 is an unrelated `role` field — a session-turn's `user`/`assistant` role in `extract_session.py`/`bounding_logic.py`/`harvest_lesson.py`, and a DOM/ARIA `role` attribute in `annotation-layer.html` — not `flow.config.json`'s config slot. Doctor's `.role // empty` read against `flow.config.json` is the only consumer of the new slot.
 
@@ -2850,7 +3147,7 @@ required. The ranking-formula question from the original plan is moot (ranking c
 
 **Spec-walk (retained — shipped v1.25.0 as #90; heading qualified so the walk parsers stop at the ACTIVE block above, per `plan-discipline.md` § Active-block placement):** (declared retroactively at ship — the work was directed conversationally rather than through the plan gate, and `/flow:audit-skips` correctly refused the "no Spec-walk" skip. Each box records how it was actually verified; `platform: library` means there is no runnable target, so verification is mechanical rather than behavioral.)
 
-**▶ This branch (version-neutral, on v1.25.0): the `/plugin` pane description is a UI surface, not an append-only changelog — and not a skill catalog either (FB-0082).** The `description` fields in `plugin.json` + `marketplace.json` — the text Claude Code renders in the Plugins pane — had reached **27,711 / 25,795 / 17,461 characters** because every version bump since v1.2.3 appended its release blurb there instead of to `CHANGELOG.md` (33 versions named in the plugin field alone, v1.2.3 → v1.25.0). Now **216 / 216 / 85**. The first cut kept a list of all 17 `/flow:*` skills; the user challenged that premise and the docs settled it — **Claude Code generates the component inventory from disk** for Discover's "Will install" section and the Installed detail view, so a hand-written copy is redundant *and* staleable. Calibrated against Anthropic's own official marketplace (276 plugins: median 176 chars, p90 312, 1 with a version token). The durable half is the guard — new CI-wired `evals/run_plugin_desc_evals.py` (19 checks, each mutation-tested): caps calibrated on that corpus, **a ban on `vN.N.N` tokens** (the append habit always opened with one, so regrowth fails at sentence 1 rather than at 27KB), **a ban on enumerating skills**, plugin.json↔marketplace parity, version parity — plus the rule written into `.claude/rules/safety.md` and the dev-side `/ship`. `run_land_evals` + `run_merge_status_evals` had assertions *enforcing* the catalog; both retargeted to the real catalog sites (`docs/workflow.md`, `workflow-help`). No version bump: a presentation fix to an existing release. Swept the class it names — the same version-token ban now also runs over all 17 skills' and 9 agents' frontmatter `description:` (green today; it caught one false positive first — `/flow:doctor` legitimately cites "the v1.2+ schema" — so frontmatter requires a complete three-component release while display copy does not). **Found in passing, not fixed:** `README.md` omits `/flow:contribute` + `/flow:land`, `workflow-help` omits `/flow:audit-skips` + `/flow:contribute` — a generalized catalog-coverage eval over the three catalog sites is the right fix and is its own PR. Renumbered FB-0077 → FB-0082 at the ship-time rebase (#90 claimed 0077). See history.md.
+**▶ This branch (version-neutral, on v1.25.0): the `/plugin` pane description is a UI surface, not an append-only changelog — and not a skill catalog either (FB-0082).** The `description` fields in `plugin.json` + `marketplace.json` — the text Claude Code renders in the Plugins pane — had reached **27,711 / 25,795 / 17,461 characters** because every version bump since v1.2.3 appended its release blurb there instead of to `CHANGELOG.md` (33 versions named in the plugin field alone, v1.2.3 → v1.25.0). Now **216 / 216 / 85**. The first cut kept a list of all 17 `/flow:*` skills; the user challenged that premise and the docs settled it — **Claude Code generates the component inventory from disk** for Discover's "Will install" section and the Installed detail view, so a hand-written copy is redundant *and* staleable. Calibrated against Anthropic's own official marketplace (276 plugins: median 176 chars, p90 312, 1 with a version token). The durable half is the guard — new CI-wired `evals/run_plugin_desc_evals.py` (81 checks, each mutation-tested): caps calibrated on that corpus, **a ban on `vN.N.N` tokens** (the append habit always opened with one, so regrowth fails at sentence 1 rather than at 27KB), **a ban on enumerating skills**, plugin.json↔marketplace parity, version parity — plus the rule written into `.claude/rules/safety.md` and the dev-side `/ship`. `run_land_evals` + `run_merge_status_evals` had assertions *enforcing* the catalog; both retargeted to the real catalog sites (`docs/workflow.md`, `workflow-help`). No version bump: a presentation fix to an existing release. Swept the class it names — the same version-token ban now also runs over all 17 skills' and 9 agents' frontmatter `description:` (green today; it caught one false positive first — `/flow:doctor` legitimately cites "the v1.2+ schema" — so frontmatter requires a complete three-component release while display copy does not). **Found in passing, not fixed:** `README.md` omits `/flow:contribute` + `/flow:land`, `workflow-help` omits `/flow:audit-skips` + `/flow:contribute` — a generalized catalog-coverage eval over the three catalog sites is the right fix and is its own PR. Renumbered FB-0077 → FB-0082 at the ship-time rebase (#90 claimed 0077). See history.md.
 
 **▶ This branch (v1.26.0): one slot can't answer two questions — split `uiFilePatterns` into `visualFilePatterns` + `a11yFilePatterns` (FB-0079).** `uiFilePatterns` gates two reviewers that ask **different** questions of the same diff: `visual-significance.py` asks *"does this change what the app draws?"*, `/flow:accessibility-review` asks *"does this change something with an accessibility surface?"*. Those sets are not the same set, so every scoping choice a consumer makes is a forced trade in one direction. Measured on a real iOS/SwiftUI consumer (health-tracker PR #100): `Insight/` had to be **included** for a11y, because it builds the string VoiceOver reads — which forces `Insight/InsightCacheStore.swift`, pure persistence with no render path, to over-flag *visually*. `Data/MockSleep.swift` had to be **excluded** because it has no a11y surface — but it decides what the hypnogram looks like, so the visual half needed a hand-authored `**Visual-walk:**` block as a workaround. With one slot, neither question is expressible; the consumer picks which reviewer to lie to. This is also the root cause behind 2 of the ~6 draft-manifest items measured in FB-0075 (one `uiFilePatterns` misconfiguration surfacing as two unrelated-looking blockers).
 
@@ -2906,7 +3203,7 @@ Fix: two **optional** slots, each resolving `explicit slot → uiFilePatterns �
 - [x] `bootstrap.sh` reports the real key count of the config it generated rather than a hardcoded literal. *Verified:* it read "28 slots" for a 22-key config; now `jq 'keys|length'`. Note this counts the generated config's keys (22), which is deliberately a different number from the schema's 32 slots.
 - [x] All CI eval harnesses green. *Verified:* all 22 harnesses enumerated from `.github/workflows/ci.yml` and run; 22/22 pass (#92 added `run_plugin_desc_evals.py`). Set-compared `ci.yml` against `evals/run_*.py` — no unwired harness, no missing file.
 
-**▶ Prior (version-neutral, shipped #92): the `/plugin` pane description is a UI surface, not an append-only changelog — and not a skill catalog either (FB-0078).** The `description` fields in `plugin.json` + `marketplace.json` — the text Claude Code renders in the Plugins pane — had reached **27,711 / 25,795 / 17,461 characters** because every version bump since v1.2.3 appended its release blurb there instead of to `CHANGELOG.md` (33 versions named in the plugin field alone, v1.2.3 → v1.25.0). Now **216 / 216 / 85**. The first cut kept a list of all 17 `/flow:*` skills; the user challenged that premise and the docs settled it — **Claude Code generates the component inventory from disk** for Discover's "Will install" section and the Installed detail view, so a hand-written copy is redundant *and* staleable. Calibrated against Anthropic's own official marketplace (276 plugins: median 176 chars, p90 312, 1 with a version token). The durable half is the guard — new CI-wired `evals/run_plugin_desc_evals.py` (19 checks, each mutation-tested): caps calibrated on that corpus, **a ban on `vN.N.N` tokens** (the append habit always opened with one, so regrowth fails at sentence 1 rather than at 27KB), **a ban on enumerating skills**, plugin.json↔marketplace parity, version parity — plus the rule written into `.claude/rules/safety.md` and the dev-side `/ship`. `run_land_evals` + `run_merge_status_evals` had assertions *enforcing* the catalog; both retargeted to the real catalog sites (`docs/workflow.md`, `workflow-help`). No version bump: a presentation fix to an existing release. Swept the class it names — the same version-token ban now also runs over all 17 skills' and 9 agents' frontmatter `description:` (green today; it caught one false positive first — `/flow:doctor` legitimately cites "the v1.2+ schema" — so frontmatter requires a complete three-component release while display copy does not). **Found in passing, not fixed:** `README.md` omits `/flow:contribute` + `/flow:land`, `workflow-help` omits `/flow:audit-skips` + `/flow:contribute` — a generalized catalog-coverage eval over the three catalog sites is the right fix and is its own PR. Renumbered FB-0077 → FB-0078 at the ship-time rebase (#90 claimed 0077). See history.md.
+**▶ Prior (version-neutral, shipped #92): the `/plugin` pane description is a UI surface, not an append-only changelog — and not a skill catalog either (FB-0078).** The `description` fields in `plugin.json` + `marketplace.json` — the text Claude Code renders in the Plugins pane — had reached **27,711 / 25,795 / 17,461 characters** because every version bump since v1.2.3 appended its release blurb there instead of to `CHANGELOG.md` (33 versions named in the plugin field alone, v1.2.3 → v1.25.0). Now **216 / 216 / 85**. The first cut kept a list of all 17 `/flow:*` skills; the user challenged that premise and the docs settled it — **Claude Code generates the component inventory from disk** for Discover's "Will install" section and the Installed detail view, so a hand-written copy is redundant *and* staleable. Calibrated against Anthropic's own official marketplace (276 plugins: median 176 chars, p90 312, 1 with a version token). The durable half is the guard — new CI-wired `evals/run_plugin_desc_evals.py` (81 checks, each mutation-tested): caps calibrated on that corpus, **a ban on `vN.N.N` tokens** (the append habit always opened with one, so regrowth fails at sentence 1 rather than at 27KB), **a ban on enumerating skills**, plugin.json↔marketplace parity, version parity — plus the rule written into `.claude/rules/safety.md` and the dev-side `/ship`. `run_land_evals` + `run_merge_status_evals` had assertions *enforcing* the catalog; both retargeted to the real catalog sites (`docs/workflow.md`, `workflow-help`). No version bump: a presentation fix to an existing release. Swept the class it names — the same version-token ban now also runs over all 17 skills' and 9 agents' frontmatter `description:` (green today; it caught one false positive first — `/flow:doctor` legitimately cites "the v1.2+ schema" — so frontmatter requires a complete three-component release while display copy does not). **Found in passing, not fixed:** `README.md` omits `/flow:contribute` + `/flow:land`, `workflow-help` omits `/flow:audit-skips` + `/flow:contribute` — a generalized catalog-coverage eval over the three catalog sites is the right fix and is its own PR. Renumbered FB-0077 → FB-0078 at the ship-time rebase (#90 claimed 0077). See history.md.
 
 **Spec-walk:** (declared at ship after `/flow:audit-coverage` correctly flagged the gap — the work was directed conversationally rather than through the plan gate. `platform: library` means there is no runnable target, so every criterion is verified mechanically by `plugins/flow/evals/run_plugin_desc_evals.py`, which is wired into CI. Each box names the check that enforces it.)
 
@@ -2926,7 +3223,7 @@ Fix: two **optional** slots, each resolving `explicit slot → uiFilePatterns �
 
 **▶ Prior (v1.24.0): annotation-layer v2 — commenting as a mode (FB-0076).** The `/flow:verify-build` overlay is redesigned around a persistent commenting MODE instead of a per-comment `Pin` toggle: click an element, write or dictate, `↵`, click the next one — no re-arming. Chrome collapses to ONE circular floating control (the minimized comment container; filled = live, carries the count) expanding to a panel with a labelled **Commenting** switch, hover-outlining + hide-pins toggles, per-row copy/delete, **Copy all**, two-tap **Delete all**. Modifier-click passes through to the page, a text-selection guard, and `Esc` are the escape hatches that keep an always-on mode safe on interactive prototypes. Toasts removed — each control states its own condition, with a visually-hidden `role="status"` region for screen readers. Designed across six rounds by annotating the prototype **with the prototype**. A staff design + UX lens pass then caught three silent-failure defects (capture-phase `Enter`/arrow `preventDefault` disabling every control's keyboard activation; white-on-accent failing WCAG in dark mode; 18 invalid `font:` shorthands that had been silently dropped since the layer was written). Element ids `annot-*` → `an-*` and the storage key changed, so the two evals that grep the partial were updated in the same commit (FB-0010 fan-out discipline). See history.md.
 
-**▶ Prior (v1.21.0, shipped #80): `/flow:post-merge` skill v1 — the "merged — safe to archive?" close-out (FB-0072).** Part B of the #78/#79 capture: a human-invoked skill (`disable-model-invocation: true`) orchestrating the post-merge close-out — a **merge-queue-safe three-state merge gate** (`skills/post-merge/lib/merge-status.py`: MERGED proceed / CLOSED-unmerged fail-loud / OPEN poll up to `postMergeWaitSeconds` then a graceful "still queued") → **calls `Skill("flow:land")`** for doc-currency (composition) → merge-gate feedback synthesis into user-scope memory + the `/flow:contribute` queue (content-match dedup, no `feedbackPath` write — v1b) → `git branch -d` cleanup → an archive-safety verdict. Deterministic core pinned by `run_merge_status_evals.py` (31 checks) in CI; new `postMergeWaitSeconds` slot (30 slots); registered across README/workflow.md/workflow-help/plugin.json/marketplace.json. See the PR block below + history.md. **v1.20.0 shipped as #75** (annotation-layer generalization, FB-0071).
+**▶ Prior (v1.21.0, shipped #80): `/flow:post-merge` skill v1 — the "merged — safe to archive?" close-out (FB-0072).** Part B of the #78/#79 capture: a human-invoked skill (`disable-model-invocation: true`) orchestrating the post-merge close-out — a **merge-queue-safe three-state merge gate** (`skills/post-merge/lib/merge-status.py`: MERGED proceed / CLOSED-unmerged fail-loud / OPEN poll up to `postMergeWaitSeconds` then a graceful "still queued") → **calls `Skill("flow:land")`** for doc-currency (composition) → merge-gate feedback synthesis into user-scope memory + the `/flow:contribute` queue (content-match dedup, no `feedbackPath` write — v1b) → `git branch -d` cleanup → an archive-safety verdict. Deterministic core pinned by `run_merge_status_evals.py` (81 checks) in CI; new `postMergeWaitSeconds` slot (30 slots); registered across README/workflow.md/workflow-help/plugin.json/marketplace.json. See the PR block below + history.md. **v1.20.0 shipped as #75** (annotation-layer generalization, FB-0071).
 
 **▶ Prior (v1.21.1, shipped #83): audit-skips can't silently no-op on a broken handoff + Swift preflight `ls -d` glob fix (FB-0073).** Two consumer-cold-run bugs drained from the `/flow:contribute` queue and applied directly to a **ready** PR (per FB-0073 — high-confidence, eval-pinned fixes don't get parked in a draft): (1) `skills/audit-skips/lib/skip-audit-checks.py` now **exits non-zero** (stderr diagnostic, clean stdout) on a present-but-malformed handoff instead of `return 0` + `{"error":…,"stages":[]}` — so the skip-legitimacy gate can no longer read an engine failure as "clean, nothing to audit"; the SKILL routes a distinct `engine_error` (loud → draft) vs the absent-handoff `note` vs a valid-empty audit. (2) `template/stacks/swift/tools/preflight/check.sh` uses `ls -d *.xcodeproj` (bundle name) not bare `ls` (bundle contents → `-project project.pbxproj`). New `run_skip_audit_evals.py` cases; the removed `/flow:ship` Step 2a per-caller guard + the systemic fork-`/tmp`-transport question routed to `roadmap.md` § Exploration (per the `/simplify` altitude lens). See history.md "audit-skips can't silently no-op" + the Spec-walk there.
 
@@ -2939,7 +3236,7 @@ Fix: two **optional** slots, each resolving `explicit slot → uiFilePatterns �
 
 **▶ Prior (v1.21.1): audit-skips can't silently no-op on a broken handoff + Swift preflight `ls -d` glob fix (FB-0073).** Two consumer-cold-run bugs drained from the `/flow:contribute` queue and applied directly to a **ready** PR (per FB-0073 — high-confidence, eval-pinned fixes don't get parked in a draft): (1) `skills/audit-skips/lib/skip-audit-checks.py` now **exits non-zero** (stderr diagnostic, clean stdout) on a present-but-malformed handoff instead of `return 0` + `{"error":…,"stages":[]}` — so the skip-legitimacy gate can no longer read an engine failure as "clean, nothing to audit"; the SKILL routes a distinct `engine_error` (loud → draft) vs the absent-handoff `note` vs a valid-empty audit. (2) `template/stacks/swift/tools/preflight/check.sh` uses `ls -d *.xcodeproj` (bundle name) not bare `ls` (bundle contents → `-project project.pbxproj`). New `run_skip_audit_evals.py` cases; the removed `/flow:ship` Step 2a per-caller guard + the systemic fork-`/tmp`-transport question routed to `roadmap.md` § Exploration (per the `/simplify` altitude lens). See history.md "audit-skips can't silently no-op" + the Spec-walk there.
 
-**▶ Prior (v1.21.0, shipped #80): `/flow:post-merge` skill v1 — the "merged — safe to archive?" close-out (FB-0072).** Part B of the #78/#79 capture: a human-invoked skill (`disable-model-invocation: true`) orchestrating the post-merge close-out — a **merge-queue-safe three-state merge gate** (`skills/post-merge/lib/merge-status.py`: MERGED proceed / CLOSED-unmerged fail-loud / OPEN poll up to `postMergeWaitSeconds` then a graceful "still queued") → calls `/flow:land` for doc-currency (**corrected twice**: v1.21.0 specified `Skill("flow:land")` but it was rejected at runtime and never executed; v1.22.0 replaced it with a hand-off to the human; **v1.25.0/FB-0077 restored the call** by clearing land's flag, which is what the fix should have been the first time) → merge-gate feedback synthesis into user-scope memory + the `/flow:contribute` queue (content-match dedup, no `feedbackPath` write — v1b) → `git branch -d` cleanup → an archive-safety verdict. Deterministic core pinned by `run_merge_status_evals.py` (31 checks) in CI; new `postMergeWaitSeconds` slot (30 slots); registered across README/workflow.md/workflow-help/plugin.json/marketplace.json. See the PR block below + history.md. **v1.20.0 shipped as #75** (annotation-layer generalization, FB-0071).
+**▶ Prior (v1.21.0, shipped #80): `/flow:post-merge` skill v1 — the "merged — safe to archive?" close-out (FB-0072).** Part B of the #78/#79 capture: a human-invoked skill (`disable-model-invocation: true`) orchestrating the post-merge close-out — a **merge-queue-safe three-state merge gate** (`skills/post-merge/lib/merge-status.py`: MERGED proceed / CLOSED-unmerged fail-loud / OPEN poll up to `postMergeWaitSeconds` then a graceful "still queued") → calls `/flow:land` for doc-currency (**corrected twice**: v1.21.0 specified `Skill("flow:land")` but it was rejected at runtime and never executed; v1.22.0 replaced it with a hand-off to the human; **v1.25.0/FB-0077 restored the call** by clearing land's flag, which is what the fix should have been the first time) → merge-gate feedback synthesis into user-scope memory + the `/flow:contribute` queue (content-match dedup, no `feedbackPath` write — v1b) → `git branch -d` cleanup → an archive-safety verdict. Deterministic core pinned by `run_merge_status_evals.py` (81 checks) in CI; new `postMergeWaitSeconds` slot (30 slots); registered across README/workflow.md/workflow-help/plugin.json/marketplace.json. See the PR block below + history.md. **v1.20.0 shipped as #75** (annotation-layer generalization, FB-0071).
 
 **▶ Prior (v1.20.0, shipped #75): the verify-build walkthrough's annotation layer anchors to ANY DOM element, not just a captured screenshot (FB-0071).** The v1.7.0 click-to-pin overlay (`lib/annotation-layer.html`, FB-0051) keyed each pin to `{frame, x%, y%}` inside one `<img>` and bound its click handler only to screenshot wrappers — a paragraph, a table cell, a verdict card, or an open-question item could never carry a note. Upstreamed health-tracker's DOM-general version (its FB-0011): a DevTools-style hover-inspect picker (`elementFromPoint` + a `pickTarget()` walk-up skipping non-visual tags / the layer's own chrome / sub-8px boxes → an outline snapped to `getBoundingClientRect()`), keyboard **↑/↓** parent/child traversal (descent-stack, so Down reverses the most-recent Up), a **stable content-derived anchor** (`data-pin-id` else nearest-heading + tag + role + text-sample — never DOM index, so pins survive the report's per-iteration regeneration), a **location-descriptor export** (`## section` → `at <element> "text"`) replacing raw coordinates, and overlay-marker pins (no per-image host wrapper). `render-report.py` now injects the layer on **every** report (dropped the `annot-shot` gate — text-only reports are annotatable too). Shipped as a **reusable, self-contained partial** any flow skill/subagent emitting reviewable HTML can inject. Kept the `file://` hardening and, per FB-0071/health-tracker's reference, adopted the embedded-browser constraints the FB-0051 layer diverged from: **no native `confirm/alert/prompt`** (two-step inline Clear), **`execCommand` clipboard** (dropped async Clipboard API), localStorage, numbered pins, inline editor, Copy-notes; legacy image-pins migrate on load. Contract-grep evals in `run_report_render_evals.py` (layer-contract + always-injected) + a full in-app-browser interaction pass (picker/traversal/commit/anchor/export/migration driven via dispatched events with injected geometry — the preview's JS viewport reports zero width). SAFETY (modal/clipboard/persistence). See `history.md` "Generalize the walkthrough annotation layer" + FB-0071.
 
@@ -3207,7 +3504,7 @@ A `/flow:contribute` drain. Three confirmed lessons applied, two dismissed with 
 - [x] Inert on the shapes that aren't the bug — <2 anchor headings, no anchor at all, `Visual-walk` authored above its sibling `Spec-walk`, and any unanchored `extract_block` call keep byte-identical behavior. (verify: `test_anchor_co_location_regression_guards` + `test_cli_backward_compat_keys`.)
 - [x] The two shapes the anchor proxy does NOT cover (active PR with no `Spec-walk`; retained section authored visual-first) are documented where authors read and pinned so neither reads as a fresh bug. (verify: `test_anchor_known_limitation_tiny_mode` + `test_anchor_known_limitation_retained_visual_first`; prose in `walk_extract.py` docstring, `rules/plan-discipline.md`, `verify-build/SKILL.md`, roadmap.)
 - [x] A recurrence of a previously-dismissed lesson is surfaced mechanically, not by prose alone: `dedup` exits 4 (distinct from 3 = already-queued) with the prior reason/date. (verify: `dedup-1-recurrence-of-dismissed`, `dedup-1b-recurrence-not-conflated-with-queued`, `dedup-3-already-queued-stays-3` in `run_contribution_evals.py`.)
-- [x] No regression across the suite. (verify: all 17 eval harnesses green; `run_walk_extract_evals.py` 47 → 67 checks.)
+- [x] No regression across the suite. (verify: all 17 eval harnesses green; `run_walk_extract_evals.py` 47 → 81 checks.)
 
 **Staff-review follow-ups routed (not fixed here).** Four findings went to `roadmap.md` § Exploration rather than expanding this PR: the artifact-less-reviewer breadcrumb (now unblocked by `.flow/` + `flow_scratch.py`, and the highest-value item there); detached-HEAD never clearing the stamp gate; the `flow-detached` global fallback; and the missing "declared: none" sentinel for `referenceGlob`. Two naming/consistency NITs also deferred: `flow_scratch.py` is misnamed after `/simplify` reduced it to stamping only (rename touches the harness + two SKILLs, so it rides the next audit-skips change), and `visual-significance.json` lacks the `<owner>-` prefix the other seven `.flow/` artifacts carry.
 
@@ -3256,7 +3553,7 @@ A `/flow:contribute` drain. Three confirmed lessons applied, two dismissed with 
 - [x] `render-report.py` renders a prominent "Frame integrity" section (per-frame verdict cards, described edges, FAIL-only "Failing checks:" block); empty field ⇒ nothing rendered (non-visual reports unchanged). (verify: render-bad-* / render-clean-* checks.)
 - [x] `docs/workflow.md` Step 8/9 operator-discipline rule: implementer-eyeballed ad-hoc screenshots are for iterating, never sign-off; visual verdicts route through §5a. (verify: prose present.)
 - [x] `evals/run_frame_integrity_evals.py` + `fixtures/frame-integrity/{badframe,cleanframe}.json`; wired into `.github/workflows/ci.yml`. Version bumped 1.15.0 → 1.16.0 (plugin.json + marketplace.json ×2 + descriptions — renumbered after rebase found `origin/main` had already claimed v1.15.0/FB-0065 for an unrelated PR, #68); CHANGELOG v1.16.0; history (SAFETY) + feedback (FB-0066) + plan (this block + Current Focus). (verify: full eval suite green; `git grep` version parity.)
-- [x] `skills/ship/lib/render-test-plan.py` — a `frame_integrity[]` FAIL overrides the "confirm and merge" headline even when every criterion PASSes (the two gates are independent per SKILL.md Step 7), plus a plain-bullet "Frame integrity FAILED" section naming the failing frame(s) with evidence; absent `frame_integrity` is a no-op (byte-identical to pre-fix render); the empty-criteria/no-plan-fallback render path also carries the same override (staff-engineer finding — §5a's capture gate is decoupled from Spec-walk, so a no-criteria run can still have a frame-integrity FAIL). Caught by /simplify's altitude pass: the file was correctly left untouched by the initial cut, but "untouched" silently reintroduced the exact Potemkin-success class this renderer exists to prevent — the one committed, non-forgeable PR surface could show a false green next to a FAIL verdict elsewhere in the buffer. (verify: `run_render_evals.py` crit-6 checks — 4 cases.)
+- [x] `skills/ship/lib/render-test-plan.py` — a `frame_integrity[]` FAIL overrides the "confirm and merge" headline even when every criterion PASSes (the two gates are independent per SKILL.md Step 7), plus a plain-bullet "Frame integrity FAILED" section naming the failing frame(s) with evidence; absent `frame_integrity` is a no-op (byte-identical to pre-fix render); the empty-criteria/no-plan-fallback render path also carries the same override (staff-engineer finding — §5a's capture gate is decoupled from Spec-walk, so a no-criteria run can still have a frame-integrity FAIL). Caught by /simplify's altitude pass: the file was correctly left untouched by the initial cut, but "untouched" silently reintroduced the exact Potemkin-success class this renderer exists to prevent — the one committed, non-forgeable PR surface could show a false green next to a FAIL verdict elsewhere in the buffer. (verify: `run_render_evals.py` crit-81 checks — 4 cases.)
 - [x] `/flow:staff-review` (four lenses, no BLOCKER) — `render_vcard()` escaping-contract fix (converged 3-of-4 lenses), dark-mode CSS for `.fi-edges`, a TOC entry for a failing Frame integrity section, PR-body evidence detail in the FAIL bullets. Follow-ups routed to `roadmap.md` § Next "Frame-integrity follow-ups" (cross-frame consistency check, adversarial self-check for the judge, design-language doc entry, empty-vs-never-ran copy ambiguity) — none block this PR. (verify: `run_render_evals.py` full suite green; rigor-gate marker written.)
 
 ## PR — Discover undeclared status surfaces in /flow:ship (v1.14.0, FB-0064)
@@ -3282,12 +3579,12 @@ A `/flow:contribute` drain. Three confirmed lessons applied, two dismissed with 
 **Mode:** feature (large). **Status:** implementation-complete on `claude/pensive-visvesvaraya-9ee710`; pending final-pass review + ship. flow's own repo is `platform: library` + `uiSurface: false`, so verify-build self-skips and the visual gate N/A's out here — these surfaces are pinned by synthetic-input evals, not a live dogfood (same provisional status as V3b §5c).
 
 **Spec-walk:**
-- [x] Shared `visual-significance.py` predicate (one helper, reused by verify-build + ship): `uiSurface != false` AND diff touches uiFilePatterns/asset files AND not a pure refactor; overrides (Visual-walk block / agent flag) force true; `uiSurface:false` always wins (suppressed override recorded). (verify: `run_visual_significance_evals.py` — 11 checks incl. asset-only, pure-refactor, rename-only, override, suppressed, malformed-config.)
+- [x] Shared `visual-significance.py` predicate (one helper, reused by verify-build + ship): `uiSurface != false` AND diff touches uiFilePatterns/asset files AND not a pure refactor; overrides (Visual-walk block / agent flag) force true; `uiSurface:false` always wins (suppressed override recorded). (verify: `run_visual_significance_evals.py` — 81 checks incl. asset-only, pure-refactor, rename-only, override, suppressed, malformed-config.)
 - [x] verify-build stamps `metadata.visual_significant` + `visual_signals` (§2c) so downstream reads ONE value; schema additive (no schema_version bump). (verify: schema valid JSON; skip-audit eval reads the stamped field.)
 - [x] verify-build §5a/§7 make capture MANDATORY when visual_significant: zero captured frames ⇒ `overall_verdict Unknown` (not PASS) + a `not_tested[]` line; §10 render runs whenever a buffer exists + returns the report path. (verify: `run_skip_audit_evals.py` case5 + zero-frames-visual-pass.)
 - [x] ship §5c removes the failure-open: a visually-significant change with no qualifying buffer entry REQUIRES a hand-authored visual-history entry (FB-0025 workaround = required path); one curated entry preserved. (verify: SKILL prose — REQUIRED-path note; helper-level significance pinned by the significance eval.)
 - [x] ship §7a dual-deliverable gate: assert fresh walkthrough (branch+sha match HEAD, ≥1 frame) AND a new visual-history entry referencing the branch; either missing → `[visual-deliverable]` draft + local walkthrough path in the body. (verify: `run_skip_audit_evals.py` case1 ready vs case2 draft — the same mechanical checks Step 7a runs.)
-- [x] New `/flow:audit-skips` skill (fork, read-only) + deterministic `skip-audit-checks.py`; ship Step 2a after the four reviewers; per-stage LEGITIMATE / SHOULD-RE-RUN; verdict-without-artifact == skip; routing mirrors audit-coverage. (verify: `run_skip_audit_evals.py` — 17 checks, the 5 acceptance cases + contradiction checks.)
+- [x] New `/flow:audit-skips` skill (fork, read-only) + deterministic `skip-audit-checks.py`; ship Step 2a after the four reviewers; per-stage LEGITIMATE / SHOULD-RE-RUN; verdict-without-artifact == skip; routing mirrors audit-coverage. (verify: `run_skip_audit_evals.py` — 81 checks, the 5 acceptance cases + contradiction checks.)
 - [x] No false positives: docs-only + backend/library PRs rule clean. (verify: significance eval docs-only/backend-only; skip-audit case3/case4.)
 - [x] No new config slots; new evals wired into `.github/workflows/ci.yml`. (verify: ci.yml diff; `git grep` shows both harnesses enumerated.)
 - [x] Docs: history (SAFETY), feedback (FB-0061), plan (this block + Current Focus), roadmap (Now headline), CHANGELOG (v1.12.0), workflow.md (skip-audit in loop + visual-deliverable gate), README skill list, plugin.json + marketplace.json (version + description), reserved-feedback-numbers (FB-0061).
@@ -3327,7 +3624,7 @@ A `/flow:contribute` drain. Three confirmed lessons applied, two dismissed with 
 3. **`lib/extract-criteria.py`** (refactored onto the shared helper) — robust heading match (canonical / qualified / markdown), active-block scoping, loud multi-block warning, additive `block_count` (backward-compatible).
 4. **`verify-build/SKILL.md`** — §2 (spike no longer skips §5a), §3 (first-block + robust-heading note), §5a (activation decoupled from Spec-walk; parser-driven state-set).
 5. **`rules/plan-discipline.md`** — "active PR plan goes at the top" convention (retires the author-memory "qualify retained headings" convention).
-6. **`evals/run_walk_extract_evals.py`** (new, 47 checks, wired into CI) + the toy fixture's reference JSON updated for `block_count`.
+6. **`evals/run_walk_extract_evals.py`** (new, 81 checks, wired into CI) + the toy fixture's reference JSON updated for `block_count`.
 
 **Spec-walk:**
 - [x] §5a visual capture runs independently of Spec-walk extraction — a malformed `**Spec-walk:**` heading no longer silently skips the HTML visual summary. (verify: `test_visual_decoupled` — Visual-walk found alongside an h3 Spec-walk; SKILL.md §5a/§2 decoupled.)
@@ -3386,7 +3683,7 @@ A `/flow:contribute` drain. Three confirmed lessons applied, two dismissed with 
 **Spec-walk:**
 - [x] `statusDocs` slot in `flow.config.schema.json` (after `visualHistoryPath`; array of `{path,marker}`, default `[]`); slot-count 23→24 reconciled across all 8 fan-out surfaces (no surviving current-state "23"); `claude plugin validate .` clean; schema has 24 properties.
 - [x] `skills/ship/lib/status-docs.py` exists (stdlib-only); `entries`/`region`/`section`/`check` subcommands behave per spec; malformed config + missing fence fail loudly (non-zero), never silent. (`section` added in /simplify to absorb the inline awk.)
-- [x] `evals/run_status_docs_evals.py` passes (27 checks); wired into CI; covers entries-parse, region-extract, section-extract, missing-fence, region-changed.
+- [x] `evals/run_status_docs_evals.py` passes (81 checks); wired into CI; covers entries-parse, region-extract, section-extract, missing-fence, region-changed.
 - [x] Ship Step 5a reconciles each `statusDocs` marker region to just-shipped reality; absent marker ⇒ loud `⚠️` warning, never silent; malformed config surfaced at 5a (not swallowed by the pipe — staff-review fix).
 - [x] Ship Step 5b BLOCKS when status moved forward (plan Current-Focus / roadmap Now changed vs base) but a declared region was left untouched; fires with NO version manifest present; empty `statusDocs` ⇒ clean skip; existing version-token gate preserved. (Validated end-to-end against block/skip/pass scenarios in a real git fixture.)
 - [x] `/flow:doctor` Check 2.7 flags a declared-but-unfenced or missing `statusDocs` path; empty ⇒ clean PASS; FAIL hint shows a concrete fence example (staff-review fix).
@@ -3439,7 +3736,7 @@ A `/flow:contribute` drain. Three confirmed lessons applied, two dismissed with 
 - [x] `insert-visual-history.py` — seeds-from-skeleton, prepends (reverse-chron), regenerates TOC, strips italic headings, atomic write (temp + `os.replace`), alt-missing nudge, graceful on malformed target (no partial write).
 - [x] `/flow:ship` § 5c distill step — gated (uiSurface + verify-build-ran + load-bearing-decision hard-skip), agent-authored entry, asset copy into `visual-history-assets/`, insert-helper call, explicit skip reasons; grounding-type enum aligned to the 4-type schema set.
 - [x] Step 4a derives a candidate FB from a human-corrected `this-iteration` open question.
-- [x] Eval fixture (`run_visual_history_evals.py`, 31 checks): insert mechanics + distill shape + gating contract + WCAG contrast assertions. Green.
+- [x] Eval fixture (`run_visual_history_evals.py`, 81 checks): insert mechanics + distill shape + gating contract + WCAG contrast assertions. Green.
 - [x] Doc-currency fix: roadmap § Now + plan Current Focus brought fully accurate to v1.8.0 (full narrative refresh per user direction, not just the version token).
 - [x] Version bumped 1.7.1→1.8.0 (both manifests + README + CHANGELOG); no stale `1.7.1` survivors that should change.
 - [x] CLAUDE.md (template) sync-table row added for `visual-history.html` as a core living doc.
@@ -4507,7 +4804,7 @@ Documentation + version updates (if it ships):
 
 **Assumption:** `/flow:doctor`'s existing text output is regular enough that init can parse it reliably via line-shape regex, given an eval fixture that locks the format.
 **Confidence:** HIGH
-**Why:** Doctor emits ~17 checks plus a final verdict line, all in a consistent `[STATUS] label` + optional indented continuation shape. The eval fixture asserting format stability is load-bearing — any future doctor edit that changes line shape fails the test and forces coordinated update.
+**Why:** Doctor emits ~81 checks plus a final verdict line, all in a consistent `[STATUS] label` + optional indented continuation shape. The eval fixture asserting format stability is load-bearing — any future doctor edit that changes line shape fails the test and forces coordinated update.
 **If it flips:** doctor's format proves brittle in init dogfood. File `/flow:doctor --json` as separate user-approved follow-up PR.
 
 **Assumption:** "Additive only" via Edit tool suffices for all adapt-candidate cases.

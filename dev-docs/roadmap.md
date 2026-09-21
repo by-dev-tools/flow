@@ -120,7 +120,7 @@ The high-value moment they named: *"The real valuable work happens when the flow
 
 ### D1 — Prototype-first gate (the load-bearing item; FB-0081)
 
-**▶ Execution plan written (2026-08-17, user-directed): [`dev-docs/handoffs/d1-prototype-first-gate.md`](handoffs/d1-prototype-first-gate.md)** — self-contained, cold-start-executable, phased spec-walk + confidence verdicts. **Phase 0 shipped (v1.31.0, #128 — the `role` slot). Phase 1 shipped (v1.35.0 — `lens-experience.md` (D3) + the design-brief template + `/flow:review-brief`, the pre-prototype fan-out orchestrator).** Two assumptions still gate Phase 2 (auto-plan-quality spike §9.3; prototype-medium human decision §9.4); §9.2 (proportionality threshold) was deliberately deferred from Phase 1 to Phase 2. The prose below is the design rationale; the handoff is the work.
+**▶ Execution plan written (2026-08-17, user-directed): [`dev-docs/handoffs/d1-prototype-first-gate.md`](handoffs/d1-prototype-first-gate.md)** — self-contained, cold-start-executable, phased spec-walk + confidence verdicts. **Phase 0 shipped (v1.31.0, #128 — the `role` slot). Phase 1 shipped (v1.35.0 — `lens-experience.md` (D3) + the design-brief template + `/flow:review-brief`, the pre-prototype fan-out orchestrator).** Two assumptions still gate Phase 2 (auto-plan-quality spike §9.3; prototype-medium human decision §9.4); §9.2 (proportionality threshold) was deliberately deferred from Phase 1 to Phase 2. The prose below is the design rationale; the handoff is the work. **§9.3's spike resolved MIXED (#153) and its mechanism gap is now closed (v1.47.0): `/flow:audit-coverage` accepts an approved prototype's SOURCE TREE as a second input, so the pre-execution gate finally has something that reads the prototype's code rather than only the plan and the brief. That closes the *mechanism*; it does NOT resolve §9.3 — whether Phase 3 machine-gates the auto-plan on completeness (spike option (a)) or explicitly prices a late-discovered coverage gap as an accepted residual (option (b)) is still open, and Phase 3 remains gated on it.**
 
 **Surfaces when:** picked up directly, or whenever `plugins/flow/docs/workflow.md`'s Step 1/2 or the Step 8/9 discovery boundary is next touched.
 
@@ -231,6 +231,105 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 **Sequencing rationale:** V1 is the input, V2 is the gate that makes autonomy safe, V3 is the deliverable, V4 is the flywheel. V3-before-V2 produces an unverified-but-pretty walkthrough; V4-before-V1 gives the loop nothing structured to check against.
 
 ## Next
+
+### SECURITY — the typed-argument placeholder is a render-time command-execution sink (found by `/flow:security-review`, v1.47.0)
+
+**Surfaces when:** any skill that takes a typed argument is next touched — or immediately, if someone has time.
+
+`$ARGUMENTS` is **textually substituted** into a `` !` `` block before the shell parses it, and is **not**
+shell-escaped. Claude Code states this itself, in the Gemini-command-import guard inside the shipped binary:
+Gemini escapes its placeholder inside a shell span, *"Claude Code's `$ARGUMENTS` substitution doesn't, so
+importing would let typed arguments inject shell commands."* So a bare `SRC="$ARGUMENTS"` runs whatever the
+argument contains, **at prompt-render time, with no Bash-tool permission prompt** — bypassing the harness's
+entire command-approval gate. Quoting does not help: `$( )` expands inside double quotes. (Backticks do not
+work, because one backtick truncates the single-backtick span — the FB-0010 note, providing accidental partial
+cover that is not a defence.)
+
+**Verified by reproduction, not inferred:** `/flow:audit-plan` (2 substitution sites) and `/flow:critique-plan`
+(4 sites) both execute an injected payload. **`/flow:review-brief` is NOT affected** — its placeholder sits in a
+documentation code fence, not an executed span; the security review's claim that it was is corrected here.
+
+`/flow:audit-coverage` was fixed in v1.47.0 with a **quoted-delimiter heredoc capture**, the only form measured
+to neutralise every payload class (quote-break, `$( )`, semicolon chain, multi-line). Two residuals were named
+rather than assumed away: a payload containing a line equal to the delimiter escapes (hence a long unguessable
+delimiter), and **the placeholder must appear exactly once in the block — a second occurrence in a *comment* is
+a live injection site**, because a multi-line payload leaves lines 2..n as executable code. That invariant is
+now asserted by an eval.
+
+**Two halves, and the second is the one that will be forgotten.** (1) Apply the capture to the two affected
+skills — ideally hoisted into one shared snippet, since this is a house idiom and not a local edit. (2) **Switch
+their evals to inject by SUBSTITUTION rather than `env["ARGUMENTS"]`.** Under the env model the shell always
+sees one quoted word, so a metacharacter assertion can only ever pass — which is exactly how v1.47.0's own
+harness certified a live RCE as safe, in the file whose docstring cites "a measurement that can only return
+clean is not a measurement." Fixing the code without fixing the instrument reproduces the certification.
+
+### Source-mode hardening: forged control lines, and a plan the caller cannot name (`/flow:staff-review`, v1.47.0)
+
+**Surfaces when:** source mode gets its second caller (D1 Phase 2/3, or Track B's interim by-hand rule), or
+`/flow:audit-coverage`'s evidence block is next touched.
+
+1. **A prototype can forge a control line; a diff structurally cannot.** Source mode `cat`s file bytes at
+   column 0, whereas diff-mode content arrives as `git diff` output where every body line carries a `+`/`-`/
+   space prefix. So a prototype containing a literal `----- file: x -----` fakes a boundary — and one
+   containing `[audit-coverage] SOURCE-UNRESOLVED …` or `SKIPPED` triggers a rule that instructs the model to
+   emit exactly that line **as its entire response**: content-driven audit suppression. v1.47.0 bought most of
+   the protection immediately by scoping the `SOURCE-UNRESOLVED` rule **positionally** (a genuine one is always
+   emitted before the `----- source -----` delimiter), but `SOURCE-TRUNCATED` is emitted *after* the body and
+   cannot be disambiguated the same way. The durable fix is a per-run nonce in the delimiter or a byte-count
+   assertion, plus fixtures asserting collision/forgery rather than mere delimiter presence. **Note this is not
+   wholly new:** diff mode's `----- new file: -----` path also `head`s raw bytes.
+2. **Source mode cannot name its plan.** `/flow:audit-plan` and `/flow:critique-plan` spend their optional path
+   argument on the *plan*; source mode spends it on the *source*, leaving criteria pinned to `planPath` with no
+   override. In the storage shape Track B uses (`.flow/prototypes/<slug>/`), several prototypes can be queued
+   against different plans — so the first real caller audits prototype A against whatever `planPath` currently
+   holds, and **stale criteria produce confidently wrong undeclared findings at a gate**. A second argument is a
+   contract change with its own eval surface, hence deferred rather than bolted on.
+3. **`SKIPPED — no declared Spec-walk criteria` is arguably the wrong outcome in source mode.** This PR's own
+   argument — someone who passes a path has asserted there *is* something to audit — applies just as forcefully
+   to the criteria side, but an empty criteria list in source mode still renders as a skip. Fixing it means
+   mode-scoping a branch v1.47.0 deliberately left untouched.
+
+### `designLanguagePath` has no entry for "the prompt as a rendered artifact" (`/flow:staff-review`, v1.47.0)
+
+**Surfaces when:** the design-language doc's coverage gap is next addressed, or any `!`-preprocessor evidence
+block is restructured.
+
+`dev-docs/design-language.md` governs the `/flow:verify-build` HTML report and explicitly scopes out its sibling
+browser surfaces. It says nothing about house conventions for `!`-preprocessor evidence blocks — delimiter
+grammar, header-line prefixing, mode labelling, truncation honesty — even though **those are flow's
+highest-traffic rendered surface by far**. Every design-engineering finding on v1.47.0 therefore rested on
+internal consistency with the diff-mode block rather than on a documented rule, which is the "degrades to
+opinion" failure mode. Extend the existing design-language coverage-gap item to cover prompt-artifact
+conventions.
+
+### Hoist the eval-harness fixture trio into `eval_utils.py` (found by `/simplify` reuse lens, v1.47.0)
+
+**Surfaces when:** the next eval harness is written, or any fixture-repo assumption changes (a default-branch
+pin, a `user.name` requirement, an `update-ref origin/<branch>`).
+
+Three helpers are now independently defined across harnesses, and `run_coverage_source_mode_evals.py` (v1.47.0)
+made each count one worse — **it added the fifth copy while declining to pay the debt**, which is worth naming
+rather than quietly filing:
+
+1. **temp-git-repo builder** — 5 copies: `run_jq_guard_evals.py:107` (`git_repo`), `run_root_anchor_evals.py:108`
+   (`git_repo`), `run_scratch_isolation_evals.py:73` (`seed_repo`, whose own docstring says it mirrors
+   `run_merge_status_evals`), and the new one. The v1.47.0 copy is the **most general** of the set (takes a
+   `files: dict`, pins `-b main`), so it is the natural one to hoist rather than the one to add.
+2. **the `` !` `` dynamic-context span parser** — 3 copies with 3 different semantics
+   (`run_scratch_isolation_evals.py:93`, `run_jq_guard_evals.py:94`, and the new anchored variant). The span
+   delimiter is a live hazard here — one inner backtick truncates it (FB-0010, pinned by
+   `run_scratch_isolation_evals.py:508`) — so a change in how it is understood must currently be reconciled
+   across three regexes.
+3. **the block runner** — `run_block(block, cwd, env, timeout)`: the env-scrubbing list is the load-bearing
+   part (a harness that forgets to pop a var tests the developer's shell, not the block) and it is now stated
+   twice (`run_root_anchor_evals.py:96` and the new harness).
+
+`eval_utils.py` already owns the sibling concern (`fenced_block` for ```` ```sh ````) and its own docstring names
+this exact rationale: *"two eval harnesses independently defining the same parser is the exact FB-0010 fan-out
+class this repo's own consistency rule names, so it gets one home."* Deliberately deferred out of v1.47.0 because
+the fix edits four harnesses outside that PR's diff — scope discipline, not disagreement. **Not** on the list:
+the FB-0074 root anchor (a structurally un-shareable per-block idiom, ~20 sites) and `check()` (31 harnesses —
+repo convention).
 
 ### Four investigative-discipline lessons from the FB-0107 provenance PR, harvested by hand (2026-09-16)
 

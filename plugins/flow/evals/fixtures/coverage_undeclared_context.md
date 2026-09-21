@@ -9,7 +9,7 @@ the deferred pluggable step (same as every other auditor fixture).
 
 {"criteria": ["User can submit the contact form and see a success toast."], "source_path": "dev-docs/plan.md", "source_heading": "**Spec-walk:**", "warnings": []}
 
-## Workspace diff — source files changed vs the default branch (what was actually built)
+## What was actually built
 
 Behavior-bearing files changed: src/contact.js
 ----- diff -----

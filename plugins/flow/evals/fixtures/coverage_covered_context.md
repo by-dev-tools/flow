@@ -8,7 +8,7 @@ declared criterion, so the correct output is `No issues flagged.` See sibling
 
 {"criteria": ["User can submit the contact form and see a success toast.", "Submitting with an empty email shows an inline validation error."], "source_path": "dev-docs/plan.md", "source_heading": "**Spec-walk:**", "warnings": []}
 
-## Workspace diff — source files changed vs the default branch (what was actually built)
+## What was actually built
 
 Behavior-bearing files changed: src/contact.js
 ----- diff -----
