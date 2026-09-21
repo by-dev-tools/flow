@@ -469,9 +469,6 @@ def test_present_always_returns_an_openable_path():
         _, out, _ = run("present", "--file", str(f))
         check("present-returns-presented-path", out and out.get("presented"),
               "every present outcome must name the file to open")
-        check("present-returns-source-sha", out and out.get("source_sha256"),
-              "the hash of what was PRESENTED, so pre-approval staleness is eyeballable "
-              "against the digest approve later records")
         src = ENGINE.read_text(encoding="utf-8")
         deg = src[src.index("except (OSError, ValueError)"):]
         deg = deg[:deg.index("idx = html.rfind")] if "idx = html.rfind" in deg else deg
@@ -745,6 +742,33 @@ def test_traversal_out_of_the_named_directory_is_refused():
 
 
 # ---------------------------------------------------------------- 5. present
+
+def test_present_reports_the_presented_sha():
+    """Its own test because it is its own property.
+
+    This assertion previously rode inside `test_present_always_returns_an_openable_path`
+    — whose name describes a different property — while the plan's criterion cited
+    `test_present_authors_no_markup`, a third test that never contained it. A reader
+    grepping for what covers the hash claim would have found nothing, and an edit to
+    either neighbour could have dropped it silently. One property, one named test.
+
+    What it buys: `verify` catches edits AFTER approval; nothing caught staleness
+    BEFORE it. Across iteration rounds a human may still have round 3's tab open and
+    approve a look the source has moved past, so the hand-off carries the hash of what
+    was actually presented, checkable against the digest `approve` later records."""
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "prototype.html"
+        shutil.copy(FIX / "prototype-minimal.html", f)
+        _, out, _ = run("present", "--file", str(f))
+        check("present-reports-source-sha", out and out.get("source_sha256"),
+              "present must report the hash of the file it presented")
+        # Positive pairing: the value is the SOURCE's hash, not the presented file's —
+        # an assertion that a key merely exists would pass on either.
+        import hashlib
+        want = hashlib.sha256(f.read_bytes()).hexdigest()
+        check("present-source-sha-is-the-source", out and out.get("source_sha256") == want,
+              "must hash prototype.html (what approve records), not the presented copy")
+
 
 def test_present_authors_no_markup():
     """The byte-diff pin. If `present` rendered flow-authored chrome, this engine
