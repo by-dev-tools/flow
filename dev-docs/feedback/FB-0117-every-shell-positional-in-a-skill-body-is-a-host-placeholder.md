@@ -32,4 +32,14 @@ descriptive argument, which is the normal way a human invokes a skill. Second, i
 because dogfooding never runs the working tree, so the tree can be fixed and the next session
 still sees the bug until the install converges.
 
+**Corroborated by a sibling instance, found independently.** `/flow:land`'s `changelog-check` calls
+`is_file()` on a slot that points at a **directory** in this repo, so that gate has been silently
+blind since the v1.40.0 doc fragmentation — returning a soft N/A that reads as "nothing to check".
+Structurally the same failure as `awk 'index($0,H)'` being rewritten: **a reader that cannot handle
+the shape it is handed, failing quietly rather than loudly.** Both are one migration with several
+readers, only some of which were updated — FB-0010's fan-out class. The generalization worth keeping
+is not about `$N` or about `is_file()`: it is that when a value's SHAPE changes (a path becoming a
+directory, a literal becoming a substituted token), every reader of that value is a call site, and
+the ones that degrade quietly are the ones you will not find by testing the happy path.
+
 **Applies to:** `plugins/flow/skills/{ship,doctor,contribute,verify-build}/SKILL.md`; `plugins/flow/evals/run_arg_safety_evals.py` (§4 asserts the extracted function's output is identical bare vs. under a 3-token argument); FB-0116 (the `$ARGUMENTS` half, same mechanism); FB-0107 (the provenance block this broke); `.claude/rules/general.md` § Consistency item 4.
