@@ -161,6 +161,18 @@ The strongest argument for the orchestrator is **not** speed: today each skill r
 
 **FOLLOW-UP — DEFERRED at the Phase 2 plan gate (2026-09-20), still open.** Ben cut it from Phase 2 on scope discipline: the test applied was *"does this PR make the statement false?"*, and a new Lens-A question is a **feature addition to an agent prompt**, not a claim D1 Phase 2 invalidates (unlike the `role` doctor check and the brief word cap, which it does falsify and which shipped with it). Needs its own small PR: one new Lens-A question **plus** a re-authored fixture demonstrating it, per "prompt change = code change". **Surfaces when:** `lens-experience.md` is next touched, or a brief review misses an accessibility/timing concern in practice. Original finding follows. Lens A's question set (journey/edge-states/friction/feel) names no accessibility or timing dimension. The lens's own worked fixture (`brief_low_ambition.md`, a 5-second auto-dismissing undo link with no way to extend or disable the timer) is a near-perfect worked example of a WCAG 2.1 SC 2.2.1 (Timing Adjustable) concern the pinned expected output never names — it raises the ambition ceiling on reassurance/confidence grounds but misses the accessibility angle entirely. Real scope expansion (a new Lens-A question + a re-authored fixture demonstrating it, per this repo's own "prompt change = code change" rule), not something to fold into Phase 1 silently. Whoever picks up D1 Phase 2 (when the lens becomes load-bearing rather than standalone-only) should fold an explicit accessibility/timing question into Lens A before then.
 
+### CV1 — `/flow:audit-coverage` cannot see `.md`, so most of this plugin is invisible to it
+
+**Surfaces when:** `/flow:audit-coverage`'s `EXCL` filter is next touched, or any PR whose substance is prompt text reports "no undeclared changes".
+
+Found while re-deriving the recall series for #158, and it is larger than the recall question it came out of. `audit-coverage/SKILL.md`'s behaviour-diff filter ends `…|\.md$`, and also drops `evals/` and `docs/`. Flow ships **prompts** — SKILL.md and agent files are deployed surface, not documentation — so the reviewer is structurally blind to most of what this repo changes.
+
+**Measured, twice.** On #159, all five undeclared behaviours lived in `audit-coverage/SKILL.md` (227 lines); the reviewer returned "no issues" and *could not have done otherwise*. On #158, **4 of 63 changed files** reached it, and the invisible set included `prototype/SKILL.md` — that PR's main deployed artifact.
+
+**Why this is not just "widen the regex".** `.md` is genuinely documentation in most consumer repos, which is why the exclusion exists and is right there. The fix has to distinguish *prose about the product* from *prose that IS the product* — plausibly by treating paths under a plugin's `skills/` and `agents/` as source regardless of extension, or by reading a config slot. That is a design call, not a one-line edit, which is why this is an entry rather than a patch.
+
+**Do not fix by deleting the exclusion.** A repo-wide `.md` inclusion would make every docs PR read as a behaviour change and drown the signal — the failure the exclusion was added to prevent.
+
 ### D1c — Gate-1's hand-off is the last unrendered hand-off in the loop
 
 **Surfaces when:** D5 (message budget) is picked up — this is its first concrete consumer — or `/flow:prototype` § 8 is next touched.

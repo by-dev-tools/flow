@@ -218,9 +218,13 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py gate-execut
 
 **The third of those has a measured limitation, on a different axis from the gate you just moved.** It answers *"did the implementation declare everything it built?"*, not *"did the human see the design?"* — the limitation is pre-existing and orthogonal, not the price of the move. Tell the human this much and no more:
 
-> **What this reviewer catches, measured.** Across four runs where the real answer was known — it found **10 · 5 · 0 · 2** (of 10, 10, 5 and 5 gaps present) — so between none and all of the undeclared behaviours present, and **never once reported a gap that was not real**. So: **treat a flag as reliable; do not treat silence as evidence nothing was missed.** Recall is known-weak and is being worked on.
+> **What this reviewer catches, measured.** Three runs where the real answer was known and the reviewer could actually see the code: it found **10 of 10**, **5 of 10**, and **2 of 5** of the undeclared behaviours — and **never once reported a gap that was not real**. So: **treat a flag as reliable; do not treat silence as evidence nothing was missed.** Recall is known-weak and is being worked on.
 
-The two weakest runs were in its long-standing **diff** mode, so it is not the newer source input that is weak. And silence is weak evidence for a structural reason worth naming: **behaviour added after a plan is written — during `/simplify` and staff-review — is exactly the behaviour least likely to be declared**, and coverage runs after those stages. The backstop is unchanged: `/flow:audit-coverage` against a real diff at `/flow:ship` Step 2, so a gap is caught **late, not never**.
+**Separately, and larger: it cannot see `.md` files at all.** Its behaviour-diff filter excludes `\.md$` along with `evals/` and `docs/`. On a plugin that ships mostly prompts that is not weak recall, it is a **blind spot** — on this PR, **4 of 63 changed files** reached the reviewer, and the excluded set included `prototype/SKILL.md`, the main deployed artifact here. A fourth run (#159) returned "no issues" over five real gaps that all lived in a `.md`; that run measures the filter, not the judgment, and **no prompt change could have moved it**, so it is not in the series above.
+
+Silence is weak evidence for a structural reason too: **behaviour added after a plan is written — during `/simplify` and staff-review — is exactly the behaviour least likely to be declared**, and coverage runs after those stages.
+
+The backstop is unchanged: `/flow:audit-coverage` against a real diff at `/flow:ship` Step 2, so a gap is caught **late, not never**.
 
 **The one guarantee here that is not judgment** is `gate-execute`'s: a plan *exists*. Mechanical, deterministic, and the reason it was pulled forward rather than left to Phase 3.
 

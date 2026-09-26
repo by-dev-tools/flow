@@ -728,6 +728,29 @@ def cmd_verify(args) -> int:
 
 # --------------------------------------------------------------------------- gate-execute
 
+def _parse_digest_stamp(tail: str) -> dict:
+    """Pull `repo=`/`branch=`/`head=` out of a committed digest line's tail.
+
+    Returns only the keys actually present, so `check_stamp` compares what the digest
+    claims and nothing else. A digest written by an older flow that omits a field is a
+    weaker stamp, not a mismatch — but a field that IS present and disagrees is refused.
+    """
+    out = {}
+    # `repo` is deliberately NOT compared, and the reason is not cosmetic. This digest
+    # is COMMITTED — it travels to every clone of the repository — so an absolute path
+    # is the one field guaranteed to differ for a legitimate reader on another machine.
+    # Comparing it would refuse every fresh clone and every CI checkout, which is a gate
+    # failing closed on its own honest users. (`render_digest` writes only the basename
+    # for readability anyway, so it was never comparable to what `current_stamp()`
+    # returns.) `branch` and `head` are portable and carry the real claim: this approval
+    # was recorded for THIS work.
+    for field in ("branch", "head"):
+        m = re.search(r"\b%s=(\S+)" % field, tail)
+        if m:
+            out[field] = m.group(1)
+    return out
+
+
 def _active_region(text: str) -> str:
     """Everything ABOVE the FIRST `Spec-walk` heading — the active PR's header block.
 
@@ -836,18 +859,31 @@ def cmd_gate_execute(args) -> int:
             "shaped like an approval with nothing in it."
         )
     else:
-        # A stamp that is rendered but never checked is decoration. FB-0082's rule —
-        # every handoff carries a stamp and readers refuse a mismatch loudly — was
-        # honored for .flow/approval.json and abandoned for the ONLY consumer of
-        # committed state, which is the one that survives the workspace.
-        want = _stamp()
-        bm = re.search(r"branch=(\S+)", digest_m.group("tail") or "")
-        got_branch = bm.group(1) if bm else ""
-        if got_branch and want.get("branch") and got_branch != want["branch"]:
+        # A stamp that is rendered but never checked is decoration (FB-0082). DELEGATED to
+        # flow_scratch.check_stamp — the same helper `verify` uses — rather than compared
+        # here.
+        #
+        # The hand-rolled version this replaces was the bug CI caught. It read
+        # `if got_branch and want["branch"] and they differ`, which SHORT-CIRCUITS when the
+        # local branch is unknown — and `git branch --show-current` returns empty in a
+        # detached HEAD, which is how CI checks out. So the gate FAILED OPEN in CI and
+        # closed locally: the worst possible split, and the failure direction was "approve
+        # work that was never approved". Meanwhile `verify`, using check_stamp, failed
+        # CLOSED on the identical unknown. Two handlers for one missing fact, disagreeing.
+        # One handler removes the disagreement by construction.
+        fs = _flow_scratch()
+        here = fs.current_stamp(cwd=str(plan_path.resolve().parent))
+        # `repo` is pinned to the local value so only branch/head are actually asserted —
+        # see _parse_digest_stamp for why a committed absolute path must never be compared.
+        # Passing `expect` explicitly (rather than letting check_stamp resolve it) keeps
+        # the comparison set visible at the call site instead of implied by the helper.
+        parsed = {"repo": here.get("repo", ""), **_parse_digest_stamp(digest_m.group("tail") or "")}
+        ok_stamp, reason = fs.check_stamp({"flow_stamp": parsed}, expect=here)
+        if not ok_stamp:
             problems.append(
-                "the approval digest was recorded on branch %r but this is %r — the approval "
-                "belongs to different work. Re-approve on this branch rather than inheriting "
-                "a digest." % (got_branch, want["branch"])
+                "the approval digest does not belong to this workspace — %s. An approval "
+                "recorded elsewhere is not an approval for this work; re-approve here rather "
+                "than inheriting a digest." % reason
             )
 
     items = None

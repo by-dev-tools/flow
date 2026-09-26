@@ -120,24 +120,40 @@ def fx(name: str) -> str:
     return str(FIX / name)
 
 
-def _live_branch() -> str:
-    p = subprocess.run(["git", "branch", "--show-current"], cwd=ROOT,
-                       capture_output=True, text=True)
-    return p.stdout.strip()
+def _mk_repo(tmp: str, branch: str = "test-branch"):
+    """A real temp git repo on a NAMED branch, with one commit.
 
-
-def _plan_with_live_stamp(tmp: str, name: str) -> Path:
-    """Materialize a plan fixture with THIS branch in its digest.
-
-    The digest now carries a stamp that `gate-execute` checks against the live
-    workspace (FB-0082: a stamp that is rendered but never checked is decoration),
-    so a fixture hardcoding `branch=b` correctly fails. Rewriting the stamp at test
-    time keeps the fixture honest instead of weakening the check to accommodate it.
+    The tests build their own git environment rather than reading the ambient one.
+    That is the fix for the bug CI caught: `git branch --show-current` returns empty
+    in a detached HEAD, which is how CI checks out, so an ambient-environment test
+    passed locally and failed (or worse, passed for the wrong reason) in CI. An
+    environment the test constructs cannot diverge between the two.
     """
+    d = Path(tmp) / "repo"
+    d.mkdir(parents=True, exist_ok=True)
+    def g(*a):
+        return subprocess.run(["git", *a], cwd=str(d), capture_output=True, text=True)
+    g("init", "-q")
+    g("config", "user.email", "t@t"); g("config", "user.name", "t")
+    g("checkout", "-q", "-b", branch)
+    (d / "seed").write_text("x", encoding="utf-8")
+    g("add", "-A"); g("commit", "-qm", "seed")
+    head = g("rev-parse", "--short", "HEAD").stdout.strip()
+    return d, {"repo": str(d), "branch": branch, "head": head}
+
+
+def _plan_in_repo(tmp: str, name: str, branch: str = "test-branch"):
+    """A plan fixture materialised INSIDE a temp repo, stamped to that repo.
+
+    Returns (plan_path, repo_dir, stamp)."""
+    d, stamp = _mk_repo(tmp, branch)
     src = (FIX / name).read_text(encoding="utf-8")
-    out = Path(tmp) / name
-    out.write_text(re.sub(r"branch=\S+", "branch=%s" % _live_branch(), src), encoding="utf-8")
-    return out
+    src = re.sub(r"repo=\S+", "repo=%s" % stamp["repo"], src)
+    src = re.sub(r"branch=\S+", "branch=%s" % stamp["branch"], src)
+    src = re.sub(r"head=\S+", "head=%s" % stamp["head"], src)
+    out = d / name
+    out.write_text(src, encoding="utf-8")
+    return out, d, stamp
 
 
 # ------------------------------------------------------------------ 1. trigger
@@ -444,10 +460,11 @@ def test_digest_survives_a_long_multiline_quote():
           "an elided quote under a heading promising 'verbatim' must say it was elided")
     # And the round trip: gate-execute accepts a plan built from this digest.
     with tempfile.TemporaryDirectory() as tmp:
-        plan = Path(tmp) / "plan.md"
+        repo, stamp = _mk_repo(tmp)
+        stamped = mod.render_digest({**rec, "stamp": stamp})
+        plan = repo / "plan.md"
         plan.write_text("# Plan\n\n%s\n\n**Spec-walk:**\n\n- [ ] a thing → verify: a test\n"
-                        % out.replace("branch=b ", "branch=%s " % _live_branch()),
-                        encoding="utf-8")
+                        % stamped, encoding="utf-8")
         _, ge, _ = run("gate-execute", "--plan", str(plan))
         check("digest-round-trips-through-gate-execute", ge and ge["ok"] is True,
               f"problems: {ge.get('problems') if ge else '-'}")
@@ -547,16 +564,22 @@ def test_approve_record_shape():
 
 
 def test_verify_detects_drift():
+    # Inside a temp repo on a NAMED branch: `approve` stamps the record with the live
+    # workspace and `verify` checks it back, so both need a resolvable branch. Read from
+    # the ambient environment this passed locally and failed in CI's detached HEAD —
+    # the same environment-dependence that hid the gate-execute fail-open.
     with tempfile.TemporaryDirectory() as tmp:
-        d = _proto_dir(tmp, "feas-full-ios.md")
-        q = Path(tmp) / "q.txt"
+        repo, _stamp = _mk_repo(tmp)
+        d = _proto_dir(str(repo), "feas-full-ios.md")
+        q = d / "q.txt"
         q.write_text("approved", encoding="utf-8")
-        run("approve", "--dir", str(d), "--quote-file", str(q), "--config", fx("cfg-ios.json"))
-        _, clean, _ = run("verify", "--dir", str(d))
+        run("approve", "--dir", str(d), "--quote-file", str(q), "--config", fx("cfg-ios.json"),
+            cwd=str(repo))
+        _, clean, _ = run("verify", "--dir", str(d), cwd=str(repo))
         check("verify-clean", clean and clean["ok"] is True)
         with (d / "prototype.html").open("a", encoding="utf-8") as fh:
             fh.write("<!-- edited after approval -->\n")
-        _, drifted, _ = run("verify", "--dir", str(d))
+        _, drifted, _ = run("verify", "--dir", str(d), cwd=str(repo))
         check("verify-detects-post-approval-edit", drifted and drifted["ok"] is False)
         check("verify-names-sha-mismatch",
               drifted and any("sha256" in p.lower() for p in drifted.get("problems", [])),
@@ -584,8 +607,8 @@ def test_gate_execute_reads_committed_state_only():
     so wiping the workspace dropped it to ok:true VACUOUSLY. Run here with no
     `.flow/` in existence at all."""
     with tempfile.TemporaryDirectory() as tmp:
-        plan = _plan_with_live_stamp(tmp, "plan-prototype-ok.md")
-        rc, out, err = run("gate-execute", "--plan", str(plan), cwd=tmp)
+        plan, repo, _ = _plan_in_repo(tmp, "plan-prototype-ok.md")
+        rc, out, err = run("gate-execute", "--plan", str(plan), cwd=str(repo))
         check("gate-execute-no-flow-dir-needed", out is not None and out["ok"] is True,
               f"must resolve from the plan doc alone; stderr={err[:200]}")
 
@@ -616,7 +639,7 @@ def test_gate_execute_blocks_missing_digest():
 
 def test_gate_execute_passes_with_both():
     with tempfile.TemporaryDirectory() as tmp:
-        plan = _plan_with_live_stamp(tmp, "plan-prototype-ok.md")
+        plan, _repo, _ = _plan_in_repo(tmp, "plan-prototype-ok.md")
         _, out, _ = run("gate-execute", "--plan", str(plan))
         check("gate-execute-ok-with-both", out and out["ok"] is True,
               f"problems: {out.get('problems') if out else '-'}")
@@ -637,7 +660,7 @@ def test_gate_execute_all_demoted():
     """The v1.30.0 all_demoted lifecycle bug, in a fifth consumer: a plan doc
     whose every block belongs to a merged PR has no ACTIVE plan, only history."""
     with tempfile.TemporaryDirectory() as tmp:
-        plan = _plan_with_live_stamp(tmp, "plan-all-demoted.md")
+        plan, _repo, _ = _plan_in_repo(tmp, "plan-all-demoted.md")
         _, out, _ = run("gate-execute", "--plan", str(plan))
         check("gate-execute-all-demoted-blocks", out and out["ok"] is False,
               "an all-demoted plan doc must not read as an active plan")
@@ -677,17 +700,57 @@ def test_gate_execute_refuses_a_foreign_branch_digest():
     repo/branch/head; `gate-execute` is the only consumer of committed state, and it
     ignored them."""
     with tempfile.TemporaryDirectory() as tmp:
-        plan = Path(tmp) / "plan.md"
+        repo, stamp = _mk_repo(tmp)
+        plan = repo / "plan.md"
+        # Everything matches EXCEPT the branch, so the refusal can only be about the
+        # branch — a plan stamped to a different repo would refuse for the wrong reason
+        # and the test would pass without measuring what it claims.
         plan.write_text(
             "# Plan\n\n**Pre-execution gate:** prototype\n\n"
-            "**Prototype approved:** `abcdef0123456789` · \"yes\" · repo=r "
-            "branch=a-different-branch head=h\n\n**Spec-walk:**\n\n- [ ] x → verify: t\n",
-            encoding="utf-8")
+            "**Prototype approved:** `abcdef0123456789` · \"yes\" · repo=%s "
+            "branch=a-different-branch head=%s\n\n**Spec-walk:**\n\n- [ ] x → verify: t\n"
+            % (stamp["repo"], stamp["head"]), encoding="utf-8")
         _, out, _ = run("gate-execute", "--plan", str(plan))
         check("foreign-branch-digest-refused", out and out["ok"] is False,
               "an approval recorded on another branch is not an approval for this work")
         check("foreign-branch-digest-names-branch",
-              out and any("branch" in p.lower() for p in out.get("problems", [])))
+              out and any("branch" in p.lower() for p in out.get("problems", [])),
+              f"problems: {out.get('problems') if out else '-'}")
+
+
+def test_detached_head_fails_closed():
+    """The bug CI caught, pinned. `git branch --show-current` returns EMPTY in a
+    detached HEAD — which is how CI checks out — and the hand-rolled comparison this
+    replaced read `if got_branch and want["branch"] and they differ`, so it
+    SHORT-CIRCUITED on the empty value and returned ok:true. The gate failed OPEN in
+    CI and closed locally, in the direction "approve work that was never approved".
+
+    Meanwhile `verify`, which already delegated to check_stamp, failed CLOSED on the
+    identical unknown. Two handlers for one missing fact, disagreeing. Both now go
+    through check_stamp, so they cannot diverge again — and this test asserts the
+    direction explicitly rather than leaving it to whichever environment runs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo, stamp = _mk_repo(tmp)
+        plan = repo / "plan.md"
+        plan.write_text(
+            "# Plan\n\n**Pre-execution gate:** prototype\n\n"
+            "**Prototype approved:** `abcdef0123456789` · \"yes\" · repo=%s branch=%s "
+            "head=%s\n\n**Spec-walk:**\n\n- [ ] x → verify: t\n"
+            % (stamp["repo"], stamp["branch"], stamp["head"]), encoding="utf-8")
+        # Sanity: on the named branch this same plan is accepted. Without this the
+        # detached assertion below could pass because everything is refused.
+        _, before, _ = run("gate-execute", "--plan", str(plan))
+        check("detached-precondition-accepted-on-branch", before and before["ok"] is True,
+              f"problems: {before.get('problems') if before else '-'}")
+        subprocess.run(["git", "checkout", "-q", "--detach", "HEAD"], cwd=str(repo),
+                       capture_output=True, text=True)
+        _, after, _ = run("gate-execute", "--plan", str(plan))
+        check("detached-head-fails-closed", after and after["ok"] is False,
+              "an unverifiable branch must REFUSE, not pass — the failure direction of a "
+              "gate is never 'approve'")
+        check("detached-head-says-why",
+              after and any("branch" in p.lower() for p in after.get("problems", [])),
+              f"problems: {after.get('problems') if after else '-'}")
 
 
 def test_symlinked_paths_are_refused():
