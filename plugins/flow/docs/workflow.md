@@ -783,6 +783,70 @@ Why two defaults: flow's *own* dev-tracking lives at `dev-docs/` (so `core-docs/
 
 ---
 
+## Skill arguments: the prose rule
+
+**A slash-command argument must never appear inside a shell block in a `SKILL.md`.** Not quoted,
+not in a heredoc, not in a comment. If you are writing a skill that takes an argument, this
+section is the contract.
+
+### Why
+
+Claude Code does not pass `\ARGUMENTS` to a shell as a variable. It **substitutes the text
+into the whole skill body before anything parses it** — prose, fenced blocks and `` !` `` spans
+alike, via a flat `replaceAll`. The only escaper applied neutralises bang-command syntax; it does
+**no shell escaping**. Claude Code says so itself, in the refusal it prints when asked to import a
+Gemini command: *"Gemini shell-escapes `{{args}}` inside `!{…}`, Claude Code's `\ARGUMENTS`
+substitution doesn't, so importing would let typed arguments inject shell commands."*
+
+So by the time a shell sees the text, the argument **is already code**:
+
+- **Quoting does not help.** `"\ARGUMENTS"` still admits `$(…)`, a backtick, and a closing
+  `"`. It *does* contain `;` and newlines, which is what makes a partial mitigation look like a
+  working one.
+- **No delimiter helps.** A heredoc terminator is a fixed literal in a world-readable file, so it
+  can appear on line 2 of the payload. Flow shipped exactly that and it was defeated — and the
+  guard then printed a clean-looking refusal *after* the command had run, so the run read green.
+- **A `` !` `` block executes at render time**, before any tool call, so there is no interactive
+  permission prompt standing between the payload and the shell.
+
+The same pass substitutes **`$0`–`$9`** and `\ARGUMENTS[n]`. That makes every shell
+positional and every awk field reference in a skill body a placeholder too: `$0` maps to the first
+argument token, so `awk 'index($0,H)'` in a skill body is rewritten the moment the skill is
+invoked with any argument at all.
+
+### The rule
+
+1. The placeholder appears **exactly once**, in **prose**, under a `## Argument` heading. Every
+   other mention — including in prose explaining this rule — is spelled `\\ARGUMENTS`,
+   which renders literally and is never substituted.
+2. Render-time `` !` `` blocks run **argument-less**. They do only what render-time can do:
+   transcript extraction, config resolution.
+3. The argument reaches a program only through a channel no interpreter parses. Two tiers, chosen
+   by what the skill's agent can actually do:
+
+   | Tier | Mechanism | Use when | In flow |
+   |---|---|---|---|
+   | **1 — Read** | The agent uses its own `Read` (and `Grep`) on the path | `context: fork` skills whose agent has no `Bash`/`Write` | `/flow:audit-plan`, `/flow:critique-plan` |
+   | **2 — Write-then-path** | The model writes the raw value to a **fixed literal** scratch path with `Write`; the block reads that path | The skill can run tools before the value is needed | `/flow:review-brief`, `/flow:audit-coverage` |
+
+   Tier 2 is FB-0108's `--finding-file` channel: the bytes travel file → `open()` → `str` and never
+   occupy a shell word. On the Python side, take the value with a `--…-from PATH` flag that
+   **refuses** a multi-line value rather than taking line 1 — a path has no second line, so a
+   second line is a caller bug or an injection attempt, and truncating hides it.
+4. A genuine shell positional is spelled **`${1}`**; a genuine awk field is spelled **`$(0)`**.
+   These are not interchangeable — awk has no brace form and `${0}` is a **syntax error**, so the
+   brace fix silently breaks awk while looking right. Prefer both over `\\$1`-style escaping: the
+   host only processes that escape when it substitutes at all, so an escaped positional survives
+   literally into the no-argument case.
+
+### What closes it
+
+`plugins/flow/evals/run_arg_safety_evals.py`, CI-wired. It lints every shipped `SKILL.md` for
+placeholders in an executable context, and — because a lint that can only say "clean" is not a
+measurement — it first reproduces the RCE against the **unfixed** form with a filesystem canary
+and aborts if that does not fire. Every negative is paired with a positive that the skill still
+accepts and still acts on its argument, so deleting the feature turns the harness red, not green.
+
 ## Anti-patterns
 
 - **Implementing without an approved plan.** Even if the change feels small, write the plan; it takes 60 seconds and prevents 60 minutes of rework.

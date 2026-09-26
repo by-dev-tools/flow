@@ -44,6 +44,7 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/handoff/SKILL.md` | `/flow:handoff` — orchestrator succession + archive safety (§4.9) |
 | `plugins/flow/skills/gate/SKILL.md` | `/flow:gate` — four-axis plan/merge gate classification (§4.8). **Classifies only; never merges** |
 | `plugins/flow/lib/sensitive_paths.py` | Shared stakes/routing-floor predicate — one definition, two readers (`gate-classify.py`, `/flow:spawn`) |
+| `plugins/flow/lib/arg_placeholders.py` | Where the host substitutes a slash-command argument, and where that is safe — the host's own regexes transcribed, plus a faithful render emulation (FB-0116) |
 | `plugins/flow/skills/gate/lib/gate-classify.py` | The §4.8 combination rule as a truth table; every undeclared axis escalates |
 | `plugins/flow/lib/dispatch_backend.py` | `dispatchBackend` resolve/validate/render — closed placeholder set, refuses rather than escapes |
 | `plugins/flow/skills/handoff/lib/brief-check.py` | Succession-brief reachability check (§4.9), paired positive+negative |

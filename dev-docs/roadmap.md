@@ -8,7 +8,7 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 ## Now
 
-**Plugin at v1.49.0 (this PR — `/flow:audit-coverage` enumerates before it judges, FB-0115. Its one pass fused *enumerate* + *match* + *suppress*, and `auditor.md`'s suppression rules — the reason precision has never once produced a false positive — were also being applied to the finding half, where they only cost recall. Split into two labelled stages: Stage 1 enumerates with those rules scoped OFF, Stage 2 matches with the existing judgment verbatim. **Measured on committed ground truth: source-mode recall 65% → 82% mean with non-overlapping distributions, union 80% → 100%, precision unchanged at zero false positives in 15 runs.** Diff mode moved **0** and the docs say so — what changed there is that both residual misses are now *attributable* to the matcher's default-to-covered call rather than invisible, which is the next lever. Also ships a deterministic hunk inventory with a `POST-PLAN` tier (a git fact: the hunk landed after the plan was last edited, so no criterion CAN cover it). **Two findings routed, not fixed:** `.md` is excluded from the behaviour diff, so #159's recorded `0-of-5` was never a judgment failure — the reviewer never received the file (on #158: 4 of 63 changed files reached it); and a coverage gate's criteria can silently belong to a *different* PR, because only the first Spec-walk block is read. Three of this PR's own instruments reported green while broken and all three are recorded.)** Recently shipped: **v1.47.0 (#159 — `/flow:audit-coverage` source-tree input mode + a verified RCE in typed arguments), v1.45.0 (#157 — the §4.10 orchestrator skill suite, FB-0110), v1.44.0 (#156 — manifest fence injection, FB-0109), v1.43.0 (#150 — dogfooding version honesty, FB-0107).**
+**Plugin at v1.50.0 (this PR — a slash-command argument never touches a shell again, FB-0116/FB-0117. `$ARGUMENTS` is substituted textually into the whole skill body before anything parses it and is not shell-escaped, so four skills were pasting a caller-supplied path into a command that ran at render time with no permission prompt. Closed with one house idiom — the argument lives in prose under `## Argument`, blocks run argument-less, and the value reaches a program only via the reviewer's own `Read` (Tier 1) or a file the model writes whose fixed literal path the block reads (Tier 2, FB-0108's channel). Also closes a second live bug of the same mechanism: `$0`–`$9` are placeholders too, so `/flow:ship <any argument>` was corrupting ship's own FB-0107 provenance block; `${1}` for shell, `$(0)` for awk, because `${0}` is an awk syntax error. New CI-wired `run_arg_safety_evals.py` validates its instrument on a known positive before trusting any negative, and #159's residual pin flipped as designed. **Two named residuals:** `/flow:critique-plan`'s pinning lint cannot read a named plan file, and `/flow:audit-coverage`'s directory walk is judgment-based on direct invocation — both stated in the skills.)** Recently shipped: **v1.49.0 (#160 — `/flow:audit-coverage` enumerates before it judges, FB-0115), v1.47.0 (#159 — source-tree input mode + a verified RCE in typed arguments), v1.45.0 (#157 — the §4.10 orchestrator skill suite, FB-0110), v1.44.0 (#156 — manifest fence injection, FB-0109).**
 
 ▶ **Next up:** the **matcher** half of the coverage judgment — `auditor.md`'s disprove self-check drops a behaviour when any criterion covers it "even loosely", and that clause is what suppressed both of the diff-mode residual misses this PR localized. Measure it on the same two cases before changing it.
 
@@ -293,6 +293,22 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 **Sequencing rationale:** V1 is the input, V2 is the gate that makes autonomy safe, V3 is the deliverable, V4 is the flywheel. V3-before-V2 produces an unverified-but-pretty walkthrough; V4-before-V1 gives the loop nothing structured to check against.
 
 ## Next
+
+- **`/flow:critique-plan`: make the pinning lint reachable in plan-file mode again (FB-0116 residual).**
+  The lint is deterministic and useful, and since v1.50.0 it can only read the session-extracted plan:
+  reaching a named plan file required interpolating the argument into a render-time block, which is
+  the injection this release closed. The blocker is a **tool grant** — `plan-critic` is `tools: Read,
+  Grep`, so it cannot run Python at all. Options: restructure the skill to main-thread + `Agent`
+  spawn (deliberately NOT done inside a security PR — it changes a reviewer's execution model, i.e.
+  fans out an untested pattern to fix an untested one), or port the lint's predicate into something
+  the reviewer can apply by reading. Until then a named plan file routes to "treat pinning as
+  UNCHECKED, not clean", which is honest but weaker than the diff-mode path.
+- **`/flow:audit-coverage`: derive the source path from config instead of an argument (FB-0116 residual).**
+  Source mode is mechanical when a caller writes `.flow/audit-coverage-arg.txt` and judgment-based on
+  direct invocation, because the directory walk needs `find`/`grep` that `agent: auditor` does not
+  have. `.flow/prototypes/<branch-slug>/` is already the canonical prototype home (`/flow:prototype`),
+  so source mode arguably needs no argument at all — it could walk the canonical location and drop
+  the asymmetry. That is a behaviour change to a just-shipped feature, so it is its own work.
 
 ### `/flow:audit-coverage` cannot see `.md`, and for a plugin made of prompts that is most of the product (measured, v1.49.0)
 

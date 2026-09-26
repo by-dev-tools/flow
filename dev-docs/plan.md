@@ -3,7 +3,7 @@
 ## Current Focus
 
 
-**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/arguments-idiom-render-time-injection-fix`, v1.50.0, FB-0116 + FB-0117): make `$ARGUMENTS` safe to accept, once, and apply it everywhere.**
+**▶ EXECUTED, shipping (this branch `conductor/arguments-idiom-render-time-injection-fix`, v1.50.0, FB-0116 + FB-0117): make `$ARGUMENTS` safe to accept, once, and apply it everywhere.** Plan approved with all four open decisions answered: OD1 **include** `review-brief` (the brief's fenced-means-not-exposed premise was refuted by measurement); OD2 **accept the degradation** and print the existing UNCHECKED line, routing the restructure to the roadmap with its tool-grant reason; OD3 **fix the two measured `$N` sites**, sweep and report the rest; OD4 #159 has merged, so the residual pin flipping red is the designed signal and this PR is the intended trigger. Shipped: the prose rule (`## Argument`, argument-less blocks, Tier 1 Read / Tier 2 Write-then-path) at four sites, `lib/arg_placeholders.py`, `extract_session.py --plan-file-from`, the `${1}`/`$(0)` fixes at four more, and CI-wired `run_arg_safety_evals.py`. **38/38 harnesses green.** Three of my own instruments reported a wrong green on the way and all three are recorded in the history entry — including `${0}` inside awk, which is a syntax error, and comments about `$0` that were themselves substitution sites.
 
 ### The vulnerability, re-verified from the shipped host (not re-derived from the brief)
 

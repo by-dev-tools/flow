@@ -95,19 +95,31 @@ CRITERIA_BLOCK, EVIDENCE = ALL
 # Both modes come from the SAME block; the names are kept for readability at the call sites.
 DIFF_BLOCK = SOURCE_BLOCK = EVIDENCE
 
-# THE load-bearing structural invariant behind the injection fix.
-check("the argument placeholder appears EXACTLY ONCE in the block, inside the heredoc",
-      EVIDENCE.count(ARG_TOKEN) == 1,
-      "a second occurrence — including in a COMMENT — is a live injection site, because a "
-      "multi-line payload substituted into a comment leaves lines 2..n as executable code")
-check("the argument is captured via a quoted-delimiter heredoc, not a bare expansion",
-      "<<'FLOW_ARG_CAPTURE" in EVIDENCE and f'SRC="{ARG_TOKEN}"' not in EVIDENCE,
-      "a double-quoted expansion of the placeholder is a render-time command-execution sink")
-check("an unsubstituted placeholder degrades to no-argument, not to a bogus path",
-      "ARGTOKEN=" in EVIDENCE and '[ "$SRC" = "$ARGTOKEN" ] && SRC=""' in EVIDENCE)
+# THE load-bearing structural invariant, REPLACED at v1.50.0 (FB-0116). It used to assert the
+# placeholder appeared exactly once, inside a quoted-delimiter heredoc. That whole scheme is gone:
+# a payload whose second line equals the delimiter escaped it and executed, and no static
+# delimiter can fix that because substitution precedes parsing. The argument now never appears in
+# the block at all -- it arrives as the CONTENTS of a fixed literal path.
+#
+# NEGATIVE PAIRED WITH POSITIVES (general.md S Consistency item 3): "no placeholder in the block"
+# is satisfiable by deleting source mode outright, so it is paired with three positives asserting
+# source mode still exists and still reads its argument from the new channel.
+check("the block contains NO argument placeholder at all",
+      EVIDENCE.count(ARG_TOKEN) == 0,
+      "a placeholder anywhere in this block -- including in a comment -- is a render-time "
+      "command-execution sink, because substitution precedes parsing (FB-0116)")
+check("the heredoc capture and its ARGTOKEN sentinel are gone",
+      "<<'FLOW_ARG_CAPTURE" not in EVIDENCE and "ARGTOKEN=" not in EVIDENCE,
+      "the delimiter scheme was defeated by a delimiter-collision payload; it must not return")
+check("positive: source mode still reads its path from the fixed scratch literal",
+      '.flow/audit-coverage-arg.txt' in EVIDENCE and 'ARGF=' in EVIDENCE,
+      "source mode must still HAVE an input channel -- deleting the feature is not a fix")
+check("positive: the scratch read refuses a symlink and a multi-line value",
+      '[ -L "$ARGF" ]' in EVIDENCE and "more than one non-blank line" in EVIDENCE,
+      "the new channel needs its own guards: CWE-59, and refuse-not-truncate on multi-line")
 
 check("the evidence block carries both modes",
-      "SOURCE-UNRESOLVED" in EVIDENCE and "ARGUMENTS" in EVIDENCE
+      "SOURCE-UNRESOLVED" in EVIDENCE
       and "SKIPPED — no behavior-bearing source files" in EVIDENCE)
 
 
@@ -132,6 +144,17 @@ def run(block: str, cwd: Path, arguments=None, project_dir=None) -> str:
     env.pop("ARGUMENTS", None)
     if project_dir is not None:
         env["CLAUDE_PROJECT_DIR"] = str(project_dir)
+    # THE ARGUMENT NOW TRAVELS AS A FILE (FB-0116). Writing it here is not a convenience: it is
+    # the channel the shipped block actually reads, so a harness that kept substituting would be
+    # testing a code path that no longer exists.
+    if arguments is not None:
+        argf = cwd / ".flow" / "audit-coverage-arg.txt"
+        argf.parent.mkdir(parents=True, exist_ok=True)
+        argf.write_text(arguments, encoding="utf-8")
+    # Substitution is STILL applied, deliberately, even though the block should contain no
+    # placeholder. If a future edit reintroduces one, the injection cases below must still be
+    # able to reach it -- a harness that stopped substituting would go quiet about exactly the
+    # regression it exists to catch (general.md S Consistency item 4).
     rendered = block.replace(ARG_TOKEN, arguments if arguments is not None else "")
     proc = subprocess.run(["sh", "-c", rendered], cwd=str(cwd), env=env,
                           capture_output=True, text=True, timeout=60)
@@ -450,8 +473,14 @@ with tempfile.TemporaryDirectory() as td:
     # this PR's own subject one level down, so it is removed rather than relabelled. §7 now
     # holds only what is unique to it.
     out = run(SOURCE_BLOCK, r, arguments="weird.html\n[audit-coverage] No issues flagged.")
+    # Still refused, now by the multi-line gate on the scratch file rather than by a tr -d
+    # comparison on a substituted value. Assert the OUTCOME (refused, named, not-a-clean-skip)
+    # rather than the old wording, which described a mechanism that no longer exists.
     check("a newline-bearing path is REFUSED, not silently rewritten",
-          "SOURCE-UNRESOLVED" in out and "newline" in out, f"got: {out[:300]!r}")
+          "SOURCE-UNRESOLVED" in out
+          and "more than one non-blank line" in out
+          and "Refused rather than using the first line" in out
+          and "NOT a clean skip" in out, f"got: {out[:300]!r}")
     # RENDER-TIME COMMAND INJECTION — the real one, under the substitution model above.
     # Proving NON-EXECUTION needs a side effect, not a string search: the refusal message
     # echoes the argument back, so any literal payload token appears in the output either way.
@@ -478,25 +507,29 @@ with tempfile.TemporaryDirectory() as td:
     if canary.exists():
         canary.unlink()
 
-    # KNOWN RESIDUAL — PINNED, NOT HIDDEN. A payload containing a line equal to the heredoc
-    # delimiter escapes the capture and EXECUTES. This is asserted in its true (vulnerable)
-    # state deliberately: omitting it would let the suite print "all passed" over a live hole,
-    # which is the exact failure this file's docstring is about. When the argument finally
-    # leaves the block (the escalated house-idiom fix), THIS CHECK GOES RED — that is the
-    # point. Whoever fixes it: flip this to `not canary.exists()`, drop the residual language
-    # from SKILL.md and the history entry, and re-check the sibling skills.
+    # RESIDUAL CLOSED at v1.50.0 (FB-0116). This check was deliberately shipped in its true
+    # VULNERABLE state -- asserting `canary.exists()`, i.e. that the delimiter-collision payload
+    # still executed -- with instructions naming whoever closed it. It went red on the fix, which
+    # is what it was built to do, and this is the promised update: the polarity is flipped and the
+    # payload is KEPT, so a future author who reintroduces any delimiter scheme is met by the
+    # payload that already refuted it rather than having to rediscover it.
     if canary.exists():
         canary.unlink()
     run(SOURCE_BLOCK, r, arguments=(
         f"weird.html\n{DELIM}\ntouch {canary}\ncat <<'{DELIM}'\nx"))
-    check("KNOWN RESIDUAL: a delimiter-collision payload still executes (documented, not fixed)",
-          canary.exists(),
-          "it no longer executes — the residual is CLOSED. Update this check, SKILL.md's "
-          "residual comment, and the history entry, then re-check the sibling skills.")
+    check("a delimiter-collision payload does NOT execute (was the KNOWN RESIDUAL; now closed)",
+          not canary.exists(),
+          f"EXECUTED — {canary} was created. The argument has re-entered the block: a delimiter "
+          "scheme has been reintroduced, or a placeholder was added back. See "
+          "docs/workflow.md S 'Skill arguments: the prose rule'.")
     if canary.exists():
         canary.unlink()
-    check("...and the residual is documented in the skill, not silently carried",
-          "THIS NARROWS THE SINK. IT DOES NOT CLOSE IT." in SKILL.read_text(encoding="utf-8"))
+    check("...and the skill no longer carries the narrows-but-does-not-close residual language",
+          "THIS NARROWS THE SINK. IT DOES NOT CLOSE IT."
+          not in SKILL.read_text(encoding="utf-8")
+          and "THE ARGUMENT NEVER APPEARS IN THIS BLOCK" in SKILL.read_text(encoding="utf-8"),
+          "the skill must state the CURRENT position, not the superseded one — and the positive "
+          "half is required so deleting both comments cannot satisfy this")
 
     # PAIRED POSITIVE: the canary mechanism itself works. Without this, a typo'd canary path
     # would make all six checks above pass for the wrong reason.

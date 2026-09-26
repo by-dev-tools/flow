@@ -440,10 +440,12 @@ else
   else
     ROADMAP=$(jq -r '.roadmapPath // "dev-docs/roadmap.md"' flow.config.json 2>/dev/null); [ -z "$ROADMAP" ] && ROADMAP=dev-docs/roadmap.md
     PLAN=$(jq -r '.planPath // "dev-docs/plan.md"' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN=dev-docs/plan.md
-    sect() { awk -v H="$1" 'index($0,H){f=1;next} f&&/^## /{exit} f' "$2"; }
+    # ${1}/${2} for shell positionals, $(0) for the awk field (awk has no brace form; ${0} is a
+    # syntax error) — FB-0117, mirror of ship Step 5b. The full reasoning lives there.
+    sect() { awk -v H="${1}" 'index($(0),H){f=1;next} f&&/^## /{exit} f' "${2}"; }
     # Anchor on the "**Plugin at vX**" headline (mirror of ship Step 5b) so the Recently-shipped
     # enumeration can't mask a stale headline; fall back to the section when no such line exists.
-    has_ver() { line=$(printf '%s\n' "$1" | grep -E '^\*\*Plugin at '); if [ -n "$line" ]; then printf '%s' "$line" | grep -qF "$VER"; else printf '%s' "$1" | grep -qF "$VER"; fi; }
+    has_ver() { line=$(printf '%s\n' "${1}" | grep -E '^\*\*Plugin at '); if [ -n "$line" ]; then printf '%s' "$line" | grep -qF "$VER"; else printf '%s' "${1}" | grep -qF "$VER"; fi; }
     FAIL=""
     s=$(sect "## Now" "$ROADMAP"); [ -z "$s" ] && s=$(head -40 "$ROADMAP" 2>/dev/null); has_ver "$s" || FAIL="$FAIL roadmap(Now)"
     s=$(sect "## Current Focus" "$PLAN"); [ -z "$s" ] && s=$(head -40 "$PLAN" 2>/dev/null); has_ver "$s" || FAIL="$FAIL plan(CurrentFocus)"

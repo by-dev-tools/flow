@@ -140,7 +140,7 @@ esac
 # table has no entry.
 if [ -n "$PLATFORM" ]; then
   # Resolve the helper the way every other flow skill does (plugin root first, in-repo
-  # second) — `$0` is the shell here, not this file, so a $0-relative path would
+  # second) — `\$0` is the shell here, not this file, so a \$0-relative path would
   # silently miss and the check would never fire (FB-0010 silent-skip).
   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/toolchain.py" ]; then
     TC="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/toolchain.py"
