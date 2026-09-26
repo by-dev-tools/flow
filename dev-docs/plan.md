@@ -2,6 +2,228 @@
 
 ## Current Focus
 
+**▶ AT PLAN GATE (this branch, `conductor/audit-coverage-recall-two-stage-union`, FB-0115, v1.49.0): raise `/flow:audit-coverage`'s recall. Precision is already perfect; recall is 0–100% and that is the confidence-inverting half.**
+
+**Mode:** feature · **Surface:** non-visual
+
+**Provenance first (FB-0107, CLAUDE.md § How to Work 3).** Measured in this workspace before anything
+else: installed plugin **1.29.0** (`~/.claude/plugins/installed_plugins.json`, `gitCommitSha cf783ac`)
+against a working tree at **1.47.0** — **eighteen releases stale**. Two consequences, stated before any
+green result is produced:
+
+1. `Skill("flow:audit-coverage")` in this session resolves **1.29.0's** SKILL.md, so it **cannot** exercise
+   anything this PR changes. Every verification runs the working-tree artifacts under the **Bash tool**, and
+   every recall measurement renders the working-tree evidence block by hand and hands it to a freshly
+   spawned `flow:auditor` — the same rig #153 and #159 used, so the before-numbers are directly comparable
+   to the recorded series.
+2. **`plugins/flow/agents/auditor.md` is byte-identical between installed 1.29.0 and this working tree**
+   (165 lines, verified by `difflib`). That is load-bearing and it is why the measurement is valid: this PR
+   changes **only** the skill's task text, never the agent's system prompt, so a spawned `flow:auditor`
+   carries the *real* shipped reviewer prompt. Had they diverged, every number below would have been
+   measuring a system that does not ship.
+
+The installed `/flow:ship` (1.29.0) **predates the `## Flow run` provenance rows** — `skills/ship/lib/`
+there has no `plugin-provenance.py` (FB-0107 shipped v1.43.0). So there were **no provenance rows to
+read**, and this plan says that rather than implying a check happened.
+
+### 0. The measured problem, and what it is not
+
+Ben: *"those gaps are huge; not really acceptable for an autonomous system that we're trusting."*
+
+| run | gaps present | found | mode | where the ground truth lives |
+|---|---|---|---|---|
+| 1 | 10 | **10** | source | `dev-docs/research/2026-09-16-d1-auto-plan-quality-spike.md` (#153), table of 10 |
+| 2 | 10 | **5** | source | #159 body § "Live joint test"; same prototype, same plan, one re-run |
+| 3 | 5 | **0** | diff | #159's own ship run — `"No issues flagged"` and it was wrong; the 5 are the criteria commit `0b69457` declared |
+| 4 | 6 | **0** | ? | **unattributed — see Open call 1** |
+| 5 | 5 | **2** | diff | #158's own ship run; the 5 are named verbatim in its manifest, all in `prototype-gate.py` |
+
+**Precision is 5/5 unblemished — it has never once reported a gap that was not real.** That asymmetry is the
+whole design constraint, and it is the opposite of G-Research's (their practitioner report describes a
+false-positive problem solved by a filtering second pass). **Our filter is already effectively perfect, so
+the lever is widening stage one, not adding a filter.** Importing their second pass would solve a problem
+we do not have.
+
+**The structural cause is already established and is not re-derived here** (#158's history entry): behaviour
+added during `/simplify` and `/flow:staff-review` lands *after* the Spec-walk was written, and Step 2 runs
+coverage after those stages — so the gate sees the new behaviour and compares it against a plan that
+predates it. That is sequencing, not judgment quality.
+
+**What the single pass actually does wrong, read off the shipped prompt.** `audit-coverage/SKILL.md:130`
+fuses three jobs into one invisible step: *enumerate* the behaviours, *match* them against criteria, and
+*suppress* weak findings. The suppression half is heavily tuned — `auditor.md`'s principle line ("a reviewer
+prompted to find gaps will usually report some, even when the work is sound"), its disprove self-check
+("if any criterion covers the behavior — **even loosely** — drop the finding. Default to 'covered' when a
+criterion plausibly exercises the change"), and the skill's own "do not invent findings to appear thorough".
+Those rules are correct for matching and they are why precision is perfect. Applied to *enumeration* they
+are pure recall loss — and because the enumeration is never written down, **a run that enumerated 6 of 11
+behaviours emits a clean result indistinguishable from a thorough one.** That is `general.md` § Consistency
+item 4 exactly: a measurement that can only return "clean".
+
+### 1. Scope
+
+**Scope (in)**
+
+1. **A deterministic change inventory** in the evidence block (`lib/change-inventory.py`): one row per hunk
+   of the *already-filtered* behaviour diff, each row carrying file · hunk header · funcname · ±lines, and a
+   **plan-relation tier** (`POST-PLAN` / `SAME-COMMIT` / `pre-plan`). Stage 1 must account for every row.
+   This is the "validate against a deterministic source — the model can suggest, but never define" pattern,
+   and it converts an invisible omission into a visible `UNACCOUNTED` row.
+2. **The sequencing fix, done deterministically, as part of (1).** `POST-PLAN` = a hunk that landed in a
+   commit after the last commit touching `planPath` on this branch. **Validated against the known positive
+   before being proposed:** replayed on #158's real commit graph, the computation selects exactly `c91b8c2`
+   (`/flow:staff-review: 4 lenses, 7 BLOCKERs`) — the commit the three missed behaviours came from — and
+   correctly *excludes* `2798889` (`/simplify`), whose behaviours were declared in `a25bdbf`. It is not a
+   prior or a heuristic: no criterion *can* have been written for a hunk the plan predates.
+3. **Split the one overloaded pass into two labelled stages inside the same forked context** — Stage 1
+   enumerates (recall only, criteria not consulted, the suppression rules explicitly scoped *off*), Stage 2
+   matches using the existing already-tuned judgment **verbatim**. This is a simplification of an overloaded
+   prompt, which is what the practitioner report found *simpler* than one complex prompt, not more complex.
+4. **Make both halves falsifiable in the output**: the Stage-1 `BEHAVIOR INVENTORY`, and a one-line
+   `COVERAGE MAP` showing Stage 2's verdict per enumerated behaviour. Same doctrine as the existing
+   source-mode `Read:` line, one notch further — *"I found nothing among these 11 behaviours"* is
+   falsifiable at a glance; *"I found nothing"* is not.
+5. **A recall measurement harness** (`tools/coverage-recall/`, dev tooling, not shipped) that renders a
+   case's evidence block from the working tree, and **deterministically scores** a reviewer output against
+   keyed ground-truth anchors. Self-validating: it refuses to print a number until its own `--selftest`
+   passes.
+6. **Union across independent runs — measured, and shipped only if it moves recall.** Three independent
+   `flow:auditor` runs per condition yield both the mean single-run recall and the 3-run union recall from
+   the same spend. Union is justified here *only* by the perfect precision: unioning can add true positives
+   and, empirically, no noise. If measurement says the staged prompt already closes the gap, **union is
+   dropped** rather than shipped on plausibility.
+
+**Scope (out)** — named, because each is a live temptation
+
+- **No new reviewer, no new agent, no new skill, no new `flow.config.json` slot.** If the design grew one of
+  those it would be the wrong turn, per Ben's explicit instruction. It grew none. The only new shipped file
+  is one `lib/*.py` helper under the existing skill — the same shape `ship/lib/*.py` already uses, and it
+  exists so the deterministic half is eval-testable instead of buried in shell.
+- **`auditor.md` is not edited.** The judgment is already tuned and is the reason precision is perfect.
+- **What counts as a "behaviour change" is unchanged** — `:130`'s definition and the refactor/rename/format/
+  comment/test/doc exclusions are copied forward verbatim.
+- The prototype gate (#158), the `$ARGUMENTS` house-idiom fix (separate worker), `/flow:verify-build`.
+- **The `.md` exclusion is reported, not fixed — see Open call 2.** It is probably a larger recall lever than
+  anything in this PR, and it is a contract change for every consumer, so it is Ben's call, not mine.
+
+**Spec-walk:**
+
+- [ ] **The inventory enumerates one row per hunk of the behaviour diff, from the same file list the diff
+      itself uses** — not a second filter → verify: `run_coverage_inventory_evals.py` asserts the row set's
+      file list is byte-equal to the shell's `$FILES`, and a mutation that changes one filter without the
+      other fails the harness.
+- [ ] **A hunk that landed after the plan's last commit is marked `POST-PLAN`** → verify: replay #158's
+      commit graph in a temp repo; `prototype-gate.py`'s staff-review hunks are `POST-PLAN`, its `/simplify`
+      hunks are `pre-plan`. **Paired negative:** a branch where the plan is the *last* commit yields zero
+      `POST-PLAN` rows, so the marker cannot be satisfied by always firing.
+- [ ] **A plan never touched on this branch reports `PLAN-PREDATES-BRANCH`, and that is a stronger signal
+      than `POST-PLAN`, not a missing one** → verify: temp-repo case asserts the distinct line.
+- [ ] **An inventory that cannot be computed prints `INVENTORY-UNAVAILABLE` and is never the `SKIPPED`
+      line** → verify: run with a broken `planPath` and with `git` unable to resolve the base; assert the
+      distinct line appears AND `SKIPPED` does not (paired positive+negative, per `general.md` item 3).
+- [ ] **The inventory is capped and its cap warns** → verify: a temp repo over the row cap emits
+      `INVENTORY-TRUNCATED`; a repo under it does not (the warning does not always fire).
+- [ ] **Stage 1's output names every inventory row exactly once, across `BEHAVIOR INVENTORY` /
+      `NOT BEHAVIOR` / `UNACCOUNTED`** → verify: a live `flow:auditor` run on case 5 (#158) is checked
+      row-by-row against the inventory the block emitted.
+- [ ] **Stage 2's output format is byte-compatible with what `/flow:ship` Step 2 routes on** → verify:
+      `run_evals.py`'s four coverage fixtures pass with regenerated `.expected.txt`, and its
+      `finding_count` regex (`^ISSUE …`) counts the same number before and after the new sections exist.
+- [ ] **Recall rises on real data, and precision does not fall** → verify: `tools/coverage-recall` before/
+      after, 3 inputs × 3 independent runs per condition; report mean single-run recall, 3-run union recall,
+      and precision per condition. **A precision regression is a blocker, not a tradeoff.**
+- [ ] **The measurement harness can fail** → verify: `--selftest` must pass before any number is reported —
+      an output containing every anchor scores N/N; `"No issues flagged."` scores 0/N; a subset scores
+      exactly that subset; an output of unrelated real findings scores 0 found + K false-positive
+      candidates; and deleting one anchor from the key changes the score. (`general.md` item 4, applied to
+      my own instrument. Four instruments in the last two PRs reported green while broken.)
+
+**Visual-walk:** N/A — flow is `uiSurface: true` but this change ships no browser UI (no `uiFilePatterns`
+match), same as #159.
+
+### 2. The test set, and why it is real
+
+Three **reconstructible** inputs with exact, committed, artifact-backed ground truth — this is what makes
+the work measurable rather than arguable:
+
+| case | input | ground truth | n gaps |
+|---|---|---|---|
+| **A** (runs 1+2) | `annotation-layer.html` + the spike's 13-criterion `auto-plan.md`, both committed under `dev-docs/research/2026-09-16-d1-auto-plan-quality-spike/` | the 10-row table in the spike doc — **already keyed in code** as `SPIKE_ANCHORS` in `run_coverage_source_mode_evals.py:325` | 10 |
+| **C** (run 3) | plan at `bd29167`, diff `f278aec..bd29167` | the 5 criteria commit `0b69457` added (symlink refusal · delimiter forgery · repo-relative exclusions · `files selected (N)` · `Read:` line) | 5 |
+| **D** (run 5) | plan + diff at #158's ship SHA, pre-backfill | the 5 named verbatim in #158's manifest, all in `prototype-gate.py` | 5 |
+
+Case A is source mode and cases C/D are diff mode, so the set spans both input paths. **Run 4 (0-of-6) is
+not reconstructible** — see Open call 1. The set is therefore **20 ground-truth gaps across 3 inputs**, and
+the honest label is n=3, not n=5.
+
+One deliberate reuse: case A's key is asserted equal to `SPIKE_ANCHORS` rather than re-typed, so the two
+copies cannot drift (`general.md` item 2).
+
+### 3. Files touched
+
+| Path | Change |
+|---|---|
+| `plugins/flow/skills/audit-coverage/SKILL.md` | the two-stage prose + the inventory call; diff/source dispatch untouched |
+| `plugins/flow/skills/audit-coverage/lib/change-inventory.py` | **new** — the deterministic inventory + plan-relation tiers |
+| `plugins/flow/evals/run_coverage_inventory_evals.py` | **new** — the inventory's eval harness |
+| `plugins/flow/evals/fixtures/coverage_*.expected.txt` (×4) | regenerated for the new output sections |
+| `plugins/flow/docs/workflow.md` | the Step-2 paragraph: what the inventory adds, and the re-measured recall series |
+| `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `changelog/v1.49.0.md` | v1.49.0 |
+| `tools/coverage-recall/` | **new, not shipped** — renderer + deterministic scorer + `--selftest` + 3 case files |
+| `dev-docs/feedback/FB-0115-*.md`, `dev-docs/history/`, `dev-docs/plan.md`, `dev-docs/roadmap.md`, `dev-docs/README.md` | docs |
+
+### 4. Confidence verdicts
+
+**Assumption:** the two-stage split *inside one forked context* measurably raises recall, without a second invocation.
+**Confidence:** MEDIUM
+**Why:** the mechanism is the one the practitioner report describes ("the first pass captures everything") and separating enumeration from suppression is a simplification of an overloaded prompt, not an addition. But one context cannot fully shed `auditor.md`'s global suppression language — the split scopes it by instruction, which is a soft constraint.
+**If it flips:** the deterministic inventory still stands on its own (it is not judgment — it forces accounting whether or not the model's enumeration improves), and union becomes the load-bearing half instead of the optional one.
+
+**Assumption:** the `POST-PLAN` marker raises recall specifically on the class that produced 3 of the 5 measured misses.
+**Confidence:** MEDIUM
+**Why:** the *instrument* is validated, not assumed — replayed on #158 it selects exactly the staff-review commit the misses came from and excludes the `/simplify` commit whose behaviours were declared. What stays unproven until measured is whether marking those hunks changes what the model reports.
+**If it flips:** the marker is still worth keeping as human-readable signal in the PR body, but it stops being the cheap-and-large fix and the prompt split carries the PR.
+
+**Assumption:** three reconstructible inputs are enough to decide whether a change ships.
+**Confidence:** MEDIUM
+**Why:** ground truth is exact and committed for all three, and 3 independent runs per condition separates instrument variance from a real shift. But n=3 inputs, one of which is a source-mode HTML prototype rather than a ship-time diff.
+**If it flips:** the numbers are reported as indicative with the n stated, and a change that shows no movement is dropped rather than shipped on plausibility — which is Ben's instruction and is the safe direction under small n.
+
+**Assumption:** spawning `flow:auditor` reproduces the shipped reviewer faithfully enough to measure.
+**Confidence:** HIGH
+**Why:** verified, not assumed — `agents/auditor.md` is **byte-identical** between installed 1.29.0 and this working tree, this PR does not touch it, and the two historical numbers in the series (10 and 5) were produced on exactly this rig.
+**If it flips:** there is no fallback — `claude -p` is unauthenticated in this sandbox ("Not logged in") and `Skill()` resolves the 18-releases-stale copy. The measurement would have to be deferred to a session with a current install, and the PR would ship no numbers, which would make it unshippable under its own Spec-walk.
+
+### 5. Risks
+
+- **The inventory adds bytes to an already-capped evidence block.** A 78-hunk PR (#158, measured) yields ~78 rows ≈ 7 KB. Mitigated by a row cap + `INVENTORY-TRUNCATED`, and by emitting *rows* for the post-plan region rather than re-printing its diff text.
+- **Forcing accounting for every hunk could invite padding** — behaviours invented to fill rows, which would be the first precision regression in five runs. This is exactly why precision is re-measured and a drop is a blocker; `NOT BEHAVIOR` exists as the cheap honest answer for a refactor hunk.
+- **`harness_audit.py --split` cannot see this file's shell.** Baseline, just measured: `audit-coverage/SKILL.md` 31,010 chars, reported **prose 100.0% / shell 0.0%** — because the documented counting rule scores only ```` ```sh ````/```` ```bash ```` fences, and this skill's ~9 KB of shell lives in `` !` `` spans. So the before/after delta Ben asked for will read as all-prose regardless of the shell added. Reported as a caveat on the instrument, not fixed here (it is a `tools/` change with its own blast radius).
+
+### 6. Open calls for the gate
+
+1. **Run 4 (`0-of-6`) has no artifact-backed provenance I can find.** Runs 1, 2, 3 and 5 each trace to a
+   named commit or PR section. Run 4 does not, and the closest candidate is a re-reading of run 3
+   (#159's *"5 of 6 review-added behaviors were undeclared"* — 6 behaviours, 5 undeclared, 0 found). If
+   that is what it is, the series is **four runs, not five**, and #158 currently ships *"Across five live
+   runs"* into `workflow.md:179` and `prototype/SKILL.md:217`. I have not touched #158 (out of scope) and I
+   am not going to quietly renumber a claim in a PR I was told to leave alone. **Which is it, and do you
+   want the correction routed to #158's worker?**
+2. **`*.md` is excluded from the behaviour diff, and in this repo that is most of the product.** Measured on
+   #158: **63 files changed, 4 reach the coverage reviewer** — the entire new `skills/prototype/SKILL.md`, a
+   shipped deployed surface by CLAUDE.md's own rule ("prompt changes are code changes"), is invisible to the
+   gate. It did not affect this PR's test set (all 10 of D's and C's gaps are in `.py`), but it is plausibly
+   a bigger recall lever than everything in scope here. It is also a `sourceFilePatterns`/`EXCL` contract
+   change for every consumer, and on flow's own repo a 176 KB `ship/SKILL.md` diff would blow the 60 KB cap
+   instantly. **Roadmap item, or in scope for a follow-up you want dispatched now?**
+3. **Measurement spend.** The numbers require ~18 `flow:auditor` spawns (3 inputs × 2 conditions × 3
+   independent runs), each carrying ~60 KB of evidence, plus a few for union checks. That is a real cost and
+   it is the only way to get the before/after you asked for rather than plausibility. **Confirming the spend
+   at the gate** per the autonomous-work guardrail on cost exposure.
+
+---
+---
+
 **▶ EXECUTED, shipping (this branch, `conductor/track-b-d1-phase-2-prototype-gate`, v1.48.0, FB-0113/FB-0114): D1 Phase 2 — the prototype phase, human gate 1, and the loop re-order.** Implements `dev-docs/handoffs/d1-prototype-first-gate.md` § Phase 2 (FB-0081), unblocked by two human decisions Ben made 2026-09-16: §9.4's prototype medium (**HTML prototypes for the first build, web AND mobile**) and §9.2's proportionality trigger (**an explicit `mode: tiny`**, not a tuned size threshold). Ships `/flow:prototype` (the iterative prototype phase + gate-1 mechanics) over a deterministic `lib/prototype-gate.py` (trigger / artifact contract / approval capture + verify), re-orders `workflow.md`'s Step 2 into a two-path fork without renumbering Steps 3–11, and rewrites the Step 8/9 "not a third gate" argument as *replacement* rather than exception. The load-bearing invariant the whole PR is built around: **exactly one pre-execution human gate, always — prototype approval XOR plan approval, never both, never neither.** Also corrects a real sequencing defect in the handoff (§8's preamble gates Phase 2 on the §9.3 spike; §9.3's own resolution text gates Phase 3 — and the spike as specified *needs* a Phase-2 artifact, so the preamble's ordering is impossible). **Two rounds of `/flow:critique-plan`: 11 findings (3 BLOCKER, 4 REDIRECT, 4 FOLLOW-UP), all accepted, none disputed** — and five of them changed the design, not the prose. Round 1: the "a plan always exists" assertion is **pulled forward out of Phase 3** (without it this PR removes the human plan gate while nothing asserts a plan was produced — FB-0080's exact condition, reintroduced by the PR that exists to close it); the trigger's second arm becomes a **declared `Surface:` brief field** instead of the un-pinnable "the request is visual" judgment the first draft smuggled in one paragraph after rejecting un-pinnable judgment; `present` authors **zero markup**, so flow doesn't gain a second browser-UI emitter sitting outside its own `uiFilePatterns`. Round 2: that new `gate-execute` guard **had no call site** (the FB-0077 shape, in the PR that cites FB-0077) and now has two; the feasibility contract **enumerated three platforms and so failed open on `platform` unset** — the default an iOS consumer ships — and is now the complement of `web`, fail-closed; and `mode: tiny`, the one proportionality escape hatch, was **undeclarable on design work** under its shipped 1–3-line definition, which would have rebuilt the ceremony D1 exists to remove. `/flow:audit-plan` then found five more — including that my version/FB claim sweep had gone stale (v1.45.0, FB-0110 **and** FB-0111 are all taken by branches that appeared while this plan was being written → **v1.46.0 / FB-0113 / FB-0114**), that the §9.3 spike had **already landed** (#153, "resolved — MIXED") while this plan still described it as in flight, and that two of my "reuse an existing harness" boxes would have passed **vacuously** because those harnesses derive their targets by filters `/flow:prototype` falls outside. See the "PR — D1 Phase 2" block below for the full Spec-walk, seven confidence verdicts, and eight open calls for the gate.
 
 **▶ EXECUTED, shipping (this branch, `conductor/d1-a-audit-coverage-source-input-mode`, v1.47.0): give `/flow:audit-coverage` a source-tree input mode.** All three plan-gate open calls resolved by the orchestrator under §4.8 (low-stakes, reversible, high-confidence, low-taste — rule 7: escalating them would spend the human's attention on null results). 81-check eval harness green; 36/36 harnesses green.
