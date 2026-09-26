@@ -46,6 +46,14 @@ Until `/flow:audit-coverage` gains its prototype-**source** input mode (approved
 
 The spike measured an *auto*-written plan while this interim uses an *agent*-written one. That distinction is real in general and does not apply here: the spike auto-wrote its plan *in character as the D1 Step-6 agent*. Same agent, same context, same moment. The finding transfers.
 
+## The framing I had wrong, corrected by Ben at the merge gate
+
+Through most of this PR the coverage hedge sat immediately after "no second human gate", which made it read as **the price of moving the gate** — as if the human were trading oversight for convenience. Ben rejected that framing and he is right: **for UI work a prototype is strictly MORE information than a written plan.** You look at the thing and click it instead of reading a description and imagining the result. Control at the gate goes **up**; nothing is traded away.
+
+So the two things were entangled in the prose and are now separated in both shipped files. The coverage limitation is about a different axis entirely — *"did the implementation declare everything it built?"*, not *"did the human see the design?"* — and it is **pre-existing and orthogonal**, unchanged by this PR. It is a note about one reviewer, not the cost of the move.
+
+The hedge's wording changed with the framing. "Raises the bar without guaranteeing" told a reader nothing they could act on; the shipped form tells them what to do with each outcome: **treat a flag as reliable; do not treat silence as evidence nothing was missed.**
+
 ## The interim rule stopped being interim before this merged
 
 Written as a two-row table conditional on the §9.3 remediation landing. **It landed mid-flight**: #159 (v1.47.0) shipped option (a), `/flow:audit-coverage`'s source-tree input mode, while this branch sat at review. So the stronger row is **live, not conditional** — the post-gate-1 plan review is `/flow:critique-plan` + `/flow:audit-plan` + `/flow:audit-coverage` **in source mode**, pointed at the approved prototype's source, which is the code nothing else at that step reads.

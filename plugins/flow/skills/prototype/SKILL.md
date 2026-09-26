@@ -210,13 +210,19 @@ python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py gate-execut
 
 **Do not proceed to Execute on `ok: false`.** It means the plan declares a prototype gate but carries no approval digest, or resolves no active Spec-walk block — in both cases nothing has been approved and nothing exists to build against. That is the condition FB-0080 named.
 
-**There is no second human gate here.** The human already gated, at the prototype. The plan is machine-reviewed:
+**There is no second human gate here, and that is not a reduction.** The human already gated — on a prototype, which is strictly *more* information than a written plan: they looked at the thing and clicked it rather than reading a description and imagining it. Control at the gate went **up**. The plan that follows is machine-reviewed:
 
 - `/flow:critique-plan` — scope drift, spec violation, incoherence.
 - `/flow:audit-plan` — unverified assumptions and recall.
-- `/flow:audit-coverage` **in source mode** (shipped v1.47.0 — point it at the approved prototype's source) — completeness, **best-effort**. Five live runs of this judgment have found **10 · 5 · 0-of-5 · 0-of-6 · 2-of-5** of the gaps present, at full precision throughout. **Read the series, not the worst number** — one bad run is a fluke, five is a property. Two of the misses were in its long-standing **diff** mode, so the variance belongs to the judgment, not to the new input path. It raises the bar; it does not guarantee completeness. **And behaviour added after the plan is written — during `/simplify` and staff-review — is exactly the behaviour least likely to be declared**, so a gap can reach Execute undeclared even when the pass runs clean.
+- `/flow:audit-coverage` **in source mode** (shipped v1.47.0 — point it at the approved prototype's source) — completeness.
 
-**Be honest about what the live one is worth.** All three run today — the source mode shipped in v1.47.0. Completeness is therefore *raised*, not *assured*: before that mode existed this review was form-and-coherence only, and the §9.3 spike measured that reviewer set catching 1 of 12 real coverage gaps, which is why the source input was built. Either way the backstop is the existing `/flow:audit-coverage` running post-execution against a real diff at `/flow:ship` Step 2, so a gap is caught **late, not never**. Say that plainly rather than implying the plan was fully checked — and note that the one guarantee here that is **not** judgment is `gate-execute`'s: a plan *exists*. That is mechanical, and with completeness only partly checked it carries more of the weight than it looks like it does.
+**The third of those has a measured limitation, on a different axis from the gate you just moved.** It answers *"did the implementation declare everything it built?"*, not *"did the human see the design?"* — the limitation is pre-existing and orthogonal, not the price of the move. Tell the human this much and no more:
+
+> **What this reviewer catches, measured.** Across five runs where the real answer was known — **10 · 5 · 0-of-5 · 0-of-6 · 2-of-5** — it found between none and all of the undeclared behaviours present, and **never once reported a gap that was not real**. So: **treat a flag as reliable; do not treat silence as evidence nothing was missed.** Recall is known-weak and is being worked on.
+
+Two of those misses were in its long-standing **diff** mode, so it is not the newer source input that is weak. And silence is weak evidence for a structural reason worth naming: **behaviour added after a plan is written — during `/simplify` and staff-review — is exactly the behaviour least likely to be declared**, and coverage runs after those stages. The backstop is unchanged: `/flow:audit-coverage` against a real diff at `/flow:ship` Step 2, so a gap is caught **late, not never**.
+
+**The one guarantee here that is not judgment** is `gate-execute`'s: a plan *exists*. Mechanical, deterministic, and the reason it was pulled forward rather than left to Phase 3.
 
 Phase 3 (auto-writing the plan and machine-gating it) is **not built**; it is gated on §9.3. Do not imply otherwise.
 
