@@ -18,13 +18,32 @@ with a Write tool and hands this flag a FIXED literal path; the untrusted text t
 travels file -> open() -> str and never occupies a shell word. This is FB-0108's
 `--finding-file` channel applied to a second sink.
 
-`--plan-file` is NOT removed, and deliberately so. FB-0108 removed `--finding`
-because that flag carried free TEXT, so every argv spelling was unsafe. This flag
-carries a PATH, which is what a correct caller has; the hazard was never the
-parameter but the shell interpolation in front of it. Closing it at the parameter
-would mutilate a correctly-used interface and leave the actual hazard -- a
-placeholder in a skill body -- untouched. It is closed where it lives instead, by
-`evals/run_arg_safety_evals.py`.
+`--plan-file` is NOT removed. The reason is narrower than it first looks, and two
+tempting versions of it are wrong -- stated here because the wrong version, taken
+as a house rule, is how the next `--plan-file "$ARGUMENTS"` gets written.
+
+The real reason: FB-0108 rule 1 asks whether the next author can reintroduce the
+hazard without noticing, and the hazard's sink is **shell composition**, not this
+parameter. `--finding` had no safe spelling -- free text inside a model-composed
+command line is unsafe on every route -- so there the parameter WAS the door. This
+flag has a safe spelling with live users: every eval call site passes it through
+`subprocess.run([...])`, a list, with no shell and no substitution. Removing it
+would close a door in a different wall from the one that was used.
+
+Two things this is NOT an argument for:
+  * NOT "a path is safer than free text". It is not. The `--plan-file-from` guards
+    twelve lines below exist precisely because the value can hold anything, and the
+    asymmetry runs the wrong way: the content validation lives on the safe channel
+    while the argv channel stays ungated.
+  * NOT "removing it would mutilate a correctly-used interface". After the FB-0116
+    conversion there are **zero** shipped-skill call sites; the remaining consumers
+    are this repo's own eval harnesses and a human running the script by hand.
+
+Residual, stated rather than implied: the lint that closes the real hazard
+(`evals/run_arg_safety_evals.py`) has authority only over skills in THIS repo's
+glob. A consumer who writes their own argument-taking skill and interpolates a
+placeholder into a shell block is protected by `/flow:doctor`'s install-time check
+(which scans the project's own `.claude/skills/` too), not by flow's CI.
 
 stdout is substituted into the SKILL.md body before dispatch to the
 auditor subagent. Output must be plain-text labeled sections matching the
@@ -564,7 +583,7 @@ def load_plan_file(plan_file: str, allow_external_paths: bool = False) -> tuple[
     candidate = raw if raw.is_absolute() else (cwd / raw)
     try:
         resolved = candidate.resolve()
-    except (OSError, RuntimeError) as e:
+    except (OSError, RuntimeError, ValueError) as e:  # ValueError: embedded NUL byte
         sys.stderr.write(
             f"extract_session: ⚠️ cannot resolve --plan-file {plan_file!r}: {e}\n"
         )

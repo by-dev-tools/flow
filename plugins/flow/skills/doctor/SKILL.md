@@ -167,6 +167,43 @@ fi
 
 `[PASS]` per scanned directory is the healthy result. `[FAIL]` names the caller, the callee, and the file:line. Note the exit codes are distinguished: **1** is a real violation, anything else is a tool failure — reporting "could not run" as a violation would be a false accusation, and reporting it as a pass would be the failure-open. UNKNOWN targets (a `Skill()` naming something outside the scanned tree — another plugin, or a typo) are printed in the indented detail rather than suppressed, so `Skill("flow:lnad")` stays visible.
 
+**Check 1.5 — no slash-command argument is interpolated into a shell block (FB-0116)**
+
+`$ARGUMENTS` is not a parameter the host hands to a shell; it is **substituted textually into the whole skill body before anything parses it**, and it is **not shell-escaped** (Claude Code says so in the refusal it prints when asked to import a Gemini command). A placeholder inside a `` !` `` span therefore executes caller-supplied commands **at render time, with no permission prompt**. Quoting cannot help — substitution happens first — and neither can a heredoc, because its delimiter can appear on line 2 of the payload. `$0`–`$9` are the same mechanism, which makes every shell positional and awk field reference in a skill body a placeholder too.
+
+This runs over the same two directories as Check 1.4, and the consumer half is the point: flow's CI lints flow's own skills, but a consumer who writes `/myproj:review <path>` and interpolates it gets the identical RCE in a file flow's CI will never see.
+
+```sh
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  PLUGIN_SKILLS="${CLAUDE_PLUGIN_ROOT}/skills"
+  A="${CLAUDE_PLUGIN_ROOT}/lib/arg_placeholders.py"
+else
+  PLUGIN_SKILLS="plugins/flow/skills"
+  A="plugins/flow/lib/arg_placeholders.py"
+fi
+if [ ! -f "$A" ]; then
+  echo "[SKIP] argument-placeholder lint — helper not found at $A"
+  echo "       Fix: reinstall the flow plugin (/plugin install flow@flow)."
+else
+  for D in "$PLUGIN_SKILLS" ".claude/skills"; do
+    if [ ! -d "$D" ]; then
+      echo "[SKIP] argument-placeholder lint — $D not present (no custom skills to lint)"
+      continue
+    fi
+    OUT=$(python3 "$A" "$D" 2>&1); RC=$?
+    printf '%s\n' "$OUT" | sed 's/^/       /'
+    case "$RC" in
+      0) echo "[PASS] no argument placeholder in a shell block ($D)" ;;
+      1) echo "[FAIL] argument placeholder interpolated into shell ($D) — render-time command execution."
+         echo "       Fix: see the [arg-placeholders] FAIL detail above." ;;
+      *) echo "[WARN] argument-placeholder lint could not run over $D (exit $RC) — argument safety is UNCHECKED, not clean." ;;
+    esac
+  done
+fi
+```
+
+Same exit-code discipline as Check 1.4: **1** is a real violation, anything else is a tool failure. A `[WARN]` here means the check did not run — never read it as clean.
+
 ### Section 2: project config
 
 **Check 2.1 — flow.config.json at repo root**
