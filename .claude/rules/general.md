@@ -55,7 +55,7 @@ This repo dogfoods the flow plugin it ships. When opening a PR from this repo:
 
 ## Autonomous work guardrails
 
-This workflow is **hybrid managed autonomy** -- human-gated at Plan and Merge, with autonomy-friendly primitives between. Even inside the autonomous portion, always confirm with the user before proceeding if the action involves:
+This workflow is **hybrid managed autonomy** -- human-gated at the **pre-execution gate** (plan approval, or prototype approval on D1's prototype-first path) and Merge, with autonomy-friendly primitives between. Even inside the autonomous portion, always confirm with the user before proceeding if the action involves:
 
 1. **Cost exposure** -- API calls that could hit rate limits or incur charges, adding paid services
 2. **Permanence** -- irreversible changes (deleting data models, breaking migration paths, force pushes, `rm -rf`)

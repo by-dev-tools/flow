@@ -188,9 +188,22 @@ def main():
     workflow = WORKFLOW_DOC.read_text()
     check("docs-1-slot-documented", "`role`" in workflow and "designer" in workflow
           and "engineer" in workflow)
-    check("docs-2-no-active-consumer-disclaimer",
-          "no skill reads" in workflow.lower() or "not yet consumed" in workflow.lower(),
-          "workflow.md must not imply the D1 trigger is already wired")
+    # INVERTED at D1 Phase 2, not deleted. Phase 0 wrote this check to guard
+    # against workflow.md claiming the trigger was wired before it was — a real
+    # premature claim, correctly policed. Phase 2 wires it, so the SAME concern
+    # now points the other way: the stale disclaimer must be gone, and the
+    # consumer must be NAMED. Deleting a check the moment it turns red would
+    # retire the guarantee along with the assertion; inverting keeps it.
+    check("docs-2-stale-disclaimer-retired",
+          "no skill reads" not in workflow.lower()
+          and "not yet consumed by" not in workflow.lower(),
+          "workflow.md still claims no skill reads `role`, but /flow:prototype does "
+          "(D1 Phase 2) — a shipped doc asserting a falsehood about its own plugin")
+    # Paired positive: a negative alone is satisfiable by deleting the paragraph
+    # (.claude/rules/general.md § Consistency item 3).
+    check("docs-3-consumer-named",
+          "/flow:prototype" in workflow,
+          "workflow.md must NAME the skill that reads `role`, not merely stop denying one exists")
 
     total_marker = "passed" if fails == 0 else "FAILED"
     print(f"\n{total_marker}: {fails} failing check(s)")

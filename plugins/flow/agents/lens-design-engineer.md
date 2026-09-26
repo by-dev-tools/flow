@@ -20,6 +20,10 @@ The skill that spawns you (`/flow:staff-review`) passes:
 - **Diff path** — passed to you by `/flow:staff-review` (a repo-local `<repo-root>/.flow/staff-diff.patch`).
 - **Untracked files list** — passed to you alongside it (`<repo-root>/.flow/staff-untracked.txt`); `Read` each one in full.
 
+**Your input may be a RENDERED ARTIFACT rather than a diff.** When `/flow:prototype` spawns you for its pre-gate self-check, your prompt names an HTML prototype (e.g. `<repo-root>/.flow/prototypes/<branch>/prototype.html`) instead of a patch, together with the design brief. Review that file's rendered craft with the same hunts below — it is CSS and DOM, your native material.
+
+**In rendered-artifact mode the workspace-identity check has no header to read** — a prototype file carries no `# flow-review-context` line, and no untracked-files list is passed. Do NOT treat that as a mismatch and stop: verify instead that the artifact path you were given sits under the repo named in your **Workspace identity** line, and stop only if it does not. Everything else in this prompt applies unchanged. Note you are reviewing a **prototype under iteration**, not shipped code: flag craft that would be wrong to carry forward, not the absence of production concerns the prototype deliberately omits — the brief's *Deliberately excluded* field tells you which is which.
+
 **Use the paths you were given; never guess a `/tmp` one.** The diff's first line is a
 `# flow-review-context repo=… branch=… head=…` header. Compare it against the **Workspace identity** line in your prompt. If they disagree, **stop and say so** — do not review the contents and do
 not silently regenerate. A mismatch means the orchestration handed you the wrong workspace,

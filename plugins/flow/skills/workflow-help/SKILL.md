@@ -33,8 +33,12 @@ Flow is a managed-autonomy loop: the agent does the work it can do well; you sta
 ```
  1. Clarify          read source-of-truth docs; surface conflicts; ask 2–4
                      targeted questions (or list assumptions if autonomous)
- 2. Plan             write plan with spec-walk checkboxes + confidence
-                     verdict; run /flow:critique-plan; WAIT for human gate
+ 2. Pre-exec gate    ONE human gate, two shapes. CLASSIC: write plan with
+        (gate)       spec-walk + confidence verdict; /flow:critique-plan;
+                     WAIT for human gate. PROTOTYPE-FIRST (UI work):
+                     brief -> /flow:review-brief -> prototype, iteratively
+                     -> WAIT for gate 1 (prototype approval) -> technical
+                     plan, machine-reviewed
  3. Execute          implement against checkboxes; stay in scope
  4. Preflight        mechanical gates (typecheck/build/test + invariants) —
                      MUST be green before /simplify runs
@@ -53,9 +57,9 @@ Flow is a managed-autonomy loop: the agent does the work it can do well; you sta
 11. STOP             the user merges; Claude never does
 ```
 
-**Two load-bearing human gates** (non-negotiable): Plan approval (step 2) and Merge (step 11). A third automatic gate fires on LOW-confidence assumptions in the plan.
+**Two load-bearing human gates** (non-negotiable): the **pre-execution gate** (step 2) and Merge (step 11). The pre-execution gate is **plan approval**, or **prototype approval** when `/flow:prototype` routes a UI change down the prototype-first path — exactly one of the two, never both and never neither. A third automatic gate fires on LOW-confidence assumptions in the plan.
 
-**Mode flags** declared in the plan: `feature` (default, full loop), `spike` (skips /simplify + /flow:staff-review; uses /flow:ship-spike), `tiny` (1–3 line fix; skips spec-walk + confidence verdict + reviews; /flow:ship skips synthesis).
+**Mode flags** declared in the plan: `feature` (default, full loop), `spike` (skips /simplify + /flow:staff-review; uses /flow:ship-spike), `tiny` (1–3 line fix; skips spec-walk + confidence verdict + reviews; /flow:ship skips synthesis). A **design brief** also declares `Mode`, scoping the pre-prototype phase only — it is not inherited by the technical plan, and `Mode: tiny` there means "this surface doesn't earn a prototype".
 
 Long-form rationale with gate semantics, why-the-PR-opens-last, continuous-improvement loop, confidence-gate worked examples, and anti-patterns: `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md`.
 

@@ -16,7 +16,7 @@ Doc-path references in this rule resolve via `flow.config.json` slots with built
 
 ## Workflow discipline
 
-- **Plan before code.** Every non-trivial request gets a plan in the project's plan doc (`flow.config.json.planPath`) with the **required fields from `${CLAUDE_PLUGIN_ROOT}/skills/plan-discipline/SKILL.md`**: mode, goal, scope (in/out), spec-walk checkboxes, confidence verdict per load-bearing assumption, risks, files touched. Wait for user approval before executing. The exception is `mode: tiny` (a 1–3 line bug fix the user explicitly asked you to "just do") which skips spec-walk + confidence verdict but still gets a one-line plan.
+- **Plan before code.** Every non-trivial request gets a plan in the project's plan doc (`flow.config.json.planPath`) with the **required fields from `${CLAUDE_PLUGIN_ROOT}/skills/plan-discipline/SKILL.md`**: mode, goal, scope (in/out), spec-walk checkboxes, confidence verdict per load-bearing assumption, risks, files touched. **Wait for the pre-execution gate your path declares.** On the classic path that is user approval of the plan. On D1's prototype-first path (`/flow:prototype`, UI-surface work) the human already approved the **prototype** — the technical plan that follows is machine-reviewed and does **not** get a second human gate; exactly one pre-execution gate, never two. The exception is `mode: tiny` (a 1–3 line bug fix the user explicitly asked you to "just do") which skips spec-walk + confidence verdict but still gets a one-line plan.
 - **Confidence verdicts gate the plan.** Every load-bearing assumption gets HIGH/MEDIUM/LOW per `plan-discipline`. **LOW = automatic human gate** — the assumption must be resolved by an explicit user answer before the plan can proceed. `/flow:critique-plan` is advisory; the workflow's enforcement is the human gate.
 - **Preflight is a required step, not a tool.** Mechanical gates (the project's `tools/preflight/check.mjs` if present + typecheck via `flow.config.json.typecheckCmd` + build + test + project invariants) must be green before `/simplify` runs. Both `spike` and `tiny` modes still run preflight.
 - **Run `/simplify` (bundled with Claude Code) after commit, before `/flow:staff-review`.** Code-quality pass (reuse, clarity, efficiency) lands first so staff-review can focus on architecture and craft instead of "this could be shorter." Both are part of the standard loop — not optional, not just for "big" changes. **Spike mode skips both** (the code is disposable; craft review on throwaway is theater).
@@ -52,7 +52,7 @@ Every plan declares one of three modes:
 
 ## Autonomous work guardrails
 
-This workflow is **hybrid managed autonomy** — human-gated at Plan (step 2) and Merge (step 11), with autonomy-friendly primitives between. Even inside the autonomous portion, always confirm with the user before proceeding if the action involves:
+This workflow is **hybrid managed autonomy** — human-gated at the **pre-execution gate** (step 2: plan approval, or prototype approval on D1's prototype-first path) and Merge (step 11), with autonomy-friendly primitives between. Even inside the autonomous portion, always confirm with the user before proceeding if the action involves:
 
 1. **Cost exposure** — API calls that could hit rate limits or incur charges, adding paid services.
 2. **Permanence** — irreversible changes (deleting data models, breaking migration paths, force pushes, `rm -rf`).

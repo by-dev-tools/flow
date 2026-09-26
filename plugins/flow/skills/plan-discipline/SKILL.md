@@ -43,6 +43,17 @@ One case placement alone can't fix: an active PR that declares a **Spec-walk** b
 
 **That scoping is a proxy, and it does not cover every plan shape.** It needs the active PR to have a `Spec-walk`, and it reads a retained section's Visual-walk as active if that section was authored Visual-walk-first. So in two shapes a retained block can still be adopted silently: (a) an active `tiny` PR, or a non-visual `spike` — neither has a `Spec-walk` anchor (per the mode overrides above); (b) a retained section whose `Visual-walk` precedes its own `Spec-walk`. On those plans, check the parser's `co_located` and `source_heading` by hand before trusting a capture state-set — `python3 ${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-visual-states.py <plan>` prints both. Closing this properly needs a per-PR boundary marker in the plan format; see `dev-docs/roadmap.md` § "A universal per-PR boundary marker for the walk parsers".
 
+
+## The moved gate (D1 prototype-first path)
+
+On a UI-surface change routed through **`/flow:prototype`**, the human's pre-execution gate is **prototype approval**, not plan approval — the gate *moves*, it does not double. Three consequences for a plan written on that path:
+
+1. **The plan is written AFTER the prototype is approved**, against a design that survived contact. Writing it first anchors both parties: the human reads a committed-looking plan and pushes back less on the prototype, which is backwards, since the prototype is the cheap thing to change.
+2. **It anchors to the approval record.** The plan doc carries two committed lines — `**Pre-execution gate:** prototype` and `**Prototype approved:** <sha256> · "<verbatim quote>" · <stamp>` — written at gate 1. `.flow/` is gitignored, so those lines are the durable half, and `prototype-gate.py gate-execute` reads them plus the active Spec-walk block before Execute may proceed.
+3. **It gets no second human gate** — but that raises the bar rather than lowering it. Machine review is the only thing there, so it is `/flow:critique-plan` + `/flow:audit-plan` (+ `/flow:audit-coverage` in prototype-source mode once that ships). Until then it is a form-and-coherence check and **explicitly not a completeness check**; the completeness backstop is `/flow:audit-coverage` post-execution at `/flow:ship` Step 2.
+
+A **design brief** also declares `Mode`, and that declaration scopes the pre-prototype phase **only** — it is not inherited here. `Mode: tiny` in a brief means "this surface doesn't earn a prototype"; the plan still declares its own mode against the usual 1–3-line bar.
+
 ## Confidence verdict
 
 The trigger for a "load-bearing assumption": **would I plan a different feature if this assumption flipped?**

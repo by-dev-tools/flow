@@ -71,6 +71,15 @@ For `mode: spike`: replace "Spec-walk checkboxes" with a single "Research questi
 
 For `mode: tiny`: skip "Spec-walk checkboxes" + "Confidence verdict" + "Visual-walk" entirely but still name the file + the one-line change.
 
+## The moved gate (D1 prototype-first path)
+
+If the spawning skill tells you this plan follows an **approved prototype** (`/flow:prototype`, D1), three things change:
+
+- **You are writing after the human's gate, not before it.** Prototype approval already happened; there is **no second human gate** on this plan. That makes machine review the only thing there, so write *more* rigorously, not less — vague criteria have nothing behind them to catch.
+- **Anchor to the approval.** The plan doc carries `**Pre-execution gate:** prototype` and a `**Prototype approved:** …` digest line, written at gate 1. Keep them; `gate-execute` refuses to let Execute proceed without them plus an active Spec-walk block.
+- **Write against the prototype, not the brief.** The prototype is what the human actually approved.
+- **A brief's `Mode` is not inherited.** It scopes the pre-prototype phase only; this plan declares its own mode against the usual bar. A brief saying `Mode: tiny` meant "this surface doesn't earn a prototype" — it says nothing about how much rigor the build needs.
+
 ## Bar
 
 - **Restate the request in 1–3 sentences** at the top of the work item — proves you understood, lets the user redirect cheaply.
