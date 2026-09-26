@@ -7,7 +7,16 @@
 
 # PLAN — Session-efficiency program (Anthropic session-value guidance)
 
-**Status:** PLAN ONLY. Not executed. Plan gate is Ben's.
+**Status:** PROGRAM IN FLIGHT, plan gate already passed. **Phase 1 shipped**
+([#151](https://github.com/by-dev-tools/flow/pull/151), `harness_audit.py`'s always-loaded fix
++ the per-skill prose/shell/comment split). **Phase 2 is half-done**: the model-routing half is
+codified — not in the field manual as originally planned (that section's own deletion criterion
+was met and it was deleted 2026-09-17 by [#157](https://github.com/by-dev-tools/flow/pull/157),
+which subsumed the routing table directly into the shipped `/flow:spawn` skill) — but the
+orchestrator-discipline half (dispatch-not-implement; set model/effort at dispatch and never
+mid-session) is **not yet codified anywhere** and remains open. **Phase 3** (extract `doctor`'s
+shell to `lib/*.sh` + the two coupled eval rewrites) **is NOT done.** **Phase 4** stays gated on
+Preconditions A/B/C per its own section below; nothing has changed that state.
 **Mode:** program (multiple sequenced PRs), not a single PR.
 **Base:** `origin/main` @ a156228, v1.41.0.
 **Version/FB:** deliberately UNCLAIMED — this plan authorizes no single PR, and claiming a

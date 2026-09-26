@@ -258,3 +258,29 @@ two PRs that both carry a plan block usually collide in `plan.md`.**
 
 **Deletion criterion:** delete this section when `/flow:orchestrate` computes and prints the queue
 order itself.
+
+## 8. A worker at a plan gate is not a silent worker
+
+An orchestrator that dispatches with "stop at the plan gate" and then treats the resulting quiet
+as a stall will chase for status instead of reading the plan. **This happened three times in one
+program, all by the same seat** — Track B (one day), the `$ARGUMENTS` idiom worker (five days,
+chased twice with escalating concern), and a third. Each chase cost a round-trip and taught
+nothing; the worker was doing exactly what it was told.
+
+**It is mechanically detectable, so it should never be a judgment call.** A worker at a gate
+looks like: a branch with commits, **no open PR**, and a HEAD commit whose message begins
+`plan:`. A worker in trouble looks like: no branch on the remote at all, or a stale
+last-activity timestamp with no commits. Check the branch before composing the message:
+
+```sh
+git ls-remote --heads origin | grep <slug>      # branch exists?
+gh pr list --head <branch> --json number        # PR open?
+git log -1 --format=%s origin/<branch>          # "plan:" prefix?
+```
+
+**The failure is asymmetric and that is why it recurs:** the cost of reading a plan you did not
+need to read is minutes; the cost of leaving an approved-and-ready worker parked is days of
+throughput. When the branch says "gate," go read the plan.
+
+**Deletion criterion:** delete when `/flow:orchestrate` distinguishes gated from stalled workers
+in its own sweep and reports them separately.
