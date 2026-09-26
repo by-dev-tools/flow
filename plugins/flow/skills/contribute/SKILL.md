@@ -40,7 +40,7 @@ fi
 
 # Resolve config slots (defaults match the schema).
 CFG="flow.config.json"
-get() { jq -r ".$1 // empty" "$CFG" 2>/dev/null; }
+get() { jq -r ".${1} // empty" "$CFG" 2>/dev/null; }   # ${1}, not \$1 — FB-0117
 FLOW_REPO="$(get flowRepoPath)"
 THRESHOLD="$(get contributionThreshold)"; [ -z "$THRESHOLD" ] && THRESHOLD="0.6"
 QUEUE_ROOT="$(get contributionsQueuePath)"

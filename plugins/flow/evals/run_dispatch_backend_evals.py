@@ -278,11 +278,13 @@ for f in sorted((PLUGIN / "lib").glob("*.py")):
     txt = f.read_text(encoding="utf-8")
     for lit in HOST_LITERALS:
         check(f"{f.name} carries no host/roster literal {lit!r}", lit.lower() not in txt.lower())
-# 4 SKILL.md + 2 skill libs (gate, handoff) + 2 shared libs in plugins/flow/lib/.
+# 4 SKILL.md + 2 skill libs (gate, handoff) + 3 shared libs in plugins/flow/lib/
+# (dispatch_backend, sensitive_paths, arg_placeholders — the last added at v1.50.0/FB-0116).
 # An exact count, not a floor: a floor goes green when a file is added, but also
-# stays green when a skill is deleted and another grows a second lib.
-check("the scan covered all 8 new shipped artifacts (an empty or partial sweep is a vacuous pass)",
-      scanned == 8, str(scanned))
+# stays green when a skill is deleted and another grows a second lib. Bumping it is
+# therefore the intended cost of adding a shared lib, not friction to route around.
+check("the scan covered all 9 new shipped artifacts (an empty or partial sweep is a vacuous pass)",
+      scanned == 9, str(scanned))
 # POSITIVE — without this, deleting the adapter entirely would turn every line above green.
 for name in SUITE:
     txt = (PLUGIN / "skills" / name / "SKILL.md").read_text(encoding="utf-8")

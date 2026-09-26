@@ -129,8 +129,16 @@ def extract_region(text: str, marker: str) -> str | None:
 def extract_section(text: str, heading: str) -> str:
     """Return the lines under the first line containing `heading`, up to (but
     excluding) the next `## ` level-2 heading. Mirrors the `sect()` awk used by
-    the version-token gate: `index($0,H){f=1;next} f&&/^## /{exit} f`. Heading
+    the version-token gate: `index($(0),H){f=1;next} f&&/^## /{exit} f`. Heading
     absent → "".
+
+    The awk field is spelled `$(0)`, not `$0`, and that is not a style choice: a
+    bare `$0` inside a SKILL.md body is a HOST PLACEHOLDER, substituted with the
+    first slash-command argument token before any shell parses it (FB-0117), which
+    silently rewrote this gate's awk whenever `/flow:ship` was invoked with an
+    argument. `${0}` does not work either — awk has no brace form and it is a
+    syntax error. This docstring quotes the shipped spelling verbatim so the two
+    cannot drift; if you change one, change both.
     """
     out = []
     started = False

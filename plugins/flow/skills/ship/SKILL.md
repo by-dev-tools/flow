@@ -1049,16 +1049,31 @@ else
   ROADMAP=$(jq -r '.roadmapPath // "dev-docs/roadmap.md"' flow.config.json 2>/dev/null); [ -z "$ROADMAP" ] && ROADMAP=dev-docs/roadmap.md
   PLAN=$(jq -r '.planPath // "dev-docs/plan.md"' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN=dev-docs/plan.md
   # Scope to the current-status section if its heading exists, else the doc's top 40 lines.
-  sect() { awk -v H="$1" 'index($0,H){f=1;next} f&&/^## /{exit} f' "$2"; }
+  # TWO different spellings below, for two different languages, and they are NOT interchangeable.
+  # The host substitutes bare \$0-\$9 anywhere in a skill body (FB-0117); \$0 maps to the FIRST
+  # argument token, so `/flow:ship <anything>` used to rewrite this awk program and corrupt the
+  # provenance block it feeds -- the one artifact CLAUDE.md tells every session to read before
+  # trusting a green pipeline.
+  #   shell positional -> ${1}   brace form: not matched by the host's positional regex, and
+  #                              identical to \$1 in POSIX sh.
+  #   awk field        -> $(0)   awk has NO brace form -- ${0} is a SYNTAX ERROR (measured), so
+  #                              the brace fix silently breaks awk while looking correct. awk's
+  #                              field operator takes an expression, and $(0) is the whole record.
+  # Escaping as \$0 was the other candidate and was rejected: the host only processes that escape
+  # when it substitutes at all, and it returns the body untouched for a null argument -- so a
+  # literal \$0 would reach awk in exactly the no-argument case. ${1} and $(0) are inert either way.
+  # (The \$ escapes in THIS comment are load-bearing too: an unescaped mention of a placeholder in
+  # a comment is itself a substitution site. Written the wrong way first; the lint caught it.)
+  sect() { awk -v H="${1}" 'index($(0),H){f=1;next} f&&/^## /{exit} f' "${2}"; }
   # Assert the version on the current-version HEADLINE line ("**Plugin at vX.Y.Z ...**", written by
   # 5a) — NOT merely anywhere in the section. Otherwise the 5a "Recently shipped" enumeration (which
   # also names the version) satisfies the gate while the headline stays stale — the exact drift this
   # gate exists to catch. Fall back to the whole section when no such headline line exists (consumer
   # projects that don't use the "Plugin at vX" convention keep the lenient section check).
-  has_ver() {  # $1 = section text
-    line=$(printf '%s\n' "$1" | grep -E '^\*\*Plugin at ')
+  has_ver() {  # ${1} = section text
+    line=$(printf '%s\n' "${1}" | grep -E '^\*\*Plugin at ')
     if [ -n "$line" ]; then printf '%s' "$line" | grep -qF "$VER"
-    else printf '%s' "$1" | grep -qF "$VER"; fi
+    else printf '%s' "${1}" | grep -qF "$VER"; fi
   }
   MISS=""
   scope=$(sect "## Now" "$ROADMAP");          [ -z "$scope" ] && scope=$(head -40 "$ROADMAP" 2>/dev/null)
