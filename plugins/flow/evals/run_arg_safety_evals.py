@@ -60,6 +60,7 @@ HERE = Path(__file__).parent
 SKILLS = HERE.parent / "skills"
 sys.path.insert(0, str(HERE.parent / "lib"))
 import arg_placeholders as AP  # noqa: E402  (sibling-lib import, house pattern)
+from eval_utils import git_repo  # noqa: E402  the shared hoist target
 
 _failures: list[str] = []
 
@@ -106,15 +107,13 @@ def run_block(block: str, cwd: Path) -> None:
         pass
 
 
-def git_repo(path: Path) -> Path:
-    path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, capture_output=True)
-    (path / "flow.config.json").write_text('{"referenceGlob": "docs/*.md"}\n')
-    (path / "p.md").write_text("# Plan\n\n- [ ] Spec-walk: a thing\n")
-    subprocess.run(["git", "add", "-A"], cwd=path, capture_output=True)
-    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
-                    "commit", "-qm", "init"], cwd=path, capture_output=True)
-    return path
+# Fixture via the shared hoist target, not a seventh local copy. eval_utils' own docstring
+# names itself the home for this and states the rule: "new harnesses import from here, so the
+# eventual hoist is a deletion instead of a rewrite."
+FIXTURE = {
+    "flow.config.json": '{"referenceGlob": "docs/*.md"}\n',
+    "p.md": "# Plan\n\n- [ ] Spec-walk: a thing\n",
+}
 
 
 # =============================================================== 1. THE INSTRUMENT
@@ -132,16 +131,19 @@ HISTORICAL_VULNERABLE = (
 def test_instrument(tmp: Path) -> bool:
     """Known-positive validation. If this does not fire, nothing below means anything."""
     print("\n1. INSTRUMENT VALIDATION -- the unfixed form must still execute")
-    repo = git_repo(tmp / "instr")
+    repo = git_repo(tmp / "instr", FIXTURE)
+    # ONE definition of the canary path. It was spelled twice -- once for the payload that
+    # WRITES it, once for the assertion that WATCHES it -- and two literals for one value means
+    # editing either leaves the harness watching a file nothing creates, i.e. permanently and
+    # silently green, in the one section whose job is to prove the instrument fires.
+    canary = tmp / "canary-instr"
     executed = []
-    for label, payload in payloads(tmp / "canary-instr").items():
-        canary = tmp / "canary-instr"
-        if canary.exists():
-            canary.unlink()
+    for label, payload in payloads(canary).items():
+        canary.unlink(missing_ok=True)
         run_block(AP.render(HISTORICAL_VULNERABLE, payload), repo)
         if canary.exists():
             executed.append(label)
-            canary.unlink()
+            canary.unlink(missing_ok=True)
     ok = check(
         "instrument reproduces RCE against the UNFIXED form",
         len(executed) >= 3,
@@ -152,20 +154,27 @@ def test_instrument(tmp: Path) -> bool:
     print(f"        executed under the old form: {', '.join(executed)}")
     # The negative control: the SAME payloads against a block with no placeholder.
     # Distinguishes "my payloads are inert" from "the block is safe".
-    clean = 0
-    for payload in payloads(tmp / "canary-instr").values():
-        canary = tmp / "canary-instr"
-        if canary.exists():
-            canary.unlink()
-        run_block(AP.render(
-            "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan", payload), repo)
-        if canary.exists():
-            clean += 1
-            canary.unlink()
-    check("negative control: same payloads, no placeholder in block => inert",
-          clean == 0,
-          f"{clean} payload(s) executed with no placeholder present -- the harness is "
-          "leaking execution from somewhere other than substitution")
+    # NEGATIVE CONTROL, in two halves. The claim is "with no placeholder in the block, the
+    # payload cannot reach the shell" -- and the FIRST half states that more strongly than
+    # running it: render is the IDENTITY function, so there is no route at all. Asserting the
+    # identity beats executing the same unchanged command once per payload (which is what this
+    # did, 7 times, for 0.4s of nothing).
+    CLEAN_BLOCK = "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan"
+    not_identity = [lbl for lbl, pl in payloads(canary).items()
+                    if AP.render(CLEAN_BLOCK, pl) != CLEAN_BLOCK]
+    check("negative control: with no placeholder, render is the identity for every payload",
+          not not_identity,
+          f"render altered the block for {not_identity} — a block containing no placeholder "
+          "must be returned byte-identical, or the emulation is substituting somewhere it "
+          "should not and every canary result here is measured through that error")
+    # ...and the second half still EXECUTES it once, because an identity claim about the
+    # renderer says nothing about whether the payload can reach the shell by another route.
+    canary.unlink(missing_ok=True)
+    run_block(AP.render(CLEAN_BLOCK, next(iter(payloads(canary).values()))), repo)
+    check("negative control: the clean block does not create the canary when executed",
+          not canary.exists(),
+          "the harness is leaking execution from somewhere other than substitution")
+    canary.unlink(missing_ok=True)
     return ok
 
 
@@ -227,11 +236,12 @@ def test_live_blocks(tmp: Path) -> None:
               bool(spans), "no `!`-span and no ```sh fence found; block extraction has "
                            "silently broken, so the payload checks below prove nothing")
         fired = []
+        # Fixture hoisted: it depends on neither the payload nor the span, and rebuilding it
+        # inside both loops ran `git init`+`add`+`commit` 63 times to produce 4 identical repos.
+        repo = git_repo(tmp / f"live-{skill}", FIXTURE)
         for label, payload in payloads(canary).items():
             for span in spans:
-                if canary.exists():
-                    canary.unlink()
-                repo = git_repo(tmp / f"live-{skill}")
+                canary.unlink(missing_ok=True)
                 run_block(AP.render(span, payload), repo)
                 if canary.exists():
                     fired.append(f"{label}")
@@ -248,7 +258,7 @@ def test_brace_positionals() -> None:
     # every session to read before trusting a green pipeline. Asserted behaviourally
     # -- the function is extracted from the live skill and RUN, both bare and under a
     # 3-token argument, and the two results must agree.
-    for skill, fn in (("ship", "sect()"), ("doctor", "sect()")):
+    for skill in ("ship", "doctor"):   # both grep for sect(); no second value to carry
         md = (SKILLS / skill / "SKILL.md").read_text(encoding="utf-8")
         line = next((l for l in md.splitlines() if l.strip().startswith("sect()")), None)
         if not check(f"{skill}: sect() still present", line is not None,
@@ -313,6 +323,77 @@ def test_idiom_documented() -> None:
           not missing, f"no workflow.md pointer in: {missing}")
 
 
+# ================================== 7. THE LINT AGREES WITH THE HOST (escape-rule table)
+# A lint with a gap is WORSE than no lint, because it certifies. This table is the host's
+# substitution contract, worked out from the shipped bundle's three replace arms plus its
+# escape arm, and it is asserted in BOTH directions: a miss is a certified live hole, an
+# over-match is noise that trains authors to ignore the lint.
+#
+# The `\\$ARGUMENTS` row is the one that caught a real gap in the first version of this
+# matcher. The host's escape arm is `(?<!\\)\\\$`, so it consumes `\$` only when that
+# backslash is not itself preceded by one -- meaning TWO backslashes leave the placeholder
+# LIVE. A naive `(?<!\\)` lookbehind (which is what shipped first) silently passed every
+# run of 2+ backslashes.
+HOST_TABLE = [
+    ("$ARGUMENTS",      True,  "bare"),
+    ("$ARGUMENTS0",     True,  "replaceAll is substring-based, so the prefix still goes"),
+    ("${ARGUMENTS}",    False, "no brace arm exists in the host"),
+    ("$ARGUMENTS[0]",   True,  "indexed arm"),
+    ("$ARGUMENTS[10]",  True,  "indexed arm, two digits"),
+    ("$0",              True,  "positional -> FIRST argument token"),
+    ("$9",              True,  "positional"),
+    ("$10",             True,  r"\d+ is greedy, so the host reads index 10"),
+    ("$1a",             False, r"(?!\w) blocks it"),
+    ("$1_",             False, r"(?!\w) blocks it"),
+    ("${1}",            False, "brace form -- the safe shell spelling"),
+    ("$(0)",            False, "paren form -- the safe awk spelling"),
+    (r"\$ARGUMENTS",    False, "exactly one backslash -> escaped"),
+    (r"\\$ARGUMENTS",   True,  "TWO backslashes -> escape arm's lookbehind fails -> LIVE"),
+    (r"\\\$ARGUMENTS",  True,  "three -> same reason -> LIVE"),
+]
+
+
+def test_host_agreement() -> None:
+    print("\n7. HOST AGREEMENT -- the matcher's escape rule matches the host's, both directions")
+    for text, host_substitutes, why in HOST_TABLE:
+        lint_flags = bool(AP.HOST_PLACEHOLDER.search(text))
+        if host_substitutes:
+            check(f"lint FLAGS {text!r} (host substitutes it: {why})", lint_flags,
+                  "LINT GAP — the host substitutes this and the lint does not flag it, so a "
+                  "skill containing it would be certified clean over a live injection site")
+        else:
+            check(f"lint IGNORES {text!r} ({why})", not lint_flags,
+                  "over-match — this is a safe spelling; flagging it trains authors to ignore "
+                  "the lint, and pushes them off the spelling we want them to use")
+    # The matcher and the render emulation are two independent definitions of one boundary.
+    # FB-0109: when two definitions of the same boundary drift, one of them is silently wrong.
+    # So assert they agree on every row rather than trusting they were written together.
+    #
+    # ASSERT ON WHAT WOULD LEAK, NOT ON A PROXY (FB-0004). The first version of this loop used
+    # `rendered != text` -- "the text moved" -- and that proxy is wrong in two ways at once:
+    # consuming the `\$` escape moves the text WITHOUT substituting anything, and `$9`/`$10`
+    # do not move at all unless the argument actually has a token at that index. Both produced
+    # false failures against correct code. The honest oracle is whether the PAYLOAD TOKEN
+    # reaches the output, so the argument below carries a distinct marker per index.
+    TOKENS = [f"TOK{i}zz" for i in range(12)]
+    ARG = " ".join(TOKENS)
+    for text, host_substitutes, why in HOST_TABLE:
+        rendered = AP.render(text, ARG)
+        leaked = any(tok in rendered for tok in TOKENS)
+        check(f"render() agrees with the matcher on {text!r}",
+              leaked == host_substitutes,
+              f"render({text!r}) -> {rendered!r}: payload reached output = {leaked}, but the "
+              f"table says the host substitutes = {host_substitutes} ({why}). The matcher and "
+              "the emulation disagree, so one of them is wrong — and every canary result in "
+              "this file is measured through the emulation.")
+    # ...and the escape genuinely yields the LITERAL token, with no payload anywhere near it.
+    esc = AP.render(r"\$ARGUMENTS", ARG)
+    check(r"the \$ escape renders a literal $ARGUMENTS and leaks no payload",
+          esc == "$ARGUMENTS",
+          f"got {esc!r} — docs and comments rely on this spelling to NAME the placeholder "
+          "without becoming a substitution site")
+
+
 def main() -> int:
     print("Skill-argument prose-rule evals (FB-0116, FB-0117)")
     with tempfile.TemporaryDirectory() as td:
@@ -326,6 +407,7 @@ def main() -> int:
         test_brace_positionals()
         test_prose_channel_safe()
         test_idiom_documented()
+        test_host_agreement()
     print()
     if _failures:
         print(f"FAILED: {len(_failures)} eval(s): {', '.join(_failures)}")

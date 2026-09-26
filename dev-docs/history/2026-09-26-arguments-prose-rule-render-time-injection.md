@@ -31,11 +31,24 @@ The direction was not in question; FB-0108 had already reached it for a differen
 
 ## What went wrong on the way, because it is the useful part
 
-Three instruments of mine reported a green that was wrong, and each was caught by a different discipline:
+Five instruments of mine reported a wrong answer, and each was caught by a different discipline. They are listed because the disciplines are the transferable part:
 
 1. **`${0}` inside awk.** The brace fix is right for shell and a **syntax error** in awk, so my "fix" broke ship's provenance function while reading as correct. Caught by asserting the extracted function's *output* is identical bare vs. under a 3-token argument — behaviour, not text. `$(0)` is the awk-safe spelling.
 2. **My own comments were injection sites.** The comments I wrote warning about `$0`–`$9` contained bare `$0`, `$9` and `$1`. Documentation about the hazard, written as the hazard. Caught by the lint I had just added.
-3. **A collision check that returned COLLISION for all 115 branches**, including this one, which touches no such file — it diffed stale branches against an advanced `main` instead of merge-base. `.claude/rules/general.md` § Consistency item 4, in my own instrument, caught only because a known-negative came back positive.
+3. **The lint itself had a gap that certified a live hole.** I wrote the matcher's escape rule
+   as a naive `(?<!\\)` lookbehind. The host's actual escape arm is `(?<!\\)\\\$`, which consumes
+   `\$` only when that backslash is not itself preceded by one — so **two** backslashes leave the
+   placeholder LIVE, and my lookbehind silently passed every run of 2+. `\\$ARGUMENTS` inside a
+   `` !` `` block would have been reported clean over a working injection site. A lint with a gap
+   is worse than no lint, because it certifies. Found by tabulating the host's three substitution
+   arms against the matcher in both directions — miss *and* over-match — rather than by spot
+   checks; now pinned as `test_host_agreement`, 15 rows.
+4. **And the test I wrote for that gap asserted on a proxy.** It compared "did the rendered text
+   change", which cannot distinguish a substituted value from a *consumed `\$` escape*, and which
+   reports no change for `$9`/`$10` unless the argument happens to have a token at that index. It
+   failed against correct code three times. The honest oracle is whether the payload token reaches
+   the output — FB-0004, in the harness built to enforce FB-0004.
+5. **A collision check that returned COLLISION for all 115 branches**, including this one, which touches no such file — it diffed stale branches against an advanced `main` instead of merge-base. `.claude/rules/general.md` § Consistency item 4, in my own instrument, caught only because a known-negative came back positive.
 
 **The residual pin flipped as designed.** #159 shipped its delimiter-collision check in its true *vulnerable* state (`check(…, canary.exists())`) with instructions naming whoever closed it. It went red on this fix; the polarity is flipped and the payload is **kept**, so a future author reintroducing any delimiter scheme meets the payload that already refuted it.
 

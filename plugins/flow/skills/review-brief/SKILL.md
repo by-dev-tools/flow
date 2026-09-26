@@ -10,7 +10,7 @@ description: >
   (/flow:review-brief path/to/brief.md) to review a queued brief document;
   without one, reviews the session's most recent design-brief-shaped plan.
 disable-model-invocation: false
-allowed-tools: Read, Bash, Agent
+allowed-tools: Read, Write, Bash, Agent
 ---
 
 # Task: Review this design brief before anything gets built
@@ -51,7 +51,11 @@ plan-shaped turn, as before.
 thing you may treat as a path. Before running Step 1, use your **`Write` tool** to write that
 one line — the path and nothing else, no quotes, no trailing commentary — to:
 
-    <repo root>/.flow/review-brief-arg.txt
+    <repo root>/.flow/review-brief-arg.<branch>.<short-head>.txt
+
+(Step 1 prints the exact path it will read, so copy it from there rather than composing it —
+the branch and short HEAD in the name are what make a stale file from an earlier run
+unreachable instead of silently authoritative.)
 
 Then run Step 1 unchanged. It reads that file by its fixed literal path and validates the
 contents; a value with more than one non-blank line is **refused**, not truncated to line 1.
@@ -105,9 +109,26 @@ FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --sh
   # shell parsed it, so it would be code rather than a value; quoting cannot help, because the
   # substitution happens first (FB-0116). --plan-file-from validates the contents and refuses a
   # multi-line value rather than silently taking line 1.
-  if [ -s "$FLOW_SCRATCH/review-brief-arg.txt" ]; then
+  # STAMPED NAME (FB-0116): an unstamped fixed name is consulted on mere existence, so a
+  # leftover from an earlier `/flow:review-brief <path>` would silently make the NEXT
+  # argument-less run review that stale document while its own "## Argument" section promises
+  # session mode. Binding repo+branch+head into the name makes the stale case unreachable
+  # instead of merely unlikely -- the failure flow_scratch.py's docstring already warns about.
+  # printf '%s' before tr -- a bare pipe would convert git's trailing newline into a '-'
+  # and silently shift the name by one character (see audit-coverage's note).
+  ARG_BR=$(git branch --show-current 2>/dev/null)
+  ARG_BR=$(printf '%s' "$ARG_BR" | tr -c 'A-Za-z0-9._-' '-')
+  ARGF="$FLOW_SCRATCH/review-brief-arg.${ARG_BR:-nobranch}.$(git rev-parse --short HEAD 2>/dev/null).txt"
+  # Refuse a leaf symlink as well as the directory one guarded above -- idiom parity with
+  # audit-coverage. load_plan_file's containment would still reject an escaped target, so this
+  # is defence in depth, not the only line.
+  if [ -L "$ARGF" ]; then
+    echo "⚠️ BLOCKER: $ARGF is a symlink — refusing to read the brief path through it (CWE-59)." >&2
+    exit 1
+  fi
+  if [ -s "$ARGF" ]; then
     python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan \
-      --plan-file-from "$FLOW_SCRATCH/review-brief-arg.txt" --reference-glob "$REFGLOB"
+      --plan-file-from "$ARGF" --reference-glob "$REFGLOB"
   else
     python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --reference-glob "$REFGLOB"
   fi

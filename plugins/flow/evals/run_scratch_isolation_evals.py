@@ -49,6 +49,7 @@ A11Y_SKILL = FLOW / "skills" / "accessibility-review" / "SKILL.md"
 VERIFY_SKILL = FLOW / "skills" / "verify-build" / "SKILL.md"
 REVIEW_BRIEF_SKILL = FLOW / "skills" / "review-brief" / "SKILL.md"
 PROTOTYPE_SKILL = FLOW / "skills" / "prototype" / "SKILL.md"
+AUDIT_COVERAGE_SKILL = FLOW / "skills" / "audit-coverage" / "SKILL.md"
 SPIKE_SKILL = FLOW / "skills" / "ship-spike" / "SKILL.md"
 SCHEMA = FLOW / "schema" / "flow.config.schema.json"
 CI = FLOW.parent.parent / ".github" / "workflows" / "ci.yml"
@@ -282,7 +283,10 @@ def test_contracts():
     idiom_sites = [("staff", STAFF_SKILL), ("sec", SEC_SKILL), ("a11y", A11Y_SKILL),
                    ("ship", SHIP_SKILL), ("verify", VERIFY_SKILL),
                    ("review-brief", REVIEW_BRIEF_SKILL), ("ship-spike", SPIKE_SKILL),
-                   ("prototype", PROTOTYPE_SKILL)]
+                   ("prototype", PROTOTYPE_SKILL),
+                   # 9th site, added with the Tier-2 argument channel (FB-0116). A guard
+                   # covering 8 of 9 is the fan-out class this harness exists to prevent.
+                   ("audit-coverage", AUDIT_COVERAGE_SKILL)]
     for name, path in idiom_sites:
         t = path.read_text(encoding="utf-8")
         check(f"contract-{name}-idiom", idiom in t and '"$FLOW_SCRATCH/' in t,

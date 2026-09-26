@@ -144,9 +144,39 @@ CAP=60000
 # text, so every guard below is a guard on a shell that was never lost.
 ROOTP=$(pwd -P)
 SRC=""
-ARGF="$ROOTP/.flow/audit-coverage-arg.txt"
-# Refuse to read the argument THROUGH a symlink (CWE-59), same call review-brief makes about its
-# scratch dir: a link here would let the value be sourced from outside the repo.
+# CANONICAL repo-local scratch idiom -- kept in sync with scripts/flow_scratch.py and pinned by
+# evals/run_scratch_isolation_evals.py; the same three lines review-brief uses. Hand-rolling
+# "$ROOTP/.flow/..." here instead dropped two guards the idiom carries: the DIRECTORY-level
+# symlink refusal (a leaf-only [ -L "$ARGF" ] walks straight through a .flow -> /elsewhere link, the
+# exact hole manifest-triage.py documents for a parent-dir link), and the .gitignore that keeps
+# flow from dirtying a consumer's git status.
+FLOW_SCRATCH="$ROOTP/.flow"
+if [ -L "$FLOW_SCRATCH" ]; then
+  echo "[audit-coverage] SOURCE-UNRESOLVED — $FLOW_SCRATCH is a symlink; refusing to read flow scratch through it, because its target is not containment-checked (CWE-59). The source tree was NOT read, so coverage was NOT audited. This is NOT a clean skip. Replace it with a real directory."
+  exit 0
+fi
+mkdir -p "$FLOW_SCRATCH" 2>/dev/null
+[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore" 2>/dev/null
+# THE FILENAME CARRIES THE STAMP, so a stale file cannot be inherited. An UNSTAMPED fixed
+# name is consulted on mere existence ([ -s ]), which makes this channel failure-OPEN in the
+# worst possible direction: any earlier /flow:audit-coverage <path> run leaves the file behind,
+# and the NEXT argument-less run -- e.g. /flow:ship Step 2, the under-declaration gate --
+# reads it, audits that one small file instead of the workspace diff, and returns
+# "No issues flagged." over a diff it never looked at. Same shape flow_scratch.py's docstring
+# already warns about ("a stale file from an earlier branch in the SAME worktree still reads
+# as current"), so the fix is the one it prescribes: bind the artifact to repo+branch+head.
+# Binding it in the NAME rather than in a header keeps the file exactly one line, which is
+# what --plan-file-from requires and what lets the multi-line refusal below stay meaningful.
+# printf '%s' BEFORE tr, not a bare pipe: tr -c replaces every byte OUTSIDE the set, and
+# git's trailing newline is outside it, so piping git branch straight into tr yields "main-" rather
+# than "main" -- a silent one-character mismatch between this name and any producer that
+# builds it differently. Caught by run_coverage_source_mode_evals.py, which derives the
+# same name independently; that disagreement is exactly what a second reader is for.
+FLOW_BR=$(git branch --show-current 2>/dev/null)
+FLOW_BR=$(printf '%s' "$FLOW_BR" | tr -c 'A-Za-z0-9._-' '-')
+FLOW_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
+ARGF="$FLOW_SCRATCH/audit-coverage-arg.${FLOW_BR:-nobranch}.${FLOW_HEAD:-nohead}.txt"
+# Refuse the LEAF too -- the directory guard above does not cover a link at the final component.
 if [ -L "$ARGF" ]; then
   echo "[audit-coverage] SOURCE-UNRESOLVED — $ARGF is a symlink; refused rather than followed. The source tree was NOT read, so coverage was NOT audited. This is NOT a clean skip. Remove the link and write the path as a regular file."
   exit 0
@@ -154,12 +184,20 @@ elif [ -s "$ARGF" ]; then
   # head -n 1 is NOT a sanitiser here: a multi-line value is refused two lines below rather than
   # truncated, because a path has no second line and silently taking the first would hide the
   # attempt. This reads one line so the refusal can NAME what it found.
-  SRC=$(head -n 2 "$ARGF")
-  if [ "$(printf '%s\n' "$SRC" | grep -c .)" -gt 1 ]; then
+  # Count non-blank lines over the ENTIRE file. An earlier revision read only head -n 2, which
+  # let path + blank + payload through the refusal below -- the guard whose whole purpose is that
+  # the attempt must be VISIBLE. Inert in practice ($SRC is quoted at every use and never
+  # re-parsed), but a guard that can be stepped around is not the guarantee it advertises.
+  if [ "$(awk 'NF{n++} END{print n+0}' "$ARGF")" -gt 1 ]; then
     echo "[audit-coverage] SOURCE-UNRESOLVED — $ARGF holds more than one non-blank line; expected exactly one (the path). Refused rather than using the first line. The source tree was NOT read, so coverage was NOT audited. This is NOT a clean skip."
     exit 0
   fi
-  SRC=$(printf '%s' "$SRC" | tr -d '\n\r')
+  # Exactly one non-blank line is guaranteed by the check above, so take it and strip the
+  # line terminator. The old tr -d HERE, combined with the [ "$SRCCLEAN" = "$SRC" ] comparison
+  # further down made that comparison unfalsifiable -- it stripped the newlines and then
+  # asserted none had been stripped, so the documented "the path contains a newline" cause was
+  # unreachable. One place strips, and it is this one.
+  SRC=$(awk 'NF{print; exit}' "$ARGF" | tr -d '\r')
 fi
 if [ -n "$SRC" ]; then
   # ONE definition of the not-a-clean-skip tail. It was copy-pasted at five exits, which is the
@@ -171,10 +209,10 @@ if [ -n "$SRC" ]; then
     echo "[audit-coverage] SOURCE-UNRESOLVED — ${1} The source tree was NOT read, so coverage was NOT audited. This is NOT a clean skip.${2}"
     exit 0
   }
-  # This block stdout IS prompt context, so a path carrying a newline could inject a fake
-  # verdict line. Refuse rather than strip: a path we had to rewrite is not the path asked for.
-  SRCCLEAN=$(printf '%s' "$SRC" | tr -d '\n\r')
-  [ "$SRCCLEAN" = "$SRC" ] || unres "the path argument contains a newline or carriage return. Refused rather than rewritten."
+  # The newline case is settled UPSTREAM now (the multi-line refusal on the arg file), so there
+  # is deliberately no second strip-then-assert-nothing-was-stripped check here: that shape is
+  # unfalsifiable, and it made the "path contains a newline" cause in the five-causes prose
+  # unreachable. Kept as a comment rather than deleted silently so the missing arm is explained.
   # Resolve to an absolute path WITHOUT realpath (absent on some minimal hosts). KIND is decided
   # HERE, once, and reused below -- the file/dir question was previously asked twice against two
   # different variables ($SRC then $ABS), so nothing forced the two answers to agree.
@@ -383,10 +421,12 @@ the default branch. Proceed.
 the diff — and it is the only thing you may treat as a path. There are two ways it reaches the
 audit, and you must check which one happened:
 
-1. **The block above already read it.** A caller (`/flow:ship`, or you in an earlier turn) wrote
-   the path to `.flow/audit-coverage-arg.txt`, so the evidence block resolved it, applied the
-   pattern filters and the byte cap, and printed the source under `----- source -----`. Nothing
-   more to do — audit what it printed.
+1. **The block above already read it.** Some *caller* wrote the path to
+   `.flow/audit-coverage-arg.txt` before invoking this skill, so the evidence block resolved it,
+   applied the pattern filters and the byte cap, and printed the source under `----- source -----`.
+   Nothing more to do — audit what it printed. **No shipped flow skill writes that file today**
+   (`/flow:ship` Step 2 invokes this skill with no argument, i.e. diff mode), so in practice this
+   path is reached only by a caller that opts in — see the residual below.
 2. **It did not.** You will see diff-mode output (or a `SKIPPED` line) despite having been given a
    path. Then **read the path yourself**: `Read` it if it is a file; if it is a directory, use
    `Grep` to enumerate the files under it and `Read` those. Skip anything under `.git`,
@@ -406,20 +446,37 @@ absolute and outside the repository, or containing `..`; a symbolic link (its ta
 containment-checked); a path that does not resolve — a named tree that is not there is a wrong
 input, never covered work.
 
-**NAMED RESIDUAL — this skill's coverage of its own argument is not uniform.** Path 1 is
-mechanical; path 2 is judgment. The reason is a tool grant, not an oversight: this skill is
-`context: fork` with `agent: auditor`, whose grant is `Read, Grep`, and a directory walk with
-extension filters, exclusion patterns and a byte cap needs `find`/`grep` in a shell the auditor
-does not have. Direct invocation (`/flow:audit-coverage <path>`) therefore lands on path 2 unless
-you write the scratch file first — which you may do, with `Write`, and then re-invoke. Closing
-this properly means either giving the auditor a shell (it has none, deliberately) or deriving the
-source path from config rather than an argument (`.flow/prototypes/<branch-slug>/` is already
-canonical for `/flow:prototype`) — a design change, tracked in the roadmap, not smuggled in here.
+**NAMED RESIDUAL — this skill's coverage of its own argument is not uniform, and the reason is a
+missing producer, not an irreducible limit.** Path 1 is mechanical; path 2 is judgment; **today
+every real invocation lands on path 2.**
 
-Why the value travels through a file: `\ARGUMENTS` is substituted textually into this
+Two distinct causes, kept distinct because they take different fixes:
+
+- *Why the reviewing agent cannot populate the channel itself:* this skill is `context: fork` with
+  `agent: auditor`, whose grant is `Read, Grep`. It has no `Write`, so it **cannot** write the
+  scratch file — an earlier draft of this paragraph told you to, which was impossible, and the
+  contradiction is recorded rather than quietly deleted because it is the reason to read a tool
+  grant instead of assuming one.
+- *Why no caller populates it either:* nothing in the shipped plugin writes
+  `.flow/audit-coverage-arg.txt`. `/flow:ship` invokes this skill argument-less, and
+  `/flow:prototype` — the skill that actually points source mode at a prototype, and which *does*
+  hold `Write` — passes the path in prose. Wiring that one producer would make path 1 genuinely
+  mechanical, and it is a one-line change to a skill outside this change's scope, so it is routed
+  to the roadmap rather than taken here.
+
+Consequence to be honest about: the walk/filter/cap logic below is **retained and tested but not
+currently reached in production**. It was kept rather than excised because excising it would
+delete a feature merged days earlier and its whole eval harness; the alternative end state —
+deriving the source path from config (`.flow/prototypes/<branch-slug>/` is already canonical) so
+source mode needs no argument at all — is the right destination and is also on the roadmap.
+
+Why the value travels through a file: `\$ARGUMENTS` is substituted textually into this
 whole document before any shell parses it, so a placeholder inside the evidence block would be
 code rather than a value. A quoted-delimiter heredoc was tried here and defeated (see the block's
 own comment). FB-0108 reached the same answer for a different sink.
+
+The house rule this follows, with the full mechanism and the two tiers, is
+`${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` § "Skill arguments: the prose rule".
 
 ## What to check
 

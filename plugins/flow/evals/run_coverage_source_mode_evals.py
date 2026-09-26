@@ -52,6 +52,8 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE.parent / "lib"))
+import arg_placeholders as AP  # noqa: E402  (sibling-lib import, house pattern)
 PLUGIN = HERE.parent
 REPO = PLUGIN.parent.parent
 SKILL = PLUGIN / "skills" / "audit-coverage" / "SKILL.md"
@@ -105,18 +107,27 @@ DIFF_BLOCK = SOURCE_BLOCK = EVIDENCE
 # is satisfiable by deleting source mode outright, so it is paired with three positives asserting
 # source mode still exists and still reads its argument from the new channel.
 check("the block contains NO argument placeholder at all",
-      EVIDENCE.count(ARG_TOKEN) == 0,
+      EVIDENCE.count(ARG_TOKEN) == 0 and not AP.HOST_PLACEHOLDER.search(EVIDENCE),
       "a placeholder anywhere in this block -- including in a comment -- is a render-time "
       "command-execution sink, because substitution precedes parsing (FB-0116)")
 check("the heredoc capture and its ARGTOKEN sentinel are gone",
       "<<'FLOW_ARG_CAPTURE" not in EVIDENCE and "ARGTOKEN=" not in EVIDENCE,
       "the delimiter scheme was defeated by a delimiter-collision payload; it must not return")
-check("positive: source mode still reads its path from the fixed scratch literal",
-      '.flow/audit-coverage-arg.txt' in EVIDENCE and 'ARGF=' in EVIDENCE,
-      "source mode must still HAVE an input channel -- deleting the feature is not a fix")
-check("positive: the scratch read refuses a symlink and a multi-line value",
-      '[ -L "$ARGF" ]' in EVIDENCE and "more than one non-blank line" in EVIDENCE,
-      "the new channel needs its own guards: CWE-59, and refuse-not-truncate on multi-line")
+check("positive: source mode reads its path from a STAMPED scratch name",
+      'audit-coverage-arg.' in EVIDENCE and 'ARGF=' in EVIDENCE
+      and 'FLOW_SCRATCH="$ROOTP/.flow"' in EVIDENCE
+      and '${FLOW_BR:-nobranch}' in EVIDENCE and '${FLOW_HEAD:-nohead}' in EVIDENCE,
+      "source mode must still HAVE an input channel -- deleting the feature is not a fix. The "
+      "path must come from the canonical repo-local scratch idiom, not a hand-rolled "
+      '"$ROOTP/.flow/..." (which drops the directory-level symlink guard).')
+check("positive: the scratch read refuses BOTH a directory symlink and a leaf symlink",
+      '[ -L "$FLOW_SCRATCH" ]' in EVIDENCE and '[ -L "$ARGF" ]' in EVIDENCE,
+      "a leaf-only [ -L ] walks straight through `.flow -> /elsewhere`; the parent-directory "
+      "link is the hole manifest-triage.py documents, so both components need refusing")
+check("positive: the scratch read refuses a multi-line value rather than truncating",
+      "more than one non-blank line" in EVIDENCE
+      and "Refused rather than using the first line" in EVIDENCE,
+      "a path has no second line, so taking line 1 would hide the attempt")
 
 check("the evidence block carries both modes",
       "SOURCE-UNRESOLVED" in EVIDENCE
@@ -148,14 +159,30 @@ def run(block: str, cwd: Path, arguments=None, project_dir=None) -> str:
     # the channel the shipped block actually reads, so a harness that kept substituting would be
     # testing a code path that no longer exists.
     if arguments is not None:
-        argf = cwd / ".flow" / "audit-coverage-arg.txt"
+        # The shipped block binds the arg file's NAME to repo+branch+head, so a stale file
+        # from an earlier run cannot be inherited (FB-0116). Derive the same name here rather
+        # than hardcoding one: a harness writing the OLD unstamped path would exercise a
+        # channel the block no longer reads, and every source-mode case would silently fall
+        # through to diff mode and assert against the wrong output.
+        br = subprocess.run(["git", "branch", "--show-current"], cwd=str(cwd),
+                            capture_output=True, text=True).stdout.strip() or "nobranch"
+        br = re.sub(r"[^A-Za-z0-9._-]", "-", br)
+        head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(cwd),
+                              capture_output=True, text=True).stdout.strip() or "nohead"
+        argf = cwd / ".flow" / f"audit-coverage-arg.{br}.{head}.txt"
         argf.parent.mkdir(parents=True, exist_ok=True)
         argf.write_text(arguments, encoding="utf-8")
     # Substitution is STILL applied, deliberately, even though the block should contain no
     # placeholder. If a future edit reintroduces one, the injection cases below must still be
     # able to reach it -- a harness that stopped substituting would go quiet about exactly the
     # regression it exists to catch (general.md S Consistency item 4).
-    rendered = block.replace(ARG_TOKEN, arguments if arguments is not None else "")
+    # Render through the CANONICAL host emulation, not a one-arm str.replace. The comment
+    # above promises that a reintroduced placeholder is still reachable by the payloads below;
+    # a `block.replace("$ARGUMENTS", ...)` keeps that promise for exactly one of the three
+    # placeholder families and silently breaks it for `$0`, `$1` and `$ARGUMENTS[n]` -- in the
+    # harness guarding the block this PR just fixed. Two definitions of one boundary, and the
+    # weaker one was the instrument (FB-0109).
+    rendered = AP.render(block, arguments)
     proc = subprocess.run(["sh", "-c", rendered], cwd=str(cwd), env=env,
                           capture_output=True, text=True, timeout=60)
     return proc.stdout + proc.stderr
