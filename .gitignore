@@ -26,6 +26,11 @@ tools/*
 # them stageable by `git add -A`, and run_shadow_sampler_evals.py (CI-wired) asserts
 # they are ignored — so the first cut of this rule turned CI red AND widened what a
 # careless `git add` could commit.
+# `!tools/coverage-recall/` above un-ignores the whole package, including anything the
+# harness RENDERS there (a ~77 KB prompt carrying the full behaviour diff). `runs/` is the
+# only committed output surface; re-ignore the rest, same reason as samples* below.
+tools/coverage-recall/*.rendered.*
+tools/coverage-recall/renders/
 tools/**/samples*
 tools/**/__pycache__/
 

@@ -315,10 +315,20 @@ with tempfile.TemporaryDirectory() as td:
     # Without this, deleting the skip branch outright would satisfy every §4 assertion.
     doc = git_repo(Path(td) / "docsonly", {
         "flow.config.json": '{"defaultBranch": "main"}', "README.md": "hi\n"})
+    # THE REMOTE-TRACKING REF IS REQUIRED, and its absence meant this check passed for the
+    # wrong reason. v1.49.0 gated the SKIPPED line on `origin/$BASE` resolving (a whole PR's
+    # behaviour used to vanish as "nothing to audit" when it did not), and this fixture never
+    # created the ref — so it was exercising the unresolvable-base path and asserting the
+    # doc-only one. Creating the ref is what makes the assertion test its own claim.
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+                   cwd=doc, capture_output=True)
     (doc / "README.md").write_text("hi there\n", encoding="utf-8")
     out = run(DIFF_BLOCK, doc)
     check("a doc-only diff in diff mode still renders SKIPPED",
           SKIP_LINE in out, f"got: {out[:300]!r}")
+    check("...and it is the doc-only skip, NOT the unresolvable-base weakening",
+          "BASE-UNRESOLVED" not in out,
+          "this check used to pass via the base-unresolved path, asserting the wrong thing")
 
 # ===========================================================================
 print("\n§5 — THE INSTRUMENT TEST: the known-positive case (D1 spike, n=1)")

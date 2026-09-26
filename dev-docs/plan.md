@@ -145,8 +145,17 @@ item 4 exactly: a measurement that can only return "clean".
 - The **measurement-harness** criterion resolved by *removing* a metric rather than adding one: a stage-1 enumeration score was built, shown to be measuring anchor vocabulary rather than enumeration, and deleted instead of repaired — because the repair was to add prose anchors after reading the outputs, i.e. to fit the instrument to its own result.
 - Precision was re-measured, not assumed: **zero false positives in 15 runs.** The 2–3 unmatched findings are all the same *real* gap the spike's list of 10 never carried, adjudicated by hand and deliberately **not** added to the key. So both denominators under-credit equally and **82% is a floor, not a point estimate**.
 
-**Visual-walk:** N/A — flow is `uiSurface: true` but this change ships no browser UI (no `uiFilePatterns`
-match), same as #159.
+**No Visual-walk block, deliberately** — and the omission is the correct authoring, not a gap.
+`plan-discipline` scopes the field to UI changes; flow is `uiSurface: true` but this diff matches no
+`uiFilePatterns`, so there is no visual surface to declare criteria against (same as #159).
+
+**Worth knowing, because the helpful-looking alternative is a trap** (found running this ship's own
+Step 2): writing `**Visual-walk:** N/A — no UI here` to be *explicit* does the opposite. The
+`visual-significance.py` predicate treats *the presence of a co-located `Visual-walk` block* as a
+forcing signal — it does not read the block's contents — so an `N/A` block flips
+`visual_significant` to **true** and Step 7a then demands a rendered walkthrough plus a
+visual-history entry for a change with no UI. Routed to the roadmap; not fixed here, because
+"detect the string N/A" is exactly the fragile shape that predicate is trying to avoid.
 
 ### 2. The test set, and why it is real
 

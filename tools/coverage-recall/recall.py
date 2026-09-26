@@ -124,6 +124,25 @@ def prepare(case_name: str, td: Path):
     if ref is None:
         # Source mode, in this checkout. Override planPath, restore it afterwards.
         cfg = REPO / "flow.config.json"
+        # Refuse rather than overwrite a dirty tracked file. The `finally` in main() restores it
+        # on exceptions and on SIGINT, but a SIGKILL -- or an editor holding unsaved edits --
+        # loses whatever was there. A measurement tool has no business risking the config of the
+        # repo it is measuring.
+        # Read the EXIT CODE, not just stdout: a failed `git status` leaves stdout empty and
+        # the old form then proceeded to overwrite the config. general.md item 4's corollary --
+        # prefer the tool's own exit code over a read of its output -- in the dev tool that
+        # cites item 4 elsewhere.
+        _st = subprocess.run(["git", "status", "--porcelain", "--", "flow.config.json"],
+                             cwd=REPO, capture_output=True, text=True)
+        if _st.returncode != 0:
+            raise SystemExit("could not determine whether flow.config.json is dirty (git status "
+                             "exited %d: %s) — refusing to overwrite it blind."
+                             % (_st.returncode, _st.stderr.strip()))
+        dirty = _st.stdout.strip()
+        if dirty:
+            raise SystemExit("flow.config.json has uncommitted changes (%s) and this case needs "
+                             "to override planPath in it. Commit or stash it first — refusing to "
+                             "overwrite a dirty tracked file." % dirty)
         original = cfg.read_text(encoding="utf-8")
         data = json.loads(original)
         data["planPath"] = case["plan"]

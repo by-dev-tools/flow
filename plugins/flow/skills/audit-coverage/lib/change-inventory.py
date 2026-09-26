@@ -53,8 +53,14 @@ did not move, which is exactly what this PR's own rule forbids. Roadmapped, and 
 below pins the SAME-COMMIT outcome as KNOWN AND INTENDED rather than leaving it to be read as
 a passing tier.
 
-FAIL LOUD, NEVER CLEAN. Every failure path prints `WEAKENED - INVENTORY-UNAVAILABLE -- <reason>`
-and exits 0. The `WEAKENED -` token is the matchable half of the contract: the skill prose has
+FAIL LOUD, NEVER CLEAN. Every failure path prints `WEAKENED · INVENTORY-UNAVAILABLE -- <reason>`
+and exits 0. THE SEPARATOR IS U+00B7 MIDDLE DOT AND THOSE BYTES ARE LOAD-BEARING -- do not
+ASCII-ify it to `-` the way the em dashes in this docstring are ASCII-ified. This paragraph
+had it as a hyphen while the emitter, the eval and the prose detector all used the middle dot,
+which is an FB-0010 fan-out contradiction sitting inside the paragraph that DECLARES the
+contract: a maintainer adding a fifth outcome reads here, writes `WEAKENED - FOO`,
+`SKILL.md`'s class rule does not match it, and the gate goes green over a degraded checklist.
+The `WEAKENED ·` token is the matchable half of the contract: the skill prose has
 ONE rule for weakenings rather than a bullet per outcome, and without a token that rule would
 also capture this engine's ordinary success lines (the inventory header, the tier legend, the
 POST-PLAN summary) -- which would require the "this audit is weaker" note on every healthy run
@@ -84,9 +90,13 @@ import sys
 # diff it annotates; an uncapped-but-silent one would hide that it did (FB-0010: pair
 # every cap with a [WARN]).
 DEFAULT_MAX_ROWS = 250
-# Funcname context from a hunk header is attacker-influenced text (it is a line of the
-# file under review) landing in prompt context. It is indented by the renderer and
-# truncated here so it cannot carry a plausible control line.
+# Funcname context from a hunk header is attacker-influenced text -- it is a line of the file
+# under review, landing in prompt context. The cap is a LAYOUT bound, not a security one, and
+# the comment used to claim otherwise ("so it cannot carry a plausible control line"): that is
+# false and it invited a future maintainer to raise the cap believing nothing depended on it.
+# `[audit-coverage] SKIPPED` is 24 characters and fits easily. What actually prevents forgery
+# is `_sanitize` (no newline survives, so nothing can start a new line) plus the row's 2-space
+# indent and the funcname's trailing position (so nothing reaches column 0).
 FUNCNAME_MAX = 70
 
 # Tier strength, one definition. `put()` never demotes a row, so a hunk present in both
@@ -99,6 +109,17 @@ _RANK = {"pre-plan": 0, "SAME-COMMIT": 1, "POST-PLAN": 2, "UNCOMMITTED": 3,
 # over zero post-plan hunks. That is the same self-contradicting-summary defect the
 # whole-file branch below was written to fix, reintroduced in the sibling condition.
 FLAGGED_TIERS = frozenset(("POST-PLAN", "UNCOMMITTED", "PLAN-PREDATES-BRANCH"))
+# DERIVED, never a literal. `%-20s` was exactly at capacity (PLAN-PREDATES-BRANCH is 20), so a
+# future 21-char tier name would ragged-shift every row and nothing would fail (FB-0010).
+_TIER_W = max(len(k) for k in _RANK)
+
+# Does the captured funcname context look like a definition rather than prose? Deliberately
+# permissive about language (def/class/function/fn/func/sub/type/struct/impl/interface, a
+# `name(...)` call shape, or an assignment) and deliberately strict about sentences.
+_DEFINITIONISH = re.compile(
+    r"^\s*(@|(pub|export|public|private|protected|static|async|final|open|override|def|class|"
+    r"function|fn|func|sub|type|struct|impl|interface|enum|trait|module|namespace|package)\b"
+    r"|[\w.$]+\s*[:=]|[\w.$]+\s*\()")
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
 
@@ -108,14 +129,18 @@ class Unavailable(Exception):
 
 
 def _unavailable(reason):
-    """The one wording for "no checklist was built". It was stated three times in this file --
+    """_sanitize the reason: main()'s catch-all feeds this arbitrary exception text, and a
+    multi-line message would render its second line at column 0 in prompt context -- the one
+    thing _sanitize exists to stop, reachable through the guard added to keep the contract.
+
+    The one wording for "no checklist was built". It was stated three times in this file --
     the FB-0010 fan-out class applied to the file's own most load-bearing sentence, where a
     wording fix to one site would leave two stale and nothing would detect it. Callers supply
     only their distinct clause. (A fourth copy lives in the SKILL.md shell fallback and
     genuinely cannot share this -- different process, no import.)"""
     return ("[audit-coverage] WEAKENED · INVENTORY-UNAVAILABLE — %s Stage 1 has no hunk checklist, so a "
             "clean result below is WEAKER than a normal one, not equal to it. This is NOT a "
-            "skip." % reason)
+            "skip." % _sanitize(reason))
 
 
 def _git(args, cwd=None):
@@ -170,6 +195,13 @@ def hunks(rev_range, path, cwd=None):
         start = int(m.group(2))
         count = 1 if m.group(3) is None else int(m.group(3))
         fn = _sanitize(m.group(4))
+        # Git's funcname picker matches the nearest preceding column-0 line, which inside a
+        # long docstring is prose -- rows rendered `in silence. "The model can suggest, but
+        # never define."` and read as broken output. Keep the slot only when the captured text
+        # looks like a definition; an empty slot is better than a misleading one. (The durable
+        # fix is a per-language diff driver via .gitattributes -- roadmapped.)
+        if fn and not _DEFINITIONISH.match(fn):
+            fn = ""
         # Slice with a visible marker: 10 of 54 rows on a real run cut mid-word at exactly
         # FUNCNAME_MAX, and a reader cannot tell that from a genuinely odd identifier.
         if len(fn) > FUNCNAME_MAX:
@@ -245,7 +277,7 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
         _git(["ls-files", "--others", "--exclude-standard"], cwd=cwd).splitlines())
     dirty_set = set(_git(["diff", "HEAD", "--name-only"], cwd=cwd).splitlines())
 
-    rows, unexamined = [], 0
+    rows, unexamined, empty_files = [], 0, []
     for i, path in enumerate(files):
         # Cost guard only. Setting `truncated` here warned "rows past the cap are NOT listed"
         # even when the remaining files would have contributed zero hunks -- a false "your
@@ -295,6 +327,13 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
                 tier = "pre-plan"
             put(h, tier)
 
+        if not merged:
+            # PER FILE, not just per run. `if not rows` alone fired only when EVERY listed file
+            # produced nothing, so the `-diff` gitattribute evasion still worked by hiding ONE
+            # file: its behaviour change vanished from the checklist with no token while the
+            # other files made the inventory look healthy. The eval validated the guard on the
+            # case where it happened to fire — general.md item 4, inside the fix for item 4.
+            empty_files.append(path)
         for (start, count) in sorted(merged):
             fn, whole, tier = merged[(start, count)]
             rows.append((path, start, count, fn, whole, tier))
@@ -308,32 +347,56 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
     # nowhere). And a one-line legend: three of the five tiers were explained only in this
     # docstring, including SAME-COMMIT -- the tier this repo sees MOST, whose meaning
     # ("genuinely ambiguous, I cannot tell") is not guessable from the name.
-    # A NEW-FILE row spans the whole file, so it overlaps the post-plan region whenever ANY
-    # part of the file is post-plan -- which made the first headline read "12 of 12 hunks are
-    # POST-PLAN" on #158 when 11 were, and the 12th was the file itself. Counting a row that
-    # contains all the others alongside them is double-counting, and the number in that
-    # sentence is the one a reader acts on. Whole-file rows keep their tier (it is true) and
-    # are excluded from the tally (they are not hunks).
-    precise = [r for r in rows if not r[4]]
-    flagged = sum(1 for r in precise if r[5] in FLAGGED_TIERS)
-    whole_rows = len(rows) - len(precise)
 
     # PARTIAL IS SAID IN THE HEADER, not only 250 rows later. The count here was
     # post-truncation, so a clipped inventory opened with a complete-sounding total and its
     # own correction sat below every row it qualified -- the third instance in this block of
     # "a summary that disagrees with its own rows", at the one place the reader's eye lands
     # first. A qualifier must precede the data it qualifies.
-    partial = " PARTIAL — the cap was reached; see INVENTORY-TRUNCATED below." if (
-        truncated or unexamined) else ""
+    # ONE definition, ahead of every consumer. These were computed TWICE with a
+    # near-duplicated comment, and the tier-vs-kind fix landed in one copy and not the other --
+    # which is how the "summary disagrees with its own rows" defect survived a fix for itself.
+    precise = [r for r in rows if not r[4]]
+    flagged = sum(1 for r in precise if r[5] in FLAGGED_TIERS)
+    whole_rows = len(rows) - len(precise)   # header denominator: ALL whole-file rows
+    # COUNTED BY TIER, NOT BY KIND — and this is the THIRD occurrence of the same defect in
+    # this one function. `flagged` above was fixed to exclude SAME-COMMIT; `whole_rows` was
+    # not, so the summary swept a whole-file row the legend had just called "genuinely
+    # ambiguous" into a definite claim. Reproduced on this PR's own output (3 whole-file rows,
+    # 2 flagged, and the sentence said 3), and worse in the flagged == 0 branch, which
+    # quantifies universally: "2 whole-file rows above are each a whole NEW file added AFTER
+    # the plan" printed directly beneath a row tiered SAME-COMMIT. `whole_rows` stays for the
+    # HEADER, where "all whole-file rows" genuinely is the right denominator.
+    flagged_whole = sum(1 for r in rows if r[4] and r[5] in FLAGGED_TIERS)
+
+    partial = ""
     lines = ["[audit-coverage] change inventory (deterministic) — %d row%s (%d hunk%s + %d "
-             "whole-file) across %d file%s.%s EVERY row must be accounted for in Stage 1."
+             "whole-file) across %d file%s.%s%s"
              % (len(rows), "" if len(rows) == 1 else "s",
                 len(precise), "" if len(precise) == 1 else "s", whole_rows,
-                len(files), "" if len(files) == 1 else "s", partial),
-             "[audit-coverage] tiers — POST-PLAN / UNCOMMITTED / PLAN-PREDATES-BRANCH: no "
-             "declared criterion CAN cover it · SAME-COMMIT: the plan moved in the same commit, "
-             "so this is genuinely ambiguous · pre-plan: routine, a criterion could exist. "
-             "NEW-FILE: the row is the whole file, not one hunk."]
+                len(files), "" if len(files) == 1 else "s", partial,
+                " EVERY row must be accounted for in Stage 1." if rows else ""),
+             ]
+    # Legend only when there are rows to read it against: over an empty inventory it was two
+    # lines of chrome for zero content, explaining five tiers that appear zero times. `;` not
+    # `·` as the list separator — `·` is now a namespace separator in `WEAKENED · <NAME>`, and
+    # a glyph doing two jobs in one block weakens it as a marker.
+    # One status per line, matching the sibling renderers' grammar (render-test-plan.py,
+    # manifest-triage.py) -- clause-chaining put the qualifier BETWEEN the count and the
+    # imperative, so the instruction trailed after an interruption. The guarantee that matters
+    # is only that the qualifier precedes the ROWS, which this keeps.
+    if truncated or unexamined:
+        lines.append("[audit-coverage] PARTIAL — the hunk cap was reached; see "
+                     "INVENTORY-TRUNCATED below. This checklist is not the whole change.")
+    if rows:
+        lines.append(
+            "[audit-coverage] tiers — POST-PLAN / UNCOMMITTED / PLAN-PREDATES-BRANCH: no "
+            "declared criterion CAN cover it; SAME-COMMIT: the plan moved in the same commit, "
+            "so this is genuinely ambiguous; pre-plan: routine, a criterion could exist. "
+            "Row markers — NEW-FILE: the row is the whole file, not one hunk; (deletion): the "
+            "hunk only removes lines; DELETED: the whole file is gone. `in <text>`: git's "
+            "hunk-header context — the nearest preceding column-0 line, not necessarily a "
+            "function name.")
     width = len(str(len(rows))) if rows else 1
     for i, (path, start, count, fn, whole, tier) in enumerate(rows, 1):
         # `(+0)` promised added lines and delivered none, reading as "the tool found nothing
@@ -347,14 +410,38 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
         # A whole-file delete has new-side start AND count 0, so `path:0` would point at a
         # line that does not exist; render the path alone.
         coord = "%s:%d" % (_sanitize(path), start) if start else _sanitize(path)
-        lines.append("  H%-*d %-20s  %s %s%s%s"
-                     % (width, i, tier, coord, extent,
+        # EXTENT MOVED UP, right behind the tier. Measured on a 55-row run: with extent behind
+        # a 32-to-61-char path it landed anywhere in columns 62-92, so "how big is this hunk" --
+        # the second question after "what tier" -- became the least alignable field on the row.
+        # Only the genuinely free-form tail (path + context) stays ragged, which is correct.
+        lines.append("  H%-*d %-*s  %-10s  %s%s%s"
+                     % (width, i, _TIER_W, tier, extent, coord,
                         "  NEW-FILE" if whole else "",
                         ("  in " + fn) if fn else ""))
+    if empty_files:
+        one_f = len(empty_files) == 1
+        lines.append("[audit-coverage] WEAKENED · INVENTORY-EMPTY — %d of %d listed file%s "
+                     "produced NO hunks (a binary file, a `-diff` gitattribute, or a mode-only "
+                     "change), so %s behavior is ABSENT from the checklist below: %s. The "
+                     "checklist is incomplete; the change is not smaller. A clean result below "
+                     "is WEAKER than a normal one, not equal to it. This is NOT a skip. Check "
+                     "`.gitattributes` for a `-diff` rule and read %s directly."
+                     % (len(empty_files), len(files), "" if len(files) == 1 else "s",
+                        "its" if one_f else "their",
+                        ", ".join(_sanitize(f) for f in empty_files[:10])
+                        + (" …" if len(empty_files) > 10 else ""),
+                        "it" if one_f else "them"))
     if not rows:
-        # A file list with no hunks is a real, reportable state -- and it must not read
-        # like a successful inventory of a real change.
-        lines.append("  (no hunks — the file list resolved to zero changed lines)")
+        # AN AFFIRMATIVE CLAIM OVER NOTHING IS A GATE-EVASION PRIMITIVE, and `/flow:security-
+        # review` found the exploit: commit `*.py -diff` in `.gitattributes` and every diff for
+        # those files prints only "Binary files ... differ". `.gitattributes` does not match
+        # `sourceFilePatterns`, so it never appears in the file list and nothing flags it -- the
+        # inventory then asserted "zero changed lines" over real behaviour changes, with no
+        # weakening token, and the diff body below showed no code either. "I enumerated nothing"
+        # and "there was nothing to enumerate" are the same distinction this whole engine exists
+        # to keep, so the non-empty-list case carries the token.
+        lines.append("  (no rows — EVERY listed file produced zero hunks; INVENTORY-EMPTY "
+                     "above names which and why)")
 
     # A NEW-FILE row spans the whole file, so it overlaps the post-plan region whenever
     # ANY part of the file is post-plan -- which made the first headline read "12 of 12
@@ -362,9 +449,6 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
     # a row that contains all the others alongside them is double-counting, and the number
     # in that sentence is the one a reader acts on. Whole-file rows keep their tier (it is
     # true) and are excluded from the tally (it is not a hunk).
-    precise = [r for r in rows if not r[4]]
-    flagged = sum(1 for r in precise if r[5] in FLAGGED_TIERS)
-    whole_rows = len(rows) - len(precise)
     if any(r[5] in FLAGGED_TIERS for r in rows):
         if plan_predates:
             lines.append("[audit-coverage] PLAN-PREDATES-BRANCH — the plan doc (%s) was never "
@@ -373,7 +457,7 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
                          "is named for it." % _sanitize(plan or "(none)"))
         else:
             wholeclause = (" (plus %d whole-file row%s spanning the same region)"
-                           % (whole_rows, "" if whole_rows == 1 else "s")) if whole_rows else ""
+                           % (flagged_whole, "" if flagged_whole == 1 else "s")) if flagged_whole else ""
             if precise and flagged:
                 subject = ("%d of %d hunks%s carry lines that landed AFTER the plan was last "
                            "edited (plan last edited at %s)"
@@ -389,12 +473,14 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
                 # than no summary.
                 subject = ("%d whole-file row%s above %s a whole NEW file added after the plan "
                            "was last edited (plan last edited at %s)"
-                           % (whole_rows, "" if whole_rows == 1 else "s",
-                              "is" if whole_rows == 1 else "are each", plan_last[:8]))
+                           % (flagged_whole, "" if flagged_whole == 1 else "s",
+                              "is" if flagged_whole == 1 else "are each", plan_last[:8]))
             # No "measured across N live runs" here: that is flow's own measurement history,
             # and it printed into every consumer's PR in every project — a reader has no idea
             # whose runs, of what. "Enumerate them first" carries the whole operational payload.
-            lines.append("[audit-coverage] POST-PLAN — %s. No declared criterion CAN have been "
+            # Labelled for the SET it counts. `FLAGGED_TIERS` includes UNCOMMITTED, so a
+            # reader who grepped POST-PLAN could not reach the number in the sentence.
+            lines.append("[audit-coverage] UNDECLARABLE (POST-PLAN + UNCOMMITTED) — %s. No declared criterion CAN have been "
                          "written for them, so they are the least likely to be covered. "
                          "Enumerate them first." % subject)
     if truncated or unexamined:

@@ -12,7 +12,7 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 ▶ **Next up:** the **matcher** half of the coverage judgment — `auditor.md`'s disprove self-check drops a behaviour when any criterion covers it "even loosely", and that clause is what suppressed both of the diff-mode residual misses this PR localized. Measure it on the same two cases before changing it.
 
-**Previously: v1.44.0 (SAFETY: a manifest entry can no longer close the manifest fence, FB-0109. `extract_manifest_region` located the NOT-READY manifest's closing fence as a bare substring, so an entry whose *finding text* carried that marker truncated the region at itself and every later entry vanished — measured `DECIDE` → `READY` with a live `[verify-build]` blocker erased, i.e. a failed behavioural gate reading as merge-ready. Fixed in two layers that deliberately want OPPOSITE rules: the fence scan takes the NARROWEST line definition (`split("\n")`, line-anchored, LAST close not first — fewer fences found means a wider region), while `parse_entries` takes the UNION of `splitlines()` and `split("\n")` (more lines found means more blockers found). Applying one rule to both looks consistent and is backwards: measured, each single split erases a live blocker in the shape the other one handles, and the `split("\n")`-only version also let the surviving entry absorb its victim's `needs` verb — the field `classify()` derives class and waivability from. **The fix was refuted twice by its own reviewers before it was right**, and the eval failed to catch its own bug twice; both are recorded in the FB entry rather than smoothed over. Mutation-tested against six builds: 17 / 13 / 8 / 5 / 1 / 0.)** Recently shipped: **v1.43.0 (#150 — dogfooding version honesty, FB-0107), v1.42.0 (#152 — `add-entry` takes untrusted text off the command line entirely, FB-0108 — the write-side half of this same delimiter class), v1.41.0 (#148 — vacuous-criterion check, FB-0104), v1.40.0 (#146 — fragment the append-only docs, FB-0102/FB-0103).**
+**Previously: v1.44.0 (SAFETY: a manifest entry can no longer close the manifest fence, FB-0109. `extract_manifest_region` located the NOT-READY manifest's closing fence as a bare substring, so an entry whose *finding text* carried that marker truncated the region at itself and every later entry vanished — measured `DECIDE` → `READY` with a live `[verify-build]` blocker erased, i.e. a failed behavioural gate reading as merge-ready. Fixed in two layers that deliberately want OPPOSITE rules: the fence scan takes the NARROWEST line definition (`split("\n")`, line-anchored, LAST close not first — fewer fences found means a wider region), while `parse_entries` takes the UNION of `splitlines()` and `split("\n")` (more lines found means more blockers found). Applying one rule to both looks consistent and is backwards: measured, each single split erases a live blocker in the shape the other one handles, and the `split("\n")`-only version also let the surviving entry absorb its victim's `needs` verb — the field `classify()` derives class and waivability from. **The fix was refuted twice by its own reviewers before it was right**, and the eval failed to catch its own bug twice; both are recorded in the FB entry rather than smoothed over. Mutation-tested against six builds: 17 / 13 / 8 / 5 / 1 / 0.)**
 **Previously: v1.48.0 (shipped #158 — D1 Phase 2: for a UI-surface change the human's FIRST approval gate moves from a written plan to an HTML prototype. `/flow:prototype` writes the design brief, runs `/flow:review-brief` over it, builds and self-evaluates the prototype through two design lenses, presents it with the click-to-pin annotation layer, and captures approval as a checkable record. The gate MOVES rather than multiplying: exactly one pre-execution human gate — prototype approval XOR plan approval, never both, never neither — plus a mechanical assertion that a plan EXISTS before Execute, pulled forward out of Phase 3 because this PR is what removes the human plan gate. Feasibility is asserted for non-web targets, so you never approve a look that cannot be built; proportionality is declared via `Mode: tiny`, not a tuned threshold. Phase 3 — auto-writing the technical plan and machine-gating it — is NOT built, and is gated on §9.3's spike).** Recently shipped: SAFETY: a manifest entry can no longer close the manifest fence, FB-0109. `extract_manifest_region` located the NOT-READY manifest's closing fence as a bare substring, so an entry whose *finding text* carried that marker truncated the region at itself and every later entry vanished — measured `DECIDE` → `READY` with a live `[verify-build]` blocker erased, i.e. a failed behavioural gate reading as merge-ready. Fixed in two layers that deliberately want OPPOSITE rules: the fence scan takes the NARROWEST line definition (`split("\n")`, line-anchored, LAST close not first — fewer fences found means a wider region), while `parse_entries` takes the UNION of `splitlines()` and `split("\n")` (more lines found means more blockers found). Applying one rule to both looks consistent and is backwards: measured, each single split erases a live blocker in the shape the other one handles, and the `split("\n")`-only version also let the surviving entry absorb its victim's `needs` verb — the field `classify()` derives class and waivability from. **The fix was refuted twice by its own reviewers before it was right**, and the eval failed to catch its own bug twice; both are recorded in the FB entry rather than smoothed over. Mutation-tested against six builds: 17 / 13 / 8 / 5 / 1 / 0.)** Recently shipped: **v1.43.0 (#150 — dogfooding version honesty, FB-0107), v1.42.0 (#152 — `add-entry` takes untrusted text off the command line entirely, FB-0108 — the write-side half of this same delimiter class), v1.41.0 (#148 — vacuous-criterion check, FB-0104), v1.40.0 (#146 — fragment the append-only docs, FB-0102/FB-0103).
 
 **v1.47.0 (shipped #159 — `/flow:audit-coverage` gains a source-tree input mode, plus a verified RCE fix in typed arguments).** This is option (a) from the §9.3 spike's remediation, and it is what makes D1's post-gate-1 completeness check live rather than conditional: point the reviewer at an approved prototype's source and it reads the code nothing else at that step reads. *Restored here by Track B:* the v1.46.0→v1.48.0 rebase resolved a roadmap conflict in favour of the D1 paragraph and dropped this headline in the process — caught by grepping for a distinctive string from each side afterwards, which is the only reason it is not silently missing.
@@ -453,6 +453,28 @@ the fix edits four harnesses outside that PR's diff — scope discipline, not di
 the FB-0074 root anchor (a structurally un-shareable per-block idiom, ~20 sites) and `check()` (31 harnesses —
 repo convention).
 
+### Pin `/flow:audit-coverage`'s control-line VOCABULARY, not just the token (found by `/simplify`'s push-further lens, v1.49.0)
+
+**Surfaces when:** anyone adds a control-line outcome to `audit-coverage`'s emitters.
+
+v1.49.0 replaced a drifting per-outcome bullet list with one class rule matching a `WEAKENED ·`
+token — which is better, and the reader side is at ceiling (one rule, a paired negative that success
+lines do not carry the token, `PLAN-PREDATES-BRANCH` explicitly excluded as a non-weakening). **The
+residue is the emitter side, and it is the same fan-out one level down.** The vocabulary is now
+eleven names across two files (`SKIPPED`, `ROOT-UNRESOLVED`, `JQ-MISSING`, `SOURCE-UNRESOLVED`,
+`POST-PLAN`, `PLAN-PREDATES-BRANCH`, `UNDECLARABLE`, plus five `WEAKENED ·` ones), and the evals pin
+an *allowlist of presence* rather than the set. **A new outcome that IS a weakening but ships without
+the token is invisible to the class rule and no check notices** — which is exactly how two of this
+release's weakenings reached the emitter unnamed in the prose, and how a third (`INVENTORY-EMPTY`)
+did so in the very commit that made the argument.
+
+**Direction (~12 lines, no new machinery):** in the source-mode harness §8, regex
+`\[audit-coverage\] (?:WEAKENED · )?([A-Z][A-Z-]+)` across `SKILL.md` **and**
+`lib/change-inventory.py`, and assert the extracted set equals a pinned literal that classifies each
+name weakening-vs-hard. Adding an outcome then forces one deliberate line. This converts "did the
+author remember the token" into a failing test — the FB-0010 defense applied to the vocabulary
+instead of to the prose.
+
 ### `/flow:audit-coverage` — the deferred half of the v1.49.0 review (four lenses, all measured)
 
 **Surfaces when:** the next recall pass on `/flow:audit-coverage`, or the first edit to
@@ -481,6 +503,16 @@ reason (1) cannot simply be shipped. Direction: one negative-control case with `
 contract of `clean is True`, plus a `selftest` assertion that a `gaps: []` case rejects any output
 carrying an `ISSUE` (so it cannot pass by being unscored). **Gate any future edit to the
 "even loosely" clause behind this case existing.**
+
+**3a. Repeat-elision is the real scanning win, and it was measured.** `/simplify`'s design-engineer
+lens corrected its own earlier estimate: on a 55-row run the leading tier column is **49/55 one
+value** — 20 columns on every row carrying a signal that changes 6 times — while
+`in def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS)` (62 chars) repeats verbatim
+**15 times** and a 57-char path repeats **31 times**. Eliding a repeat of the previous row's value
+preserves the sort exactly and makes each *transition* pop. **Deferred because it changes the
+machine-readable row contract** — `row_tiers()` and `tier_of()` both require every row to carry its
+tier, and the evals depend on that. Do it together with a decision about whether the row format is a
+parseable contract or a human one.
 
 **3. Rendering, deferred with reasons.** (a) git's default funcname for `.md` grabs the nearest
 column-0 line, so rows render `in These files are published when the plugin is installed.` — pure
@@ -543,6 +575,28 @@ component is ~2 µs per tracked file. Linearly extrapolated to 20k files that is
 ~30 s at 50k. Treat the magnitude as soft — it is a 30x extrapolation — but the direction is structural:
 `max_rows` bounds the spawn *count*, not the per-spawn index read. **If flow gains a known monorepo
 consumer, batch it then**, and the measurements above are the baseline to beat.
+
+### A `**Visual-walk:** N/A` block forces `visual_significant` TRUE — being explicit is a trap (found dogfooding, v1.49.0)
+
+**Surfaces when:** an author writes `**Visual-walk:** N/A — no UI in this change` to be helpful on a
+non-visual PR in a `uiSurface: true` project.
+
+`visual-significance.py` treats **the presence of a co-located `Visual-walk` block** as a forcing
+signal and never reads the block's contents. So the explicit `N/A` declaration flips
+`visual_significant` to **true**, and `/flow:ship` §7a then demands a rendered walkthrough **and** a
+visual-history entry for a diff with no UI — a `[visual-deliverable]` draft-manifest entry on a change
+that cannot produce either. Omitting the block entirely is correct (`plan-discipline` scopes the field
+to UI changes) and gives the right verdict, so **the careless authoring is rewarded and the
+conscientious authoring is punished** — measured on v1.49.0's own ship, which hit exactly this.
+
+**Not fixed here on purpose.** The obvious patch — detect the string `N/A` in the block — is precisely
+the fragile shape the predicate is built to avoid (`n/a`, `none`, `not applicable`, `—`, a prose
+sentence…). Two candidate real fixes: (a) treat a block with **zero parsed assertions** as
+non-forcing, since `extract-visual-states.py` already returns the assertion list and a block with no
+`- [ ]` lines declares nothing to capture — this looks right and is cheap; or (b) require an explicit
+`**Visual surface:** none` field, making non-applicability a *declared* value rather than an inferred
+one (the same "declared, not judged" move FB-0114 made for `Mode`). **(a) needs one check that a
+0-assertion block does not force**, plus the paired positive that a 1+-assertion block still does.
 
 ### `harness_audit.py --split` undercounts `` !` ``-span shell as prose (noted v1.49.0)
 
