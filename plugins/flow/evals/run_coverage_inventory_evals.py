@@ -585,6 +585,26 @@ check("...via CLAUDE_PLUGIN_ROOT, like the sibling extract-criteria.py call",
 check("the inventory is fed $FILES through a pipe, so there is exactly one source-file filter",
       'printf \'%s\\n\' "$FILES" | python3 "${CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/change-inventory.py"' in skill,
       "the piping relationship is what guarantees one filter; a co-mention does not")
+# THE UNION CONTRACT IS CALLER-FACING, so it is pinned in the FRONTMATTER (what Claude Code
+# surfaces at invocation) and not only in the body (which only the forked reviewer reads). The
+# measured number travels with the instruction: a rule without its evidence is the thing this
+# whole release argues against.
+_front = skill.split("---", 2)[1] if skill.count("---") >= 2 else ""
+check("the caller-facing description carries the union rule",
+      "UNION THE FINDINGS" in _front.upper(),
+      "the skill body is read by the forked reviewer, which cannot act on an invocation rule — "
+      "it has to be in the description a caller sees")
+check("...and it carries the measured number, not a bare recommendation",
+      "+18pp" in _front and "80%" in _front and "100%" in _front, _front[-400:])
+check("...and it states the diff-mode zero, so nobody wires a second pass at ship Step 2",
+      "+0pp" in _front, "union measured +0pp in diff mode; omitting that invites a cost "
+      "doubling for no gain")
+check("the body carries the caller-facing section with both modes' numbers",
+      "## Running this more than once" in skill
+      and "| source mode | 82% | **100%** |" in skill
+      and "| diff mode | 60% | **60%** |" in skill,
+      "the two modes gave different answers and must be readable side by side")
+
 check("the emitter still uses the exact summary label these negatives forbid",
       _SUMMARY_LABEL.replace("[audit-coverage] ", "").rstrip(" —")
       in ENGINE.read_text(encoding="utf-8"),

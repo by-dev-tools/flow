@@ -32,6 +32,18 @@ explicitly scoped *off* (there, the only error is omission); Stage 2 matches wit
 | spike — 10 documented gaps | **source** | **65%** (n=4) | **82%** (n=5) | 80% | **100%** |
 | pr158b — 5 gaps | **diff** | 60% (n=3) | **60%** (n=3) | 60% | 60% |
 
+**Union is the largest single number here, and it ships.** At matched n=4, source-mode union
+reaches **10/10 — 100%** against an 82% single-run mean: **+18pp**, and more than the split itself
+bought. It ships as an *invocation* rule (the skill's caller-facing description + `workflow.md`'s
+pre-execution gate say to run the source-mode pass 2–3× and union), not as machinery — the skill is
+`context: fork`, so it cannot spawn its own second run, and the union has to be the caller's. **What
+licenses it is the precision record, not the technique**: unioning independent runs can only add true
+positives when the filter never admits a false one, and it never has in 15 runs. **Diff-mode union
+measured +0pp** — three runs found exactly the same gaps, so there was no variance to harvest, and
+`/flow:ship` Step 2 stays a single pass rather than doubling every PR's cost for a measured zero.
+Union also lifted the *pre-split* prompt by +15pp, which is the tell that it is a property of the
+judgment's variance and composes with the split rather than overlapping it.
+
 **Source mode: the distributions do not overlap.** Every after-run (80·80·80·90·80) beats every
 before-run (60·60·70·70). **Precision held at zero false positives across all 15 runs.**
 
@@ -188,9 +200,14 @@ and **demonstrably used** — two after-runs cite `POST-PLAN` in their own reaso
   fully shed the system prompt's global suppression — it is scoped by instruction, a soft constraint. It
   measured as enough in source mode; a genuine second invocation would cost a second run of the whole
   evidence block and was not needed to move the number.
-- **Union across runs was measured, not shipped.** Precision licenses it (unioning can only add true
-  positives), and union does rise — 80% → 100% at matched n. But that needs N invocations per gate, and
-  single-run mean already moved. Recorded as the available lever if recall needs more later.
+- **Union across runs is measured AND shipped — as an invocation rule, scoped to the mode where it
+  pays.** It cannot be machinery: the skill is `context: fork`, so it cannot spawn its own second
+  run; the union belongs to the caller. So the rule lives where a caller reads it (the frontmatter
+  description Claude Code surfaces, plus `workflow.md`'s pre-execution gate) with the number attached,
+  and an eval pins the description rather than trusting a sentence. **Scoped deliberately:** +18pp in
+  source mode, +0pp in diff mode, so ship Step 2 stays one pass. The alternative — union everywhere —
+  would double every PR's reviewer cost for a gain measured at exactly zero on the one diff-mode case
+  available, and the honest move is to say that rather than quietly pay it.
 - **`eval_utils.py` gained the repo builders rather than a sixth copy being written.** The five existing
   copies are untouched (scope), but the hoist target is now populated, so the deferred cleanup is a
   deletion instead of a rewrite. `commit()` is new because the `POST-PLAN` tier is computed from commit
