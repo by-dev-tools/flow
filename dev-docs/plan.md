@@ -2,6 +2,132 @@
 
 ## Current Focus
 
+
+**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/arguments-idiom-render-time-injection-fix`, v1.50.0, FB-0116 + FB-0117): make `$ARGUMENTS` safe to accept, once, and apply it everywhere.**
+
+### The vulnerability, re-verified from the shipped host (not re-derived from the brief)
+
+`$ARGUMENTS` is substituted by `cde()` in the Claude Code bundle as a **flat
+`e.replaceAll("$ARGUMENTS", h(n))` over the entire skill body** — prose, fenced blocks and
+`` !` `` spans alike. The only escaper applied on the plugin-skill path is
+`cde(Ln, ir, !0, De, xS)` where `xS` neutralises **bang-command syntax only**
+(`` `! ``→`` ` ! ``, `` !` ``→`` ! ` ``, `(^|\s)!`→`\!`). It does **no shell escaping**.
+The bundle says so in its own words, in the Gemini-import refusal string: *"Gemini shell-escapes
+`{{args}}` inside `!{…}`, Claude Code's `$ARGUMENTS` substitution doesn't, so importing would let
+typed arguments inject shell commands."* Substitution runs **before** `Brn()` extracts bang
+commands, so the payload is part of the command string by the time anything parses it.
+
+**Measured, not read** (`.context/probe.py`, faithful `cde()`+`xS()` transcription, filesystem
+canary, run against the verbatim `audit-plan:13` block): **3 of 5 payloads execute** — quote-break,
+command substitution, backtick. Negative control (same payloads, token absent from the block):
+**0/5**. The instrument is therefore validated on a known positive before any negative is trusted
+(`general.md` § Consistency item 4).
+
+*Refinement to the dispatch brief's model, stated because it changes nothing about the verdict but
+something about the writeup:* `"$ARGUMENTS"` does **not** quote nothing. The double quotes do
+contain `;` and newline — those two payloads were inert. What they cannot contain is `$(…)`,
+backticks, or a closing `"`. Still full RCE, by three routes. Separately, bang-commands **are**
+permission-*checked* (`tengu_prompt_shell_permission`) — they are simply never interactively
+prompted: a non-`allow` decision either hands off to the model or throws. So "no permission prompt"
+is exactly right; "bypasses approval" holds under `bypassPermissions` (this workspace, and the mode
+flow's autonomy story encourages) and under any allowlist rule broad enough to match.
+
+### Site sweep — classified mechanically, not from the table
+
+Classifier mirrors the host's own regexes, incl. its `(?<!\\)` escape:
+
+| Skill | Line | Placeholder | Context | Verdict |
+|---|---|---|---|---|
+| `audit-plan` | 13 ×2 | `$ARGUMENTS` | `!`-span | **EXPOSED — render-time RCE** |
+| `critique-plan` | 43 ×2, 57, 58 | `$ARGUMENTS` | `!`-span | **EXPOSED — render-time RCE** |
+| `review-brief` | 69 ×2 | `$ARGUMENTS` | fenced | **EXPOSED (lower severity)** — see OD1 |
+| `ship` | 1052, 1058–1061 | `$0`,`$1`,`$2` | fenced | **BROKEN TODAY** — see OD3 |
+| `doctor` | 443, 446 | `$0`,`$1`,`$2` | fenced | **BROKEN TODAY** — see OD3 |
+| `contribute` | 43 | `$1` | fenced | latent, same class |
+| `verify-build` | 143 ×2 | `$0` | fenced (comment) | cosmetic, same class |
+| `audit-coverage` (#159, unmerged) | 135 | `$ARGUMENTS` | `!`-span | conditional — see OD4 |
+
+### The idiom — convergence with FB-0108, and with two skills that already do it
+
+No delimiter, quote or in-block guard can work: substitution precedes parsing. The argument must
+leave the block. **This repo has already reached that answer twice.** FB-0108 removed `--finding`
+from `manifest-triage.py` so untrusted text travels as a **file path**. And — the find that settled
+the shape — **`/flow:land` and `/flow:post-merge`, the repo's other two argument-taking skills,
+already avoid `$ARGUMENTS` entirely**: they declare the argument under a prose `## Argument`
+heading and their shell blocks carry a literal `N="<PR#>"` the model fills in. The idiom is not
+invented here; it is named, tightened for paths, and made mechanical.
+
+**`$ARGUMENTS` is prose. The shell only ever sees a literal.**
+
+1. Host placeholders (`$ARGUMENTS`, `$ARGUMENTS[n]`, `$0`–`$9`) appear in a SKILL.md **only in
+   prose**, once, under `## Argument`. Never inside a `` !` `` span or a fenced block.
+2. Render-time `` !` `` blocks run **argument-less**, always — they do only what render-time can do
+   (transcript extraction, config resolution).
+3. The argument's work happens *after* render, through a channel no interpreter parses:
+   - **Tier 1 — the agent Reads it.** For `context: fork` skills whose agent has `Read`
+     (`auditor`, `plan-critic` — both `tools: Read, Grep`). Applies to `audit-plan`, `critique-plan`.
+   - **Tier 2 — Write-then-path.** For Bash-capable main-thread skills: the model writes the raw
+     argument to a fixed scratch file with the **Write tool**, and the block hands Python that
+     **fixed literal path**. FB-0108's channel, one layer up. Applies to `review-brief`.
+4. Shell positional parameters are spelled **`${1}`/`${0}`** — brace form, which the host's
+   `/\$(\d+)(?!\w)/` cannot match. A 2-character fix, semantically identical in POSIX sh.
+5. **The door is closed, not merely joined by a safe path** (FB-0108 rule 1): a new eval lints every
+   shipped SKILL.md and fails CI on any unescaped host placeholder in an executable context.
+
+### Spec-walk
+
+- [ ] **The idiom is documented once** in `plugins/flow/docs/workflow.md` + `dev-docs/spec.md`, with
+      the bundle evidence. *Pinned by:* `run_arg_safety_evals.py::test_idiom_documented`.
+- [ ] **`audit-plan`** takes its argument in prose; block is argument-less; auditor Reads the named
+      plan. *Pinned by:* canary test (unfixed form executes / fixed form does not) **+ positive**:
+      skill still contains `## Argument` and still routes a path to plan-document review.
+- [ ] **`critique-plan`** same, both blocks (`:43` extractor, `:57–58` pin lint). *Pinned by:* same pair.
+- [ ] **`review-brief`** converted to Tier 2 (Write-then-path, fixed literal path into the block).
+      *Pinned by:* same pair + `run_review_brief_evals.py` stays green.
+- [ ] **`${N}` remediation** in `ship`, `doctor`, `contribute`, `verify-build`. *Pinned by:* lint +
+      a positive test that `ship`'s provenance `sect()`/`has_ver()` still work under a 3-token argument.
+- [ ] **`run_arg_safety_evals.py`** ships, CI-wired (ci.yml has a self-check that every
+      `run_*_evals.py` is listed — adding the file forces the wiring).
+- [ ] **Instrument validated on a known positive** — the eval asserts the *unfixed* form creates the
+      canary before asserting the fixed form does not. A test that can only say "clean" is not a test.
+- [ ] **FB-0115** (the idiom) + **FB-0116** (the `$N` collision class) written; `dev-docs/history/` entry.
+
+### Open decisions for the gate — I have NOT acted on these
+
+- **OD1 — `review-brief:69` is in scope; the brief excluded it on a premise that is false.** It is
+  not "not exposed": `replaceAll` covers fenced blocks, so it **does** receive the value, and the
+  model is then told to run that block via Bash. Lower severity (permission-checked, not
+  render-time) but the same class. **Recommend: include.**
+  **And the FB-0085-class bug you asked me to check does not exist** — the path *is* delivered, so
+  `/flow:review-brief <path>` does not silently ignore its argument and does not always take the
+  else branch. No entry owed. (Reported, not fixed, as instructed.)
+- **OD2 — `critique-plan`'s deterministic pinning lint degrades in plan-file mode.** `plan-critic`
+  has `tools: Read, Grep` — no Bash, no Python — so under Tier 1 the lint cannot run against a named
+  plan file. (a) Accept it and print the file's **existing** "treat pinning as UNCHECKED, not clean"
+  line; (b) restructure `critique-plan` to main-thread + `Agent` spawn — bigger, and outside the
+  stated scope. **Recommend (a)**, flagged as a real behavior change against "do not change what any
+  skill does with its argument".
+- **OD3 — a second, live bug this sweep turned up.** `/flow:ship <any argument>` corrupts ship's own
+  FB-0107 provenance block **today**: `awk 'index($0,H)…'` at `ship:1052` has its `$0` replaced with
+  the first argument token. Same at `doctor:443`. Shipped, believed to work, silently wrong — the
+  FB-0085 class, and it is the *provenance* block, i.e. the thing CLAUDE.md § 3 tells every session
+  to trust. Same root cause and the same lint closes it, so **recommend including the `${N}` fix**;
+  if the lint ships covering `$N` and these files are not fixed, CI is red. Owed its own entry (FB-0116).
+- **OD4 — #159 merge order.** #159 is unmerged, holds v1.47.0, and **pins this exact residual with
+  `check(…, canary.exists())`** — an assertion that the RCE *still works*, with a note naming
+  whoever fixes it. My fix flips that pin. `audit-coverage` is also `context: fork`/`agent: auditor`,
+  so Tier 1 covers its single-file mode but **not** its directory walk (the auditor has no Glob).
+  **Recommend: coordinate rather than unilaterally rewrite an unmerged branch** — I take the four
+  merged sites; #159's site lands whichever way merges second, and its directory mode needs its own
+  call. Will re-sweep at rebase per the dispatch.
+
+**Claimed mechanically against `origin/main` + every open branch (manifest, never a PR title
+— #158 rebased onto #159 and took 1.48.0 while its title still said 1.46.0):** v1.50.0
+(ceiling 1.49.0, held by main + 2 branches); FB-0116, FB-0117 (FB-0115 → the recall work,
+now merged).
+
+
+
 **▶ EXECUTED, shipping (this branch, `conductor/audit-coverage-recall-two-stage-union`, FB-0115, v1.49.0): raise `/flow:audit-coverage`'s recall by splitting its one fused pass into enumerate-then-match.** Source-mode recall **65% → 82%** mean with non-overlapping distributions, union **80% → 100%**, precision unchanged at zero false positives in 15 runs. Diff mode moved **0** and that is reported as such — the residual there is now attributable to the matcher rather than invisible. 37/37 eval harnesses green; the measurement harness refuses to print a number until it proves it can fail.
 
 **Mode:** feature · **Surface:** non-visual
