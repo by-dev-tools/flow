@@ -1,0 +1,59 @@
+Read: /home/vercel-sandbox/flow/plugins/flow/skills/verify-build/lib/annotation-layer.html
+
+AUDIT SUMMARY
+4 issues flagged: 4 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "Clicking an element while commenting mode is on opens a comment editor pinned to that element → verify: manual click-through in a browser."
+
+Hunk: `annotation-layer.html` lines 1152-1203 (capture-phase `keydown`), 528-570 (`walkStep`/`walkDepth`/`focusWalkTarget`), 1207-1213 (`focusin` sets the pick target), 405 (the hint "⇧↑↓ walks elements, ⇧←→ widens/narrows"), 1163 (`Escape` switches commenting off) — a complete mouse-free commenting path: Shift+arrows walk/widen/narrow the target with a forced outline and a spoken descriptor, Tab-to-element then Enter creates a comment, plain ↑/↓ re-scope a pointer-chosen target, and bare Esc turns commenting off.
+
+Why uncovered: checked every criterion naming an input. Criterion 1 is "clicking", criterion 3 is modifier-click passthrough, criterion 4 is drag-select. Criterion 10 is the only accessibility criterion and is scoped to "an announcement when commenting mode toggles or the note count changes, via a visually-hidden live region" — verifying it exercises the toggle and the counter, not the element walk, not Tab-then-Enter, and not Esc-as-mode-off. No criterion would cause a tester to press an arrow key.
+
+Suggested: add a Spec-walk criterion for the keyboard path (Shift+↑↓/←→ walk and widen/narrow, Tab+Enter creates a pin on the focused element, plain arrows still scroll the page when the target came from Tab, Esc turns commenting off) with a manual keyboard-only check.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "The overlay works correctly with no native `confirm`/`alert`/`prompt` calls (so it is safe to inject into any static page, including `file://`) → verify: grep the script for `confirm(`/`alert(`/`prompt(` and confirm none are present."
+
+Hunk: `annotation-layer.html` lines 894-908 (per-row `×` delete with focus moved to the next row), 986-990 (`#an-del` deletes the open note), 1037-1052 (`#an-wipe` two-step "Delete all?" arm that auto-cancels after 6000 ms and then wipes every note from memory and `localStorage`) — destructive deletion of one comment or of all comments.
+
+Why uncovered: checked criterion 6 ("remove the anchored element, confirm the pin still lists in the panel as lost" — that removes a *page element*, not a comment), criterion 9 (its verification is a grep for native dialogs; it exercises the absence of `confirm(`, not the delete flow the two-step arm replaces), and criteria 1/5/7 (create, survive re-render, copy). No criterion causes anyone to delete a comment, so neither the two-step arming and its 6-second cancel nor the irreversible wipe has a declared check.
+
+Suggested: add a criterion for the delete paths — single-row delete, editor delete, and the arm/confirm/timeout behavior of "Delete all" including that an un-confirmed arm expires without deleting.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "The floating control and comment panel behave as expected across light and dark mode → verify: manual check with OS dark mode toggled."
+
+Hunk: `annotation-layer.html` lines 451-453 and 1025-1035 (`#an-snap` toggles hover-outlining, persisted under its own `flow-annotations-v2:snapPreview` key, default on), 709-721 (`flashHL` — with outlining off, the captured element flashes for ~700 ms on commit), 1018-1021 and 156 (`#an-eye` hides/shows all on-page pins, swapping its icon and accessible name) — two panel controls that change what the reviewer sees on the page.
+
+Why uncovered: checked criterion 11 (theming only — toggling OS dark mode and looking at the panel does not exercise whether the outline preference survives a reload or whether pins can be hidden), criterion 2 (persistence, but scoped explicitly to commenting mode: "toggle off, reload, confirm state survives"), and criteria 5/6 (pin anchoring and lost pins, not pin visibility). No criterion would cause a tester to press either toggle.
+
+Suggested: add a criterion covering the two view toggles — hover-outlining off/on persists across reload and substitutes a post-commit flash, and hiding pins removes them from the page while the panel list stays intact.
+
+---
+
+ISSUE 4 · Undeclared change
+
+Claim:
+> "Commenting mode persists across reloads via `localStorage` and defaults to on → verify: toggle off, reload, confirm state survives."
+
+Hunk: `annotation-layer.html` lines 455-465 (`save()`): when `localStorage.setItem` throws — quota exceeded, or storage blocked in private mode — the overlay keeps working in memory and announces once, "Comments could not be saved — this browser is blocking local storage. Copy them before leaving the page.", after which every comment is lost on reload.
+
+Why uncovered: checked criterion 2 (happy-path persistence), criterion 8 (the *clipboard* being unavailable, not storage), criterion 12 (frameless report), and criterion 13 (a corrupt overlay file). The plan declares two degradation paths but none in which storage is unavailable, and no criterion's verification runs the overlay with `localStorage` blocked — so the one-shot warning and the silent in-memory-only mode are untested.
+
+Suggested: add a criterion for the storage-blocked path (private-mode or blocked-storage run: commenting still works, the warning is announced once, and the user is told to copy before leaving).
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

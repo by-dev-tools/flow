@@ -315,10 +315,20 @@ with tempfile.TemporaryDirectory() as td:
     # Without this, deleting the skip branch outright would satisfy every §4 assertion.
     doc = git_repo(Path(td) / "docsonly", {
         "flow.config.json": '{"defaultBranch": "main"}', "README.md": "hi\n"})
+    # THE REMOTE-TRACKING REF IS REQUIRED, and its absence meant this check passed for the
+    # wrong reason. v1.49.0 gated the SKIPPED line on `origin/$BASE` resolving (a whole PR's
+    # behaviour used to vanish as "nothing to audit" when it did not), and this fixture never
+    # created the ref — so it was exercising the unresolvable-base path and asserting the
+    # doc-only one. Creating the ref is what makes the assertion test its own claim.
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+                   cwd=doc, capture_output=True)
     (doc / "README.md").write_text("hi there\n", encoding="utf-8")
     out = run(DIFF_BLOCK, doc)
     check("a doc-only diff in diff mode still renders SKIPPED",
           SKIP_LINE in out, f"got: {out[:300]!r}")
+    check("...and it is the doc-only skip, NOT the unresolvable-base weakening",
+          "BASE-UNRESOLVED" not in out,
+          "this check used to pass via the base-unresolved path, asserting the wrong thing")
 
 # ===========================================================================
 print("\n§5 — THE INSTRUMENT TEST: the known-positive case (D1 spike, n=1)")
@@ -557,8 +567,31 @@ print("\n§8 — registration self-guards")
 skill_text = SKILL.read_text(encoding="utf-8")
 check("the skill's What-to-check prose routes SOURCE-UNRESOLVED away from SKIPPED",
       "SOURCE-UNRESOLVED` is NOT the skip case" in skill_text)
-check("the skill's prose treats SOURCE-TRUNCATED as partial, not clean",
-      "SOURCE-TRUNCATED" in skill_text and "this audit is partial" in skill_text)
+# v1.49.0 replaced the per-outcome truncation bullets with ONE catch-all weakening rule, so
+# the assertion moved from "this exact phrase appears" to "the class rule covers this outcome
+# BY NAME". Both halves are required: the rule must exist, AND SOURCE-TRUNCATED must be named
+# under it — a catch-all that forgot to list the outcome it replaced would otherwise pass on
+# the rule's presence alone, which is the deletable-prohibition shape.
+check("the skill's prose treats SOURCE-TRUNCATED as a weakening, not clean",
+      "WEAKENED ·" in skill_text
+      and "weaker than a normal one, not equal to it" in skill_text
+      and "`SOURCE-TRUNCATED`" in skill_text,
+      "the catch-all weakening rule must exist AND name SOURCE-TRUNCATED under it")
+check("...and every weakening the block EMITS carries the token the prose matches on",
+      all(("WEAKENED · " + n) in skill_text for n in ("TRUNCATED", "SOURCE-TRUNCATED")),
+      "the rule matches on the token, so an emitted weakening without it is invisible to it")
+# PAIRED NEGATIVE, and it is the whole reason the token exists: the first version of this rule
+# matched "any control line that is not one of the four hard outcomes", which captured the
+# block's own SUCCESS lines and would have demanded the weakening note on every healthy run.
+check("...and the rule does NOT capture the block's own success/informational lines",
+      "not on \"any control line that isn't one of the hard outcomes\"" in skill_text
+      and "`PLAN-PREDATES-BRANCH` is NOT a weakening" in skill_text,
+      "a weakening marker that fires on healthy runs cannot tell healthy from degraded")
+check("the inventory call asserts the engine's MARKER, not mere non-emptiness",
+      'case "$INV" in' in skill_text and '"[audit-coverage]"*)' in skill_text
+      and '2>&1)' not in skill_text.split("change-inventory.py")[1][:400],
+      "a non-emptiness test passes on python3-missing, a traceback, and an unset plugin root — "
+      "all three then print garbage where the checklist goes, matching no control-line rule")
 check("frontmatter advertises both input modes",
       "Two input modes" in skill_text)
 check("the prose requires the block's own SOURCE-UNRESOLVED line, verbatim",

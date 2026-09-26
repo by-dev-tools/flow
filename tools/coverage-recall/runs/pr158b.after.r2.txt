@@ -1,0 +1,67 @@
+BEHAVIOR INVENTORY
+B1  `prototype-gate.py arming` emits a config-only JSON verdict (`armed`/`ui_surface`/`role`/`brief_required`/`reasons`) and reports not-armed when the config is malformed or not a JSON object, recording `role: designer` as suppressed under `uiSurface: false`.  [H5]
+B2  `trigger` resolves `path` (`prototype-first`/`collapsed`/`classic`) and `pre_execution_gate` (`prototype`/`plan`) from the brief's declared `**Mode:**`/`**Surface:**` plus config `uiSurface`/`role`; `uiSurface: false` vetoes `role: designer`, `Mode: tiny` collapses, `Mode: spike` goes classic.  [H5]
+B3  `trigger` degrades to `classic`/`plan` with distinct `[WARN]` reasons for an absent brief vs a malformed brief vs an absent/unreadable/non-object config, exiting 0 with parseable JSON rather than a traceback.  [H5]
+B4  `contract` emits a verdict: `web` exempt; otherwise a `**Feasibility**` block is required, rows must carry a verdict from the closed set, a proxy disclosure is required, non-`native-standard` rows are listed in `must_surface[]`, and unset `platform` names both remedies.  [H5]
+B5  The one-line browser-delivery exit is an allowlist (`library`/`none`/`cli`/`tauri`); any other non-`web` platform is refused and told to enumerate affordances.  [H5, H6]
+B6  With no `prototype.html` in the directory, `contract` returns `ok: false` with a "There is no prototype.html in … yet" reason (and `approve` prints `REFUSED: no prototype.html …` and exits 2).  [H5, H7, H8]
+B7  `approve` refuses (exit 2, no record written) on a missing/empty quote file or a failing contract, and on success writes `approval.json` carrying sha256, workspace stamp, platform, `must_surface`, and the verbatim quote.  [H5]
+B8  A successful `approve` prints a TWO-line paste block — `**Pre-execution gate:** prototype` plus `**Prototype approved:** \`<sha16>\` · <quote> · repo=… branch=… head=…` — with the quote newline-folded, JSON-quoted, and truncated to 150 chars plus `…`, under an instruction to paste BOTH lines verbatim.  [H9, H10, H11, H12]
+B9  `verify` returns `ok: false` with reasons kept distinct for sha256 drift vs workspace-stamp mismatch (delegated to `flow_scratch.check_stamp`), plus missing/malformed record and missing-quote cases.  [H5]
+B10 `gate-execute` reads only committed plan-doc state: `ok: true` with a well-formed digest plus an active Spec-walk block; `ok: false` on a missing digest, an empty approval quote, no active block, or an all-demoted plan; `ok: true` no-op when no prototype gate is declared.  [H5]
+B11 `gate-execute` returns `ok: false` when the plan declares an *unrecognized* `**Pre-execution gate:**` literal (e.g. `prototype-first`), naming the literal and that `prototype-first` is the path name, where such a value previously fell through to the classic `ok: true` branch.  [H13]
+B12 `present` writes `prototype.presented.html` with the existing annotation layer injected before `</body>` (appended with a `[WARN]` when no `</body>` exists), leaving the source file unmodified.  [H5]
+B13 When the annotation partial is unreadable, `present` still writes a presented copy and returns `ok: true`, `injected: false`, with a `[WARN]` and read-only "ask for feedback in chat" guidance.  [H14, H15]
+B14 `present` emits `source_sha256` — the hash of the unmodified source — alongside `presented`/`open_this` guidance.  [H16]
+B15 CLI surface: seven subcommands (`arming`, `trigger`, `contract`, `approve`, `verify`, `gate-execute`, `present`) with a required `--quote-file` and no `--quote` string flag.  [H5]
+NOT BEHAVIOR
+H1 version · H2 version · H3 test-only · H4 version
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  B1 covered · B2 covered · B3 covered · B4 covered · B5 covered · B6 UNDECLARED · B7 covered · B8 UNDECLARED · B9 covered · B10 covered · B11 UNDECLARED · B12 covered · B13 covered · B14 covered · B15 covered
+
+AUDIT SUMMARY
+3 issues flagged: 3 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "`approve` exits non-zero and writes **no** record when the quote file is absent, empty, or whitespace-only. → `test_approve_requires_quote`, three fixture runs" … "`approve` exits non-zero and writes no record when `contract` is not `ok`. → `test_approve_requires_contract`"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py:433` and `:440` (H7, H8, both POST-PLAN), plus the `cmd_approve` precondition in H5 — with no `prototype.html` in the target directory, `contract` returns `ok: false` with a dedicated "There is no prototype.html in … yet, so there is nothing to check. Build the prototype first." reason and `feasibility_required: null`, and `approve` prints `REFUSED: no prototype.html … — nothing to approve.` and exits 2.
+
+Why uncovered: I checked every `contract` criterion (`test_contract_web_exempt`, `test_contract_browser_delivery_one_liner`, `test_contract_native_cannot_take_one_liner`, `test_contract_requires_feasibility_unless_web`, `test_contract_unset_platform_message`, `test_contract_rows_need_verdicts`, `test_contract_requires_proxy_disclosure`, `test_contract_native_complete`, `test_contract_deletion_not_green`) — each is about the *contents* of the feasibility document and its fixtures must contain a prototype for the declared message ("naming the missing block") to be produced at all. The two `approve` refusal criteria name exactly two of the three refusals the function's own docstring lists; the "no prototype.html ⇒ refuse. Nothing to hash." branch is named by no criterion. `test_approve_record_shape` exercises the success path.
+
+Suggested: Add a criterion (and fixture row) asserting that `contract` returns `ok: false` with the distinct no-prototype reason and that `approve` exits non-zero writing no record when `prototype.html` is absent, so the third declared refusal is pinned like the other two.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "A successful `approve` writes a record carrying the prototype sha256, `repo`/`branch`/`head` stamp, resolved platform, contract verdict, and the verbatim quote; `verify` returns `ok: true` for it. → `test_approve_record_shape`"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py:592` (H9), `:600` (H10), `:610` (H11), `:623` (H12) — all POST-PLAN — `render_digest` now emits **two** lines (`**Pre-execution gate:** prototype` and `**Prototype approved:** \`<sha16>\` · <quote> · repo=… branch=… head=…`), and the quote a human pastes into the plan doc is whitespace/newline-folded, JSON-serialized, and truncated to 149 chars plus `…`, under a new "Paste BOTH lines above into the plan doc verbatim" instruction.
+
+Why uncovered: `test_approve_record_shape` is scoped to `approval.json`'s fields ("writes a record carrying…"), not to the rendered `digest_line`. The gate-execute criteria (`test_gate_execute_blocks_missing_digest`, `test_gate_execute_passes_with_both`, and the well-formed-digest criterion requiring "a sha-shaped token and a non-empty quote") describe the *consumer's* parsing of a plan-doc line, not the producer's rendering; nothing declares that two lines are emitted, nor the 150-character truncation, newline folding, or the `repo=/branch=/head=` suffix. No criterion mentions `render_digest`, `digest_line`, truncation, or a length cap.
+
+Suggested: Add a criterion pinning `render_digest`'s output — both lines emitted, one line each, quote folded and truncated with a visible marker — and assert the produced line round-trips through `DIGEST_RE`/`gate-execute` rather than only hand-written fixture lines.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "`gate-execute` returns `ok: true` and requires no digest when the plan doc declares no prototype gate — the classic path is untouched and pays nothing. → `test_gate_execute_classic_noop`"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py:699` (H13, POST-PLAN) — a plan doc declaring an unrecognized `**Pre-execution gate:**` literal (anything other than `prototype` or `plan`, explicitly including this engine's own `prototype-first` path value) now returns `ok: false` with `spec_walk_items: null` and a problem naming the literal, where such a value would otherwise take the classic `ok: true` branch.
+
+Why uncovered: I checked all seven `gate-execute` criteria — `test_gate_execute_reads_committed_state_only`, `test_gate_execute_blocks_missing_plan`, `test_gate_execute_blocks_missing_digest`, `test_gate_execute_passes_with_both`, `test_gate_execute_classic_noop`, `test_gate_execute_uses_shared_parser`, `test_gate_execute_all_demoted` — plus the well-formed-digest criterion. They partition plan docs into exactly two classes: declares `prototype`, or "declares no prototype gate". A third class (declares an unrecognized literal) appears in none of them, so no fixture would exercise the new RED branch; `test_gate_execute_classic_noop`'s fixture is the no-gate/classic doc.
+
+Suggested: Add a criterion and fixture row asserting `gate-execute` returns `ok: false` for `**Pre-execution gate:** prototype-first` (and one other bogus literal), so the "falls open on anything else" regression the branch was written to close stays pinned.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

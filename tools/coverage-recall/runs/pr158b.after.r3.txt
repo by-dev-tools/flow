@@ -1,0 +1,66 @@
+BEHAVIOR INVENTORY
+B1  `arming` emits a config-only verdict (`armed` / `ui_surface` / `role` / `brief_required` / `reasons`), reports not-armed on a malformed config, and records the `role: designer` suppression when `uiSurface: false`.  [H5]
+B2  `trigger` resolves `path` + `pre_execution_gate` from the brief's declared `Mode`/`Surface` plus `role`/`uiSurface`: prototype-first/prototype, `collapsed`/plan on `Mode: tiny`, classic/plan on spike, non-visual, and the `uiSurface: false` veto.  [H5]
+B3  `trigger` degradations all land on classic/plan with a `[WARN]`, exit 0, valid JSON: malformed config, malformed brief, absent brief (distinct `brief_absent` reason), out-of-enum `Mode`/`Surface` treated as unset.  [H5]
+B4  `contract` verdicts: `web` exemption, one-line browser-delivery exit restricted to the `{library,none,cli,tauri}` allowlist, refusal for native platforms and unset `platform` (both remedies named), row/verdict and proxy-disclosure requirements, `must_surface[]` listing.  [H5, H6, H8]
+B5  `contract` (and `approve`) run against a directory with no `prototype.html` return a parseable refusal naming the directory and telling the user to build the prototype first, instead of a traceback.  [H5, H7, H8]
+B6  `approve` exits non-zero and writes no `approval.json` when the quote file is missing/empty or the contract fails; writes the record with sha256, stamp, platform, must_surface and verbatim quote on success.  [H5, H9]
+B7  `approve` prints a `digest_line` containing BOTH plan-doc lines (`**Pre-execution gate:** prototype` and `**Prototype approved:** …`), with the human quote whitespace-folded to one line, truncated at 150 characters with an ellipsis, and JSON-quoted.  [H9, H10, H11, H12]
+B8  `verify` reports sha drift and workspace-stamp mismatch as distinct problems via `flow_scratch.check_stamp`, and reports a missing or malformed `approval.json`.  [H5]
+B9  `gate-execute` reads committed plan-doc state only: `ok: true` with declaration + well-formed digest + active Spec-walk; red on missing digest, empty quote, no active block, all-demoted, or an unresolvable parser; `ok: true` no-op when no prototype gate is declared.  [H5]
+B10 `gate-execute` returns `ok: false` when the plan declares an unrecognized gate literal (e.g. `prototype-first`), instead of falling through to the classic no-op.  [H13]
+B11 `present` writes `prototype.presented.html` with the existing annotation layer injected before `</body>`, leaves the source byte-identical, appends at EOF with a `[WARN]` when no `</body>` exists, and degrades read-only with a `[WARN]` (still writing the presented file) when the partial is unreadable.  [H5, H14, H15]
+B12 `present` reports `source_sha256`, `bytes_added` and `open_this` hand-off guidance in its JSON.  [H16]
+NOT BEHAVIOR
+H1 version · H2 version · H3 CI-only · H4 version
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  B1 covered · B2 covered · B3 covered · B4 covered · B5 UNDECLARED · B6 covered · B7 UNDECLARED · B8 covered · B9 covered · B10 UNDECLARED · B11 covered · B12 covered
+
+AUDIT SUMMARY
+3 issues flagged: 3 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "`contract` returns `ok: false` naming the missing block for **every** other resolved value — `ios`, `android`, `tauri`, `cli`, `library`, `none`, **and `platform` unset** — asserted over the full enum plus the unset case … → `test_contract_requires_feasibility_unless_web`, seven fixture rows"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` H7 (`:433`, +6) and H8 (`:440`, +4), the `_contract` early return when `_prototype_file()` is `None` — a run against a directory with no `prototype.html` now returns `{"ok": false, "feasibility_required": null, "reasons": [… "There is no prototype.html in <dir> yet, so there is nothing to check. Build the prototype first."]}` on stdout, exit 0, rather than the emit-then-`AttributeError` the hunk's own comment describes. `cmd_approve`'s matching `REFUSED: no prototype.html` exit-2 path is the same behavior on the approve side.
+
+Why uncovered: I checked every `contract`/`approve` criterion — `test_contract_web_exempt`, `test_contract_browser_delivery_one_liner`, `test_contract_native_cannot_take_one_liner`, `test_contract_requires_feasibility_unless_web`, `test_contract_unset_platform_message`, `test_contract_rows_need_verdicts`, `test_contract_requires_proxy_disclosure`, `test_contract_native_complete`, `test_contract_deletion_not_green`, `test_approve_requires_quote`, `test_approve_requires_contract`, `test_approve_record_shape`. Every one is phrased around a prototype that exists plus a feasibility block that is present, absent, or malformed; none names the no-artifact case. The quoted criterion is the closest, and it is the reason this gap matters rather than a reason to drop the finding: a fixture built for "ok:false naming the missing block" that forgets to create `prototype.html` passes on the no-prototype message instead, so the declared assertion goes green without exercising the rule it claims to pin.
+
+Suggested: add a criterion (and fixture row) that `contract` on a directory with no `prototype.html` returns `ok: false` with the distinct "nothing to check" reason and exit 0, and assert the seven `test_contract_requires_feasibility_unless_web` rows each fail on the *missing-block* reason specifically.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "A successful `approve` writes a record carrying the prototype sha256, `repo`/`branch`/`head` stamp, resolved platform, contract verdict, and the verbatim quote; `verify` returns `ok: true` for it. → `test_approve_record_shape`"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` H9 (`:592`, +3), H10 (`:600`, +9), H11 (`:610`, +12), H12 (`:623`, +1) — `render_digest()` now returns two lines (`**Pre-execution gate:** prototype` *plus* `**Prototype approved:** …`), and the quote it embeds is whitespace-folded to a single line, cut to 149 characters + `…` when longer, and serialized with `json.dumps`. `approve`'s `reasons` tells the human to paste BOTH lines verbatim. What the user copies into the committed plan doc is therefore a two-line block whose quote may not be verbatim.
+
+Why uncovered: the quoted criterion pins `approval.json`'s fields (where the quote *is* verbatim), not the emitted `digest_line`. I also checked `test_gate_execute_blocks_missing_digest` ("a sha-shaped token and a non-empty quote") and `test_gate_execute_passes_with_both` — both exercise the *consumer* side against hand-written plan-doc text, so neither would cause anyone to run `approve` with a >150-character or multi-line quote and inspect what it prints. No criterion mentions the gate-declaration line being emitted by `approve` at all, and no criterion mentions truncation or newline folding.
+
+Verification-relevant next step: assert `render_digest()` emits both lines, and that a multi-line / >150-character quote yields one line matching `DIGEST_RE` with the visible ellipsis.
+
+Suggested: declare a criterion that `approve`'s `digest_line` contains both plan-doc lines and that a long or multi-line quote round-trips through `DIGEST_RE` as a single truncated-but-visible line, with a fixture at the boundary.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "`gate-execute` returns `ok: true` and requires no digest when the plan doc declares no prototype gate — the classic path is untouched and pays nothing. → `test_gate_execute_classic_noop`"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` H13 (`:699`, +14) — a new branch in `cmd_gate_execute`: if the plan declares a gate literal that is neither `prototype` nor `plan`, the command returns `ok: false` with `problems: ["The plan declares an unrecognized pre-execution gate, … note `prototype-first` is the PATH name, not the gate name."]`. A plan doc reading `**Pre-execution gate:** prototype-first` now blocks Execute where it previously read as the classic no-op.
+
+Why uncovered: the quoted criterion is the only one describing the non-`prototype` declaration case, and it declares the *opposite* outcome (`ok: true`, nothing to assert) for that region of the input space — a `test_gate_execute_classic_noop` fixture written to it would use an absent declaration or `plan`, never a third literal. I also checked `test_gate_execute_blocks_missing_plan`, `test_gate_execute_blocks_missing_digest`, `test_gate_execute_passes_with_both`, `test_gate_execute_reads_committed_state_only`, `test_gate_execute_uses_shared_parser`, `test_gate_execute_all_demoted`, and criterion 98's well-formed-digest requirement: every one holds `gate == "prototype"` or an absent declaration. None exercises an unrecognized literal.
+
+Suggested: add a criterion and fixture row asserting `gate-execute` returns `ok: false` naming the offending literal for `prototype-first` (and one other unrecognized value), paired with the existing `classic_noop` positive so the two branches are pinned together.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

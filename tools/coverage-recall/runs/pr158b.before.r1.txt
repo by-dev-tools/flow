@@ -1,0 +1,47 @@
+AUDIT SUMMARY
+2 issues flagged: 2 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "`gate-execute` returns `ok: true` and requires no digest when the plan doc declares no prototype gate — the classic path is untouched and pays nothing. → `test_gate_execute_classic_noop`"
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py`, `cmd_gate_execute`, the new unrecognized-literal branch:
+```
++    if gate is not None and gate not in ("prototype", "plan"):
++        return _emit({
++            "ok": False, "gate": gate, "has_digest": has_digest, "spec_walk_items": None,
++            "problems": ["The plan declares an unrecognized pre-execution gate, %r. ..."],
++        })
+```
+User-perceptible behavior: a plan doc whose `**Pre-execution gate:**` line carries any literal other than `prototype` or `plan` — the code's own comment names `prototype-first`, this engine's `path` value — now blocks Execute with `ok: false`, where the same plan doc would resolve to the pass-through classic verdict without this branch.
+
+Why uncovered: I checked every gate-execute criterion — committed-state-only (`test_gate_execute_reads_committed_state_only`), missing plan (`test_gate_execute_blocks_missing_plan`), missing digest (`test_gate_execute_blocks_missing_digest`), both-present pass (`test_gate_execute_passes_with_both`), classic no-op (`test_gate_execute_classic_noop`), shared parser (`test_gate_execute_uses_shared_parser`), all-demoted (`test_gate_execute_all_demoted`), and the well-formed-digest criterion. All of them describe fixtures whose declaration is either `prototype`, or absent/`plan`. The closed literal set is a third verdict class: `ok: false` on a *declared but unrecognized* gate. `test_gate_execute_classic_noop` is the nearest criterion and it asserts the opposite outcome for a plan that declares something other than `prototype`, so it would not cause anyone to write the `prototype-first` row that this branch exists for.
+
+Suggested: Add a Spec-walk criterion pinning the closed gate-literal set — a `Pre-execution gate: prototype-first` fixture returning `ok: false`, paired with the existing `plan`/absent rows that must stay `ok: true` — so the recognized-set positive and the unrecognized-literal negative ship together.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "A successful `approve` writes a record carrying the prototype sha256, `repo`/`branch`/`head` stamp, resolved platform, contract verdict, and the verbatim quote; `verify` returns `ok: true` for it. → `test_approve_record_shape`"
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py`, `render_digest`:
+```
++    raw = " ".join((record.get("approved_by_human_quote", "") or "").split())
++    if len(raw) > 150:
++        raw = raw[:149] + "…"
+```
+User-perceptible behavior: the `**Prototype approved:**` line that `approve` prints and the agent pastes into the committed plan doc carries the human's approval whitespace-folded and silently cut at 150 characters with an ellipsis — so the committed evidence of gate 1 can differ in content from the approval the human gave.
+
+Why uncovered: I checked `test_approve_record_shape` (asserts the *record*'s fields, and `approval.json` stores the quote untruncated), `test_approve_requires_quote`, `test_approve_requires_contract`, `test_verify_detects_drift`, and the two digest criteria — `test_gate_execute_blocks_missing_digest` and the well-formed-digest criterion, which require only a sha-shaped token plus a non-empty quoted string, both of which a truncated quote satisfies. The `~80-word / 20-second` cap criterion (`test_brief_word_cap_warns`) governs the design brief, not the approval quote. No criterion names the digest line's rendering, length bound, or newline folding, so nothing would fail if the cut moved, lost the ellipsis, or dropped the folding.
+
+Suggested: Add a criterion covering `render_digest`'s output contract — one line pair emitted, newlines folded, over-length quotes truncated visibly and still matching `DIGEST_RE` — or drop the truncation and let the digest carry the quote verbatim as the surrounding criteria assert.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

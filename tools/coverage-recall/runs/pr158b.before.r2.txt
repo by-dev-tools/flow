@@ -1,0 +1,63 @@
+AUDIT SUMMARY
+3 issues flagged: 3 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> +    if gate is not None and gate not in ("prototype", "plan"):
+> +        return _emit({
+> +            "ok": False, "gate": gate, "has_digest": has_digest, "spec_walk_items": None,
+> +            "problems": ["The plan declares an unrecognized pre-execution gate, %r. It must be "
+> +                         "exactly `prototype` or `plan` — note `prototype-first` is the PATH "
+> +                         "name, not the gate name." % gate],
+> +        })
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py`, `cmd_gate_execute`, the unrecognized-literal branch (added lines ~873-879). A plan doc whose `**Pre-execution gate:**` line carries any literal other than `prototype` or `plan` — e.g. `prototype-first`, which the same engine emits as its `path` value — now returns `ok: false` and blocks Execute, where the surrounding docstring's own three-state table says "no declaration ⇒ classic path, ok, costs nothing".
+
+Why uncovered: I checked every gate-execute criterion — committed-state-only (`test_gate_execute_reads_committed_state_only`), missing plan (`test_gate_execute_blocks_missing_plan`), missing digest (`test_gate_execute_blocks_missing_digest`), both-present pass (`test_gate_execute_passes_with_both`), classic no-op (`test_gate_execute_classic_noop`), shared parser (`test_gate_execute_uses_shared_parser`), all-DEMOTED (`test_gate_execute_all_demoted`), and well-formed digest. None names an invalid or unrecognized gate literal. The nearest, `test_gate_execute_classic_noop`, declares the opposite outcome for a doc that "declares no prototype gate" (`ok: true`, no digest required), so a fixture written to that criterion would not exercise — and could not distinguish — the new RED third state.
+
+Suggested: Add a Spec-walk criterion and fixture row asserting `gate-execute` returns `ok: false` for a plan declaring `Pre-execution gate: prototype-first` (and one other non-enum literal), paired against the `plan`/absent rows that must stay `ok: true`.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> +def render_digest(record) -> str:
+> +    """BOTH lines that go in the PLAN DOC …
+> +    raw = " ".join((record.get("approved_by_human_quote", "") or "").split())
+> +    if len(raw) > 150:
+> +        raw = raw[:149] + "…"
+> +    return ("**Pre-execution gate:** prototype\n"
+> +            "**Prototype approved:** `%s` · %s · repo=%s branch=%s head=%s") % (
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py`, `render_digest` (added lines ~766-792), consumed by `cmd_approve`'s `"digest_line": render_digest(record)` and `cmd_verify`'s same key. The human-facing output of a successful `approve` is two literal lines to paste into the committed plan doc, with the sha truncated to 16 chars, newlines folded, and the verbatim quote silently truncated at 150 chars with an ellipsis — the text `gate-execute`'s `DIGEST_RE` must later match.
+
+Why uncovered: I checked `test_approve_record_shape` (it declares the contents of the `approval.json` **record** — sha256, stamp, platform, contract verdict, verbatim quote — not the rendered paste block), `test_quote_file_only`, `test_verify_detects_drift`, and `test_gate_execute_blocks_missing_digest` (it asserts `gate-execute` rejects a malformed digest, using its own plan-doc fixture, not one produced by `render_digest`). No criterion mentions `digest_line`, the two-line paste block, the 150-char truncation, or the newline fold, so nothing joins `approve`'s emitted digest to the regex that has to parse it — the round-trip the docstring says previously broke in both directions.
+
+Suggested: Add a criterion asserting `render_digest`'s output for a long, multi-line quote is a single line that `DIGEST_RE` matches and that `gate-execute` accepts end-to-end (approve → paste → gate-execute), including the truncation marker.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> +    proto = _prototype_file(proto_dir)
+> +    if proto is None:
+> +        print("REFUSED: no prototype.html in %s — nothing to approve." % proto_dir, file=sys.stderr)
+> +        return 2
+
+and, in `_contract`:
+> +            "reasons": reasons + ["There is no prototype.html in %s yet, so there is nothing "
+> +                                  "to check. Build the prototype first." % proto_dir],
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py`, `cmd_approve`'s first refusal (added lines ~718-721) and `_contract`'s no-artifact early return (added lines ~598-610). Two user-perceptible outcomes: `approve` exits 2 with a `REFUSED` message and writes no record when `prototype.html` is absent, and `contract` returns `ok: false` with `feasibility_required: null` for the same condition — the third refusal the `cmd_approve` docstring itself enumerates.
+
+Why uncovered: I checked all four `approve` criteria (`test_approve_requires_quote` — absent/empty/whitespace quote file; `test_approve_requires_contract` — contract not ok; `test_approve_record_shape`; `test_quote_file_only`) and all nine `contract` criteria (web exempt, one-line browser delivery, native cannot take the one-liner, feasibility-required-unless-web over the full enum, unset-platform message, row verdicts, proxy disclosure, native complete, deletion-not-green). None names an absent `prototype.html`; the only criterion referencing `prototype.html` at all is the `present` byte-identity one (`test_present_authors_no_markup`), which requires the file to exist. `test_contract_deletion_not_green` deletes the Feasibility block, not the artifact.
+
+Suggested: Add a fixture row asserting `contract` returns `ok: false` and `approve` exits non-zero writing no `approval.json` when the prototype directory contains no `prototype.html`, so the docstring's third refusal is pinned like the other two.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

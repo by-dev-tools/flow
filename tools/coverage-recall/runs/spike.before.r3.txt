@@ -1,0 +1,85 @@
+Read: /home/vercel-sandbox/flow/plugins/flow/skills/verify-build/lib/annotation-layer.html
+
+AUDIT SUMMARY
+6 issues flagged: 6 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "The overlay works correctly with no native `confirm`/`alert`/`prompt` calls (so it is safe to inject into any static page, including `file://`) → verify: grep the script for `confirm(`/`alert(`/`prompt(` and confirm none are present."
+
+Hunk: `annotation-layer.html` — the `#an-wipe` handler (`if (!armed) { armed = true; this.textContent = "Delete all?"; ... armTimer = setTimeout(... 6000)`), the per-row `an-del` handler (`notes = notes.filter(...); save(); render()`), and the editor's `$("an-del")` handler. A reader can delete one comment from its panel row or from the editor, and delete every comment via a two-press "Delete all" → "Delete all?" control that re-disarms itself after six seconds of inactivity.
+
+Why uncovered: I checked all thirteen criteria for any mention of deleting a comment. Criterion 9 is the closest — it constrains *how* a destructive confirmation may be implemented (no native `confirm`) and its verify step is a grep for `confirm(`, which passes on a build with no delete feature at all. Criterion 6 covers keeping a lost anchor rather than dropping it — the opposite of deliberate deletion. Nothing directs anyone to press Delete, Delete all, or the second press that actually destroys data, nor to discover that the arming state expires.
+
+Suggested: Add a Spec-walk criterion for the delete paths, naming the two-press arm, the six-second auto-disarm, and that deletion persists across a reload.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "Clicking an element while commenting mode is on opens a comment editor pinned to that element → verify: manual click-through in a browser."
+
+Hunk: `annotation-layer.html` — the capture-phase `keydown` handler (`if (e.shiftKey && (e.key === "ArrowDown" || ...)) { walkStep / walkDepth }`), `buildWalk()`/`walkStep()`/`walkDepth()`/`focusWalkTarget()`, the plain `ArrowUp`/`ArrowDown` widen/narrow branch, the `Enter` → `commit()` branch, the `focusin` listener that makes a Tab-focused element the pick target, and the `Escape` branch that calls `setCommenting(false)`. A keyboard-only reader can walk the page element-by-element with Shift+↑↓, widen/narrow the selection with Shift+←→, comment with Enter, and switch commenting off with Escape — and the on-page hint text advertises all of it.
+
+Why uncovered: I checked criterion 1 (mouse click-through), criterion 3 (modifier-click passthrough — verifies the escape hatch, not keyboard targeting), and criterion 10 (screen-reader announcement scoped to "commenting mode toggles or the note count changes" — the walk's per-element `announce(descriptor(...) + " — press Enter to comment")` is neither). No criterion mentions a key, Tab, or keyboard reachability, so nothing would cause anyone to test the entire non-pointer path to creating a comment, including Escape silently turning the mode off.
+
+Suggested: Add a criterion for the keyboard commenting path (Shift+arrow walk, Shift+←→ depth, Tab+Enter, Escape-to-off) with a keyboard-only manual check.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "Commenting mode persists across reloads via `localStorage` and defaults to on → verify: toggle off, reload, confirm state survives."
+
+Hunk: `annotation-layer.html` — `#an-snap` and its handler (`snapPreview = !snapPreview; localStorage.setItem(PREF, ...)`), `drawHL(el, force)` gated on `snapPreview`, the `mousemove` listener that outlines the hovered element, and `flashHL()` (`flashT`/`fadeT`, the 460 ms/700 ms fade). With the preference on, an outline follows the cursor; with it off, the outline appears only on keyboard adjustment and as a post-commit flash of what was captured. The preference persists under its own key `flow-annotations-v2:snapPreview`.
+
+Why uncovered: Criterion 2 is scoped to the *commenting* mode key and its verify step ("toggle off, reload") exercises only that switch; a build with no outline preview at all passes it. Criterion 11 covers light/dark appearance of "the floating control and comment panel," not whether a hover outline is drawn, suppressed, or flashed. No criterion mentions hovering, outlining, or a second persisted preference.
+
+Suggested: Add a criterion for the hover-outline preference — default on, persists under its own key, and the post-commit flash that replaces it when off.
+
+---
+
+ISSUE 4 · Undeclared change
+
+Claim:
+> "An anchor that stops resolving after a re-render is kept and exported, flagged, rather than silently dropped → verify: manual check (remove the anchored element, confirm the pin still lists in the panel as lost)."
+
+Hunk: `annotation-layer.html` — `#an-eye` and its handler (`var hidden = $("an-pins").classList.toggle("hidden"); paintToggle(...)`) plus `#an-pins.hidden { display: none; }`. A reader can hide every pin from the page while keeping the comments, and the control's icon/label/`aria-pressed` invert to offer showing them again.
+
+Why uncovered: I checked criterion 4 (the pin *listed* as lost in the panel — about list membership, not page visibility), criterion 1 (editor opens on click), and criterion 11 (light/dark appearance of the control and panel). None directs anyone to press the eye control or to confirm the design is viewable unobstructed. Unlike the commenting switch, this toggle is not persisted, which is also unobserved.
+
+Suggested: Add a criterion for hide/show pins, stating whether the hidden state is expected to survive a reload.
+
+---
+
+ISSUE 5 · Undeclared change
+
+Claim:
+> "\"Copy notes\" produces one structured, per-screen text block on the clipboard → verify: manual click + paste."
+
+Hunk: `annotation-layer.html` — the per-row `an-copy1` button and its handler (`writeClipboard(oneNoteBlock(n, notes.indexOf(n) + 1, !!el))`), with `oneNoteBlock()` emitting a *different* payload from the batch export: a `viewCtx()` line, one `## heading`, and one record — no document-title header, no comment count, no grouping preamble. The icon swaps to a check for 1300 ms and the live region announces the copy.
+
+Why uncovered: Criterion 7 names "Copy notes" and its output as *one* block covering the screen; its verify step is a single click + paste, which a reader performs on the footer's "Copy all". Nothing in the thirteen criteria mentions copying an individual comment, so the second clipboard path and its distinct format go untested — including whether it, too, reaches the `file://` fallback sheet (criterion 8's verify step is likewise scoped to the batch copy).
+
+Suggested: Add a criterion for the per-comment copy, naming its expected format and that it shares the clipboard-unavailable fallback.
+
+---
+
+ISSUE 6 · Undeclared change
+
+Claim:
+> "Notes survive a page re-render/regeneration by matching on content (heading + tag + role + text sample, or an author-supplied `data-pin-id`) rather than DOM index → verify: manual check across two renders of the same content."
+
+Hunk: `annotation-layer.html` — the pin `click` handler (`openEditor(n.id)`), the panel row's `an-n` badge and row-level handlers (`scrollToNote(n, true); openEditor(n.id)`), `scrollToNote()` (`el.scrollIntoView({ block: "center", ... })`), and `openEditor()`'s reopen path (`$("an-text").value = n.note || ""`, popover repositioned from the anchor's rect, `(element not found in this version of the page)` appended when unresolved). Activating a pin or a list row scrolls the page to the anchored element and reopens that comment for editing.
+
+Why uncovered: Criterion 1 covers *creating* a comment by clicking a page element; criterion 5 covers anchors resolving across renders; criterion 6 covers a lost pin remaining listed. None of the thirteen states that a saved comment can be reopened and edited, or that activating a pin/row navigates the page to its element — a build where comments were write-once would satisfy every criterion as written.
+
+Suggested: Add a criterion for reopening and editing an existing comment from a pin or panel row, including the scroll-to-element behavior and the unanchored case where no scroll is possible.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

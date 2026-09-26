@@ -8,7 +8,12 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 ## Now
 
-**Plugin at v1.48.0 (this PR — D1 Phase 2: for a UI-surface change the human's FIRST approval gate moves from a written plan to an HTML prototype. `/flow:prototype` writes the design brief, runs `/flow:review-brief` over it, builds and self-evaluates the prototype through two design lenses, presents it with the click-to-pin annotation layer, and captures approval as a checkable record. The gate MOVES rather than multiplying: exactly one pre-execution human gate — prototype approval XOR plan approval, never both, never neither — plus a mechanical assertion that a plan EXISTS before Execute, pulled forward out of Phase 3 because this PR is what removes the human plan gate. Feasibility is asserted for non-web targets, so you never approve a look that cannot be built; proportionality is declared via `Mode: tiny`, not a tuned threshold. Phase 3 — auto-writing the technical plan and machine-gating it — is NOT built, and is gated on §9.3's spike).** Recently shipped: SAFETY: a manifest entry can no longer close the manifest fence, FB-0109. `extract_manifest_region` located the NOT-READY manifest's closing fence as a bare substring, so an entry whose *finding text* carried that marker truncated the region at itself and every later entry vanished — measured `DECIDE` → `READY` with a live `[verify-build]` blocker erased, i.e. a failed behavioural gate reading as merge-ready. Fixed in two layers that deliberately want OPPOSITE rules: the fence scan takes the NARROWEST line definition (`split("\n")`, line-anchored, LAST close not first — fewer fences found means a wider region), while `parse_entries` takes the UNION of `splitlines()` and `split("\n")` (more lines found means more blockers found). Applying one rule to both looks consistent and is backwards: measured, each single split erases a live blocker in the shape the other one handles, and the `split("\n")`-only version also let the surviving entry absorb its victim's `needs` verb — the field `classify()` derives class and waivability from. **The fix was refuted twice by its own reviewers before it was right**, and the eval failed to catch its own bug twice; both are recorded in the FB entry rather than smoothed over. Mutation-tested against six builds: 17 / 13 / 8 / 5 / 1 / 0.)** Recently shipped: **v1.43.0 (#150 — dogfooding version honesty, FB-0107), v1.42.0 (#152 — `add-entry` takes untrusted text off the command line entirely, FB-0108 — the write-side half of this same delimiter class), v1.41.0 (#148 — vacuous-criterion check, FB-0104), v1.40.0 (#146 — fragment the append-only docs, FB-0102/FB-0103).
+**Plugin at v1.49.0 (this PR — `/flow:audit-coverage` enumerates before it judges, FB-0115. Its one pass fused *enumerate* + *match* + *suppress*, and `auditor.md`'s suppression rules — the reason precision has never once produced a false positive — were also being applied to the finding half, where they only cost recall. Split into two labelled stages: Stage 1 enumerates with those rules scoped OFF, Stage 2 matches with the existing judgment verbatim. **Measured on committed ground truth: source-mode recall 65% → 82% mean with non-overlapping distributions, union 80% → 100%, precision unchanged at zero false positives in 15 runs.** Diff mode moved **0** and the docs say so — what changed there is that both residual misses are now *attributable* to the matcher's default-to-covered call rather than invisible, which is the next lever. Also ships a deterministic hunk inventory with a `POST-PLAN` tier (a git fact: the hunk landed after the plan was last edited, so no criterion CAN cover it). **Two findings routed, not fixed:** `.md` is excluded from the behaviour diff, so #159's recorded `0-of-5` was never a judgment failure — the reviewer never received the file (on #158: 4 of 63 changed files reached it); and a coverage gate's criteria can silently belong to a *different* PR, because only the first Spec-walk block is read. Three of this PR's own instruments reported green while broken and all three are recorded.)** Recently shipped: **v1.47.0 (#159 — `/flow:audit-coverage` source-tree input mode + a verified RCE in typed arguments), v1.45.0 (#157 — the §4.10 orchestrator skill suite, FB-0110), v1.44.0 (#156 — manifest fence injection, FB-0109), v1.43.0 (#150 — dogfooding version honesty, FB-0107).**
+
+▶ **Next up:** the **matcher** half of the coverage judgment — `auditor.md`'s disprove self-check drops a behaviour when any criterion covers it "even loosely", and that clause is what suppressed both of the diff-mode residual misses this PR localized. Measure it on the same two cases before changing it.
+
+**Previously: v1.44.0 (SAFETY: a manifest entry can no longer close the manifest fence, FB-0109. `extract_manifest_region` located the NOT-READY manifest's closing fence as a bare substring, so an entry whose *finding text* carried that marker truncated the region at itself and every later entry vanished — measured `DECIDE` → `READY` with a live `[verify-build]` blocker erased, i.e. a failed behavioural gate reading as merge-ready. Fixed in two layers that deliberately want OPPOSITE rules: the fence scan takes the NARROWEST line definition (`split("\n")`, line-anchored, LAST close not first — fewer fences found means a wider region), while `parse_entries` takes the UNION of `splitlines()` and `split("\n")` (more lines found means more blockers found). Applying one rule to both looks consistent and is backwards: measured, each single split erases a live blocker in the shape the other one handles, and the `split("\n")`-only version also let the surviving entry absorb its victim's `needs` verb — the field `classify()` derives class and waivability from. **The fix was refuted twice by its own reviewers before it was right**, and the eval failed to catch its own bug twice; both are recorded in the FB entry rather than smoothed over. Mutation-tested against six builds: 17 / 13 / 8 / 5 / 1 / 0.)**
+**Previously: v1.48.0 (shipped #158 — D1 Phase 2: for a UI-surface change the human's FIRST approval gate moves from a written plan to an HTML prototype. `/flow:prototype` writes the design brief, runs `/flow:review-brief` over it, builds and self-evaluates the prototype through two design lenses, presents it with the click-to-pin annotation layer, and captures approval as a checkable record. The gate MOVES rather than multiplying: exactly one pre-execution human gate — prototype approval XOR plan approval, never both, never neither — plus a mechanical assertion that a plan EXISTS before Execute, pulled forward out of Phase 3 because this PR is what removes the human plan gate. Feasibility is asserted for non-web targets, so you never approve a look that cannot be built; proportionality is declared via `Mode: tiny`, not a tuned threshold. Phase 3 — auto-writing the technical plan and machine-gating it — is NOT built, and is gated on §9.3's spike).** Recently shipped: SAFETY: a manifest entry can no longer close the manifest fence, FB-0109. `extract_manifest_region` located the NOT-READY manifest's closing fence as a bare substring, so an entry whose *finding text* carried that marker truncated the region at itself and every later entry vanished — measured `DECIDE` → `READY` with a live `[verify-build]` blocker erased, i.e. a failed behavioural gate reading as merge-ready. Fixed in two layers that deliberately want OPPOSITE rules: the fence scan takes the NARROWEST line definition (`split("\n")`, line-anchored, LAST close not first — fewer fences found means a wider region), while `parse_entries` takes the UNION of `splitlines()` and `split("\n")` (more lines found means more blockers found). Applying one rule to both looks consistent and is backwards: measured, each single split erases a live blocker in the shape the other one handles, and the `split("\n")`-only version also let the surviving entry absorb its victim's `needs` verb — the field `classify()` derives class and waivability from. **The fix was refuted twice by its own reviewers before it was right**, and the eval failed to catch its own bug twice; both are recorded in the FB entry rather than smoothed over. Mutation-tested against six builds: 17 / 13 / 8 / 5 / 1 / 0.)** Recently shipped: **v1.43.0 (#150 — dogfooding version honesty, FB-0107), v1.42.0 (#152 — `add-entry` takes untrusted text off the command line entirely, FB-0108 — the write-side half of this same delimiter class), v1.41.0 (#148 — vacuous-criterion check, FB-0104), v1.40.0 (#146 — fragment the append-only docs, FB-0102/FB-0103).
 
 **v1.47.0 (shipped #159 — `/flow:audit-coverage` gains a source-tree input mode, plus a verified RCE fix in typed arguments).** This is option (a) from the §9.3 spike's remediation, and it is what makes D1's post-gate-1 completeness check live rather than conditional: point the reviewer at an approved prototype's source and it reads the code nothing else at that step reads. *Restored here by Track B:* the v1.46.0→v1.48.0 rebase resolved a roadmap conflict in favour of the D1 paragraph and dropped this headline in the process — caught by grepping for a distinctive string from each side afterwards, which is the only reason it is not silently missing.
 
@@ -289,6 +294,48 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### `/flow:audit-coverage` cannot see `.md`, and for a plugin made of prompts that is most of the product (measured, v1.49.0)
+
+**Surfaces when:** any PR whose behaviour lives in a `SKILL.md`, an `agents/*.md`, or a rule-skill — i.e. most
+flow PRs, and most PRs in any prompt-shaped project.
+
+**This is not a theoretical blind spot. It is the dominant cause of the worst number in the recall series, and
+it was mis-attributed for two releases.** Measured while building v1.49.0, by reconstructing #159's ship-time
+coverage run faithfully (a clone with `origin/main` rewritten to `f278aec`, HEAD at `bd29167`):
+
+```
+Behavior-bearing files changed: .claude-plugin/marketplace.json .github/workflows/ci.yml plugins/flow/.claude-plugin/plugin.json
+```
+
+A version bump, a marketplace entry, one CI line. **All five of that PR's undeclared behaviours were added in
+`plugins/flow/skills/audit-coverage/SKILL.md` — 212 insertions — which the behaviour diff excludes via `EXCL`'s
+`|\.md$` clause.** So its recorded `0-of-5` was never a judgment failure: the reviewer was never shown the code,
+and **no prompt change can ever move that number.** The exclusion is byte-identical in the installed 1.29.0 that
+produced the run and in the f278aec-era tree, so this is a property of the shipped gate, not of one session.
+
+The same measurement on #158: **63 files changed, 4 reached the reviewer.** The entire new
+`skills/prototype/SKILL.md` — deployed surface by CLAUDE.md's own rule that *prompt changes are code changes* —
+was invisible to the gate that exists to check its completeness.
+
+**Why v1.49.0 did not fix it, stated so this does not read as an oversight** (the call was made explicitly at
+that PR's plan gate, not discovered afterwards):
+
+1. `sourceFilePatterns` / `EXCL` are a **published contract every consumer inherits**. Widening them changes
+   what every flow project's coverage gate reads, on every PR.
+2. **It collides with the 60 KB evidence cap in a way that needs its own design.** "Just include `.md`" is not
+   the fix: a diff touching `ship/SKILL.md` (176 KB) blows the cap instantly, and a truncated evidence block is
+   the same blindness with a warning attached.
+3. v1.49.0's job was recall over what the reviewer **can** see, which is separable and measurable. Mixing the
+   two would have made both unmeasurable — the recall numbers would have moved for two reasons at once.
+
+**What a fix probably needs** (not decided): a distinction between *prose* and *behaviour-bearing prose*, since a
+SKILL.md carries both, plus per-file capping so one huge skill cannot starve the rest of the diff. Possibly a
+`behaviorBearingDocPatterns` slot that defaults to empty, so no consumer's gate changes until they opt in.
+
+**Until then, the honest statement — and `workflow.md` now carries it:** on a project whose behaviour lives in
+markdown, `/flow:audit-coverage` is not a completeness gate over that behaviour at all. It is a completeness gate
+over the subset of the diff that matches `sourceFilePatterns`.
+
 ### SECURITY — the typed-argument placeholder is a render-time command-execution sink (found by `/flow:security-review`, v1.47.0)
 
 **Surfaces when:** any skill that takes a typed argument is next touched — or immediately, if someone has time.
@@ -348,6 +395,18 @@ clean is not a measurement." Fixing the code without fixing the instrument repro
 
 ### `designLanguagePath` has no entry for "the prompt as a rendered artifact" (`/flow:staff-review`, v1.47.0)
 
+**v1.49.0 added a fourth renderer and two more undocumented conventions, so this is now a
+four-site gap.** `change-inventory.py` joins `render-report.py`, `render-test-plan.py` and
+`manifest-triage.py` as a shipped emitter of structured text. Credit where due — the new one matches
+the sibling control-line idiom exactly (`[name] TOKEN — em-dash`) — but **by author memory**, which
+`.claude/rules/general.md` § Consistency names as this repo's most recurring bug class. Two real
+typographic rules are now load-bearing and written down nowhere: **CAPS-vs-lowercase as visual
+filtering** (`pre-plan` is lower-cased "so the eye goes to the others"; `COVERAGE MAP` uses `covered`
+vs `UNDECLARED` on the same principle) and **column discipline** (v1.49.0 moved the tier to a leading
+`%-20s` field after measuring the trailing version starting at 30+ distinct columns). A short
+"§ Emitted text artefacts" section — control-line grammar, the `WEAKENED ·` token, column discipline,
+truncation glyph, legend-vs-row — would ground the fifth renderer instead of leaving it to memory.
+
 **Surfaces when:** the design-language doc's coverage gap is next addressed, or any `!`-preprocessor evidence
 block is restructured.
 
@@ -381,12 +440,172 @@ rather than quietly filing:
    part (a harness that forgets to pop a var tests the developer's shell, not the block) and it is now stated
    twice (`run_root_anchor_evals.py:96` and the new harness).
 
+**v1.49.0 moved this from "write the hoist" to "delete the copies."** Rather than adding a sixth copy,
+`run_coverage_inventory_evals.py` **imports** `git_repo` from `eval_utils.py`, which now owns it — plus a new
+`commit()` sibling, because the POST-PLAN tier is computed from commit ORDER and a builder that can only make one
+commit cannot exercise it at all (a helper that forces a harness to skip the case is how an untested tier ships).
+So the copy count is unchanged at five, but the hoist target is populated and the remaining work is a deletion.
+
 `eval_utils.py` already owns the sibling concern (`fenced_block` for ```` ```sh ````) and its own docstring names
 this exact rationale: *"two eval harnesses independently defining the same parser is the exact FB-0010 fan-out
 class this repo's own consistency rule names, so it gets one home."* Deliberately deferred out of v1.47.0 because
 the fix edits four harnesses outside that PR's diff — scope discipline, not disagreement. **Not** on the list:
 the FB-0074 root anchor (a structurally un-shareable per-block idiom, ~20 sites) and `check()` (31 harnesses —
 repo convention).
+
+### Pin `/flow:audit-coverage`'s control-line VOCABULARY, not just the token (found by `/simplify`'s push-further lens, v1.49.0)
+
+**Surfaces when:** anyone adds a control-line outcome to `audit-coverage`'s emitters.
+
+v1.49.0 replaced a drifting per-outcome bullet list with one class rule matching a `WEAKENED ·`
+token — which is better, and the reader side is at ceiling (one rule, a paired negative that success
+lines do not carry the token, `PLAN-PREDATES-BRANCH` explicitly excluded as a non-weakening). **The
+residue is the emitter side, and it is the same fan-out one level down.** The vocabulary is now
+eleven names across two files (`SKIPPED`, `ROOT-UNRESOLVED`, `JQ-MISSING`, `SOURCE-UNRESOLVED`,
+`POST-PLAN`, `PLAN-PREDATES-BRANCH`, `UNDECLARABLE`, plus five `WEAKENED ·` ones), and the evals pin
+an *allowlist of presence* rather than the set. **A new outcome that IS a weakening but ships without
+the token is invisible to the class rule and no check notices** — which is exactly how two of this
+release's weakenings reached the emitter unnamed in the prose, and how a third (`INVENTORY-EMPTY`)
+did so in the very commit that made the argument.
+
+**Direction (~12 lines, no new machinery):** in the source-mode harness §8, regex
+`\[audit-coverage\] (?:WEAKENED · )?([A-Z][A-Z-]+)` across `SKILL.md` **and**
+`lib/change-inventory.py`, and assert the extracted set equals a pinned literal that classifies each
+name weakening-vs-hard. Adding an outcome then forces one deliberate line. This converts "did the
+author remember the token" into a failing test — the FB-0010 defense applied to the vocabulary
+instead of to the prose.
+
+### `/flow:audit-coverage` — the deferred half of the v1.49.0 review (four lenses, all measured)
+
+**Surfaces when:** the next recall pass on `/flow:audit-coverage`, or the first edit to
+`plugins/flow/agents/auditor.md`'s disprove self-check.
+
+**1. Make a dismissal show its join — the only matcher lever that leaves `auditor.md` untouched.**
+The `BEHAVIOR INVENTORY` cites hunk rows (`B7 … [H5, H6]`), so a reader can check the *enumeration*.
+The `COVERAGE MAP`'s other verdict cites nothing — measured output is eleven consecutive bare
+`covered` tokens. Meanwhile a *published* finding must carry `Why uncovered:` naming every criterion
+checked (`auditor.md:138`). **So publishing demands evidence and suppressing demands none — and
+suppression is where 100% of the measured residual now lives.** Direction:
+`COVERAGE MAP  B1 covered (test_gate_execute_classic_noop) · B9 UNDECLARED · …`. This adds no
+reasoning step — `auditor.md:62` already *requires* naming the covering criterion during the
+disprove self-check, and that name is computed and thrown away today. It cannot manufacture
+findings, so it carries no precision risk. **Deferred only because FB-0115's own rule is that a
+prompt change ships on measured before/after**, and the 15 committed runs were produced under the
+current format; shipping it unmeasured would spend the credibility that PR earned.
+
+**2. Precision has never been measured on a case whose correct answer is silence — fix before
+touching `auditor.md`.** All four `tools/coverage-recall` cases carry real gaps, so "zero false
+positives in 15 runs" is measured only where over-flagging competes with a true positive. The input
+class that would expose a loosened matcher — a well-declared PR where the right output is
+`No issues flagged.` — **is not in the corpus.** That is `general.md` item 4 inverted: the precision
+instrument has never been run against the case it exists to catch, which is the second, independent
+reason (1) cannot simply be shipped. Direction: one negative-control case with `gaps: []` and a
+contract of `clean is True`, plus a `selftest` assertion that a `gaps: []` case rejects any output
+carrying an `ISSUE` (so it cannot pass by being unscored). **Gate any future edit to the
+"even loosely" clause behind this case existing.**
+
+**3a. Repeat-elision is the real scanning win, and it was measured.** `/simplify`'s design-engineer
+lens corrected its own earlier estimate: on a 55-row run the leading tier column is **49/55 one
+value** — 20 columns on every row carrying a signal that changes 6 times — while
+`in def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS)` (62 chars) repeats verbatim
+**15 times** and a 57-char path repeats **31 times**. Eliding a repeat of the previous row's value
+preserves the sort exactly and makes each *transition* pop. **Deferred because it changes the
+machine-readable row contract** — `row_tiers()` and `tier_of()` both require every row to carry its
+tier, and the evals depend on that. Do it together with a decision about whether the row format is a
+parseable contract or a human one.
+
+**3. Rendering, deferred with reasons.** (a) git's default funcname for `.md` grabs the nearest
+column-0 line, so rows render `in These files are published when the plugin is installed.` — pure
+noise in the widest field; real fix is a `.gitattributes` `diff=markdown` driver, outside the
+engine. (b) A funcname repeats for up to 9 consecutive rows; run-length rendering would restore
+rhythm but changes the row contract the evals pin. (c) **Do NOT sort or group by tier** —
+file-then-line predictability is worth more than tier adjacency, and v1.49.0's leading fixed-width
+tier column already buys most of the scanning benefit. Revisit only if a measured run shows
+reviewers still missing `POST-PLAN` rows. (d) A wide diff will wrap the one-line `COVERAGE MAP`, and
+a wrapped one-liner scans worse than a column — revisit after the first real wide run.
+
+**4. Two engine gaps that need a `diff --git` header read, which the engine deliberately declines.**
+A **binary** change or a pure **rename** emits no `@@` under `-U0`, so such files contribute zero
+rows and a file list of only those renders `(no hunks — …)` — honest but easy to over-trust. And two
+rows can share a start line with different counts (the cumulative and post-plan diffs describing the
+same region at different extents), which renders as an apparent duplicate; the `(start, count)` merge
+key cannot collapse them without overlap-aware logic. Both land naturally with the `walk_extract`
+line-range work above.
+
+### Tier `POST-PLAN` off the active Spec-walk BLOCK, not the plan FILE (found by `/simplify`'s altitude lens, v1.49.0)
+
+**Surfaces when:** a PR commits its plan update and its code in the **same** commit — which is
+`/flow:ship`'s normal shape, since Step 5 rewrites `planPath` in the ship commit.
+
+`change-inventory.py` computes `plan_last` as the last commit touching the plan **file**. The question
+the tier actually wants answered is *"when were the declared criteria last edited?"* — and those diverge
+systematically: a shared multi-PR `plan.md` gets touched for reasons unrelated to this PR's criteria, and
+ship's own doc synthesis touches it alongside the code. **Measured on v1.49.0's own branch: every
+committed hunk landed `SAME-COMMIT`, not `POST-PLAN`** — so the sharp signal is lost exactly on the
+commit shape this repo produces. Found independently by two `/simplify` lenses on one run.
+
+It is **honest, not wrong** — `SAME-COMMIT` means "I cannot tell", which is true. But it is a real
+ceiling on the tier that `workflow.md` advertises, and `run_coverage_inventory_evals.py` now pins the
+degradation as **KNOWN AND INTENDED** so it cannot be misread as a working tier.
+
+**The fix, named:** `walk_extract` already computes the active block's heading/terminator indices but does
+not export them. Export the line range, then tier off `git log -1 -L<start>,<end>:<plan>`, which answers
+the real question instead of approximating it. One new field on the parser that already owns "where the
+active block is", reused via the established cross-skill import precedent (`walk-pin-lint.py`).
+
+**Why v1.49.0 declined it,** stated so this does not read as an oversight: it is a **shared-parser
+contract edit for a local reason** (the shape #159 deliberately avoided), and the inventory's measured
+recall effect in diff mode is already **zero** — deepening it would ship an unmeasured improvement to a
+component whose headline number did not move, which is what that PR's own drop-rule forbids. **When this
+lands, the pinned known-ceiling check must fail and be rewritten, not deleted.**
+
+### Per-file git probes in `change-inventory.py` (measured, deliberately not fully batched, v1.49.0)
+
+**Surfaces when:** flow runs on a **monorepo**. `/simplify`'s efficiency lens measured the shipped path
+rather than asserting: the whole evidence block costs **178 ms** on a 7-file diff (vs 78 ms before the
+inventory), and `build()` alone runs ~197 subprocesses at 64 files in **0.75 s** after v1.49.0 hoisted
+three whole-set probes out of the per-file loop (was 322 / 1.29 s). At that scale it is not a cost, and
+the full batching rewrite — a further **33x**, measured — was **declined**: it needs a `diff --git` header
+parser (rename pairs, `core.quotepath` octal escapes) inside the one script whose entire value is
+deterministic correctness, to buy ~1.2 s against an LLM audit taking tens of seconds.
+
+**The caveat is the scaling one, and it is extrapolated rather than measured** (no large repo on the
+measuring host): per-spawn cost grew 3.35 → 4.3 ms from 92 to 635 tracked files, and the index-read
+component is ~2 µs per tracked file. Linearly extrapolated to 20k files that is ~40 ms/spawn ≈ **13 s**,
+~30 s at 50k. Treat the magnitude as soft — it is a 30x extrapolation — but the direction is structural:
+`max_rows` bounds the spawn *count*, not the per-spawn index read. **If flow gains a known monorepo
+consumer, batch it then**, and the measurements above are the baseline to beat.
+
+### A `**Visual-walk:** N/A` block forces `visual_significant` TRUE — being explicit is a trap (found dogfooding, v1.49.0)
+
+**Surfaces when:** an author writes `**Visual-walk:** N/A — no UI in this change` to be helpful on a
+non-visual PR in a `uiSurface: true` project.
+
+`visual-significance.py` treats **the presence of a co-located `Visual-walk` block** as a forcing
+signal and never reads the block's contents. So the explicit `N/A` declaration flips
+`visual_significant` to **true**, and `/flow:ship` §7a then demands a rendered walkthrough **and** a
+visual-history entry for a diff with no UI — a `[visual-deliverable]` draft-manifest entry on a change
+that cannot produce either. Omitting the block entirely is correct (`plan-discipline` scopes the field
+to UI changes) and gives the right verdict, so **the careless authoring is rewarded and the
+conscientious authoring is punished** — measured on v1.49.0's own ship, which hit exactly this.
+
+**Not fixed here on purpose.** The obvious patch — detect the string `N/A` in the block — is precisely
+the fragile shape the predicate is built to avoid (`n/a`, `none`, `not applicable`, `—`, a prose
+sentence…). Two candidate real fixes: (a) treat a block with **zero parsed assertions** as
+non-forcing, since `extract-visual-states.py` already returns the assertion list and a block with no
+`- [ ]` lines declares nothing to capture — this looks right and is cheap; or (b) require an explicit
+`**Visual surface:** none` field, making non-applicability a *declared* value rather than an inferred
+one (the same "declared, not judged" move FB-0114 made for `Mode`). **(a) needs one check that a
+0-assertion block does not force**, plus the paired positive that a 1+-assertion block still does.
+
+### `harness_audit.py --split` undercounts `` !` ``-span shell as prose (noted v1.49.0)
+
+**Surfaces when:** anyone reads a `--split` number for a skill whose shell lives in `` !` `` dynamic-context
+spans rather than ```` ```sh ```` fences. The documented counting rule only scores fenced blocks, so
+`audit-coverage/SKILL.md` reports **prose 100.0% / shell 0.0%** while carrying ~9 KB of shell — and
+`audit-skips`, `workflow-help` and the rule-skills read the same way. Not a wrong measurement of what it
+measures; a measurement of less than the reader assumes. A before/after delta on any such file is blind to
+shell added or removed. Dev tooling, own blast radius, deliberately not fixed inside a plugin-artifact PR.
 
 ### Four investigative-discipline lessons from the FB-0107 provenance PR, harvested by hand (2026-09-16)
 

@@ -1,0 +1,116 @@
+BEHAVIOR INVENTORY
+B1  Clicking an element while commenting is on creates a numbered pin and opens a comment editor positioned at that element.  [click handler, `commit()`, `openEditor()`]
+B2  Commenting is a persistent mode stored in `localStorage` (`flow-annotations-v2:commenting`), defaults to on, and the panel switch turns it on/off, repainting crosshair cursor, hint text and dock colour.  [`setCommenting()`, `MODE` key]
+B3  Modifier-click (⌘/Ctrl/Alt) and clicks inside the host page's own `input`/`textarea`/`select`/contenteditable pass through to the page instead of pinning.  [`eventIsOurs()`]
+B4  Drag-selecting text (selection longer than one character) does not create a pin.  [click handler selection guard]
+B5  Pins re-resolve after a re-render by content — author `data-pin-id`, else scored heading + tag + role + text sample, with a score floor so heading agreement alone cannot claim a pin.  [`anchorFor()`, `resolve()`]
+B6  An anchor that stops resolving is kept: its pin is greyed/hidden, its panel row reads "unanchored", and the export labels it lost rather than dropping it.  [`render()` lost branch, `headFor()`, `LOST`]
+B7  "Copy all" writes one structured block to the clipboard — section-grouped, in reading order, numbered to match pins, with a viewport/colour-scheme header.  [`$("an-copy")` handler, `noteRecord()`, `viewCtx()`]
+B8  When the clipboard write is refused, a modal select-and-copy sheet appears with the text pre-selected, dismissable via Done, backdrop click or Esc, and callers never claim a false success.  [`writeClipboard()`, `showCopyBox()`]
+B9  Comments can be deleted: a per-row "×" deletes one, the editor's Delete button deletes the open one, and "Delete all" is a two-step arm/confirm that relabels to "Delete all?" and auto-cancels after 6 seconds — no native `confirm`.  [`an-wipe` handler, `disarm()`, row `an-del`, `$("an-del")`]
+B10 A visually-hidden live region announces mode toggles, comment added/saved/deleted, remaining count, and copy results.  [`announce()`, `#an-status`]
+B11 Dock, panel, editor, pins and copy sheet retheme under `prefers-color-scheme: dark`, including recomputed on-accent foregrounds, track and field borders.  [`@media (prefers-color-scheme: dark)` block]
+B12 Full keyboard commenting path: Tab/focus sets the target, Enter comments it, Shift+↑/↓ walks block elements (auto-scrolling and announcing each), Shift+←/→ widens/narrows, plain ↑/↓ widen/narrow a pointer-chosen target, and Escape steps a ladder — close editor, dismiss copy sheet, close panel, else switch commenting off.  [`keydown` handler, `walkStep()`, `walkDepth()`, `focusWalkTarget()`, `focusin` handler]
+B13 A hover outline follows the cursor over page elements while commenting; an "Outline elements while hovering" toggle turns that off, persists in `localStorage` (`snapPreview`), and when off the captured element flashes after commit.  [`mousemove` handler, `drawHL()`, `paintSnap()`, `flashHL()`, `PREF` key]
+B14 A panel toggle hides/shows all on-page pins, swapping its icon to a slashed variant and its label/`aria-pressed`.  [`$("an-eye")` handler, `#an-pins.hidden`, `paintToggle()`]
+B15 Each panel row has a copy button that copies that single comment in the same located format as the batch export, with a transient check-icon confirmation.  [row `an-copy1` handler, `oneNoteBlock()`]
+B16 Clicking a panel row or its number badge scrolls the page to that comment's anchored element and opens its editor.  [row click handler, `an-n` handler, `scrollToNote()`]
+B17 When `localStorage` writes are blocked (private mode/quota), the overlay announces once that comments cannot be saved and to copy them before leaving, instead of silently losing them.  [`save()`, `saveWarned`]
+NOT BEHAVIOR
+(none) — the single selected file is accounted for by B1–B17.
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  B1 covered · B2 covered · B3 covered · B4 covered · B5 covered · B6 covered · B7 covered · B8 covered · B9 UNDECLARED · B10 covered · B11 covered · B12 UNDECLARED · B13 UNDECLARED · B14 UNDECLARED · B15 UNDECLARED · B16 UNDECLARED · B17 UNDECLARED
+
+Read: /home/vercel-sandbox/flow/plugins/flow/skills/verify-build/lib/annotation-layer.html
+
+AUDIT SUMMARY
+7 issues flagged: 7 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "The overlay works correctly with no native `confirm`/`alert`/`prompt` calls (so it is safe to inject into any static page, including `file://`) → verify: grep the script for `confirm(`/`alert(`/`prompt(` and confirm none are present."
+
+Hunk: `annotation-layer.html` — `$("an-wipe")` click handler + `disarm()` (two-step "Delete all?" arm with a 6-second auto-cancel), the per-row `an-del` "×" handler, and the editor's `$("an-del")` handler. Comments can be destroyed from three places, and the bulk path is guarded only by a second press that silently expires.
+Why uncovered: criterion 9 is the only one touching this code, and its verify step is a grep for native dialog calls — passing that grep requires no deletion attempt at all. Criteria 1, 2, 5, 6, 7 exercise creating, persisting, re-anchoring and exporting comments; none deletes one. No criterion mentions delete, clear, remove, or the arm/confirm interaction, so nothing would catch an arm state that never disarms, a bulk delete that fires on first press, or a row delete that removes the wrong comment.
+
+Suggested: add a Spec-walk criterion for the deletion paths — e.g. "Deleting one comment removes only that comment; 'Delete all' requires a second press and cancels itself if unconfirmed → verify: manual check of all three delete controls."
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "Clicking an element while commenting mode is on opens a comment editor pinned to that element → verify: manual click-through in a browser."
+
+Hunk: `annotation-layer.html` — the capture-phase `keydown` handler plus `walkStep()`, `walkDepth()`, `focusWalkTarget()` and the `focusin` handler. A keyboard user can Tab to an element and press Enter to comment it, walk block elements with Shift+↑/↓ (each announced and scrolled into view), widen/narrow with Shift+←/→ or plain ↑/↓, and Escape runs a four-step ladder ending in switching commenting off.
+Why uncovered: criteria 1, 3 and 4 are all pointer-verified ("manual click-through", modifier-click, drag-select). Criterion 10 covers screen-reader *announcements* on mode toggle and count change, not keyboard *navigation* — a tester inspecting the live region never presses Shift+ArrowDown. Criterion 2's "toggle off" is the panel switch; nothing directs anyone to discover that Escape also switches commenting off. No criterion names a key, Tab, Enter, or keyboard operation of any kind, so the entire non-pointer input surface ships untested.
+
+Suggested: add a criterion for the keyboard path — walk with Shift+arrows, Enter to comment, and the Escape ladder — including the guarantee that plain arrow keys still scroll the host page.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "The floating control and comment panel behave as expected across light and dark mode → verify: manual check with OS dark mode toggled."
+
+Hunk: `annotation-layer.html` — the `mousemove` handler, `drawHL()`, `flashHL()`, `paintSnap()`, the `$("an-snap")` handler and the `PREF`/`snapPreview` `localStorage` key. A live outline tracks the cursor over page elements; a panel toggle switches that off and persists the choice across reloads; with it off, the committed element flashes instead.
+Why uncovered: criterion 11 covers appearance of the control and panel under dark mode, not whether the outline tracks, whether the toggle sticks, or whether the post-commit flash appears. Criterion 2 covers persistence of the *commenting* key only (`toggle off, reload`) — `snapPreview` is a second, separately stored preference under its own key with its own default. Criterion 1's click-through would incidentally show an outline but gives no reason to toggle it off or reload, which is where the persisted-preference and flash behavior live.
+
+Suggested: add a criterion covering the hover-outline toggle: outline follows the cursor by default, switching it off persists across reloads, and the captured element still flashes on commit.
+
+---
+
+ISSUE 4 · Undeclared change
+
+Claim:
+> "An anchor that stops resolving after a re-render is kept and exported, flagged, rather than silently dropped → verify: manual check (remove the anchored element, confirm the pin still lists in the panel as lost)."
+
+Hunk: `annotation-layer.html` — `$("an-eye")` click handler, `#an-pins.hidden`, `paintToggle()`. A panel control hides every pin on the page and swaps its own icon/label/`aria-pressed` to report the non-default state.
+Why uncovered: criterion 6 is the only criterion about pins on the page, and it checks that a *lost* pin still lists in the panel — it says nothing about deliberately hiding the visible ones. Criterion 11 checks the control's appearance across colour schemes, not its effect. No criterion mentions hiding, showing, or the icon-swap state reporting, so a toggle that hides pins without a way back, or reports the wrong pressed state, passes every declared check.
+
+Suggested: add a criterion for the hide-pins toggle: pins disappear and reappear on second press, and the control reports its own state.
+
+---
+
+ISSUE 5 · Undeclared change
+
+Claim:
+> "\"Copy notes\" produces one structured, per-screen text block on the clipboard → verify: manual click + paste."
+
+Hunk: `annotation-layer.html` — the per-row `an-copy1` handler and `oneNoteBlock()`. Each panel row carries its own copy button that writes a single located block (view context + section heading + record) to the clipboard and shows a transient check icon.
+Why uncovered: criterion 7's verify step is a single "manual click + paste" against the batch export ("Copy all"), which renders through `headFor()`/`noteRecord()` from a different call site with a different header. Criterion 8 covers only the fallback when the clipboard is unavailable. Nothing directs a tester to the per-row icon, so a single-comment copy that silently writes nothing, or drifts from the batch format, is not caught.
+
+Suggested: extend criterion 7 or add one: copying a single comment from its row yields the same located format as the batch export, with visible confirmation.
+
+---
+
+ISSUE 6 · Undeclared change
+
+Claim:
+> "An anchor that stops resolving after a re-render is kept and exported, flagged, rather than silently dropped → verify: manual check (remove the anchored element, confirm the pin still lists in the panel as lost)."
+
+Hunk: `annotation-layer.html` — the panel row click handler, the `an-n` number-badge handler and `scrollToNote()`. Activating a row or its badge scrolls the host page to that comment's anchored element (instantly when an editor follows, honouring reduced-motion) and opens its editor.
+Why uncovered: criterion 6 has the tester read the panel list, not navigate from it. Criterion 1 covers opening the editor by clicking the *element*, which is the opposite direction. Criterion 11 covers panel appearance. No criterion exercises list-to-page navigation, so a row that scrolls to the wrong element — or, for a lost anchor, does nothing with no feedback — goes unobserved.
+
+Suggested: add a criterion: activating a comment in the panel scrolls the page to its element and opens that comment, and a lost comment's row still opens its editor.
+
+---
+
+ISSUE 7 · Undeclared change
+
+Claim:
+> "Commenting mode persists across reloads via `localStorage` and defaults to on → verify: toggle off, reload, confirm state survives."
+
+Hunk: `annotation-layer.html` — `save()` and the `saveWarned` latch. When a `localStorage` write throws (quota, or storage blocked in private mode), the overlay announces once that comments cannot be saved and that the reviewer should copy them before leaving the page, rather than appearing to persist them.
+Why uncovered: criterion 2 verifies the success path (toggle off, reload, state survives) in a browser where storage works. Criterion 8 establishes that an unavailable-API fallback is in scope for this plan — but only for the clipboard, under `file://`. Criteria 12 and 13 cover renderer-side degradation (frameless report, corrupt overlay file), not blocked storage. No criterion puts a tester in a private-mode/quota-exhausted browser, so a warning that never fires — leaving a reviewer to lose a session of comments believing they were saved — is not caught.
+
+Suggested: add a criterion mirroring criterion 8 for storage: with `localStorage` blocked, the overlay warns that comments will not persist instead of failing silently → verify manually in a private window.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

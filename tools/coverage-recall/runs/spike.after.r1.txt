@@ -1,0 +1,125 @@
+BEHAVIOR INVENTORY
+B1  Clicking an element while commenting is on creates a pin at the click offset and opens a comment editor positioned next to it.  [annotation-layer.html]
+B2  Commenting is a persistent mode stored in `localStorage`, defaulting to on, repainted into the dock/crosshair at load.  [annotation-layer.html]
+B3  ⌘/Ctrl/Alt-click, clicks in host `input`/`textarea`/`select`/contenteditable, and clicks on the overlay's own chrome pass through to the page.  [annotation-layer.html]
+B4  A click carrying a text selection longer than one character never creates a pin.  [annotation-layer.html]
+B5  Notes anchor by content (`data-pin-id`, else nearest heading + tag + role + text sample) and re-resolve on every render, with a score floor that refuses heading-only matches.  [annotation-layer.html]
+B6  A note whose anchor stops resolving is kept, listed in the panel as unanchored with its pin suppressed, and exported flagged.  [annotation-layer.html]
+B7  "Copy all" writes one grouped, DOM-ordered per-screen block (title, count, viewport + colour-scheme context, section headings, per-note records) and the button shows a transient "Copied N".  [annotation-layer.html]
+B8  When the copy is refused, a modal select-and-copy sheet appears with the text pre-selected, dismissible via Done, backdrop click, or Esc, restoring focus.  [annotation-layer.html]
+B9  No native `confirm`/`alert`/`prompt` is used anywhere; destructive confirmation is in-page.  [annotation-layer.html]
+B10 A visually-hidden live region announces mode toggles, note added/saved/deleted, remaining counts, and walk targets.  [annotation-layer.html]
+B11 Light and dark palettes for dock, panel, popover, pins and copy sheet via `prefers-color-scheme`.  [annotation-layer.html]
+B12 Keyboard commenting: Tab/focusin sets the pick target, Shift+↑/↓ walks block elements, Shift+←/→ widens/narrows, ↑/↓ widen/narrow a pointer-chosen target, Enter commits a comment on the current target.  [annotation-layer.html]
+B13 Esc with no editor, copy sheet, or panel open switches commenting off; otherwise it closes editor, then copy sheet, then panel, in that order.  [annotation-layer.html]
+B14 A hover-outline preview toggle persisted under its own `localStorage` key (default on); with it off, the captured element flashes an outline after each commit.  [annotation-layer.html]
+B15 A hide/show-pins toggle that removes all pins from the page and swaps the control to a slashed icon.  [annotation-layer.html]
+B16 Deleting comments: per-row `×` and editor Delete remove one note; a two-step "Delete all?" armed button wipes all and auto-cancels after 6 seconds.  [annotation-layer.html]
+B17 When `localStorage` writes are blocked (quota or private mode), a one-time announcement warns that comments cannot be saved and to copy them before leaving.  [annotation-layer.html]
+B18 Pins and panel re-layout on window resize / body resize (120 ms debounce), restoring focus to the row or pin that held it.  [annotation-layer.html]
+B19 Empty-note hygiene: an untouched new note is never persisted; clicking away with text saves it, without text discards it; opening another note flushes the previous one.  [annotation-layer.html]
+B20 Clicking a panel row or its number badge scrolls the page to the anchored element and opens that note's editor.  [annotation-layer.html]
+NOT BEHAVIOR
+(none — the single selected file is accounted for by B1–B20)
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  B1 covered · B2 covered · B3 covered · B4 covered · B5 covered · B6 covered · B7 covered · B8 covered · B9 covered · B10 covered · B11 covered · B12 UNDECLARED · B13 UNDECLARED · B14 UNDECLARED · B15 UNDECLARED · B16 UNDECLARED · B17 UNDECLARED · B18 covered · B19 covered · B20 covered
+
+Read: /home/vercel-sandbox/flow/plugins/flow/skills/verify-build/lib/annotation-layer.html
+
+AUDIT SUMMARY
+6 issues flagged: 6 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "Clicking an element while commenting mode is on opens a comment editor pinned to that element → verify: manual click-through in a browser."
+
+Hunk:
+`annotation-layer.html`, the `keydown` capture handler plus `buildWalk`/`walkStep`/`walkDepth`/`focusWalkTarget` and the `focusin` handler — Shift+↑/↓ walks block-level elements, Shift+←/→ widens/narrows the target, ↑/↓ adjust a pointer-chosen target, Tab sets a target via `focusin`, and Enter commits a comment on the current target. A user can create a comment on any element without ever using a pointer.
+
+Why uncovered:
+Checked all thirteen criteria. Criterion 1 names clicking and verifies by "manual click-through". Criterion 3 covers modifier-click passthrough. Criterion 10 covers screen-reader *announcements* on mode toggle and count change, not keyboard targeting or commit. No criterion mentions a key, arrow, Tab, or Enter, so nothing would cause a tester to exercise the walk, the wrapper-skipping element list, the `targetFromPointer` guard that keeps plain arrows scrolling the page, or Enter-to-comment.
+
+Suggested: Add a Spec-walk criterion for the keyboard path — e.g. "Shift+↑↓/←→ walks and widens/narrows the target and Enter comments on it; plain arrows still scroll the page → verify: manual keyboard-only pass over a prototype."
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "Commenting mode persists across reloads via `localStorage` and defaults to on → verify: toggle off, reload, confirm state survives."
+
+Hunk:
+`annotation-layer.html`, the `Escape` branch of the `keydown` handler: `if (commenting && eventIsOurs(e)) setCommenting(false);` — Esc is a second, undocumented way to turn commenting off (and a layered dismissal order: editor, then copy sheet, then panel).
+
+Why uncovered:
+Checked all thirteen criteria. Criterion 2 verifies persistence by toggling the switch; criterion 4 covers selection; nothing names Esc or the dismissal precedence. A tester following criterion 2 toggles the switch in the panel and never discovers that Esc mutates the persisted mode, so the case where Esc inside a host page's own field must *not* switch commenting off goes untested.
+
+Suggested: Add a criterion for Esc's layered behavior, including that Esc inside a host page input does not disable commenting.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "The floating control and comment panel behave as expected across light and dark mode → verify: manual check with OS dark mode toggled."
+
+Hunk:
+`annotation-layer.html`, `snapPreview` / `PREF = "flow-annotations-v2:snapPreview"`, `paintSnap`, the `an-snap` click handler, `drawHL(el, force)` and `flashHL` — a persisted per-reviewer preference that switches the hover outline off, after which the captured element flashes an outline on commit instead.
+
+Why uncovered:
+Checked all thirteen criteria. Criterion 2 covers persistence of *commenting mode* under its own key only. Criterion 11 covers appearance across colour schemes, not the existence or persistence of this toggle. Criterion 1's click-through would exercise the default-on outline incidentally but would never toggle it off, so neither the second `localStorage` key nor the post-commit flash path is tested.
+
+Suggested: Add a criterion covering the hover-outline toggle and its persistence, including the commit flash when outlining is off.
+
+---
+
+ISSUE 4 · Undeclared change
+
+Claim:
+> "An anchor that stops resolving after a re-render is kept and exported, flagged, rather than silently dropped → verify: manual check (remove the anchored element, confirm the pin still lists in the panel as lost)."
+
+Hunk:
+`annotation-layer.html`, the `an-eye` click handler plus `#an-pins.hidden` — a toggle that removes every pin from the page and repaints the control to a slashed icon with a swapped accessible name.
+
+Why uncovered:
+Checked all thirteen criteria. Criterion 6 exercises the panel list for a lost pin; criterion 11 covers colour schemes. No criterion mentions hiding pins, so nothing would cause a tester to verify that pins disappear and reappear, or that the toggle's `aria-pressed` and label track the state.
+
+Suggested: Add a criterion for the hide/show-pins toggle, including the state announced to assistive tech.
+
+---
+
+ISSUE 5 · Undeclared change
+
+Claim:
+> "The overlay works correctly with no native `confirm`/`alert`/`prompt` calls (so it is safe to inject into any static page, including `file://`) → verify: grep the script for `confirm(`/`alert(`/`prompt(` and confirm none are present."
+
+Hunk:
+`annotation-layer.html`, the `an-wipe` handler plus `disarm()`, the per-row `an-del` handler, and the editor's `an-del` handler — comments can be deleted individually, and "Delete all" is a two-step armed control that relabels to "Delete all?", auto-cancels after 6 seconds, and wipes the store on the second press.
+
+Why uncovered:
+Checked all thirteen criteria. Criterion 9's verification is a grep for native dialog calls — it proves the absence of `confirm(`, which is satisfied whether the in-page replacement works or does not exist at all. No criterion names deleting a comment or deleting all comments, so the destructive path, its arming timeout, and the focus move to the next row after a delete are never exercised.
+
+Suggested: Add a criterion for deletion — single-note delete and the two-step "Delete all?" arm/auto-cancel — paired with the existing grep so the negative assertion is not the only check on that path.
+
+---
+
+ISSUE 6 · Undeclared change
+
+Claim:
+> "Commenting mode persists across reloads via `localStorage` and defaults to on → verify: toggle off, reload, confirm state survives."
+
+Hunk:
+`annotation-layer.html`, `save()` and `saveWarned` — when `localStorage.setItem` throws (quota exceeded, or storage blocked in private mode), the overlay announces once "Comments could not be saved — this browser is blocking local storage. Copy them before leaving the page." and continues in memory.
+
+Why uncovered:
+Checked all thirteen criteria. Criterion 2 verifies the happy path (toggle, reload, state survives). Criterion 8 covers the *clipboard* being unavailable; criterion 13 covers a corrupt overlay file at the renderer level. Nothing directs a tester to block storage, so the degraded-persistence warning — the one signal that a reviewer's comments will vanish on reload — is never triggered.
+
+Suggested: Add a criterion for storage-blocked degradation, verified by disabling site data or using a private window and confirming the warning is announced rather than silent loss.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

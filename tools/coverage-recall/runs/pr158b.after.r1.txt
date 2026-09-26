@@ -1,0 +1,70 @@
+BEHAVIOR INVENTORY
+B1  `arming` returns an armed/not-armed verdict (`armed`, `ui_surface`, `role`, `brief_required`) from config alone, and reports not-armed with a `role: designer` suppression note when `uiSurface: false`.  [H5]
+B2  `trigger` returns `path: "prototype-first"` + `pre_execution_gate: "prototype"` when `uiSurface` is not false and the brief declares `Surface: visual` (or `role: designer` with no `Surface`).  [H5]
+B3  `trigger` returns `path: "collapsed"` + gate `plan` for `Mode: tiny`.  [H5]
+B4  `trigger` returns `path: "classic"` + gate `plan` for the `uiSurface: false` veto, a non-visual declaration, and `Mode: spike`.  [H5]
+B5  `trigger` and `arming` fail closed to classic/not-armed with `[WARN]` reasons on a malformed or non-object config, a malformed brief, an absent brief (distinct `brief_absent` reason), and an out-of-enum `Mode`/`Surface` value.  [H5]
+B6  `contract` returns `ok: true` with no feasibility block when `platform: web`.  [H5]
+B7  `contract` accepts the one-line browser-delivery declaration only for `{library, none, cli, tauri}` and rejects it for any other platform value.  [H5, H6]
+B8  `contract` returns `ok: false` naming the missing `**Feasibility**` block, unverdicted rows, a row-less block, a missing proxy disclosure, and an unset `platform` (with both remedies); returns `must_surface[]` for every non-`native-standard` row.  [H5]
+B9  `contract`, `approve` and `verify` emit a named refusal rather than a traceback when the artifact they read is absent or malformed: `contract` returns `ok: false` with "There is no prototype.html … Build the prototype first", `approve` exits 2 with "nothing to approve", `verify` returns `ok: false` for a missing `approval.json`, malformed `approval.json`, or a record carrying no quote.  [H5, H7, H8]
+B10 `approve` exits non-zero without writing a record when `--quote-file` is missing/empty or the contract fails, and otherwise writes `approval.json` carrying sha256, stamp, platform, contract verdict, `must_surface`, and the verbatim quote.  [H5]
+B11 A successful `approve` prints a two-line paste block (`**Pre-execution gate:** prototype` plus the `**Prototype approved:**` digest) and instructs the human to paste both; the quote in that digest is whitespace-folded to one line and truncated to 150 chars with a trailing `…`.  [H9, H11, H12]
+B12 `verify` reports sha256 drift and workspace-stamp mismatch as distinct problems, delegating the stamp comparison to `flow_scratch.check_stamp`.  [H5]
+B13 `gate-execute` decides from committed plan-doc state only: RED on a missing plan file, a missing or empty-quoted digest, no active Spec-walk block, or an all-DEMOTED plan; `ok: true` for the classic path with no digest required.  [H5]
+B14 `gate-execute` returns `ok: false` when the plan declares an unrecognized `**Pre-execution gate:**` literal — anything other than `prototype` or `plan`, naming `prototype-first` as the likely slip.  [H13]
+B15 `present` writes `prototype.presented.html` with the annotation layer injected before `</body>` (appended with a `[WARN]` when absent) and leaves `prototype.html` byte-identical.  [H5]
+B16 `present` still writes the presented file and returns `injected: false` with a read-only `[WARN]` when the annotation partial is unreadable.  [H14, H15]
+B17 `present` reports `source_sha256` and an `open_this` hand-off sentence naming the unmodified source.  [H16]
+B18 CLI exposes seven subcommands (`arming`, `trigger`, `contract`, `approve`, `verify`, `gate-execute`, `present`); `approve` requires `--quote-file` and exposes no `--quote`.  [H5]
+NOT BEHAVIOR
+H1 version · H2 version · H3 CI-wiring · H4 version · H10 docstring
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  B1 covered · B2 covered · B3 covered · B4 covered · B5 covered · B6 covered · B7 covered · B8 covered · B9 UNDECLARED · B10 covered · B11 UNDECLARED · B12 covered · B13 covered · B14 UNDECLARED · B15 covered · B16 covered · B17 covered · B18 covered
+
+AUDIT SUMMARY
+3 issues flagged: 3 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "`gate-execute` returns `ok: true` and requires no digest when the plan doc declares no prototype gate — the classic path is untouched and pays nothing. → `test_gate_execute_classic_noop`"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py:699` (+14, H13) — `if gate is not None and gate not in ("prototype", "plan"): return _emit({"ok": False, …})`. A plan doc whose `**Pre-execution gate:**` line carries any other literal (the code names `prototype-first`, this engine's own `path` value) now blocks Execute with `ok: false` instead of being treated as the classic path.
+
+Why uncovered: I checked all eight declared `gate-execute` criteria — `test_gate_execute_reads_committed_state_only`, `_blocks_missing_plan`, `_blocks_missing_digest`, `_passes_with_both`, `_classic_noop`, `_uses_shared_parser`, `_all_demoted`, and the well-formed-digest criterion. Every one describes a plan doc that declares `prototype` or declares no prototype gate; none describes a plan that declares a *wrong* gate literal, so no fixture author would write the `Pre-execution gate: prototype-first` row that distinguishes the new RED verdict from the old fall-open. `test_gate_execute_classic_noop` is the nearest, and its stated input ("declares no prototype gate") is satisfied by an absent declaration or `plan` — both of which still return `ok: true` under the new code.
+
+Suggested: Add a `gate-execute` fixture row declaring `Pre-execution gate: prototype-first` (and one other junk literal) asserting `ok: false`, and declare it as a criterion alongside `test_gate_execute_classic_noop`.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "A successful `approve` writes a record carrying the prototype sha256, `repo`/`branch`/`head` stamp, resolved platform, contract verdict, and the verbatim quote; `verify` returns `ok: true` for it. → `test_approve_record_shape`"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py:592-623` (+3/+12/+1, H9/H11/H12) — `render_digest` now returns **two** lines (`**Pre-execution gate:** prototype` plus the `**Prototype approved:**` digest), `approve`'s reasons instruct the human to paste both, and the quote is whitespace-folded to a single line and truncated at 150 chars with a trailing `…`. What the human commits into the plan doc is therefore not the verbatim quote when the approval runs long.
+
+Why uncovered: I checked `test_approve_record_shape` (asserts `approval.json`'s fields, including the verbatim quote — a different artifact from `digest_line`), `test_gate_execute_blocks_missing_digest` and the well-formed-digest criterion (both exercise `gate-execute` against plan text, which a fixture author hand-writes rather than obtaining from `render_digest`), and `test_quote_file_only` (argument-parser surface). No criterion round-trips `approve`'s rendered output into `gate-execute`/`DIGEST_RE`, and none mentions the two-line emission or the 150-char fold-and-truncate — the very transformation whose earlier form the code comment says produced both a false RED and a false GREEN against `DIGEST_RE`.
+
+Suggested: Declare and add a criterion that feeds `render_digest`'s output for a long, multi-line quote straight into `gate-execute`/`DIGEST_RE` and asserts both emitted lines parse and the truncation marker is present.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "A **malformed** brief, and an absent/malformed `flow.config.json`, each degrade to `path: \"classic\"` with a `[WARN]` in `reasons[]`, exit 0, valid JSON — never a crash, never a silent prototype-first. → `test_trigger_degrades`, three fixture runs"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py:433` (+6) and `:440` (+4) (H7/H8), plus the same guards in `cmd_approve` and `cmd_verify` inside the new file (H5) — `contract` returns `ok: false` with "There is no prototype.html in … Build the prototype first", `approve` exits 2 with "nothing to approve", and `verify` returns `ok: false` for an absent `approval.json`, a malformed `approval.json`, or a record whose quote is empty. These are the user-visible refusals that hold the module docstring's "a caller can always parse a verdict rather than a traceback" promise for the *artifact* inputs.
+
+Why uncovered: the two degradation criteria I checked (`test_trigger_degrades`, `test_config_not_an_object_fails_closed`) name only the brief and `flow.config.json`, and only for `trigger`/`arming`. Every declared `contract` criterion (`test_contract_web_exempt`, `_browser_delivery_one_liner`, `_native_cannot_take_one_liner`, `_requires_feasibility_unless_web`, `_unset_platform_message`, `_rows_need_verdicts`, `_requires_proxy_disclosure`, `_native_complete`, `_deletion_not_green`) requires a `prototype.html` to be present to reach the assertion under test, so none exercises the absent-artifact branch; `test_approve_requires_quote`/`_requires_contract` name the quote file and the contract verdict, not a missing prototype; `test_verify_detects_drift` and `test_approve_record_shape` both require an existing `approval.json`.
+
+Suggested: Add fixture rows running `contract`, `approve` and `verify` against an empty prototype directory (and a corrupt `approval.json`), asserting exit code, parseable output and the distinct reason strings, and declare that row in the Spec-walk.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.
