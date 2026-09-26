@@ -76,21 +76,53 @@ invented here; it is named, tightened for paths, and made mechanical.
 
 ### Spec-walk
 
-- [ ] **The idiom is documented once** in `plugins/flow/docs/workflow.md` + `dev-docs/spec.md`, with
-      the bundle evidence. *Pinned by:* `run_arg_safety_evals.py::test_idiom_documented`.
-- [ ] **`audit-plan`** takes its argument in prose; block is argument-less; auditor Reads the named
-      plan. *Pinned by:* canary test (unfixed form executes / fixed form does not) **+ positive**:
-      skill still contains `## Argument` and still routes a path to plan-document review.
-- [ ] **`critique-plan`** same, both blocks (`:43` extractor, `:57–58` pin lint). *Pinned by:* same pair.
-- [ ] **`review-brief`** converted to Tier 2 (Write-then-path, fixed literal path into the block).
-      *Pinned by:* same pair + `run_review_brief_evals.py` stays green.
-- [ ] **`${N}` remediation** in `ship`, `doctor`, `contribute`, `verify-build`. *Pinned by:* lint +
-      a positive test that `ship`'s provenance `sect()`/`has_ver()` still work under a 3-token argument.
-- [ ] **`run_arg_safety_evals.py`** ships, CI-wired (ci.yml has a self-check that every
-      `run_*_evals.py` is listed — adding the file forces the wiring).
-- [ ] **Instrument validated on a known positive** — the eval asserts the *unfixed* form creates the
-      canary before asserting the fixed form does not. A test that can only say "clean" is not a test.
-- [ ] **FB-0115** (the idiom) + **FB-0116** (the `$N` collision class) written; `dev-docs/history/` entry.
+- [x] **The idiom is documented once** in `plugins/flow/docs/workflow.md` § "Skill arguments: the
+      prose rule", with the bundle evidence. **Spec-walk:** the section exists, states `## Argument`,
+      both tiers, `${1}`, `$(0)` and the harness name, and every skill that cites it resolves.
+      *Pinned by:* `run_arg_safety_evals.py::test_idiom_documented` (8 assertions).
+- [x] **`audit-plan` → Tier 1.** **Spec-walk:** the `!`-block runs argument-less; the placeholder
+      appears exactly once, in prose, under `## Argument`; the auditor is told to `Read` the path.
+      *Pinned by:* live-block canary (no payload executes) **+ positives** (`## Argument` present,
+      `plan-file` behavior still documented, one prose placeholder).
+- [x] **`critique-plan` → Tier 1, both blocks.** **Spec-walk:** the extractor line and the pinning
+      lint both run argument-less, and the lint now prints its own scope label so a named plan file
+      cannot read as linted. *Pinned by:* same canary + positive pair; scope label asserted present.
+- [x] **`review-brief` → Tier 2.** **Spec-walk:** the model writes the path with `Write`; the fenced
+      block reads a **stamped** literal path; `Write` is granted in frontmatter. *Pinned by:* same
+      pair + `run_review_brief_evals.py` green.
+- [x] **`audit-coverage` → Tier 2 at the capture point.** **Spec-walk:** the heredoc capture and its
+      `ARGTOKEN` sentinel are gone; the path arrives as the contents of a stamped scratch file; every
+      pre-existing walk/filter/cap guard still runs. *Pinned by:* `run_coverage_source_mode_evals.py`
+      (all source-mode cases green through the new channel) + the flipped residual pin.
+- [x] **`${N}` / `$(0)` remediation** in `ship`, `doctor`, `contribute`, `verify-build`.
+      **Spec-walk:** `ship`'s provenance `sect()` produces identical output invoked bare and under a
+      3-token argument. *Pinned by:* `run_arg_safety_evals.py::test_brace_positionals` — behavioural,
+      the extracted function is RUN, not grepped.
+- [x] **`run_arg_safety_evals.py` ships, CI-wired.** **Spec-walk:** `ci.yml` lists it, and ci.yml's
+      own self-check asserts every `run_*_evals.py` is listed. *Pinned by:* that self-check.
+- [x] **The instrument is validated on a known positive.** **Spec-walk:** the harness renders the
+      *unfixed* `audit-plan:13` and asserts the filesystem canary **is** created (4 of 7 payloads
+      execute), with a negative control, and **aborts** if that does not fire. *Pinned by:*
+      `test_instrument` + the abort path.
+- [x] **The matcher agrees with the host in both directions.** **Spec-walk:** a 15-row table of every
+      form the host substitutes, asserted for both misses (a certified hole) and over-matches (noise),
+      plus row-by-row agreement between the matcher and the render emulation. *Pinned by:*
+      `test_host_agreement`. Added after review found a real gap: `\\$ARGUMENTS` (two backslashes)
+      is LIVE, because the host's escape arm is `(?<!\\)\\\$`.
+- [x] **A stale arg file cannot hijack an argument-less run** (found by `/flow:security-review`).
+      **Spec-walk:** the Tier-2 filename carries repo+branch+head, so a leftover from an earlier
+      `/flow:audit-coverage <path>` is not read. *Pinned by:* a known-positive check that an old
+      unstamped leftover is ignored (diff mode), plus the stamp asserted present in the block.
+- [x] **The lint sees indented fences.** **Spec-walk:** a placeholder inside a fence indented under a
+      list item classifies `fenced`, not `prose`. *Pinned by:* the classifier test; `ship/SKILL.md`
+      went from 41 to 75 recognised fence regions.
+- [x] **`/flow:doctor` Check 1.5 runs the predicate over the consumer's own `.claude/skills/`.**
+      **Spec-walk:** the CLI exits 0 clean / 1 violation / 2 could-not-scan, and each arm was
+      exercised (clean tree, a planted positive, a missing directory). *Pinned by:* the three
+      measured exit codes; doctor reports `[PASS]`/`[FAIL]`/`[WARN]` per scanned directory.
+- [x] **FB-0116** (the idiom) + **FB-0117** (the `$0`–`$9` collision class) written, plus a
+      `dev-docs/history/` entry and `changelog/v1.50.0.md`. **Spec-walk:** `dev-docs/check-index.py`
+      green; both FB numbers claimed mechanically against `origin/main` and every open branch.
 
 ### Open decisions for the gate — I have NOT acted on these
 
