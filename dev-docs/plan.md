@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-**▶ AT PLAN GATE (this branch, `conductor/audit-coverage-recall-two-stage-union`, FB-0115, v1.49.0): raise `/flow:audit-coverage`'s recall. Precision is already perfect; recall is 0–100% and that is the confidence-inverting half.**
+**▶ EXECUTED, shipping (this branch, `conductor/audit-coverage-recall-two-stage-union`, FB-0115, v1.49.0): raise `/flow:audit-coverage`'s recall by splitting its one fused pass into enumerate-then-match.** Source-mode recall **65% → 82%** mean with non-overlapping distributions, union **80% → 100%**, precision unchanged at zero false positives in 15 runs. Diff mode moved **0** and that is reported as such — the residual there is now attributable to the matcher rather than invisible. 37/37 eval harnesses green; the measurement harness refuses to print a number until it proves it can fail.
 
 **Mode:** feature · **Surface:** non-visual
 
@@ -34,8 +34,8 @@ Ben: *"those gaps are huge; not really acceptable for an autonomous system that 
 |---|---|---|---|---|
 | 1 | 10 | **10** | source | `dev-docs/research/2026-09-16-d1-auto-plan-quality-spike.md` (#153), table of 10 |
 | 2 | 10 | **5** | source | #159 body § "Live joint test"; same prototype, same plan, one re-run |
-| 3 | 5 | **0** | diff | #159's own ship run — `"No issues flagged"` and it was wrong; the 5 are the criteria commit `0b69457` declared |
-| 4 | 6 | **0** | ? | **unattributed — see Open call 1** |
+| 3 | 5 | **0** | diff | #159's own ship run. **Measured during execution: NOT a judgment failure.** The five gaps were added in `skills/audit-coverage/SKILL.md` (212 insertions), which `EXCL`'s `|\.md$` excludes — the reviewer was never shown the code. A *file-filter* result, not a recall one |
+| ~~4~~ | — | — | — | **withdrawn: the same event as run 3, counted twice. Corrected at the plan gate before it reached shipped prose** |
 | 5 | 5 | **2** | diff | #158's own ship run; the 5 are named verbatim in its manifest, all in `prototype-gate.py` |
 
 **Precision is 5/5 unblemished — it has never once reported a gap that was not real.** That asymmetry is the
@@ -108,35 +108,42 @@ item 4 exactly: a measurement that can only return "clean".
 
 **Spec-walk:**
 
-- [ ] **The inventory enumerates one row per hunk of the behaviour diff, from the same file list the diff
+- [x] **The inventory enumerates one row per hunk of the behaviour diff, from the same file list the diff
       itself uses** — not a second filter → verify: `run_coverage_inventory_evals.py` asserts the row set's
       file list is byte-equal to the shell's `$FILES`, and a mutation that changes one filter without the
       other fails the harness.
-- [ ] **A hunk that landed after the plan's last commit is marked `POST-PLAN`** → verify: replay #158's
+- [x] **A hunk that landed after the plan's last commit is marked `POST-PLAN`** → verify: replay #158's
       commit graph in a temp repo; `prototype-gate.py`'s staff-review hunks are `POST-PLAN`, its `/simplify`
       hunks are `pre-plan`. **Paired negative:** a branch where the plan is the *last* commit yields zero
       `POST-PLAN` rows, so the marker cannot be satisfied by always firing.
-- [ ] **A plan never touched on this branch reports `PLAN-PREDATES-BRANCH`, and that is a stronger signal
+- [x] **A plan never touched on this branch reports `PLAN-PREDATES-BRANCH`, and that is a stronger signal
       than `POST-PLAN`, not a missing one** → verify: temp-repo case asserts the distinct line.
-- [ ] **An inventory that cannot be computed prints `INVENTORY-UNAVAILABLE` and is never the `SKIPPED`
+- [x] **An inventory that cannot be computed prints `INVENTORY-UNAVAILABLE` and is never the `SKIPPED`
       line** → verify: run with a broken `planPath` and with `git` unable to resolve the base; assert the
       distinct line appears AND `SKIPPED` does not (paired positive+negative, per `general.md` item 3).
-- [ ] **The inventory is capped and its cap warns** → verify: a temp repo over the row cap emits
+- [x] **The inventory is capped and its cap warns** → verify: a temp repo over the row cap emits
       `INVENTORY-TRUNCATED`; a repo under it does not (the warning does not always fire).
-- [ ] **Stage 1's output names every inventory row exactly once, across `BEHAVIOR INVENTORY` /
+- [x] **Stage 1's output names every inventory row exactly once, across `BEHAVIOR INVENTORY` /
       `NOT BEHAVIOR` / `UNACCOUNTED`** → verify: a live `flow:auditor` run on case 5 (#158) is checked
       row-by-row against the inventory the block emitted.
-- [ ] **Stage 2's output format is byte-compatible with what `/flow:ship` Step 2 routes on** → verify:
+- [x] **Stage 2's output format is byte-compatible with what `/flow:ship` Step 2 routes on** → verify:
       `run_evals.py`'s four coverage fixtures pass with regenerated `.expected.txt`, and its
       `finding_count` regex (`^ISSUE …`) counts the same number before and after the new sections exist.
-- [ ] **Recall rises on real data, and precision does not fall** → verify: `tools/coverage-recall` before/
+- [x] **Recall rises on real data, and precision does not fall** → verify: `tools/coverage-recall` before/
       after, 3 inputs × 3 independent runs per condition; report mean single-run recall, 3-run union recall,
       and precision per condition. **A precision regression is a blocker, not a tradeoff.**
-- [ ] **The measurement harness can fail** → verify: `--selftest` must pass before any number is reported —
+- [x] **The measurement harness can fail** → verify: `--selftest` must pass before any number is reported —
       an output containing every anchor scores N/N; `"No issues flagged."` scores 0/N; a subset scores
       exactly that subset; an output of unrelated real findings scores 0 found + K false-positive
       candidates; and deleting one anchor from the key changes the score. (`general.md` item 4, applied to
       my own instrument. Four instruments in the last two PRs reported green while broken.)
+
+
+**Outcome against these criteria, recorded because two of them resolved in the negative:**
+
+- The **recall** criterion is met in **source mode** (65% → 82% mean, non-overlapping, union 80% → 100%) and **not met in diff mode** (3-of-5 → 3-of-5, n=3). Both are reported separately in `workflow.md`, the changelog and the history entry; nothing claims a diff-mode recall gain.
+- The **measurement-harness** criterion resolved by *removing* a metric rather than adding one: a stage-1 enumeration score was built, shown to be measuring anchor vocabulary rather than enumeration, and deleted instead of repaired — because the repair was to add prose anchors after reading the outputs, i.e. to fit the instrument to its own result.
+- Precision was re-measured, not assumed: **zero false positives in 15 runs.** The 2–3 unmatched findings are all the same *real* gap the spike's list of 10 never carried, adjudicated by hand and deliberately **not** added to the key. So both denominators under-credit equally and **82% is a floor, not a point estimate**.
 
 **Visual-walk:** N/A — flow is `uiSurface: true` but this change ships no browser UI (no `uiFilePatterns`
 match), same as #159.
@@ -200,23 +207,23 @@ copies cannot drift (`general.md` item 2).
 - **Forcing accounting for every hunk could invite padding** — behaviours invented to fill rows, which would be the first precision regression in five runs. This is exactly why precision is re-measured and a drop is a blocker; `NOT BEHAVIOR` exists as the cheap honest answer for a refactor hunk.
 - **`harness_audit.py --split` cannot see this file's shell.** Baseline, just measured: `audit-coverage/SKILL.md` 31,010 chars, reported **prose 100.0% / shell 0.0%** — because the documented counting rule scores only ```` ```sh ````/```` ```bash ```` fences, and this skill's ~9 KB of shell lives in `` !` `` spans. So the before/after delta Ben asked for will read as all-prose regardless of the shell added. Reported as a caveat on the instrument, not fixed here (it is a `tools/` change with its own blast radius).
 
-### 6. Open calls for the gate
+### 6. Open calls — all resolved at the gate
 
-1. **Run 4 (`0-of-6`) has no artifact-backed provenance I can find.** Runs 1, 2, 3 and 5 each trace to a
+1. **RESOLVED — the series is four runs, not five.** Run 4 (`0-of-6`) has no artifact-backed provenance: Runs 1, 2, 3 and 5 each trace to a
    named commit or PR section. Run 4 does not, and the closest candidate is a re-reading of run 3
    (#159's *"5 of 6 review-added behaviors were undeclared"* — 6 behaviours, 5 undeclared, 0 found). If
    that is what it is, the series is **four runs, not five**, and #158 currently ships *"Across five live
    runs"* into `workflow.md:179` and `prototype/SKILL.md:217`. I have not touched #158 (out of scope) and I
    am not going to quietly renumber a claim in a PR I was told to leave alone. **Which is it, and do you
    want the correction routed to #158's worker?**
-2. **`*.md` is excluded from the behaviour diff, and in this repo that is most of the product.** Measured on
+2. **RESOLVED — roadmap, loudly, with the three reasons stated in the entry so it does not read as an oversight.** `*.md` is excluded from the behaviour diff, and in this repo that is most of the product: Measured on
    #158: **63 files changed, 4 reach the coverage reviewer** — the entire new `skills/prototype/SKILL.md`, a
    shipped deployed surface by CLAUDE.md's own rule ("prompt changes are code changes"), is invisible to the
    gate. It did not affect this PR's test set (all 10 of D's and C's gaps are in `.py`), but it is plausibly
    a bigger recall lever than everything in scope here. It is also a `sourceFilePatterns`/`EXCL` contract
    change for every consumer, and on flow's own repo a 176 KB `ship/SKILL.md` diff would blow the 60 KB cap
    instantly. **Roadmap item, or in scope for a follow-up you want dispatched now?**
-3. **Measurement spend.** The numbers require ~18 `flow:auditor` spawns (3 inputs × 2 conditions × 3
+3. **RESOLVED — approved.** Measurement spend: The numbers require ~18 `flow:auditor` spawns (3 inputs × 2 conditions × 3
    independent runs), each carrying ~60 KB of evidence, plus a few for union checks. That is a real cost and
    it is the only way to get the before/after you asked for rather than plausibility. **Confirming the spend
    at the gate** per the autonomous-work guardrail on cost exposure.

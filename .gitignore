@@ -19,6 +19,7 @@ tools/*
 !tools/model-measure/
 !tools/harness_audit/
 !tools/doc-fragment/
+!tools/coverage-recall/
 # ...but the GENERATED artifacts inside those packages stay ignored. Last matching
 # pattern wins, so these must come after the negations above. `samples/` holds
 # shadow-sampler logs containing session-transcript excerpts: un-ignoring them made

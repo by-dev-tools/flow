@@ -1,0 +1,76 @@
+AUDIT SUMMARY
+3 issues flagged: 3 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "`gate-execute` returns `ok: true` and requires no digest when the plan doc declares no prototype gate — the classic path is untouched and pays nothing. → `test_gate_execute_classic_noop`"
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py`, `cmd_gate_execute`:
+```
++    if gate is not None and gate not in ("prototype", "plan"):
++        return _emit({
++            "ok": False, "gate": gate, "has_digest": has_digest, "spec_walk_items": None,
++            "problems": ["The plan declares an unrecognized pre-execution gate, %r. ...
+```
+A plan doc whose `**Pre-execution gate:**` line carries any literal other than `prototype` or `plan` — the comment names `prototype-first`, this engine's own `path` value — now returns `ok: false` and blocks Execute. That is a third outcome beside the two declared ones (prototype-gated ⇒ digest required; no prototype gate ⇒ free pass).
+
+Why uncovered: I checked all eight declared `gate-execute` criteria — `test_gate_execute_reads_committed_state_only`, `_blocks_missing_plan`, `_blocks_missing_digest`, `_passes_with_both`, `_classic_noop`, `_uses_shared_parser`, `_all_demoted`, and the well-formed-digest criterion. Each pins either the `prototype` branch or the "declares no prototype gate" branch. `_classic_noop` is the only one touching non-`prototype` values, and its stated expectation (`ok: true`, no digest) is the *opposite* of what this branch returns, so a fixture author working from it would never write the `prototype-first`/typo row. No criterion names an unrecognized or invalid gate literal.
+
+Suggested: Add a declared criterion (and fixture row) asserting `gate-execute` returns `ok: false` for a plan doc declaring an unrecognized gate literal, with `prototype-first` as the named row, and state in `_classic_noop` that its scope is an absent declaration or the literal `plan`.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "`contract` returns `ok: false` naming the missing block for **every** other resolved value — `ios`, `android`, `tauri`, `cli`, `library`, `none`, **and `platform` unset** — asserted over the full enum plus the unset case … → `test_contract_requires_feasibility_unless_web`, seven fixture rows"
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py`, `_contract` and `cmd_approve`:
+```
++    proto = _prototype_file(proto_dir)
++    if proto is None:
++        return {
++            "ok": False, "platform": platform, "feasibility_required": None,
++            ... "There is no prototype.html in %s yet, so there is nothing to check. Build the prototype first."
+```
+and
+```
++    if proto is None:
++        print("REFUSED: no prototype.html in %s — nothing to approve." % proto_dir, ...)
++        return 2
+```
+Running `contract` or `approve` against a prototype directory that has no `prototype.html` yields a distinct verdict — `ok: false` with `feasibility_required: null`, and a non-zero `approve` refusal — before any platform or feasibility logic runs.
+
+Why uncovered: I checked every `contract` criterion (`_web_exempt`, `_browser_delivery_one_liner`, `_native_cannot_take_one_liner`, `_requires_feasibility_unless_web`, `_unset_platform_message`, `_rows_need_verdicts`, `_requires_proxy_disclosure`, `_native_complete`, `_deletion_not_green`) and every `approve` criterion (`_requires_quote`, `_requires_contract`, `_record_shape`). All of them require a fixture that *has* a prototype to hash or a block to check — `_requires_feasibility_unless_web` demands the message name the missing feasibility block, and `_deletion_not_green` deletes `feasibility.md`, not `prototype.html`. `_requires_quote`'s three runs would pass vacuously against a prototype-less directory (non-zero, no record) without distinguishing the reason. No criterion names the absent-artifact case, which the module docstring lists as one of `approve`'s three refusals.
+
+Suggested: Add a criterion pinning both halves of the absent-artifact path — `contract` ⇒ `ok: false` with `feasibility_required: null`, `approve` ⇒ non-zero with no record written — and assert its reason is distinct from the missing-feasibility-block reason.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "A successful `approve` writes a record carrying the prototype sha256, `repo`/`branch`/`head` stamp, resolved platform, contract verdict, and the verbatim quote; `verify` returns `ok: true` for it. → `test_approve_record_shape`"
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py`, `render_digest` (called from `cmd_approve`'s `"digest_line"` and `cmd_verify`):
+```
++    raw = " ".join((record.get("approved_by_human_quote", "") or "").split())
++    if len(raw) > 150:
++        raw = raw[:149] + "…"
++    return ("**Pre-execution gate:** prototype\n"
++            "**Prototype approved:** `%s` · %s · repo=%s branch=%s head=%s") % (...
+```
+`approve` emits a two-line block the agent is instructed to paste verbatim into the committed plan doc ("Paste BOTH lines above"), with the human's approval newline-folded and hard-truncated to 149 chars + `…`, and a `repo=/branch=/head=` tail. What lands in the committed plan doc is therefore a transformed quote, produced by an emitter whose output must satisfy `DIGEST_RE` on the reader side.
+
+Why uncovered: I re-scanned for any criterion naming `digest_line`, `render_digest`, the two-line paste block, or quote truncation. `test_approve_record_shape` pins the contents of `approval.json` (which stores the untruncated quote), not stdout. The digest criteria are all reader-side — `test_gate_execute_blocks_missing_digest` and "`gate-execute` requires a **well-formed** digest — a sha-shaped token and a non-empty quote" — and would be satisfied by hand-written fixture lines, so nothing causes anyone to test that the emitter's output parses under the detector's regex, or that the pasted quote is a truncation of the human's words.
+
+Suggested: Add a criterion asserting `render_digest`'s output for both a short and a >150-char quote matches `DIGEST_RE` and carries both lines, so emitter and detector are pinned at the join rather than separately.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

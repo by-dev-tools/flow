@@ -289,6 +289,48 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### `/flow:audit-coverage` cannot see `.md`, and for a plugin made of prompts that is most of the product (measured, v1.49.0)
+
+**Surfaces when:** any PR whose behaviour lives in a `SKILL.md`, an `agents/*.md`, or a rule-skill — i.e. most
+flow PRs, and most PRs in any prompt-shaped project.
+
+**This is not a theoretical blind spot. It is the dominant cause of the worst number in the recall series, and
+it was mis-attributed for two releases.** Measured while building v1.49.0, by reconstructing #159's ship-time
+coverage run faithfully (a clone with `origin/main` rewritten to `f278aec`, HEAD at `bd29167`):
+
+```
+Behavior-bearing files changed: .claude-plugin/marketplace.json .github/workflows/ci.yml plugins/flow/.claude-plugin/plugin.json
+```
+
+A version bump, a marketplace entry, one CI line. **All five of that PR's undeclared behaviours were added in
+`plugins/flow/skills/audit-coverage/SKILL.md` — 212 insertions — which the behaviour diff excludes via `EXCL`'s
+`|\.md$` clause.** So its recorded `0-of-5` was never a judgment failure: the reviewer was never shown the code,
+and **no prompt change can ever move that number.** The exclusion is byte-identical in the installed 1.29.0 that
+produced the run and in the f278aec-era tree, so this is a property of the shipped gate, not of one session.
+
+The same measurement on #158: **63 files changed, 4 reached the reviewer.** The entire new
+`skills/prototype/SKILL.md` — deployed surface by CLAUDE.md's own rule that *prompt changes are code changes* —
+was invisible to the gate that exists to check its completeness.
+
+**Why v1.49.0 did not fix it, stated so this does not read as an oversight** (the call was made explicitly at
+that PR's plan gate, not discovered afterwards):
+
+1. `sourceFilePatterns` / `EXCL` are a **published contract every consumer inherits**. Widening them changes
+   what every flow project's coverage gate reads, on every PR.
+2. **It collides with the 60 KB evidence cap in a way that needs its own design.** "Just include `.md`" is not
+   the fix: a diff touching `ship/SKILL.md` (176 KB) blows the cap instantly, and a truncated evidence block is
+   the same blindness with a warning attached.
+3. v1.49.0's job was recall over what the reviewer **can** see, which is separable and measurable. Mixing the
+   two would have made both unmeasurable — the recall numbers would have moved for two reasons at once.
+
+**What a fix probably needs** (not decided): a distinction between *prose* and *behaviour-bearing prose*, since a
+SKILL.md carries both, plus per-file capping so one huge skill cannot starve the rest of the diff. Possibly a
+`behaviorBearingDocPatterns` slot that defaults to empty, so no consumer's gate changes until they opt in.
+
+**Until then, the honest statement — and `workflow.md` now carries it:** on a project whose behaviour lives in
+markdown, `/flow:audit-coverage` is not a completeness gate over that behaviour at all. It is a completeness gate
+over the subset of the diff that matches `sourceFilePatterns`.
+
 ### SECURITY — the typed-argument placeholder is a render-time command-execution sink (found by `/flow:security-review`, v1.47.0)
 
 **Surfaces when:** any skill that takes a typed argument is next touched — or immediately, if someone has time.
@@ -381,12 +423,27 @@ rather than quietly filing:
    part (a harness that forgets to pop a var tests the developer's shell, not the block) and it is now stated
    twice (`run_root_anchor_evals.py:96` and the new harness).
 
+**v1.49.0 moved this from "write the hoist" to "delete the copies."** Rather than adding a sixth copy,
+`run_coverage_inventory_evals.py` **imports** `git_repo` from `eval_utils.py`, which now owns it — plus a new
+`commit()` sibling, because the POST-PLAN tier is computed from commit ORDER and a builder that can only make one
+commit cannot exercise it at all (a helper that forces a harness to skip the case is how an untested tier ships).
+So the copy count is unchanged at five, but the hoist target is populated and the remaining work is a deletion.
+
 `eval_utils.py` already owns the sibling concern (`fenced_block` for ```` ```sh ````) and its own docstring names
 this exact rationale: *"two eval harnesses independently defining the same parser is the exact FB-0010 fan-out
 class this repo's own consistency rule names, so it gets one home."* Deliberately deferred out of v1.47.0 because
 the fix edits four harnesses outside that PR's diff — scope discipline, not disagreement. **Not** on the list:
 the FB-0074 root anchor (a structurally un-shareable per-block idiom, ~20 sites) and `check()` (31 harnesses —
 repo convention).
+
+### `harness_audit.py --split` undercounts `` !` ``-span shell as prose (noted v1.49.0)
+
+**Surfaces when:** anyone reads a `--split` number for a skill whose shell lives in `` !` `` dynamic-context
+spans rather than ```` ```sh ```` fences. The documented counting rule only scores fenced blocks, so
+`audit-coverage/SKILL.md` reports **prose 100.0% / shell 0.0%** while carrying ~9 KB of shell — and
+`audit-skips`, `workflow-help` and the rule-skills read the same way. Not a wrong measurement of what it
+measures; a measurement of less than the reader assumes. A before/after delta on any such file is blind to
+shell added or removed. Dev tooling, own blast radius, deliberately not fixed inside a plugin-artifact PR.
 
 ### Four investigative-discipline lessons from the FB-0107 provenance PR, harvested by hand (2026-09-16)
 

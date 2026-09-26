@@ -276,6 +276,11 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
 [ -z "$BASE" ] && BASE=main
 # Source-file filter (shared default with security-review / ship Step 1c).
+# planPath, resolved AGAIN here rather than shared with the criteria block above: each
+# dynamic-context span is its OWN process, so no variable crosses between them -- the same
+# constraint that forces the FB-0074 root anchor to appear twice. Two readers, one default; a
+# change to either must change both (FB-0010 fan-out).
+PLANDOC=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLANDOC" ] && PLANDOC="dev-docs/plan.md"
 SP=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
 [ -z "$SP" ] && SP='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
 # Exclude test/fixture/doc paths from the BEHAVIOR diff (tests are not new behavior).
@@ -285,6 +290,25 @@ if [ -z "$FILES" ]; then
   echo "[audit-coverage] SKIPPED — no behavior-bearing source files in the diff (doc/test/refactor-only vs origin/$BASE)."
 else
   echo "Behavior-bearing files changed: $(printf '%s' "$FILES" | tr '\n' ' ')"
+  # Deterministic change inventory (FB-0115) -- the checklist Stage 1 must account for, and
+  # the POST-PLAN tiers. Printed BEFORE the diff it annotates, and above the delimiter, so it
+  # is unambiguously the skill speaking rather than file content.
+  #
+  # Fed "$FILES" on stdin, which is the load-bearing part: the engine defines NO source-file
+  # filter of its own, so there is exactly one filter in this skill. A second one could
+  # annotate hunks the diff never showed (or stay silent about hunks it did), and Stage 1
+  # would be told to account for rows that are not in its evidence.
+  #
+  # Captured then asserted non-empty rather than swallowed with an or-true: a crash printing nothing
+  # would otherwise remove the checklist silently, and a Stage 1 with no checklist that does
+  # not KNOW it has no checklist is the exact failure this inventory exists to close
+  # (general.md item 1 -- pair every fallback with a positive assertion).
+  INV=$(printf '%s\n' "$FILES" | python3 "${CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/change-inventory.py" --base "origin/$BASE" --plan "$PLANDOC" 2>&1)
+  if [ -n "$INV" ]; then
+    printf '%s\n' "$INV"
+  else
+    echo "[audit-coverage] INVENTORY-UNAVAILABLE — change-inventory.py produced no output (python3 missing, or the engine failed). Stage 1 has no hunk checklist, so a clean result below is WEAKER than a normal one, not equal to it. This is NOT a skip."
+  fi
   echo "----- diff -----"
   # Iterate one path per line via while-read (NOT "git diff -- $FILES"): an unquoted
   # newline-joined var does NOT word-split under zsh, so the multi-path form silently
@@ -322,12 +346,52 @@ fi
 - If either block above is empty — the criteria list has **no criteria** (no `**Spec-walk:**` block: spike/tiny/no plan), **or** the diff prints a `[audit-coverage] SKIPPED` line — then coverage cannot be audited. Output **exactly** that skip line (or `[audit-coverage] SKIPPED — no declared **Spec-walk:** criteria to compare against.` when the criteria list is empty) as your entire response, then the standard footer. Do not invent findings.
 - If the diff block contains a `[audit-coverage] TRUNCATED` line, your evidence is **partial** — behavior past the cap is unseen. Do not assert full coverage: append a one-line `Note: diff was truncated; this audit is partial` to your output (whether or not you flag anything), so a clean result is not over-trusted.
 - **You check declared-vs-built completeness only, not criterion quality.** A criterion that is vague or vacuous ("X works correctly") still *counts as covering* its behavior here — judging whether a criterion is specific enough to be meaningfully verifiable is `/flow:verify-build`'s axis, not yours. Default to "covered" when a criterion plausibly maps to the hunk; do not flag a behavior as undeclared just because its criterion is weak.
-- Otherwise, apply **only** the **Undeclared change** category from your system prompt: for each **user-perceptible behavior change** in the diff — or, in source mode, each **user-perceptible behavior** the source tree implements — check whether any declared criterion would cause someone to test it. Flag the ones none covers. Refactors, renames, formatting, comments, dependency bumps, pure-internal helpers, and test/doc changes are **not** behavior changes — do not flag them. Run the disprove self-check (coverage variant: name the covering criterion, re-scan, default to "covered" when one plausibly applies) before emitting each finding.
+- **A criteria block warning about MULTIPLE `**Spec-walk:**` blocks weakens the result too, and in the opposite direction from everything else here.** `extract-criteria.py` reads only the **first** block in the plan doc, and a plan doc that retains shipped PRs' blocks can easily have another PR's criteria on top (measured: at #158's ship-time commit the first block was a *different* PR's, 17 criteria none of which described the diff). When that happens the comparison is not "incomplete criteria" — it is **the wrong criteria**, which inflates findings rather than suppressing them. If the criteria block carries such a warning, do the audit, and append a one-line `Note: the criteria block warned that N Spec-walk blocks exist and only the first was read — if these criteria do not describe this diff, the declared set is the wrong one and every finding below should be re-read in that light`. Never silently treat another PR's criteria as this PR's.
+- **`INVENTORY-UNAVAILABLE` weakens the result; it is not a skip and not a failure.** If the evidence block carries that line, the deterministic hunk checklist could not be built, so Stage 1 below has nothing to account for and you are enumerating unaided. Do the audit anyway — then append a one-line `Note: no hunk inventory; Stage 1 was unaided and this audit is weaker than a normal one` whether or not you flag anything. "I checked every hunk" and "I checked the ones I happened to notice" must not read alike.
+- Otherwise, run **Stage 1** and then **Stage 2** below, in that order, and show both. They are the same single judgment this skill has always applied — `**Undeclared change**` from your system prompt, nothing added — split into the two steps it was always really doing.
 
-A clean result (`No issues flagged.`) means every behavior change in the diff — or every behavior in the source tree — maps to a declared criterion — the correct, common outcome on a well-declared PR. Do not invent findings to appear thorough.
+## Stage 1 — enumerate (recall only)
+
+**Do not consult the declared-criteria block in this step.** An enumeration anchored to the criteria finds mostly what the criteria already mention, which is the failure this split exists to remove.
+
+List every **user-perceptible behavior** the evidence contains: in diff mode every behavior the diff *changes*; in source mode every behavior the source tree *implements*. A behavior is something a user could observe — a new or changed endpoint, state transition, validation rule, output, CLI flag, rendered result, keyboard path, error path, persisted preference. Refactors, renames, formatting, comments, dependency bumps, pure-internal helpers, and test/doc changes are **not** behaviors.
+
+**Account for every `H` row in the change inventory.** Each enumerated behavior cites the rows that implement it; each remaining row is classified non-behavioral with a one-word reason. A row in neither list goes under `UNACCOUNTED` — and `UNACCOUNTED` being non-empty is itself worth saying, because it means the evidence contains something you could not classify. *(Source mode has no hunk inventory; its checklist is the block's `files selected` list, and every selected file must be accounted for the same way.)*
+
+**The suppression rules in your system prompt govern Stage 2 only.** "Default to covered", "do not invent findings to appear thorough", "flag only gaps that affect correctness", and the disprove self-check are all about *whether to publish a finding*. Stage 1 publishes nothing — it is a list of what exists, and Stage 2 filters it. So in Stage 1 the only error is **omission**: an over-inclusive list costs nothing downstream, and a behavior you leave out here can never be found later. **Start with the `POST-PLAN` rows.** Measured across four live runs, behavior that landed after the plan was written is both the least likely to be declared and the most often missed.
+
+## Stage 2 — match (the existing judgment, unchanged)
+
+For each behavior Stage 1 enumerated, apply **only** the **Undeclared change** category from your system prompt: check whether any declared criterion would cause someone to test it. Flag the ones none covers. Run the disprove self-check (coverage variant: name the covering criterion, re-scan, default to "covered" when one plausibly applies) before emitting each finding. **A criterion that is vague or vacuous still counts as covering its behavior** — criterion *quality* is `/flow:verify-build`'s axis, not yours.
+
+Return a verdict for **every** Stage-1 behavior, not only the flagged ones — the `COVERAGE MAP` line in the output format below. That one line is what makes a clean result falsifiable by the person who knows what is actually in their own change.
+
+A clean result (`No issues flagged.`) means every behavior Stage 1 enumerated maps to a declared criterion — the correct, common outcome on a well-declared PR. Do not invent findings to appear thorough. **An empty Stage-1 list is not a clean result**: if you enumerated no behaviors at all on a diff the block rendered rows for, say that instead, because it means the evidence and the enumeration disagree.
 
 ## Output
 
-Produce output exactly in the format specified in your system prompt (`ISSUE · Undeclared change` blocks, or `AUDIT SUMMARY`, or `No issues flagged.`, or the skip line above). Do not add commentary before or after. Do not explain your process.
+Three parts, in this order. Parts 1 and 2 are new; part 3 is unchanged, and **is what `/flow:ship` Step 2 routes on** — do not alter its shape.
+
+**1. Stage 1's enumeration.** Exactly this, no prose around it:
+
+```
+BEHAVIOR INVENTORY
+B1  <one sentence, a behavior a user could observe>  [H3, H7]
+B2  <...>  [H12]
+NOT BEHAVIOR
+H2 refactor · H5 comment · H9 test-only · H11 rename
+UNACCOUNTED
+(none)
+```
+
+**2. Stage 2's verdict on every enumerated behavior**, one line:
+
+```
+COVERAGE MAP  B1 covered · B2 covered · B3 UNDECLARED · B4 covered
+```
+
+**3. The findings**, exactly in the format specified in your system prompt (`ISSUE · Undeclared change` blocks, or `AUDIT SUMMARY`, or `No issues flagged.`, or the skip line above) — one `ISSUE` per `UNDECLARED` entry in the map, and no `ISSUE` without one. Do not add commentary before or after. Do not explain your process.
+
+**The skip and unresolved outcomes above override all three parts.** `SKIPPED`, `ROOT-UNRESOLVED`, `JQ-MISSING` and `SOURCE-UNRESOLVED` each say "that fixed line is your entire response" — they still are. There is nothing to enumerate when the evidence was never read, and emitting an empty `BEHAVIOR INVENTORY` above a skip line would dress a non-audit up as a thorough one.
 
 **Source mode only — open with one `Read: <files>` line**, copied from the block's `files selected` list, before the `ISSUE` blocks or `No issues flagged.`. One line, no commentary. This is the same doctrine as `SOURCE-UNRESOLVED`-is-not-`SKIPPED`, applied one notch further: *"I found nothing in these three files"* is falsifiable at a glance by the one reader who knows what is in their own prototype; *"I found nothing"* is not. It matters most in source mode because the human invoked the skill deliberately, pre-plan, on a directory **they** named, and is about to write a Spec-walk on the strength of the answer — so a walk that silently matched two of nine files must not return a clean result that reads identically to a thorough one. Diff mode is exempt: its evidence is implicit, bounded, and surrounded by other gates at `/flow:ship` Step 2.

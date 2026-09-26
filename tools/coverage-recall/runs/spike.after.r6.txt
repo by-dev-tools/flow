@@ -1,0 +1,163 @@
+BEHAVIOR INVENTORY
+B1  Clicking an element while commenting is on opens an editor popover pinned at the click offset inside that element.  [annotation-layer.html · document click handler → commit() → openEditor()]
+B2  Commenting is a persistent mode read from `localStorage` at load, defaulting to on, and repaints dock/crosshair/hint on boot.  [MODE key, setCommenting(), init `setCommenting(commenting)`]
+B3  ⌘/Ctrl/Alt-click, clicks on the layer's own chrome, and clicks inside the host page's own `input`/`textarea`/`select`/contenteditable pass through to the page.  [eventIsOurs()]
+B4  A click carrying a text selection longer than one character never creates a comment.  [click handler selection guard]
+B5  Comments re-anchor by content — author `data-pin-id`, else nearest heading + tag + role + text sample scored with a floor of 2 — so pins survive regeneration.  [anchorFor(), resolve()]
+B6  An anchor that stops resolving keeps its comment: the pin is greyed/hidden, the row reads "unanchored", and the export flags it.  [render() lost branch, headFor(), LOST]
+B7  "Copy all" writes one grouped, DOM-ordered, per-screen block to the clipboard — title, count, viewport + colour-scheme context, section headings, numbered records matching the pins.  [an-copy handler, noteRecord(), viewCtx()]
+B8  A refused clipboard write raises a modal select-and-copy sheet with the text preselected, dismissible three ways with focus restored.  [writeClipboard() → showCopyBox()]
+B9  Destructive deletion: per-row `×` and the editor's Delete remove one comment; "Delete all" arms on first press ("Delete all?"), wipes on the second, and auto-cancels after 6 seconds.  [an-del handlers, an-wipe handler, disarm()]
+B10 Live-region announcements on mode toggle, comment add/save/delete, remaining count, single-comment copy, and walk target.  [announce(), #an-status]
+B11 Dock, panel, popover, pins and copy sheet are themed for light and dark, including accent-foreground inversion.  [`prefers-color-scheme: dark` token block]
+B12 Keyboard-only commenting path: Shift+↑/↓ walks block-level elements, Shift+←/→ widens/narrows the target, Tab/focus sets a target, Enter creates the comment; the target scrolls into view and is spoken.  [keydown walk branch, walkStep(), walkDepth(), focusWalkTarget(), focusin handler]
+B13 Escape cascade: closes the editor (discarding an untouched note), else dismisses the copy sheet, else closes the panel, else switches commenting OFF.  [keydown Escape branch]
+B14 Hover-outline preference: a panel toggle turns live element outlining on/off, persists under its own `localStorage` key, and when off the captured element flashes for ~700ms after each commit.  [PREF key, an-snap handler, paintSnap(), flashHL()]
+B15 Hide-pins toggle hides/shows every on-page pin and swaps its own icon, label and pressed state.  [an-eye handler, `#an-pins.hidden`]
+B16 Activating a panel row or its number badge scrolls the page to the commented element and opens that comment's editor.  [scrollToNote(), row + `.an-n` click handlers]
+B17 A blocked or full `localStorage` surfaces a one-time "comments could not be saved — copy them before leaving the page" announcement instead of silently losing data.  [save() catch, saveWarned]
+B18 Under `prefers-reduced-motion`, transitions are removed and the walk/scroll-to-comment become instant rather than smooth.  [reduced-motion media block, matchMedia checks in focusWalkTarget()/scrollToNote()]
+B19 The dock control shows the comment count (or ✛) plus a mode colour and expands/collapses the panel; panel title, empty state and footer visibility track count and mode.  [updateFab(), render() title/empty/footer]
+B20 Editor keys: ↵ saves, ⇧↵ newlines, Esc cancels; clicking elsewhere with the editor open saves typed text or discards an untouched empty note instead of creating a new pin.  [an-text keydown, click close-first branch, dropEmpty()]
+B21 No native `confirm`/`alert`/`prompt`; clipboard goes through `execCommand` on a scratch textarea, making the layer `file://`-safe.  [two-step wipe, writeClipboard()]
+NOT BEHAVIOR
+annotation-layer.html · internal helpers (pickTarget/eventIsOurs/paintToggle consolidation) · CSS token naming · design-note comments
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  B1 covered · B2 covered · B3 covered · B4 covered · B5 covered · B6 covered · B7 covered · B8 covered · B9 UNDECLARED · B10 covered · B11 covered · B12 UNDECLARED · B13 UNDECLARED · B14 UNDECLARED · B15 UNDECLARED · B16 UNDECLARED · B17 UNDECLARED · B18 UNDECLARED · B19 covered · B20 covered · B21 covered
+
+Read: /home/vercel-sandbox/flow/plugins/flow/skills/verify-build/lib/annotation-layer.html
+
+AUDIT SUMMARY
+8 issues flagged: 8 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> `$("an-wipe").addEventListener("click", function () {`
+> `    if (!armed) {                                   // two-step, no native confirm (file:// safe)`
+> `      armed = true; this.textContent = "Delete all?"; this.classList.add("arm");`
+> …
+> `    notes = []; save(); render(); disarm(); closeEditor();`
+
+Hunk: `annotation-layer.html` — the `an-wipe` two-step handler plus the per-row `an-del` handler and the editor's `#an-del` handler. Introduces destructive removal of one comment or of every comment, with an arm/confirm interaction and a 6-second auto-cancel.
+
+Why uncovered: checked all 13 criteria. None names deletion. C9 (no native `confirm`/`alert`/`prompt`) is the nearest, but its declared verification is "grep the script for `confirm(`/`alert(`/`prompt(`" — a grep never exercises whether the two-step arming actually guards the wipe, whether the second press deletes, or whether the timeout cancels. C6 concerns anchors being kept, not user-initiated deletion.
+
+Suggested: add a criterion covering comment deletion — single delete, "Delete all" requiring two presses, and the 6-second disarm — verified by a manual click-through that confirms one press does not wipe.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> `// Keyboard walk — the route to elements Tab cannot reach (WCAG 2.1.1).`
+> `if (e.shiftKey && (e.key === "ArrowDown" || e.key === "ArrowUp" ||`
+> `                   e.key === "ArrowRight" || e.key === "ArrowLeft")) {`
+
+Hunk: `annotation-layer.html` — `walkStep()`, `walkDepth()`, `focusWalkTarget()`, the keydown walk branch, the `focusin` targeting handler, and the `e.detail === 0` keyboard-synthesised click path. Introduces a full keyboard-only route to create a comment: Shift+arrows walk and widen/narrow the target, Tab sets it, Enter commits it, the target scrolls into view and is announced.
+
+Why uncovered: checked all 13 criteria. C1, C3 and C4 are all pointer interactions ("clicking an element", "modifier-click", "drag-select"); C10 covers announcements only for mode toggle and note-count change, not walk-target narration. No criterion mentions a key, Tab, or keyboard at all, so nothing declared would cause anyone to discover that Shift+↑↓/←→/Enter exist or that they work.
+
+Suggested: add a criterion for the keyboard path — walk with Shift+arrows, widen/narrow, Enter to comment, with the current target visibly outlined and announced — verified by a mouse-free click-through.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> `      // Only when the key wasn't meant for the host page — Esc inside a page's own input`
+> `      // must not silently switch commenting off.`
+> `      if (commenting && eventIsOurs(e)) setCommenting(false);`
+
+Hunk: `annotation-layer.html` — the `keydown` Escape cascade: editor close (discarding an empty note), else copy-sheet dismissal, else panel close, else commenting switched off and persisted.
+
+Why uncovered: checked all 13 criteria. C2 declares the mode toggle and its persistence, verified by "toggle off, reload" — that exercises the switch control, not a global Escape key that turns the mode off as the last rung of a cascade. C3's "equivalent escape hatch" refers to passing a click through to the page, not to the Esc key changing mode state. Nothing declared would surface that Esc can disable commenting (and write `"0"` to storage, surviving reload).
+
+Suggested: add a criterion for the Escape cascade, including that the final Esc turns commenting off and that Esc inside a host page's own input does not.
+
+---
+
+ISSUE 4 · Undeclared change
+
+Claim:
+> `  var PREF = "flow-annotations-v2:snapPreview";`
+> `  var snapPreview = true;`
+> `  try { snapPreview = localStorage.getItem(PREF) !== "0"; } catch (e) {}`
+
+Hunk: `annotation-layer.html` — the `an-snap` toggle handler, `paintSnap()`, `drawHL(el, force)` and `flashHL()`. Introduces a user-facing preference that turns live hover-outlining on/off, persists it under a second `localStorage` key, and — when off — flashes the captured element for ~700ms after each commit instead.
+
+Why uncovered: checked all 13 criteria. C2 is specifically "commenting mode persists across reloads via `localStorage`"; testing it exercises one key and one control, not a second independent persisted preference. C1 says the editor is "pinned to that element" but says nothing about a hover outline existing, being switchable, or being replaced by a post-commit flash. C11 covers light/dark appearance of the control and panel.
+
+Suggested: add a criterion for the hover-outline toggle — outline follows the cursor when on, flash-on-commit when off, preference survives reload — verified by a manual toggle plus reload.
+
+---
+
+ISSUE 5 · Undeclared change
+
+Claim:
+> `  $("an-eye").addEventListener("click", function () {`
+> `    var hidden = $("an-pins").classList.toggle("hidden");`
+> `    paintToggle(this, hidden, hidden ? "Show pins on the page" : "Hide pins on the page", hidden);`
+
+Hunk: `annotation-layer.html` — the `an-eye` handler and `#an-pins.hidden` rule. Introduces a control that hides every on-page pin (and restores them), swapping its own icon, accessible name and pressed state.
+
+Why uncovered: checked all 13 criteria. C6 mentions the panel listing a lost pin; C1 and C5 assume pins exist and stay anchored. No criterion mentions suppressing pin display, so no declared verification would catch pins failing to hide, failing to come back, or the toggle's state being unreported.
+
+Suggested: add a criterion for the hide/show-pins toggle, verified by hiding pins, confirming the design is unobstructed, and restoring them.
+
+---
+
+ISSUE 6 · Undeclared change
+
+Claim:
+> `      num.setAttribute("aria-label", "Go to comment " + (i + 1));`
+> …
+> `      num.addEventListener("click", function (ev) {`
+> `        ev.stopPropagation(); scrollToNote(n, true); openEditor(n.id);`
+
+Hunk: `annotation-layer.html` — `scrollToNote()`, the `.an-n` badge handler and the whole-row click handler. Introduces panel-to-page navigation: activating a row scrolls the page to the commented element (centred, instantly when an editor follows) and opens that comment for editing.
+
+Why uncovered: checked all 13 criteria. C1 covers clicking an element *on the page* opening an editor — the opposite direction. C6 covers a lost pin merely *listing* in the panel. C7/C8 are clipboard. Nothing declared would cause anyone to click a panel row and check that the page scrolls to the right element.
+
+Suggested: add a criterion for navigating from a panel row to its element on the page, verified by clicking a row for an off-screen comment.
+
+---
+
+ISSUE 7 · Undeclared change
+
+Claim:
+> `    catch (e) {                       // quota, or storage blocked (private mode)`
+> `      if (!saveWarned) {`
+> `        saveWarned = true;`
+> `        announce("Comments could not be saved — this browser is blocking local storage. Copy them before leaving the page.");`
+
+Hunk: `annotation-layer.html` — the `save()` catch branch and the `saveWarned` latch. Introduces a one-time user-facing warning when persistence is blocked or full, so comments are known to be volatile rather than silently lost.
+
+Why uncovered: checked all 13 criteria. C8 is the analogous degradation path for the *clipboard* only. C2 declares the `localStorage` happy path ("toggle off, reload, confirm state survives") and would be run in a browser where storage works, so it never reaches this branch. No criterion mentions storage being blocked, private mode, or quota.
+
+Suggested: add a criterion for the storage-blocked path — comments still usable in-session, one clear warning, no silent loss — verified with storage disabled in the browser.
+
+---
+
+ISSUE 8 · Undeclared change
+
+Claim:
+> `  @media (prefers-reduced-motion: reduce) {`
+> `    #an-fab, #an-mode, #an-mode::after, #an-hl.an-flash, .an-item .an-row-act { transition: none; }`
+> `  }`
+> and
+> `    var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;`
+> `    el.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });`
+
+Hunk: `annotation-layer.html` — the reduced-motion media block plus the `matchMedia` checks in `focusWalkTarget()` and `scrollToNote()`. Changes observable motion: control transitions are removed and scroll-to-element becomes instant rather than smooth.
+
+Why uncovered: checked all 13 criteria. C11 is the only OS-setting-conditioned criterion and it is scoped to "light and dark mode … with OS dark mode toggled"; toggling appearance does not exercise the motion preference. C10 covers screen-reader announcements. Nothing declared would cause anyone to enable reduce-motion and confirm the overlay honours it.
+
+Suggested: add a criterion for reduced-motion behaviour, verified by enabling the OS reduce-motion setting and confirming transitions and scrolling are instant.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

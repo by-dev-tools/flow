@@ -1,0 +1,127 @@
+Read: /home/vercel-sandbox/flow/plugins/flow/skills/verify-build/lib/annotation-layer.html
+
+```
+BEHAVIOR INVENTORY
+B1  Clicking an element while commenting is on creates a numbered pin and opens an editor pinned to that element.  [annotation-layer.html]
+B2  Commenting is a persistent localStorage-backed mode defaulting to on; toggling it repaints the dock, the crosshair cursor and the hint line.  [annotation-layer.html]
+B3  Meta/Ctrl/Alt-click, clicks on the layer's own chrome, and clicks into the host page's own inputs pass through to the page.  [annotation-layer.html]
+B4  A click that ends a text selection of more than one character creates no pin.  [annotation-layer.html]
+B5  Pins resolve by content-derived anchor (`data-pin-id`, else scored heading + tag + role + text with a floor of 2) and are repositioned on resize/ResizeObserver reflow.  [annotation-layer.html]
+B6  A comment whose anchor stops resolving is kept, shown as "unanchored" in the panel, and exported flagged rather than dropped.  [annotation-layer.html]
+B7  "Copy all" writes a section-grouped, DOM-ordered block with a header naming the page title, comment count and the viewport/colour scheme it was copied at.  [annotation-layer.html]
+B8  A per-row copy button writes one comment in the same located format and flips to a check icon for ~1.3s.  [annotation-layer.html]
+B9  When `execCommand("copy")` is refused, a modal select-and-copy sheet appears with the text preselected, dismissible by Done, backdrop click or Esc, with focus restored.  [annotation-layer.html]
+B10 A visually-hidden live region announces mode changes, adds, saves, deletes, copies and walk targets.  [annotation-layer.html]
+B11 Dock, panel, pins, editor and copy sheet render a full dark palette under `prefers-color-scheme: dark`.  [annotation-layer.html]
+B12 Keyboard-only commenting: Shift+↑/↓ walks block-level elements, Shift+←/→ widens/narrows the target, Tab focus sets the target, Enter comments, and the target is scrolled into view and announced.  [annotation-layer.html]
+B13 An "Outline elements while hovering" toggle switches live hover outlining off, persists under its own localStorage key, and substitutes a post-commit outline flash.  [annotation-layer.html]
+B14 A hide-pins toggle removes every pin from the page while keeping the comments listed in the panel, showing a slashed icon and pressed state.  [annotation-layer.html]
+B15 Deleting one comment (editor "Delete" or the row "×") removes and renumbers it, persists, announces the remaining count, and moves focus to the next row.  [annotation-layer.html]
+B16 "Delete all" is a two-step armed control that relabels to "Delete all?", disarms itself after 6 seconds, and only deletes on the second press.  [annotation-layer.html]
+B17 Escape steps back one layer at a time — open editor, then copy sheet, then panel — and with nothing open switches commenting off.  [annotation-layer.html]
+B18 The editor saves on Enter, inserts a newline on Shift+Enter, and an editor left empty never persists a comment.  [annotation-layer.html]
+B19 When localStorage refuses a write (private mode or quota), a one-time announcement says comments cannot be saved and to copy them before leaving.  [annotation-layer.html]
+B20 Under `prefers-reduced-motion: reduce`, walk/note scrolling becomes instant and control transitions are removed.  [annotation-layer.html]
+B21 Panel rows scroll the page to their comment and open its editor; the batch-action footer hides on an empty list; the empty-state text differs depending on whether commenting is on.  [annotation-layer.html]
+B22 The dock button shows the comment count (or ✛) and reports mode + count + expanded state in its accessible name; clicking it expands/collapses the panel.  [annotation-layer.html]
+NOT BEHAVIOR
+(none — the single selected file is fully accounted for above; its header comment block and inline rationale comments are non-behavioral · comment)
+UNACCOUNTED
+(none)
+```
+
+COVERAGE MAP  B1 covered · B2 covered · B3 covered · B4 covered · B5 covered · B6 covered · B7 covered · B8 covered · B9 covered · B10 covered · B11 covered · B12 UNDECLARED · B13 UNDECLARED · B14 UNDECLARED · B15 UNDECLARED · B16 UNDECLARED · B17 UNDECLARED · B18 covered · B19 UNDECLARED · B20 UNDECLARED · B21 covered · B22 covered
+
+AUDIT SUMMARY
+8 issues flagged: 8 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "Clicking an element while commenting mode is on opens a comment editor pinned to that element → verify: manual click-through in a browser."
+
+Hunk: `annotation-layer.html` — `buildWalk`/`walkStep`/`walkDepth`/`focusWalkTarget`, the `e.shiftKey && Arrow*` branch of the capture-phase `keydown` handler, the `focusin` handler, the `Enter` branch, and the `e.detail === 0` branch of the `click` handler. A reviewer can create and refine a comment target with no pointer at all: Shift+↓/↑ steps through block elements, Shift+→/← narrows/widens, Tab focus sets the target, Enter commits, and each target is scrolled into view and announced.
+Why uncovered: Criterion 1 names clicking and prescribes a manual click-through; criterion 3 covers modifier-*click*; criterion 4 covers drag-select; criterion 10 covers live-region announcements on mode toggle and count change, not per-target walk announcements. No criterion mentions a key, Tab, or keyboard operation, so nothing would cause anyone to test the walk, the descent/widen path, or Enter-to-comment.
+Suggested: Add a Spec-walk criterion for keyboard-only commenting (Shift+arrow walk, Shift+←/→ depth, Tab+Enter) with a keyboard-only manual check.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "Commenting mode persists across reloads via `localStorage` and defaults to on → verify: toggle off, reload, confirm state survives."
+
+Hunk: `annotation-layer.html` — `PREF = "flow-annotations-v2:snapPreview"`, the `#an-snap` click handler, `paintSnap`, `drawHL(el, force)`, `flashHL`. A second toggle turns live hover outlining off, persists that choice under its own key, and replaces the live outline with a ~700ms post-commit flash.
+Why uncovered: Criterion 2 is scoped to commenting mode's own persistence; toggling commenting off and reloading never touches `snapPreview`. Criterion 1's click-through does not require noticing an outline, and criterion 11's dark-mode check exercises appearance, not the outlining state machine. No criterion names outlining, hover preview, or a second persisted preference.
+Suggested: Add a criterion for the hover-outline toggle — default on, survives reload under its own key, and the flash-on-commit substitute when off.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "An anchor that stops resolving after a re-render is kept and exported, flagged, rather than silently dropped → verify: manual check (remove the anchored element, confirm the pin still lists in the panel as lost)."
+
+Hunk: `annotation-layer.html` — `#an-eye` click handler plus `#an-pins.hidden { display: none; }`. A toggle hides every pin on the page while the comments stay listed in the panel, swapping to a slashed icon and `aria-pressed="true"`.
+Why uncovered: Criterion 6 covers one pin disappearing because its anchor was lost — a different cause with a different panel state ("lost") — and would not cause anyone to press the eye control. Criteria 1, 5 and 11 concern pin creation, anchor matching and colour scheme. No criterion mentions hiding or showing pins.
+Suggested: Add a criterion for the hide-pins toggle: pins vanish from the page, comments remain listed, state is reflected on the control.
+
+---
+
+ISSUE 4 · Undeclared change
+
+Claim:
+> "\"Copy notes\" produces one structured, per-screen text block on the clipboard → verify: manual click + paste."
+
+Hunk: `annotation-layer.html` — `#an-del` handler in the editor, the row `del` button handler in `render()`, and `dropEmpty`. A single comment can be deleted from two places; the remaining comments renumber, the store is rewritten, the remaining count is announced, and focus moves to the next row rather than to `<body>`.
+Why uncovered: No declared criterion mentions deleting a comment. Criterion 7 covers export; criterion 9's verification is a grep for `confirm(`/`alert(`/`prompt(`, which says nothing about whether deletion works; criterion 10 covers announcements on mode toggle and count change but would not prompt anyone to delete and check renumbering or focus placement.
+Suggested: Add a criterion for single-comment deletion covering renumbering, persistence and where focus lands.
+
+---
+
+ISSUE 5 · Undeclared change
+
+Claim:
+> "The overlay works correctly with no native `confirm`/`alert`/`prompt` calls (so it is safe to inject into any static page, including `file://`) → verify: grep the script for `confirm(`/`alert(`/`prompt(` and confirm none are present."
+
+Hunk: `annotation-layer.html` — the `#an-wipe` click handler, `disarm`, `armTimer`. "Delete all" is destructive and irreversible behind a two-step arm: first press relabels to "Delete all?" and announces the count at risk, a 6-second timer silently disarms and announces cancellation, and only a second press inside that window wipes every comment.
+Why uncovered: Criterion 9 only asserts the *absence* of native dialogs and verifies by grep — a grep passes whether the two-step replacement exists, works, or is broken, so it cannot cause anyone to test the arm/disarm behavior or the 6-second window. No other criterion mentions bulk deletion.
+Suggested: Add a criterion for the two-step Delete-all: first press arms and announces, timeout cancels, second press deletes all.
+
+---
+
+ISSUE 6 · Undeclared change
+
+Claim:
+> "A modifier-click (or equivalent escape hatch) passes the click through to the underlying page so links and interactive prototypes still work while commenting is on → verify: manual check."
+
+Hunk: `annotation-layer.html` — the `e.key === "Escape"` branch of the capture-phase `keydown` handler. Escape is a layered back-out: it closes an open editor (dropping an empty note), else dismisses the copy sheet with focus restored, else closes the panel, and with nothing open it switches commenting off — a persisted mode change made by a keypress.
+Why uncovered: Criterion 3's escape hatch is explicitly a modifier-*click* passthrough and its manual check is a click. Criterion 2 exercises the switch control, not Escape, and would not reveal that Escape can turn commenting off and write that to `localStorage`. Criteria 7/8 cover the copy sheet's appearance, not its Escape dismissal or focus restoration.
+Suggested: Add a criterion for the Escape hierarchy, including that Escape with nothing open turns commenting off and that state persists.
+
+---
+
+ISSUE 7 · Undeclared change
+
+Claim:
+> "Commenting mode persists across reloads via `localStorage` and defaults to on → verify: toggle off, reload, confirm state survives."
+
+Hunk: `annotation-layer.html` — `save()` with `saveWarned` and the announcement "Comments could not be saved — this browser is blocking local storage. Copy them before leaving the page." When storage writes throw (private mode, quota), the layer keeps working in memory and warns once via the live region instead of failing silently.
+Why uncovered: Criterion 2 tests the success path of persistence. Criteria 12 and 13 are the declared degradation cases (frameless report, corrupt overlay file) and neither involves storage; criterion 8 is the clipboard-unavailable fallback. No criterion would cause anyone to run the overlay with storage blocked, so the warning path and the data-loss risk it covers go untested.
+Suggested: Add a criterion for storage-blocked/quota-exceeded: the overlay stays usable in memory and surfaces the one-time "could not be saved" warning.
+
+---
+
+ISSUE 8 · Undeclared change
+
+Claim:
+> "The floating control and comment panel behave as expected across light and dark mode → verify: manual check with OS dark mode toggled."
+
+Hunk: `annotation-layer.html` — `@media (prefers-reduced-motion: reduce)` in the stylesheet plus the `matchMedia("(prefers-reduced-motion: reduce)")` checks in `focusWalkTarget` and `scrollToNote`. With the OS reduce-motion setting on, walk and go-to-comment scrolling becomes instant and the dock/switch/outline/row-action transitions are dropped.
+Why uncovered: Criterion 11 is the only OS-preference criterion and names dark mode; toggling dark mode does not change motion behavior. Criterion 10 covers screen-reader announcements, not motion. No criterion names reduced motion, scrolling, or animation, so no one would toggle that setting.
+Suggested: Add a criterion for reduced-motion: with the OS setting on, scroll-to-target is instant and control transitions are suppressed.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.
