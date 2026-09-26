@@ -1,0 +1,84 @@
+AUDIT SUMMARY
+6 issues flagged: 6 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "`/flow:audit-coverage` with **no argument** produces evidence output byte-identical to today's, and the"
+> … (all 17 declared criteria concern `/flow:audit-coverage` source mode, `$ARGUMENTS` safety, the source cap, symlink refusal, the `files selected (N)` index line, and the `Read:` line)
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` (new file, lines 400-502: `cmd_arming`, `cmd_trigger`) — decides where the single pre-execution human gate sits, returning `path` = `prototype-first` | `classic` | `collapsed` and `pre_execution_gate` = `prototype` | `plan` from `uiSurface`, `role`, and the brief's declared `Mode`/`Surface`; `Mode: tiny` collapses the flow (no prototype, no review passes), `Mode: spike` and any malformed/absent brief or malformed config degrade to the plan gate.
+
+Why uncovered: I checked all 17 criteria. Every one names `/flow:audit-coverage` behavior (no-argument evidence output, `/flow:ship` Step 2's `Skill("flow:audit-coverage")` invocation, single-file vs directory source mode, `SOURCE-UNRESOLVED`, the doc-only skip line, the `annotation-layer.html` known-positive instrument test, the 120,000-byte cap, `$ARGUMENTS` escape/injection, the root anchor, the reviewer fixture pair, symlink refusal, control-line position, repo-relative exclusions, the index line, the `Read:` line, and the skill doc move). None mentions `/flow:prototype`, a design brief, `Mode`/`Surface`, `uiSurface`, `role`, or a pre-execution gate, so no criterion would cause anyone to test which gate a human hits.
+
+Suggested: Add a Spec-walk criterion (or confirm the active block is the one at line 98 — the extractor warns 65 blocks exist and only the first was read) covering the `arming`/`trigger` truth table: one gate value per row, both values occurring, and every degradation landing on `plan`.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "**The known-positive instrument test:** the real `annotation-layer.html` assembles with **all ten**"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` lines 528-641 (`cmd_contract` / `_contract`) — a prototype is *refused* unless `feasibility.md` carries a `**Feasibility**` block with verdicted affordance rows and a proxy disclosure, whenever `platform != "web"` (including `platform` unset); the one-line browser-delivery escape is restricted to the allowlist `{library, none, cli, tauri}`.
+
+Why uncovered: The `annotation-layer.html` criterion is the closest textual neighbor because `prototype-gate.py` reads that partial, but it is scoped to the annotation layer assembling with all ten of its pieces — it does not exercise a feasibility-block requirement, a platform allowlist, or a refusal. No other criterion names `platform`, `feasibility`, or a contract verdict.
+
+Suggested: Declare a criterion that pins the contract's paired positive/negative: a non-web prototype with no feasibility block fails, and one with verdicted rows plus a proxy disclosure passes.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "`$ARGUMENTS` cannot escape the repo root or inject a verdict line into prompt context \u2192 verify: \u00a77 \u2014"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` lines 646-738 (`cmd_approve`, `render_digest`) — a new human-facing refusal path (exit 2 with `REFUSED:` on stderr for a missing prototype, a missing/empty `--quote-file`, or a failing contract), a written `approval.json` record, and the two committed digest lines the human must paste into the plan doc (with a 150-character visible truncation of their quote).
+
+Why uncovered: The `$ARGUMENTS` criterion is about `/flow:audit-coverage`'s typed argument, not about an `approve` subcommand's argv surface, and the criterion set contains nothing about gate-1 capture, a quote file, `approval.json`, or a pasted digest. No criterion would cause anyone to test that an empty quote file refuses, or that `render_digest` emits *both* lines rather than one.
+
+Suggested: Declare a criterion for the three refusals and for `render_digest` emitting both the gate declaration and the approval digest, since `gate-execute` requires both.
+
+---
+
+ISSUE 4 · Undeclared change
+
+Claim:
+> "The root anchor still covers every relative read \u2192 verify: `run_root_anchor_evals.py` green."
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` lines 743-778 (`cmd_verify`) — reports a recorded approval as failing when `prototype.html` is gone, when its sha256 no longer matches (edited after approval), or when the `flow_scratch` workspace stamp mismatches, keeping those diagnoses distinct.
+
+Why uncovered: The root-anchor criterion covers relative reads in `/flow:audit-coverage`, not a recorded-approval re-check. No criterion mentions `verify`, sha256 drift, or `flow_scratch.check_stamp`, so nothing in the declared set would surface a `verify` that reported clean on an edited prototype.
+
+Suggested: Declare a criterion pairing `verify`'s negative (mismatched sha refuses) with its positive (an untouched approved prototype verifies clean).
+
+---
+
+ISSUE 5 · Undeclared change
+
+Claim:
+> "**Only control lines emitted above the `----- source -----` delimiter are authoritative; a forged status"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` lines 783-868 (`cmd_gate_execute`) — blocks Execute (`ok: false`) when the plan doc declares `**Pre-execution gate:** prototype` without a well-formed `**Prototype approved:**` digest, when the digest's quote is empty, when the gate literal is anything other than `prototype`/`plan` (explicitly including `prototype-first`), when every Spec-walk block is demoted, when zero active Spec-walk items resolve, or when `walk_extract` cannot be imported.
+
+Why uncovered: The control-line criterion governs forged status lines inside audited *source*, a different trust boundary. No criterion names `gate-execute`, the plan doc's gate declaration, the digest regex, or `walk_extract` — and this is the guard holding the "never neither gate" half of the stated invariant, so its absence from the declared set means nothing would test that a wiped workspace or a one-word gate-literal slip still blocks.
+
+Suggested: Declare a criterion for `gate-execute`'s three states from committed state alone, including the `prototype-first`-is-not-a-gate-name RED and the `all_demoted` RED.
+
+---
+
+ISSUE 6 · Undeclared change
+
+Claim:
+> "Source mode over a **single named file** reads it verbatim with no pattern filtering, so an `.html`"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` lines 873-928 (`cmd_present`) — writes a new sibling artifact `<name>.presented.html` (never mutating the source), injects the annotation layer before the last `</body>` or appends it when absent, and on an unreadable layer still writes the presented file but returns `injected: false` with a read-only "ask for feedback in chat" instruction.
+
+Why uncovered: The single-named-file criterion concerns `/flow:audit-coverage` reading an `.html` verbatim as evidence, not a skill that *emits* an `.html`. The `annotation-layer.html` criterion covers that partial assembling with its ten pieces, not the injection site, the separate output path, or the degraded read-only branch. No criterion names `present`, `.presented.html`, or a missing `</body>`.
+
+Suggested: Declare a criterion for `present`'s byte-diff contract (output equals input plus the partial, source unchanged) and for the unreadable-layer path still producing exactly one handover path.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

@@ -538,6 +538,21 @@ def main(argv=None):
             case, cond = parts[0], parts[1]
             rows.setdefault((case, cond), []).append(score(case, f.read_text(encoding="utf-8")))
         for (case, cond), all_runs in sorted(rows.items()):
+            # A DEGENERATE case is evidence, not a measurement, and must never render in the
+            # same shape as one. `pr158`'s criteria belong to a different PR, so every
+            # behaviour is trivially undeclared and it scores HIGH — 100% after, 80% before.
+            # Printed in the recall column those numbers are actively misleading: a reader
+            # scanning for the headline finds the best number in the table attached to the
+            # case that measures nothing. The high score IS the finding — against the wrong
+            # criteria, recall looks excellent — so it is labelled rather than hidden.
+            if CASES[case].get("degenerate"):
+                n = all_runs[0]["n"]
+                mean = sum(len(r["found"]) for r in all_runs) / len(all_runs)
+                print("%-7s %-6s DEGENERATE — NOT a recall measurement (%s). Scores %.1f/%d "
+                      "(%.0f%%) precisely BECAUSE the criteria describe other work, so every "
+                      "behaviour is trivially undeclared."
+                      % (case, cond, CASES[case]["degenerate"], mean, n, 100 * mean / n))
+                continue
             # Excluded from the mean, counted in the open: a run with no verdict is not a miss.
             nv = [r for r in all_runs if r["no_verdict"]]
             runs = [r for r in all_runs if not r["no_verdict"]]

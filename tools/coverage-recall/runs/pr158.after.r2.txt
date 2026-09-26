@@ -1,0 +1,141 @@
+BEHAVIOR INVENTORY
+B1  New `prototype-gate.py arming` subcommand: prints a JSON verdict on whether the D1 prototype branch is available from `flow.config.json` alone (`armed`, `ui_surface`, `role`, `brief_required`), reports not-armed on a malformed/non-object config, and emits the `role: designer is SUPPRESSED by uiSurface: false` message.  [H5]
+B2  New `trigger` subcommand: resolves `path` + `pre_execution_gate` from the brief's declared `**Mode:**`/`**Surface:**` plus `role`/`uiSurface` — `prototype-first`/`prototype`, `collapsed`/`plan` for `Mode: tiny`, `classic`/`plan` for spike, no visual signal, absent brief, malformed brief, or malformed config.  [H5]
+B3  New `contract` subcommand: the § 9.4 feasibility verdict — required for every `platform` except `web` (including unset), `ok: false` when `prototype.html` is missing, requires a `**Feasibility**` block with verdicted affordance rows and a proxy disclosure, admits the one-line browser-delivery exit only for `{library, none, cli, tauri}`, and returns `must_surface` rows.  [H5, H6, H7, H8]
+B4  New `approve` subcommand: refuses with exit 2 and a `REFUSED:` message on absent `prototype.html`, a missing `--quote-file`, an empty/whitespace quote, or a failing contract; otherwise writes `approval.json` and emits `ok`/`record`/`sha256`/`digest_line`. Accepts the human quote only as a file path — no `--quote` string flag exists.  [H5, H9]
+B5  Digest output the human pastes into the plan doc: two lines — `**Pre-execution gate:** prototype` and `**Prototype approved:** <sha16> · "<quote>" · repo=… branch=… head=…` — with the quote newline-folded and visibly truncated at 150 chars with `…`.  [H5, H10, H11, H12]
+B6  New `verify` subcommand: re-checks a recorded approval against disk — missing or malformed `approval.json`, no human quote in the record, a deleted `prototype.html`, a sha256 mismatch reported as "changed after approval", and a workspace-stamp mismatch reported separately.  [H5]
+B7  New `gate-execute` subcommand: reads committed plan-doc state only — an unrecognized `**Pre-execution gate:**` literal (e.g. `prototype-first`) is RED, a non-prototype gate returns ok with "classic path, nothing to assert", a missing or empty-quoted `**Prototype approved:**` digest is a problem, and an all-demoted or zero-item Spec-walk block (or a `walk_extract` import failure) fails closed.  [H5, H13]
+B8  New `present` subcommand: writes a separate `<name>.presented.html` (source never mutated) with `annotation-layer.html` injected before the last `</body>`, appends at end of file with a `[WARN] no </body> found` when absent, and on an unreadable layer still writes the presented file and returns a read-only "ask for feedback in chat" hand-off.  [H5, H14, H15, H16]
+NOT BEHAVIOR
+H1 version · H2 version · H3 test-only · H4 version
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  B1 UNDECLARED · B2 UNDECLARED · B3 UNDECLARED · B4 UNDECLARED · B5 UNDECLARED · B6 UNDECLARED · B7 UNDECLARED · B8 UNDECLARED
+
+AUDIT SUMMARY
+8 issues flagged: 8 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "criteria": [ "`/flow:audit-coverage` with **no argument** produces evidence output byte-identical to today's, and the", … ]
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py:1` (new file, +862) — `cmd_arming` / `sub.add_parser("arming", …)`. A new CLI subcommand prints a JSON verdict (`armed`, `ui_surface`, `role`, `brief_required`, `config_state`, `reasons`) deciding whether `/flow:prototype` Step 2 takes the D1 branch, reporting `armed: false` when the config is a non-object or unreadable and emitting the designer-suppression message when `uiSurface: false`.
+
+Why uncovered:
+All seventeen declared criteria scope `/flow:audit-coverage`'s source-mode argument: no-arg byte-identical output, `/flow:ship` Step 2's unchanged invocation, single-file verbatim read, directory walk patterns, `SOURCE-UNRESOLVED` never `SKIPPED` and its paired doc-only negative, the 120,000-byte cap warning, `$ARGUMENTS` escape, root anchor, reviewer fixture pair, symlink refusal, control-line authority above the delimiter, repo-relative exclusions, the `files selected (N)` index line, the `Read: <files>` line, and the docs-move grep. None names `/flow:prototype`, `prototype-gate.py`, arming, `uiSurface`, or `role`, so no criterion would cause anyone to run this subcommand.
+
+Suggested: Add a Spec-walk criterion for `arming` — armed/not-armed across `uiSurface` true / false / absent-config / non-object-config, plus the designer-suppression line — or state which existing criterion is meant to cover it.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "criteria": [ … "The root anchor still covers every relative read → verify: `run_root_anchor_evals.py` green.", … ]
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py:1` (new file, +862) — `cmd_trigger`. Resolves `path` + `pre_execution_gate` from the brief's `**Mode:**`/`**Surface:**` and config `role`/`uiSurface`: `prototype-first`/`prototype`, `collapsed`/`plan` on `Mode: tiny`, `classic`/`plan` on spike, no visual signal, absent brief, malformed brief, or malformed config. This decides where the human's single pre-execution gate sits.
+
+Why uncovered:
+Checked every declared criterion; all concern audit-coverage's source-mode input handling (see ISSUE 1's enumeration). None mentions `Mode`, `Surface`, `pre_execution_gate`, prototype-first, or the classic plan gate, so nothing in the declared set would exercise the trigger matrix or its fail-closed degradations.
+
+Suggested: Declare a criterion sweeping the brief × config matrix and asserting exactly one `pre_execution_gate` per row with both values occurring.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "criteria": [ … "The 120,000-byte source cap is **paired with a loud warning**, never a silent swallow → verify: §6 —", … ]
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py:433,440` plus the new-file body — `_contract` / `cmd_contract`, `BROWSER_NATIVE_PLATFORM`, `BROWSER_DELIVERY_ELIGIBLE = {"library", "none", "cli", "tauri"}`. A new subcommand emits a pass/fail contract verdict: feasibility read required for every `platform` value except `web` (including unset), `ok: false` when `prototype.html` is absent, problems for a missing `**Feasibility**` block, zero affordance rows, unverdicted rows, a missing proxy disclosure, or a browser-delivery declaration from a non-allowlisted platform.
+
+Why uncovered:
+Checked all seventeen criteria. The nearest candidate, "**The known-positive instrument test:** the real `annotation-layer.html` assembles with **all ten**", concerns an HTML partial's assembly inside the coverage/verify-build instrument test — it does not exercise a feasibility-block parser, the `platform != "web"` requirement, or the browser-delivery allowlist. No other criterion names platform, feasibility, or proxy disclosure.
+
+Suggested: Declare criteria for the contract verdict — required/exempt by `platform` (including unset), the allowlist boundary on the browser-delivery one-liner, and the absent-block-versus-unverdicted-row pairing.
+
+---
+
+ISSUE 4 · Undeclared change
+
+Claim:
+> "criteria": [ … "`$ARGUMENTS` cannot escape the repo root or inject a verdict line into prompt context → verify: §7 —", … ]
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py:592` plus the new-file body — `cmd_approve` and its `--quote-file`-only interface. Exit 2 with a `REFUSED:` message when `prototype.html` is absent, the quote file does not exist, the quote is empty/whitespace, or the re-run contract fails; on success writes `approval.json` and emits `digest_line`. No `--quote` string flag is accepted.
+
+Why uncovered:
+The `$ARGUMENTS` criterion is about `/flow:audit-coverage`'s own argument handling, not about a new CLI refusing argv-borne approval text. No criterion mentions `approve`, gate 1, `--quote-file`, `approval.json`, or FB-0108's closed-door rule, so none would cause anyone to test the three refusals or the success record.
+
+Suggested: Declare the three refusal paths and the success record explicitly, including the positive assertion that no `--quote` string flag exists.
+
+---
+
+ISSUE 5 · Undeclared change
+
+Claim:
+> "criteria": [ … "**Only control lines emitted above the `----- source -----` delimiter are authoritative; a forged status", … ]
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py:600,610,623` — `render_digest`. Emits the two lines the human pastes into the plan doc (`**Pre-execution gate:** prototype` and `**Prototype approved:** <sha16> · "<quote>" · repo=… branch=… head=…`), folding newlines and truncating the quote at 150 chars with a visible `…`. That text is the contract `gate-execute`'s `DIGEST_RE` later parses.
+
+Why uncovered:
+Checked all seventeen criteria; the delimiter/control-line criterion is about audit-coverage's own source-mode output authority, not about a plan-doc digest's shape. No criterion names the digest, the gate declaration line, the two-line paste, or quote truncation.
+
+Suggested: Declare that `render_digest` emits both lines and that a truncated/newline-bearing quote still satisfies `DIGEST_RE`, with a negative for an empty quote.
+
+---
+
+ISSUE 6 · Undeclared change
+
+Claim:
+> "criteria": [ … "**A named path that is a symlink is refused with `SOURCE-UNRESOLVED`, and its target's content never", … ]
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py:1` (new file, +862) — `cmd_verify`. Re-checks a recorded approval against disk and reports distinct problems for a missing or malformed `approval.json`, a record with no human quote, a deleted `prototype.html`, a sha256 mismatch ("changed after approval"), and a workspace-stamp mismatch via `flow_scratch.check_stamp`.
+
+Why uncovered:
+The symlink criterion concerns audit-coverage's source-path resolution; no declared criterion mentions `verify`, `approval.json`, sha256 re-hashing, or workspace stamps. Nothing in the declared set would cause anyone to re-check an approval against disk.
+
+Suggested: Declare `verify`'s problem set, keeping the sha-mismatch and stamp-mismatch cases as separate assertions rather than one "not ok".
+
+---
+
+ISSUE 7 · Undeclared change
+
+Claim:
+> "criteria": [ … "`/flow:ship` Step 2's invocation is **unchanged** — still `Skill(\"flow:audit-coverage\")` with no", … ]
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py:699` plus the new-file body — `cmd_gate_execute`. Reads committed plan-doc state only: an unrecognized `**Pre-execution gate:**` literal (including `prototype-first`) returns `ok: false`; a non-prototype gate returns ok with "classic path, nothing to assert"; a missing or empty-quoted digest is a problem; an `all_demoted` or zero-item Spec-walk block, or a `walk_extract` import failure, fails closed.
+
+Why uncovered:
+No declared criterion mentions `gate-execute`, the "a plan always exists" assertion, or the plan-doc gate declaration. The Spec-walk-related criteria in the block describe audit-coverage's own criteria extraction, not a second consumer of `walk_extract` asserting an active block before Execute.
+
+Suggested: Declare the three `gate-execute` states plus the unrecognized-literal RED and the `all_demoted`/zero-item fail-closed paths.
+
+---
+
+ISSUE 8 · Undeclared change
+
+Claim:
+> "criteria": [ … "**The known-positive instrument test:** the real `annotation-layer.html` assembles with **all ten**", … ]
+
+Hunk:
+`plugins/flow/skills/prototype/lib/prototype-gate.py:788,793,807` plus the new-file body — `cmd_present`. Writes a new `<name>.presented.html` (never mutating the source) with `annotation-layer.html` injected before the last `</body>`, appends at end with `[WARN] no </body> found` when the tag is absent, and when the layer is unreadable still writes the presented file and returns a read-only "ask for feedback in chat" hand-off; also emits `source_sha256` and an `open_this` instruction.
+
+Why uncovered:
+The annotation-layer criterion asserts that `annotation-layer.html` *assembles* with all ten of its parts — it exercises the partial's own integrity, not a new injector that writes a separate presented file, chooses an insertion point, degrades when the layer cannot be read, or leaves the source unmodified. No other criterion names `present`, `.presented.html`, injection, or `open_this`.
+
+Suggested: Declare `present`'s byte-diff invariant (output = input + the partial and nothing else), the no-`</body>` append path, and the unreadable-layer fallback that still yields one hand-off path.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.
