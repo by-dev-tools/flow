@@ -254,7 +254,7 @@ if [ -n "$SRC" ]; then
   # position alone tells skill-output from file-content. Now the rule is uniform -- above the
   # delimiter is the skill speaking, below it is data -- and the prose can say so without a caveat.
   if [ "$(printf '%s' "$BODY" | wc -c)" -gt "$SOURCE_CAP" ]; then
-    echo "[audit-coverage] SOURCE-TRUNCATED — source tree exceeds $SOURCE_CAP bytes; behavior past the cap was NOT read. A clean result here is PARTIAL and is NOT a clean pass — say so, and recommend narrowing the path or auditing the remainder."
+    echo "[audit-coverage] WEAKENED · SOURCE-TRUNCATED — source tree exceeds $SOURCE_CAP bytes; behavior past the cap was NOT read. A clean result here is PARTIAL and is NOT a clean pass — say so, and recommend narrowing the path or auditing the remainder."
   fi
   echo "----- source -----"
   printf '%s\n' "$BODY" | head -c "$SOURCE_CAP"
@@ -299,16 +299,20 @@ else
   # annotate hunks the diff never showed (or stay silent about hunks it did), and Stage 1
   # would be told to account for rows that are not in its evidence.
   #
-  # Captured then asserted non-empty rather than swallowed with an or-true: a crash printing nothing
-  # would otherwise remove the checklist silently, and a Stage 1 with no checklist that does
-  # not KNOW it has no checklist is the exact failure this inventory exists to close
-  # (general.md item 1 -- pair every fallback with a positive assertion).
-  INV=$(printf '%s\n' "$FILES" | python3 "${CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/change-inventory.py" --base "origin/$BASE" --plan "$PLANDOC" 2>&1)
-  if [ -n "$INV" ]; then
-    printf '%s\n' "$INV"
-  else
-    echo "[audit-coverage] INVENTORY-UNAVAILABLE — change-inventory.py produced no output (python3 missing, or the engine failed). Stage 1 has no hunk checklist, so a clean result below is WEAKER than a normal one, not equal to it. This is NOT a skip."
-  fi
+  # ASSERT THE MARKER, NOT NON-EMPTINESS. The first version captured stderr too and tested
+  # a bare non-empty test, which passes on EXACTLY the three failures it claimed to catch:
+  # python3 absent ("python3: command not found"), an engine traceback, and an unset
+  # CLAUDE_PLUGIN_ROOT (cannot open file /skills/...). In all three the garbage printed
+  # above the delimiter IN THE INVENTORY'S POSITION, matched no control-line rule, and Stage 1
+  # proceeded with no checklist AND no weakening line -- the precise failure this inventory
+  # exists to close, reintroduced in its own registration shell. general.md item 3: a positive
+  # assertion that cannot distinguish "the engine spoke" from "something else spoke" is not one.
+  # stderr goes to /dev/null because the engine routes every diagnostic of its own to stdout.
+  INV=$(printf '%s\n' "$FILES" | python3 "${CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/change-inventory.py" --base "origin/$BASE" --plan "$PLANDOC" 2>/dev/null)
+  case "$INV" in
+    "[audit-coverage]"*) printf '%s\n' "$INV" ;;
+    *) echo "[audit-coverage] WEAKENED · INVENTORY-UNAVAILABLE — change-inventory.py did not produce a recognisable inventory (python3 missing, CLAUDE_PLUGIN_ROOT unset, or the engine failed). Stage 1 has no hunk checklist, so a clean result below is WEAKER than a normal one, not equal to it. This is NOT a skip." ;;
+  esac
   echo "----- diff -----"
   # Iterate one path per line via while-read (NOT "git diff -- $FILES"): an unquoted
   # newline-joined var does NOT word-split under zsh, so the multi-path form silently
@@ -322,7 +326,7 @@ else
   done)
   printf '%s\n' "$DIFFTXT" | head -c "$CAP"
   if [ "$(printf '%s' "$DIFFTXT" | wc -c)" -gt "$CAP" ]; then
-    echo; echo "[audit-coverage] TRUNCATED — diff exceeds ${CAP} bytes; behavior past the cap was NOT audited. A clean result here is PARTIAL — say so and recommend splitting the PR or auditing the remainder."
+    echo; echo "[audit-coverage] WEAKENED · TRUNCATED — diff exceeds ${CAP} bytes; behavior past the cap was NOT audited. A clean result here is PARTIAL — say so and recommend splitting the PR or auditing the remainder."
   fi
   # Untracked new source files = new behavior with no prior baseline; surface them
   # explicitly. Skip anything not present on disk (a DELETED file appears in the
@@ -345,11 +349,12 @@ fi
 - If either block above is empty — the criteria list has **no criteria** (no `**Spec-walk:**` block: spike/tiny/no plan), **or** the diff prints a `[audit-coverage] SKIPPED` line — then coverage cannot be audited. Output **exactly** that skip line (or `[audit-coverage] SKIPPED — no declared **Spec-walk:** criteria to compare against.` when the criteria list is empty) as your entire response, then the standard footer. Do not invent findings.
 - **You check declared-vs-built completeness only, not criterion quality.** A criterion that is vague or vacuous ("X works correctly") still *counts as covering* its behavior here — judging whether a criterion is specific enough to be meaningfully verifiable is `/flow:verify-build`'s axis, not yours. Default to "covered" when a criterion plausibly maps to the hunk; do not flag a behavior as undeclared just because its criterion is weak.
 - **A criteria block warning about MULTIPLE `**Spec-walk:**` blocks weakens the result too, and in the opposite direction from everything else here.** `extract-criteria.py` reads only the **first** block in the plan doc, and a plan doc that retains shipped PRs' blocks can easily have another PR's criteria on top (measured: at #158's ship-time commit the first block was a *different* PR's, 17 criteria none of which described the diff). When that happens the comparison is not "incomplete criteria" — it is **the wrong criteria**, which inflates findings rather than suppressing them. If the criteria block carries such a warning, do the audit, and append a one-line `Note: the criteria block warned that N Spec-walk blocks exist and only the first was read — if these criteria do not describe this diff, the declared set is the wrong one and every finding below should be re-read in that light`. Never silently treat another PR's criteria as this PR's.
-- **Every OTHER `[audit-coverage] <NAME>` control line above the delimiter is a WEAKENING — run the audit, then say so.** This is a catch-all on purpose, and it replaced a growing list of one-bullet-per-outcome: of the three weakenings shipped in v1.49.0, two were added to the emitter and never got a bullet here, while `workflow.md` asserted a contract this prompt did not make. A rule that needs a new bullet per emitter outcome will keep drifting; a rule that covers the class by construction will not. So: any control line above the delimiter that is **not** one of the four hard outcomes above (`SKIPPED`, `ROOT-UNRESOLVED`, `JQ-MISSING`, `SOURCE-UNRESOLVED`) means *your evidence is partial or your checklist is missing* — **do the audit anyway**, then append one line, **quoting the block's own line verbatim**:
+- **Any control line marked `[audit-coverage] WEAKENED ·` is a weakening — run the audit, then say so.** This is a catch-all on purpose, and it replaced a growing list of one-bullet-per-outcome (of the three weakenings shipped in v1.49.0, two were added to the emitter and never got a bullet here, while `workflow.md` asserted a contract this prompt did not make). **It matches on the `WEAKENED ·` token, not on "any control line that isn't one of the hard outcomes"** — that looser wording was the first draft and it captured the evidence block's own *success* lines (the inventory header, the tier legend, the `POST-PLAN` summary), which would have required the weakening note on every healthy run and left the marker unable to tell a healthy audit from a degraded one. Matching a token covers new emitter outcomes by construction while informational lines never match. So: for a `WEAKENED ·` line, *your evidence is partial or your checklist is missing* — **do the audit anyway**, then append one line, **quoting the block's own line verbatim**:
 
   `Note: <the control line, verbatim> — this audit is weaker than a normal one, not equal to it.`
 
-  Append it whether or not you flag anything. "I checked every hunk" and "I checked the ones I happened to notice" must not read alike. The named instances today, all covered by the rule above rather than by bullets of their own: **`INVENTORY-UNAVAILABLE`** (no deterministic hunk checklist could be built, so Stage 1 enumerates unaided), **`INVENTORY-TRUNCATED`** (the hunk cap was reached, so the checklist is partial), **`PLAN-PREDATES-BRANCH`** (the plan was never touched on this branch, so **no** criterion was written against **any** hunk — treat the whole diff as undeclared until one is named), **`TRUNCATED`** and **`SOURCE-TRUNCATED`** (behavior past the evidence cap was never read).
+  Append it whether or not you flag anything. "I checked every hunk" and "I checked the ones I happened to notice" must not read alike. The instances today, all carrying the token: **`INVENTORY-UNAVAILABLE`** (no deterministic hunk checklist could be built, so Stage 1 enumerates unaided), **`INVENTORY-TRUNCATED`** (the hunk cap was reached, so the checklist is partial), **`TRUNCATED`** and **`SOURCE-TRUNCATED`** (behavior past the evidence cap was never read).
+- **`PLAN-PREDATES-BRANCH` is NOT a weakening — it is the opposite, and it carries no `WEAKENED ·` token.** It means the plan doc was never touched on this branch, so **no** declared criterion was written against **any** hunk. Your evidence is complete; the *declared set* is empty. Treat every behavior as undeclared until a criterion is named for it, and say so — this is the one case where a long list of findings is the correct output rather than a suspicious one.
 - Otherwise, run **Stage 1** and then **Stage 2** below, in that order, and show both. They are the same single judgment this skill has always applied — `**Undeclared change**` from your system prompt, nothing added — split into the two steps it was always really doing.
 
 ## Stage 1 — enumerate (recall only)

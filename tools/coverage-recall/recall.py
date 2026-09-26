@@ -54,6 +54,11 @@ FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
 _ISSUE_HEAD = r"ISSUE(?:\s+\d+)?\s+·"
 FLAG_START_RE = re.compile(r"^(%s|AUDIT SUMMARY)" % _ISSUE_HEAD, re.MULTILINE)
 CLEAN_RE = re.compile(r"^No issues flagged\.", re.MULTILINE)
+# A control line means the reviewer deliberately refused to audit (skip / unresolved), which is
+# a real outcome. Its ABSENCE, together with no findings and no clean verdict, means the run
+# produced nothing at all — and that must not be averaged in as 0/N. See NO-VERDICT below.
+CONTROL_RE = re.compile(r"^\[audit-coverage\] (SKIPPED|[A-Z-]*UNRESOLVED|JQ-MISSING)",
+                        re.MULTILINE)
 ISSUE_SPLIT_RE = re.compile(r"^%s" % _ISSUE_HEAD, re.MULTILINE)
 
 
@@ -251,6 +256,16 @@ def flagged_region(output: str) -> str:
 
 
 def score(case_name: str, output: str):
+    """Recall for one run.
+
+    THREE OUTCOMES, NOT TWO. `flagged_region()` returns "" both for a genuinely clean audit and
+    for a run that never produced one, and the earlier version reported 0/N for both — so a
+    truncated-read failure would be averaged in as a real miss. That is this PR's own doctrine
+    ("I found nothing" and "I didn't look" must not read alike) one layer down, on the
+    instrument, and it was enforced only by a prose note in runs/README.md: drop such a file
+    into runs/ next month and the mean quietly absorbs a 0. `no_verdict` makes it a state the
+    aggregate excludes and counts separately.
+    """
     case = CASES[case_name]
     region = flagged_region(output)
     low = region.lower()
@@ -267,6 +282,8 @@ def score(case_name: str, output: str):
     return {
         "case": case_name,
         "n": len(case["gaps"]),
+        "no_verdict": not region and not CLEAN_RE.search(output)
+                      and not CONTROL_RE.search(output),
         "found": found,
         "missed": missed,
         "recall": len(found) / len(case["gaps"]) if case["gaps"] else 0.0,
@@ -280,6 +297,9 @@ def score(case_name: str, output: str):
 
 
 def fmt(s) -> str:
+    if s["no_verdict"]:
+        return ("%-7s NO-VERDICT — the run produced no audit (no findings, no clean verdict, "
+                "no control line). NOT scored as 0/%d." % (s["case"], s["n"]))
     return ("%-7s %2d/%-2d recall=%3.0f%%  issues=%-2d  fp?=%-2d  missed: %s"
             % (s["case"], len(s["found"]), s["n"], 100 * s["recall"], s["issues"],
                s["fp_candidates"], ", ".join(g for g, _l in s["missed"]) or "—"))
@@ -325,6 +345,20 @@ def selftest() -> int:
     s = score("pr158", enumerated)
     ck("naming every behavior WITHOUT flagging it scores 0/N (not a tautology)",
        len(s["found"]) == 0, "the scorer is crediting enumeration as recall: " + str(s))
+
+    # 3b. NO-VERDICT is distinguished from clean, using the REAL text of the run this project
+    #     actually discarded — not a synthetic stand-in, because the whole point is that the
+    #     discard rule stops being prose. Paired with the positive (check 2 already asserts the
+    #     clean fixture scores `clean`), so it cannot pass by classifying everything NO-VERDICT.
+    nv = score("pr158", "I need to read the rest of the file.")
+    ck("a run that produced no audit is NO-VERDICT, not 0/N",
+       nv["no_verdict"] and not nv["clean"], str(nv))
+    ck("...and a genuinely clean audit is NOT NO-VERDICT (paired positive)",
+       not score("pr158", "No issues flagged.\nNote: passive audit only.")["no_verdict"],
+       "classifying a clean verdict as no-verdict would hide real clean runs")
+    ck("...and a deliberate SKIPPED control line is NOT NO-VERDICT either",
+       not score("pr158", "[audit-coverage] SKIPPED — no behavior-bearing source files.")["no_verdict"],
+       "a refusal to audit is a real outcome the reviewer chose, not an absent one")
 
     # 4. Subset -> exactly that subset.
     two = gaps[:2]
@@ -484,7 +518,14 @@ def main(argv=None):
                 continue
             case, cond = parts[0], parts[1]
             rows.setdefault((case, cond), []).append(score(case, f.read_text(encoding="utf-8")))
-        for (case, cond), runs in sorted(rows.items()):
+        for (case, cond), all_runs in sorted(rows.items()):
+            # Excluded from the mean, counted in the open: a run with no verdict is not a miss.
+            nv = [r for r in all_runs if r["no_verdict"]]
+            runs = [r for r in all_runs if not r["no_verdict"]]
+            if not runs:
+                print("%-7s %-6s ALL %d run(s) produced NO VERDICT — nothing scoreable."
+                      % (case, cond, len(nv)))
+                continue
             union = set()
             for run in runs:
                 union |= {g for g, _l in run["found"]}
@@ -492,9 +533,10 @@ def main(argv=None):
             mean = sum(len(x["found"]) for x in runs) / len(runs)
             fps = sum(x["fp_candidates"] for x in runs)
             print("%-7s %-6s n=%d runs=%d  flagged mean=%.1f/%d (%3.0f%%)  "
-                  "union=%d/%d (%3.0f%%)  fp?=%d"
+                  "union=%d/%d (%3.0f%%)  fp?=%d%s"
                   % (case, cond, n, len(runs), mean, n, 100 * mean / n,
-                     len(union), n, 100 * len(union) / n, fps))
+                     len(union), n, 100 * len(union) / n, fps,
+                     ("  no-verdict=%d (excluded)" % len(nv)) if nv else ""))
         return 0
     return 0
 

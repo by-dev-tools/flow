@@ -47,7 +47,7 @@ ENGINE = PLUGIN / "skills" / "audit-coverage" / "lib" / "change-inventory.py"
 SKILL = PLUGIN / "skills" / "audit-coverage" / "SKILL.md"
 
 SKIP_LINE = "[audit-coverage] SKIPPED"
-UNAVAIL = "[audit-coverage] INVENTORY-UNAVAILABLE"
+UNAVAIL = "[audit-coverage] WEAKENED · INVENTORY-UNAVAILABLE"
 
 _failures: list[str] = []
 
@@ -69,11 +69,28 @@ def inv(cwd, files, base="main", plan="plan.md", extra=None):
 
 
 def tier_of(out, needle):
-    """The tier on the first row mentioning `needle`, or None."""
+    """The tier on the first row mentioning `needle`, or None.
+
+    Reads the LEADING tier column (`  H1  POST-PLAN  path:12 (+4)`). It used to read the
+    trailing field; the tier moved to the front because trailing put a 30-column-ragged edge
+    on the one field the prose tells the reader to scan for."""
     for line in out.splitlines():
         if line.startswith("  H") and needle in line:
-            return line.rsplit("  ", 1)[-1].strip()
+            parts = line.split(None, 2)          # ["H1", "<TIER>", "<rest>"]
+            return parts[1] if len(parts) > 1 else None
     return None
+
+
+def row_tiers(out):
+    """Every tier appearing on an actual ROW.
+
+    Required because the output now carries a legend line that NAMES all five tiers, so a
+    whole-output `"POST-PLAN" in out` is true on every run and four assertions here silently
+    became unfailable the moment the legend shipped. Reading rows is both the fix and the
+    stricter check — it was always what those assertions meant.
+    """
+    return [line.split(None, 2)[1] for line in out.splitlines()
+            if line.startswith("  H") and len(line.split(None, 2)) > 1]
 
 
 # ===========================================================================
@@ -128,7 +145,7 @@ with tempfile.TemporaryDirectory() as td:
                          "\n\ndef later():\n    return 3\n"}, "post-plan, contiguous")
     out = inv(r, ["app.py"], base="base-mark")
     check("a pre-plan hunk contiguous with a post-plan one is marked POST-PLAN, not pre-plan",
-          "pre-plan" not in out and "POST-PLAN" in out,
+          "pre-plan" not in row_tiers(out) and "POST-PLAN" in row_tiers(out),
           "under-marking a coalesced hunk would hide post-plan behaviour: " + out)
 
 with tempfile.TemporaryDirectory() as td:
@@ -142,7 +159,7 @@ with tempfile.TemporaryDirectory() as td:
     commit(r, {"plan.md": "**Spec-walk:**\n- [x] a returns 9 → verify: unit\n"}, "plan last")
     out = inv(r, ["app.py"], base="base-mark")
     check("a branch whose LAST commit is the plan yields zero POST-PLAN rows",
-          "POST-PLAN" not in out, out)
+          "POST-PLAN" not in row_tiers(out), out)
     check("...and still renders a real inventory (not silence)",
           "change inventory (deterministic)" in out and "  H1 " in out, out)
 
@@ -156,7 +173,8 @@ with tempfile.TemporaryDirectory() as td:
     (r / "app.py").write_text("def a():\n    return 1\n\n\ndef uncommitted():\n    pass\n",
                               encoding="utf-8")
     out = inv(r, ["app.py"], base="base-mark")
-    check("a working-tree-only change is tiered UNCOMMITTED", "UNCOMMITTED" in out, out)
+    check("a working-tree-only change is tiered UNCOMMITTED",
+          "UNCOMMITTED" in row_tiers(out), out)
 
 with tempfile.TemporaryDirectory() as td:
     # THE KNOWN LIMITATION, PINNED AS KNOWN — not left to read like a working tier.
@@ -197,7 +215,7 @@ with tempfile.TemporaryDirectory() as td:
     commit(r, {"app.py": "def a():\n    return 1\n\n\ndef b():\n    return 2\n"}, "src only")
     out = inv(r, ["app.py"], base="base-mark")
     check("a plan never touched on this branch reports PLAN-PREDATES-BRANCH",
-          "PLAN-PREDATES-BRANCH" in out, out)
+          "PLAN-PREDATES-BRANCH" in row_tiers(out), out)
     check("...and says the whole diff is undeclared, not that the tier is unknown",
           "NO declared criterion was written against" in out, out)
     check("...and does NOT also claim POST-PLAN (one tier, not two)",
@@ -222,6 +240,9 @@ with tempfile.TemporaryDirectory() as td:
         check(f"...and {label} is never the SKIPPED line", SKIP_LINE not in out, out)
         check(f"...and {label} says a clean result below is WEAKER, not equal",
               "WEAKER" in out and "NOT a skip" in out, out)
+        check(f"...and {label} carries the WEAKENED token the skill prose matches on",
+              "WEAKENED · " in out,
+              "the prose rule keys on the token; a weakening without it is invisible: " + out)
 
     # Not a git repo at all -- the engine must not traceback into the evidence block.
     with tempfile.TemporaryDirectory() as td2:
@@ -229,6 +250,28 @@ with tempfile.TemporaryDirectory() as td:
         check("a non-repo cwd reports INVENTORY-UNAVAILABLE rather than crashing",
               UNAVAIL in out and "Traceback" not in out, out)
         check("...and a non-repo cwd is never the SKIPPED line", SKIP_LINE not in out, out)
+
+with tempfile.TemporaryDirectory() as td:
+    # NON-UTF-8 CONTENT MUST NOT CRASH THE ENGINE. Strict decoding raised UnicodeDecodeError
+    # outside `Unavailable`, so a latin-1 funcname produced a traceback on stderr and NO
+    # [audit-coverage] line at all -- the direct contradiction of this module's "every failure
+    # path prints INVENTORY-UNAVAILABLE and exits 0" contract, and worse than a weakening
+    # because Stage 1 then has no checklist AND no notice that it has none.
+    r = git_repo(Path(td) / "latin1", {"plan.md": "**Spec-walk:**\n- [x] x\n"})
+    (r / "a.py").write_bytes(b"x = 1\n")
+    subprocess.run(["git", "add", "-A"], cwd=r, capture_output=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "b"],
+                   cwd=r, capture_output=True)
+    subprocess.run(["git", "branch", "-q", "base-mark"], cwd=r, capture_output=True)
+    (r / "a.py").write_bytes(b"def \xe9legant():\n    return 1\n\n\nx = 2\n")
+    subprocess.run(["git", "add", "-A"], cwd=r, capture_output=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "l"],
+                   cwd=r, capture_output=True)
+    out = inv(r, ["a.py"], base="base-mark")
+    check("non-UTF-8 content does not crash the engine (contract: never print nothing)",
+          "Traceback" not in out and "[audit-coverage] change inventory" in out, out)
+    check("...and it still produces a real row rather than degrading to unavailable",
+          row_tiers(out) != [], out)
 
 # ===========================================================================
 print("\n§4 — the cap warns, and does not always fire")
@@ -243,12 +286,26 @@ with tempfile.TemporaryDirectory() as td:
     commit(r, {"app.py": "\n".join(lines) + "\n"}, "many hunks")
     out_small = inv(r, ["app.py"], base="base-mark", extra=["--max-rows", "3"])
     check("over the cap emits INVENTORY-TRUNCATED",
-          "INVENTORY-TRUNCATED" in out_small, out_small)
+          "WEAKENED · INVENTORY-TRUNCATED" in out_small, out_small)
+    check("...and the HEADER says PARTIAL, so the qualifier precedes the rows it qualifies",
+          "PARTIAL — the cap was reached" in out_small.splitlines()[0],
+          "a clipped inventory opened with a complete-sounding total and its correction sat "
+          "below every row it qualified: " + out_small.splitlines()[0])
     check("...and says the checklist is PARTIAL",
           "PARTIAL" in out_small, out_small)
     out_big = inv(r, ["app.py"], base="base-mark", extra=["--max-rows", "500"])
     check("under the cap does NOT emit INVENTORY-TRUNCATED (the warning is not decorative)",
           "INVENTORY-TRUNCATED" not in out_big, out_big)
+    check("...and an un-clipped header does NOT claim PARTIAL",
+          "PARTIAL" not in out_big.splitlines()[0], out_big.splitlines()[0])
+    # THE PAIRED NEGATIVE for the whole token scheme. The engine's ordinary output -- header,
+    # tier legend, POST-PLAN summary -- are all `[audit-coverage]` control lines above the
+    # delimiter, and the first version of the prose rule captured them, which would have
+    # demanded "this audit is weaker" on every healthy run. If a success line ever gains the
+    # token, the marker stops distinguishing healthy from degraded.
+    check("a HEALTHY run emits no WEAKENED token at all (the marker means something)",
+          "WEAKENED" not in out_big,
+          "an informational line is carrying the weakening token: " + out_big)
 
 # ===========================================================================
 print("\n§5 — THE KNOWN POSITIVE: #158's real commit graph, and its real negative control")
@@ -291,10 +348,15 @@ else:
                   all(tier_of(out, fn) == "POST-PLAN" for fn in GROUND_TRUTH_158.values()),
                   out)
             check("...and the NEW-FILE whole-file row is labelled as the file, not a hunk",
-                  "NEW-FILE (this row is the whole file, not one hunk)" in out, out)
+                  any(line.startswith("  H") and "NEW-FILE" in line
+                      for line in out.splitlines())
+                  and "NEW-FILE: the row is the whole file, not one hunk" in out,
+                  "the row needs the marker AND the legend needs to define it: " + out)
             check("...and the whole-file row is excluded from the POST-PLAN tally",
-                  "whole-file row spanning it" in out,
-                  "a row containing all the others must not be counted alongside them: " + out)
+                  "whole-file row spanning the same region" in out
+                  and "(11 hunks + 1 whole-file)" in out,
+                  "a row containing all the others must not be counted alongside them, and "
+                  "both denominators must be visible in the header: " + out)
 
             # THE PROBE'S OWN NEGATIVE CONTROL, on real data rather than a fixture: at the
             # branch TIP the last commit touching the plan is newer than the source commits,

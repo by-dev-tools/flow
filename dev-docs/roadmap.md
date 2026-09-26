@@ -395,6 +395,18 @@ clean is not a measurement." Fixing the code without fixing the instrument repro
 
 ### `designLanguagePath` has no entry for "the prompt as a rendered artifact" (`/flow:staff-review`, v1.47.0)
 
+**v1.49.0 added a fourth renderer and two more undocumented conventions, so this is now a
+four-site gap.** `change-inventory.py` joins `render-report.py`, `render-test-plan.py` and
+`manifest-triage.py` as a shipped emitter of structured text. Credit where due — the new one matches
+the sibling control-line idiom exactly (`[name] TOKEN — em-dash`) — but **by author memory**, which
+`.claude/rules/general.md` § Consistency names as this repo's most recurring bug class. Two real
+typographic rules are now load-bearing and written down nowhere: **CAPS-vs-lowercase as visual
+filtering** (`pre-plan` is lower-cased "so the eye goes to the others"; `COVERAGE MAP` uses `covered`
+vs `UNDECLARED` on the same principle) and **column discipline** (v1.49.0 moved the tier to a leading
+`%-20s` field after measuring the trailing version starting at 30+ distinct columns). A short
+"§ Emitted text artefacts" section — control-line grammar, the `WEAKENED ·` token, column discipline,
+truncation glyph, legend-vs-row — would ground the fifth renderer instead of leaving it to memory.
+
 **Surfaces when:** the design-language doc's coverage gap is next addressed, or any `!`-preprocessor evidence
 block is restructured.
 
@@ -440,6 +452,53 @@ class this repo's own consistency rule names, so it gets one home."* Deliberatel
 the fix edits four harnesses outside that PR's diff — scope discipline, not disagreement. **Not** on the list:
 the FB-0074 root anchor (a structurally un-shareable per-block idiom, ~20 sites) and `check()` (31 harnesses —
 repo convention).
+
+### `/flow:audit-coverage` — the deferred half of the v1.49.0 review (four lenses, all measured)
+
+**Surfaces when:** the next recall pass on `/flow:audit-coverage`, or the first edit to
+`plugins/flow/agents/auditor.md`'s disprove self-check.
+
+**1. Make a dismissal show its join — the only matcher lever that leaves `auditor.md` untouched.**
+The `BEHAVIOR INVENTORY` cites hunk rows (`B7 … [H5, H6]`), so a reader can check the *enumeration*.
+The `COVERAGE MAP`'s other verdict cites nothing — measured output is eleven consecutive bare
+`covered` tokens. Meanwhile a *published* finding must carry `Why uncovered:` naming every criterion
+checked (`auditor.md:138`). **So publishing demands evidence and suppressing demands none — and
+suppression is where 100% of the measured residual now lives.** Direction:
+`COVERAGE MAP  B1 covered (test_gate_execute_classic_noop) · B9 UNDECLARED · …`. This adds no
+reasoning step — `auditor.md:62` already *requires* naming the covering criterion during the
+disprove self-check, and that name is computed and thrown away today. It cannot manufacture
+findings, so it carries no precision risk. **Deferred only because FB-0115's own rule is that a
+prompt change ships on measured before/after**, and the 15 committed runs were produced under the
+current format; shipping it unmeasured would spend the credibility that PR earned.
+
+**2. Precision has never been measured on a case whose correct answer is silence — fix before
+touching `auditor.md`.** All four `tools/coverage-recall` cases carry real gaps, so "zero false
+positives in 15 runs" is measured only where over-flagging competes with a true positive. The input
+class that would expose a loosened matcher — a well-declared PR where the right output is
+`No issues flagged.` — **is not in the corpus.** That is `general.md` item 4 inverted: the precision
+instrument has never been run against the case it exists to catch, which is the second, independent
+reason (1) cannot simply be shipped. Direction: one negative-control case with `gaps: []` and a
+contract of `clean is True`, plus a `selftest` assertion that a `gaps: []` case rejects any output
+carrying an `ISSUE` (so it cannot pass by being unscored). **Gate any future edit to the
+"even loosely" clause behind this case existing.**
+
+**3. Rendering, deferred with reasons.** (a) git's default funcname for `.md` grabs the nearest
+column-0 line, so rows render `in These files are published when the plugin is installed.` — pure
+noise in the widest field; real fix is a `.gitattributes` `diff=markdown` driver, outside the
+engine. (b) A funcname repeats for up to 9 consecutive rows; run-length rendering would restore
+rhythm but changes the row contract the evals pin. (c) **Do NOT sort or group by tier** —
+file-then-line predictability is worth more than tier adjacency, and v1.49.0's leading fixed-width
+tier column already buys most of the scanning benefit. Revisit only if a measured run shows
+reviewers still missing `POST-PLAN` rows. (d) A wide diff will wrap the one-line `COVERAGE MAP`, and
+a wrapped one-liner scans worse than a column — revisit after the first real wide run.
+
+**4. Two engine gaps that need a `diff --git` header read, which the engine deliberately declines.**
+A **binary** change or a pure **rename** emits no `@@` under `-U0`, so such files contribute zero
+rows and a file list of only those renders `(no hunks — …)` — honest but easy to over-trust. And two
+rows can share a start line with different counts (the cumulative and post-plan diffs describing the
+same region at different extents), which renders as an apparent duplicate; the `(start, count)` merge
+key cannot collapse them without overlap-aware logic. Both land naturally with the `walk_extract`
+line-range work above.
 
 ### Tier `POST-PLAN` off the active Spec-walk BLOCK, not the plan FILE (found by `/simplify`'s altitude lens, v1.49.0)
 

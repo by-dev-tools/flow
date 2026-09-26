@@ -563,15 +563,25 @@ check("the skill's What-to-check prose routes SOURCE-UNRESOLVED away from SKIPPE
 # under it — a catch-all that forgot to list the outcome it replaced would otherwise pass on
 # the rule's presence alone, which is the deletable-prohibition shape.
 check("the skill's prose treats SOURCE-TRUNCATED as a weakening, not clean",
-      "is a WEAKENING" in skill_text
+      "WEAKENED ·" in skill_text
       and "weaker than a normal one, not equal to it" in skill_text
       and "`SOURCE-TRUNCATED`" in skill_text,
       "the catch-all weakening rule must exist AND name SOURCE-TRUNCATED under it")
-check("...and the catch-all names the other weakenings too, so the class is really covered",
-      all(("`%s`" % n) in skill_text for n in
-          ("INVENTORY-UNAVAILABLE", "INVENTORY-TRUNCATED", "PLAN-PREDATES-BRANCH", "TRUNCATED")),
-      "an outcome the emitter can print but the prose never names is how two of three "
-      "v1.49.0 weakenings shipped undocumented")
+check("...and every weakening the block EMITS carries the token the prose matches on",
+      all(("WEAKENED · " + n) in skill_text for n in ("TRUNCATED", "SOURCE-TRUNCATED")),
+      "the rule matches on the token, so an emitted weakening without it is invisible to it")
+# PAIRED NEGATIVE, and it is the whole reason the token exists: the first version of this rule
+# matched "any control line that is not one of the four hard outcomes", which captured the
+# block's own SUCCESS lines and would have demanded the weakening note on every healthy run.
+check("...and the rule does NOT capture the block's own success/informational lines",
+      "not on \"any control line that isn't one of the hard outcomes\"" in skill_text
+      and "`PLAN-PREDATES-BRANCH` is NOT a weakening" in skill_text,
+      "a weakening marker that fires on healthy runs cannot tell healthy from degraded")
+check("the inventory call asserts the engine's MARKER, not mere non-emptiness",
+      'case "$INV" in' in skill_text and '"[audit-coverage]"*)' in skill_text
+      and '2>&1)' not in skill_text.split("change-inventory.py")[1][:400],
+      "a non-emptiness test passes on python3-missing, a traceback, and an unset plugin root — "
+      "all three then print garbage where the checklist goes, matching no control-line rule")
 check("frontmatter advertises both input modes",
       "Two input modes" in skill_text)
 check("the prose requires the block's own SOURCE-UNRESOLVED line, verbatim",
