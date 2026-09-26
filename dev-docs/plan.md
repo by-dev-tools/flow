@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-**▶ EXECUTED, shipping (this branch, `conductor/audit-coverage-recall-two-stage-union`, FB-0115, v1.49.0): raise `/flow:audit-coverage`'s recall by splitting its one fused pass into enumerate-then-match.** Source-mode recall **65% → 82%** mean with non-overlapping distributions, union **80% → 100%**, precision unchanged at zero false positives in 15 runs. Diff mode moved **0** and that is reported as such — the residual there is now attributable to the matcher rather than invisible. 37/37 eval harnesses green; the measurement harness refuses to print a number until it proves it can fail.
+**▶ MERGED ([#160](https://github.com/by-dev-tools/flow/pull/160), `8be27d7`, v1.49.0, FB-0115): raise `/flow:audit-coverage`'s recall by splitting its one fused pass into enumerate-then-match.** Source-mode recall **65% → 82%** mean with non-overlapping distributions, union **80% → 100%**, precision unchanged at zero false positives in 15 runs. Diff mode moved **0** and that is reported as such — the residual there is now attributable to the matcher rather than invisible. 37/37 eval harnesses green; the measurement harness refuses to print a number until it proves it can fail.
 
 **Mode:** feature · **Surface:** non-visual
 

@@ -1,6 +1,6 @@
 # `/flow:audit-coverage` enumerates before it judges — recall 65% → 82%, and three instruments that lied
 
-**Date:** 2026-09-26 · **Version:** v1.49.0 · **Branch:** `conductor/audit-coverage-recall-two-stage-union` · **Feedback:** FB-0115
+**Date:** 2026-09-26 · **Version:** v1.49.0 · **Branch:** `conductor/audit-coverage-recall-two-stage-union` · **Merged:** [#160](https://github.com/by-dev-tools/flow/pull/160) @ `8be27d7` · **Feedback:** FB-0115
 
 ## The problem, and why its shape decided the fix
 
