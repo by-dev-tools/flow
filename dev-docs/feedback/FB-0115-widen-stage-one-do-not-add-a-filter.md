@@ -68,6 +68,21 @@ that the reference case's own documented list never carried. It was deliberately
 key: fitting a key to the outputs it scores measures nothing. So both conditions under-credit equally,
 and the honest claim is "at least 82%", which is stronger than the point estimate as well as truer.
 
+**A third corollary, and it is the reusable half of this PR's sharpest miss: pin a claim at the
+layer where it is CLAIMED.** See `.claude/rules/general.md` § Consistency item 4 for the full
+statement and the measurement. Short form: a criterion verified one layer below the surface it
+describes can be green while the surface is false, because the passing test is real — it is just
+testing somewhere else.
+
+**And a fourth, on when a guard may be tested before its criterion is approved.** The doctrine
+forbids **self-declaring a criterion** (the agent grading its own homework); it does not forbid
+**testing a guard**. The discriminator, and it is narrow enough not to become a loophole:
+*does the undeclared behaviour guard something whose absence is invisible?* If yes — a
+sanitisation step, an injection guard, anything whose deletion leaves every declared criterion
+green — write the test now, because **the waiting period IS the window in which it is untested**,
+and route the criterion for approval as usual. If no, wait. Applied once in v1.49.0, to a
+prompt-context guard on a surface with a shipped RCE in its history.
+
 ## How to apply
 
 - Before tuning a reviewer, get its precision and recall separately. "It misses things" and "it

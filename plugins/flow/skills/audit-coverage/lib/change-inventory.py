@@ -113,14 +113,6 @@ FLAGGED_TIERS = frozenset(("POST-PLAN", "UNCOMMITTED", "PLAN-PREDATES-BRANCH"))
 # future 21-char tier name would ragged-shift every row and nothing would fail (FB-0010).
 _TIER_W = max(len(k) for k in _RANK)
 
-# Does the captured funcname context look like a definition rather than prose? Deliberately
-# permissive about language (def/class/function/fn/func/sub/type/struct/impl/interface, a
-# `name(...)` call shape, or an assignment) and deliberately strict about sentences.
-_DEFINITIONISH = re.compile(
-    r"^\s*(@|(pub|export|public|private|protected|static|async|final|open|override|def|class|"
-    r"function|fn|func|sub|type|struct|impl|interface|enum|trait|module|namespace|package)\b"
-    r"|[\w.$]+\s*[:=]|[\w.$]+\s*\()")
-
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
 
 
@@ -195,13 +187,15 @@ def hunks(rev_range, path, cwd=None):
         start = int(m.group(2))
         count = 1 if m.group(3) is None else int(m.group(3))
         fn = _sanitize(m.group(4))
-        # Git's funcname picker matches the nearest preceding column-0 line, which inside a
-        # long docstring is prose -- rows rendered `in silence. "The model can suggest, but
-        # never define."` and read as broken output. Keep the slot only when the captured text
-        # looks like a definition; an empty slot is better than a misleading one. (The durable
-        # fix is a per-language diff driver via .gitattributes -- roadmapped.)
-        if fn and not _DEFINITIONISH.match(fn):
-            fn = ""
+        # NOT filtered to definition-shaped text. Git's picker grabs the nearest preceding
+        # column-0 line, which inside a long docstring is prose -- and an earlier version
+        # blanked anything that did not look like a definition. /flow:audit-coverage caught
+        # that this CONTRADICTS the paired positive one layer up: a control-line-shaped
+        # payload does not look like a definition either, so it was silently dropped rather
+        # than rendered as visible indented row content, and the eval passed only because its
+        # fixture's payload happened to start with `def`. Dropping evidence to tidy a row is
+        # the wrong trade -- the legend now states what `in <text>` actually is, which was
+        # always the real fix. Safety here is indentation + _sanitize, never omission.
         # Slice with a visible marker: 10 of 54 rows on a real run cut mid-word at exactly
         # FUNCNAME_MAX, and a reader cannot tell that from a genuinely odd identifier.
         if len(fn) > FUNCNAME_MAX:

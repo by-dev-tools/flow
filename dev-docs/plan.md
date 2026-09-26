@@ -139,6 +139,39 @@ item 4 exactly: a measurement that can only return "clean".
       my own instrument. Four instruments in the last two PRs reported green while broken.)
 
 
+*Behaviour added during review, declared at the gate (approved by the orchestrator under §4.8 rule 7 — Ben ruled this exact shape twice, on #159's five and #158's five, and the reasoning transfers: the evals already exist, so these document already-tested behaviour, and waiving would leave the Spec-walk understating the PR while coverage read clean by omission). Found by `/flow:audit-coverage` auditing this PR — the reviewer this PR improves, working on the PR that improves it.*
+
+- [x] **A hunk whose lines were last touched by the same commit that last touched the plan is tiered
+      `SAME-COMMIT`** — not `pre-plan` and not `POST-PLAN`, because "the plan moved with the code" is
+      genuinely ambiguous rather than either answer → verify: `run_coverage_inventory_evals.py`'s
+      KNOWN-CEILING case asserts `SAME-COMMIT` on the code hunk when plan+code land in one commit,
+      paired with §1's separate-commit case asserting it does **not**. This is the tier this repo's
+      own ships produce most, so it is declared rather than left verified only by an absence.
+- [x] **An untracked source file produces exactly one whole-file row tiered `UNCOMMITTED` carrying the
+      file's real line count, and a working-tree-only edit to a tracked file is tiered `UNCOMMITTED`
+      too** → verify: `run_coverage_inventory_evals.py` §1's dirty-tree case for the tracked half;
+      the untracked half is exercised by the live-render case that found it (a new file was reported
+      as "0 hunks" — a confident empty checklist over a brand-new source file).
+- [x] **No text originating in the file under review reaches column 0 of the inventory**: newlines are
+      collapsed, over-long funcnames are visibly elided, and a control-line-shaped payload in a
+      funcname renders as indented row content rather than as a control line → verify:
+      `run_coverage_inventory_evals.py` §5b, which pairs each negative with a positive (the payload
+      must still be VISIBLE as row content, and a short funcname must NOT be elided) so the guard
+      cannot be satisfied by dropping evidence.
+- [x] **A file new in the diff renders as ONE whole-file row marked `NEW-FILE`, is excluded from the
+      "N of M hunks" tally, and the header states both denominators** (`N rows = P hunks + W
+      whole-file`) → verify: `run_coverage_inventory_evals.py` §5's #158 replay asserts the marker,
+      both denominators, and the exclusion — the miscount it prevents (`12 of 12` when 11 were) was
+      found by hand on #158 and must not return unobserved.
+- [x] **A listed file that produces ZERO hunks — a binary file, a `-diff` gitattribute, a mode-only
+      change — emits `WEAKENED · INVENTORY-EMPTY` naming that file**, per file rather than only when
+      every file is empty → verify: `run_coverage_inventory_evals.py` commits `*.py -diff` (the
+      gate-evasion `/flow:security-review` found) and asserts the token fires and names the hidden
+      file, **paired** with a one-of-two-files variant (the cheaper attack the first fix missed) and
+      with a fully-visible multi-file diff that must **not** trip it. Declared because an affirmative
+      "zero changed lines" over a real change is a gate-evasion primitive, and the guard against it
+      is exactly the kind whose absence is invisible.
+
 **Outcome against these criteria, recorded because two of them resolved in the negative:**
 
 - The **recall** criterion is met in **source mode** (65% → 82% mean, non-overlapping, union 80% → 100%) and **not met in diff mode** (3-of-5 → 3-of-5, n=3). Both are reported separately in `workflow.md`, the changelog and the history entry; nothing claims a diff-mode recall gain.

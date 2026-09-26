@@ -41,6 +41,18 @@ Most recurring bug class flow's own development has surfaced (6 incidents across
 
    **Corollary — prefer a tool's own exit code over a grep of its output.** `grep -c` returning `0` is ambiguous between "no matches" and "my pattern is wrong"; an exit code is a signal the tool's author designed and maintains against their own output format. This is the stronger defense because it *removes* the judgment call instead of adding one more thing to remember.
 
+   **Corollary — pin a claim at the layer where it is CLAIMED, not the layer where it is
+   implemented.** A criterion verified one layer below the surface it describes can be green while
+   the surface is false, and nothing will notice, because the passing test is real — it is just
+   testing somewhere else. Measured, v1.49.0: `/flow:audit-coverage`'s engine asserts that an
+   unresolvable base ref yields a distinct "I could not look" line and never the skip line, and an
+   eval pins that **in the engine**. But the engine's empty-file-list path is *unreachable from the
+   shipped shell*, and the shell's substitute printed `SKIPPED` — "there was nothing to audit",
+   non-blocking at `/flow:ship` Step 2 — for a whole PR's behaviour. The criterion was green at the
+   unit layer and false at the composed surface. The fix is not a better engine test; it is a test
+   at the composed layer. Ask: *if the surface were broken and the unit were perfect, would anything
+   fail?*
+
    Not a duplicate of item 3, and the difference decides the fix: item 3 is about an assertion's **logical shape** (a negative-only assertion passes whether the contract is honored *or* deleted); item 4 is about **instrument validation** (the detector was never exercised on a positive). Same symptom — unearned green — different defenses: pair with a positive assertion, versus run against a known positive. Live instance: a queue-conflict recipe shipped in `research/orchestrator-field-manual.md` § 7 grepped `'^<<<<<<<'` over old-form `merge-tree` output, which is diff-prefixed (`+<<<<<<<`), so it printed `0 = clean` for every pair. It was "validated" on a genuinely-disjoint pair, where `0` was right for the wrong reason (FB-0112).
 
 When in doubt, ask: "If a colleague greps for the old value tomorrow, will they find a contradiction?" If yes, fix it now. And: "If someone deleted the thing this check protects, would the check still pass?" If yes, it isn't a check yet.

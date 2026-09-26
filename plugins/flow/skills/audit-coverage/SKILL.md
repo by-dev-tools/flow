@@ -67,10 +67,12 @@ the *measurement*, not the technique.
 | diff mode | 60% | **60%** |
 
 **Source mode: +18pp. Diff mode: +0pp** — three diff-mode runs found exactly the same gaps, so
-there was no variance to harvest. That is why `/flow:ship` Step 2 stays a **single** pass:
-doubling the cost of every PR for a gain measured at zero is not a trade worth making, and
-saying so is cheaper than quietly paying it. Union where the variance is; one pass where it
-is not. (Union also lifted the *pre-v1.49.0* prompt by +15pp, so this is a property of the
+there was no variance to harvest. **Read that +0pp as n=1 INPUT, not as a property of diff mode:**
+one case with no run-to-run variance is strong evidence that *that input* had none, and weak
+evidence that diff mode generally does. A second diff-mode case should revisit this call rather
+than inherit it as settled. On the evidence available, `/flow:ship` Step 2 stays a **single** pass:
+doubling the cost of every PR for a gain measured at zero is not a trade worth making, and saying
+so is cheaper than quietly paying it. Union where the variance is; one pass where it is not. (Union also lifted the *pre-v1.49.0* prompt by +15pp, so this is a property of the
 judgment's variance rather than of the two-stage split — the two compose, they do not overlap.)
 
 ## Declared `**Spec-walk:**` criteria (the claim of what the work covers)
