@@ -7,11 +7,20 @@
 
 ## The measurement behind it
 
-`/flow:audit-coverage` across five live runs with known ground truth: **10 · 5 · 0-of-5 · 0-of-6 ·
-2-of-5** found. **Precision unblemished in all five** — it has never once reported a gap that was not
-real. Recall is the entire problem, and it is *variable* (0–100%) rather than uniformly low, which is a
-different and worse failure shape: a variable-recall gate returns "no undeclared changes" over real gaps
-and reads identically to a thorough pass.
+`/flow:audit-coverage` was reported as five live runs — **10 · 5 · 0-of-5 · 0-of-6 · 2-of-5**.
+**Two of those five numbers did not survive checking, and both corrections are part of the lesson:**
+
+- `0-of-6` is the **same event** as `0-of-5`, described two ways and counted twice. Caught at the plan
+  gate, minutes before shipping as "Across five live runs" into two files.
+- the surviving `0-of-5` is a **file-filter** result, not a judgment one: all five of that PR's gaps were
+  added in a `.md` file the behaviour diff excludes, so the reviewer was never shown the code. No prompt
+  change could ever have moved it.
+
+Honest series: **10-of-10 · 5-of-10 · 2-of-5** judgment recall, plus one structural miss. **Precision
+unblemished in every run that produced findings** — it has never once reported a gap that was not real.
+Recall is the entire problem, and it is *variable* rather than uniformly low, which is a different and
+worse failure shape: a variable-recall gate returns "no undeclared changes" over real gaps and reads
+identically to a thorough pass.
 
 ## Synthesized rule
 
@@ -43,6 +52,21 @@ agent, a skill or a config slot is almost certainly the wrong turn. The correct 
 **subtractive** — splitting one overloaded prompt into two labelled halves is a simplification, and the
 practitioner report says so explicitly: they found the split *simpler* than the single complex prompt,
 not more complex.
+
+## Two corollaries the execution added
+
+**A drop-rule that names only the headline metric will delete the wrong things.** The rule this work ran
+under — *"if a change does not move recall, drop it"* — was good and was followed rather than argued with.
+Applied literally it deleted a validated instrument whose value is **observability**: the deterministic
+hunk inventory moved recall by 0 in diff mode *because it worked* — the enumerator found both missed
+behaviours and the matcher dismissed them, relocating the bottleneck downstream. The headline number
+cannot see that. So: before acting on a metric, check that the metric can see the thing you are changing.
+Same error class as the rest of this entry, one level up — and the rule-setter is not exempt from it.
+
+**A recall number is a floor when the key is not known to be exhaustive.** Two runs flagged a real gap
+that the reference case's own documented list never carried. It was deliberately **not** added to the
+key: fitting a key to the outputs it scores measures nothing. So both conditions under-credit equally,
+and the honest claim is "at least 82%", which is stronger than the point estimate as well as truer.
 
 ## How to apply
 

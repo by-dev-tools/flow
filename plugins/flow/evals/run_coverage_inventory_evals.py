@@ -158,6 +158,34 @@ with tempfile.TemporaryDirectory() as td:
     out = inv(r, ["app.py"], base="base-mark")
     check("a working-tree-only change is tiered UNCOMMITTED", "UNCOMMITTED" in out, out)
 
+with tempfile.TemporaryDirectory() as td:
+    # THE KNOWN LIMITATION, PINNED AS KNOWN — not left to read like a working tier.
+    # `plan_last` is the last commit touching the plan FILE, so when a single commit carries
+    # BOTH the plan and the code (which is /flow:ship's normal shape — Step 5 rewrites
+    # planPath in the ship commit) every hunk lands SAME-COMMIT, and the sharp POST-PLAN
+    # signal is lost exactly where the measured miss class lives. Two independent /simplify
+    # lenses found this on one run. It is honest (the tier reports it cannot tell) but it is
+    # a real ceiling, and an eval that merely stayed green here would let the next reader
+    # believe the tier fires on this repo's own ships. The deeper fix — tier off the active
+    # Spec-walk BLOCK's line range via `git log -L` — is on the roadmap, and when it lands
+    # THIS check must fail and be rewritten, which is the point of writing it down.
+    r = git_repo(Path(td) / "together", {
+        "app.py": "def a():\n    return 1\n",
+        "plan.md": "**Spec-walk:**\n- [x] a → verify: unit\n",
+    })
+    subprocess.run(["git", "branch", "-q", "base-mark"], cwd=r, capture_output=True)
+    # One commit carrying plan + code, the ship-time shape.
+    commit(r, {"app.py": "def a():\n    return 1\n\n\ndef added():\n    return 2\n",
+               "plan.md": "**Spec-walk:**\n- [x] a → verify: unit\n- [x] noted\n"}, "ship: plan+code")
+    out = inv(r, ["app.py"], base="base-mark")
+    check("KNOWN CEILING: plan+code in ONE commit degrades to SAME-COMMIT, not POST-PLAN",
+          tier_of(out, "app.py") == "SAME-COMMIT",
+          "if this now says POST-PLAN the block-scoped fix landed — rewrite this check and "
+          "the roadmap entry rather than deleting it: " + out)
+    check("...and the summary does NOT claim POST-PLAN over it (no self-contradiction)",
+          "[audit-coverage] POST-PLAN —" not in out,
+          "a headline that disagrees with its own rows is worse than no headline: " + out)
+
 # ===========================================================================
 print("\n§2 — PLAN-PREDATES-BRANCH is its own tier, and it is the STRONGER signal")
 with tempfile.TemporaryDirectory() as td:
@@ -295,15 +323,20 @@ skill = SKILL.read_text(encoding="utf-8")
 check("the evidence block invokes change-inventory.py",
       "change-inventory.py" in skill, "the engine ships but nothing calls it")
 check("...via CLAUDE_PLUGIN_ROOT, like the sibling extract-criteria.py call",
-      'CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/change-inventory.py' in skill, skill[:0])
+      'CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/change-inventory.py' in skill,
+      "the call must resolve through the plugin root, not a bare relative path")
 # THE fan-out guard. The inventory must annotate the SAME hunks the diff shows. If it grew
 # its own source-file filter, the two could disagree and Stage 1 would be told to account
 # for rows that are not in its evidence (or worse, not told about rows that are).
-check("the inventory is fed $FILES, so there is exactly one source-file filter",
-      'printf \'%s\\n\' "$FILES" | python3 "${CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/change-inventory.py"' in skill
-      or ('"$FILES"' in skill and "change-inventory.py" in skill
-          and "sourceFilePatterns" not in ENGINE.read_text(encoding="utf-8")),
-      "the engine must not define a second file filter")
+#
+# STRICT FORM ONLY. The first version carried an `or` fallback that accepted a SKILL.md
+# merely mentioning "$FILES" somewhere and change-inventory.py somewhere, with no piping
+# relationship between them — i.e. it would have passed in exactly the refactor this check
+# exists to catch. It was also dead, since the strict arm matches today; a dead lenient
+# fallback is a check that degrades silently the moment it starts mattering.
+check("the inventory is fed $FILES through a pipe, so there is exactly one source-file filter",
+      'printf \'%s\\n\' "$FILES" | python3 "${CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/change-inventory.py"' in skill,
+      "the piping relationship is what guarantees one filter; a co-mention does not")
 check("the engine really contains no second source-file filter (paired positive)",
       "sourceFilePatterns" not in ENGINE.read_text(encoding="utf-8")
       and "--files-from" in ENGINE.read_text(encoding="utf-8"),

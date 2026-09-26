@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import json
 import subprocess
 import sys
 import tempfile
@@ -48,9 +49,12 @@ FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
 
 # The flagged region starts at the first of these. Everything above it -- including the new
 # BEHAVIOR INVENTORY and COVERAGE MAP -- is enumeration, not a finding, and must not score.
-FLAG_START_RE = re.compile(r"^(ISSUE(?:\s+\d+)?\s+·|AUDIT SUMMARY)", re.MULTILINE)
+# One fragment, composed twice — the two regexes must agree about what an ISSUE header looks
+# like, or `score` finds findings it cannot split.
+_ISSUE_HEAD = r"ISSUE(?:\s+\d+)?\s+·"
+FLAG_START_RE = re.compile(r"^(%s|AUDIT SUMMARY)" % _ISSUE_HEAD, re.MULTILINE)
 CLEAN_RE = re.compile(r"^No issues flagged\.", re.MULTILINE)
-ISSUE_SPLIT_RE = re.compile(r"^ISSUE(?:\s+\d+)?\s+·", re.MULTILINE)
+ISSUE_SPLIT_RE = re.compile(r"^%s" % _ISSUE_HEAD, re.MULTILINE)
 
 
 # --------------------------------------------------------------------- rendering
@@ -116,7 +120,6 @@ def prepare(case_name: str, td: Path):
         # Source mode, in this checkout. Override planPath, restore it afterwards.
         cfg = REPO / "flow.config.json"
         original = cfg.read_text(encoding="utf-8")
-        import json
         data = json.loads(original)
         data["planPath"] = case["plan"]
         cfg.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -258,7 +261,7 @@ def score(case_name: str, output: str):
         else:
             missed.append((gid, label))
 
-    issues = [b for b in ISSUE_SPLIT_RE.split(region)[1:]] if region else []
+    issues = ISSUE_SPLIT_RE.split(region)[1:]
     all_anchors = [a.lower() for _g, _l, anchors in case["gaps"] for a in anchors]
     unmatched = [i for i in issues if not any(a in i.lower() for a in all_anchors)]
     return {
@@ -296,9 +299,14 @@ def selftest() -> int:
     n = len(gaps)
 
     # 1. Perfect output -> N/N. Without this the harness could be scoring nothing at all.
-    perfect = "AUDIT SUMMARY\n%d issues flagged\n\n" % n + "\n".join(
-        "ISSUE %d · Undeclared change\nClaim:\n> %s\n" % (i + 1, anchors[0])
-        for i, (_g, _l, anchors) in enumerate(gaps))
+    def issue_blocks(subset):
+        """The two fixtures below are the same builder over different slices. Stated once, so
+        an output-format change cannot land in one and silently stop matching the other."""
+        return "AUDIT SUMMARY\n%d issues flagged\n\n" % len(subset) + "\n".join(
+            "ISSUE %d · Undeclared change\nClaim:\n> %s\n" % (i + 1, a[0])
+            for i, (_g, _l, a) in enumerate(subset))
+
+    perfect = issue_blocks(gaps)
     s = score("pr158", perfect)
     ck("an output citing every anchor scores N/N", len(s["found"]) == n, str(s))
 
@@ -320,9 +328,7 @@ def selftest() -> int:
 
     # 4. Subset -> exactly that subset.
     two = gaps[:2]
-    partial = "AUDIT SUMMARY\n2 issues flagged\n\n" + "\n".join(
-        "ISSUE %d · Undeclared change\nClaim:\n> %s\n" % (i + 1, a[0])
-        for i, (_g, _l, a) in enumerate(two))
+    partial = issue_blocks(two)
     s = score("pr158", partial)
     ck("a two-gap output scores exactly those two",
        {g for g, _ in s["found"]} == {g for g, _l, _a in two}, str(s))
@@ -364,6 +370,13 @@ def selftest() -> int:
     # 8. THE ANCHOR KEY IS ADMISSIBLE, and the checker can reject. Without the negative half
     #    this is the deletable-prohibition shape: a rule that only forbids passes in a world
     #    where the rule was removed (general.md item 3).
+    # `mode` and `worktree_ref is None` both encode source-vs-diff. Keeping `mode` (it
+    # documents the case for a reader) is only safe if something forces the two to agree.
+    ck("every case's declared mode agrees with whether it uses a worktree ref",
+       all((c["mode"] == "source") == (c["worktree_ref"] is None) for c in CASES.values()),
+       "a case's declared mode contradicts its setup: " + ", ".join(
+           n for n, c in CASES.items() if (c["mode"] == "source") != (c["worktree_ref"] is None)))
+
     bad = assert_key_admissible()
     ck("every anchor in every case is symbol-like or a multi-word phrase",
        not bad, "inadmissible anchors match incidentally and inflate recall: " + "; ".join(bad))
@@ -372,7 +385,24 @@ def selftest() -> int:
        and anchor_ok("parseable verdict"),
        "the checker accepts anything, so it is not a checker")
 
-    # 9. THE STRUCTURAL CASE'S OWN ASSERTION, paired positive+negative. #159's `0-of-5` is
+    # 9. THE BLOCK-SHAPE CONTRACT IS PINNED, like the other two forced duplications.
+    #    `BLOCK_RE` and the textual-substitution model in `render()` are copies of
+    #    `run_coverage_source_mode_evals.py`'s (the import is rejected — that harness runs
+    #    checks at module level). This PR pinned its other two forced duplications (the spike
+    #    key ↔ SPIKE_ANCHORS, check 7; the .md exclusion, check 10) and left this one
+    #    unpinned — the FB-0010 fan-out class, inside the PR about it.
+    #
+    #    What the gap would cost: if the evidence block ever grows a second span or an inline
+    #    `!`cmd`` form, `render()` returns the block text UNEXECUTED as prose, the render still
+    #    succeeds, `score` still prints a number, and that number goes into a PR body. The
+    #    sibling harness asserts the same count for the same reason.
+    n_blocks = len(BLOCK_RE.findall(skill_text(False)))
+    ck("the skill still has exactly the two dynamic blocks this renderer assumes",
+       n_blocks == 2,
+       f"found {n_blocks} — render() would emit an unexecuted block as prose and still "
+       "produce a scoreable number")
+
+    # 10. THE STRUCTURAL CASE'S OWN ASSERTION, paired positive+negative. #159's `0-of-5` is
     #    not a recall result -- the file its five gaps live in never reached the reviewer,
     #    because the behaviour diff excludes `.md`. Asserting the blindness POSITIVELY (the
     #    exclusion clause is present in the shipped block AND the gaps' file matches it)
@@ -382,9 +412,13 @@ def selftest() -> int:
     sb = CASES["pr159"].get("structural_blindness") or {}
     if sb:
         block = (REPO / SKILL_REL).read_text(encoding="utf-8")
+        # Strict form only: the exclusion must appear as an alternation branch inside EXCL,
+        # not merely somewhere in the file. The earlier `or <loose>` disjunct could never
+        # change the result (the strict operand CONTAINS the loose one), so it read as a
+        # fallback while enforcing nothing.
         ck("the shipped block still carries the exclusion that blinded #159",
-           "|" + sb["excluded_by"] + "'" in block or sb["excluded_by"] in block,
-           "the .md exclusion is gone — re-classify pr159 as a recall case and re-measure")
+           "|" + sb["excluded_by"] + "'" in block,
+           "the .md exclusion is gone or moved — re-classify pr159 as a recall case and re-measure")
         ck("...and #159's five gaps really do live in a file that exclusion matches",
            sb["gaps_live_in"].endswith(".md"),
            "the structural claim no longer matches the case")

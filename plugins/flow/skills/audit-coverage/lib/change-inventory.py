@@ -35,6 +35,24 @@ not a heuristic and not a prior -- it is a `git` fact, computed here:
                        STRONGER signal than POST-PLAN, not a missing one, so it gets
                        its own tier instead of collapsing into "unknown".
 
+KNOWN LIMITATION, MEASURED RATHER THAN DISCOVERED LATER. `plan_last` is the last commit
+touching the plan FILE, not the last commit touching the ACTIVE Spec-walk BLOCK. Those
+diverge systematically on flow's own ships, because /flow:ship Step 5 rewrites planPath in
+the same commit that carries the code -- so on THIS repo's normal commit shape every
+committed hunk lands SAME-COMMIT ("genuinely ambiguous") rather than POST-PLAN, and the sharp
+signal is lost exactly where the measured miss class lives. It is honest, not wrong: the tier
+reports that it cannot tell. Two independent /simplify lenses found this on the same run.
+
+The deeper fix is real and is NOT taken here: have `walk_extract` export the active block's
+line range (it already computes the indices) and tier off `git log -1 -L<start>,<end>:<plan>`,
+which answers "when were the declared criteria last edited" instead of approximating it with
+the whole file. Declined for this PR because (a) it is a shared-parser contract edit for a
+local reason, and (b) the inventory's measured recall effect in diff mode is already ZERO --
+deepening it would be shipping an unmeasured improvement to a component whose headline number
+did not move, which is exactly what this PR's own rule forbids. Roadmapped, and the eval
+below pins the SAME-COMMIT outcome as KNOWN AND INTENDED rather than leaving it to be read as
+a passing tier.
+
 FAIL LOUD, NEVER CLEAN. Every failure path prints `INVENTORY-UNAVAILABLE -- <reason>`
 and exits 0. It must never print nothing, and must never print the evidence block's
 `SKIPPED` line: "I could not build the checklist" and "there was nothing to check"
@@ -70,12 +88,29 @@ FUNCNAME_MAX = 70
 # the cumulative and the post-plan diff keeps POST-PLAN rather than whichever loop ran last.
 _RANK = {"pre-plan": 0, "SAME-COMMIT": 1, "POST-PLAN": 2, "UNCOMMITTED": 3,
          "PLAN-PREDATES-BRANCH": 4}
+# The tiers that mean "no declared criterion CAN cover this". ONE definition: the summary
+# guard previously re-derived it as `!= "pre-plan"`, which also matches SAME-COMMIT -- so a
+# diff with one SAME-COMMIT row and one pre-plan whole-file row printed a POST-PLAN headline
+# over zero post-plan hunks. That is the same self-contradicting-summary defect the
+# whole-file branch below was written to fix, reintroduced in the sibling condition.
+FLAGGED_TIERS = frozenset(("POST-PLAN", "UNCOMMITTED", "PLAN-PREDATES-BRANCH"))
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
 
 
 class Unavailable(Exception):
     """Raised anywhere a deterministic answer cannot be produced. Always caught."""
+
+
+def _unavailable(reason):
+    """The one wording for "no checklist was built". It was stated three times in this file --
+    the FB-0010 fan-out class applied to the file's own most load-bearing sentence, where a
+    wording fix to one site would leave two stale and nothing would detect it. Callers supply
+    only their distinct clause. (A fourth copy lives in the SKILL.md shell fallback and
+    genuinely cannot share this -- different process, no import.)"""
+    return ("[audit-coverage] INVENTORY-UNAVAILABLE — %s Stage 1 has no hunk checklist, so a "
+            "clean result below is WEAKER than a normal one, not equal to it. This is NOT a "
+            "skip." % reason)
 
 
 def _git(args, cwd=None):
@@ -128,25 +163,16 @@ def hunks(rev_range, path, cwd=None):
     return found
 
 
-def _untracked(path, cwd=None):
-    """Is `path` present on disk but not known to git? `ls-files --error-unmatch` exits
-    non-zero for exactly that case -- the tool's own exit code rather than a grep of its
-    output (general.md item 4's corollary)."""
-    try:
-        p = subprocess.run(["git", "ls-files", "--error-unmatch", "--", path],
-                           cwd=cwd, capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise Unavailable("git ls-files could not be invoked (%s)" % exc)
-    return p.returncode != 0
-
-
 def _line_count(path, cwd=None):
+    """Lines in an untracked file. Raises Unavailable rather than returning 0 on an
+    unreadable path: a `+0` row reads like a real measurement of an empty file, and it
+    would be the only silent zero in an engine where every other failure path is loud."""
     base = pathlib.Path(cwd) if cwd else pathlib.Path(".")
     try:
         with (base / path).open("rb") as fh:
             return sum(1 for _ in fh)
-    except OSError:
-        return 0
+    except OSError as exc:
+        raise Unavailable("could not read the untracked file %s (%s)" % (path, exc))
 
 
 def _overlaps(a, b):
@@ -162,7 +188,7 @@ def _overlaps(a, b):
 
 
 def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
-    """Returns (lines, meta). Raises Unavailable on any non-deterministic outcome.
+    """Returns the output lines. Raises Unavailable on any non-deterministic outcome.
 
     ROWS COME FROM TWO DIFFS, NOT FROM TIERING ONE. The first draft tiered the
     cumulative `base..HEAD` hunks by overlap and that is provably not enough: on #158
@@ -188,10 +214,30 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
         plan_last = _git(["log", "-1", "--format=%H", rng, "--", plan], cwd=cwd).strip()
     plan_predates = not plan_last
 
-    rows, truncated = [], False
-    for path in files:
+    # THREE WHOLE-SET PROBES, HOISTED OUT OF THE PER-FILE LOOP. Measured (64-file diff):
+    # 322 spawns / 1.29s -> 197 / 0.75s, a 41% cut for three calls costing ~10ms together.
+    # Deliberately NOT the full batching rewrite, which was measured at a further 33x and
+    # declined: it needs a `diff --git` header parser (rename pairs, core.quotepath octal
+    # escapes) inside the one script whose whole value is deterministic correctness, to buy
+    # ~1.2s on a 64-file PR against an LLM audit that takes tens of seconds. The per-file
+    # loop and its file->hunk attribution are untouched here; only the yes/no probes move.
+    head_sha = _git(["rev-parse", "HEAD"], cwd=cwd).strip()
+    # `plan_last == HEAD` is the NORMAL ship-time shape, not an edge case: /flow:ship commits
+    # the doc updates last, so `<plan_last>..HEAD` is an empty range and the post-plan diff
+    # was running once per file to learn nothing (64 empty spawns, 0.19s, on this very branch).
+    post_range_empty = plan_predates or plan_last == head_sha
+    untracked_set = set(
+        _git(["ls-files", "--others", "--exclude-standard"], cwd=cwd).splitlines())
+    dirty_set = set(_git(["diff", "HEAD", "--name-only"], cwd=cwd).splitlines())
+
+    rows, unexamined = [], 0
+    for i, path in enumerate(files):
+        # Cost guard only. Setting `truncated` here warned "rows past the cap are NOT listed"
+        # even when the remaining files would have contributed zero hunks -- a false "your
+        # checklist is PARTIAL" that pushes a reviewer to split a PR that is not over the cap.
+        # Truncation is now decided in exactly one place, from the slice below.
         if len(rows) >= max_rows:
-            truncated = True
+            unexamined = len(files) - i
             break
         # An UNTRACKED file is invisible to every `git diff`, so the first version reported
         # "0 hunks" over a brand-new source file -- a clean-looking checklist covering a
@@ -200,13 +246,13 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
         # PR's own new file, not by reasoning about it. The evidence block already surfaces
         # untracked files separately (`----- new file: -----`), so the inventory has to agree
         # with it or the two disagree about what is under review.
-        if _untracked(path, cwd=cwd):
+        if path in untracked_set:
             n = _line_count(path, cwd=cwd)
             rows.append((path, 1, n, "", True, "UNCOMMITTED"))
             continue
         cum = hunks("%s..HEAD" % base if base else None, path, cwd=cwd)
-        working = hunks("HEAD", path, cwd=cwd)
-        post = [] if plan_predates else hunks("%s..HEAD" % plan_last, path, cwd=cwd)
+        working = hunks("HEAD", path, cwd=cwd) if path in dirty_set else []
+        post = [] if post_range_empty else hunks("%s..HEAD" % plan_last, path, cwd=cwd)
         same = [] if plan_predates else hunks("%s^!" % plan_last, path, cwd=cwd)
 
         # (start, count) -> (funcname, whole, tier). Later writes win only when the tier
@@ -238,12 +284,9 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
             fn, whole, tier = merged[(start, count)]
             rows.append((path, start, count, fn, whole, tier))
 
-    if len(rows) > max_rows:
-        rows, truncated = rows[:max_rows], True
-
-    tiers = {}
-    for r in rows:
-        tiers[r[5]] = tiers.get(r[5], 0) + 1
+    truncated = len(rows) > max_rows
+    if truncated:
+        rows = rows[:max_rows]
 
     lines = ["[audit-coverage] change inventory (deterministic) — %d hunk%s across %d file%s. "
              "EVERY row must be accounted for in Stage 1."
@@ -268,9 +311,9 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
     # in that sentence is the one a reader acts on. Whole-file rows keep their tier (it is
     # true) and are excluded from the tally (it is not a hunk).
     precise = [r for r in rows if not r[4]]
-    flagged = sum(1 for r in precise if r[5] in ("POST-PLAN", "UNCOMMITTED", "PLAN-PREDATES-BRANCH"))
-    whole = len(rows) - len(precise)
-    if flagged or (whole and any(r[5] != "pre-plan" for r in rows)):
+    flagged = sum(1 for r in precise if r[5] in FLAGGED_TIERS)
+    whole_rows = len(rows) - len(precise)
+    if any(r[5] in FLAGGED_TIERS for r in rows):
         if plan_predates:
             lines.append("[audit-coverage] PLAN-PREDATES-BRANCH — the plan doc (%s) was never "
                          "touched on this branch, so NO declared criterion was written against "
@@ -278,7 +321,7 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
                          "is named for it." % _sanitize(plan or "(none)"))
         else:
             wholeclause = (" plus %d whole-file row%s spanning it"
-                           % (whole, "" if whole == 1 else "s")) if whole else ""
+                           % (whole_rows, "" if whole_rows == 1 else "s")) if whole_rows else ""
             if precise:
                 subject = ("%d of %d hunks%s carry lines that landed AFTER the plan was last "
                            "edited (%s)" % (flagged, len(precise),
@@ -295,12 +338,13 @@ def build(files, base, plan, cwd=None, max_rows=DEFAULT_MAX_ROWS):
             lines.append("[audit-coverage] POST-PLAN — %s. No declared criterion CAN have been "
                          "written for them; measured across four live runs, these are the hunks "
                          "missed most often. Enumerate them first." % subject)
-    if truncated:
-        lines.append("[audit-coverage] INVENTORY-TRUNCATED — more than %d hunks; rows past the "
-                     "cap are NOT listed, so Stage 1's checklist is PARTIAL and a clean result "
-                     "here is partial too. Say so, and recommend splitting the PR." % max_rows)
-    return lines, {"rows": len(rows), "tiers": tiers, "plan_last": plan_last,
-                   "plan_predates": plan_predates, "truncated": truncated}
+    if truncated or unexamined:
+        extra = (" %d file%s past the cap were not examined at all."
+                 % (unexamined, "" if unexamined == 1 else "s")) if unexamined else ""
+        lines.append("[audit-coverage] INVENTORY-TRUNCATED — the %d-hunk cap was reached, so "
+                     "Stage 1's checklist is PARTIAL and a clean result here is partial too.%s "
+                     "Say so, and recommend splitting the PR." % (max_rows, extra))
+    return lines
 
 
 def main(argv=None):
@@ -315,25 +359,20 @@ def main(argv=None):
     try:
         raw = sys.stdin.read() if args.files_from == "-" else open(args.files_from, encoding="utf-8").read()
     except OSError as exc:
-        print("[audit-coverage] INVENTORY-UNAVAILABLE — could not read the file list (%s). "
-              "Stage 1 has no hunk checklist, so a clean result below is WEAKER than a normal "
-              "one, not equal to it. This is NOT a skip." % exc)
+        print(_unavailable("could not read the file list (%s)." % exc))
         return 0
 
     files = [f.strip() for f in raw.splitlines() if f.strip()]
     if not files:
-        print("[audit-coverage] INVENTORY-UNAVAILABLE — the file list was empty, but this script "
-              "is only called when the evidence block found behavior-bearing files, so an empty "
-              "list means the two disagree. Stage 1 has no hunk checklist, so a clean result "
-              "below is WEAKER than a normal one, not equal to it. This is NOT a skip.")
+        print(_unavailable("the file list was empty, but this script is only called when the "
+                           "evidence block found behavior-bearing files, so an empty list means "
+                           "the two disagree."))
         return 0
 
     try:
-        lines, _meta = build(files, args.base, args.plan, cwd=args.cwd, max_rows=args.max_rows)
+        lines = build(files, args.base, args.plan, cwd=args.cwd, max_rows=args.max_rows)
     except Unavailable as exc:
-        print("[audit-coverage] INVENTORY-UNAVAILABLE — %s. Stage 1 has no hunk checklist, so a "
-              "clean result below is WEAKER than a normal one, not equal to it. This is NOT a "
-              "skip." % exc)
+        print(_unavailable("%s." % exc))
         return 0
     print("\n".join(lines))
     return 0

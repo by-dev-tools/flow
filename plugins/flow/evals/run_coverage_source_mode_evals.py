@@ -557,8 +557,21 @@ print("\n§8 — registration self-guards")
 skill_text = SKILL.read_text(encoding="utf-8")
 check("the skill's What-to-check prose routes SOURCE-UNRESOLVED away from SKIPPED",
       "SOURCE-UNRESOLVED` is NOT the skip case" in skill_text)
-check("the skill's prose treats SOURCE-TRUNCATED as partial, not clean",
-      "SOURCE-TRUNCATED" in skill_text and "this audit is partial" in skill_text)
+# v1.49.0 replaced the per-outcome truncation bullets with ONE catch-all weakening rule, so
+# the assertion moved from "this exact phrase appears" to "the class rule covers this outcome
+# BY NAME". Both halves are required: the rule must exist, AND SOURCE-TRUNCATED must be named
+# under it — a catch-all that forgot to list the outcome it replaced would otherwise pass on
+# the rule's presence alone, which is the deletable-prohibition shape.
+check("the skill's prose treats SOURCE-TRUNCATED as a weakening, not clean",
+      "is a WEAKENING" in skill_text
+      and "weaker than a normal one, not equal to it" in skill_text
+      and "`SOURCE-TRUNCATED`" in skill_text,
+      "the catch-all weakening rule must exist AND name SOURCE-TRUNCATED under it")
+check("...and the catch-all names the other weakenings too, so the class is really covered",
+      all(("`%s`" % n) in skill_text for n in
+          ("INVENTORY-UNAVAILABLE", "INVENTORY-TRUNCATED", "PLAN-PREDATES-BRANCH", "TRUNCATED")),
+      "an outcome the emitter can print but the prose never names is how two of three "
+      "v1.49.0 weakenings shipped undocumented")
 check("frontmatter advertises both input modes",
       "Two input modes" in skill_text)
 check("the prose requires the block's own SOURCE-UNRESOLVED line, verbatim",
