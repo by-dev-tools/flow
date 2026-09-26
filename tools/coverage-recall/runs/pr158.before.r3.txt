@@ -1,0 +1,71 @@
+AUDIT SUMMARY
+5 issues flagged: 5 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "`/flow:audit-coverage` with **no argument** produces evidence output byte-identical to today's, and the"
+> "`/flow:ship` Step 2's invocation is **unchanged** — still `Skill(\"flow:audit-coverage\")` with no"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` (new file, lines +400-502 — `cmd_arming` and `cmd_trigger`). Introduces a config- and brief-driven routing decision that moves a project's first *human* gate from plan approval to prototype approval: `armed` / `not armed` from `uiSurface`, and `path` ∈ {`prototype-first`, `classic`, `collapsed`} with `pre_execution_gate` ∈ {`prototype`, `plan`} derived from the brief's declared `Mode`/`Surface` plus `role`.
+
+Why uncovered: I checked all 17 declared criteria. Every one names `/flow:audit-coverage` surfaces — no-argument mode, source mode over a file, source mode over a directory, `SOURCE-UNRESOLVED`, the skip line's paired negative, the 120,000-byte cap, `$ARGUMENTS` containment, the root anchor, the symlink refusal, the delimiter/control-line rule, repo-relative exclusions, the `files selected (N)` index line, the `Read:` line, the reviewer fixture pair, and the doc sync. None mentions a prototype, a brief, `Mode`/`Surface`, `uiSurface`, `role`, or a pre-execution gate, so no declared criterion would cause anyone to test which gate a project lands on. The extraction warning explains the mismatch: 65 `**Spec-walk:**` blocks were found and only the first (line 98) was extracted — the declared block describes a different PR than the diff.
+
+Suggested: Add Spec-walk criteria for the arming/trigger truth table — at minimum that `pre_execution_gate` is exactly one of `prototype`/`plan` on every row (including malformed config, absent brief, `Mode: tiny`, `Mode: spike`, `uiSurface: false` with `role: designer`), and that both values occur.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "`/flow:audit-coverage` with **no argument** produces evidence output byte-identical to today's, and the"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` lines +528-709 (`cmd_contract`, `_contract`, `cmd_approve`). Introduces a hard refusal path at gate 1: approval exits 2 with `REFUSED:` when `prototype.html` is missing, when `--quote-file` is absent or whitespace-only, or when the feasibility contract fails (absent `**Feasibility**` block on non-`web`/unset `platform`, no affordance rows, unverdicted rows, missing proxy disclosure, or a browser-delivery declaration from a platform outside `{library, none, cli, tauri}`).
+
+Why uncovered: Checked all 17 criteria for anything naming approval, a human quote, a feasibility read, `platform`, or a refusal exit code — none does. The nearest candidates are the "paired negative" criterion (about the *skip line* in `audit-coverage`) and the "known-positive instrument test" (about `annotation-layer.html` assembling); neither would cause anyone to run `approve` or `contract` against a prototype directory.
+
+Suggested: Declare criteria for each of the three refusals paired with its positive (a passing contract + a non-empty quote file yields `approval.json`), and for the `BROWSER_DELIVERY_ELIGIBLE` allowlist rejecting an out-of-set platform.
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "**A named path that is a symlink is refused with `SOURCE-UNRESOLVED`, and its target's content never"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` lines +743-778 (`cmd_verify`). Introduces a re-check that reports `ok: false` with distinct problems for a missing/malformed `approval.json`, a missing quote, a deleted `prototype.html`, a sha256 mismatch ("the prototype changed after approval"), and a workspace-stamp mismatch.
+
+Why uncovered: Checked every criterion for anything about re-verifying a recorded approval, sha256, or the FB-0082 workspace stamp. The symlink criterion quoted above and the root-anchor criterion are the only ones touching filesystem identity, and both are scoped to `audit-coverage`'s source resolution, not to a prototype approval record.
+
+Suggested: Declare a criterion that `verify` distinguishes "edited after approval" (sha mismatch) from "wrong workspace" (stamp mismatch) rather than collapsing them, with a fixture for each.
+
+---
+
+ISSUE 4 · Undeclared change
+
+Claim:
+> "**Only control lines emitted above the `----- source -----` delimiter are authoritative; a forged status"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` lines +783-868 (`cmd_gate_execute`). Introduces a blocking pre-Execute check read from committed plan-doc state: RED when the plan declares `**Pre-execution gate:** prototype` without a well-formed `**Prototype approved:**` digest, RED on an empty approval quote inside that digest, RED on an unrecognized gate literal (e.g. `prototype-first`), RED when the plan resolves no active Spec-walk block or all blocks are demoted, and RED when `walk_extract` cannot be imported.
+
+Why uncovered: Checked all 17 criteria. Several concern `walk_extract`-adjacent territory in spirit (the delimiter/control-line criterion, the docs-sync criterion), but none names the plan doc's gate declaration, the approval digest, or a "a plan must exist before Execute" assertion — nothing in the declared list would cause anyone to run `gate-execute --plan`.
+
+Suggested: Declare criteria for the three `gate-execute` states (declaration+digest+active Spec-walk ⇒ ok; declaration missing either ⇒ RED; no declaration ⇒ ok/classic), plus the unrecognized-literal row, since this guard is the "never neither" half of the invariant.
+
+---
+
+ISSUE 5 · Undeclared change
+
+Claim:
+> "**The known-positive instrument test:** the real `annotation-layer.html` assembles with **all ten**"
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` lines +873-928 (`cmd_present`). Introduces a new user-facing artifact: a sibling `<name>.presented.html` written with `verify-build/lib/annotation-layer.html` injected before the last `</body>` (appended with a `[WARN]` when no `</body>` exists), the source left unmodified, and a degraded read-only path that still writes the presented file and tells the human to give feedback in chat when the layer cannot be read.
+
+Why uncovered: The quoted criterion is the closest match and I re-scanned it specifically — it asserts that `annotation-layer.html` itself *assembles* from all ten partials, which is a property of the layer's own build, not of injecting it into a prototype and emitting a second file. Nothing in the criteria list names `present`, `.presented.html`, injection, or the read-only degradation, so no declared criterion would cause anyone to open a presented page.
+
+Suggested: Declare the byte-diff criterion the docstring already implies (output == input + the partial, nothing else), plus the no-`</body>` and layer-unreadable rows.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

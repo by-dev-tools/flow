@@ -32,6 +32,11 @@ showed its `0-of-5` is a FILE-FILTER result, not a judgment one (see pr159 below
                     - 2-of-5 (#158, diff). Three runs, worst case 40%.
   structural miss   0-of-5 (#159, diff) -- the file the gaps live in never reached the
                     reviewer. Not recall. Reported separately, never averaged in.
+  degenerate        80% / 100% (pr158, diff) -- the HIGHEST scores in the corpus, and they
+                    measure nothing: the criteria describe a different PR, so every behaviour
+                    is trivially undeclared. `report` labels this case rather than printing it
+                    in the recall column, because the best number in the table being the
+                    meaningless one is exactly how a reader gets misled.
 
 Precision 4/4 across every run that produced findings. A test set that quietly inherits
 either a double-counted datapoint or a mis-attributed one is a test set nobody can check,
@@ -167,9 +172,16 @@ CASES = {
         # MEASURED AND REPORTED, NOT SCORED. At this commit the plan doc's FIRST
         # `**Spec-walk:**` block -- the only one `extract-criteria.py` reads -- is a DIFFERENT
         # PR's (17 criteria, every one about `/flow:audit-coverage` source mode; the extractor
-        # warns that 65 blocks exist). So every behaviour in the diff is genuinely undeclared,
-        # and recall is trivially 5/5 in BOTH conditions: measured 5/5 before (3 runs) and 5/5
-        # after (3 runs), which measures the setup rather than the change. Kept in the file
+        # warns that 65 blocks exist). So every behaviour in the diff is genuinely undeclared
+        # and recall scores HIGH for the worst possible reason: **80% before (4.0/5) and 100%
+        # after (5.0/5)** across three runs each, with 3 and 7 unmatched findings respectively
+        # -- the tell that the reviewer is correctly flagging a diff nothing describes.
+        #
+        # THOSE NUMBERS WERE WRONG IN THIS COMMENT UNTIL THE EVIDENCE WAS COMMITTED. It read
+        # "5/5 in BOTH conditions", measured before the scoring key was tightened to reject
+        # bare common words; under the admissible key the before condition is 4/5. Nobody
+        # could have caught that while the six raw outputs lived only in a sandbox -- which is
+        # the argument for committing them, made by the act of committing them. Kept in the file
         # because the finding is worth more than the datapoint: a coverage gate whose criteria
         # silently belong to another PR returns a verdict about nothing, and the loud warning
         # it prints is routed nowhere. v1.49.0 makes the skill surface that warning; the

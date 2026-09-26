@@ -1,0 +1,83 @@
+AUDIT SUMMARY
+6 issues flagged: 6 undeclared change
+
+---
+
+ISSUE 1 · Undeclared change
+
+Claim:
+> "criteria": ["`/flow:audit-coverage` with **no argument** produces evidence output byte-identical to today's, and the", ... "Docs move with the contract (`general.md` §2 — grep first, edit second): skill"]
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py` (new file, `@@ -0,0 +1,862 @@`), `cmd_arming` + `cmd_trigger`. A new CLI resolves which pre-execution human gate applies — `pre_execution_gate: "prototype"` vs `"plan"` and `path: prototype-first | classic | collapsed` — from `flow.config.json` (`uiSurface`, `role`) and a brief's declared `**Mode:**` / `**Surface:**`. A user running `prototype-gate.py trigger`/`arming` now gets a verdict that decides whether a plan approval gate is bypassed in favor of a prototype approval gate (`Mode: tiny` → `collapsed`, `Mode: spike` → `classic`, malformed/absent config or brief → `classic`).
+
+Why uncovered: All 17 declared criteria concern `/flow:audit-coverage` — no-arg byte-identical output, `/flow:ship` Step 2 invocation, single-file vs directory source mode, `SOURCE-UNRESOLVED`, the doc-only skip negative, the `annotation-layer.html` known-positive instrument test, the 120,000-byte cap warning, `$ARGUMENTS` escape/injection, `run_root_anchor_evals.py`, the reviewer fixture pair, symlink refusal, control-line authority above the delimiter, repo-relative exclusion matching, the `files selected (N)` index line, the `Read:` line, and doc/contract sync. None names a prototype, a brief, `Mode`/`Surface`, `uiSurface`, or a pre-execution gate, so no criterion causes anyone to test gate routing. The criteria block's own warning ("65 Spec-walk blocks found ... extracted ONLY the first — line 98") indicates the extracted block describes different work than this diff.
+
+Suggested: Add Spec-walk criteria for the gate-routing truth table (each `path`/`pre_execution_gate` pair, including the malformed-config and absent-brief degradations), or move the active Spec-walk block for this PR to the top of `dev-docs/plan.md` so the declared criteria match the diff.
+
+---
+
+ISSUE 2 · Undeclared change
+
+Claim:
+> "criteria": ["`/flow:audit-coverage` with **no argument** produces evidence output byte-identical to today's, and the", ...]
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py`, `cmd_contract` / `_contract` / `_feasibility_rows`. A new validation rule: a prototype on any `platform` other than `"web"` (including `platform` unset) is reported `ok: false` unless `feasibility.md` carries a `**Feasibility**` block with verdicted affordance rows from `("native-standard","native-custom","expensive","infeasible")` plus a proxy disclosure; the one-line browser-delivery escape is allowed only for `platform` in `{"library","none","cli","tauri"}`.
+
+Why uncovered: Re-scanned all 17 criteria. The closest candidates — the 120,000-byte cap warning and the `annotation-layer.html` known-positive test — concern audit-coverage source reading and the annotation partial, not a feasibility-block validation rule or a platform allowlist. No criterion mentions `platform`, `feasibility`, or verdict vocabulary.
+
+Suggested: Declare a criterion enumerating the feasibility-contract pass/fail matrix (block absent, rows unverdicted, missing proxy disclosure, `platform: web` exemption, browser-delivery allowlist vs a non-eligible platform).
+
+---
+
+ISSUE 3 · Undeclared change
+
+Claim:
+> "criteria": ["`/flow:audit-coverage` with **no argument** produces evidence output byte-identical to today's, and the", ...]
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py`, `cmd_approve` + `render_digest`, and the CLI parser's `approve` subcommand (`--dir`, `--quote-file`, no `--quote`). New observable error paths and outputs: exit code 2 with `REFUSED:` on stderr when `prototype.html` is missing, when `--quote-file` does not exist, when it is whitespace-only, or when the contract does not pass; on success it writes `<dir>/approval.json` and prints a two-line digest (`**Pre-execution gate:** prototype` / `**Prototype approved:** ...`) with the quote folded to one line and truncated at 150 chars with `…`.
+
+Why uncovered: Checked every criterion; the `$ARGUMENTS` escape/injection criterion is the nearest (it concerns untrusted argument handling) but it is scoped to `/flow:audit-coverage`'s `$ARGUMENTS` and prompt-context verdict injection, not to a `--quote-file`-only approval interface, its refusal exit codes, or the emitted digest format. No criterion mentions approval, quotes, or `approval.json`.
+
+Suggested: Declare criteria for the three `approve` refusals (paired with the success path that writes `approval.json`) and for the exact two-line digest `gate-execute` later parses.
+
+---
+
+ISSUE 4 · Undeclared change
+
+Claim:
+> "criteria": ["`/flow:audit-coverage` with **no argument** produces evidence output byte-identical to today's, and the", ...]
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py`, `cmd_verify`. New output: `ok: false` with distinct `problems` strings for a missing/malformed `approval.json`, an empty quote, a deleted `prototype.html`, a `sha256 MISMATCH` (edited after approval), and a `workspace stamp MISMATCH` via `flow_scratch.check_stamp`.
+
+Why uncovered: No declared criterion references verification of a recorded approval, sha comparison, or workspace stamps. The root-anchor criterion (`run_root_anchor_evals.py` green) covers relative-read anchoring in audit-coverage, not stamp/sha re-checking here.
+
+Suggested: Declare a criterion asserting each `verify` problem is reported distinctly (notably sha-mismatch vs stamp-mismatch not collapsing).
+
+---
+
+ISSUE 5 · Undeclared change
+
+Claim:
+> "criteria": ["`/flow:audit-coverage` with **no argument** produces evidence output byte-identical to today's, and the", ...]
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py`, `cmd_gate_execute` + `GATE_DECL_RE`/`DIGEST_RE`. A new blocking state transition read from committed plan text: `ok: false` when the plan declares `**Pre-execution gate:** prototype` without a well-formed `**Prototype approved:**` digest, when the digest's quote is empty, when the plan resolves no active `Spec-walk` block, when every block is demoted, or when `walk_extract` cannot be imported; `ok: false` also for any gate literal that is not exactly `prototype` or `plan` (including `prototype-first`); `ok: true` with "classic path" when no declaration exists.
+
+Why uncovered: This is the one hunk that touches `Spec-walk` extraction, so I checked whether any criterion covers it: the criteria mention Spec-walk only as the source of the audit-coverage declared-criteria block, and the audit-coverage criteria list contains no item about a plan-existence guard, a gate declaration literal, or the `all_demoted` lifecycle. No criterion causes anyone to run `gate-execute` against a plan doc.
+
+Suggested: Declare criteria for the three `gate-execute` states plus the unrecognized-literal RED and the `walk_extract` import-failure fail-closed path.
+
+---
+
+ISSUE 6 · Undeclared change
+
+Claim:
+> "criteria": ["**The known-positive instrument test:** the real `annotation-layer.html` assembles with **all ten**", ...]
+
+Hunk: `plugins/flow/skills/prototype/lib/prototype-gate.py`, `cmd_present` + `ANNOTATION_LAYER`. New rendered output: writes a sibling `<name>.presented.html` (source left unmodified) with `verify-build/lib/annotation-layer.html` injected before the last `</body>`, appended at EOF with a `[WARN]` when no `</body>` exists, and — when the layer cannot be read — still writes a view-only copy with `injected: false` and an "ask for feedback in chat" message.
+
+Why uncovered: The known-positive criterion names `annotation-layer.html`, so I re-read it: it asserts the real layer "assembles with all ten" as an instrument test for `/flow:audit-coverage`'s source-mode reading, not that a new consumer injects that layer into a prototype and emits a second `.presented.html` file. The behavior flagged here — a new file being produced, and its degraded view-only variant — is not exercised by that criterion.
+
+Suggested: Declare a criterion for `present`'s byte-diff contract (output == input + partial, nothing else), the no-`</body>` append warning, and the unreadable-layer view-only fallback.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.
