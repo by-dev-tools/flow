@@ -364,17 +364,30 @@ check("ref 2", r2.returncode == 0 and "### dev-docs/history/" not in r2.stdout,
 # undeclared). Each of these was a real behaviour change with no mechanical check.
 # --------------------------------------------------------------------------
 
-# The `documentation` rule-skill must activate on BOTH doc shapes. Single-file globs
-# stay (single-file docs remain supported); the directory globs are what keeps the
-# entry-format rules loading after a project migrates. Paired: a bare "has the new
-# globs" check would also pass if the old ones were deleted, silently dropping every
-# un-migrated consumer.
+# The `documentation` rule-skill must cover BOTH doc shapes -- single-file (`history.md`)
+# and one-file-per-entry (`history/<date>-<slug>.md`). FB-0102's intent, unchanged.
+#
+# The MECHANISM this pinned is gone (FB-0122). It used to assert four `paths:` globs,
+# because activation was believed to be path-triggered. S0 removed `paths:` from all four
+# rule-skills: it *limits* a description-driven activation rather than triggering one, so
+# a glob could only gate the trigger the description now earns. This check was a genuine
+# fan-out survivor -- the S0 sweep grepped prose for path-activation claims and did not
+# think to grep EVAL ASSERTIONS for the same contract, which is precisely the
+# "grep first, edit second" failure `.claude/rules/general.md` item 2 describes.
+#
+# Re-pointed, not deleted: the requirement is real, so it is now asserted against the
+# surface that carries it. Paired positive + negative, so neither half passes alone --
+# the coverage claim must be present AND the retired mechanism must be absent.
 _doc_skill = (PLUGIN / "skills" / "documentation" / "SKILL.md").read_text(encoding="utf-8")
-for _g in ('"**/history.md"', '"**/history/*.md"', '"**/feedback.md"', '"**/feedback/*.md"'):
-    check(f"cov doc-glob {_g}", _g in _doc_skill,
-          f"skills/documentation must activate on {_g} — a fragmented doc matches neither "
-          f"single-file glob, so without the directory forms every migrated project silently "
-          f"loses the entry-format rules")
+for _shape in ("one-file-per-entry", "history/"):
+    check(f"cov doc-shape {_shape!r}", _shape in _doc_skill,
+          f"skills/documentation must still tell the reader it covers {_shape!r} docs — a "
+          f"fragmented doc is `history/<date>-<slug>.md`, and dropping that from the body "
+          f"loses the entry-format contract for every migrated project")
+check("cov doc-no-retired-globs", '"**/history/*.md"' not in _doc_skill
+      and "paths:" not in _doc_skill.split("\n---", 1)[0],
+      "skills/documentation must no longer declare `paths:` globs — they gate the "
+      "description-driven activation S0 restored (FB-0122)")
 
 # changelogPath must be in doctor's existence-checked loop, not silently excluded.
 _doctor = (PLUGIN / "skills" / "doctor" / "SKILL.md").read_text(encoding="utf-8")

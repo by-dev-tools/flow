@@ -810,8 +810,11 @@ else
   RS_BAD=""
   for s in general plan-discipline documentation exploration; do
     F="$RS_ROOT/skills/$s/SKILL.md"
-    # Frontmatter only — everything above the closing fence.
-    FM=$(awk 'NR==1 && $0!="---"{exit} NR>1 && $0=="---"{exit} {print}' "$F" 2>/dev/null)
+    # Frontmatter only — line 2 through the closing fence. Deliberately sed, not awk:
+    # awk's field variable is spelled the same as a host argument placeholder, so an awk
+    # frontmatter parser trips the FB-0116/FB-0117 placeholder lint. sed has no such
+    # collision, and the lint should stay strict rather than learn an exception.
+    FM=$(sed -n '2,/^---[[:space:]]*$/p' "$F" 2>/dev/null)
     # POSITIVE: the file exists and declares a non-empty description. Without this the
     # three negatives below are all satisfiable by deleting the skill (FB-0077).
     [ -s "$F" ] || { RS_BAD="$RS_BAD $s(missing)"; continue; }
