@@ -355,7 +355,7 @@ invented here; it is named, tightened for paths, and made mechanical.
 5. **The door is closed, not merely joined by a safe path** (FB-0108 rule 1): a new eval lints every
    shipped SKILL.md and fails CI on any unescaped host placeholder in an executable context.
 
-### Spec-walk
+### Spec-walk (shipped — merged as v1.50.0, #165)
 
 - [x] **The idiom is documented once** in `plugins/flow/docs/workflow.md` § "Skill arguments: the
       prose rule", with the bundle evidence. **Spec-walk:** the section exists, states `## Argument`,
@@ -381,7 +381,7 @@ invented here; it is named, tightened for paths, and made mechanical.
       pre-existing walk/filter/cap guard still runs. *Pinned by:* `run_coverage_source_mode_evals.py`
       (all source-mode cases green through the new channel) + the flipped residual pin.
 - [x] **`${N}` / `$(0)` remediation** in `ship`, `doctor`, `contribute`, `verify-build`.
-      **Spec-walk:** `ship`'s provenance `sect()` produces identical output invoked bare and under a
+      **Spec-walk (shipped — merged as v1.50.0, #165):** `ship`'s provenance `sect()` produces identical output invoked bare and under a
       3-token argument. *Pinned by:* `run_arg_safety_evals.py::test_brace_positionals` — behavioural,
       the extracted function is RUN, not grepped.
 - [x] **`run_arg_safety_evals.py` ships, CI-wired.** **Spec-walk:** `ci.yml` lists it, and ci.yml's
@@ -396,14 +396,14 @@ invented here; it is named, tightened for paths, and made mechanical.
       `test_host_agreement`. Added after review found a real gap: `\\$ARGUMENTS` (two backslashes)
       is LIVE, because the host's escape arm is `(?<!\\)\\\$`.
 - [x] **A stale arg file cannot hijack an argument-less run** (found by `/flow:security-review`).
-      **Spec-walk:** the Tier-2 filename carries repo+branch+head, so a leftover from an earlier
+      **Spec-walk (shipped — merged as v1.50.0, #165):** the Tier-2 filename carries repo+branch+head, so a leftover from an earlier
       `/flow:audit-coverage <path>` is not read. *Pinned by:* a known-positive check that an old
       unstamped leftover is ignored (diff mode), plus the stamp asserted present in the block.
 - [x] **The lint sees indented fences.** **Spec-walk:** a placeholder inside a fence indented under a
       list item classifies `fenced`, not `prose`. *Pinned by:* the classifier test; `ship/SKILL.md`
       went from 41 to 75 recognised fence regions.
 - [x] **`/flow:doctor` Check 1.5 runs the predicate over the consumer's own `.claude/skills/`.**
-      **Spec-walk:** the CLI exits 0 clean / 1 violation / 2 could-not-scan, and each arm was
+      **Spec-walk (shipped — merged as v1.50.0, #165):** the CLI exits 0 clean / 1 violation / 2 could-not-scan, and each arm was
       exercised (clean tree, a planted positive, a missing directory). *Pinned by:* the three
       measured exit codes; doctor reports `[PASS]`/`[FAIL]`/`[WARN]` per scanned directory.
 - [x] **FB-0116** (the idiom) + **FB-0117** (the `$0`–`$9` collision class) written, plus a
@@ -1138,8 +1138,8 @@ pass's scope.)
 ## PR — D1 Phase 3: the auto-written technical plan and its MACHINE gate (this branch, `conductor/track-b-d1-phase-3-autoplan-machine-gate`, FB-0122, v1.51.0) — AT THE PLAN GATE
 
 **Mode:** feature
-**Base:** `origin/main` @ `5fcc349` (v1.49.0, FB high-water FB-0115).
-**Version claim `v1.51.0` / FB claim `FB-0122`** — #165 holds v1.50.0 + FB-0116/0117, #164 holds FB-0118–0121; both are queued ahead of me. **Designed against the post-#165 tree, not the tree I can read today** (see §3).
+**Base:** `origin/main` @ `e683238` (**v1.50.0**, FB high-water **FB-0121**) — #164 and #165 both merged while this plan was stopped at the session limit.
+**Version claim `v1.51.0` / FB claim `FB-0123`.** Re-swept at the rebase: v1.51.0 free; **FB-0122 is taken** by the in-flight `conductor/docs-only-verify-build-na`, so the claim moves to FB-0123. **§3 is no longer a prediction** — #165's removal is on `main` and I measured it.
 **Spec:** `dev-docs/handoffs/d1-prototype-first-gate.md` § Phase 3 · **Gated on:** §9.3, resolved **MIXED** by #153.
 
 ---
@@ -1187,16 +1187,18 @@ That is FB-0121's contract (*a stage that did not run is red, not clean*) arrivi
 
 **Arm B reads a different artifact from Arm C's three reviewers, by design, and the plan says so rather than pretending one extraction covers everything.** Arm C's reviewers read the *plan*; Arm B reads the *prototype's source*. That asymmetry is the entire reason Arm B exists — the §9.3 spike's finding was that nothing at this step reads the prototype's code. The one-extraction guarantee is stated for **Arm C's three reviewers** and explicitly *not* claimed for Arm B.
 
-### 3. Designing against post-#165, which I cannot read yet
+### 3. Post-#165 is now the tree, and I measured it rather than predicting it
 
-`main` today runs `walk-pin-lint.py "$ARGUMENTS"` on a named plan file (`critique-plan/SKILL.md:57-58`) — I measured it. **#165 removes that**: its body records that a named file then routes to *"treat pinning as UNCHECKED, not clean."*
+**Confirmed on `main` @ `e683238`:** `critique-plan/SKILL.md` runs the pinning lint only over the **session-extracted** plan, and prints a scope disclaimer — *"If this skill was invoked WITH a path argument, these lines do NOT describe that document."* So a named plan file routes to **UNCHECKED, not clean**, exactly as #165's body said it would. The earlier draft of this section designed against that as a prediction; it is now a measurement.
 
 **I do not need it back.** Arm A invokes the lint itself, so the named-file path through `critique-plan` is not on my critical path. What I must not do is let Arm A's pinning check silently become UNCHECKED after the rebase — so:
 
 - Arm A calls `walk-pin-lint.py` **directly**, and
 - a Spec-walk criterion asserts the gate's own pinning result is `checked`, not inherited from whatever `critique-plan` happens to do with `$ARGUMENTS` post-#165.
 
-**Rebase risk, named now:** #165 is a `$ARGUMENTS`-idiom change across skills. If it alters how a skill receives a path argument, Arm B's `/flow:audit-coverage <path>` invocation is in its blast radius. Re-verify Arm B end-to-end at the rebase, not by reading the diff.
+**Verified post-rebase, not assumed:** Arm A's two scripts still run standalone on a named plan file on `main` — `walk-pin-lint.py dev-docs/plan.md` → exit 0, and `extract-criteria.py | criterion-specificity.py` → `total=13 vacuous=0`. The design-around holds *and is now required rather than optional*.
+
+**The live rebase risk has moved.** #165 landed, so its `$ARGUMENTS` blast radius is settled. The open one is **`conductor/docs-only-verify-build-na`**, in flight and touching **`verify-build`** and **`audit-skips`** — and Arm A depends on two `verify-build/lib` scripts (`extract-criteria.py`, `criterion-specificity.py`). If that PR changes either script's interface or output shape, Arm A breaks silently: it would still exit 0 and report a clean quality arm. **Re-verify Arm A by running it at that rebase, not by reading the diff** — a quality gate that degrades to "clean" is the failure this whole plan is organised against.
 
 ### 4. Union depth, gated on the trigger — the proportionality proposal
 
