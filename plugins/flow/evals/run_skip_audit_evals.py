@@ -325,6 +325,32 @@ def main() -> int:
               "not on PATH" in reason_of(r, "verify-build"),
               reason_of(r, "verify-build"))
 
+        # FIFTH CORNER — same toolchain-shaped reason, same toolchain-less host, but a
+        # DOCS-ONLY diff. This must be LEGITIMATE and owe NOTHING, and it is the corner whose
+        # absence produced an unmergeable PR: `toolchain` is in manifest-triage.CHECK_ONLY, so
+        # the entry was never waivable-to-ready and never subtracted, while its own re-check
+        # could never pass — a docs-only diff has no behaviour for any build to exercise.
+        # Measured on health-tracker#118. "Nothing to verify" and "could not verify" are
+        # different claims; only the second is a blocker.
+        #
+        # Kept on the CONSUMER side even though verify-build now exits docs-only first,
+        # because an installed plugin lags the repo (FB-0107 measured twelve releases): an
+        # older producer will still hand this a toolchain reason on a docs-only diff.
+        r_docs = run(tmp, config=ios_cfg, report=tc_report, files="M\tdocs/guide.md", which=[])
+        check("toolchain-docs-only-legitimate",
+              verdict_of(r_docs, "verify-build") == "LEGITIMATE",
+              f"got {verdict_of(r_docs, 'verify-build')!r}: {r_docs.get('stages')}")
+        check("toolchain-docs-only-owes-NO-manifest-entry",
+              kind_of(r_docs, "verify-build") is None,
+              f"manifest_kind={kind_of(r_docs, 'verify-build')!r} — a docs-only diff that owes a "
+              "CHECK_ONLY entry is a PR that can never reach READY by any sanctioned path")
+        check("toolchain-docs-only-reason-says-N/A-not-unverified",
+              "no behavior for any build to exercise" in reason_of(r_docs, "verify-build"),
+              reason_of(r_docs, "verify-build"))
+        # PAIRED POSITIVE, stated here rather than assumed: the SAME host and reason on a
+        # source-touching diff still owes the entry (asserted as toolchain-green-owes-the-
+        # manifest above). If both stopped owing, the two checks above would pass vacuously.
+
         # RED — identical claim, identical config, host that HAS the toolchain.
         r = run(tmp, config=ios_cfg, report=tc_report, files=SRC, which=["xcodebuild", "xcrun"])
         check("toolchain-red-should-re-run", verdict_of(r, "verify-build") == "SHOULD-RE-RUN",

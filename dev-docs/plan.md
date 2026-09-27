@@ -2,6 +2,65 @@
 
 ## Current Focus
 
+**▶ EXECUTED, shipping (this branch `conductor/docs-only-verify-build-na`, v1.52.0, FB-0122): a docs-only PR is N/A, not unverified — and was unmergeable.**
+
+**Mode:** feature · **Surface:** non-visual
+
+On a docs-only PR from a toolchain-less host, flow produced a pull request **that could not be merged
+through any sanctioned path**: `verify-build` could not build → `audit-skips` filed a `toolchain`
+entry → that kind is in `manifest-triage.CHECK_ONLY`, so never waivable-to-ready and never
+subtracted, while its own re-check could never pass on a diff with no behaviour to build. Verdict
+`BLOCKED` forever, and the remediation text told the human to mark the PR ready and merge it
+themselves — flow telling the user to bypass flow. Measured on health-tracker
+[#118](https://github.com/byamron/health-tracker/pull/118) by the health-tracker workspace
+(`463e6017`), which supplied every finding; the orchestrator found the `CHECK_ONLY` deadlock.
+
+**`CHECK_ONLY` is correct and untouched.** The fix is upstream of the entry: "there is nothing to
+verify" is not "I could not verify" (FB-0121's distinction, one layer down). `verify-build` § 1.2
+gains a docs-only N/A exit **before** the toolchain check (ordering is the fix), and `audit-skips`
+gains the diff condition it used to declare it deliberately lacked — kept as a backstop because an
+installed plugin lags the repo (FB-0107).
+
+### Spec-walk
+
+- [x] **The docs-only exit fires on a genuinely docs-only diff and emits a skip reason
+      `audit-skips` already matches.** **Spec-walk:** the shipped § 1.2 block, extracted and run,
+      prints the N/A line + the `skip_reason=` handoff. *Pinned by:*
+      `run_docs_only_evals.py` § 1.
+- [x] **It does NOT fire when exactly one source file is added — `.py`, `.json`, `.yaml`, `.toml`,
+      `.html`.** **Spec-walk:** each case misses the N/A exit **and** still reaches the toolchain
+      blocker, so the negative is paired with a positive rather than passing because both exits
+      went quiet. *Pinned by:* `run_docs_only_evals.py` § 2. `.json` is the case the
+      config-toggle counter-argument turns on; `.html` is the case a source-only predicate would
+      get wrong.
+- [x] **Ordering is asserted, not assumed.** **Spec-walk:** the docs-only exit precedes the
+      toolchain exit in the shipped block. *Pinned by:* `run_docs_only_evals.py` § 0.
+- [x] **A docs-only PR reaches a merge-ready verdict end to end; a real toolchain gap still cannot,
+      even after a waiver.** **Spec-walk:** `classify` returns `READY` with no entry, and
+      `BLOCKED` with a `toolchain` entry both before and after `waive`. *Pinned by:*
+      `run_docs_only_evals.py` § 3 + § 4 (which asserts `CHECK_ONLY` still holds both kinds).
+- [x] **The consumer is right on its own, for old installs.** **Spec-walk:** a toolchain reason +
+      toolchain-less host + docs-only diff ⇒ `LEGITIMATE` with `manifest_kind is None`; the same
+      reason + host on a source diff still owes the entry. *Pinned by:*
+      `run_skip_audit_evals.py` (fifth corner).
+- [x] **The stale premise is gone and its replacement names a reversal condition.**
+      **Spec-walk:** the retired phrase is absent (and not quoted anywhere, so a grep for the dead
+      justification finds nothing), a diff condition is genuinely enforced, and the new comment
+      names the `sourceFilePatterns` fact that would overturn it. *Pinned by:*
+      `run_docs_only_evals.py` § 5.
+- [x] **One verdict for one input shape.** **Spec-walk:** the no-plan fallback's docs-only arm is
+      retired; § 1.2 answers docs-only whether or not a plan exists. Not load-bearing — the two
+      behaviours differed accidentally, not for a reason, so this did not need the plan gate.
+- [x] **FB-0122** + history entry crediting the health-tracker workspace; `run_docs_only_evals.py`
+      CI-wired. **39/39 harnesses green.**
+
+**Version:** took **v1.52.0**, not 1.51.0 — `main` is at 1.50.0 and the S0 PR holds 1.51.0 (not yet
+in a pushed manifest, so the ceiling read 1.50.0; taking the orchestrator's word and stepping over
+it rather than colliding). **Overlap:** S0 also edits `roadmap.md`/`plan.md`; this branch keeps its
+diff to `verify-build`, `audit-skips`, their evals, one feedback file, one history file, the two
+manifests and these two doc blocks.
+
+
 
 **▶ EXECUTED, shipping (this branch `conductor/arguments-idiom-render-time-injection-fix`, v1.50.0, FB-0116 + FB-0117): make `$ARGUMENTS` safe to accept, once, and apply it everywhere.** Plan approved with all four open decisions answered: OD1 **include** `review-brief` (the brief's fenced-means-not-exposed premise was refuted by measurement); OD2 **accept the degradation** and print the existing UNCHECKED line, routing the restructure to the roadmap with its tool-grant reason; OD3 **fix the two measured `$N` sites**, sweep and report the rest; OD4 #159 has merged, so the residual pin flipping red is the designed signal and this PR is the intended trigger. Shipped: the prose rule (`## Argument`, argument-less blocks, Tier 1 Read / Tier 2 Write-then-path) at four sites, `lib/arg_placeholders.py`, `extract_session.py --plan-file-from`, the `${1}`/`$(0)` fixes at four more, and CI-wired `run_arg_safety_evals.py`. **38/38 harnesses green.** `/simplify`'s four lenses and `/flow:security-review` then found real defects, including a **failure-open** (an unstamped Tier-2 arg file let a leftover from an earlier run make the next argument-less ship audit that file instead of the diff) and **a gap in the lint itself** (`\\$ARGUMENTS` — two backslashes — is LIVE, because the host's escape arm is `(?<!\\)\\\$`). Five of my own instruments reported a wrong answer on the way; all five are in the history entry, because the disciplines that caught them are the transferable part. `/flow:staff-review` could NOT run — all three lens spawns died on an account session limit (HTTP 429) — so it is routed as a `[rigor]` draft-manifest entry rather than claimed.
 
