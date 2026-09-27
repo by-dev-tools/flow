@@ -4,7 +4,10 @@
 Invoked from a SKILL.md via:
     !`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan`
     !`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode completion`
-    !`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file <path>`
+    (NOT from a SKILL.md with a substituted argument -- see --plan-file-from below and
+     docs/workflow.md S "Skill arguments: the prose rule". No shipped skill spells this
+     form any more; it is shown because a human may still run it by hand.)
+    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file <path>
 
 `--plan-file` (plan mode only) reviews an explicit plan DOCUMENT (e.g. a queued
 plan under a consumer's plans directory) instead of extracting the most recent
@@ -1051,7 +1054,8 @@ def main() -> int:
         args.plan_file = lines[0].strip()
     if args.plan_file and args.mode != "plan":
         sys.stderr.write(
-            "extract_session: ⚠️ --plan-file is only valid with --mode plan — a "
+            f"extract_session: ⚠️ {'--plan-file-from' if args.plan_file_from else '--plan-file'} "
+            "is only valid with --mode plan — a "
             "completion audit reviews the session's completion claim, not a plan "
             "document. Did you mean --mode plan?\n"
         )

@@ -185,7 +185,9 @@ ARG_SKILLS = {
     "audit-plan":     ("## Argument", "plan-file"),
     "critique-plan":  ("## Argument", "plan-file"),
     "review-brief":   ("## Argument", "brief-file"),
-    "audit-coverage": ("## Argument", "source"),
+    # NOT "source" -- it occurs throughout that file, so half this positive survived
+    # deleting the argument feature. Key on the stamped channel the argument uses.
+    "audit-coverage": ("## Argument", "--arg-path audit-coverage"),
 }
 
 
@@ -314,11 +316,28 @@ def test_idiom_documented() -> None:
     # satisfy the check above while documenting nothing.
     for required in ("## Argument", "Tier 1", "Tier 2", "${1}", "$(0)", "run_arg_safety_evals.py"):
         check(f"idiom section states {required!r}", required in body)
+    # THE SECTION MUST SPELL ITS OWN SUBJECT. Five dollar-less `\\ARGUMENTS` typos shipped past
+    # the checks above, because "the section exists and states its rules" is satisfiable by a
+    # section that names an identifier the host does not have. general.md item 3: a positive
+    # assertion about the protected thing, not only about the container.
+    check("idiom section spells the placeholder with its $",
+          body.count(TOK) >= 4 and "`\\ARGUMENTS" not in body,
+          f"found {body.count(TOK)} correct occurrence(s); a dollar-less `\\ARGUMENTS` names an "
+          "identifier that does not exist in the host, in the one document every skill cites")
+    # ...and it must not teach the two-backslash form, which is LIVE (the escape arm's
+    # lookbehind fails at 2+). The doc previously advised exactly that.
+    check("idiom section does not teach the two-backslash escape",
+          "\\\\$ARGUMENTS`" not in body.replace("\\\\$ARGUMENTS` (two backslashes)", ""),
+          "two backslashes defeat the host's lookbehind and leave the placeholder live; the "
+          "escaped spelling is exactly ONE backslash")
     # And every citer is real: assert the string is cited from the artifacts that claim to cite it.
     citers = ["skills/audit-plan/SKILL.md", "skills/critique-plan/SKILL.md",
               "skills/review-brief/SKILL.md", "skills/audit-coverage/SKILL.md"]
+    # Require the SECTION NAME, not a bare "workflow.md". The looser form passed for
+    # audit-coverage off an unrelated pre-existing mention 20 lines away -- a check satisfied by
+    # a coincidence is not a check (and audit-plan genuinely lacked the pointer while passing).
     missing = [c for c in citers
-               if "workflow.md" not in (HERE.parent / c).read_text(encoding="utf-8")]
+               if SECTION not in (HERE.parent / c).read_text(encoding="utf-8")]
     check("each converted skill points a reader at the canonical section",
           not missing, f"no workflow.md pointer in: {missing}")
 
@@ -394,6 +413,98 @@ def test_host_agreement() -> None:
           "without becoming a substitution site")
 
 
+# ============================ 8. FENCE CLASSES, AGAINST KNOWN POSITIVES (not just quiet inputs)
+def test_fence_classes() -> None:
+    print("\n8. FENCE CLASSES -- each fence spelling validated on a KNOWN POSITIVE")
+    # Every row plants a live placeholder inside a real shell fence written that way. A row that
+    # classifies `prose` is the lint reporting CLEAN over a live site. The blockquoted row is here
+    # because it was a MEASURED bypass: `ship/SKILL.md` carries `> ```sh` fences wrapping real
+    # shell, the opener was invisible to the classifier, and a planted placeholder came back
+    # `prose`. The indented row had already been fixed; fixing one cause of parity inversion is
+    # not closing the class, which is why this is now a table rather than a case.
+    rows = [
+        ("column-0",     '```sh\n%s\n```\n'),
+        ("indented",     '- item:\n\n    ```sh\n    %s\n    ```\n'),
+        ("blockquoted",  '> ```sh\n> %s\n> ```\n'),
+        ("tilde",        '~~~sh\n%s\n~~~\n'),
+        ("bq+indent",    '>   ```sh\n>   %s\n>   ```\n'),
+    ]
+    live = 'echo "' + TOK + '"'
+    for label, tmpl in rows:
+        body = "intro\n\n" + (tmpl % live) + "\ntail\n"
+        got = [f["context"] for f in AP.classify(body)]
+        check(f"a live placeholder in a {label} fence classifies 'fenced'",
+              got == ["fenced"],
+              f"classified {got} — 'prose' here means the lint would report CLEAN over a live "
+              "shell block a skill tells the model to run")
+    # Paired positive: genuine prose must still read as prose, or the fix is just over-matching
+    # everything (which would be safe but useless -- it would flag the `## Argument` sections).
+    check("a placeholder in genuine prose still classifies 'prose'",
+          [f["context"] for f in AP.classify("The argument is: " + TOK + "\n")] == ["prose"],
+          "over-matching would flag every ## Argument section and train authors to ignore the lint")
+
+
+# ================================= 9. ONE NAME, THREE PRODUCERS -- they must agree exactly
+def test_arg_path_agreement(tmp: Path) -> None:
+    print("\n9. ARG PATH -- the Python printer and the shipped shell derivation agree byte-for-byte")
+    # A one-character disagreement is silent: the consumer's `[ -s "$ARGF" ]` is false, source
+    # mode never engages, and the gate reports clean over work it never read. Branch names that
+    # have actually broken this: one containing `/` (every branch in this repo) and one
+    # containing a multi-byte character (`tr -c` is byte-based, a codepoint regex is not).
+    for branch in ("main", "conductor/some-work", "feat/caf\u00e9-x", "a.b_c-d"):
+        repo = git_repo(tmp / ("agree-" + AP._slug(branch)), FIXTURE)
+        subprocess.run(["git", "checkout", "-q", "-b", branch], cwd=str(repo), capture_output=True)
+        py = AP.arg_path("audit-coverage", repo_root=str(repo))
+        sh = subprocess.run(
+            ["sh", "-c",
+             'ROOTP=$(pwd -P); B=$(git branch --show-current 2>/dev/null); '
+             "B=$(printf '%s' \"$B\" | tr -c 'A-Za-z0-9._-' '-'); "
+             'H=$(git rev-parse --short HEAD 2>/dev/null); '
+             'printf "%s" "$ROOTP/.flow/audit-coverage-arg.${B:-nobranch}.${H:-nohead}.txt"'],
+            cwd=str(repo), capture_output=True, text=True).stdout
+        check(f"arg path agrees on branch {branch!r}", py == sh,
+              f"python={py!r}\n          shell={sh!r}")
+
+
+# ========== 10. THE TIER-2 CHANNEL, AT THE COMPOSED LAYER (general.md item 4's corollary)
+def test_tier2_composed(tmp: Path) -> None:
+    print("\n10. TIER-2 COMPOSED LAYER -- the carrier file actually reaches the reviewed document")
+    # Nothing tested this before: `run_review_brief_evals.py` invokes `--plan-file` directly, so
+    # it is green at a layer that does not touch the Tier-2 claim at all. That is exactly the
+    # corollary -- a criterion verified one layer below the surface it describes. Here the whole
+    # path is exercised: write the carrier the way a producer would, then assert the extractor
+    # reviews THAT document and refuses the malformed shapes.
+    repo = git_repo(tmp / "tier2", FIXTURE)
+    (repo / "brief.md").write_text("# Brief\n\n- [ ] Spec-walk: the thing\n", encoding="utf-8")
+    extractor = str(HERE.parent / "scripts" / "extract_session.py")
+    carrier = repo / ".flow" / "carrier.txt"
+    carrier.parent.mkdir(parents=True, exist_ok=True)
+
+    def run_extract(contents):
+        carrier.write_text(contents, encoding="utf-8")
+        return subprocess.run(
+            ["python3", extractor, "--mode", "plan", "--plan-file-from", str(carrier)],
+            cwd=str(repo), capture_output=True, text=True)
+
+    ok = run_extract("brief.md\n")
+    check("a one-line carrier renders the NAMED document",
+          ok.returncode == 0 and "from file:" in ok.stdout and "brief.md" in ok.stdout,
+          f"rc={ok.returncode} stdout={ok.stdout[:200]!r} stderr={ok.stderr[:200]!r}")
+    for label, body, want in [
+        ("multi-line", "brief.md\nrm -rf /\n", "Refused rather than using the first line"),
+        ("empty", "", "is empty"),
+        ("outside the repo", "../../../etc/passwd\n", "outside cwd"),
+    ]:
+        r = run_extract(body)
+        check(f"a {label} carrier is REFUSED loudly", r.returncode != 0 and want in r.stderr,
+              f"rc={r.returncode} stderr={r.stderr[:200]!r} (wanted {want!r})")
+    # Paired positive on the refusals: none of them may fall back to session mode silently.
+    r = run_extract("does-not-exist.md\n")
+    check("an unresolvable named document does NOT degrade to session mode",
+          r.returncode != 0 and "from file:" not in r.stdout,
+          "a named document that cannot be read must fail, never render a session-mode review")
+
+
 def main() -> int:
     print("Skill-argument prose-rule evals (FB-0116, FB-0117)")
     with tempfile.TemporaryDirectory() as td:
@@ -408,6 +519,9 @@ def main() -> int:
         test_prose_channel_safe()
         test_idiom_documented()
         test_host_agreement()
+        test_fence_classes()
+        test_arg_path_agreement(tmp)
+        test_tier2_composed(tmp)
     print()
     if _failures:
         print(f"FAILED: {len(_failures)} eval(s): {', '.join(_failures)}")

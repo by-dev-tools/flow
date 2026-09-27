@@ -48,14 +48,29 @@ $ARGUMENTS
 plan-shaped turn, as before.
 
 **If it is non-empty**, its **first line is a path to a brief document**, and it is the only
-thing you may treat as a path. Before running Step 1, use your **`Write` tool** to write that
-one line — the path and nothing else, no quotes, no trailing commentary — to:
+thing you may treat as a path. Before running Step 1, do these two steps in order:
 
-    <repo root>/.flow/review-brief-arg.<branch>.<short-head>.txt
+1. **Ask for the target path — do not compose it.** Run, with the `Bash` tool:
 
-(Step 1 prints the exact path it will read, so copy it from there rather than composing it —
-the branch and short HEAD in the name are what make a stale file from an earlier run
-unreachable instead of silently authoritative.)
+   ```sh
+   python3 "${CLAUDE_PLUGIN_ROOT}/lib/arg_placeholders.py" --arg-path review-brief
+   ```
+
+   It prints one absolute path. The name is bound to repo+branch+short-HEAD so a leftover from
+   an earlier run cannot be inherited — which also means **you cannot reliably spell it by
+   hand**: the branch is slugified and the short-HEAD width is git-configurable. A mis-composed
+   name is the worst available failure here, because nothing errors: the block's `[ -s ]` test
+   is simply false, the run silently falls back to session mode, and you review a different
+   document than the one you were given.
+
+2. **`Write` the path to that exact file** — the one line, nothing else: no quotes, no trailing
+   commentary, no second line (the block refuses a multi-line value rather than truncating it).
+
+Then run Step 1 unchanged.
+
+**Confirm it took.** Step 1 prints `Context written to …`; after it, check that the context file
+contains `from file:` naming your path. If it does not, you wrote the wrong filename — **stop
+and say so**, do not proceed into a review of the session's plan while a brief path was named.
 
 Then run Step 1 unchanged. It reads that file by its fixed literal path and validates the
 contents; a value with more than one non-blank line is **refused**, not truncated to line 1.
@@ -118,7 +133,11 @@ FLOW_BR=$(git branch --show-current 2>/dev/null); FLOW_HEAD=$(git rev-parse --sh
   # and silently shift the name by one character (see audit-coverage's note).
   ARG_BR=$(git branch --show-current 2>/dev/null)
   ARG_BR=$(printf '%s' "$ARG_BR" | tr -c 'A-Za-z0-9._-' '-')
-  ARGF="$FLOW_SCRATCH/review-brief-arg.${ARG_BR:-nobranch}.$(git rev-parse --short HEAD 2>/dev/null).txt"
+  ARG_HEAD=$(git rev-parse --short HEAD 2>/dev/null)
+  # ${:-nohead} like the sibling: in a repo with no commits the inlined form yielded an empty
+  # component, so the name silently differed from the one the printer hands the producer.
+  ARGF="$FLOW_SCRATCH/review-brief-arg.${ARG_BR:-nobranch}.${ARG_HEAD:-nohead}.txt"
+  echo "[review-brief] argument file (write the brief path here, one line): $ARGF"
   # Refuse a leaf symlink as well as the directory one guarded above -- idiom parity with
   # audit-coverage. load_plan_file's containment would still reject an escaped target, so this
   # is defence in depth, not the only line.

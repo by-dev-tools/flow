@@ -54,6 +54,48 @@ Five instruments of mine reported a wrong answer, and each was caught by a diffe
 
 **The brief's own exclusion list was refuted by measurement.** It classified `review-brief:69` as not-exposed because it is fenced — an inferred mechanism, never measured. The host's replace is over the whole body, so the value does arrive; the fence changes only who executes it. Included. That is FB-0116 rule 3, and the fourth time in this program an inferred mechanism lost to a measured one.
 
+## Third review round — `/flow:staff-review`, and why it was worth re-running
+
+The first ship attempt could not run staff-review: all three lens spawns died on an account
+session limit, so it was routed as a `[rigor]` draft-manifest entry rather than waived. Re-running
+it five hours later found **four more BLOCKERs**, two of which the *earlier* rounds had created:
+
+1. **A measured live lint bypass.** The fence classifier had been widened to accept *indented*
+   fences; it was still blind to **blockquoted** ones (`> ```sh`), and `ship/SKILL.md` carries two
+   of those wrapping real shell the skill tells the model to run. A live placeholder planted inside
+   that block classified `prose` — the lint reported CLEAN over a live site, which is exactly the
+   failure its own comment claims to prevent. The lesson is item 4 again, one level up: fixing one
+   *cause* of parity inversion is not closing the *class*. Now a five-row table (column-0,
+   indented, blockquoted, tilde, blockquote+indent), each validated on a known positive, paired
+   with a positive that genuine prose still reads as prose.
+2. **`/flow:review-brief <path>` silently ignored its argument on any branch containing `/`** —
+   i.e. every branch in this repo. The stamping fix slugified the branch in the block, while the
+   prose told the model to write an *unslugified* name; `[ -s ]` was then false and the run fell
+   back to session mode, reviewing the wrong document with nothing printed. The fix is that nobody
+   composes the name any more: `arg_placeholders.py --arg-path <skill>` prints it, the block echoes
+   the path it will read, and an eval asserts the Python printer and the shipped shell derivation
+   agree byte-for-byte on four branch shapes — including one with a `/` and one non-ASCII, where
+   `tr -c` (byte-based) and a codepoint regex had genuinely disagreed.
+3. **A contradiction with no stated precedence.** `audit-coverage`'s path 2 said "if you see a
+   `SKIPPED` line despite being given a path, read the path yourself"; a later rule said a `SKIPPED`
+   diff means "output exactly that line as your entire response." Source mode's main use is a
+   pre-execution run where an empty diff is *expected*, so a compliant agent could emit "nothing to
+   audit" for a run that named a path — the collision the file spends three bullets forbidding.
+4. **The canonical doc misspelled its own subject at five sites** (`\ARGUMENTS`, no `$`) and, worse,
+   its rule sentence advised the **two-backslash** escape — which this PR had already measured to be
+   *live*, because the host's escape arm fails its own lookbehind at 2+. The section teaching the
+   safe spelling named an unsafe one.
+
+Also from that round: a rebase artifact had resurrected a superseded plan block that said "this
+branch" about a *different* branch; the Spec-walk credited `run_review_brief_evals.py` with pinning
+Tier 2 when it invokes `--plan-file` directly and never touches that channel; and the host
+transcription carried no provenance, in a repo that ships `plugin-provenance.py` on the premise
+that an unstamped version claim is worthless.
+
+**Three of my test oracles were wrong rather than the code**, across the three rounds — "did the
+text change" instead of "did the payload leak", `${0}` in awk, and an assertion string that did not
+match the shipped refusal. Each was caught by running the thing rather than reading it.
+
 ## Verification
 
 - `run_arg_safety_evals.py` (new, CI-wired) **validates its instrument on a known positive first**: it renders the historical unfixed `audit-plan:13` and asserts the filesystem canary **is** created (4 of 7 payloads execute), with a negative control proving the payloads are inert when no placeholder is present — then **aborts** rather than continuing if that does not fire, because every later "no canary" would be unfalsifiable. The ancestor of this harness certified this exact RCE as safe by modelling `env` instead of substitution.

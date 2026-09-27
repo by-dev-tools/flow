@@ -187,7 +187,13 @@ if [ ! -f "$A" ]; then
 else
   for D in "$PLUGIN_SKILLS" ".claude/skills"; do
     if [ ! -d "$D" ]; then
-      echo "[SKIP] argument-placeholder lint — $D not present (no custom skills to lint)"
+      # Differentiate: an absent .claude/skills is normal, an absent PLUGIN skills dir means
+      # flow's OWN skills went unlinted -- opposite meanings, and one of them is a broken install.
+      if [ "$D" = "$PLUGIN_SKILLS" ]; then
+        echo "[WARN] argument-placeholder lint — $D not present, so flow's OWN skills were NOT linted (argument safety is UNCHECKED, not clean). Fix: reinstall the flow plugin."
+      else
+        echo "[SKIP] argument-placeholder lint — $D not present (this project writes no custom skills)"
+      fi
       continue
     fi
     OUT=$(python3 "$A" "$D" 2>&1); RC=$?

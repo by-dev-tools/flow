@@ -166,7 +166,9 @@ def run(block: str, cwd: Path, arguments=None, project_dir=None) -> str:
         # through to diff mode and assert against the wrong output.
         br = subprocess.run(["git", "branch", "--show-current"], cwd=str(cwd),
                             capture_output=True, text=True).stdout.strip() or "nobranch"
-        br = re.sub(r"[^A-Za-z0-9._-]", "-", br)
+        # Via the shared slug, not a local regex: `tr -c` is byte-based and a codepoint regex
+        # disagrees on any non-ASCII branch name (measured: feat/caf\u00e9-x).
+        br = AP._slug(br)
         head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(cwd),
                               capture_output=True, text=True).stdout.strip() or "nohead"
         argf = cwd / ".flow" / f"audit-coverage-arg.{br}.{head}.txt"

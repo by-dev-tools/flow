@@ -15,7 +15,7 @@ agent: auditor
 <!-- This block takes NO argument, deliberately. The argument is carried in prose
      under "## Argument" below and read with the Read tool. A placeholder here would
      be substituted into shell source before the shell parsed it, i.e. it would be
-     code. See docs/workflow.md S "Skill arguments: the prose rule" (FB-0116). -->
+     code. See docs/workflow.md § "Skill arguments: the prose rule" (FB-0116). -->
 
 ## Argument
 
@@ -45,6 +45,9 @@ Why the path reaches you as prose and not as a preprocessed `--plan-file`: subst
 executable code, not a value (FB-0116). Your `Read` tool is not a shell, so the path reaches a
 reader without ever becoming code. Your grant is `Read, Grep` — you have no shell to hand it to
 even if you wanted one, which is what makes this channel structural rather than a convention.
+
+The house rule this follows, with the full mechanism and the two tiers, is
+`${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` § "Skill arguments: the prose rule".
 
 ## What to check
 

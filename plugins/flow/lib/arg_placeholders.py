@@ -7,6 +7,19 @@ spelled out in N files is held together by author memory, so the regexes below a
 written once, here, and transcribed from the shipped Claude Code bundle rather than
 inferred from observed behaviour.
 
+PROVENANCE OF THE HOST MODEL BELOW
+----------------------------------
+Transcribed 2026-09-26 from the Claude Code bundle shipped at
+`/conductor-infra/<hash>/binaries/claude` (the build this workspace ran; its plugin host reported
+itself via the marketplace install, not a --version string, so the bundle path is the honest
+identifier). Every negative result in `evals/run_arg_safety_evals.py` is measured THROUGH this
+transcription, so an undetected host change is the one class the harness reports clean over --
+`test_host_agreement` pins the matcher against THIS table, not against the live host.
+
+**Re-derive the three substitution arms and `xS` when the installed host's version changes.** A
+staleness WARN that compares the recorded build against the running one is routed in the roadmap;
+until it exists, this paragraph is the only thing that will remind you.
+
 WHY THIS FILE EXISTS (FB-0116)
 ------------------------------
 `$ARGUMENTS` is not a shell variable. The host substitutes it **textually into the
@@ -154,7 +167,16 @@ BANG_SPAN = re.compile(r"(?:^|(?<=\s))!`([^`]+)`", re.M)
 # region wrongly treated as fenced makes the lint flag MORE (noise, caught in review),
 # while a region wrongly treated as prose makes it flag LESS (a silent live sink). When
 # only one direction can be wrong cheaply, pick that one.
-_FENCE_LINE = re.compile(r"^[ \t]*(?:```|~~~)", re.M)
+# `>` is in the class too, and that was a MEASURED gap, not a precaution. The first fix here
+# allowed indentation only; `ship/SKILL.md:1268` and `:1282` carry BLOCKQUOTED fences
+# (`> ```sh`) wrapping real shell the skill tells the model to run, and those opener lines were
+# invisible. A live placeholder planted inside that block classified `prose` -- the lint
+# reported CLEAN over a live site, which is precisely the failure the comment below claims to
+# prevent. Two lessons, both already house rules:
+#   * item 4: the classifier had been validated on the indented case only. Fixing one CAUSE of
+#     parity inversion is not closing the CLASS; the next cause was one grep away.
+#   * a blockquoted fence body is not decoration. It is copy-paste source for the model.
+_FENCE_LINE = re.compile(r"^[ \t>]*(?:```|~~~)", re.M)
 
 
 def _spans(pattern, text):
@@ -267,12 +289,76 @@ def render(body: str, argument: str | None) -> str:
 #     0  no placeholder in any executable context
 #     1  at least one violation (the real finding)
 #     2  could not scan (no such directory, unreadable)
+# ---------------------------------------------------------------- Tier-2 arg path
+# ONE implementation of the stamped arg-file name. It was derived in three places -- two
+# shell blocks and an eval -- and a one-character disagreement between any two of them is
+# silent: the consumer's `[ -s "$ARGF" ]` is simply false, source mode never engages, and the
+# gate reports clean over work it never read. Worse, the PRODUCER is a model composing the
+# name by hand against a sanitized branch and a git-configurable short-HEAD width, with no
+# error to notice when it gets it wrong.
+#
+# So the name is printed by a program, and every party asks the same program. The shell blocks
+# keep their own derivation for the render-time case (they cannot depend on this module being
+# importable), and `evals/run_arg_safety_evals.py::test_arg_path_agreement` asserts the two
+# constructions produce identical strings -- the FB-0109 discipline: two readers of one
+# boundary, pinned against each other rather than trusted.
+_SLUG_KEEP = frozenset(
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-"
+)
+
+
+def _slug(value: str) -> str:
+    """Branch -> filename-safe token, byte-for-byte identical to `tr -c 'A-Za-z0-9._-' '-'`.
+
+    Operates on UTF-8 BYTES, not codepoints, and that is the whole point: `tr` is byte-based, so
+    a branch `feat/caf\u00e9-x` becomes `feat-caf---x` in shell (two bytes -> two dashes) and
+    `feat-caf--x` under a naive codepoint loop. A one-character divergence here is silent -- the
+    consumer's `[ -s "$ARGF" ]` is just false, and source mode never engages.
+    """
+    return "".join(
+        chr(b) if b in _SLUG_KEEP else "-" for b in value.encode("utf-8", "surrogatepass")
+    )
+
+
+def arg_path(skill: str, repo_root=None) -> str:
+    """Absolute path of the stamped Tier-2 argument file for `skill`.
+
+    Bound to repo+branch+head so a leftover from an earlier run cannot be inherited (FB-0116).
+    """
+    import subprocess
+    from pathlib import Path as _P
+
+    def _git(*a):
+        try:
+            r = subprocess.run(["git", *a], cwd=repo_root, capture_output=True, text=True)
+            return r.stdout.strip() if r.returncode == 0 else ""
+        except OSError:
+            return ""
+
+    root = repo_root or _git("rev-parse", "--show-toplevel")
+    if not root:
+        raise RuntimeError("not inside a git repository; the arg path is repo-bound")
+    br = _slug(_git("branch", "--show-current")) or "nobranch"
+    head = _git("rev-parse", "--short", "HEAD") or "nohead"
+    return str(_P(root) / ".flow" / f"{skill}-arg.{br}.{head}.txt")
+
+
 def _main(argv: list) -> int:
     import sys as _sys
     from pathlib import Path as _Path
 
+    if len(argv) == 2 and argv[0] == "--arg-path":
+        # Producer-facing: print the exact path to Write the argument to. A model composing
+        # this name by hand is the silent-miss hazard this exists to remove.
+        try:
+            print(arg_path(argv[1]))
+        except RuntimeError as e:
+            _sys.stderr.write(f"[arg-placeholders] {e}\n")
+            return 2
+        return 0
     if len(argv) != 1:
-        _sys.stderr.write("usage: arg_placeholders.py <skills-dir>\n")
+        _sys.stderr.write("usage: arg_placeholders.py <skills-dir>\n"
+                          "       arg_placeholders.py --arg-path <skill-name>\n")
         return 2
     root = _Path(argv[0])
     if not root.is_dir():
@@ -309,7 +395,10 @@ def _main(argv: list) -> int:
             "§ \"Skill arguments: the prose rule\"."
         )
         return 1
-    print(f"[arg-placeholders] {len(skills)} skill(s) scanned, no placeholder in shell")
+    # "PASS —" mirrors skill-composition-lint, whose detail line prints adjacent to this one
+    # under doctor's shared indent. Without the token this is the only clean detail line in
+    # Section 1 with no severity anchor for a skim.
+    print(f"[arg-placeholders] PASS — {len(skills)} skill(s) scanned, no placeholder in shell")
     return 0
 
 

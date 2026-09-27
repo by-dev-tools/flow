@@ -87,9 +87,14 @@ invented here; it is named, tightened for paths, and made mechanical.
 - [x] **`critique-plan` → Tier 1, both blocks.** **Spec-walk:** the extractor line and the pinning
       lint both run argument-less, and the lint now prints its own scope label so a named plan file
       cannot read as linted. *Pinned by:* same canary + positive pair; scope label asserted present.
-- [x] **`review-brief` → Tier 2.** **Spec-walk:** the model writes the path with `Write`; the fenced
-      block reads a **stamped** literal path; `Write` is granted in frontmatter. *Pinned by:* same
-      pair + `run_review_brief_evals.py` green.
+- [x] **`review-brief` → Tier 2.** **Spec-walk:** the model asks `arg_placeholders.py --arg-path`
+      for the file name (it cannot be spelled by hand), `Write`s the path there, and the block reads
+      that stamped path and echoes it; `Write` is granted in frontmatter. *Pinned by:* the canary
+      pair **+ `run_arg_safety_evals.py::test_tier2_composed`**, which exercises the whole carrier →
+      extractor → reviewed-document path. **Corrected claim:** this row previously cited
+      `run_review_brief_evals.py`, which invokes `--plan-file` directly and never touches the Tier-2
+      channel at all — green at a layer that does not reach the claim (general.md item 4's
+      corollary), and staff-review caught it.
 - [x] **`audit-coverage` → Tier 2 at the capture point.** **Spec-walk:** the heredoc capture and its
       `ARGTOKEN` sentinel are gone; the path arrives as the contents of a stamped scratch file; every
       pre-existing walk/filter/cap guard still runs. *Pinned by:* `run_coverage_source_mode_evals.py`
@@ -159,8 +164,6 @@ invented here; it is named, tightened for paths, and made mechanical.
 now merged).
 
 
-
-**▶ EXECUTED, shipping (this branch, `conductor/audit-coverage-recall-two-stage-union`, FB-0115, v1.49.0): raise `/flow:audit-coverage`'s recall by splitting its one fused pass into enumerate-then-match.** Source-mode recall **65% → 82%** mean with non-overlapping distributions, union **80% → 100%**, precision unchanged at zero false positives in 15 runs. Diff mode moved **0** and that is reported as such — the residual there is now attributable to the matcher rather than invisible. 37/37 eval harnesses green; the measurement harness refuses to print a number until it proves it can fail.
 
 **▶ MERGED ([#160](https://github.com/by-dev-tools/flow/pull/160), `8be27d7`, v1.49.0, FB-0115): raise `/flow:audit-coverage`'s recall by splitting its one fused pass into enumerate-then-match.** Source-mode recall **65% → 82%** mean with non-overlapping distributions, union **80% → 100%**, precision unchanged at zero false positives in 15 runs. Diff mode moved **0** and that is reported as such — the residual there is now attributable to the matcher rather than invisible. 37/37 eval harnesses green; the measurement harness refuses to print a number until it proves it can fail.
 
