@@ -270,6 +270,140 @@ def main() -> int:
               f"{kind} frontmatter description carries a release token: {stamped} — "
               "frontmatter description is trigger text loaded every invocation, not a changelog")
 
+    # ---- the four rule-skills: the contract that makes model invocation possible ----
+    # FB-0122. These four are `user-invocable: false` background knowledge: a plugin
+    # cannot ship `.claude/rules/*.md` (no `rules/` plugin component), so the ONLY way
+    # they reach a session is Claude reading the description and deciding to load the
+    # body. From v1.33.0 to v1.49.0 every one of them ended with "Not user-invocable --
+    # path-activated only.", which told the model the skill was not its to invoke, and
+    # carried `paths:`, which NARROWS a description-driven activation rather than
+    # triggering one. They loaded for nobody.
+    #
+    # Every negative below is PAIRED with a positive, because a prohibition satisfiable
+    # by deletion is not a check (`.claude/rules/general.md` item 3): "no suppressant in
+    # the description" passes just as well when the description, or the whole skill, is
+    # gone. `rule-skill-present` is what makes the negatives mean something.
+    rule_skills = ["general", "plan-discipline", "documentation", "exploration"]
+    # Two documented caps, two different mechanisms, both binding:
+    #   1,024 = hard validation on `description` alone (Agent Skills spec /
+    #           platform.claude.com .../agent-skills/best-practices)
+    #   1,536 = truncation of `description` + `when_to_use` in the skill LISTING
+    #           (code.claude.com/docs/en/skills § Frontmatter reference)
+    DESC_HARD_CAP, LISTING_CAP = 1024, 1536
+    SUPPRESSANT = re.compile(r"path-activated|Not user-invocable", re.I)
+
+    def rule_skill_fm(name: str) -> str | None:
+        """The frontmatter block of a rule-skill, or None if unreadable."""
+        f = SKILLS_DIR / name / "SKILL.md"
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        if not text.startswith("---"):
+            return None
+        end = text.find("\n---", 3)
+        return text[:end] if end != -1 else None
+
+    def scalar(fm: str, key: str) -> str | None:
+        """A frontmatter scalar, folding the `key: >-` block form onto one line."""
+        m = re.search(rf"^{key}: >-\n((?:  .*\n)+)", fm + "\n", re.M)
+        if m:
+            return " ".join(l.strip() for l in m.group(1).splitlines())
+        m = re.search(rf"^{key}:[ \t]*(.+)$", fm, re.M)
+        return m.group(1).strip() if m else None
+
+    fms = {n: rule_skill_fm(n) for n in rule_skills}
+
+    # POSITIVE, and the anchor for everything after it: all four exist, parse, and
+    # declare a non-empty description. Delete a skill and THIS fails.
+    missing = sorted(n for n, fm in fms.items() if fm is None)
+    check("rule-skill-present", not missing,
+          f"unreadable or frontmatter-less rule-skill(s): {missing} — the negative checks "
+          "below all pass when the file is gone, so this is what gives them meaning")
+
+    for n in rule_skills:
+        fm = fms[n]
+        if fm is None:
+            continue
+        desc, wtu = scalar(fm, "description"), scalar(fm, "when_to_use")
+
+        # POSITIVE: a description exists and is trigger-bearing. A skill Claude must
+        # choose to invoke needs to say WHEN, not only what.
+        check(f"rule-skill-has-description:{n}", bool(desc),
+              f"{n} declares no `description:` — its description IS its trigger")
+        check(f"rule-skill-trigger-clause:{n}",
+              bool(desc) and bool(re.search(r"\bUse (when|before|at)\b|\bLoad (when|before)\b",
+                                            desc + " " + (wtu or ""), re.I)),
+              f"{n}'s description/when_to_use names no trigger condition — per the docs' "
+              "§ Writing effective descriptions it must give what it does AND when to use it")
+
+        # POSITIVE: model-invocable-only is the shape we want, and it is the marker
+        # `plugin-provenance.py:_is_rule_skill` now keys on.
+        check(f"rule-skill-user-invocable-false:{n}",
+              bool(re.search(r"^user-invocable:\s*false\b", fm, re.M)),
+              f"{n} must declare `user-invocable: false` — it is background knowledge, and "
+              "this is also the marker plugin-provenance.py classifies rule-skills by")
+
+        # NEGATIVE ×3, each paired with a positive above.
+        check(f"rule-skill-no-suppressant:{n}",
+              bool(desc) and not SUPPRESSANT.search(desc),
+              f"{n}'s description claims path-activation or advertises itself as "
+              "not-invocable — that is the sentence that suppressed the trigger for 17 "
+              "releases; a model reading it concludes the skill is not its to invoke")
+        check(f"rule-skill-no-paths:{n}",
+              not re.search(r"^\s*paths\s*:", fm, re.M),
+              f"{n} declares `paths:` — it LIMITS an activation the description otherwise "
+              "earns, so it can only gate the trigger, never create one")
+        check(f"rule-skill-no-disable-model-invocation:{n}",
+              not re.search(r"^disable-model-invocation:\s*true\b", fm, re.M),
+              f"{n} sets `disable-model-invocation: true` — that removes the description "
+              "from context, forbidding the one path by which this skill can ever load")
+
+        # Both caps.
+        check(f"rule-skill-desc-cap:{n}", bool(desc) and len(desc) <= DESC_HARD_CAP,
+              f"{n} description is {len(desc or '')} chars (hard cap {DESC_HARD_CAP})")
+        combined = len(desc or "") + len(wtu or "")
+        check(f"rule-skill-listing-cap:{n}", combined <= LISTING_CAP,
+              f"{n} description+when_to_use is {combined} chars (listing truncates at "
+              f"{LISTING_CAP}) — the tail would be silently lost")
+
+    # ---- NEGATIVE CONTROL: prove the predicate above can FAIL ----
+    # A measurement that can only return "clean" is not a measurement
+    # (`.claude/rules/general.md` item 4). The four real files are expected to pass, so
+    # passing over them cannot distinguish a working check from a vacuous one. These are
+    # the v1.49.0 descriptions verbatim — the ones that shipped broken for 17 releases —
+    # and every one of them MUST be rejected. If this block ever goes quiet, the checks
+    # above have stopped meaning anything.
+    BROKEN = {
+        "old-general": (
+            "Auto-loading workflow-discipline guidance (plan-before-code, mode flags, scope "
+            "discipline, decision tracking, autonomous work guardrails) for every file touched "
+            "in a flow-using project. Not user-invocable — path-activated only."),
+        "old-plan-discipline": (
+            "Auto-loading plan-writing requirements (required fields, spec-walk/visual-walk, "
+            "confidence verdicts) when writing to the project's plan doc. Not user-invocable — "
+            "path-activated only."),
+        "old-documentation": (
+            "Auto-loading formatting rules for the project's narrative docs (history, feedback, "
+            "plan, roadmap, spec). Not user-invocable — path-activated only."),
+        "old-exploration": (
+            "Auto-loading nudge to check the roadmap's § Exploration section when touching "
+            "common source roots. Not user-invocable — path-activated only."),
+    }
+    for label, desc in BROKEN.items():
+        check(f"negative-control-rejects:{label}", bool(SUPPRESSANT.search(desc)),
+              f"the suppressant predicate FAILED to reject {label} — it would have passed "
+              "the v1.49.0 description that never triggered, so it is not a check")
+    # And the paths-predicate half, on a frontmatter that carries `paths:`.
+    check("negative-control-rejects:paths-frontmatter",
+          bool(re.search(r"^\s*paths\s*:", "---\nname: x\nuser-invocable: false\npaths:\n  - '**/*'", re.M)),
+          "the paths predicate FAILED to detect `paths:` in frontmatter")
+    # And the trigger-clause half must reject a description that names no trigger.
+    check("negative-control-rejects:no-trigger-clause",
+          not re.search(r"\bUse (when|before|at)\b|\bLoad (when|before)\b",
+                        "Auto-loading formatting rules for the project's narrative docs.", re.I),
+          "the trigger-clause predicate accepted a description with no when-to-use clause")
+
     # ---- CI wiring (the orphaned-eval guard) ----
     # Scoped to an executable `- run:` line, NOT a bare substring: ci.yml's own
     # join-check step argues that a bare grep would count a harness merely NAMED in a

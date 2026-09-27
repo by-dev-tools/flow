@@ -1,27 +1,15 @@
 ---
 name: documentation
-description: Auto-loading formatting rules for the project's narrative docs (history, feedback, plan, roadmap, spec). Not user-invocable — path-activated only.
+description: >-
+  Specifies flow's entry formats for a project's narrative docs — the history log, the feedback log (one FB-XXXX file per entry), plan, roadmap, and spec — including one-file-per-entry naming, what belongs in each, and how a correction becomes a feedback entry. Use when adding a history entry, synthesizing a user correction into a feedback entry, updating the roadmap or spec, or reconciling docs at ship or land time.
+when_to_use: >-
+  Trigger terms: "history entry", "feedback entry", "FB-", "roadmap", "spec doc", "write this up", "record the decision", "the user corrected me", "land the PR docs". Load before creating or editing any of those files, not after.
 user-invocable: false
-paths:
-  # Both shapes, deliberately. The single-file forms stay because single-file docs
-  # remain supported (the schema defaults are still files); the directory forms are
-  # added because a fragmented doc is `history/2026-09-06-<slug>.md`, which matches
-  # NEITHER of the originals. Without them this rule-skill silently stops activating
-  # for every project that adopts one-file-per-entry -- the entry-format contract
-  # would go unenforced with nothing printed. Same by-filename-prohibition shape that
-  # `scripts/extract_session.py` fixes for the reference-doc skip list (FB-0102).
-  - "**/history.md"
-  - "**/history/*.md"
-  - "**/feedback.md"
-  - "**/feedback/*.md"
-  - "**/plan.md"
-  - "**/roadmap.md"
-  - "**/spec.md"
 ---
 
 # Documentation Format Rules (flow plugin)
 
-These rules ensure consistent formatting across the project's narrative docs (history, feedback, plan, roadmap, spec). Path-matches the file names so the rule auto-loads regardless of where the project keeps the docs (`flow.config.json.{history,feedback,plan,roadmap,spec}Path`; defaults `dev-docs/<name>.md`; consumer projects typically `core-docs/<name>.md`).
+These rules ensure consistent formatting across the project's narrative docs (history, feedback, plan, roadmap, spec), wherever the project keeps them (`flow.config.json.{history,feedback,plan,roadmap,spec}Path`; defaults `dev-docs/<name>.md`; consumer projects typically `core-docs/<name>.md`). Both single-file and one-file-per-entry layouts are supported — a fragmented doc is `history/2026-09-06-<slug>.md`.
 
 **Relationship to `.claude/rules/documentation.md` (this repo's own dev-side copy, FB-0085 / Phase 00 / 00c):** the history.md/feedback.md format sections below are mirrored there, scoped to this repo's own `dev-docs/` paths. Keep both in sync.
 

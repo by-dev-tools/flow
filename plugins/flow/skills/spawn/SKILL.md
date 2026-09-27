@@ -122,7 +122,7 @@ This is not a ledger of live *state* — that is deleted by design, because stat
 
 ## 3. Render the brief — and keep it under ~30 lines
 
-The fixed contract block below is ~20 lines before you write anything; keep **your** per-dispatch content (Outcome, Done means, You own, Context) under ~20 more. Past that, something in it belongs in the repo instead. Everything about *how to work* already lives in the project's `CLAUDE.md`, this plugin, and the auto-loading rules; restating it here is duplicated state that drifts.
+The fixed contract block below is ~20 lines before you write anything; keep **your** per-dispatch content (Outcome, Done means, You own, Context) under ~20 more. Past that, something in it belongs in the repo instead. Everything about *how to work* already lives in the project's `CLAUDE.md`, this plugin, and the rule-skills the worker can load itself; restating it here is duplicated state that drifts. (The plugin's four rule-skills are **model-invoked**, so a worker that must follow a specific rule is better told to load it by name than left to infer it.)
 
 Write it with the **Write tool** to `.flow/brief-<item>.md`. Never compose it as a shell string.
 

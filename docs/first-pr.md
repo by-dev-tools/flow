@@ -24,7 +24,7 @@ Claude reads `core-docs/spec.md` (and likely `core-docs/plan.md` + `core-docs/fe
 
 ## Step 2 — Plan (load-bearing human gate)
 
-Claude writes a plan into `core-docs/plan.md` under "Active Work Items". The auto-loading `plan-discipline.md` rule (paths: `**/plan.md`) injects the required-fields contract: mode, goal, scope in/out, spec-walk checkboxes, confidence verdict per load-bearing assumption.
+Claude writes a plan into `core-docs/plan.md` under "Active Work Items". The `plan-discipline` rule-skill carries the required-fields contract — mode, goal, scope in/out, spec-walk checkboxes, confidence verdict per load-bearing assumption — and Claude loads it by judgment when it recognizes it is writing a plan. If the plan comes back missing those fields, say "use plan-discipline" and it will.
 
 For a one-sentence-to-spec change the plan is small but the SHAPE is the same:
 
@@ -205,7 +205,7 @@ You review the PR. CI runs (your project's `.github/workflows/ci.yml` from the b
 ## What you should walk away with after one trip through the loop
 
 1. **Muscle memory for the gate sequence.** Plan (gate) → execute → preflight → commit → reviews → ship → merge (gate). The two human gates are non-negotiable; everything between is delegable.
-2. **Familiarity with which auto-loading rules fire when.** Edit `plan.md` → the `plan-discipline` rule-skill injects. Edit `src/foo.tsx` → `ui.md` (project-shaped, if your stack overlay ships one) + the `exploration` rule-skill inject. The rules are the load-bearing enforcement.
+2. **Familiarity with which rules apply when — and which are guaranteed.** Writing a plan → the `plan-discipline` rule-skill applies; finishing UI work → the `exploration` rule-skill applies. Both are **model-invoked**: Claude decides, from their descriptions, whether to load them. Your own `.claude/rules/*.md` (e.g. `ui.md`, `safety.md`) are the path-activated ones that fire deterministically on a matching file — those are the load-bearing enforcement.
 3. **A real PR history entry in `core-docs/history.md`** with the per-PR decision log shape (what + why + design decisions + technical decisions + tradeoffs + lessons learned).
 4. **A first sense of when the lens agents catch real things.** On a trivial docs change, they won't catch much. On a real product change, the 4-parallel pattern's value compounds.
 

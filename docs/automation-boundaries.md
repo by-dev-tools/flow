@@ -14,7 +14,7 @@ There is no MANUAL-only skill: every skill is at least model-invocable. The only
 
 ## Cold-start reality
 
-Install flow, open a session, and say "build me X" with no slash commands, and **only the auto-loading rules attach.** Those rules are workflow-discipline *guidance* in Claude's context that nudges it to plan before coding and wait for your approval. That nudge is the entire automatic footprint of a cold start.
+Install flow, open a session, and say "build me X" with no slash commands, and **the only thing that can happen automatically is Claude choosing to load one of the four rule-skills.** Their descriptions are always in its context; whether it pulls the body in is its judgment call, not a path match (a plugin cannot ship path-activated rules — see § "Rules" in `plugins/flow/docs/workflow.md`). Those rules are workflow-discipline *guidance* that nudges it to plan before coding and wait for your approval. That nudge — when it fires — is the entire automatic footprint of a cold start.
 
 No audit, plan critique, staff/security/a11y review, verify-build, or ship pipeline runs from a cold "build me X" until you — or a phrase trigger — invoke it. The plugin registers no hooks by default.
 

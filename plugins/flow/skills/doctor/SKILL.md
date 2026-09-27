@@ -12,8 +12,10 @@ description: >
   are intentionally excluded), any declared `statusDocs` status surfaces exist + are
   fenced, any undeclared `statusSurfaceCandidates` that carry status content are
   flagged for opt-in, any open PR for HEAD is body↔draft coherent (no stale
-  `NOT READY TO MERGE` manifest on a ready PR), auto-loading rules visible to
-  Claude Code, prerequisite CLI
+  `NOT READY TO MERGE` manifest on a ready PR), the rule layer (project-side
+  auto-load rules present; plugin-side rule-skills registered and correctly
+  shaped -- their ACTIVATION is model-judged and reported [UNCHECKED], never
+  [PASS]), prerequisite CLI
   tools (gh, jq, git) installed, preflight + CI optionally wired. Each FAIL prints an actionable
   fix command. Emits a final-line verdict ([READY] / [READY with WARN] /
   [NOT READY]) so the bottom line is scannable. Use after `bash bootstrap.sh`
@@ -748,7 +750,7 @@ fi
 # no duplicate/conflicting message here (same silent-defer convention as Checks 2.3/2.4).
 ```
 
-### Section 3: auto-loading rules (the load-bearing enforcement mechanism)
+### Section 3: the rule layer (project-side auto-load + plugin-side model-invoked)
 
 **Check 3.1 — project-side rules present**
 
@@ -762,9 +764,13 @@ else
 fi
 ```
 
-**Check 3.2 — plugin-shipped auto-load rules are reachable**
+**Check 3.2 — plugin-shipped rule-skills are registered and correctly shaped**
 
-Plugin-shipped rules ship as path-activated skills at `${CLAUDE_PLUGIN_ROOT}/skills/{general,plan-discipline,documentation,exploration}/SKILL.md` (`paths:` frontmatter + `user-invocable: false`) and auto-load on path matches when `flow@flow` is enabled. This check asks the loader itself, not disk presence or an inferred pass from Section 1 — a component can be present on disk and still not be what the running Claude Code actually reports (FB-0085: this exact gap is why the 4 rules never loaded for any consumer despite always being on disk).
+Plugin-shipped rules ship as **model-invoked** skills at `${CLAUDE_PLUGIN_ROOT}/skills/{general,plan-discipline,documentation,exploration}/SKILL.md` (`user-invocable: false`, no `paths:`). A plugin cannot ship `.claude/rules/*.md` at all — `rules/` is not a plugin component — so a skill whose description Claude reads and decides to load is the only mechanism available. Their descriptions are always in context; **loading the body is Claude's judgment call, not a path match.**
+
+**Read this before trusting a green line here.** Until v1.50.0 this check asserted the four *"auto-load on path matches"*, and that was **false** — `paths:` on a `SKILL.md` *narrows* a description-driven activation rather than triggering one, and all four descriptions ended with "Not user-invocable — path-activated only.", which told the model the skill was not its to invoke. None of them loaded for any consumer from v1.33.0 to v1.49.0. The check reported `[PASS]` across that whole span because it grepped `claude plugin details` for the four **names** — which measures **registration**, not **activation**. Two different claims; the narrower one was true the entire time.
+
+So this check now asserts what a shell genuinely can: registration, plus the frontmatter contract that makes model invocation possible. **It cannot assert activation** — that is a model-judgment event inside a session, and no shell command observes one. It says so in its own output with `[UNCHECKED]` rather than implying a clean bill of health (FB-0121: a gate reporting nothing wrong must distinguish "nothing wrong" from "I could not see").
 
 ```sh
 if ! command -v claude >/dev/null 2>&1; then
@@ -784,13 +790,55 @@ else
       echo "$SKILLS_LINE" | grep -qE "(^|[, ])$s(,|$| )" || MISSING="$MISSING $s"
     done
     if [ -z "$MISSING" ]; then
-      echo "[PASS] plugin-shipped rule-skills (general/plan-discipline/documentation/exploration) reported by the loader"
+      echo "[PASS] plugin-shipped rule-skills (general/plan-discipline/documentation/exploration) REGISTERED with the loader"
     else
       echo "[FAIL] plugin-shipped rule-skills missing from the loader's own report:$MISSING"
       echo "       Fix: /plugin marketplace update flow && /plugin install flow@flow"
     fi
   fi
 fi
+```
+
+The frontmatter contract that makes model invocation possible — asserted over the **installed** tree, because that is what runs. Exit-code driven rather than output-grepped: a `grep -c` of `0` cannot distinguish "no matches" from "my pattern is wrong", while an exit code is a signal grep's own author maintains (`.claude/rules/general.md` § Consistency item 4 corollary).
+
+```sh
+RS_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+if [ -z "$RS_ROOT" ] || [ ! -d "$RS_ROOT/skills" ]; then
+  echo "[UNCHECKED] rule-skill frontmatter contract — CLAUDE_PLUGIN_ROOT unset or has no skills/ dir."
+  echo "            Checkable by: running this from a session with flow@flow enabled."
+else
+  RS_BAD=""
+  for s in general plan-discipline documentation exploration; do
+    F="$RS_ROOT/skills/$s/SKILL.md"
+    # Frontmatter only — everything above the closing fence.
+    FM=$(awk 'NR==1 && $0!="---"{exit} NR>1 && $0=="---"{exit} {print}' "$F" 2>/dev/null)
+    # POSITIVE: the file exists and declares a non-empty description. Without this the
+    # three negatives below are all satisfiable by deleting the skill (FB-0077).
+    [ -s "$F" ] || { RS_BAD="$RS_BAD $s(missing)"; continue; }
+    printf '%s' "$FM" | grep -qE '^description:' || RS_BAD="$RS_BAD $s(no-description)"
+    # POSITIVE: model-invocable-only is the shape we want.
+    printf '%s' "$FM" | grep -qE '^user-invocable:[[:space:]]*false'       || RS_BAD="$RS_BAD $s(not-user-invocable-false)"
+    # NEGATIVE: `paths:` would gate the description-driven trigger behind a glob.
+    printf '%s' "$FM" | grep -qE '^[[:space:]]*paths[[:space:]]*:'       && RS_BAD="$RS_BAD $s(has-paths)"
+    # NEGATIVE: this would forbid the one path that works ("Description not in context").
+    printf '%s' "$FM" | grep -qE '^disable-model-invocation:[[:space:]]*true'       && RS_BAD="$RS_BAD $s(disable-model-invocation)"
+    # NEGATIVE: the sentence that suppressed the trigger for 17 releases.
+    printf '%s' "$FM" | grep -qiE 'path-activated|Not user-invocable'       && RS_BAD="$RS_BAD $s(suppressant-in-description)"
+  done
+  if [ -z "$RS_BAD" ]; then
+    echo "[PASS] rule-skill frontmatter contract: all 4 declare a description + user-invocable:false, none carry paths:/disable-model-invocation/suppressant text"
+  else
+    echo "[FAIL] rule-skill frontmatter contract violated:$RS_BAD"
+    echo "       Fix: a rule-skill must declare a trigger-bearing description and user-invocable: false,"
+    echo "            and must NOT declare paths: or disable-model-invocation: true. See FB-0122."
+  fi
+fi
+echo "[UNCHECKED] rule-skill ACTIVATION (whether Claude actually loads these four bodies in a session)."
+echo "            Registration and frontmatter shape are checked above; activation is a model-judgment"
+echo "            event inside a session and no shell command observes one. Unchecked, not clean."
+echo "            Checkable by: a first-party CLI or hook surface that reports per-session skill"
+echo "            invocations (none exists today). Measured out-of-band for v1.51.0 — see"
+echo "            dev-docs/history/ for the session counts."
 ```
 
 ### Section 4: prerequisite CLI tools
@@ -914,7 +962,7 @@ After running all sections, emit a summary line:
 ═══ flow:doctor summary ═══
   Section 1 (install):       <N PASS / N FAIL>
   Section 2 (project config): <N PASS / N WARN / N FAIL>
-  Section 3 (auto-load rules): <N PASS / N WARN>
+  Section 3 (rule layer):     <N PASS / N WARN / N UNCHECKED>
   Section 4 (CLI tools):     <N PASS / N FAIL>
   Section 5 (optional infra): <N PASS / N WARN>
 
@@ -923,11 +971,29 @@ After running all sections, emit a summary line:
 
 Final-line verdict (the skill's contract — not an exit code, since skill bodies are agent prompts not processes):
 
-- `[READY] flow is correctly set up; all checks pass.`
-- `[READY with WARN-level items] flow is functional; N optional items can be addressed at your discretion.`
+- `[READY] flow is correctly set up; all checks pass. (N unchecked)`
+- `[READY with WARN-level items] flow is functional; N optional items can be addressed at your discretion. (N unchecked)`
 - `[NOT READY] N FAIL(s) block flow from working correctly. Address each FAIL's fix above before proceeding.`
 
 Always emit the verdict as the FINAL line so the agent/user can scan to the bottom for the bottom line.
+
+**The four markers, and why there are four (FB-0121/FB-0122).**
+
+| Marker | Means | Counts toward the verdict? |
+|---|---|---|
+| `[PASS]` | Checked, and correct | yes |
+| `[WARN]` | Checked, and imperfect — optional, the consumer can act on it | yes → `[READY with WARN-level items]` |
+| `[FAIL]` | Checked, and broken — blocks | yes → `[NOT READY]` |
+| `[UNCHECKED]` | **Not checked. This gate could not see.** | **no** — reported inline as `(N unchecked)` |
+
+`[UNCHECKED]` exists because a gate that reports nothing wrong must distinguish *"nothing wrong"* from *"I could not see"* (FB-0121). It is deliberately **outside** the verdict arithmetic: the thing it names is not a mild failure the consumer can fix, so routing it to `[WARN]` would put every consumer permanently below `[READY]` over an item nobody can ever clear, and would eventually make the case for retiring `[READY]` altogether. Keeping it out of the arithmetic preserves `[READY]`'s meaning; printing `(N unchecked)` **inline on the verdict line** keeps the unseen items visible rather than buried. Both properties, not one.
+
+**Two rules, so the class does not become the drawer every lazy check goes into:**
+
+1. **Every `[UNCHECKED]` line MUST name the mechanism that would make it checkable** — a `Checkable by:` clause. No mechanism named, no `[UNCHECKED]`: use `[WARN]` or write the check.
+2. **That clause is the line's own deletion criterion.** When the named mechanism exists, the line becomes a real check or it dies. An `[UNCHECKED]` that cannot say what would resolve it is a check excusing itself.
+
+`[SKIP]` is unchanged and is a *different* thing: a check that did not apply (a tool absent, a config slot unset), not one that applied and could not see.
 
 ## What doctor does NOT check
 

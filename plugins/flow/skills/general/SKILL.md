@@ -1,14 +1,15 @@
 ---
 name: general
-description: Auto-loading workflow-discipline guidance (plan-before-code, mode flags, scope discipline, decision tracking, autonomous work guardrails) for every file touched in a flow-using project. Not user-invocable — path-activated only.
+description: >-
+  Defines flow's workflow discipline for a flow-using project: plan-before-code, the single pre-execution gate (plan approval, or prototype approval on the D1 UI path), HIGH/MEDIUM/LOW confidence verdicts, scope discipline, decision tracking, and the autonomous-work guardrails for cost, permanence, and risk. Use at the start of any non-trivial request, before writing or editing a plan, before committing, before opening a PR, when new scope appears mid-task, and before auto-advancing into /flow:ship.
+when_to_use: >-
+  Trigger terms: "plan before code", "scope creep", "is this in scope", "can I just do this", "mode: tiny", "ship it", "should I ask first". Also load before any action touching cost exposure, irreversibility, or security/privacy, and when unsure which step of the flow loop the session is on.
 user-invocable: false
-paths:
-  - "**/*"
 ---
 
 # General Rules (flow plugin)
 
-These apply to all work in any flow-using project. They reinforce the workflow defined in `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` — they don't replace it. If a rule here contradicts `workflow.md`, `workflow.md` wins (and the contradiction is itself a bug to fix in the plugin).
+These apply to all work in any flow-using project, and are most useful at the junctures named in this skill's `when_to_use`: opening a non-trivial request, writing or editing a plan, committing, opening a PR, absorbing new scope, and deciding whether to auto-advance into `/flow:ship`. They reinforce the workflow defined in `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` — they don't replace it. If a rule here contradicts `workflow.md`, `workflow.md` wins (and the contradiction is itself a bug to fix in the plugin).
 
 Doc-path references in this rule resolve via `flow.config.json` slots with built-in defaults (`dev-docs/<name>.md` for flow's own repo; consumer projects typically `core-docs/<name>.md`).
 

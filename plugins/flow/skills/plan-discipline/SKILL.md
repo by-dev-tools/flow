@@ -1,14 +1,15 @@
 ---
 name: plan-discipline
-description: Auto-loading plan-writing requirements (required fields, spec-walk/visual-walk, confidence verdicts) when writing to the project's plan doc. Not user-invocable — path-activated only.
+description: >-
+  Specifies the required fields of a flow plan — mode, goal, scope in/out, Spec-walk and Visual-walk checkboxes, a HIGH/MEDIUM/LOW confidence verdict per load-bearing assumption, risks, and files touched — plus where the active block must sit in the plan doc for the walk parsers to find it. Use when writing, editing, or reviewing a plan in a project's plan doc, when declaring acceptance criteria, when choosing a mode (feature/spike/tiny), and before asking the user to approve a plan.
+when_to_use: >-
+  Trigger terms: "write a plan", "plan.md", "Spec-walk", "Visual-walk", "acceptance criteria", "confidence verdict", "mode: spike", "mode: tiny", "plan gate", "approve the plan". A LOW verdict is an automatic human gate, so load this before recording one.
 user-invocable: false
-paths:
-  - "**/plan.md"
 ---
 
 # Plan-discipline rule (flow plugin)
 
-Loads when writing a plan in response to a user request (step 2 of the loop in `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md`). Path-matches any `plan.md` file in the project tree so it auto-loads regardless of where the project keeps its plan doc (`flow.config.json.planPath` default `dev-docs/plan.md`; consumer projects typically `core-docs/plan.md`).
+Applies when writing a plan in response to a user request (step 2 of the loop in `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md`), wherever the project keeps its plan doc (`flow.config.json.planPath` default `dev-docs/plan.md`; consumer projects typically `core-docs/plan.md`).
 
 ## Before drafting a plan
 

@@ -331,6 +331,36 @@ Zero hook events. Zero transcript occurrences. Probe 2 self-reported `plan_disci
 
 **Probe 3 isolates the cause.** A throwaway **project-scoped** skill (`.claude/skills/e1-probe-rule/SKILL.md`, `user-invocable: false`, `paths: ["**/roadmap.md"]`, containing a unique marker string) also **did not activate** when the probe Read `dev-docs/roadmap.md` — while `.claude/rules/documentation.md` fired on the same Read, in the same session. So this is **not** a plugin-scope problem and not a glob-syntax problem.
 
+> **CORRECTION, 2026-09-27 (v1.51.0, FB-0122) — read this before citing the finding below.**
+> This §5.1 is cited from six places, so the correction states what still stands as well as what does not.
+>
+> **What still stands, unchanged and load-bearing:** *the four rule-skills had never loaded for any
+> consumer.* That was measured three independent ways, with four positive controls firing on the same
+> Reads in the same sessions, and isolated from plugin scope by probe 3. Nothing below weakens it, and it
+> is the finding that justified the S0 option decision.
+>
+> **What does not stand: the attribution to `paths:` specifically.** The finding as worded blames the
+> field. The probes cannot support that, because **every one of them carried a restrictive `paths:` glob
+> AND a description ending "Not user-invocable — path-activated only."** — a sentence that tells a model
+> the skill is not its to invoke. Non-activation is explained equally well by either cause, and the
+> experiment never separated them. Probe 3 is the closest to a clean arm, and this section **records no
+> description for it**, so its cause-isolation is *unrecorded* rather than *absent*; the artifact is
+> unrecoverable (`git log --all -- '*e1-probe*'` is empty, and §5's preamble notes the repo carries no
+> artifact from any of E1–E3).
+>
+> **And the documented semantics point the other way.** `paths:` is a real SKILL.md field whose
+> documented meaning is to *limit* an activation the `description` otherwise earns — *"Glob patterns that
+> **limit** when this skill is activated… Uses the same **format** as path-specific rules"* (format, not
+> semantics). The read-trigger behaviour this section's positive controls demonstrated belongs to
+> `.claude/rules/*.md`. Two mechanisms, one field name. **So the "observed behavior does not match that
+> description" clause below is not established** — on the filter reading, a skill with a suppressive
+> description would be expected not to load whether or not `paths:` worked.
+>
+> This correction is not a retraction. It is the same discipline this section applied to Phase 00, turned
+> on this section: *registration was checked, activation was not* — and here, *activation was measured,
+> attribution was not.* v1.51.0 removed `paths:` anyway, because under either reading it could only gate
+> the trigger the descriptions now earn.
+
 > **Finding: `paths:` frontmatter on a `SKILL.md` does not activate the skill. Path-scoped activation works for `.claude/rules/*.md` and does not work for skills — at either project or plugin scope — in Claude Code v2.1.257.**
 >
 > `paths` is a documented SKILL.md frontmatter field (*"Glob patterns that limit when this skill is activated… Claude loads the skill automatically only when working with files matching the patterns"*). Observed behavior does not match that description. Whether the field is inert on skills, or activates through a channel all three instruments miss, is not distinguishable from outside — but flow cannot rely on it either way.
