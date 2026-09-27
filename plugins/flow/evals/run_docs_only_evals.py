@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import re
 import subprocess
 import sys
@@ -51,7 +50,9 @@ HERE = Path(__file__).parent
 PLUGIN = HERE.parent
 SKILLS = PLUGIN / "skills"
 sys.path.insert(0, str(HERE))
-from eval_utils import git_repo  # noqa: E402  the shared hoist target
+from eval_utils import commit, git_repo  # noqa: E402  the shared hoist target
+sys.path.insert(0, str(PLUGIN / 'skills' / 'verify-build' / 'lib'))
+from diff_scope import DOCS_ONLY, SOURCE_TOUCHING, UNDETERMINED  # noqa: E402
 
 _failures: list[str] = []
 
@@ -65,80 +66,69 @@ def check(name: str, cond: bool, detail: str = "") -> bool:
     return bool(cond)
 
 
-# ------------------------------------------------------- extract the shipped S 1.2 block
-# EXTRACTED, never restated: a harness that re-types the predicate tests its own copy and
-# lets the shipped shell drift away underneath it.
-def section_shell(skill: Path, heading: str) -> str:
-    text = skill.read_text(encoding="utf-8")
-    start = text.index(heading)
-    nxt = text.find("\n### ", start + len(heading))
-    body = text[start: nxt if nxt != -1 else len(text)]
-    blocks = re.findall(r"^```sh\n(.*?)^```$", body, re.S | re.M)
-    if not blocks:
-        raise AssertionError(f"no ```sh block under {heading!r}")
-    return "\n".join(blocks)
+# ------------------------------------------------------- the shipped S 1.2 wiring, asserted
+# The PREDICATE is `lib/diff_scope.py` (a program), not shell. The first cut of this fix
+# hand-rolled it in shell and diverged from the engine three ways -- two-dot diff, a UI ruler
+# missing `visualFilePatterns` + the built-in default, and a `2>/dev/null` that made an
+# unresolvable base look like an empty diff. Each is a regression case in section 1 below.
+#
+# What is still asserted about the SHELL is only its wiring: that it calls the helper, keys on
+# the three exit codes, and puts the docs-only exit BEFORE the toolchain check. Ordering is the
+# fix; if the toolchain exit ran first a toolchain-less host would claim a docs-only diff again.
+VB_SKILL = (SKILLS / "verify-build" / "SKILL.md").read_text(encoding="utf-8")
 
-
-VB_12 = section_shell(SKILLS / "verify-build" / "SKILL.md", "### 1.2. Skip-path checks")
-
-check("the shipped S 1.2 block was extracted (not restated here)",
-      "docs-only diff" in VB_12 and "cannot build the" in VB_12,
-      "extraction returned a block without the docs-only exit or the toolchain exit; the "
-      "cases below would then prove nothing about shipped behaviour")
-# ORDER IS THE FIX. If the toolchain exit came first, a toolchain-less host would claim a
-# docs-only diff before the N/A exit ran -- which is the deadlock, restored.
-check("the docs-only exit precedes the toolchain exit in the shipped block",
-      VB_12.index("docs-only diff") < VB_12.index("cannot build the"),
+check("S 1.2 calls the shared predicate rather than re-deriving it in shell",
+      "diff_scope.py" in VB_SKILL and "VB_HITS" not in VB_SKILL,
+      "a second hand-rolled predicate diverges from the engine that validates its claim")
+check("the docs-only exit precedes the toolchain exit",
+      VB_SKILL.index("docs-only diff — no behavior to verify")
+      < VB_SKILL.index("cannot build the"),
       "the toolchain exit would claim a docs-only diff first and file a never-clearable entry")
+check("all three exit codes are handled, and UNDETERMINED is not treated as docs-only",
+      "DS_RC" in VB_SKILL and "UNCHECKED here, not clean" in VB_SKILL,
+      "exit 2 must fall through loudly; collapsing it into 0 is the failure-open")
+check("an unreachable helper warns rather than silently skipping the check",
+      "diff_scope.py not reachable" in VB_SKILL)
+
+DS = SKILLS / "verify-build" / "lib" / "diff_scope.py"
 
 
-def run_12(repo: Path, config: dict) -> str:
-    # The config is written and COMMITTED by `scenario()` as part of the baseline, never
-    # left dirty here. `flow.config.json` is itself `.json`, which `sourceFilePatterns`
-    # classifies as SOURCE -- an uncommitted config made every scenario source-touching and
-    # the docs-only exit correctly never fired. The harness was wrong, not the predicate,
-    # and it is worth the comment because the same trap catches a real repo: a PR that
-    # edits flow.config.json is NOT docs-only, by design.
-    env = dict(os.environ)
-    env.pop("CLAUDE_PLUGIN_ROOT", None)          # force the in-repo helper path
-    env["PATH"] = env.get("PATH", "")
-    p = subprocess.run(["sh", "-c", VB_12], cwd=str(repo), env=env,
-                       capture_output=True, text=True, timeout=60)
-    return p.stdout + p.stderr
-
-
-IOS = {"platform": "ios", "defaultBranch": "main",
-       "uiFilePatterns": r"(^|/)[^/]*\.(html|css)$"}
-
-
-def scenario(tmp: Path, label: str, added: dict) -> str:
-    """A repo whose committed diff vs origin/main adds exactly `added`."""
-    repo = git_repo(tmp / label,
-                    {"README.md": "# r\n", "flow.config.json": json.dumps(IOS)})
-    # Make the in-repo toolchain helper REACHABLE. Without it S 1.2's toolchain exit cannot
-    # fire, and then "did not take the docs-only exit" would pass for the wrong reason -- the
-    # negative half would prove only that one exit was missed, not that the blocking exit is
-    # still reached. With it, this host is a genuine toolchain-less ios host: the exact
-    # health-tracker#118 shape, and the known positive this harness needs (item 4).
-    lib = repo / "plugins" / "flow" / "skills" / "verify-build" / "lib"
-    lib.mkdir(parents=True, exist_ok=True)
-    shutil.copy(PLUGIN / "skills" / "verify-build" / "lib" / "toolchain.py", lib / "toolchain.py")
-    subprocess.run(["git", "add", "-A"], cwd=str(repo), capture_output=True)
-    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "helper"],
-                   cwd=str(repo), capture_output=True)
-    subprocess.run(["git", "branch", "-f", "main"], cwd=str(repo), capture_output=True)
-    subprocess.run(["git", "remote", "add", "origin", str(repo)], cwd=str(repo), capture_output=True)
-    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "main"],
-                   cwd=str(repo), capture_output=True)
+def repo_with(tmp, label, cfg, committed=None, base_extra=None, untracked=None, no_origin=False):
+    """A repo whose branch `work` adds `committed`, with `base_extra` landing on main AFTER."""
+    repo = git_repo(tmp / label, {"README.md": "# r\n", "flow.config.json": json.dumps(cfg)})
+    if not no_origin:
+        subprocess.run(["git", "remote", "add", "origin", str(repo)], cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "main"],
+                       cwd=str(repo), capture_output=True)
     subprocess.run(["git", "checkout", "-q", "-b", "work"], cwd=str(repo), capture_output=True)
-    for rel, body in added.items():
+    if committed:
+        commit(repo, committed, label)
+    if base_extra:
+        subprocess.run(["git", "checkout", "-q", "main"], cwd=str(repo), capture_output=True)
+        commit(repo, base_extra, "base-moved")
+        if not no_origin:
+            subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "main"],
+                           cwd=str(repo), capture_output=True)
+        subprocess.run(["git", "checkout", "-q", "work"], cwd=str(repo), capture_output=True)
+    if no_origin:
+        # resolve_base falls back origin/<b> -> <b>, correctly. To exercise "neither resolves"
+        # the local branch has to go too, or this fixture tests the fallback, not the failure.
+        subprocess.run(["git", "branch", "-D", "main"], cwd=str(repo), capture_output=True)
+    for rel, body in (untracked or {}).items():
         f = repo / rel
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(body, encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=str(repo), capture_output=True)
-    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", label],
-                   cwd=str(repo), capture_output=True)
-    return run_12(repo, IOS)
+    return repo
+
+
+def ds_verdict(repo) -> tuple:
+    p = subprocess.run(["python3", str(DS), "--config", "flow.config.json"],
+                       cwd=str(repo), capture_output=True, text=True)
+    return p.returncode, (p.stdout + p.stderr).strip()
+
+
+IOS = {"platform": "ios", "defaultBranch": "main"}
+WEB = {"platform": "web", "defaultBranch": "main"}
 
 
 def main() -> int:
@@ -147,45 +137,169 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
 
-        print("\n1. THE EXIT FIRES on a genuinely docs-only diff")
-        for label, added in [
-            ("md-only",   {"docs/guide.md": "hi\n"}),
-            ("many-docs", {"a.md": "a\n", "b.txt": "b\n", "LICENSE": "x\n"}),
-        ]:
-            out = scenario(tmp, label, added)
-            check(f"{label}: emits the docs-only N/A skip",
-                  "docs-only diff — no behavior to verify" in out, f"got: {out[:240]!r}")
-            check(f"{label}: does NOT emit the toolchain 'cannot build' skip",
-                  "cannot build the" not in out,
-                  "the toolchain exit claimed a docs-only diff — that is the deadlock. Note the "
-                  "toolchain exit IS live on this fixture (section 2 proves it fires for a "
-                  "source diff), so its absence here is pre-emption, not a dead check")
-            check(f"{label}: hands ship a skip_reason carrying a needle audit-skips matches",
-                  'skip_reason="docs-only diff' in out, f"got: {out[:240]!r}")
+        print("\n1. DOCS-ONLY verdicts, including the three measured regressions")
+        cases = [
+            # (label, cfg, committed, base_extra, untracked, want_rc, why)
+            ("md-only", IOS, {"docs/g.md": "x\n"}, None, None, DOCS_ONLY,
+             "a plain docs diff"),
+            ("many-docs", IOS, {"a.md": "a\n", "LICENSE": "x\n"}, None, None, DOCS_ONLY,
+             "several docs files"),
+            # REGRESSION 1 -- two-dot vs three-dot. `main` advancing with a .py must not make a
+            # docs-only branch source-touching; two-dot did exactly that, so the original fix
+            # missed the common case (main moves during every real PR).
+            ("base-moved", IOS, {"docs/g.md": "x\n"}, {"other.py": "print(1)\n"}, None,
+             DOCS_ONLY, "main advanced with a .py after the branch started"),
+            # REGRESSION 2 -- the UI ruler. With NO ui/a11y slots set, the built-in default must
+            # still classify css/html/vue as UI. The shell read only `uiFilePatterns` and had no
+            # default, so these were called docs-only and skipped the gate: failure-OPEN.
+            ("css-no-slots", WEB, {"styles/app.css": "a{}\n"}, None, None, SOURCE_TOUCHING,
+             "css with no uiFilePatterns set — the default ruler must still catch it"),
+            ("html-no-slots", WEB, {"index.html": "<b>x</b>\n"}, None, None, SOURCE_TOUCHING,
+             "html with no slots set"),
+            ("vue-no-slots", WEB, {"Card.vue": "<template/>\n"}, None, None, SOURCE_TOUCHING,
+             "vue with no slots set"),
+            # REGRESSION 3 -- an unresolvable base is UNDETERMINED, never docs-only. Previously
+            # `2>/dev/null` made it read as "no committed changes" and an untracked docs file
+            # was enough to buy the N/A exit on a repo containing committed source.
+            ("no-base", IOS, {"app.py": "print(1)\n"}, None, {"notes.md": "n\n"},
+             UNDETERMINED, "no origin/main and no local main to fall back to"),
+            # The counter-argument cases: config-as-source. These are why json/ya?ml/toml in the
+            # default matter, and they are the pair for every docs-only row above.
+            ("one-json", IOS, {"flags.json": '{"a":1}\n'}, None, None, SOURCE_TOUCHING, ".json is SOURCE"),
+            ("one-yaml", IOS, {"c/app.yaml": "x: 1\n"}, None, None, SOURCE_TOUCHING, ".yaml is SOURCE"),
+            ("one-toml", IOS, {"s.toml": "x = 1\n"}, None, None, SOURCE_TOUCHING, ".toml is SOURCE"),
+            ("one-py", IOS, {"app.py": "print(1)\n"}, None, None, SOURCE_TOUCHING, "plain source"),
+            ("docs+src", IOS, {"a.md": "a\n", "app.py": "p\n"}, None, None, SOURCE_TOUCHING,
+             "one source file among docs is still source-touching"),
+            ("untracked-src", IOS, {"a.md": "a\n"}, None, {"new.py": "p\n"}, SOURCE_TOUCHING,
+             "an UNTRACKED source file counts — the iterate-then-ship loop"),
+            ("uncommitted-src", IOS, {"a.md": "a\n"}, None, None, SOURCE_TOUCHING, ""),
+            # An invalid pattern must fall back to the default, never fail open into docs-only.
+            ("bad-regex", dict(IOS, sourceFilePatterns="(?i)\\.py$"), {"app.py": "p\n"},
+             None, None, SOURCE_TOUCHING, "an invalid regex falls back, never opens"),
+            ("non-ascii", IOS, {"caf\u00e9.py": "p\n"}, None, None, SOURCE_TOUCHING,
+             "quotePath=false so a non-ASCII source name still matches"),
+        ]
+        NAMES = {DOCS_ONLY: "docs-only", SOURCE_TOUCHING: "source-touching",
+                 UNDETERMINED: "undetermined"}
+        for label, cfg, committed, base_extra, untracked, want, why in cases:
+            repo = repo_with(tmp, label, cfg, committed, base_extra, untracked,
+                             no_origin=(label == "no-base"))
+            if label == "uncommitted-src":
+                (repo / "mod.py").write_text("p\n", encoding="utf-8")
+                subprocess.run(["git", "add", "-A"], cwd=str(repo), capture_output=True)
+            got, out = ds_verdict(repo)
+            check(f"{label}: {NAMES[want]}" + (f" ({why})" if why else ""),
+                  got == want, f"got {NAMES.get(got, got)} — {out[:200]}")
 
-        print("\n2. THE EXIT DOES NOT FIRE when exactly one source file is added (the pair)")
-        # .json is the case the counter-argument turns on; .html is in uiFilePatterns but NOT
-        # in sourceFilePatterns, so a source-only predicate would wrongly call it docs-only.
-        for label, added in [
-            ("one-py",   {"app.py": "print(1)\n"}),
-            ("one-json", {"feature-flags.json": '{"x":true}\n'}),
-            ("one-yaml", {"config/app.yaml": "x: 1\n"}),
-            ("one-toml", {"settings.toml": "x = 1\n"}),
-            ("one-html", {"page.html": "<b>x</b>\n"}),
-            ("docs+one-src", {"a.md": "a\n", "app.py": "print(1)\n"}),
+        print("\n2. THE PREDICATE AGREES WITH THE ENGINE THAT VALIDATES ITS CLAIM")
+        # The producer's verdict and the consumer's `touches_*` union are two readers of one
+        # boundary. Pinning them SEPARATELY is what let three divergences ship, so they are
+        # compared here per shape -- general.md item 4's corollary, pointed at this PR's own
+        # "the two predicates agree by construction" claim.
+        sys.path.insert(0, str(SKILLS / "audit-skips" / "lib"))
+        import importlib.util, re as _re
+        spec = importlib.util.spec_from_file_location(
+            "sac", str(SKILLS / "audit-skips" / "lib" / "skip-audit-checks.py"))
+        sac = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sac)
+        import diff_scope as ds
+        import file_patterns as fp
+
+        # The ONE genuine duplication between the two readers is the source default; the UI
+        # rulers already come from the same `file_patterns.compile_for` on both sides. Assert
+        # the duplicate is byte-identical rather than trusting it was copied correctly.
+        check("the source-pattern default is byte-identical in producer and engine",
+              ds.DEFAULT_SOURCE_PATTERN == sac.DEFAULT_SOURCE_PATTERN,
+              "the two readers would classify a config-only diff differently:\n"
+              f"          producer={ds.DEFAULT_SOURCE_PATTERN!r}\n"
+              f"          engine  ={sac.DEFAULT_SOURCE_PATTERN!r}")
+        check("both readers take their UI rulers from file_patterns.compile_for",
+              "compile_for" in (SKILLS / "audit-skips" / "lib" / "skip-audit-checks.py")
+              .read_text(encoding="utf-8")
+              and "file_patterns.compile_for" in DS.read_text(encoding="utf-8"),
+              "a local jq/regex read instead of the shared resolver is how the css-only "
+              "divergence shipped")
+
+        def engine_touches(cfg, files):
+            src = _re.compile(cfg.get("sourceFilePatterns") or sac.DEFAULT_SOURCE_PATTERN)
+            vis, _, _ = sac.compile_for(cfg, sac.VISUAL)
+            a11y, _, _ = sac.compile_for(cfg, sac.A11Y)
+            return any(src.search(f) or vis.search(f) or a11y.search(f) for f in files)
+
+        def producer_touches(cfg, files):
+            src = ds._compile(cfg.get("sourceFilePatterns") or ds.DEFAULT_SOURCE_PATTERN, "s", [])
+            vis, _, _ = fp.compile_for(cfg, fp.VISUAL)
+            a11y, _, _ = fp.compile_for(cfg, fp.A11Y)
+            return any(src.search(f) or vis.search(f) or a11y.search(f) for f in files)
+
+        for label, cfg, files in [
+            ("md-only",       IOS, ["docs/g.md"]),
+            ("css-no-slots",  WEB, ["styles/app.css"]),
+            ("html-no-slots", WEB, ["index.html"]),
+            ("mdx-visualonly", dict(WEB, visualFilePatterns=r"\.mdx$"), ["docs/p.mdx"]),
+            ("json",          IOS, ["flags.json"]),
+            ("py",            IOS, ["app.py"]),
         ]:
-            out = scenario(tmp, label, added)
-            check(f"{label}: does NOT take the docs-only exit",
-                  "docs-only diff — no behavior to verify" not in out,
-                  "a source/UI-touching diff bought a docs-only N/A it has not earned — "
-                  f"got: {out[:240]!r}")
-            # The POSITIVE half of the negative: on this toolchain-less ios host the diff must
-            # still reach the toolchain exit. Asserting only the absence of the N/A line would
-            # pass if BOTH exits silently stopped firing.
-            check(f"{label}: still reaches the toolchain blocker (the exit is genuinely live)",
-                  "cannot build the" in out,
-                  "neither exit fired, so the previous assertion proved nothing — "
-                  f"got: {out[:240]!r}")
+            pt, et = producer_touches(cfg, files), engine_touches(cfg, files)
+            check(f"agreement[{label}]: producer and engine classify identically",
+                  pt == et, f"producer touches={pt} engine touches={et} for {files} cfg={cfg}")
+
+        print("\n2b. THE SHELL ACTUALLY TAKES THE EXIT (composed layer, not just the predicate)")
+        # Mutation-found gap: every other section tests the PREDICATE or greps the skill TEXT,
+        # so disabling the whole exit (`if [ -n "$DS" ]` -> `if false`) left the harness green.
+        # A check that cannot fail when the feature is removed is not a check (item 4), and the
+        # claim being made is about /flow:verify-build's behaviour, not about diff_scope's --
+        # item 4's corollary: pin it at the layer where it is claimed. So: extract the shipped
+        # S 1.2 block and RUN it, with the helpers reachable, over both verdicts.
+        import re as _re2
+        vb = VB_SKILL
+        sect = vb[vb.index("### 1.2. Skip-path checks"):]
+        sect = sect[:sect.index("\n### ")] if "\n### " in sect else sect
+        blocks = _re2.findall(r"^```sh\n(.*?)^```$", sect, _re2.S | _re2.M)
+        check("S 1.2's shell block is extractable", bool(blocks),
+              "cannot run what cannot be extracted; the checks below would be vacuous")
+        shell = "\n".join(blocks)
+
+        def run_12(repo):
+            # Reach the helpers via CLAUDE_PLUGIN_ROOT, NOT by copying them into the fixture.
+            # Copying put three untracked `.py` files in the repo, which the predicate then
+            # correctly counted as source -- the fixture defeated its own docs-only case and
+            # reported a deadlock that was not there. (Same shape as leaving flow.config.json
+            # uncommitted: the harness's own artifacts are part of the diff it measures.)
+            # It also exercises the plugin-root-first resolution branch production uses.
+            env = dict(os.environ)
+            env["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN)
+            pr = subprocess.run(["sh", "-c", shell], cwd=str(repo), env=env,
+                                capture_output=True, text=True, timeout=60)
+            return pr.stdout + pr.stderr
+
+        docs_repo = repo_with(tmp, "run12-docs", IOS, {"docs/g.md": "x\n"})
+        out = run_12(docs_repo)
+        check("running S 1.2 on a docs-only diff emits the N/A skip",
+              "docs-only diff — no behavior to verify" in out, f"got: {out[:220]!r}")
+        check("...and does NOT emit the toolchain blocker",
+              "cannot build the" not in out,
+              "the toolchain exit claimed a docs-only diff — the deadlock, restored")
+        # UNDETERMINED at the composed layer. Mutation-found: with no fixture producing exit 2,
+        # rewriting the `*)` arm to `exit 0` escaped every other check -- i.e. the single
+        # failure-open this whole fix exists to prevent was the one state nothing exercised.
+        und_repo = repo_with(tmp, "run12-undet", IOS, {"app.py": "print(1)\n"},
+                             untracked={"notes.md": "n\n"}, no_origin=True)
+        out3 = run_12(und_repo)
+        check("an UNDETERMINED diff does NOT take the N/A exit",
+              "docs-only diff — no behavior to verify" not in out3,
+              "\"I could not look\" bought a clean skip — the FB-0121 conflation, reintroduced")
+        check("...and says so out loud (UNCHECKED, not clean)",
+              "UNCHECKED here, not clean" in out3, f"got: {out3[:220]!r}")
+
+        src_repo = repo_with(tmp, "run12-src", IOS, {"app.py": "print(1)\n"})
+        out2 = run_12(src_repo)
+        check("running S 1.2 on a source diff does NOT emit the N/A skip",
+              "docs-only diff — no behavior to verify" not in out2, f"got: {out2[:220]!r}")
+        check("...and DOES reach the toolchain blocker (the exit is live on this fixture)",
+              "cannot build the" in out2,
+              "neither exit fired, so the assertion above proved nothing")
 
         print("\n3. END TO END -- a docs-only PR reaches a MERGE-READY verdict")
         T = str(SKILLS / "ship" / "lib" / "manifest-triage.py")
@@ -227,9 +341,14 @@ def main() -> int:
 
         print("\n4. CHECK_ONLY survives this change, asserted directly")
         mt = (SKILLS / "ship" / "lib" / "manifest-triage.py").read_text(encoding="utf-8")
-        check('CHECK_ONLY still contains both "verify-build" and "toolchain"',
-              'CHECK_ONLY = frozenset({"verify-build", "toolchain"})' in mt,
-              "the fix must not widen what can reach READY; it removes the mis-routing instead")
+        # Membership, not the literal source line: reordering the frozenset or adding a
+        # legitimate third kind would redden CI over a green contract. §3 already proves the
+        # behaviour; this pins the SET so a silent removal of "toolchain" is still caught.
+        m_ck = _re.search(r"CHECK_ONLY\s*=\s*frozenset\(\{([^}]*)\}\)", mt)
+        members = set(_re.findall(r'"([^"]+)"', m_ck.group(1))) if m_ck else set()
+        check("CHECK_ONLY still holds both verify-build and toolchain",
+              {"verify-build", "toolchain"} <= members,
+              f"members={sorted(members)} — the fix must not widen what can reach READY")
 
         print("\n5. THE STALE PREMISE IS GONE -- and its replacement names a reversal condition")
         sac = (SKILLS / "audit-skips" / "lib" / "skip-audit-checks.py").read_text(encoding="utf-8")

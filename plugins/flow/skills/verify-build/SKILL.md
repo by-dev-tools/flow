@@ -127,7 +127,7 @@ esac
 # Third skip case: NOTHING TO VERIFY. Distinct from every other exit here, and the
 # distinction is the whole point (FB-0121): "there is nothing to verify" is not the same
 # claim as "I could not verify". A docs-only diff has no runtime behaviour any build could
-# exercise, so the honest verdict is N/A — a clean skip that costs the PR nothing.
+# exercise, so the honest verdict is N/A -- a clean skip that costs the PR nothing.
 #
 # ORDER IS LOAD-BEARING: this MUST precede the toolchain check below. Measured on
 # health-tracker#118, a docs-only PR: on a toolchain-less host the toolchain check claimed
@@ -135,41 +135,46 @@ esac
 # `toolchain` manifest entry. `manifest-triage.py`'s CHECK_ONLY set makes that kind
 # never-waivable-to-ready and never-subtracted, and the entry's own re-check can never pass
 # because no Mac on earth can build behaviour a docs diff does not contain. The PR could not
-# reach READY by any sanctioned path — the skill's own remediation told the human to mark it
+# reach READY by any sanctioned path -- the skill's own remediation told the human to mark it
 # ready and merge it themselves, i.e. flow instructing the user to bypass flow. CHECK_ONLY is
 # correct and is deliberately untouched; the bug was routing a docs-only diff into it.
 #
-# The predicate is the UNION of the three surface rulers, not just sourceFilePatterns,
-# because that is exactly what /flow:audit-skips validates this claim against. A producer
-# that claimed docs-only on an html-only diff (html is NOT in sourceFilePatterns but IS in
-# uiFilePatterns) would be refused as SHOULD-RE-RUN and re-run into the same skip — so the
-# two predicates agree by construction, and `run_docs_only_evals.py` asserts it on a matrix
-# that includes that exact divergent case.
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
-[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
-VB_SRC_PAT=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
-[ -z "$VB_SRC_PAT" ] && VB_SRC_PAT='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
-VB_UI_PAT=$(jq -r '.uiFilePatterns // empty' flow.config.json 2>/dev/null)
-VB_A11Y_PAT=$(jq -r '.a11yFilePatterns // empty' flow.config.json 2>/dev/null)
-# All three file sources, like every other diff predicate in flow: a local iterate-then-ship
-# loop puts the change in the uncommitted or untracked set, and reading only the committed
-# diff would call a source-touching change docs-only (the FB-0006 three-way check).
-VB_FILES=$( { git diff "origin/${DEFAULT_BRANCH}..HEAD" --name-only 2>/dev/null; \
-              git diff HEAD --name-only 2>/dev/null; \
-              git ls-files --others --exclude-standard 2>/dev/null; } | sort -u)
-if [ -n "$VB_FILES" ]; then
-  VB_HITS=$(printf '%s\n' "$VB_FILES" | grep -E "$VB_SRC_PAT" || true)
-  # An UNSET ui/a11y slot must not match everything (an empty grep -E pattern matches every
-  # line), so each is guarded on being non-empty. Unset means "this project declares no such
-  # surface", which is a genuine no-match, not a wildcard.
-  [ -n "$VB_UI_PAT" ] && VB_HITS="$VB_HITS$(printf '%s\n' "$VB_FILES" | grep -E "$VB_UI_PAT" || true)"
-  [ -n "$VB_A11Y_PAT" ] && VB_HITS="$VB_HITS$(printf '%s\n' "$VB_FILES" | grep -E "$VB_A11Y_PAT" || true)"
-  if [ -z "$(printf '%s' "$VB_HITS" | tr -d '[:space:]')" ]; then
-    echo "[verify-build] docs-only diff — no behavior to verify; skipping. This is N/A, not an unverified build: nothing in this change can be exercised by a build, so there is no gap for a human to close."
-    echo "[verify-build] Hand this to /flow:ship Step 2a.1 as: skip_reason=\"docs-only diff — no behavior to verify\""
-    exit 0
-  fi
+# THE PREDICATE IS A PROGRAM, NOT SHELL, and that is a correction rather than a preference.
+# The first cut of this exit hand-rolled three jq slot reads plus three greps, and reviewers
+# measured three divergences from the engine that validates this very claim -- a two-dot diff
+# (so a docs-only branch was misclassified the moment `main` moved), a UI ruler that skipped
+# `visualFilePatterns` and the built-in default (so a css/html/vue-only diff was called
+# docs-only and skipped the gate -- a failure OPEN on a source change), and a `2>/dev/null`
+# that made an unresolvable base read as "no committed changes". `lib/diff_scope.py` shares
+# `file_patterns.resolve()` with the reviewer that audits this skip, uses `{base}...HEAD`, and
+# fails CLOSED: anything it cannot determine is `undetermined`, never docs-only.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/diff_scope.py" ]; then
+  DS="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/diff_scope.py"
+elif [ -f "plugins/flow/skills/verify-build/lib/diff_scope.py" ]; then
+  DS="plugins/flow/skills/verify-build/lib/diff_scope.py"
+else
+  DS=""
+  echo "⚠️ [verify-build] diff_scope.py not reachable — the docs-only check did NOT run, so a docs-only diff may take the toolchain path and file a blocker nothing can clear. Docs-only status is UNCHECKED, not clean. Reinstall the flow plugin." >&2
+fi
+if [ -n "$DS" ]; then
+  DS_OUT=$(python3 "$DS" --config flow.config.json 2>&1); DS_RC=$?
+  case "$DS_RC" in
+    0)
+      # docs-only. The message names the counts and the base it decided against, so an
+      # operator who believes source changed has something to reconcile rather than a verdict.
+      echo "[verify-build] docs-only diff — no behavior to verify; skipping. This is N/A, not an unverified build: nothing in this change can be exercised by a build, so there is no gap for a human to close. ($DS_OUT)"
+      echo "[verify-build] Hand this to /flow:ship Step 2a.1 as: skip_reason=\"docs-only diff — no behavior to verify\""
+      exit 0
+      ;;
+    1) : ;;  # source-touching — run the gate.
+    *)
+      # UNDETERMINED is never docs-only. Say so out loud and fall through: the third state has
+      # to be visible, or "I could not look" is indistinguishable from "nothing there" — the
+      # exact conflation this exit exists to end (and /flow:doctor's [WARN] ... is UNCHECKED,
+      # not clean discipline, applied here).
+      echo "⚠️ [verify-build] could not determine whether this diff is docs-only (exit $DS_RC: $DS_OUT) — NOT claiming docs-only; falling through. Docs-only status is UNCHECKED here, not clean." >&2
+      ;;
+  esac
 fi
 
 # Fourth skip case: the target IS runnable in principle — just not on THIS machine.
@@ -266,13 +271,12 @@ fi
 # When MODE=no-plan, classify the diff (reuse ship Step 1c's sourceFilePatterns three-way
 # check — committed + uncommitted + untracked — so source-touching is detected identically).
 if [ "$MODE" = "no-plan" ]; then
-  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
-  [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
-  SOURCE_PATTERN=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
-  [ -z "$SOURCE_PATTERN" ] && SOURCE_PATTERN='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
-  SRC=$( { git diff "origin/${DEFAULT_BRANCH}..HEAD" --name-only 2>/dev/null; git diff HEAD --name-only 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | grep -E "$SOURCE_PATTERN" || true)
-  if [ -n "$SRC" ]; then NO_PLAN_SCOPE=source-touching; else NO_PLAN_SCOPE=docs-only; fi
+  # NO_PLAN_SCOPE is source-touching BY CONSTRUCTION now: a docs-only diff exits at S 1.2 as
+  # N/A and never reaches Step 2. The five lines this replaces re-derived the classification
+  # with a SOURCE-ONLY predicate, so it disagreed with S 1.2's source+visual+a11y union --
+  # "docs-only" named two different things inside one skill, and the weaker one gated the
+  # rubric choice. One definition, and it lives in lib/diff_scope.py.
+  NO_PLAN_SCOPE=source-touching
   echo "⚠️ [verify-build] WARN: no plan governs this run ($NO_PLAN_REASON); scope=$NO_PLAN_SCOPE." >&2
   echo "   This is the NO-PLAN FALLBACK, NOT spike — spike's reduced rigor requires /flow:ship-spike." >&2
   echo "   /flow:ship will route a source-touching no-plan run to the draft manifest (declare criteria + re-verify, or human-waive)." >&2
@@ -281,7 +285,7 @@ elif [ "$MODE" = "spike" ]; then
 fi
 ```
 
-### 2a. `MODE=spike` (explicit) — OR `MODE=no-plan` + `NO_PLAN_SCOPE=docs-only`
+### 2a. `MODE=spike` (explicit) — the spike-rubric smoke path
 
 Run the **spike-rubric smoke path** (an explicit spike's code is disposable; the smoke check is the honest lower bar). **The docs-only arm this used to carry is gone** — a docs-only diff exits at S 1.2 as N/A before mode selection, so reaching here with nothing to verify is no longer possible:
 - Skip Step 3 (extract-criteria) and Step 4 (adversarial transformation).
@@ -363,7 +367,7 @@ echo "$CRITERIA_JSON"
 echo "$CRITERIA_JSON" | python3 "${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/criterion-specificity.py"
 ```
 
-`extract-criteria.py` emits one criterion per `- [ ]` checkbox under the **active** `**Spec-walk:**` heading. Heading match is robust (V2.1): it recognizes the canonical `**Spec-walk:**`, a qualified `**Spec-walk (PR 1c — shipped):**`, and a markdown `### Spec-walk` — the old strict matcher silently missed non-canonical active headings. When a plan carries several Spec-walk blocks (flow's own multi-PR plan.md; a consumer retaining shipped blocks), **only the first (active) block is extracted**, and a loud warning names the others. Convention: **author the active PR's plan at the top**; retained blocks below are ignored and need no heading qualification (this replaces the old author-memory "qualify retained headings" convention). If no Spec-walk block is found at all, it emits a warning + the run takes the **no-plan fallback** (Step 2: source-touching → §2b judged path over diff-derived criteria; docs-only → §2a smoke path) — note this no longer disables visual capture (§5a is decoupled).
+`extract-criteria.py` emits one criterion per `- [ ]` checkbox under the **active** `**Spec-walk:**` heading. Heading match is robust (V2.1): it recognizes the canonical `**Spec-walk:**`, a qualified `**Spec-walk (PR 1c — shipped):**`, and a markdown `### Spec-walk` — the old strict matcher silently missed non-canonical active headings. When a plan carries several Spec-walk blocks (flow's own multi-PR plan.md; a consumer retaining shipped blocks), **only the first (active) block is extracted**, and a loud warning names the others. Convention: **author the active PR's plan at the top**; retained blocks below are ignored and need no heading qualification (this replaces the old author-memory "qualify retained headings" convention). If no Spec-walk block is found at all, it emits a warning + the run takes the **no-plan fallback** (Step 2: §2b judged path over diff-derived criteria — a docs-only diff exited at §1.2 as N/A and never reaches Step 2) — note this no longer disables visual capture (§5a is decoupled).
 
 **Criterion-specificity heuristic (closes the over-broad-declaration seam `/flow:audit-coverage` leaves open).** `criterion-specificity.py` consumes `extract-criteria.py`'s own output — no plan-parsing logic is duplicated — and flags any criterion with no observable predicate (no named output/state/value/error path, just a generic "works" / "correctly" / "as expected" claim). Deterministic regex, never an LLM judgment: a downstream bounded-retry loop needs a mechanical signal, and judge prose is reward-hackable. Distinct from `/flow:critique-plan`'s `walk-pin-lint.py` (FB-0068): that lint asks, at plan-critique time over the whole document, "is a verification *method* named?"; this asks, at extraction time over the active block only, "is the criterion's own claim falsifiable?" A criterion can satisfy one and fail the other (`"Rate limiting works correctly → verify: manual QA"` is pinned but vacuous; `"Retries back off exponentially, capped at 5 attempts"` is unpinned but not vacuous) — they compose, they don't overlap. Carry its `vacuous` list forward to Step 8's `metadata.vacuous_criteria_found` field; `/flow:ship` Step 2 routes each flagged criterion to a `[vacuous-criterion]` draft-manifest entry.
 
@@ -544,6 +548,10 @@ The explicit `--assets-dir <report dir>` matches §5a's persist path (`<dirname(
 |---|---|---|
 | `flow.config.json.verifyEnabled` | `true` | Step 1.2 (skip-path) |
 | `flow.config.json.platform` | unset → bundled `/run` autodetect | Step 1.2 (skip-path for library/none, and the toolchain-absent skip on a declared toolchain-gated platform) |
+| `flow.config.json.sourceFilePatterns` | built-in source/config extensions | § 1.2 (docs-only N/A exit — the union predicate) |
+| `flow.config.json.uiFilePatterns` | unset ⇒ no visual surface declared | § 1.2 (docs-only union — unset must not match everything) |
+| `flow.config.json.a11yFilePatterns` | unset ⇒ no a11y surface declared | § 1.2 (docs-only union) |
+| `flow.config.json.defaultBranch` | `git symbolic-ref` → `main` | § 1.2 (the base the docs-only diff is taken against) |
 | `flow.config.json.planPath` | `dev-docs/plan.md` | Step 3 (criteria extraction) |
 | `flow.config.json.verifyFindingsPath` | `.flow/verify-findings.json` | Step 8 (buffer write) |
 | `flow.config.json.verifyReportPath` | `.flow/verify-report.html` | Step 5a (assets dir alongside it), Step 10 (HTML render) |

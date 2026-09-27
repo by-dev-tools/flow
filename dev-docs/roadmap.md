@@ -41,6 +41,20 @@ Canonical: `research/2026-08-23-flow-cloud-workflow-plan.md`. One orchestrator w
 
 **§ Exploration
 
+- **Every gate re-derives "nothing to check" locally, in its own words, one bug at a time.**
+  Flow has now discovered the same three-state distinction — `ok` / `nothing there` / `could not
+  look` — four times: FB-0082's absent/invalid/stale/ok, FB-0121 in `audit-coverage`,
+  `general.md` item 4, and this PR — and fixed it per-gate each time. The sibling gates still say
+  "skip doc-only diffs", not "N/A": one input shape, four vocabularies. And `manifest-triage` has
+  verdict kinds for blockers but no first-class N/A, which is why this fix had to be "emit no
+  entry" rather than "emit an N/A entry". No shape is obvious — a shared `nothing-to-check`
+  helper, an N/A manifest kind that renders as an explicit non-blocker, or just a stated
+  three-state vocabulary each gate must answer are genuinely different designs with different
+  blast radii, and choosing on this PR's evidence would be guessing.
+  **Surfaces when:** anyone next edits an early-exit or skip predicate in
+  `plugins/flow/skills/{security-review,accessibility-review,audit-coverage,verify-build}/SKILL.md`,
+  or adds a kind to `manifest_contract.py` / `manifest-triage.py`'s `CHECK_ONLY`.
+
 - **Tier 1 closed the injection channel structurally and left containment a convention.**
   `audit-plan`'s own prose is precise about what it claims — the agent's grant is `Read, Grep`, so
   there is no shell to hand the path to, and the *channel* really is structural. But the
@@ -305,6 +319,31 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 **Sequencing rationale:** V1 is the input, V2 is the gate that makes autonomy safe, V3 is the deliverable, V4 is the flywheel. V3-before-V2 produces an unverified-but-pretty walkthrough; V4-before-V1 gives the loop nothing structured to check against.
 
 ## Next
+
+- **Canonicalise FB-0122's reversal-condition marker before the other two instances land.**
+  This PR invented `THE CONDITION THAT WOULD REVERSE THIS:` and pinned its presence at one
+  site. FB-0122 names two more instances (a `/flow:doctor` `[UNCHECKED]` line must name the
+  mechanism that makes it checkable; a `research/orchestrator-field-manual.md` section must
+  carry its deletion criterion) which land in separate PRs — and if each invents its own
+  phrasing there is nothing to search for and the rule stays a habit. FB-0122 is right that
+  grep cannot find an *expired* premise; it can find a *missing marker*, which is a different
+  and tractable claim. Add the rule as a § Consistency item in `.claude/rules/general.md`
+  (which auto-loads, unlike a feedback file) fixing one token, then grow a site list
+  (path → marker present) as each PR lands so deleting a reversal condition reddens CI.
+  **Must precede or accompany the doctor PR to be worth anything.** ~1 paragraph + ~25 eval lines.
+- **Hoist `resolve_base` + `collect_changes_git` out of `visual-significance.py`.**
+  `lib/diff_scope.py` deliberately does not import them because that file's name is hyphenated
+  and therefore not importable, so the base-resolution and three-dot-collection logic now exists
+  twice. `run_docs_only_evals.py` pins the two source-pattern defaults byte-identically and the
+  rulers structurally, which is the mitigation, not the fix. Renaming the module (or moving both
+  functions into `diff_scope.py` and importing from there) removes the duplication; it touches a
+  file four other skills read, so it is its own PR.
+- **`/flow:audit-skips`' new docs-only arm returns LEGITIMATE without consulting the host.**
+  A producer falsely claiming "toolchain absent" on a docs-only diff is now accepted rather than
+  refuted with "but `xcrun` IS on PATH". Outcome-equivalent today (nothing to verify either way),
+  but it removes the only signal that a producer is lying about its host, and that signal is the
+  reason the toolchain arm checks the host at all. Either order the host check first and return
+  N/A only once it agrees, or state in the comment why the lie is harmless here.
 
 - **`/flow:audit-skips`: the stamp guard is a one-caller guard on a multi-caller engine (found by the health-tracker workspace `463e6017`; framing corrected by measurement here).**
   *Not* "the stamp is never validated" — it is, and it works. Measured: `flow_scratch.py check` on a

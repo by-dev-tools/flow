@@ -168,9 +168,9 @@
     },
     "sourceFilePatterns": {
       "type": "string",
-      "description": "Extended-regex pattern (passed to grep -E) matching source/config file paths in the diff. Used by /flow:security-review at Step 1 to early-exit when a diff contains no source files (e.g., docs-only PR). Default covers TS/JS/Python/Rust/Swift/Go/Ruby/Java/Kotlin/Shell + JSON/YAML/TOML + Terraform/SQL/proto/GraphQL + Dockerfile/Makefile literals (security-relevant config classes). Override for projects with non-standard file layouts (monorepos, language-specific source roots). Invalid regex falls back to default + emits loud warning rather than silently skipping the review.",
+      "description": "Extended-regex pattern (passed to grep -E) matching source/config file paths in the diff. Used by /flow:security-review at Step 1 to early-exit when a diff contains no source files (e.g., docs-only PR). Default covers TS/JS/Python/Rust/Swift/Go/Ruby/Java/Kotlin/Shell + JSON/YAML/TOML + Terraform/SQL/proto/GraphQL + Dockerfile/Makefile literals (security-relevant config classes). Override for projects with non-standard file layouts (monorepos, language-specific source roots). Invalid regex falls back to default + emits loud warning rather than silently skipping the review. ALSO read by /flow:verify-build S 1.2 and /flow:audit-skips to decide a diff is DOCS-ONLY, which returns N/A with no behavioural gate. Narrowing this to code extensions makes a config-only diff docs-only, so behaviour a config toggle changes would ship with no build exercising it -- the json/ya?ml/toml patterns in the default are load-bearing for that reason, not incidental.",
       "default": "\\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\\.|$)",
-      "examples": ["\\.(ts|tsx|py)$", "^(packages|services)/.+\\.(ts|js|py)$"]
+      "examples": ["\\.(ts|tsx|py|json|ya?ml|toml)$", "^(packages|services)/.+\\.(ts|js|py)$"]
     },
     "uiFilePatterns": {
       "type": "string",

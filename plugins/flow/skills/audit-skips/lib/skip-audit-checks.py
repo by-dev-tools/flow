@@ -470,11 +470,9 @@ def classify(stage, ctx):
             # justification, and a reader who finds it cannot tell it is dead.)
             # It argued a docs-only PR on a
             # toolchain-less host "drafts today anyway (verify-build runs, cannot launch,
-            # returns Unknown)". That is false on BOTH host shapes now: a toolchain-less
-            # host self-skips at verify-build S 1.2 so it never runs, and a
-            # toolchain-equipped host on a docs-only no-plan diff takes the smoke path so
-            # it never returns Unknown. The premise was obsoleted by the very feature the
-            # comment was attached to.
+            # returns Unknown)". That is false now: BOTH host shapes self-skip at
+            # verify-build S 1.2 (docs-only, N/A) so it never runs at all. The premise was
+            # obsoleted by the very feature the comment was attached to.
             #
             # What the false premise cost, measured on health-tracker#118: a `toolchain`
             # entry is in `manifest-triage.CHECK_ONLY`, so it is never waivable-to-ready

@@ -29,6 +29,45 @@ On a docs-only PR from a host without the platform's toolchain, flow produced a 
 
 **Every measurement in the finding came from the health-tracker workspace (`463e6017`), on PR [#118](https://github.com/byamron/health-tracker/pull/118), which was stuck in this state.** That workspace established: § 1.2's three exits and that none was docs-only; that a docs-only no-plan diff takes the spike-rubric SMOKE path and can PASS; that `audit-skips`' *"no diff condition, deliberately"* premise was false on **both** host shapes; and the `sourceFilePatterns` check that closes the one real counter-argument (a config-driven toggle in a non-code file — impossible, because json/yaml/toml are SOURCE). The orchestrator found the `CHECK_ONLY` deadlock. I re-verified each against the engine rather than the prose before relying on it, and two things only a re-read would catch: the consumer **already had** a correct docs-only branch returning no entry (it never fired because nothing emitted a docs-only reason), and adding the diff condition naively dropped the case through to `NEEDS-JUDGMENT` — a different wrong answer.
 
+## The review round rewrote the fix, and that is the story
+
+The first cut hand-rolled the docs-only predicate in shell — three `jq` slot reads and three
+`grep`s. `/flow:staff-review` and the cleanup lenses measured **three divergences** from the
+engine that validates this very claim, each one a failure:
+
+1. **Two-dot vs three-dot.** `git diff origin/main..HEAD` attributes commits that landed on
+   `main` after the branch started to *this* diff. `main` moving is the normal case during a PR,
+   so a docs-only branch was reclassified source-touching and the deadlock came straight back —
+   **the fix missed most real instances of the bug it was written for.**
+2. **A different UI ruler.** `file_patterns.resolve()` is `visualFilePatterns → uiFilePatterns →
+   DEFAULT_UI_PATTERN`; the shell read only `uiFilePatterns` and had no default. On a project
+   setting neither, a css/html/vue-only change was called docs-only and skipped the behavioural
+   gate — a **failure-OPEN on a source change**, strictly worse than the deadlock being fixed.
+3. **An unresolvable base read as "nothing there."** `2>/dev/null` on the committed arm made "I
+   could not look" indistinguishable from "no committed changes" — the exact FB-0121 conflation
+   this exit exists to end, reproduced inside it.
+
+So the predicate stopped being shell. `lib/diff_scope.py` shares `file_patterns` with the
+reviewer that audits the skip, uses `{base}...HEAD`, validates its own regex, sets
+`core.quotePath=false`, and **fails closed**: anything it cannot determine is `undetermined`,
+never docs-only. That also retired the hand-rolled `VB_HITS` accumulation, a second source-only
+`NO_PLAN_SCOPE` classifier in Step 2 (so "docs-only" no longer named two different things in one
+skill), and five places of dead prose the retirement had left behind — including
+`spike-rubric.md`, which is the judge's own system prompt.
+
+**Then I mutation-tested the harness, and it had two holes.** Disabling the shell exit entirely
+left every check green, because nothing *ran* § 1.2 — only greps of its text and tests of the
+predicate. And rewriting the `undetermined` arm to `exit 0` escaped too, because no fixture
+produced that state — the single failure-open the whole fix exists to prevent was the one state
+nothing exercised. Both are closed by a composed-layer section that extracts § 1.2 and runs it
+over docs-only, source-touching **and** undetermined fixtures. All five mutations are now caught.
+
+**And that new section immediately failed for a fixture reason worth recording:** it copied the
+three helper `.py` files into the repo to make them reachable, and the predicate correctly counted
+them as source. The harness's own artifacts were part of the diff it measured — the same trap as
+leaving `flow.config.json` uncommitted, twice in one PR. It reaches them via `CLAUDE_PLUGIN_ROOT`
+now, which also exercises the resolution branch production actually uses.
+
 ## Verification
 
 Measured before/after on a simulated toolchain-less `platform: ios` host — the #118 shape — by extracting § 1.2 from `origin/main` and from this branch and running both:

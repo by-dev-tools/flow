@@ -51,6 +51,27 @@ installed plugin lags the repo (FB-0107).
 - [x] **One verdict for one input shape.** **Spec-walk:** the no-plan fallback's docs-only arm is
       retired; § 1.2 answers docs-only whether or not a plan exists. Not load-bearing — the two
       behaviours differed accidentally, not for a reason, so this did not need the plan gate.
+- [x] **The predicate is a PROGRAM, not shell, and the two readers agree.** **Spec-walk:**
+      `lib/diff_scope.py` uses `{base}...HEAD`, takes its UI rulers from the eval-pinned
+      `file_patterns.resolve()`, validates its own regex, sets `core.quotePath=false`, and fails
+      **closed** (`undetermined`, never docs-only). *Pinned by:* `run_docs_only_evals.py` § 1
+      (16 cases incl. the three measured regressions) + § 2, which asserts the one genuine
+      duplication — the source-pattern default — is **byte-identical** to the engine's and that
+      both take their UI rulers from the same resolver.
+- [x] **The composed layer is pinned, not just the predicate.** **Spec-walk:** § 1.2's shell is
+      extracted and RUN over docs-only, source-touching and undetermined fixtures. *Pinned by:*
+      `run_docs_only_evals.py` § 2b. Added because mutation testing found the harness green when
+      the shell exit was disabled entirely — item 4's corollary, on this PR's own claim.
+- [x] **Mutation-validated: 5 of 5 injected defects are caught** — two-dot diff, dropped UI ruler,
+      `undetermined`→docs-only, a disabled shell exit, and `exit 2` treated as docs-only.
+- [x] **Dead code and dead prose removed.** **Spec-walk:** Step 2's source-only `NO_PLAN_SCOPE`
+      classifier collapsed (it disagreed with § 1.2's union, so "docs-only" named two things in
+      one skill); § 2a's heading, `spike-rubric.md` (the judge's own prompt), `ship/SKILL.md` and
+      `docs/workflow.md` re-pointed. *Pinned by:* zero `NO_PLAN_SCOPE=docs-only` survivors.
+- [x] **The schema slot points back at the claim it can break.** **Spec-walk:**
+      `sourceFilePatterns`' description names the docs-only consumers, and its `examples` no
+      longer offer the code-only pattern that falsifies the premise. FB-0122's discipline is
+      symmetric — the editor of the cause needs the pointer more than the reader of the effect.
 - [x] **FB-0122** + history entry crediting the health-tracker workspace; `run_docs_only_evals.py`
       CI-wired. **39/39 harnesses green.**
 
