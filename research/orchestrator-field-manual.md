@@ -166,19 +166,24 @@ Shipping a README that describes unbuilt behaviour is precisely the class Phase 
 a batched end-of-program rewrite is the wrong shape — fold each correction into the ship that makes
 it true (canonical §4.5/§4.6: no standalone docs-only land PR).
 
-**One claim on `main` is false right now**, and it is the reason this section exists rather than a
-roadmap line. Verified verbatim at `a156228`, 2026-09-13:
+**DISCHARGED 2026-09-27 by S0 / v1.51.0 (FB-0122).** The claim this section was built around was:
 
 ```
 README.md:86: - **4 auto-loading rules** that attach by file path — workflow discipline, plan requirements, doc format, exploration triggers.
 ```
 
-The AGENTS.md spike's E1 measured that `paths:` on a `SKILL.md` **never activates**. Those four
-rules have therefore not loaded for any consumer since v1.33.0, while the README has advertised them
-the whole time. Do **not** fix the line on its own: **S0 decides the wording.** If S0 makes the rules
-load, the claim becomes true and needs no edit; if it cannot, the claim needs correcting. Editing now
-means guessing which, and rewriting twice. This is the FB-0085 class surfacing in user-facing copy —
-shipped, advertised, never loading.
+The hold was correct and it paid off — the line needed **correcting**, not merely un-blocking, and the
+reason is not the one recorded here. E1's finding (*"`paths:` on a `SKILL.md` never activates"*) was
+**over-claimed**: `paths:` is a documented field that *limits* an activation the `description` otherwise
+earns, and every E1 probe carried both a restrictive glob and a suppressive description, so the cause was
+never isolated. v1.51.0 rewrote the line to say the four are **model-invoked, not path-activated**, and to
+say plainly that they raise the floor rather than acting as a gate — which is what the S0 measurement
+supports. **Do not re-derive "never activates" from this section**; see `dev-docs/research/2026-09-agents-md-vs-skills.md`
+§5.1's dated correction, which carries both what survives and what does not.
+
+The general rule this section exists for still stands: **fold each README correction into the ship that
+makes it true.** Waiting for the deciding PR, rather than guessing the wording and rewriting twice, is what
+made this a one-edit fix.
 
 **Owed updates, each gated on its feature landing:**
 
@@ -186,7 +191,7 @@ shipped, advertised, never loading.
   v1.32.0) — the loop/gate description never mentions that a change can be honestly "verifiable in
   principle, but not on this host," which drafts the PR rather than green-ticking it. **Landed; safe
   to write now.** This is the only one currently unblocked.
-- **`README.md:86` / the four rules** — blocked on S0, as above.
+- ~~**`README.md:86` / the four rules**~~ — **discharged by v1.51.0 (FB-0122)**, as above.
 - **Orchestrator skill suite** (§4.10 — `/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`,
   `/flow:gate`) — decided, not built. The skill list needs these **only once they ship**.
 - **D1 prototype-first gate** — changes where the first human gate sits for designer-role projects.
