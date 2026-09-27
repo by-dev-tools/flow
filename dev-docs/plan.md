@@ -62,8 +62,21 @@ installed plugin lags the repo (FB-0107).
       extracted and RUN over docs-only, source-touching and undetermined fixtures. *Pinned by:*
       `run_docs_only_evals.py` § 2b. Added because mutation testing found the harness green when
       the shell exit was disabled entirely — item 4's corollary, on this PR's own claim.
-- [x] **Mutation-validated: 5 of 5 injected defects are caught** — two-dot diff, dropped UI ruler,
-      `undetermined`→docs-only, a disabled shell exit, and `exit 2` treated as docs-only.
+- [x] **The predicate's POLARITY is correct: unrecognised ⇒ source-touching.** **Spec-walk:**
+      docs-only requires EVERY path to match a narrow, non-configurable docs allowlist; the
+      source/visual/a11y union is a secondary guard. *Pinned by:* `run_docs_only_evals.py` § 1b
+      (a 30-path escape list measured by `/flow:security-review`, paired with a positive that
+      genuinely-docs paths still match — an allowlist matching nothing would kill the exit) plus
+      classify()-level cases for `Info.plist`, `Podfile.lock` and `docs/app.py`.
+- [x] **Two fail-opens closed**: an empty enumeration is `undetermined`, not docs-only; and the
+      consumer arm requires a non-empty enumeration, because `resolve_base` there returns an
+      unverified ref and zero files meant "silently READY" where it used to file an entry.
+      *Pinned by:* the `base-is-head` case + the skip-audit sixth corner.
+- [x] **Mutation-validated: 8 of 8 injected defects are caught** — two-dot diff, dropped UI ruler,
+      `undetermined`→docs-only, a disabled shell exit, `exit 2` treated as docs-only, a reverted
+      polarity, a dropped secondary guard, and a dropped `file_count` guard. Three of those
+      escaped the first time — rewriting a predicate invalidates its harness's coverage, and
+      re-running the tests does not reveal that; re-running the mutations does.
 - [x] **Dead code and dead prose removed.** **Spec-walk:** Step 2's source-only `NO_PLAN_SCOPE`
       classifier collapsed (it disagreed with § 1.2's union, so "docs-only" named two things in
       one skill); § 2a's heading, `spike-rubric.md` (the judge's own prompt), `ship/SKILL.md` and

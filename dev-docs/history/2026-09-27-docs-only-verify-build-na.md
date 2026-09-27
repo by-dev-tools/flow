@@ -68,6 +68,49 @@ them as source. The harness's own artifacts were part of the diff it measured �
 leaving `flow.config.json` uncommitted, twice in one PR. It reaches them via `CLAUDE_PLUGIN_ROOT`
 now, which also exercises the resolution branch production actually uses.
 
+## The security round found a polarity error, and it was mine
+
+`/flow:security-review` attacked the predicate as a **gate-evasion** surface rather than an RCE
+one, which is the right threat model, and found the most serious defect in the PR:
+
+**`sourceFilePatterns` is an allowlist of SOURCE, and I used it as a denylist of everything
+else.** On `platform: ios` — the platform #118 was measured on — `Info.plist`,
+`project.pbxproj`, `*.xcconfig`, `*.storyboard`, `Package.resolved`, `Podfile.lock`, and also
+`.c`, `.m`, `.mm`, `.cpp`, `.cs`, `.php`, `.dart`, `.gradle`, `go.mod`, `go.sum`, `yarn.lock`,
+`Cargo.lock`, `requirements.txt`, `pom.xml`, `CMakeLists.txt`, `.env`, `.gitmodules` and a bare
+submodule pointer **all classified docs-only** under the default config. A dependency bump or an
+iOS build-setting flip would have skipped a behavioural gate **that ran before this fix existed.**
+Trading a deadlock for a silently-skipped gate is a strictly worse bargain, and it is the one
+outcome this PR could not be allowed to produce.
+
+The diagnosis is the transferable part: the slot was authored to scope a *review* early-exit,
+where a false docs-only costs a skipped read. Reusing it to decide whether a **build** runs needs
+the **opposite polarity**, because the costs are not symmetric. So the predicate inverted — it is
+now **docs-only iff every changed path matches a narrow, deliberately non-configurable docs
+allowlist**, with the source/visual/a11y union kept as a secondary guard so a project that puts
+UI under `docs/` cannot buy a skip. Unfamiliar extensions now run the gate, which can only waste
+time rather than ship unverified behaviour.
+
+Two more blockers, both measured, both mine:
+
+- **An empty changed-file set returned docs-only.** `defaultBranch: "@"` and
+  `defaultBranch: <this branch>` each gave zero files and a clean N/A. A branch under review
+  always has changes, so zero files is proof the base is wrong — the FB-0121 conflation again,
+  one line after the arm that guards it.
+- **My new consumer arm upgraded a fail-open from "drafts" to "silently READY."**
+  `skip-audit-checks.resolve_base` returns an *unverified* `origin/<branch>` when nothing
+  verifies, so on a shallow clone the file list is empty, all three `touches_*` are False, and
+  the arm returned `LEGITIMATE` with no entry. Before the arm existed that state fell through and
+  filed a `CHECK_ONLY` entry a human had to see. The arm now requires a non-empty enumeration.
+
+**Then mutation testing again found the harness lagging the fix.** After the inversion, three of
+eight injected defects escaped: reverting the polarity, dropping the secondary guard, and dropping
+the `file_count` guard — because section 1b greps the pattern directly and nothing exercised those
+through `classify()`, and nothing exercised an empty enumeration through the consumer. Three cases
+closed them (`Info.plist`, `Podfile.lock`, `docs/app.py`, and a sixth corner in the skip-audit
+eval). **8 of 8 now caught.** Rewriting a predicate invalidates its harness's coverage, and the
+only way to know is to re-run the mutations rather than the tests.
+
 ## Verification
 
 Measured before/after on a simulated toolchain-less `platform: ios` host — the #118 shape — by extracting § 1.2 from `origin/main` and from this branch and running both:

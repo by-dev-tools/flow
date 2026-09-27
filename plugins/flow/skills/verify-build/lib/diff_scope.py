@@ -58,6 +58,35 @@ DEFAULT_SOURCE_PATTERN = (
     r"|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)"
 )
 
+# THE DOCS ALLOWLIST, and the polarity here is the whole correctness argument.
+#
+# The first version of this module decided docs-only as "nothing matched `sourceFilePatterns`".
+# That is an allowlist of SOURCE used as a denylist of everything else, and a security review
+# measured what it costs: on `platform: ios` -- the platform this fix was motivated on --
+# `Info.plist`, `project.pbxproj`, `*.xcconfig`, `*.storyboard`, `Package.resolved`,
+# `Podfile.lock`, and also `.c`, `.m`, `.cpp`, `.gradle`, `go.mod`, `go.sum`, `yarn.lock`,
+# `Cargo.lock`, `requirements.txt`, `pom.xml`, `CMakeLists.txt`, `.env`, `.gitmodules` and a
+# bare submodule pointer ALL fell through as docs-only. A dependency bump or an iOS
+# build-setting flip would have skipped the behavioural gate entirely -- a gate that ran
+# before this fix existed. `sourceFilePatterns` was authored to scope a *review* early-exit,
+# where a false docs-only costs a skipped read; reusing it to decide whether a BUILD runs
+# needs the opposite polarity, because the costs are not symmetric.
+#
+# So: docs-only iff EVERY changed path matches this allowlist. Anything unrecognised is
+# source-touching. An unfamiliar extension now runs the gate instead of skipping it, which is
+# the direction that can only waste time rather than ship unverified behaviour.
+#
+# Deliberately NOT configurable. A slot here would let a project widen its way back into the
+# bug, and the one legitimate need -- "my docs live somewhere unusual" -- is served by the
+# directory arms below. Deliberately NOT including bare `.txt`: `requirements.txt` is a
+# dependency manifest, and a lockfile is exactly the behaviour-bearing change this must catch.
+DOCS_ONLY_PATTERN = (
+    r"\.(md|mdx|markdown|rst|adoc)$"
+    r"|^(docs|dev-docs|doc)/"
+    r"|^changelog/"
+    r"|(^|/)(LICENSE|COPYING|NOTICE|AUTHORS|CONTRIBUTORS|CODEOWNERS|CHANGELOG)(\.(md|txt|rst))?$"
+)
+
 DOCS_ONLY, SOURCE_TOUCHING, UNDETERMINED = 0, 1, 2
 
 
@@ -94,13 +123,16 @@ def changed_files(base):
     out = []
     # THREE dots: `A...B` is B-since-the-merge-base, so commits that landed on the base after
     # the branch started are excluded. Two dots would attribute them to this diff.
-    for args in (["diff", f"{base}...HEAD", "--name-only"],
-                 ["diff", "HEAD", "--name-only"],
-                 ["ls-files", "--others", "--exclude-standard"]):
+    # `-z` + NUL split, not `--name-only` + splitlines: `core.quotePath=false` fixes non-ASCII
+    # but git STILL C-quotes a path containing `"` or a control char, so `src/a"b.py` arrives as
+    # `"src/a\"b.py"` and misses a `$`-anchored pattern -> classified docs (measured by review).
+    for args in (["diff", "-z", f"{base}...HEAD", "--name-only"],
+                 ["diff", "-z", "HEAD", "--name-only"],
+                 ["ls-files", "-z", "--others", "--exclude-standard"]):
         got = _git(args)
         if got is None:
             return None            # could not look -> undetermined, never docs-only
-        out.extend(ln for ln in got.splitlines() if ln.strip())
+        out.extend(p for p in got.split("\0") if p.strip())
     return sorted(set(out))
 
 
@@ -125,6 +157,23 @@ def classify(cfg, explicit_base=None):
         return {"verdict": "undetermined", "base": base, "files": [], "matched": [],
                 "reason": "a git enumeration command failed", "warnings": warnings, "rulers": {}}
 
+    # BLOCKER (measured): an EMPTY changed-file set was returning docs-only. A branch under
+    # review always has changes, so "looked and saw nothing" is proof the base is wrong, not
+    # proof of docs-only -- the FB-0121 conflation, one line after the arm that guards it.
+    # Measured escapes: defaultBranch "@" and defaultBranch=<this branch> both gave 0 files.
+    if not files:
+        return {"verdict": "undetermined", "base": base, "files": [], "matched": [],
+                "reason": (f"no changed files vs {base} — a branch under review always has "
+                           "some, so the base is wrong rather than the diff empty"),
+                "warnings": warnings, "rulers": {}}
+
+    docs_re = re.compile(DOCS_ONLY_PATTERN)
+    # SECONDARY guard, kept even though the docs allowlist alone decides the positive: if a path
+    # matches a declared source/visual/a11y ruler it is source-touching no matter what, so a
+    # project that puts UI under `docs/` cannot buy a skip. Union the resolved UI pattern WITH
+    # the built-in default rather than substituting it -- a project narrowing
+    # `visualFilePatterns` to `\.tsx$` would otherwise re-open the css/vue divergence inside
+    # this very union (measured by review).
     src_pat = cfg.get("sourceFilePatterns") if isinstance(cfg, dict) else None
     src_src = "sourceFilePatterns"
     if not (isinstance(src_pat, str) and src_pat.strip()):
@@ -132,21 +181,28 @@ def classify(cfg, explicit_base=None):
     src_re = _compile(src_pat, "sourceFilePatterns", warnings)
     if src_re is None:
         src_re, src_src = re.compile(DEFAULT_SOURCE_PATTERN), file_patterns.DEFAULT_SOURCE
-
-    # The UI rulers come from the eval-pinned resolver, NOT from a local jq read: its chain is
-    # visualFilePatterns -> uiFilePatterns -> DEFAULT_UI_PATTERN, and skipping the default is
-    # what made a css-only diff look docs-only.
     vis_re, vis_src, vw = file_patterns.compile_for(cfg, file_patterns.VISUAL)
     a11y_re, a11y_src, aw = file_patterns.compile_for(cfg, file_patterns.A11Y)
     warnings.extend(vw or []); warnings.extend(aw or [])
+    ui_default = re.compile(file_patterns.DEFAULT_UI_PATTERN)
 
-    matched = [f for f in files
-               if src_re.search(f) or vis_re.search(f) or a11y_re.search(f)]
-    return {
-        "verdict": "docs-only" if not matched else "source-touching",
-        "base": base, "files": files, "matched": matched, "reason": None, "warnings": warnings,
-        "rulers": {"source": src_src, "visual": vis_src, "a11y": a11y_src},
-    }
+    def is_source(f):
+        return bool(src_re.search(f) or vis_re.search(f) or a11y_re.search(f)
+                    or ui_default.search(f))
+
+    # docs-only iff EVERY path is recognisably docs AND none trips a source/UI ruler.
+    not_docs = [f for f in files if not docs_re.search(f)]
+    tripped = [f for f in files if is_source(f)]
+    if not_docs or tripped:
+        return {"verdict": "source-touching", "base": base, "files": files,
+                "matched": sorted(set(tripped + not_docs)), "reason": None,
+                "warnings": warnings,
+                "rulers": {"source": src_src, "visual": vis_src, "a11y": a11y_src,
+                           "docs": "built-in docs allowlist"}}
+    return {"verdict": "docs-only", "base": base, "files": files, "matched": [],
+            "reason": None, "warnings": warnings,
+            "rulers": {"source": src_src, "visual": vis_src, "a11y": a11y_src,
+                       "docs": "built-in docs allowlist"}}
 
 
 def main(argv=None) -> int:

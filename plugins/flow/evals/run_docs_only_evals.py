@@ -53,6 +53,7 @@ sys.path.insert(0, str(HERE))
 from eval_utils import commit, git_repo  # noqa: E402  the shared hoist target
 sys.path.insert(0, str(PLUGIN / 'skills' / 'verify-build' / 'lib'))
 from diff_scope import DOCS_ONLY, SOURCE_TOUCHING, UNDETERMINED  # noqa: E402
+import diff_scope as ds_mod  # noqa: E402  (the module, for its pattern constants)
 
 _failures: list[str] = []
 
@@ -163,12 +164,30 @@ def main() -> int:
             # was enough to buy the N/A exit on a repo containing committed source.
             ("no-base", IOS, {"app.py": "print(1)\n"}, None, {"notes.md": "n\n"},
              UNDETERMINED, "no origin/main and no local main to fall back to"),
+            # An EMPTY enumeration is undetermined, not docs-only: a branch under review always
+            # has changes, so zero files proves the base is wrong. Measured escapes before the
+            # fix: defaultBranch "@" and defaultBranch=<this branch> both returned docs-only.
+            ("base-is-head", dict(IOS, defaultBranch="work"), {"docs/g.md": "x\n"}, None, None,
+             UNDETERMINED, "base resolves to the branch itself, so the diff is empty"),
             # The counter-argument cases: config-as-source. These are why json/ya?ml/toml in the
             # default matter, and they are the pair for every docs-only row above.
             ("one-json", IOS, {"flags.json": '{"a":1}\n'}, None, None, SOURCE_TOUCHING, ".json is SOURCE"),
             ("one-yaml", IOS, {"c/app.yaml": "x: 1\n"}, None, None, SOURCE_TOUCHING, ".yaml is SOURCE"),
             ("one-toml", IOS, {"s.toml": "x = 1\n"}, None, None, SOURCE_TOUCHING, ".toml is SOURCE"),
             ("one-py", IOS, {"app.py": "print(1)\n"}, None, None, SOURCE_TOUCHING, "plain source"),
+            # POLARITY, through classify() rather than through the regex. Mutation-found: 1b
+            # greps DOCS_ONLY_PATTERN directly, so reverting the polarity escaped every case.
+            # `Info.plist` matches NO ruler -- it is exactly the "unrecognised" class that an
+            # allowlist-of-source would wave through.
+            ("plist-unrecognised", IOS, {"Info.plist": "<dict/>\n"}, None, None,
+             SOURCE_TOUCHING, "matches no ruler at all — unrecognised must be source-touching"),
+            ("lockfile", IOS, {"Podfile.lock": "PODS:\n"}, None, None, SOURCE_TOUCHING,
+             "a dependency bump is behaviour-bearing and matches no ruler"),
+            # SECONDARY GUARD, through classify(). Mutation-found too: this path satisfies the
+            # docs allowlist (^docs/) AND trips a source ruler (.py$), so it is the only shape
+            # that can tell the guard is live.
+            ("py-under-docs", IOS, {"docs/app.py": "print(1)\n"}, None, None, SOURCE_TOUCHING,
+             "passes the docs allowlist but trips a source ruler — the guard must win"),
             ("docs+src", IOS, {"a.md": "a\n", "app.py": "p\n"}, None, None, SOURCE_TOUCHING,
              "one source file among docs is still source-touching"),
             ("untracked-src", IOS, {"a.md": "a\n"}, None, {"new.py": "p\n"}, SOURCE_TOUCHING,
@@ -191,6 +210,37 @@ def main() -> int:
             got, out = ds_verdict(repo)
             check(f"{label}: {NAMES[want]}" + (f" ({why})" if why else ""),
                   got == want, f"got {NAMES.get(got, got)} — {out[:200]}")
+
+        print("\n1b. THE POLARITY: an unrecognised path is SOURCE-TOUCHING, never docs-only")
+        # The first version decided docs-only as "nothing matched sourceFilePatterns" -- an
+        # allowlist of SOURCE used as a denylist of everything else. A security review measured
+        # the escape list below: every one of these classified docs-only and would have skipped
+        # a behavioural gate that ran BEFORE the fix. They are pinned individually rather than
+        # as a count, because the next one added is the interesting case.
+        import re as _re3
+        _docs = _re3.compile(ds_mod.DOCS_ONLY_PATTERN)
+        must_be_source = [
+            "Info.plist", "App.xcodeproj/project.pbxproj", "Config.xcconfig", "Main.storyboard",
+            "Main.xib", "Package.resolved", "Podfile.lock", "go.mod", "go.sum", "yarn.lock",
+            "Cargo.lock", "requirements.txt", "pom.xml", "CMakeLists.txt", "build.gradle",
+            "src/a.c", "src/a.cpp", "src/a.h", "src/a.m", "src/a.mm", "src/a.cs", "src/a.php",
+            "src/a.dart", "src/a.scala", "src/a.lua", "deploy.ps1", ".env", ".gitmodules",
+            "vendor/libfoo", 'src/a"b.py',
+        ]
+        leaked = [f for f in must_be_source if _docs.search(f)]
+        check("no behaviour-bearing path matches the docs allowlist",
+              not leaked,
+              f"these would be classified docs-only and skip the gate: {leaked}")
+        must_be_docs = ["README.md", "docs/guide.md", "dev-docs/plan.md", "doc/x.rst",
+                        "changelog/v1.0.0.md", "LICENSE", "CHANGELOG.md", "NOTICE",
+                        "CODEOWNERS", "notes.mdx", "x.adoc"]
+        missed = [f for f in must_be_docs if not _docs.search(f)]
+        # PAIRED POSITIVE: an allowlist that matches nothing would pass the negative above and
+        # make the whole N/A exit dead -- the docs-only case would never fire again.
+        check("every genuinely-docs path DOES match the allowlist",
+              not missed, f"these would never earn the N/A exit: {missed}")
+        check("the allowlist is not configurable (a slot would let a project widen back in)",
+              "Deliberately NOT configurable" in DS.read_text(encoding="utf-8"))
 
         print("\n2. THE PREDICATE AGREES WITH THE ENGINE THAT VALIDATES ITS CLAIM")
         # The producer's verdict and the consumer's `touches_*` union are two readers of one
@@ -270,6 +320,12 @@ def main() -> int:
             # It also exercises the plugin-root-first resolution branch production uses.
             env = dict(os.environ)
             env["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN)
+            # Isolate from the developer's global git config: init.defaultBranch or a
+            # core.hooksPath in ~/.gitconfig would otherwise leak into these fixtures and make
+            # the result machine-dependent (green here, red in CI, or the reverse).
+            env["HOME"] = str(tmp)
+            env["GIT_CONFIG_GLOBAL"] = str(tmp / "no-such-gitconfig")
+            env["GIT_CONFIG_NOSYSTEM"] = "1"
             pr = subprocess.run(["sh", "-c", shell], cwd=str(repo), env=env,
                                 capture_output=True, text=True, timeout=60)
             return pr.stdout + pr.stderr
