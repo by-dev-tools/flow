@@ -35,7 +35,25 @@ descriptions were *actively suppressing* the only mechanism left — all four en
 tool_use for that rule **during the task turn**. Every session carried its own known-positive and any
 session failing it was discarded rather than counted as a zero.
 
-<!-- RESULTS_TABLE -->
+### `claude-opus-5`  — **the default Conductor model for the `claude` agent**
+
+| rule | project<br>**new** desc | **plugin**<br>**new** desc (v1.51.0) |
+|---|---|---|
+| `plan-discipline` *(name matches the task — see finding 3)* | **2/2** | 0/2 |
+| `documentation` *(name matches the task — see finding 3)* | **2/2** | — |
+| `exploration` | 0/1 | — |
+| `general` | **1/1** | — |
+
+### `claude-sonnet-4-6`  — *not* the default model
+
+| rule | project<br>old desc + `paths:` | project<br>**new** desc | **plugin**<br>old desc (v1.50.0) | **plugin**<br>**new** desc (v1.51.0) | project<br>*neutral* desc + `paths:` |
+|---|---|---|---|---|---|
+| `plan-discipline` *(name matches the task — see finding 3)* | **2/3** | **3/3** | 0/3 | 0/3 | **1/1** |
+| `documentation` *(name matches the task — see finding 3)* | **1/3** | 0/3 | 0/1 | 0/3 | **1/1** |
+| `exploration` | 0/3 | 0/3 | — | 0/3 | 0/1 |
+| `general` | 0/3 | 0/3 | — | 0/3 | 0/1 |
+
+**52 interpretable sessions. 0 discarded at final count** (19 limit-truncated sessions were discarded and re-run; see § instrument defects).
 
 **Arms.** **a** = today's (pre-v1.51.0) descriptions + `paths:`, project scope. **b** = the v1.51.0
 descriptions, no `paths:`, project scope. **cold** = the real v1.50.0 plugin installed, **plugin scope, old
@@ -59,19 +77,31 @@ description barely registers. Those cells measure naming quality, not descriptio
 discriminating cells are `general` and `exploration`, where the name does not match the task surface — and
 those are where everything reads zero on sonnet.
 
-**4. Plugin scope and project scope are NOT equivalent, and only plugin scope matters.** This is the
-finding that matters most, and it is the one the orchestrator's insistence on arm c bought. Project-scope
-`plan-discipline` fires 3/3; plugin-scope `flow:plan-discipline` fired **0** in every measured session. The
-plugin was live and invocable in those sessions — `flow:workflow-help` worked in the same transcripts, which
-is precisely why that control exists. The plausible mechanism: at plugin scope the skill is namespaced and
-competes with 26 sibling flow skills across ~5,669 always-on description tokens; at project scope there are
-five skills and one obviously matches. **The plan cited E1's probe 3 as establishing project ≡ plugin
-equivalence. That was for `paths:` — a different mechanism — and it does not transfer.**
+**4. Scope is the decisive variable — not the description — and only plugin scope matters.** This is the
+finding that matters most, and it is the one the orchestrator's insistence on arm c bought. `plan-discipline`
+on sonnet gives a clean 2×2:
 
-**5. The model matters more than the description.** On **opus-5, the default Conductor model for the claude
-agent**, arm b fired 3 of 4 rules where sonnet fired 1. The main 36-session series ran on sonnet — a
-**non-default** model. Per the orchestrator's own standing instruction ("if they diverge, that divergence is
-a more important finding than the headline"), this outranks the headline.
+| | old description | new description |
+|---|---|---|
+| **project** scope | 2/3 | 3/3 |
+| **plugin** scope (what consumers have) | **0/3** | **0/3** |
+
+Rewriting the description moves nothing at plugin scope; changing the scope moves everything. The plugin was
+live and invocable in all of those sessions — `flow:workflow-help` worked in the same transcripts, which is
+precisely why that control exists. The plausible mechanism: at plugin scope the skill is namespaced
+(`flow:plan-discipline`) and competes with 26 sibling flow skills across ~5,669 always-on description tokens;
+at project scope there are five skills and one obviously matches. **My plan cited E1's probe 3 as
+establishing project ≡ plugin equivalence. That was for `paths:` — a different mechanism — and it does not
+transfer.** Arm `cold` exists because without it "the rewrite didn't help at plugin scope" had no
+comparison — it would have been a bare zero with nothing to contrast against.
+
+**5. The model matters more than the description — but not enough to rescue plugin scope.** On **opus-5,
+the default Conductor model for the `claude` agent**, project-scope arm b fired 3 of 4 rules where sonnet
+fired 1. The main series ran on sonnet, a **non-default** model, so per the orchestrator's standing
+instruction that a divergence outranks the headline, this had to be chased. It was: **arm c on opus-5 —
+plugin scope, default model, the actual consumer configuration — still read 0/2.** So the model is a large
+effect at project scope and does not change the plugin-scope answer. That cell is the one that describes a
+real consumer, and it is why I ran it beyond the approved cap.
 
 ## So did (c) work?
 
