@@ -284,3 +284,30 @@ throughput. When the branch says "gate," go read the plan.
 
 **Deletion criterion:** delete when `/flow:orchestrate` distinguishes gated from stalled workers
 in its own sweep and reports them separately.
+
+## 9. Re-measure a roadmap item before treating it as open
+
+**Three inherited to-do items were found already closed in a single session** (2026-09-26): the
+`land-helpers.py` directory-slot gap, and two of three asks in the "no active plan block" item —
+`visual-significance.py` and `extract-criteria.py` both now report `all_demoted`/`visual_significant:
+false` explicitly, closing their asks; `skip-audit-checks.py`'s ask is real but narrower than filed —
+a "no active plan block" skip still classifies `NEEDS-JUDGMENT`, though the file already derives
+`spec_blocks=0` from `all_demoted` for the audit-coverage leg. Each was real when filed and fixed by
+the time it was read.
+
+**The cause is version skew, not carelessness.** A worker running installed 1.29.0 observes a genuine
+defect and files it; a reader on 1.49.0 inherits it as open. The observation was correct and
+*version-scoped*, and the scope was never recorded — so the entry outlives the bug. This is FB-0107
+aimed at the backlog rather than at a gate: not a verdict about the wrong artifact, but a **finding**
+about the wrong artifact.
+
+**So: before dispatching work from a roadmap entry, re-measure the claim against `main`.** It is
+usually one `git show origin/main:<file> | grep`. Three of three attempts this session changed the
+answer — two to CLOSED, one to NARROWER.
+
+**And when filing, record the version you observed it in.** An entry saying "measured on installed
+1.29.0" tells the next reader what to re-check; one that says only "is broken" does not. That single
+clause is the difference between an entry that ages and one that rots.
+
+**Deletion criterion:** delete when roadmap entries carry an observed-version field and
+`/flow:doctor` or the harness audit re-checks open items against `main`.
