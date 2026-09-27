@@ -1273,9 +1273,30 @@ Three properties that make it answerable rather than a document: **the resolutio
 
 **Out:** the merge gate; `/flow:verify-build`; anything on the classic path; **the v1.46.0/v1.48.0 contradiction on `main`** (five occurrences across two docs — dispatched to another worker; I would collide); D4/D5.
 
+### 8. Files touched
+
+*Absent from the first draft — a required `plan-discipline` field, and the omission was not cosmetic: my largest declared risk is a file-level collision, and this list is what makes it checkable. Its absence produced ISSUE 3 directly.*
+
+**Plugin artifacts:** `plugins/flow/skills/autoplan/SKILL.md` (new) · `plugins/flow/skills/autoplan/lib/gate.py` (new — Arm A's invocations, union + dedup, the disagreement rule, depth resolution, the FB-0075 renderer) · `plugins/flow/skills/review-brief/SKILL.md` (artifact-noun generalization, 30 occurrences, + the second call site) · `plugins/flow/agents/{auditor,plan-critic,lens-experience}.md` (only where a prompt says "brief" for what is now "the artifact under review") · `plugins/flow/docs/workflow.md` (§ 2's prototype-first path) · `plugins/flow/evals/run_autoplan_evals.py` + `fixtures/autoplan/` (new) · `.github/workflows/ci.yml` · `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` (v1.51.0) · `changelog/v1.51.0.md` (new).
+
+**Dev-tracking:** `dev-docs/plan.md` (this block) · `dev-docs/history/2026-09-27-*.md` · `dev-docs/feedback/FB-0123-*.md` · `dev-docs/roadmap.md` · `dev-docs/handoffs/d1-prototype-first-gate.md` (§8's stale checkbox).
+
+**Collision surface vs `conductor/docs-only-verify-build-na` — measured, not assumed.** It touches `plan.md`, `roadmap.md`, `workflow.md`, `marketplace.json`, `plugin.json`, `ci.yml`, plus `verify-build/{SKILL.md,lib/diff_scope.py,lib/spike-rubric.md}` and `audit-skips/lib/`. **Overlap with me: the six shared docs/manifests** — and it touches **none** of Arm A's three scripts (see A4).
+
+**Visual-walk:** N/A — no file matching `uiFilePatterns` is in scope.
+
 ---
 
 **Spec-walk:**
+
+*The auto-write itself — the deliverable every other criterion assumes exists*
+
+*Added after `/flow:critique-plan` found all 21 criteria grading the **gate** and none grading the **artifact the gate exists to check**. That is the under-declaration class this entire plan is organised against, committed in the plan itself — and it landed on the one deliverable §9.3 and verdict A3 both rest on.*
+
+- [ ] `/flow:autoplan` writes a plan to `flow.config.json.planPath` carrying an active `**Spec-walk:**` block, **placed first** per plan-discipline's active-block rule — RED if no plan is produced or the block is empty. Both polarities, so "wrote nothing" cannot read as success. → `test_autoplan_produces_a_plan`
+- [ ] The written plan carries the **required plan-discipline fields** (Mode, Goal, Scope in/out, Spec-walk, confidence verdict, risks, files touched); one missing is RED, because every downstream consumer anchors to that shape. → `test_autoplan_plan_is_well_formed`
+- [ ] Its criteria derive from **the approved prototype**, not the session: RED when the plan doc's `**Prototype approved:**` digest is absent or its sha does not match the prototype the criteria were written against. That is what makes "against a design that survived contact" checkable rather than asserted. → `test_autoplan_derives_from_the_approved_prototype`
+- [ ] The auto-written plan passes **its own Arm A** — a plan this skill produced that would fail the gate it then runs is a contradiction the gate must surface, not absorb. → `test_autoplan_output_survives_arm_a`
 
 *Arm A — deterministic, hard gate*
 
@@ -1326,7 +1347,7 @@ Three properties that make it answerable rather than a document: **the resolutio
 
 **A3. Auto-writing a plan good enough to gate is achievable.** **MEDIUM** — this is §9.3 itself, and it resolved MIXED rather than clear. *Why it is not LOW any more:* the quality half measured clean, and the completeness half now has an instrument it did not have when §9.3 ran. *If it flips:* the plan needs a human gate after all, which breaks the two-gate thesis. *Mitigation:* Arm B's pass condition is procedural, so a weak auto-plan produces findings rather than a false green.
 
-**A4. ~~#165 does not break Arm B's path argument.~~ RESOLVED — and it flipped.** #165 landed and I read the shipped files rather than the diff. It *did* change the channel: both Arm B and Arm C now take a path through a **stamped arg file**, not `$ARGUMENTS`, and `/flow:autoplan` would be the **first shipped skill to write one**. The design absorbed it (§ 2) and it turned out to be a simplification — one idiom serves both reviewers. **The residual risk moves to `conductor/docs-only-verify-build-na`** (in flight, touching `verify-build`, which owns both of Arm A's scripts): **MEDIUM**, mitigated by re-running Arm A at that rebase rather than reading the diff. *If it flips:* Arm A degrades to a clean quality verdict silently, which is the one failure mode this plan exists to prevent.
+**A4. ~~#165 does not break Arm B's path argument.~~ RESOLVED — and it flipped.** #165 landed and I read the shipped files rather than the diff. It *did* change the channel: both Arm B and Arm C now take a path through a **stamped arg file**, not `$ARGUMENTS`, and `/flow:autoplan` would be the **first shipped skill to write one**. The design absorbed it (§ 2) and it turned out to be a simplification — one idiom serves both reviewers. **The residual moves to `conductor/docs-only-verify-build-na`, and measuring it lowered the rating.** Two corrections. **Arm A spans two owners, not one:** `extract-criteria.py` and `criterion-specificity.py` are `verify-build/lib`, but `walk-pin-lint.py` is **`critique-plan/lib`** — owned by the skill #165 just changed, and my "both of Arm A's scripts" wording had left it outside the risk register entirely. **And the in-flight branch touches none of the three** (measured: `verify-build/SKILL.md`, `diff_scope.py`, `spike-rubric.md`). So **LOW**, not MEDIUM, and the real overlap is six shared docs/manifests — a rebase conflict, not a silent degradation. *Mitigation, unchanged in kind:* re-run Arm A at any rebase touching **either** owner, by running it rather than reading. *If it flips:* Arm A degrades to a clean quality verdict silently — the failure this plan exists to prevent.
 
 ---
 
