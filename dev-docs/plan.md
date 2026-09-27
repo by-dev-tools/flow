@@ -2,9 +2,28 @@
 
 ## Current Focus
 
-**▶ PLAN GATE — round 2, after 9 reviewer findings (this branch, `conductor/s0-rule-skills-never-load-option-c`, v1.51.0, FB-0122): S0 option (c) — the four rule-skills earn their trigger from their descriptions, and the descriptions currently forbid it.** Ben chose (c) at the human gate: stop trying to path-activate, let Claude load them by judgment. The substance is not deleting `paths:` — it is that all four descriptions end with **"Not user-invocable — path-activated only."**, a sentence telling the model the skill is not its to invoke, while model invocation is the only mechanism (c) has. Ships rewritten `description` + new `when_to_use` on all four, removal of `paths:`, **a re-based `_is_rule_skill()` in `plugin-provenance.py` (which keys on `paths:` and would silently break)**, an honest `/flow:doctor` Check 3.2, deterministic evals with a negative control, and an A/B measurement in fresh sessions.
+**▶ EXECUTED, shipping (this branch, `conductor/s0-rule-skills-never-load-option-c`, v1.51.0, FB-0122): S0 option (c) — the four rule-skills earn their trigger from their descriptions, and the descriptions currently forbid it.** Ben chose (c) at the human gate: stop trying to path-activate, let Claude load them by judgment. The substance is not deleting `paths:` — it is that all four descriptions end with **"Not user-invocable — path-activated only."**, a sentence telling the model the skill is not its to invoke, while model invocation is the only mechanism (c) has. Ships rewritten `description` + new `when_to_use` on all four, removal of `paths:`, **a re-based `_is_rule_skill()` in `plugin-provenance.py` (which keys on `paths:` and would silently break)**, an honest `/flow:doctor` Check 3.2, deterministic evals with a negative control, and an A/B measurement in fresh sessions.
 
 **Mode:** feature · **Surface:** non-visual
+
+**Gate: APPROVED.** All five open calls decided, my recommendation carried on each, with amendments on 2, 3
+and 5: (1) juncture-triggered `general` **plus** a `SessionStart`-hook roadmap line written as a *verified
+candidate replacement* with its context-tax and delivery-is-not-compliance caveats attached; (2) full 36 +
+arm D, **plus** per-probe model recorded in the artifact and a capped n=6 cross-model slice on the default
+consumer model; (3) existing public base, nothing created under Ben's account, with clean-base **and**
+four-visible assertions printed per probe; (4) dated in-place §5.1 note carrying **both** halves;
+(5) `[UNCHECKED]` rather than `[INFO]`, each line naming the mechanism that would make it checkable (its own
+deletion criterion), and `[READY] (N unchecked)` inline.
+
+**The measurement did not support the premise, and that is reported rather than smoothed.** See
+`dev-docs/history/2026-09-27-s0-rule-skills-model-invoked-and-the-measurement-refused-the.md` for the table,
+the discards, and the three instrument defects. Headline: the suppressant sentence was **not** decisive (arm
+a fires); arm b is **not** reliably better than arm a at n=3; **plugin scope — the only scope consumers have
+— read zero throughout on sonnet**; and the **model** mattered more than the description (opus-5, the
+default, fired 4 of 5 project-scope cells where sonnet fired 1). Two additions beyond the approved rig, both
+because the approved cells turned out not to describe a real consumer: **arm `cold`** (plugin scope × *old*
+descriptions — without it, "the rewrite didn't help at plugin scope" had no comparison) and **arm c on
+opus-5** (plugin scope × default model — the only cell that is an actual consumer configuration).
 
 **Reviewer rounds.** `/flow:critique-plan` returned 4 (3 BLOCKER, 1 REDIRECT); `/flow:audit-plan` returned 5 (4 unverified assumption, 1 unverified recall). **All 9 verified against the code and all 9 accepted — none disputed.** Four changed the plan's substance rather than its prose: a shipped-code regression the plan had not noticed (§5 item 2), an instrument that could not be shown to fire (§8), a version collision that would have broken a live PR (§6 A7), and a claim of mine that made the same over-claiming error I had just accused E1 of (§2). Each is marked ⟢ below.
 
