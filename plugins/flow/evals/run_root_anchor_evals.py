@@ -55,6 +55,9 @@ EXPECTED_GUARDS = {"audit-coverage": 2, "audit-skips": 2, "critique-plan": 1}
 EXEMPT_FORK_SKILLS = {
     # Both read the session transcript, not the repo. audit-plan does take a relative
     # --plan-file path, but extract_session.py::load_plan_file EXITS NON-ZERO when it
+    # NOTE (v1.50.0/FB-0116): audit-plan no longer passes --plan-file at all -- its argument
+    # travels in prose and the agent Reads it. The exemption's CONCLUSION still holds, but the
+    # mechanism cited above is gone; fail-loud is now a prose instruction, not a Python exit.
     # cannot find it — it fails loud, so it is not in the silent-degradation class.
     "audit-plan": "reads the session transcript; a missing --plan-file exits non-zero (fails loud)",
     "audit-completion": "reads the session transcript only; no repo-relative read",

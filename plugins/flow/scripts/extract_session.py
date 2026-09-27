@@ -4,11 +4,49 @@
 Invoked from a SKILL.md via:
     !`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan`
     !`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode completion`
-    !`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file <path>`
+    (NOT from a SKILL.md with a substituted argument -- see --plan-file-from below and
+     docs/workflow.md S "Skill arguments: the prose rule". No shipped skill spells this
+     form any more; it is shown because a human may still run it by hand.)
+    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py --mode plan --plan-file <path>
 
 `--plan-file` (plan mode only) reviews an explicit plan DOCUMENT (e.g. a queued
 plan under a consumer's plans directory) instead of extracting the most recent
 plan from the session transcript; session context then becomes best-effort.
+
+`--plan-file-from PATH` is the same thing for callers whose path came from a
+slash-command argument. `$ARGUMENTS` is substituted textually into a skill body
+before any shell parses it, so a caller that interpolates it into a command is
+executing it, not passing it (FB-0116). Such a caller writes the bytes out-of-band
+with a Write tool and hands this flag a FIXED literal path; the untrusted text then
+travels file -> open() -> str and never occupies a shell word. This is FB-0108's
+`--finding-file` channel applied to a second sink.
+
+`--plan-file` is NOT removed. The reason is narrower than it first looks, and two
+tempting versions of it are wrong -- stated here because the wrong version, taken
+as a house rule, is how the next `--plan-file "$ARGUMENTS"` gets written.
+
+The real reason: FB-0108 rule 1 asks whether the next author can reintroduce the
+hazard without noticing, and the hazard's sink is **shell composition**, not this
+parameter. `--finding` had no safe spelling -- free text inside a model-composed
+command line is unsafe on every route -- so there the parameter WAS the door. This
+flag has a safe spelling with live users: every eval call site passes it through
+`subprocess.run([...])`, a list, with no shell and no substitution. Removing it
+would close a door in a different wall from the one that was used.
+
+Two things this is NOT an argument for:
+  * NOT "a path is safer than free text". It is not. The `--plan-file-from` guards
+    twelve lines below exist precisely because the value can hold anything, and the
+    asymmetry runs the wrong way: the content validation lives on the safe channel
+    while the argv channel stays ungated.
+  * NOT "removing it would mutilate a correctly-used interface". After the FB-0116
+    conversion there are **zero** shipped-skill call sites; the remaining consumers
+    are this repo's own eval harnesses and a human running the script by hand.
+
+Residual, stated rather than implied: the lint that closes the real hazard
+(`evals/run_arg_safety_evals.py`) has authority only over skills in THIS repo's
+glob. A consumer who writes their own argument-taking skill and interpolates a
+placeholder into a shell block is protected by `/flow:doctor`'s install-time check
+(which scans the project's own `.claude/skills/` too), not by flow's CI.
 
 stdout is substituted into the SKILL.md body before dispatch to the
 auditor subagent. Output must be plain-text labeled sections matching the
@@ -548,7 +586,7 @@ def load_plan_file(plan_file: str, allow_external_paths: bool = False) -> tuple[
     candidate = raw if raw.is_absolute() else (cwd / raw)
     try:
         resolved = candidate.resolve()
-    except (OSError, RuntimeError) as e:
+    except (OSError, RuntimeError, ValueError) as e:  # ValueError: embedded NUL byte
         sys.stderr.write(
             f"extract_session: ⚠️ cannot resolve --plan-file {plan_file!r}: {e}\n"
         )
@@ -963,10 +1001,61 @@ def main() -> int:
         "plan from the session transcript (plan mode only). Must resolve under cwd "
         "unless --allow-external-paths. Session context becomes best-effort.",
     )
+    ap.add_argument(
+        "--plan-file-from",
+        default=None,
+        metavar="PATH",
+        help="read the --plan-file VALUE out of the file at PATH instead of taking it "
+        "as argv. For callers whose path argument came from a slash-command argument: "
+        "the caller writes those bytes with a Write tool and passes this a FIXED literal "
+        "path, so the untrusted text never occupies a shell word (FB-0116). Mutually "
+        "exclusive with --plan-file.",
+    )
     args = ap.parse_args()
+    if args.plan_file and args.plan_file_from:
+        sys.stderr.write(
+            "extract_session: ⚠️ pass --plan-file OR --plan-file-from, not both — two "
+            "sources for one value cannot be reconciled, and guessing which wins is how "
+            "a reviewer ends up auditing the wrong document.\n"
+        )
+        return 2
+    if args.plan_file_from:
+        # The whole point of this flag is that PATH is a fixed literal in the caller and
+        # the untrusted bytes are its CONTENTS. So validate the contents here, loudly,
+        # rather than letting a malformed value become a confusing path error later.
+        src = Path(args.plan_file_from)
+        try:
+            raw = src.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            sys.stderr.write(
+                f"extract_session: ⚠️ could not read --plan-file-from {args.plan_file_from!r}: {e}\n"
+            )
+            return 2
+        lines = [ln for ln in raw.splitlines() if ln.strip()]
+        if not lines:
+            sys.stderr.write(
+                f"extract_session: ⚠️ --plan-file-from {args.plan_file_from!r} is empty — "
+                "it should contain exactly one line: the plan-document path. An empty file "
+                "is a caller bug, not a request for session mode.\n"
+            )
+            return 2
+        if len(lines) > 1:
+            # REFUSE, do not take line 1. A path has no second line, so this is either a
+            # caller bug or an injection attempt -- and silently using the first line would
+            # make the attempt invisible. Same call dispatch_backend.py makes about unsafe
+            # placeholder values: refuse the shape rather than sanitise it.
+            sys.stderr.write(
+                f"extract_session: ⚠️ --plan-file-from {args.plan_file_from!r} holds "
+                f"{len(lines)} non-blank lines; expected exactly one (the path). Refused "
+                "rather than using the first line — a path has no second line, so this is a "
+                "caller bug or an injection attempt, and either way it must be visible.\n"
+            )
+            return 2
+        args.plan_file = lines[0].strip()
     if args.plan_file and args.mode != "plan":
         sys.stderr.write(
-            "extract_session: ⚠️ --plan-file is only valid with --mode plan — a "
+            f"extract_session: ⚠️ {'--plan-file-from' if args.plan_file_from else '--plan-file'} "
+            "is only valid with --mode plan — a "
             "completion audit reviews the session's completion claim, not a plan "
             "document. Did you mean --mode plan?\n"
         )

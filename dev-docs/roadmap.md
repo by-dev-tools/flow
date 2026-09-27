@@ -8,7 +8,7 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 ## Now
 
-**Plugin at v1.49.0 (shipped [#160](https://github.com/by-dev-tools/flow/pull/160) — `/flow:audit-coverage` enumerates before it judges, FB-0115. Its one pass fused *enumerate* + *match* + *suppress*, and `auditor.md`'s suppression rules — the reason precision has never once produced a false positive — were also being applied to the finding half, where they only cost recall. Split into two labelled stages: Stage 1 enumerates with those rules scoped OFF, Stage 2 matches with the existing judgment verbatim. **Measured on committed ground truth: source-mode recall 65% → 82% mean with non-overlapping distributions, union 80% → 100%, precision unchanged at zero false positives in 15 runs.** Diff mode moved **0** and the docs say so — what changed there is that both residual misses are now *attributable* to the matcher's default-to-covered call rather than invisible, which is the next lever. Also ships a deterministic hunk inventory with a `POST-PLAN` tier (a git fact: the hunk landed after the plan was last edited, so no criterion CAN cover it). **Two findings routed, not fixed:** `.md` is excluded from the behaviour diff, so #159's recorded `0-of-5` was never a judgment failure — the reviewer never received the file (on #158: 4 of 63 changed files reached it); and a coverage gate's criteria can silently belong to a *different* PR, because only the first Spec-walk block is read. Three of this PR's own instruments reported green while broken and all three are recorded.)** Recently shipped: **v1.48.0 (#158 — D1 Phase 2: the prototype is the gate, FB-0113/FB-0114), v1.47.0 (#159 — `/flow:audit-coverage` source-tree input mode + a verified RCE in typed arguments), v1.45.0 (#157 — the §4.10 orchestrator skill suite, FB-0110), v1.44.0 (#156 — manifest fence injection, FB-0109), v1.43.0 (#150 — dogfooding version honesty, FB-0107).**
+**Plugin at v1.50.0 (this PR — a slash-command argument never touches a shell again, FB-0116/FB-0117. `$ARGUMENTS` is substituted textually into the whole skill body before anything parses it and is not shell-escaped, so four skills were pasting a caller-supplied path into a command that ran at render time with no permission prompt. Closed with one house idiom — the argument lives in prose under `## Argument`, blocks run argument-less, and the value reaches a program only via the reviewer's own `Read` (Tier 1) or a file the model writes whose fixed literal path the block reads (Tier 2, FB-0108's channel). Also closes a second live bug of the same mechanism: `$0`–`$9` are placeholders too, so `/flow:ship <any argument>` was corrupting ship's own FB-0107 provenance block; `${1}` for shell, `$(0)` for awk, because `${0}` is an awk syntax error. New CI-wired `run_arg_safety_evals.py` validates its instrument on a known positive before trusting any negative, and #159's residual pin flipped as designed. **Two named residuals:** `/flow:critique-plan`'s pinning lint cannot read a named plan file, and `/flow:audit-coverage`'s directory walk is judgment-based on direct invocation — both stated in the skills.)** Recently shipped: **v1.49.0 (#160 — `/flow:audit-coverage` enumerates before it judges, FB-0115), v1.47.0 (#159 — source-tree input mode + a verified RCE in typed arguments), v1.45.0 (#157 — the §4.10 orchestrator skill suite, FB-0110), v1.44.0 (#156 — manifest fence injection, FB-0109).**
 
 ▶ **Next up:** the **matcher** half of the coverage judgment — `auditor.md`'s disprove self-check drops a behaviour when any criterion covers it "even loosely", and that clause is what suppressed both of the diff-mode residual misses this PR localized. Measure it on the same two cases before changing it.
 
@@ -39,7 +39,19 @@ Canonical: `research/2026-08-23-flow-cloud-workflow-plan.md`. One orchestrator w
 - **Neither new slot appears in `template/base/flow.config.json.example`.** Coherent for `dispatchBackend` (doctor is deliberately silent when it is absent), less so for `sensitivePaths` — a security-relevant policy list the schema tells consumers to populate, with nothing in the onboarding path revealing it exists. A commented-out stanza costs nothing.
 - **Merge-gate inputs are agent-declared where an artifact exists.** `--verify-verdict pass` is accepted as a CLI string while a canonical per-HEAD findings buffer exists, and this repo's own skip-auditor already refuses a verdict whose artifact is absent. `--plan-result` fixed the worst of the four this pass; reading the verify buffer directly is the rest. Blocked on nothing except scope.
 
-**§ Exploration — the five communication rules are described in four places and enforced in one.** `format_escalation` already enforces rules 3/4/5 and `ships_or_paperwork` enforces rule 7, but only `/flow:gate` routes through them; `/flow:orchestrate`, `/flow:spawn` and `/flow:handoff` each restate the rules as prose applied by hand. The suite's thesis is "wrap the checklists", and this is the one place a checklist stayed a checklist while an enforcer for it shipped in the same PR. The counter-argument is real and unresolved: skill bodies load independently, so a pointer costs a read the inline restatement does not, and forcing a *ready line* through an escalation formatter may be the wrong shape entirely. **Surfaces when:** any edit to the communication-rules block in `plugins/flow/skills/{orchestrate,spawn,handoff}/SKILL.md`, or when `gate-classify.py`'s `format_escalation` gains a sixth rule.
+**§ Exploration
+
+- **Tier 1 closed the injection channel structurally and left containment a convention.**
+  `audit-plan`'s own prose is precise about what it claims — the agent's grant is `Read, Grep`, so
+  there is no shell to hand the path to, and the *channel* really is structural. But the
+  guarantees immediately above it (first line only, nothing outside the repo, no `..`, refuse a
+  symlink) are a reviewing model choosing to obey a list, with no artifact that fails if it does
+  not. Tier 2 got a backstop for free because Python was already in the loop. No shape is obvious:
+  a pre-flight validator has no one to run it, and pushing the read back into a Bash-capable
+  parent would undo the tool-grant reasoning this idiom rests on.
+  **Surfaces when:** any new `context: fork` skill takes a path argument; or
+  `plugins/flow/agents/{auditor,plan-critic}.md` gain a tool beyond `Read, Grep`; or
+  `plugins/flow/lib/arg_placeholders.py` grows a second reader. — the five communication rules are described in four places and enforced in one.** `format_escalation` already enforces rules 3/4/5 and `ships_or_paperwork` enforces rule 7, but only `/flow:gate` routes through them; `/flow:orchestrate`, `/flow:spawn` and `/flow:handoff` each restate the rules as prose applied by hand. The suite's thesis is "wrap the checklists", and this is the one place a checklist stayed a checklist while an enforcer for it shipped in the same PR. The counter-argument is real and unresolved: skill bodies load independently, so a pointer costs a read the inline restatement does not, and forcing a *ready line* through an escalation formatter may be the wrong shape entirely. **Surfaces when:** any edit to the communication-rules block in `plugins/flow/skills/{orchestrate,spawn,handoff}/SKILL.md`, or when `gate-classify.py`'s `format_escalation` gains a sixth rule.
 
 **FOLLOW-UPs routed from the orchestrator-suite `/simplify` pass (v1.45.0)** — each declined in that PR as a cross-cutting refactor of files it does not own, per § Scope discipline, and each real:
 
@@ -293,6 +305,54 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 **Sequencing rationale:** V1 is the input, V2 is the gate that makes autonomy safe, V3 is the deliverable, V4 is the flywheel. V3-before-V2 produces an unverified-but-pretty walkthrough; V4-before-V1 gives the loop nothing structured to check against.
 
 ## Next
+
+- **Argument safety: warn when the host substitution model goes stale (FB-0116, staff-review).**
+  `lib/arg_placeholders.py` transcribes the host's three substitution arms, its escape arm and
+  `xS` from one measured build, and `run_arg_safety_evals.py::test_host_agreement` pins the
+  matcher against **that table**, not against the live host. So a host change is the one class
+  the harness reports clean over — and the rows most exposed are the ones the whole remediation
+  rests on (`${1}` and `${ARGUMENTS}` are asserted NOT substituted; if a future host adds a brace
+  arm, the recommended safe spelling silently becomes the sink and CI stays green). Fix is a
+  staleness trigger, not a better emulation: have `/flow:doctor` Check 1.5 compare the recorded
+  build against the running one and print `[WARN] … argument safety is UNCHECKED against this
+  host` on mismatch, with the same WARN-is-not-clean discipline Check 1.5 already uses. ~15 lines
+  + one eval row asserting the WARN arm fires on a forced mismatch.
+- **Argument safety: ship a canonical `## Argument` skeleton and assert every clause (FB-0116).**
+  The canonical section mandates a shape without showing one, so four sites were composed by
+  hand and their refusal-clause sets diverge — and the divergence lands asymmetrically: Tier 2
+  has a machine backstop (`load_plan_file` resolves and contains), while Tier 1 has only the
+  prose. Add a fenced skeleton to `docs/workflow.md` § "Skill arguments: the prose rule" (heading,
+  placeholder, empty/non-empty split, tier pointer, the full refusal checklist as named clauses),
+  then extend `run_arg_safety_evals.py`'s `ARG_SKILLS` loop to assert each converted skill carries
+  every clause. Makes the next argument-taking skill a copy, and a missing clause red instead of
+  invisible. ~25 doc lines + ~10 eval lines. Deliberately NOT a new skill-authoring doc — flow has
+  no such surface and inventing one to house this would be the orphan-rule failure.
+- **Argument safety: wire the one producer that already holds `Write` (FB-0116).** Cheaper interim
+  than deriving the path from config: `/flow:prototype` is the skill that actually points source
+  mode at a prototype and it already holds `Write`, so having it write the stamped arg file
+  immediately before its `Skill()` call makes `/flow:audit-coverage`'s path 1 genuinely mechanical.
+  **Hazard to respect:** the name carries the short HEAD, so any commit between producer and
+  consumer silently demotes to the judgment path — producer and consumer must be adjacent. Sizing
+  note: this is no longer the "one line" the skill's residual once claimed, because the producer
+  must reproduce the stamped derivation; use `arg_placeholders.py --arg-path <skill>` rather than
+  re-deriving it.
+
+- **`/flow:critique-plan`: make the pinning lint reachable in plan-file mode again (FB-0116 residual).**
+  The lint is deterministic and useful, and since v1.50.0 it can only read the session-extracted plan:
+  reaching a named plan file required interpolating the argument into a render-time block, which is
+  the injection this release closed. The blocker is a **tool grant** — `plan-critic` is `tools: Read,
+  Grep`, so it cannot run Python at all. Options: restructure the skill to main-thread + `Agent`
+  spawn (deliberately NOT done inside a security PR — it changes a reviewer's execution model, i.e.
+  fans out an untested pattern to fix an untested one), or port the lint's predicate into something
+  the reviewer can apply by reading. Until then a named plan file routes to "treat pinning as
+  UNCHECKED, not clean", which is honest but weaker than the diff-mode path.
+- **`/flow:audit-coverage`: derive the source path from config instead of an argument (FB-0116 residual).**
+  Source mode is mechanical when a caller writes the stamped arg file (name from `arg_placeholders.py
+  --arg-path audit-coverage`) and judgment-based on
+  direct invocation, because the directory walk needs `find`/`grep` that `agent: auditor` does not
+  have. `.flow/prototypes/<branch-slug>/` is already the canonical prototype home (`/flow:prototype`),
+  so source mode arguably needs no argument at all — it could walk the canonical location and drop
+  the asymmetry. That is a behaviour change to a just-shipped feature, so it is its own work.
 
 ### `/flow:audit-coverage` cannot see `.md`, and for a plugin made of prompts that is most of the product (measured, v1.49.0)
 
