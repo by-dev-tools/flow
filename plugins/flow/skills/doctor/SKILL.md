@@ -835,7 +835,7 @@ else
   else
     echo "[FAIL] rule-skill frontmatter contract violated:$RS_BAD"
     echo "       Fix: a rule-skill must declare a trigger-bearing description and user-invocable: false,"
-    echo "            and must NOT declare paths: or disable-model-invocation: true. See FB-0122."
+    echo "            and must NOT declare paths: or disable-model-invocation: true. See FB-0124."
   fi
 fi
 echo "[UNCHECKED] rule-skill ACTIVATION (whether Claude actually loads these four bodies in a session)."
@@ -982,7 +982,7 @@ Final-line verdict (the skill's contract — not an exit code, since skill bodie
 
 Always emit the verdict as the FINAL line so the agent/user can scan to the bottom for the bottom line.
 
-**The four markers, and why there are four (FB-0121/FB-0122).**
+**The four markers, and why there are four (FB-0121/FB-0124).**
 
 | Marker | Means | Counts toward the verdict? |
 |---|---|---|

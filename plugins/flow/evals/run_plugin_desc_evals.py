@@ -271,7 +271,7 @@ def main() -> int:
               "frontmatter description is trigger text loaded every invocation, not a changelog")
 
     # ---- the four rule-skills: the contract that makes model invocation possible ----
-    # FB-0122. These four are `user-invocable: false` background knowledge: a plugin
+    # FB-0124. These four are `user-invocable: false` background knowledge: a plugin
     # cannot ship `.claude/rules/*.md` (no `rules/` plugin component), so the ONLY way
     # they reach a session is Claude reading the description and deciding to load the
     # body. From v1.33.0 to v1.49.0 every one of them ended with "Not user-invocable --

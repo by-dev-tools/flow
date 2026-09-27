@@ -367,7 +367,7 @@ check("ref 2", r2.returncode == 0 and "### dev-docs/history/" not in r2.stdout,
 # The `documentation` rule-skill must cover BOTH doc shapes -- single-file (`history.md`)
 # and one-file-per-entry (`history/<date>-<slug>.md`). FB-0102's intent, unchanged.
 #
-# The MECHANISM this pinned is gone (FB-0122). It used to assert four `paths:` globs,
+# The MECHANISM this pinned is gone (FB-0124). It used to assert four `paths:` globs,
 # because activation was believed to be path-triggered. S0 removed `paths:` from all four
 # rule-skills: it *limits* a description-driven activation rather than triggering one, so
 # a glob could only gate the trigger the description now earns. This check was a genuine
@@ -387,7 +387,7 @@ for _shape in ("one-file-per-entry", "history/"):
 check("cov doc-no-retired-globs", '"**/history/*.md"' not in _doc_skill
       and "paths:" not in _doc_skill.split("\n---", 1)[0],
       "skills/documentation must no longer declare `paths:` globs — they gate the "
-      "description-driven activation S0 restored (FB-0122)")
+      "description-driven activation S0 restored (FB-0124)")
 
 # changelogPath must be in doctor's existence-checked loop, not silently excluded.
 _doctor = (PLUGIN / "skills" / "doctor" / "SKILL.md").read_text(encoding="utf-8")

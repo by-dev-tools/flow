@@ -331,7 +331,7 @@ Zero hook events. Zero transcript occurrences. Probe 2 self-reported `plan_disci
 
 **Probe 3 isolates the cause.** A throwaway **project-scoped** skill (`.claude/skills/e1-probe-rule/SKILL.md`, `user-invocable: false`, `paths: ["**/roadmap.md"]`, containing a unique marker string) also **did not activate** when the probe Read `dev-docs/roadmap.md` — while `.claude/rules/documentation.md` fired on the same Read, in the same session. So this is **not** a plugin-scope problem and not a glob-syntax problem.
 
-> **CORRECTION, 2026-09-27 (v1.51.0, FB-0122) — read this before citing the finding below.**
+> **CORRECTION, 2026-09-27 (v1.51.0, FB-0124) — read this before citing the finding below.**
 > This §5.1 is cited from six places, so the correction states what still stands as well as what does not.
 >
 > **What still stands, unchanged and load-bearing:** *the four rule-skills had never loaded for any

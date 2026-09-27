@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-**▶ EXECUTED, shipping (this branch, `conductor/s0-rule-skills-never-load-option-c`, v1.51.0, FB-0122): S0 option (c) — the four rule-skills earn their trigger from their descriptions, and the descriptions currently forbid it.** Ben chose (c) at the human gate: stop trying to path-activate, let Claude load them by judgment. The substance is not deleting `paths:` — it is that all four descriptions end with **"Not user-invocable — path-activated only."**, a sentence telling the model the skill is not its to invoke, while model invocation is the only mechanism (c) has. Ships rewritten `description` + new `when_to_use` on all four, removal of `paths:`, **a re-based `_is_rule_skill()` in `plugin-provenance.py` (which keys on `paths:` and would silently break)**, an honest `/flow:doctor` Check 3.2, deterministic evals with a negative control, and an A/B measurement in fresh sessions.
+**▶ EXECUTED, shipping (this branch, `conductor/s0-rule-skills-never-load-option-c`, v1.51.0, FB-0124): S0 option (c) — the four rule-skills earn their trigger from their descriptions, and the descriptions currently forbid it.** Ben chose (c) at the human gate: stop trying to path-activate, let Claude load them by judgment. The substance is not deleting `paths:` — it is that all four descriptions end with **"Not user-invocable — path-activated only."**, a sentence telling the model the skill is not its to invoke, while model invocation is the only mechanism (c) has. Ships rewritten `description` + new `when_to_use` on all four, removal of `paths:`, **a re-based `_is_rule_skill()` in `plugin-provenance.py` (which keys on `paths:` and would silently break)**, an honest `/flow:doctor` Check 3.2, deterministic evals with a negative control, and an A/B measurement in fresh sessions.
 
 **Mode:** feature · **Surface:** non-visual
 
@@ -88,7 +88,7 @@ Make the four rule-skills actually reach a session's context for the first time 
 5. Activation measurement: fresh sessions, A/B against the old descriptions, counts per cell (§8).
 6. ⟢ **Fan-out sweep, repo-wide rather than over an unnamed "live-doc set"** (§7 criterion 9 carries the corrected enumeration and the widened pattern). Round 1 named five surfaces, mis-cited one, and missed four.
 7. Retire two roadmap items (c) makes moot: **S2** (`exploration`'s globs reach 1 of 4 consumer repos) and **"Config-driven `paths:` for the portable rules"**. With no globs there is nothing to widen and nothing to make config-driven. Leaving them is the FB-0010 class.
-8. `dev-docs/feedback/FB-0122-*.md`, `dev-docs/history/`, `CHANGELOG.md`, version → **1.51.0** (§6 A7).
+8. `dev-docs/feedback/FB-0124-*.md`, `dev-docs/history/`, `CHANGELOG.md`, version → **1.51.0** (§6 A7).
 
 ### 6. Scope (out)
 
@@ -158,7 +158,7 @@ Arms A and B are **project-scoped**, which E1's probe 3 established behaves iden
 
 **A7 — ⟢ Version and rebase surface, re-measured unfiltered after `/flow:audit-plan` caught both halves wrong.** **HIGH — now measured properly.** Round 1 claimed "HIGH — measured" on a `gh pr view --json files` call **filtered to `doctor|rule-skills|feedback`**, which structurally could not see the collision. Unfiltered:
 
-- **`v1.50.0` is already claimed by [#165](https://github.com/by-dev-tools/flow/pull/165)** (title carries it; it ships `changelog/v1.50.0.md` + both manifests). Shipping as declared would have collided in three files and created a duplicate changelog filename. → **v1.51.0.** `FB-0122` stands (local `dev-docs/feedback/` ends at FB-0115; 0116–0117 in #165, 0118–0121 in #164).
+- **`v1.50.0` is already claimed by [#165](https://github.com/by-dev-tools/flow/pull/165)** (title carries it; it ships `changelog/v1.50.0.md` + both manifests). Shipping as declared would have collided in three files and created a duplicate changelog filename. → **v1.51.0.** `FB-0124` stands (local `dev-docs/feedback/` ends at FB-0115; 0116–0117 in #165, 0118–0121 in #164).
 - **[#165](https://github.com/by-dev-tools/flow/pull/165) overlaps §11 in eight files**, not one: `plugins/flow/skills/doctor/SKILL.md`, `plugins/flow/docs/workflow.md`, `dev-docs/plan.md`, `dev-docs/roadmap.md`, `CLAUDE.md`, both manifests, and `changelog/v1.50.0.md`. It also rewrites `$ARGUMENTS` handling across many skill bodies, so Check 3.2 will have moved.
 - **[#164](https://github.com/by-dev-tools/flow/pull/164) overlaps in zero** of my paths (`flow.config.json`, `research/orchestrator-field-manual.md`, and its own `dev-docs/{feedback,history}/` files).
 
@@ -179,7 +179,7 @@ Rebase on `main` immediately before ship and re-check the version then — the D
 - `plugins/flow/evals/run_plugin_desc_evals.py`, `plugins/flow/evals/run_plugin_provenance_evals.py` (+ `fixtures/` negative control)
 - `README.md`, `docs/automation-boundaries.md`, `docs/first-pr.md`, `plugins/flow/docs/workflow.md` *(conflicts with #165)*, `plugins/flow/skills/spawn/SKILL.md`, `template/base/CLAUDE.md.template`
 - `dev-docs/roadmap.md` *(conflicts with #165)* — S0 outcome + diagnosis correction; retire S2 + the config-driven-`paths:` item; add the hooks-channel line
-- `dev-docs/plan.md` *(conflicts with #165)*, `dev-docs/history/2026-09-27-<slug>.md`, `dev-docs/feedback/FB-0122-*.md`, `dev-docs/research/2026-09-agents-md-vs-skills.md` (§5.1 over-claim correction, per Open call 4)
+- `dev-docs/plan.md` *(conflicts with #165)*, `dev-docs/history/2026-09-27-<slug>.md`, `dev-docs/feedback/FB-0124-*.md`, `dev-docs/research/2026-09-agents-md-vs-skills.md` (§5.1 over-claim correction, per Open call 4)
 - `CHANGELOG.md`, `changelog/v1.51.0.md`, `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` *(all conflict with #165)*
 
 ### 12. Open calls for the gate

@@ -1,6 +1,6 @@
 # 2026-09-27 — S0 option (c): the rule-skills are model-invoked, and the measurement refused the premise
 
-**PR:** #TBD · **Version:** v1.51.0 · **Feedback:** FB-0122 · **Roadmap:** S0 (resolved), S2 + config-driven-`paths:` (retired)
+**PR:** #TBD · **Version:** v1.51.0 · **Feedback:** FB-0124 · **Roadmap:** S0 (resolved), S2 + config-driven-`paths:` (retired)
 
 ## What was asked, and what the measurement said instead
 

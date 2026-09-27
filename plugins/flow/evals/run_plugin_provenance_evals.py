@@ -555,7 +555,7 @@ def test_callout_splits_rule_skills_from_command_skills():
 def test_is_rule_skill_pinned_to_the_real_four():
     """The classifier is asserted over the FOUR REAL SKILL.md files, not a fixture.
 
-    Why this test exists (FB-0122, `.claude/rules/general.md` item 4 corollary -- pin a
+    Why this test exists (FB-0124, `.claude/rules/general.md` item 4 corollary -- pin a
     claim at the layer where it is CLAIMED): `_is_rule_skill` keyed on `paths:` while the
     only thing checking it was a synthetic `a-rule` fixture that carried `paths:`. When
     S0 removed `paths:` from all four real rule-skills, the fixture kept passing and the
@@ -588,7 +588,7 @@ def test_is_rule_skill_pinned_to_the_real_four():
               f"{name} must carry `user-invocable: false` in frontmatter")
         check("paths:" not in head,
               f"{name} must NOT carry `paths:` -- it narrows the description-driven "
-              f"activation S0 restored (FB-0122)")
+              f"activation S0 restored (FB-0124)")
 
 
 def test_graceful_degradation():

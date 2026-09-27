@@ -388,7 +388,7 @@ def _is_rule_skill(root: Path, name: str) -> bool:
     consequence to a rule-skill states something simply untrue of it.
 
     The marker WAS `paths:`, and that was correct only while the four rule-skills
-    carried it. S0 (FB-0122) removed `paths:` from all four -- it narrows a
+    carried it. S0 (FB-0124) removed `paths:` from all four -- it narrows a
     description-driven activation rather than triggering one, so it could only gate the
     trigger the descriptions now earn. Keying on `paths:` after that change would have
     silently reclassified every rule-skill as a command and printed the wrong

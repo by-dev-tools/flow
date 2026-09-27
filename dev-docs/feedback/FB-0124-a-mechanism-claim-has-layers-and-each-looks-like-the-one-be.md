@@ -1,4 +1,4 @@
-# FB-0122 — A mechanism claim has layers, and each one looks like the guarantee beneath it
+# FB-0124 — A mechanism claim has layers, and each one looks like the guarantee beneath it
 
 **What was said (2026-09-27):** at the S0 human gate, choosing option (c), the orchestrator named the
 pattern rather than just the bug: *"We asserted **registration** and meant **activation**; the hook would
