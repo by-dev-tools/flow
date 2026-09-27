@@ -1167,12 +1167,20 @@ That is FB-0121's contract (*a stage that did not run is red, not clean*) arrivi
 - `extract-criteria.py <plan> | criterion-specificity.py` → any vacuous criterion is red.
 - `walk-pin-lint.py <plan>` → any checkbox naming no verification is red.
 
+**Where the auto-plan lands, and why Arm A must prove it read it.** `extract-criteria.py`'s contract is **first (active) block only** — and the auto-written plan goes into `flow.config.json.planPath`, which in this repo and any consumer retaining shipped blocks is exactly the multi-block case. So Arm A could lint *another PR's* criteria and exit 0: a hard gate reporting green over a plan it never examined. **This session is the evidence the hazard is live, not theoretical** — the rebase minutes ago required demoting four Spec-walk headings inside #165's merged block before the extractor named the active one, and the same pipe reported `total=14`, `total=13` and 18 criteria across three tree states.
+
+So Arm A does not merely run the pipe. It **asserts the block it read is the plan under review**, by checking `extract-criteria.py`'s `source_heading` and `block_count` against the plan it was handed, and is RED if they disagree. A gate that cannot prove which document it graded is not a gate.
+
 **Invoked directly by the orchestrator, not through `/flow:critique-plan`.** This is forced by #165 (§3) and it is better regardless: a gate that depends on another skill's internal block inherits that skill's scope changes. Verified both run standalone on a named plan file (`walk-pin-lint.py dev-docs/plan.md` → exit 0; the extract→specificity pipe → `total=14 vacuous=0`).
 
 *Vocabulary, fixed before it reaches the diff: **arm** means A/B/C and nothing else. `audit-coverage` is **Arm B's reviewer**, never "the fourth arm"; § 4's table has **rows**, not arms.*
 
 **Arm B — criterion completeness. Best-effort. Never passes on silence.**
-- `/flow:audit-coverage <approved-prototype-source>` in **source mode**, run **N times**, findings **unioned** and deduped by the symbol each cites.
+- `/flow:audit-coverage` in **source mode** against the approved prototype, run **N times**, findings **unioned** and deduped by the symbol each cites.
+
+**`/flow:autoplan` must WRITE the stamped argument file, and it would be the first shipped skill to do so.** `/flow:audit-coverage`'s own § Argument documents two ways a path reaches it, and says plainly: *"**No shipped flow skill writes that file today**… this path is reached only by a caller that opts in."* Path 1 — a caller writes the path to the file named by `arg_placeholders.py --arg-path audit-coverage` (branch- and HEAD-stamped, unspellable by hand) — gets pattern filters and the byte cap applied. Path 2 is the reviewer reading the tree itself and emitting **`WEAKENED · FILTERS-ADVISORY`**.
+
+**This is not a detail: the 82%/100% figures in § 4 were measured on path 1.** A gate that silently took path 2 would run a different procedure from the one its own honesty string describes — the "degrades to clean" failure this plan is organised against, relocated from Arm A to Arm B. So Arm B writes the arg file, and asserts its output carries **no** `WEAKENED` line.
 - **Pass condition: the procedure ran at declared depth AND every finding is resolved.** Zero findings is *not* a pass condition — it is an input to one.
 - Depth is declared in the output, always, with what that depth is worth (§4).
 
@@ -1180,8 +1188,9 @@ That is FB-0121's contract (*a stage that did not run is red, not clean*) arrivi
 
 *`/flow:critique-plan` caught me re-specifying a shipped skill as a deliverable.* The handoff § 6 lists the orchestrator under **Genuinely new** as *"the fan-out + single-extraction + triaged-verdict harness, **used at Steps 3 and 6**"* — one harness, two call sites — and Step 3's instance shipped in Phase 1. Measured: `review-brief/SKILL.md` already runs `extract_session.py --mode plan --plan-file "$ARGUMENTS"`, spawns `auditor` + `plan-critic` + `lens-experience` in a **single tool message** over **one** extraction, and returns one triaged verdict. That is Arm C, entire. Building it again beside itself would be the FB-0072 merge-instead-of-compose error inverted.
 
-**So Arm C = `Skill("flow:review-brief")` with the plan's path as its argument**, and the work is a *generalization*, not a build:
-- Its artifact noun is `brief` in **20 places**. Step 6's artifact is a technical plan. The body generalizes to "the artifact under review", with the two call sites naming which they pass.
+**So Arm C = `Skill("flow:review-brief")`, invoked through the same stamped-arg-file channel**, and the work is a *generalization*, not a build:
+- **Re-measured at `e683238`, because #165 changed this file and my first reading predated it.** It no longer takes `--plan-file "$ARGUMENTS"`; it writes the path to `$FLOW_SCRATCH/review-brief-arg.<branch>.<head>.txt` (named via `arg_placeholders.py --arg-path review-brief`) and reads `--plan-file-from "$ARGF"`. Arm C invokes *that* channel. **Same mechanism as Arm B** — one idiom, two reviewers, which is a simplification the first draft missed by reading a stale file.
+- Its artifact noun is `brief` in **30 places** (not the 20 I first counted — that figure was measured against the pre-#165 file). Step 6's artifact is a technical plan; the body generalizes to "the artifact under review", with each call site naming what it passes.
 - The skill **name** stays `review-brief` — renaming a shipped, model-invocable skill breaks consumers for a cosmetic gain. Recorded as a naming residual, not fixed here.
 - `lens-experience`'s Lens B *is* the handoff's "push-further-on-quality"; one agent already covers both halves.
 
@@ -1209,8 +1218,12 @@ Depth keys on **`trigger`'s resolved `path`** — its actual output — **not on
 | `trigger` → `path` | union depth | what the output must say |
 |---|---|---|
 | **`prototype-first`** | **2** | "2 passes unioned. Measured basis: 1 pass ≈ 82%, 4 passes = 100% on the reference case; **2 is between and unmeasured**." |
-| **`collapsed`** | **1** | "1 pass. Recall ≈ **82%**, not ~100% — depth reduced because this surface did not earn a prototype." |
-| **`classic`** | **n/a — Arm B does not run** | "No approved prototype exists, so there is no source to read. Arm B **did not run**; this is not a clean completeness result." |
+| **`collapsed`** | **n/a — Phase 3 does not apply** | see below |
+| **`classic`** | **n/a — Phase 3 does not apply** | "No approved prototype exists, so there is no source to read, and the human still gates this plan." |
+
+**`collapsed` was a category error in the first draft and `/flow:audit-plan` caught it.** I gave it depth 1. But `prototype-gate.py`'s collapsed branch returns `pre_execution_gate: "plan"` — *"the pre-execution gate stays at plan approval"* — so **the human still gates that plan.** Phase 3's machine gate exists precisely because the human gate moved to the prototype; where it has not moved, there is nothing for a machine gate to replace. `collapsed` therefore joins `classic`: **Arm B does not run, and `/flow:autoplan` does not run at all.** No approved prototype exists to read either way.
+
+That leaves **one** row where Phase 3 applies — `prototype-first` — which is the honest shape: the machine gate is the counterpart of the moved human gate, one for one.
 
 `Mode: spike` reaches this table only via `path` (the trigger routes spike to `classic`), so it needs no row of its own — which is the point of keying on `path`.
 
@@ -1268,11 +1281,13 @@ Three properties that make it answerable rather than a document: **the resolutio
 
 - [ ] A plan with a vacuous criterion is RED, and the same plan with that criterion sharpened is GREEN — both polarities, so the check is not satisfiable by always failing. → `test_arm_a_vacuous_both_polarities`
 - [ ] A plan with an unpinned checkbox is RED; pinned is GREEN. → `test_arm_a_pinning_both_polarities`
-- [ ] Arm A invokes `walk-pin-lint.py` **directly** and does not route pinning through `/flow:critique-plan` — asserted positively (the direct call is present) and negatively (no reliance on `$ARGUMENTS` pinning), so #165 cannot silently turn this UNCHECKED. → `test_arm_a_owns_its_pinning`
+- [ ] Arm A invokes `walk-pin-lint.py` **directly** and does not route pinning through `/flow:critique-plan` — asserted positively (the direct call is present) and negatively (no reliance on `$ARGUMENTS` pinning), so #165's removal cannot silently turn this UNCHECKED. → `test_arm_a_owns_its_pinning`
+- [ ] Arm A is RED when `extract-criteria.py`'s `source_heading`/`block_count` show it read a block other than the plan under review — pinned with a multi-block fixture where the active plan is **not** first, which is the shape that would otherwise pass green over an unexamined plan. → `test_arm_a_proves_which_block_it_graded`
 
 *Arm B — completeness, never pass-on-silence*
 
 - [ ] The gate is RED when Arm B **did not run**, distinctly from when it ran and found nothing — two different reasons, never collapsed. → `test_arm_b_not_run_is_red`
+- [ ] `/flow:autoplan` **writes the stamped arg file** (named via `arg_placeholders.py --arg-path audit-coverage`) before invoking Arm B, and Arm B is RED if its output carries a `WEAKENED` line — so the gate cannot silently run the unfiltered path whose recall its own honesty string does not describe. Positive (the write happens) and negative (no `WEAKENED` survives) both asserted. → `test_arm_b_uses_the_filtered_path`
 - [ ] Zero findings at declared depth is a PASS **only** in conjunction with the procedure having run; a fixture asserting "no findings" with no recorded run is RED. → `test_arm_b_silence_is_not_a_pass`
 - [ ] The output always states the depth used and what that depth is worth, and never claims a measured figure for an unmeasured depth (depth 2 must not be described as ~100%). → `test_arm_b_depth_honesty`
 
@@ -1285,11 +1300,12 @@ Three properties that make it answerable rather than a document: **the resolutio
 
 - [ ] `/flow:autoplan` **calls `Skill("flow:review-brief")` with the plan's path** and does not re-implement the fan-out — asserted positively (the call is present, with an argument) and negatively (no second three-agent spawn in `autoplan`), so the handoff's one-orchestrator-two-call-sites contract cannot be satisfied by building a twin. → `test_arm_c_reuses_review_brief`
 - [ ] `/flow:review-brief` reads as artifact-neutral: its reviewer prompts no longer say "brief" where the artifact may be a plan, and **both** call sites name what they pass. → `test_review_brief_is_artifact_neutral`, looping both call sites
+- [ ] Arm C passes the plan through `--plan-file-from` via the stamped arg file (#165's Tier-2 idiom), **not** `$ARGUMENTS` — the channel that no longer exists. → `test_arm_c_uses_the_arg_file_channel`
 - [ ] The skill states explicitly that **Arm B's reviewer** reads the prototype source, **not** the shared extraction — the one-extraction guarantee is scoped to Arm C's three reviewers and not claimed beyond them. → `test_arm_b_input_is_stated`
 
 *Routing + proportionality*
 
-- [ ] Union depth resolves from `trigger`'s **`path`** (its real output), not from `Mode`: `prototype-first` ⇒ 2, `collapsed` ⇒ 1, `classic` ⇒ Arm B does not run. Every row exercised, **including `Mode: feature` routed to `classic`** by a non-visual `Surface` — the case a Mode-keyed table would have given depth 2 with nothing to read. → `test_union_depth_from_trigger_path`
+- [ ] `/flow:autoplan` runs **only** on `trigger` → `path == "prototype-first"`, and is a clean no-op on `collapsed` and `classic` — because both keep `pre_execution_gate: "plan"`, so a human still gates and there is nothing for a machine gate to replace. Every row exercised, **including `Mode: feature` routed to `classic`** by a non-visual `Surface`. → `test_autoplan_runs_only_where_the_human_gate_moved`
 - [ ] `Mode: spike` reaches the table only through `path` (trigger routes it to `classic`) and never resolves an undeclared depth. → `test_spike_has_no_undeclared_depth`
 - [ ] `[auto-fixable]` fixes and re-reviews **once**, never loops. → `test_auto_fixable_single_retry`
 - [ ] `[decision-required]` renders a numbered answerable question carrying a drafted resolution and the pass-provenance with its interpretation. → `test_decision_required_shape`
@@ -1310,7 +1326,7 @@ Three properties that make it answerable rather than a document: **the resolutio
 
 **A3. Auto-writing a plan good enough to gate is achievable.** **MEDIUM** — this is §9.3 itself, and it resolved MIXED rather than clear. *Why it is not LOW any more:* the quality half measured clean, and the completeness half now has an instrument it did not have when §9.3 ran. *If it flips:* the plan needs a human gate after all, which breaks the two-gate thesis. *Mitigation:* Arm B's pass condition is procedural, so a weak auto-plan produces findings rather than a false green.
 
-**A4. #165's `$ARGUMENTS` change does not break Arm B's path argument.** **LOW — and I am not resolving it by reading the diff.** *Why LOW:* #165 is explicitly a change to how slash-command arguments are handled, and Arm B passes a path as an argument. *If it flips:* Arm B cannot be invoked as designed. *Mitigation:* re-verify Arm B end-to-end at the rebase by running it, not by reading. **This is an automatic gate on the rebase, not on this plan.**
+**A4. ~~#165 does not break Arm B's path argument.~~ RESOLVED — and it flipped.** #165 landed and I read the shipped files rather than the diff. It *did* change the channel: both Arm B and Arm C now take a path through a **stamped arg file**, not `$ARGUMENTS`, and `/flow:autoplan` would be the **first shipped skill to write one**. The design absorbed it (§ 2) and it turned out to be a simplification — one idiom serves both reviewers. **The residual risk moves to `conductor/docs-only-verify-build-na`** (in flight, touching `verify-build`, which owns both of Arm A's scripts): **MEDIUM**, mitigated by re-running Arm A at that rebase rather than reading the diff. *If it flips:* Arm A degrades to a clean quality verdict silently, which is the one failure mode this plan exists to prevent.
 
 ---
 
