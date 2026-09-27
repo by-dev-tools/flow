@@ -1,0 +1,1 @@
+I want to add a `median(items)` helper to this project's src/ directory. Before writing any code, write a plan for it into core-docs/plan.md. Then stop — don't implement it yet.

@@ -137,6 +137,21 @@ def skill_mentions(text: str, skills: list[str]) -> list[str]:
     return sorted(hits)
 
 
+def load_rule_skills():
+    """`plugins/flow/lib/rule_skills.py` -- the single definition of the rule-skill contract.
+
+    importlib because this harness must pin the module the SHIPPED code imports, not a
+    re-implementation of it: a restatement here could agree with the spec while disagreeing
+    with `plugin-provenance.py` and `/flow:doctor`, and nothing would notice.
+    """
+    import importlib.util
+    target = PLUGIN_ROOT / "lib" / "rule_skills.py"
+    spec = importlib.util.spec_from_file_location("flow_rule_skills", target)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def frontmatter_description(skill_md: Path) -> str | None:
     """The `description:` value from a SKILL.md's YAML frontmatter.
 
@@ -271,138 +286,238 @@ def main() -> int:
               "frontmatter description is trigger text loaded every invocation, not a changelog")
 
     # ---- the four rule-skills: the contract that makes model invocation possible ----
-    # FB-0124. These four are `user-invocable: false` background knowledge: a plugin
-    # cannot ship `.claude/rules/*.md` (no `rules/` plugin component), so the ONLY way
-    # they reach a session is Claude reading the description and deciding to load the
-    # body. From v1.33.0 to v1.49.0 every one of them ended with "Not user-invocable --
-    # path-activated only.", which told the model the skill was not its to invoke, and
-    # carried `paths:`, which NARROWS a description-driven activation rather than
-    # triggering one. They loaded for nobody.
+    # FB-0124. These four are `user-invocable: false` background knowledge: a plugin cannot
+    # ship `.claude/rules/*.md` (no `rules/` plugin component), so the ONLY way they reach a
+    # session is Claude reading the description and deciding to load the body. From v1.33.0
+    # to v1.49.0 every one of them ended with "Not user-invocable -- path-activated only.",
+    # which told the model the skill was not its to invoke, and carried `paths:`, which
+    # NARROWS a description-driven activation rather than triggering one.
     #
-    # Every negative below is PAIRED with a positive, because a prohibition satisfiable
-    # by deletion is not a check (`.claude/rules/general.md` item 3): "no suppressant in
-    # the description" passes just as well when the description, or the whole skill, is
-    # gone. `rule-skill-present` is what makes the negatives mean something.
-    rule_skills = ["general", "plan-discipline", "documentation", "exploration"]
-    # Two documented caps, two different mechanisms, both binding:
-    #   1,024 = hard validation on `description` alone (Agent Skills spec /
-    #           platform.claude.com .../agent-skills/best-practices)
-    #   1,536 = truncation of `description` + `when_to_use` in the skill LISTING
-    #           (code.claude.com/docs/en/skills § Frontmatter reference)
-    DESC_HARD_CAP, LISTING_CAP = 1024, 1536
-    SUPPRESSANT = re.compile(r"path-activated|Not user-invocable", re.I)
+    # The roster AND the predicate live in `plugins/flow/lib/rule_skills.py` -- imported
+    # here, imported by `plugin-provenance.py`, and invoked by `/flow:doctor` Check 3.2.
+    # This eval therefore pins THE CODE DOCTOR RUNS, not a Python restatement of doctor's
+    # shell (`.claude/rules/general.md` item 4's corollary -- pin a claim at the layer where
+    # it is CLAIMED). Both /simplify cleanup lenses flagged the five-copy version.
+    #
+    # Every negative in `violations()` is paired with a positive, because a prohibition
+    # satisfiable by deletion is not a check (item 3): "no suppressant" passes just as well
+    # when the description, or the whole skill, is gone.
+    rs = load_rule_skills()
 
-    def rule_skill_fm(name: str) -> str | None:
-        """The frontmatter block of a rule-skill, or None if unreadable."""
-        f = SKILLS_DIR / name / "SKILL.md"
-        try:
-            text = f.read_text(encoding="utf-8")
-        except OSError:
-            return None
-        if not text.startswith("---"):
-            return None
-        end = text.find("\n---", 3)
-        return text[:end] if end != -1 else None
+    bad = {n: v for n, v in rs.audit(SKILLS_DIR).items() if v}
+    check("rule-skill-contract", not bad,
+          f"rule-skill contract violated: {bad} — see plugins/flow/lib/rule_skills.py for "
+          f"what each token means; this is the same predicate /flow:doctor Check 3.2 runs")
+    # The roster itself must not silently empty, or the audit above passes vacuously
+    # (FB-0104's vacuous-criterion class): a zero-length roster yields `bad == {}`.
+    check("rule-skill-roster-nonempty", len(rs.RULE_SKILLS) >= 4 and all(rs.RULE_SKILLS),
+          f"RULE_SKILLS must name every rule-skill; got {rs.RULE_SKILLS!r}")
 
-    def scalar(fm: str, key: str) -> str | None:
-        """A frontmatter scalar, folding the `key: >-` block form onto one line."""
-        m = re.search(rf"^{key}: >-\n((?:  .*\n)+)", fm + "\n", re.M)
-        if m:
-            return " ".join(l.strip() for l in m.group(1).splitlines())
-        m = re.search(rf"^{key}:[ \t]*(.+)$", fm, re.M)
-        return m.group(1).strip() if m else None
+    # ---- NEGATIVE CONTROL: prove `violations()` can FAIL ----
+    # A measurement that can only return "clean" is not a measurement (item 4). The four
+    # real files are expected to pass, so passing over them cannot distinguish a working
+    # predicate from a vacuous one. Each case below is a MINIMAL frontmatter that isolates
+    # ONE clause -- deliberately not four copies of the same retired description, which is
+    # what the first draft carried and which exercised one regex branch four times.
+    NEG = [
+        ("suppressant", "---\nname: x\ndescription: Does a thing. Use when testing. "
+                        "Not user-invocable — path-activated only.\nuser-invocable: false\n---\n",
+         "suppressant-in-description"),
+        ("paths", "---\nname: x\ndescription: Does a thing. Use when testing.\n"
+                  "user-invocable: false\npaths:\n  - '**/*'\n---\n", "has-paths"),
+        ("dmi", "---\nname: x\ndescription: Does a thing. Use when testing.\n"
+                "user-invocable: false\ndisable-model-invocation: true\n---\n",
+         "disable-model-invocation"),
+        ("not-model-only", "---\nname: x\ndescription: Does a thing. Use when testing.\n---\n",
+         "not-user-invocable-false"),
+        ("no-trigger", "---\nname: x\ndescription: Formatting rules for narrative docs.\n"
+                       "user-invocable: false\n---\n", "no-trigger-clause"),
+        ("no-description", "---\nname: x\nuser-invocable: false\n---\n", "no-description"),
+        ("over-cap", "---\nname: x\ndescription: " + "y" * (rs.DESC_HARD_CAP + 1) +
+                     " Use when testing.\nuser-invocable: false\n---\n",
+         f"description-over-{rs.DESC_HARD_CAP}"),
+        ("absent", None, "missing"),
+    ]
+    for label, text, expected in NEG:
+        got = rs.violations(text)
+        check(f"negative-control-rejects:{label}", expected in got,
+              f"violations() FAILED to report {expected!r} for the {label} case (got {got}) — "
+              "the predicate would have passed a description that cannot trigger, so it is "
+              "not a check")
+    # And the POSITIVE control on the predicate itself: a compliant frontmatter must yield
+    # NO violations. Without this the negatives above all pass a `return ["everything"]` stub.
+    check("positive-control-accepts-compliant",
+          rs.violations("---\nname: x\ndescription: Does a thing. Use when testing.\n"
+                        "user-invocable: false\n---\n") == [],
+          "violations() reported a problem with a compliant frontmatter — the negative "
+          "controls above would pass even a predicate that rejects everything")
 
-    fms = {n: rule_skill_fm(n) for n in rule_skills}
+    # ---- claim lint: no shipped surface may call a rule-skill path-activated ----
+    # The altitude fix for FB-0124. Correcting nine occurrences by hand is symptom-level:
+    # the sweep was performed from memory, and it MISSED two — including
+    # `template/base/core-docs/roadmap.md`, which `bootstrap.sh` copies into every consumer
+    # repo, so a wrong line there is wrong forever in every project that already adopted
+    # flow. Found by /simplify's altitude lens, not by the sweep.
+    #
+    # This makes the tenth occurrence impossible rather than the ninth corrected: fail when
+    # a path-activation phrase appears near any rule-skill name across shipped surfaces. The
+    # roster comes from rule_skills.RULE_SKILLS, so adding a rule-skill extends the lint for
+    # free.
+    #
+    # `.claude/rules/*.md` is deliberately NOT swept: project-scope rules genuinely ARE
+    # path-activated, and that is the distinction every corrected doc now draws.
+    CLAIM = re.compile(r"path-activat\w*|auto-load(?:ing|s|ed)?\b|fires? on (?:a )?path", re.IGNORECASE)
+    NEAR = 110          # chars either side — a claim ABOUT a rule-skill sits close to its name.
 
-    # POSITIVE, and the anchor for everything after it: all four exist, parse, and
-    # declare a non-empty description. Delete a skill and THIS fails.
-    missing = sorted(n for n, fm in fms.items() if fm is None)
-    check("rule-skill-present", not missing,
-          f"unreadable or frontmatter-less rule-skill(s): {missing} — the negative checks "
-          "below all pass when the file is gone, so this is what gives them meaning")
+    # Negation is checked in a WINDOW AROUND THE CLAIM, never over the whole line. A
+    # line-scoped exemption is unsound and was measurably so: the first version of this
+    # lint exempted any line containing "by judgment", so re-introducing
+    # "Auto-loading `documentation` rule fires on path match" into a sentence that later
+    # said "loads it by judgment" passed clean. A check that cannot fail is worse than no
+    # check (`.claude/rules/general.md` item 4) — so the negation must sit next to the
+    # claim it negates, which is where a real correction puts it anyway.
+    NEGATED = re.compile(
+        r"\bnot\b|\bno longer\b|\brather than\b|\bnever\b|\bcannot\b|\bwithout\b|"
+        r"\bARE\b|model-invoked|by judgment|used to|through v1\.5|until v1\.5|was \*\*false\*\*|"
+        r"claimed", re.IGNORECASE)
+    NEG_WIN = 70        # chars either side of the CLAIM phrase
 
-    for n in rule_skills:
-        fm = fms[n]
-        if fm is None:
-            continue
-        desc, wtu = scalar(fm, "description"), scalar(fm, "when_to_use")
+    # Surfaces that genuinely DO auto-load and are not rule-skills — the consumer's own
+    # CLAUDE.md block, the statusDocs orientation files, project-scope .claude/rules. Matched
+    # against the claim window, not the line.
+    OTHER_MECHANISM = re.compile(
+        r"statusSurfaceCandidates|orientation|status surface|auto-loads? into (?:every|a) session|"
+        r"\.claude/rules|safety\.md|auto-load rules present|CLAUDE\.md", re.IGNORECASE)
 
-        # POSITIVE: a description exists and is trigger-bearing. A skill Claude must
-        # choose to invoke needs to say WHEN, not only what.
-        check(f"rule-skill-has-description:{n}", bool(desc),
-              f"{n} declares no `description:` — its description IS its trigger")
-        check(f"rule-skill-trigger-clause:{n}",
-              bool(desc) and bool(re.search(r"\bUse (when|before|at)\b|\bLoad (when|before)\b",
-                                            desc + " " + (wtu or ""), re.I)),
-              f"{n}'s description/when_to_use names no trigger condition — per the docs' "
-              "§ Writing effective descriptions it must give what it does AND when to use it")
+    lint_roots = [ROOT / "README.md", ROOT / "docs", ROOT / "template",
+                  PLUGIN_ROOT / "docs", PLUGIN_ROOT / "skills", PLUGIN_ROOT / "agents"]
 
-        # POSITIVE: model-invocable-only is the shape we want, and it is the marker
-        # `plugin-provenance.py:_is_rule_skill` now keys on.
-        check(f"rule-skill-user-invocable-false:{n}",
-              bool(re.search(r"^user-invocable:\s*false\b", fm, re.M)),
-              f"{n} must declare `user-invocable: false` — it is background knowledge, and "
-              "this is also the marker plugin-provenance.py classifies rule-skills by")
+    def path_activation_claims(body: str) -> list[str]:
+        """Lines asserting that a RULE-SKILL is path-activated / auto-loading.
 
-        # NEGATIVE ×3, each paired with a positive above.
-        check(f"rule-skill-no-suppressant:{n}",
-              bool(desc) and not SUPPRESSANT.search(desc),
-              f"{n}'s description claims path-activation or advertises itself as "
-              "not-invocable — that is the sentence that suppressed the trigger for 17 "
-              "releases; a model reading it concludes the skill is not its to invoke")
-        check(f"rule-skill-no-paths:{n}",
-              not re.search(r"^\s*paths\s*:", fm, re.M),
-              f"{n} declares `paths:` — it LIMITS an activation the description otherwise "
-              "earns, so it can only gate the trigger, never create one")
-        check(f"rule-skill-no-disable-model-invocation:{n}",
-              not re.search(r"^disable-model-invocation:\s*true\b", fm, re.M),
-              f"{n} sets `disable-model-invocation: true` — that removes the description "
-              "from context, forbidding the one path by which this skill can ever load")
+        Targeted, not an NLP judge: it matches a claim phrase, requires a rule-skill name
+        within NEAR chars, and clears only on a negation or other-mechanism marker inside
+        NEG_WIN chars of the claim itself.
+        """
+        hits = []
+        for line in body.splitlines():
+            for cm in CLAIM.finditer(line):
+                win = line[max(0, cm.start() - NEG_WIN): cm.end() + NEG_WIN]
+                if NEGATED.search(win) or OTHER_MECHANISM.search(win):
+                    continue
+                near = line[max(0, cm.start() - NEAR): cm.end() + NEAR]
+                if any(re.search(rf"\b{re.escape(n)}\b", near) for n in rs.RULE_SKILLS):
+                    hits.append(line.strip()[:110])
+                    break
+        return hits
 
-        # Both caps.
-        check(f"rule-skill-desc-cap:{n}", bool(desc) and len(desc) <= DESC_HARD_CAP,
-              f"{n} description is {len(desc or '')} chars (hard cap {DESC_HARD_CAP})")
-        combined = len(desc or "") + len(wtu or "")
-        check(f"rule-skill-listing-cap:{n}", combined <= LISTING_CAP,
-              f"{n} description+when_to_use is {combined} chars (listing truncates at "
-              f"{LISTING_CAP}) — the tail would be silently lost")
+    # ---- claim lint: no shipped surface may call a rule-skill path-activated ----
+    # The altitude fix for FB-0124. Correcting occurrences by hand is symptom-level: the
+    # sweep was performed from memory and MISSED FIVE — two found by /simplify's altitude
+    # lens (including `template/base/core-docs/roadmap.md`, which `bootstrap.sh` copies into
+    # every consumer repo, so a wrong line there is wrong forever in every project that
+    # already adopted flow), and three more in `docs/first-pr.md` found by this lint on its
+    # first run. That is the argument for the lint in one sentence.
+    #
+    # `.claude/rules/*.md` is deliberately NOT swept: project-scope rules genuinely ARE
+    # path-activated, and that distinction is what every corrected doc now draws.
+    offenders = []
+    for root in lint_roots:
+        files = sorted(root.rglob("*.md")) if root.is_dir() else ([root] if root.is_file() else [])
+        for f in files:
+            if ".claude/rules" in f.as_posix():
+                continue
+            try:
+                body = f.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            offenders += [f"{f.relative_to(ROOT)}: {h}" for h in path_activation_claims(body)]
+    check("no-path-activation-claim-near-a-rule-skill", not offenders,
+          "shipped surface(s) still call a rule-skill path-activated or auto-loading — they "
+          "are model-invoked, so the claim is false: " + "; ".join(sorted(set(offenders))[:4]))
 
-    # ---- NEGATIVE CONTROL: prove the predicate above can FAIL ----
-    # A measurement that can only return "clean" is not a measurement
-    # (`.claude/rules/general.md` item 4). The four real files are expected to pass, so
-    # passing over them cannot distinguish a working check from a vacuous one. These are
-    # the v1.49.0 descriptions verbatim — the ones that shipped broken for 17 releases —
-    # and every one of them MUST be rejected. If this block ever goes quiet, the checks
-    # above have stopped meaning anything.
-    BROKEN = {
-        "old-general": (
-            "Auto-loading workflow-discipline guidance (plan-before-code, mode flags, scope "
-            "discipline, decision tracking, autonomous work guardrails) for every file touched "
-            "in a flow-using project. Not user-invocable — path-activated only."),
-        "old-plan-discipline": (
-            "Auto-loading plan-writing requirements (required fields, spec-walk/visual-walk, "
-            "confidence verdicts) when writing to the project's plan doc. Not user-invocable — "
-            "path-activated only."),
-        "old-documentation": (
-            "Auto-loading formatting rules for the project's narrative docs (history, feedback, "
-            "plan, roadmap, spec). Not user-invocable — path-activated only."),
-        "old-exploration": (
-            "Auto-loading nudge to check the roadmap's § Exploration section when touching "
-            "common source roots. Not user-invocable — path-activated only."),
-    }
-    for label, desc in BROKEN.items():
-        check(f"negative-control-rejects:{label}", bool(SUPPRESSANT.search(desc)),
-              f"the suppressant predicate FAILED to reject {label} — it would have passed "
-              "the v1.49.0 description that never triggered, so it is not a check")
-    # And the paths-predicate half, on a frontmatter that carries `paths:`.
-    check("negative-control-rejects:paths-frontmatter",
-          bool(re.search(r"^\s*paths\s*:", "---\nname: x\nuser-invocable: false\npaths:\n  - '**/*'", re.M)),
-          "the paths predicate FAILED to detect `paths:` in frontmatter")
-    # And the trigger-clause half must reject a description that names no trigger.
-    check("negative-control-rejects:no-trigger-clause",
-          not re.search(r"\bUse (when|before|at)\b|\bLoad (when|before)\b",
-                        "Auto-loading formatting rules for the project's narrative docs.", re.I),
-          "the trigger-clause predicate accepted a description with no when-to-use clause")
+    # ---- the lint's OWN known-positive / known-negative pair ----
+    # Not a probe of the regex in isolation: run the real predicate over real sentences.
+    # The first version of this lint checked only that its patterns matched a probe string,
+    # which is why it could pass while the predicate it fronted did not fire at all.
+    MUST_FLAG = [
+        "Auto-loading `documentation` rule fires on path match and carries the format contract.",
+        "The four portable rules (`general`, `plan-discipline`) — path-activated skills.",
+        "- **4 auto-loading rules** that attach by file path — plan-discipline, documentation.",
+        # The exact shape that defeated version 1: a false claim beside an exempting phrase.
+        "Auto-loading `documentation` rule fires on path match — Claude loads it by judgment later.",
+    ]
+    for i, sentence in enumerate(MUST_FLAG):
+        check(f"claim-lint-flags-known-positive:{i}", bool(path_activation_claims(sentence)),
+              f"the lint did NOT flag a sentence that plainly makes the forbidden claim "
+              f"({sentence[:70]!r}) — it cannot be trusted to have found nothing")
+    MUST_PASS = [
+        "The `general` rule-skill is model-invoked, not path-activated.",
+        "Your own `.claude/rules/*.md` are the path-activated ones that fire deterministically.",
+        "This CLAUDE.md block auto-loads into every session.",
+        "`documentation` applies wherever the project keeps its docs; Claude loads it by judgment.",
+    ]
+    for i, sentence in enumerate(MUST_PASS):
+        check(f"claim-lint-passes-known-negative:{i}", not path_activation_claims(sentence),
+              f"the lint flagged a CORRECT sentence ({sentence[:70]!r}) — a lint that fires on "
+              f"the fix teaches authors to route around it")
+
+    # ---- the [UNCHECKED] marker's own contract, asserted over doctor's shipped text ----
+    # FB-0124 introduced this marker class. Its rules were prose with nothing verifying them,
+    # in a PR whose thesis is that unverified prose claims survive twenty releases
+    # (/simplify's altitude lens made that point, and it landed).
+    doctor = (SKILLS_DIR / "doctor" / "SKILL.md").read_text(encoding="utf-8")
+
+    def echo_blocks(text: str, marker: str) -> list[tuple[str, str]]:
+        """[(first line, the contiguous echo block it heads)] for each `marker` emission.
+
+        Bounded to CONSECUTIVE echo lines, not a fixed character window: a fixed window
+        spilled into the next check's text and read ITS `Fix:` as this line's, which failed
+        the rule over a line that satisfied it. The block is the unit the reader sees.
+        """
+        out, lines = [], text.splitlines()
+        for i, line in enumerate(lines):
+            if not line.lstrip().startswith(f'echo "{marker}'):
+                continue
+            block = [line]
+            for nxt in lines[i + 1:]:
+                if nxt.lstrip().startswith("echo "):
+                    block.append(nxt)
+                else:
+                    break
+            out.append((line.strip(), "\n".join(block)))
+        return out
+
+    unchecked = echo_blocks(doctor, "[UNCHECKED]")
+    unchecked_emissions = [first for first, _ in unchecked]
+    # POSITIVE: the class is actually used. Without this the rules below are satisfiable by
+    # deleting every emission (item 3 — a prohibition satisfiable by deletion is not a check).
+    check("unchecked-class-in-use", len(unchecked_emissions) >= 1,
+          "doctor emits no [UNCHECKED] line — the marker class, its table, and its rules are "
+          "then dead prose, and rule-skill activation is being reported as something it isn't")
+    # RULE 1: every [UNCHECKED] names the mechanism that would make it checkable. That
+    # clause is also the line's deletion criterion, so it is what keeps the class from
+    # becoming the drawer every unverifiable check goes into.
+    for em, block in unchecked:
+        check(f"unchecked-names-its-mechanism:{em[14:44].strip()}",
+              "Checkable by:" in block,
+              f"an [UNCHECKED] line carries no 'Checkable by:' clause — that clause IS the "
+              f"deletion criterion, and without it the marker excuses itself: {em[:80]}")
+    # RULE 2: [UNCHECKED] is reserved for what NO consumer can act on. A condition with a
+    # consumer-side fix is a [WARN] worded "UNCHECKED, not clean" — the shape this file
+    # already uses elsewhere. An [UNCHECKED] carrying a `Fix:` has conflated the two axes.
+    for em, block in unchecked:
+        check(f"unchecked-is-not-consumer-fixable:{em[14:44].strip()}",
+              "Fix:" not in block,
+              f"an [UNCHECKED] line offers a consumer-side 'Fix:' — if the consumer can act, "
+              f"it belongs in the verdict arithmetic as [WARN] 'UNCHECKED, not clean', not "
+              f"outside it: {em[:80]}")
+    # And the verdict line must surface the count inline, so unchecked items stay visible
+    # rather than being buried by living outside the arithmetic.
+    check("unchecked-count-is-inline-on-the-verdict",
+          "(N unchecked)" in doctor,
+          "doctor's [READY] contract must print the unchecked count inline — keeping "
+          "[UNCHECKED] out of the arithmetic without surfacing it loses the signal entirely")
 
     # ---- CI wiring (the orphaned-eval guard) ----
     # Scoped to an executable `- run:` line, NOT a bare substring: ci.yml's own

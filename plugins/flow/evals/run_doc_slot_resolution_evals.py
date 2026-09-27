@@ -384,10 +384,13 @@ for _shape in ("one-file-per-entry", "history/"):
           f"skills/documentation must still tell the reader it covers {_shape!r} docs — a "
           f"fragmented doc is `history/<date>-<slug>.md`, and dropping that from the body "
           f"loses the entry-format contract for every migrated project")
-check("cov doc-no-retired-globs", '"**/history/*.md"' not in _doc_skill
-      and "paths:" not in _doc_skill.split("\n---", 1)[0],
-      "skills/documentation must no longer declare `paths:` globs — they gate the "
-      "description-driven activation S0 restored (FB-0124)")
+check("cov doc-no-retired-globs", '"**/history/*.md"' not in _doc_skill,
+      "skills/documentation must no longer declare the retired `paths:` globs — they gate "
+      "the description-driven activation S0 restored (FB-0124)")
+# The `paths:`-absent half of the frontmatter contract is asserted ONCE, in
+# run_plugin_desc_evals.py against rule_skills.violations(), over all four rule-skills.
+# A copy here could only fail by disagreeing with that module about whitespace, and
+# doc-slot resolution is not where the frontmatter contract lives.
 
 # changelogPath must be in doctor's existence-checked loop, not silently excluded.
 _doctor = (PLUGIN / "skills" / "doctor" / "SKILL.md").read_text(encoding="utf-8")

@@ -20,7 +20,7 @@ Where the product is going over the next few horizons. Active work lives in `pla
 
 ## § Exploration
 
-Items surfaced by `/flow:staff-review`'s push-further lens. These don't have a concrete shape yet — they describe a direction worth investigating when relevant code is touched. Each entry includes a **`Surfaces when:`** trigger naming the file paths or area that should re-surface the item, so the auto-loading `exploration` rule can grep this section for trigger matches.
+Items surfaced by `/flow:staff-review`'s push-further lens. These don't have a concrete shape yet — they describe a direction worth investigating when relevant code is touched. Each entry includes a **`Surfaces when:`** trigger naming the file paths or area that should re-surface the item, so the `exploration` rule-skill — which Claude loads by judgment, not by path match — can grep this section for trigger matches.
 
 ### Template
 

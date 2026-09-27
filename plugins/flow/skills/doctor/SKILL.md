@@ -805,45 +805,46 @@ The frontmatter contract that makes model invocation possible — asserted over 
 
 ```sh
 RS_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+# ONE definition of the contract — lib/rule_skills.py — invoked here, imported by
+# ship/lib/plugin-provenance.py, and pinned by evals/run_plugin_desc_evals.py. Before
+# FB-0124 this block re-derived the predicate in shell with sed + five greps while the
+# eval re-derived it again in Python, so the eval was pinning a restatement of this
+# check rather than the code this check runs (`.claude/rules/general.md` item 4
+# corollary). Exit-code driven, not output-grepped: a `grep -c` of 0 cannot distinguish
+# "no matches" from "my pattern is wrong", while an exit code is a signal the tool's
+# author maintains against their own output.
+RS_LIB="$RS_ROOT/lib/rule_skills.py"
 if [ -z "$RS_ROOT" ] || [ ! -d "$RS_ROOT/skills" ]; then
-  echo "[UNCHECKED] rule-skill frontmatter contract — CLAUDE_PLUGIN_ROOT unset or has no skills/ dir."
-  echo "            Checkable by: running this from a session with flow@flow enabled."
+  echo "[WARN] rule-skill frontmatter contract UNCHECKED, not clean — CLAUDE_PLUGIN_ROOT unset or has no skills/ dir."
+  echo "       Fix: run /flow:doctor from a session with flow@flow enabled."
+elif [ ! -f "$RS_LIB" ]; then
+  # An older installed plugin has no lib/rule_skills.py. Say so rather than silently
+  # skipping — an absent checker is UNCHECKED, never clean.
+  echo "[WARN] rule-skill frontmatter contract UNCHECKED, not clean — this install predates lib/rule_skills.py."
+  echo "       Fix: /plugin marketplace update flow && /plugin install flow@flow"
+elif ! command -v python3 >/dev/null 2>&1; then
+  echo "[WARN] rule-skill frontmatter contract UNCHECKED, not clean — python3 not on PATH."
+  echo "       Fix: install python3 (the contract checker is stdlib-only)."
 else
-  RS_BAD=""
-  for s in general plan-discipline documentation exploration; do
-    F="$RS_ROOT/skills/$s/SKILL.md"
-    # Frontmatter only — line 2 through the closing fence. Deliberately sed, not awk:
-    # awk's field variable is spelled the same as a host argument placeholder, so an awk
-    # frontmatter parser trips the FB-0116/FB-0117 placeholder lint. sed has no such
-    # collision, and the lint should stay strict rather than learn an exception.
-    FM=$(sed -n '2,/^---[[:space:]]*$/p' "$F" 2>/dev/null)
-    # POSITIVE: the file exists and declares a non-empty description. Without this the
-    # three negatives below are all satisfiable by deleting the skill (FB-0077).
-    [ -s "$F" ] || { RS_BAD="$RS_BAD $s(missing)"; continue; }
-    printf '%s' "$FM" | grep -qE '^description:' || RS_BAD="$RS_BAD $s(no-description)"
-    # POSITIVE: model-invocable-only is the shape we want.
-    printf '%s' "$FM" | grep -qE '^user-invocable:[[:space:]]*false'       || RS_BAD="$RS_BAD $s(not-user-invocable-false)"
-    # NEGATIVE: `paths:` would gate the description-driven trigger behind a glob.
-    printf '%s' "$FM" | grep -qE '^[[:space:]]*paths[[:space:]]*:'       && RS_BAD="$RS_BAD $s(has-paths)"
-    # NEGATIVE: this would forbid the one path that works ("Description not in context").
-    printf '%s' "$FM" | grep -qE '^disable-model-invocation:[[:space:]]*true'       && RS_BAD="$RS_BAD $s(disable-model-invocation)"
-    # NEGATIVE: the sentence that suppressed the trigger for 17 releases.
-    printf '%s' "$FM" | grep -qiE 'path-activated|Not user-invocable'       && RS_BAD="$RS_BAD $s(suppressant-in-description)"
-  done
-  if [ -z "$RS_BAD" ]; then
-    echo "[PASS] rule-skill frontmatter contract: all 4 declare a description + user-invocable:false, none carry paths:/disable-model-invocation/suppressant text"
+  RS_OUT=$(python3 "$RS_LIB" check --skills-dir "$RS_ROOT/skills" 2>&1)
+  if [ $? -eq 0 ]; then
+    echo "[PASS] rule-skill frontmatter contract: $RS_OUT"
   else
-    echo "[FAIL] rule-skill frontmatter contract violated:$RS_BAD"
-    echo "       Fix: a rule-skill must declare a trigger-bearing description and user-invocable: false,"
-    echo "            and must NOT declare paths: or disable-model-invocation: true. See FB-0124."
+    echo "[FAIL] rule-skill frontmatter contract violated:"
+    printf '%s\n' "$RS_OUT" | sed 's/^/       /'
+    echo "       Fix: a rule-skill must declare a trigger-bearing description and"
+    echo "            user-invocable: false, and must NOT declare paths: or"
+    echo "            disable-model-invocation: true. See plugins/flow/lib/rule_skills.py"
+    echo "            for what each token means, and FB-0124 for why."
   fi
 fi
 echo "[UNCHECKED] rule-skill ACTIVATION (whether Claude actually loads these four bodies in a session)."
 echo "            Registration and frontmatter shape are checked above; activation is a model-judgment"
 echo "            event inside a session and no shell command observes one. Unchecked, not clean."
 echo "            Checkable by: a first-party CLI or hook surface that reports per-session skill"
-echo "            invocations (none exists today). Measured out-of-band for v1.51.0 — see"
-echo "            dev-docs/history/ for the session counts."
+echo "            invocations (none exists today). Measured out-of-band with tools/rule-activation/ —"
+echo "            and the v1.51.0 measurement found ZERO invocations at plugin scope. Do not read the"
+echo "            PASS above as 'the rules governed this run'; it means installed and correctly shaped."
 ```
 
 ### Section 4: prerequisite CLI tools
@@ -992,6 +993,15 @@ Always emit the verdict as the FINAL line so the agent/user can scan to the bott
 | `[UNCHECKED]` | **Not checked. This gate could not see.** | **no** — reported inline as `(N unchecked)` |
 
 `[UNCHECKED]` exists because a gate that reports nothing wrong must distinguish *"nothing wrong"* from *"I could not see"* (FB-0121). It is deliberately **outside** the verdict arithmetic: the thing it names is not a mild failure the consumer can fix, so routing it to `[WARN]` would put every consumer permanently below `[READY]` over an item nobody can ever clear, and would eventually make the case for retiring `[READY]` altogether. Keeping it out of the arithmetic preserves `[READY]`'s meaning; printing `(N unchecked)` **inline on the verdict line** keeps the unseen items visible rather than buried. Both properties, not one.
+
+**Which marker, decided by a predicate — not per-site judgment.** Two orthogonal facts settle it, and conflating them is what made the first draft of this class emit `[UNCHECKED]` for three consumer-fixable conditions that this file already (correctly) reports as `[WARN] … UNCHECKED, not clean` at four other sites:
+
+| | **the consumer can act** | **nobody can act** |
+|---|---|---|
+| **observed** | `[WARN]` / `[FAIL]` | `[FAIL]` |
+| **not observed** | **`[WARN]`**, worded "UNCHECKED, not clean", with a `Fix:` | **`[UNCHECKED]`**, with a `Checkable by:` |
+
+So a missing tool, a stale install, or an unset env var is a `[WARN]` — the consumer has a fix, and withholding it from the verdict would hide an actionable problem. `[UNCHECKED]` is reserved for a claim **no consumer can make checkable**, which today is exactly one thing: rule-skill activation.
 
 **Two rules, so the class does not become the drawer every lazy check goes into:**
 

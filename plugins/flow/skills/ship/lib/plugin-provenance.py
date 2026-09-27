@@ -375,6 +375,26 @@ def surface_drift(installed: dict, root: Path) -> dict:
     return out
 
 
+_RULE_SKILLS_MOD = None
+
+
+def _rule_skills():
+    """`plugins/flow/lib/rule_skills.py`, loaded lazily from this file's own plugin root.
+
+    Resolved relative to __file__ (skills/ship/lib -> ../../../lib) so it works from an
+    installed plugin cache and from a checkout alike, with no CLAUDE_PLUGIN_ROOT dependency.
+    """
+    global _RULE_SKILLS_MOD
+    if _RULE_SKILLS_MOD is None:
+        import importlib.util
+        target = Path(__file__).resolve().parents[3] / "lib" / "rule_skills.py"
+        spec = importlib.util.spec_from_file_location("flow_rule_skills", target)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _RULE_SKILLS_MOD = mod
+    return _RULE_SKILLS_MOD
+
+
 def _is_rule_skill(root: Path, name: str) -> bool:
     """True when a skill is BACKGROUND KNOWLEDGE the model loads by judgment, rather
     than a command a user or a skill invokes by name.
@@ -400,17 +420,12 @@ def _is_rule_skill(root: Path, name: str) -> bool:
     the four real SKILL.md files AND over a real command skill, so neither a
     hardwired-True nor a hardwired-False implementation can pass.
     """
-    f = root / CHECKOUT_PLUGIN / "skills" / name / "SKILL.md"
-    try:
-        head = f.read_text(encoding="utf-8")[:2000]
-    except (OSError, UnicodeDecodeError):
-        return False
-    # Frontmatter only: stop at the closing fence so a `user-invocable` mentioned in
-    # prose cannot promote a command skill.
-    if head.startswith("---"):
-        end = head.find("\n---", 3)
-        head = head[:end] if end != -1 else head
-    return bool(re.search(r"^\s*user-invocable\s*:\s*false\b", head, re.MULTILINE))
+    # ONE definition, in plugins/flow/lib/rule_skills.py -- imported, not re-spelled, and
+    # keyed on ROSTER MEMBERSHIP rather than on a frontmatter flag. A flag-keyed test would
+    # silently reclassify a rule-skill (and print the wrong consequence for it) the moment
+    # the flag were edited, which is the `paths:` bug wearing a new marker. No file read is
+    # needed: whether `general` is a rule-skill is not a property of the installed bytes.
+    return _rule_skills().is_rule_skill(name)
 
 
 def _names(d: Path, suffix: str) -> set[str] | None:

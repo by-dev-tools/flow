@@ -1,9 +1,9 @@
 ---
 name: documentation
 description: >-
-  Specifies flow's entry formats for a project's narrative docs — the history log, the feedback log (one FB-XXXX file per entry), plan, roadmap, and spec — including one-file-per-entry naming, what belongs in each, and how a correction becomes a feedback entry. Use when adding a history entry, synthesizing a user correction into a feedback entry, updating the roadmap or spec, or reconciling docs at ship or land time.
+  Flow's entry formats for a project's narrative docs — history, feedback (one FB-XXXX file per entry), plan, roadmap, spec — including one-file-per-entry naming. Use when adding a history entry, turning a user correction into a feedback entry, or updating the roadmap or spec.
 when_to_use: >-
-  Trigger terms: "history entry", "feedback entry", "FB-", "roadmap", "spec doc", "write this up", "record the decision", "the user corrected me", "land the PR docs". Load before creating or editing any of those files, not after.
+  Covers both single-file docs and one-file-per-entry layouts, where a fragmented doc is `history/<date>-<slug>.md`.
 user-invocable: false
 ---
 

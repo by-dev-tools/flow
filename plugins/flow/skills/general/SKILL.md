@@ -1,9 +1,9 @@
 ---
 name: general
 description: >-
-  Defines flow's workflow discipline for a flow-using project: plan-before-code, the single pre-execution gate (plan approval, or prototype approval on the D1 UI path), HIGH/MEDIUM/LOW confidence verdicts, scope discipline, decision tracking, and the autonomous-work guardrails for cost, permanence, and risk. Use at the start of any non-trivial request, before writing or editing a plan, before committing, before opening a PR, when new scope appears mid-task, and before auto-advancing into /flow:ship.
+  Flow's workflow discipline: plan-before-code, the single pre-execution gate, confidence verdicts, scope discipline, and the guardrails for cost, permanence, and risk. Use before writing or editing a plan, before committing, before opening a PR, and when new scope appears mid-task.
 when_to_use: >-
-  Trigger terms: "plan before code", "scope creep", "is this in scope", "can I just do this", "mode: tiny", "ship it", "should I ask first". Also load before any action touching cost exposure, irreversibility, or security/privacy, and when unsure which step of the flow loop the session is on.
+  Also load when a change touches cost, irreversibility, or security, or when unsure which step of the flow loop applies.
 user-invocable: false
 ---
 

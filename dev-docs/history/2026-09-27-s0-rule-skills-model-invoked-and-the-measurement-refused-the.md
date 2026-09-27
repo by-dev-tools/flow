@@ -157,7 +157,7 @@ than by version string — the FB-0107 dogfooding trap, one layer out.
   `${CLAUDE_PLUGIN_ROOT}/rules/` — the directory Phase 00 deleted in v1.33.0. `bootstrap.sh` copies that
   file into every consumer repo, so it is **write-once**: a wrong line there stays wrong forever in every
   project that already adopted flow.
-- **Two fan-out survivors the eval suite caught**, both after I believed the sweep was complete: doctor's
+- **Seven fan-out survivors found after I believed the sweep was complete** — two by `/simplify`'s altitude lens (one of them `template/base/core-docs/roadmap.md`, a **second** write-once surface `bootstrap.sh` copies into every consumer repo, in the same category as the one I did fix and flagged as highest-cost), three more by the claim lint on its first run (`docs/first-pr.md`), and two by the eval suite, both after I believed the sweep was complete: doctor's
   awk frontmatter parser tripped #165's new argument-placeholder lint (awk's field variable is spelled like
   a host placeholder — rewritten in sed, because the lint should stay strict rather than learn an
   exception), and `run_doc_slot_resolution_evals.py` asserted FB-0102's coverage requirement *through the
@@ -175,6 +175,31 @@ than by version string — the FB-0107 dogfooding trap, one layer out.
 - **Reporting a null result rather than tuning until it passed.** Ben's instruction was explicit and it was
   the right call: a description reverse-engineered to satisfy my own instrument would be the instrument
   measuring itself.
+- **The always-on cost, which my first draft did not list as a tradeoff at all.** The four descriptions
+  carry no `Use when …` clause today, so adding one is not free: the combined `description` + `when_to_use`
+  listing text went **695 → 1,543 chars** (~+210 always-on tokens, on every turn of every session, for every
+  consumer). My first draft spent **2,830** — 4.1× — and `/simplify`'s altitude lens made the argument that
+  killed it: the measurement's own plausible mechanism for the plugin-scope zero is competition inside that
+  very budget, and finding 3 says the *name* does the work while the description "barely registers". Paying
+  4× for the variable the measurement exonerated, in the budget it implicated, is the shape of a change made
+  because the deeper cause is out of reach. Trimmed to 2.2×, which is the cost of the trigger clause itself
+  and no more. **`tools/harness_audit/` now counts `when_to_use`** — it counted only `description`, so the
+  instrument that exists to police always-on weight was under-reporting it by ~1,015 chars on the day the
+  weight jumped.
+- **`[UNCHECKED]` reserved for the unactionable, not "anything I could not see".** The first draft emitted it
+  for three *consumer-fixable* conditions (`CLAUDE_PLUGIN_ROOT` unset, stale install, no `python3`) — while
+  this same file already reports that shape as `[WARN] … UNCHECKED, not clean` at four other sites. That
+  would have put consumers below `[READY]` over conditions they could fix, and left two spellings of one
+  concept with opposite verdict consequences. Doctor now states the assigning **predicate** (observed? ×
+  actionable?) instead of leaving the marker to per-site judgment, and an eval asserts the class's own rules
+  over doctor's shipped text — rules that were, until then, prose with nothing verifying them, in a PR whose
+  thesis is that unverified prose survives twenty releases.
+- **The roster is the definition of rule-skill-hood; the frontmatter flag is an assertion about members.**
+  Keying `_is_rule_skill` on `user-invocable: false` would have relocated the `paths:` fragility rather than
+  removing it: a member that lost the flag would FAIL `violations()` (correct) *while* the classifier
+  silently returned False and provenance printed the command-skill consequence its own docstring calls
+  "something simply untrue of it". Two definitions agreeing only while a flag happens to be set is the same
+  bug wearing a new marker.
 - **Not re-opening (c).** The change stands on its own merits; whether to reach for the `SessionStart` hook
   is a separate decision, recorded on the roadmap with the layer caveats attached.
 

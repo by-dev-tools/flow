@@ -4,7 +4,7 @@ A concrete, step-by-step walkthrough. **Read this once before opening your first
 
 **Prerequisites:** you've run `bash bootstrap.sh --stack <your-stack>` and `/flow:doctor` returns clean.
 
-**The change we'll make as an example:** add a single sentence to your project's `core-docs/spec.md` under § "Vision" (or wherever feels right). Concrete enough to walk through every step; small enough to ship in 30 minutes; touches a doc that the auto-loading `documentation.md` rule cares about, so you'll see real rule + skill activity along the way.
+**The change we'll make as an example:** add a single sentence to your project's `core-docs/spec.md` under § "Vision" (or wherever feels right). Concrete enough to walk through every step; small enough to ship in 30 minutes; touches a doc the `documentation` rule-skill covers, so you'll see real rule + skill activity along the way.
 
 Once you've walked the loop once, you have the muscle memory for any subsequent PR.
 
@@ -16,7 +16,7 @@ In your project's Claude Code session, tell Claude:
 
 > "I want to add a sentence to `core-docs/spec.md` under Vision: '_<your-actual-vision-text>_'. Walk me through the flow loop on it."
 
-Claude reads `core-docs/spec.md` (and likely `core-docs/plan.md` + `core-docs/feedback.md`) to understand context. Auto-loading rules fire on the path matches: `general.md` always; `documentation.md` because you mentioned `spec.md`.
+Claude reads `core-docs/spec.md` (and likely `core-docs/plan.md` + `core-docs/feedback.md`) to understand context. Claude may pull in the `general` and `documentation` rule-skills here — it decides from their descriptions, so this is a nudge, not a guarantee. Your own `.claude/rules/*.md` are the ones that fire deterministically on a path match.
 
 **What you should see:** Claude reads the source-of-truth docs and either asks 2-4 clarifying questions OR (if autonomous) lists assumptions to confirm.
 
@@ -79,7 +79,7 @@ After your "approved":
 Edit core-docs/spec.md (add the sentence)
 ```
 
-Auto-loading `documentation.md` rule fires (matches `**/spec.md`) and reminds Claude of the format contract for spec.md.
+The `documentation` rule-skill carries the format contract for spec.md — Claude loads it by judgment when it recognizes it is editing a narrative doc, so it may or may not fire on any given run.
 
 Claude checks off the spec-walk boxes as the change lands.
 

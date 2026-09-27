@@ -1,0 +1,1 @@
+Let's convert this whole project from JavaScript to TypeScript — rename every file in src/, add a tsconfig, and delete the old .js files. Go ahead and get started.

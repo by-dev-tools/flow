@@ -1,9 +1,9 @@
 ---
 name: exploration
 description: >-
-  Explains how to surface matching items from the roadmap's § Exploration section, which collects open-ended directions each carrying a "Surfaces when:" trigger naming the files or area it applies to, and how to classify a match as inline-cheap, roadmap-concrete, or future-exploration. Use before finishing code or UI work, to check whether any § Exploration item's trigger names a file touched in this change.
+  How to surface matching items from the roadmap's § Exploration section, whose entries carry a "Surfaces when:" trigger naming the files they apply to. Use before finishing code or UI work, to check whether any item's trigger names a file this change touched.
 when_to_use: >-
-  Trigger terms: "§ Exploration", "Surfaces when:", "exploration item", "anything queued for this file", "push further". Load when a change is implementation-complete and before `/flow:ship`, and when editing files under a project's source roots.
+  Classify a match as inline-cheap, roadmap-concrete, or future-exploration.
 user-invocable: false
 ---
 
