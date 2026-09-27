@@ -2,6 +2,174 @@
 
 ## Current Focus
 
+**▶ PLAN GATE — round 2, after 9 reviewer findings (this branch, `conductor/s0-rule-skills-never-load-option-c`, v1.51.0, FB-0122): S0 option (c) — the four rule-skills earn their trigger from their descriptions, and the descriptions currently forbid it.** Ben chose (c) at the human gate: stop trying to path-activate, let Claude load them by judgment. The substance is not deleting `paths:` — it is that all four descriptions end with **"Not user-invocable — path-activated only."**, a sentence telling the model the skill is not its to invoke, while model invocation is the only mechanism (c) has. Ships rewritten `description` + new `when_to_use` on all four, removal of `paths:`, **a re-based `_is_rule_skill()` in `plugin-provenance.py` (which keys on `paths:` and would silently break)**, an honest `/flow:doctor` Check 3.2, deterministic evals with a negative control, and an A/B measurement in fresh sessions.
+
+**Mode:** feature · **Surface:** non-visual
+
+**Reviewer rounds.** `/flow:critique-plan` returned 4 (3 BLOCKER, 1 REDIRECT); `/flow:audit-plan` returned 5 (4 unverified assumption, 1 unverified recall). **All 9 verified against the code and all 9 accepted — none disputed.** Four changed the plan's substance rather than its prose: a shipped-code regression the plan had not noticed (§5 item 2), an instrument that could not be shown to fire (§8), a version collision that would have broken a live PR (§6 A7), and a claim of mine that made the same over-claiming error I had just accused E1 of (§2). Each is marked ⟢ below.
+
+### 0. Provenance, stated before any green result (FB-0107, CLAUDE.md § How to Work 3)
+
+Installed plugin **1.29.0** (`~/.claude/plugins/installed_plugins.json`, `gitCommitSha cf783ac`) against a working tree at **1.49.0** — **twenty releases stale**. Two consequences that shape the whole verification design:
+
+1. **1.29.0 is pre-Phase-00.** It ships `plugins/flow/rules/` and **zero rule-skills**. So `Skill("flow:general")` here does not resolve a stale copy of the thing I am changing — it resolves *nothing*. Dogfooding cannot exercise this PR at all, not even badly.
+2. **Same for `/flow:doctor`.** 1.29.0's doctor predates Check 3.2 in its current form, so running `/flow:doctor` here would neither pass nor fail my rewritten check. Every verification below runs working-tree artifacts under the **Bash tool**, and the activation measurement runs in **fresh sessions against a fresh install from this branch** — the rig E1 used (§5.1 of `dev-docs/research/2026-09-agents-md-vs-skills.md`), which had to uninstall 1.29.0 and reinstall from the working tree for exactly this reason.
+
+### 1. The roadmap's diagnosis is wrong, and correcting it is part of the work
+
+Verified against the primary sources, not inherited. **`paths:` on a `SKILL.md` is a real, documented field**, not a bug and not a typo:
+
+> `paths` — "Glob patterns that **limit** when this skill is activated… When set, Claude loads the skill automatically **only when** working with files matching the patterns. Uses the same **format** as path-specific rules." — [code.claude.com/docs/en/skills](https://code.claude.com/docs/en/skills) § Frontmatter reference
+
+Note "format", not *semantics*. The read-trigger semantics we assumed belong to a different mechanism with the same field name:
+
+> "Rules can be scoped to specific files using YAML frontmatter with the `paths` field. These conditional rules only apply when Claude is working with files matching the specified patterns." — [code.claude.com/docs/en/memory](https://code.claude.com/docs/en/memory) § Path-specific rules
+
+**So option (a) is moot: there is nothing to report upstream.**
+
+**A plugin cannot ship rules at all**, which is the structural reason (b) needs PR 3 and (c) does not. [plugins-reference](https://code.claude.com/docs/en/plugins-reference) § Standard layout enumerates twelve component locations — manifest, skills, commands, agents, hooks, MCP, LSP, output-styles, workflows, themes, monitors, executables, settings — and **no `rules/`**. The same page closes the argument in one line, and it endorses (c)'s mechanism rather than merely lacking an alternative:
+
+> "A `CLAUDE.md` at the plugin root isn't loaded as context… **To include instructions that load into Claude's context, put them in a skill.**"
+
+**`user-invocable: false` is correct and stays** — documented as "for background knowledge users shouldn't invoke directly", and its invocation-table row is exactly the shape wanted: *"Description always in context, full skill loads when invoked."* **`disable-model-invocation` must not be set**; its row reads *"Description not in context"*, which would forbid the one path that works. E1 confirmed that row behaviourally: `post-merge` (the only skill setting it) was the single `flow:*` skill absent from the probe's visible list, while all four rule-skills **were** present. That is the load-bearing precondition for (c) — **their descriptions already reach the model; only the invocation decision is missing.**
+
+**Two corrections to the brief's citations, both of which change the constraints:**
+
+- § "Writing effective descriptions" is **not** on `code.claude.com/docs/en/skills`. It lives at [platform.claude.com/…/agent-skills/best-practices#writing-effective-descriptions](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices#writing-effective-descriptions), and carries a limit the brief omits: **`description` max 1,024 characters, hard validation** ("Must be non-empty; Maximum 1,024 characters; Cannot contain XML tags"). That is a *different* number from the 1,536 the brief cites, which is the **combined `description` + `when_to_use` listing truncation** in Claude Code. Both bind; all four rewrites come in under 500 chars, so neither is close.
+- The docs give a **second field for exactly this job** the brief does not name: `when_to_use` — "Additional context for when Claude should invoke the skill, such as trigger phrases or example requests." Using it is the documented shape and keeps `description` tight. All four get one.
+
+Guidance the rewrites are built to: **third person** ("Always write in third person. The description is injected into the system prompt, and inconsistent point-of-view can cause discovery problems"), what it does **and** when to use it, specific trigger terms, key use case first.
+
+### 2. ⟢ What is actually wrong with the roadmap's diagnosis — narrowed, because my first draft over-claimed in the same way
+
+My round-1 draft asserted that **E1 never isolated `paths:` from `description`**, "including probe 3's throwaway project-scoped skill." `/flow:audit-plan` checked and the evidence does not support the second half: §5.1 describes probe 3 only as `user-invocable: false`, `paths: ["**/roadmap.md"]`, "containing a unique marker string" — **it records no description at all**, the artifact is unrecoverable (`git log --all -- '*e1-probe*'` empty, §5's preamble says the repo carries no artifact), and a throwaway marker-bearing probe plausibly had a neutral description, which *would* have isolated the cause.
+
+**That is the same error I was accusing E1 of, made one paragraph after accusing it.** Recorded here rather than quietly fixed, because it is the reason this section exists at all: an over-claim is legible to a reviewer and invisible to its author.
+
+The narrowed claim, which is what the evidence carries: **E1's write-up does not record probe 3's description, so its cause-isolation is *unrecorded*, not *absent*.** What survives untouched is the part that matters and that E1 measured directly, three ways, with four positive controls firing on the same Reads: **these four skills have never loaded.**
+
+**(c) does not depend on which cause it was** — it removes both — so this changes the record, not the plan. §8 adds a cheap optional arm that would settle it outright.
+
+### 3. The one thing (c) cannot do, said now rather than discovered at merge
+
+`general` carries `paths: "**/*"` — semantically *always*. **Model invocation has no "always".** No description makes a model invoke a skill every turn, and none should: the skill listing is priced per-turn whether or not anyone invokes. So (c) **cannot** restore `general` to its advertised behaviour. It can only convert *always* into *at these junctures* — before writing a plan, before committing, before opening a PR, when scope grows mid-task, before auto-advancing into `/flow:ship`.
+
+That is a real reduction in the feature, and it lands in docs as well as code: `README.md:88` "4 auto-loading rules that attach by file path" and `docs/automation-boundaries.md:17` "only the auto-loading rules attach" both become false in a new way. I expect `general` to measure lowest of the four. If it does, that is a finding for Ben at the merge gate — **not** grounds to re-open (c), which I am not doing.
+
+### 4. Goal
+
+Make the four rule-skills actually reach a session's context for the first time since v1.33.0 (2026-08-27), by the only mechanism a plugin has: model invocation earned from the description. Pair the removal of `paths:` with positive assertions that the bodies load — and replace the `/flow:doctor` check that has reported `[PASS]` over this dead feature for twenty-plus releases with one that cannot.
+
+### 5. Scope (in)
+
+1. Rewrite `description` + add `when_to_use` on all four of `plugins/flow/skills/{general,plan-discipline,documentation,exploration}/SKILL.md`; delete the suppressant sentence; remove `paths:`; keep `user-invocable: false`; set no `disable-model-invocation`. Adjust each body's opening paragraph, which currently narrates its own path-activation ("Loads automatically when touching code under…", "Path-matches any `plan.md` file…") — prose that becomes false with `paths:` gone.
+2. ⟢ **Re-base `plugin-provenance.py`'s rule-skill classifier.** `_is_rule_skill()` (`:378-399`) keys on exactly `re.search(r"^\s*paths\s*:", head)`. Removing `paths:` silently reclassifies all four as command skills, so `render_block` (`:711-721`) would attach the *command* consequence to them — "a model asked to run one would wrongly conclude it does not exist" — which its own docstring calls "something simply untrue of it", instead of the rule consequence "the rules simply were not applied". **CI cannot catch it**: `run_plugin_provenance_evals.py:515-519` builds a synthetic `a-rule` fixture with `paths:` rather than reading the four real skills. Re-base the marker on something that survives (`user-invocable: false`, or a literal name list), fix the now-false string at `:715` ("These auto-load on matching paths rather than being invoked"), and make the eval assert the classifier **over the four real `SKILL.md` files** so the pairing cannot go green on a synthetic fixture. *This is the FB-0010 fan-out class inside the PR whose whole subject is that class — found by `/flow:critique-plan`, not by me.*
+3. Rewrite `/flow:doctor` Check 3.2: its prose claim (`:722`) and its registration-measures-activation test. Also `:15` (the skill's own description) and `:706` (Section 3's heading).
+4. Extend `plugins/flow/evals/run_plugin_desc_evals.py` with a rule-skill section **including a negative-control fixture built from the current descriptions**, which the eval must reject.
+5. Activation measurement: fresh sessions, A/B against the old descriptions, counts per cell (§8).
+6. ⟢ **Fan-out sweep, repo-wide rather than over an unnamed "live-doc set"** (§7 criterion 9 carries the corrected enumeration and the widened pattern). Round 1 named five surfaces, mis-cited one, and missed four.
+7. Retire two roadmap items (c) makes moot: **S2** (`exploration`'s globs reach 1 of 4 consumer repos) and **"Config-driven `paths:` for the portable rules"**. With no globs there is nothing to widen and nothing to make config-driven. Leaving them is the FB-0010 class.
+8. `dev-docs/feedback/FB-0122-*.md`, `dev-docs/history/`, `CHANGELOG.md`, version → **1.51.0** (§6 A7).
+
+### 6. Scope (out)
+
+- **Not re-opening the (a)/(b)/(c) decision.** No upstream report (§1: nothing to report); no `.claude/rules/*.md` shipping (needs PR 3's template directory).
+- **Not** adding a plugin `hooks/hooks.json` rule-injection channel. A plugin *can* ship hooks, and a `SessionStart` hook is the one deterministic injection path available to a plugin — the only route that could restore *always* for `general`. Different mechanism, own always-on cost, explicitly outside (c), and FB-0085 already left flow's hooks opt-in deliberately. **Roadmap line only.**
+- Not touching the other 23 skills' descriptions. The `ship`-description item (`roadmap.md:1626`) shares this PR's guardrail and is adjacent, but it is gate machinery and separately human-gated.
+- Not changing `.claude/rules/general.md` (flow's own dev-side meta-rule — different audience, loads correctly today, and is one of E1's positive controls).
+
+### 7. Spec-walk
+
+**Spec-walk:**
+
+- [ ] **The suppressant is gone and cannot come back.** No shipped rule-skill description contains "path-activated" or "Not user-invocable". *Verified:* `run_plugin_desc_evals.py` check `rule-skill-no-suppressant`, **paired with** `rule-skill-present` (all four files exist, each with a non-empty `description`) so deleting a skill fails rather than passes. Negative control: the same predicate over a fixture holding today's four descriptions must **FAIL** — asserted in the harness, so the check proves it can fail on every CI run, not once by hand.
+- [ ] **`paths:` is absent and `user-invocable: false` is present**, on all four. *Verified:* `rule-skill-no-paths` **paired with** `rule-skill-user-invocable-false` and `rule-skill-no-disable-model-invocation` — three assertions such that deleting the frontmatter, the field, or the file fails at least one.
+- [ ] **Each description is trigger-bearing and within both caps.** Explicit when-to-use clause; `description` ≤ 1,024; `description` + `when_to_use` ≤ 1,536. *Verified:* `rule-skill-trigger-clause` + `rule-skill-desc-caps`, both documented numbers asserted and both sources cited in the harness docstring.
+- [ ] **No body still narrates path-activation.** *Verified:* grep the four bodies for `Loads automatically` / `Path-matches` / `path-activated` returns empty, paired with a positive assertion that each body still opens with a statement of when the rule applies (so the fix is not "delete the paragraph").
+- [ ] ⟢ **`plugin-provenance.py` still classifies all four as rule-skills after `paths:` is gone.** *Verified:* `run_plugin_provenance_evals.py` asserts `_is_rule_skill()` over the **four real `SKILL.md` files** (True for each) **and** over a real command skill (`ship` → False). Both halves required: the True-only form passes if the classifier is hardwired to True, the False-only form passes if it always returns False. The synthetic `a-rule`/`a-command` fixture is kept for the render path and is explicitly *not* what pins the classifier.
+- [ ] ⟢ **The `:715` consequence string matches what the four skills now are.** *Verified:* assert `plugin-provenance.py`'s rule-skill callout text contains no claim of path-matching, paired with the existing positive assertions that it still names the ungoverned-run consequence ("not governed by them"), which the current eval already checks.
+- [ ] **`/flow:doctor` Check 3.2 no longer claims what is false, and no longer reports `[PASS]` for activation.** Prose drops "auto-load on path matches" (`:722`), and `:15` / `:706` follow. Output distinguishes what it checked from what it cannot see: registration → `[PASS] … registered with the loader` (a true, narrower claim); activation → an explicit `[WARN] … activation is model-judged, not shell-observable — unchecked, not clean`, per FB-0121. *Verified:* a new eval asserts over `doctor/SKILL.md`'s Check 3.2 text that (a) the false phrase is absent, (b) the `[WARN]` line naming activation as unchecked is **present**, (c) no `[PASS]` string in that check claims activation. (b) is the positive half that makes (a) and (c) undeletable.
+- [ ] **Check 3.2's shell block asserts the new contract mechanically**, not just registration: for each of the four, the installed skill file exists, carries `user-invocable: false`, carries no `paths:`, and its description carries no suppressant. *Verified:* run the block by hand against a fresh install of this branch (exit-code driven, not output-grepped — `.claude/rules/general.md` § Consistency item 4 corollary), and against a deliberately-broken copy with the old description restored, which must FAIL.
+- [ ] **The composed surface is pinned, not only the unit.** The eval asserts over `doctor/SKILL.md` — the shipped text — not a helper. Ask FB-0118's question explicitly: *if the check's output were wrong and the evals perfect, would anything fail?* Recorded in the history entry with the answer.
+- [ ] **Measured: the new descriptions trigger and the old ones do not.** N fresh sessions, per-rule counts for both arms, in a table. *Verified:* §8's rig, including its own known-positive. If any cell is 0/N for the new arm, that is reported as a result, not smoothed.
+- [ ] ⟢ **Every surviving path-attachment claim is corrected — enumerated by a repo-wide grep, not a named doc set.** Nine confirmed surfaces: `README.md:88`; `docs/automation-boundaries.md:17`; `docs/first-pr.md:27` and `:208`; `plugins/flow/docs/workflow.md:`**`26`** (round 1 wrongly cited `:116`, which is a past-tense retrospective that stays true); `plugins/flow/skills/doctor/SKILL.md:15`, `:706`, `:722`; `plugins/flow/skills/spawn/SKILL.md:125` (tells a dispatched worker to rely on "the auto-loading rules"); `template/base/CLAUDE.md.template:68`; and **`template/base/CLAUDE.md.template:31`, which still points at `${CLAUDE_PLUGIN_ROOT}/rules/` — the directory Phase 00 deleted. Phase 00 missed it, and `bootstrap.sh` copies this file into every consumer repo, so it is the one surface flow cannot later update.** *Verified:* `git grep -nE 'auto-loading|auto-load on|path-activated|attach by file path|rule-skill' -- README.md docs template plugins/flow CLAUDE.md` — the widened alternation, because round 1's pattern missed `docs/first-pr.md:27`'s "the auto-loading `plan-discipline.md` rule" form. Every survivor inspected and named in the history entry.
+- [ ] **Both moot roadmap items are retired with their reason**, and no surviving text still promises glob work. *Verified:* `git grep -n 'Config-driven .paths:\|S2 —'` plus a read of S0/S2.
+
+### 8. ⟢ The measurement rig — and how it is shown to fire, not only to stay quiet
+
+**The instrument is body-level.** "Reaches context" means the body loaded, not that the name is in a registry — that conflation is exactly what Check 3.2 has been doing. Two probes, both deterministic:
+
+1. **Sentinel recall (primary, arms A/B).** Each probe copy of a rule-skill carries an arbitrary nonce in its body (`RULESENTINEL-<rule>-<8 hex>`), nothing else changed. A probe session gets a realistic task and is asked to report any sentinel it holds. The token is unguessable, so a hit **cannot** be produced without the body in context — false positives are structurally impossible, the property a name-in-registry check lacks.
+2. **`Skill` tool-use in the transcript (secondary; the only probe for arm C).** Docs: "the skill invocation appears as a Skill tool use." Scored from the transcript, not from self-report.
+
+**⟢ The known-positive, which round 1 did not have.** Round 1 called arm A the can-fail proof. `/flow:critique-plan` was right that this is backwards: arm A is a known-**negative**, and 0/N is what a working sentinel instrument and a totally broken one both produce — the two hypotheses predict the same output, which is `.claude/rules/general.md` § Consistency item 4 verbatim. Round 1's fifth control skill only proved the *directory* loaded, because it was scored by invocation, not by sentinel. **Fix, at zero extra session cost: the fifth control skill is user-invocable and carries its own `RULESENTINEL-control-<hex>`, and recall of *that* token is the per-session precondition.** The primary instrument is then validated on a known positive in every single session, and arm A's 0/N becomes attributable instead of ambiguous.
+
+**Transcript access is confirmed, not assumed.** `conductor --json session message <id>` returns full content including `rawPayload` (verified against this session: the `system/init` payload with `cwd` and the `tools` array came back intact). For sessions in this workspace there is also `~/.claude/projects/-home-vercel-sandbox-flow/<session-id>.jsonl` at full fidelity — verified, and it is the fallback that makes field-manual **T1** (never conclude ABSENT from one substring query) manageable: scoring reads the whole file, not a truncated query.
+
+| arm | what runs | scores | expectation |
+|---|---|---|---|
+| **A — negative control** | probe copies carrying **today's** four descriptions verbatim, `paths:` included | sentinel | **0/N**, and attributable because the control sentinel fired in the same session |
+| **B — treatment** | probe copies carrying the **new** descriptions, no `paths:` | sentinel | > A, per rule |
+| **C — integration** | this branch installed as a real plugin, fresh session | `Skill` tool-use | confirms plugin scope matches project scope |
+| **D — optional, 1 session** | a probe with a **neutral** description **and** a restrictive `paths:` glob | sentinel | settles §2 directly: if it fires, `paths:` is a filter and E1's finding was over-claimed; if not, E1 was right |
+
+Arms A and B are **project-scoped**, which E1's probe 3 established behaves identically to plugin scope for this mechanism — and project scope is what makes a 24-session A/B affordable. **A and B never share a session**; the model must not see both descriptions of one rule.
+
+**Neutral ground, because this repo is the worst possible venue.** A probe inside flow's checkout inherits `CLAUDE.md` and `.claude/rules/general.md`, which *already instruct* plan-before-code and doc discipline — a probe could do everything `plan-discipline` says without ever loading it. So arms A/B/D run in **throwaway Conductor workspaces built from a neutral repo with no flow docs**, which is also closer to a real consumer project than flow's own repo.
+
+**Preconditions asserted per session before any result is trusted:** the control sentinel is recalled (above); `cwd` in `system/init` is the probe directory; no flow `CLAUDE.md` / `.claude/rules/` in the probe workspace. The `system/init` `skills` array **cannot** substitute — the docs state a `user-invocable: false` skill "loads and remains available to Claude, but doesn't appear in the array."
+
+**Scenarios:** one per rule, each a realistic task that should pull that rule in (write a plan → `plan-discipline`; add a history entry → `documentation`; edit a source file → `exploration`; start a non-trivial request → `general`). **N = 3 per rule per arm** = 24 sessions for A+B, 12 for arm C, +1 for optional D: **~36–37 short sessions**, the bar E1 set. Cheap variant if the gate wants it: arm C at 1 run per rule (28).
+
+**If the rig cannot produce a deterministic number, the PR says so and names the gap.** It does not ship an adjective.
+
+### 9. Confidence verdicts
+
+**A1 — The four descriptions already reach the model; only the invocation decision is missing.** **HIGH.** The `user-invocable: false` row is "Description always in context", and E1 observed exactly that split behaviourally: all four rule-skills present in the probe's visible list, `post-merge` (`disable-model-invocation: true`) absent. *If it flips:* (c) is unimplementable as specified and the PR is void — arm C is the check that would catch it, and that is why arm C exists rather than trusting project scope.
+
+**A2 — `paths:` narrows a description-driven activation rather than triggering one.** **MEDIUM**, and **deliberately not load-bearing.** The wording ("limit", "only when") reads as a filter, but the same sentence says "loads the skill automatically", and §2 explains why E1 cannot adjudicate. *Why MEDIUM is acceptable:* (c) removes `paths:` under either reading — as a filter it would gate the newly-earned trigger behind a glob; as a trigger it does not work. Nothing branches on the answer. Optional arm D settles it for the record.
+
+**A3 — A rewritten description can earn model invocation for `plan-discipline`, `documentation`, `exploration`.** **MEDIUM.** These three have concrete, nameable trigger moments, which is what the best-practices guidance says works. But it is model judgment, not a mechanism. *This is what §8 measures*; MEDIUM is the honest label for an unmeasured claim, and the numbers replace the verdict before ship.
+
+**A4 — `general` cannot be restored to "always" and will measure lowest.** **HIGH** that it cannot be "always" (§3). **LOW** on what rate it achieves. **LOW is an automatic human gate** → **Open call 1**. Not resolving this myself.
+
+**A5 — Activation is not assertable from a shell check.** **HIGH.** A model-judgment event inside a session; no shell observes one. Hence Check 3.2 asserts the *contract* mechanically and reports activation as unchecked. *Consequence I missed in round 1, now Open call 5.*
+
+**A6 — `conductor --json session message` + local JSONL give deterministic transcript scoring.** **HIGH — verified during planning**, not assumed: full `rawPayload` returned for this session, local JSONL confirmed to carry `Skill` tool-use entries. `claude -p` is **not** available (unauthenticated in this sandbox: "Not logged in · Please run /login", no `ANTHROPIC_API_KEY`), which is why the rig is Conductor-based — recorded so a later seat does not re-derive it.
+
+**A7 — ⟢ Version and rebase surface, re-measured unfiltered after `/flow:audit-plan` caught both halves wrong.** **HIGH — now measured properly.** Round 1 claimed "HIGH — measured" on a `gh pr view --json files` call **filtered to `doctor|rule-skills|feedback`**, which structurally could not see the collision. Unfiltered:
+
+- **`v1.50.0` is already claimed by [#165](https://github.com/by-dev-tools/flow/pull/165)** (title carries it; it ships `changelog/v1.50.0.md` + both manifests). Shipping as declared would have collided in three files and created a duplicate changelog filename. → **v1.51.0.** `FB-0122` stands (local `dev-docs/feedback/` ends at FB-0115; 0116–0117 in #165, 0118–0121 in #164).
+- **[#165](https://github.com/by-dev-tools/flow/pull/165) overlaps §11 in eight files**, not one: `plugins/flow/skills/doctor/SKILL.md`, `plugins/flow/docs/workflow.md`, `dev-docs/plan.md`, `dev-docs/roadmap.md`, `CLAUDE.md`, both manifests, and `changelog/v1.50.0.md`. It also rewrites `$ARGUMENTS` handling across many skill bodies, so Check 3.2 will have moved.
+- **[#164](https://github.com/by-dev-tools/flow/pull/164) overlaps in zero** of my paths (`flow.config.json`, `research/orchestrator-field-manual.md`, and its own `dev-docs/{feedback,history}/` files).
+
+Rebase on `main` immediately before ship and re-check the version then — the D1 plan's sweep went stale at exactly this step.
+
+### 10. Risks / open questions
+
+- **The measurement could vindicate the pessimism.** If arm B lands near arm A, (c) has replaced a mechanism that never fired with one that rarely fires — an improvement too small to justify the doc claims. The PR would ship the fix *and* a recommendation; the recommendation is Ben's call.
+- **Arm-A construction remains the subtlest failure mode**, now defended rather than merely noted: the control sentinel (§8) is what distinguishes "old descriptions don't trigger" from "the rig never loaded", and **A runs before B** so a broken rig cannot manufacture a favourable contrast.
+- **Version/FB drift.** Both in-flight PRs may merge mid-flight; re-check `plugin.json` and `ls dev-docs/feedback/` immediately before ship.
+- **Neutral-repo choice** must be a repo I can legitimately base a throwaway workspace on. Reading a public repo is fine; **creating one under Ben's account is outward-facing and I will not do it without a word** — Open call 3.
+
+### 11. Files touched (anticipated)
+
+- `plugins/flow/skills/{general,plan-discipline,documentation,exploration}/SKILL.md` — frontmatter + opening paragraph
+- `plugins/flow/skills/doctor/SKILL.md` — Check 3.2 prose + shell block, `:15`, `:706` *(conflicts with #165)*
+- `plugins/flow/skills/ship/lib/plugin-provenance.py` — `_is_rule_skill()` marker + the `:715` string
+- `plugins/flow/evals/run_plugin_desc_evals.py`, `plugins/flow/evals/run_plugin_provenance_evals.py` (+ `fixtures/` negative control)
+- `README.md`, `docs/automation-boundaries.md`, `docs/first-pr.md`, `plugins/flow/docs/workflow.md` *(conflicts with #165)*, `plugins/flow/skills/spawn/SKILL.md`, `template/base/CLAUDE.md.template`
+- `dev-docs/roadmap.md` *(conflicts with #165)* — S0 outcome + diagnosis correction; retire S2 + the config-driven-`paths:` item; add the hooks-channel line
+- `dev-docs/plan.md` *(conflicts with #165)*, `dev-docs/history/2026-09-27-<slug>.md`, `dev-docs/feedback/FB-0122-*.md`, `dev-docs/research/2026-09-agents-md-vs-skills.md` (§5.1 over-claim correction, per Open call 4)
+- `CHANGELOG.md`, `changelog/v1.51.0.md`, `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` *(all conflict with #165)*
+
+### 12. Open calls for the gate
+
+1. **`general` is the real decision (A4, LOW → automatic gate).** **(i)** juncture-triggered as planned — honest, measurable, less than advertised; **(ii)** juncture-triggered *plus* a roadmap item for the plugin `SessionStart` hook that could restore determinism later; **(iii)** split `general` — keep the always-relevant part (the cost/permanence/risk guardrails) somewhere always-on, juncture-trigger the rest; more work, more surface. **Recommendation: (ii)** — ships the honest thing now and names the only mechanism that could do better, without building it inside a PR about descriptions.
+2. **36 sessions, or 28?** The full rig matches E1's bar; the cheap variant thins arm C to one run per rule. **Recommendation: the full 36 + optional arm D** — arm C is the only one testing plugin scope, which is the only scope consumers have, and D is one session for a correction that is otherwise an assertion.
+3. **Neutral repo for arms A/B/D.** I plan to base throwaway workspaces on an existing public repo and create nothing under Ben's account. Say the word if you would rather I use a scratch repo in the org and I will ask before creating it.
+4. **Write §2's correction back into `dev-docs/research/2026-09-agents-md-vs-skills.md` §5.1?** It is marked point-in-time and not maintained, so convention would leave it. This one earns an exception: its over-claim is what the roadmap's wrong diagnosis was built on, and S0 is cited from six places. **Recommendation: correct in place with a dated note**, not a rewrite — and state the narrowed claim from §2, not round 1's stronger one.
+5. **⟢ NEW — `/flow:doctor` loses `[READY]` permanently, for every consumer.** A5 is HIGH, so the activation `[WARN]` is **unclearable by construction**. Doctor's contract (`doctor/SKILL.md:881-882`) reserves `[READY]` for "all checks pass" and `[READY with WARN-level items]` for "N optional items can be addressed at your discretion" — so every consumer would permanently see a non-`[READY]` verdict naming an optional item **no consumer can ever address**, and the same argument would then be available for retiring `[READY]` from the schema. `/flow:critique-plan` flagged this and it is a headline-contract change neither round-1 §10 nor §12 surfaced. Three shapes: **(i)** accept the permanent WARN and amend the contract text at `:881-882` plus the Section 3 summary line so it is documented rather than surprising; **(ii)** add a new `[INFO]` / "not checkable" class excluded from the verdict arithmetic, so activation is reported without consuming the verdict; **(iii)** report activation only in Check 3.2's body with no verdict-bearing marker at all. **Recommendation: (ii)** — it keeps FB-0121's requirement (a gate must distinguish "nothing wrong" from "I could not see") while leaving `[READY]` meaningful, and "unchecked" is genuinely a third thing rather than a mild failure. **This is the one call I would most like overridden if you disagree**, because it changes a surface every consumer sees on every `/flow:doctor` run.
 **▶ EXECUTED, shipping (this branch `conductor/docs-only-verify-build-na`, v1.52.0, FB-0122): a docs-only PR is N/A, not unverified — and was unmergeable.**
 
 **Mode:** feature · **Surface:** non-visual
