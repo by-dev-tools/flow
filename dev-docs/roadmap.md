@@ -306,6 +306,45 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+- **`/flow:audit-skips`: the stamp guard is a one-caller guard on a multi-caller engine (found by the health-tracker workspace `463e6017`; framing corrected by measurement here).**
+  *Not* "the stamp is never validated" — it is, and it works. Measured: `flow_scratch.py check` on a
+  handoff stamped `repo=/somewhere/else branch=not-this-branch head=0000000` returns
+  `{"status":"stale","reason":"handoff repo=… does not match this workspace"}`, exit 2, and
+  `audit-skips/SKILL.md:~137` turns that into `stamp_error` and refuses to audit. **The defect is
+  that the guard lives in the skill's shell preamble and not in the engine.** Invoke
+  `lib/skip-audit-checks.py` directly with that same bogus-stamped report and it never mentions the
+  stamp — measured, `'stamp' in output == False`; it audits the contents of a report claiming to be
+  from another repo, branch and HEAD. Its CLI takes `--report --config --head-sha --branch
+  --files-from --diff-from --plan --base --which-from` and **no body/manifest/stamp input at all**.
+  Every eval calls it directly; so could any future caller. That is FB-0010's fan-out shape and the
+  same contract-split-across-two-files class as FB-0074/FB-0082.
+  *One correction to the original report:* the fabricated-HEAD run did **not** reproduce an identical
+  7/7 LEGITIMATE for me — I measured **2/7**, because the engine computes its own diff context and
+  correctly refuted several doc-only claims. So the finding is structural (no stamp input), not
+  "the verdict is unchanged". **Carries:** validate the stamp *in the engine*, or make the engine
+  refuse a report whose `flow_stamp` it was not given the means to check — fail closed, like
+  `read_stamped` already does one layer up.
+  **Why this is not the docs-only bug:** that one was a *classification* error upstream of the
+  entry; this is an *input-trust* gap in the auditor itself. Different layer, different defense.
+- **`/flow:audit-skips`: buffer freshness has two fallbacks that absence satisfies (orchestrator-found; measured here, and it is BOTH disjuncts, not one).**
+  `lib/skip-audit-checks.py:244-246`:
+  `b_ok = (not facts["branch"]) or (branch and facts["branch"] == branch)` and
+  `s_ok = (not facts["head_sha_short"]) or (head_sha and facts["head_sha_short"] == head_sha)`.
+  The leading disjunct in **each** means a missing field passes its own check, and `fresh` then only
+  requires `branch or head_sha_short` — so one field present and matching is enough, with the other
+  comparison never performed. Measured against `read_buffer(branch="work", head="abc1234")`:
+  `branch match + sha ABSENT ⇒ fresh=True`, and `branch ABSENT + sha match ⇒ fresh=True`. The
+  original report named the SHA half; the branch half is the identical shape and equally live.
+  This is `.claude/rules/general.md` item 1 — a fallback with no paired positive assertion — inside
+  the engine whose own comment at `:407` names *"the FB-0010 silent-skip shape, in the engine whose
+  job is refusing silent skips."* The comment is right and the code has two more instances than the
+  comment knows about. **Carries:** require BOTH fields and fail closed on an unstamped buffer, or
+  pair each fallback with an explicit positive — a buffer that cannot prove which HEAD it describes
+  is not evidence of freshness. **Why this is not the other two:** it is not classification and not
+  input-trust; it is a truth-table error in a predicate that already has the right inputs.
+  *Both entries are deliberately NOT fixed in the v1.52.0 docs-only PR* — they touch the same file
+  and would collide; dispatch after it merges.
+
 - **Argument safety: warn when the host substitution model goes stale (FB-0116, staff-review).**
   `lib/arg_placeholders.py` transcribes the host's three substitution arms, its escape arm and
   `xS` from one measured build, and `run_arg_safety_evals.py::test_host_agreement` pins the
