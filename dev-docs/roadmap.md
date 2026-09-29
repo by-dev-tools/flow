@@ -35,9 +35,20 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 **v1.47.0 (shipped #159 — `/flow:audit-coverage` gains a source-tree input mode, plus a verified RCE fix in typed arguments).** This is option (a) from the §9.3 spike's remediation, and it is what makes D1's post-gate-1 completeness check live rather than conditional: point the reviewer at an approved prototype's source and it reads the code nothing else at that step reads. *Restored here by Track B:* the v1.46.0→v1.48.0 rebase resolved a roadmap conflict in favour of the D1 paragraph and dropped this headline in the process — caught by grepping for a distinctive string from each side afterwards, which is the only reason it is not silently missing.
 
-### ~~S0 — the four rule-skills have not loaded for any consumer since v1.33.0~~ — RESOLVED (v1.53.0, FB-0124): option (c), and the diagnosis below was wrong
+### ~~S0 — the four rule-skills have not loaded for any consumer since v1.33.0~~ — **RESOLVED AS WITHDRAWN**, not as fixed (v1.53.0, FB-0124)
 
-**RESOLVED 2026-09-27 by v1.53.0 (FB-0124).** Ben chose **(c)** at the human gate. Two things worth carrying forward, because the original capture below is wrong about the mechanism and right about the consequence:
+> ⚠️ **Read this before treating S0 as a working feature.** It is closed because flow stopped
+> *claiming* something false — **not** because the four rule-skills now load. They still do not,
+> for consumers. **Ben decided 2026-09-29: S0 closes at honest.** The advertised auto-loading is
+> **withdrawn**, not restored: the four rules nudge rather than enforce, and every shipped doc now
+> says so. Restoring enforcement needs the `SessionStart` hook — recorded below as a roadmap entry
+> with its per-session cost, and deliberately not built.
+>
+> **Measured, 52 probe sessions, 0 discarded:** rewriting the descriptions changed nothing at
+> plugin scope — **0/3 before, 0/3 after, 0/2 on the default model** — while project scope fires
+> 2/3 → 3/3. Scope is the decisive variable, not the description.
+
+**RESOLVED 2026-09-27 by v1.53.0 (FB-0124); closure basis decided by Ben 2026-09-29.** Ben chose **(c)** at the human gate. Two things worth carrying forward, because the original capture below is wrong about the mechanism and right about the consequence:
 
 1. **`paths:` on a `SKILL.md` is a real, documented field — not a bug, and there was nothing to report upstream.** It *limits* an activation the `description` otherwise earns: *"Glob patterns that **limit** when this skill is activated… Uses the same **format** as path-specific rules"* — format, not semantics. The read-trigger semantics we assumed (*"Path-scoped rules trigger when Claude reads files matching the pattern"*) belong to `.claude/rules/*.md`. **Two different mechanisms, one field name.** So option (a) was moot from the start.
 2. **E1's finding was over-claimed, and the roadmap text below inherited the over-claim.** E1 concluded "`paths:` frontmatter on a `SKILL.md` does not activate the skill." Its probes could not support that: **every one carried a restrictive glob *and* a suppressive description** ("Not user-invocable — path-activated only."), so the failure was never attributed to either cause. Probe 3 is the closest to a clean arm, and §5.1 **records no description for it at all** — so its cause-isolation is *unrecorded*, not *absent*. **What survives, and it is the part that mattered: these four skills had never loaded — measured three ways, with four positive controls firing on the same Reads.** That is why (b)/(c) were live options regardless of which cause it was.

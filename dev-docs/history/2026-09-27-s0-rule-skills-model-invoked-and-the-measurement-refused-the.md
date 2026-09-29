@@ -30,7 +30,7 @@ descriptions were *actively suppressing* the only mechanism left — all four en
 
 ## The numbers
 
-43 interpretable sessions, 0 discarded at final count, on scrubbed neutral bases with no `CLAUDE.md`,
+52 interpretable sessions, 0 discarded at final count, on scrubbed neutral bases with no `CLAUDE.md`,
 `AGENTS.md`, or `.claude/` beyond the probe skills. Counts are "fired / n", where *fired* = a `Skill`
 tool_use for that rule **during the task turn**. Every session carried its own known-positive and any
 session failing it was discarded rather than counted as a zero.
@@ -102,6 +102,15 @@ instruction that a divergence outranks the headline, this had to be chased. It w
 plugin scope, default model, the actual consumer configuration — still read 0/2.** So the model is a large
 effect at project scope and does not change the plugin-scope answer. That cell is the one that describes a
 real consumer, and it is why I ran it beyond the approved cap.
+
+## Ben's closure decision (2026-09-29)
+
+**S0 closes at *honest* — resolved as WITHDRAWN, not as fixed.** The grounds: flow no longer claims
+something false. The four rules nudge rather than enforce, and every shipped doc now says so. The
+`SessionStart` hook stays a roadmap entry and was deliberately not built.
+
+Recorded here because the distinction is the whole value of the entry: a future reader finding S0
+closed must not read it as a working feature. The roadmap item carries the same warning inline.
 
 ## So did (c) work?
 

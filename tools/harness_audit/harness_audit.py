@@ -149,7 +149,7 @@ def _read_text(path: Path) -> str | None:
         return None
 
 
-def _extract_frontmatter_description(text: str) -> str:
+def _extract_always_on_listing(text: str) -> str:
     """The always-on listing text of a SKILL.md/agent .md: `description` + `when_to_use`.
 
     Handles the plain `description: one line` form and the folded-block
@@ -215,7 +215,7 @@ def resolve_always_loaded_surfaces(repo_root: Path = _REPO_ROOT) -> tuple[list[d
             if text is None:
                 warnings.append(f"missing or unreadable frontmatter source: {path}")
                 continue
-            desc = _extract_frontmatter_description(text)
+            desc = _extract_always_on_listing(text)
             if not desc:
                 warnings.append(f"no frontmatter description found (contributes 0 chars): {path}")
                 continue

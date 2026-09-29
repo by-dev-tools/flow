@@ -352,20 +352,6 @@ def main() -> int:
           "violations() reported a problem with a compliant frontmatter — the negative "
           "controls above would pass even a predicate that rejects everything")
 
-    # ---- claim lint: no shipped surface may call a rule-skill path-activated ----
-    # The altitude fix for FB-0124. Correcting nine occurrences by hand is symptom-level:
-    # the sweep was performed from memory, and it MISSED two — including
-    # `template/base/core-docs/roadmap.md`, which `bootstrap.sh` copies into every consumer
-    # repo, so a wrong line there is wrong forever in every project that already adopted
-    # flow. Found by /simplify's altitude lens, not by the sweep.
-    #
-    # This makes the tenth occurrence impossible rather than the ninth corrected: fail when
-    # a path-activation phrase appears near any rule-skill name across shipped surfaces. The
-    # roster comes from rule_skills.RULE_SKILLS, so adding a rule-skill extends the lint for
-    # free.
-    #
-    # `.claude/rules/*.md` is deliberately NOT swept: project-scope rules genuinely ARE
-    # path-activated, and that is the distinction every corrected doc now draws.
     CLAIM = re.compile(r"path-activat\w*|auto-load(?:ing|s|ed)?\b|fires? on (?:a )?path", re.IGNORECASE)
     NEAR = 110          # chars either side — a claim ABOUT a rule-skill sits close to its name.
 
@@ -376,10 +362,20 @@ def main() -> int:
     # said "loads it by judgment" passed clean. A check that cannot fail is worse than no
     # check (`.claude/rules/general.md` item 4) — so the negation must sit next to the
     # claim it negates, which is where a real correction puts it anyway.
+    # TWO patterns, because ONE of these negations is case-SENSITIVE and the rest are not.
+    # Under a single IGNORECASE alternation, `\bARE\b` matched a plain lowercase "are" — so
+    # "The four rule-skills are path-activated" and "`documentation` and `general` are
+    # attached by file path" both cleared the lint. Those are the most natural spellings of
+    # the exact claim this lint exists to forbid, which made it a check that could not fail,
+    # inside the instrument built to enforce item 2 (caught by /flow:staff-review's
+    # staff-engineer lens; both sentences are now MUST_FLAG controls below).
     NEGATED = re.compile(
         r"\bnot\b|\bno longer\b|\brather than\b|\bnever\b|\bcannot\b|\bwithout\b|"
-        r"\bARE\b|model-invoked|by judgment|used to|through v1\.5|until v1\.5|was \*\*false\*\*|"
+        r"model-invoked|by judgment|used to|through v1\.5|until v1\.5|was \*\*false\*\*|"
         r"claimed", re.IGNORECASE)
+    # Emphatic capitalised ARE only — "`.claude/rules/*.md` genuinely **ARE** path-activated"
+    # is a correction; "these are path-activated" is the claim.
+    NEGATED_CASED = re.compile(r"\bARE\b")
     NEG_WIN = 70        # chars either side of the CLAIM phrase
 
     # Surfaces that genuinely DO auto-load and are not rule-skills — the consumer's own
@@ -403,7 +399,8 @@ def main() -> int:
         for line in body.splitlines():
             for cm in CLAIM.finditer(line):
                 win = line[max(0, cm.start() - NEG_WIN): cm.end() + NEG_WIN]
-                if NEGATED.search(win) or OTHER_MECHANISM.search(win):
+                if (NEGATED.search(win) or NEGATED_CASED.search(win)
+                        or OTHER_MECHANISM.search(win)):
                     continue
                 near = line[max(0, cm.start() - NEAR): cm.end() + NEAR]
                 if any(re.search(rf"\b{re.escape(n)}\b", near) for n in rs.RULE_SKILLS):
@@ -446,6 +443,9 @@ def main() -> int:
         "- **4 auto-loading rules** that attach by file path — plan-discipline, documentation.",
         # The exact shape that defeated version 1: a false claim beside an exempting phrase.
         "Auto-loading `documentation` rule fires on path match — Claude loads it by judgment later.",
+        # The shapes that defeated version 2: a lowercase "are" cleared an IGNORECASE \bARE\b.
+        "The four rule-skills are path-activated when you touch a matching file, so `general` applies.",
+        "Auto-loading rules: `documentation` and `general` are attached by file path.",
     ]
     for i, sentence in enumerate(MUST_FLAG):
         check(f"claim-lint-flags-known-positive:{i}", bool(path_activation_claims(sentence)),
@@ -499,7 +499,7 @@ def main() -> int:
     # clause is also the line's deletion criterion, so it is what keeps the class from
     # becoming the drawer every unverifiable check goes into.
     for em, block in unchecked:
-        check(f"unchecked-names-its-mechanism:{em[14:44].strip()}",
+        check(f"unchecked-names-its-mechanism:{em[18:58].strip()}",
               "Checkable by:" in block,
               f"an [UNCHECKED] line carries no 'Checkable by:' clause — that clause IS the "
               f"deletion criterion, and without it the marker excuses itself: {em[:80]}")
@@ -507,7 +507,7 @@ def main() -> int:
     # consumer-side fix is a [WARN] worded "UNCHECKED, not clean" — the shape this file
     # already uses elsewhere. An [UNCHECKED] carrying a `Fix:` has conflated the two axes.
     for em, block in unchecked:
-        check(f"unchecked-is-not-consumer-fixable:{em[14:44].strip()}",
+        check(f"unchecked-is-not-consumer-fixable:{em[18:58].strip()}",
               "Fix:" not in block,
               f"an [UNCHECKED] line offers a consumer-side 'Fix:' — if the consumer can act, "
               f"it belongs in the verdict arithmetic as [WARN] 'UNCHECKED, not clean', not "

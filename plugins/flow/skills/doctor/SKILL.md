@@ -775,7 +775,14 @@ Plugin-shipped rules ship as **model-invoked** skills at `${CLAUDE_PLUGIN_ROOT}/
 So this check now asserts what a shell genuinely can: registration, plus the frontmatter contract that makes model invocation possible. **It cannot assert activation** — that is a model-judgment event inside a session, and no shell command observes one. It says so in its own output with `[UNCHECKED]` rather than implying a clean bill of health (FB-0121: a gate reporting nothing wrong must distinguish "nothing wrong" from "I could not see").
 
 ```sh
-if ! command -v claude >/dev/null 2>&1; then
+# The roster comes from lib/rule_skills.py, never a literal list: a fifth rule-skill added
+# to RULE_SKILLS must be registration-checked here too, and a hardcoded copy is how the
+# contract audit below and this check would silently disagree about which skills exist.
+RULE_SKILLS=$(python3 "${CLAUDE_PLUGIN_ROOT:-.}/lib/rule_skills.py" roster 2>/dev/null)
+if [ -z "$RULE_SKILLS" ]; then
+  echo "[WARN] plugin-shipped rule-skills check UNCHECKED, not clean — could not read the roster from lib/rule_skills.py."
+  echo "       Fix: /plugin marketplace update flow && /plugin install flow@flow (or install python3)."
+elif ! command -v claude >/dev/null 2>&1; then
   echo "[SKIP] plugin-shipped rule-skills check — 'claude' CLI not on PATH; cannot query the loader"
 else
   DETAILS_RAW=$(claude plugin details flow@flow 2>&1)
@@ -788,11 +795,11 @@ else
     echo "[SKIP] plugin-shipped rule-skills check — 'claude plugin details flow@flow' returned no Skills line (is flow@flow installed?)"
   else
     MISSING=""
-    for s in general plan-discipline documentation exploration; do
+    for s in $RULE_SKILLS; do
       echo "$SKILLS_LINE" | grep -qE "(^|[, ])$s(,|$| )" || MISSING="$MISSING $s"
     done
     if [ -z "$MISSING" ]; then
-      echo "[PASS] plugin-shipped rule-skills (general/plan-discipline/documentation/exploration) REGISTERED with the loader"
+      echo "[PASS] plugin-shipped rule-skills ($(echo $RULE_SKILLS | tr ' ' '/')) REGISTERED with the loader"
     else
       echo "[FAIL] plugin-shipped rule-skills missing from the loader's own report:$MISSING"
       echo "       Fix: /plugin marketplace update flow && /plugin install flow@flow"
@@ -1001,7 +1008,7 @@ Always emit the verdict as the FINAL line so the agent/user can scan to the bott
 | **observed** | `[WARN]` / `[FAIL]` | `[FAIL]` |
 | **not observed** | **`[WARN]`**, worded "UNCHECKED, not clean", with a `Fix:` | **`[UNCHECKED]`**, with a `Checkable by:` |
 
-So a missing tool, a stale install, or an unset env var is a `[WARN]` — the consumer has a fix, and withholding it from the verdict would hide an actionable problem. `[UNCHECKED]` is reserved for a claim **no consumer can make checkable**, which today is exactly one thing: rule-skill activation.
+So a missing tool, a stale install, or an unset env var is a `[WARN]` — the consumer has a fix, and withholding it from the verdict would hide an actionable problem. `[UNCHECKED]` is reserved for a claim **no consumer can make checkable**. Today rule-skill activation is the only one — and the eval asserts the *rules* below over every emission rather than pinning that count, so a second legitimate `[UNCHECKED]` site is allowed and will be held to the same two rules.
 
 **Two rules, so the class does not become the drawer every lazy check goes into:**
 

@@ -71,15 +71,20 @@ LISTING_CAP = 1536
 
 
 def frontmatter(text: str) -> str | None:
-    """The frontmatter block of a SKILL.md, or None when there isn't one.
+    """The frontmatter block of a SKILL.md, or None when there isn't a well-formed one.
 
     Returns everything above the closing fence, so a `paths:` or `user-invocable`
     mentioned in PROSE cannot promote a command skill.
+
+    An UNTERMINATED fence returns None, not the whole file. Returning the file voided that
+    guarantee in exactly the case where the file is broken: body prose could then supply a
+    `paths:` (false FAIL) or a malformed skill could read compliant (false PASS). `None`
+    surfaces as `no-frontmatter`, which is the honest answer.
     """
     if not text.startswith("---"):
         return None
     end = text.find("\n---", 3)
-    return text[:end] if end != -1 else text
+    return text[:end] if end != -1 else None
 
 
 def scalar(fm: str, key: str) -> str | None:
@@ -88,8 +93,15 @@ def scalar(fm: str, key: str) -> str | None:
     Tolerates any block-scalar indicator and any indent, because hardcoding `>-` plus a
     two-space indent silently yielded the indicator itself as the value.
     """
-    m = re.search(rf"^{re.escape(key)}:[ \t]*[>|][-+]?[0-9]*[ \t]*\n((?:[ \t]+\S.*\n?)+)",
-                  fm + "\n", re.MULTILINE)
+    # `[-+0-9]*` not `[-+]?[0-9]*`: YAML allows indent-then-chomp (`>2-`) as well as
+    # `>-2`, and the narrower form returned the literal indicator as the value.
+    # `(?:[ \t]*\n)*` inside the continuation allows blank lines within a folded block,
+    # which otherwise truncated the value at the first paragraph break and under-counted
+    # both caps.
+    m = re.search(
+        rf"^{re.escape(key)}:[ \t]*[>|][-+0-9]*[ \t]*\n((?:(?:[ \t]+\S.*|[ \t]*)\n?)+?)"
+        rf"(?=^\S|\Z)",
+        fm + "\n", re.MULTILINE)
     if m:
         return " ".join(line.strip() for line in m.group(1).splitlines() if line.strip())
     m = re.search(rf"^{re.escape(key)}:[ \t]*(.+)$", fm, re.MULTILINE)

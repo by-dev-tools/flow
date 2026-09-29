@@ -375,6 +375,16 @@ def surface_drift(installed: dict, root: Path) -> dict:
     return out
 
 
+class _NoRoster:
+    """Fallback when `lib/rule_skills.py` cannot be loaded: classify nothing as a rule-skill."""
+
+    RULE_SKILLS: tuple[str, ...] = ()
+
+    @staticmethod
+    def is_rule_skill(name: str) -> bool:
+        return False
+
+
 _RULE_SKILLS_MOD = None
 
 
@@ -388,10 +398,19 @@ def _rule_skills():
     if _RULE_SKILLS_MOD is None:
         import importlib.util
         target = Path(__file__).resolve().parents[3] / "lib" / "rule_skills.py"
-        spec = importlib.util.spec_from_file_location("flow_rule_skills", target)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        _RULE_SKILLS_MOD = mod
+        try:
+            spec = importlib.util.spec_from_file_location("flow_rule_skills", target)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        except Exception:  # noqa: BLE001 -- a reporter must not take the ship down
+            # An absent/corrupt module must not collapse all four `## Flow run` rows into
+            # the top-level "the reporter itself failed" row -- that surface is FB-0107's
+            # whole point, and losing it to a classification helper is a worse failure than
+            # mis-labelling one bullet. Degrade to "everything is a command skill", which is
+            # the milder consequence and is what this file did before rule-skills existed.
+            _RULE_SKILLS_MOD = _NoRoster()
+        else:
+            _RULE_SKILLS_MOD = mod
     return _RULE_SKILLS_MOD
 
 
