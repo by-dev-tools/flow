@@ -738,7 +738,11 @@ def test_no_live_not_built_claim() -> None:
     wrong repair."""
     proc = subprocess.run(
         ["git", "grep", "-lEi", r"phase 3.{0,60}(not built|is gated)", "--",
-         "plugins/", "README.md"],
+         "plugins/", "README.md",
+         # This harness DEFINES the pattern, so it necessarily contains it. A detector
+         # quoting what it searches for is not a live claim (same exemption
+         # run_prototype_gate_evals.py grants itself).
+         ":!plugins/flow/evals/run_autoplan_evals.py"],
         capture_output=True, text=True, cwd=str(REPO))
     # `git grep -l` exits 1 when there are no matches: key on the EXIT CODE, not a
     # count of output (item 4's corollary).
@@ -754,7 +758,8 @@ def test_no_live_not_built_claim() -> None:
 def test_review_brief_catalog_sweep_has_no_survivors() -> None:
     proc = subprocess.run(
         ["git", "grep", "-nEi", "pre-prototype review|reviews a brief|review of a design brief",
-         "--", "README.md", "plugins/"],
+         "--", "README.md", "plugins/",
+         ":!plugins/flow/evals/run_autoplan_evals.py"],
         capture_output=True, text=True, cwd=str(REPO))
     check("no-catalog-survivor-describes-review-brief-as-brief-only",
           proc.returncode == 1,

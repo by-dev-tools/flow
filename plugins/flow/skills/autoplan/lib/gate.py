@@ -472,7 +472,8 @@ def combine(state: dict) -> dict:
     Findings route by tier: `auto-fixable` is fixed and re-reviewed ONCE; a finding
     that SURVIVES that single retry becomes `decision-required` — never "proceed",
     and never a second retry. A `LOW` confidence verdict in the plan is also
-    `decision-required`: D1 moves PLAN APPROVAL, and leaves untouched the third gate
+    `decision-required`: on the prototype-first path D1 moves PLAN APPROVAL to the
+    prototype, and leaves untouched the third gate
     `plan-discipline/SKILL.md` states as "LOW — automatic human gate. The plan cannot
     proceed." Nothing in the three arms reads a verdict, so without this the gate
     would delete a shipped gate by omission.

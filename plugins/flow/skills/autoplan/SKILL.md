@@ -144,7 +144,7 @@ The state file carries one entry per arm with `ran`, `evidence`, `findings`, and
 - any arm ran **document-blind** — its reference-document load resolved zero documents, so it cannot clear the Spec-violation category. A reviewer that cannot read the rules has not reviewed;
 - a confidence verdict in the plan is **LOW**.
 
-**The LOW rule is not this skill inventing a gate.** `plan-discipline` states it: *"LOW — automatic human gate. The plan cannot proceed."* D1 moved **plan approval**; it did not move that gate, and CLAUDE.md names it separately as *"a third automatic gate on LOW-confidence assumptions."* Nothing in the three arms reads a verdict, so without this rule the gate would delete a shipped gate by omission.
+**The LOW rule is not this skill inventing a gate.** On the prototype-first path the human already gated — on the prototype — and `plan-discipline` states the remaining one: *"LOW — automatic human gate. The plan cannot proceed."* D1 moved **plan approval**; it did not move that gate, and CLAUDE.md names it separately as *"a third automatic gate on LOW-confidence assumptions."* Nothing in the three arms reads a verdict, so without this rule the gate would delete a shipped gate by omission.
 
 ## 7. Route
 
@@ -152,7 +152,7 @@ The state file carries one entry per arm with `ran`, `evidence`, `findings`, and
 - **`[auto-fixable]`** — fix it, re-review **once**. If it clears, proceed. **If it survives that one retry it becomes `[decision-required]`** — never "proceed", and never a second retry.
 - **`[decision-required]`** — **pause and escalate.** Render the engine's `escalation` block verbatim. It never proceeds silently.
 
-**On escalation with no human present** (decided by Ben, 2026-09-29): pause and escalate through the channel that already exists — worker → orchestrator → human. This is not a breach of the two-gate thesis; it is the third automatic gate CLAUDE.md already names. **The machine gate replaces *routine* plan approval, not every judgment.**
+**On escalation with no human present** (decided by Ben, 2026-09-29): pause and escalate through the channel that already exists — worker → orchestrator → human. This is not a breach of the two-gate thesis — the one pre-execution human gate was spent on the prototype, and this is the third automatic gate CLAUDE.md already names alongside it. **The machine gate replaces *routine* plan approval, not every judgment.**
 
 ## Output format
 
