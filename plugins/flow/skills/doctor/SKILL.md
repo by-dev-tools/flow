@@ -849,13 +849,13 @@ else
   fi
 fi
 echo "[UNCHECKED] rule-skill activation (whether Claude actually loads these four bodies in a session)."
-echo "            Registration and frontmatter shape are REPORTED above (each may itself be"
-echo "            [PASS], [WARN] or [SKIP] — read them); activation is a model-judgment"
-echo "            event inside a session and no shell command observes one. Unchecked, not clean."
-echo "            Checkable by: a first-party CLI or hook surface that reports per-session skill"
-echo "            invocations (none exists today). Measured out-of-band with tools/rule-activation/ —"
-echo "            and the v1.53.0 measurement found zero invocations at plugin scope. Do not read the"
-echo "            PASS above as 'the rules governed this run'; it means installed and correctly shaped."
+echo "       Registration and frontmatter shape are REPORTED above (each may itself be"
+echo "       [PASS], [WARN] or [SKIP] — read them); activation is a model-judgment event"
+echo "       inside a session and no shell command observes one. Unchecked, not clean."
+echo "       Checkable by: a first-party CLI or hook surface reporting per-session skill"
+echo "       invocations (none exists today). Measured out-of-band with tools/rule-activation/;"
+echo "       the v1.53.0 measurement found zero invocations at plugin scope. Do not read the"
+echo "       PASS above as 'the rules governed this run' — it means installed and correctly shaped."
 ```
 
 ### Section 4: prerequisite CLI tools
@@ -977,11 +977,11 @@ After running all sections, emit a summary line:
 
 ```
 ═══ flow:doctor summary ═══
-  Section 1 (install):       <N PASS / N FAIL>
-  Section 2 (project config): <N PASS / N WARN / N FAIL>
-  Section 3 (rule layer):     <N PASS / N WARN / N SKIP / N UNCHECKED>
-  Section 4 (CLI tools):     <N PASS / N FAIL>
-  Section 5 (optional infra): <N PASS / N WARN>
+  Section 1 (install):        <N PASS / N WARN / N FAIL / N SKIP>
+  Section 2 (project config): <N PASS / N WARN / N FAIL / N SKIP>
+  Section 3 (rule layer):     <N PASS / N WARN / N FAIL / N SKIP / N UNCHECKED>
+  Section 4 (CLI tools):      <N PASS / N FAIL>
+  Section 5 (optional infra): <N PASS / N WARN / N SKIP>
 
   Overall: [READY] / [READY with WARN-level items] / [NOT READY — N FAILs blocking]
 ```
@@ -1001,8 +1001,8 @@ Always emit the verdict as the FINAL line so the agent/user can scan to the bott
 | `[PASS]` | Checked, and correct | yes |
 | `[WARN]` | Checked, and imperfect — optional, the consumer can act on it | yes → `[READY with WARN-level items]` |
 | `[FAIL]` | Checked, and broken — blocks | yes → `[NOT READY]` |
-| `[SKIP]` | **Did not apply** — a tool absent, a config slot unset, nothing of this kind present | no |
-| `[UNCHECKED]` | **Applied, but could not see.** | **no** — reported inline as `(N unchecked)` |
+| `[SKIP]` | Did not apply — a tool absent, a config slot unset, nothing of this kind present | no |
+| `[UNCHECKED]` | Applied, but could not see | no — reported inline as `(N unchecked)` |
 
 `[UNCHECKED]` exists because a gate that reports nothing wrong must distinguish *"nothing wrong"* from *"I could not see"* (FB-0121). It is deliberately **outside** the verdict arithmetic: the thing it names is not a mild failure the consumer can fix, so routing it to `[WARN]` would put every consumer permanently below `[READY]` over an item nobody can ever clear, and would eventually make the case for retiring `[READY]` altogether. Keeping it out of the arithmetic preserves `[READY]`'s meaning; printing `(N unchecked)` **inline on the verdict line** keeps the unseen items visible rather than buried. Both properties, not one.
 

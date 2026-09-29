@@ -1287,6 +1287,22 @@ Two deferrals from the same review, both judgment calls about how much a surface
 1. **Doctor's activation block is six lines and fires on every healthy run, forever.** Three of the six are argument rather than status (the "do not read the PASS above as…" caveat, the measurement result). Two lines in the output plus the rationale in `docs/upgrade.md` would hold. Deferred because the eval that pins the marker class's rules over shipped text moves with it.
 2. **`template/base/CLAUDE.md.template` ships flow's own postmortem into every consumer repo, permanently** — "From flow v1.33.0 to v1.49.0 this table claimed… twenty releases… (FB-0124)", including an FB reference a consumer cannot resolve. The *rule* above it (two mechanisms, don't conflate, yours is the load-bearing one) fully earns its place. The version archaeology is flow's history in someone else's always-loaded file. **A write-once surface deserves its own decision rather than a same-PR trim** — which is exactly the argument this PR makes about that file.
 
+### `/flow:doctor`'s Summary block is a fan-in point that understates what its sections emit (v1.53.0, design-engineer lens)
+
+**Surfaces when:** `plugins/flow/skills/doctor/SKILL.md`'s Summary section is next touched, OR any section gains a new marker site.
+
+Measured: Section 1 emits PASS/WARN/FAIL/SKIP; Section 2 emits SKIP; Section 5 emits SKIP — and before v1.53.0 none of the three advertised those in the Summary template. v1.53.0 fixed the rows it was responsible for (Section 3, whose row had no FAIL slot while the section emits `[FAIL]` twice, one of them added by that PR) and squared 1/2/5 while it was there, but **the template is still hand-maintained prose listing what the sections below it happen to emit.** That is § Consistency item 2 with the Summary as the fan-in: the next marker site added anywhere in doctor silently desynchronises it, and nothing fails.
+
+Shape: derive the row from the section's actual emissions, or add an eval that greps each `### Section N:` block for `echo "[MARKER]` sites and asserts the Summary row lists exactly that set. The eval is the cheaper half and is the one that makes the drift impossible rather than merely corrected.
+
+### § Exploration — structured terminal output is flow's highest-traffic ungrounded surface (v1.53.0, design-engineer lens)
+
+**Surfaces when:** `dev-docs/design-language.md` is next touched, OR a third reviewer grounds a terminal-output finding in conventions it had to derive by counting.
+
+`dev-docs/design-language.md` scopes itself explicitly to the `/flow:verify-build` HTML report. So every convention governing doctor's terminal output — the bracket-marker vocabulary, the 7-space first-level continuation gutter (68 sites), the Summary block's monospace value column — exists only as emergent practice. v1.53.0's design-engineer review had to **count occurrences to establish what the convention even was** before it could call a 12-space gutter a collision.
+
+Open question, and the reason this is exploration rather than a queued item: is a design-language section the right home for terminal-output rules, or is that doc correctly scoped to visual artifacts and this belongs somewhere else (a doctor-local conventions note, or a lint)? Two of flow's three rendered surfaces are already tracked as ungrounded; structured terminal output is the third and arguably the highest-traffic, since every consumer reads it on every `/flow:doctor` run.
+
 ### Deferred from the doc-fragmentation PR (v1.40.0, FB-0102/FB-0103)
 
 Routed here rather than left in a PR body — all four were raised by `/flow:staff-review`
