@@ -8,6 +8,22 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 ## Now
 
+> **▶ THE STOPPING POINT (Ben, 2026-09-28).** This program stops when three features ship —
+> **S0** (below), **CV1** (`/flow:audit-coverage` cannot see `.md`, § Next), and **D1 Phase 3**
+> (auto-written technical plan + machine gate, `handoffs/d1-prototype-first-gate.md`) — plus the
+> version-provenance check (#167, still in flight). Then stop. **Explicitly not in scope:** the
+> rest of this section, all of § Next, V1–V4, D1a–e, D2–D6, and the audit-skips follow-ups #166
+> routed. Written down because the failure mode is specific: a fresh orchestrator seat reading a
+> thirty-item roadmap as a work queue, rather than as the record it is.
+> **S0's done-condition, corrected (Ben, 2026-09-29): S0 closes at "honest," not "loads."** The
+> auto-loading claim is **withdrawn**, not restored — option (a)/(c) below, not (b) — and the
+> `SessionStart`-hook idea stays a roadmap option, not a commitment. So S0 is done when its PR
+> (v1.53.0) merges, not when the four rule-skills actually auto-load; don't wait on a mechanism
+> fix that isn't happening.
+> **Deletion criterion:** remove this line when S0 (v1.53.0) + CV1 + D1 Phase 3 have shipped,
+> replaced by whatever Ben sets next — not silently carried forward as the implied stopping point
+> once it's been reached.
+
 **Plugin at v1.52.0 (this PR — a docs-only PR is N/A, not unverified, FB-0122. On a docs-only PR from a toolchain-less host flow produced a PR that could not be merged by any sanctioned path: a `toolchain` manifest entry is in `CHECK_ONLY`, so never waivable-to-ready and never subtracted, while its own re-check could never pass on a diff with no behaviour to build — the remediation told the human to bypass flow. Measured on health-tracker #118 by the health-tracker workspace. `CHECK_ONLY` is correct and untouched; the fix is upstream — `verify-build` § 1.2 gains a docs-only N/A exit **before** the toolchain check, and `audit-skips` gains the diff condition it used to declare it deliberately lacked, retained as a backstop for lagging installs. Also unifies the two different answers flow used to give one input shape.)** Recently shipped: **v1.50.0 (#165 — the $ARGUMENTS prose rule, FB-0116/FB-0117), v1.49.0 (#160 — audit-coverage enumerates before it judges, FB-0115).**
 
 ▶ **Next up:** the **matcher** half of the coverage judgment — `auditor.md`'s disprove self-check drops a behaviour when any criterion covers it "even loosely", and that clause is what suppressed both of the diff-mode residual misses this PR localized. Measure it on the same two cases before changing it.
@@ -319,6 +335,85 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 **Sequencing rationale:** V1 is the input, V2 is the gate that makes autonomy safe, V3 is the deliverable, V4 is the flywheel. V3-before-V2 produces an unverified-but-pretty walkthrough; V4-before-V1 gives the loop nothing structured to check against.
 
 ## Next
+
+### Orchestrator seat policy — compaction is the default, rotation is triggered, and the flush moves onto decisions (Ben, 2026-09-28/29)
+
+**Surfaces when:** `/flow:handoff` or canonical §4.9 is next touched, or a rotation is being
+considered for context-fill alone.
+
+Context filling is **not** a rotation trigger; compact instead. Rotate only on: the seat holding a
+wrong belief that resurfaces after correction; compaction visibly failing; an operational need
+(model, machine, or operator change); wanting an independent read of program state; or Ben asks.
+Measured against this seat's own history: it compacted three times, and all 86 pre-compaction
+human prompts remain on disk verbatim — **compaction hides, it does not delete.**
+
+**The load-bearing part is what routine rotation was actually doing.** It was functioning as a
+*forcing function for durability* — the field manual, `.claude/rules/general.md`'s Consistency
+discipline item 4, and the routing procedure in canonical §4.3 were all written because a handoff
+was imminent and nothing else made the seat write them down. Remove routine rotation and that
+pressure vanishes with it. So the replacement discipline is **flush on decision, not on
+compaction**: a decision not already carried by a worker message or a commit gets written down
+the moment it's made, because a local file is compaction-proof but only git is teardown-proof.
+**Never flush from the compaction summary alone** — the summary cannot see what it dropped, so a
+check run against it can only ever return clean, which is exactly the "measurement that can only
+return clean" item 4 warns about. Measured live in this seat: a wrong version number survived a
+compaction undetected (see the version-provenance work, #167).
+
+**Mechanism, verified against Claude Code's hooks documentation rather than assumed:** `PreCompact`
+cannot reach the model — it's side-effects-or-block only, and blocking auto-compaction at full
+context is rejected outright. `SessionStart` with matcher `compact` fires *after* compaction, and
+its stdout **is** injected into the fresh context — so it can deliver "you just compacted; the
+journal is at `<path>`; the pre-compaction transcript is at `<path>`; re-verify anything numeric
+before asserting it." That is delivery, not compliance — the hook can hand the seat the map, not
+force it to read one.
+
+**Work this implies, not yet done:** amend canonical §4.9 and `/flow:handoff`'s deletion
+criterion, which is currently binary (routine rotation | delete this section) where reality has a
+third state — retained, but triggered rather than scheduled; and add the `compact`-matched
+`SessionStart` hook to `.claude/settings.json`.
+
+**Deletion criterion:** delete once §4.9 states the triggered-not-routine rule directly and the
+`compact` hook ships; a fresh reader should get this from the canonical doc, not from a roadmap
+entry describing how the doc came to be wrong.
+
+### Workers killed by the account session limit read identical to workers that finished (2026-09-27/29, orchestrator seat)
+
+**Surfaces when:** an idle worker is found with no explanation, or a dispatch is being planned
+close to a known rate-limit reset.
+
+**The costliest process gap of the week, measured, not estimated.** Three separate events cost
+five worker-deaths and roughly two days of idle worker time — time the workers sat finished-looking
+after their account session limit had already reset: 2026-09-27 05:19 (three workers, not
+restarted until 10:45 — over two and a half hours idle *after the limit had cleared*), and
+2026-09-27 19:50 (two workers, not found until 2026-09-29). **Detection today depends entirely on
+the orchestrator reading each worker's last assistant message** rather than any status API — a
+worker killed mid-turn by the limit and a worker that finished cleanly produce visually identical
+"nothing more to report" idle states from the outside.
+
+Candidates, deliberately not decided here: a field-manual row naming the check as a standing habit
+(cheapest, weakest); an orchestrator poll on a cadence keyed to known reset times; a resume nudge
+fired on limit reset; or Claude Code's native agent view, which shows each background session as
+working/needs-input/done and would close this directly (§ Exploration, below). **Evidence the cost
+generalizes beyond this seat:** S0's own measurement work lost 19 of 28 probe sessions to the
+identical limit and had to discard and re-run them — this is not an orchestrator-seat-specific
+failure mode.
+
+### The orchestrator seat does not use `/flow:spawn` (2026-09-29, orchestrator seat)
+
+**Surfaces when:** `/flow:spawn` or its `usage.tsv` logging is next touched, or a re-dispatch path
+for an already-running worker is designed.
+
+`/flow:spawn` shipped in #157 specifically to record `model · effort · why` per dispatch into
+`.flow/usage.tsv`, so routing decisions survive the session that made them. This seat dispatched
+every worker this week with raw `conductor` CLI calls instead, so this week's routing rationale
+exists only in chat messages — nowhere durable. The session-efficiency program recorded the
+identical gap **before `/flow:spawn` existed** (*"no dispatch in this program had logged a routing
+rationale"*); it is still true, now measured by the very seat that shipped the fix.
+
+**Also genuinely unclear, not just unused:** `/flow:spawn` creates a *new* workspace, so it has no
+path for re-dispatching an already-running idle worker — which, per the entry above, is the
+cheaper and more common move once a worker is found alive-but-stalled. Worth deciding whether
+that's a gap in the skill's coverage or a gap in how this seat has been using it.
 
 - **Canonicalise FB-0122's reversal-condition marker before the other two instances land.**
   This PR invented `THE CONDITION THAT WOULD REVERSE THIS:` and pinned its presence at one
@@ -1664,6 +1759,24 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 ---
 
 ## § Exploration
+
+### Claude Code's native multi-agent primitives vs. Conductor orchestration (2026-09-29, orchestrator seat)
+
+**Surfaces when:** the stopping point above is reached and orchestration itself is next up for
+reconsideration, or Anthropic's docs for agent teams / agent view leave preview status.
+
+Per `CLAUDE.md`'s "compose, never re-implement" rule: Claude Code now ships **agent teams** (a
+lead session coordinating teammates through a shared task list and mailbox — structurally close to
+this repo's orchestrator + workers + ping protocol) and **agent view** (each background session
+shown as working / needs-input / done, which would directly close the idle-vs-finished ambiguity
+in the entry above). The likely answer is that this program keeps Conductor — it's cloud-hosted,
+cross-repo, and built for multi-day work, while agent teams is experimental and (as far as this
+entry's research went) single-host — but that verdict rests entirely on secondhand write-ups today
+and **must be checked against Anthropic's own documentation, not third-party sources, before it's
+treated as a decision.** Also worth naming: the field has independently converged on "nothing
+reaches the next agent unless a file carries it" — this program's flush-on-decision rule (§ Next,
+above) is consensus, not an idiosyncrasy invented here. Out of scope until the stopping point above
+is reached.
 
 ### `harness_audit.py --split`/`--ship-sections` have no structured output, only prose text (session-efficiency Phase 1, staff-review push-further lens)
 
