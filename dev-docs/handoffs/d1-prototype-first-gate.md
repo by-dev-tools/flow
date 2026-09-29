@@ -130,7 +130,7 @@ Phasing is dependency-ordered. **§9.3's spike gates Phase 3, not Phase 2** (see
 - [x] Build the **pre-prototype review orchestrator** (Step 3): one extraction of the brief, fanned to `auditor` + `plan-critic` + `lens-experience` in one tool message, returning one triaged verdict (BLOCKER/decision-required routes to a human question per FB-0075; clean ⇒ proceed to prototype). Reuse `extract_session.py --plan-file` against the brief. *Verified:* `plugins/flow/skills/review-brief/SKILL.md`; `run_review_brief_evals.py`'s `skill-*` composition checks (all three `subagent_type`s named, both triage outcomes present, one-tool-message guarantee stated) + `extract-*` checks (real `extract_session.py --plan-file` invocation against both brief fixtures).
 - [x] Wire any new eval harness into `.github/workflows/ci.yml` (CI enumerates harnesses explicitly — an unwired harness gives zero protection). *Verified:* `run_review_brief_evals.py` added to the `evals` job; CI's own harness/runner join-check confirmed green locally.
 
-### Phase 2 — the prototype phase + human gate 1 + the loop re-ordering — ✅ SHIPPED (v1.46.0, FB-0113/FB-0114)
+### Phase 2 — the prototype phase + human gate 1 + the loop re-ordering — ✅ SHIPPED (v1.48.0, FB-0113/FB-0114)
 - [x] Define the **prototype phase**: iterative, no ship pipeline/evals/doc-synthesis; the agent produces + self-evaluates an HTML prototype (held item [10]'s geometry-audit + fresh-eyes-taste self-check folded in as a two-lens fresh-context fan-out) and iterates before presenting. *Verified:* `/flow:prototype` Steps 5–7; `run_prototype_gate_evals.py::test_prototype_phase_runs_no_pipeline` (positive + negative paired), `::test_skill_composition`.
 - [x] Define **human gate 1** mechanics: the prototype is a `file://` HTML page with the existing `annotation-layer.html` injected (`present`, pinned byte-identical to input + partial); approval is captured by `approve` into `.flow/…/approval.json` **and** as two committed lines in the plan doc. *Verified:* `::test_present_authors_no_markup`, `::test_approve_*`, `::test_verify_detects_drift`.
 - [x] Re-order `workflow.md` Steps 1–2 and rewrite the Step 8/9 "not a third gate" argument by **replacement**. The re-order lands *inside* Step 2 (which forks) rather than renumbering the loop — "Step 8" is a named contract in a dozen files. *Verified:* `::test_workflow_step2_fork` (incl. a numbering-unchanged assertion), `::test_not_a_third_gate_rewrite` (positive + negative).
@@ -184,7 +184,7 @@ A new optional config slot defaulting to classic behavior; additive. **If it fli
 ## 13. Suggested PR breakdown
 - **PR 1 (Phase 0):** D2 `role` slot — small, unblocks the trigger.
 - **PR 2 (Phase 1):** the experience/ambition lens agent + the design-brief template + the pre-prototype orchestrator. Self-contained; delivers the "review the brief" half.
-- **PR 3 (Phase 2):** the prototype phase + human gate 1 + the workflow re-ordering. Gated on §9.4 being decided. ✅ SHIPPED (v1.46.0).
+- **PR 3 (Phase 2):** the prototype phase + human gate 1 + the workflow re-ordering. Gated on §9.4 being decided. ✅ SHIPPED (v1.48.0).
 - **Spike (before PR 4):** §9.3 auto-plan quality. Ship as `mode: spike` — the finding is the deliverable. ✅ SHIPPED (#153, MIXED).
 - **PR 4 (Phase 3):** the auto-written technical plan + machine-gate + the "plan always exists" assertion.
 

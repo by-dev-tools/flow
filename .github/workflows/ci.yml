@@ -95,6 +95,29 @@ jobs:
       - name: every point-in-time doc is indexed + status-lined (FB-0085)
         run: python3 dev-docs/check-index.py
 
+  version-provenance:
+    name: version provenance
+    runs-on: ubuntu-latest
+    # Defense-in-depth alongside the script's own MAX_MATCHES_PER_FILE cap (found by
+    # /flow:security-review on this PR): bounds worst-case runner time even if a future edit to
+    # the scanned-file list or the pairing engine reopens an unbounded-scan path.
+    timeout-minutes: 5
+    steps:
+      # fetch-depth: 0 -- check-version-provenance.py walks the FULL history of
+      # plugins/flow/.claude-plugin/plugin.json to build its PR->version ground truth; a
+      # shallow clone would silently truncate that history (the script fails loud on a shallow
+      # clone rather than reporting a false-clean smaller result, but avoid tripping it here).
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: pairing engine self-test (FB-0122 -- never trust a check that can only pass)
+        run: python3 dev-docs/check-version-provenance.py --selftest
+      - name: every PR-tagged version claim in dev-docs agrees with what that PR shipped (FB-0122)
+        run: python3 dev-docs/check-version-provenance.py
+
   model-measure:
     name: model-measure (dev tooling, not shipped — FB-0089)
     runs-on: ubuntu-latest
