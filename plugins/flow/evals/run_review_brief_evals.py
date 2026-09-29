@@ -160,10 +160,30 @@ def test_orchestrator_composition() -> None:
     # Positive-pair the two triage outcomes (FB-0010): a skill that only ever
     # escalates, or only ever proceeds, is not doing triage.
     check("skill-has-decision-required-routing", "decision-required" in text)
+    # The proceed language stayed; what moved is WHO supplies the next step. The skill
+    # now serves two call sites (a design brief pre-prototype, a technical plan
+    # pre-Execute), so a hardcoded "proceed to the prototype phase" in its verdict would
+    # point the plan call site back into a phase that finished before it was invoked.
+    # Asserted as a PAIR, because "the old string is gone" is satisfiable by deleting the
+    # proceed path entirely -- which is the exact FB-0010 item-3 shape, and would leave a
+    # skill that can only ever escalate.
     check(
         "skill-has-proceed-verdict",
-        "proceed to the prototype phase" in text,
+        "proceed to <the next step your caller named>" in text,
         "clean-pass proceed language must be present, not just the escalation path",
+    )
+    check(
+        "skill-next-step-is-caller-supplied",
+        "Never emit a next step your caller did not name" in text
+        and "proceed to the prototype phase (/flow:prototype) | blocked" not in text,
+        "the verdict's next step must come from the caller, not be hardcoded to the "
+        "prototype phase (D1 Phase 3 call site runs AFTER that phase completes)",
+    )
+    check(
+        "skill-reports-a-reviewer-that-did-not-return",
+        "DID NOT RETURN" in text,
+        "a dead spawn and a clean spawn both yield zero findings; the caller cannot "
+        "tell them apart unless this skill surfaces the absence",
     )
     check(
         "skill-single-tool-message",

@@ -184,10 +184,19 @@ ARG_SKILLS = {
     #           phrase proving it still ACTS on it)
     "audit-plan":     ("## Argument", "plan-file"),
     "critique-plan":  ("## Argument", "plan-file"),
-    "review-brief":   ("## Argument", "brief-file"),
+    # Was "brief-file". The skill generalized from brief-only to any reviewed artifact
+    # (it now serves /flow:autoplan's Arm C with a technical plan), so that noun went
+    # away -- and this positive caught it, which is the whole point of pairing. Keyed on
+    # the extractor flag instead: `--plan-file-from` is the MECHANISM by which the
+    # argument is acted on, and unlike a prose noun it cannot drift with the artifact.
+    "review-brief":   ("## Argument", "plan-file"),
     # NOT "source" -- it occurs throughout that file, so half this positive survived
     # deleting the argument feature. Key on the stamped channel the argument uses.
     "audit-coverage": ("## Argument", "--arg-path audit-coverage"),
+    # D1 Phase 3. The FIRST shipped skill that WRITES a stamped arg file as well as
+    # receiving one, so the Tier-2 idiom is pinned here on both sides: it asks
+    # arg_placeholders.py for its own path, and it asks for audit-coverage's.
+    "autoplan":       ("## Argument", "--arg-path autoplan"),
 }
 
 
