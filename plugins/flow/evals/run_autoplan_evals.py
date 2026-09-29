@@ -126,17 +126,33 @@ def test_autoplan_produces_a_plan() -> None:
     check("autoplan-places-block-first", "placed FIRST" in t or "placed first" in t)
 
 
-def test_autoplan_writes_the_gate_markers_above_the_walk() -> None:
-    """Both D1 markers, and ABOVE the block's own heading — the region `gate-execute` reads."""
+def test_autoplan_plan_is_well_formed() -> None:
+    """The required plan-discipline fields, plus both D1 header markers."""
     t = SKILL.read_text(encoding="utf-8")
+    for field in ("Mode", "Goal", "Scope in/out", "Spec-walk", "confidence verdicts",
+                  "risks", "Files touched"):
+        check(f"autoplan-requires-{field.replace(' ', '-').replace('/', '-')}",
+              field in t, f"every downstream consumer anchors to that shape; {field} missing")
     check("autoplan-names-gate-marker", "**Pre-execution gate:** prototype" in t)
     check("autoplan-names-digest-marker", "**Prototype approved:**" in t)
+
+
+def test_autoplan_writes_the_gate_markers_above_the_walk() -> None:
+    """PLACEMENT, which is a separate criterion from presence and fails differently.
+
+    Presence without placement still fails open: `_active_region` reads everything
+    above the FIRST `Spec-walk` heading, so a marker below it is invisible to the guard.
+    """
+    t = SKILL.read_text(encoding="utf-8")
     check("autoplan-states-markers-go-above-the-walk",
           "ABOVE the block's own" in t,
           "placement is the whole point: `_active_region` reads above the FIRST heading")
     check("autoplan-states-the-failure-direction",
           "ok: true" in t and "asserted **nothing**" in t,
           "must state that a missing marker makes gate-execute pass having asserted nothing")
+    check("autoplan-explains-why-first-placement-causes-it",
+          "makes *its* header the region that guard reads" in t,
+          "the hazard is caused by the block being first, which this skill requires")
 
 
 def test_missing_gate_marker_makes_gate_execute_red() -> None:
@@ -193,7 +209,7 @@ def test_pass_requires_evidence_of_running_all_arms() -> None:
         check("arm-without-evidence-is-red", out["verdict"] == "RED")
 
 
-def test_arm_did_not_run_is_distinct_from_found_nothing() -> None:
+def test_arm_b_not_run_is_red() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         ran = gate_state(tmp, {"arms": _arms()})
@@ -291,7 +307,7 @@ def _arm_a(tmp: Path, criteria, expect_line=None, retained=""):
     return out
 
 
-def test_arm_a_vacuity_both_polarities() -> None:
+def test_arm_a_vacuous_both_polarities() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         vague = _arm_a(tmp, ["it works"])
@@ -398,7 +414,7 @@ def test_arm_a_proves_which_block_it_graded() -> None:
         check("extractor-surfaces-the-line", data.get("source_heading_line") == 3)
 
 
-def test_arm_a_invokes_the_lint_directly() -> None:
+def test_arm_a_owns_its_pinning() -> None:
     t = SKILL.read_text(encoding="utf-8")
     check("arm-a-calls-the-lint-directly", "walk-pin-lint.py" in t)
     check("arm-a-does-not-route-through-critique-plan",
@@ -456,7 +472,7 @@ def test_depth_provenance_both_polarities() -> None:
               "recorded passes must be visible so a caller can compare to the declared depth")
 
 
-def test_arm_b_writes_the_stamped_arg_file() -> None:
+def test_arm_b_uses_the_filtered_path() -> None:
     t = SKILL.read_text(encoding="utf-8")
     check("arm-b-writes-the-arg-file", "--arg-path audit-coverage" in t)
     check("arm-b-asserts-no-WEAKENED", "WEAKENED" in t,
@@ -465,7 +481,7 @@ def test_arm_b_writes_the_stamped_arg_file() -> None:
           "measured on path 1" in t or "were measured on path 1" in t)
 
 
-def test_arm_b_never_passes_on_silence() -> None:
+def test_arm_b_silence_is_not_a_pass() -> None:
     t = SKILL.read_text(encoding="utf-8")
     check("skill-states-the-pass-condition-once",
           "Absence of findings is **never by itself a pass.**" in t)
@@ -535,7 +551,7 @@ def test_arm_c_all_clean_is_green() -> None:
         check("arm-c-all-three-returned-is-green", out["verdict"] == "GREEN", str(out))
 
 
-def test_arm_c_is_review_brief_not_a_rebuild() -> None:
+def test_arm_c_reuses_review_brief() -> None:
     t = SKILL.read_text(encoding="utf-8")
     check("arm-c-composes-review-brief", 'Skill("flow:review-brief")' in t)
     check("arm-c-says-it-is-not-new", "not new machinery" in t.lower())
@@ -581,7 +597,7 @@ def test_review_brief_is_artifact_neutral() -> None:
 
 # ============================================================ 7. routing
 
-def test_autoplan_runs_only_on_prototype_first() -> None:
+def test_autoplan_runs_only_where_the_human_gate_moved() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         f = tmp / "t.json"
@@ -614,7 +630,7 @@ def test_spike_has_no_undeclared_depth() -> None:
             check(f"unrecognized-path-{bogus!r}-has-no-depth", out["depth"] is None)
 
 
-def test_decision_required_renders_an_answerable_question() -> None:
+def test_decision_required_shape() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         f = tmp / "e.json"
@@ -675,6 +691,82 @@ def test_escalation_header_matches_shipped() -> None:
     check("autoplan-header-diverges-only-in-the-trailing-clause",
           "Execute starts" in rendered and "closer to ready" not in rendered,
           "no PR exists at this gate, so the shipped trailing promise would be false")
+
+
+def test_autoplan_derives_from_the_approved_prototype() -> None:
+    """The digest is what makes "against a design that survived contact" checkable."""
+    t = SKILL.read_text(encoding="utf-8")
+    check("skill-derives-criteria-from-the-prototype",
+          "Derive the criteria from the approved prototype" in t)
+    check("skill-refuses-on-a-digest-mismatch",
+          "does not match the prototype the criteria describe, stop" in t,
+          "a recorded sha that disagrees with the artifact is a wrong input, not a warning")
+    check("skill-does-not-derive-from-the-session",
+          "not from the conversation" in t,
+          "the session is what the prototype gate exists to stop trusting")
+
+
+def test_autoplan_output_survives_arm_a() -> None:
+    """A plan this skill produced that would fail the gate it then runs is a
+    contradiction the gate must surface, not absorb."""
+    t = SKILL.read_text(encoding="utf-8")
+    check("skill-runs-arm-a-over-its-own-output", "--expect-line" in t and "arm-a" in t)
+    # Run it for real: the shape the skill tells the model to write must pass Arm A.
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        p2 = tmp / "plan.md"
+        p2.write_text(
+            "# Plan\n\n**Pre-execution gate:** prototype\n"
+            "**Prototype approved:** `abc1234` · 2026-09-29\n\n"
+            "**Spec-walk:**\n\n- [ ] `depth` resolves to 2 on prototype-first. \u2192 `test_depth`\n",
+            encoding="utf-8")
+        out, _ = run("arm-a", "--plan", str(p2))
+        check("the-shape-the-skill-prescribes-passes-arm-a",
+              out["verdict"] == "GREEN", str(out))
+
+
+def test_no_path_is_interpolated_into_shell() -> None:
+    """#165/FB-0116: substitution precedes parsing, so a placeholder in a shell block
+    is code. Delegated to the shipped predicate rather than re-implemented here."""
+    sys.path.insert(0, str(ROOT / "lib"))
+    import arg_placeholders as AP
+    for skill in ("autoplan", "review-brief", "audit-coverage", "prototype"):
+        f = ROOT / "skills" / skill / "SKILL.md"
+        if not f.exists():
+            continue
+        bad = AP.unsafe(f.read_text(encoding="utf-8"))
+        check(f"{skill}-interpolates-no-placeholder-into-shell", not bad,
+              f"executable-context placeholders: {bad}")
+    t = SKILL.read_text(encoding="utf-8")
+    check("autoplan-declares-its-argument-in-prose", "## Argument" in t)
+    check("autoplan-uses-the-write-then-path-tier",
+          "--arg-path autoplan" in t and "`Write` the path" in t,
+          "the positive half: the lint above is satisfiable by removing the argument")
+
+
+def test_arm_b_input_is_stated() -> None:
+    """Arm B reads the prototype's SOURCE; Arm C's three read the plan. The
+    one-extraction guarantee is Arm C's and is not claimed for Arm B."""
+    t = SKILL.read_text(encoding="utf-8")
+    check("skill-states-arm-b-reads-the-prototype-source",
+          "Arm B reads the *prototype's source*" in t)
+    check("skill-scopes-the-one-extraction-guarantee-to-arm-c",
+          "is Arm C's, and is **not** claimed for Arm B" in t)
+
+
+def test_workflow_states_the_gate_contract() -> None:
+    t = WORKFLOW.read_text(encoding="utf-8")
+    check("workflow-names-autoplan", "/flow:autoplan" in t)
+    check("workflow-states-green-requires-running",
+          "GREEN only when every arm RAN" in t,
+          "the loop doc must carry the rule, not just the skill")
+    # Was `"machine-reviewed" not in t or "MACHINE" in t` — a disjunct satisfied by
+    # either half, so it could not distinguish the two states it named. Replaced with
+    # the thing actually worth asserting: the loop doc names the arms, not just the fact
+    # that something reviews.
+    check("workflow-names-the-three-arms",
+          all(a in t for a in ("quality", "completeness", "conformance")),
+          "the loop doc must say WHAT reviews the plan, not merely that a machine does")
 
 
 # ============================================================ 8. docs
