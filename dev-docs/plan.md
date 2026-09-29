@@ -68,6 +68,21 @@ and `workflow.md` carries the honest statement while the *gate output* does not.
 matters most for consumers who never opt in — it converts silent blindness into stated blindness, which is
 the fourth instance of the FB-0121 distinction and the one the orchestrator named.
 
+**A's trigger, stated explicitly — a built-in predicate, with the slot as an OVERRIDE.** When
+`behaviorBearingDocPatterns` is **set**, A warns about paths matching *it* that the filter dropped. When
+**unset**, A falls back to a built-in doc-shape predicate — `.md` under a `skills/`, `agents/` or `rules/`
+directory — and **says in the line which one it used**, so a suggestion is never mistaken for the project's
+own declaration. *(Restored at the audit gate. My fix for critic ISSUE 3 deleted the explicit parenthetical
+and left only "A reads the same slot" — which at the documented empty default matches nothing and fires for
+nobody, i.e. silence: precisely the state A exists to end. The slot must override the judgment, not supply
+it. Worth noting how it got lost: that edit was a `str.replace` I did not assert on, so it silently
+no-opped and I reported it as applied — the silent-no-op class, self-inflicted, in the session that has
+been catching it elsewhere.)*
+
+**Why a built-in predicate is right for A and wrong for B** (critic ISSUE 3, accepted — the distinction is
+the point): A only ever *says something*; B changes what the gate *reads*. A suggestion costs a consumer one
+line they can silence by declaring the slot; a reading changes their gate's verdict unasked.
+
 **B. SEE IT (opt-in; the only part that changes what the gate reads).** New `behaviorBearingDocPatterns`
 slot, **defaulting to empty** — so **no consumer's gate changes until they opt in**, which is constraint 1
 discharged exactly. Matching paths are added to the behaviour diff (union with `sourceFilePatterns`, and
@@ -78,9 +93,13 @@ default.
 
 **C. FIT IT (fair-share cap; justified by its own pre-existing failure).** Replace `head -c` over a
 concatenation with a **fair-share allocation**: each file gets `cap / N`, unused share from small files is
-redistributed to large ones, and **every truncated file is named individually**. On #158 that turns "3 files
-entirely invisible, one generic warning" into "every file represented, 4 named as partially cut". This is
-worth doing on today's evidence alone, and B makes it necessary rather than merely better.
+redistributed to large ones, and **every truncated file is named individually**. **Simulated on the corrected `1218d2f^1...2ccad9e` set** (15 files, share 4,000 B; 12 sit under their share,
+releasing 12,049 B to each of the 3 over it): **0 entirely invisible, 2 named as truncated**
+(`prototype/SKILL.md` 21,898→12,049 B, `prototype/lib/prototype-gate.py` 52,517→12,049 B) — versus **2 of
+15 entirely invisible and unnamed** under `head -c` today. *(Corrected at the audit gate: this paragraph
+still carried "3 invisible → 4 named" from the run I had retracted eight paragraphs earlier. I fixed the
+measurement block and left the paragraph citing it stale — the fan-out class, in the plan that spends two
+screens on measurement discipline.)*
 
 ### Spec-walk
 
@@ -110,9 +129,14 @@ worth doing on today's evidence alone, and B makes it necessary rather than mere
       **This flips `cases.py`'s `structural_blindness` pin, which was written to fail loudly exactly here**
       ("if the exclusion is ever fixed this case fails loudly and is re-classified"). Expected, and I am
       the intended trigger; the case gets re-classified from structural to recall with its number recorded.
-- [ ] **The negative: a pure-prose `.md` PR produces no coverage findings.** *Pinned by:* a docs-only-prose
-      case scored at 0 findings. Without this the gate becomes noise on every docs edit — the failure the
-      exclusion was added to prevent, and the reason "just widen the regex" is wrong.
+- [ ] **The negative: a pure-prose edit INSIDE a matched file produces no coverage findings.** *Pinned by:*
+      a case whose diff is a wording change in `plugins/flow/skills/ship/SKILL.md` — a path the slot
+      **matches** — **with the slot set**, scored at 0 findings and mutation-tested like the other parts.
+      *(Specified at the audit gate. "A docs-only-prose case" was vacuous: a prose edit to `dev-docs/*.md`
+      matches no pattern, so the behaviour diff is empty and the existing branch prints `SKIPPED` — 0
+      findings before B and 0 after, whatever B does to prose noise. A pin that passes in both the honored
+      and the broken world is general.md item 4, in the plan that applies item 4 to `--selftest` and forgot
+      it here.)*
 - [ ] **C: no file is entirely invisible when the cap binds.** *Pinned by:* the #158 shape — assert every
       file contributes ≥1 byte and each truncated file is named. Paired with: under the cap, output is
       **byte-identical** to today (no gratuitous reflow of the common case).
@@ -157,8 +181,17 @@ worth doing on today's evidence alone, and B makes it necessary rather than mere
   the approved prototype, so anything I change about source-mode file selection or capping changes what
   that gate reads. That is the reason for OQ3, and it is the answer to your question: *no shared files,
   one shared surface.*
-- **S0 (`conductor/s0-rule-skills-never-load-option-c`):** `plan.md`, `roadmap.md`, both manifests, README,
-  docs — **no audit-coverage files.** Collision is docs-only.
+- **S0 (`conductor/s0-rule-skills-never-load-option-c`) — 25 files, and it DOES collide.** *(Corrected at
+  the audit gate. My first answer came from `git diff --name-only | head -12`, whose cut-off entry was
+  `plugins/flow/.claude-plugin/plugin.json` — so everything under `plugins/flow/docs/` and
+  `plugins/flow/skills/` sorted after it and was never displayed. Truncated output read as complete.)*
+  S0 touches **`plugins/flow/docs/workflow.md`** — **the exact file this plan's Docs item commits to
+  editing** — plus five shipped `skills/*/SKILL.md`, three `evals/*.py` and `ship/lib/plugin-provenance.py`.
+  None is `audit-coverage`, so the *code* collision is still nil; the `workflow.md` one is real.
+- **`plugins/flow/docs/workflow.md` is a THREE-WAY collision**: S0, **#166 (mine, open)** and CV1 all
+  rewrite it, all three on the honest-limitation paragraph. My last report gave #166's collision as
+  `schema/flow.config.schema.json` only — incomplete for the same truncation reason. Whoever lands last
+  rebases; I will take the paragraph as it stands rather than reverting either.
 - **#167 version-provenance:** dev-docs only.
 - **#166 (mine, open):** touches `schema/flow.config.schema.json`, which CV1's new slot also needs — a
   real collision, self-inflicted. If #166 merges first this is a clean add; if not I will rebase onto it.
