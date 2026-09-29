@@ -9,7 +9,7 @@ user-invocable: false
 
 # General Rules (flow plugin)
 
-These apply to all work in any flow-using project, and are most useful at the junctures named in this skill's `when_to_use`: opening a non-trivial request, writing or editing a plan, committing, opening a PR, absorbing new scope, and deciding whether to auto-advance into `/flow:ship`. They reinforce the workflow defined in `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` — they don't replace it. If a rule here contradicts `workflow.md`, `workflow.md` wins (and the contradiction is itself a bug to fix in the plugin).
+These apply to all work in any flow-using project, and are most useful at the junctures named in this skill's `description`: opening a non-trivial request, writing or editing a plan, committing, opening a PR, absorbing new scope, and deciding whether to auto-advance into `/flow:ship`. They reinforce the workflow defined in `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` — they don't replace it. If a rule here contradicts `workflow.md`, `workflow.md` wins (and the contradiction is itself a bug to fix in the plugin).
 
 Doc-path references in this rule resolve via `flow.config.json` slots with built-in defaults (`dev-docs/<name>.md` for flow's own repo; consumer projects typically `core-docs/<name>.md`).
 

@@ -214,8 +214,14 @@ than by version string — the FB-0107 dogfooding trap, one layer out.
 
 ## Open, and routed rather than fixed
 
-- **The decisive experiment is now a different one**: plugin scope × default model × a rule whose name does
-  *not* match the task. That cell is the only one that describes a real consumer on the hard case.
+- **What would reopen S0, stated as a falsifier rather than as an experiment to run.** An earlier draft of
+  this section called "plugin scope × default model × a name-mismatched rule" the decisive next
+  experiment. `/flow:staff-review`'s push-further lens pointed out that the table already answers that
+  cell three times — `general` and `exploration` (the two name-mismatched rules) read **0/3** in arm c
+  and **0/1** on opus — and that re-running it at n=3 could not move anything, because a non-zero at
+  n=3 is exactly the noise this entry refuses to interpret. So: **S0 reopens only if a plugin-scope
+  cell reads ≥2/3 at n≥5 on the default model.** Three readings exist and all are zero. That is a stated
+  cost of admission rather than an open invitation to spend ~50 live sessions learning nothing.
 - **`general` cannot be restored to "always" by any description.** The `SessionStart` hook is the only
   mechanism that could, and it buys **delivery**, not **compliance** — the third turn of the same screw
   (registration → activation → delivery → compliance, each looking like the guarantee beneath it).

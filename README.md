@@ -78,7 +78,7 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 /flow:doctor
 ```
 
-`/flow:doctor` runs a PASS / WARN / FAIL / UNCHECKED punch-list and ends in a `[READY]` verdict carrying an inline `(N unchecked)` count, with a fix command for anything it flags. `[UNCHECKED]` means the check could not see rather than that it found nothing, and each such line names what would make it checkable. `/flow:workflow-help` prints the loop and your resolved config — the onboarding front door.
+`/flow:doctor` runs a PASS / WARN / FAIL / SKIP / UNCHECKED punch-list and ends in a `[READY]` verdict carrying an inline `(N unchecked)` count, with a fix command for anything it flags. `[UNCHECKED]` means the check could not see rather than that it found nothing, and each such line names what would make it checkable. `/flow:workflow-help` prints the loop and your resolved config — the onboarding front door.
 
 Adoption guides: [new project](docs/bootstrap.md) · [existing project](docs/migration.md) · [your first PR](docs/first-pr.md) · [upgrading](docs/upgrade.md).
 

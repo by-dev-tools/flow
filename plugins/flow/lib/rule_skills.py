@@ -152,8 +152,15 @@ def violations(text: str | None) -> list[str]:
     desc, wtu = scalar(fm, "description"), scalar(fm, "when_to_use")
     if desc and SUPPRESSANT.search(desc):
         out.append("suppressant-in-description")
-    if desc and not TRIGGER_CLAUSE.search(f"{desc} {wtu or ''}"):
+    if desc and not TRIGGER_CLAUSE.search(desc):
         out.append("no-trigger-clause")
+    # `when_to_use`'s documented job is trigger phrases. Tested SEPARATELY, because testing
+    # the concatenation let a `when_to_use` carrying only scope notes pass on the
+    # description's clause -- which is what shipped on two of the four until
+    # /flow:staff-review's UX lens read the field as copy. It is optional; if present it
+    # must earn the always-on tokens it costs.
+    if wtu and not (TRIGGER_CLAUSE.search(wtu) or "Trigger terms:" in wtu):
+        out.append("when-to-use-names-no-trigger")
     if desc and len(desc) > DESC_HARD_CAP:
         out.append(f"description-over-{DESC_HARD_CAP}")
     if len(desc or "") + len(wtu or "") > LISTING_CAP:

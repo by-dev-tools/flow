@@ -3,7 +3,7 @@ name: exploration
 description: >-
   How to surface matching items from the roadmap's § Exploration section, whose entries carry a "Surfaces when:" trigger naming the files they apply to. Use before finishing code or UI work, to check whether any item's trigger names a file this change touched.
 when_to_use: >-
-  Classify a match as inline-cheap, roadmap-concrete, or future-exploration.
+  Trigger terms: "§ Exploration", "Surfaces when:", "anything queued for this file", "push further". Load when a change is implementation-complete and before `/flow:ship`; classify a match as inline-cheap, roadmap-concrete, or future-exploration.
 user-invocable: false
 ---
 

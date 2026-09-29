@@ -3,7 +3,7 @@ name: plan-discipline
 description: >-
   The required fields of a flow plan: mode, goal, scope in/out, Spec-walk and Visual-walk checkboxes, a HIGH/MEDIUM/LOW confidence verdict per load-bearing assumption, risks, and files touched. Use when writing, editing, or reviewing a plan, and before the pre-execution gate — plan approval, or prototype approval on D1's prototype-first path.
 when_to_use: >-
-  A LOW verdict is an automatic human gate, so load this before recording one.
+  Trigger terms: "write a plan", "plan.md", "Spec-walk", "acceptance criteria", "confidence verdict", "mode: spike", "mode: tiny", "approve the plan". A LOW verdict is an automatic human gate, so load this before recording one.
 user-invocable: false
 ---
 

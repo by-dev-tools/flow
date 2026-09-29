@@ -799,7 +799,7 @@ else
       echo "$SKILLS_LINE" | grep -qE "(^|[, ])$s(,|$| )" || MISSING="$MISSING $s"
     done
     if [ -z "$MISSING" ]; then
-      echo "[PASS] plugin-shipped rule-skills ($(echo $RULE_SKILLS | tr ' ' '/')) REGISTERED with the loader"
+      echo "[PASS] plugin-shipped rule-skills ($(echo $RULE_SKILLS | tr ' ' '/')) registered with the loader"
     else
       echo "[FAIL] plugin-shipped rule-skills missing from the loader's own report:$MISSING"
       echo "       Fix: /plugin marketplace update flow && /plugin install flow@flow"
@@ -841,16 +841,20 @@ else
     printf '%s\n' "$RS_OUT" | sed 's/^/       /'
     echo "       Fix: a rule-skill must declare a trigger-bearing description and"
     echo "            user-invocable: false, and must NOT declare paths: or"
-    echo "            disable-model-invocation: true. See plugins/flow/lib/rule_skills.py"
-    echo "            for what each token means, and FB-0124 for why."
+    echo "            disable-model-invocation: true."
+    echo "            Token meanings: \$CLAUDE_PLUGIN_ROOT/lib/rule_skills.py"
+    echo "            Why: \$CLAUDE_PLUGIN_ROOT/docs/workflow.md § Rules"
+    echo "       If a token is 'missing' or 'no-frontmatter', the install is damaged, not"
+    echo "       misconfigured: /plugin marketplace update flow && /plugin install flow@flow"
   fi
 fi
-echo "[UNCHECKED] rule-skill ACTIVATION (whether Claude actually loads these four bodies in a session)."
-echo "            Registration and frontmatter shape are checked above; activation is a model-judgment"
+echo "[UNCHECKED] rule-skill activation (whether Claude actually loads these four bodies in a session)."
+echo "            Registration and frontmatter shape are REPORTED above (each may itself be"
+echo "            [PASS], [WARN] or [SKIP] — read them); activation is a model-judgment"
 echo "            event inside a session and no shell command observes one. Unchecked, not clean."
 echo "            Checkable by: a first-party CLI or hook surface that reports per-session skill"
 echo "            invocations (none exists today). Measured out-of-band with tools/rule-activation/ —"
-echo "            and the v1.53.0 measurement found ZERO invocations at plugin scope. Do not read the"
+echo "            and the v1.53.0 measurement found zero invocations at plugin scope. Do not read the"
 echo "            PASS above as 'the rules governed this run'; it means installed and correctly shaped."
 ```
 
@@ -975,7 +979,7 @@ After running all sections, emit a summary line:
 ═══ flow:doctor summary ═══
   Section 1 (install):       <N PASS / N FAIL>
   Section 2 (project config): <N PASS / N WARN / N FAIL>
-  Section 3 (rule layer):     <N PASS / N WARN / N UNCHECKED>
+  Section 3 (rule layer):     <N PASS / N WARN / N SKIP / N UNCHECKED>
   Section 4 (CLI tools):     <N PASS / N FAIL>
   Section 5 (optional infra): <N PASS / N WARN>
 
@@ -986,18 +990,19 @@ Final-line verdict (the skill's contract — not an exit code, since skill bodie
 
 - `[READY] flow is correctly set up; all checks pass. (N unchecked)`
 - `[READY with WARN-level items] flow is functional; N optional items can be addressed at your discretion. (N unchecked)`
-- `[NOT READY] N FAIL(s) block flow from working correctly. Address each FAIL's fix above before proceeding.`
+- `[NOT READY] N FAIL(s) block flow from working correctly. Address each FAIL's fix above before proceeding. (N unchecked)`
 
 Always emit the verdict as the FINAL line so the agent/user can scan to the bottom for the bottom line.
 
-**The four markers, and why there are four (FB-0121/FB-0124).**
+**The five markers (FB-0121/FB-0124).**
 
 | Marker | Means | Counts toward the verdict? |
 |---|---|---|
 | `[PASS]` | Checked, and correct | yes |
 | `[WARN]` | Checked, and imperfect — optional, the consumer can act on it | yes → `[READY with WARN-level items]` |
 | `[FAIL]` | Checked, and broken — blocks | yes → `[NOT READY]` |
-| `[UNCHECKED]` | **Not checked. This gate could not see.** | **no** — reported inline as `(N unchecked)` |
+| `[SKIP]` | **Did not apply** — a tool absent, a config slot unset, nothing of this kind present | no |
+| `[UNCHECKED]` | **Applied, but could not see.** | **no** — reported inline as `(N unchecked)` |
 
 `[UNCHECKED]` exists because a gate that reports nothing wrong must distinguish *"nothing wrong"* from *"I could not see"* (FB-0121). It is deliberately **outside** the verdict arithmetic: the thing it names is not a mild failure the consumer can fix, so routing it to `[WARN]` would put every consumer permanently below `[READY]` over an item nobody can ever clear, and would eventually make the case for retiring `[READY]` altogether. Keeping it out of the arithmetic preserves `[READY]`'s meaning; printing `(N unchecked)` **inline on the verdict line** keeps the unseen items visible rather than buried. Both properties, not one.
 
@@ -1015,7 +1020,7 @@ So a missing tool, a stale install, or an unset env var is a `[WARN]` — the co
 1. **Every `[UNCHECKED]` line MUST name the mechanism that would make it checkable** — a `Checkable by:` clause. No mechanism named, no `[UNCHECKED]`: use `[WARN]` or write the check.
 2. **That clause is the line's own deletion criterion.** When the named mechanism exists, the line becomes a real check or it dies. An `[UNCHECKED]` that cannot say what would resolve it is a check excusing itself.
 
-`[SKIP]` is unchanged and is a *different* thing: a check that did not apply (a tool absent, a config slot unset), not one that applied and could not see.
+`[SKIP]` vs `[UNCHECKED]` is the distinction worth holding: SKIP means *the question did not arise*; UNCHECKED means *the question arose and this gate could not answer it*. Both stay out of the arithmetic, for different reasons.
 
 ## What doctor does NOT check
 

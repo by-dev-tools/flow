@@ -59,7 +59,7 @@ The fix: all four now carry a rewritten `description` + a `when_to_use` naming t
 
 **Original capture (2026-09-04), retained because its consequence-half is the evidence and its mechanism-half is the lesson:**
 
-### S0 — the four rule-skills have not loaded for any consumer since v1.33.0 (E1, `research/2026-09-agents-md-vs-skills.md` §5.1) — ~~▶ TOP ITEM~~ (2026-09-04)
+### ~~S0 (original capture, 2026-09-04) — superseded by the RESOLVED AS WITHDRAWN block above~~
 
 A shipped, advertised feature that does not fire, plus a `/flow:doctor` check that is green over it. **E1 measured that `paths:` frontmatter on a `SKILL.md` does not activate the skill** at either project or plugin scope (Claude Code v2.1.257) — 3 fresh sessions, 3 independent instruments, positive controls (`.claude/rules/*.md`) firing on the same Reads, isolated to the mechanism with a throwaway project-scoped probe. So `general` / `plan-discipline` / `documentation` / `exploration` have not loaded for any consumer since Phase 00 shipped in v1.33.0 (2026-08-27; main now at v1.37.0). **Third instance of the FB-0085 class and the second created by Phase 00 itself** — Phase 00 fixed a never-loading feature by moving it to a different never-loading mechanism and verified *registration* instead of *activation*.
 
@@ -1251,7 +1251,7 @@ Shape and cost are unchanged from the original capture (~3 one-line writes + one
 
 ### A plugin `SessionStart` hook — the one mechanism that could make `general` deterministic again (v1.53.0, FB-0124)
 
-**Surfaces when:** the measured invocation rate for `general` (see `dev-docs/history/2026-09-27-*`) proves too low to rely on, OR flow's opt-in `hooks/default-hooks.json` recipe is next touched, OR any work begins on autonomous-routine enforcement.
+**Trigger already satisfied — this is held open by a decision, not by missing evidence.** `general` measured **0/3 at every scope and model** (v1.53.0), so the "if the rate proves too low" condition fired the day this entry was written. It is deferred because **Ben decided 2026-09-29 that S0 closes at honest** — the four rules nudge rather than enforce. Recorded explicitly because a deferral whose stated precondition is already met is indistinguishable from one nobody revisits (this repo has been bitten by exactly that; see D5's own fired-and-unacted trigger). **Surfaces when:** Ben wants `general` to *enforce*, OR flow's opt-in `hooks/default-hooks.json` recipe is next touched, OR any work begins on autonomous-routine enforcement.
 
 **This is a verified candidate replacement, not an enhancement.** Confirmed against the docs: `SessionStart` is a real hook event; plugin hooks ship at `hooks/hooks.json` and merge with the user's and project's hooks when the plugin is enabled; and `SessionStart` is one of the events where Claude Code adds a hook's plain-text stdout to the context Claude can see and act on. So a plugin **can** inject rule text deterministically today. S0 chose option (c) — model invocation from the description — and (c) cannot give `general` its advertised "every file touched" behaviour, because model invocation has no *always*. This is the mechanism that could.
 
@@ -1261,6 +1261,31 @@ Two caveats that must stay attached to this item, or a future seat re-makes S0's
 - **Delivery is not compliance.** The docs are explicit: *"Claude treats them as context, not enforced configuration. To block an action regardless of what Claude decides, use a PreToolUse hook instead."* A `SessionStart` hook buys determinism of **delivery**, not of **obedience**.
 
 **Name the pattern, because it is the third turn of the same screw.** We asserted **registration** and meant **activation** (`/flow:doctor` Check 3.2, green for twenty releases over a dead feature). A hook would assert **delivery** and still not be **compliance**. Each layer looks exactly like the guarantee one layer beneath it, and the resemblance is what makes the substitution feel safe. Before adopting this, state which of the four you are buying and which you are not — and if the answer is "delivery", say so in the docs rather than writing "enforced".
+
+### Promote FB-0124's layer ladder to `.claude/rules/general.md` § Consistency discipline item 5 (v1.53.0, push-further lens)
+
+**Surfaces when:** `.claude/rules/general.md` is next touched, OR a sixth instance of the class lands.
+
+The **registration → activation → delivery → compliance** ladder currently lives in one unindexed FB file (`dev-docs/feedback/FB-0124-*.md`) plus the S0 roadmap block. `dev-docs/feedback/` has no index by design ("`ls` is the index"), so the ladder's reach is whoever greps for it — while the always-loaded rule file carries four flavors of this class, two of which (item 3's prohibition-satisfiable-by-deletion, item 4's pin-at-the-layer-where-it-is-claimed) are strictly **narrower ancestors** of the ladder. The class has now produced five incidents.
+
+Shape: a fifth numbered flavor — *"A mechanism claim has layers, and each looks like the guarantee beneath it. Name the layer you verified and the layer you are claiming. Defense: in a check's own output state the observed layer (`registered with the loader`, not `auto-loads`); when the claimed layer is unobservable from where you stand, emit `[UNCHECKED] … Checkable by:`, never `[PASS]` and never `[WARN]`."* Carry the four-row table by reference, not inline. ~15 lines. **Cost is low:** § Consistency discipline is **not** one of the three sections mirrored into `plugins/flow/skills/general/SKILL.md`, so there is no mirror edit and no project-agnostic scrub. The promotion path is established precedent (FB-0118 → item 4's corollary; FB-0112 → its worked instance). **Decays fastest of this PR's deferrals** — it is one sitting if Ben wants it in-tree.
+
+### § Exploration — the `[UNCHECKED]` marker as a candidate export to the other gates (v1.53.0, push-further lens)
+
+**Surfaces when:** `plugins/flow/skills/doctor/SKILL.md`'s marker table is next touched, OR a sixth instance of the "ok / nothing there / could not look" conflation lands, OR one of the four sibling gates rewords its skip line.
+
+#166's § Exploration entry counts that three-state conflation as discovered **four** times and concludes "no shape is obvious". v1.53.0 is the **fifth** discovery and it built one of the three options that entry names: a marker class, an assigning predicate (observed? × consumer-can-act?), two stated rules, and an eval asserting those rules over doctor's shipped text. So the entry's count and premise are both stale — in a repo whose own rule file mocks exactly that ("a stale count inside the section about stale counts").
+
+**Still genuinely open, which is why this is exploration and not a queued item:** the sibling gates' skip lines are `[WARN]`-shaped (consumer-actionable), and `[UNCHECKED]` is reserved for what **no** consumer can fix. So it is not obvious that `[UNCHECKED]` is the right export at all. Naming the tension is the useful move; picking the design on v1.53.0's evidence would be guessing. Amend #166's entry rather than adding a third.
+
+### Trim doctor's `[UNCHECKED]` activation block, and the postmortem in the write-once template (v1.53.0, UX lens)
+
+**Surfaces when:** `plugins/flow/skills/doctor/SKILL.md`'s Check 3.2 is next touched, OR `template/base/CLAUDE.md.template` is next edited.
+
+Two deferrals from the same review, both judgment calls about how much a surface should *teach* vs *report*:
+
+1. **Doctor's activation block is six lines and fires on every healthy run, forever.** Three of the six are argument rather than status (the "do not read the PASS above as…" caveat, the measurement result). Two lines in the output plus the rationale in `docs/upgrade.md` would hold. Deferred because the eval that pins the marker class's rules over shipped text moves with it.
+2. **`template/base/CLAUDE.md.template` ships flow's own postmortem into every consumer repo, permanently** — "From flow v1.33.0 to v1.49.0 this table claimed… twenty releases… (FB-0124)", including an FB reference a consumer cannot resolve. The *rule* above it (two mechanisms, don't conflate, yours is the load-bearing one) fully earns its place. The version archaeology is flow's history in someone else's always-loaded file. **A write-once surface deserves its own decision rather than a same-PR trim** — which is exactly the argument this PR makes about that file.
 
 ### Deferred from the doc-fragmentation PR (v1.40.0, FB-0102/FB-0103)
 
