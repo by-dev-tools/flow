@@ -1303,6 +1303,14 @@ Shape: derive the row from the section's actual emissions, or add an eval that g
 
 Open question, and the reason this is exploration rather than a queued item: is a design-language section the right home for terminal-output rules, or is that doc correctly scoped to visual artifacts and this belongs somewhere else (a doctor-local conventions note, or a lint)? Two of flow's three rendered surfaces are already tracked as ungrounded; structured terminal output is the third and arguably the highest-traffic, since every consumer reads it on every `/flow:doctor` run.
 
+### One shared resolver for plugin libs, so a cwd-relative fallback is unrepresentable (v1.53.0, security-review)
+
+**Surfaces when:** a skill gains a new `python3 "$CLAUDE_PLUGIN_ROOT/lib/..."` call site, OR `plugins/flow/lib/` gains a module read from more than one skill.
+
+v1.53.0 shipped — briefly — `python3 "${CLAUDE_PLUGIN_ROOT:-.}/lib/rule_skills.py"` in `/flow:doctor` Check 3.2. Because these are Bash-tool blocks, `CLAUDE_PLUGIN_ROOT` is **unset**, so `.` was taken on essentially every run and doctor's cwd is the *consumer's project root*: any repo carrying `lib/rule_skills.py` got it **executed** with the user's privileges, stderr discarded, and a payload printing the expected roster left a clean `[PASS]`. Caught by `/flow:security-review` with a working proof of concept; fixed, and an eval now forbids the pattern in any shipped `SKILL.md`.
+
+**The eval closes the instance; it does not close the class.** There are ~27 correct `${CLAUDE_PLUGIN_ROOT:-}`-then-`[ -n ]` sites and the correctness lives in author discipline at each one — exactly the argument the field manual makes about T6 ("the fix belongs in the *interface* rather than in author discipline"). Shape: one resolver (`lib/resolve-plugin-lib.sh`, sibling to `resolve-doc-slot.sh`) that takes a lib name, refuses anything that is not under an absolute `$CLAUDE_PLUGIN_ROOT`, and returns non-zero so the caller emits `[WARN] … UNCHECKED, not clean`. Then a cwd-relative plugin-lib path is unrepresentable rather than merely linted. Note `ship/lib/plugin-provenance.py`'s `importlib` loader is a *second* exec of a path-resolved Python file per ship — reviewed as not exploitable (it always lands in the same tree as the already-running script), but it is the same shape and would be retired by the same resolver.
+
 ### Deferred from the doc-fragmentation PR (v1.40.0, FB-0102/FB-0103)
 
 Routed here rather than left in a PR body — all four were raised by `/flow:staff-review`

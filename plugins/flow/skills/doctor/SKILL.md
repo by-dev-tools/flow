@@ -778,7 +778,20 @@ So this check now asserts what a shell genuinely can: registration, plus the fro
 # The roster comes from lib/rule_skills.py, never a literal list: a fifth rule-skill added
 # to RULE_SKILLS must be registration-checked here too, and a hardcoded copy is how the
 # contract audit below and this check would silently disagree about which skills exist.
-RULE_SKILLS=$(python3 "${CLAUDE_PLUGIN_ROOT:-.}/lib/rule_skills.py" roster 2>/dev/null)
+#
+# SECURITY: resolve the lib ONLY under $CLAUDE_PLUGIN_ROOT, never cwd-relative. A
+# `${CLAUDE_PLUGIN_ROOT:-.}` fallback shipped here briefly and was arbitrary code
+# execution: this is a Bash-tool block, where `CLAUDE_PLUGIN_ROOT` is UNSET (CLAUDE.md
+# § How to Work 3), so `.` was taken on essentially every run — and doctor's cwd is the
+# consumer's project root. Any repo carrying `lib/rule_skills.py` got it EXECUTED with the
+# user's privileges, stderr discarded, and a payload printing the four expected names left
+# a clean `[PASS]` behind. Strictly worse than the CWE-59 symlink cases this repo already
+# guards. An unresolvable lib is `[WARN] … UNCHECKED, not clean` — never a cwd guess.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/lib/rule_skills.py" ]; then
+  RULE_SKILLS=$(python3 "${CLAUDE_PLUGIN_ROOT}/lib/rule_skills.py" roster 2>/dev/null)
+else
+  RULE_SKILLS=""
+fi
 if [ -z "$RULE_SKILLS" ]; then
   echo "[WARN] plugin-shipped rule-skills check UNCHECKED, not clean — could not read the roster from lib/rule_skills.py."
   echo "       Fix: /plugin marketplace update flow && /plugin install flow@flow (or install python3)."
@@ -795,11 +808,13 @@ else
     echo "[SKIP] plugin-shipped rule-skills check — 'claude plugin details flow@flow' returned no Skills line (is flow@flow installed?)"
   else
     MISSING=""
+    set -f                      # no globbing: a `*` in the roster must not expand to a file list
     for s in $RULE_SKILLS; do
       echo "$SKILLS_LINE" | grep -qE "(^|[, ])$s(,|$| )" || MISSING="$MISSING $s"
     done
+    set +f
     if [ -z "$MISSING" ]; then
-      echo "[PASS] plugin-shipped rule-skills ($(echo $RULE_SKILLS | tr ' ' '/')) registered with the loader"
+      echo "[PASS] plugin-shipped rule-skills ($(echo "$RULE_SKILLS" | tr ' ' '/')) registered with the loader"
     else
       echo "[FAIL] plugin-shipped rule-skills missing from the loader's own report:$MISSING"
       echo "       Fix: /plugin marketplace update flow && /plugin install flow@flow"

@@ -519,6 +519,52 @@ def main() -> int:
           "doctor's [READY] contract must print the unchecked count inline — keeping "
           "[UNCHECKED] out of the arithmetic without surfacing it loses the signal entirely")
 
+    # ---- SECURITY: no shipped skill may resolve a plugin lib cwd-relatively ----
+    # A `${CLAUDE_PLUGIN_ROOT:-.}` fallback shipped in doctor Check 3.2 and was arbitrary
+    # code execution: these are Bash-tool blocks, where CLAUDE_PLUGIN_ROOT is UNSET, so `.`
+    # was taken on essentially every run and doctor's cwd is the CONSUMER's project root.
+    # Any repo carrying `lib/rule_skills.py` got it executed with the user's privileges,
+    # stderr discarded, and a payload printing the expected roster left a clean `[PASS]`.
+    # Found by /flow:security-review with a working proof of concept.
+    #
+    # The rule: an unresolvable plugin lib is `[WARN] … UNCHECKED, not clean`, never a cwd
+    # guess. Asserted over every shipped SKILL.md so the class cannot return through a
+    # different skill.
+    # Scoped to EXECUTABLE lines inside ```sh fences, never a bare substring — the same
+    # discipline ci-wired uses below ("CI enumerates, doesn't glob; a mention in a comment is
+    # not wiring"). The first draft of this check was a whole-file substring match and
+    # therefore flagged its own remediation comment in doctor, which documents the forbidden
+    # string in order to explain it: a detector that fires on the fix teaches authors to
+    # delete the explanation.
+    # The default must be NON-EMPTY and cwd-relative to be dangerous. `${CLAUDE_PLUGIN_ROOT:-}`
+    # (empty default, then an explicit `[ -n ]` guard) is the CORRECT idiom and is used at 27
+    # sites — the first version of this regex made the default optional and flagged all of
+    # them, which the negative half of the control pair caught immediately.
+    BAD_FALLBACK = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT:-\.[^}]*\}")
+    cwd_fallbacks = []
+    for sk in sorted(SKILLS_DIR.glob("*/SKILL.md")):
+        in_sh = False
+        for n, line in enumerate(sk.read_text(encoding="utf-8").splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("```"):
+                in_sh = stripped.startswith("```sh")
+                continue
+            if not in_sh or stripped.startswith("#") or not stripped:
+                continue
+            if BAD_FALLBACK.search(line):
+                cwd_fallbacks.append(f"{sk.parent.name}:{n}")
+    check("no-cwd-relative-plugin-lib-fallback", not cwd_fallbacks,
+          "a shipped skill resolves a plugin lib relative to CWD: " + "; ".join(cwd_fallbacks) +
+          " — CLAUDE_PLUGIN_ROOT is unset in Bash-tool blocks, so this executes the "
+          "CONSUMER's repo. Guard with [ -n ... ] && [ -f ... ] and WARN when unresolvable")
+    # POSITIVE control: the forbidden string is what this check actually looks for, so prove
+    # the detector fires on it rather than trusting an empty result (item 4).
+    check("cwd-fallback-detector-fires",
+          bool(BAD_FALLBACK.search('x=$(python3 "${CLAUDE_PLUGIN_ROOT:-.}/lib/f.py")'))
+          and bool(BAD_FALLBACK.search('cd "${CLAUDE_PLUGIN_ROOT:-}"')) is False,
+          "the cwd-fallback detector must match the `:-.` form and must NOT match the safe "
+          "`:-` empty-default form — otherwise it either misses the bug or flags the fix")
+
     # ---- CI wiring (the orphaned-eval guard) ----
     # Scoped to an executable `- run:` line, NOT a bare substring: ci.yml's own
     # join-check step argues that a bare grep would count a harness merely NAMED in a
