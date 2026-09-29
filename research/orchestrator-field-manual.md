@@ -166,7 +166,7 @@ Shipping a README that describes unbuilt behaviour is precisely the class Phase 
 a batched end-of-program rewrite is the wrong shape — fold each correction into the ship that makes
 it true (canonical §4.5/§4.6: no standalone docs-only land PR).
 
-**DISCHARGED 2026-09-27 by S0 / v1.51.0 (FB-0124).** The claim this section was built around was:
+**DISCHARGED 2026-09-27 by S0 / v1.53.0 (FB-0124).** The claim this section was built around was:
 
 ```
 README.md:86: - **4 auto-loading rules** that attach by file path — workflow discipline, plan requirements, doc format, exploration triggers.
@@ -176,7 +176,7 @@ The hold was correct and it paid off — the line needed **correcting**, not mer
 reason is not the one recorded here. E1's finding (*"`paths:` on a `SKILL.md` never activates"*) was
 **over-claimed**: `paths:` is a documented field that *limits* an activation the `description` otherwise
 earns, and every E1 probe carried both a restrictive glob and a suppressive description, so the cause was
-never isolated. v1.51.0 rewrote the line to say the four are **model-invoked, not path-activated**, and to
+never isolated. v1.53.0 rewrote the line to say the four are **model-invoked, not path-activated**, and to
 say plainly that they raise the floor rather than acting as a gate — which is what the S0 measurement
 supports. **Do not re-derive "never activates" from this section**; see `dev-docs/research/2026-09-agents-md-vs-skills.md`
 §5.1's dated correction, which carries both what survives and what does not.
@@ -191,7 +191,7 @@ made this a one-edit fix.
   v1.32.0) — the loop/gate description never mentions that a change can be honestly "verifiable in
   principle, but not on this host," which drafts the PR rather than green-ticking it. **Landed; safe
   to write now.** This is the only one currently unblocked.
-- ~~**`README.md:86` / the four rules**~~ — **discharged by v1.51.0 (FB-0124)**, as above.
+- ~~**`README.md:86` / the four rules**~~ — **discharged by v1.53.0 (FB-0124)**, as above.
 - **Orchestrator skill suite** (§4.10 — `/flow:orchestrate`, `/flow:spawn`, `/flow:handoff`,
   `/flow:gate`) — decided, not built. The skill list needs these **only once they ship**.
 - **D1 prototype-first gate** — changes where the first human gate sits for designer-role projects.

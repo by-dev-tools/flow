@@ -1,6 +1,6 @@
 # 2026-09-27 — S0 option (c): the rule-skills are model-invoked, and the measurement refused the premise
 
-**PR:** #TBD · **Version:** v1.51.0 · **Feedback:** FB-0124 · **Roadmap:** S0 (resolved), S2 + config-driven-`paths:` (retired)
+**PR:** #TBD · **Version:** v1.53.0 · **Feedback:** FB-0124 · **Roadmap:** S0 (resolved), S2 + config-driven-`paths:` (retired)
 
 ## What was asked, and what the measurement said instead
 
@@ -37,7 +37,7 @@ session failing it was discarded rather than counted as a zero.
 
 ### `claude-opus-5`  — **the default Conductor model for the `claude` agent**
 
-| rule | project<br>**new** desc | **plugin**<br>**new** desc (v1.51.0) |
+| rule | project<br>**new** desc | **plugin**<br>**new** desc (v1.53.0) |
 |---|---|---|
 | `plan-discipline` *(name matches the task — see finding 3)* | **2/2** | 0/2 |
 | `documentation` *(name matches the task — see finding 3)* | **2/2** | — |
@@ -46,7 +46,7 @@ session failing it was discarded rather than counted as a zero.
 
 ### `claude-sonnet-4-6`  — *not* the default model
 
-| rule | project<br>old desc + `paths:` | project<br>**new** desc | **plugin**<br>old desc (v1.50.0) | **plugin**<br>**new** desc (v1.51.0) | project<br>*neutral* desc + `paths:` |
+| rule | project<br>old desc + `paths:` | project<br>**new** desc | **plugin**<br>old desc (v1.50.0) | **plugin**<br>**new** desc (v1.53.0) | project<br>*neutral* desc + `paths:` |
 |---|---|---|---|---|---|
 | `plan-discipline` *(name matches the task — see finding 3)* | **2/3** | **3/3** | 0/3 | 0/3 | **1/1** |
 | `documentation` *(name matches the task — see finding 3)* | **1/3** | 0/3 | 0/1 | 0/3 | **1/1** |
@@ -55,9 +55,9 @@ session failing it was discarded rather than counted as a zero.
 
 **52 interpretable sessions. 0 discarded at final count** (19 limit-truncated sessions were discarded and re-run; see § instrument defects).
 
-**Arms.** **a** = today's (pre-v1.51.0) descriptions + `paths:`, project scope. **b** = the v1.51.0
+**Arms.** **a** = today's (pre-v1.53.0) descriptions + `paths:`, project scope. **b** = the v1.53.0
 descriptions, no `paths:`, project scope. **cold** = the real v1.50.0 plugin installed, **plugin scope, old
-descriptions**. **c** = the real v1.51.0 plugin installed, **plugin scope, new descriptions**. **d** = a
+descriptions**. **c** = the real v1.53.0 plugin installed, **plugin scope, new descriptions**. **d** = a
 deliberately *neutral* description + `paths:`, project scope — isolates the field from the description.
 
 ## What that means, in the order the evidence forces

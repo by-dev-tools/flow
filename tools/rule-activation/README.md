@@ -32,13 +32,13 @@ do everything `plan-discipline` says without ever loading it. Probes run on scru
 
 | arm | scope | what varies | control |
 |---|---|---|---|
-| a | project | today's (pre-v1.51.0) descriptions + `paths:` | `probe-control` sentinel |
-| b | project | the v1.51.0 descriptions, no `paths:` | `probe-control` sentinel |
+| a | project | today's (pre-v1.53.0) descriptions + `paths:` | `probe-control` sentinel |
+| b | project | the v1.53.0 descriptions, no `paths:` | `probe-control` sentinel |
 | c | plugin | the real installed plugin | `flow:workflow-help` invocable |
 | d | project | a **neutral** description + `paths:` — isolates the field from the description | `probe-control` sentinel |
 
 Arm **c** is the only arm at plugin scope, which is the only scope consumers have. Do not generalise a
-project-scope result to consumers: the v1.51.0 measurement found them **divergent**, not equivalent.
+project-scope result to consumers: the v1.53.0 measurement found them **divergent**, not equivalent.
 
 ## Running it
 
@@ -52,7 +52,7 @@ Arm c uses `prompts/followup-c.txt` (plugin namespace + a plugin-scope control).
 
 **Record the model per probe.** `aggregate.py` keys on the model reported by the session, not the one
 requested, because skill effectiveness depends on the underlying model — the docs say to test every model
-you ship to, and the v1.51.0 run found sonnet and opus disagreeing on the same rule.
+you ship to, and the v1.53.0 run found sonnet and opus disagreeing on the same rule.
 
 ## Reading a result honestly
 

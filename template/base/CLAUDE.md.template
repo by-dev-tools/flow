@@ -47,7 +47,7 @@ Three layers, in order of decreasing strength:
 
 **Which layer is load-bearing, honestly.** Your own `.claude/rules/` fire deterministically on a path match — that is the enforcement layer you can rely on. The plugin's four are guidance Claude pulls in by judgment; treat them as raising the floor, not as a gate. If a rule genuinely must fire every time, put it in `.claude/rules/` here, or use a `PreToolUse` hook — Claude Code treats all of this as *context, not enforced configuration*.
 
-> **Why this section is worded so carefully.** From flow v1.33.0 to v1.49.0 this table claimed the four plugin rules auto-loaded on path matches. They loaded for **nobody** — `paths:` on a `SKILL.md` narrows a description-driven activation rather than triggering one, and the descriptions said "path-activated only", which told Claude not to invoke them. A `/flow:doctor` check reported `[PASS]` over it for twenty releases by verifying **registration** and calling it **activation**. Fixed in v1.51.0 (FB-0124).
+> **Why this section is worded so carefully.** From flow v1.33.0 to v1.49.0 this table claimed the four plugin rules auto-loaded on path matches. They loaded for **nobody** — `paths:` on a `SKILL.md` narrows a description-driven activation rather than triggering one, and the descriptions said "path-activated only", which told Claude not to invoke them. A `/flow:doctor` check reported `[PASS]` over it for twenty releases by verifying **registration** and calling it **activation**. Fixed in v1.53.0 (FB-0124).
 
 ### 2. Skill auto-invocation (probabilistic — fires on description match)
 

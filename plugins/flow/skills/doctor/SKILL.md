@@ -843,7 +843,7 @@ echo "            Registration and frontmatter shape are checked above; activati
 echo "            event inside a session and no shell command observes one. Unchecked, not clean."
 echo "            Checkable by: a first-party CLI or hook surface that reports per-session skill"
 echo "            invocations (none exists today). Measured out-of-band with tools/rule-activation/ —"
-echo "            and the v1.51.0 measurement found ZERO invocations at plugin scope. Do not read the"
+echo "            and the v1.53.0 measurement found ZERO invocations at plugin scope. Do not read the"
 echo "            PASS above as 'the rules governed this run'; it means installed and correctly shaped."
 ```
 

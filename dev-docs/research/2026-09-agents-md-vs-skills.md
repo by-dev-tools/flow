@@ -331,7 +331,7 @@ Zero hook events. Zero transcript occurrences. Probe 2 self-reported `plan_disci
 
 **Probe 3 isolates the cause.** A throwaway **project-scoped** skill (`.claude/skills/e1-probe-rule/SKILL.md`, `user-invocable: false`, `paths: ["**/roadmap.md"]`, containing a unique marker string) also **did not activate** when the probe Read `dev-docs/roadmap.md` — while `.claude/rules/documentation.md` fired on the same Read, in the same session. So this is **not** a plugin-scope problem and not a glob-syntax problem.
 
-> **CORRECTION, 2026-09-27 (v1.51.0, FB-0124) — read this before citing the finding below.**
+> **CORRECTION, 2026-09-27 (v1.53.0, FB-0124) — read this before citing the finding below.**
 > This §5.1 is cited from six places, so the correction states what still stands as well as what does not.
 >
 > **What still stands, unchanged and load-bearing:** *the four rule-skills had never loaded for any
@@ -358,7 +358,7 @@ Zero hook events. Zero transcript occurrences. Probe 2 self-reported `plan_disci
 >
 > This correction is not a retraction. It is the same discipline this section applied to Phase 00, turned
 > on this section: *registration was checked, activation was not* — and here, *activation was measured,
-> attribution was not.* v1.51.0 removed `paths:` anyway, because under either reading it could only gate
+> attribution was not.* v1.53.0 removed `paths:` anyway, because under either reading it could only gate
 > the trigger the descriptions now earn.
 
 > **Finding: `paths:` frontmatter on a `SKILL.md` does not activate the skill. Path-scoped activation works for `.claude/rules/*.md` and does not work for skills — at either project or plugin scope — in Claude Code v2.1.257.**
