@@ -2,6 +2,137 @@
 
 ## Current Focus
 
+
+**▶ EXECUTED, shipping (this branch `conductor/cv1-audit-coverage-md-blindness`, v1.55.0, FB-0126/FB-0127): CV1 — `/flow:audit-coverage` cannot see `.md`, so most of this plugin is invisible to it.** Measured end to end: #159's reconstruction moves from **0 gaps found at baseline** (both arms A-off) to **2-of-5 and 1-of-5 single-run, union 3-of-5**, zero false positives, plus the paired prose negative. Four follow-ups this measurement produced are in `roadmap.md` § Next, none of them fixed here.
+
+**Mode:** feature · **Surface:** non-visual
+
+### What I measured before designing (the roadmap's constraints, re-derived — two of them shift)
+
+`.md` never matches `sourceFilePatterns` in the first place, so `EXCL`'s `|\.md$` is belt-and-braces:
+**this is an inclusion change, not an exclusion edit.**
+
+| case | files changed | reach the reviewer today | + behaviour-bearing `.md` | total vs 60 KB cap |
+|---|---|---|---|---|
+| #159 (the motivating case) | 18 | 3 (2,085 B) | 2 (28,329 B) | **30,414 B — half the cap** |
+| #158 | 68 | 10 (113,289 B) | 9 (73,243 B) | 186,532 B — 3.1× |
+| #166 | 16 | 8 (24,082 B) | — | 24,082 B |
+
+**Constraint 2 is real but mis-stated, and the correction changes the design.** "Including `.md` blows the
+cap" is false on #159 — the case this entry exists for fits in **half the cap** with the `.md` included, so
+the motivating case needs no capping work at all. On #158 the cap *is* blown — but it is **already blown
+today at 113,289 B without a single `.md`**. The cap collision is **pre-existing**, not introduced by this
+fix; the fix worsens an existing failure rather than creating one. That matters because it means capping is
+justified on its own evidence, not as a tax on the `.md` change.
+
+**And a second blindness nobody has named, measured on #158.** The cap is applied as `head -c` over a
+**concatenation ordered by `sort -u`** — alphabetical. So:
+
+```
+7 of 10 files reached the reviewer at all; 3 were ENTIRELY INVISIBLE
+  ... audit-coverage/lib/change-inventory.py   partially cut (26,758 of 34,188 B)
+  ... ship/lib/status-docs.py                  *** ENTIRELY INVISIBLE ***
+  ... tools/coverage-recall/cases.py           *** ENTIRELY INVISIBLE ***
+  ... tools/coverage-recall/recall.py          *** ENTIRELY INVISIBLE ***
+```
+
+with **one generic `WEAKENED · TRUNCATED` line that does not say which**. A file late in the alphabet is
+structurally less likely to be reviewed than an early one, and nothing states it. That is the same
+"nothing there vs I could not see" class, a second time, inside the same block.
+
+**Constraint 1 stands unchanged** — `sourceFilePatterns`/`EXCL` are a published contract — and it is what
+forces the opt-in shape below. **Constraint 3 stands** and I keep to it: nothing here touches the matcher
+or the judging prompt, so v1.49.0's recall numbers stay comparable.
+
+### The design — three parts, deliberately separable, only one of which changes any verdict
+
+**A. SAY IT (ships for every consumer, opt-in or not; changes no verdict).** When the diff contains files
+the behaviour filter dropped that are *doc-shaped but plausibly behaviour-bearing* (`.md` under a
+`skills/`, `agents/` or `rules/` directory), emit `[audit-coverage] WEAKENED · DOC-BLIND — N changed
+file(s) carry prose that may be deployed surface and were NOT read: <paths>. On a project whose behaviour
+lives in markdown this is not a completeness gate over that behaviour.` Today that blindness is **silent**,
+and `workflow.md` carries the honest statement while the *gate output* does not. This is the half that
+matters most for consumers who never opt in — it converts silent blindness into stated blindness, which is
+the fourth instance of the FB-0121 distinction and the one the orchestrator named.
+
+**B. SEE IT (opt-in; the only part that changes what the gate reads).** New `behaviorBearingDocPatterns`
+slot, **defaulting to empty** — so **no consumer's gate changes until they opt in**, which is constraint 1
+discharged exactly. Matching paths are added to the behaviour diff (union with `sourceFilePatterns`, and
+exempt from `EXCL`'s `.md`/`docs?/` clauses). Flow sets it for itself to
+`(^|/)(skills|agents|rules)/.*\.md$`. I am converging on the roadmap's own hypothesis here rather than
+inventing one; the part I add is that A ships independently of B, so the blindness is *stated* even at the
+default.
+
+**C. FIT IT (fair-share cap; justified by its own pre-existing failure).** Replace `head -c` over a
+concatenation with a **fair-share allocation**: each file gets `cap / N`, unused share from small files is
+redistributed to large ones, and **every truncated file is named individually**. On #158 that turns "3 files
+entirely invisible, one generic warning" into "every file represented, 4 named as partially cut". This is
+worth doing on today's evidence alone, and B makes it necessary rather than merely better.
+
+### Spec-walk
+
+- [ ] **A fires on a doc-shaped diff and names the paths.** *Pinned by:* a new eval case — a diff touching
+      only `skills/x/SKILL.md` emits `DOC-BLIND` naming it, **paired** with: a diff touching no doc-shaped
+      files does NOT emit it (or the line becomes noise on every PR).
+- [ ] **B is genuinely opt-in.** *Pinned by:* with the slot unset, the file list is **byte-identical** to
+      today's on all three measured cases — the strongest form of "no consumer's gate changes", and a
+      negative that is paired with the positive below rather than standing alone.
+- [ ] **B moves the known positive off 0/5.** *Pinned by:* `tools/coverage-recall` on the `pr159` case with
+      the slot set — the five gaps live in `audit-coverage/SKILL.md`, which must now reach the reviewer.
+      **This flips `cases.py`'s `structural_blindness` pin, which was written to fail loudly exactly here**
+      ("if the exclusion is ever fixed this case fails loudly and is re-classified"). Expected, and I am
+      the intended trigger; the case gets re-classified from structural to recall with its number recorded.
+- [ ] **The negative: a pure-prose `.md` PR produces no coverage findings.** *Pinned by:* a docs-only-prose
+      case scored at 0 findings. Without this the gate becomes noise on every docs edit — the failure the
+      exclusion was added to prevent, and the reason "just widen the regex" is wrong.
+- [ ] **C: no file is entirely invisible when the cap binds.** *Pinned by:* the #158 shape — assert every
+      file contributes ≥1 byte and each truncated file is named. Paired with: under the cap, output is
+      **byte-identical** to today (no gratuitous reflow of the common case).
+- [ ] **Per-file cap behaviour reported on the 176 KB case**, as asked. Note the distinction I will report
+      rather than blur: 177,768 B is `ship/SKILL.md`'s **file size**, which binds in **source mode**
+      (whole files are `cat`-ed, `SOURCE_CAP` = 120,000 B, so it is ~1.5× over *alone*). Its **diff** in a
+      realistic PR is ~3 KB. The 44,687 B single-file diff in #158 is the real diff-mode starvation case.
+- [ ] **Instrument validated:** `tools/coverage-recall --selftest` must show it can fail before any number
+      is reported; and I will mutation-test the three parts (revert the union, revert the fair-share, drop
+      the DOC-BLIND line) and confirm each is caught.
+- [ ] **Docs:** FB entry (the rule: an exclusion tuned for one repo shape becomes a blind spot in another,
+      and the gate must say which shape it assumed), history entry, `workflow.md`'s honest-limitation
+      paragraph updated to describe the opt-in, schema slot documented, roadmap entries closed.
+
+### Open questions for the gate — I have NOT acted on these
+
+- **OQ1 — does C belong in this PR?** It is pre-existing breakage (#158 is already truncated today without
+  any `.md`), so it is arguably its own PR and its own measurement. I lean **include**, because B measurably
+  worsens it and shipping a change that knowingly degrades a gate is the thing this program keeps writing
+  feedback entries about. But it is scope, and it is your call. If you want it split I will ship A+B and
+  route C with the #158 numbers attached.
+- **OQ2 — should `behaviorBearingDocPatterns` really default to empty?** It discharges constraint 1
+  perfectly, but it means a prompt-shaped consumer stays blind until they discover a slot. The alternative
+  — default to `(^|/)(skills|agents)/.*\.md$`, which is inert in a repo with no such directories — changes
+  no gate in practice for an app repo while helping prompt-shaped ones by default. I lean **empty** (the
+  roadmap's hypothesis, and silent contract changes are what constraint 1 forbids), with `/flow:doctor`
+  surfacing the suggestion as a separate item. Flagging because the alternative is defensible.
+- **OQ3 — source mode.** `ship/SKILL.md` alone is 1.5× `SOURCE_CAP`. Source mode has the same starvation
+  problem, worse. **D1 Phase 3 (`/flow:autoplan`) builds on source mode**, so changing its capping changes
+  what that machine gate reads. I propose to **leave source mode alone** in this PR and report the number,
+  rather than move a surface Track B is building on. Confirm.
+
+### Coordination — you asked specifically
+
+- **Track B `/flow:autoplan` (`conductor/track-b-d1-phase-3-autoplan-machine-gate`, 5 commits): touches
+  `dev-docs/plan.md` ONLY.** No source-file collision with CV1. **But there is a semantic dependency
+  without a file collision:** `prototype/SKILL.md:217` points `/flow:audit-coverage` **in source mode** at
+  the approved prototype, so anything I change about source-mode file selection or capping changes what
+  that gate reads. That is the reason for OQ3, and it is the answer to your question: *no shared files,
+  one shared surface.*
+- **S0 (`conductor/s0-rule-skills-never-load-option-c`):** `plan.md`, `roadmap.md`, both manifests, README,
+  docs — **no audit-coverage files.** Collision is docs-only.
+- **#167 version-provenance:** dev-docs only.
+- **#166 (mine, open):** touches `schema/flow.config.schema.json`, which CV1's new slot also needs — a
+  real collision, self-inflicted. If #166 merges first this is a clean add; if not I will rebase onto it.
+- Version and FB numbers **claimed at ship time**, not now, per your instruction.
+
+
 *The active work item sits here, above the merged blocks, so the walk parsers name it regardless of whether anyone else's merged headings carry a demotion qualifier. The demotions below are correct and independently true; this placement means the extractor does not depend on them surviving another worker's rebase.*
 
 **▶ EXECUTED, shipping — D1 Phase 3: the auto-written technical plan and its MACHINE gate** (this branch, `conductor/track-b-d1-phase-3-autoplan-machine-gate`, **v1.54.0**, **FB-0125**). Plan approved by the orchestrator after eight rounds of `/flow:critique-plan`; open calls 2 and 3 answered there, **call 4 decided by Ben on 2026-09-29 (option (a))**.
@@ -317,6 +448,7 @@ Three properties that make it answerable rather than a document: **the resolutio
 
 ---
 
+
 **▶ EXECUTED, shipping (this branch, `conductor/s0-rule-skills-never-load-option-c`, v1.53.0, FB-0124): S0 option (c) — the four rule-skills earn their trigger from their descriptions, and the descriptions currently forbid it.** Ben chose (c) at the human gate: stop trying to path-activate, let Claude load them by judgment. The substance is not deleting `paths:` — it is that all four descriptions end with **"Not user-invocable — path-activated only."**, a sentence telling the model the skill is not its to invoke, while model invocation is the only mechanism (c) has. Ships rewritten `description` + new `when_to_use` on all four, removal of `paths:`, **a re-based `_is_rule_skill()` in `plugin-provenance.py` (which keys on `paths:` and would silently break)**, an honest `/flow:doctor` Check 3.2, deterministic evals with a negative control, and an A/B measurement in fresh sessions.
 
 **Mode:** feature · **Surface:** non-visual
@@ -505,6 +637,7 @@ Rebase on `main` immediately before ship and re-check the version then — the D
 3. **Neutral repo for arms A/B/D.** I plan to base throwaway workspaces on an existing public repo and create nothing under Ben's account. Say the word if you would rather I use a scratch repo in the org and I will ask before creating it.
 4. **Write §2's correction back into `dev-docs/research/2026-09-agents-md-vs-skills.md` §5.1?** It is marked point-in-time and not maintained, so convention would leave it. This one earns an exception: its over-claim is what the roadmap's wrong diagnosis was built on, and S0 is cited from six places. **Recommendation: correct in place with a dated note**, not a rewrite — and state the narrowed claim from §2, not round 1's stronger one.
 5. **⟢ NEW — `/flow:doctor` loses `[READY]` permanently, for every consumer.** A5 is HIGH, so the activation `[WARN]` is **unclearable by construction**. Doctor's contract (`doctor/SKILL.md:881-882`) reserves `[READY]` for "all checks pass" and `[READY with WARN-level items]` for "N optional items can be addressed at your discretion" — so every consumer would permanently see a non-`[READY]` verdict naming an optional item **no consumer can ever address**, and the same argument would then be available for retiring `[READY]` from the schema. `/flow:critique-plan` flagged this and it is a headline-contract change neither round-1 §10 nor §12 surfaced. Three shapes: **(i)** accept the permanent WARN and amend the contract text at `:881-882` plus the Section 3 summary line so it is documented rather than surprising; **(ii)** add a new `[INFO]` / "not checkable" class excluded from the verdict arithmetic, so activation is reported without consuming the verdict; **(iii)** report activation only in Check 3.2's body with no verdict-bearing marker at all. **Recommendation: (ii)** — it keeps FB-0121's requirement (a gate must distinguish "nothing wrong" from "I could not see") while leaving `[READY]` meaningful, and "unchecked" is genuinely a third thing rather than a mild failure. **This is the one call I would most like overridden if you disagree**, because it changes a surface every consumer sees on every `/flow:doctor` run.
+
 **▶ EXECUTED, shipping (this branch `conductor/docs-only-verify-build-na`, v1.52.0, FB-0122): a docs-only PR is N/A, not unverified — and was unmergeable.**
 
 **Mode:** feature · **Surface:** non-visual
@@ -596,6 +729,7 @@ in a pushed manifest, so the ceiling read 1.50.0; taking the orchestrator's word
 it rather than colliding). **Overlap:** S0 also edits `roadmap.md`/`plan.md`; this branch keeps its
 diff to `verify-build`, `audit-skips`, their evals, one feedback file, one history file, the two
 manifests and these two doc blocks.
+
 
 
 
