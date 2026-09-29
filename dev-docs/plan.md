@@ -12,43 +12,56 @@
 `.md` never matches `sourceFilePatterns` in the first place, so `EXCL`'s `|\.md$` is belt-and-braces:
 **this is an inclusion change, not an exclusion edit.**
 
-| case | files changed | reach the reviewer today | + behaviour-bearing `.md` | total vs 60 KB cap |
-|---|---|---|---|---|
-| #159 (the motivating case) | 18 | 3 (2,085 B) | 2 (28,329 B) | **30,414 B — half the cap** |
-| #158 | 68 | 10 (113,289 B) | 9 (73,243 B) | 186,532 B — 3.1× |
-| #166 | 16 | 8 (24,082 B) | — | 24,082 B |
+| case | base | files changed | reach the reviewer today | + behaviour-bearing `.md` | total vs 60 KB cap |
+|---|---|---|---|---|---|
+| #159 (the motivating case) | `f278aec` | 18 | 3 (2,085 B) | 2 (28,329 B) | **30,414 B — half the cap** |
+| #158 | `5a2aaf3` | 63 | 4 (54,605 B, **under**) | 11 (49,180 B) | **103,785 B — the `.md` CAUSES the overflow** |
+| #160 | `1218d2f` | 35 | 6 (78,629 B, **already OVER**) | 2 (28,493 B) | 107,122 B |
 
-**Constraint 2 is real but mis-stated, and the correction changes the design.** "Including `.md` blows the
-cap" is false on #159 — the case this entry exists for fits in **half the cap** with the `.md` included, so
-the motivating case needs no capping work at all. On #158 the cap *is* blown — but it is **already blown
-today at 113,289 B without a single `.md`**. The cap collision is **pre-existing**, not introduced by this
-fix; the fix worsens an existing failure rather than creating one. That matters because it means capping is
-justified on its own evidence, not as a tax on the `.md` change.
+**CORRECTED AT THE PLAN GATE — the first draft of this table was wrong and `/flow:critique-plan` caught
+it.** I measured #158 by diffing its head against **today's** `main` rather than against its own base, so
+the reverse-diff pulled in files that landed *after* #158 — the block I presented as "#158" named
+`change-inventory.py` and `tools/coverage-recall/*`, which are **#160's**. The critic re-ran the skill's own
+filter and got 63/4/54,605 B; I re-derived it independently with `1218d2f^1...2ccad9e` and reproduce their
+figures exactly. The #159 row was right and reproduces byte-for-byte, so the defect was the base, not the
+method. Recording it because "measured" is the word this plan leans on hardest.
 
-**And a second blindness nobody has named, measured on #158.** The cap is applied as `head -c` over a
-**concatenation ordered by `sort -u`** — alphabetical. So:
+**What the corrected numbers actually say — and it is a better argument than the one I had.** Both claims
+are true, *of different PRs*:
+
+- On **#158** the diff is **under** the cap today and the `.md` inclusion **causes** the overflow
+  (54,605 → 103,785 B). So C is **not separable from B**: shipping B alone knowingly pushes this PR shape
+  past the cap.
+- On **#160** the diff is **already over** at 78,629 B with no `.md` at all. So C is **also** justified on
+  today's evidence, independently of B.
+- On **#159**, the motivating case, everything fits in half the cap and no capping work is needed at all.
+
+**The starvation is real, but only post-fix, and I re-measured it on the correct base.** My first draft
+claimed "3 of 10 entirely invisible" on #158 — that came from the same contaminated run and does **not**
+reproduce. On #160 as it stands today: **0 of 6 entirely invisible**, one partially cut. On **#158 in its
+post-fix shape** (source + behaviour-bearing `.md`, the shape B produces):
 
 ```
-7 of 10 files reached the reviewer at all; 3 were ENTIRELY INVISIBLE
-  ... audit-coverage/lib/change-inventory.py   partially cut (26,758 of 34,188 B)
-  ... ship/lib/status-docs.py                  *** ENTIRELY INVISIBLE ***
-  ... tools/coverage-recall/cases.py           *** ENTIRELY INVISIBLE ***
-  ... tools/coverage-recall/recall.py          *** ENTIRELY INVISIBLE ***
+2 of 15 files ENTIRELY INVISIBLE, under ONE generic warning that does not name them
+  21898B  plugins/flow/skills/prototype/SKILL.md            shown
+  52517B  plugins/flow/skills/prototype/lib/prototype-gate.py  partially cut (17092 of 52517)
+   5518B  plugins/flow/skills/review-brief/SKILL.md         *** ENTIRELY INVISIBLE ***
+   2842B  plugins/flow/skills/workflow-help/SKILL.md        *** ENTIRELY INVISIBLE ***
 ```
 
-with **one generic `WEAKENED · TRUNCATED` line that does not say which**. A file late in the alphabet is
-structurally less likely to be reviewed than an early one, and nothing states it. That is the same
-"nothing there vs I could not see" class, a second time, inside the same block.
+Chosen by `sort -u` position, not by relevance. That is still the "nothing there vs I could not see"
+class, and it is still unnamed — but it is a consequence of B, which is the honest framing.
 
 **Constraint 1 stands unchanged** — `sourceFilePatterns`/`EXCL` are a published contract — and it is what
-forces the opt-in shape below. **Constraint 3 stands** and I keep to it: nothing here touches the matcher
-or the judging prompt, so v1.49.0's recall numbers stay comparable.
+forces the opt-in shape below. **Constraint 3 stands**, with one correction the critic forced: nothing here touches the matcher or the
+judging **rubric**, so v1.49.0's recall numbers stay comparable — but A *does* add one enumerated instance
+to the judging prompt's `WEAKENED ·` list, and the before/after must therefore hold A constant. Both are
+Spec-walk items below rather than assurances here.
 
 ### The design — three parts, deliberately separable, only one of which changes any verdict
 
 **A. SAY IT (ships for every consumer, opt-in or not; changes no verdict).** When the diff contains files
-the behaviour filter dropped that are *doc-shaped but plausibly behaviour-bearing* (`.md` under a
-`skills/`, `agents/` or `rules/` directory), emit `[audit-coverage] WEAKENED · DOC-BLIND — N changed
+the behaviour filter dropped that are doc-shaped but plausibly behaviour-bearing, emit `[audit-coverage] WEAKENED · DOC-BLIND — N changed
 file(s) carry prose that may be deployed surface and were NOT read: <paths>. On a project whose behaviour
 lives in markdown this is not a completeness gate over that behaviour.` Today that blindness is **silent**,
 and `workflow.md` carries the honest statement while the *gate output* does not. This is the half that
@@ -77,6 +90,21 @@ worth doing on today's evidence alone, and B makes it necessary rather than mere
 - [ ] **B is genuinely opt-in.** *Pinned by:* with the slot unset, the file list is **byte-identical** to
       today's on all three measured cases — the strongest form of "no consumer's gate changes", and a
       negative that is paired with the positive below rather than standing alone.
+- [ ] **`DOC-BLIND` is added to the judging prompt's instance enumeration.** *Pinned by:* an assertion
+      that `audit-coverage/SKILL.md`'s `WEAKENED ·` instance list names it. **Critic ISSUE 2, accepted:**
+      `:493` instructs the reviewer to quote any `WEAKENED ·` line verbatim and `:497` enumerates every
+      instance by name — with a footnote recording that omitting a new instance from that list is a
+      regression **that already happened once**. So A *does* touch the judging prompt, and my "nothing here
+      touches the matcher or the judging prompt" claim was wrong as written. Corrected: nothing here
+      touches **the matcher or the judging rubric**; A adds one enumerated weakening instance, which is
+      exactly the kind of change that list exists to absorb.
+- [ ] **B's before/after is measured with A held constant.** *Pinned by:* both arms run with A **off**.
+      **Critic ISSUE 2, second half, accepted and it is the sharper catch:** A fires only when a file was
+      *dropped*, so in the natural setup it is present in the before arm (slot unset → the file with the
+      five gaps is dropped → DOC-BLIND names that exact file) and absent in the after arm — and the recorded
+      0/5 baseline was taken without A at all. Measuring B against that baseline would move two variables
+      and hand the reviewer a pointer to the answer in one arm only. Both arms A-off; A's own effect is
+      measured separately by its own pins above.
 - [ ] **B moves the known positive off 0/5.** *Pinned by:* `tools/coverage-recall` on the `pr159` case with
       the slot set — the five gaps live in `audit-coverage/SKILL.md`, which must now reach the reviewer.
       **This flips `cases.py`'s `structural_blindness` pin, which was written to fail loudly exactly here**
@@ -101,12 +129,16 @@ worth doing on today's evidence alone, and B makes it necessary rather than mere
 
 ### Open questions for the gate — I have NOT acted on these
 
-- **OQ1 — does C belong in this PR?** It is pre-existing breakage (#158 is already truncated today without
-  any `.md`), so it is arguably its own PR and its own measurement. I lean **include**, because B measurably
-  worsens it and shipping a change that knowingly degrades a gate is the thing this program keeps writing
-  feedback entries about. But it is scope, and it is your call. If you want it split I will ship A+B and
-  route C with the #158 numbers attached.
-- **OQ2 — should `behaviorBearingDocPatterns` really default to empty?** It discharges constraint 1
+- **OQ1 — does C belong in this PR? RESOLVED by the corrected measurement; flagging rather than asking.**
+  My original framing ("pre-existing breakage, arguably its own PR") rested on the wrong #158 row. Corrected:
+  on #158 the `.md` inclusion **causes** the overflow (54,605 → 103,785 B), so C is **not separable** from B
+  — shipping B alone would knowingly push that PR shape past the cap and leave 2 of 15 files invisible. C is
+  *additionally* justified on today's evidence by #160 (78,629 B, already over, no `.md`). **Include.** Say
+  so if you disagree; I am no longer treating it as open.
+- **OQ2 — should `behaviorBearingDocPatterns` really default to empty? (Narrowed by ISSUE 3.)** Now that A
+  reads the same slot, the cost of an empty default is only that an un-opted-in consumer gets a *suggestion*
+  line rather than a reading — not silence. That makes empty clearly safer, and this question is close to
+  moot. Left open only because the alternative is still defensible: It discharges constraint 1
   perfectly, but it means a prompt-shaped consumer stays blind until they discover a slot. The alternative
   — default to `(^|/)(skills|agents)/.*\.md$`, which is inert in a repo with no such directories — changes
   no gate in practice for an app repo while helping prompt-shaped ones by default. I lean **empty** (the
