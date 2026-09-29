@@ -15,7 +15,7 @@ You judge whether bundled `/verify`'s observations demonstrate three fixed launc
 This 3-check smoke rubric is used by exactly two Step-2 paths (see `SKILL.md` § 2):
 
 1. **Explicit spike** (`MODE=spike`) — invoked by `/flow:ship-spike`. The user/agent has explicitly chosen the lower bar. The orchestrator stamps `metadata.spike_mode=true` and every criterion `provenance: "spike-rubric"`.
-2. **Docs-only no-plan fallback** (`MODE=no-plan` + `NO_PLAN_SCOPE=docs-only`) — the plan path is missing or has no `**Spec-walk:**` block AND the diff touches no source files, so there is little runtime behavior to verify. The orchestrator stamps `metadata.no_plan_fallback=true` and `provenance: "spike-rubric"`.
+2. **Docs-only no-plan fallback** (`MODE=spike` + `NO_PLAN_SCOPE=docs-only`) — the plan path is missing or has no `**Spec-walk:**` block AND the diff touches no source files, so there is little runtime behavior to verify. The orchestrator stamps `metadata.no_plan_fallback=true` and `provenance: "spike-rubric"`.
 
 **This rubric does NOT fire for a *source-touching* no-plan diff.** That case takes the robust judged path (`SKILL.md` § 2b: diff-derived criteria + the full Step-4 adversarial transform + Step-6 judges, provenance `adversarial-judged`) — production code that merely lacks a plan artifact gets a real judged verification, not a 3-check smoke test.
 

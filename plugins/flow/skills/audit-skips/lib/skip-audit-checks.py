@@ -463,12 +463,58 @@ def classify(stage, ctx):
             # `absent()` and never "missing() is non-empty": a partially-equipped
             # host (Xcode present, xcrun off PATH) must RUN the gate, not skip it.
             #
-            # No diff condition here, deliberately. An earlier design skipped the
-            # entry for a docs-only diff; but a toolchain entry means "draft", and
-            # a docs-only PR on such a host drafts today anyway (verify-build runs,
-            # cannot launch, returns Unknown). Drafting every validated case keeps
-            # the status quo without a second diff predicate to disagree with the
-            # producer's.
+            # THERE IS A DIFF CONDITION. The comment that stood here until v1.51.0
+            # asserted the opposite was deliberate, and rested on a premise that had
+            # already expired when it was written. (It is paraphrased, not quoted, on
+            # purpose: a verbatim copy would keep answering a grep for the retired
+            # justification, and a reader who finds it cannot tell it is dead.)
+            # It argued a docs-only PR on a
+            # toolchain-less host "drafts today anyway (verify-build runs, cannot launch,
+            # returns Unknown)". That is false now: BOTH host shapes self-skip at
+            # verify-build S 1.2 (docs-only, N/A) so it never runs at all. The premise was
+            # obsoleted by the very feature the comment was attached to.
+            #
+            # What the false premise cost, measured on health-tracker#118: a `toolchain`
+            # entry is in `manifest-triage.CHECK_ONLY`, so it is never waivable-to-ready
+            # and never subtracted from the residual -- and on a docs-only diff its own
+            # re-check can never pass, because there is no behaviour for any build to
+            # exercise. The PR could not reach READY by any sanctioned path. CHECK_ONLY is
+            # correct and stays; routing a docs-only diff into it was the bug.
+            #
+            # THE CONDITION THAT WOULD REVERSE THIS: if a docs-only diff could ever carry
+            # behaviour a build must exercise, this arm must go back to filing the entry.
+            # Today it cannot -- `sourceFilePatterns` includes json/ya?ml/toml, so the one
+            # real candidate (a config-driven behaviour toggle in a non-code file) is
+            # SOURCE and such a diff is never docs-only. Re-read that slot before trusting
+            # this: if those extensions ever leave the default, this arm is wrong again.
+            # Stated as a reversal condition rather than a restatement, because `git grep`
+            # cannot find a premise that has merely become false (FB-0122).
+            #
+            # Kept as a BACKSTOP even though the producer now exits docs-only first: an
+            # installed plugin lags the repo by many releases (FB-0107 measured twelve),
+            # so an older verify-build will still hand this a toolchain skip reason on a
+            # docs-only diff. The consumer has to be right on its own.
+            # `file_count > 0` is part of the condition, not decoration: zero enumerated files
+            # is evidence the base did not resolve, never evidence of a docs-only diff. Falling
+            # through to the toolchain arm there is the conservative answer -- it files an entry
+            # a human sees, which is what this state did before the arm existed.
+            #
+            # DOCS-ONLY FIRST, and it returns N/A rather than falling through: a
+            # toolchain reason on a diff with no source/UI is "I could not verify" applied
+            # to a change with nothing to verify. Filing the entry there is the deadlock;
+            # letting it fall through to NEEDS-JUDGMENT would be a different wrong answer.
+            # Same UNION as the doc-only branch above, for the same reason -- html is in
+            # uiFilePatterns but not sourceFilePatterns, so source alone under-counts.
+            if (toolchain_required(cfg.get("platform"))
+                    and _reason_has(skip, *REASON_NEEDLES)
+                    and diff.get("file_count", 0) > 0
+                    and not (diff["touches_source"] or diff["touches_visual"]
+                             or diff["touches_a11y"])):
+                return ("LEGITIMATE",
+                        "toolchain absent on this host, but the diff touches no source/UI "
+                        "files — there is no behavior for any build to exercise, so the "
+                        "missing toolchain closes no gap (N/A, not unverified)",
+                        auto, None)
             if toolchain_required(cfg.get("platform")) and _reason_has(skip, *REASON_NEEDLES):
                 platform = cfg.get("platform")
                 present = ctx["toolchain_present"]
@@ -692,7 +738,15 @@ def main(argv):
     # to three at one site and not the other.
     diff_info = {"touches_source": touches_source,
                  "touches_visual": touches_visual,
-                 "touches_a11y": touches_a11y}
+                 "touches_a11y": touches_a11y,
+                 # COUNT, not just the three booleans. `resolve_base` here returns an
+                 # UNVERIFIED `origin/<branch>` when nothing verifies, and `_git` maps any
+                 # failure to "", so a shallow clone or a worktree without the remote ref
+                 # yields ZERO files -- and three False booleans, which is indistinguishable
+                 # from a genuine docs-only diff. Before the docs-only arm existed that state
+                 # fell through and filed a CHECK_ONLY entry a human had to see; without this
+                 # count the arm would silently return READY instead (measured by review).
+                 "file_count": len(files)}
 
     vs = compute_visual_significance(args, args.config)
     visual_significant = bool(vs.get("visual_significant"))

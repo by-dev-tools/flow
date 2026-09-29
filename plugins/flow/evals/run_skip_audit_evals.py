@@ -325,6 +325,44 @@ def main() -> int:
               "not on PATH" in reason_of(r, "verify-build"),
               reason_of(r, "verify-build"))
 
+        # FIFTH CORNER — same toolchain-shaped reason, same toolchain-less host, but a
+        # DOCS-ONLY diff. This must be LEGITIMATE and owe NOTHING, and it is the corner whose
+        # absence produced an unmergeable PR: `toolchain` is in manifest-triage.CHECK_ONLY, so
+        # the entry was never waivable-to-ready and never subtracted, while its own re-check
+        # could never pass — a docs-only diff has no behaviour for any build to exercise.
+        # Measured on health-tracker#118. "Nothing to verify" and "could not verify" are
+        # different claims; only the second is a blocker.
+        #
+        # Kept on the CONSUMER side even though verify-build now exits docs-only first,
+        # because an installed plugin lags the repo (FB-0107 measured twelve releases): an
+        # older producer will still hand this a toolchain reason on a docs-only diff.
+        r_docs = run(tmp, config=ios_cfg, report=tc_report, files="M\tdocs/guide.md", which=[])
+        check("toolchain-docs-only-legitimate",
+              verdict_of(r_docs, "verify-build") == "LEGITIMATE",
+              f"got {verdict_of(r_docs, 'verify-build')!r}: {r_docs.get('stages')}")
+        check("toolchain-docs-only-owes-NO-manifest-entry",
+              kind_of(r_docs, "verify-build") is None,
+              f"manifest_kind={kind_of(r_docs, 'verify-build')!r} — a docs-only diff that owes a "
+              "CHECK_ONLY entry is a PR that can never reach READY by any sanctioned path")
+        check("toolchain-docs-only-reason-says-N/A-not-unverified",
+              "no behavior for any build to exercise" in reason_of(r_docs, "verify-build"),
+              reason_of(r_docs, "verify-build"))
+        # PAIRED POSITIVE, stated here rather than assumed: the SAME host and reason on a
+        # source-touching diff still owes the entry (asserted as toolchain-green-owes-the-
+        # manifest above). If both stopped owing, the two checks above would pass vacuously.
+
+        # SIXTH CORNER — same reason, same toolchain-less host, and a diff that enumerated
+        # ZERO files. That is evidence the base did not resolve (resolve_base here returns an
+        # UNVERIFIED origin/<branch>), not evidence of docs-only, so it must still owe the
+        # entry. Mutation-found: dropping the `file_count > 0` guard escaped every other check,
+        # because nothing exercised an empty enumeration through classify().
+        r_empty = run(tmp, config=ios_cfg, report=tc_report, files="", which=[])
+        check("toolchain-empty-enumeration-still-owes-the-manifest",
+              kind_of(r_empty, "verify-build") == "toolchain",
+              f"manifest_kind={kind_of(r_empty, 'verify-build')!r} — zero files means the base "
+              "is wrong, and silently returning N/A there is strictly worse than the deadlock: "
+              "before the docs-only arm existed this state filed an entry a human saw")
+
         # RED — identical claim, identical config, host that HAS the toolchain.
         r = run(tmp, config=ios_cfg, report=tc_report, files=SRC, which=["xcodebuild", "xcrun"])
         check("toolchain-red-should-re-run", verdict_of(r, "verify-build") == "SHOULD-RE-RUN",
@@ -673,9 +711,19 @@ def main() -> int:
         #    a consumer reading `touches_ui` would be reading a field whose meaning
         #    silently changed.
         diff_obj = (r.get("context") or {}).get("diff") or {}
+        # EXACT set, deliberately: a merged `touches_ui` survivor would be a field whose
+        # meaning silently changed. `file_count` joined it at v1.52.0 and is load-bearing --
+        # the docs-only arm requires a NON-EMPTY enumeration, because zero files means the base
+        # did not resolve (resolve_base returns an unverified ref) rather than "nothing to
+        # verify", and without the count that state would return READY instead of filing an
+        # entry. Adding a field here is intended to cost this edit; dropping one must not be free.
         check("fb78-emits-split-diff-fields",
-              set(diff_obj) == {"touches_source", "touches_visual", "touches_a11y"},
-              f"expected exactly the split fields, got {sorted(diff_obj)}")
+              set(diff_obj) == {"touches_source", "touches_visual", "touches_a11y",
+                                "file_count"},
+              f"expected exactly the split fields + file_count, got {sorted(diff_obj)}")
+        check("fb78-file-count-is-an-int-the-arm-can-gate-on",
+              isinstance(diff_obj.get("file_count"), int),
+              f"file_count={diff_obj.get('file_count')!r} — the docs-only arm gates on > 0")
 
         # 5. Back-compat: with ONLY uiFilePatterns set, both consumers resolve to it,
         #    so the pre-split verdicts stand unchanged.

@@ -8,7 +8,7 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 ## Now
 
-**Plugin at v1.50.0 (this PR — a slash-command argument never touches a shell again, FB-0116/FB-0117. `$ARGUMENTS` is substituted textually into the whole skill body before anything parses it and is not shell-escaped, so four skills were pasting a caller-supplied path into a command that ran at render time with no permission prompt. Closed with one house idiom — the argument lives in prose under `## Argument`, blocks run argument-less, and the value reaches a program only via the reviewer's own `Read` (Tier 1) or a file the model writes whose fixed literal path the block reads (Tier 2, FB-0108's channel). Also closes a second live bug of the same mechanism: `$0`–`$9` are placeholders too, so `/flow:ship <any argument>` was corrupting ship's own FB-0107 provenance block; `${1}` for shell, `$(0)` for awk, because `${0}` is an awk syntax error. New CI-wired `run_arg_safety_evals.py` validates its instrument on a known positive before trusting any negative, and #159's residual pin flipped as designed. **Two named residuals:** `/flow:critique-plan`'s pinning lint cannot read a named plan file, and `/flow:audit-coverage`'s directory walk is judgment-based on direct invocation — both stated in the skills.)** Recently shipped: **v1.49.0 (#160 — `/flow:audit-coverage` enumerates before it judges, FB-0115), v1.47.0 (#159 — source-tree input mode + a verified RCE in typed arguments), v1.45.0 (#157 — the §4.10 orchestrator skill suite, FB-0110), v1.44.0 (#156 — manifest fence injection, FB-0109).**
+**Plugin at v1.52.0 (this PR — a docs-only PR is N/A, not unverified, FB-0122. On a docs-only PR from a toolchain-less host flow produced a PR that could not be merged by any sanctioned path: a `toolchain` manifest entry is in `CHECK_ONLY`, so never waivable-to-ready and never subtracted, while its own re-check could never pass on a diff with no behaviour to build — the remediation told the human to bypass flow. Measured on health-tracker #118 by the health-tracker workspace. `CHECK_ONLY` is correct and untouched; the fix is upstream — `verify-build` § 1.2 gains a docs-only N/A exit **before** the toolchain check, and `audit-skips` gains the diff condition it used to declare it deliberately lacked, retained as a backstop for lagging installs. Also unifies the two different answers flow used to give one input shape.)** Recently shipped: **v1.50.0 (#165 — the $ARGUMENTS prose rule, FB-0116/FB-0117), v1.49.0 (#160 — audit-coverage enumerates before it judges, FB-0115).**
 
 ▶ **Next up:** the **matcher** half of the coverage judgment — `auditor.md`'s disprove self-check drops a behaviour when any criterion covers it "even loosely", and that clause is what suppressed both of the diff-mode residual misses this PR localized. Measure it on the same two cases before changing it.
 
@@ -40,6 +40,20 @@ Canonical: `research/2026-08-23-flow-cloud-workflow-plan.md`. One orchestrator w
 - **Merge-gate inputs are agent-declared where an artifact exists.** `--verify-verdict pass` is accepted as a CLI string while a canonical per-HEAD findings buffer exists, and this repo's own skip-auditor already refuses a verdict whose artifact is absent. `--plan-result` fixed the worst of the four this pass; reading the verify buffer directly is the rest. Blocked on nothing except scope.
 
 **§ Exploration
+
+- **Every gate re-derives "nothing to check" locally, in its own words, one bug at a time.**
+  Flow has now discovered the same three-state distinction — `ok` / `nothing there` / `could not
+  look` — four times: FB-0082's absent/invalid/stale/ok, FB-0121 in `audit-coverage`,
+  `general.md` item 4, and this PR — and fixed it per-gate each time. The sibling gates still say
+  "skip doc-only diffs", not "N/A": one input shape, four vocabularies. And `manifest-triage` has
+  verdict kinds for blockers but no first-class N/A, which is why this fix had to be "emit no
+  entry" rather than "emit an N/A entry". No shape is obvious — a shared `nothing-to-check`
+  helper, an N/A manifest kind that renders as an explicit non-blocker, or just a stated
+  three-state vocabulary each gate must answer are genuinely different designs with different
+  blast radii, and choosing on this PR's evidence would be guessing.
+  **Surfaces when:** anyone next edits an early-exit or skip predicate in
+  `plugins/flow/skills/{security-review,accessibility-review,audit-coverage,verify-build}/SKILL.md`,
+  or adds a kind to `manifest_contract.py` / `manifest-triage.py`'s `CHECK_ONLY`.
 
 - **Tier 1 closed the injection channel structurally and left containment a convention.**
   `audit-plan`'s own prose is precise about what it claims — the agent's grant is `Read, Grep`, so
@@ -305,6 +319,70 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 **Sequencing rationale:** V1 is the input, V2 is the gate that makes autonomy safe, V3 is the deliverable, V4 is the flywheel. V3-before-V2 produces an unverified-but-pretty walkthrough; V4-before-V1 gives the loop nothing structured to check against.
 
 ## Next
+
+- **Canonicalise FB-0122's reversal-condition marker before the other two instances land.**
+  This PR invented `THE CONDITION THAT WOULD REVERSE THIS:` and pinned its presence at one
+  site. FB-0122 names two more instances (a `/flow:doctor` `[UNCHECKED]` line must name the
+  mechanism that makes it checkable; a `research/orchestrator-field-manual.md` section must
+  carry its deletion criterion) which land in separate PRs — and if each invents its own
+  phrasing there is nothing to search for and the rule stays a habit. FB-0122 is right that
+  grep cannot find an *expired* premise; it can find a *missing marker*, which is a different
+  and tractable claim. Add the rule as a § Consistency item in `.claude/rules/general.md`
+  (which auto-loads, unlike a feedback file) fixing one token, then grow a site list
+  (path → marker present) as each PR lands so deleting a reversal condition reddens CI.
+  **Must precede or accompany the doctor PR to be worth anything.** ~1 paragraph + ~25 eval lines.
+- **Hoist `resolve_base` + `collect_changes_git` out of `visual-significance.py`.**
+  `lib/diff_scope.py` deliberately does not import them because that file's name is hyphenated
+  and therefore not importable, so the base-resolution and three-dot-collection logic now exists
+  twice. `run_docs_only_evals.py` pins the two source-pattern defaults byte-identically and the
+  rulers structurally, which is the mitigation, not the fix. Renaming the module (or moving both
+  functions into `diff_scope.py` and importing from there) removes the duplication; it touches a
+  file four other skills read, so it is its own PR.
+- **`/flow:audit-skips`' new docs-only arm returns LEGITIMATE without consulting the host.**
+  A producer falsely claiming "toolchain absent" on a docs-only diff is now accepted rather than
+  refuted with "but `xcrun` IS on PATH". Outcome-equivalent today (nothing to verify either way),
+  but it removes the only signal that a producer is lying about its host, and that signal is the
+  reason the toolchain arm checks the host at all. Either order the host check first and return
+  N/A only once it agrees, or state in the comment why the lie is harmless here.
+
+- **`/flow:audit-skips`: the stamp guard is a one-caller guard on a multi-caller engine (found by the health-tracker workspace `463e6017`; framing corrected by measurement here).**
+  *Not* "the stamp is never validated" — it is, and it works. Measured: `flow_scratch.py check` on a
+  handoff stamped `repo=/somewhere/else branch=not-this-branch head=0000000` returns
+  `{"status":"stale","reason":"handoff repo=… does not match this workspace"}`, exit 2, and
+  `audit-skips/SKILL.md:~137` turns that into `stamp_error` and refuses to audit. **The defect is
+  that the guard lives in the skill's shell preamble and not in the engine.** Invoke
+  `lib/skip-audit-checks.py` directly with that same bogus-stamped report and it never mentions the
+  stamp — measured, `'stamp' in output == False`; it audits the contents of a report claiming to be
+  from another repo, branch and HEAD. Its CLI takes `--report --config --head-sha --branch
+  --files-from --diff-from --plan --base --which-from` and **no body/manifest/stamp input at all**.
+  Every eval calls it directly; so could any future caller. That is FB-0010's fan-out shape and the
+  same contract-split-across-two-files class as FB-0074/FB-0082.
+  *One correction to the original report:* the fabricated-HEAD run did **not** reproduce an identical
+  7/7 LEGITIMATE for me — I measured **2/7**, because the engine computes its own diff context and
+  correctly refuted several doc-only claims. So the finding is structural (no stamp input), not
+  "the verdict is unchanged". **Carries:** validate the stamp *in the engine*, or make the engine
+  refuse a report whose `flow_stamp` it was not given the means to check — fail closed, like
+  `read_stamped` already does one layer up.
+  **Why this is not the docs-only bug:** that one was a *classification* error upstream of the
+  entry; this is an *input-trust* gap in the auditor itself. Different layer, different defense.
+- **`/flow:audit-skips`: buffer freshness has two fallbacks that absence satisfies (orchestrator-found; measured here, and it is BOTH disjuncts, not one).**
+  `lib/skip-audit-checks.py:244-246`:
+  `b_ok = (not facts["branch"]) or (branch and facts["branch"] == branch)` and
+  `s_ok = (not facts["head_sha_short"]) or (head_sha and facts["head_sha_short"] == head_sha)`.
+  The leading disjunct in **each** means a missing field passes its own check, and `fresh` then only
+  requires `branch or head_sha_short` — so one field present and matching is enough, with the other
+  comparison never performed. Measured against `read_buffer(branch="work", head="abc1234")`:
+  `branch match + sha ABSENT ⇒ fresh=True`, and `branch ABSENT + sha match ⇒ fresh=True`. The
+  original report named the SHA half; the branch half is the identical shape and equally live.
+  This is `.claude/rules/general.md` item 1 — a fallback with no paired positive assertion — inside
+  the engine whose own comment at `:407` names *"the FB-0010 silent-skip shape, in the engine whose
+  job is refusing silent skips."* The comment is right and the code has two more instances than the
+  comment knows about. **Carries:** require BOTH fields and fail closed on an unstamped buffer, or
+  pair each fallback with an explicit positive — a buffer that cannot prove which HEAD it describes
+  is not evidence of freshness. **Why this is not the other two:** it is not classification and not
+  input-trust; it is a truth-table error in a predicate that already has the right inputs.
+  *Both entries are deliberately NOT fixed in the v1.52.0 docs-only PR* — they touch the same file
+  and would collide; dispatch after it merges.
 
 - **Argument safety: warn when the host substitution model goes stale (FB-0116, staff-review).**
   `lib/arg_placeholders.py` transcribes the host's three substitution arms, its escape arm and
