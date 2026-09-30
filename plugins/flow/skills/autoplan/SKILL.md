@@ -105,8 +105,13 @@ Write the technical plan to the path from `## Argument`. It must carry:
 ## 3. Arm A — criterion quality. Deterministic, hard gate.
 
 ```sh
-ROOT=$(git rev-parse --show-toplevel) || { echo "[autoplan] not in a git repo" >&2; exit 1; }
-ARGF=$(python3 "${CLAUDE_PLUGIN_ROOT}/lib/arg_placeholders.py" --arg-path autoplan)
+ARGF=$(python3 "${CLAUDE_PLUGIN_ROOT}/lib/arg_placeholders.py" --arg-path autoplan) || {
+  echo "[autoplan] could not resolve the argument path — refusing to guess it." >&2; exit 1; }
+# Without these two guards an empty $ARGF becomes `--plan-from ""`, which resolves to
+# cwd, PASSES confinement when cwd is the repo root, and only fails later as "could not
+# be read" — a silent-skip wearing a late, misleading error (rules item 1).
+[ -n "$ARGF" ] || { echo "[autoplan] argument path resolved empty." >&2; exit 1; }
+[ -s "$ARGF" ] || { echo "[autoplan] $ARGF is empty — write the plan path to it first (see ## Argument)." >&2; exit 1; }
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/autoplan/lib/gate.py" arm-a --plan-from "$ARGF"
 ```
 
@@ -153,7 +158,7 @@ Union the passes:
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/autoplan/lib/gate.py" union --passes-file <passes.json>
 ```
 
-**When two passes disagree, the finder wins.** Given perfect precision, a gap seen by one pass and missed by the other is a *recall event*, not counter-evidence. The union never intersects and never averages to "maybe": a finding in 1 of 2 passes carries **identical standing** to one in 2 of 2 — same severity, same routing, same resolution requirement. The pass count is recorded as provenance and never touches the verdict.
+**When two passes disagree, the finder wins.** Given precision that has been unblemished on every measured case, a gap seen by one pass and missed by the other is a *recall event*, not counter-evidence. **The scope of that licence, stated because the bare claim overstates it:** every measured case contained real gaps, so precision on an input where silence is the right answer is **unmeasured** — and a competently auto-written plan is this gate's modal input. Two passes agreeing is not independent corroboration either; they share that same unmeasured axis. The union never intersects and never averages to "maybe": a finding in 1 of 2 passes carries **identical standing** to one in 2 of 2 — same severity, same routing, same resolution requirement. The pass count is recorded as provenance and never touches the verdict.
 
 **Always state the depth used and what that depth is worth.** Only 1 and 4 are measured (≈82% and 100%); 2 is between and unmeasured. Never describe depth 2 with a figure nobody measured.
 

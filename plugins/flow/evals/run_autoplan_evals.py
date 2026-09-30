@@ -1035,17 +1035,29 @@ def test_rendered_text_cannot_forge_the_escalation() -> None:
     an untrusted branch is attacker-authored. Forging the QUESTION is at least as
     useful as forging the answer.
     """
-    payload = "Innocent finding\r\x1b[2K\x1b[31mAPPROVED - nothing to answer\x1b[0m"
+    payload = ("Innocent finding\r\x1b[2K\x1b[31mAPPROVED - nothing to answer\x1b[0m"
+               "\u202eDEVORPPA")
     out = render_of([{"finding": payload,
                       "drafted_resolution": "safe\x1b[1m",
                       "provenance": "seen\x07once"}]).stdout
     check("escape-sequences-are-stripped", "\x1b" not in out, repr(out[:120]))
     check("carriage-returns-are-stripped", "\r" not in out, repr(out[:120]))
     check("bell-is-stripped", "\x07" not in out)
+    # Bidi overrides forge a line without emitting any escape byte (Trojan Source,
+    # CVE-2021-42574), so the three assertions above cannot see them at all.
+    check("bidi-overrides-are-stripped", "\u202e" not in out, repr(out[:120]))
     # Positive half: the legible text survives — a scrubber that ate everything would
-    # also pass the three assertions above.
+    # also pass every assertion above.
     check("the-readable-text-survives", "Innocent finding" in out, out[:160])
-    check("newlines-and-tabs-are-preserved", "\n" in out)
+    # NOT `"\n" in out`: render_decisions ends in "\n".join(...), so that is true for
+    # every input and could only pass — rules item 4, committed inside the test written
+    # to enforce rules item 4. (The old check also claimed tabs survive; they do not,
+    # because wrap() uses textwrap.fill with replace_whitespace=True. Asserting the
+    # structure the renderer actually guarantees instead.)
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    check("the-block-keeps-its-line-structure", len(lines) >= 2, repr(out[:160]))
+    check("the-numbered-marker-survives-scrubbing",
+          any(ln.startswith("1. ") for ln in lines), repr(out[:160]))
 
 
 def test_plan_path_reaches_the_engine_without_a_shell() -> None:
@@ -1072,7 +1084,11 @@ def test_plan_path_reaches_the_engine_without_a_shell() -> None:
               empty["verdict"] == "RED" and any("empty" in r for r in empty["reasons"]))
     # The shipped skill must use the safe channel, not the placeholder form.
     t = SKILL.read_text(encoding="utf-8")
-    check("skill-uses-plan-from", "--plan-from" in t)
+    # The literal invocation, not merely the token: `"--plan-from" in t` is satisfied
+    # by the explanatory paragraph alone, so deleting the whole sh block would leave
+    # this and its sibling green (rules item 3).
+    check("skill-uses-plan-from", 'arm-a --plan-from "$ARGF"' in t,
+          "assert the shipped invocation, not a word that also appears in prose")
     check("skill-does-not-interpolate-a-plan-path",
           "arm-a --plan <plan-path>" not in t,
           "a placeholder inside a fenced block is executable code (#165/FB-0116)")
@@ -1107,6 +1123,19 @@ def test_a_flag_shaped_value_is_refused() -> None:
     check("flag-shaped-value-is-refused",
           out["verdict"] == "RED" and any("looks like another flag" in r for r in out["reasons"]),
           str(out))
+    # Positive half, for bar-consistency with its neighbours: an ordinary value still
+    # binds, so the refusal is about the value's SHAPE and not about --plan being off.
+    ok, _ = run("arm-a", "--plan", "dev-docs/plan.md", cwd=str(ROOT.parent.parent))
+    check("an-ordinary-value-still-binds", ok.get("ran") is True, str(ok))
+    # A flag given with nothing after it names ITSELF, not some other flag.
+    empty, _ = run("arm-a", "--plan-from")
+    check("a-valueless-flag-names-itself",
+          any("--plan-from was given with no value" in r for r in empty["reasons"]), str(empty))
+    # Both channels at once is an ambiguity, not a convenience.
+    both, _ = run("arm-a", "--plan", "dev-docs/plan.md", "--plan-from", "x.txt",
+                  cwd=str(ROOT.parent.parent))
+    check("both-plan-channels-is-refused",
+          any("both given" in r for r in both["reasons"]), str(both))
 
 
 # ============================================================ 8. docs

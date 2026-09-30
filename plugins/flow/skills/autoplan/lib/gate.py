@@ -100,6 +100,17 @@ class SecurityRefusal(Exception):
     """A path refused by `_safe_path`. Surfaced as a clean refusal, never a traceback."""
 
 
+# Bidi controls reorder the VISUAL rendering of everything after them — Trojan Source,
+# CVE-2021-42574 — so they forge a rendered line without emitting a single escape byte.
+# A C0/C1 filter alone misses them entirely, which left the scrubber at roughly 80% of
+# its own stated goal: `\x1b[2K` erases the line, `\u202e` rewrites it in place and the
+# three escape-byte assertions never fire. U+2028/U+2029 are line/paragraph separators
+# that some renderers treat as breaks, so they go too.
+_BIDI = frozenset(
+    [0x200E, 0x200F, 0x2028, 0x2029] + list(range(0x202A, 0x202F)) + list(range(0x2066, 0x206A))
+)
+
+
 def _scrub(text) -> str:
     """Strip terminal control characters from text that will be PRINTED to a human.
 
@@ -120,7 +131,8 @@ def _scrub(text) -> str:
         text = "" if text is None else str(text)
     return "".join(
         ch for ch in text
-        if ch in "\n\t" or (ord(ch) >= 0x20 and not 0x7F <= ord(ch) <= 0x9F)
+        if ch in "\n\t"
+        or (ord(ch) >= 0x20 and not 0x7F <= ord(ch) <= 0x9F and ord(ch) not in _BIDI)
     )
 
 
@@ -196,13 +208,25 @@ def _safe_path(path: Path, what: str) -> Path:
     # guard against a path that MUST be refused, which is the only reason either was
     # visible -- neither showed up as a failing test, because both versions passed.
     base = _repo_root(Path.cwd())
+    # Resolve ONCE. The earlier version called path.resolve() again inside the
+    # except-handler while formatting its message — so a path that cannot resolve at
+    # all (an embedded NUL) raised a SECOND time from the error path and escaped as a
+    # traceback with no JSON on stdout, breaking this file's stated contract twice
+    # over ("a clean refusal, never a traceback"). Only reachable since --plan-from:
+    # execve forbids NUL in argv, so before the file channel no caller could deliver
+    # one. An error handler that can itself fail is not an error handler.
     try:
         resolved = path.resolve()
+    except (ValueError, OSError) as exc:
+        raise SecurityRefusal(
+            "%s is not a resolvable path (%s) — refusing rather than acting on it."
+            % (what, exc))
+    try:
         resolved.relative_to(base)
     except ValueError:
         raise SecurityRefusal(
             "%s resolves to %s, outside %s — refusing to read a path outside the "
-            "repository it belongs to." % (what, path.resolve(), base)
+            "repository it belongs to." % (what, resolved, base)
         )
     except SecurityRefusal:
         raise
@@ -468,9 +492,18 @@ def arm_a(plan_path: Path, expect_line=None, lib_root: Path | None = None) -> di
 def union_passes(passes: list) -> dict:
     """Union N coverage passes, deduped by cited symbol. The finder wins.
 
-    Given perfect precision across every measured run, a disagreement between two
+    Given precision unblemished on every measured case, a disagreement between two
     passes has exactly ONE reading: the finder is right and the miss is a recall
-    event, not counter-evidence. So this unions, never intersects, and never averages
+    event, not counter-evidence.
+
+    THE SCOPE OF THAT LICENCE, stated here because this is where a future author
+    decides whether the union rule still holds: every measured case CONTAINED REAL
+    GAPS. Precision on an input where silence is the correct answer has never been
+    measured (`dev-docs/roadmap.md` § "Precision has never been measured on a case
+    whose correct answer is silence"). That is the gate's MODAL input — a competently
+    auto-written plan — and it is the case where one phantom finding would RED-gate a
+    good plan with no human gate behind it. Agreement between passes is not
+    independent corroboration either: both share the unmeasured axis. So this unions, never intersects, and never averages
     to "maybe". A finding present in 1 of 2 passes carries IDENTICAL standing to one
     present in 2 of 2 — same severity, same routing, same resolution requirement.
     `seen_in` is recorded as provenance and never touches the verdict.
@@ -501,7 +534,9 @@ def union_passes(passes: list) -> dict:
             "real gaps, so precision on an input where silence is the right answer "
             "is UNMEASURED.)" % (n, total)
             if n < total
-            else "Found by all %d coverage passes." % total
+            else "Found by all %d coverage passes — which is agreement, not "
+                 "independent corroboration: both passes share the same unmeasured "
+                 "axis (precision where silence is correct)." % total
         )
     return {"findings": findings, "passes": len(passes)}
 
@@ -530,7 +565,7 @@ def _why_arm_cannot_pass(arm: dict) -> str | None:
     if str(arm.get("verdict", "")).upper() == "RED":
         why = "; ".join(arm.get("reasons") or []) or "no reason given"
         return (
-            "Arm %s reported verdict RED: %s. An arm's own verdict is authoritative; "
+            "Arm %s reported verdict RED — %s. An arm's own verdict is authoritative; "
             "the gate never overrides it. → Fix what it names, then re-run this arm."
             % (name, why)
         )
@@ -775,6 +810,9 @@ def _arg(argv, flag, required=True):
                     "%s was followed by %r, which looks like another flag — refusing "
                     "rather than binding a mis-parsed value." % (flag, val))
             return val
+        # Flag present with nothing after it. Reporting "missing required argument
+        # --plan" to someone who typed `--plan-from` names the wrong flag.
+        raise SecurityRefusal("%s was given with no value after it" % flag)
     if required:
         raise SecurityRefusal("missing required argument %s" % flag)
     return None
@@ -801,6 +839,10 @@ def _path_from_file(arg_file: Path, what: str) -> Path:
     lines = [ln for ln in raw.splitlines() if ln.strip()]
     if not lines:
         raise SecurityRefusal("%s argument file %s is empty" % (what, arg_file))
+    if "\x00" in lines[0]:
+        raise SecurityRefusal(
+            "%s argument file %s contains a NUL byte — refusing. A path cannot hold "
+            "one, and it is the one byte argv could never have carried here." % (what, arg_file))
     if len(lines) > 1:
         raise SecurityRefusal(
             "%s argument file %s carries %d non-blank lines; a path has exactly one. "
@@ -835,6 +877,12 @@ def main(argv: list) -> int:
             # ever a token in a shell command (#165/FB-0116). `--plan` is retained for
             # direct human/CI use where argv is not attacker-influenced.
             plan_from = _arg(rest, "--plan-from", required=False)
+            if plan_from and "--plan" in rest:
+                # Silent precedence is an ambiguity, not a convenience: the caller gets
+                # no signal about which of the two paths was graded.
+                raise SecurityRefusal(
+                    "--plan and --plan-from were both given; refusing rather than "
+                    "silently picking one. Pass exactly one.")
             plan = (_path_from_file(Path(plan_from), "plan") if plan_from
                     else Path(_arg(rest, "--plan")))
             _safe_path(plan, "plan file")
