@@ -240,7 +240,7 @@ The strongest argument for the orchestrator is **not** speed: today each skill r
 
 **FOLLOW-UP — DEFERRED at the Phase 2 plan gate (2026-09-20), still open.** Ben cut it from Phase 2 on scope discipline: the test applied was *"does this PR make the statement false?"*, and a new Lens-A question is a **feature addition to an agent prompt**, not a claim D1 Phase 2 invalidates (unlike the `role` doctor check and the brief word cap, which it does falsify and which shipped with it). Needs its own small PR: one new Lens-A question **plus** a re-authored fixture demonstrating it, per "prompt change = code change". **Surfaces when:** `lens-experience.md` is next touched, or a brief review misses an accessibility/timing concern in practice. Original finding follows. Lens A's question set (journey/edge-states/friction/feel) names no accessibility or timing dimension. The lens's own worked fixture (`brief_low_ambition.md`, a 5-second auto-dismissing undo link with no way to extend or disable the timer) is a near-perfect worked example of a WCAG 2.1 SC 2.2.1 (Timing Adjustable) concern the pinned expected output never names — it raises the ambition ceiling on reassurance/confidence grounds but misses the accessibility angle entirely. Real scope expansion (a new Lens-A question + a re-authored fixture demonstrating it, per this repo's own "prompt change = code change" rule), not something to fold into Phase 1 silently. Whoever picks up D1 Phase 2 (when the lens becomes load-bearing rather than standalone-only) should fold an explicit accessibility/timing question into Lens A before then.
 
-### CV1 — `/flow:audit-coverage` cannot see `.md`, so most of this plugin is invisible to it
+### CV1 — `/flow:audit-coverage` cannot see `.md`, so most of this plugin is invisible to it — ✅ SHIPPED (v1.55.0, FB-0126/FB-0127)
 
 **Surfaces when:** `/flow:audit-coverage`'s `EXCL` filter is next touched, or any PR whose substance is prompt text reports "no undeclared changes".
 
@@ -251,6 +251,8 @@ Found while re-deriving the recall series for #158, and it is larger than the re
 **Why this is not just "widen the regex".** `.md` is genuinely documentation in most consumer repos, which is why the exclusion exists and is right there. The fix has to distinguish *prose about the product* from *prose that IS the product* — plausibly by treating paths under a plugin's `skills/` and `agents/` as source regardless of extension, or by reading a config slot. That is a design call, not a one-line edit, which is why this is an entry rather than a patch.
 
 **Do not fix by deleting the exclusion.** A repo-wide `.md` inclusion would make every docs PR read as a behaviour change and drown the signal — the failure the exclusion was added to prevent.
+
+**Shipped as three parts (v1.55.0).** (A) **say it** — with the slot unset a run prints `WEAKENED · DOC-BLIND` naming every changed doc-shaped file it did not read, so an un-opted-in consumer gets a stated blind spot rather than a clean pass; (B) **see it** — the new `behaviorBearingDocPatterns` slot (**empty by default**, so no consumer's result changes silently) unions matching paths back in *after* the source filter, which is the right shape because `.md` never matched `sourceFilePatterns` in the first place: this was an inclusion bug, not an exclusion one, and the `|\.md$` clause was belt-and-braces; (C) **fit it** — `head -c` over a concatenation made files late in `sort -u` order entirely invisible once the 60 KB cap bound, replaced by max-min fair-share allocation (`lib/evidence-budget.py`) that names every cut file. **Measured end to end:** #159's reconstruction moves from a structural 0-of-5 to **2-of-5 and 1-of-5 single-run, union 3-of-5**, with zero false positives, via `tools/coverage-recall/` with `--selftest` passing first; paired with the negative that a wording-only `.md` change returns `No issues flagged.` while one added rule in the same file is flagged. Two follow-ups this measurement produced are in § Next: criterion truncation (80% of declared text silently dropped) and whether ship Step 2 should union two passes.
 
 ### D1c — Gate-1's hand-off is the last unrendered hand-off in the loop
 
@@ -1869,6 +1871,65 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 - **27 carryover FOLLOW-UPs** routed from reviews of PR G + H1 + I + J + H2-docs + M. Most are MEDIUM-priority polish or v1.2 hygiene; bundle into a future PR H-proper consolidation after the active queue lands. Highlights: doctor Check 2.5 generalization to `template/` files (validated by PR M's BLOCKER class; folding into PR N is preferred — see Now § Cross-track dependencies); manifest description CHANGELOG.md extraction; `preflightCmd` example in `template/base/flow.config.json.example`; per-attempt log machinery enforcement.
 - **Resume umbrella retirement.** md-manager PRs 5 (dogfood) + 6 (delete duplicates + retire umbrella) per `dev-docs/handoffs/md-manager-pr4-6-spec.md`. Flow-side: standing by for PR 5's feedback intake; may surface additional rough edges worth a second follow-up bundle.
 - **Carryover PR-2 FOLLOW-UPs not yet absorbed** (items 3-8 in `dev-docs/plan.md` § "PR 3+ follow-ups from PR 2 review"). Most are MEDIUM-priority polish or v1.2 hygiene; pick up opportunistically rather than as a focused PR.
+
+- **Source mode's cap is 1.5x too small for this repo's own largest skill — deliberately deferred
+  (CV1 measurement).** `SOURCE_CAP` is **120,000 B**; `plugins/flow/skills/ship/SKILL.md` alone is
+  **177,768 B**. Pointing `/flow:audit-coverage <path>` at flow's own skill tree therefore truncates
+  *inside a single file* before it ever reaches a second one. CV1 fixed the **diff**-mode cap by
+  replacing `head -c` over a concatenation with max-min fair allocation across files, and that shape
+  does not help here — there is nothing to share a budget with when one file is 1.5x the whole
+  budget. **Deliberately not fixed in CV1** because `prototype/SKILL.md:217` points source mode at an
+  approved *prototype*, not at a repo, so the input that motivates a fix arrives with D1 Phase 3.
+  Re-measure then, and choose between raising the cap and intra-file selection rather than raising it
+  blind.
+
+- **Every declared criterion reaches both reviewers as its first physical line only, silently (CV1
+  measurement).** `verify-build/lib/walk_extract.py:272`'s `CHECKBOX_RE` matches one physical line. A
+  wrapped `- [ ]` bullet's continuation lines match neither `is_terminator` nor `_MALFORMED_CB_RE`, so
+  the loop `continue`s past them: they reach no consumer and add no `warnings` entry — in a function
+  that already has a warnings channel and uses it for three other conditions (`general.md` item 1,
+  silent-skip, with the defense already built and not wired to this case). **Measured at #159's
+  ship-time HEAD (`bd29167`): 12 of 12 criteria are wrapped, and 1,143 of 5,819 characters reach the
+  reviewer — 80% of the declared text is dropped.** Criterion 1 arrives ending mid-sentence at
+  `"...byte-identical to today's, and the"`. Two consumers, so this is not one skill's bug:
+  `/flow:audit-coverage` judges against this set, and `/flow:verify-build` Step 3 feeds these same
+  strings to bundled `/verify`. **What is deliberately NOT claimed:** a controlled arm with the
+  criteria untruncated did *not* raise recall on #159 — it scored 1/5 where the truncated arm scored
+  2/5, finding a *disjoint* gap. One run per arm cannot be separated from ordinary run-to-run
+  variance, so this is filed as a silent-skip defect **on its own merits**, never as the explanation
+  for a recall number. Fix is continuation-line joining plus a warning naming every truncated bullet;
+  re-measure recall afterwards with enough runs to see past the variance.
+
+- **Decide whether `/flow:ship` Step 2 runs `/flow:audit-coverage` twice and unions — CV1 reopened
+  this.** `audit-coverage/SKILL.md`'s "Running this more than once" section justified a single pass
+  with "a gain measured at zero", on three diff-mode runs that found identical gaps, and explicitly
+  asked for a second diff-mode case before treating that as settled. CV1 ran it and got the opposite:
+  two runs over **byte-identical** evidence scored 2/5 and 1/5 with **disjoint** gaps — union 60%,
+  **+30pp**, zero false positives in either. The dead premise is now out of the shipped paragraph and
+  the single-pass decision left standing, which turns this into an open **cost** question rather than
+  a measurement one: two cases point opposite ways and nothing predicts in advance which diff carries
+  harvestable variance. **Do not decide this from the two datapoints on record** — it needs a third
+  and fourth diff-mode case first.
+
+- **`/flow:audit-coverage` has no defined verdict for "I enumerated nothing but the diff was not
+  empty", so the reviewer invents one (CV1 measurement).** The two-stage prompt asks Stage 1 to
+  enumerate behaviours and Stage 2 to judge coverage. When Stage 1 legitimately finds zero
+  behaviours in a non-empty inventory, the schema offers only `ISSUE` / `AUDIT SUMMARY` /
+  `No issues flagged.` — and none is right: there is nothing to flag, and "no issues" would certify
+  a comparison that never happened. **Measured across five CV1 runs, three improvised a shape
+  outside the schema**, including the invented header `EVIDENCE/ENUMERATION DISAGREEMENT — this is
+  not a clean pass.` (`git grep` finds that string nowhere in the plugin). The improvisation is
+  *good judgment* — one run even inferred the blind spot from the **absence** of a `WEAKENED ·`
+  line — which is exactly why it should be a contract instead of a coincidence. **Why it matters
+  beyond tidiness:** `/flow:ship` Step 2 routes coverage results into the draft manifest, and an
+  improvised shape is neither a gap entry nor a clean signal, so the most epistemically careful
+  output the reviewer can produce is the one the pipeline is least able to read. It is also the
+  `.claude/rules/general.md` item 4 shape at the *output* layer: "nothing found" and "I could not
+  compare" must not render the same, and here the second has nowhere to render at all. Fix is a
+  fourth defined verdict with a fixed token, plus routing for it at ship Step 2 and an eval pinning
+  that the token is emitted rather than narrated. **Not fixed in CV1**: CV1 only *adds vocabulary*
+  to the judging prompt, and changing its verdict schema plus a ship routing path is a larger,
+  separately-measurable change.
 
 ## Later
 

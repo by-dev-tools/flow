@@ -18,7 +18,10 @@ description: >
   (union 80% -> 100% across 4 runs vs an 82% single-run mean). Union is safe here
   BECAUSE precision is unblemished across every measured run: unioning independent
   runs can add true positives and, measured, adds no noise. Diff mode measured +0pp
-  (three runs found the same gaps), so a single pass is enough at /flow:ship Step 2.
+  on one input (three runs, identical gaps) and +30pp on a second (#159 with the doc
+  slot set: two runs, disjoint gaps, union 60%), so diff-mode variance is
+  INPUT-DEPENDENT. /flow:ship Step 2 stays a single pass on cost grounds, not because
+  the gain was measured at zero.
 disable-model-invocation: false
 context: fork
 agent: auditor
@@ -59,20 +62,33 @@ only add true positives — run-to-run variance stops being a defect and becomes
 Without that precision record the same technique would just amplify noise, so the licence is
 the *measurement*, not the technique.
 
-**What it bought, measured on the reference prototype (10 documented undeclared behaviours):**
+**What it bought, measured on two inputs** — the reference prototype (10 documented
+undeclared behaviours) and #159's reconstruction (5 keyed gaps, `tools/coverage-recall/`):
 
-| | single-run mean | union of 4 runs |
+| | single-run mean | union |
 |---|---|---|
-| source mode | 82% | **100%** |
-| diff mode | 60% | **60%** |
+| source mode (prototype) | 82% | **100%** (4 runs) |
+| diff mode (prototype) | 60% | **60%** (4 runs) |
+| diff mode (#159, doc slot set — CV1) | 30% | **60%** (2 runs) |
 
-**Source mode: +18pp. Diff mode: +0pp** — three diff-mode runs found exactly the same gaps, so
-there was no variance to harvest. **Read that +0pp as n=1 INPUT, not as a property of diff mode:**
-one case with no run-to-run variance is strong evidence that *that input* had none, and weak
-evidence that diff mode generally does. A second diff-mode case should revisit this call rather
-than inherit it as settled. On the evidence available, `/flow:ship` Step 2 stays a **single** pass:
-doubling the cost of every PR for a gain measured at zero is not a trade worth making, and saying
-so is cheaper than quietly paying it. Union where the variance is; one pass where it is not. (Union also lifted the *pre-v1.49.0* prompt by +15pp, so this is a property of the
+**Source mode: +18pp. Diff mode: +0pp on that input** — three diff-mode runs found exactly the
+same gaps, so there was no variance to harvest there. That paragraph used to add "read the +0pp as
+n=1 INPUT, not as a property of diff mode" and ask for a second diff-mode case. **The second case
+has now been run, and it went the other way** (CV1): on the #159 reconstruction with
+`behaviorBearingDocPatterns` set, two runs over byte-identical evidence scored **2/5 and 1/5 and
+found *disjoint* gaps** — single-run mean 30%, **union 60%, +30pp**, with zero false positives in
+either run. So diff-mode variance is **input-dependent**, and the honest state is two cases
+pointing opposite ways rather than one settled answer.
+
+**`/flow:ship` Step 2 still stays a single pass — but not for the old reason.** The old
+justification was "a gain measured at zero", and that premise is now false. It stays single because
+the gain is real but *unpredictable per input*, and nothing here tells you in advance which diff
+has harvestable variance; doubling Step 2 on every PR to capture it on some unknown fraction is a
+cost decision, not a measurement one, and it is tracked in `dev-docs/roadmap.md` § Next rather
+than decided here. What the measurement does license unconditionally: **if you are looking at a
+specific diff you care about, run it twice and union** — precision stayed perfect across every run
+in both cases, so a second pass can only add true positives. Union where you can afford it; one
+pass in the pipeline. (Union also lifted the *pre-v1.49.0* prompt by +15pp, so this is a property of the
 judgment's variance rather than of the two-stage split — the two compose, they do not overlap.)
 
 ## Declared `**Spec-walk:**` criteria (the claim of what the work covers)
@@ -342,7 +358,53 @@ SP=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
 [ -z "$SP" ] && SP='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
 # Exclude test/fixture/doc paths from the BEHAVIOR diff (tests are not new behavior).
 EXCL='(^|/)(test|tests|__tests__|__fixtures__|fixtures|evals|spec|specs)/|\.(test|spec)\.|(^|/)docs?/|\.md$'
-FILES=$( { git diff "origin/$BASE..HEAD" --name-only 2>/dev/null; git diff HEAD --name-only 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u | grep -E "$SP" | grep -vE "$EXCL" )
+# CV1 — BEHAVIOUR-BEARING PROSE. A .md path never matched $SP in the first place, so EXCL's .md clause
+# was belt-and-braces: this is an INCLUSION change, not an exclusion edit. Flow ships PROMPTS --
+# a SKILL.md is deployed surface by CLAUDE.md's own rule -- so the gate was structurally blind to
+# most of what this repo changes. Measured: on #159 all five undeclared behaviours lived in a
+# SKILL.md the diff excluded, so its recorded 0-of-5 was never a judgment failure.
+#
+# TWO KNOBS WOULD BE ONE TOO MANY. The slot decides what is READ (below); when it is unset the
+# DOC-BLIND line still fires off a built-in suggestion, so an un-opted-in consumer gets a stated
+# blind spot rather than silence. The slot OVERRIDES the built-in judgment, it does not supply it.
+BBDP=$(jq -r '.behaviorBearingDocPatterns // empty' flow.config.json 2>/dev/null)
+DOC_BUILTIN='(^|/)(skills|agents|rules)/.*\.md$'
+if [ -n "$BBDP" ]; then DOCPAT="$BBDP"; DOCSRC="your behaviorBearingDocPatterns"; else DOCPAT="$DOC_BUILTIN"; DOCSRC="a built-in suggestion, not your project's declaration"; fi
+# Validate before use. An invalid ERE makes grep exit 2, an || true swallows it, the match set is
+# empty and the gate reads FEWER files while looking healthy -- the FB-0008 silent-skip class, on
+# the predicate whose false negative costs a gate. Same guard security-review/a11y-review carry.
+echo "" | grep -qE "$DOCPAT" 2>/dev/null; [ $? -gt 1 ] && { echo "[audit-coverage] WEAKENED · DOC-PATTERN-INVALID — behaviorBearingDocPatterns is not a valid extended regex, so behaviour-bearing prose was NOT selected and this run is blind to it. Fix the slot; this is NOT a clean pass."; BBDP=""; DOCPAT="$DOC_BUILTIN"; DOCSRC="a built-in suggestion (your slot did not compile)"; }
+ALLF=$( { git diff "origin/$BASE..HEAD" --name-only 2>/dev/null; git diff HEAD --name-only 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u )
+FILES=$(printf '%s\n' "$ALLF" | grep -E "$SP" | grep -vE "$EXCL")
+# B — SEE IT. Only when the slot is SET, so no consumer's gate changes until they opt in
+# (sourceFilePatterns/EXCL are a published contract every consumer inherits). Test/fixture dirs
+# stay excluded: a fixture SKILL.md is not deployed surface.
+if [ -n "$BBDP" ]; then
+  DOCF=$(printf '%s\n' "$ALLF" | grep -E "$BBDP" | grep -vE '(^|/)(test|tests|__tests__|__fixtures__|fixtures|evals|spec|specs)/')
+  FILES=$(printf '%s\n%s\n' "$FILES" "$DOCF" | grep -v '^[[:space:]]*$' | sort -u)
+fi
+# VACUITY, not just validity. The exit-code guard above catches a malformed ERE (grep exits 2),
+# but grep TOLERATES a PCRE-ism: a slot of (?i)\.md$ warns and exits 1 -- "no match" -- so a
+# project would read FEWER files while the run looked healthy. That is the unsafe direction for a
+# slot whose job is to widen what the gate reads, so it is checked by OUTCOME: if the slot is set
+# and selected nothing while the built-in suggestion WOULD have selected something, say so.
+if [ -n "$BBDP" ]; then
+  VAC_SET=$(printf '%s\n' "$ALLF" | grep -cE "$BBDP" 2>/dev/null); VAC_SET=${VAC_SET:-0}
+  VAC_STD=$(printf '%s\n' "$ALLF" | grep -cE "$DOC_BUILTIN" 2>/dev/null); VAC_STD=${VAC_STD:-0}
+  if [ "${VAC_SET:-0}" -eq 0 ] && [ "${VAC_STD:-0}" -gt 0 ]; then
+    echo "[audit-coverage] WEAKENED · DOC-PATTERN-INVALID — behaviorBearingDocPatterns is set but matched NONE of the $VAC_STD doc-shaped file(s) in this diff that the built-in suggestion would match. Either the pattern is wrong (a PCRE-ism like (?i) compiles under grep -E and matches nothing) or those files really are prose — but this run read none of them, so it is NOT a clean pass over their behaviour."
+  fi
+fi
+# A — SAY IT. Doc-shaped paths the behaviour filter DROPPED. Fires whether or not the slot is set,
+# and changes no verdict: it converts a silent blind spot into a stated one (FB-0121's distinction,
+# applied to the evidence rather than to the verdict).
+DROPPED=$(printf '%s\n' "$ALLF" | grep -E "$DOCPAT" | while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  printf '%s\n' "$FILES" | grep -qxF "$f" || printf '%s\n' "$f"
+done)
+if [ -n "$(printf '%s' "$DROPPED" | tr -d '[:space:]')" ]; then
+  echo "[audit-coverage] WEAKENED · DOC-BLIND — $(printf '%s\n' "$DROPPED" | grep -c .) changed file(s) carry prose that may be deployed surface and were NOT read: $(printf '%s' "$DROPPED" | tr '\n' ' '). Matched by $DOCSRC. On a project whose behaviour lives in markdown this is NOT a completeness gate over that behaviour — set flow.config.json.behaviorBearingDocPatterns to have them read."
+fi
 # THE SKIP LINE IS GATED ON THE BASE HAVING RESOLVED. Every git call above ends 2>/dev/null,
 # so an unresolvable origin/$BASE makes all three contribute nothing, $FILES is empty, and the
 # block used to print SKIPPED -- which this skill's own prose defines as "there was nothing to
@@ -389,14 +451,29 @@ if [ -n "$FILES" ]; then
   # diffs nothing there — and quoting "$f" also handles paths with spaces. Capture
   # first so we can detect truncation rather than silently swallowing behavior past
   # the cap (FB-0010: pair every cap with a [WARN]).
-  DIFFTXT=$(printf '%s\n' "$FILES" | while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    git diff "origin/$BASE..HEAD" -- "$f" 2>/dev/null
-    git diff HEAD -- "$f" 2>/dev/null
-  done)
-  printf '%s\n' "$DIFFTXT" | head -c "$CAP"
-  if [ "$(printf '%s' "$DIFFTXT" | wc -c)" -gt "$CAP" ]; then
-    echo; echo "[audit-coverage] WEAKENED · TRUNCATED — diff exceeds ${CAP} bytes; behavior past the cap was NOT audited. A clean result here is PARTIAL — say so and recommend splitting the PR or auditing the remainder."
+  # CV1 — FAIR-SHARE, not a head -c on a concatenation. The old form cut one joined string in
+  # sort -u order, so files late in the alphabet contributed ZERO bytes and the single
+  # TRUNCATED line did not say which. Measured on #158's post-fix shape (15 files, 103,785 B):
+  # two files entirely invisible, chosen by filename. The budgeter water-fills instead -- every
+  # file gets its full size if it fits its fair share, the remainder is redistributed, and each
+  # cut file is named -- and is byte-identical to the old output when the total is under the cap.
+  EB="${CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/evidence-budget.py"
+  [ -f "$EB" ] || EB="plugins/flow/skills/audit-coverage/lib/evidence-budget.py"
+  if [ -f "$EB" ] && command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' "$FILES" | python3 "$EB" --base "origin/$BASE" --cap "$CAP"
+  else
+    # Fall back to the old shape rather than printing nothing, and SAY the budget did not run --
+    # a silent fallback would reintroduce the alphabetical blindness with no way to notice.
+    echo "[audit-coverage] WEAKENED · BUDGET-UNAVAILABLE — evidence-budget.py was not reachable, so the cap is applied by simple truncation and files late in the list may be entirely absent. This is NOT a clean pass."
+    DIFFTXT=$(printf '%s\n' "$FILES" | while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      git diff "origin/$BASE..HEAD" -- "$f" 2>/dev/null
+      git diff HEAD -- "$f" 2>/dev/null
+    done)
+    printf '%s\n' "$DIFFTXT" | head -c "$CAP"
+    if [ "$(printf '%s' "$DIFFTXT" | wc -c)" -gt "$CAP" ]; then
+      echo; echo "[audit-coverage] WEAKENED · TRUNCATED — diff exceeds ${CAP} bytes; behavior past the cap was NOT audited."
+    fi
   fi
   # Untracked new source files = new behavior with no prior baseline; surface them
   # explicitly. Skip anything not present on disk (a DELETED file appears in the
@@ -494,7 +571,7 @@ The house rule this follows, with the full mechanism and the two tiers, is
 
   `Note: <the control line, verbatim> — this audit is weaker than a normal one, not equal to it.`
 
-  Append it whether or not you flag anything. "I checked every hunk" and "I checked the ones I happened to notice" must not read alike. The instances today, all carrying the token: **`BASE-UNRESOLVED`** (the default branch does not resolve, so the diff is empty for a reason that is not "nothing changed"), **`INVENTORY-UNAVAILABLE`** (no deterministic hunk checklist could be built, so Stage 1 enumerates unaided), **`INVENTORY-EMPTY`** (one or more listed files produced no hunks — a binary file, a `-diff` gitattribute, a mode-only change — so their behavior is absent from the checklist), **`INVENTORY-TRUNCATED`** (the hunk cap was reached, so the checklist is partial), **`TRUNCATED`** and **`SOURCE-TRUNCATED`** (behavior past the evidence cap was never read). *Two of these shipped in the same release that added this bullet and were initially left unnamed here — which is the bullet's own argument, so the list is now pinned by an eval rather than by this sentence.*. Plus one MODEL-emitted instance added in v1.50.0: `FILTERS-ADVISORY`, which path 2 of `## Argument` requires when the reviewer read the source itself rather than the evidence block. It is listed separately because the emitter does not produce it -- the distinction this bullet's own footnote warns about.
+  Append it whether or not you flag anything. "I checked every hunk" and "I checked the ones I happened to notice" must not read alike. The instances today, all carrying the token: **`BASE-UNRESOLVED`** (the default branch does not resolve, so the diff is empty for a reason that is not "nothing changed"), **`INVENTORY-UNAVAILABLE`** (no deterministic hunk checklist could be built, so Stage 1 enumerates unaided), **`INVENTORY-EMPTY`** (one or more listed files produced no hunks — a binary file, a `-diff` gitattribute, a mode-only change — so their behavior is absent from the checklist), **`INVENTORY-TRUNCATED`** (the hunk cap was reached, so the checklist is partial), **`TRUNCATED`** and **`SOURCE-TRUNCATED`** (behavior past the evidence cap was never read). **`DOC-BLIND`** (changed files carry prose that may be deployed surface and were not read — see `behaviorBearingDocPatterns`), **`DOC-PATTERN-INVALID`** (that slot is not a valid extended regex, so behaviour-bearing prose was not selected), **`BUDGET-UNAVAILABLE`** (the evidence budgeter was unreachable, so the cap fell back to simple truncation and files late in the list may be absent). *Two of these shipped in the same release that added this bullet and were initially left unnamed here — which is the bullet's own argument. **That sentence used to claim the list was "pinned by an eval rather than by this sentence"; it was not — no such eval existed, and the list stayed complete by memory alone.** `evals/run_coverage_vocab_evals.py` now derives the emitter's tokens from the shipped source and fails if any is missing here, so the claim is true as of v1.5x.*. Plus one MODEL-emitted instance added in v1.50.0: `FILTERS-ADVISORY`, which path 2 of `## Argument` requires when the reviewer read the source itself rather than the evidence block. It is listed separately because the emitter does not produce it -- the distinction this bullet's own footnote warns about.
 - **`PLAN-PREDATES-BRANCH` is NOT a weakening — it is the opposite, and it carries no `WEAKENED ·` token.** It means the plan doc was never touched on this branch, so **no** declared criterion was written against **any** hunk. Your evidence is complete; the *declared set* is empty. Treat every behavior as undeclared until a criterion is named for it, and say so — this is the one case where a long list of findings is the correct output rather than a suspicious one.
 - Otherwise, run **Stage 1** and then **Stage 2** below, in that order, and show both. They are the same single judgment this skill has always applied — `**Undeclared change**` from your system prompt, nothing added — split into the two steps it was always really doing.
 

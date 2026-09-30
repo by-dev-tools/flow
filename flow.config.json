@@ -12,6 +12,8 @@
   "historyPath": "dev-docs/history",
   "feedbackPath": "dev-docs/feedback",
   "changelogPath": "changelog",
+  "$comment-behaviorBearingDocPatterns": "Flow ships PROMPTS: a SKILL.md and an agents/*.md are deployed surface by CLAUDE.md's own rule that prompt changes are code changes. Without this slot /flow:audit-coverage was structurally blind to most of what this repo changes -- measured on #159, where all five undeclared behaviours lived in a SKILL.md the behaviour diff excluded, so its recorded 0-of-5 was never a judgment failure. `rules/` is included because .claude/rules/*.md auto-load into every session. evals/ and fixtures/ stay excluded by the test-path filter: a fixture SKILL.md is not deployed surface.",
+  "behaviorBearingDocPatterns": "(^|/)(skills|agents|rules)/.*\\.md$",
   "platform": "library",
   "defaultBranch": "main",
   "referenceGlob": "dev-docs/*.md,dev-docs/feedback/*.md",

@@ -103,13 +103,13 @@ screens on measurement discipline.)*
 
 ### Spec-walk
 
-- [ ] **A fires on a doc-shaped diff and names the paths.** *Pinned by:* a new eval case — a diff touching
+- [x] **A fires on a doc-shaped diff and names the paths.** *Pinned by:* a new eval case — a diff touching
       only `skills/x/SKILL.md` emits `DOC-BLIND` naming it, **paired** with: a diff touching no doc-shaped
       files does NOT emit it (or the line becomes noise on every PR).
-- [ ] **B is genuinely opt-in.** *Pinned by:* with the slot unset, the file list is **byte-identical** to
+- [x] **B is genuinely opt-in.** *Pinned by:* with the slot unset, the file list is **byte-identical** to
       today's on all three measured cases — the strongest form of "no consumer's gate changes", and a
       negative that is paired with the positive below rather than standing alone.
-- [ ] **`DOC-BLIND` is added to the judging prompt's instance enumeration.** *Pinned by:* an assertion
+- [x] **`DOC-BLIND` is added to the judging prompt's instance enumeration.** *Pinned by:* an assertion
       that `audit-coverage/SKILL.md`'s `WEAKENED ·` instance list names it. **Critic ISSUE 2, accepted:**
       `:493` instructs the reviewer to quote any `WEAKENED ·` line verbatim and `:497` enumerates every
       instance by name — with a footnote recording that omitting a new instance from that list is a
@@ -117,19 +117,24 @@ screens on measurement discipline.)*
       touches the matcher or the judging prompt" claim was wrong as written. Corrected: nothing here
       touches **the matcher or the judging rubric**; A adds one enumerated weakening instance, which is
       exactly the kind of change that list exists to absorb.
-- [ ] **B's before/after is measured with A held constant.** *Pinned by:* both arms run with A **off**.
+- [x] **B's before/after is measured with A held constant.** **Satisfied only on a second pass.**
+      The first before-arm run had A **ON**, and its output quoted the `DOC-BLIND` line naming
+      `audit-coverage/SKILL.md` — precisely the pointer this criterion exists to withhold. Re-rendered
+      from a block with A's emit stripped: the baseline is then **0 gaps found with no pointer given**,
+      and the after arms are A-off by construction (A is silent when nothing is dropped). The
+      confounded run is reported alongside, not discarded. *Pinned by:* both arms run with A **off**.
       **Critic ISSUE 2, second half, accepted and it is the sharper catch:** A fires only when a file was
       *dropped*, so in the natural setup it is present in the before arm (slot unset → the file with the
       five gaps is dropped → DOC-BLIND names that exact file) and absent in the after arm — and the recorded
       0/5 baseline was taken without A at all. Measuring B against that baseline would move two variables
       and hand the reviewer a pointer to the answer in one arm only. Both arms A-off; A's own effect is
       measured separately by its own pins above.
-- [ ] **B moves the known positive off 0/5.** *Pinned by:* `tools/coverage-recall` on the `pr159` case with
+- [x] **B moves the known positive off 0/5.** *Pinned by:* `tools/coverage-recall` on the `pr159` case with
       the slot set — the five gaps live in `audit-coverage/SKILL.md`, which must now reach the reviewer.
       **This flips `cases.py`'s `structural_blindness` pin, which was written to fail loudly exactly here**
       ("if the exclusion is ever fixed this case fails loudly and is re-classified"). Expected, and I am
       the intended trigger; the case gets re-classified from structural to recall with its number recorded.
-- [ ] **The negative: a pure-prose edit INSIDE a matched file produces no coverage findings.** *Pinned by:*
+- [x] **The negative: a pure-prose edit INSIDE a matched file produces no coverage findings.** *Pinned by:*
       a case whose diff is a wording change in `plugins/flow/skills/ship/SKILL.md` — a path the slot
       **matches** — **with the slot set**, scored at 0 findings and mutation-tested like the other parts.
       *(Specified at the audit gate. "A docs-only-prose case" was vacuous: a prose edit to `dev-docs/*.md`
@@ -137,17 +142,17 @@ screens on measurement discipline.)*
       findings before B and 0 after, whatever B does to prose noise. A pin that passes in both the honored
       and the broken world is general.md item 4, in the plan that applies item 4 to `--selftest` and forgot
       it here.)*
-- [ ] **C: no file is entirely invisible when the cap binds.** *Pinned by:* the #158 shape — assert every
+- [x] **C: no file is entirely invisible when the cap binds.** *Pinned by:* the #158 shape — assert every
       file contributes ≥1 byte and each truncated file is named. Paired with: under the cap, output is
       **byte-identical** to today (no gratuitous reflow of the common case).
-- [ ] **Per-file cap behaviour reported on the 176 KB case**, as asked. Note the distinction I will report
+- [x] **Per-file cap behaviour reported on the 176 KB case**, as asked. Note the distinction I will report
       rather than blur: 177,768 B is `ship/SKILL.md`'s **file size**, which binds in **source mode**
       (whole files are `cat`-ed, `SOURCE_CAP` = 120,000 B, so it is ~1.5× over *alone*). Its **diff** in a
       realistic PR is ~3 KB. The 44,687 B single-file diff in #158 is the real diff-mode starvation case.
-- [ ] **Instrument validated:** `tools/coverage-recall --selftest` must show it can fail before any number
+- [x] **Instrument validated:** `tools/coverage-recall --selftest` must show it can fail before any number
       is reported; and I will mutation-test the three parts (revert the union, revert the fair-share, drop
       the DOC-BLIND line) and confirm each is caught.
-- [ ] **Docs:** FB entry (the rule: an exclusion tuned for one repo shape becomes a blind spot in another,
+- [x] **Docs:** FB entry (the rule: an exclusion tuned for one repo shape becomes a blind spot in another,
       and the gate must say which shape it assumed), history entry, `workflow.md`'s honest-limitation
       paragraph updated to describe the opt-in, schema slot documented, roadmap entries closed.
 

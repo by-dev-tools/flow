@@ -54,7 +54,19 @@ from pathlib import Path
 # release while this scanner reported green, because `\d+\s+slots?` cannot see across an
 # interposed word. Same value, same guard, second escape. Up to two words are allowed
 # between the count and the noun; more than that stops being one claim.
-SLOT_RE = re.compile(r"(\d+\s+(?:[A-Za-z-]+\s+){0,2}slots?)\b")
+#
+# SEPARATOR-tolerant too (CV1) — third escape, same guard, and found the same way: by
+# reading a survivor the scanner had reported clean. English hyphenates this claim as
+# readily as it spaces it, and `README.md:89` said **"A 24-slot `flow.config.json`"**
+# against a schema of 37 while every `N slots` sweep went green, because `\s+` cannot
+# match `-`. The README is the most-read file that ships. Both separators are now the
+# same character class in both positions.
+# The hyphen is allowed ONLY in the first separator, where "24-slot" lives. Allowing it
+# in the adjective separator too matched `FB-0058 boolean-slot` and `4 config-slot`,
+# where the digits are an issue number and a hyphenated compound adjective follows: two
+# false positives, measured, on the first run of the looser form. A scanner whose output
+# you must triage by hand is a scanner people stop reading.
+SLOT_RE = re.compile(r"(\d+[\s-]+(?:[A-Za-z-]+\s+){0,2}slots?)\b")
 
 # Extensions worth scanning for "N slots" prose. Kept narrow deliberately (see
 # module docstring) rather than scanning every file a directory walk turns up.

@@ -166,6 +166,14 @@
       "default": "src-tauri",
       "examples": ["src-tauri", ".", "crates"]
     },
+    "behaviorBearingDocPatterns": {
+      "type": "string",
+      "description": "Extended regex (grep -E) matching documentation-extension paths whose CONTENT IS DEPLOYED BEHAVIOUR rather than prose about it -- a prompt-shaped project's SKILL.md, agent definitions, rule files. Read by /flow:audit-coverage to add those paths to the behaviour diff it audits for under-declaration. DEFAULTS TO EMPTY, and that is deliberate: sourceFilePatterns/EXCL are a contract every consumer inherits, so widening what the gate reads must be opted into, never applied silently. Leaving it unset does NOT mean the blindness is hidden -- /flow:audit-coverage still emits a WEAKENED DOC-BLIND line naming the doc-shaped files it dropped, matched against a built-in suggestion, so an un-opted-in project gets a stated blind spot rather than a clean-looking pass. Set it when your behaviour lives in markdown; leave it unset when your .md really is documentation.",
+      "examples": [
+        "(^|/)(skills|agents|rules)/.*\\.md$",
+        "(^|/)prompts/.*\\.(md|txt)$"
+      ]
+    },
     "sourceFilePatterns": {
       "type": "string",
       "description": "Extended-regex pattern (passed to grep -E) matching source/config file paths in the diff. Used by /flow:security-review at Step 1 to early-exit when a diff contains no source files (e.g., docs-only PR). Default covers TS/JS/Python/Rust/Swift/Go/Ruby/Java/Kotlin/Shell + JSON/YAML/TOML + Terraform/SQL/proto/GraphQL + Dockerfile/Makefile literals (security-relevant config classes). Override for projects with non-standard file layouts (monorepos, language-specific source roots). Invalid regex falls back to default + emits loud warning rather than silently skipping the review. ALSO read by /flow:verify-build S 1.2 and /flow:audit-skips as a SECONDARY guard on the docs-only verdict (which returns N/A with no behavioural gate). It is not the decider: docs-only requires every changed path to match a built-in, non-configurable docs allowlist, precisely because an allowlist of SOURCE cannot safely decide 'everything else is docs' -- unlisted things like Info.plist, go.mod or a lockfile would skip the gate. Narrowing this slot therefore no longer opens that hole, but it still narrows what /flow:security-review reads, which is its original purpose.",

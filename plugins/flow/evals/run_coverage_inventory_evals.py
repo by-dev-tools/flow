@@ -622,13 +622,18 @@ check("the caller-facing description carries the union rule",
       "it has to be in the description a caller sees")
 check("...and it carries the measured number, not a bare recommendation",
       "+18pp" in _front and "80%" in _front and "100%" in _front, _front[-400:])
-check("...and it states the diff-mode zero, so nobody wires a second pass at ship Step 2",
-      "+0pp" in _front, "union measured +0pp in diff mode; omitting that invites a cost "
-      "doubling for no gain")
+check("...and it states BOTH diff-mode datapoints, not just the zero",
+      "+0pp" in _front and "+30pp" in _front,
+      "diff mode measured +0pp on one input (3 runs, identical gaps) and +30pp on a second "
+      "(#159 with the doc slot set, 2 runs, disjoint gaps). Shipping only the zero lets 'no "
+      "gain' read as the reason Step 2 is single-pass, and that premise is false — CV1 "
+      "falsified it and the call now rests on cost")
 check("the body carries the caller-facing section with both modes' numbers",
       "## Running this more than once" in skill
-      and "| source mode | 82% | **100%** |" in skill
-      and "| diff mode | 60% | **60%** |" in skill,
+      and "| source mode (prototype) | 82% | **100%** (4 runs) |" in skill
+      and "| diff mode (prototype) | 60% | **60%** (4 runs) |" in skill
+      # the CV1 row is what makes the section show two ANSWERS rather than one result
+      and "| diff mode (#159, doc slot set — CV1) | 30% | **60%** (2 runs) |" in skill,
       "the two modes gave different answers and must be readable side by side")
 
 check("the emitter still uses the exact summary label these negatives forbid",
