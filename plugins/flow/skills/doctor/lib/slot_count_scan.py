@@ -128,7 +128,14 @@ def scan_paths(paths, expected, exclude_substrings=(), root=None):
             if f.suffix == ".sh" and prefix.startswith("#"):
                 continue
             claim = " ".join(m.group(1).split())
-            if claim.split()[0] != expected_str:
+            # Read the COUNT off the front explicitly. `claim.split()[0]` assumed whitespace
+            # separation, so once SLOT_RE learned the hyphenated form (CV1) every "37-slot"
+            # compared as the string "37-slot" against "37" and was reported stale REGARDLESS
+            # of the number -- a false positive on the correct spelling, which is how a scanner
+            # stops being read. Making the matcher more tolerant without teaching the
+            # comparison is the same fan-out this whole predicate exists to catch.
+            count = re.match(r"\d+", claim).group(0)
+            if count != expected_str:
                 line_no = text.count("\n", 0, m.start()) + 1
                 words = f'"{claim}"'
                 if "\n" in m.group(0):

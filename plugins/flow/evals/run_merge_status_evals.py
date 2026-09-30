@@ -276,7 +276,11 @@ def main() -> int:
         # the shell-parity check below for why that sharing is the point.
         root = Path(__file__).resolve().parents[3]
         stale, scanned = _slot_scan().scan_paths(
-            [root / "plugins", root / "template"], expected=len(props),
+            # README.md is a SHIPPED surface (CLAUDE.md's artifact table lists it) and this
+            # sweep never read it -- which is exactly why "A 24-slot flow.config.json" sat in
+            # the most-read file in the repo against a 37-slot schema while this check stayed
+            # green for release after release. A sweep that omits the front page is not a sweep.
+            [root / "plugins", root / "template", root / "README.md"], expected=len(props),
             exclude_substrings=("evals/", "plan-critic.md"),  # harnesses + the prose
                                                                # example teaching the failure
             root=root)
@@ -318,6 +322,18 @@ def main() -> int:
             quiet.write_text("(FB-0058 boolean-slot footgun) and the Step 4 config-slot "
                              "consumers are not counts.\n")
             q_stale, q_scanned = _slot_scan().scan_paths([quiet], expected=len(props))
+            # PAIRED NEGATIVE for the hyphen support, and it is the one that was missing: the
+            # positive above ("30-slot" against 37) passed even while the comparison was broken,
+            # because a broken comparison flags EVERY hyphenated form whatever its number. Only
+            # a correct-count hyphenated fixture can tell the two apart (general.md item 4 --
+            # validate the instrument on the case where it must stay quiet, too).
+            okhyph = Path(scratch) / "OKHYPH.md"
+            okhyph.write_text(f"- **A {len(props)}-slot `flow.config.json`** ships today.\n")
+            ok_stale, ok_scanned = _slot_scan().scan_paths([okhyph], expected=len(props))
+            check("slot-count-scan-does-not-flag-a CORRECT hyphenated count",
+                  ok_scanned == 1 and not ok_stale,
+                  f"a hyphenated count that MATCHES the schema was reported stale: {ok_stale} "
+                  "— the matcher reads the hyphen but the comparison does not")
             check("slot-count-scan-does-not-flag-hyphenated-compound-adjectives",
                   q_scanned == 1 and not q_stale,
                   "an issue number followed by a hyphenated compound adjective is not a "
