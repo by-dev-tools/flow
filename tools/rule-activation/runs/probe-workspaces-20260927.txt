@@ -22,5 +22,8 @@ c-old  2ff471a3-f7ca-4176-80db-15657e45e7f9  conductor/s0-probe-arm-c-old-main-v
 # whether a skill was invoked, which lives in the transcript (scored, committed), not in what the
 # probe then wrote. Keeping it would confuse task output with evidence.
 #
-# The three probe/s0-arm-{a,b,d} BRANCHES hold the scrubbed neutral bases and are left in place;
-# their deletion is Ben's call.
+# The three scrubbed neutral bases these arms ran on are preserved in
+# runs/probe-bases-20260927.bundle at their original SHAs (1d32c5d, 50dd4da, c67c1d7), verified by
+# ../verify-bundle.sh. They were ALSO on `probe/s0-arm-{a,b,d}` branches, which are deleted --
+# the bundle is the copy that survives, because that 11-file neutral project exists nowhere else
+# in the repo and re-running the design needs it. Restore command: see runs/README.md.

@@ -55,6 +55,7 @@ in the history entry).
 | `aggregate-20260927.json` | the full scored output, per session: model, turn-1 `Skill` calls, sentinels, control status |
 | `sentinel-nonces-20260927.json` | the per-rule nonces injected into the probe bodies — needed to interpret a transcript |
 | `probe-workspaces-20260927.txt` | the seven Conductor workspace ids, their branches, and the read-only audit of each one taken before archiving them on 2026-09-30 |
+| `probe-bases-20260927.bundle` | the three scrubbed neutral bases, at their original SHAs — see § "Re-running the design" |
 
 ## Re-running the design, not just the scoring
 
@@ -64,8 +65,26 @@ messages that built the two plugin-scope arms, including the **validity check by
 plugin instead of the branch's, and only a content assertion caught it.
 
 The probe skill bodies themselves are **not** committed: they are the four real rule-skills plus an injected
-nonce, reconstructible from any commit plus `sentinel-nonces-*.json`. The scrubbed neutral bases live on the
-`probe/s0-arm-{a,b,d}` branches.
+nonce, reconstructible from any commit plus `sentinel-nonces-*.json`.
+
+**The three scrubbed neutral bases live in `probe-bases-20260927.bundle`.** That 11-file project — the five
+probe skills, `PROJECT.md`, `core-docs/`, `src/` — exists nowhere else in this repo, so it is part of the rig
+rather than scratch. Restore it into a scratch repo:
+
+```sh
+git init /tmp/probe && git -C /tmp/probe fetch \
+  tools/rule-activation/runs/probe-bases-20260927.bundle 'refs/heads/probe/*:refs/heads/probe/*'
+```
+
+That yields `probe/s0-arm-a`, `-b` and `-d` at their original SHAs (`1d32c5d`, `50dd4da`, `c67c1d7`).
+`../verify-bundle.sh` asserts commit **and** tree hash for all three plus an 11-file count, and carries a
+known-negative so a run where every `rev-parse` returned empty cannot print PASS.
+
+A **bundle** rather than three copied directories, deliberately: copying them in would place three live
+`.claude/skills/` trees — holding skills named `general`, `plan-discipline`, `documentation`, `exploration`
+and `probe-control` — inside flow's own repo, where nested skill dirs can be discovered. That would
+contaminate flow's dev sessions and inflate `harness_audit`'s always-on count with probe copies of the very
+skills this PR measures. One inert file avoids all of it and preserves the exact SHAs the docs cite.
 
 **This rig needs live authenticated sessions, so it cannot be CI-wired.** It is the instrument that would
 measure a `SessionStart` hook if flow ever builds one (roadmap § "A plugin `SessionStart` hook"), which is

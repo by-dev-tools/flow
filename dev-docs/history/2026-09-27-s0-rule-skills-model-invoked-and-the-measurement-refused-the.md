@@ -224,4 +224,10 @@ than by version string — the FB-0107 dogfooding trap, one layer out.
   mechanism that could, and it buys **delivery**, not **compliance** — the third turn of the same screw
   (registration → activation → delivery → compliance, each looking like the guarantee beneath it).
 - **`tools/rule-activation/`** ships the rig with all three instrument defects documented, so the next seat
-  inherits the corrected version rather than rediscovering it.
+  inherits the corrected version rather than rediscovering it. The 59 raw per-session results are under
+  `runs/`, and `aggregate.py --offline` re-derives every figure above with no network — the transcripts
+  are not durable (the probe workspaces are archived), so the scored JSON is the evidence. The three
+  scrubbed neutral bases the probes ran on are preserved in `runs/probe-bases-20260927.bundle` at their
+  original SHAs, verified by `verify-bundle.sh`; that 11-file project exists nowhere else in the repo, so
+  without it the "re-run the design" path — the one a `SessionStart` hook measurement would need — would
+  be broken by deleting three branches. Caught at review by the orchestrator, not by me.
