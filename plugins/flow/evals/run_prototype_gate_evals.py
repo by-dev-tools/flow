@@ -1129,11 +1129,7 @@ def test_lens_experience_scope_held():
     check("lens-experience-generalized-not-rewritten",
           "artifact" in t.lower() and "ambition" in t.lower(),
           "Phase 3 generalizes the artifact noun; the lens's job is unchanged")
-    proc = subprocess.run(["git", "diff", "--stat", "origin/main...HEAD", "--",
-                           str(LENS_EXP.relative_to(ROOT))],
-                          cwd=ROOT, capture_output=True, text=True)
-    check("lens-experience-change-is-declared", True,
-          f"lens-experience.md must be unchanged; diff:\n{proc.stdout[:200]}")
+
 
 
 def test_skill_composition():

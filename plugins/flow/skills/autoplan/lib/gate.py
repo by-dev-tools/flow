@@ -104,30 +104,82 @@ def _emit(obj) -> int:
     return 0
 
 
-def _safe_path(path: Path, what: str) -> Path:
-    """Refuse a symlink, and refuse traversal out of the caller's directory.
+def _repo_root(start: Path) -> Path:
+    """The repository containing `start`, or its directory if there is no repo.
 
-    CWE-59, same guard `prototype-gate.py` and `ship/lib/manifest-triage.py` already
-    hold for their producer files — not a new invention. Confinement is to the
-    caller's own directory rather than an absolute `.flow/`: an earlier draft of the
-    sibling hardcoded the latter and refused every legitimate run outside a repo,
-    which is a gate failing closed on its own users. Symlink refusal is what defeats
-    the planted-link attack; directory confinement is what stops `../../..`.
+    The confinement boundary has to be a real one. An earlier draft derived it as
+    `path.resolve().parent`, which makes the containment test true by construction --
+    a resolved path is always relative to its own parent -- so the traversal half of
+    this guard was a no-op that could only ever pass, while the docstring claimed it
+    stopped `../../..`. Caught by `/simplify`'s reuse lens. A check that cannot fail
+    is not a check (`.claude/rules/general.md` § Consistency item 4), and writing one
+    into the security guard of the gate built to catch that class is the version of
+    the mistake worth recording rather than quietly correcting.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(start), "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return Path(out.stdout.strip()).resolve()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return start.resolve()
+
+
+def _safe_path(path: Path, what: str) -> Path:
+    """Refuse a symlink, a symlinked ancestor, and a path outside the repository.
+
+    CWE-59, the same guard `prototype-gate.py` and `ship/lib/manifest-triage.py`
+    already hold for their producer files -- not a new invention. Every input this
+    engine reads is a path some caller supplied, and under the #165/FB-0116 idiom a
+    caller's path can originate in `$ARGUMENTS`, i.e. in text this process does not
+    control. So the boundary is the REPOSITORY, matching the rule `/flow:review-brief`
+    states in prose: refuse "a path that is absolute and outside the repository, or
+    contains `..`".
+
+    Outside a repo the boundary degrades to the path's own directory, which confines
+    nothing -- stated rather than implied, because the alternative (hardcoding an
+    absolute `.flow/`) is what made an earlier draft of the sibling refuse every
+    legitimate run outside a repo: a gate failing closed on its own users.
+
+    NOT hoisted to `plugins/flow/lib/` in this PR, though that is where it belongs and
+    where `sensitive_paths.py` set the one-definition-two-readers precedent. This is
+    the third copy in the tree and they have already drifted; unifying them edits a
+    second shipped engine and its 277-check harness mid-ship. Filed as a follow-up.
     """
     if path.is_symlink():
         raise SecurityRefusal(
             "%s is a symlink (%s) — refusing to follow it; a read through it returns "
             "whatever the link points at (CWE-59)." % (what, path)
         )
+    # Anchored on the process's OWN repository, never derived from the path under
+    # test. Deriving it from the argument is how this guard was wrong twice: first as
+    # `path.resolve().parent` (tautology), then as `_repo_root(path.parent)`, which
+    # "confined" /etc/hostname to /etc and accepted it. A boundary computed from the
+    # thing it is supposed to bound is not a boundary. Both were caught by running the
+    # guard against a path that MUST be refused, which is the only reason either was
+    # visible -- neither showed up as a failing test, because both versions passed.
+    base = _repo_root(Path.cwd())
     try:
         resolved = path.resolve()
-        base = path.resolve().parent
         resolved.relative_to(base)
+    except ValueError:
+        raise SecurityRefusal(
+            "%s resolves to %s, outside %s — refusing to read a path outside the "
+            "repository it belongs to." % (what, path.resolve(), base)
+        )
+    except SecurityRefusal:
+        raise
     except Exception:  # noqa: BLE001 - an unresolvable path must not fail OPEN
         raise SecurityRefusal(
-            "%s could not be confined — refusing rather than acting on an unverified path."
-            % what
+            "%s could not be confined to %s — refusing rather than acting on an "
+            "unverified path." % (what, base)
         )
+    # A symlinked ANCESTOR inside `base` defeats a leaf-only check. The earlier
+    # draft iterated `resolved.parents` and broke on `parent == base`, which is the
+    # first element when base is the leaf's own parent -- so this loop never ran.
     for parent in resolved.parents:
         if parent == base:
             break
@@ -205,6 +257,54 @@ def _run(cmd, stdin_text=None):
     return proc, None
 
 
+def _a_did_not_run(msg: str) -> dict:
+    """The one place Arm A's `ran: False` ⇒ `verdict: RED` invariant is written.
+
+    It was re-typed at seven return sites, which is the fan-out class this file's own
+    docstring is organised against: an eighth branch could get it wrong silently.
+    """
+    return {"arm": "A", "ran": False, "verdict": "RED", "reasons": [msg]}
+
+
+def _load_is_pinned(lib_root: Path):
+    """Import `walk-pin-lint.py`'s own `is_pinned` predicate.
+
+    ONE definition of "what counts as a pin", not two. An earlier draft spawned the
+    lint as a subprocess, fed it a SYNTHETIC single-block document, and screen-scraped
+    an integer out of its human-readable stdout. That paid a prose coupling for a
+    function call: the parser keyed on the substring "carry a named pin" and an
+    em-dash-delimited number, so rewording one sentence in the lint would have turned
+    Arm A RED with "DID NOT RUN" on every plan. It also bought nothing from the
+    subprocess, because feeding a synthetic doc already bypassed every part of the
+    lint except this predicate.
+
+    The same rationale `walk-pin-lint.py` itself gives for importing `walk_extract`
+    rather than re-implementing block parsing, and the one `CLAUDE.md` gives for
+    `visual-significance.py` and `manifest_contract.py`: one definition, N readers.
+    The shipped CLI and `/flow:critique-plan` are untouched — this reads the module,
+    it does not change it.
+
+    `importlib` rather than `import`, because the filename is hyphenated.
+    """
+    import importlib.util
+
+    target = lib_root / "critique-plan" / "lib" / "walk-pin-lint.py"
+    if not target.exists():
+        raise SecurityRefusal("walk-pin-lint.py not found at %s" % target)
+    spec = importlib.util.spec_from_file_location("_walk_pin_lint", target)
+    if spec is None or spec.loader is None:
+        raise SecurityRefusal("walk-pin-lint.py at %s could not be loaded" % target)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    fn = getattr(mod, "is_pinned", None)
+    if not callable(fn):
+        raise SecurityRefusal(
+            "walk-pin-lint.py at %s exposes no is_pinned() predicate — refusing to "
+            "guess what counts as a pin." % target
+        )
+    return fn
+
+
 def arm_a(plan_path: Path, expect_line=None, lib_root: Path | None = None) -> dict:
     """Criterion quality. Deterministic hard gate.
 
@@ -214,54 +314,46 @@ def arm_a(plan_path: Path, expect_line=None, lib_root: Path | None = None) -> di
     verdict (advisory — the critic assigns severity); nonzero only on crash-grade
     input errors." Neither has a red channel in `$?`, so an exit-code gate would be
     green on every input — a measurement that can only return "clean" is not a
-    measurement (.claude/rules/general.md § Consistency item 4).
+    measurement (`.claude/rules/general.md` § Consistency item 4).
 
-    The pinning half is scoped to the ACTIVE block. `walk-pin-lint.py` is all-blocks
-    by design ("a standalone plan DOCUMENT may legitimately carry several"), while
-    `extract-criteria.py` is first-block-only. Unscoped, this arm fails every run in
-    any repo that retains shipped blocks — measured on flow's own plan.md: 591
-    unpinned checkboxes across 71 blocks, none of them the author's to fix. A gate
-    that is red for reasons nobody can fix is a gate that gets ignored.
+    The pinning half is scoped to the ACTIVE block, which falls out of asking the
+    predicate about the extracted criteria directly: `walk-pin-lint.py`'s CLI is
+    all-blocks by design ("a standalone plan DOCUMENT may legitimately carry
+    several"), while `extract-criteria.py` is first-block-only. Unscoped, this arm
+    fails every run in any repo that retains shipped blocks — measured on flow's own
+    plan.md: 591 unpinned checkboxes across 71 blocks, none of them the author's to
+    fix. A gate that is red for reasons nobody can fix is a gate that gets ignored.
+
+    `lib_root` exists so the suite can point this at a stub tree and prove the
+    fail-closed paths behaviourally. Without it the only way to test them is to grep
+    this file for its own error strings, which passes if the sentence survives in a
+    comment after the branch is deleted.
     """
     root = lib_root or Path(__file__).resolve().parent.parent.parent
     extract = root / "verify-build" / "lib" / "extract-criteria.py"
     specificity = root / "verify-build" / "lib" / "criterion-specificity.py"
-    pin_lint = root / "critique-plan" / "lib" / "walk-pin-lint.py"
 
-    reasons: list[str] = []
-    for tool in (extract, specificity, pin_lint):
+    for tool in (extract, specificity):
         if not tool.exists():
-            return {
-                "arm": "A",
-                "ran": False,
-                "verdict": "RED",
-                "reasons": [
-                    "Arm A tool missing: %s. The arm DID NOT RUN — this is distinct "
-                    "from running and finding nothing." % tool
-                ],
-            }
+            return _a_did_not_run(
+                "Arm A tool missing: %s. The arm DID NOT RUN — this is distinct from "
+                "running and finding nothing." % tool
+            )
 
     proc, err = _run([sys.executable, str(extract), str(plan_path)])
     if err or proc.returncode != 0:
-        return {
-            "arm": "A",
-            "ran": False,
-            "verdict": "RED",
-            "reasons": [
-                "extract-criteria.py did not complete (%s). The arm DID NOT RUN."
-                % (err or (proc.stderr or "").strip()[:200])
-            ],
-        }
+        return _a_did_not_run(
+            "extract-criteria.py did not complete (%s). The arm DID NOT RUN."
+            % (err or (proc.stderr or "").strip()[:200])
+        )
     try:
         extracted = json.loads(proc.stdout)
     except ValueError:
-        return {
-            "arm": "A",
-            "ran": False,
-            "verdict": "RED",
-            "reasons": ["extract-criteria.py emitted unparseable JSON. The arm DID NOT RUN."],
-        }
+        return _a_did_not_run(
+            "extract-criteria.py emitted unparseable JSON. The arm DID NOT RUN."
+        )
 
+    reasons: list[str] = []
     criteria = extracted.get("criteria") or []
     got_line = extracted.get("source_heading_line")
 
@@ -270,13 +362,12 @@ def arm_a(plan_path: Path, expect_line=None, lib_root: Path | None = None) -> di
     # every unqualified heading is the identical string `**Spec-walk:**` and
     # `block_count` is a file-wide total, so an assertion on those passes whether or
     # not the property holds — the "satisfiable by deletion" shape one step over.
-    if expect_line is not None:
-        if got_line != expect_line:
-            reasons.append(
-                "Arm A graded the block at line %s, but the plan under review was "
-                "recorded at line %s. A gate that cannot prove which document it "
-                "graded is not a gate." % (got_line, expect_line)
-            )
+    if expect_line is not None and got_line != expect_line:
+        reasons.append(
+            "Arm A graded the block at line %s, but the plan under review was "
+            "recorded at line %s. A gate that cannot prove which document it graded "
+            "is not a gate." % (got_line, expect_line)
+        )
 
     if extracted.get("all_demoted"):
         reasons.append(
@@ -287,82 +378,42 @@ def arm_a(plan_path: Path, expect_line=None, lib_root: Path | None = None) -> di
     if not criteria and not extracted.get("all_demoted"):
         reasons.append("the active Spec-walk block declares no criteria.")
 
-    # Vacuity — parsed from the pipe's JSON, not from its exit status.
+    # Vacuity — parsed from the pipe's JSON, not from its exit status. `proc.stdout`
+    # is already exactly the bytes the consumer wants, so it is passed through rather
+    # than re-serialized from the dict it was parsed into.
     vacuous: list = []
+    unpinned: list = []
     if criteria:
-        proc2, err2 = _run(
-            [sys.executable, str(specificity)], stdin_text=json.dumps(extracted)
-        )
+        proc2, err2 = _run([sys.executable, str(specificity)], stdin_text=proc.stdout)
         if err2 or proc2.returncode != 0:
-            return {
-                "arm": "A",
-                "ran": False,
-                "verdict": "RED",
-                "reasons": ["criterion-specificity.py did not complete. The arm DID NOT RUN."],
-            }
+            return _a_did_not_run(
+                "criterion-specificity.py did not complete. The arm DID NOT RUN."
+            )
         try:
             vacuous = (json.loads(proc2.stdout) or {}).get("vacuous") or []
         except ValueError:
-            return {
-                "arm": "A",
-                "ran": False,
-                "verdict": "RED",
-                "reasons": ["criterion-specificity.py emitted unparseable JSON. The arm DID NOT RUN."],
-            }
+            return _a_did_not_run(
+                "criterion-specificity.py emitted unparseable JSON. The arm DID NOT RUN."
+            )
         if vacuous:
             reasons.append(
                 "%d vacuous criterion/criteria: %s"
                 % (len(vacuous), "; ".join(v.get("criterion", "?")[:60] for v in vacuous))
             )
 
-    # Pinning — over a document synthesised from the ACTIVE block only, piped on stdin
-    # (the lint's own documented channel for an out-of-tree lint). This is what scopes
-    # the check; handing it the whole planPath file is what makes it useless here.
-    synthetic = "**Spec-walk:**\n\n" + "".join("- [ ] %s\n" % c for c in criteria)
-    unpinned = 0
-    if criteria:
-        proc3, err3 = _run([sys.executable, str(pin_lint)], stdin_text=synthetic)
-        if err3 or proc3 is None:
-            return {
-                "arm": "A",
-                "ran": False,
-                "verdict": "RED",
-                "reasons": ["walk-pin-lint.py did not complete. The arm DID NOT RUN."],
-            }
-        # The lint has exactly two verdict shapes, and a run that matches NEITHER is a
-        # failure to measure, not a clean result. Defaulting `unpinned` to 0 when no line
-        # parses would make a broken lint indistinguishable from a fully-pinned plan —
-        # the silent-skip class (.claude/rules/general.md § Consistency item 1) at the
-        # exact spot this arm is supposed to be deterministic.
-        #   clean:  "PIN LINT: clean — 3/3 checkboxes carry a named pin."
-        #   dirty:  "PIN LINT: 1/3 checkboxes carry a named pin — 2 unpinned:"
-        parsed = False
-        for line in (proc3.stdout or "").splitlines():
-            if "carry a named pin" not in line:
-                continue
-            if "unpinned" in line:
-                tail = line.rsplit("—", 1)[-1].strip().split()
-                if tail and tail[0].isdigit():
-                    unpinned, parsed = int(tail[0]), True
-            elif "clean" in line:
-                unpinned, parsed = 0, True
-            if parsed:
-                break
-        if not parsed:
-            return {
-                "arm": "A",
-                "ran": False,
-                "verdict": "RED",
-                "reasons": [
-                    "walk-pin-lint.py produced no parseable verdict line — the pinning "
-                    "check DID NOT RUN. Treating an unparseable result as zero unpinned "
-                    "would report clean over a measurement that never happened."
-                ],
-            }
+        try:
+            is_pinned = _load_is_pinned(root)
+        except SecurityRefusal as exc:
+            return _a_did_not_run(
+                "the pinning predicate could not be loaded (%s) — the pinning check "
+                "DID NOT RUN. Treating an unloadable predicate as zero unpinned would "
+                "report clean over a measurement that never happened." % exc
+            )
+        unpinned = [c for c in criteria if not is_pinned(c)]
         if unpinned:
             reasons.append(
                 "%d criterion/criteria in the ACTIVE block name no verification "
-                "artifact." % unpinned
+                "artifact." % len(unpinned)
             )
 
     return {
@@ -371,7 +422,7 @@ def arm_a(plan_path: Path, expect_line=None, lib_root: Path | None = None) -> di
         "verdict": "RED" if reasons else "GREEN",
         "criteria_count": len(criteria),
         "vacuous_count": len(vacuous),
-        "unpinned_count": unpinned,
+        "unpinned_count": len(unpinned),
         "graded_line": got_line,
         "expected_line": expect_line,
         "reasons": reasons,
@@ -422,7 +473,7 @@ def union_passes(passes: list) -> dict:
 # --------------------------------------------------------------- the gate
 
 
-def _arm_not_run(arm: dict) -> str | None:
+def _why_arm_cannot_pass(arm: dict) -> str | None:
     """Why this arm cannot count as a pass — or None if it genuinely ran.
 
     Every branch here keeps a DISTINCT reason. Collapsing "errored", "absent
@@ -491,7 +542,7 @@ def combine(state: dict) -> dict:
             )
 
     for arm in arms:
-        why = _arm_not_run(arm)
+        why = _why_arm_cannot_pass(arm)
         if why:
             blockers.append(why)
             continue
@@ -604,7 +655,14 @@ def main(argv: list) -> int:
             plan = Path(_arg(rest, "--plan"))
             _safe_path(plan, "plan file")
             expect = _arg(rest, "--expect-line", required=False)
-            return _emit(arm_a(plan, int(expect) if expect is not None else None))
+            # `--lib-root` is a TEST SEAM, and it earns its place by converting the
+            # only source-grep assertion in this suite into a behavioural one: point
+            # it at a stub tree and the fail-closed paths can be exercised for real,
+            # rather than by grepping this file for its own error strings (which
+            # passes if the sentence survives in a comment after the branch is gone).
+            lib = _arg(rest, "--lib-root", required=False)
+            return _emit(arm_a(plan, int(expect) if expect is not None else None,
+                               lib_root=Path(lib) if lib else None))
         if cmd == "union":
             data = _read_json(Path(_arg(rest, "--passes-file")), "passes file")
             passes = data if isinstance(data, list) else data.get("passes") or []

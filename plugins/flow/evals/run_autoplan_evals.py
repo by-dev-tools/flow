@@ -40,12 +40,16 @@ Exits non-zero on any failure (CI gate).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from eval_utils import git_repo  # noqa: E402 - path set immediately above
 
 ROOT = Path(__file__).resolve().parent.parent
 ENGINE = ROOT / "skills" / "autoplan" / "lib" / "gate.py"
@@ -69,10 +73,17 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         _fails.append(f"{name}: {detail}")
 
 
-def run(*args, stdin=None):
+def run(*args, stdin=None, cwd=None):
+    """Drive the engine through its CLI, from `cwd`.
+
+    `cwd` is not incidental. `gate.py` confines every path it reads to the repository
+    the PROCESS is running in, so a fixture written to a temp dir is correctly refused
+    unless the engine is run from there. Passing the temp dir is also the honest
+    invocation: it is what a consumer repo looks like from the engine's point of view.
+    """
     proc = subprocess.run(
         [sys.executable, str(ENGINE), *args],
-        capture_output=True, text=True, input=stdin,
+        capture_output=True, text=True, input=stdin, cwd=cwd,
     )
     try:
         return json.loads(proc.stdout), proc
@@ -80,19 +91,64 @@ def run(*args, stdin=None):
         return None, proc
 
 
-def gate_state(tmp: Path, state: dict):
-    f = tmp / "state.json"
-    f.write_text(json.dumps(state), encoding="utf-8")
-    out, _ = run("gate", "--state-file", str(f))
-    return out
+@contextlib.contextmanager
+def _scratch():
+    with tempfile.TemporaryDirectory() as d:
+        yield Path(d)
 
 
-def _arms(a=True, b=True, c=True, **over):
-    """Three arms that all ran clean, so each test mutates exactly one thing."""
+def gate_state(state: dict):
+    """One gate run against one fixture, managing its own scratch.
+
+    Previously took a caller-supplied `tmp`, which forced nine tests to open a
+    `TemporaryDirectory` they used for nothing else — two lines of prologue and a
+    level of indentation each, for a directory only this helper touched.
+    """
+    with _scratch() as tmp:
+        f = tmp / "state.json"
+        f.write_text(json.dumps(state), encoding="utf-8")
+        out, _ = run("gate", "--state-file", str(f), cwd=str(tmp))
+        return out
+
+
+def depth_of(trigger: dict):
+    with _scratch() as tmp:
+        f = tmp / "trigger.json"
+        f.write_text(json.dumps(trigger), encoding="utf-8")
+        out, _ = run("depth", "--trigger-file", str(f), cwd=str(tmp))
+        return out
+
+
+def render_of(entries: list):
+    """Returns the rendered escalation TEXT (not JSON) — the layer a human reads."""
+    with _scratch() as tmp:
+        f = tmp / "entries.json"
+        f.write_text(json.dumps(entries), encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(ENGINE), "render-decisions", "--entries-file", str(f)],
+            capture_output=True, text=True, cwd=str(tmp))
+        return proc
+
+
+def union_of(passes: list):
+    with _scratch() as tmp:
+        f = tmp / "passes.json"
+        f.write_text(json.dumps(passes), encoding="utf-8")
+        out, _ = run("union", "--passes-file", str(f), cwd=str(tmp))
+        return out
+
+
+def _arms(**over):
+    """Three arms that all ran clean, so each test mutates exactly one thing.
+
+    Mutate through `**over` only. Boolean `a`/`b`/`c` params also existed and were
+    two-thirds dead — `_arms(B={"ran": False})` and `_arms(B={"ran": False})` did the same
+    thing, which a reader had to work out.
+    """
     base = [
-        {"arm": "A", "ran": a, "evidence": "ran"},
-        {"arm": "B", "ran": b, "evidence": "ran"},
-        {"arm": "C", "ran": c, "evidence": "ran",
+        {"arm": "A", "ran": True, "evidence": "ran"},
+        {"arm": "B", "ran": True, "evidence": "ran"},
+        {"arm": "C", "ran": True, "evidence": "ran",
          "reviewers": {"auditor": "returned", "plan-critic": "returned",
                        "lens-experience": "returned"}},
     ]
@@ -102,8 +158,8 @@ def _arms(a=True, b=True, c=True, **over):
     return base
 
 
-def plan_doc(criteria, heading="**Spec-walk:**", preamble="", retained=""):
-    body = preamble + heading + "\n\n"
+def plan_doc(criteria, retained=""):
+    body = "**Spec-walk:**\n\n"
     body += "".join(f"- [ ] {c}\n" for c in criteria)
     return body + retained
 
@@ -165,11 +221,13 @@ def test_missing_gate_marker_makes_gate_execute_red() -> None:
     guard = ROOT / "skills" / "prototype" / "lib" / "prototype-gate.py"
     if not guard.exists():
         return
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        subprocess.run(["git", "init", "-q", "-b", "main", str(tmp)], check=False)
+    with _scratch() as tmp:
+        # eval_utils.git_repo, not a hand-rolled `git init`. Its docstring records that
+        # five harnesses each grew their own copy and asks new ones to import instead,
+        # "so the eventual hoist is a deletion instead of a rewrite" — this would have
+        # been the sixth. It also commits, which the local version did not.
+        git_repo(tmp, {"plan-no-markers.md": plan_doc(["alpha emits X. → `test_a`"])})
         bare = tmp / "plan-no-markers.md"
-        bare.write_text(plan_doc(["alpha emits X. → `test_a`"]), encoding="utf-8")
         proc = subprocess.run(
             [sys.executable, str(guard), "gate-execute", "--plan", str(bare)],
             capture_output=True, text=True, cwd=str(tmp),
@@ -196,24 +254,24 @@ def test_missing_gate_marker_makes_gate_execute_red() -> None:
 def test_pass_requires_evidence_of_running_all_arms() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        green = gate_state(tmp, {"arms": _arms()})
+        green = gate_state({"arms": _arms()})
         check("all-arms-ran-clean-is-green", green["verdict"] == "GREEN", str(green))
         for missing in ("A", "B", "C"):
             arms = [a for a in _arms() if a["arm"] != missing]
-            out = gate_state(tmp, {"arms": arms})
+            out = gate_state({"arms": arms})
             check(f"absent-arm-{missing}-is-red", out["verdict"] == "RED")
             check(f"absent-arm-{missing}-says-why",
                   any("never reported" in b for b in out["blockers"]))
         # An arm that ran but produced no evidence is not a pass either.
-        out = gate_state(tmp, {"arms": _arms(A={"evidence": ""})})
+        out = gate_state({"arms": _arms(A={"evidence": ""})})
         check("arm-without-evidence-is-red", out["verdict"] == "RED")
 
 
 def test_arm_b_not_run_is_red() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        ran = gate_state(tmp, {"arms": _arms()})
-        not_run = gate_state(tmp, {"arms": _arms(b=False)})
+        ran = gate_state({"arms": _arms()})
+        not_run = gate_state({"arms": _arms(B={"ran": False})})
         check("arm-b-not-run-is-red", not_run["verdict"] == "RED")
         check("arm-b-not-run-has-its-own-reason",
               any("DID NOT RUN" in b for b in not_run["blockers"]),
@@ -225,7 +283,7 @@ def test_arm_b_not_run_is_red() -> None:
 def test_errored_reviewer_is_not_a_clean_pass() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        out = gate_state(tmp, {"arms": _arms(B={"error": "HTTP 429"})})
+        out = gate_state({"arms": _arms(B={"error": "HTTP 429"})})
         check("errored-arm-is-red", out["verdict"] == "RED")
         check("errored-arm-is-classified-as-did-not-run",
               any("DID NOT RUN" in b for b in out["blockers"]),
@@ -241,11 +299,11 @@ def test_zero_reference_docs_is_red() -> None:
     """
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        out = gate_state(tmp, {"arms": _arms(C={"document_blind": True})})
+        out = gate_state({"arms": _arms(C={"document_blind": True})})
         check("document-blind-arm-is-red", out["verdict"] == "RED")
         check("document-blind-names-the-category-it-cannot-clear",
               any("Spec-violation" in b for b in out["blockers"]))
-        sighted = gate_state(tmp, {"arms": _arms(C={"document_blind": False})})
+        sighted = gate_state({"arms": _arms(C={"document_blind": False})})
         check("sighted-arm-is-green", sighted["verdict"] == "GREEN",
               "the positive half: blindness must be what makes it red, not arm C itself")
 
@@ -254,7 +312,7 @@ def test_low_verdict_routes_to_decision_required() -> None:
     """D1 moves PLAN APPROVAL. It does not move flow's third gate."""
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        low = gate_state(tmp, {"arms": _arms(),
+        low = gate_state({"arms": _arms(),
                                "confidence_verdicts": [{"assumption": "depth 2", "confidence": "LOW"}]})
         check("low-verdict-is-red", low["verdict"] == "RED")
         check("low-verdict-is-a-decision-not-a-blocker",
@@ -268,7 +326,7 @@ def test_medium_verdict_proceeds() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         for level in ("MEDIUM", "HIGH", "MEDIUM-HIGH"):
-            out = gate_state(tmp, {"arms": _arms(),
+            out = gate_state({"arms": _arms(),
                                    "confidence_verdicts": [{"assumption": "x", "confidence": level}]})
             check(f"{level}-verdict-proceeds", out["verdict"] == "GREEN",
                   "only LOW is an automatic gate; the others must not block")
@@ -277,10 +335,10 @@ def test_medium_verdict_proceeds() -> None:
 def test_surviving_finding_escalates() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        cleared = gate_state(tmp, {"arms": _arms(
+        cleared = gate_state({"arms": _arms(
             A={"findings": [{"tier": "auto-fixable", "survived_retry": False, "finding": "fixed"}]})})
         check("auto-fixable-that-cleared-proceeds", cleared["verdict"] == "GREEN")
-        survived = gate_state(tmp, {"arms": _arms(
+        survived = gate_state({"arms": _arms(
             A={"findings": [{"tier": "auto-fixable", "survived_retry": True, "finding": "still vacuous"}]})})
         check("auto-fixable-that-survived-escalates", survived["verdict"] == "RED")
         check("survivor-becomes-a-decision-not-a-second-retry",
@@ -303,7 +361,7 @@ def _arm_a(tmp: Path, criteria, expect_line=None, retained=""):
     args = ["arm-a", "--plan", str(p)]
     if expect_line is not None:
         args += ["--expect-line", str(expect_line)]
-    out, _ = run(*args)
+    out, _ = run(*args, cwd=str(tmp))
     return out
 
 
@@ -394,10 +452,10 @@ def test_arm_a_proves_which_block_it_graded() -> None:
             "\n### Retained (shipped — merged as v1.0.0, #1)\n\n"
             "**Spec-walk:**\n\n- [ ] beta emits Y. → `test_b`\n",
             encoding="utf-8")
-        out, _ = run("arm-a", "--plan", str(p), "--expect-line", "3")
+        out, _ = run("arm-a", "--plan", str(p), "--expect-line", "3", cwd=str(tmp))
         check("arm-a-green-when-it-graded-the-expected-block", out["verdict"] == "GREEN", str(out))
         check("arm-a-reports-the-line-it-graded", out["graded_line"] == 3, str(out))
-        wrong, _ = run("arm-a", "--plan", str(p), "--expect-line", "9")
+        wrong, _ = run("arm-a", "--plan", str(p), "--expect-line", "9", cwd=str(tmp))
         check("arm-a-red-when-it-graded-a-different-block", wrong["verdict"] == "RED")
         check("arm-a-says-which-block-it-graded",
               any("cannot prove which document" in r for r in wrong["reasons"]), str(wrong))
@@ -427,11 +485,40 @@ def test_arm_a_owns_its_pinning() -> None:
 
 
 def test_arm_a_unparseable_lint_is_not_clean() -> None:
-    """A verdict line that does not parse is a failure to measure, not zero unpinned."""
-    engine = ENGINE.read_text(encoding="utf-8")
-    check("engine-fails-closed-on-unparseable-lint",
-          "no parseable verdict line" in engine and '"ran": False' in engine,
-          "defaulting to 0 unpinned would make a broken lint look like a clean plan")
+    """A pinning predicate that cannot be loaded is a failure to MEASURE, not zero
+    unpinned — asserted behaviourally against a stub tree, not by grepping this
+    engine for its own error strings.
+
+    The grep version passed if the sentence existed anywhere in `gate.py`, including
+    in a comment, and would have kept passing if the branch were deleted and the
+    comment left behind. That is the same defect `test_escalation_header_matches_shipped`
+    diagnosed in itself. The `--lib-root` seam exists to make this one real.
+    """
+    real = ROOT / "skills"
+    with _scratch() as tmp:
+        stub = tmp / "libs"
+        (stub / "verify-build" / "lib").mkdir(parents=True)
+        (stub / "critique-plan" / "lib").mkdir(parents=True)
+        for f in (real / "verify-build" / "lib").glob("*.py"):
+            (stub / "verify-build" / "lib" / f.name).write_text(
+                f.read_text(encoding="utf-8"), encoding="utf-8")
+        # A lint module that loads fine but exposes no predicate.
+        (stub / "critique-plan" / "lib" / "walk-pin-lint.py").write_text(
+            '"""stub: no is_pinned"""\n', encoding="utf-8")
+        plan = tmp / "plan.md"
+        plan.write_text(plan_doc(["alpha emits X. \u2192 `test_a`"]), encoding="utf-8")
+
+        out, _ = run("arm-a", "--plan", str(plan), "--lib-root", str(stub), cwd=str(tmp))
+        check("unloadable-predicate-is-red", out["verdict"] == "RED", str(out))
+        check("unloadable-predicate-is-did-not-run", out["ran"] is False,
+              "it must not report a verdict it never measured")
+        check("unloadable-predicate-says-so",
+              any("DID NOT RUN" in r for r in out["reasons"]), str(out))
+        # The positive half, same fixture through the REAL tree: if this were red too,
+        # the check above would be measuring the stub harness rather than the branch.
+        ok, _ = run("arm-a", "--plan", str(plan), "--lib-root", str(real), cwd=str(tmp))
+        check("real-predicate-tree-is-green", ok["verdict"] == "GREEN", str(ok))
+        check("real-predicate-tree-ran", ok["ran"] is True)
 
 
 # ============================================================ 4. arm B
@@ -439,9 +526,7 @@ def test_arm_a_unparseable_lint_is_not_clean() -> None:
 def test_arm_b_depth_honesty() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        f = tmp / "t.json"
-        f.write_text(json.dumps({"path": "prototype-first"}), encoding="utf-8")
-        out, _ = run("depth", "--trigger-file", str(f))
+        out = depth_of({"path": "prototype-first"})
         check("prototype-first-resolves-depth-2", out["depth"] == 2, str(out))
         check("depth-states-what-it-is-worth", "unmeasured" in out.get("honesty", ""),
               "must never claim a figure for a depth nobody measured")
@@ -456,18 +541,14 @@ def test_depth_provenance_both_polarities() -> None:
     check("union-records-per-pass-provenance", "seen_in" in engine)
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        f = tmp / "p.json"
-        f.write_text(json.dumps([
+        out = union_of([
             {"findings": [{"symbol": "a", "finding": "A"}]},
             {"findings": [{"symbol": "a", "finding": "A"}]},
-        ]), encoding="utf-8")
-        out, _ = run("union", "--passes-file", str(f))
+        ])
         check("union-reports-the-pass-count", out["passes"] == 2, str(out))
         check("union-records-which-passes-saw-it",
               out["findings"][0]["seen_in"] == [1, 2])
-        f.write_text(json.dumps([{"findings": [{"symbol": "a", "finding": "A"}]}]),
-                     encoding="utf-8")
-        one, _ = run("union", "--passes-file", str(f))
+        one = union_of([{"findings": [{"symbol": "a", "finding": "A"}]}])
         check("union-reports-a-smaller-recorded-depth", one["passes"] == 1,
               "recorded passes must be visible so a caller can compare to the declared depth")
 
@@ -495,13 +576,11 @@ def test_union_never_averages() -> None:
     """A finding in 1 of 2 carries identical standing to one in 2 of 2."""
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        f = tmp / "p.json"
-        f.write_text(json.dumps([
+        out = union_of([
             {"findings": [{"symbol": "both", "finding": "seen twice"}]},
             {"findings": [{"symbol": "both", "finding": "seen twice"},
                           {"symbol": "once", "finding": "seen once"}]},
-        ]), encoding="utf-8")
-        out, _ = run("union", "--passes-file", str(f))
+        ])
         by = {x["symbol"]: x for x in out["findings"]}
         check("both-findings-survive-the-union", set(by) == {"both", "once"}, str(out))
         check("neither-finding-is-downgraded",
@@ -511,7 +590,7 @@ def test_union_never_averages() -> None:
               "not weaker evidence" in by["once"]["provenance"],
               "the reader must not be left to discount 1-of-2 on their own")
         # The gate must route them identically too, not merely record them alike.
-        g = gate_state(tmp, {"arms": _arms(B={"findings": [by["once"], by["both"]]})})
+        g = gate_state({"arms": _arms(B={"findings": [by["once"], by["both"]]})})
         check("gate-routes-both-findings", len(g["decisions"]) == 2, str(g))
         check("gate-is-red-for-either", g["verdict"] == "RED")
 
@@ -519,12 +598,10 @@ def test_union_never_averages() -> None:
 def test_union_dedupes_by_symbol() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        f = tmp / "p.json"
-        f.write_text(json.dumps([
+        out = union_of([
             {"findings": [{"symbol": "same", "finding": "x"}]},
             {"findings": [{"symbol": "same", "finding": "x restated differently"}]},
-        ]), encoding="utf-8")
-        out, _ = run("union", "--passes-file", str(f))
+        ])
         check("same-gap-found-twice-is-one-item", len(out["findings"]) == 1, str(out))
         check("dedupe-records-both-sightings", out["findings"][0]["seen_in"] == [1, 2])
 
@@ -534,7 +611,7 @@ def test_union_dedupes_by_symbol() -> None:
 def test_arm_c_partial_return_is_red() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        partial = gate_state(tmp, {"arms": _arms(C={"reviewers": {
+        partial = gate_state({"arms": _arms(C={"reviewers": {
             "auditor": "returned", "plan-critic": "errored: HTTP 429",
             "lens-experience": "returned"}})})
         check("arm-c-partial-fanout-is-red", partial["verdict"] == "RED")
@@ -547,7 +624,7 @@ def test_arm_c_partial_return_is_red() -> None:
 def test_arm_c_all_clean_is_green() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
-        out = gate_state(tmp, {"arms": _arms()})
+        out = gate_state({"arms": _arms()})
         check("arm-c-all-three-returned-is-green", out["verdict"] == "GREEN", str(out))
 
 
@@ -602,14 +679,12 @@ def test_autoplan_runs_only_where_the_human_gate_moved() -> None:
         tmp = Path(d)
         f = tmp / "t.json"
         for path, applies in (("prototype-first", True), ("collapsed", False), ("classic", False)):
-            f.write_text(json.dumps({"path": path}), encoding="utf-8")
-            out, _ = run("depth", "--trigger-file", str(f))
+            out = depth_of({"path": path})
             check(f"{path}-applies-{applies}", out["applies"] is applies, str(out))
             check(f"{path}-is-a-clean-outcome", out["ok"] is True,
                   "not applying is a correct result, never an error")
         for path in ("collapsed", "classic"):
-            f.write_text(json.dumps({"path": path}), encoding="utf-8")
-            out, _ = run("depth", "--trigger-file", str(f))
+            out = depth_of({"path": path})
             check(f"{path}-explains-the-human-still-gates",
                   any("human" in r and "gates" in r for r in out["reasons"]), str(out))
 
@@ -624,43 +699,32 @@ def test_spike_has_no_undeclared_depth() -> None:
         tmp = Path(d)
         f = tmp / "t.json"
         for bogus in ("spike", "", "unknown", None):
-            f.write_text(json.dumps({"path": bogus}), encoding="utf-8")
-            out, _ = run("depth", "--trigger-file", str(f))
+            out = depth_of({"path": bogus})
             check(f"unrecognized-path-{bogus!r}-refuses", out["ok"] is False, str(out))
             check(f"unrecognized-path-{bogus!r}-has-no-depth", out["depth"] is None)
 
 
 def test_decision_required_shape() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        f = tmp / "e.json"
-        f.write_text(json.dumps([{
-            "finding": "Esc closes the editor but leaves the pin",
-            "drafted_resolution": "add a criterion covering Esc twice",
-            "provenance": "Found by 1 of 2 coverage passes. That is not weaker evidence — "
-                          "this reviewer has never reported a gap that was not real.",
-        }]), encoding="utf-8")
-        proc = subprocess.run([sys.executable, str(ENGINE), "render-decisions",
-                               "--entries-file", str(f)], capture_output=True, text=True)
-        out = proc.stdout
-        check("escalation-is-numbered", re.search(r"^1\. ", out, re.M) is not None, out)
-        check("escalation-drafts-the-resolution", "What I'd do:" in out,
-              "the resolution is drafted, not requested")
-        check("escalation-asks-a-yes-no", "What I need from you: yes" in out)
-        check("escalation-states-provenance-with-its-interpretation",
-              "not weaker evidence" in out)
-        # No `or True`: the first draft of this check was `X or True`, which can only
-        # pass. A check that cannot fail is not a check -- the same class this harness
-        # exists to enforce, committed inside the harness itself.
-        empty = f.parent / "empty.json"
-        empty.write_text("[]", encoding="utf-8")
-        blank = subprocess.run([sys.executable, str(ENGINE), "render-decisions",
-                                "--entries-file", str(empty)],
-                               capture_output=True, text=True)
-        check("empty-entries-render-nothing", blank.stdout.strip() == "",
-              f"expected no escalation for zero decisions, got {blank.stdout!r}")
-        check("empty-entries-still-exit-clean", blank.returncode == 0,
-              "nothing to escalate is a normal outcome, not an error")
+    out = render_of([{
+        "finding": "Esc closes the editor but leaves the pin",
+        "drafted_resolution": "add a criterion covering Esc twice",
+        "provenance": "Found by 1 of 2 coverage passes. That is not weaker evidence — "
+                      "this reviewer has never reported a gap that was not real.",
+    }]).stdout
+    check("escalation-is-numbered", re.search(r"^1\. ", out, re.M) is not None, out)
+    check("escalation-drafts-the-resolution", "What I'd do:" in out,
+          "the resolution is drafted, not requested")
+    check("escalation-asks-a-yes-no", "What I need from you: yes" in out)
+    check("escalation-states-provenance-with-its-interpretation",
+          "not weaker evidence" in out)
+    # No `or True`: the first draft of this check was `X or True`, which can only
+    # pass. A check that cannot fail is not a check -- the same class this harness
+    # exists to enforce, committed inside the harness itself.
+    blank = render_of([])
+    check("empty-entries-render-nothing", blank.stdout.strip() == "",
+          f"expected no escalation for zero decisions, got {blank.stdout!r}")
+    check("empty-entries-still-exit-clean", blank.returncode == 0,
+          "nothing to escalate is a normal outcome, not an error")
 
 
 def test_escalation_header_matches_shipped() -> None:
@@ -678,12 +742,7 @@ def test_escalation_header_matches_shipped() -> None:
     # matched this file's own explanatory comment about the shipped wording and passed
     # for the wrong reason -- the criterion belongs at the layer where it is CLAIMED
     # (the text a human reads), not one layer below it.
-    with tempfile.TemporaryDirectory() as d:
-        f = Path(d) / "e.json"
-        f.write_text(json.dumps([{"finding": "x"}]), encoding="utf-8")
-        rendered = subprocess.run(
-            [sys.executable, str(ENGINE), "render-decisions", "--entries-file", str(f)],
-            capture_output=True, text=True).stdout
+    rendered = render_of([{"finding": "x"}]).stdout
     shipped_first_sentence = m.group(1).split(".")[0] + "."
     check("autoplan-header-matches-the-shipped-one",
           shipped_first_sentence in rendered,
@@ -720,7 +779,7 @@ def test_autoplan_output_survives_arm_a() -> None:
             "**Prototype approved:** `abc1234` · 2026-09-29\n\n"
             "**Spec-walk:**\n\n- [ ] `depth` resolves to 2 on prototype-first. \u2192 `test_depth`\n",
             encoding="utf-8")
-        out, _ = run("arm-a", "--plan", str(p2))
+        out, _ = run("arm-a", "--plan", str(p2), cwd=str(tmp))
         check("the-shape-the-skill-prescribes-passes-arm-a",
               out["verdict"] == "GREEN", str(out))
 
