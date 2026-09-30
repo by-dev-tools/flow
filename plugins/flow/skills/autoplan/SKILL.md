@@ -112,7 +112,7 @@ ARGF=$(python3 "${CLAUDE_PLUGIN_ROOT}/lib/arg_placeholders.py" --arg-path autopl
 # be read" — a silent-skip wearing a late, misleading error (rules item 1).
 [ -n "$ARGF" ] || { echo "[autoplan] argument path resolved empty." >&2; exit 1; }
 [ -s "$ARGF" ] || { echo "[autoplan] $ARGF is empty — write the plan path to it first (see ## Argument)." >&2; exit 1; }
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/autoplan/lib/gate.py" arm-a --plan-from "$ARGF"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/autoplan/lib/gate.py" arm-a --plan-from "$ARGF" --expect-line <N>
 ```
 
 **`--plan-from`, never `--plan <plan-path>`, and this is not a style preference.** An
@@ -126,23 +126,28 @@ through exactly this stamped-file channel — three files away, in the same rele
 safe idiom was already here to copy. The engine refuses a multi-line arg file rather than
 taking line 1, and confines `--lib-root` the same way it confines the plan.
 
-*Where `--expect-line` went.* It is deliberately absent from the block above. The arg file
-holds exactly one line — a path — and refuses a second, so the line number cannot travel
-that way; and putting `--expect-line <N>` back into the fence would reintroduce a
-placeholder in an executable context for a value that has a safer home. Instead: **read
-`graded_line` out of the engine's JSON and compare it yourself** against the line you
-recorded in Step 2. If they disagree, Arm A graded a different block and the gate is RED —
-you are performing the assertion the flag would have performed. `--expect-line` remains on
-the CLI for direct CI use, where argv is not caller-influenced.
-
-It invokes `extract-criteria.py`, `criterion-specificity.py` and `walk-pin-lint.py` **directly** — not through `/flow:critique-plan`, whose pinning path routes a named plan file to `UNCHECKED` post-#165, and which would in any case make this gate inherit another skill's scope changes.
+It invokes `extract-criteria.py`, `criterion-specificity.py` and `walk-pin-lint.py`'s own `is_pinned` predicate **directly** — not through `/flow:critique-plan`, whose pinning path routes a named plan file to `UNCHECKED` post-#165, and which would in any case make this gate inherit another skill's scope changes.
 
 Two things it does that are easy to get wrong, both already handled in the engine:
 
 - **It reads their OUTPUT, never their exit status.** Measured: `criterion-specificity.py` exits `0` while reporting a vacuous criterion, and `walk-pin-lint.py` documents *"Exit codes: 0 for every lint verdict."* An exit-code gate here is green on every input.
-- **It scopes pinning to the ACTIVE block.** `walk-pin-lint.py` is all-blocks by design; unscoped, this arm is red forever in any repo retaining shipped blocks (measured on flow's own plan: 591 unpinned across 71 blocks, none of them the author's to fix).
+- **It scopes pinning to the ACTIVE block.** The lint's CLI is all-blocks by design; unscoped, this arm is red forever in any repo retaining shipped blocks (measured on flow's own plan: 591 unpinned across 71 blocks, none of them the author's to fix). Asking the predicate about the extracted criteria directly is what scopes it.
 
-`--expect-line` is the assertion that Arm A graded **the plan under review**. It is keyed on the heading's line because that is the only field that varies per block — in a plan retaining shipped blocks every unqualified heading is the identical string `**Spec-walk:**`, and `block_count` is a file-wide total.
+**`--expect-line <N>` is required, and `<N>` is the line you recorded in Step 2.** Arm A
+is RED without it, deliberately: its contract is that it proves *which* block it graded,
+and with no expected line it compares nothing and would return GREEN having proved
+nothing. "Proved it" and "was never asked to prove it" are the same
+did-not-run/ran-clean collapse this gate exists to forbid, one level down. The escape,
+for direct CI use where provenance genuinely is not wanted, is `--allow-unproven` — loud,
+named, and never the default.
+
+*An earlier draft removed this flag from the block for injection-safety, and that
+reasoning was wrong here.* The hazard `#165` closed is a caller-supplied **path** reaching
+a shell through `$ARGUMENTS` substitution. `<N>` is neither: it is a line number **you**
+computed in Step 2, and the engine forces it through `int()` and refuses anything else
+before it is used, so it cannot carry a payload. Removing it traded a real correctness
+property for a safety property that was not at risk — `/flow:audit-coverage` caught the
+trade, because the criterion still claimed the proof the shipped path had stopped making.
 
 ## 4. Arm B — completeness. Best-effort, and it never passes on silence.
 

@@ -349,6 +349,12 @@ def _arm_a(tmp: Path, criteria, expect_line=None, retained=""):
     args = ["arm-a", "--plan", str(p)]
     if expect_line is not None:
         args += ["--expect-line", str(expect_line)]
+    else:
+        # These fixtures grade VACUITY and PINNING, not provenance. Arm A is now RED
+        # without an expected line (it cannot prove which block it graded), so they
+        # ask for the quality verdict explicitly via the named escape rather than
+        # having the provenance rule silently mask what they are testing.
+        args += ["--allow-unproven"]
     out, _ = run(*args, cwd=str(tmp))
     return out
 
@@ -496,7 +502,8 @@ def test_arm_a_unparseable_lint_is_not_clean() -> None:
         plan = tmp / "plan.md"
         plan.write_text(plan_doc(["alpha emits X. \u2192 `test_a`"]), encoding="utf-8")
 
-        out, _ = run("arm-a", "--plan", str(plan), "--lib-root", str(stub), cwd=str(tmp))
+        out, _ = run("arm-a", "--plan", str(plan), "--lib-root", str(stub),
+                     "--allow-unproven", cwd=str(tmp))
         check("unloadable-predicate-is-red", out["verdict"] == "RED", str(out))
         check("unloadable-predicate-is-did-not-run", out["ran"] is False,
               "it must not report a verdict it never measured")
@@ -509,8 +516,8 @@ def test_arm_a_unparseable_lint_is_not_clean() -> None:
     # --lib-root; keeping the stub NEGATIVE in a temp repo and the POSITIVE in the real
     # one satisfies both.)
     repo = ROOT.parent.parent
-    ok, _ = run("arm-a", "--plan", "dev-docs/plan.md",
-                "--lib-root", "plugins/flow/skills", cwd=str(repo))
+    ok, _ = run("arm-a", "--plan", "dev-docs/plan.md", "--lib-root",
+                "plugins/flow/skills", "--allow-unproven", cwd=str(repo))
     check("real-predicate-tree-is-green", ok.get("verdict") == "GREEN", str(ok))
     check("real-predicate-tree-ran", ok.get("ran") is True, str(ok))
 
@@ -770,7 +777,7 @@ def test_autoplan_output_survives_arm_a() -> None:
             "**Prototype approved:** `abc1234` · 2026-09-29\n\n"
             "**Spec-walk:**\n\n- [ ] `depth` resolves to 2 on prototype-first. \u2192 `test_depth`\n",
             encoding="utf-8")
-        out, _ = run("arm-a", "--plan", str(p2), cwd=str(tmp))
+        out, _ = run("arm-a", "--plan", str(p2), "--allow-unproven", cwd=str(tmp))
         check("the-shape-the-skill-prescribes-passes-arm-a",
               out["verdict"] == "GREEN", str(out))
 
@@ -835,7 +842,7 @@ def test_arm_a_red_composes_into_the_gate() -> None:
     with _scratch() as tmp:
         plan = tmp / "plan.md"
         plan.write_text(plan_doc(["it works"]), encoding="utf-8")  # vacuous AND unpinned
-        a, _ = run("arm-a", "--plan", str(plan), cwd=str(tmp))
+        a, _ = run("arm-a", "--plan", str(plan), "--allow-unproven", cwd=str(tmp))
         check("known-positive: arm-a itself is RED", a["verdict"] == "RED", str(a))
         check("known-positive: arm-a emits no findings key",
               not a.get("findings"),
@@ -854,7 +861,7 @@ def test_arm_a_red_composes_into_the_gate() -> None:
         # The positive half, same composition: a GREEN arm-a must not block.
         plan.write_text(plan_doc(["`depth` resolves to 2 on prototype-first. \u2192 `test_depth`"]),
                         encoding="utf-8")
-        g, _ = run("arm-a", "--plan", str(plan), cwd=str(tmp))
+        g, _ = run("arm-a", "--plan", str(plan), "--allow-unproven", cwd=str(tmp))
         check("known-positive: arm-a is GREEN on a good plan", g["verdict"] == "GREEN", str(g))
         gg = dict(g); gg["evidence"] = "ran"
         out2 = gate_state({"arms": [gg,
@@ -1092,7 +1099,7 @@ def test_plan_path_reaches_the_engine_without_a_shell() -> None:
         git_repo(tmp, {"plan.md": plan_doc(["alpha emits X. \u2192 `test_a`"])})
         argf = tmp / "autoplan-arg.txt"
         argf.write_text(str(tmp / "plan.md") + "\n", encoding="utf-8")
-        out, _ = run("arm-a", "--plan-from", str(argf), cwd=str(tmp))
+        out, _ = run("arm-a", "--plan-from", str(argf), "--allow-unproven", cwd=str(tmp))
         check("plan-from-resolves-the-path", out.get("ran") is True, str(out))
         check("plan-from-grades-the-plan", out.get("criteria_count") == 1, str(out))
         # A path has one line. A second is an injection attempt, not a value to trim.
@@ -1125,7 +1132,7 @@ def test_lib_root_is_confined() -> None:
     """
     with _scratch() as tmp:
         git_repo(tmp, {"plan.md": plan_doc(["alpha emits X. \u2192 `test_a`"])})
-        out, _ = run("arm-a", "--plan", str(tmp / "plan.md"),
+        out, _ = run("arm-a", "--plan", str(tmp / "plan.md"), "--allow-unproven",
                      "--lib-root", "/tmp/attacker-tree", cwd=str(tmp))
         check("lib-root-outside-the-repo-is-refused",
               out["verdict"] == "RED" and any("outside" in r for r in out["reasons"]),
@@ -1133,8 +1140,8 @@ def test_lib_root_is_confined() -> None:
     # Positive: an in-repo lib-root still loads, so the refusal is about LOCATION and
     # not about the flag being wired off. Run wholly inside the flow repo.
     repo = ROOT.parent.parent
-    ok, _ = run("arm-a", "--plan", "dev-docs/plan.md",
-                "--lib-root", "plugins/flow/skills", cwd=str(repo))
+    ok, _ = run("arm-a", "--plan", "dev-docs/plan.md", "--lib-root",
+                "plugins/flow/skills", "--allow-unproven", cwd=str(repo))
     check("real-lib-root-still-loads", ok.get("ran") is True, str(ok))
 
 
@@ -1147,7 +1154,8 @@ def test_a_flag_shaped_value_is_refused() -> None:
           str(out))
     # Positive half, for bar-consistency with its neighbours: an ordinary value still
     # binds, so the refusal is about the value's SHAPE and not about --plan being off.
-    ok, _ = run("arm-a", "--plan", "dev-docs/plan.md", cwd=str(ROOT.parent.parent))
+    ok, _ = run("arm-a", "--plan", "dev-docs/plan.md", "--allow-unproven",
+                cwd=str(ROOT.parent.parent))
     check("an-ordinary-value-still-binds", ok.get("ran") is True, str(ok))
     # A flag given with nothing after it names ITSELF, not some other flag.
     empty, _ = run("arm-a", "--plan-from")
@@ -1182,6 +1190,64 @@ def test_every_refusal_names_a_remedy() -> None:
     missing = [" ".join(re.findall(r'"([^"]*)"', c))[:70] for c in calls if "\u2192" not in c]
     check("every-refusal-names-a-remedy", not missing,
           "refusal(s) that stop without saying what to do: " + "; ".join(missing))
+
+
+def test_arm_a_without_an_expected_line_is_red() -> None:
+    """"Proved it" and "was never asked to prove it" must not be the same outcome.
+
+    The which-block proof was opt-in: with the flag omitted — its shipped default at
+    the time — Arm A compared nothing and returned GREEN, while the criterion claimed
+    it goes RED when it cannot prove which document it graded.
+    """
+    repo = ROOT.parent.parent
+    unasked, _ = run("arm-a", "--plan", "dev-docs/plan.md", cwd=str(repo))
+    check("no-expected-line-is-red", unasked["verdict"] == "RED", str(unasked)[:200])
+    check("no-expected-line-says-it-proved-nothing",
+          any("proved nothing" in r for r in unasked["reasons"]), str(unasked)[:200])
+    check("no-expected-line-names-a-remedy",
+          any("→" in r for r in unasked["reasons"]))
+    # Positive: supplied and matching is GREEN, so the RED is about the PROOF being
+    # absent and not about the arm being wired off.
+    line = json.loads(subprocess.run(
+        [sys.executable, str(ROOT / "skills" / "verify-build" / "lib" / "extract-criteria.py"),
+         "dev-docs/plan.md"], capture_output=True, text=True, cwd=str(repo)).stdout
+    )["source_heading_line"]
+    proven, _ = run("arm-a", "--plan", "dev-docs/plan.md", "--expect-line", str(line),
+                    cwd=str(repo))
+    check("a-matching-expected-line-is-green", proven["verdict"] == "GREEN", str(proven)[:200])
+    # The escape exists, is explicit, and is not the default.
+    escaped, _ = run("arm-a", "--plan", "dev-docs/plan.md", "--allow-unproven", cwd=str(repo))
+    check("allow-unproven-is-an-explicit-escape", escaped["verdict"] == "GREEN", str(escaped)[:200])
+    t = SKILL.read_text(encoding="utf-8")
+    check("skill-passes-the-expected-line", "--expect-line <N>" in t,
+          "the shipped call path must ask for the proof it claims to make")
+
+
+def test_union_never_silently_drops_a_finding() -> None:
+    """A pass that reported something must not contribute nothing.
+
+    `if not symbol: continue` meant a finding carrying neither a symbol nor finding
+    text vanished before `combine` saw it — no decision, no blocker, and the gate
+    free to return GREEN over a real Arm B finding. The silent-skip class, inside the
+    one function whose job is not to lose findings.
+    """
+    keyless = union_of([{"findings": [{"detail": "the dock never takes focus"}]}])
+    check("a-keyless-finding-survives-the-union", len(keyless["findings"]) == 1,
+          str(keyless))
+    check("a-keyless-finding-is-marked-unkeyable",
+          keyless["findings"][0].get("unkeyable") is True, str(keyless))
+    check("an-unkeyable-finding-warns-it-may-be-a-duplicate",
+          "could not be deduplicated" in (keyless["findings"][0].get("provenance_note") or ""),
+          str(keyless))
+    # ...and it must still reach the gate, which is the property that actually matters.
+    g = gate_state({"arms": _arms(B={"findings": keyless["findings"]})})
+    check("a-keyless-finding-still-blocks-the-gate", g["verdict"] == "RED", str(g)[:200])
+    # Positive half: a normal keyed finding is unaffected and still dedupes.
+    keyed = union_of([{"findings": [{"symbol": "s", "finding": "x"}]},
+                      {"findings": [{"symbol": "s", "finding": "x"}]}])
+    check("keyed-findings-still-dedupe", len(keyed["findings"]) == 1, str(keyed))
+    check("keyed-findings-are-not-marked-unkeyable",
+          not keyed["findings"][0].get("unkeyable"))
 
 
 # ============================================================ 8. docs

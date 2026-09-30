@@ -381,7 +381,8 @@ def _load_is_pinned(lib_root: Path):
     return fn
 
 
-def arm_a(plan_path: Path, expect_line=None, lib_root: Path | None = None) -> dict:
+def arm_a(plan_path: Path, expect_line=None, lib_root: Path | None = None,
+          allow_unproven: bool = False) -> dict:
     """Criterion quality. Deterministic hard gate.
 
     Reads each tool's OUTPUT, never its exit status, and that is load-bearing rather
@@ -438,6 +439,21 @@ def arm_a(plan_path: Path, expect_line=None, lib_root: Path | None = None) -> di
     # every unqualified heading is the identical string `**Spec-walk:**` and
     # `block_count` is a file-wide total, so an assertion on those passes whether or
     # not the property holds — the "satisfiable by deletion" shape one step over.
+    if expect_line is None and not allow_unproven:
+        # Fail CLOSED. The criterion says Arm A "is RED when it cannot prove it read
+        # the plan under review" — and with the flag omitted it did not compare
+        # anything and returned GREEN, so it was never asked to prove it. "Proved it"
+        # and "was never asked" are the ran/did-not-run collapse this engine forbids,
+        # one level down. An earlier draft dropped the flag from the shipped call path
+        # for injection-safety; that reasoning was wrong here, because the line is
+        # agent-authored from Step 2 rather than caller-supplied, and it is forced
+        # through int() before use, so it cannot carry a payload.
+        reasons.append(
+            "Arm A was not told which block to expect, so it proved nothing about "
+            "WHICH document it graded (it read line %s). → Pass --expect-line with the "
+            "line the auto-write recorded, or --allow-unproven to accept a quality "
+            "verdict with no provenance." % got_line
+        )
     if expect_line is not None and got_line != expect_line:
         reasons.append(
             "Arm A graded the block at line %s, but the plan under review was "
@@ -536,7 +552,17 @@ def union_passes(passes: list) -> dict:
         for f in p.get("findings") or []:
             symbol = (f.get("symbol") or f.get("finding") or "").strip()
             if not symbol:
-                continue
+                # NEVER drop it. `continue` here meant a pass that reported something
+                # contributed nothing: no decision, no blocker, and the gate could
+                # return GREEN with "every arm ran and returned nothing" over a real
+                # finding. That is the silent-skip class (rules item 1) inside the one
+                # function whose whole job is not to lose findings — and it is the same
+                # model-omits-a-key failure the Arm C roster rule calls "the cheapest
+                # omission", defended there and undefended here. Keyed positionally so
+                # it still routes, and marked so nobody reads the key as meaningful.
+                symbol = "unkeyed:pass-%d:item-%d" % (i, len(order) + 1)
+                f = dict(f)
+                f["unkeyable"] = True
             if symbol not in by_symbol:
                 by_symbol[symbol] = dict(f)
                 by_symbol[symbol]["seen_in"] = []
@@ -544,6 +570,13 @@ def union_passes(passes: list) -> dict:
             by_symbol[symbol]["seen_in"].append(i)
     findings = [by_symbol[s] for s in order]
     for f in findings:
+        if f.get("unkeyable"):
+            f["provenance_note"] = (
+                "This finding carried no `symbol` and no `finding` text, so it could "
+                "not be deduplicated against the other passes — it is kept under a "
+                "positional key and may be a duplicate of another item here. → Fix the "
+                "reviewer output to carry a symbol; do not assume this is distinct."
+            )
         n, total = len(f["seen_in"]), len(passes)
         f["provenance"] = (
             "Found by %d of %d coverage passes. That is not weaker evidence — on "
@@ -935,7 +968,8 @@ def main(argv: list) -> int:
             if lib:
                 lib_root = Path(lib)
                 _safe_path(lib_root, "lib root")
-            return _emit(arm_a(plan, expect_n, lib_root=lib_root))
+            return _emit(arm_a(plan, expect_n, lib_root=lib_root,
+                               allow_unproven="--allow-unproven" in rest))
         if cmd == "union":
             data = _read_json(Path(_arg(rest, "--passes-file")), "passes file")
             passes = data if isinstance(data, list) else data.get("passes")
