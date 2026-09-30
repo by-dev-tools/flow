@@ -221,7 +221,7 @@ def resolve_always_loaded_surfaces(repo_root: Path = _REPO_ROOT) -> tuple[list[d
                 warnings.append(f"no frontmatter description found (contributes 0 chars): {path}")
                 continue
             label = path.relative_to(repo_root)
-            entries.append({"path": f"{label} (description only)", "chars": len(desc), "lines": 1})
+            entries.append({"path": f"{label} (listing text)", "chars": len(desc), "lines": 1})
 
     return entries, warnings
 

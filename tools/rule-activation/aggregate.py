@@ -7,7 +7,8 @@ from pathlib import Path
 # evidence, and a hardcoded /tmp path made the README's "re-derive every number" command a
 # claim nothing could check (the class this whole PR is about).
 HERE = Path(__file__).resolve().parent
-RUNS = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else HERE / "runs"
+_ARGS = [a for a in sys.argv[1:] if not a.startswith("-")]   # flags are not directories
+RUNS = Path(_ARGS[0]).resolve() if _ARGS else HERE / "runs"
 
 RULES = ["plan-discipline", "documentation", "exploration", "general"]
 
@@ -30,7 +31,7 @@ def rows_from_tsv():
     return seen
 
 def tally_rows(scored):
-    """(model, arm, rule) -> [fired, n]. The only place a count is computed."""
+    """(model, arm, rule) -> [fired, n]. THE only place a count is computed — see main()."""
     t = collections.defaultdict(lambda: [0, 0])
     for r in scored:
         m = r["model"] or r.get("requested_model")
@@ -95,34 +96,22 @@ def main():
         if not (r["segmented"] and r["control_ok"]):
             discarded.append(r); continue
         scored.append(r)
+    # gitignored: the DATED file is the committed evidence, and a run must not silently
+    # overwrite it (the offline path reads it).
     out = RUNS / "aggregate-latest.json"
     json.dump(dict(scored=scored, discarded=discarded), open(out, "w"), indent=2)
 
-    tally = collections.defaultdict(lambda: [0, 0])   # (arm,model,scen) -> [fired, n]
-    models = collections.Counter()
-    for r in scored:
-        # arm c runs the REAL plugin bodies, which carry no sentinel by design
-        # (a sentinel would be a shipped artifact). Its signal is the Skill
-        # tool_use, which IS the activation event: "full skill loads when invoked".
-        fired = r["scen"] in r["task_turn_rule_calls"]
-        key = (r["arm"], r["model"] or r["requested_model"], r["scen"])
-        tally[key][0] += int(fired); tally[key][1] += 1
-        models[r["model"] or r["requested_model"]] += 1
-
-    arms = sorted({k[0] for k in tally}); mdls = sorted({k[1] for k in tally})
-    for m in mdls:
-        print(f"\n=== model: {m} ===")
-        print(f"{'rule':18} " + " ".join(f"arm {a:<8}" for a in arms))
-        for scen in RULES:
-            cells_out = []
-            for a in arms:
-                f, n = tally.get((a, m, scen), [0, 0])
-                cells_out.append(f"{f}/{n}".ljust(12) if n else "—".ljust(12))
-            print(f"{scen:18} " + " ".join(cells_out))
-    print(f"\ninterpretable sessions: {len(scored)}   discarded (precondition unmet): {len(discarded)}")
-    print("models observed:", dict(models))
+    # ONE counting path and ONE renderer, shared with --offline. The live path used to keep
+    # its own tally keyed (arm, model, scen) while report() keys (model, arm, scen), so the two
+    # paths printed different column orders and only one of them printed the plugin-scope
+    # total — two implementations of the same table, which is the fan-out class this repo
+    # names (found by /flow:staff-review's delta re-review).
+    report(tally_rows(scored), len(scored), len(discarded),
+           collections.Counter((r["model"] or r["requested_model"]) for r in scored))
     if discarded:
         print("discarded:", ", ".join(sorted(d["label"] for d in discarded)))
+    return 0
+
 
 if __name__ == "__main__":
     main()

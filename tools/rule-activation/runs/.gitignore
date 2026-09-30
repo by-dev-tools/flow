@@ -1,0 +1,3 @@
+# The LIVE aggregate.py path writes this on each run (--offline never writes).
+# The dated file is the committed evidence and must not be silently overwritten.
+aggregate-latest.json

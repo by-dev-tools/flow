@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Render the results table into the history entry, replacing <!-- RESULTS_TABLE -->."""
-import json, collections, pathlib, subprocess, sys
+import json, collections, pathlib, sys
 RULES = ["plan-discipline", "documentation", "exploration", "general"]
 ARMLABEL = {
     "a":    ("project", "old desc + `paths:`"),
@@ -41,7 +41,7 @@ for m in models:
     out.append("")
 n_disc = len(agg["discarded"])
 out.append(f"**{len(scored)} interpretable sessions. {n_disc} discarded at final count** "
-           f"(19 limit-truncated sessions were discarded and re-run; see § instrument defects).")
+           f"(limit-truncated sessions were discarded and re-run; see § instrument defects).")
 p = pathlib.Path(sys.argv[1]); t = p.read_text()
 assert "<!-- RESULTS_TABLE -->" in t
 p.write_text(t.replace("<!-- RESULTS_TABLE -->", "\n".join(out), 1))

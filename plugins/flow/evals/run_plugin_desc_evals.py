@@ -553,10 +553,23 @@ def main() -> int:
                 continue
             if BAD_FALLBACK.search(line):
                 cwd_fallbacks.append(f"{sk.parent.name}:{n}")
-    check("no-cwd-relative-plugin-lib-fallback", not cwd_fallbacks,
-          "a shipped skill resolves a plugin lib relative to CWD: " + "; ".join(cwd_fallbacks) +
+    check("no-dot-cwd-plugin-lib-fallback", not cwd_fallbacks,
+          "a shipped skill resolves a plugin lib via a `.`-rooted CWD default: "
+          + "; ".join(cwd_fallbacks) +
           " — CLAUDE_PLUGIN_ROOT is unset in Bash-tool blocks, so this executes the "
           "CONSUMER's repo. Guard with [ -n ... ] && [ -f ... ] and WARN when unresolvable")
+    # SCOPE, stated so a PASS is not read as full coverage: this covers the `:-.` tier only.
+    # The `${CLAUDE_PLUGIN_ROOT:-plugins/flow}` tier survives at ~14 sites in 5 shipped skills
+    # (including doctor itself, 190 lines below the line this PR fixed). Narrower blast radius
+    # — it needs the consumer repo to carry `plugins/flow/lib/...` — and it is queued at
+    # roadmap § "One shared resolver for plugin libs". Named here because a detector whose
+    # name is broader than its pattern is this repo's own item-3 shape (found by
+    # /flow:staff-review's delta re-review).
+    check("dot-cwd-detector-scope-is-documented",
+          bool(BAD_FALLBACK.search('x="${CLAUDE_PLUGIN_ROOT:-.}/lib/f.py"'))
+          and not BAD_FALLBACK.search('x="${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/f.py"'),
+          "this check covers the `:-.` tier only; if it now also matches the "
+          "`:-plugins/flow` tier, widen the name and message and retire the roadmap item")
     # POSITIVE control: the forbidden string is what this check actually looks for, so prove
     # the detector fires on it rather than trusting an empty result (item 4).
     check("cwd-fallback-detector-fires",
