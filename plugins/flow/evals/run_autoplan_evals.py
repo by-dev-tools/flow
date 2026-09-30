@@ -240,8 +240,10 @@ def test_missing_gate_marker_makes_gate_execute_red() -> None:
         # ("classic path, nothing to assert"). That is CORRECT in isolation and is
         # exactly why the auto-write must emit the markers -- this check pins the
         # hazard so a future reader cannot mistake the pass for an approval.
+        # Paired with `ok is True`: on unparseable stdout `out` is {}, so the
+        # inequality alone was green whether the guard behaved or died.
         check("gate-execute-without-markers-asserts-nothing",
-              out.get("gate") != "prototype",
+              out.get("ok") is True and out.get("gate") != "prototype",
               "a plan with no gate declaration must not resolve as a prototype gate")
         check("autoplan-skill-owns-that-hazard",
               "declares no prototype gate" in SKILL.read_text(encoding="utf-8")
@@ -252,42 +254,36 @@ def test_missing_gate_marker_makes_gate_execute_red() -> None:
 # ============================================================ 2. gate-level
 
 def test_pass_requires_evidence_of_running_all_arms() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        green = gate_state({"arms": _arms()})
-        check("all-arms-ran-clean-is-green", green["verdict"] == "GREEN", str(green))
-        for missing in ("A", "B", "C"):
-            arms = [a for a in _arms() if a["arm"] != missing]
-            out = gate_state({"arms": arms})
-            check(f"absent-arm-{missing}-is-red", out["verdict"] == "RED")
-            check(f"absent-arm-{missing}-says-why",
-                  any("never reported" in b for b in out["blockers"]))
-        # An arm that ran but produced no evidence is not a pass either.
-        out = gate_state({"arms": _arms(A={"evidence": ""})})
-        check("arm-without-evidence-is-red", out["verdict"] == "RED")
+    green = gate_state({"arms": _arms()})
+    check("all-arms-ran-clean-is-green", green["verdict"] == "GREEN", str(green))
+    for missing in ("A", "B", "C"):
+        arms = [a for a in _arms() if a["arm"] != missing]
+        out = gate_state({"arms": arms})
+        check(f"absent-arm-{missing}-is-red", out["verdict"] == "RED")
+        check(f"absent-arm-{missing}-says-why",
+              any("never reported" in b for b in out["blockers"]))
+    # An arm that ran but produced no evidence is not a pass either.
+    out = gate_state({"arms": _arms(A={"evidence": ""})})
+    check("arm-without-evidence-is-red", out["verdict"] == "RED")
 
 
 def test_arm_b_not_run_is_red() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        ran = gate_state({"arms": _arms()})
-        not_run = gate_state({"arms": _arms(B={"ran": False})})
-        check("arm-b-not-run-is-red", not_run["verdict"] == "RED")
-        check("arm-b-not-run-has-its-own-reason",
-              any("DID NOT RUN" in b for b in not_run["blockers"]),
-              "must not collapse into the same message as a clean pass")
-        check("the-two-outcomes-differ", ran["verdict"] != not_run["verdict"],
-              "ran-and-clean and did-not-run must not produce the same verdict")
+    ran = gate_state({"arms": _arms()})
+    not_run = gate_state({"arms": _arms(B={"ran": False})})
+    check("arm-b-not-run-is-red", not_run["verdict"] == "RED")
+    check("arm-b-not-run-has-its-own-reason",
+          any("DID NOT RUN" in b for b in not_run["blockers"]),
+          "must not collapse into the same message as a clean pass")
+    check("the-two-outcomes-differ", ran["verdict"] != not_run["verdict"],
+          "ran-and-clean and did-not-run must not produce the same verdict")
 
 
 def test_errored_reviewer_is_not_a_clean_pass() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        out = gate_state({"arms": _arms(B={"error": "HTTP 429"})})
-        check("errored-arm-is-red", out["verdict"] == "RED")
-        check("errored-arm-is-classified-as-did-not-run",
-              any("DID NOT RUN" in b for b in out["blockers"]),
-              "a 429 is an absence of a review, never a review that came back clean")
+    out = gate_state({"arms": _arms(B={"error": "HTTP 429"})})
+    check("errored-arm-is-red", out["verdict"] == "RED")
+    check("errored-arm-is-classified-as-did-not-run",
+          any("DID NOT RUN" in b for b in out["blockers"]),
+          "a 429 is an absence of a review, never a review that came back clean")
 
 
 def test_zero_reference_docs_is_red() -> None:
@@ -297,53 +293,45 @@ def test_zero_reference_docs_is_red() -> None:
     (1.29.0) could not comma-split `referenceGlob`, so every critique round on the
     Phase 3 plan itself ran document-blind.
     """
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        out = gate_state({"arms": _arms(C={"document_blind": True})})
-        check("document-blind-arm-is-red", out["verdict"] == "RED")
-        check("document-blind-names-the-category-it-cannot-clear",
-              any("Spec-violation" in b for b in out["blockers"]))
-        sighted = gate_state({"arms": _arms(C={"document_blind": False})})
-        check("sighted-arm-is-green", sighted["verdict"] == "GREEN",
-              "the positive half: blindness must be what makes it red, not arm C itself")
+    out = gate_state({"arms": _arms(C={"document_blind": True})})
+    check("document-blind-arm-is-red", out["verdict"] == "RED")
+    check("document-blind-names-the-category-it-cannot-clear",
+          any("Spec-violation" in b for b in out["blockers"]))
+    sighted = gate_state({"arms": _arms(C={"document_blind": False})})
+    check("sighted-arm-is-green", sighted["verdict"] == "GREEN",
+          "the positive half: blindness must be what makes it red, not arm C itself")
 
 
 def test_low_verdict_routes_to_decision_required() -> None:
     """D1 moves PLAN APPROVAL. It does not move flow's third gate."""
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        low = gate_state({"arms": _arms(),
-                               "confidence_verdicts": [{"assumption": "depth 2", "confidence": "LOW"}]})
-        check("low-verdict-is-red", low["verdict"] == "RED")
-        check("low-verdict-is-a-decision-not-a-blocker",
-              any("LOW" in (x.get("finding") or "") for x in low["decisions"]),
-              "LOW escalates as an answerable question, it does not merely fail")
-        check("low-verdict-cites-the-shipped-rule",
-              any("cannot proceed" in (x.get("why") or "") for x in low["decisions"]))
+    low = gate_state({"arms": _arms(),
+                           "confidence_verdicts": [{"assumption": "depth 2", "confidence": "LOW"}]})
+    check("low-verdict-is-red", low["verdict"] == "RED")
+    check("low-verdict-is-a-decision-not-a-blocker",
+          any("LOW" in (x.get("finding") or "") for x in low["decisions"]),
+          "LOW escalates as an answerable question, it does not merely fail")
+    check("low-verdict-cites-the-shipped-rule",
+          any("cannot proceed" in (x.get("why") or "") for x in low["decisions"]))
 
 
 def test_medium_verdict_proceeds() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        for level in ("MEDIUM", "HIGH", "MEDIUM-HIGH"):
-            out = gate_state({"arms": _arms(),
-                                   "confidence_verdicts": [{"assumption": "x", "confidence": level}]})
-            check(f"{level}-verdict-proceeds", out["verdict"] == "GREEN",
-                  "only LOW is an automatic gate; the others must not block")
+    for level in ("MEDIUM", "HIGH", "MEDIUM-HIGH"):
+        out = gate_state({"arms": _arms(),
+                               "confidence_verdicts": [{"assumption": "x", "confidence": level}]})
+        check(f"{level}-verdict-proceeds", out["verdict"] == "GREEN",
+              "only LOW is an automatic gate; the others must not block")
 
 
 def test_surviving_finding_escalates() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        cleared = gate_state({"arms": _arms(
-            A={"findings": [{"tier": "auto-fixable", "survived_retry": False, "finding": "fixed"}]})})
-        check("auto-fixable-that-cleared-proceeds", cleared["verdict"] == "GREEN")
-        survived = gate_state({"arms": _arms(
-            A={"findings": [{"tier": "auto-fixable", "survived_retry": True, "finding": "still vacuous"}]})})
-        check("auto-fixable-that-survived-escalates", survived["verdict"] == "RED")
-        check("survivor-becomes-a-decision-not-a-second-retry",
-              survived["decisions"] and "never gets a second retry"
-              in (survived["decisions"][0].get("why") or ""))
+    cleared = gate_state({"arms": _arms(
+        A={"findings": [{"tier": "auto-fixable", "survived_retry": False, "finding": "fixed"}]})})
+    check("auto-fixable-that-cleared-proceeds", cleared["verdict"] == "GREEN")
+    survived = gate_state({"arms": _arms(
+        A={"findings": [{"tier": "auto-fixable", "survived_retry": True, "finding": "still vacuous"}]})})
+    check("auto-fixable-that-survived-escalates", survived["verdict"] == "RED")
+    check("survivor-becomes-a-decision-not-a-second-retry",
+          survived["decisions"] and "never gets a second retry"
+          in (survived["decisions"][0].get("why") or ""))
 
 
 def test_auto_fixable_single_retry() -> None:
@@ -524,14 +512,12 @@ def test_arm_a_unparseable_lint_is_not_clean() -> None:
 # ============================================================ 4. arm B
 
 def test_arm_b_depth_honesty() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        out = depth_of({"path": "prototype-first"})
-        check("prototype-first-resolves-depth-2", out["depth"] == 2, str(out))
-        check("depth-states-what-it-is-worth", "unmeasured" in out.get("honesty", ""),
-              "must never claim a figure for a depth nobody measured")
-        check("depth-does-not-claim-100-percent", "100%" in out["honesty"]
-              and "2 is between and unmeasured" in out["honesty"])
+    out = depth_of({"path": "prototype-first"})
+    check("prototype-first-resolves-depth-2", out["depth"] == 2, str(out))
+    check("depth-states-what-it-is-worth", "unmeasured" in out.get("honesty", ""),
+          "must never claim a figure for a depth nobody measured")
+    check("depth-does-not-claim-100-percent", "100%" in out["honesty"]
+          and "2 is between and unmeasured" in out["honesty"])
 
 
 def test_depth_provenance_both_polarities() -> None:
@@ -539,18 +525,16 @@ def test_depth_provenance_both_polarities() -> None:
     output SAYS about depth is checked."""
     engine = ENGINE.read_text(encoding="utf-8")
     check("union-records-per-pass-provenance", "seen_in" in engine)
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        out = union_of([
-            {"findings": [{"symbol": "a", "finding": "A"}]},
-            {"findings": [{"symbol": "a", "finding": "A"}]},
-        ])
-        check("union-reports-the-pass-count", out["passes"] == 2, str(out))
-        check("union-records-which-passes-saw-it",
-              out["findings"][0]["seen_in"] == [1, 2])
-        one = union_of([{"findings": [{"symbol": "a", "finding": "A"}]}])
-        check("union-reports-a-smaller-recorded-depth", one["passes"] == 1,
-              "recorded passes must be visible so a caller can compare to the declared depth")
+    out = union_of([
+        {"findings": [{"symbol": "a", "finding": "A"}]},
+        {"findings": [{"symbol": "a", "finding": "A"}]},
+    ])
+    check("union-reports-the-pass-count", out["passes"] == 2, str(out))
+    check("union-records-which-passes-saw-it",
+          out["findings"][0]["seen_in"] == [1, 2])
+    one = union_of([{"findings": [{"symbol": "a", "finding": "A"}]}])
+    check("union-reports-a-smaller-recorded-depth", one["passes"] == 1,
+          "recorded passes must be visible so a caller can compare to the declared depth")
 
 
 def test_arm_b_uses_the_filtered_path() -> None:
@@ -574,58 +558,50 @@ def test_arm_b_silence_is_not_a_pass() -> None:
 
 def test_union_never_averages() -> None:
     """A finding in 1 of 2 carries identical standing to one in 2 of 2."""
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        out = union_of([
-            {"findings": [{"symbol": "both", "finding": "seen twice"}]},
-            {"findings": [{"symbol": "both", "finding": "seen twice"},
-                          {"symbol": "once", "finding": "seen once"}]},
-        ])
-        by = {x["symbol"]: x for x in out["findings"]}
-        check("both-findings-survive-the-union", set(by) == {"both", "once"}, str(out))
-        check("neither-finding-is-downgraded",
-              by["once"].get("severity") == by["both"].get("severity"),
-              "a 1-of-2 finding must not be weakened relative to a 2-of-2 one")
-        check("provenance-carries-its-interpretation",
-              "not weaker evidence" in by["once"]["provenance"],
-              "the reader must not be left to discount 1-of-2 on their own")
-        # The gate must route them identically too, not merely record them alike.
-        g = gate_state({"arms": _arms(B={"findings": [by["once"], by["both"]]})})
-        check("gate-routes-both-findings", len(g["decisions"]) == 2, str(g))
-        check("gate-is-red-for-either", g["verdict"] == "RED")
+    out = union_of([
+        {"findings": [{"symbol": "both", "finding": "seen twice"}]},
+        {"findings": [{"symbol": "both", "finding": "seen twice"},
+                      {"symbol": "once", "finding": "seen once"}]},
+    ])
+    by = {x["symbol"]: x for x in out["findings"]}
+    check("both-findings-survive-the-union", set(by) == {"both", "once"}, str(out))
+    check("neither-finding-is-downgraded",
+          by["once"].get("severity") == by["both"].get("severity"),
+          "a 1-of-2 finding must not be weakened relative to a 2-of-2 one")
+    check("provenance-carries-its-interpretation",
+          "not weaker evidence" in by["once"]["provenance"],
+          "the reader must not be left to discount 1-of-2 on their own")
+    # The gate must route them identically too, not merely record them alike.
+    g = gate_state({"arms": _arms(B={"findings": [by["once"], by["both"]]})})
+    check("gate-routes-both-findings", len(g["decisions"]) == 2, str(g))
+    check("gate-is-red-for-either", g["verdict"] == "RED")
 
 
 def test_union_dedupes_by_symbol() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        out = union_of([
-            {"findings": [{"symbol": "same", "finding": "x"}]},
-            {"findings": [{"symbol": "same", "finding": "x restated differently"}]},
-        ])
-        check("same-gap-found-twice-is-one-item", len(out["findings"]) == 1, str(out))
-        check("dedupe-records-both-sightings", out["findings"][0]["seen_in"] == [1, 2])
+    out = union_of([
+        {"findings": [{"symbol": "same", "finding": "x"}]},
+        {"findings": [{"symbol": "same", "finding": "x restated differently"}]},
+    ])
+    check("same-gap-found-twice-is-one-item", len(out["findings"]) == 1, str(out))
+    check("dedupe-records-both-sightings", out["findings"][0]["seen_in"] == [1, 2])
 
 
 # ============================================================ 6. arm C
 
 def test_arm_c_partial_return_is_red() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        partial = gate_state({"arms": _arms(C={"reviewers": {
-            "auditor": "returned", "plan-critic": "errored: HTTP 429",
-            "lens-experience": "returned"}})})
-        check("arm-c-partial-fanout-is-red", partial["verdict"] == "RED")
-        check("arm-c-names-the-missing-reviewer",
-              any("plan-critic" in b for b in partial["blockers"]), str(partial))
-        check("arm-c-explains-why-silence-is-ambiguous",
-              any("three clean spawns" in b for b in partial["blockers"]))
+    partial = gate_state({"arms": _arms(C={"reviewers": {
+        "auditor": "returned", "plan-critic": "errored: HTTP 429",
+        "lens-experience": "returned"}})})
+    check("arm-c-partial-fanout-is-red", partial["verdict"] == "RED")
+    check("arm-c-names-the-missing-reviewer",
+          any("plan-critic" in b for b in partial["blockers"]), str(partial))
+    check("arm-c-explains-why-silence-is-ambiguous",
+          any("three clean spawns" in b for b in partial["blockers"]))
 
 
 def test_arm_c_all_clean_is_green() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
-        out = gate_state({"arms": _arms()})
-        check("arm-c-all-three-returned-is-green", out["verdict"] == "GREEN", str(out))
+    out = gate_state({"arms": _arms()})
+    check("arm-c-all-three-returned-is-green", out["verdict"] == "GREEN", str(out))
 
 
 def test_arm_c_reuses_review_brief() -> None:
@@ -644,9 +620,13 @@ def test_review_brief_next_step_is_call_site_supplied() -> None:
           "proceed to <the next step your caller named>" in t)
     check("review-brief-forbids-an-unnamed-next-step",
           "Never emit a next step your caller did not name" in t)
-    check("review-brief-documents-a-default",
-          "default to *design brief*" in t,
-          "a direct human invocation must still get a sane, stated default")
+    check("review-brief-default-next-step-is-inert",
+          "unspecified — my caller did not name one" in t,
+          "an unnamed next step must default to nothing, not to a phase: defaulting "
+          "to the prototype phase is right at one call site and wrong at the other, "
+          "and a silently-half-right default is the harder failure to notice")
+    check("review-brief-announces-the-default",
+          "Say plainly that you took the default" in t)
     check("review-brief-reports-a-missing-reviewer", "DID NOT RETURN" in t)
 
 
@@ -730,6 +710,11 @@ def test_decision_required_shape() -> None:
 def test_escalation_header_matches_shipped() -> None:
     """One user-facing contract, one spelling. Detection, not prevention — the
     drift-proof fix is a shared constant, deferred to roadmap D1f."""
+    # NOT a bare `if not exists(): return` — that made this whole drift test green if
+    # the sibling engine were renamed or moved, which is the satisfiable-by-deletion
+    # shape (rules item 3) inside a test written to defend against fan-out (item 2).
+    check("sibling-engine-still-exists", MANIFEST_TRIAGE.exists(),
+          f"{MANIFEST_TRIAGE} is gone — the header this test pins has no source of truth")
     if not MANIFEST_TRIAGE.exists():
         return
     ship = MANIFEST_TRIAGE.read_text(encoding="utf-8")
@@ -826,6 +811,169 @@ def test_workflow_states_the_gate_contract() -> None:
     check("workflow-names-the-three-arms",
           all(a in t for a in ("quality", "completeness", "conformance")),
           "the loop doc must say WHAT reviews the plan, not merely that a machine does")
+
+
+def test_arm_a_red_composes_into_the_gate() -> None:
+    """`arm-a`'s own output, fed to `gate`, must stay RED.
+
+    The two subcommands of this one engine had NO test that composed them, and that
+    gap hid the worst defect in the first draft: `arm-a` emits
+    {arm, ran: true, verdict: "RED", reasons: [...]} with no `findings`, while
+    `combine` read only `findings`. So the DETERMINISTIC arm — the only one whose
+    result the gate can trust without a model in the loop — reported RED and the gate
+    returned GREEN with "every arm ran, was evidenced, and returned nothing".
+
+    This drives the real `arm-a` rather than a hand-written fixture, so the two
+    contracts cannot drift apart again without turning this red.
+    """
+    with _scratch() as tmp:
+        plan = tmp / "plan.md"
+        plan.write_text(plan_doc(["it works"]), encoding="utf-8")  # vacuous AND unpinned
+        a, _ = run("arm-a", "--plan", str(plan), cwd=str(tmp))
+        check("known-positive: arm-a itself is RED", a["verdict"] == "RED", str(a))
+        check("known-positive: arm-a emits no findings key",
+              not a.get("findings"),
+              "if arm-a grew a findings list this test no longer covers the gap it was written for")
+        arm = dict(a)
+        arm["evidence"] = "ran"          # what the SKILL tells the model to supply
+        out = gate_state({"arms": [arm,
+                                   {"arm": "B", "ran": True, "evidence": "ran"},
+                                   {"arm": "C", "ran": True, "evidence": "ran",
+                                    "reviewers": {"auditor": "returned",
+                                                  "plan-critic": "returned",
+                                                  "lens-experience": "returned"}}]})
+        check("arm-a-RED-makes-the-gate-RED", out["verdict"] == "RED", str(out))
+        check("gate-surfaces-arm-a's-own-reason",
+              any("verdict RED" in b for b in out["blockers"]), str(out))
+        # The positive half, same composition: a GREEN arm-a must not block.
+        plan.write_text(plan_doc(["`depth` resolves to 2 on prototype-first. \u2192 `test_depth`"]),
+                        encoding="utf-8")
+        g, _ = run("arm-a", "--plan", str(plan), cwd=str(tmp))
+        check("known-positive: arm-a is GREEN on a good plan", g["verdict"] == "GREEN", str(g))
+        gg = dict(g); gg["evidence"] = "ran"
+        out2 = gate_state({"arms": [gg,
+                                    {"arm": "B", "ran": True, "evidence": "ran"},
+                                    {"arm": "C", "ran": True, "evidence": "ran",
+                                     "reviewers": {"auditor": "returned",
+                                                   "plan-critic": "returned",
+                                                   "lens-experience": "returned"}}]})
+        check("arm-a-GREEN-composes-to-GREEN", out2["verdict"] == "GREEN", str(out2))
+
+
+def test_arm_c_absent_roster_is_red() -> None:
+    """An ABSENT reviewer roster is not an implicit pass.
+
+    `if reviewers:` made "no record of the fan-out" indistinguishable from "all three
+    returned" — the ambiguity this engine exists to forbid, and the likeliest way a
+    dead spawn disappears, since a model writes this file and an omitted key is the
+    cheapest possible omission.
+    """
+    out = gate_state({"arms": [{"arm": "A", "ran": True, "evidence": "x"},
+                               {"arm": "B", "ran": True, "evidence": "x"},
+                               {"arm": "C", "ran": True, "evidence": "x"}]})
+    check("arm-c-with-no-roster-is-red", out["verdict"] == "RED", str(out))
+    check("arm-c-absent-roster-says-why",
+          any("no reviewer roster" in b for b in out["blockers"]), str(out))
+    check("arm-c-with-a-full-roster-is-green", gate_state({"arms": _arms()})["verdict"] == "GREEN")
+
+
+def test_blockers_are_rendered_for_a_human() -> None:
+    """A RED caused only by blockers must not render an empty escalation.
+
+    This is the MOST LIKELY red in practice — a 429, a tool failure, a missing
+    reviewer — and it produced `escalation: ""`, so the output template printed
+    "blocked on 0 decision(s) below" followed by nothing.
+    """
+    out = gate_state({"arms": _arms(B={"ran": False})})
+    check("blockers-only-is-red", out["verdict"] == "RED")
+    check("blockers-only-still-renders-text", out["escalation"].strip() != "",
+          "the most likely RED must not be the one with no human-facing output")
+    check("blockers-section-says-there-is-nothing-to-answer",
+          "nothing to answer here" in out["escalation"], out["escalation"])
+    check("blocker-names-an-action", "→" in out["escalation"],
+          "a blocker must say what would clear it, not only what went wrong")
+    # Header must not promise "nothing else is blocked" while blockers are listed.
+    both = gate_state({"arms": _arms(B={"ran": False}),
+                       "confidence_verdicts": [{"assumption": "x", "confidence": "LOW"}]})
+    check("header-does-not-overpromise-when-blockers-exist",
+          "Nothing else is blocked" not in both["escalation"]
+          and "must clear too" in both["escalation"], both["escalation"])
+    # ...and it must still make the plain promise when they genuinely do not.
+    clean = gate_state({"arms": _arms(),
+                        "confidence_verdicts": [{"assumption": "x", "confidence": "LOW"}]})
+    check("header-does-promise-when-nothing-else-is-blocked",
+          "Nothing else is blocked" in clean["escalation"], clean["escalation"])
+
+
+def test_escalation_is_readable() -> None:
+    """Typesetting the engine claims: 76 columns, derived indents, no broken symbols."""
+    long_finding = ("the annotation dock never takes keyboard focus when the panel "
+                    "opens, so a keyboard user lands on the document body instead")
+    out = render_of([{"finding": long_finding,
+                      "drafted_resolution": "add a criterion covering focus on open",
+                      # Realistic prose, not an unbreakable 200-char token: with
+                      # break_long_words=False a single huge token MUST overflow, and
+                      # that is the deliberate trade (never split an identifier). The
+                      # first draft of this check asserted the impossible and failed.
+                      "provenance": "Found by 1 of 2 coverage passes. That is not "
+                                    "weaker evidence, and the reason is worth stating "
+                                    "in full so the reader is not left to discount a "
+                                    "single sighting on their own judgement."}]).stdout
+    widest = max(len(l) for l in out.splitlines())
+    check("escalation-wraps-at-76", widest <= 76, f"widest line was {widest} cols")
+    check("the-numbered-line-is-wrapped-too",
+          not any(l.startswith("1. ") and len(l) > 76 for l in out.splitlines()),
+          "the headline is the line a reader scans first and was the only unwrapped one")
+    # Item 10's marker is 4 chars; a hardcoded 3-space indent stops aligning there.
+    ten = render_of([{"finding": "f%d needs enough text that it wraps onto a second line here" % i,
+                      "drafted_resolution": "do it"} for i in range(1, 11)]).stdout
+    lines = ten.splitlines()
+    i10 = next(n for n, l in enumerate(lines) if l.startswith("10. "))
+    check("item-10-sub-fields-align-under-the-text",
+          lines[i10 + 2].startswith("    What"), repr(lines[i10 + 2][:20]))
+    # Identifiers must not be split mid-token.
+    sym = render_of([{"finding": "`manifest-triage.py::render_decisions` disagrees with "
+                                 "the autoplan renderer about the sub-field idiom used"}]).stdout
+    check("identifiers-are-not-broken-across-lines",
+          "manifest-\n" not in sym and "render_\n" not in sym, sym)
+
+
+def test_low_verdict_without_a_draft_asks_an_open_question() -> None:
+    """Yes/no is the wrong shape when there is nothing drafted to say yes to.
+
+    The LOW path is generated by the engine itself from a confidence verdict, so it
+    cannot be assumed to carry a mitigation — and it rendered "What I need from you:
+    yes (I apply it...)" referring to nothing.
+    """
+    out = gate_state({"arms": _arms(),
+                      "confidence_verdicts": [{"assumption": "depth 2", "confidence": "LOW"}]})
+    esc = out["escalation"]
+    check("no-draft-does-not-ask-yes", "from you: yes" not in esc, esc)
+    check("no-draft-asks-an-open-question", "no resolution to propose" in esc, esc)
+    # With a mitigation present, the yes/no form is correct and must come back.
+    out2 = gate_state({"arms": _arms(),
+                       "confidence_verdicts": [{"assumption": "depth 2", "confidence": "LOW",
+                                                "mitigation": "declare depth as a constant"}]})
+    check("a-drafted-resolution-does-ask-yes",
+          "from you: yes" in out2["escalation"], out2["escalation"])
+
+
+def test_escalation_survives_a_non_utf8_stdout() -> None:
+    """`render-decisions` is the one subcommand that writes text rather than going
+    through `_emit`'s ensure_ascii JSON. Under LC_ALL=C it died with a traceback —
+    breaking this file's own contract that a refusal is never a traceback."""
+    import os
+    with _scratch() as tmp:
+        f = tmp / "e.json"
+        f.write_text(json.dumps([{"finding": "an em-dash — and an arrow \u2192 here"}]),
+                     encoding="utf-8")
+        env = dict(os.environ, PYTHONIOENCODING="ascii")
+        proc = subprocess.run([sys.executable, str(ENGINE), "render-decisions",
+                               "--entries-file", str(f)],
+                              capture_output=True, text=True, cwd=str(tmp), env=env)
+        check("ascii-stdout-does-not-traceback", proc.returncode == 0, proc.stderr[-200:])
+        check("ascii-stdout-still-renders-the-decision",
+              "Decisions for you" in proc.stdout, proc.stdout[:120])
 
 
 # ============================================================ 8. docs

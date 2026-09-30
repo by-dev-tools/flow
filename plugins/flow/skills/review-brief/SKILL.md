@@ -105,7 +105,9 @@ This skill is artifact-neutral, and three things differ per call site. **Your ca
 | **next step** | what a clean pass proceeds to | the prototype phase (`/flow:prototype`) | Execute |
 | **caller** | who invoked you, and must not be called back | `/flow:prototype` | `/flow:autoplan` |
 
-**If your caller named none of them** (a human typed `/flow:review-brief <path>` directly), default to *design brief* / *the prototype phase* / *direct human invocation* — the D1 Phase 1 shape — and say which default you took, so a caller that forgot to name them sees that rather than a confidently wrong next step.
+**If your caller named none of them**, do NOT guess a phase. Default the artifact to *document*, the caller to *direct human invocation*, and the next step to **`unspecified — my caller did not name one`**. Say plainly that you took the default.
+
+*Why the next step defaults to nothing rather than to the D1 Phase 1 shape.* An earlier version defaulted it to *the prototype phase*, which is right at one call site and **wrong at the other** — at the plan call site that phase finished before you were invoked, which this section calls worse than no verdict. A default that is silently correct half the time is the harder failure to notice: an inert "unspecified" makes a caller's omission visible, a confidently wrong phase does not.
 
 **Never emit a next step your caller did not name.** A verdict pointing back into a phase that is already complete is worse than no verdict: at the plan call site, "proceed to the prototype phase" names a step that finished before you were invoked.
 

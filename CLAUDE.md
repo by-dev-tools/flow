@@ -39,6 +39,8 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/ship/SKILL.md` | `/flow:ship` final-pass pipeline (Step 4c harvests flow-generalizable lessons) |
 | `plugins/flow/skills/prototype/SKILL.md` | `/flow:prototype` — D1's prototype phase + **human gate 1**; the pre-execution gate MOVES here for UI work (FB-0081/FB-0113/FB-0114) |
 | `plugins/flow/skills/prototype/lib/prototype-gate.py` | The D1 trigger, the §9.4 feasibility contract, gate-1 approval capture, and the "a plan always exists" assertion — one engine, committed-state-only where it matters |
+| `plugins/flow/skills/autoplan/SKILL.md` | `/flow:autoplan` — D1 Phase 3: after gate 1, auto-writes the technical plan against the approved prototype and gates it by **machine** (FB-0125) |
+| `plugins/flow/skills/autoplan/lib/gate.py` | The three-arm machine gate. GREEN requires every arm to have **run**; absence of findings is never by itself a pass |
 | `plugins/flow/skills/orchestrate/SKILL.md` | `/flow:orchestrate` — boot/re-boot an orchestrator seat (FB-0110, §4.10) |
 | `plugins/flow/skills/spawn/SKILL.md` | `/flow:spawn` — dispatch one worker; `model · effort · why` routing, floored for `sensitivePaths` |
 | `plugins/flow/skills/handoff/SKILL.md` | `/flow:handoff` — orchestrator succession + archive safety (§4.9) |

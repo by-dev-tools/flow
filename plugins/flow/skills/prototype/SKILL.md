@@ -100,6 +100,8 @@ State the resolved gate in **one line** ("This is going to prototype approval, n
 Skill("flow:review-brief") with the brief path as its argument
 ```
 
+**Tell it what it is reviewing** (`/flow:review-brief` § Call context): the artifact is a **design brief**, the next step on a clean pass is **the prototype phase**, and the caller is **`/flow:prototype`**. It is artifact-neutral and serves a second call site now (`/flow:autoplan`, with a technical plan), so naming these is what keeps its verdict pointed at the right phase. Without them it reports an unspecified next step and says it took the default.
+
 Pass the path explicitly. Without an argument `/flow:review-brief` falls back to scanning the session transcript for a plan-shaped turn — which is the ambiguous state this phase exists to remove.
 
 Resolve every `decision-required` finding **with the human** before prototyping. A brief that solves the wrong problem costs a discarded prototype; a question costs a moment.

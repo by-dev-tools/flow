@@ -54,8 +54,10 @@ Why out-of-band rather than into a shell block: `$ARGUMENTS` is substituted text
 Run `trigger` and hand its output to `depth`:
 
 ```sh
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py" trigger > .flow/autoplan-trigger.json
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/autoplan/lib/gate.py" depth --trigger-file .flow/autoplan-trigger.json
+ROOT=$(git rev-parse --show-toplevel) || { echo "[autoplan] not in a git repo" >&2; exit 1; }
+mkdir -p "$ROOT/.flow"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py" trigger > "$ROOT/.flow/autoplan-trigger.json"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/autoplan/lib/gate.py" depth --trigger-file "$ROOT/.flow/autoplan-trigger.json"
 ```
 
 Depth keys on the trigger's resolved **`path`**, never on `Mode`. Keying on `Mode` opens two holes: `Mode: spike` resolves to no declared depth at all, and a `Mode: feature` change the trigger routes to `classic` would claim a depth while Arm B has no prototype source to read.
@@ -150,7 +152,14 @@ The state file carries one entry per arm with `ran`, `evidence`, `findings`, and
 
 - **Clean** — every arm ran, evidenced, nothing found ⇒ **proceed to Execute.** Say which arms ran and at what depth.
 - **`[auto-fixable]`** — fix it, re-review **once**. If it clears, proceed. **If it survives that one retry it becomes `[decision-required]`** — never "proceed", and never a second retry.
-- **`[decision-required]`** — **pause and escalate.** Render the engine's `escalation` block verbatim. It never proceeds silently.
+- **`[decision-required]`** — **pause and escalate.** Print the engine's `escalation` block as emitted. It never proceeds silently.
+- **RED with blockers and no decisions** — the most likely red in practice (a 429, a tool failure, a missing reviewer). The engine renders a **Blockers** section for exactly this case; there is nothing for the human to answer, so do not ask them to. Say what did not run and what would clear it.
+
+**Do not re-typeset the escalation.** The engine hard-wraps it at 76 columns, derives sub-field indents from the item marker, and keeps multi-line drafted resolutions verbatim. If you re-flow it from the JSON string you will undo all three. To print it as bytes rather than as an escaped JSON field, run the engine's own renderer:
+
+```sh
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/autoplan/lib/gate.py" render-decisions --entries-file <decisions.json>
+```
 
 **On escalation with no human present** (decided by Ben, 2026-09-29): pause and escalate through the channel that already exists — worker → orchestrator → human. This is not a breach of the two-gate thesis — the one pre-execution human gate was spent on the prototype, and this is the third automatic gate CLAUDE.md already names alongside it. **The machine gate replaces *routine* plan approval, not every judgment.**
 
@@ -163,9 +172,9 @@ Arm A (quality):      [GREEN | RED — reason] · [N criteria, N vacuous, N unpi
 Arm B (completeness): [ran, N passes, N findings | DID NOT RUN — reason]
 Arm C (conformance):  [3/3 reviewers returned, N findings | RED — reason]
 
-VERDICT: [proceed to Execute | blocked on N decision(s) below]
+VERDICT: [proceed to Execute | blocked — N blocker(s), M decision(s) below]
 
-[if blocked, the engine's escalation block verbatim]
+[if blocked, the engine's `escalation` block — print it as the engine emitted it]
 ```
 
 ## Gotchas

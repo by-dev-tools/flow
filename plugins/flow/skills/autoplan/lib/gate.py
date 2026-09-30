@@ -57,9 +57,12 @@ SCHEMA_VERSION = 1
 # manifest (`result["residual"]`, `class in {ask,auto,blocked}`, `kind` against
 # KIND_COPY) that has no meaning before a PR. Unifying the two engines behind one
 # entry shape is roadmap D1f; unifying the WORDING is free and is done here.
+# The trailing clause is NOT part of the constant: whether anything else is blocked
+# is a property of the run, and baking "Nothing else is blocked." in here is how the
+# header came to promise that while blockers sat listed above it.
 DECISION_HEADER = (
     "**Decisions for you** — answer by number. I apply your answer and re-run the\n"
-    "check; if it passes, Execute starts. Nothing else is blocked."
+    "check; if it passes, Execute starts."
 )
 
 # Depth keys on `trigger`'s resolved PATH, never on `Mode`. Keying on Mode opens two
@@ -95,6 +98,13 @@ _NOT_APPLICABLE = (
 
 class SecurityRefusal(Exception):
     """A path refused by `_safe_path`. Surfaced as a clean refusal, never a traceback."""
+
+
+def _clip(text: str, n: int) -> str:
+    """Truncate with a marker. A criterion cut mid-word at 60 chars reads as a
+    malformed criterion rather than a truncated one."""
+    text = text or ""
+    return text if len(text) <= n else text[: n - 1].rstrip() + "…"
 
 
 def _emit(obj) -> int:
@@ -177,17 +187,16 @@ def _safe_path(path: Path, what: str) -> Path:
             "%s could not be confined to %s — refusing rather than acting on an "
             "unverified path." % (what, base)
         )
-    # A symlinked ANCESTOR inside `base` defeats a leaf-only check. The earlier
-    # draft iterated `resolved.parents` and broke on `parent == base`, which is the
-    # first element when base is the leaf's own parent -- so this loop never ran.
-    for parent in resolved.parents:
-        if parent == base:
-            break
-        if parent.is_symlink():
-            raise SecurityRefusal(
-                "%s sits under a symlinked directory (%s) — refusing (CWE-59)."
-                % (what, parent)
-            )
+    # No symlinked-ancestor loop here, deliberately, and the reason is worth keeping:
+    # there WAS one, over `resolved.parents`, and `Path.resolve()` has already
+    # collapsed every symlink by that point, so `parent.is_symlink()` was constantly
+    # False. That made it the THIRD tautology found in this one function — after
+    # `base = path.resolve().parent` and `_repo_root(path.parent)` — each of which
+    # passed every test it had. An ancestor symlink that escapes the repository is
+    # caught by the `relative_to(base)` check above, on the RESOLVED path, which is
+    # the guard that actually does this work; one that stays inside the repository
+    # lands somewhere the caller already controls. A loop that cannot fire is worse
+    # than no loop: it reads as defence and provides none.
     return path
 
 
@@ -344,7 +353,7 @@ def arm_a(plan_path: Path, expect_line=None, lib_root: Path | None = None) -> di
     if err or proc.returncode != 0:
         return _a_did_not_run(
             "extract-criteria.py did not complete (%s). The arm DID NOT RUN."
-            % (err or (proc.stderr or "").strip()[:200])
+            % (err or _clip((proc.stderr or "").strip(), 200))
         )
     try:
         extracted = json.loads(proc.stdout)
@@ -398,7 +407,7 @@ def arm_a(plan_path: Path, expect_line=None, lib_root: Path | None = None) -> di
         if vacuous:
             reasons.append(
                 "%d vacuous criterion/criteria: %s"
-                % (len(vacuous), "; ".join(v.get("criterion", "?")[:60] for v in vacuous))
+                % (len(vacuous), "; ".join(_clip(v.get("criterion", "?"), 60) for v in vacuous))
             )
 
         try:
@@ -461,9 +470,12 @@ def union_passes(passes: list) -> dict:
     for f in findings:
         n, total = len(f["seen_in"]), len(passes)
         f["provenance"] = (
-            "Found by %d of %d coverage passes. That is not weaker evidence — this "
-            "reviewer has never reported a gap that was not real; the other pass "
-            "simply missed it." % (n, total)
+            "Found by %d of %d coverage passes. That is not weaker evidence — on "
+            "every case measured so far this reviewer has not reported a gap that "
+            "was not real, so the other pass simply missed it. (Scope, stated "
+            "because the bare claim overstates it: every measured case contained "
+            "real gaps, so precision on an input where silence is the right answer "
+            "is UNMEASURED.)" % (n, total)
             if n < total
             else "Found by all %d coverage passes." % total
         )
@@ -481,38 +493,69 @@ def _why_arm_cannot_pass(arm: dict) -> str | None:
     different failures into the same silent clean.
     """
     name = arm.get("arm", "?")
+    # An arm that reported its OWN verdict as RED. This is first because it was
+    # missing entirely, and its absence was the worst defect in the first draft:
+    # `arm-a` emits {arm, ran: true, verdict: "RED", reasons: [...]} and NO
+    # `findings`, while this function read only ran/error/document_blind/reviewers
+    # and the caller read only `findings`. So the one DETERMINISTIC arm — the only
+    # one whose result the gate can trust without a model in the loop — reported RED
+    # and the gate returned GREEN with "every arm ran, was evidenced, and returned
+    # nothing". Reproduced end to end before fixing, and pinned by a test that feeds
+    # `arm-a`'s literal output into `gate`, which is the composition the two
+    # subcommands of this one engine previously had no test for.
+    if str(arm.get("verdict", "")).upper() == "RED":
+        why = "; ".join(arm.get("reasons") or []) or "no reason given"
+        return (
+            "Arm %s reported verdict RED: %s. An arm's own verdict is authoritative; "
+            "the gate never overrides it. → Fix what it names, then re-run this arm."
+            % (name, why)
+        )
     if arm.get("error"):
         return (
             "Arm %s ERRORED (%s) — classified as DID NOT RUN, never as found nothing. "
             "A 429, a tool failure and an empty output are all absences of a review, "
-            "not reviews that came back clean." % (name, str(arm["error"])[:160])
+            "not reviews that came back clean. → Re-run this arm; nothing about the plan has been judged yet." % (name, _clip(str(arm["error"]), 160))
         )
     if not arm.get("ran"):
         return (
-            "Arm %s DID NOT RUN. This is distinct from running and finding nothing, "
-            "and the two never collapse." % name
+            "Arm %s DID NOT RUN. This is distinct from running and finding nothing, and "
+            "the two never collapse. → Run it, then re-run the gate." % name
         )
     if arm.get("document_blind"):
         return (
             "Arm %s ran DOCUMENT-BLIND — its reference-document load resolved zero "
             "documents, so it could not quote a project rule and cannot clear the "
             "Spec-violation category. A reviewer that cannot read the rules has not "
-            "reviewed." % name
+            "reviewed. → Fix the reference-document load (usually `referenceGlob`) "
+            "and re-run this arm." % name
         )
     reviewers = arm.get("reviewers") or {}
+    # An ABSENT roster is not an implicit pass. `if reviewers:` alone made "no record
+    # of the fan-out" indistinguishable from "all three returned" — the same ambiguity
+    # this module exists to forbid, and the likeliest way a dead spawn disappears,
+    # since a model writes this file and an omitted key is the cheapest omission.
+    # The sibling rule one function up already says an arm missing from the list
+    # cannot have run; this is that rule applied one level down.
+    if name == "C" and not reviewers:
+        return (
+            "Arm C reported no reviewer roster. Three dead spawns and three clean "
+            "spawns produce the same zero findings, so an absent record is RED, not "
+            "a pass. → Re-run Arm C and record each reviewer's outcome."
+        )
     if reviewers:
         missing = sorted(k for k, v in reviewers.items() if v != "returned")
         if missing:
             return (
                 "Arm %s is incomplete: %s did not return (%s). Three dead spawns and "
                 "three clean spawns produce the same zero findings, so a partial "
-                "fan-out is RED, not a pass."
+                "fan-out is RED, not a pass. → Re-spawn the reviewer(s) that did not "
+                "return; the others need not re-run."
                 % (name, ", ".join(missing), ", ".join("%s=%s" % (k, reviewers[k]) for k in missing))
             )
     if not arm.get("evidence"):
         return (
             "Arm %s reported no evidence that it ran. GREEN requires the procedure to "
-            "be evidenced, not asserted." % name
+            "be evidenced, not asserted. → Record what proves this arm ran, or run it." % name
         )
     return None
 
@@ -588,42 +631,106 @@ def combine(state: dict) -> dict:
 # --------------------------------------------------------------- escalation
 
 
-def render_decisions(decisions: list) -> str:
-    """The `[decision-required]` escalation — an answerable question, not a document.
+def render_decisions(decisions: list, blockers: list | None = None) -> str:
+    """The human-facing output when the gate is RED — answerable, not a document.
 
-    Three properties make it answerable: the resolution is DRAFTED rather than
-    requested, the ask is a yes/no, and the pass-provenance is stated WITH its
-    interpretation so the reader is not left to discount 1-of-2 on their own.
+    Three properties make a decision answerable: the resolution is DRAFTED rather
+    than requested, the ask is yes/no, and the pass-provenance is stated WITH its
+    interpretation so the reader is not left to discount 1-of-2 alone.
+
+    BLOCKERS are rendered too, and that was missing. `combine` produces RED from two
+    independent lists, so an arm that did not run yielded `blockers` populated,
+    `decisions` empty, and an escalation of `""` — nothing at all for the human, in
+    the single MOST LIKELY red (a 429, a tool failure, a missing reviewer). The
+    header also closed with "Nothing else is blocked" while blockers sat unmentioned,
+    so answering the one rendered question could not start Execute. Both were found by
+    running the engine rather than reading it.
+
+    Blockers are deliberately NOT numbered alongside decisions: there is nothing to
+    answer: they must clear first. Each carries an action clause instead of a draft.
     """
-    if not decisions:
+    blockers = blockers or []
+    if not decisions and not blockers:
         return ""
 
-    def wrap(text, indent="   "):
-        # Hard-wrapped rather than left to the terminal: this block is read in a
-        # transcript where a 300-column provenance sentence is the one line a human
-        # skips, and the provenance is the part that stops them discounting a 1-of-2
-        # finding as weak.
+    def wrap(text, indent="   ", first=None):
+        # break_long_words/break_on_hyphens are off because this block's payload is,
+        # by construction, cited symbols and file paths — Arm B findings key on
+        # `symbol`. With the defaults, `manifest-triage` split across a line break.
         return textwrap.fill(
-            text, width=76, initial_indent=indent, subsequent_indent=indent
+            text, width=76,
+            initial_indent=indent if first is None else first,
+            subsequent_indent=indent,
+            break_long_words=False, break_on_hyphens=False,
         )
 
-    out = [DECISION_HEADER, ""]
-    for i, d in enumerate(decisions, 1):
-        out.append("%d. %s" % (i, d.get("finding") or d.get("symbol") or "unnamed finding"))
-        if d.get("why"):
-            out.append("")
-            out.append(wrap("Why this is blocking: %s" % d["why"]))
-        drafted = (d.get("drafted_resolution") or "").strip()
-        if drafted:
-            out.append("")
-            out.append(wrap("What I'd do: %s" % drafted))
+    out: list[str] = []
+
+    if blockers:
+        out.append(textwrap.fill(
+            "**Blockers** — nothing to answer here; these must clear before the "
+            "gate can pass.", width=76,
+            break_long_words=False, break_on_hyphens=False))
         out.append("")
-        out.append(wrap("What I need from you: yes (I apply it and re-run the check), "
-                        "or tell me it is out of scope and I record that instead."))
-        if d.get("provenance"):
+        for b in blockers:
+            out.append(wrap(str(b), indent="  ", first="- "))
             out.append("")
-            out.append(wrap(d["provenance"]))
+
+    if decisions:
+        # The closing clause is conditional: promising "Nothing else is blocked"
+        # while blockers are listed above is a promise the same output invalidates.
+        clause = (
+            "Nothing else is blocked."
+            if not blockers
+            else "**%d blocker(s) above must clear too**, so answering these is "
+                 "necessary but not sufficient." % len(blockers)
+        )
+        # Wrapped as one paragraph rather than concatenated onto the constant's
+        # second line, which produced a 150-column line in exactly the block whose
+        # whole point is that it stays readable.
+        out.append(textwrap.fill(
+            DECISION_HEADER.replace("\n", " ") + " " + clause,
+            width=76, break_long_words=False, break_on_hyphens=False))
         out.append("")
+        for i, d in enumerate(decisions, 1):
+            marker = "%d. " % i
+            # Indent width is derived, not hardcoded to 3: at item 10 the marker is
+            # four characters and every sub-field silently stopped aligning.
+            pad = " " * len(marker)
+            out.append(wrap(d.get("finding") or d.get("symbol") or "unnamed finding",
+                            indent=pad, first=marker))
+            if d.get("why"):
+                out.append("")
+                out.append(wrap("Why this is blocking: %s" % d["why"], indent=pad))
+            drafted = (d.get("drafted_resolution") or "").strip()
+            if drafted:
+                out.append("")
+                if "\n" in drafted:
+                    # A multi-line draft is structured on purpose (a criterion, a
+                    # snippet). Filling it collapses that structure into prose, and
+                    # the thing the human must say yes to is what degrades most.
+                    out.append(wrap("What I'd do:", indent=pad))
+                    out.append(textwrap.indent(drafted, pad + "  "))
+                else:
+                    out.append(wrap("What I'd do: %s" % drafted, indent=pad))
+            out.append("")
+            if drafted:
+                out.append(wrap(
+                    "What I need from you: yes (I apply it and re-run the check), or "
+                    "tell me it is out of scope and I record that instead.", indent=pad))
+            else:
+                # No draft means yes/no is the wrong shape — "yes" would refer to
+                # nothing. This is the LOW-confidence path, which the engine
+                # generates itself and which therefore cannot be assumed to carry a
+                # mitigation; asking an open question is the honest form.
+                out.append(wrap(
+                    "What I need from you: I have no resolution to propose here. "
+                    "Tell me how you would de-risk this, or that you accept the risk "
+                    "as stated and I record that instead.", indent=pad))
+            if d.get("provenance"):
+                out.append("")
+                out.append(wrap(d["provenance"], indent=pad))
+            out.append("")
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -641,6 +748,16 @@ def _arg(argv, flag, required=True):
 
 
 def main(argv: list) -> int:
+    # The escalation carries em-dashes and arrows, and `render-decisions` is the one
+    # subcommand that writes text rather than going through `_emit`'s ensure_ascii
+    # JSON. Under LC_ALL=C or PYTHONIOENCODING=ascii — a plain container, a CI box —
+    # it died with a UnicodeEncodeError traceback instead of printing the decision a
+    # human is being asked to make, which also broke this file's stated contract that
+    # a refusal is "surfaced as a clean refusal, never a traceback".
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+    except (AttributeError, ValueError):  # pragma: no cover - <3.7 or a non-tty sink
+        pass
     if len(argv) < 2:
         sys.stderr.write(
             "usage: gate.py <depth|arm-a|union|gate|render-decisions> [options]\n"
@@ -661,16 +778,28 @@ def main(argv: list) -> int:
             # rather than by grepping this file for its own error strings (which
             # passes if the sentence survives in a comment after the branch is gone).
             lib = _arg(rest, "--lib-root", required=False)
-            return _emit(arm_a(plan, int(expect) if expect is not None else None,
-                               lib_root=Path(lib) if lib else None))
+            try:
+                expect_n = int(expect) if expect is not None else None
+            except (TypeError, ValueError):
+                raise SecurityRefusal(
+                    "--expect-line must be an integer line number, got %r" % expect)
+            return _emit(arm_a(plan, expect_n, lib_root=Path(lib) if lib else None))
         if cmd == "union":
             data = _read_json(Path(_arg(rest, "--passes-file")), "passes file")
-            passes = data if isinstance(data, list) else data.get("passes") or []
+            passes = data if isinstance(data, list) else data.get("passes")
+            if not isinstance(passes, list):
+                # Feeding `union`'s own output back in yields an int here, which used
+                # to raise TypeError with no JSON on stdout — the same exit code as a
+                # clean refusal, so a caller parsing the output got nothing.
+                raise SecurityRefusal(
+                    "passes file must be a list of pass results (or an object with a "
+                    "`passes` list), got %s" % type(passes).__name__)
             return _emit(union_passes(passes))
         if cmd == "gate":
             state = _read_json(Path(_arg(rest, "--state-file")), "gate state file")
             result = combine(state)
-            result["escalation"] = render_decisions(result["decisions"])
+            result["escalation"] = render_decisions(result["decisions"],
+                                                 result["blockers"])
             return _emit(result)
         if cmd == "render-decisions":
             data = _read_json(Path(_arg(rest, "--entries-file")), "entries file")
