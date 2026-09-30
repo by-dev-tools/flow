@@ -41,6 +41,20 @@ def fenced_block(text, heading_substr):
     return m.group(1) if m else None
 
 
+# The host's BANG-span shape (`!` + backtick ... backtick), as distinct from a ```sh fence.
+# Five harnesses had independently spelled this; four agreed and one (added by CV1) did not --
+# a looser non-greedy form that needed a content filter where the anchored form indexes
+# directly. The divergence is the hazard: add one inline bang-span to a SKILL.md and you get
+# one hard failure, one harness silently testing the WRONG block, and one still correct.
+#
+# NOTE the host cannot nest these: its own span regex is `[^`+]`-shaped, so a span ends at the
+# first backtick inside it. `run_arg_safety_evals.py::test_no_backtick_in_bang_span` enforces
+# that across every shipped skill; this function only finds the spans.
+def bang_blocks(text):
+    """Every `!`-span body in `text`, outermost-first, in document order."""
+    return re.findall(r"^!`\n(.*?)^`$", text, re.MULTILINE | re.DOTALL)
+
+
 def git_repo(path, files, branch="main"):
     """A throwaway git repo with one commit. Returns `path`."""
     path.mkdir(parents=True, exist_ok=True)

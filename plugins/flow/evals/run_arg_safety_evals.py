@@ -60,7 +60,7 @@ HERE = Path(__file__).parent
 SKILLS = HERE.parent / "skills"
 sys.path.insert(0, str(HERE.parent / "lib"))
 import arg_placeholders as AP  # noqa: E402  (sibling-lib import, house pattern)
-from eval_utils import git_repo  # noqa: E402  the shared hoist target
+from eval_utils import bang_blocks, git_repo  # noqa: E402  the shared hoist target
 
 _failures: list[str] = []
 
@@ -514,6 +514,34 @@ def test_tier2_composed(tmp: Path) -> None:
           "a named document that cannot be read must fail, never render a session-mode review")
 
 
+def test_no_backtick_in_bang_span() -> None:
+    print("\n9. SPAN INTEGRITY -- no shipped bang-span contains a backtick")
+    # arg_placeholders.py's transcription of the host regex notes `[^`]+`: a bang-span CANNOT
+    # contain a backtick, "which is why several shipped blocks carry a 'no backticks anywhere in
+    # this block' warning". Those warnings were the whole enforcement -- author memory, prose-only
+    # -- and the failure mode is silent and severe: one backtick ends the span early, so the
+    # remainder of an executable gate is demoted to PROSE and the gate stops running while the
+    # skill still reads correct. Measured during CV1: a comment added inside
+    # audit-coverage's evidence block contained a literal bang-backtick while explaining this very
+    # constraint, and the block stopped being extractable. Caught by an eval asserting the
+    # positive (files ARE read), not by anything checking the rule. Now it is checked.
+    spans = 0
+    for skill in sorted(SKILLS.glob("*/SKILL.md")):
+        body = skill.read_text(encoding="utf-8")
+        for block in bang_blocks(body):
+            spans += 1
+            check(f"{skill.parent.name}: bang-span carries no backtick",
+                  "`" not in block,
+                  "the host's span regex is [^`]+, so the span ends at the first backtick and "
+                  "every line after it becomes prose -- an executable gate silently stops "
+                  "executing. Use the word 'backtick', or bang-span, in block comments.")
+    # PAIRED POSITIVE (item 3): a prohibition over an EMPTY set passes trivially. Deleting every
+    # bang-span, or breaking the extractor, must not turn this green.
+    check("...and the sweep actually found bang-spans to check",
+          spans >= 5, f"only {spans} span(s) extracted across {len(list(SKILLS.glob('*/SKILL.md')))} "
+                      "skills -- the extractor is broken, so the check above measured nothing")
+
+
 def main() -> int:
     print("Skill-argument prose-rule evals (FB-0116, FB-0117)")
     with tempfile.TemporaryDirectory() as td:
@@ -529,6 +557,7 @@ def main() -> int:
         test_idiom_documented()
         test_host_agreement()
         test_fence_classes()
+        test_no_backtick_in_bang_span()
         test_arg_path_agreement(tmp)
         test_tier2_composed(tmp)
     print()

@@ -81,6 +81,39 @@ def main() -> int:
           len(emitted) >= 5, f"derived only {sorted(emitted)} — extraction is probably broken")
     check("the prose list is non-empty", len(listed) >= 5, f"listed only {sorted(listed)}")
 
+    # SPELLING, not just completeness -- and this is the hole the floor above cannot see.
+    # `emitted` is DERIVED by matching `WEAKENED ·`, so a separator typo on ONE emitter
+    # (`WEAKENED - DOC-BLIND`, an ASCII hyphen for the U+00B7) removes that token from
+    # `emitted` rather than adding it to `missing`: `emitted - listed` stays empty, the count
+    # stays above the floor, and the eval passes GREEN while the consumer-side rule -- which
+    # matches on the token, by design, so new instances are covered by construction -- silently
+    # stops matching that one line. `change-inventory.py`'s docstring flags the separator in
+    # capitals and asks the author to remember it; this checks it instead.
+    #
+    # Keyed on the EMITTER PREFIX, deliberately. Two classes of occurrence must not be flagged:
+    # prose that quotes the bare token (`WEAKENED ·` followed by a backtick or a newline), and
+    # -- the one that matters -- `change-inventory.py`'s docstring, which spells
+    # `WEAKENED - FOO` ON PURPOSE as the counter-example teaching this very failure. A check
+    # that flagged the lesson about the bug would be a check nobody keeps.
+    EMIT = re.compile(r"\[audit-coverage\] WEAKENED(?! \u00b7)")
+    prefixed = 0
+    for f in EMITTERS:
+        if not f.exists():
+            continue
+        body = f.read_text(encoding="utf-8")
+        prefixed += body.count("[audit-coverage] WEAKENED")
+        bad = [body[max(0, m.start() - 30):m.end() + 30] for m in EMIT.finditer(body)]
+        check(f"{f.name}: every emitted WEAKENED carries the U+00B7 separator",
+              not bad,
+              f"{len(bad)} emission(s) use a near-miss separator: {bad}. Invisible to the "
+              "derivation above AND to the shipped prose rule, so the weakening reaches nobody")
+    # PAIRED POSITIVE: the loop above is a prohibition, and a prohibition over an empty set is
+    # green. If the prefix ever changes, this fails instead of quietly checking nothing.
+    check("...and there were emissions to check (the prohibition is not vacuous)",
+          prefixed >= 5,
+          f"only {prefixed} `[audit-coverage] WEAKENED` emission(s) found — the prefix changed, "
+          "so the separator check above measured nothing")
+
     # CV1's three new instances specifically, named so a regression points at the right change.
     for tok in ("DOC-BLIND", "DOC-PATTERN-INVALID", "BUDGET-UNAVAILABLE"):
         check(f"CV1 instance {tok} is both emitted and enumerated",

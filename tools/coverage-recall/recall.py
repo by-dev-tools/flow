@@ -74,10 +74,14 @@ def doc_union_wiring(block: str) -> dict:
     """Extract the four patterns and the union flag the selection decision depends on."""
     sp = re.search(r"""^\[ -z "\$SP" \] && SP='([^']*)'""", block, re.M)
     assert sp, "the SP default literal is gone from the shipped block"
-    docf = re.search(r"""^\s*DOCF=.*?grep -vE '([^']*)'""", block, re.M)
-    assert docf, "the doc-side test-path exclusion is gone from the shipped block"
-    return {"sp": sp.group(1), "excl": _sq(block, "EXCL"),
-            "builtin": _sq(block, "DOC_BUILTIN"), "doc_excl": docf.group(1),
+    # TESTDIRS is now a NAMED literal the doc branch reuses, so the bespoke "dig it back out of
+    # the DOCF line" regex this used to need is gone -- and EXCL is COMPOSED from it, so the two
+    # cannot drift apart. Reconstruct EXCL the way the shell does rather than reading a literal.
+    testdirs = _sq(block, "TESTDIRS")
+    excl_tail = re.search(r'^EXCL="\$TESTDIRS"\'([^\']*)\'', block, re.M)
+    assert excl_tail, "EXCL is no longer composed from TESTDIRS — re-read the block before trusting this"
+    return {"sp": sp.group(1), "excl": testdirs + excl_tail.group(1),
+            "builtin": _sq(block, "DOC_BUILTIN"), "doc_excl": testdirs,
             "unions": UNION_SIG in block}
 
 
@@ -665,7 +669,7 @@ def main(argv=None):
 
     if a.cmd == "render":
         with tempfile.TemporaryDirectory() as td:
-            target, undo = prepare(a.case, Path(td), getattr(a, "doc_slot", "") or "")
+            target, undo = prepare(a.case, Path(td), a.doc_slot)
             try:
                 text = render(a.case, a.before, target)
             finally:

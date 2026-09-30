@@ -40,7 +40,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from eval_utils import commit, git_repo          # noqa: E402  the shared hoist target
+from eval_utils import bang_blocks, commit, git_repo# noqa: E402  the shared hoist target
 
 HERE = Path(__file__).parent
 PLUGIN = HERE.parent
@@ -550,12 +550,11 @@ print("\n§5c — the COMPOSED SHELL, not just the engine (the layer the criteri
 # printed `SKIPPED` — "there was nothing to audit", non-blocking at ship Step 2 — for a whole
 # PR's behaviour. A criterion verified one layer below where it is claimed is the unearned-green
 # shape this PR is about, so it is now tested where it is claimed.
-_BLOCK_RE = re.compile(r"^!`\n(.*?)^`$", re.MULTILINE | re.DOTALL)
 
 
 def run_block(cwd, block_index=1):
     """Render + run one of the skill's dynamic-context spans, the way the preprocessor does."""
-    blocks = _BLOCK_RE.findall(SKILL.read_text(encoding="utf-8"))
+    blocks = bang_blocks(SKILL.read_text(encoding="utf-8"))
     env = dict(os.environ)
     env["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN)
     env.pop("CLAUDE_PROJECT_DIR", None)

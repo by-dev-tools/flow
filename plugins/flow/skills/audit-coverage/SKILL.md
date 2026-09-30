@@ -71,25 +71,19 @@ undeclared behaviours) and #159's reconstruction (5 keyed gaps, `tools/coverage-
 | diff mode (prototype) | 60% | **60%** (4 runs) |
 | diff mode (#159, doc slot set — CV1) | 30% | **60%** (2 runs) |
 
-**Source mode: +18pp. Diff mode: +0pp on that input** — three diff-mode runs found exactly the
-same gaps, so there was no variance to harvest there. That paragraph used to add "read the +0pp as
-n=1 INPUT, not as a property of diff mode" and ask for a second diff-mode case. **The second case
-has now been run, and it went the other way** (CV1): on the #159 reconstruction with
-`behaviorBearingDocPatterns` set, two runs over byte-identical evidence scored **2/5 and 1/5 and
-found *disjoint* gaps** — single-run mean 30%, **union 60%, +30pp**, with zero false positives in
-either run. So diff-mode variance is **input-dependent**, and the honest state is two cases
-pointing opposite ways rather than one settled answer.
+**Source mode: +18pp. Diff mode: +0pp on one input, +30pp on another** — on the prototype, three
+diff-mode runs found identical gaps, so there was nothing to harvest. On #159's reconstruction with
+`behaviorBearingDocPatterns` set, two runs over **byte-identical** evidence scored 2/5 and 1/5 and
+found *disjoint* gaps: mean 30%, **union 60%**. So diff-mode variance is **input-dependent**, and
+nothing here predicts which diff has it.
 
-**`/flow:ship` Step 2 still stays a single pass — but not for the old reason.** The old
-justification was "a gain measured at zero", and that premise is now false. It stays single because
-the gain is real but *unpredictable per input*, and nothing here tells you in advance which diff
-has harvestable variance; doubling Step 2 on every PR to capture it on some unknown fraction is a
-cost decision, not a measurement one, and it is tracked in `dev-docs/roadmap.md` § Next rather
-than decided here. What the measurement does license unconditionally: **if you are looking at a
-specific diff you care about, run it twice and union** — precision stayed perfect across every run
-in both cases, so a second pass can only add true positives. Union where you can afford it; one
-pass in the pipeline. (Union also lifted the *pre-v1.49.0* prompt by +15pp, so this is a property of the
-judgment's variance rather than of the two-stage split — the two compose, they do not overlap.)
+**`/flow:ship` Step 2 stays a single pass on COST, not on a measured zero.** Doubling every PR's
+Step 2 to capture a gain that appears on an unknown fraction of inputs is a cost call, tracked in
+`dev-docs/roadmap.md` § Next rather than decided here. What the measurement licenses
+unconditionally: **on a diff you care about, run it twice and union** — precision was perfect in
+every run across both cases, so a second pass can only add true positives. Union where you can
+afford it; one pass in the pipeline. (Union also lifted the *pre-v1.49.0* prompt by +15pp, so this
+is a property of the judgment's variance rather than of the two-stage split — they compose.)
 
 ## Declared `**Spec-walk:**` criteria (the claim of what the work covers)
 
@@ -123,6 +117,15 @@ fi
 ## What was actually built
 
 !`
+# Test/fixture paths, named ONCE for this block. Three expressions need them -- source
+# mode's walk exclusion, the behaviour diff's exclusion, and the doc branch's -- and they
+# were three separate copies of one alternation (general.md item 2, this repo's most
+# recurring bug class). All three compose from this now, so a fourth test dir is one edit.
+# MUST live in THIS block: each bang-span is its OWN shell, so a definition in the criteria
+# block above is not in scope here -- it expands empty and EXCL becomes '|...', which
+# matches everything and silently excludes every file (measured: the whole gate printed
+# SKIPPED). The eval's paired positives are what caught it.
+TESTDIRS='(^|/)(test|tests|__tests__|__fixtures__|fixtures|evals|spec|specs)/'
 # Root anchor (FB-0074) — see the criteria block above. Resolve BEFORE any relative read;
 # an unresolvable root is ROOT-UNRESOLVED, never the SKIPPED line.
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
@@ -255,7 +258,7 @@ if [ -n "$SRC" ]; then
     *) unres "'$SRC' resolves to $ABS, which is OUTSIDE the repo under review ($ROOTP). Refused." ;;
   esac
   # Build/vendor/test paths a prototype tree carries. Tests are not the built behavior.
-  SEXCL='(^|/)(\.git|node_modules|dist|build|vendor|__pycache__|\.next|coverage)/|(^|/)(test|tests|__tests__|__fixtures__|fixtures|evals|spec|specs)/|\.(test|spec)\.'
+  SEXCL='(^|/)(\.git|node_modules|dist|build|vendor|__pycache__|\.next|coverage)/|'"$TESTDIRS"'|\.(test|spec)\.'
   if [ "$KIND" = file ]; then
     # A SINGLE NAMED FILE IS TAKEN VERBATIM, NEVER PATTERN-FILTERED. This is load-bearing,
     # not laziness. The shared sourceFilePatterns default used by the diff block above matches
@@ -330,6 +333,13 @@ if [ -n "$SRC" ]; then
     echo "[audit-coverage] WEAKENED · SOURCE-TRUNCATED — source tree exceeds $SOURCE_CAP bytes; behavior past the cap was NOT read. A clean result here is PARTIAL and is NOT a clean pass — say so, and recommend narrowing the path or auditing the remainder."
   fi
   echo "----- source -----"
+  # DELIBERATELY STILL head -c, and the defect is real: this is the same concatenate-then-
+  # truncate shape that made files late in the order contribute zero bytes in diff mode,
+  # which lib/evidence-budget.py exists to fix. Source mode is NOT fixed here because the
+  # binding case is one file larger than the whole budget (ship/SKILL.md is 177,768 B
+  # against a 120,000 B SOURCE_CAP), and fair-share has nothing to share when one file
+  # exceeds the cap alone. Tracked in dev-docs/roadmap.md § Next, deferred until D1
+  # Phase 3 lands. Do not read the budgeter's presence above as covering this call.
   printf '%s\n' "$BODY" | head -c "$SOURCE_CAP"
 
   exit 0
@@ -357,7 +367,7 @@ PLANDOC=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAND
 SP=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
 [ -z "$SP" ] && SP='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
 # Exclude test/fixture/doc paths from the BEHAVIOR diff (tests are not new behavior).
-EXCL='(^|/)(test|tests|__tests__|__fixtures__|fixtures|evals|spec|specs)/|\.(test|spec)\.|(^|/)docs?/|\.md$'
+EXCL="$TESTDIRS"'|\.(test|spec)\.|(^|/)docs?/|\.md$'
 # CV1 — BEHAVIOUR-BEARING PROSE. A .md path never matched $SP in the first place, so EXCL's .md clause
 # was belt-and-braces: this is an INCLUSION change, not an exclusion edit. Flow ships PROMPTS --
 # a SKILL.md is deployed surface by CLAUDE.md's own rule -- so the gate was structurally blind to
@@ -369,41 +379,43 @@ EXCL='(^|/)(test|tests|__tests__|__fixtures__|fixtures|evals|spec|specs)/|\.(tes
 # blind spot rather than silence. The slot OVERRIDES the built-in judgment, it does not supply it.
 BBDP=$(jq -r '.behaviorBearingDocPatterns // empty' flow.config.json 2>/dev/null)
 DOC_BUILTIN='(^|/)(skills|agents|rules)/.*\.md$'
-if [ -n "$BBDP" ]; then DOCPAT="$BBDP"; DOCSRC="your behaviorBearingDocPatterns"; else DOCPAT="$DOC_BUILTIN"; DOCSRC="a built-in suggestion, not your project's declaration"; fi
-# Validate before use. An invalid ERE makes grep exit 2, an || true swallows it, the match set is
-# empty and the gate reads FEWER files while looking healthy -- the FB-0008 silent-skip class, on
-# the predicate whose false negative costs a gate. Same guard security-review/a11y-review carry.
-echo "" | grep -qE "$DOCPAT" 2>/dev/null; [ $? -gt 1 ] && { echo "[audit-coverage] WEAKENED · DOC-PATTERN-INVALID — behaviorBearingDocPatterns is not a valid extended regex, so behaviour-bearing prose was NOT selected and this run is blind to it. Fix the slot; this is NOT a clean pass."; BBDP=""; DOCPAT="$DOC_BUILTIN"; DOCSRC="a built-in suggestion (your slot did not compile)"; }
+# Validate the CONSUMER's slot, not the effective pattern: the built-in is a known-good literal, so
+# an invalid ERE can only come from the slot, and the message is then true by construction rather
+# than by the reader checking. grep exits 2 on a bad pattern, an || true swallows it, the match set
+# is empty and the gate reads FEWER files while looking healthy -- the FB-0008 silent-skip class on
+# the one predicate whose false negative costs a gate.
+if [ -n "$BBDP" ]; then
+  echo "" | grep -qE "$BBDP" 2>/dev/null; [ $? -gt 1 ] && { echo "[audit-coverage] WEAKENED · DOC-PATTERN-INVALID — behaviorBearingDocPatterns is not a valid extended regex, so behaviour-bearing prose was NOT selected by it and this run is blind to whatever it was meant to add. Fix the slot; this is NOT a clean pass."; BBDP=""; }
+fi
 ALLF=$( { git diff "origin/$BASE..HEAD" --name-only 2>/dev/null; git diff HEAD --name-only 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u )
 FILES=$(printf '%s\n' "$ALLF" | grep -E "$SP" | grep -vE "$EXCL")
 # B — SEE IT. Only when the slot is SET, so no consumer's gate changes until they opt in
 # (sourceFilePatterns/EXCL are a published contract every consumer inherits). Test/fixture dirs
 # stay excluded: a fixture SKILL.md is not deployed surface.
 if [ -n "$BBDP" ]; then
-  DOCF=$(printf '%s\n' "$ALLF" | grep -E "$BBDP" | grep -vE '(^|/)(test|tests|__tests__|__fixtures__|fixtures|evals|spec|specs)/')
+  DOCF=$(printf '%s\n' "$ALLF" | grep -E "$BBDP" | grep -vE "$TESTDIRS")
   FILES=$(printf '%s\n%s\n' "$FILES" "$DOCF" | grep -v '^[[:space:]]*$' | sort -u)
-fi
-# VACUITY, not just validity. The exit-code guard above catches a malformed ERE (grep exits 2),
-# but grep TOLERATES a PCRE-ism: a slot of (?i)\.md$ warns and exits 1 -- "no match" -- so a
-# project would read FEWER files while the run looked healthy. That is the unsafe direction for a
-# slot whose job is to widen what the gate reads, so it is checked by OUTCOME: if the slot is set
-# and selected nothing while the built-in suggestion WOULD have selected something, say so.
-if [ -n "$BBDP" ]; then
-  VAC_SET=$(printf '%s\n' "$ALLF" | grep -cE "$BBDP" 2>/dev/null); VAC_SET=${VAC_SET:-0}
-  VAC_STD=$(printf '%s\n' "$ALLF" | grep -cE "$DOC_BUILTIN" 2>/dev/null); VAC_STD=${VAC_STD:-0}
-  if [ "${VAC_SET:-0}" -eq 0 ] && [ "${VAC_STD:-0}" -gt 0 ]; then
-    echo "[audit-coverage] WEAKENED · DOC-PATTERN-INVALID — behaviorBearingDocPatterns is set but matched NONE of the $VAC_STD doc-shaped file(s) in this diff that the built-in suggestion would match. Either the pattern is wrong (a PCRE-ism like (?i) compiles under grep -E and matches nothing) or those files really are prose — but this run read none of them, so it is NOT a clean pass over their behaviour."
-  fi
 fi
 # A — SAY IT. Doc-shaped paths the behaviour filter DROPPED. Fires whether or not the slot is set,
 # and changes no verdict: it converts a silent blind spot into a stated one (FB-0121's distinction,
 # applied to the evidence rather than to the verdict).
-DROPPED=$(printf '%s\n' "$ALLF" | grep -E "$DOCPAT" | while IFS= read -r f; do
-  [ -n "$f" ] || continue
-  printf '%s\n' "$FILES" | grep -qxF "$f" || printf '%s\n' "$f"
-done)
-if [ -n "$(printf '%s' "$DROPPED" | tr -d '[:space:]')" ]; then
-  echo "[audit-coverage] WEAKENED · DOC-BLIND — $(printf '%s\n' "$DROPPED" | grep -c .) changed file(s) carry prose that may be deployed surface and were NOT read: $(printf '%s' "$DROPPED" | tr '\n' ' '). Matched by $DOCSRC. On a project whose behaviour lives in markdown this is NOT a completeness gate over that behaviour — set flow.config.json.behaviorBearingDocPatterns to have them read."
+#
+# DOC-BLIND IS COMPUTED AGAINST BOTH JUDGMENTS -- the built-in's AND yours -- never against the
+# effective pattern alone. Keying it on the effective pattern is what an earlier version did, and it
+# made the line structurally unable to report what a SET slot MISSES: every file the slot matched is
+# in $FILES by construction, so $DROPPED could only ever be empty. Measured on a slot covering
+# skills/ but not agents/ -- the realistic hand-written case -- a changed, unread agents/*.md
+# produced NO warning of any kind. That silence is the exact failure this line exists to prevent, so
+# it is now impossible: a doc-shaped path either reached the reviewer or is named here.
+DOCALL="$DOC_BUILTIN"; [ -n "$BBDP" ] && DOCALL="$DOC_BUILTIN|$BBDP"
+DROPPED=$(printf '%s\n' "$ALLF" | grep -E "$DOCALL" | grep -vxF "$FILES")
+DROPN=$(printf '%s\n' "$DROPPED" | grep -c .)
+if [ "$DROPN" -gt 0 ]; then
+  if [ -n "$BBDP" ]; then
+    echo "[audit-coverage] WEAKENED · DOC-BLIND — $DROPN changed file(s) carry prose that may be deployed surface and were NOT read: $(printf '%s' "$DROPPED" | tr '\n' ' '). Your behaviorBearingDocPatterns did not select them — they are doc-shaped by flow's built-in suggestion, or match your pattern but sit under a test path. Widen the slot if they are deployed surface. This run is blind to them; it is NOT a clean pass over them."
+  else
+    echo "[audit-coverage] WEAKENED · DOC-BLIND — $DROPN changed file(s) carry prose that may be deployed surface and were NOT read: $(printf '%s' "$DROPPED" | tr '\n' ' '). Matched by a built-in suggestion, not your project's declaration. On a project whose behaviour lives in markdown this is NOT a completeness gate over that behaviour — set flow.config.json.behaviorBearingDocPatterns to have them read."
+  fi
 fi
 # THE SKIP LINE IS GATED ON THE BASE HAVING RESOLVED. Every git call above ends 2>/dev/null,
 # so an unresolvable origin/$BASE makes all three contribute nothing, $FILES is empty, and the
@@ -457,8 +469,12 @@ if [ -n "$FILES" ]; then
   # two files entirely invisible, chosen by filename. The budgeter water-fills instead -- every
   # file gets its full size if it fits its fair share, the remainder is redistributed, and each
   # cut file is named -- and is byte-identical to the old output when the total is under the cap.
+  # House GATED idiom (8+ call sites; see lib/resolve-doc-slot.sh's SECURITY header). The
+  # cwd-relative tier is reached only after confirming the cwd really is a flow checkout --
+  # an ungated relative path would run whatever plugins/flow/... happens to sit under the
+  # cwd this fork inherited.
   EB="${CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/evidence-budget.py"
-  [ -f "$EB" ] || EB="plugins/flow/skills/audit-coverage/lib/evidence-budget.py"
+  [ -f "$EB" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && EB=plugins/flow/skills/audit-coverage/lib/evidence-budget.py; }
   if [ -f "$EB" ] && command -v python3 >/dev/null 2>&1; then
     printf '%s\n' "$FILES" | python3 "$EB" --base "origin/$BASE" --cap "$CAP"
   else

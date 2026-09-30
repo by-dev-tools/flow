@@ -54,6 +54,8 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE.parent / "lib"))
 import arg_placeholders as AP  # noqa: E402  (sibling-lib import, house pattern)
+sys.path.insert(0, str(HERE))
+from eval_utils import bang_blocks  # noqa: E402  the shared span extractor
 PLUGIN = HERE.parent
 REPO = PLUGIN.parent.parent
 SKILL = PLUGIN / "skills" / "audit-coverage" / "SKILL.md"
@@ -78,11 +80,10 @@ def check(name, cond, detail=""):
 # that restates the guard lets the eval pass while the artifact drifts (the lesson
 # run_root_anchor_evals.py records in its own docstring).
 # ---------------------------------------------------------------------------
-_BLOCK_RE = re.compile(r"^!`\n(.*?)^`$", re.MULTILINE | re.DOTALL)
 
 
 def blocks() -> list[str]:
-    return _BLOCK_RE.findall(SKILL.read_text(encoding="utf-8"))
+    return bang_blocks(SKILL.read_text(encoding="utf-8"))
 
 
 ALL = blocks()

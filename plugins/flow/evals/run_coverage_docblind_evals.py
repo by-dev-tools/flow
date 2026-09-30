@@ -46,7 +46,7 @@ HERE = Path(__file__).parent
 PLUGIN = HERE.parent
 SKILLS = PLUGIN / "skills"
 sys.path.insert(0, str(HERE))
-from eval_utils import commit, git_repo  # noqa: E402  the shared hoist target
+from eval_utils import bang_blocks, commit, git_repo  # noqa: E402  the shared hoist target
 
 _failures: list = []
 BUILTIN = r"(^|/)(skills|agents|rules)/.*\.md$"
@@ -65,8 +65,11 @@ def check(name, cond, detail=""):
 # shell tests its own copy and lets the artifact drift underneath it.
 def evidence_block() -> str:
     t = (SKILLS / "audit-coverage" / "SKILL.md").read_text(encoding="utf-8")
-    blocks = re.findall(r"(?:^|(?<=\s))!`(.*?)`", t, re.S)
-    cand = [b for b in blocks if "Behavior-bearing files changed" in b]
+    # Shared extractor, NOT a fifth local spelling: this file originally carried a looser regex
+    # that disagreed with the other four about what a span is (see eval_utils.bang_blocks).
+    # Selection stays by CONTENT rather than by index -- an inline span added above this one
+    # would silently shift a positional `blocks[1]`.
+    cand = [b for b in bang_blocks(t) if "Behavior-bearing files changed" in b]
     assert cand, "could not extract the evidence block"
     return cand[0]
 
@@ -153,15 +156,66 @@ def main() -> int:
                                  cfg_extra={"behaviorBearingDocPatterns": "["})
         check("a MALFORMED slot emits DOC-PATTERN-INVALID and falls back",
               "DOC-PATTERN-INVALID" in out_malformed, out_malformed[:280])
+        # A VALID-but-vacuous slot is caught by OUTCOME, not by a second bespoke check: every
+        # doc-shaped file it failed to select is simply DROPPED, so DOC-BLIND names them. An
+        # earlier version emitted a separate "matched NONE of the N" line under the
+        # DOC-PATTERN-INVALID token -- two meanings for one token, and it covered only the
+        # all-or-nothing corner. `(?i)\.md$` is a PCRE-ism grep TOLERATES (warns, exits 1 = "no
+        # match"), so the exit-code guard above cannot see it; this is the arm that does.
         out_vacuous = scenario(tmp, "b-vacuous", {**SKILL, **SRC},
                                cfg_extra={"behaviorBearingDocPatterns": "(?i)\\.md$"})
-        check("a VALID-but-vacuous slot is also flagged (grep tolerates the PCRE-ism)",
-              "DOC-PATTERN-INVALID" in out_vacuous,
+        check("a VALID-but-vacuous slot is caught by outcome: DOC-BLIND NAMES the unread file",
+              "DOC-BLIND" in out_vacuous
+              and "plugins/flow/skills/x/SKILL.md" in out_vacuous,
               "a slot that compiles and matches nothing reads fewer files while looking "
-              f"healthy — the unsafe direction: {out_vacuous[:280]!r}")
-        # PAIRED NEGATIVE: a correct slot must NOT be flagged as vacuous, or the check is noise.
-        check("a CORRECT slot is not flagged vacuous",
-              "DOC-PATTERN-INVALID" not in out_set, out_set[:240])
+              f"healthy — the unsafe direction: {out_vacuous[:320]!r}")
+        check("...and it is NOT reported as a malformed pattern (the token means one thing)",
+              "DOC-PATTERN-INVALID" not in out_vacuous, out_vacuous[:280])
+
+        # THE PARTIAL-COVERAGE CASE — the regression this section exists for, found by
+        # /simplify's altitude lens and reproduced before it was fixed. A hand-written slot that
+        # covers skills/ but forgets agents/ is the REALISTIC consumer mistake, and the earlier
+        # implementation was structurally silent about it: DOC-BLIND was keyed on the EFFECTIVE
+        # pattern, so every file the slot matched was in $FILES by construction and $DROPPED
+        # could only ever be empty. No warning of any kind on a changed, unread agents/*.md.
+        # Invisible to dogfooding too: flow's own slot value is byte-identical to DOC_BUILTIN,
+        # so both code paths agree in this repo forever.
+        out_partial = scenario(tmp, "b-partial",
+                               {"plugins/flow/skills/x/SKILL.md": "# x\n",
+                                "plugins/flow/agents/auditor.md": "# auditor\n", **SRC},
+                               cfg_extra={"behaviorBearingDocPatterns":
+                                          "(^|/)skills/.*\\.md$"})
+        check("a PARTIAL slot: the file it covers IS read",
+              "plugins/flow/skills/x/SKILL.md" in files_line(out_partial),
+              f"files={files_line(out_partial)!r}")
+        check("...and the one it MISSES is named by DOC-BLIND, not silently dropped",
+              "DOC-BLIND" in out_partial
+              and "plugins/flow/agents/auditor.md" in out_partial,
+              "this is the silence the line exists to prevent: doc-shaped, changed, unread, "
+              f"unmentioned — {out_partial[:400]!r}")
+        check("...and the warning tells the consumer it is THEIR slot that missed it",
+              "behaviorBearingDocPatterns did not select them" in out_partial,
+              "with the slot set, blaming a 'built-in suggestion' misdirects the fix: the "
+              f"actionable fact is that their own pattern is too narrow — {out_partial[:400]!r}")
+        # PAIRED NEGATIVE: a slot that covers everything doc-shaped stays silent, or the three
+        # checks above are satisfied by a line that always fires.
+        check("a CORRECT slot is silent (the pair's negative)",
+              "DOC-BLIND" not in out_set and "DOC-PATTERN-INVALID" not in out_set,
+              out_set[:240])
+
+        # FAN-OUT GUARD (general.md item 2). The doc branch reuses $TESTDIRS and EXCL is now
+        # COMPOSED from it, so the alternation exists once in this block instead of three times.
+        # Assert the composition rather than trusting it: if someone re-inlines either copy, the
+        # source filter and the doc filter can disagree about what a test path is, and the
+        # failure direction is quiet (a fixture SKILL.md enters the behaviour diff).
+        check("the test-dir alternation is spelled ONCE and both consumers compose from it",
+              BLOCK.count("(^|/)(test|tests|__tests__|__fixtures__|fixtures|evals|spec|specs)/") == 1
+              and 'EXCL="$TESTDIRS"' in BLOCK          # the behaviour diff's exclusion
+              and '\'"$TESTDIRS"\'' in BLOCK           # source mode's walk exclusion (SEXCL)
+              and 'grep -vE "$TESTDIRS"' in BLOCK,     # the doc branch's
+              "three expressions needed this alternation and each carried its own copy; the next "
+              "test dir added to one and not the others makes the source filter and the doc filter "
+              "disagree about what a test path is, quietly (a fixture SKILL.md enters the diff)")
 
         print("\n3. C — FIT IT: no file is entirely invisible when the cap binds")
         # Genuinely OVER the 60,000-byte cap: the first fixture was ~32 KB, so nothing truncated
