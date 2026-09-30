@@ -55,9 +55,25 @@ Run `trigger` and hand its output to `depth`:
 
 ```sh
 ROOT=$(git rev-parse --show-toplevel) || { echo "[autoplan] not in a git repo" >&2; exit 1; }
-mkdir -p "$ROOT/.flow"
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py" trigger > "$ROOT/.flow/autoplan-trigger.json"
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/autoplan/lib/gate.py" depth --trigger-file "$ROOT/.flow/autoplan-trigger.json"
+FLOW_SCRATCH="$ROOT/.flow"
+# SECURITY (CWE-59), the same guard the other nine `.flow` writers in this plugin
+# carry. `.flow` is an ordinary repo path with none of git's `.git` special-casing, so
+# a branch can COMMIT it as a symlink; `mkdir -p` on an existing symlink-to-dir exits 0
+# and FOLLOWS it, so the redirect below would write this trigger JSON wherever the link
+# points. `gh pr checkout` of an untrusted branch is the attack step (see CONTRIBUTING.md).
+if [ -L "$FLOW_SCRATCH" ]; then
+  echo "⚠️ BLOCKER: $FLOW_SCRATCH is a symlink — refusing to write flow scratch through it, because writes would land outside the repo (CWE-59). Replace it with a real directory." >&2
+  exit 1
+fi
+mkdir -p "$FLOW_SCRATCH"
+[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
+# Refuse a symlinked leaf as well as the directory — idiom parity with audit-coverage.
+if [ -L "$FLOW_SCRATCH/autoplan-trigger.json" ]; then
+  echo "⚠️ BLOCKER: $FLOW_SCRATCH/autoplan-trigger.json is a symlink — refusing to write through it (CWE-59)." >&2
+  exit 1
+fi
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py" trigger > "$FLOW_SCRATCH/autoplan-trigger.json"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/autoplan/lib/gate.py" depth --trigger-file "$FLOW_SCRATCH/autoplan-trigger.json"
 ```
 
 Depth keys on the trigger's resolved **`path`**, never on `Mode`. Keying on `Mode` opens two holes: `Mode: spike` resolves to no declared depth at all, and a `Mode: feature` change the trigger routes to `classic` would claim a depth while Arm B has no prototype source to read.
@@ -89,8 +105,30 @@ Write the technical plan to the path from `## Argument`. It must carry:
 ## 3. Arm A — criterion quality. Deterministic, hard gate.
 
 ```sh
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/autoplan/lib/gate.py" arm-a --plan <plan-path> --expect-line <N>
+ROOT=$(git rev-parse --show-toplevel) || { echo "[autoplan] not in a git repo" >&2; exit 1; }
+ARGF=$(python3 "${CLAUDE_PLUGIN_ROOT}/lib/arg_placeholders.py" --arg-path autoplan)
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/autoplan/lib/gate.py" arm-a --plan-from "$ARGF"
 ```
+
+**`--plan-from`, never `--plan <plan-path>`, and this is not a style preference.** An
+earlier draft of this step wrote `--plan <plan-path>` — a placeholder inside a fenced
+block. `$ARGUMENTS` is substituted into this whole document *before any shell parses it*,
+so that placeholder is executable code, not a value (#165/FB-0116); a plan path of
+`docs/p.md"; curl … | sh #` satisfies every refusal in `## Argument` above and still runs.
+Worse, it word-splits: `p.md --lib-root /tmp/evil` would have pointed the engine's
+`exec_module` at an attacker-authored tree. `/flow:review-brief` reaches its own extractor
+through exactly this stamped-file channel — three files away, in the same release — so the
+safe idiom was already here to copy. The engine refuses a multi-line arg file rather than
+taking line 1, and confines `--lib-root` the same way it confines the plan.
+
+*Where `--expect-line` went.* It is deliberately absent from the block above. The arg file
+holds exactly one line — a path — and refuses a second, so the line number cannot travel
+that way; and putting `--expect-line <N>` back into the fence would reintroduce a
+placeholder in an executable context for a value that has a safer home. Instead: **read
+`graded_line` out of the engine's JSON and compare it yourself** against the line you
+recorded in Step 2. If they disagree, Arm A graded a different block and the gate is RED —
+you are performing the assertion the flag would have performed. `--expect-line` remains on
+the CLI for direct CI use, where argv is not caller-influenced.
 
 It invokes `extract-criteria.py`, `criterion-specificity.py` and `walk-pin-lint.py` **directly** — not through `/flow:critique-plan`, whose pinning path routes a named plan file to `UNCHECKED` post-#165, and which would in any case make this gate inherit another skill's scope changes.
 

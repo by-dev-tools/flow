@@ -100,6 +100,30 @@ class SecurityRefusal(Exception):
     """A path refused by `_safe_path`. Surfaced as a clean refusal, never a traceback."""
 
 
+def _scrub(text) -> str:
+    """Strip terminal control characters from text that will be PRINTED to a human.
+
+    The escalation's fields (`finding`, `drafted_resolution`, `why`, `provenance`)
+    originate in a JSON file whose contents can come from a reviewer reading an
+    untrusted branch's source — an Arm B finding keys on a `symbol` lifted out of
+    that code. An embedded `\r` or CSI sequence can erase or overwrite lines in the
+    rendered block, which is precisely the text a human is being asked to make a
+    decision from: forging the question is at least as useful to an attacker as
+    forging the answer.
+
+    Keeps `\n` and `\t` (the renderer's own structure) and drops the rest of C0/C1.
+    `ship/lib/manifest-triage.py` has the same exposure and no such filter; this is
+    the narrow fix for the surface this PR adds, and the shared helper is filed with
+    the `_safe_path` hoist rather than done here mid-ship.
+    """
+    if not isinstance(text, str):
+        text = "" if text is None else str(text)
+    return "".join(
+        ch for ch in text
+        if ch in "\n\t" or (ord(ch) >= 0x20 and not 0x7F <= ord(ch) <= 0x9F)
+    )
+
+
 def _clip(text: str, n: int) -> str:
     """Truncate with a marker. A criterion cut mid-word at 60 chars reads as a
     malformed criterion rather than a truncated one."""
@@ -673,7 +697,7 @@ def render_decisions(decisions: list, blockers: list | None = None) -> str:
             break_long_words=False, break_on_hyphens=False))
         out.append("")
         for b in blockers:
-            out.append(wrap(str(b), indent="  ", first="- "))
+            out.append(wrap(_scrub(str(b)), indent="  ", first="- "))
             out.append("")
 
     if decisions:
@@ -697,12 +721,12 @@ def render_decisions(decisions: list, blockers: list | None = None) -> str:
             # Indent width is derived, not hardcoded to 3: at item 10 the marker is
             # four characters and every sub-field silently stopped aligning.
             pad = " " * len(marker)
-            out.append(wrap(d.get("finding") or d.get("symbol") or "unnamed finding",
+            out.append(wrap(_scrub(d.get("finding") or d.get("symbol") or "unnamed finding"),
                             indent=pad, first=marker))
             if d.get("why"):
                 out.append("")
-                out.append(wrap("Why this is blocking: %s" % d["why"], indent=pad))
-            drafted = (d.get("drafted_resolution") or "").strip()
+                out.append(wrap("Why this is blocking: %s" % _scrub(d["why"]), indent=pad))
+            drafted = _scrub(d.get("drafted_resolution") or "").strip()
             if drafted:
                 out.append("")
                 if "\n" in drafted:
@@ -729,7 +753,7 @@ def render_decisions(decisions: list, blockers: list | None = None) -> str:
                     "as stated and I record that instead.", indent=pad))
             if d.get("provenance"):
                 out.append("")
-                out.append(wrap(d["provenance"], indent=pad))
+                out.append(wrap(_scrub(d["provenance"]), indent=pad))
             out.append("")
     return "\n".join(out).rstrip() + "\n"
 
@@ -741,10 +765,47 @@ def _arg(argv, flag, required=True):
     if flag in argv:
         i = argv.index(flag)
         if i + 1 < len(argv):
-            return argv[i + 1]
+            val = argv[i + 1]
+            # A value that looks like a flag is a mis-parse, not a value. `_arg` scans
+            # for the flag anywhere in argv and takes the NEXT token, so a word-split
+            # argument (`p.md --lib-root /tmp/evil`) would otherwise bind silently —
+            # and `--lib-root` is the tree this engine EXECUTES from. Refuse instead.
+            if isinstance(val, str) and val.startswith("--"):
+                raise SecurityRefusal(
+                    "%s was followed by %r, which looks like another flag — refusing "
+                    "rather than binding a mis-parsed value." % (flag, val))
+            return val
     if required:
         raise SecurityRefusal("missing required argument %s" % flag)
     return None
+
+
+def _path_from_file(arg_file: Path, what: str) -> Path:
+    """Read a path out of a stamped argument FILE — the #165/FB-0108 Tier-2 channel.
+
+    The path never appears as a token in a shell command, because `$ARGUMENTS` is
+    substituted into a skill body before any shell parses it: a placeholder inside a
+    fenced block is executable code, and no quoting convention fixes that, because
+    substitution precedes parsing. `/flow:review-brief` reaches its extractor exactly
+    this way; this is the same channel, not a new one.
+
+    A multi-line value is REFUSED rather than truncated to line 1 — a path has no
+    second line, so a second line is an injection attempt against the caller.
+    """
+    _safe_path(arg_file, "%s argument file" % what)
+    try:
+        raw = arg_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise SecurityRefusal("%s argument file could not be read (%s): %s"
+                              % (what, arg_file, exc))
+    lines = [ln for ln in raw.splitlines() if ln.strip()]
+    if not lines:
+        raise SecurityRefusal("%s argument file %s is empty" % (what, arg_file))
+    if len(lines) > 1:
+        raise SecurityRefusal(
+            "%s argument file %s carries %d non-blank lines; a path has exactly one. "
+            "Refusing rather than taking the first." % (what, arg_file, len(lines)))
+    return Path(lines[0].strip())
 
 
 def main(argv: list) -> int:
@@ -769,7 +830,13 @@ def main(argv: list) -> int:
             trigger = _read_json(Path(_arg(rest, "--trigger-file")), "trigger file")
             return _emit(resolve_depth(trigger))
         if cmd == "arm-a":
-            plan = Path(_arg(rest, "--plan"))
+            # Prefer the Tier-2 channel: the caller writes the path to a stamped file
+            # and passes that file's FIXED LITERAL name, so no caller-supplied path is
+            # ever a token in a shell command (#165/FB-0116). `--plan` is retained for
+            # direct human/CI use where argv is not attacker-influenced.
+            plan_from = _arg(rest, "--plan-from", required=False)
+            plan = (_path_from_file(Path(plan_from), "plan") if plan_from
+                    else Path(_arg(rest, "--plan")))
             _safe_path(plan, "plan file")
             expect = _arg(rest, "--expect-line", required=False)
             # `--lib-root` is a TEST SEAM, and it earns its place by converting the
@@ -783,7 +850,16 @@ def main(argv: list) -> int:
             except (TypeError, ValueError):
                 raise SecurityRefusal(
                     "--expect-line must be an integer line number, got %r" % expect)
-            return _emit(arm_a(plan, expect_n, lib_root=Path(lib) if lib else None))
+            # `--lib-root` is confined like every other input. It is the tree the
+            # engine IMPORTS and SUBPROCESSES from, so guarding the read-only --plan
+            # while leaving this open had the threat model inverted: it is not
+            # independently reachable (it needs argv control), but it turns any argv
+            # foothold into arbitrary code execution.
+            lib_root = None
+            if lib:
+                lib_root = Path(lib)
+                _safe_path(lib_root, "lib root")
+            return _emit(arm_a(plan, expect_n, lib_root=lib_root))
         if cmd == "union":
             data = _read_json(Path(_arg(rest, "--passes-file")), "passes file")
             passes = data if isinstance(data, list) else data.get("passes")

@@ -502,11 +502,17 @@ def test_arm_a_unparseable_lint_is_not_clean() -> None:
               "it must not report a verdict it never measured")
         check("unloadable-predicate-says-so",
               any("DID NOT RUN" in r for r in out["reasons"]), str(out))
-        # The positive half, same fixture through the REAL tree: if this were red too,
-        # the check above would be measuring the stub harness rather than the branch.
-        ok, _ = run("arm-a", "--plan", str(plan), "--lib-root", str(real), cwd=str(tmp))
-        check("real-predicate-tree-is-green", ok["verdict"] == "GREEN", str(ok))
-        check("real-predicate-tree-ran", ok["ran"] is True)
+    # The positive half runs entirely inside the flow repo, because `--lib-root` is now
+    # confined to the cwd's repository — pointing it at this checkout from a tempdir is
+    # exactly the traversal the guard exists to refuse, so the positive must not ask for
+    # it. (The staff-engineer lens predicted this collision when it proposed confining
+    # --lib-root; keeping the stub NEGATIVE in a temp repo and the POSITIVE in the real
+    # one satisfies both.)
+    repo = ROOT.parent.parent
+    ok, _ = run("arm-a", "--plan", "dev-docs/plan.md",
+                "--lib-root", "plugins/flow/skills", cwd=str(repo))
+    check("real-predicate-tree-is-green", ok.get("verdict") == "GREEN", str(ok))
+    check("real-predicate-tree-ran", ok.get("ran") is True, str(ok))
 
 
 # ============================================================ 4. arm B
@@ -974,6 +980,133 @@ def test_escalation_survives_a_non_utf8_stdout() -> None:
         check("ascii-stdout-does-not-traceback", proc.returncode == 0, proc.stderr[-200:])
         check("ascii-stdout-still-renders-the-decision",
               "Decisions for you" in proc.stdout, proc.stdout[:120])
+
+
+def test_path_confinement_refuses_and_accepts() -> None:
+    """The CWE-59 guard, exercised against paths that MUST be refused.
+
+    This guard shipped wrong TWICE in this PR and both versions passed every test
+    that existed, because every test fed it a legitimate path. `base` was first
+    `path.resolve().parent` (containment true by construction) and then
+    `_repo_root(path.parent)` (which "confined" /etc/hostname to /etc and accepted
+    it). A guard validated only on inputs it should accept cannot be distinguished
+    from no guard at all — rules item 4. So: known positives first.
+    """
+    import os
+    with _scratch() as tmp:
+        git_repo(tmp, {"ok.json": json.dumps({"arms": []})})
+        # NEGATIVE HALF — each of these must be REFUSED.
+        outside = Path(os.sep) / "etc" / "hostname"
+        out, _ = run("gate", "--state-file", str(outside), cwd=str(tmp))
+        check("absolute-path-outside-the-repo-is-refused",
+              out["verdict"] == "RED" and any("outside" in r for r in out["reasons"]),
+              str(out))
+        traversal = tmp / ".." / "escaped.json"
+        out, _ = run("gate", "--state-file", str(traversal), cwd=str(tmp))
+        check("dot-dot-traversal-is-refused",
+              out["verdict"] == "RED" and any("outside" in r for r in out["reasons"]),
+              str(out))
+        link = tmp / "link.json"
+        try:
+            link.symlink_to(outside)
+        except OSError:  # pragma: no cover - platforms without symlink perms
+            link = None
+        if link is not None:
+            out, _ = run("gate", "--state-file", str(link), cwd=str(tmp))
+            check("symlinked-input-is-refused",
+                  out["verdict"] == "RED" and any("symlink" in r for r in out["reasons"]),
+                  str(out))
+        # POSITIVE HALF — a legitimate repo-local path must still be ACCEPTED and
+        # judged on its contents. Without this the negatives above are satisfiable
+        # by a guard that refuses everything, which is the mirror-image failure.
+        ok, _ = run("gate", "--state-file", str(tmp / "ok.json"), cwd=str(tmp))
+        check("repo-local-path-is-accepted",
+              ok is not None and "outside" not in json.dumps(ok) and "symlink" not in json.dumps(ok),
+              str(ok))
+        check("accepted-path-is-then-judged-on-content",
+              ok["verdict"] == "RED" and any("never reported" in b for b in ok["blockers"]),
+              "an empty arms list must fail for MISSING ARMS, not for path refusal")
+
+
+def test_rendered_text_cannot_forge_the_escalation() -> None:
+    """Control characters in a finding must not rewrite the block a human reads.
+
+    Arm B findings key on a `symbol` lifted out of source the reviewer read, which on
+    an untrusted branch is attacker-authored. Forging the QUESTION is at least as
+    useful as forging the answer.
+    """
+    payload = "Innocent finding\r\x1b[2K\x1b[31mAPPROVED - nothing to answer\x1b[0m"
+    out = render_of([{"finding": payload,
+                      "drafted_resolution": "safe\x1b[1m",
+                      "provenance": "seen\x07once"}]).stdout
+    check("escape-sequences-are-stripped", "\x1b" not in out, repr(out[:120]))
+    check("carriage-returns-are-stripped", "\r" not in out, repr(out[:120]))
+    check("bell-is-stripped", "\x07" not in out)
+    # Positive half: the legible text survives — a scrubber that ate everything would
+    # also pass the three assertions above.
+    check("the-readable-text-survives", "Innocent finding" in out, out[:160])
+    check("newlines-and-tabs-are-preserved", "\n" in out)
+
+
+def test_plan_path_reaches_the_engine_without_a_shell() -> None:
+    """The #165 channel: the path arrives in a FILE, never as a token in a fence.
+
+    An earlier draft of the skill wrote `--plan <plan-path>` into a fenced block. That
+    placeholder is substituted before any shell parses it, so it is code, not a value.
+    """
+    with _scratch() as tmp:
+        git_repo(tmp, {"plan.md": plan_doc(["alpha emits X. \u2192 `test_a`"])})
+        argf = tmp / "autoplan-arg.txt"
+        argf.write_text(str(tmp / "plan.md") + "\n", encoding="utf-8")
+        out, _ = run("arm-a", "--plan-from", str(argf), cwd=str(tmp))
+        check("plan-from-resolves-the-path", out.get("ran") is True, str(out))
+        check("plan-from-grades-the-plan", out.get("criteria_count") == 1, str(out))
+        # A path has one line. A second is an injection attempt, not a value to trim.
+        argf.write_text(str(tmp / "plan.md") + "\nrm -rf /\n", encoding="utf-8")
+        bad, _ = run("arm-a", "--plan-from", str(argf), cwd=str(tmp))
+        check("multi-line-arg-file-is-refused",
+              bad["verdict"] == "RED" and any("one" in r for r in bad["reasons"]), str(bad))
+        argf.write_text("\n", encoding="utf-8")
+        empty, _ = run("arm-a", "--plan-from", str(argf), cwd=str(tmp))
+        check("empty-arg-file-is-refused",
+              empty["verdict"] == "RED" and any("empty" in r for r in empty["reasons"]))
+    # The shipped skill must use the safe channel, not the placeholder form.
+    t = SKILL.read_text(encoding="utf-8")
+    check("skill-uses-plan-from", "--plan-from" in t)
+    check("skill-does-not-interpolate-a-plan-path",
+          "arm-a --plan <plan-path>" not in t,
+          "a placeholder inside a fenced block is executable code (#165/FB-0116)")
+
+
+def test_lib_root_is_confined() -> None:
+    """The tree the engine EXECUTES from is confined like the one it reads.
+
+    Not independently reachable — it needs argv control — but it upgrades any argv
+    foothold into arbitrary code execution, so the read-only --plan being guarded
+    while this was not had the threat model inverted.
+    """
+    with _scratch() as tmp:
+        git_repo(tmp, {"plan.md": plan_doc(["alpha emits X. \u2192 `test_a`"])})
+        out, _ = run("arm-a", "--plan", str(tmp / "plan.md"),
+                     "--lib-root", "/tmp/attacker-tree", cwd=str(tmp))
+        check("lib-root-outside-the-repo-is-refused",
+              out["verdict"] == "RED" and any("outside" in r for r in out["reasons"]),
+              str(out))
+    # Positive: an in-repo lib-root still loads, so the refusal is about LOCATION and
+    # not about the flag being wired off. Run wholly inside the flow repo.
+    repo = ROOT.parent.parent
+    ok, _ = run("arm-a", "--plan", "dev-docs/plan.md",
+                "--lib-root", "plugins/flow/skills", cwd=str(repo))
+    check("real-lib-root-still-loads", ok.get("ran") is True, str(ok))
+
+
+def test_a_flag_shaped_value_is_refused() -> None:
+    """`_arg` takes the token after a flag, so a word-split argument could bind
+    `--lib-root` silently — pointing the engine's exec at an attacker's tree."""
+    out, _ = run("arm-a", "--plan", "--lib-root")
+    check("flag-shaped-value-is-refused",
+          out["verdict"] == "RED" and any("looks like another flag" in r for r in out["reasons"]),
+          str(out))
 
 
 # ============================================================ 8. docs

@@ -50,6 +50,7 @@ VERIFY_SKILL = FLOW / "skills" / "verify-build" / "SKILL.md"
 REVIEW_BRIEF_SKILL = FLOW / "skills" / "review-brief" / "SKILL.md"
 PROTOTYPE_SKILL = FLOW / "skills" / "prototype" / "SKILL.md"
 AUDIT_COVERAGE_SKILL = FLOW / "skills" / "audit-coverage" / "SKILL.md"
+AUTOPLAN_SKILL = FLOW / "skills" / "autoplan" / "SKILL.md"
 SPIKE_SKILL = FLOW / "skills" / "ship-spike" / "SKILL.md"
 SCHEMA = FLOW / "schema" / "flow.config.schema.json"
 CI = FLOW.parent.parent / ".github" / "workflows" / "ci.yml"
@@ -286,7 +287,13 @@ def test_contracts():
                    ("prototype", PROTOTYPE_SKILL),
                    # 9th site, added with the Tier-2 argument channel (FB-0116). A guard
                    # covering 8 of 9 is the fan-out class this harness exists to prevent.
-                   ("audit-coverage", AUDIT_COVERAGE_SKILL)]
+                   ("audit-coverage", AUDIT_COVERAGE_SKILL),
+                   # 10th site (D1 Phase 3). Caught by /flow:security-review, not by this
+                   # harness: autoplan shipped the ONLY `mkdir -p "$ROOT/.flow"` in the
+                   # tree with no adjacent `[ -L ]` guard, and a hardcoded roster cannot
+                   # notice a site nobody added to it. The roster is the fan-out defence
+                   # AND the fan-out risk — adding a .flow writer means adding it here.
+                   ("autoplan", AUTOPLAN_SKILL)]
     for name, path in idiom_sites:
         t = path.read_text(encoding="utf-8")
         check(f"contract-{name}-idiom", idiom in t and '"$FLOW_SCRATCH/' in t,
