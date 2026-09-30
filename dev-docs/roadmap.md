@@ -1760,6 +1760,37 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 
 ## § Exploration
 
+### A generated, read-only Notion mirror of flow's project state — parked, not abandoned (2026-09-30, Ben)
+
+**Surfaces when:** the program's stopping point (§ Now, top) is reached and Ben sets the next
+front, OR `/flow:land` is next restructured (an earlier design draft hooked regeneration there
+before Ben's own design change moved it to a GitHub Actions workflow on merge-to-`main` instead —
+so `/flow:land` is no longer a dependency, but it was once the anchor point and is the natural
+place a future worker would look first), OR Ben decides Notion is worth a slot again.
+
+Full design (694 lines: verified API facts, page model, size/limits handling, a loud-failure
+contract, read-only enforcement, ~60 acceptance criteria) lives in
+[`dev-docs/handoffs/notion-generated-surface.md`](handoffs/notion-generated-surface.md) — read
+that first, not this entry. **Never executed:** no `tools/notion-publish/`, no workflow file, no
+plugin artifact. The never-merged branch holding the work is
+`conductor/notion-read-only-generated-surface` (head `6b7d29a`) — it is not deleted and is where
+a resuming worker should start, not from scratch. Recommendation throughout: ship nothing to the
+plugin — 100% repo-local dev tooling, zero `plugins/flow/**` changes.
+
+**Four open calls were unresolved at park** (full detail in the handoff's §10): case-study
+cadence (minor-version bump vs. hand-tagged milestone), hardening the secret-blocking hook (a
+pre-existing, separable gap — not blocking this feature specifically), whether a verbatim
+per-PR history log actually satisfies "the progression narrative" the design asks for (the
+weakest call in the plan, left for Ben rather than inherited), and whether to merge
+verified-offline-only or hold for one live publish.
+
+**The one dependency this can never resolve on its own: `NOTION_TOKEN`.** It is a GitHub Actions
+repo secret Ben must create and is **never** pasted into chat or committed to any file — the
+repo's secret-blocking hook is filename-based only and will not catch a token sitting in an
+ordinary `.md` or `.py` (`research/orchestrator-field-manual.md` § 4 records this same
+constraint independently). Ben's own priority statement on the setup: explicitly low, park it,
+don't chase him for it.
+
 ### Claude Code's native multi-agent primitives vs. Conductor orchestration (2026-09-29, orchestrator seat)
 
 **Surfaces when:** the stopping point above is reached and orchestration itself is next up for
