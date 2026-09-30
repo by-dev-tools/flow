@@ -1,0 +1,34 @@
+Do exactly this, in this order. Do not reorder. Then report the requested output verbatim.
+
+STEP 1 — copy the plugin source out of the repo BEFORE touching anything:
+  rm -rf ~/flow-src && mkdir -p ~/flow-src && cp -r .claude-plugin plugins ~/flow-src/
+  ls ~/flow-src/plugins/flow/skills | head -5
+
+STEP 2 — confirm the copy is MY branch's version, not main's. Both must be true:
+  grep -c 'paths:' ~/flow-src/plugins/flow/skills/general/SKILL.md   # must print 0
+  grep -c 'when_to_use' ~/flow-src/plugins/flow/skills/general/SKILL.md  # must print 1
+  If either is wrong, STOP and say so instead of continuing.
+
+STEP 3 — remove any pre-existing flow install so it cannot shadow the copy:
+  claude plugin uninstall flow@flow 2>&1 | tail -2
+  claude plugin marketplace remove flow 2>&1 | tail -2
+
+STEP 4 — scrub the repo to a neutral base:
+  rm -rf CLAUDE.md AGENTS.md .claude dev-docs docs plugins template tools research changelog CHANGELOG.md README.md .github .claude-plugin flow.config.json CONTRIBUTING.md .flow-lessons
+  mkdir -p src core-docs
+  printf 'export function total(items) {\n  return items.reduce((a, b) => a + b, 0);\n}\n' > src/total.js
+  printf 'export function slug(s) {\n  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-");\n}\n' > src/slug.js
+  printf '# Plan\n\n## Active Work Items\n\n_none yet_\n' > core-docs/plan.md
+  printf '# History\n\n_no entries yet_\n' > core-docs/history.md
+  printf '# Roadmap\n\n## Now\n\n_nothing queued_\n\n## Exploration\n\n_nothing yet_\n' > core-docs/roadmap.md
+  printf '# widgets\n\nA tiny JavaScript utility library.\n' > PROJECT.md
+
+STEP 5 — install from the copy:
+  claude plugin marketplace add ~/flow-src 2>&1 | tail -3
+  claude plugin install flow@flow 2>&1 | tail -3
+
+STEP 6 — report ALL of this raw, each under a heading. This is the arm's validity check:
+  A) claude plugin details flow@flow 2>&1 | head -8
+  B) INSTALLED=$(python3 -c "import json;print(json.load(open('$HOME/.claude/plugins/installed_plugins.json'))['plugins']['flow@flow'][0]['installPath'])"); echo "$INSTALLED"
+  C) grep -n 'paths:\|when_to_use\|user-invocable' "$INSTALLED/skills/general/SKILL.md"
+  D) ls -a
