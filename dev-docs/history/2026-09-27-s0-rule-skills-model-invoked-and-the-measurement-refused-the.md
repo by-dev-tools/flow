@@ -193,10 +193,7 @@ than by version string — the FB-0107 dogfooding trap, one layer out.
   very budget, and finding 3 says the *name* does the work while the description "barely registers". Paying
   4× for the variable the measurement exonerated, in the budget it implicated, is the shape of a change made
   because the deeper cause is out of reach. Trimmed to 2.2×, which is the cost of the trigger clause itself
-  and no more. **`tools/harness_audit/` now counts `when_to_use`** — it counted only `description`, so the
-  instrument that exists to police always-on weight was under-reporting it by ~1,015 chars on the day the
-  weight jumped.
-- **`[UNCHECKED]` reserved for the unactionable, not "anything I could not see".** The first draft emitted it
+  and no more. **`tools/harness_audit/` now counts `when_to_use`** — it counted only `description`, so the one instrument whose job is to police always-on weight was under-reporting it by **871 chars** on the day the weight jumped. That number is measured (22,691 → 23,562 across skills + agents) and pinned by a CI-wired eval; the first draft asserted "~1,015" from an estimate, which is the same unverified-number habit this entry is about. Found by `/flow:audit-coverage` as an undeclared change.** The first draft emitted it
   for three *consumer-fixable* conditions (`CLAUDE_PLUGIN_ROOT` unset, stale install, no `python3`) — while
   this same file already reports that shape as `[WARN] … UNCHECKED, not clean` at four other sites. That
   would have put consumers below `[READY]` over conditions they could fix, and left two spellings of one

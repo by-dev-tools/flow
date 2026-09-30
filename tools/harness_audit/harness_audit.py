@@ -159,7 +159,8 @@ def _extract_always_on_listing(text: str) -> str:
     **`when_to_use` counts (FB-0124).** Claude Code appends it to `description` in the skill
     LISTING and counts it toward the same 1,536-char listing cap, so it renders every session
     exactly as `description` does. Counting only `description` under-reported this repo's own
-    always-on weight by ~1,015 chars the day `when_to_use` was introduced -- an accountant
+    always-on weight by **871 chars** (measured: 22,691 -> 23,562 across skills + agents) the
+    day `when_to_use` was introduced -- an accountant
     that misses a new always-on field on the day the weight jumps is the FB-0010 fan-out
     class aimed at the instrument. Flagged by /simplify's altitude lens.
     """
