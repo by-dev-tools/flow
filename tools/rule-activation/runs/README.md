@@ -54,7 +54,7 @@ in the history entry).
 |---|---|
 | `aggregate-20260927.json` | the full scored output, per session: model, turn-1 `Skill` calls, sentinels, control status |
 | `sentinel-nonces-20260927.json` | the per-rule nonces injected into the probe bodies — needed to interpret a transcript |
-| `probe-workspaces-20260927.txt` | the Conductor workspace ids the probes ran in (archived 2026-09-30) |
+| `probe-workspaces-20260927.txt` | the seven Conductor workspace ids, their branches, and the read-only audit of each one taken before archiving them on 2026-09-30 |
 
 ## Re-running the design, not just the scoring
 
