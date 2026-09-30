@@ -77,10 +77,10 @@ def doc_union_wiring(block: str) -> dict:
     # TESTDIRS is now a NAMED literal the doc branch reuses, so the bespoke "dig it back out of
     # the DOCF line" regex this used to need is gone -- and EXCL is COMPOSED from it, so the two
     # cannot drift apart. Reconstruct EXCL the way the shell does rather than reading a literal.
-    testdirs = _sq(block, "TESTDIRS")
-    excl_tail = re.search(r'^EXCL="\$TESTDIRS"\'([^\']*)\'', block, re.M)
-    assert excl_tail, "EXCL is no longer composed from TESTDIRS — re-read the block before trusting this"
-    return {"sp": sp.group(1), "excl": testdirs + excl_tail.group(1),
+    testdirs, testfiles = _sq(block, "TESTDIRS"), _sq(block, "TESTFILES")
+    excl_tail = re.search(r'^EXCL="\$TESTDIRS\|\$TESTFILES"\'([^\']*)\'', block, re.M)
+    assert excl_tail, "EXCL is no longer composed from TESTDIRS|TESTFILES — re-read the block"
+    return {"sp": sp.group(1), "excl": testdirs + "|" + testfiles + excl_tail.group(1),
             "builtin": _sq(block, "DOC_BUILTIN"), "doc_excl": testdirs,
             "unions": UNION_SIG in block}
 

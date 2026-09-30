@@ -621,8 +621,15 @@ check("the caller-facing description carries the union rule",
       "it has to be in the description a caller sees")
 check("...and it carries the measured number, not a bare recommendation",
       "+18pp" in _front and "80%" in _front and "100%" in _front, _front[-400:])
-check("...and it states BOTH diff-mode datapoints, not just the zero",
-      "+0pp" in _front and "+30pp" in _front,
+# The datapoints moved OUT of the frontmatter into the BODY: `description:` is always-loaded and
+# its job is routing, not carrying a measurement changelog (staff-review's design-engineer lens,
+# citing tools/harness_audit's always-loaded classification). The claim is unchanged and still
+# pinned -- the frontmatter keeps the conclusion, the body keeps the numbers behind it.
+check("the frontmatter states the CONCLUSION without the changelog",
+      "INPUT-DEPENDENT" in _front and "+0pp" not in _front,
+      "the routing field should carry the call, not the measurement history")
+check("...and the body states BOTH diff-mode datapoints, not just the zero",
+      "+0pp" in skill and "+30pp" in skill,
       "diff mode measured +0pp on one input (3 runs, identical gaps) and +30pp on a second "
       "(#159 with the doc slot set, 2 runs, disjoint gaps). Shipping only the zero lets 'no "
       "gain' read as the reason Step 2 is single-pass, and that premise is false — CV1 "

@@ -17,11 +17,8 @@ description: >
   RUN IT MORE THAN ONCE IN SOURCE MODE AND UNION THE FINDINGS — measured, +18pp
   (union 80% -> 100% across 4 runs vs an 82% single-run mean). Union is safe here
   BECAUSE precision is unblemished across every measured run: unioning independent
-  runs can add true positives and, measured, adds no noise. Diff mode measured +0pp
-  on one input (three runs, identical gaps) and +30pp on a second (#159 with the doc
-  slot set: two runs, disjoint gaps, union 60%), so diff-mode variance is
-  INPUT-DEPENDENT. /flow:ship Step 2 stays a single pass on cost grounds, not because
-  the gain was measured at zero.
+  runs can add true positives and, measured, adds no noise. Diff-mode variance is
+  INPUT-DEPENDENT (measured both ways; see the body), so ship Step 2 stays one pass.
 disable-model-invocation: false
 context: fork
 agent: auditor
@@ -126,6 +123,7 @@ fi
 # matches everything and silently excludes every file (measured: the whole gate printed
 # SKIPPED). The eval's paired positives are what caught it.
 TESTDIRS='(^|/)(test|tests|__tests__|__fixtures__|fixtures|evals|spec|specs)/'
+TESTFILES='\.(test|spec)\.'
 # Root anchor (FB-0074) — see the criteria block above. Resolve BEFORE any relative read;
 # an unresolvable root is ROOT-UNRESOLVED, never the SKIPPED line.
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
@@ -258,7 +256,7 @@ if [ -n "$SRC" ]; then
     *) unres "'$SRC' resolves to $ABS, which is OUTSIDE the repo under review ($ROOTP). Refused." ;;
   esac
   # Build/vendor/test paths a prototype tree carries. Tests are not the built behavior.
-  SEXCL='(^|/)(\.git|node_modules|dist|build|vendor|__pycache__|\.next|coverage)/|'"$TESTDIRS"'|\.(test|spec)\.'
+  SEXCL='(^|/)(\.git|node_modules|dist|build|vendor|__pycache__|\.next|coverage)/|'"$TESTDIRS|$TESTFILES"
   if [ "$KIND" = file ]; then
     # A SINGLE NAMED FILE IS TAKEN VERBATIM, NEVER PATTERN-FILTERED. This is load-bearing,
     # not laziness. The shared sourceFilePatterns default used by the diff block above matches
@@ -367,7 +365,7 @@ PLANDOC=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAND
 SP=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
 [ -z "$SP" ] && SP='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
 # Exclude test/fixture/doc paths from the BEHAVIOR diff (tests are not new behavior).
-EXCL="$TESTDIRS"'|\.(test|spec)\.|(^|/)docs?/|\.md$'
+EXCL="$TESTDIRS|$TESTFILES"'|(^|/)docs?/|\.md$'
 # CV1 — BEHAVIOUR-BEARING PROSE. A .md path never matched $SP in the first place, so EXCL's .md clause
 # was belt-and-braces: this is an INCLUSION change, not an exclusion edit. Flow ships PROMPTS --
 # a SKILL.md is deployed surface by CLAUDE.md's own rule -- so the gate was structurally blind to
@@ -385,7 +383,7 @@ DOC_BUILTIN='(^|/)(skills|agents|rules)/.*\.md$'
 # is empty and the gate reads FEWER files while looking healthy -- the FB-0008 silent-skip class on
 # the one predicate whose false negative costs a gate.
 if [ -n "$BBDP" ]; then
-  echo "" | grep -qE "$BBDP" 2>/dev/null; [ $? -gt 1 ] && { echo "[audit-coverage] WEAKENED · DOC-PATTERN-INVALID — behaviorBearingDocPatterns is not a valid extended regex, so behaviour-bearing prose was NOT selected by it and this run is blind to whatever it was meant to add. Fix the slot; this is NOT a clean pass."; BBDP=""; }
+  echo "" | grep -qE "$BBDP" 2>/dev/null; [ $? -gt 1 ] && { echo "[audit-coverage] WEAKENED · DOC-SLOT-INVALID — behaviorBearingDocPatterns is not a valid extended regex, so behaviour-bearing prose was NOT selected by it and this run is blind to whatever it was meant to add. The value was: $BBDP — fix the slot; this is NOT a clean pass."; BBDP=""; }
 fi
 ALLF=$( { git diff "origin/$BASE..HEAD" --name-only 2>/dev/null; git diff HEAD --name-only 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u )
 FILES=$(printf '%s\n' "$ALLF" | grep -E "$SP" | grep -vE "$EXCL")
@@ -412,9 +410,26 @@ DROPPED=$(printf '%s\n' "$ALLF" | grep -E "$DOCALL" | grep -vxF "$FILES")
 DROPN=$(printf '%s\n' "$DROPPED" | grep -c .)
 if [ "$DROPN" -gt 0 ]; then
   if [ -n "$BBDP" ]; then
-    echo "[audit-coverage] WEAKENED · DOC-BLIND — $DROPN changed file(s) carry prose that may be deployed surface and were NOT read: $(printf '%s' "$DROPPED" | tr '\n' ' '). Your behaviorBearingDocPatterns did not select them — they are doc-shaped by flow's built-in suggestion, or match your pattern but sit under a test path. Widen the slot if they are deployed surface. This run is blind to them; it is NOT a clean pass over them."
+    # TWO CAUSES, OPPOSITE FIXES -- so they are never merged into one disjunction. A dropped
+    # file that MATCHES your slot was removed by the test-path filter, which takes no config:
+    # widening the slot cannot help, and telling you to widen it sends you round a loop that
+    # ends in a byte-identical warning. One that does NOT match is a genuine gap in the slot,
+    # where widening IS the fix. The block already knows which is which; handing the reader a
+    # disjunction to re-derive was the bug.
+    DROP_MISS=$(printf '%s\n' "$DROPPED" | grep -vE "$BBDP")
+    DROP_TEST=$(printf '%s\n' "$DROPPED" | grep -E "$BBDP")
+    if [ -n "$DROP_MISS" ]; then
+      echo "[audit-coverage] WEAKENED · DOC-BLIND — $(printf '%s\n' "$DROP_MISS" | grep -c .) changed file(s) carry prose that may be behaviour rather than documentation, and were NOT read: $(printf '%s' "$DROP_MISS" | tr '\n' ' '). Your behaviorBearingDocPatterns does not match them. Widen it if they are deployed surface. This run is blind to them; it is NOT a clean pass over them."
+    fi
+    if [ -n "$DROP_TEST" ]; then
+      echo "[audit-coverage] WEAKENED · DOC-BLIND — $(printf '%s\n' "$DROP_TEST" | grep -c .) changed file(s) match your behaviorBearingDocPatterns but sit under a test/fixture path and were NOT read: $(printf '%s' "$DROP_TEST" | tr '\n' ' '). That exclusion is BY DESIGN and takes no configuration — widening the slot will not change it, because a fixture is not deployed surface. Move the file if it really is."
+    fi
   else
-    echo "[audit-coverage] WEAKENED · DOC-BLIND — $DROPN changed file(s) carry prose that may be deployed surface and were NOT read: $(printf '%s' "$DROPPED" | tr '\n' ' '). Matched by a built-in suggestion, not your project's declaration. On a project whose behaviour lives in markdown this is NOT a completeness gate over that behaviour — set flow.config.json.behaviorBearingDocPatterns to have them read."
+    # Name the value, not just the slot. The gate already holds the pattern that would fix the
+    # blind spot; making the reader go find it is friction on a once-per-project fact. And say
+    # what the built-in does NOT know -- its scope is three directory names, so prose anywhere
+    # else produces no warning at all, and a consumer must not read silence as coverage.
+    echo "[audit-coverage] WEAKENED · DOC-BLIND — $DROPN changed file(s) carry prose that may be behaviour rather than documentation, and were NOT read: $(printf '%s' "$DROPPED" | tr '\n' ' '). flow.config.json.behaviorBearingDocPatterns is NOT SET, so these were matched against a built-in guess; set the slot to that guess — $DOC_BUILTIN — or to your own extended regex, to have them read. NOTE the guess only knows skills/, agents/ and rules/: if your deployed prose lives anywhere else, NOTHING here will mention it, so do not read silence as coverage."
   fi
 fi
 # THE SKIP LINE IS GATED ON THE BASE HAVING RESOLVED. Every git call above ends 2>/dev/null,
@@ -473,14 +488,15 @@ if [ -n "$FILES" ]; then
   # cwd-relative tier is reached only after confirming the cwd really is a flow checkout --
   # an ungated relative path would run whatever plugins/flow/... happens to sit under the
   # cwd this fork inherited.
-  EB="${CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/evidence-budget.py"
+  EB=""; [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && EB="${CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/evidence-budget.py"
   [ -f "$EB" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && EB=plugins/flow/skills/audit-coverage/lib/evidence-budget.py; }
   if [ -f "$EB" ] && command -v python3 >/dev/null 2>&1; then
     printf '%s\n' "$FILES" | python3 "$EB" --base "origin/$BASE" --cap "$CAP"
   else
     # Fall back to the old shape rather than printing nothing, and SAY the budget did not run --
     # a silent fallback would reintroduce the alphabetical blindness with no way to notice.
-    echo "[audit-coverage] WEAKENED · BUDGET-UNAVAILABLE — evidence-budget.py was not reachable, so the cap is applied by simple truncation and files late in the list may be entirely absent. This is NOT a clean pass."
+    if [ -f "$EB" ]; then EBWHY="python3 is not on PATH"; else EBWHY="evidence-budget.py was not found at $EB"; fi
+    echo "[audit-coverage] WEAKENED · BUDGET-UNAVAILABLE — $EBWHY, so the evidence cap is applied by simple truncation and files late in the list may be entirely absent. Run /flow:doctor to check the install. A clean result here is PARTIAL — say so, and recommend splitting the PR. This is NOT a clean pass."
     DIFFTXT=$(printf '%s\n' "$FILES" | while IFS= read -r f; do
       [ -n "$f" ] || continue
       git diff "origin/$BASE..HEAD" -- "$f" 2>/dev/null
@@ -587,7 +603,7 @@ The house rule this follows, with the full mechanism and the two tiers, is
 
   `Note: <the control line, verbatim> — this audit is weaker than a normal one, not equal to it.`
 
-  Append it whether or not you flag anything. "I checked every hunk" and "I checked the ones I happened to notice" must not read alike. The instances today, all carrying the token: **`BASE-UNRESOLVED`** (the default branch does not resolve, so the diff is empty for a reason that is not "nothing changed"), **`INVENTORY-UNAVAILABLE`** (no deterministic hunk checklist could be built, so Stage 1 enumerates unaided), **`INVENTORY-EMPTY`** (one or more listed files produced no hunks — a binary file, a `-diff` gitattribute, a mode-only change — so their behavior is absent from the checklist), **`INVENTORY-TRUNCATED`** (the hunk cap was reached, so the checklist is partial), **`TRUNCATED`** and **`SOURCE-TRUNCATED`** (behavior past the evidence cap was never read). **`DOC-BLIND`** (changed files carry prose that may be deployed surface and were not read — see `behaviorBearingDocPatterns`), **`DOC-PATTERN-INVALID`** (that slot is not a valid extended regex, so behaviour-bearing prose was not selected), **`BUDGET-UNAVAILABLE`** (the evidence budgeter was unreachable, so the cap fell back to simple truncation and files late in the list may be absent). *Two of these shipped in the same release that added this bullet and were initially left unnamed here — which is the bullet's own argument. **That sentence used to claim the list was "pinned by an eval rather than by this sentence"; it was not — no such eval existed, and the list stayed complete by memory alone.** `evals/run_coverage_vocab_evals.py` now derives the emitter's tokens from the shipped source and fails if any is missing here, so the claim is true as of v1.5x.*. Plus one MODEL-emitted instance added in v1.50.0: `FILTERS-ADVISORY`, which path 2 of `## Argument` requires when the reviewer read the source itself rather than the evidence block. It is listed separately because the emitter does not produce it -- the distinction this bullet's own footnote warns about.
+  Append it whether or not you flag anything. "I checked every hunk" and "I checked the ones I happened to notice" must not read alike. The instances today, all carrying the token: **`BASE-UNRESOLVED`** (the default branch does not resolve, so the diff is empty for a reason that is not "nothing changed"), **`INVENTORY-UNAVAILABLE`** (no deterministic hunk checklist could be built, so Stage 1 enumerates unaided), **`EVIDENCE-EMPTY`** (files were selected but produced zero diff bytes — all new/untracked, or this repo's diff rendering could not be parsed; either way no evidence was audited), **`INVENTORY-EMPTY`** (one or more listed files produced no hunks — a binary file, a `-diff` gitattribute, a mode-only change — so their behavior is absent from the checklist), **`INVENTORY-TRUNCATED`** (the hunk cap was reached, so the checklist is partial), **`TRUNCATED`** and **`SOURCE-TRUNCATED`** (behavior past the evidence cap was never read). **`DOC-BLIND`** (changed files carry prose that may be deployed surface and were not read — see `behaviorBearingDocPatterns`), **`DOC-SLOT-INVALID`** (that slot is not a valid extended regex, so behaviour-bearing prose was not selected), **`BUDGET-UNAVAILABLE`** (the evidence budgeter was unreachable, so the cap fell back to simple truncation and files late in the list may be absent). *Two of these shipped in the same release that added this bullet and were initially left unnamed here — which is the bullet's own argument. **That sentence used to claim the list was "pinned by an eval rather than by this sentence"; it was not — no such eval existed, and the list stayed complete by memory alone.** `evals/run_coverage_vocab_evals.py` now derives the emitter's tokens from the shipped source and fails if any is missing here, so the claim is true as of v1.55.0. Plus one MODEL-emitted instance added in v1.50.0: `FILTERS-ADVISORY`, which path 2 of `## Argument` requires when the reviewer read the source itself rather than the evidence block. It is listed separately because the emitter does not produce it -- the distinction this bullet's own footnote warns about.
 - **`PLAN-PREDATES-BRANCH` is NOT a weakening — it is the opposite, and it carries no `WEAKENED ·` token.** It means the plan doc was never touched on this branch, so **no** declared criterion was written against **any** hunk. Your evidence is complete; the *declared set* is empty. Treat every behavior as undeclared until a criterion is named for it, and say so — this is the one case where a long list of findings is the correct output rather than a suspicious one.
 - Otherwise, run **Stage 1** and then **Stage 2** below, in that order, and show both. They are the same single judgment this skill has always applied — `**Undeclared change**` from your system prompt, nothing added — split into the two steps it was always really doing.
 

@@ -43,32 +43,75 @@ import sys
 # ARG_MAX. Output is asserted byte-identical to the per-file concatenation by the evals.
 _CHUNK = 400
 
+# PIN THE RENDERER, do not inherit it. Batching means parsing git's own per-file header to key
+# hunks back to paths, which makes this code depend on the SHAPE of that header -- and the shape
+# is user-configurable. Measured on git 2.50.1: with `diff.noprefix=true` (an ordinary setting)
+# the header is `diff --git app.py app.py`, no path matches, every blob stays empty, the
+# under-cap fast path prints NOTHING, and the block emits `----- diff -----` followed by silence
+# with zero WEAKENED tokens -- a healthy-looking gate over no evidence at all. `mnemonicPrefix`
+# (`c/… w/…`), `color.diff=always` and `GIT_EXTERNAL_DIFF` are the same shape. The per-file loop
+# this replaced concatenated raw output and was prefix-agnostic, so the regression arrived WITH
+# the optimisation. These flags override the config rather than trusting it.
+_PIN = ["--no-pager", "diff", "--no-ext-diff", "--no-color",
+        "--src-prefix=a/", "--dst-prefix=b/"]
+
+# A path that could make the header ambiguous is diffed one at a time instead of keyed out of a
+# batch. ` b/` inside a filename defeats a suffix match (`zoo b/a.md` ends with ` b/a.md`, so its
+# hunk would be charged to `a.md`); whitespace makes the header unsplittable in general. Rare,
+# but the fallback costs 2 spawns for those paths only and removes the class.
+def _risky(path: str) -> bool:
+    return " b/" in path or any(c.isspace() for c in path)
+
+
+def _one(base: str, path: str) -> bytes:
+    out = b""
+    for arm in ([f"{base}..HEAD", "--", path], ["HEAD", "--", path]):
+        try:
+            r = subprocess.run(["git", *_PIN[:1], *_PIN[1:], *arm],
+                               capture_output=True, timeout=120)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if r.returncode == 0:
+            out += r.stdout
+    return out
+
 
 def _diff_all(base: str, paths: list) -> dict:
-    """{path: diff bytes} for both arms, in `paths` order, batched."""
+    """{path: diff bytes} for both arms, in `paths` order, batched where it is safe."""
     out = {f: b"" for f in paths}
+    risky = [f for f in paths if _risky(f)]
+    batch = [f for f in paths if not _risky(f)]
+    for f in risky:
+        out[f] = _one(base, f)
     for arm in ([f"{base}..HEAD", "--"], ["HEAD", "--"]):
-        for i in range(0, len(paths), _CHUNK):
-            chunk = paths[i:i + _CHUNK]
+        for i in range(0, len(batch), _CHUNK):
+            chunk = batch[i:i + _CHUNK]
+            if not chunk:
+                continue
             try:
-                p = subprocess.run(["git", "diff", *arm, *chunk],
+                r = subprocess.run(["git", *_PIN, *arm, *chunk],
                                    capture_output=True, timeout=120)
             except (OSError, subprocess.SubprocessError):
                 continue
-            if p.returncode != 0:
+            if r.returncode != 0:
                 continue
-            # Split on the per-file header git emits, and key each part back by its `b/<path>`.
-            # A path absent from the output simply contributes nothing, exactly as before.
-            for part in p.stdout.split(b"\ndiff --git "):
+            for part in r.stdout.split(b"\ndiff --git "):
                 if not part:
                     continue
                 if not part.startswith(b"diff --git "):
                     part = b"diff --git " + part
                 head = part.split(b"\n", 1)[0]
-                for f in chunk:
-                    if head.endswith(b" b/" + f.encode()):
-                        out[f] += part if part.endswith(b"\n") else part + b"\n"
-                        break
+                blob = part if part.endswith(b"\n") else part + b"\n"
+                # EXACT form first (`a/<p> b/<p>`, what the pinned prefixes produce for an
+                # ordinary modification); the suffix match is the rename arm, where the `a/`
+                # side is the OLD path and only the `b/` side is in our list.
+                hit = next((f for f in chunk
+                            if head == b"diff --git a/" + f.encode() + b" b/" + f.encode()), None)
+                if hit is None:
+                    hit = next((f for f in chunk
+                                if head.endswith(b" b/" + f.encode())), None)
+                if hit is not None:
+                    out[hit] += blob
     return out
 
 
@@ -103,6 +146,18 @@ def main(argv=None) -> int:
     blobs = _diff_all(args.base, files)
     sizes = {f: len(b) for f, b in blobs.items()}
     total = sum(sizes.values())
+
+    # NEVER PRINT SILENCE OVER A NON-EMPTY FILE LIST. If the selection named files and not one
+    # diff byte came back, the honest outcomes are "they are all untracked" and "the diff could
+    # not be read" -- and those must not render identically to a clean small diff (general.md
+    # item 4, and the reason the pinned flags above exist). Say which it might be and refuse the
+    # clean reading; the caller's prose rule routes any WEAKENED line as a weakening.
+    if total == 0:
+        print("[audit-coverage] WEAKENED · EVIDENCE-EMPTY — %d file(s) were selected but "
+              "produced zero diff bytes. Either they are all new/untracked (nothing to diff yet), "
+              "or this repo's diff rendering could not be parsed. Do NOT read this as a clean "
+              "pass: no evidence was audited." % len(files))
+        return 0
 
     if total <= args.cap:
         # UNDER THE CAP THE OUTPUT IS BYTE-IDENTICAL TO THE OLD FORM. The common case must not

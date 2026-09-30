@@ -15,7 +15,7 @@
 - **B — see it.** New `behaviorBearingDocPatterns` config slot (schema 36 → 37 slots), **empty by
   default**. When set, matching paths are unioned back into the behaviour diff *after* the source
   filter, minus test/fixture paths. Invalid and valid-but-vacuous slot values are both flagged
-  (`DOC-PATTERN-INVALID`), because a slot that compiles and matches nothing reads fewer files while
+  (`DOC-SLOT-INVALID`), because a slot that compiles and matches nothing reads fewer files while
   looking healthy.
 - **C — fit it.** `head -c` over a concatenation made files late in `sort -u` order **entirely
   invisible** once the 60 KB cap bound. Replaced with max-min fair-share allocation
@@ -111,3 +111,56 @@ one file exceeds the budget alone.
   *not* raise recall, so truncation is explicitly **not** offered as the explanation for any number
   above.
 - **Source mode**, for the `SOURCE_CAP` reason above.
+
+## What review found, and what it cost
+
+`/simplify` (4 lenses) then `/flow:staff-review` (4 lenses) after the rigor gate reported
+`rigor: missing`. Eight lenses produced three findings I would call serious, and **two of them were
+mine, introduced by this PR's own cleanups** — which is the part worth recording.
+
+**1. A partial-coverage blind spot that A could not report (`/simplify`, altitude lens).** With the
+slot set, `DOC-BLIND` was computed against the *effective* pattern, so every file the slot matched
+was in `$FILES` by construction and `$DROPPED` could only ever be empty. A slot covering `skills/`
+but forgetting `agents/` — the realistic hand-written case — produced **no warning of any kind**
+over a changed, unread `agents/*.md`. Invisible to dogfooding, because flow's own slot value is
+byte-identical to `DOC_BUILTIN`, so both paths agree in this repo forever. Now computed against
+`DOC_BUILTIN|BBDP`; a doc-shaped path either reached the reviewer or is named. That subsumed the
+~10-line vacuity block, which is deleted.
+
+**2. The batched `git diff` inherited the user's renderer (`/flow:staff-review`, staff-engineer).**
+The 24→2-spawn optimisation keys hunks off git's per-file header, and that header's shape is
+user-configurable. Measured: with `diff.noprefix=true` — an ordinary setting — no path matched,
+every blob came back empty, the under-cap fast path printed nothing, and the block emitted
+`----- diff -----` followed by **silence with zero weakening tokens**. A healthy-looking gate over
+no evidence. The per-file loop it replaced was prefix-agnostic, so *the regression arrived with the
+optimisation*. Fixed by pinning the renderer (`--no-ext-diff --no-color --src-prefix=a/
+--dst-prefix=b/ --no-pager`), hardening the keying (exact match first, suffix only for renames,
+per-file fallback for paths containing whitespace or `" b/"`), and adding an `EVIDENCE-EMPTY` floor
+so zero bytes can never render as a clean small diff. Pinned by three hostile-config eval cases.
+
+**3. A false completeness claim in consumer docs (`/flow:staff-review`, UX lens).** `workflow.md`
+said DOC-BLIND names "every changed doc-shaped file it did not read". It names only files matching
+flow's built-in guess. Measured: a changed `prompts/system.md` — this slot's *own second documented
+example* — with the slot unset produces zero warnings. A false completeness claim about the
+mechanism whose purpose is preventing false completeness claims, against this repo's own "Honest
+limitations" bar. Corrected to state the guess's scope and that silence elsewhere is not coverage.
+
+**Also mine, also found by review:** the slot-count scanner's comparison still read the count with
+`claim.split()[0]` after the matcher learned the hyphenated form, so every `37-slot` compared as a
+string against `37` and was flagged stale *whatever the number* — and my own fixture passed straight
+through it, because a broken comparison flags hyphenated forms either way. Only a correct-count
+fixture distinguishes the two. The same sweep never read `README.md` at all, which is why
+`24-slot` sat on the front page against a 37-slot schema while the check stayed green.
+
+**A near-miss with a permanent guard.** Hoisting `TESTDIRS`, a comment I wrote contained a literal
+bang-backtick *inside a bang-span*. The host's span regex is `[^` + `]+`, so one backtick ends the
+span early and silently demotes the rest of an executable gate to prose. `arg_placeholders.py`
+documented this and nothing enforced it. Now checked across every shipped skill, paired with a
+non-vacuity floor. Caught only because the evals assert files ARE read.
+
+**Deferred, all in `roadmap.md` § Next with their measurements** — most importantly the one two
+lenses found independently: Stage 1 and `auditor.md` both still instruct the reviewer that
+**doc changes are not behaviours**, so B feeds it a `SKILL.md` diff and the prompt hands it a rule
+for discarding it. That is the leading candidate explanation for the recall figures below, it
+predicts their *shape* (perfect precision, disjoint misses), and it is not fixed here: it is a
+reviewer-prompt change needing its own re-measurement.

@@ -1931,6 +1931,90 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
   to the judging prompt, and changing its verdict schema plus a ship routing path is a larger,
   separately-measurable change.
 
+- **▶ THE LIKELIEST EXPLANATION FOR CV1's RECALL NUMBER: the judgment layer still tells the
+  reviewer to discard the files the selection layer now feeds it.** Found INDEPENDENTLY by two of
+  four `/flow:staff-review` lenses (staff-engineer and push-further), which is why it leads this
+  list. `plugins/flow/skills/audit-coverage/SKILL.md`'s Stage 1 enumeration rule says "Refactors,
+  renames, formatting, comments, dependency bumps, pure-internal helpers, and **test/doc changes
+  are not behaviors**", and `plugins/flow/agents/auditor.md` carries the matching carve-out. Stage
+  1's own `NOT BEHAVIOR` template even models the disposal (`H9 test-only`). So on a repo that sets
+  `behaviorBearingDocPatterns`, CV1 hands the reviewer a `SKILL.md` diff **and the prompt hands it
+  a rule for throwing that diff away**. CV1 moved the mechanism and did not sweep the contract —
+  the fan-out class, inside the change that cites it. **It predicts the shape of the measurement,
+  not merely fits it:** perfect precision with *disjoint* misses across two runs is what you get
+  when a reviewer is deciding case-by-case whether a prose hunk is admissible at all. Note
+  `run_coverage_docblind_evals.py` pins 20+ properties and every one is about SELECTION; nothing
+  pins what the reviewer should DO with a selected `.md`. **Fix sketch** (from push-further, and it
+  is testable rather than hopeful): emit `$DOCF` — the paths that entered via the slot, which the
+  block already computes and then discards — as an informational line above the delimiter (NOT a
+  `WEAKENED ·` line), then one clause in both prompts keyed to it: for a file on that list the
+  doc-only carve-out does not apply, because the consumer has *declared* that file deployed
+  surface; a changed or added rule/instruction/contract in it is a behaviour change, while changed
+  rationale, commentary or example prose still is not. The discriminator is exactly what CV1's
+  paired prose negative already measures, so `tools/coverage-recall/` scores the upside and the
+  wording-only negative guards the over-fire. **Do this before deciding the union question below**
+  — union's cost/benefit should be measured against a reviewer that is allowed to answer.
+
+- **Finish the convergence half of DOC-BLIND: `/flow:doctor` should propose the pattern once per
+  project, not once per PR.** CV1 did the cheap half — the unset-slot warning now prints
+  `$DOC_BUILTIN` so the value is copy-pasteable instead of requiring a trip to the schema. The
+  durable half is still open: a warning that fires on every PR for a once-per-project config fact
+  is one people learn to read past, which is how a *stated* blind spot decays back into a silent
+  one. Add a `/flow:doctor` check that fires when `git ls-files` shows tracked `skills|agents|rules`
+  `.md` and the slot is unset, printing the same proposed line once — `slot_count_scan.py` is the
+  precedent for doctor reading shipped config facts. Narrow the proposal to the directory segments
+  actually present rather than the full union, and derive it from `DOC_BUILTIN` rather than
+  re-typing it (item 2).
+
+- **`DOC-BLIND` inverts the control-line family's naming grammar.** Every sibling is
+  `<SUBJECT>-<STATE-OF-THAT-SUBJECT>`: `BASE-UNRESOLVED`, `INVENTORY-EMPTY`, `INVENTORY-TRUNCATED`,
+  `SOURCE-TRUNCATED`, `ROOT-UNRESOLVED`, `JQ-MISSING`, `EVIDENCE-EMPTY`, `BUDGET-UNAVAILABLE`.
+  `DOC-BLIND` reads the other way — the docs are not blind; the *run* is blind to them — and
+  `DOC-UNREAD` is both parallel and literally what the message body says ("were NOT read").
+  **Deliberately not renamed in CV1:** ~35 occurrences across ten files including two dev-docs
+  narratives, an eval *filename* (`run_coverage_docblind_evals.py`) and its CI wiring, so the churn
+  is real and the token is not wrong, merely off-grammar. Do it with the family, not alone.
+  (`DOC-PATTERN-INVALID` → `DOC-SLOT-INVALID` WAS done in CV1: that one was a genuine prefix
+  collision — `DOC-` denoting the documents in one token and the config pattern in the other,
+  shipped in the same release — and its radius was nine occurrences.)
+
+- **A path git has to quote is silently unreadable, end to end.** With default `core.quotePath`,
+  `git diff --name-only` emits `"\303\274.md"`, so the file list carries the escaped literal, the
+  budgeter keys zero bytes for it, and DOC-BLIND will not mention it either. Pre-existing (the
+  per-file loop CV1 replaced also diffed nothing), so not a regression — but a non-ASCII `SKILL.md`
+  name is not exotic in every consumer repo, and `EVIDENCE-EMPTY` will now at least refuse the
+  clean reading. Fix is `-z` on the name-only calls plus `-c core.quotePath=false`; deferred because
+  it touches the shared file-list construction `change-inventory.py` also consumes.
+
+- **The built-in doc guess and flow's own three-surface boundary disagree about `.claude/agents/`.**
+  `DOC_BUILTIN` matches `.claude/agents/*.md`, which `CLAUDE.md` § Repository Layout classifies as
+  **project-dev infra, not deployed surface**. Most flow consumers have that directory, so the
+  guess's judgment contradicts flow's own taxonomy. Deciding whether project-dev agent definitions
+  are behaviour is a scope call on the slot's semantics, not a copy fix. Next slot revision.
+
+- **DOC-BLIND has no acknowledgement path.** A consumer who has decided a matching file is *not*
+  deployed surface sees the same line on every PR forever — alarm fatigue on a correct-by-design
+  exclusion, which is how weakening lines stop being read. Needs a design (an `acknowledged` list
+  vs. a negative pattern), not a wording tweak. After the slot has real consumer usage.
+
+- **`designLanguagePath` has no grammar for PROMPT artifacts, so control-line craft is taste
+  rather than citation.** `dev-docs/design-language.md` scopes itself to the `/flow:verify-build`
+  HTML report only. Three of CV1's staff-review findings therefore cited *observed family
+  regularity* instead of a written rule — exactly the degradation the skill's own gotcha warns
+  about. A short "§ Control-line vocabulary" (subject-predicate naming; `WEAKENED · <TOKEN>` as
+  canonical across markdown **and** JSON; the what → consequence → remediation message shape)
+  would convert them. Third instance of the roadmap's existing "designLanguagePath has no entry
+  pointing at this surface" gap.
+
+- **Two smaller CV1 leftovers.** (a) `evidence-budget.py`'s `allocate()` is pure and reusable but
+  its CLI is welded to diff mode (`--base` plus an internal `_diff_all`), so the roadmapped
+  source-mode cap fix needs a signature change rather than a call — ~6 lines either way, recorded
+  so it is not rediscovered. (b) `SKILL.md` still carries design-rationale commentary aimed at
+  neither audience (the reviewing model needs the current contract; the human invoker does not read
+  this file), including a retraction of a prior version of its own footnote. CV1 trimmed the
+  variance narration; the rest is a keep/move judgment pass over ~60 KB whose destination is
+  `dev-docs/history/`, not a mechanical edit.
+
 ## Later
 
 - **visual-significance net-delta (moved-block) detection (FB-0062 push-further).** `_diff_content_changed` in `visual-significance.py` is line-prefix-based, so a verbatim block move/reorder (same lines deleted then re-added elsewhere, zero net render delta) reads as content-changed → visually significant. It's a false-positive in the SAFE direction (costs a screenshot, never a missed regression), so not a bug — but the heuristic's real ceiling. A multiset-diff over a hunk's `+`/`-` bodies (~20 lines + a fixture) would treat a pure reorder as no-render-delta. **Surfaces when:** `_diff_content_changed` is next touched, OR a dogfood reports a pure-reorder PR flagged significant and resolving to a wasted Unknown.
@@ -1943,6 +2027,24 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 - **`## Flow run` skip-vocabulary consistency check** (PR T staff-review FOLLOW-UP) — the skip-reason vocabulary (`skipped (spike)` / `skipped (tiny)` / `uiSurface:false` / `verifyEnabled:false` / `platform library|none`) + the `<✓ / skipped (reason)>` Status-cell shape now live in `/flow:ship` §7, `/flow:ship-spike` §7, and (by reference) the dev-side `.claude/skills/ship`. PR T guards drift with a one-PR spec-walk grep; the durable fix is a `/flow:doctor` check that diffs the skip-reason token set + Status-cell convention across those surfaces. Net-new check; fold into the Check 2.5 generalization above. **Surfaces when:** the `## Flow run` table wording is edited in any ship skill.
 
 ---
+
+- **"Is this file deployed surface?" is now asked four times, by four predicates, with four
+  defaults.** The honest generalisation behind CV1: `sourceFilePatterns` answers a *language*
+  question while every consumer of it is asking a *role* question. The repo already knows this
+  shape — `plugins/flow/lib/sensitive_paths.py` exists because the stakes/routing-floor role
+  predicate needed one definition and two readers. CV1 added a fourth path-role judgment
+  (`DOC_BUILTIN` + the slot) inline in shell, with its own default and its own failure mode, rather
+  than joining that pattern. The interesting version: a project declares its deployed surface once,
+  by role and language-agnostically, and `/flow:audit-coverage`, verify-build's visual-significance
+  predicate and `/flow:spawn`'s routing floor each project from it. **Why exploration and not a
+  scoped entry:** every existing slot is a published contract, and an umbrella slot that supersedes
+  two is config churn for consumers who are fine. There is likely a non-breaking read-side-only
+  framing (a shared `lib/deployed_surface.py` that composes the existing slots and owns the
+  built-in suggestions, changing no config) — but that is a guess, and it deserves a reader who has
+  seen a third gate want the same answer. **Surfaces when:** a third gate needs a path-role
+  predicate, OR `sourceFilePatterns` is next widened for a non-code deployed surface (`.mdx`,
+  `.txt`/YAML prompts, notebook cells), OR a consumer reports DOC-BLIND firing on files that are
+  not their deployed surface.
 
 ## § Exploration
 

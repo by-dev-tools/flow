@@ -21,7 +21,6 @@ Stdlib only. Run:
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -115,17 +114,26 @@ def main() -> int:
           "so the separator check above measured nothing")
 
     # CV1's three new instances specifically, named so a regression points at the right change.
-    for tok in ("DOC-BLIND", "DOC-PATTERN-INVALID", "BUDGET-UNAVAILABLE"):
+    for tok in ("DOC-BLIND", "DOC-SLOT-INVALID", "BUDGET-UNAVAILABLE"):
         check(f"CV1 instance {tok} is both emitted and enumerated",
               tok in emitted and tok in listed,
               f"emitted={tok in emitted} listed={tok in listed}")
 
     # ...and the superseded false claim is gone, paired with the positive that a true one replaced
     # it -- deleting the sentence entirely would satisfy a bare negative.
+    # The old FALSE claim must not stand UNQUOTED. This half used to be a plain substring test
+    # whose needle contained a literal `.*`, so it could never match and the negative could never
+    # fail -- a vacuity check that was itself vacuous (found by /flow:staff-review). The claim IS
+    # still in the file, quoted inside the correction that retracts it, which is why the lookahead
+    # test is per-LINE rather than a bare absence test -- and direction-agnostic, because
+# the retraction precedes the quote on that line (a lookahead alone read it backwards).
     check("the false 'pinned by an eval' claim is corrected, not merely deleted",
           "run_coverage_vocab_evals.py" in skill
-          and "the list is now pinned by an eval rather than by this sentence.*" not in skill,
-          "the bullet must name the harness that actually pins it")
+          and all("used to claim" in ln
+                  for ln in skill.splitlines()
+                  if "pinned by an eval rather than by this sentence" in ln),
+          "the bullet must name the harness that actually pins it, and the retracted claim must "
+          "appear only inside its own retraction")
 
     print()
     if _failures:

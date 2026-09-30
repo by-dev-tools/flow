@@ -80,7 +80,7 @@ check("the shipped evidence block was extracted, not restated",
       "extraction returned a block without A or C; every case below would prove nothing")
 
 
-def scenario(tmp, label, added, cfg_extra=None, base_files=None):
+def scenario(tmp, label, added, cfg_extra=None, base_files=None, git_config=None):
     files = {"plan.md": "# Plan\n\n**Spec-walk:**\n\n- [ ] a thing\n"}
     files.update(base_files or {})
     cfg = {"defaultBranch": "main", "planPath": "plan.md"}
@@ -91,6 +91,8 @@ def scenario(tmp, label, added, cfg_extra=None, base_files=None):
               ["git", "update-ref", "refs/remotes/origin/main", "main"],
               ["git", "checkout", "-q", "-b", "work"]):
         subprocess.run(c, cwd=str(repo), capture_output=True)
+    for k, v in (git_config or {}).items():
+        subprocess.run(["git", "config", k, v], cwd=str(repo), capture_output=True)
     commit(repo, added, label)
     env = dict(os.environ)
     env["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN)
@@ -118,7 +120,7 @@ def main() -> int:
         check("A fires on a dropped doc-shaped file and NAMES it",
               "WEAKENED · DOC-BLIND" in out and "skills/x/SKILL.md" in out, out[:240])
         check("A says WHICH predicate matched (suggestion vs the project's own slot)",
-              "a built-in suggestion, not your project's declaration" in out, out[:240])
+              "matched against a built-in guess" in out, out[:300])
         check("A changes no verdict — the file list is unchanged by A",
               files_line(out) == "app.py", f"files={files_line(out)!r}")
         # PAIRED NEGATIVE: a diff with no doc-shaped file must not carry the line, or it becomes
@@ -154,12 +156,12 @@ def main() -> int:
         # project silently reads FEWER files. Validity is caught by exit code, vacuity by outcome.
         out_malformed = scenario(tmp, "b-malformed", {**SKILL, **SRC},
                                  cfg_extra={"behaviorBearingDocPatterns": "["})
-        check("a MALFORMED slot emits DOC-PATTERN-INVALID and falls back",
-              "DOC-PATTERN-INVALID" in out_malformed, out_malformed[:280])
+        check("a MALFORMED slot emits DOC-SLOT-INVALID and falls back",
+              "DOC-SLOT-INVALID" in out_malformed, out_malformed[:280])
         # A VALID-but-vacuous slot is caught by OUTCOME, not by a second bespoke check: every
         # doc-shaped file it failed to select is simply DROPPED, so DOC-BLIND names them. An
         # earlier version emitted a separate "matched NONE of the N" line under the
-        # DOC-PATTERN-INVALID token -- two meanings for one token, and it covered only the
+        # DOC-SLOT-INVALID token -- two meanings for one token, and it covered only the
         # all-or-nothing corner. `(?i)\.md$` is a PCRE-ism grep TOLERATES (warns, exits 1 = "no
         # match"), so the exit-code guard above cannot see it; this is the arm that does.
         out_vacuous = scenario(tmp, "b-vacuous", {**SKILL, **SRC},
@@ -170,7 +172,7 @@ def main() -> int:
               "a slot that compiles and matches nothing reads fewer files while looking "
               f"healthy — the unsafe direction: {out_vacuous[:320]!r}")
         check("...and it is NOT reported as a malformed pattern (the token means one thing)",
-              "DOC-PATTERN-INVALID" not in out_vacuous, out_vacuous[:280])
+              "DOC-SLOT-INVALID" not in out_vacuous, out_vacuous[:280])
 
         # THE PARTIAL-COVERAGE CASE — the regression this section exists for, found by
         # /simplify's altitude lens and reproduced before it was fixed. A hand-written slot that
@@ -194,28 +196,35 @@ def main() -> int:
               "this is the silence the line exists to prevent: doc-shaped, changed, unread, "
               f"unmentioned — {out_partial[:400]!r}")
         check("...and the warning tells the consumer it is THEIR slot that missed it",
-              "behaviorBearingDocPatterns did not select them" in out_partial,
+              "Your behaviorBearingDocPatterns does not match them" in out_partial,
               "with the slot set, blaming a 'built-in suggestion' misdirects the fix: the "
               f"actionable fact is that their own pattern is too narrow — {out_partial[:400]!r}")
         # PAIRED NEGATIVE: a slot that covers everything doc-shaped stays silent, or the three
         # checks above are satisfied by a line that always fires.
         check("a CORRECT slot is silent (the pair's negative)",
-              "DOC-BLIND" not in out_set and "DOC-PATTERN-INVALID" not in out_set,
+              "DOC-BLIND" not in out_set and "DOC-SLOT-INVALID" not in out_set,
               out_set[:240])
 
-        # FAN-OUT GUARD (general.md item 2). The doc branch reuses $TESTDIRS and EXCL is now
-        # COMPOSED from it, so the alternation exists once in this block instead of three times.
-        # Assert the composition rather than trusting it: if someone re-inlines either copy, the
-        # source filter and the doc filter can disagree about what a test path is, and the
-        # failure direction is quiet (a fixture SKILL.md enters the behaviour diff).
-        check("the test-dir alternation is spelled ONCE and both consumers compose from it",
-              BLOCK.count("(^|/)(test|tests|__tests__|__fixtures__|fixtures|evals|spec|specs)/") == 1
-              and 'EXCL="$TESTDIRS"' in BLOCK          # the behaviour diff's exclusion
-              and '\'"$TESTDIRS"\'' in BLOCK           # source mode's walk exclusion (SEXCL)
-              and 'grep -vE "$TESTDIRS"' in BLOCK,     # the doc branch's
-              "three expressions needed this alternation and each carried its own copy; the next "
-              "test dir added to one and not the others makes the source filter and the doc filter "
-              "disagree about what a test path is, quietly (a fixture SKILL.md enters the diff)")
+        # FAN-OUT GUARD (general.md item 2). Both test-path alternations are now NAMED once
+        # ($TESTDIRS for directories, $TESTFILES for `.test.`/`.spec.` filenames) and all three
+        # consumers compose from them: source mode's walk exclusion, the behaviour diff's
+        # exclusion, and the doc branch's. Before this they were spelled three and two times
+        # respectively, in one shell. Assert the composition rather than trusting it -- if
+        # someone re-inlines a copy, the source filter and the doc filter can come to disagree
+        # about what a test path is, and the failure direction is quiet: a fixture SKILL.md
+        # enters the behaviour diff and is audited as deployed surface.
+        for name, pat in (("TESTDIRS", "(^|/)(test|tests|__tests__|__fixtures__|fixtures|evals|spec|specs)/"),
+                          ("TESTFILES", "\\.(test|spec)\\.")):
+            check(f"${name}'s alternation is spelled exactly once in the block",
+                  BLOCK.count(pat) == 1,
+                  f"found {BLOCK.count(pat)} copies of {name}'s pattern; a change to one and not "
+                  "the others makes two filters disagree about what a test path is, quietly")
+        for who, frag in (("the behaviour diff (EXCL)", 'EXCL="$TESTDIRS|$TESTFILES"'),
+                          ("source mode (SEXCL)", '"$TESTDIRS|$TESTFILES"'),
+                          ("the doc branch", 'grep -vE "$TESTDIRS"')):
+            check(f"{who} composes from the named pattern(s)", frag in BLOCK,
+                  f"expected {frag!r} in the block — a consumer that stopped composing is a "
+                  "re-inlined copy waiting to drift")
 
         print("\n3. C — FIT IT: no file is entirely invisible when the cap binds")
         # Genuinely OVER the 60,000-byte cap: the first fixture was ~32 KB, so nothing truncated
@@ -240,6 +249,28 @@ def main() -> int:
                and any(f"{f} (" in out_big for f in big)),
               "a generic cap warning leaves the reviewer unable to tell a fully-read file "
               f"from an unread one: {out_big[-400:]!r}")
+        # THE RENDERER IS PINNED, NOT INHERITED -- the regression the batching introduced.
+        # `diff.noprefix=true` is an ordinary user setting that changes git's per-file header to
+        # `diff --git app.py app.py`. The batched budgeter keys hunks off that header, so with
+        # the config honoured NOTHING matched, every blob came back empty, the under-cap fast
+        # path printed nothing, and the block emitted `----- diff -----` followed by silence with
+        # zero WEAKENED tokens: a healthy-looking gate over no evidence. Measured before the fix.
+        # `mnemonicPrefix` (`c/ w/`), `color.diff=always` and GIT_EXTERNAL_DIFF are the same shape.
+        for cfg in ({"diff.noprefix": "true"}, {"diff.mnemonicPrefix": "true"},
+                    {"color.diff": "always"}):
+            key = list(cfg)[0]
+            out_cfg = scenario(tmp, "c-" + key.replace(".", "-"), SRC, git_config=cfg)
+            check(f"evidence survives {key}={cfg[key]} (the renderer is pinned, not inherited)",
+                  "x = 1" in out_cfg or "app.py" in out_cfg.split("----- diff -----")[-1],
+                  "the diff section is empty under a user git-config that changes git's own "
+                  f"header shape — a clean-looking gate over zero bytes: {out_cfg[-320:]!r}")
+        # ...and the floor beneath it: a selection that yields no bytes must SAY so, never print
+        # silence that reads like a small clean diff.
+        out_empty = scenario(tmp, "c-untracked", {}, base_files={"seed.md": "# s\n"})
+        check("a selection with zero diff bytes is announced, not printed as silence",
+              ("EVIDENCE-EMPTY" in out_empty) or ("SKIPPED" in out_empty),
+              f"neither a weakening nor a skip line: {out_empty[-300:]!r}")
+
         # PAIRED NEGATIVE: under the cap nothing is truncated and no weakening token appears --
         # otherwise C would be reporting partial evidence on every healthy run.
         out_small = scenario(tmp, "c-under", SRC)
