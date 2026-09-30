@@ -1027,6 +1027,28 @@ def test_path_confinement_refuses_and_accepts() -> None:
               ok["verdict"] == "RED" and any("never reported" in b for b in ok["blockers"]),
               "an empty arms list must fail for MISSING ARMS, not for path refusal")
 
+        # EVERY refusal must say why AND what to do. A gate that stops without naming
+        # a remedy leaves the user knowing they are blocked and not how to move —
+        # FB-0121's failure shape. Swept over all three refusal paths rather than
+        # spot-checked, so a fourth one cannot be added as a bare stop.
+        refusals = []
+        for label, args in (
+            ("outside-repo", ("gate", "--state-file", str(outside))),
+            ("traversal", ("gate", "--state-file", str(tmp / ".." / "escaped.json"))),
+        ):
+            r, _ = run(*args, cwd=str(tmp))
+            refusals.append((label, r["reasons"][0]))
+        if link is not None:
+            r, _ = run("gate", "--state-file", str(link), cwd=str(tmp))
+            refusals.append(("symlink", r["reasons"][0]))
+        nul = tmp / "nul-arg.txt"
+        nul.write_text("pl\x00an.md\n", encoding="utf-8")
+        r, _ = run("arm-a", "--plan-from", str(nul), cwd=str(tmp))
+        refusals.append(("unresolvable", r["reasons"][0]))
+        for label, msg in refusals:
+            check(f"refusal-{label}-says-why", "refusing" in msg or "refus" in msg, msg[:120])
+            check(f"refusal-{label}-names-a-remedy", "→" in msg, msg[:160])
+
 
 def test_rendered_text_cannot_forge_the_escalation() -> None:
     """Control characters in a finding must not rewrite the block a human reads.
@@ -1136,6 +1158,30 @@ def test_a_flag_shaped_value_is_refused() -> None:
                   cwd=str(ROOT.parent.parent))
     check("both-plan-channels-is-refused",
           any("both given" in r for r in both["reasons"]), str(both))
+
+
+def test_every_refusal_names_a_remedy() -> None:
+    """Sweep the SOURCE, not just the reachable paths.
+
+    The behavioural half (`test_path_confinement_refuses_and_accepts`) exercises four
+    refusals end to end, which is the stronger evidence — but the engine has fifteen,
+    and several are only reachable with a broken plugin tree. A gate that stops
+    without naming a remedy leaves the user knowing they are blocked and not how to
+    move, which is FB-0121's failure shape; so the rule is swept over every
+    `SecurityRefusal(...)` in the file rather than spot-checked on the ones a test
+    happens to reach. Adding a sixteenth as a bare stop turns this red.
+
+    Validated on a known positive: the sweep is asserted to FIND the refusals first.
+    A regex that matched nothing would otherwise report "all clean" forever.
+    """
+    src = ENGINE.read_text(encoding="utf-8")
+    calls = re.findall(
+        r'SecurityRefusal\(\s*((?:\s*(?:"[^"]*"|\'[^\']*\')\s*%?[^)]*?)+)\)', src)
+    check("the-sweep-finds-the-refusals", len(calls) >= 10,
+          f"matched only {len(calls)} — the pattern broke, which is not the same as clean")
+    missing = [" ".join(re.findall(r'"([^"]*)"', c))[:70] for c in calls if "\u2192" not in c]
+    check("every-refusal-names-a-remedy", not missing,
+          "refusal(s) that stop without saying what to do: " + "; ".join(missing))
 
 
 # ============================================================ 8. docs

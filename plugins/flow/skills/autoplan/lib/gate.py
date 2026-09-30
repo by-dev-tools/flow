@@ -197,8 +197,11 @@ def _safe_path(path: Path, what: str) -> Path:
     """
     if path.is_symlink():
         raise SecurityRefusal(
-            "%s is a symlink (%s) — refusing to follow it; a read through it returns "
-            "whatever the link points at (CWE-59)." % (what, path)
+            "%s is a symlink (%s) — refusing to follow it, because a read through it "
+            "returns whatever the link points at rather than what you named (CWE-59). "
+            "→ Pass the real file instead of the link, or replace the link with the "
+            "file itself. If you meant to review the link's target, name that target "
+            "directly so the path you get is the path you asked for." % (what, path)
         )
     # Anchored on the process's OWN repository, never derived from the path under
     # test. Deriving it from the argument is how this guard was wrong twice: first as
@@ -219,21 +222,28 @@ def _safe_path(path: Path, what: str) -> Path:
         resolved = path.resolve()
     except (ValueError, OSError) as exc:
         raise SecurityRefusal(
-            "%s is not a resolvable path (%s) — refusing rather than acting on it."
+            "%s is not a resolvable path (%s) — refusing rather than acting on it. "
+            "→ Check the value for stray bytes (a NUL or a truncated write is the "
+            "usual cause) and re-write the argument file with the plain path."
             % (what, exc))
     try:
         resolved.relative_to(base)
     except ValueError:
         raise SecurityRefusal(
-            "%s resolves to %s, outside %s — refusing to read a path outside the "
-            "repository it belongs to." % (what, resolved, base)
+            "%s resolves to %s, which is outside %s — refusing, because this engine "
+            "reads and executes only within the repository it is run from, and a path "
+            "that escapes it is either a mistake or an attempt to steer the gate at "
+            "someone else's files. → Either pass a path inside that repository, or "
+            "re-run the gate from the repository the file actually belongs to (the "
+            "boundary is taken from your current directory, not from the path)."
+            % (what, resolved, base)
         )
     except SecurityRefusal:
         raise
     except Exception:  # noqa: BLE001 - an unresolvable path must not fail OPEN
         raise SecurityRefusal(
             "%s could not be confined to %s — refusing rather than acting on an "
-            "unverified path." % (what, base)
+            "unverified path. → Re-run from inside the repository that holds the file." % (what, base)
         )
     # No symlinked-ancestor loop here, deliberately, and the reason is worth keeping:
     # there WAS one, over `resolved.parents`, and `Path.resolve()` has already
@@ -254,7 +264,9 @@ def _read_json(path: Path, what: str):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise SecurityRefusal("%s could not be read as JSON (%s): %s" % (what, path, exc))
+        raise SecurityRefusal("%s could not be read as JSON (%s): %s. → Check the file exists and parses "
+            "(`python3 -m json.tool <path>`); the producer may have written a partial file."
+            % (what, path, exc))
 
 
 # --------------------------------------------------------------- depth
@@ -347,17 +359,20 @@ def _load_is_pinned(lib_root: Path):
 
     target = lib_root / "critique-plan" / "lib" / "walk-pin-lint.py"
     if not target.exists():
-        raise SecurityRefusal("walk-pin-lint.py not found at %s" % target)
+        raise SecurityRefusal("walk-pin-lint.py not found at %s. → Point --lib-root at a tree containing "
+                              "critique-plan/lib/, or drop the flag to use the installed plugin." % target)
     spec = importlib.util.spec_from_file_location("_walk_pin_lint", target)
     if spec is None or spec.loader is None:
-        raise SecurityRefusal("walk-pin-lint.py at %s could not be loaded" % target)
+        raise SecurityRefusal("walk-pin-lint.py at %s could not be loaded. → It must be importable Python; "
+                              "check it parses before pointing the gate at it." % target)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     fn = getattr(mod, "is_pinned", None)
     if not callable(fn):
         raise SecurityRefusal(
             "walk-pin-lint.py at %s exposes no is_pinned() predicate — refusing to "
-            "guess what counts as a pin." % target
+            "guess what counts as a pin. → Use a tree whose walk-pin-lint.py "
+            "still defines is_pinned(), or drop --lib-root." % target
         )
     return fn
 
@@ -808,13 +823,15 @@ def _arg(argv, flag, required=True):
             if isinstance(val, str) and val.startswith("--"):
                 raise SecurityRefusal(
                     "%s was followed by %r, which looks like another flag — refusing "
-                    "rather than binding a mis-parsed value." % (flag, val))
+                    "rather than binding a mis-parsed value. → Give %s a value, or "
+                    "remove it." % (flag, val, flag))
             return val
         # Flag present with nothing after it. Reporting "missing required argument
         # --plan" to someone who typed `--plan-from` names the wrong flag.
-        raise SecurityRefusal("%s was given with no value after it" % flag)
+        raise SecurityRefusal("%s was given with no value after it. → Supply its value, or remove the flag." % flag)
     if required:
-        raise SecurityRefusal("missing required argument %s" % flag)
+        raise SecurityRefusal("missing required argument %s. → Pass it, or use --plan-from to read the "
+                              "path from a stamped argument file." % flag)
     return None
 
 
@@ -834,19 +851,23 @@ def _path_from_file(arg_file: Path, what: str) -> Path:
     try:
         raw = arg_file.read_text(encoding="utf-8")
     except OSError as exc:
-        raise SecurityRefusal("%s argument file could not be read (%s): %s"
-                              % (what, arg_file, exc))
+        raise SecurityRefusal("%s argument file could not be read (%s): %s. → Write the path to that file "
+                              "with the Write tool first (see the skill's ## Argument)." % (what, arg_file, exc))
     lines = [ln for ln in raw.splitlines() if ln.strip()]
     if not lines:
-        raise SecurityRefusal("%s argument file %s is empty" % (what, arg_file))
+        raise SecurityRefusal("%s argument file %s is empty. → Write the plan path into it, one line, "
+                              "nothing else." % (what, arg_file))
     if "\x00" in lines[0]:
         raise SecurityRefusal(
             "%s argument file %s contains a NUL byte — refusing. A path cannot hold "
-            "one, and it is the one byte argv could never have carried here." % (what, arg_file))
+            "one, and it is the one byte argv could never have carried here. → Re-write "
+            "the file with the plain path." % (what, arg_file))
     if len(lines) > 1:
         raise SecurityRefusal(
             "%s argument file %s carries %d non-blank lines; a path has exactly one. "
-            "Refusing rather than taking the first." % (what, arg_file, len(lines)))
+            "Refusing rather than taking the first. → Write exactly the path and "
+            "nothing else; a second line is treated as an injection attempt against "
+            "the caller, not as extra context." % (what, arg_file, len(lines)))
     return Path(lines[0].strip())
 
 
@@ -882,7 +903,8 @@ def main(argv: list) -> int:
                 # no signal about which of the two paths was graded.
                 raise SecurityRefusal(
                     "--plan and --plan-from were both given; refusing rather than "
-                    "silently picking one. Pass exactly one.")
+                    "silently picking one. → Pass exactly one: --plan-from for the "
+                    "stamped-file channel, --plan for direct CI use.")
             plan = (_path_from_file(Path(plan_from), "plan") if plan_from
                     else Path(_arg(rest, "--plan")))
             _safe_path(plan, "plan file")
@@ -897,7 +919,9 @@ def main(argv: list) -> int:
                 expect_n = int(expect) if expect is not None else None
             except (TypeError, ValueError):
                 raise SecurityRefusal(
-                    "--expect-line must be an integer line number, got %r" % expect)
+                    "--expect-line must be an integer line number, got %r. → Pass "
+                    "the 1-indexed line of the plan's active Spec-walk heading, or "
+                    "omit the flag." % expect)
             # `--lib-root` is confined like every other input. It is the tree the
             # engine IMPORTS and SUBPROCESSES from, so guarding the read-only --plan
             # while leaving this open had the threat model inverted: it is not
@@ -917,7 +941,9 @@ def main(argv: list) -> int:
                 # clean refusal, so a caller parsing the output got nothing.
                 raise SecurityRefusal(
                     "passes file must be a list of pass results (or an object with a "
-                    "`passes` list), got %s" % type(passes).__name__)
+                    "`passes` list), got %s. → Pass the list of per-pass results; "
+                    "feeding `union`'s own output back in is the usual cause."
+                    % type(passes).__name__)
             return _emit(union_passes(passes))
         if cmd == "gate":
             state = _read_json(Path(_arg(rest, "--state-file")), "gate state file")
