@@ -288,7 +288,11 @@ def resolve_depth(trigger: dict) -> dict:
             "reasons": [
                 "trigger resolved no recognized path (got %r) — refusing to assume a "
                 "depth. A depth nobody declared cannot be distinguished later from a "
-                "procedure that did not run." % (path,)
+                "procedure that did not run. → Re-run `prototype-gate.py trigger` and "
+                "pass its output; a path outside {prototype-first, collapsed, classic} "
+                "means the trigger itself failed, so fix that rather than this call. "
+                "Note `ok: false` is NOT the same as `applies: false` — do not branch "
+                "on `applies` alone." % (path,)
             ],
         }
     depth = _DEPTH_BY_PATH[path]
