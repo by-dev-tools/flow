@@ -30,7 +30,7 @@ descriptions were *actively suppressing* the only mechanism left — all four en
 
 ## The numbers
 
-52 interpretable sessions, 0 discarded at final count, on scrubbed neutral bases with no `CLAUDE.md`,
+59 interpretable sessions, 0 discarded at final count, on scrubbed neutral bases with no `CLAUDE.md`,
 `AGENTS.md`, or `.claude/` beyond the probe skills. Counts are "fired / n", where *fired* = a `Skill`
 tool_use for that rule **during the task turn**. Every session carried its own known-positive and any
 session failing it was discarded rather than counted as a zero.
@@ -40,20 +40,20 @@ session failing it was discarded rather than counted as a zero.
 | rule | project<br>**new** desc | **plugin**<br>**new** desc (v1.53.0) |
 |---|---|---|
 | `plan-discipline` *(name matches the task — see finding 3)* | **2/2** | 0/2 |
-| `documentation` *(name matches the task — see finding 3)* | **2/2** | — |
-| `exploration` | 0/1 | — |
-| `general` | **1/1** | — |
+| `documentation` *(name matches the task — see finding 3)* | **2/2** | 0/2 |
+| `exploration` | 0/1 | 0/1 |
+| `general` | **1/1** | 0/2 |
 
 ### `claude-sonnet-4-6`  — *not* the default model
 
 | rule | project<br>old desc + `paths:` | project<br>**new** desc | **plugin**<br>old desc (v1.50.0) | **plugin**<br>**new** desc (v1.53.0) | project<br>*neutral* desc + `paths:` |
 |---|---|---|---|---|---|
 | `plan-discipline` *(name matches the task — see finding 3)* | **2/3** | **3/3** | 0/3 | 0/3 | **1/1** |
-| `documentation` *(name matches the task — see finding 3)* | **1/3** | 0/3 | 0/1 | 0/3 | **1/1** |
+| `documentation` *(name matches the task — see finding 3)* | **1/3** | 0/3 | 0/3 | 0/3 | **1/1** |
 | `exploration` | 0/3 | 0/3 | — | 0/3 | 0/1 |
 | `general` | 0/3 | 0/3 | — | 0/3 | 0/1 |
 
-**52 interpretable sessions. 0 discarded at final count** (19 limit-truncated sessions were discarded and re-run; see § instrument defects).
+**59 interpretable sessions. 0 discarded at final count** (19 limit-truncated sessions were discarded and re-run; see § instrument defects).
 
 **Arms.** **a** = today's (pre-v1.53.0) descriptions + `paths:`, project scope. **b** = the v1.53.0
 descriptions, no `paths:`, project scope. **cold** = the real v1.50.0 plugin installed, **plugin scope, old
@@ -95,13 +95,14 @@ establishing project ≡ plugin equivalence. That was for `paths:` — a differe
 transfer.** Arm `cold` exists because without it "the rewrite didn't help at plugin scope" had no
 comparison — it would have been a bare zero with nothing to contrast against.
 
-**5. The model matters more than the description — but not enough to rescue plugin scope.** On **opus-5,
-the default Conductor model for the `claude` agent**, project-scope arm b fired 3 of 4 rules where sonnet
-fired 1. The main series ran on sonnet, a **non-default** model, so per the orchestrator's standing
-instruction that a divergence outranks the headline, this had to be chased. It was: **arm c on opus-5 —
-plugin scope, default model, the actual consumer configuration — still read 0/2.** So the model is a large
-effect at project scope and does not change the plugin-scope answer. That cell is the one that describes a
-real consumer, and it is why I ran it beyond the approved cap.
+**5. The model matters more than the description — and not at all at plugin scope.** On **opus-5, the
+default Conductor model for the `claude` agent**, project-scope arm b fired 3 of 4 rules where sonnet fired
+1. The main series ran on sonnet, a **non-default** model, so per the orchestrator's standing instruction
+that a divergence outranks the headline, this had to be chased. It was, and the answer is unambiguous:
+**arm c on opus-5 — plugin scope, default model, the actual consumer configuration — read ZERO on all four
+rules (0/2, 0/2, 0/1, 0/2).** So the model is a large effect at project scope and makes no difference at
+plugin scope. That is the cell that describes a real consumer, and it is why I ran it beyond the approved
+cap.
 
 ## Ben's closure decision (2026-09-29)
 
