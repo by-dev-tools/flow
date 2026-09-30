@@ -1916,9 +1916,14 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
   enumerate behaviours and Stage 2 to judge coverage. When Stage 1 legitimately finds zero
   behaviours in a non-empty inventory, the schema offers only `ISSUE` / `AUDIT SUMMARY` /
   `No issues flagged.` — and none is right: there is nothing to flag, and "no issues" would certify
-  a comparison that never happened. **Measured across five CV1 runs, three improvised a shape
-  outside the schema**, including the invented header `EVIDENCE/ENUMERATION DISAGREEMENT — this is
-  not a clean pass.` (`git grep` finds that string nowhere in the plugin). The improvisation is
+  a comparison that never happened. **Measured across CV1's eight reviewer runs: three improvised a
+  shape outside the schema, and all three were DIFFERENT** — prose ("Stage 1 enumerated no
+  user-perceptible behavior…"), an invented header (`EVIDENCE/ENUMERATION DISAGREEMENT — this is
+  not a clean pass.`), and — worst — a token-shaped line, `[audit-coverage] EMPTY-ENUMERATION`.
+  `git grep` finds none of the three anywhere in the plugin. The token-shaped one is the sharpest
+  argument for closing this: it is indistinguishable IN FORM from a defined control line, so a
+  downstream reader keying on the `[audit-coverage] ` prefix would treat a model invention as
+  skill output. Three runs, three spellings, is what an undefined contract looks like. The improvisation is
   *good judgment* — one run even inferred the blind spot from the **absence** of a `WEAKENED ·`
   line — which is exactly why it should be a contract instead of a coincidence. **Why it matters
   beyond tidiness:** `/flow:ship` Step 2 routes coverage results into the draft manifest, and an

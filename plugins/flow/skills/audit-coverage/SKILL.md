@@ -383,7 +383,15 @@ DOC_BUILTIN='(^|/)(skills|agents|rules)/.*\.md$'
 # is empty and the gate reads FEWER files while looking healthy -- the FB-0008 silent-skip class on
 # the one predicate whose false negative costs a gate.
 if [ -n "$BBDP" ]; then
-  echo "" | grep -qE "$BBDP" 2>/dev/null; [ $? -gt 1 ] && { echo "[audit-coverage] WEAKENED · DOC-SLOT-INVALID — behaviorBearingDocPatterns is not a valid extended regex, so behaviour-bearing prose was NOT selected by it and this run is blind to whatever it was meant to add. The value was: $BBDP — fix the slot; this is NOT a clean pass."; BBDP=""; }
+  # SANITISE BEFORE ECHOING. Any value interpolated into a control line is attacker-shaped
+  # input: only lines ABOVE the delimiter are "the skill speaking", so a slot value carrying
+  # a newline plus an [audit-coverage] SKIPPED line forges one, and SKIPPED means "nothing to
+  # audit" -- non-blocking at ship Step 2. Measured during this PR's own security review:
+  # the forged line landed above the delimiter. The realistic path is a contributor editing
+  # flow.config.json in the very PR being audited, so "repo-controlled" is not "trusted".
+  # Newlines and CRs out, length capped; the value is diagnostic, not a contract.
+  BBDP_SHOWN=$(printf '%s' "$BBDP" | tr -d '\n\r' | cut -c1-200)
+  echo "" | grep -qE "$BBDP" 2>/dev/null; [ $? -gt 1 ] && { echo "[audit-coverage] WEAKENED · DOC-SLOT-INVALID — behaviorBearingDocPatterns is not a valid extended regex, so behaviour-bearing prose was NOT selected by it and this run is blind to whatever it was meant to add. The value was: $BBDP_SHOWN — fix the slot; this is NOT a clean pass."; BBDP=""; }
 fi
 ALLF=$( { git diff "origin/$BASE..HEAD" --name-only 2>/dev/null; git diff HEAD --name-only 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u )
 FILES=$(printf '%s\n' "$ALLF" | grep -E "$SP" | grep -vE "$EXCL")
