@@ -1,0 +1,29 @@
+# S0 probe workspaces (FB-0124, v1.53.0) — ALL ARCHIVED 2026-09-30
+#
+# Audited read-only before archiving. Nothing in any of them needed saving: every artifact was
+# either a probe TASK's own work product (reproducible from ../prompts/) or a Conductor
+# auto-checkpoint (`checkpoint:session-...`), never authored work. No probe session ever pushed
+# a branch — `git ls-remote` shows only the three probe/* bases this worker pushed.
+#
+# The measurement evidence is NOT in these workspaces: it is the session transcripts, scored
+# into runs/aggregate-20260927.json, which `aggregate.py --offline` re-derives with no network.
+#
+# arm  workspace-id                          branch                                   audit finding
+a      caa52395-8035-493d-9111-b142d4b87b19  conductor/s0-probe-arm-a                 untracked tsconfig.json (the `general` scenario's TypeScript task)
+b      f992e1c4-dab5-451d-9f62-6f5f503abc9b  conductor/s0-probe-arm-b                 untracked tsconfig.json (same)
+d      c10714f8-a8dc-4747-a79d-94e121452526  conductor/s0-probe-arm-d                 deleted src/*.js + untracked package.json, src/*.ts, tsconfig.json (same task, further along)
+c      2383a2e5-8d9e-435c-8bf1-8f2cc45a3208  conductor/s0-probe-arm-c                 staged deletions (the setup scrub) + the 6 neutral-project files, untracked
+c-v1   542ee615-4b23-44ad-8110-771fc575e955  conductor/s0-probe-arm-c-v1              staged deletions only. ABANDONED: its setup installed main's plugin, not the branch's
+c2     0659cb2b-1246-4097-9e6c-a4a533695c29  conductor/s0-probe-arm-c2                untracked PROJECT.md + .context/median-plan-draft.md (a probe's plan output, 3.4 KB)
+c-old  2ff471a3-f7ca-4176-80db-15657e45e7f9  conductor/s0-probe-arm-c-old-main-v1500  untracked PROJECT.md
+#
+# arm-c2's .context/median-plan-draft.md is the closest thing to a judgment call: it is a probe's
+# PLAN, produced by the plan-discipline scenario. Deliberately not saved — the measurement asks
+# whether a skill was invoked, which lives in the transcript (scored, committed), not in what the
+# probe then wrote. Keeping it would confuse task output with evidence.
+#
+# The three scrubbed neutral bases these arms ran on are preserved in
+# runs/probe-bases-20260927.bundle at their original SHAs (1d32c5d, 50dd4da, c67c1d7), verified by
+# ../verify-bundle.sh. They were ALSO on `probe/s0-arm-{a,b,d}` branches, which are deleted --
+# the bundle is the copy that survives, because that 11-file neutral project exists nowhere else
+# in the repo and re-running the design needs it. Restore command: see runs/README.md.

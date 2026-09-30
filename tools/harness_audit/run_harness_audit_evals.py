@@ -234,9 +234,57 @@ def test_report_separates_classes_and_never_sums_them(root: Path) -> None:
 # identical seven-directory fixture. Tests that need to MUTATE a tree (add a
 # file, start from empty) build their own below -- sharing would make their
 # assertions depend on run order.
+def test_always_loaded_counts_when_to_use(tmp: Path) -> None:
+    """`when_to_use` renders in the same always-on skill listing as `description`, so the
+    always-loaded accountant must count it (FB-0124).
+
+    Why this test exists: the accountant counted `description` only. `when_to_use` was
+    introduced repo-side the same day the always-on weight jumped, so the one instrument whose
+    job is to police that weight was under-reporting it by **871 chars** (measured) and nothing
+    would have
+    said so — item 4 aimed at an instrument. Found by `/flow:audit-coverage` as an undeclared
+    change, not by me.
+
+    Both forms are exercised because the folded-block branch is the one that silently returns
+    the indicator instead of the value when its regex is wrong.
+    """
+    inline = ("---\nname: s\ndescription: Does a thing. Use when testing.\n"
+              "when_to_use: Trigger terms: alpha, beta.\n---\nbody\n")
+    folded = ("---\nname: s\ndescription: >-\n  Does a thing. Use when testing.\n"
+              "when_to_use: >-\n  Trigger terms: alpha, beta.\n---\nbody\n")
+    desc_only = "---\nname: s\ndescription: Does a thing. Use when testing.\n---\nbody\n"
+
+    got_inline = ha._extract_always_on_listing(inline)
+    got_folded = ha._extract_always_on_listing(folded)
+    got_desc = ha._extract_always_on_listing(desc_only)
+
+    for label, got in (("inline", got_inline), ("folded", got_folded)):
+        check(f"always-loaded counts when_to_use ({label} form)",
+              "Trigger terms: alpha, beta." in got,
+              f"when_to_use missing from the counted listing: {got!r}")
+        check(f"always-loaded still counts description ({label} form)",
+              "Does a thing." in got,
+              f"description missing from the counted listing: {got!r}")
+        # The folded branch's failure mode is returning the block indicator as the value.
+        check(f"always-loaded does not return the block indicator ({label} form)",
+              ">" not in got and "|" not in got, f"indicator leaked into the value: {got!r}")
+    # POSITIVE pair: a description-only surface must still count, and must NOT be inflated —
+    # without this the two assertions above pass on an implementation that always appends text.
+    check("always-loaded counts a description-only surface",
+          "Does a thing." in got_desc and "Trigger" not in got_desc,
+          f"description-only surface mis-counted: {got_desc!r}")
+    # And counting both must exceed counting one — the actual claim, stated as an inequality
+    # so it cannot be satisfied by a constant.
+    check("always-loaded total grows when when_to_use is present",
+          len(got_inline) > len(got_desc) and len(got_folded) > len(got_desc),
+          f"adding when_to_use did not increase the counted listing: "
+          f"{len(got_inline)}/{len(got_folded)} vs {len(got_desc)}")
+
+
 READ_ONLY_SURFACE_TESTS = [
     test_always_loaded_excludes_workflow_and_keeps_the_rest,
     test_always_loaded_extracts_folded_description_only,
+    test_always_loaded_counts_when_to_use,
     test_always_loaded_agent_description_extracted,
     test_always_loaded_missing_description_warns_not_crashes,
     test_invoked_surfaces_includes_full_skill_body,

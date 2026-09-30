@@ -231,7 +231,7 @@ actual source change after this point does, which correctly re-flags for re-revi
 
 - **FOLLOW-UP** belongs to active work → `flow.config.json.planPath` (default `dev-docs/plan.md`; consumer projects typically `core-docs/plan.md`). Under the current work item.
 - **FOLLOW-UP / roadmap-concrete** larger / future work → `flow.config.json.roadmapPath` (default `dev-docs/roadmap.md`; consumer projects typically `core-docs/roadmap.md`). Under the relevant horizon.
-- **future-exploration** → `flow.config.json.roadmapPath` § Exploration, with a `Surfaces when:` trigger that names the file paths or area that should re-surface the item later (so any auto-loading exploration rule can find it during future work in that area).
+- **future-exploration** → `flow.config.json.roadmapPath` § Exploration, with a `Surfaces when:` trigger that names the file paths or area that should re-surface the item later (so the `exploration` rule-skill, or a reader, can find it during future work in that area).
 
 Can also mention in the PR body for reviewer awareness, but the doc entry is canonical.
 

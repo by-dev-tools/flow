@@ -12,8 +12,10 @@ description: >
   are intentionally excluded), any declared `statusDocs` status surfaces exist + are
   fenced, any undeclared `statusSurfaceCandidates` that carry status content are
   flagged for opt-in, any open PR for HEAD is body↔draft coherent (no stale
-  `NOT READY TO MERGE` manifest on a ready PR), auto-loading rules visible to
-  Claude Code, prerequisite CLI
+  `NOT READY TO MERGE` manifest on a ready PR), the rule layer (project-side
+  auto-load rules present; plugin-side rule-skills registered and correctly
+  shaped -- their ACTIVATION is model-judged and reported [UNCHECKED], never
+  [PASS]), prerequisite CLI
   tools (gh, jq, git) installed, preflight + CI optionally wired. Each FAIL prints an actionable
   fix command. Emits a final-line verdict ([READY] / [READY with WARN] /
   [NOT READY]) so the bottom line is scannable. Use after `bash bootstrap.sh`
@@ -748,7 +750,7 @@ fi
 # no duplicate/conflicting message here (same silent-defer convention as Checks 2.3/2.4).
 ```
 
-### Section 3: auto-loading rules (the load-bearing enforcement mechanism)
+### Section 3: the rule layer (project-side auto-load + plugin-side model-invoked)
 
 **Check 3.1 — project-side rules present**
 
@@ -762,12 +764,38 @@ else
 fi
 ```
 
-**Check 3.2 — plugin-shipped auto-load rules are reachable**
+**Check 3.2 — plugin-shipped rule-skills are registered and correctly shaped**
 
-Plugin-shipped rules ship as path-activated skills at `${CLAUDE_PLUGIN_ROOT}/skills/{general,plan-discipline,documentation,exploration}/SKILL.md` (`paths:` frontmatter + `user-invocable: false`) and auto-load on path matches when `flow@flow` is enabled. This check asks the loader itself, not disk presence or an inferred pass from Section 1 — a component can be present on disk and still not be what the running Claude Code actually reports (FB-0085: this exact gap is why the 4 rules never loaded for any consumer despite always being on disk).
+Plugin-shipped rules ship as **model-invoked** skills at `${CLAUDE_PLUGIN_ROOT}/skills/{general,plan-discipline,documentation,exploration}/SKILL.md` (`user-invocable: false`, no `paths:`). A plugin cannot ship `.claude/rules/*.md` at all — `rules/` is not a plugin component — so a skill whose description Claude reads and decides to load is the only mechanism available. Their descriptions are always in context; **loading the body is Claude's judgment call, not a path match.**
+
+**Read this before trusting a green line here.** Through v1.50.0 this check asserted the four *"auto-load on path matches"*, and that was **false**: `paths:` on a `SKILL.md` *narrows* a description-driven activation rather than triggering one. The check reported `[PASS]` across twenty releases because it grepped `claude plugin details` for the four **names** — which measures **registration**, not **activation**. Two different claims, one body of evidence; only the narrower one was ever true.
+
+**And the measurement that replaced it did not vindicate the fix — read `dev-docs/history/2026-09-27-*` before relying on these four.** At plugin scope, which is the only scope a consumer has, the rewritten descriptions did **not** produce an invocation in any measured session. Do not read a green line below as "the rules are governing this run." It means the skills are installed and correctly shaped — nothing more.
+
+So this check now asserts what a shell genuinely can: registration, plus the frontmatter contract that makes model invocation possible. **It cannot assert activation** — that is a model-judgment event inside a session, and no shell command observes one. It says so in its own output with `[UNCHECKED]` rather than implying a clean bill of health (FB-0121: a gate reporting nothing wrong must distinguish "nothing wrong" from "I could not see").
 
 ```sh
-if ! command -v claude >/dev/null 2>&1; then
+# The roster comes from lib/rule_skills.py, never a literal list: a fifth rule-skill added
+# to RULE_SKILLS must be registration-checked here too, and a hardcoded copy is how the
+# contract audit below and this check would silently disagree about which skills exist.
+#
+# SECURITY: resolve the lib ONLY under $CLAUDE_PLUGIN_ROOT, never cwd-relative. A
+# `${CLAUDE_PLUGIN_ROOT:-.}` fallback shipped here briefly and was arbitrary code
+# execution: this is a Bash-tool block, where `CLAUDE_PLUGIN_ROOT` is UNSET (CLAUDE.md
+# § How to Work 3), so `.` was taken on essentially every run — and doctor's cwd is the
+# consumer's project root. Any repo carrying `lib/rule_skills.py` got it EXECUTED with the
+# user's privileges, stderr discarded, and a payload printing the four expected names left
+# a clean `[PASS]` behind. Strictly worse than the CWE-59 symlink cases this repo already
+# guards. An unresolvable lib is `[WARN] … UNCHECKED, not clean` — never a cwd guess.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/lib/rule_skills.py" ]; then
+  RULE_SKILLS=$(python3 "${CLAUDE_PLUGIN_ROOT}/lib/rule_skills.py" roster 2>/dev/null)
+else
+  RULE_SKILLS=""
+fi
+if [ -z "$RULE_SKILLS" ]; then
+  echo "[WARN] plugin-shipped rule-skills check UNCHECKED, not clean — could not read the roster from lib/rule_skills.py."
+  echo "       Fix: /plugin marketplace update flow && /plugin install flow@flow (or install python3)."
+elif ! command -v claude >/dev/null 2>&1; then
   echo "[SKIP] plugin-shipped rule-skills check — 'claude' CLI not on PATH; cannot query the loader"
 else
   DETAILS_RAW=$(claude plugin details flow@flow 2>&1)
@@ -780,17 +808,69 @@ else
     echo "[SKIP] plugin-shipped rule-skills check — 'claude plugin details flow@flow' returned no Skills line (is flow@flow installed?)"
   else
     MISSING=""
-    for s in general plan-discipline documentation exploration; do
+    set -f                      # no globbing: a `*` in the roster must not expand to a file list
+    for s in $RULE_SKILLS; do
       echo "$SKILLS_LINE" | grep -qE "(^|[, ])$s(,|$| )" || MISSING="$MISSING $s"
     done
+    set +f
     if [ -z "$MISSING" ]; then
-      echo "[PASS] plugin-shipped rule-skills (general/plan-discipline/documentation/exploration) reported by the loader"
+      echo "[PASS] plugin-shipped rule-skills ($(echo "$RULE_SKILLS" | tr ' ' '/')) registered with the loader"
     else
       echo "[FAIL] plugin-shipped rule-skills missing from the loader's own report:$MISSING"
       echo "       Fix: /plugin marketplace update flow && /plugin install flow@flow"
     fi
   fi
 fi
+```
+
+The frontmatter contract that makes model invocation possible — asserted over the **installed** tree, because that is what runs. Exit-code driven rather than output-grepped: a `grep -c` of `0` cannot distinguish "no matches" from "my pattern is wrong", while an exit code is a signal grep's own author maintains (`.claude/rules/general.md` § Consistency item 4 corollary).
+
+```sh
+RS_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+# ONE definition of the contract — lib/rule_skills.py — invoked here, imported by
+# ship/lib/plugin-provenance.py, and pinned by evals/run_plugin_desc_evals.py. Before
+# FB-0124 this block re-derived the predicate in shell with sed + five greps while the
+# eval re-derived it again in Python, so the eval was pinning a restatement of this
+# check rather than the code this check runs (`.claude/rules/general.md` item 4
+# corollary). Exit-code driven, not output-grepped: a `grep -c` of 0 cannot distinguish
+# "no matches" from "my pattern is wrong", while an exit code is a signal the tool's
+# author maintains against their own output.
+RS_LIB="$RS_ROOT/lib/rule_skills.py"
+if [ -z "$RS_ROOT" ] || [ ! -d "$RS_ROOT/skills" ]; then
+  echo "[WARN] rule-skill frontmatter contract UNCHECKED, not clean — CLAUDE_PLUGIN_ROOT unset or has no skills/ dir."
+  echo "       Fix: run /flow:doctor from a session with flow@flow enabled."
+elif [ ! -f "$RS_LIB" ]; then
+  # An older installed plugin has no lib/rule_skills.py. Say so rather than silently
+  # skipping — an absent checker is UNCHECKED, never clean.
+  echo "[WARN] rule-skill frontmatter contract UNCHECKED, not clean — this install predates lib/rule_skills.py."
+  echo "       Fix: /plugin marketplace update flow && /plugin install flow@flow"
+elif ! command -v python3 >/dev/null 2>&1; then
+  echo "[WARN] rule-skill frontmatter contract UNCHECKED, not clean — python3 not on PATH."
+  echo "       Fix: install python3 (the contract checker is stdlib-only)."
+else
+  RS_OUT=$(python3 "$RS_LIB" check --skills-dir "$RS_ROOT/skills" 2>&1)
+  if [ $? -eq 0 ]; then
+    echo "[PASS] rule-skill frontmatter contract: $RS_OUT"
+  else
+    echo "[FAIL] rule-skill frontmatter contract violated:"
+    printf '%s\n' "$RS_OUT" | sed 's/^/       /'
+    echo "       Fix: a rule-skill must declare a trigger-bearing description and"
+    echo "            user-invocable: false, and must NOT declare paths: or"
+    echo "            disable-model-invocation: true."
+    echo "            Token meanings: \$CLAUDE_PLUGIN_ROOT/lib/rule_skills.py"
+    echo "            Why: \$CLAUDE_PLUGIN_ROOT/docs/workflow.md § Rules"
+    echo "       If a token is 'missing' or 'no-frontmatter', the install is damaged, not"
+    echo "       misconfigured: /plugin marketplace update flow && /plugin install flow@flow"
+  fi
+fi
+echo "[UNCHECKED] rule-skill activation (whether Claude actually loads these four bodies in a session)."
+echo "       Registration and frontmatter shape are REPORTED above (each may itself be"
+echo "       [PASS], [WARN] or [SKIP] — read them); activation is a model-judgment event"
+echo "       inside a session and no shell command observes one. Unchecked, not clean."
+echo "       Checkable by: a first-party CLI or hook surface reporting per-session skill"
+echo "       invocations (none exists today). Measured out-of-band with tools/rule-activation/;"
+echo "       the v1.53.0 measurement found zero invocations at plugin scope. Do not read the"
+echo "       PASS above as 'the rules governed this run' — it means installed and correctly shaped."
 ```
 
 ### Section 4: prerequisite CLI tools
@@ -912,22 +992,50 @@ After running all sections, emit a summary line:
 
 ```
 ═══ flow:doctor summary ═══
-  Section 1 (install):       <N PASS / N FAIL>
-  Section 2 (project config): <N PASS / N WARN / N FAIL>
-  Section 3 (auto-load rules): <N PASS / N WARN>
-  Section 4 (CLI tools):     <N PASS / N FAIL>
-  Section 5 (optional infra): <N PASS / N WARN>
+  Section 1 (install):        <N PASS / N WARN / N FAIL / N SKIP>
+  Section 2 (project config): <N PASS / N WARN / N FAIL / N SKIP>
+  Section 3 (rule layer):     <N PASS / N WARN / N FAIL / N SKIP / N UNCHECKED>
+  Section 4 (CLI tools):      <N PASS / N FAIL>
+  Section 5 (optional infra): <N PASS / N WARN / N SKIP>
 
   Overall: [READY] / [READY with WARN-level items] / [NOT READY — N FAILs blocking]
 ```
 
 Final-line verdict (the skill's contract — not an exit code, since skill bodies are agent prompts not processes):
 
-- `[READY] flow is correctly set up; all checks pass.`
-- `[READY with WARN-level items] flow is functional; N optional items can be addressed at your discretion.`
-- `[NOT READY] N FAIL(s) block flow from working correctly. Address each FAIL's fix above before proceeding.`
+- `[READY] flow is correctly set up; all checks pass. (N unchecked)`
+- `[READY with WARN-level items] flow is functional; N optional items can be addressed at your discretion. (N unchecked)`
+- `[NOT READY] N FAIL(s) block flow from working correctly. Address each FAIL's fix above before proceeding. (N unchecked)`
 
 Always emit the verdict as the FINAL line so the agent/user can scan to the bottom for the bottom line.
+
+**The five markers (FB-0121/FB-0124).**
+
+| Marker | Means | Counts toward the verdict? |
+|---|---|---|
+| `[PASS]` | Checked, and correct | yes |
+| `[WARN]` | Checked, and imperfect — optional, the consumer can act on it | yes → `[READY with WARN-level items]` |
+| `[FAIL]` | Checked, and broken — blocks | yes → `[NOT READY]` |
+| `[SKIP]` | Did not apply — a tool absent, a config slot unset, nothing of this kind present | no |
+| `[UNCHECKED]` | Applied, but could not see | no — reported inline as `(N unchecked)` |
+
+`[UNCHECKED]` exists because a gate that reports nothing wrong must distinguish *"nothing wrong"* from *"I could not see"* (FB-0121). It is deliberately **outside** the verdict arithmetic: the thing it names is not a mild failure the consumer can fix, so routing it to `[WARN]` would put every consumer permanently below `[READY]` over an item nobody can ever clear, and would eventually make the case for retiring `[READY]` altogether. Keeping it out of the arithmetic preserves `[READY]`'s meaning; printing `(N unchecked)` **inline on the verdict line** keeps the unseen items visible rather than buried. Both properties, not one.
+
+**Which marker, decided by a predicate — not per-site judgment.** Two orthogonal facts settle it, and conflating them is what made the first draft of this class emit `[UNCHECKED]` for three consumer-fixable conditions that this file already (correctly) reports as `[WARN] … UNCHECKED, not clean` at four other sites:
+
+| | **the consumer can act** | **nobody can act** |
+|---|---|---|
+| **observed** | `[WARN]` / `[FAIL]` | `[FAIL]` |
+| **not observed** | **`[WARN]`**, worded "UNCHECKED, not clean", with a `Fix:` | **`[UNCHECKED]`**, with a `Checkable by:` |
+
+So a missing tool, a stale install, or an unset env var is a `[WARN]` — the consumer has a fix, and withholding it from the verdict would hide an actionable problem. `[UNCHECKED]` is reserved for a claim **no consumer can make checkable**. Today rule-skill activation is the only one — and the eval asserts the *rules* below over every emission rather than pinning that count, so a second legitimate `[UNCHECKED]` site is allowed and will be held to the same two rules.
+
+**Two rules, so the class does not become the drawer every lazy check goes into:**
+
+1. **Every `[UNCHECKED]` line MUST name the mechanism that would make it checkable** — a `Checkable by:` clause. No mechanism named, no `[UNCHECKED]`: use `[WARN]` or write the check.
+2. **That clause is the line's own deletion criterion.** When the named mechanism exists, the line becomes a real check or it dies. An `[UNCHECKED]` that cannot say what would resolve it is a check excusing itself.
+
+`[SKIP]` vs `[UNCHECKED]` is the distinction worth holding: SKIP means *the question did not arise*; UNCHECKED means *the question arose and this gate could not answer it*. Both stay out of the arithmetic, for different reasons.
 
 ## What doctor does NOT check
 

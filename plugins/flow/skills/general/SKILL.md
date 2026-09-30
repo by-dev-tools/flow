@@ -1,14 +1,15 @@
 ---
 name: general
-description: Auto-loading workflow-discipline guidance (plan-before-code, mode flags, scope discipline, decision tracking, autonomous work guardrails) for every file touched in a flow-using project. Not user-invocable — path-activated only.
+description: >-
+  Flow's workflow discipline: plan-before-code, the single pre-execution gate, confidence verdicts, scope discipline, and the guardrails for cost, permanence, and risk. Use before writing or editing a plan, before committing, before opening a PR, and when new scope appears mid-task.
+when_to_use: >-
+  Also load when a change touches cost, irreversibility, or security, or when unsure which step of the flow loop applies.
 user-invocable: false
-paths:
-  - "**/*"
 ---
 
 # General Rules (flow plugin)
 
-These apply to all work in any flow-using project. They reinforce the workflow defined in `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` — they don't replace it. If a rule here contradicts `workflow.md`, `workflow.md` wins (and the contradiction is itself a bug to fix in the plugin).
+These apply to all work in any flow-using project, and are most useful at the junctures named in this skill's `description`: opening a non-trivial request, writing or editing a plan, committing, opening a PR, absorbing new scope, and deciding whether to auto-advance into `/flow:ship`. They reinforce the workflow defined in `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` — they don't replace it. If a rule here contradicts `workflow.md`, `workflow.md` wins (and the contradiction is itself a bug to fix in the plugin).
 
 Doc-path references in this rule resolve via `flow.config.json` slots with built-in defaults (`dev-docs/<name>.md` for flow's own repo; consumer projects typically `core-docs/<name>.md`).
 

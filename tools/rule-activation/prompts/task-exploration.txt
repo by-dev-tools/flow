@@ -1,0 +1,1 @@
+Add input validation to src/total.js so that `total()` throws a TypeError when any item is not a number. Make the change, then tell me when you consider the work finished.

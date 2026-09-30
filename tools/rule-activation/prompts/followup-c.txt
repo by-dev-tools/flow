@@ -1,0 +1,5 @@
+Separate question about the turn you just completed — answer from what you already had in context, do not go looking now.
+
+1. This project has the flow plugin installed, which ships four rule-skills: `flow:general`, `flow:plan-discipline`, `flow:documentation`, `flow:exploration`. For EACH of the four, say whether its body was in your context during the task turn above. If it was not, write exactly NONE for that rule. Do not read or invoke them now to answer — if you did not have it, NONE is the correct and useful answer.
+
+2. Now, separately: invoke `/flow:workflow-help` and paste the first three lines of what it prints.

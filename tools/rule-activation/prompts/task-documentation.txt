@@ -1,0 +1,1 @@
+We just shipped the `slug()` helper in src/slug.js. Add an entry to core-docs/history.md recording that it shipped and why it was worth doing. Just the history entry — no code changes.

@@ -26,18 +26,18 @@ Project-specific configuration: [`flow.config.json`](./flow.config.json) at repo
 
 Three layers, in order of decreasing strength:
 
-### 1. Auto-loading rules (deterministic — fire on path matches every relevant edit)
+### 1. The rule layer (two different mechanisms — don't conflate them)
 
-Plugin-shipped rules (live at `${CLAUDE_PLUGIN_ROOT}/rules/`; auto-load when `flow@flow` is enabled):
+**Plugin-shipped rules are model-invoked**, not path-activated. They ship as skills at `${CLAUDE_PLUGIN_ROOT}/skills/<name>/SKILL.md` with `user-invocable: false`, because a Claude Code plugin **cannot ship `.claude/rules/*.md` at all** — `rules/` is not a plugin component. Their descriptions are always in Claude's context; Claude loads the body when the description matches what it is doing. So they are **reliable-ish, not deterministic**: no glob guarantees them.
 
-| Rule | Loads on path-match | Enforces |
+| Rule-skill | Claude should load it when | Enforces |
 |---|---|---|
-| `general.md` | `**/*` (every edit) | Workflow discipline, scope, autonomy guardrails, "never merge" |
-| `plan-discipline.md` | `**/plan.md` | Required plan fields (mode, goal, scope in/out, spec-walk, confidence verdicts) + LOW = automatic human gate |
-| `documentation.md` | `**/{history,feedback,plan,roadmap,spec}.md` | Format rules (history entry shape, FB-XXXX entry shape, memory entry shape) |
-| `exploration.md` | `src/**`, `app/**`, `lib/**`, `packages/**` | Grep this project's `roadmap.md § Exploration` for `Surfaces when:` triggers matching the file you're editing |
+| `general` | Opening a non-trivial request, writing/editing a plan, committing, opening a PR, absorbing new scope, deciding to auto-advance into `/flow:ship` | Workflow discipline, scope, autonomy guardrails, "never merge" |
+| `plan-discipline` | Writing, editing, or reviewing a plan; declaring acceptance criteria; choosing a mode | Required plan fields (mode, goal, scope in/out, spec-walk, confidence verdicts) + LOW = automatic human gate |
+| `documentation` | Adding a history entry, synthesizing a correction into a feedback entry, updating roadmap/spec | Format rules (history entry shape, FB-XXXX entry shape, memory entry shape) |
+| `exploration` | Finishing code or UI work, before `/flow:ship` | Grep this project's `roadmap.md § Exploration` for `Surfaces when:` triggers matching the file you're editing |
 
-Project-side rules (live at `.claude/rules/`; this project owns them):
+**Project-side rules ARE path-activated** — `.claude/rules/*.md` with `paths:` frontmatter is the mechanism that genuinely fires on a file read, and this project owns these files:
 
 | Rule | Loads on | Purpose |
 |---|---|---|
@@ -45,7 +45,9 @@ Project-side rules (live at `.claude/rules/`; this project owns them):
 | `ui.md` (UI projects only) | UI file edits | Read `design-language.md` first; use tokens, not raw values; WCAG 2.1 AA baseline |
 | `dev-server.md` (UI projects only) | UI file edits | Surface dev URL via `/link` after UI changes |
 
-When you edit a file whose path matches any of these `paths:` globs, Claude Code automatically loads the rule into the agent's context. **This is the load-bearing enforcement layer** — even if a skill is skipped, the rules still fire.
+**Which layer is load-bearing, honestly.** Your own `.claude/rules/` fire deterministically on a path match — that is the enforcement layer you can rely on. The plugin's four are guidance Claude pulls in by judgment; treat them as raising the floor, not as a gate. If a rule genuinely must fire every time, put it in `.claude/rules/` here, or use a `PreToolUse` hook — Claude Code treats all of this as *context, not enforced configuration*.
+
+> **Why this section is worded so carefully.** From flow v1.33.0 to v1.49.0 this table claimed the four plugin rules auto-loaded on path matches. They loaded for **nobody** — `paths:` on a `SKILL.md` narrows a description-driven activation rather than triggering one, and the descriptions said "path-activated only", which told Claude not to invoke them. A `/flow:doctor` check reported `[PASS]` over it for twenty releases by verifying **registration** and calling it **activation**. Fixed in v1.53.0 (FB-0124).
 
 ### 2. Skill auto-invocation (probabilistic — fires on description match)
 
@@ -65,7 +67,7 @@ After the assumption surface, `/flow:ship` runs hard pre-flight gates (Step 1a s
 
 ### What's NOT enforced today (honest gaps)
 
-- **No Stop hook** that fails a session if `/flow:critique-plan` was skipped on a plan. The user can technically execute against an un-critiqued plan. Workflow.md's "Run on EVERY plan" qualifier captures the discipline, but enforcement is the auto-loading rules + `/flow:ship` Step 1.0 surface, not a hard hook. v1.x autonomous-routines work will add Stop hooks for this class.
+- **No Stop hook** that fails a session if `/flow:critique-plan` was skipped on a plan. The user can technically execute against an un-critiqued plan. Workflow.md's "Run on EVERY plan" qualifier captures the discipline, but enforcement is your own `.claude/rules/` + `/flow:ship` Step 1.0 surface, not a hard hook (the plugin's four rule-skills are model-invoked, so they cannot enforce anything). v1.x autonomous-routines work will add Stop hooks for this class.
 - **No scope-check on Edit|Write** outside a plan's declared `files_touched`. Same v1.x scope.
 
 ## Docs

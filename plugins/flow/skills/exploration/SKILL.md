@@ -1,17 +1,15 @@
 ---
 name: exploration
-description: Auto-loading nudge to check the roadmap's § Exploration section when touching common source roots. Not user-invocable — path-activated only.
+description: >-
+  How to surface matching items from the roadmap's § Exploration section, whose entries carry a "Surfaces when:" trigger naming the files they apply to. Use before finishing code or UI work, to check whether any item's trigger names a file this change touched.
+when_to_use: >-
+  Trigger terms: "§ Exploration", "Surfaces when:", "anything queued for this file", "push further". Load when a change is implementation-complete and before `/flow:ship`; classify a match as inline-cheap, roadmap-concrete, or future-exploration.
 user-invocable: false
-paths:
-  - "src/**"
-  - "app/**"
-  - "lib/**"
-  - "packages/**"
 ---
 
 # Exploration Surface Rule (flow plugin)
 
-Loads automatically when touching code under common source roots (`src/`, `app/`, `lib/`, `packages/`). The trigger paths are intentionally generic; consumer projects with non-standard layouts can override by shipping a project-local rule that shadows this one (project-scope rules take precedence over plugin-scope rules).
+Applies to code and UI work anywhere in the project tree — there is no source-root restriction, which matters because three of four surveyed consumer repos are Swift/iOS with no lowercase `src/`, `app/`, `lib/` or `packages/` directory at all (E3, `dev-docs/research/2026-09-agents-md-vs-skills.md` §5.3). A consumer wanting different behaviour can ship a project-local rule that shadows this one (project-scope rules take precedence over plugin-scope rules).
 
 The project's roadmap doc (`flow.config.json.roadmapPath`; default `dev-docs/roadmap.md`; consumer projects typically `core-docs/roadmap.md`) carries a § Exploration section. Items there collect open-ended directions surfaced by `/flow:staff-review`'s push-further lens or by user curiosity. Each entry carries a `Surfaces when:` trigger naming the file paths / area that should re-surface it.
 

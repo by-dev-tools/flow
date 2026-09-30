@@ -83,6 +83,12 @@ _FRONTMATTER_DESC_RE = re.compile(
     r'^description:\s*(?:[>|][-+]?\s*\n((?:^\s{2,}.+\n?)+)|(.*))', re.MULTILINE
 )
 
+# `when_to_use` renders in the same always-on listing as `description` (FB-0124),
+# so the accountant must count it. Same shape, one key apart.
+_FRONTMATTER_WHEN_RE = re.compile(
+    r'^when_to_use:\s*(?:[>|][-+]?\s*\n((?:^\s{2,}.+\n?)+)|(.*))', re.MULTILINE
+)
+
 
 def _run_git(args: list[str], repo_root: Path) -> tuple[str | None, str]:
     """Returns (stdout-on-success-or-None, a one-line reason for a human to
@@ -143,19 +149,32 @@ def _read_text(path: Path) -> str | None:
         return None
 
 
-def _extract_frontmatter_description(text: str) -> str:
-    """Pull the `description:` value out of a SKILL.md/agent .md frontmatter
-    block. Handles both the plain `description: one line` form and the
-    folded-block `description: >` / `description: >-` form used by several
-    flow skills. Returns '' (not None) on no match -- an empty description
-    contributes zero chars, which is honest, rather than a crash."""
-    match = _FRONTMATTER_DESC_RE.search(text)
-    if not match:
-        return ""
-    block, inline = match.groups()
-    if block is not None:
-        return " ".join(line.strip() for line in block.splitlines() if line.strip())
-    return (inline or "").strip()
+def _extract_always_on_listing(text: str) -> str:
+    """The always-on listing text of a SKILL.md/agent .md: `description` + `when_to_use`.
+
+    Handles the plain `description: one line` form and the folded-block
+    `description: >` / `description: >-` form. Returns '' (not None) on no match -- an empty
+    description contributes zero chars, which is honest, rather than a crash.
+
+    **`when_to_use` counts (FB-0124).** Claude Code appends it to `description` in the skill
+    LISTING and counts it toward the same 1,536-char listing cap, so it renders every session
+    exactly as `description` does. Counting only `description` under-reported this repo's own
+    always-on weight by **871 chars** (measured: 22,691 -> 23,562 across skills + agents) the
+    day `when_to_use` was introduced -- an accountant
+    that misses a new always-on field on the day the weight jumps is the FB-0010 fan-out
+    class aimed at the instrument. Flagged by /simplify's altitude lens.
+    """
+    parts = []
+    for key_re in (_FRONTMATTER_DESC_RE, _FRONTMATTER_WHEN_RE):
+        match = key_re.search(text)
+        if not match:
+            continue
+        block, inline = match.groups()
+        if block is not None:
+            parts.append(" ".join(l.strip() for l in block.splitlines() if l.strip()))
+        else:
+            parts.append((inline or "").strip())
+    return " ".join(p for p in parts if p)
 
 
 def _surface_entry(path: Path, text: str, repo_root: Path) -> dict:
@@ -197,12 +216,12 @@ def resolve_always_loaded_surfaces(repo_root: Path = _REPO_ROOT) -> tuple[list[d
             if text is None:
                 warnings.append(f"missing or unreadable frontmatter source: {path}")
                 continue
-            desc = _extract_frontmatter_description(text)
+            desc = _extract_always_on_listing(text)
             if not desc:
                 warnings.append(f"no frontmatter description found (contributes 0 chars): {path}")
                 continue
             label = path.relative_to(repo_root)
-            entries.append({"path": f"{label} (description only)", "chars": len(desc), "lines": 1})
+            entries.append({"path": f"{label} (listing text)", "chars": len(desc), "lines": 1})
 
     return entries, warnings
 

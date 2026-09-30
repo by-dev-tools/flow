@@ -496,26 +496,46 @@ def test_no_internal_state_leaks_to_the_reader():
           f"{len(seen_sentences)}: {seen_sentences}")
 
 
+def _rs_roster():
+    """flow's rule-skill roster, from the shared module -- never a hardcoded copy."""
+    import importlib.util as ilu
+    s = ilu.spec_from_file_location("flow_rule_skills", FLOW / "lib" / "rule_skills.py")
+    m = ilu.module_from_spec(s); s.loader.exec_module(m)
+    return list(m.RULE_SKILLS)
+
+
 def test_callout_splits_rule_skills_from_command_skills():
     """An absent rule-skill and an absent command skill fail DIFFERENTLY.
 
-    A rule-skill auto-loads on matching paths; nothing invokes it, so "a model asked to
-    run one would conclude it does not exist" is simply untrue of it. Its real
-    consequence is stronger: the rules meant to govern the run were never applied. An
-    earlier draft attached only the milder consequence, to a live list in which four of
-    five entries were rule-skills.
+    A rule-skill is background knowledge the model loads by judgment; nothing types its
+    name, so "a model asked to run one would conclude it does not exist" is simply untrue
+    of it. Its real consequence is stronger: the rules meant to govern the run were never
+    applied. An earlier draft attached only the milder consequence, to a live list in
+    which four of five entries were rule-skills.
+
+    This test covers the RENDER path with synthetic skills. It deliberately does NOT pin
+    the classifier -- see test_is_rule_skill_pinned_to_the_real_four for that, and
+    `.claude/rules/general.md` item 4's corollary for why the split matters: this test
+    passed unchanged while S0 removed `paths:` from all four real rule-skills, because a
+    synthetic fixture carrying the old marker cannot notice that the real files stopped
+    carrying it.
     """
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
         inst = make_install_tree(td, ["ship"], ["auditor"])
         home = make_home(td, registry("1.29.0", install_path=str(inst)),
                          marketplace_json("1.29.0"))
-        root = make_root(td, "1.43.0", skills=["ship", "a-rule", "a-command"],
+        # The rule-skill side uses a REAL roster name, because classification is now keyed
+        # on roster membership (rule_skills.RULE_SKILLS), not on a frontmatter flag -- see
+        # rule_skills.is_rule_skill for why that is the correct depth. A synthetic
+        # "a-rule" would be classified a command skill, correctly.
+        rule_name = _rs_roster()[0]
+        root = make_root(td, "1.43.0", skills=["ship", rule_name, "a-command"],
                          agents=["auditor"])
-        # a-rule carries `paths:` in frontmatter; a-command does not.
         sk = root / "plugins" / "flow" / "skills"
-        (sk / "a-rule" / "SKILL.md").write_text(
-            "---\nname: a-rule\npaths:\n  - '**/*.py'\n---\nbody\n")
+        (sk / rule_name / "SKILL.md").write_text(
+            f"---\nname: {rule_name}\ndescription: Does a thing. Use when testing.\n"
+            "user-invocable: false\n---\nbody\n")
         (sk / "a-command" / "SKILL.md").write_text(
             "---\nname: a-command\ndescription: does a thing\n---\nbody\n")
         _, out = run(home, root, as_json=False)
@@ -523,26 +543,69 @@ def test_callout_splits_rule_skills_from_command_skills():
           f"the callout must name the rule-skill failure mode:\n{out}")
     check("not governed by them" in out,
           "the rule-skill consequence must be that the run was ungoverned")
-    check("a-rule" in out and "a-command" in out, "both skills must be listed")
+    check(rule_name in out and "a-command" in out, "both skills must be listed")
     rule_line = next((l for l in out.splitlines() if "Rule-skills" in l), "")
     cmd_line = next((l for l in out.splitlines() if "not invocable" in l), "")
-    check("a-rule" in rule_line and "a-command" not in rule_line,
-          f"a-rule belongs in the rule-skill bullet only, got {rule_line!r}")
-    check("a-command" in cmd_line and "a-rule" not in cmd_line,
+    check(rule_name in rule_line and "a-command" not in rule_line,
+          f"{rule_name} belongs in the rule-skill bullet only, got {rule_line!r}")
+    check("a-command" in cmd_line and rule_name not in cmd_line,
           f"a-command belongs in the command bullet only, got {cmd_line!r}")
-    # NEGATIVE pair: a `paths:` in PROSE must not promote a command skill.
+    # NEGATIVE pair: a non-roster skill is never a rule-skill, whatever its frontmatter
+    # says -- including a real `user-invocable: false`, which under the old marker-keyed
+    # classifier WOULD have promoted it.
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
         inst = make_install_tree(td, ["ship"], [])
         root = make_root(td, "1.43.0", skills=["ship", "prose-only"])
         (root / "plugins" / "flow" / "skills" / "prose-only" / "SKILL.md").write_text(
-            "---\nname: prose-only\n---\nSome body text mentioning paths: nope\n")
+            "---\nname: prose-only\nuser-invocable: false\n---\nbody\n")
         _, out2 = run(make_home(td, registry("1.29.0", install_path=str(inst)),
                                 marketplace_json("1.29.0")), root, as_json=False)
     check("prose-only" in out2, "the skill must still be listed")
     rl = next((l for l in out2.splitlines() if "Rule-skills" in l), "")
     check("prose-only" not in rl,
-          "a `paths:` in prose must not promote a command skill to rule-skill")
+          "a skill outside RULE_SKILLS must never be reported as a rule-skill, even with "
+          "`user-invocable: false` in its frontmatter -- the roster is the definition")
+
+
+def test_is_rule_skill_pinned_to_the_real_four():
+    """The classifier is asserted over the FOUR REAL SKILL.md files, not a fixture.
+
+    Why this test exists (FB-0124, `.claude/rules/general.md` item 4 corollary -- pin a
+    claim at the layer where it is CLAIMED): `_is_rule_skill` keyed on `paths:` while the
+    only thing checking it was a synthetic `a-rule` fixture that carried `paths:`. When
+    S0 removed `paths:` from all four real rule-skills, the fixture kept passing and the
+    real classifier silently began reporting every rule-skill as a command skill -- so
+    the provenance rows would have printed "a model asked to run one would wrongly
+    conclude it does not exist", which that function's own docstring calls "something
+    simply untrue of it". The unit was green; the composed claim was false.
+
+    BOTH halves are required. True-over-the-four alone passes a hardwired `return True`;
+    False-over-a-command alone passes a hardwired `return False`. Neither half is a check
+    by itself.
+    """
+    root = REPO
+    prov = _engine
+    # The roster comes from the shared module, not a fourth hardcoded copy.
+    import importlib.util as _ilu
+    _s = _ilu.spec_from_file_location(
+        "flow_rule_skills", FLOW / "lib" / "rule_skills.py")
+    _rs = _ilu.module_from_spec(_s); _s.loader.exec_module(_rs)
+    check(len(_rs.RULE_SKILLS) >= 4, f"roster must be populated; got {_rs.RULE_SKILLS!r}")
+    for name in _rs.RULE_SKILLS:
+        check(prov._is_rule_skill(root, name),
+              f"{name} is a rule-skill (background knowledge, `user-invocable: false`) "
+              f"and must classify as one -- if this fails, the provenance rows attach the "
+              f"command consequence to it, which is untrue of it")
+    for name in ("ship", "doctor", "land"):
+        check(not prov._is_rule_skill(root, name),
+              f"{name} is a command skill and must NOT classify as a rule-skill -- "
+              f"without this half the test passes a hardwired True")
+    # NOTE: the frontmatter contract itself (marker present, `paths:` absent, caps, …) is
+    # asserted ONCE, in run_plugin_desc_evals.py, against `rule_skills.violations()`. It is
+    # deliberately NOT restated here: a third copy of `"paths:" not in head` could only fail
+    # by disagreeing with the classifier about whitespace, and `paths:` is not a provenance
+    # concern. The positive half above already fails if the marker is deleted.
 
 
 def test_graceful_degradation():
@@ -1050,6 +1113,7 @@ def main() -> int:
                test_healthy_run_does_not_cry_wolf,
                test_no_internal_state_leaks_to_the_reader,
                test_callout_splits_rule_skills_from_command_skills,
+               test_is_rule_skill_pinned_to_the_real_four,
                test_row_labels, test_both_polarities, test_graceful_degradation,
                test_decoy_repo_refused, test_surface_drift, test_contracts,
                test_hook_single_predicate, test_hook_loud_failure,

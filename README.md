@@ -78,14 +78,14 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 /flow:doctor
 ```
 
-`/flow:doctor` runs a PASS/FAIL punch-list and ends in a `[READY]` verdict, with a fix command for anything it flags. `/flow:workflow-help` prints the loop and your resolved config — the onboarding front door.
+`/flow:doctor` runs a PASS / WARN / FAIL / SKIP / UNCHECKED punch-list and ends in a `[READY]` verdict carrying an inline `(N unchecked)` count, with a fix command for anything it flags. `[UNCHECKED]` means the check could not see rather than that it found nothing, and each such line names what would make it checkable. `/flow:workflow-help` prints the loop and your resolved config — the onboarding front door.
 
 Adoption guides: [new project](docs/bootstrap.md) · [existing project](docs/migration.md) · [your first PR](docs/first-pr.md) · [upgrading](docs/upgrade.md).
 
 ## Under the hood
 
 - **2 review agents** (`auditor`, `plan-critic`) + **4 staff-review lenses** (engineer, UX, design-engineer, push-further) + the **D1 `lens-experience` agent** (experience/ambition + push-further-on-quality, reached via `/flow:review-brief`) + 2 context-isolation helpers (`planner`, `docs`).
-- **4 auto-loading rules** that attach by file path — workflow discipline, plan requirements, doc format, exploration triggers.
+- **4 rule-skills** Claude loads by judgment from their descriptions — workflow discipline, plan requirements, doc format, exploration triggers. Model-invoked, not path-activated: a plugin cannot ship `.claude/rules/*.md`, so these raise the floor rather than acting as a gate.
 - **A 24-slot `flow.config.json`** ([schema](plugins/flow/schema/flow.config.schema.json)) so every doc path, command, and branch name is configurable, never hardcoded.
 - **A template directory** (`template/`) with per-stack overlays for web, Swift, and Tauri/Rust/TS — the scaffolding `bootstrap.sh` copies in.
 - **No runtime dependencies.** Python stdlib for preprocessing; Markdown for everything else. No API calls — the plugin delegates to Claude Code subagents.

@@ -375,28 +375,76 @@ def surface_drift(installed: dict, root: Path) -> dict:
     return out
 
 
-def _is_rule_skill(root: Path, name: str) -> bool:
-    """True when a skill AUTO-LOADS on matching paths rather than being invoked.
+class _NoRoster:
+    """Fallback when `lib/rule_skills.py` cannot be loaded: classify nothing as a rule-skill."""
 
-    The marker is a `paths:` key in the SKILL.md frontmatter -- a plain frontmatter
-    read, never a judgment call. This distinction matters because the two kinds fail
-    DIFFERENTLY when absent from the installed tree, and reporting only the milder
-    consequence is what render_block did before: for a command skill the failure is
-    "you cannot invoke it"; for a rule-skill NOTHING invokes it, so the failure is
-    that the rules meant to govern the run were never loaded. Attaching the command
-    consequence to a rule-skill states something simply untrue of it.
-    """
-    f = root / CHECKOUT_PLUGIN / "skills" / name / "SKILL.md"
-    try:
-        head = f.read_text(encoding="utf-8")[:2000]
-    except (OSError, UnicodeDecodeError):
+    RULE_SKILLS: tuple[str, ...] = ()
+
+    @staticmethod
+    def is_rule_skill(name: str) -> bool:
         return False
-    # Frontmatter only: stop at the closing fence so a `paths:` mentioned in prose
-    # cannot promote a command skill.
-    if head.startswith("---"):
-        end = head.find("\n---", 3)
-        head = head[:end] if end != -1 else head
-    return bool(re.search(r"^\s*paths\s*:", head, re.MULTILINE))
+
+
+_RULE_SKILLS_MOD = None
+
+
+def _rule_skills():
+    """`plugins/flow/lib/rule_skills.py`, loaded lazily from this file's own plugin root.
+
+    Resolved relative to __file__ (skills/ship/lib -> ../../../lib) so it works from an
+    installed plugin cache and from a checkout alike, with no CLAUDE_PLUGIN_ROOT dependency.
+    """
+    global _RULE_SKILLS_MOD
+    if _RULE_SKILLS_MOD is None:
+        import importlib.util
+        target = Path(__file__).resolve().parents[3] / "lib" / "rule_skills.py"
+        try:
+            spec = importlib.util.spec_from_file_location("flow_rule_skills", target)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        except Exception:  # noqa: BLE001 -- a reporter must not take the ship down
+            # An absent/corrupt module must not collapse all four `## Flow run` rows into
+            # the top-level "the reporter itself failed" row -- that surface is FB-0107's
+            # whole point, and losing it to a classification helper is a worse failure than
+            # mis-labelling one bullet. Degrade to "everything is a command skill", which is
+            # the milder consequence and is what this file did before rule-skills existed.
+            _RULE_SKILLS_MOD = _NoRoster()
+        else:
+            _RULE_SKILLS_MOD = mod
+    return _RULE_SKILLS_MOD
+
+
+def _is_rule_skill(root: Path, name: str) -> bool:
+    """True when a skill is BACKGROUND KNOWLEDGE the model loads by judgment, rather
+    than a command a user or a skill invokes by name.
+
+    The marker is `user-invocable: false` in the SKILL.md frontmatter -- a plain
+    frontmatter read, never a judgment call. This distinction matters because the two
+    kinds fail DIFFERENTLY when absent from the installed tree, and reporting only the
+    milder consequence is what render_block did before: for a command skill the failure
+    is "you cannot invoke it"; for a rule-skill nothing types its name, so the failure
+    is that the rules meant to govern the run were never loaded. Attaching the command
+    consequence to a rule-skill states something simply untrue of it.
+
+    The marker WAS `paths:`, and that was correct only while the four rule-skills
+    carried it. S0 (FB-0124) removed `paths:` from all four -- it narrows a
+    description-driven activation rather than triggering one, so it could only gate the
+    trigger the descriptions now earn. Keying on `paths:` after that change would have
+    silently reclassified every rule-skill as a command and printed the wrong
+    consequence for it. The regression was invisible to CI because the eval pinned the
+    classifier to a SYNTHETIC `a-rule` fixture that carried `paths:` instead of to the
+    four real files, so the fixture kept passing after the real files stopped having the
+    shape: `.claude/rules/general.md` item 4's corollary -- pin a claim at the layer
+    where it is CLAIMED. `run_plugin_provenance_evals.py` now asserts this function over
+    the four real SKILL.md files AND over a real command skill, so neither a
+    hardwired-True nor a hardwired-False implementation can pass.
+    """
+    # ONE definition, in plugins/flow/lib/rule_skills.py -- imported, not re-spelled, and
+    # keyed on ROSTER MEMBERSHIP rather than on a frontmatter flag. A flag-keyed test would
+    # silently reclassify a rule-skill (and print the wrong consequence for it) the moment
+    # the flag were edited, which is the `paths:` bug wearing a new marker. No file read is
+    # needed: whether `general` is a rule-skill is not a property of the installed bytes.
+    return _rule_skills().is_rule_skill(name)
 
 
 def _names(d: Path, suffix: str) -> set[str] | None:
@@ -712,8 +760,9 @@ def render_block(d: dict, root: Path) -> str:
         out.append(
             "- **Rule-skills that did NOT load — this run was not governed by them.** "
             + ", ".join(f"`{s}`" for s in rules)
-            + ". These auto-load on matching paths rather than being invoked, so nothing "
-              "reports their absence: the rules simply were not applied.")
+            + ". Nothing types their names -- the model loads them by judgment from their "
+              "descriptions -- so nothing reports their absence: the rules simply were "
+              "not applied.")
     if commands:
         out.append(
             "- **Skills that were not invocable.** " + ", ".join(f"`{s}`" for s in commands)

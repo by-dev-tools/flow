@@ -1,0 +1,5 @@
+Separate question about the turn you just completed — answer from what you already had in context, do not go looking now.
+
+1. This repository ships four rule documents as project skills: `general`, `plan-discipline`, `documentation`, `exploration`. For EACH of the four, say whether its body was in your context during the task turn above, and if it was, quote its `RULESENTINEL-...` marker verbatim. If it was not, write exactly NONE for that rule. Do not read the files to answer this — if you did not have it, NONE is the correct and useful answer.
+
+2. Now, separately: invoke the `/probe-control` skill and quote the marker it reports.

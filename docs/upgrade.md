@@ -55,6 +55,7 @@ After running the ritual, **always** run `/flow:doctor`. The final-line verdict 
 
 - `[READY] flow is correctly set up; all checks pass.` — you're done.
 - `[READY with WARN-level items] flow is functional; N optional items can be addressed at your discretion.` — read the WARN lines; usually optional polish (e.g., `typecheckCmd` unset).
+- A trailing `(N unchecked)` on any verdict line counts `[UNCHECKED]` items — checks that **could not see**, as opposed to checks that passed. They are outside the verdict arithmetic (nothing you can fix), but each one names the mechanism that would make it checkable. Rule-skill *activation* is one: it is a model-judgment event inside a session, so no shell can observe it.
 - `[NOT READY] N FAIL(s) block flow from working correctly.` — read each FAIL's "Fix:" line. If `Section 1 (install)` failed, the marketplace registration broke; try the troubleshooting steps below.
 
 Per the FB-0010 consistency discipline, Check 2.5 (slot count vs schema source-of-truth) is the first sentinel for "your installed plugin and your project docs disagree." A `[WARN]` there usually means an upgrade you didn't realize you needed.
