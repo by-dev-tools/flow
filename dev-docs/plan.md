@@ -70,6 +70,27 @@ and Item 1 cannot ship, not that a previously-green control regressed.
 
 ### Item 2 — `rigor-marker.py` fingerprints only `sourceFilePatterns`
 
+**DECISION (a′), and its mechanism, settled before building.** Fingerprint
+`sourceFilePatterns ∪ DOC_BUILTIN ∪ behaviorBearingDocPatterns` — the same union #172 used for
+`DROPPED`. **Measured on CV1's own merged diff:** today 16 of 29 files are fingerprinted and **0 of
+11 `.md` files**; under (a′) it is 19 of 29 and **3 of 11** — exactly `audit-coverage/SKILL.md`,
+`doctor/SKILL.md` and `.claude/rules/general.md`, while `README.md`, `CLAUDE.md`, `plan.md`,
+`roadmap.md`, the feedback and history entries, and `plugins/flow/docs/workflow.md` are left alone.
+A `SKILL.md` edit after review invalidates the marker; a README typo does not. That is why (a′)
+beats both (a), which fails open for anyone who has not set the slot, and (b), which fires on
+trivial edits and teaches people to ignore the gate.
+
+**`DOC_BUILTIN` is not importable today, so (a′)'s "one definition" needs a mechanism.** It is a
+SHELL literal at `audit-coverage/SKILL.md:391` inside a bang-span; the two things that reuse it
+re-extract it from the skill text, and `rigor-marker.py` imports stdlib only. Rejected: parsing the
+prompt file from a ship-time gate (couples ship to audit-coverage's internals), and duplicating the
+literal (the second definition (a′) exists to avoid). Taken: `plugins/flow/lib/doc_patterns.py`
+becomes the single source, `rigor-marker.py` imports it, the shell keeps its literal, and an eval
+asserts the two byte-equal — the house pattern already used by `sensitive_paths.py`,
+`arg_placeholders.py` and `dispatch_backend.py` in that same directory, and the same shape as
+`run_docs_only_evals.py:262`'s producer/engine pin. The module is the mechanism (a′) requires,
+flagged to the orchestrator as such rather than smuggled in as scope.
+
 Measured on CV1: 29 changed files, 16 fingerprinted, **0 of the 11 changed `.md` files**. A
 `SKILL.md` edit committed after the marker was written left the gate reporting `ok`, so on a
 prompts-are-the-product repo a prompt-only PR cannot invalidate its own staff-review marker.
@@ -77,7 +98,7 @@ prompts-are-the-product repo a prompt-only PR cannot invalidate its own staff-re
 (`ship/SKILL.md:101`, `staff-review/SKILL.md:218`, `skip-audit-checks.py:269`) and
 `run_docs_only_evals.py:262` pins the default's byte-identity between producer and engine.
 
-**OPEN DECISION — OD1.** The dispatch and my own roadmap entry disagree, so this goes to the gate
+**OD1 — DECIDED (orchestrator, 2026-10-01): (a′).** The dispatch and my own roadmap entry disagree, so this goes to the gate
 rather than being quietly picked.
 - **(a) Union `behaviorBearingDocPatterns`** — the dispatch's instruction (`dev-docs/handoffs/2026-10-01-cv1-followup-dispatch.md`, item 2).
   Smallest diff. Weakness:
@@ -131,15 +152,20 @@ re-implemented `collect_spec_walk_blocks` — the latter imports only `CHECKBOX_
 third of a plan and reporting clean. The sites are named rather than counted, because a completeness
 criterion keyed to a quantity the tree does not contain certifies nothing.
 
-**OPEN DECISION — OD2, scope.** The dispatch (`dev-docs/handoffs/2026-10-01-cv1-followup-dispatch.md`) says exactly three
+**OD2 — DECIDED (orchestrator, 2026-10-01): (b2).** The dispatch (`dev-docs/handoffs/2026-10-01-cv1-followup-dispatch.md`) says exactly three
 fixes, and names item 3 as the early-block-end. The roadmap bullet this closes carries BOTH failure modes and says "same pass as
 the first-line truncation above: one reader, one fix, one harness". Fixing only the early end leaves
 the measured 80%-of-declared-text-dropped half open under a bullet that would otherwise read as
 closed.
-- **(b1) Early end only** — honours the dispatch's scope literally. Then the roadmap bullet must be
+- **(b1) Early end only — NOT taken.** It would have honoured the scope literally but required
+  splitting the roadmap bullet; under (b2) the bullet closes whole. The boundary stays exactly
+  where this plan drew it: the early-block-end, the `ARTIFACT_RE`/`_evals` word-boundary gap in
+  `is_pinned`, and the second scan site. Nothing else in `walk_extract` or `walk-pin-lint` —
+  notably NOT `PIN_MARKERS`' missing `verified:`, which stays recorded and out of scope. Each
+  half gets its own paired test. Formerly: Then the roadmap bullet must be
   SPLIT, closing only the early-end half and leaving the truncation half open with its measurement
   intact, per the critic's FOLLOW-UP.
-- **(b2) Both halves plus the third loop** — my recommendation, because the #171 instance that
+- **(b2) Both halves plus the second scan site — TAKEN.** Because the #171 instance that
   motivates item 3 is caused by the half (b1) excludes, so (b1) ships a fix that does not address
   its own stated evidence. Larger diff, one reader, one harness.
 
