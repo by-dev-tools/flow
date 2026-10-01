@@ -120,8 +120,32 @@ def skill_text(before: bool) -> str:
     return out.stdout
 
 
+def _assert_base_not_stale(workdir: Path, base: str) -> None:
+    """Refuse to render across a moved base. FB-0008 / `/flow:ship` Step 1a, which every shipped
+    skill enforces and this harness did not.
+
+    MEASURED, and it cost a whole reviewer pass: a render taken minutes before #171 merged was
+    scored after it merged, so `origin/main..HEAD` showed #171's ADDITIONS as deletions. The
+    reviewer produced a confident, well-formed audit reporting that the diff deleted
+    `/flow:autoplan`, its 1005-line gate engine and its CI eval — six "undeclared change"
+    findings about work the branch had never touched. Nothing in the output marked it as suspect,
+    because a phantom-deletion diff is a perfectly valid diff. The only tell was the clock.
+    """
+    r = subprocess.run(["git", "merge-base", "--is-ancestor", f"origin/{base}", "HEAD"],
+                       cwd=str(workdir), capture_output=True)
+    if r.returncode == 0:
+        return
+    behind = subprocess.run(["git", "rev-list", "--count", f"HEAD..origin/{base}"],
+                            cwd=str(workdir), capture_output=True, text=True).stdout.strip()
+    raise SystemExit(
+        f"[recall] REFUSING TO RENDER: origin/{base} is not an ancestor of HEAD in {workdir} "
+        f"(behind by {behind} commit(s)). The diff would show the base's commits as DELETIONS, "
+        "and a reviewer cannot tell a phantom deletion from a real one. Rebase, then re-render.")
+
+
 def render(case_name: str, before: bool, workdir: Path) -> str:
     case = CASES[case_name]
+    _assert_base_not_stale(workdir, "main")
     text = skill_text(before)
     body = FRONTMATTER_RE.sub("", text)
     env = dict(os.environ)
