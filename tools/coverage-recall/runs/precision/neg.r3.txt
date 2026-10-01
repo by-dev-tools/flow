@@ -1,0 +1,14 @@
+BEHAVIOR INVENTORY
+(none — no row changes a behavior a user could observe)
+NOT BEHAVIOR
+H1 rewording · H2 rename · H3 rewording
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  (no behaviors enumerated; PLAN-PREDATES-BRANCH would make any enumerated behavior undeclared, but all three DOC-SURFACE rows restate the same instructions — cap source and default of 60, wait-for-next-window, one log line per wait naming request id and remaining seconds — without changing what the prose directs)
+
+No issues flagged.
+Note: passive audit only checks stated evidence; absence of flags doesn't mean absence of problems.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

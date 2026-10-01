@@ -1,0 +1,14 @@
+BEHAVIOR INVENTORY
+(none)
+NOT BEHAVIOR
+H1 rewording · H2 rename · H3 rewording
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  (no behaviors enumerated — all 3 inventory rows reword declared-surface prose without changing what the skill instructs; the declared set is additionally empty per PLAN-PREDATES-BRANCH, so nothing could be covered or uncovered)
+
+No issues flagged.
+Note: passive audit only checks stated evidence; absence of flags doesn't mean absence of problems.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.
