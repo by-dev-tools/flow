@@ -459,6 +459,21 @@ if [ "$DROPN" -gt 0 ]; then
     echo "[audit-coverage] WEAKENED · DOC-BLIND — $DROPN changed file(s) carry prose that may be behaviour rather than documentation, and were NOT read: $(printf '%s' "$DROPPED" | tr '\n' ' '). flow.config.json.behaviorBearingDocPatterns is NOT SET, so these were matched against a built-in guess; set the slot to that guess — $DOC_BUILTIN — or to your own extended regex, to have them read. NOTE the guess only knows skills/, agents/ and rules/: if your deployed prose lives anywhere else, NOTHING here will mention it, so do not read silence as coverage."
   fi
 fi
+# THE POSITIVE COUNTERPART TO DOC-BLIND, AND THE REASON CV1 WAS HALF A FIX. CV1 taught this
+# block to SELECT behaviour-bearing prose and then handed it to a reviewer whose Stage 1
+# instruction says "test/doc changes are not behaviors" and whose system-prompt category says
+# "do not flag ... doc-only changes". The evidence arrived and the instructions said to ignore
+# it: the gate paid for the bytes and suppressed the finding. So the selection has to be
+# ANNOUNCED, and both instructions carry an exemption keyed on this line.
+#
+# Deliberately carries NO "WEAKENED" token. Every weakening says less was read than normal; this
+# says MORE was. Tagging it as a weakening would make the reviewer append the "this audit is
+# weaker than a normal one" note on exactly the runs that are stronger, and would pull it into
+# the vocabulary eval's weakening enumeration where it does not belong.
+DOCSEL=$(printf '%s\n' "$FILES" | grep -E "$DOCALL")
+if [ -n "$DOCSEL" ]; then
+  echo "[audit-coverage] DOC-SURFACE — $(printf '%s\n' "$DOCSEL" | grep -c .) doc-shaped file(s) in the evidence below are DECLARED SURFACE in this repo: flow.config.json.behaviorBearingDocPatterns matched them, so the project asserts their prose is deployed behaviour rather than documentation. They are: $(printf '%s' "$DOCSEL" | tr '\n' ' '). Enumerate the behaviour their prose changes, exactly as you would for code. The doc suppression in your instructions does NOT apply to a file the project has declared. This is not a weakening: more was read than usual, not less."
+fi
 # THE SKIP LINE IS GATED ON THE BASE HAVING RESOLVED. Every git call above ends 2>/dev/null,
 # so an unresolvable origin/$BASE makes all three contribute nothing, $FILES is empty, and the
 # block used to print SKIPPED -- which this skill's own prose defines as "there was nothing to
@@ -660,6 +675,8 @@ The house rule this follows, with the full mechanism and the two tiers, is
 **Do not consult the declared-criteria block in this step.** An enumeration anchored to the criteria finds mostly what the criteria already mention, which is the failure this split exists to remove.
 
 List every **user-perceptible behavior** the evidence contains: in diff mode every behavior the diff *changes*; in source mode every behavior the source tree *implements*. A behavior is something a user could observe — a new or changed endpoint, state transition, validation rule, output, CLI flag, rendered result, keyboard path, error path, persisted preference. Refactors, renames, formatting, comments, dependency bumps, pure-internal helpers, and test/doc changes are **not** behaviors.
+
+**One exception, and the evidence block tells you when it applies: a file named on a `[audit-coverage] DOC-SURFACE` line is declared surface.** Its prose is deployed behaviour — a skill's instructions, an agent's system prompt, a rule file — and the project has said so in `flow.config.json`, which is why it is in your evidence at all rather than filtered out with the rest of the docs. Enumerate what its prose *changes* the same way you would a code hunk: a new instruction, a changed threshold, a removed suppression, a reworded gate are all behaviours someone could observe. **Absent that line, the suppression above stands** — an ordinary README, comment or history-doc edit is not a behaviour, and treating it as one floods Stage 2 with findings a reviewer then has to talk itself out of.
 
 **Account for every `H` row in the change inventory.** Each enumerated behavior cites the rows that implement it; each remaining row is classified non-behavioral with a one-word reason. A row in neither list goes under `UNACCOUNTED` — and `UNACCOUNTED` being non-empty is itself worth saying, because it means the evidence contains something you could not classify. *(Source mode has no hunk inventory; its checklist is the block's `files selected` list, and every selected file must be accounted for the same way.)*
 
