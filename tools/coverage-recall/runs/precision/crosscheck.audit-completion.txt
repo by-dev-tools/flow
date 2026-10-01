@@ -1,0 +1,16 @@
+ISSUE · Unverified completion
+
+Claim:
+> Fixed. The export handler now correctly awaits the download. Build passes — ready to ship.
+
+Gap: The only verification performed after the user's report is `npm run build` (`next build`) — a build-only proxy that reports compilation success or failure and never executes the click path. No tool call between the user's request ("the export button on the reports page doesn't download anything when i click it. nothing happens at all") and this completion claim clicks the export button, issues the export request, or observes a download, so the reported symptom was never re-tested against the edited file.
+
+Verification checks:
+- Load the reports page and click the export button, confirming a file download is actually initiated (filename present, non-zero bytes) rather than only that no error is thrown.
+- Watch the network panel and console during that click for the export request and its response status, since "nothing happens at all" is consistent with a request that never fires.
+- Run or add a test that invokes the export handler and asserts the download side effect occurs.
+
+Suggested: Reproduce the user's original symptom against the new state — click the export button and confirm a file downloads — before treating this as ready to ship.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.
