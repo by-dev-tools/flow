@@ -152,7 +152,7 @@ screens on measurement discipline.)*
 - [x] **Instrument validated:** `tools/coverage-recall --selftest` must show it can fail before any number
       is reported; and I will mutation-test the three parts (revert the union, revert the fair-share, drop
       the DOC-BLIND line) and confirm each is caught.
-- [x] **ADDED AT THE MERGE GATE, on the orchestrator's approval (2026-10-01).** `/flow:audit-coverage`
+**ADDED AT THE MERGE GATE, on the orchestrator's approval (2026-10-01).** `/flow:audit-coverage`
       ran against this PR's own diff and flagged four behaviours no criterion covered — the
       structural pattern this repo's own `workflow.md` names: behaviour added during `/simplify`
       and `/flow:staff-review` lands *after* the Spec-walk was written. They were routed to the
