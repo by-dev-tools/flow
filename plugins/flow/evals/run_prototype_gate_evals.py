@@ -938,7 +938,11 @@ def test_gate_language_fanout():
     # searches for is not a claim that a gate is unconditional.
     hits = _grep_hits(GATE_PAT, ["plugins/", "README.md", ".claude/", "CLAUDE.md",
                                  ":!plugins/flow/evals/fixtures/",
-                                 ":!plugins/flow/evals/run_prototype_gate_evals.py"])
+                                 ":!plugins/flow/evals/run_prototype_gate_evals.py",
+                                 # Second detector, same reason: run_autoplan_evals.py
+                                 # quotes these phrases to assert on them. A detector
+                                 # naming what it searches for is not a gate claim.
+                                 ":!plugins/flow/evals/run_autoplan_evals.py"])
     check("gate-sweep-found-something", len(hits) > 0,
           "a gate sweep returning nothing means the pattern broke, not that the corpus is clean")
     # Verdict at HIT granularity, not file granularity. The earlier predicate was
@@ -1101,14 +1105,31 @@ def test_skill_gate1_message_has_a_budget():
           "reviewers need Deliberately excluded, or they flag what the brief scoped out")
 
 
-def test_lens_experience_untouched():
+def test_lens_experience_scope_held():
     """Cut at the plan gate: the accessibility/timing question is a feature
-    addition, not a claim this PR falsifies. Scope discipline."""
-    proc = subprocess.run(["git", "diff", "--stat", "origin/main...HEAD", "--",
-                           str(LENS_EXP.relative_to(ROOT))],
-                          cwd=ROOT, capture_output=True, text=True)
-    check("lens-experience-untouched", not proc.stdout.strip(),
-          f"lens-experience.md must be unchanged; diff:\n{proc.stdout[:200]}")
+    addition, not a claim this PR falsifies. Scope discipline.
+
+    RE-SCOPED at D1 Phase 3 (v1.54.0). This was `git diff --stat` == empty, i.e. "the
+    file is byte-identical to main". That held for Phase 2 and stopped holding for a
+    legitimate reason: Phase 3 points the same lens at a technical plan as well as a
+    design brief, so its artifact noun genuinely had to generalize. Deleting the check
+    was the wrong repair -- a scope guard satisfied by removing it is the FB-0010 item-3
+    shape -- so it is narrowed to what it was actually protecting: the accessibility /
+    timing FEATURE is still absent, paired with the positive that both lenses still
+    exist. A byte-identity assertion cannot tell "nobody added the feature" from
+    "nobody touched the file", and only the first was ever the point.
+    """
+    t = LENS_EXP.read_text(encoding="utf-8")
+    check("lens-experience-has-no-accessibility-lens",
+          "Lens C" not in t and "accessibility" not in t.lower(),
+          "the deferred feature must still be deferred")
+    check("lens-experience-still-has-both-lenses",
+          "Lens A" in t and "Lens B" in t,
+          "the positive half: the guard must not be satisfiable by gutting the agent")
+    check("lens-experience-generalized-not-rewritten",
+          "artifact" in t.lower() and "ambition" in t.lower(),
+          "Phase 3 generalizes the artifact noun; the lens's job is unchanged")
+
 
 
 def test_skill_composition():

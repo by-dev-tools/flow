@@ -100,6 +100,8 @@ State the resolved gate in **one line** ("This is going to prototype approval, n
 Skill("flow:review-brief") with the brief path as its argument
 ```
 
+**Tell it what it is reviewing** (`/flow:review-brief` § Call context): the artifact is a **design brief**, the next step on a clean pass is **the prototype phase**, and the caller is **`/flow:prototype`**. It is artifact-neutral and serves a second call site now (`/flow:autoplan`, with a technical plan), so naming these is what keeps its verdict pointed at the right phase. Without them it reports an unspecified next step and says it took the default.
+
 Pass the path explicitly. Without an argument `/flow:review-brief` falls back to scanning the session transcript for a plan-shaped turn — which is the ambiguous state this phase exists to remove.
 
 Resolve every `decision-required` finding **with the human** before prototyping. A brief that solves the wrong problem costs a discarded prototype; a question costs a moment.
@@ -200,35 +202,43 @@ The quote arrives **only as a file path**. There is deliberately no `--quote` st
 
 `.flow/` is gitignored, so `approval.json` does not survive the workspace. **These committed lines are the durable half**, and `gate-execute` reads them and nothing else. Skipping this step leaves the guard armed on state that can vanish — which is how a lost workspace turns into no human gate at all.
 
-## 10. Hand off
+## 10. Hand off — `/flow:autoplan` writes the plan and gates it, then `gate-execute` asserts one exists
 
-Write the technical plan against the approved prototype, then:
+The human has approved a prototype. That was **the** pre-execution gate, and it is spent. What follows is D1 Phase 3:
+
+```
+Skill("flow:autoplan")
+```
+
+Pass it the plan-file path through its stamped argument file (`arg_placeholders.py --arg-path autoplan`, then `Write` the path — see its `## Argument`). It writes the technical plan **against the approved prototype** and gates it by machine.
+
+**Then, and only after it returns, assert a plan exists:**
 
 ```sh
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/prototype/lib/prototype-gate.py gate-execute --plan "$PLAN_PATH"
 ```
 
+**The order is load-bearing.** `gate-execute` reads its markers from *everything above the **first** `Spec-walk` heading*, and `/flow:autoplan` places its new block first — so running the guard before the plan exists asserts against the wrong region, and running it after is what makes the assertion mean anything.
+
 **Do not proceed to Execute on `ok: false`.** It means the plan declares a prototype gate but carries no approval digest, or resolves no active Spec-walk block — in both cases nothing has been approved and nothing exists to build against. That is the condition FB-0080 named.
 
-**There is no second human gate here, and that is not a reduction.** The human already gated — on a prototype, which is strictly *more* information than a written plan: they looked at the thing and clicked it rather than reading a description and imagining it. Control at the gate went **up**. The plan that follows is machine-reviewed:
+**There is no second human gate here, and that is not a reduction.** The human already gated — on a prototype, which is strictly *more* information than a written plan: they looked at the thing and clicked it rather than reading a description and imagining it. Control at the gate went **up**. The plan that follows is machine-reviewed, by `/flow:autoplan`'s three arms:
 
-- `/flow:critique-plan` — scope drift, spec violation, incoherence.
-- `/flow:audit-plan` — unverified assumptions and recall.
-- `/flow:audit-coverage` **in source mode** (shipped v1.47.0 — point it at the approved prototype's source) — completeness.
+- **Arm A — criterion quality.** Deterministic: `extract-criteria.py` + `criterion-specificity.py` (vacuity) and `walk-pin-lint.py` (pinning), scoped to the active block, read by output rather than exit status.
+- **Arm B — completeness.** `/flow:audit-coverage` **in source mode** against the approved prototype's source, run at the declared union depth and unioned.
+- **Arm C — conformance + experience.** `/flow:review-brief` pointed at the plan: `auditor` + `plan-critic` + `lens-experience` over one extraction.
 
-**The third of those has a measured limitation, on a different axis from the gate you just moved.** It answers *"did the implementation declare everything it built?"*, not *"did the human see the design?"* — the limitation is pre-existing and orthogonal, not the price of the move. Tell the human this much and no more:
+**Arm B has a measured limitation, on a different axis from the gate you just moved.** It answers *"did the implementation declare everything it built?"*, not *"did the human see the design?"* — the limitation is pre-existing and orthogonal, not the price of the move. Tell the human this much and no more:
 
 > **What this reviewer catches, measured.** Three runs where the real answer was known and the reviewer could actually see the code: it found **10 of 10**, **5 of 10**, and **2 of 5** of the undeclared behaviours — and **never once reported a gap that was not real**. So: **treat a flag as reliable; do not treat silence as evidence nothing was missed.** Recall is known-weak and is being worked on.
 
 **Separately, and larger: it cannot see `.md` files at all.** Its behaviour-diff filter excludes `\.md$` along with `evals/` and `docs/`. On a plugin that ships mostly prompts that is not weak recall, it is a **blind spot** — on this PR, **4 of 63 changed files** reached the reviewer, and the excluded set included `prototype/SKILL.md`, the main deployed artifact here. A fourth run (#159) returned "no issues" over five real gaps that all lived in a `.md`; that run measures the filter, not the judgment, and **no prompt change could have moved it**, so it is not in the series above.
 
-Silence is weak evidence for a structural reason too: **behaviour added after a plan is written — during `/simplify` and staff-review — is exactly the behaviour least likely to be declared**, and coverage runs after those stages.
+Silence is weak evidence for a structural reason too: **behaviour added after a plan is written — during `/simplify` and staff-review — is exactly the behaviour least likely to be declared**, and coverage runs after those stages. That is why `/flow:autoplan` is **GREEN only when every arm RAN**, and never on silence alone.
 
 The backstop is unchanged: `/flow:audit-coverage` against a real diff at `/flow:ship` Step 2, so a gap is caught **late, not never**.
 
 **The one guarantee here that is not judgment** is `gate-execute`'s: a plan *exists*. Mechanical, deterministic, and the reason it was pulled forward rather than left to Phase 3.
-
-Phase 3 (auto-writing the plan and machine-gating it) is **not built**; it is gated on §9.3. Do not imply otherwise.
 
 ## Gotchas
 

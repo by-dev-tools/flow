@@ -37,8 +37,10 @@ Flow is a managed-autonomy loop: the agent does the work it can do well; you sta
         (gate)       spec-walk + confidence verdict; /flow:critique-plan;
                      WAIT for human gate. PROTOTYPE-FIRST (UI work):
                      brief -> /flow:review-brief -> prototype, iteratively
-                     -> WAIT for gate 1 (prototype approval) -> technical
-                     plan, machine-reviewed
+                     -> WAIT for gate 1 (prototype approval) ->
+                     /flow:autoplan writes the plan + gates it by MACHINE
+                     (quality / completeness / conformance; GREEN only when
+                     every arm RAN)
  3. Execute          implement against checkboxes; stay in scope
  4. Preflight        mechanical gates (typecheck/build/test + invariants) —
                      MUST be green before /simplify runs

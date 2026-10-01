@@ -2,6 +2,321 @@
 
 ## Current Focus
 
+*The active work item sits here, above the merged blocks, so the walk parsers name it regardless of whether anyone else's merged headings carry a demotion qualifier. The demotions below are correct and independently true; this placement means the extractor does not depend on them surviving another worker's rebase.*
+
+**▶ EXECUTED, shipping — D1 Phase 3: the auto-written technical plan and its MACHINE gate** (this branch, `conductor/track-b-d1-phase-3-autoplan-machine-gate`, **v1.54.0**, **FB-0125**). Plan approved by the orchestrator after eight rounds of `/flow:critique-plan`; open calls 2 and 3 answered there, **call 4 decided by Ben on 2026-09-29 (option (a))**.
+
+**Mode:** feature
+**Base:** `origin/main` @ `5a9c896` (**v1.52.0**, FB high-water **FB-0124** across unmerged branches) — rebased at ship time; #166 and #167 both merged while this plan was at the gate.
+**Version claim `v1.54.0` / FB claim `FB-0125` — re-swept at ship time, and both had moved since the plan was written (FB-0125). Plan-time sweep said FB-0123 / v1.51.0, correctly then; #167 took FB-0123, S0's branch holds v1.51.0 and is moving to v1.53.0, #166 took v1.52.0. Swept across every unmerged remote branch, not just `main`: **v1.54.0 steps over S0's unmerged v1.53.0 deliberately** — renumbering to close the gap would collide with a branch that has already written the file.
+**Spec:** `dev-docs/handoffs/d1-prototype-first-gate.md` § Phase 3 · **Gated on:** §9.3, resolved **MIXED** by #153.
+
+---
+
+### 1. What Phase 3 is, and the one thing that decides its shape
+
+After human gate 1 (prototype approval, shipped v1.48.0), the technical plan is **auto-written against the approved prototype** and gated by **machine**, not by Ben. Clean ⇒ proceed. `[auto-fixable]` ⇒ fix, re-review once, proceed. `[decision-required]` ⇒ escalate as an answerable question.
+
+The whole design turns on how §9.3 resolved. **MIXED is not "half good"** — it is two findings about two different properties, and they need two different kinds of gate:
+
+| | §9.3 measured | kind of check | gate shape |
+|---|---|---|---|
+| criterion **quality** | 0 of 13 vacuous — clean | **deterministic** | hard gate: red or green |
+| criterion **completeness** | ~half the surface undeclared | **best-effort LLM judgment** | **must never pass on silence** |
+
+**The load-bearing consequence, and the sentence the rest of this plan implements:**
+
+> `/flow:audit-coverage` has **perfect precision across every measured run** and **recall between 60% and 100%**. So a flag is reliable evidence; **silence is not evidence of anything.** The completeness gate therefore cannot key on "the reviewer found nothing." It keys on **the procedure having run, and every finding it did produce being resolved.**
+
+That is FB-0121's contract (*a stage that did not run is red, not clean*) arriving at a gate design from a different direction, and it is what stops Phase 3 from being a gate that says "clean" over the half of the surface nobody declared.
+
+### 2. The gate — three arms, and they are deliberately not alike
+
+**Arm A — criterion quality. Deterministic. Hard gate.**
+- `extract-criteria.py <plan> | criterion-specificity.py` → **`vacuous` non-empty** is red.
+- `walk-pin-lint.py` over **the active block only** → **unpinned-count > 0** is red.
+
+**Arm A reads their OUTPUT, never their exit status — and the first draft got this exactly backwards, in the plan that exists to prevent it.** Measured, not assumed: `criterion-specificity.py` exits **0** while reporting a vacuous criterion, and `walk-pin-lint.py` documents *"Exit codes: **0 for every lint verdict** (advisory — the critic assigns severity); nonzero only on crash-grade input errors."* Neither tool has a red channel in `$?`. §3's original evidence that Arm A works was the sentence *"`walk-pin-lint.py dev-docs/plan.md` → exit 0"* — an exit code that is 0 on the file carrying **591 unpinned checkboxes**, and therefore 0 on every file. That is FB-0010 § 4's corollary inverted: the corollary says prefer an exit code *when the tool designed one*, and these two deliberately did not. So Arm A parses `vacuous` and the unpinned count, and the honest reading of the old evidence is that **it measured nothing**.
+
+**And the two halves grade different things, so the pinning half must be scoped.** `walk-pin-lint.py` is all-blocks **by design** (*"a standalone plan DOCUMENT may legitimately carry several"*, and it says so: *"71 Spec-walk blocks found; linting all of them"*), while `extract-criteria.py` is **first-block-only**. Unscoped, Arm A would fail every run in this repo on 591 unpinned checkboxes belonging to **shipped PRs** — a gate that is red for reasons the author cannot fix is a gate that gets ignored. The pinning check therefore runs over the **extracted active block**, not the whole `planPath` file, and a criterion pins that in the *failing* direction: a retained merged block with unpinned checkboxes must **not** turn Arm A red.
+
+**Where the auto-plan lands, and why Arm A must prove it read it.** `extract-criteria.py`'s contract is **first (active) block only** — and the auto-written plan goes into `flow.config.json.planPath`, which in this repo and any consumer retaining shipped blocks is exactly the multi-block case. So Arm A could lint *another PR's* criteria and exit 0: a hard gate reporting green over a plan it never examined. **This session is the evidence the hazard is live, not theoretical** — the rebase minutes ago required demoting four Spec-walk headings inside #165's merged block before the extractor named the active one, and the same pipe reported `total=14`, `total=13` and 18 criteria across three tree states.
+
+So Arm A does not merely run the pipe. It **asserts the block it read is the plan under review**, by parsing the **extracted block's line number** out of `extract-criteria.py`'s `warnings` and comparing it to the line the auto-write recorded — RED if they disagree. *Not `source_heading`/`block_count`: an earlier draft used those and the Spec-walk measured them unable to discriminate (constant heading, file-wide count). They are retained below only as the retracted alternative, and this sentence is the one an implementer builds from, so it had to move too.* A gate that cannot prove which document it graded is not a gate.
+
+**Invoked directly by the orchestrator, not through `/flow:critique-plan`.** This is forced by #165 (§3) and it is better regardless: a gate that depends on another skill's internal block inherits that skill's scope changes. Verified both run standalone on a named plan file (the extract→specificity pipe → `total=14 vacuous=0`; the pinning lint produces a verdict — **not** its exit code, see above).
+
+*Vocabulary, fixed before it reaches the diff: **arm** means A/B/C and nothing else. `audit-coverage` is **Arm B's reviewer**, never "the fourth arm"; § 4's table has **rows**, not arms.*
+
+**Arm B — criterion completeness. Best-effort. Never passes on silence.**
+- `/flow:audit-coverage` in **source mode** against the approved prototype, run **N times**, findings **unioned** and deduped by the symbol each cites.
+
+**`/flow:autoplan` must WRITE the stamped argument file, and it would be the first shipped skill to do so.** (Distinct from passing the path *as the skill's argument*, which it also does — see the two-layer note under Arm C. The argument is how the callee learns the path; the file is how that path reaches a shell without being interpolated into one.) `/flow:audit-coverage`'s own § Argument documents two ways a path reaches it, and says plainly: *"**No shipped flow skill writes that file today**… this path is reached only by a caller that opts in."* Path 1 — a caller writes the path to the file named by `arg_placeholders.py --arg-path audit-coverage` (branch- and HEAD-stamped, unspellable by hand) — gets pattern filters and the byte cap applied. Path 2 is the reviewer reading the tree itself and emitting **`WEAKENED · FILTERS-ADVISORY`**.
+
+**This is not a detail: the 82%/100% figures in § 4 were measured on path 1.** A gate that silently took path 2 would run a different procedure from the one its own honesty string describes — the "degrades to clean" failure this plan is organised against, relocated from Arm A to Arm B. So Arm B writes the arg file, and asserts its output carries **no** `WEAKENED` line.
+- **Pass condition: the procedure ran at declared depth AND every finding is resolved.**
+
+**And the third gate is untouched, which round 6 caught me silently removing.** `plan-discipline/SKILL.md:76` is unambiguous: *"**LOW** — **automatic human gate.** The plan cannot proceed."* That gate is not the one D1 moves — D1 moves **plan approval**, and CLAUDE.md names the LOW gate separately as *"a third automatic gate on LOW-confidence assumptions."* But this plan requires the auto-written plan to carry confidence verdicts while **no arm reads one**, and §7 says the answer to "who approves" on this path is *nobody*. Composed, those three facts delete a shipped gate by omission. So: a LOW verdict routes to `[decision-required]` like any other blocking finding, and the human who answers it is the human that gate always required. **Exactly one pre-execution gate on approval, plus the LOW gate that was always conditional — the invariant is unchanged, and it was one criterion away from not being.** Zero findings is *not* a pass condition — it is an input to one.
+- Depth is declared in the output, always, with what that depth is worth (§4).
+
+**Arm C — conformance + experience. NOT NEW — it is `/flow:review-brief`, pointed at the plan.**
+
+*`/flow:critique-plan` caught me re-specifying a shipped skill as a deliverable.* The handoff § 6 lists the orchestrator under **Genuinely new** as *"the fan-out + single-extraction + triaged-verdict harness, **used at Steps 3 and 6**"* — one harness, two call sites — and Step 3's instance shipped in Phase 1. Measured: `review-brief/SKILL.md` already runs `extract_session.py --mode plan --plan-file "$ARGUMENTS"`, spawns `auditor` + `plan-critic` + `lens-experience` in a **single tool message** over **one** extraction, and returns one triaged verdict. That is Arm C, entire. Building it again beside itself would be the FB-0072 merge-instead-of-compose error inverted.
+
+**So Arm C = `Skill("flow:review-brief")`, invoked through the same stamped-arg-file channel**, and the work is a *generalization*, not a build:
+- **Re-measured at `e683238`, because #165 changed this file and my first reading predated it.** It no longer takes `--plan-file "$ARGUMENTS"`; it writes the path to `$FLOW_SCRATCH/review-brief-arg.<branch>.<head>.txt` (named via `arg_placeholders.py --arg-path review-brief`) and reads `--plan-file-from "$ARGF"`. Arm C invokes *that* channel. **Same mechanism as Arm B** — one idiom, two reviewers, which is a simplification the first draft missed by reading a stale file.
+- Its artifact noun is `brief` in **30 places** (not the 20 I first counted — that figure was measured against the pre-#165 file). Step 6's artifact is a technical plan; the body generalizes to "the artifact under review", with each call site naming what it passes.
+- The skill **name** stays `review-brief` — renaming a shipped, model-invocable skill breaks consumers for a cosmetic gain. Recorded as a naming residual, not fixed here.
+- `lens-experience`'s Lens B *is* the handoff's "push-further-on-quality"; one agent already covers both halves.
+
+**Arm B reads a different artifact from Arm C's three reviewers, by design, and the plan says so rather than pretending one extraction covers everything.** Arm C's reviewers read the *plan*; Arm B reads the *prototype's source*. That asymmetry is the entire reason Arm B exists — the §9.3 spike's finding was that nothing at this step reads the prototype's code. The one-extraction guarantee is stated for **Arm C's three reviewers** and explicitly *not* claimed for Arm B.
+
+### 3. Post-#165 is now the tree, and I measured it rather than predicting it
+
+**Confirmed on `main` @ `e683238`:** `critique-plan/SKILL.md` runs the pinning lint only over the **session-extracted** plan, and prints a scope disclaimer — *"If this skill was invoked WITH a path argument, these lines do NOT describe that document."* So a named plan file routes to **UNCHECKED, not clean**, exactly as #165's body said it would. The earlier draft of this section designed against that as a prediction; it is now a measurement.
+
+**I do not need it back.** Arm A invokes the lint itself, so the named-file path through `critique-plan` is not on my critical path. What I must not do is let Arm A's pinning check silently become UNCHECKED after the rebase — so:
+
+- Arm A calls `walk-pin-lint.py` **directly**, and
+- a Spec-walk criterion asserts the gate's own pinning result is `checked`, not inherited from whatever `critique-plan` happens to do with `$ARGUMENTS` post-#165.
+
+**Verified post-rebase, not assumed — and the first version of this sentence was retracted.** Arm A's two scripts still **load and parse** a named plan file on `main`: `extract-criteria.py | criterion-specificity.py` → `total=13 vacuous=0`, and `walk-pin-lint.py dev-docs/plan.md` produces a verdict. What that establishes is *parsing*, not *gating*. The original wording offered `walk-pin-lint.py … → exit 0` as evidence the lint works; per §2 that exit code is 0 for **every** verdict, so it distinguished nothing. The design-around holds *and is now required rather than optional* — but the evidence for it is the parsed output, never `$?`.
+
+**The live rebase risk has moved.** #165 landed, so its `$ARGUMENTS` blast radius is settled. The open one is **`conductor/docs-only-verify-build-na`**, in flight and touching **`verify-build`** and **`audit-skips`** — and Arm A depends on two `verify-build/lib` scripts (`extract-criteria.py`, `criterion-specificity.py`). If that PR changes either script's interface or output shape, Arm A breaks silently: it would still exit 0 and report a clean quality arm. **Re-verify Arm A by running it at that rebase, not by reading the diff** — a quality gate that degrades to "clean" is the failure this whole plan is organised against.
+
+### 4. Union depth, gated on the trigger — the proportionality proposal
+
+#160 measured, on the reference prototype (10 documented undeclared behaviours): **source mode single-run mean 82%, union of 4 runs 100%.** Diff mode 60%/60%.
+
+Depth keys on **`trigger`'s resolved `path`** — its actual output — **not on `Mode`**. An earlier draft keyed it on Mode and `/flow:critique-plan` caught two holes that opens: `Mode: spike` resolves to no declared depth at all, and a `Mode: feature` change the trigger sends to **classic** (non-visual `Surface`, or `uiSurface: false`) would claim depth 2 while Arm B has no prototype source to read. An undeclared depth is precisely the "ran and found nothing" vs "did not run" ambiguity § 2 exists to forbid, reintroduced through the routing table.
+
+| `trigger` → `path` | union depth | what the output must say |
+|---|---|---|
+| **`prototype-first`** | **2** | "2 passes unioned. Measured basis: 1 pass ≈ 82%, 4 passes = 100% on the reference case; **2 is between and unmeasured**." |
+| **`collapsed`** | **n/a — Phase 3 does not apply** | see below |
+| **`classic`** | **n/a — Phase 3 does not apply** | "No approved prototype exists, so there is no source to read, and the human still gates this plan." |
+
+**`collapsed` was a category error in the first draft and `/flow:audit-plan` caught it.** I gave it depth 1. But `prototype-gate.py`'s collapsed branch returns `pre_execution_gate: "plan"` — *"the pre-execution gate stays at plan approval"* — so **the human still gates that plan.** Phase 3's machine gate exists precisely because the human gate moved to the prototype; where it has not moved, there is nothing for a machine gate to replace. `collapsed` therefore joins `classic`: **Arm B does not run, and `/flow:autoplan` does not run at all.** No approved prototype exists to read either way.
+
+That leaves **one** row where Phase 3 applies — `prototype-first` — which is the honest shape: the machine gate is the counterpart of the moved human gate, one for one.
+
+`Mode: spike` reaches this table only via `path` (the trigger routes spike to `classic`), so it needs no row of its own — which is the point of keying on `path`.
+
+**Two things I will not do.** I will not claim depth 2 buys 100% — only 1 and 4 are measured, and interpolating would be exactly the confidently-shaped-claim-over-a-weaker-measurement class this program has corrected three times in the last PR. And I will not run uniform depth 4: 4 passes on top of three agents, on a small change, is the ceremony D1 exists to remove.
+
+**The cost, stated honestly:** on the prototype-first path this gate is 3 agents + 2 coverage passes = 5 model invocations before any code is written. That is the price of the 82%→100% curve, and it is why depth is a declared knob rather than a constant.
+
+### 5. When two passes disagree — the finder wins, and nothing averages
+
+One pass flags a gap, the other does not. Given **precision has been perfect across every measured run**, the disagreement has exactly one reading:
+
+> **The finder is right. The miss is a recall event, not counter-evidence.**
+
+So the gate **unions, never intersects, and never averages to "maybe."** A finding present in 1 of 2 passes carries **identical standing** to one present in 2 of 2 — same severity, same routing, same resolution requirement. The gate records *how many passes saw it* as provenance only; that number never changes the verdict.
+
+This is asserted as a criterion, not left to prose, because "2 of 2 is stronger than 1 of 2" is the intuitive read and it is wrong here. Unioning is only safe *because* of the precision record — without it the same technique amplifies noise, so the licence is the measurement, not the technique.
+
+### 6. `[decision-required]` — the escalation, written out
+
+Not described. This is the literal shape the gate emits, in FB-0075's form, for the most common case (a coverage gap the agent cannot resolve alone):
+
+```
+**Decisions for you** — answer by number. I apply your answer and re-run the
+check; if it passes, Execute starts. Nothing else is blocked.
+
+1. The prototype does something the plan never promises: pressing Esc while the
+   comment editor is open closes the editor but leaves the pin. Nothing in the
+   plan says that should happen, so nothing will test it.
+
+   What I'd do: add this criterion —
+     "Esc with the editor open closes the editor and leaves the pin in place;
+      a second Esc closes the panel. → verify: open a pin, press Esc twice."
+
+   What I need from you: yes (I add it and re-run the check), or tell me it is
+   out of scope and I record that instead.
+
+   Found by 1 of 2 coverage passes. That is not weaker evidence — this reviewer
+   has never reported a gap that was not real; the other pass simply missed it.
+```
+
+**The header is the shipped one, not a new one — and the renderer is deliberately *not* reused.** `/flow:critique-plan` round 5 caught the first draft inventing `DECISION NEEDED — 1 item, answerable now.` beside a shipped FB-0075 renderer that already emits **`**Decisions for you** — answer by number.`** (`ship/lib/manifest-triage.py` → `render_decisions`). Two spellings of one user-facing contract is the fan-out class, so the wording is now the shipped wording, with only the trailing clause changed — the shipped one promises this "takes the PR closer to ready", which is false here, because there is no PR yet.
+
+*Why the wording and not the engine.* `render_decisions` is draft-PR-shaped all the way down: it consumes `result["residual"]`, keys every entry on `class ∈ {ask, auto, blocked}` and a `kind` matched against `KIND_COPY`, and its copy speaks in PR-readiness. This gate runs **before any PR exists** and has no manifest to classify. Composing would mean either fabricating PR-shaped classes for findings that have none, or generalizing a shipped ship-path engine — new machinery, on a path I am not touching, which is the thing I was told to stop and report rather than build. **So: reported, not built.** If the two escalation surfaces should share an engine, that is a real follow-up and it is filed as one (roadmap, D1f) — it is not this PR, and the cheap half of the win, one format for the human, is taken here.
+
+Three properties that make it answerable rather than a document: **the resolution is drafted, not requested**; the ask is a yes/no; and the one-of-two provenance is stated *with* its interpretation, so the reader is not left to discount it.
+
+### 7. Scope
+
+**In:** a new **`/flow:autoplan`** skill (auto-write + Arm A + Arm B + the `/flow:review-brief` call + routing); the deterministic Arm A invocations; union-depth resolution from the trigger; the disagreement rule; the FB-0075 renderer; **`prototype/SKILL.md` § 10 rewired to call it** — see below, this is the only thing that makes the skill reachable; **registration at all three sites** — `.claude/skills/ship/SKILL.md:28` requires `README.md` + `plugins/flow/docs/workflow.md` + `workflow-help/SKILL.md` for a new skill, and the first draft listed one of three, in the section added specifically to make omissions checkable; **`/flow:review-brief` generalized from brief-only to any reviewed artifact** (its noun in 30 places, plus the next-step and caller strings above), given its second call site, **and swept across the catalog surfaces that still describe it as pre-prototype-only** (nine known occurrences, by grep not by memory); `workflow.md` Step 2's prototype-first path updated from "machine-reviewed" to the actual contract; **handoff §8's Phase 3 checkbox corrected** — it currently names the three-reviewer set §9.3 proved insufficient, and that staleness propagated verbatim into my dispatch; evals + CI.
+
+**Out:** the merge gate; `/flow:verify-build`; anything on the classic path; **the v1.46.0/v1.48.0 contradiction on `main`** (five occurrences across two docs — dispatched to another worker; I would collide); D4/D5.
+
+**The call site, added after `/flow:critique-plan` round 4 found the skill had none.** `plugins/flow/skills/prototype/SKILL.md` § 10 is the **shipped** hand-off the agent actually follows after human gate 1, and today it reads *"Write the technical plan against the approved prototype, then: `gate-execute`"* — a hand-write, with the three reviewers listed underneath as prose the agent may run ad hoc. That sentence **is** the thing Phase 3 replaces, and it appeared in neither this section nor § 8. Building the plan as drafted would have shipped `/flow:autoplan` unreachable: green evals, a skill nothing invokes — the FB-0077 shape, where a contract stayed green over a feature that no longer had a call site. So § 10 is in scope, and a criterion asserts the call **positively**, because "the hand-write sentence is gone" is satisfiable by deleting the hand-off entirely.
+
+*What is stale in § 10, corrected twice — the round-4 premise was wrong and my correction to it was too narrow.* Round 4 called the reviewer list superseded; it is not, **today** — I updated it in Phase 2 and it already names all three with `/flow:audit-coverage` in source mode. But round 8 caught the tense error in my own rebuttal: the list is accurate now and **false the moment this ships**, because the post-gate-1 review set becomes Arm A (two deterministic scripts it names nowhere) + Arm B + Arm C, and the follow-on sentence *"**The third of those** has a measured limitation"* is an ordinal into a list that no longer has that shape. Ruling the list out of scope would have shipped a deployed prompt describing a pipeline that does not run — the FB-0077 shape, two paragraphs after citing it. **So § 10's `machine-reviewed:` list and its ordinal are in scope**, and a criterion asserts positively that it names the three arms as shipped.
+
+*And the separate line, which round 4 did find:* The critique called the reviewer list superseded. It is not: I updated it in Phase 2 and it already names all three, `/flow:audit-coverage` **in source mode** included. What does go stale the moment this ships is a different line — § 10's closing **"Phase 3 … is not built; it is gated on §9.3. Do not imply otherwise."** Swept mechanically rather than from memory: `git grep -nEi "phase 3.{0,60}(not built|is gated)"` returns **one live shipped occurrence** (`prototype/SKILL.md:231`) plus `changelog/v1.48.0.md:12`, which is **immutable history and must not be edited** — a changelog records what was true at v1.48.0, and it was.
+
+**The division of labour with the shipped `/flow:gate`, stated because the names invite confusion.** `/flow:gate` answers *"who may approve this — orchestrator or human?"* by classifying four axes (stakes, reversibility, confidence, taste). `/flow:autoplan` answers *"is this plan sound?"* by reviewing its content. Orthogonal questions. **They do not chain on the D1 path**, and the reason is the whole point of Phase 3: the answer to `/flow:gate`'s question is already fixed there — **nobody approves the plan itself**; it is machine-gated — so asking it would be asking who should hold a gate that has deliberately been removed. *Precisely, because §2 names this very sentence as one of three facts that compose into deleting the LOW gate:* **nobody approves the plan as a document, and a human still answers a `[decision-required]` escalation and still holds the LOW-confidence gate.** Those were never the plan-approval gate; they are conditional and they survive. On the classic path `/flow:gate` is untouched.
+
+### 8. Files touched
+
+*Absent from the first draft — a required `plan-discipline` field, and the omission was not cosmetic: my largest declared risk is a file-level collision, and this list is what makes it checkable. Its absence produced ISSUE 3 directly.*
+
+**Plugin artifacts:** `plugins/flow/skills/autoplan/SKILL.md` (new) · `plugins/flow/skills/autoplan/lib/gate.py` (new — Arm A's invocations, union + dedup, the disagreement rule, depth resolution, the FB-0075 renderer) · `plugins/flow/skills/review-brief/SKILL.md` (artifact-noun generalization, 30 occurrences, + the second call site) · `plugins/flow/agents/lens-experience.md` (33 occurrences of "brief" for what is now "the artifact under review" — **one agent file, not three**: measured, `auditor.md` and `plan-critic.md` contain zero, and the first draft listed them from memory) · `plugins/flow/skills/prototype/SKILL.md` (§ 10 — the call site, the `machine-reviewed:` list + its ordinal, and the now-false "not built" line) · `README.md` (a skills-table row for `/flow:autoplan`, **and** the `/flow:review-brief` row's now-false *"Standalone today — not yet wired into the loop"* clause, which Arm C ends) · `plugins/flow/skills/workflow-help/SKILL.md` (the loop cheat-sheet gains the autoplan step) · `plugins/flow/docs/workflow.md` (§ 2's prototype-first path) · `plugins/flow/evals/run_autoplan_evals.py` + `fixtures/autoplan/` (new) · **`plugins/flow/evals/run_review_brief_evals.py`** — CI-wired (`ci.yml:75`) and it pins the exact string Arm C moves: `:165` asserts `"proceed to the prototype phase" in text`. **Decided, not left to discovery: the verdict's next-step string moves to the call sites, so this eval is updated in the same PR** — it must assert that the string is *supplied by the caller*, not that `review-brief/SKILL.md` contains it · `.github/workflows/ci.yml` · `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` (v1.51.0) · `changelog/v1.51.0.md` (new).
+
+**Dev-tracking:** `dev-docs/plan.md` (this block) · `dev-docs/history/2026-09-27-*.md` · `dev-docs/feedback/FB-0123-*.md` · `dev-docs/roadmap.md` · `dev-docs/handoffs/d1-prototype-first-gate.md` (§8's stale checkbox).
+
+**Collision surface vs `conductor/docs-only-verify-build-na` — measured, not assumed.** It touches `plan.md`, `roadmap.md`, `workflow.md`, `marketplace.json`, `plugin.json`, `ci.yml`, plus `verify-build/{SKILL.md,lib/diff_scope.py,lib/spike-rubric.md}` and `audit-skips/lib/`. **Overlap with me: the six shared docs/manifests** — and it touches **none** of Arm A's three scripts (see A4).
+
+**Visual-walk:** N/A — no file matching `uiFilePatterns` is in scope.
+
+---
+
+**Spec-walk:**
+
+*The auto-write itself — the deliverable every other criterion assumes exists*
+
+*And it must write the D1 header, or it disarms the guard it runs in front of — found by `/flow:critique-plan` round 5, verified in the shipped engine.* `gate-execute` resolves its markers from `_active_region()`, *"everything ABOVE the **FIRST** `Spec-walk` heading"* (`prototype-gate.py`), and on `gate != "prototype"` it returns **`ok: true`** with *"plan doc declares no prototype gate — classic path, nothing to assert."* Correct in isolation. But criterion 1 makes the auto-written block the document's new **first** block, so `_active_region` is now that block's header — and a header without the two markers means the guard is handed a fresh plan, finds no gate declared, and passes having asserted **nothing**. That is the Phase 2 bypass reintroduced, from the other side: not a retained digest satisfying a later gate, but a new block carrying no digest at all, and the step this plan adds in front of the guard is what causes it. It is the same first-vs-second-heading boundary that only got caught last time by replaying the attack — so the criteria below pin it in the failing direction, not just the passing one.
+
+
+*Added after `/flow:critique-plan` found all 21 criteria grading the **gate** and none grading the **artifact the gate exists to check**. That is the under-declaration class this entire plan is organised against, committed in the plan itself — and it landed on the one deliverable §9.3 and verdict A3 both rest on.*
+
+- [x] `/flow:autoplan` writes a plan to `flow.config.json.planPath` carrying an active `**Spec-walk:**` block, **placed first** per plan-discipline's active-block rule — RED if no plan is produced or the block is empty. Both polarities, so "wrote nothing" cannot read as success. → `test_autoplan_produces_a_plan`
+- [x] The written plan carries the **required plan-discipline fields** (Mode, Goal, Scope in/out, Spec-walk, confidence verdict, risks, files touched) **and both D1 header markers — `**Pre-execution gate:** prototype` and the verbatim `**Prototype approved:** \`<sha>\` · …` line** — one missing is RED, because every downstream consumer anchors to that shape and because `gate-execute` fails **open** without them (see below). → `test_autoplan_plan_is_well_formed`
+- [x] **Both markers sit ABOVE the auto-written block's own `**Spec-walk:**` heading**, which is the region `gate-execute` actually reads. RED when either is missing or sits below it; GREEN when both are above. Both polarities, because the failing direction here is a silent pass, not an error. → `test_autoplan_writes_the_gate_markers_above_the_walk`, `test_missing_gate_marker_makes_gate_execute_red`
+- [x] Its criteria derive from **the approved prototype**, not the session: RED when the plan doc's `**Prototype approved:**` digest is absent or its sha does not match the prototype the criteria were written against. That is what makes "against a design that survived contact" checkable rather than asserted. → `test_autoplan_derives_from_the_approved_prototype`
+- [x] The auto-written plan passes **its own Arm A** — a plan this skill produced that would fail the gate it then runs is a contradiction the gate must surface, not absorb. → `test_autoplan_output_survives_arm_a`
+- [x] **`prototype/SKILL.md` § 10 calls `/flow:autoplan`**, and calls it **before** `gate-execute` — asserted **positively** (the invocation is present, in that order), because the negative alone ("the hand-write sentence is gone") passes equally if the hand-off were deleted. Pinned at the **composed** layer, not only in the engine: the criterion reads the shipped skill file. → `test_hand_off_invokes_autoplan`, `test_hand_off_order_is_autoplan_then_gate_execute`
+- [x] The reachability check fails when the call is removed — the fixture mutates § 10 to drop the invocation and the harness must go RED. An instrument that has never returned RED is not an instrument (FB-0010 § 4). → `test_hand_off_missing_call_is_red`
+
+*Arm A — deterministic, hard gate*
+
+- [x] A plan with a vacuous criterion is RED, and the same plan with that criterion sharpened is GREEN — both polarities, so the check is not satisfiable by always failing. → `test_arm_a_vacuous_both_polarities`
+- [x] A plan with an unpinned checkbox is RED; pinned is GREEN. → `test_arm_a_pinning_both_polarities`
+- [x] The pinning check runs over **the active block only**: a plan file whose *retained, merged* blocks carry unpinned checkboxes is **GREEN** when the active block is fully pinned — the failing direction, because unscoped this arm is red forever on any repo that retains history (measured here: 591 unpinned across 71 blocks). → `test_retained_blocks_do_not_turn_arm_a_red`
+- [x] Arm A's verdict is read from **parsed output fields** (`vacuous`, unpinned-count), never `$?` — asserted by a fixture where the tool exits 0 *and* reports a defect, which must be RED. Both tools exit 0 on every verdict, so an exit-code gate would be green on all input. → `test_arm_a_ignores_exit_status`
+- [x] Arm A invokes `walk-pin-lint.py` **directly** and does not route pinning through `/flow:critique-plan` — asserted positively (the direct call is present) and negatively (no reliance on `$ARGUMENTS` pinning), so #165's removal cannot silently turn this UNCHECKED. → `test_arm_a_owns_its_pinning`
+- [x] Arm A is RED when it cannot prove it read the plan under review — keyed on **`extract-criteria.py`'s `source_heading_line`**, a field added to the shared extractor for this, compared against the line the auto-write recorded. *Corrected after `/flow:audit-coverage` caught the criterion naming a mechanism that was considered and **replaced**: an earlier draft said the line was "parsed from `warnings`" prose, and scraping a warning sentence is the same fragile-instrument class this plan rejects elsewhere — a criterion describing the wrong mechanism is worse than a missing one, because it tells a future reader the wrong thing shipped.* The field is `null` on the no-block and `all_demoted` paths, and those are distinct from a mismatch. **Not** on `source_heading`/`block_count`, which the first draft used and which cannot carry the claim: measured on this file, `source_heading` is the constant `**Spec-walk:**` for every unqualified block and `block_count` is the file-wide total **71** — so the assertion passed whether or not the property held, the FB-0010 § 3 shape one step over. The fixture's non-first active block and first block carry **identical bare headings**, because that is the case that currently passes green. → `test_arm_a_proves_which_block_it_graded`
+
+*Gate-level — the pass condition, stated once for all three arms*
+
+*Added after round 4: the never-pass-on-silence rule was pinned for Arm B only, and Arm C **imports the opposite default**. `/flow:review-brief` says a clean pass proceeds and that "a brief with zero findings across all three is a legitimate, common outcome" — correct for review-brief, whose callers treat it as advisory, and wrong for a gate that replaces a human. It has no handling at all for a reviewer that did not return, and the live instance is in this very file: on `conductor/arguments-idiom-render-time-injection-fix` **all three lens spawns died on an account session limit (HTTP 429)**. Three dead spawns and three clean spawns produce the same zero findings.*
+
+*The fix is at the gate, not in `/flow:review-brief` — changing that skill's semantics would reach `/flow:staff-review`, which is out of scope and correctly advisory there.*
+
+- [x] **GREEN requires each arm to have RUN, evidenced, and returned nothing** — for every arm, not just Arm B. Absence of findings is never by itself a pass. → `test_pass_requires_evidence_of_running_all_arms`
+- [x] The gate is **RED when Arm C's three reviewers did not all return**, and that RED is distinct from "three reviewers returned clean" — a fixture with one reviewer absent must not render as a pass. → `test_arm_c_partial_return_is_red`, `test_arm_c_all_clean_is_green` (both polarities, so the check is not satisfiable by always failing)
+- [x] A reviewer that **errored** (429, tool failure, empty output) is classified as *did not run*, never as *found nothing*. → `test_errored_reviewer_is_not_a_clean_pass`
+- [x] **A `LOW` confidence verdict in the auto-written plan routes to `[decision-required]` and Execute does not proceed** — RED on LOW, GREEN on MEDIUM/HIGH, both polarities. D1 moves the **plan-approval** gate; it does not touch flow's **third** gate, and nothing in the three arms reads a verdict, so without this an auto-plan that rates its own central assumption LOW clears a gate the shipped loop says it cannot pass. → `test_low_verdict_routes_to_decision_required`, `test_medium_verdict_proceeds`
+- [x] The gate is **RED when a reviewer ran document-blind** — i.e. its output carries the FB-0082 `resolved **zero** documents` warning. A critique that could not read the project's rules cannot clear the Spec-violation category, and its clean verdict on the other categories must not be counted as a full pass. **Found by running the instrument on this very plan** (see below). → `test_zero_reference_docs_is_red`
+
+*Arm B — completeness, never pass-on-silence*
+
+- [x] The gate is RED when Arm B **did not run**, distinctly from when it ran and found nothing — two different reasons, never collapsed. → `test_arm_b_not_run_is_red`
+- [x] `/flow:autoplan` **writes the stamped arg file** (named via `arg_placeholders.py --arg-path audit-coverage`) before invoking Arm B, and Arm B is RED if its output carries a `WEAKENED` line — so the gate cannot silently run the unfiltered path whose recall its own honesty string does not describe. Positive (the write happens) and negative (no `WEAKENED` survives) both asserted. → `test_arm_b_uses_the_filtered_path`
+- [x] Zero findings at declared depth is a PASS **only** in conjunction with the procedure having run; a fixture asserting "no findings" with no recorded run is RED. → `test_arm_b_silence_is_not_a_pass`
+- [x] The union carries **per-pass provenance for exactly the resolved depth**, and is RED when recorded passes < declared depth — pinned because "*at declared depth*" is half the stated pass condition and every other criterion checks only what the output **says**: a single pass whose output reads "2 passes unioned" would otherwise satisfy the whole walk while delivering the 82% single-run recall §4 exists to improve on. Depth-2 declared + 2 recorded ⇒ GREEN; depth-2 declared + 1 recorded ⇒ RED. → `test_depth_provenance_both_polarities`
+- [x] The output always states the depth used and what that depth is worth, and never claims a measured figure for an unmeasured depth (depth 2 must not be described as ~100%). → `test_arm_b_depth_honesty`
+
+*The disagreement rule*
+
+- [x] A finding present in 1 of 2 passes routes identically to one present in 2 of 2 — same severity, same requirement. → `test_union_never_averages`, asserting equal treatment rather than absence of downweighting
+- [x] The union deduplicates by cited symbol, so the same gap found twice is one item, not two. → `test_union_dedupes_by_symbol`
+
+*Arm C — one extraction, three agents*
+
+- [x] `/flow:autoplan` **calls `Skill("flow:review-brief")` with the plan's path** and does not re-implement the fan-out — asserted positively (the call is present, with an argument) and negatively (no second three-agent spawn in `autoplan`), so the handoff's one-orchestrator-two-call-sites contract cannot be satisfied by building a twin. → `test_arm_c_reuses_review_brief`
+- [x] `/flow:review-brief` reads as artifact-neutral: its reviewer prompts no longer say "brief" where the artifact may be a plan, and **both** call sites name what they pass. → `test_review_brief_is_artifact_neutral`, looping both call sites
+- [x] **The generalization covers its phase-specific strings, not only its noun** — `/flow:review-brief`'s output contract ends `VERDICT: [proceed to the prototype phase (/flow:prototype) | …]` and its gotchas assert *"Don't invoke `/flow:prototype` yourself. It is your **caller**"*. Called from Arm C, which runs **after** gate 1, both are false: the verdict points back into a completed phase and names the wrong caller. Each call site supplies the artifact noun **and** its own next step and caller identity; the Phase 3 call site's verdict must never name `/flow:prototype`. → `test_review_brief_next_step_is_call_site_supplied`, `test_phase_3_verdict_does_not_name_prototype`
+- [x] **No path is interpolated into a shell block** by `/flow:autoplan` or by the skills it calls — the path reaches a shell only via a tool-written file (#165/FB-0116: `$ARGUMENTS` is substituted textually *before* any shell parses it, so a placeholder inside a shell block is executable code, not a value). → `test_no_path_is_interpolated_into_shell`
+
+  *Restated: the first draft had this as "passes via the arg file, **not** `$ARGUMENTS` — the channel that no longer exists", which contradicted the criterion above it and was simply wrong about #165.* Two different layers: the **caller→skill** argument channel is alive and required (`review-brief`'s `## Argument` section still renders `$ARGUMENTS`), and what #165 removed is only the **skill→its own shell** interpolation. Building to the wrong version would have dropped the argument entirely and sent `review-brief` down its no-argument transcript branch — the exact silent failure Phase 2 shipped a criterion to prevent (`prototype/SKILL.md` "passes the canonical brief path as its argument — both halves, since the call alone would silently take review-brief's no-argument transcript branch"). Same split applies to Arm B.
+- [x] The skill states explicitly that **Arm B's reviewer** reads the prototype source, **not** the shared extraction — the one-extraction guarantee is scoped to Arm C's three reviewers and not claimed beyond them. → `test_arm_b_input_is_stated`
+
+*Routing + proportionality*
+
+- [x] `/flow:autoplan` runs **only** on `trigger` → `path == "prototype-first"`, and is a clean no-op on `collapsed` and `classic` — because both keep `pre_execution_gate: "plan"`, so a human still gates and there is nothing for a machine gate to replace. Every row exercised, **including `Mode: feature` routed to `classic`** by a non-visual `Surface`. → `test_autoplan_runs_only_where_the_human_gate_moved`
+- [x] `Mode: spike` reaches the table only through `path` (trigger routes it to `classic`) and never resolves an undeclared depth. → `test_spike_has_no_undeclared_depth`
+- [x] `[auto-fixable]` fixes and re-reviews **once**, never loops. → `test_auto_fixable_single_retry`
+- [x] **A finding that survives the one retry becomes `[decision-required]`** — never "proceed", and never a second retry. RED when a surviving finding routes to proceed; GREEN when it escalates. The state machine's terminal case, unpinned in the first draft while §1 read "proceed" and the pass condition read RED. → `test_surviving_finding_escalates`
+- [x] `[decision-required]` renders a numbered answerable question carrying a drafted resolution and the pass-provenance with its interpretation. → `test_decision_required_shape`
+- [x] **The escalation header equals the shipped one** — asserted by reading `ship/lib/manifest-triage.py`'s `render_decisions`, not by restating the string, so an edit to the shipped header turns this RED instead of silently forking the format a second time. Detection, not prevention: the drift-proof fix is a shared constant in the `manifest_contract.py` shape, and it is deferred to D1f with the engine unification it belongs to. → `test_escalation_header_matches_shipped`
+
+*Declared after `/flow:audit-coverage` flagged them — and the provenance is the point*
+
+*All three behaviours were added **during `/simplify` and `/flow:staff-review`**, i.e. after this plan was written, which is exactly the structural reason § 10 gives for why coverage silence is weak evidence: "behaviour added after a plan is written — during `/simplify` and staff-review — is exactly the behaviour least likely to be declared, and coverage runs after those stages." The plan predicted this about itself and was right. The tests were written when the behaviour was; only the declarations were missing, and the gate is what noticed. Approved by the orchestrator, 2026-09-30 — declared here rather than self-declared at the moment they were found.*
+
+- [x] An input path that is a symlink, contains `..`, or resolves outside the repository is **REFUSED** with verdict RED; a repo-local path is accepted and then judged on its contents. Both polarities, because a guard validated only on paths it should accept cannot be told apart from no guard at all — this one shipped wrong **twice** and passed every test both times. → `test_path_confinement_refuses_and_accepts`
+- [x] **Every refusal says why AND what to do**, carrying a `→` remedy clause — swept over every `SecurityRefusal` in the engine, not spot-checked on the four a test happens to reach, because a gate that stops without naming a remedy leaves the user knowing they are blocked and not how to move (FB-0121's shape). The sweep asserts it finds the refusals before asserting they are clean. → `test_every_refusal_names_a_remedy`, `test_path_confinement_refuses_and_accepts`
+- [x] Arm A's literal output, fed to the gate, **preserves its verdict**: a RED `arm-a` yields a RED gate with that arm's own reasons surfaced, and a GREEN `arm-a` yields GREEN. Pinned **across** the two subcommands rather than within each, because the defect lived in the seam — every per-subcommand criterion passed while the composition returned GREEN over a RED deterministic arm. → `test_arm_a_red_composes_into_the_gate`
+- [x] A RED caused **only by blockers** renders a non-empty escalation naming each blocker and the action that would clear it; with no blockers the header keeps its plain "Nothing else is blocked" promise. Both polarities, because the four existing RED criteria all pass over an escalation of `""` — the declared set was satisfiable by a gate that is correctly RED and silent. → `test_blockers_are_rendered_for_a_human`
+
+- [x] **Text rendered to a human is scrubbed of forgery vectors** — C0/C1 controls, `\r`, CSI sequences and Unicode bidi overrides (Trojan Source, CVE-2021-42574) are dropped from `finding` / `why` / `drafted_resolution` / `provenance` and from every blocker line; an ordinary finding renders unchanged. Both polarities, because a scrubber that ate everything would satisfy the negative half alone. The threat is concrete: an Arm B finding keys on a symbol lifted out of source the reviewer read, so on an untrusted branch the attacker authors that string — and **forging the question is at least as useful as forging the answer**. → `test_rendered_text_cannot_forge_the_escalation`
+- [x] An **unrecognized or absent `trigger.path`** yields `ok: false` and is distinguishable by the caller from `applies: false`, and its reason carries a `→` remedy like every other refusal. This is the row that is *not in the table*: the routing criterion above enumerates the three rows that are, and is satisfied without ever supplying a fourth — so a caller branching on `applies` alone would read a malformed trigger as a legitimate clean no-op, which is the did-not-run/ran-clean collapse this engine exists to forbid. → `test_spike_has_no_undeclared_depth`
+- [x] The shared extractor's new field reaches **both** its consumers: `extract-criteria.py` (Spec-walk, which Arm A reads) and `extract-visual-states.py` (Visual-walk, a different pipeline this PR does not otherwise touch) both document and emit `source_heading_line`. Declared because `cli_main` is shared, so adding a key for one consumer silently changed the other's output contract. → `test_arm_a_proves_which_block_it_graded`, `run_walk_extract_evals.py`
+
+*Round 3 — the engine/skill boundary, which is where the remaining gaps all were*
+
+*`/flow:audit-coverage`'s own summary named the pattern better than I had: the 49 declared criteria "cover the `gate.py` engine, the extractor's `source_heading_line`, the hand-off order, and the registration/catalog sweeps thoroughly; the gaps are all at the boundary between the new engine and the shipped skills it composes with." Each of these three is the PRODUCER half of a contract whose CONSUMER half was already pinned — the gate's fixtures supply by hand what the skill is supposed to emit, so the skill could stop emitting it and every criterion would still pass. That is this PR's own "pin the claim at the layer where it is claimed" rule, inverted.*
+
+- [x] **`/flow:review-brief` surfaces a reviewer that did not return** — `DID NOT RETURN` on its own line, a per-reviewer branch in the output format, and an `incomplete — N reviewer(s) did not return` verdict. This is the PRODUCER half of Arm C's RED: `test_arm_c_partial_return_is_red` pins the gate over a hand-written `reviewers` map, so if this reporting rule regressed the skill would render two clean reviewers, omit the third, and every gate criterion would still pass. Pinned at both call sites, including `/flow:prototype`'s pre-existing one. → `run_review_brief_evals.py` (`skill-reports-a-reviewer-that-did-not-return`), `test_review_brief_next_step_is_call_site_supplied`
+- [x] **`/flow:autoplan` Step 1's scratch write refuses a symlink** — `[ -L ]` on both `.flow` and the trigger leaf, before `mkdir -p`, with the `.gitignore` self-ignore. The engine's guards are `SecurityRefusal`s in `gate.py`; this one is a shell guard in the SKILL body, which neither `test_path_confinement_refuses_and_accepts` nor `test_every_refusal_names_a_remedy` reaches. It is the tree's **tenth** `.flow` writer and it shipped as the only one without the guard — caught by `/flow:security-review`, not by the walk, which is the signature of behaviour added after the plan. → `run_scratch_isolation_evals.py` (`contract-autoplan-idiom`, roster entry)
+- [x] **`/flow:review-brief`'s no-caller default is inert, and announced** — artifact *document*, caller *direct human invocation*, next step **`unspecified — my caller did not name one`**, and the skill says it took the default. Direct invocation is neither call site, so the two call-site criteria both pass while this regresses; and the regression it prevents is specifically a default that is right half the time, which is the harder failure to notice. → `test_review_brief_next_step_is_call_site_supplied` (`review-brief-default-next-step-is-inert`, `review-brief-announces-the-default`)
+
+*Round 4 — two real defects, not missing declarations*
+
+*The first three rounds found behaviour that existed and was tested but undeclared. This round found two places where the DECLARED criterion was true of the engine and false of the shipped path. Both are corrections, and both were self-inflicted by earlier fixes in this same PR.*
+
+- [x] **Arm A is RED when it was never asked to prove which block it graded.** `--expect-line` was optional, so the shipped call path omitted it, compared nothing, and returned GREEN — while the criterion above claimed Arm A "is RED when it cannot prove it read the plan under review." *"Proved it" and "was never asked to prove it" are the same did-not-run/ran-clean collapse this engine forbids, one level down.* Now fail-closed, with `--allow-unproven` as a loud, named escape that is never the default, and the skill passes the flag. **The removal was my own:** I dropped it from the fenced block for injection-safety, and that reasoning was wrong here — the line is agent-authored from Step 2, not caller-supplied, and the engine forces it through `int()`. → `test_arm_a_without_an_expected_line_is_red`
+- [x] **The union never silently drops a finding.** A finding carrying neither `symbol` nor `finding` text hit `if not symbol: continue` and vanished before `combine` saw it — no decision, no blocker, and the gate free to return GREEN over a real Arm B finding. The silent-skip class (rules item 1) inside the one function whose entire job is not to lose findings, and the same model-omits-a-key failure the Arm C roster rule calls "the cheapest omission" — defended there, undefended here. Now kept under a positional key, marked `unkeyable`, and carrying a note that it may be a duplicate; it still reaches the gate, which is the property that matters. → `test_union_never_silently_drops_a_finding`
+
+*Docs + the stale spec*
+
+- [x] Handoff §8's Phase 3 checkbox no longer names the three-reviewer set as sufficient, and records that #159 (source mode) and #160 (the union technique) supplied Arm B. → the diff
+- [x] `prototype/SKILL.md` § 10's `machine-reviewed:` list names **the three arms as shipped**, and its ordinal follow-on ("the third of those") resolves to the arm that actually carries the coverage limitation — asserted positively, not by the absence of the old list. → `test_hand_off_names_the_shipped_review_set`
+- [x] **The `review-brief` sweep is a grep, not a list of two call sites.** `git grep -nE 'review-brief' -- README.md plugins/` runs, and every survivor that describes it as brief-only or as reachable only from `/flow:prototype` is either updated or carries an explicit exemption. Known live at plan time and covered by this: `README.md:19`, `:104`; `docs/workflow.md:18`, `:49`, `:175`, `:692`, `:732`, `:733`; `workflow-help/SKILL.md:39`. Per `.claude/rules/general.md` FB-0010 item 2 — grep first, and every survivor ships with the contract change rather than becoming a follow-up. → `test_review_brief_catalog_sweep_has_no_survivors`
+- [x] `/flow:autoplan` is registered at **all three** sites the ship rule names — `README.md`, `plugins/flow/docs/workflow.md`, `workflow-help/SKILL.md` — asserted by grepping all three for the skill name, not one. → `test_autoplan_registered_at_three_sites`
+- [x] **Every live claim that Phase 3 is not built is retired**, swept by `git grep -nEi "phase 3.{0,60}(not built|is gated)"` rather than from memory, and `changelog/v1.48.0.md` is **left untouched** — it records what was true at v1.48.0 and editing history to stay consistent with the present is the wrong repair. → `test_no_live_not_built_claim` (greps the shipped tree, excludes `changelog/`)
+- [x] `workflow.md` § 2's prototype-first paragraph states the real gate contract, and the "procedure ran, not silence" rule appears where a reader of the loop will meet it. → `test_workflow_states_the_gate_contract`
+- [x] New harness wired into `.github/workflows/ci.yml`; full suite green **in detached HEAD as well as on a named branch** (the #158 lesson — tests must not read the ambient environment). → the CI diff + both runs recorded
+
+---
+
+### Confidence verdicts
+
+**A1. Two coverage passes is the right default depth.** **MEDIUM.** *Why:* 1 and 4 are measured; 2 is interpolation, chosen to buy most of the curve at half the cost of 4. *If it flips:* depth is a single declared constant — changing it is a one-line change plus the honesty string. *Mitigation:* the output never claims a figure for depth 2, so a wrong default misstates nothing.
+
+**A2. Perfect precision continues to hold, which is what licenses unioning.** **MEDIUM-HIGH.** *Why:* unbroken across every measured run, and #160 makes the same argument for the same reason. *If it flips* (one false positive): unioning starts amplifying noise, and the disagreement rule inverts from "the finder is right" to "needs adjudication." *Mitigation:* the rule is stated with its licence attached, so a future reader who sees a false positive knows precisely which assumption died.
+
+**A3. Auto-writing a plan good enough to gate is achievable.** **MEDIUM** — this is §9.3 itself, and it resolved MIXED rather than clear. *Why it is not LOW any more:* the quality half measured clean, and the completeness half now has an instrument it did not have when §9.3 ran. *If it flips:* the plan needs a human gate after all, which breaks the two-gate thesis. *Mitigation:* Arm B's pass condition is procedural, so a weak auto-plan produces findings rather than a false green.
+
+**A4. ~~#165 does not break Arm B's path argument.~~ RESOLVED — and it flipped.** #165 landed and I read the shipped files rather than the diff. It *did* change the channel: both Arm B and Arm C now take a path through a **stamped arg file**, not `$ARGUMENTS`, and `/flow:autoplan` would be the **first shipped skill to write one**. The design absorbed it (§ 2) and it turned out to be a simplification — one idiom serves both reviewers. **The residual moves to `conductor/docs-only-verify-build-na`, and measuring it lowered the rating.** Two corrections. **Arm A spans two owners, not one:** `extract-criteria.py` and `criterion-specificity.py` are `verify-build/lib`, but `walk-pin-lint.py` is **`critique-plan/lib`** — owned by the skill #165 just changed, and my "both of Arm A's scripts" wording had left it outside the risk register entirely. **And the in-flight branch touches none of the three** (measured: `verify-build/SKILL.md`, `diff_scope.py`, `spike-rubric.md`). So **LOW**, not MEDIUM, and the real overlap is six shared docs/manifests — a rebase conflict, not a silent degradation. *Mitigation, unchanged in kind:* re-run Arm A at any rebase touching **either** owner, by running it rather than reading. *If it flips:* Arm A degrades to a clean quality verdict silently — the failure this plan exists to prevent.
+
+
+**A5. How this plan was itself reviewed — a disclosure, because it changes what the review is worth.** All five `/flow:critique-plan` rounds run against this block were **document-blind**, and the critic said so in a scope note every time. Measured rather than assumed: this repo's `referenceGlob` is `dev-docs/*.md,dev-docs/feedback/*.md` and resolves **114 files** with the working tree's preprocessor — but Claude Code resolves skills from the **installed** plugin (FB-0107), which is **1.29.0** against a working tree at **1.50.0**, and 1.29.0's `extract_session.py` predates the comma-splitting fix now at `:1064`. It therefore treated the whole string as one pattern, matched zero files, and emitted the FB-0082 warning. **So: every finding I have applied is internal-incoherence only; the Spec-violation category was never assessed.** I have not re-run the rounds against the working-tree copy, because a Bash-invoked reviewer is not the shipped path and would measure something different again.
+
+*Composed with the criterion above, which round 7 caught me stating twice and never multiplying out:* **in this workspace, as it stands today, the gate is RED on every run.** Arm C's reviewers reach their reference docs through the same installed 1.29.0 preprocessor, so each emits the zero-documents warning, so the document-blind criterion fires unconditionally — the `Clean ⇒ proceed` path is **unreachable here**, and A3's mitigation ("a weak auto-plan produces findings rather than a false green") cannot be demonstrated in the only environment I have.
+
+**I am not adding an escape hatch, and that is the substantive call.** An exemption for "the reviewer could not read the project's rules, but it was the host's fault rather than the config's" is a fail-open wearing a provenance label, in the one place this plan is least entitled to one. The gate is correct to be red: a reviewer that cannot read the rules has not reviewed. So **converging the install is a stated prerequisite for dogfooding this gate green** — D1f's second item is not a nice-to-have adjacent finding, it is on the critical path for demonstrating Phase 3 at all, and I have marked it so. Until it converges, a green claim about this gate from this workspace would be unearned.
+
+*Two things follow, and only one is mine.* Mine: the criterion above, which makes my own gate RED on that warning rather than counting a blind pass — the failure mode is precisely the one this plan is organised against. **Not mine, reported not fixed:** the currency hook has not converged. `1.29.0` is the same number FB-0107 measured on 2026-09-12; it is still 1.29.0 on 2026-09-27, so the "it converges next session" expectation in `CLAUDE.md` § 3 is not holding in this workspace. That is a live defect in dev infrastructure I was told not to expand into, and it is on the roadmap below rather than in this diff.
+
+---
+
+### Open calls
+
+1. ~~**Skill name — low stakes, mine.**~~ **Withdrawn: it was not low stakes and it was not mine.** `/flow:plan-gate` collides with the **shipped** `/flow:gate`, which is model-invocable and whose own documented triggers include *"can I approve this plan?"* and whose § 1 is headed *"The plan gate — four axes"*. A prefix-extension of an existing skill's name, with an overlapping trigger phrase, is a routing hazard for the model that has to choose between them — not a cosmetic call. **Now `/flow:autoplan`**, and § 7 states the division of labour (below). Flagging that I classified this wrong: I judged "naming" as low-stakes without checking whether the name was taken.
+2. **Union depth 2 vs 3 on the prototype-first path.** I propose 2 (§4). 3 buys more of the curve at 1.5× the cost, and neither is measured. **Yours** — it is a cost/recall tradeoff, not a correctness question.
+3. **Does Arm B block, or only escalate?** ~~Open.~~ **Already answered, and I mis-filed it as open.** Your dispatch set the routing: `[decision-required]` ⇒ escalate as an answerable question, and Execute does not proceed until it is answered. Presenting that back as a choice would have spent a decision you had already made. Restated as the constraint it is: **Arm B blocks.** Catching a gap here costs a question; catching it at ship costs a built feature.
+
+   *The genuine residual, which is open:* **what happens to a finding the human waives.** If the answer to a `[decision-required]` is "build it anyway", the plan now carries a known, accepted gap — and nothing currently records that, so `/flow:audit-coverage` at ship Step 2 will re-find it and re-escalate a question already settled. I propose the waiver is written into the plan block as a declared, cited exception, so the second pass sees a decision rather than a defect. **Yours** — it is small, but it decides whether the loop can be answered once.
+4. **Ben, not you: does the machine gate ever surface to him at all?** **RESOLVED by Ben, 2026-09-29 — option (a).** An unresolved `[decision-required]` **pauses and escalates through the channel that already exists** — worker → orchestrator → human — and never proceeds silently. **His reasoning, recorded because it is the part that generalizes:** this is not a breach of the two-gate thesis, because CLAUDE.md already names *"a third automatic gate on LOW-confidence assumptions."* An auto-fix that failed is exactly that. **The machine gate replaces *routine* plan approval, not every judgment.** — Which is the same conclusion §2's LOW-verdict paragraph reached from the other end, independently: D1 moves plan approval and leaves the third gate untouched. *Implementation note: this cost nothing to make non-provisional. The orchestrator offered isolation scaffolding so an override would be a local change; there is none to keep or drop, because escalation is not a branch in `combine()` — any decision entry makes the verdict RED by construction. Overriding it would mean deleting the rule, not flipping a flag, which is the right shape for a gate.*
+
+---
+
+---
+
 **▶ EXECUTED, shipping (this branch, `conductor/s0-rule-skills-never-load-option-c`, v1.53.0, FB-0124): S0 option (c) — the four rule-skills earn their trigger from their descriptions, and the descriptions currently forbid it.** Ben chose (c) at the human gate: stop trying to path-activate, let Claude load them by judgment. The substance is not deleting `paths:` — it is that all four descriptions end with **"Not user-invocable — path-activated only."**, a sentence telling the model the skill is not its to invoke, while model invocation is the only mechanism (c) has. Ships rewritten `description` + new `when_to_use` on all four, removal of `paths:`, **a re-based `_is_rule_skill()` in `plugin-provenance.py` (which keys on `paths:` and would silently break)**, an honest `/flow:doctor` Check 3.2, deterministic evals with a negative control, and an A/B measurement in fresh sessions.
 
 **Mode:** feature · **Surface:** non-visual
@@ -355,7 +670,7 @@ invented here; it is named, tightened for paths, and made mechanical.
 5. **The door is closed, not merely joined by a safe path** (FB-0108 rule 1): a new eval lints every
    shipped SKILL.md and fails CI on any unescaped host placeholder in an executable context.
 
-### Spec-walk
+### Spec-walk (shipped — merged as v1.50.0, #165)
 
 - [x] **The idiom is documented once** in `plugins/flow/docs/workflow.md` § "Skill arguments: the
       prose rule", with the bundle evidence. **Spec-walk:** the section exists, states `## Argument`,
@@ -381,7 +696,7 @@ invented here; it is named, tightened for paths, and made mechanical.
       pre-existing walk/filter/cap guard still runs. *Pinned by:* `run_coverage_source_mode_evals.py`
       (all source-mode cases green through the new channel) + the flipped residual pin.
 - [x] **`${N}` / `$(0)` remediation** in `ship`, `doctor`, `contribute`, `verify-build`.
-      **Spec-walk:** `ship`'s provenance `sect()` produces identical output invoked bare and under a
+      **Spec-walk (shipped — merged as v1.50.0, #165):** `ship`'s provenance `sect()` produces identical output invoked bare and under a
       3-token argument. *Pinned by:* `run_arg_safety_evals.py::test_brace_positionals` — behavioural,
       the extracted function is RUN, not grepped.
 - [x] **`run_arg_safety_evals.py` ships, CI-wired.** **Spec-walk:** `ci.yml` lists it, and ci.yml's
@@ -396,14 +711,14 @@ invented here; it is named, tightened for paths, and made mechanical.
       `test_host_agreement`. Added after review found a real gap: `\\$ARGUMENTS` (two backslashes)
       is LIVE, because the host's escape arm is `(?<!\\)\\\$`.
 - [x] **A stale arg file cannot hijack an argument-less run** (found by `/flow:security-review`).
-      **Spec-walk:** the Tier-2 filename carries repo+branch+head, so a leftover from an earlier
+      **Spec-walk (shipped — merged as v1.50.0, #165):** the Tier-2 filename carries repo+branch+head, so a leftover from an earlier
       `/flow:audit-coverage <path>` is not read. *Pinned by:* a known-positive check that an old
       unstamped leftover is ignored (diff mode), plus the stamp asserted present in the block.
 - [x] **The lint sees indented fences.** **Spec-walk:** a placeholder inside a fence indented under a
       list item classifies `fenced`, not `prose`. *Pinned by:* the classifier test; `ship/SKILL.md`
       went from 41 to 75 recognised fence regions.
 - [x] **`/flow:doctor` Check 1.5 runs the predicate over the consumer's own `.claude/skills/`.**
-      **Spec-walk:** the CLI exits 0 clean / 1 violation / 2 could-not-scan, and each arm was
+      **Spec-walk (shipped — merged as v1.50.0, #165):** the CLI exits 0 clean / 1 violation / 2 could-not-scan, and each arm was
       exercised (clean tree, a planted positive, a missing directory). *Pinned by:* the three
       measured exit codes; doctor reports `[PASS]`/`[FAIL]`/`[WARN]` per scanned directory.
 - [x] **FB-0116** (the idiom) + **FB-0117** (the `$0`–`$9` collision class) written, plus a
@@ -550,7 +865,7 @@ item 4 exactly: a measurement that can only return "clean".
 - **The `.md` exclusion is reported, not fixed — see Open call 2.** It is probably a larger recall lever than
   anything in this PR, and it is a contract change for every consumer, so it is Ben's call, not mine.
 
-**Spec-walk:**
+**Spec-walk (shipped — merged as v1.49.0, #160):**
 
 - [x] **The inventory enumerates one row per hunk of the behaviour diff, from the same file list the diff
       itself uses** — not a second filter → verify: `run_coverage_inventory_evals.py` asserts the row set's

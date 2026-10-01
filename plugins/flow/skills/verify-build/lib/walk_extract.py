@@ -169,6 +169,7 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
         "items":         [<checkbox text>, ...],   # first ACTIVE block only
         "block_count":   <int>,                    # how many label blocks exist
         "first_heading": "<heading line>" | None,  # the selected heading
+        "first_heading_line": <int> | None,        # 1-indexed line of that heading
         "co_located":    True | False | None,      # vs anchor_label's active region
         "all_demoted":   True | False,              # every block is qualified shipped/merged/demoted
         "warnings":      ["..."],
@@ -197,6 +198,7 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
             "items": [],
             "block_count": 0,
             "first_heading": None,
+            "first_heading_line": None,
             "co_located": None,
             "all_demoted": False,
             "warnings": warnings,
@@ -216,6 +218,7 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
             "items": [],
             "block_count": len(heading_idxs),
             "first_heading": None,
+            "first_heading_line": None,
             "co_located": None,
             "all_demoted": True,
             "warnings": warnings,
@@ -293,6 +296,14 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
         "items": items,
         "block_count": len(heading_idxs),
         "first_heading": first_heading,
+        # 1-indexed line of the SELECTED heading. Surfaced as a field because it is the
+        # only value in this contract that distinguishes WHICH block was read: in a plan
+        # retaining shipped blocks every unqualified heading is the identical string
+        # `**Spec-walk:**`, and `block_count` is a file-wide total. `/flow:autoplan`'s
+        # Arm A asserts it graded the plan it was handed, and the alternative was scraping
+        # the line number back out of the warning prose above -- an instrument that breaks
+        # the next time that sentence is reworded.
+        "first_heading_line": first + 1,
         "co_located": co_located,
         "all_demoted": False,
         "warnings": warnings,
@@ -386,6 +397,7 @@ def cli_main(
                 items_key: items,
                 "source_path": str(plan_path),
                 "source_heading": block["first_heading"],
+                "source_heading_line": block["first_heading_line"],
                 "block_count": block["block_count"],
                 "co_located": block["co_located"],
                 "all_demoted": block["all_demoted"],

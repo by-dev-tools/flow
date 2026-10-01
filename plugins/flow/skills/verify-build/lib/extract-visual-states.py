@@ -28,6 +28,7 @@ Contract:
       ],
       "source_path": "<plan path>",
       "source_heading": "<the active Visual-walk heading line>",
+      "source_heading_line": <1-indexed line of that heading, or null>,
       "block_count": <how many Visual-walk blocks exist in the file>,
       "all_demoted": <true iff block_count > 0 but every one is qualified
                       shipped/merged/demoted — no active block>,
