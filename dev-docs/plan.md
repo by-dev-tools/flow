@@ -2,6 +2,115 @@
 
 ## Current Focus
 
+**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/cv1-followup-reviewer-rigor-walkextract`,
+version + FB at ship time, expect v1.56.0): CV1's unfinished half — three fixes, each one a gate
+that reads less than it reports.** Ben's call was (a), finish CV1 inside the stopping point. Scope is
+exactly the three fixes below and nothing else.
+
+**Mode:** feature · **Surface:** non-visual
+
+### What I measured before designing, and two corrections to the review that produced these items
+
+**Item 1's instruction lives in ONE place, not two.** Both the staff-engineer and push-further
+lenses cited it at `audit-coverage/SKILL.md:616` as well as in the agent. It is not there:
+`git grep 'test-only / doc-only'` returns exactly one hit, `plugins/flow/agents/auditor.md:27`.
+Acting on the lens reports unchecked would have meant editing a second site that does not exist.
+
+**It is already scoped to coverage, so the shared-agent risk is smaller than the dispatch assumed.**
+`auditor.md` carries five categories. Only the fifth, `Undeclared change`, is marked
+*(coverage mode only)* and contains the clause, and only `/flow:audit-coverage` restricts the agent
+to it (its prompt says "one category only: Undeclared change ... Ignore your other four
+categories"). `/flow:audit-plan` and `/flow:audit-completion` use the other four and never name the
+fifth. Residual, stated rather than waved away: they do not *explicitly* exclude it either, so a
+model reading the agent for those modes still sees the bullet — but its declared evidence base (a
+diff plus Spec-walk criteria) is not supplied in those modes.
+
+**And the fix is better aimed than "remove the instruction".** The skill already carries a rule that
+the suppression rules in the system prompt govern Stage 2 only, naming four of them: default to
+covered, do not invent findings, flag only gaps that affect correctness, and the disprove
+self-check. The doc-only clause is NOT among the four, so its stage scope is undefined while its
+siblings' is declared. The evidence agrees: across CV1's runs Stage 1 enumerated 12 to 20 SKILL.md
+behaviours, so enumeration is not being suppressed. The dismissal happens at Stage 2, where the
+clause legitimately applies. So this is a scoping gap, not a wrong instruction, and that distinction
+is what protects precision.
+
+### Item 1 — give the doc-only clause a declared stage scope, and carve out declared surface
+
+The mechanism the block already computes and then discards: `$DOCF`, the paths that entered via
+`behaviorBearingDocPatterns`. Emit it as an informational provenance line above the delimiter
+(`files selected via behaviorBearingDocPatterns: ...`) — **not** a `WEAKENED` line, since it is not
+a weakening and must not be routed as one. Then one clause in `auditor.md:27`, keyed to that list:
+for a file on it the doc-only carve-out does not apply, because the consumer has *declared* that
+file deployed surface. A changed or added rule, instruction or contract in such a file is a
+behaviour change; changed rationale, commentary or example prose still is not.
+
+That discriminator is exactly what CV1's prose negative already measures, which is why this is
+testable rather than hopeful — and why it does not license flagging wording edits.
+
+### Item 2 — `rigor-marker.py` fingerprints only `sourceFilePatterns`
+
+Measured on CV1: 29 changed files, 16 fingerprinted, **0 of the 11 changed `.md` files**. A
+`SKILL.md` edit committed after the marker was written left the gate reporting `ok`, so on a
+prompts-are-the-product repo a prompt-only PR cannot invalidate its own staff-review marker.
+`source_sha()` selects with `pat.search(f)` at `rigor-marker.py:91`; three callers pass the pattern
+(`ship/SKILL.md:101`, `staff-review/SKILL.md:218`, `skip-audit-checks.py:269`) and
+`run_docs_only_evals.py:262` pins the default's byte-identity between producer and engine.
+
+**OPEN DECISION — OD1, and I am not picking it quietly because the dispatch and my own roadmap
+entry disagree.** The dispatch says include the behaviour-bearing doc patterns. The roadmap entry
+I wrote argues the opposite: that slot is **opt-in**, so a gate that only enforces when configured
+is not an enforcement mechanism, and a consumer who never sets it still gets no protection for
+prompt edits.
+- **(a) Union `behaviorBearingDocPatterns`** — the dispatch's instruction. Smallest change, no
+  behaviour change for anyone who has not opted in. Weakness: protection is opt-in, which is the
+  wrong shape for an enforcement mechanism.
+- **(b) Fingerprint every changed tracked file** — my recommendation. The question the marker asks
+  is "did the tree move since review?", which has no reason to care what language a file is in. No
+  new argument, no three-caller fan-out. Cost: every existing marker goes stale once on upgrade, a
+  one-time false "re-review needed" — which at least fails toward review rather than away from it.
+
+### Item 3 — `walk_extract.py` ends a block early when a continuation line opens with `**`
+
+**Motivation, and it is the third-time evidence.** This defect bit three separate times inside one
+session, each time silently: CV1's original six criteria, the two added at its merge gate, and the
+single criterion written to close its loop. The third time, #171's brand-new plan gate went red with
+"15 of 16 criteria name no verification artifact" on a plan where all 16 were pinned by passing
+evals. Nothing warned; `warnings` stayed empty. A defect that catches its own author three times in
+one sitting is not a cosmetic reader quirk.
+
+Measured twice: 15 criteria became 5 on CV1's plan, and on a 3-item fixture with a control, both
+front-ends extracted 1 of 3 with 0 warnings, where deleting the one bold continuation line gave
+3 of 3. Both front-ends matter — `extract-criteria.py` (Spec-walk) and `extract-visual-states.py`
+(Visual-walk) — so declared visual states are lost the same way, which exposes D1's visual gate too.
+
+Paired fix, neither half sufficient alone: the extractor **loses no criteria** (require a blank line
+before a bold-label terminator, or track bullet continuation explicitly) **and** it **flags an early
+end loudly** in `warnings`, so a truncated set can never pass as a complete one.
+
+### Spec-walk
+
+- [ ] **Item 1 scopes to the coverage path only.** *Pinned by:* a new eval asserting the edited clause sits inside the `(coverage mode only)` category and that `audit-plan` + `audit-completion` do not restrict the agent to `Undeclared change`.
+      If execution shows the edit must touch shared text instead, this criterion fails and the measurement set grows to those two reviewers, per the dispatch.
+- [ ] **A declared-surface file is no longer dismissed on doc-only grounds at Stage 2.** *Pinned by:* an eval fixture pair over the `pr159` case, plus the `$DOCF` provenance line asserted present above the delimiter and asserted NOT to carry the `WEAKENED` token.
+- [ ] **Recall moves, measured on the same rig.** *Pinned by:* the `tools/coverage-recall` report on `pr159` with `--selftest` passing FIRST, reporting single-run scores and the union against today's 20 to 40 percent single-run and 60 percent union.
+- [ ] **Precision does not drop, measured over repeated runs.** *Pinned by:* the `tools/coverage-recall` report — the pure-prose negative run at least three times, each returning `No issues flagged.`, plus false-positive counts across every recall run. A drop is a regression, not a trade-off: stop and report, do not ship.
+- [ ] **Item 2: a `.md`-only change after review makes the marker stale.** *Pinned by:* a new `run_rigor_marker_evals.py` eval case — fingerprint, edit only a `SKILL.md`, re-fingerprint, assert the digest changed, paired with the negative that an unchanged tree leaves it identical.
+- [ ] **Item 2 keeps the producer and engine in agreement.** *Pinned by:* the existing `run_docs_only_evals.py` eval's byte-identity check, updated in the same commit as whichever option OD1 settles on.
+- [ ] **Item 3: a `**`-leading continuation line keeps every criterion.** *Pinned by:* a new `run_walk_extract_evals.py` eval case over a plan whose bullet carries such a line, asserting all criteria survive, on BOTH front-ends.
+- [ ] **Item 3: a genuine bold-label heading still terminates the block.** *Pinned by:* the same eval — the paired negative, without which the fix is satisfiable by never terminating, which would break this repo's own multi-block plans.
+- [ ] **Item 3: a block that genuinely ends early says so.** *Pinned by:* the same eval asserting a non-empty `warnings` entry naming the early end, paired with the positive that a well-formed block warns nothing.
+- [ ] **Fixtures first.** *Pinned by:* the git history — each prompt or reader change lands in a commit whose fixture was committed first or alongside, per this repo's prompt-changes-are-code-changes rule.
+- [ ] **Docs.** *Pinned by:* a doc-diff — one `dev-docs/history/` entry, the FB entries the work earns, and the three roadmap entries closed rather than left open.
+
+### Coordination
+
+Branched from `main` at `a250b66` (v1.55.0, CV1 merged) after #172 landed, as instructed, because
+this edits the same `audit-coverage` files. Baseline on the branch: evals 43/43,
+`recall.py --selftest` passing. Version and FB numbers at ship time; expect v1.56.0. Nothing else
+is in flight on these files as of branching.
+
+
+
 
 **▶ EXECUTED, shipping (this branch `conductor/cv1-audit-coverage-md-blindness`, v1.55.0, FB-0126/FB-0127): CV1 — `/flow:audit-coverage` cannot see `.md`, so most of this plugin is invisible to it.** Measured end to end: #159's reconstruction moves from **0 gaps found at baseline** (both arms A-off) to **2-of-5 and 1-of-5 single-run, union 3-of-5**, zero false positives, plus the paired prose negative. Four follow-ups this measurement produced are in `roadmap.md` § Next, none of them fixed here.
 
