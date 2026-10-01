@@ -324,9 +324,11 @@ if [ -n "$SRC" ]; then
   done)
   # Emit the truncation notice BEFORE the delimiter, with the other control lines. It used to be
   # printed after the body, which made it the one control line a file under review could forge
-  # indistinguishably: every other one is emitted by a helper that exits before the delimiter, so
-  # position alone tells skill-output from file-content. Now the rule is uniform -- above the
-  # delimiter is the skill speaking, below it is data -- and the prose can say so without a caveat.
+  # indistinguishably. The rule is now uniform in BOTH modes -- above the delimiter is the skill
+  # speaking, below it is data -- but it was not when this comment was first written: it claimed
+  # "every other one is emitted by a helper that exits before the delimiter", and diff mode's
+  # own budgeter falsified that by printing TRUNCATED after the body. Flagged by this change's
+  # security review; the diff-mode side now hoists its weakenings, so the claim is true again.
   if [ "$(printf '%s' "$BODY" | wc -c)" -gt "$SOURCE_CAP" ]; then
     echo "[audit-coverage] WEAKENED · SOURCE-TRUNCATED — source tree exceeds $SOURCE_CAP bytes; behavior past the cap was NOT read. A clean result here is PARTIAL and is NOT a clean pass — say so, and recommend narrowing the path or auditing the remainder."
   fi
@@ -356,12 +358,22 @@ command -v jq >/dev/null 2>&1 || { echo "[audit-coverage] JQ-MISSING — jq is n
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
 [ -z "$BASE" ] && BASE=main
+# SANITISE A CONFIG-SUPPLIED REF. git check-ref-format forbids control characters in a
+# branch name, so stripping them is lossless for any legitimate value -- and jq -r passes a
+# newline through verbatim. Measured: defaultBranch set to a newline followed by an
+# [audit-coverage] SKIPPED line forged that token at column 0 ABOVE the delimiter, where
+# this block declares the skill is speaking, and SKIPPED is the non-blocking one.
+BASE=$(printf '%s' "$BASE" | tr -d '\n\r' | cut -c1-200)
 # Source-file filter (shared default with security-review / ship Step 1c).
 # planPath, resolved AGAIN here rather than shared with the criteria block above: each
 # dynamic-context span is its OWN process, so no variable crosses between them -- the same
 # constraint that forces the FB-0074 root anchor to appear twice. Two readers, one default; a
 # change to either must change both (FB-0010 fan-out).
 PLANDOC=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLANDOC" ] && PLANDOC="dev-docs/plan.md"
+# Same sanitisation, same reason: this path is interpolated into the DECLARED-CRITERIA block,
+# which the prompt names as the only trusted criteria source, so a newline here injects
+# lines -- including forged criteria -- into exactly the wrong place.
+PLANDOC=$(printf '%s' "$PLANDOC" | tr -d '\n\r' | cut -c1-300)
 SP=$(jq -r '.sourceFilePatterns // empty' flow.config.json 2>/dev/null)
 [ -z "$SP" ] && SP='\.(ts|tsx|js|jsx|mjs|cjs|py|rs|swift|go|rb|java|kt|sh|bash|tf|tfvars|sql|proto|graphql|gql)$|\.(json|ya?ml|toml)$|(^|/)(Dockerfile|Makefile)(\.|$)'
 # Exclude test/fixture/doc paths from the BEHAVIOR diff (tests are not new behavior).
@@ -391,7 +403,14 @@ if [ -n "$BBDP" ]; then
   # flow.config.json in the very PR being audited, so "repo-controlled" is not "trusted".
   # Newlines and CRs out, length capped; the value is diagnostic, not a contract.
   BBDP_SHOWN=$(printf '%s' "$BBDP" | tr -d '\n\r' | cut -c1-200)
-  echo "" | grep -qE "$BBDP" 2>/dev/null; [ $? -gt 1 ] && { echo "[audit-coverage] WEAKENED · DOC-SLOT-INVALID — behaviorBearingDocPatterns is not a valid extended regex, so behaviour-bearing prose was NOT selected by it and this run is blind to whatever it was meant to add. The value was: $BBDP_SHOWN — fix the slot; this is NOT a clean pass."; BBDP=""; }
+  # BOUND THE PROBE, not just its validity. A pathological ERE from config -- measured:
+  # ((((a{50}){50}){50}){50}) -- never returns, so the whole span renders no evidence at all
+  # and the empty block reads as nothing to audit. Compile-validity was checked; runtime was
+  # not. rc>=124 is timeout's kill, treated the same as a malformed pattern. timeout is
+  # coreutils and may be absent, so fall back to the bare probe rather than skipping it.
+  if command -v timeout >/dev/null 2>&1; then echo "" | timeout 5 grep -qE "$BBDP" 2>/dev/null
+  else echo "" | grep -qE "$BBDP" 2>/dev/null; fi
+  [ $? -gt 1 ] && { echo "[audit-coverage] WEAKENED · DOC-SLOT-INVALID — behaviorBearingDocPatterns is not a valid extended regex, so behaviour-bearing prose was NOT selected by it and this run is blind to whatever it was meant to add. The value was: $BBDP_SHOWN — fix the slot; this is NOT a clean pass."; BBDP=""; }
 fi
 ALLF=$( { git diff "origin/$BASE..HEAD" --name-only 2>/dev/null; git diff HEAD --name-only 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u )
 FILES=$(printf '%s\n' "$ALLF" | grep -E "$SP" | grep -vE "$EXCL")
@@ -480,12 +499,9 @@ if [ -n "$FILES" ]; then
     "[audit-coverage]"*) printf '%s\n' "$INV" ;;
     *) echo "[audit-coverage] WEAKENED · INVENTORY-UNAVAILABLE — change-inventory.py did not produce a recognisable inventory (python3 missing, CLAUDE_PLUGIN_ROOT unset, or the engine failed). Stage 1 has no hunk checklist, so a clean result below is WEAKER than a normal one, not equal to it. This is NOT a skip." ;;
   esac
-  echo "----- diff -----"
   # Iterate one path per line via while-read (NOT "git diff -- $FILES"): an unquoted
   # newline-joined var does NOT word-split under zsh, so the multi-path form silently
-  # diffs nothing there — and quoting "$f" also handles paths with spaces. Capture
-  # first so we can detect truncation rather than silently swallowing behavior past
-  # the cap (FB-0010: pair every cap with a [WARN]).
+  # diffs nothing there — and quoting "$f" also handles paths with spaces.
   # CV1 — FAIR-SHARE, not a head -c on a concatenation. The old form cut one joined string in
   # sort -u order, so files late in the alphabet contributed ZERO bytes and the single
   # TRUNCATED line did not say which. Measured on #158's post-fix shape (15 files, 103,785 B):
@@ -498,23 +514,47 @@ if [ -n "$FILES" ]; then
   # cwd this fork inherited.
   EB=""; [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && EB="${CLAUDE_PLUGIN_ROOT}/skills/audit-coverage/lib/evidence-budget.py"
   [ -f "$EB" ] || { [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null && EB=plugins/flow/skills/audit-coverage/lib/evidence-budget.py; }
+  # RUN THE BUDGETER BEFORE THE DELIMITER, then HOIST its weakenings above it. This block's own
+  # rule is that only a control line ABOVE the delimiter is the skill speaking; everything below
+  # is untrusted data under review. The budgeter runs after the delimiter had already been
+  # printed, so TRUNCATED -- the line that says a file's behaviour was NOT read -- landed in the
+  # zone the reviewer is told to distrust, and a partial audit could honestly be reported clean.
+  # That position is inherited (origin/main emitted TRUNCATED below the delimiter too), but this
+  # change adds a NEW weakening into the same zone while its whole premise is that a weakening
+  # must reach the reviewer, so it is fixed here rather than carried.
+  #
+  # The split is on the WEAKENED-dot token, NOT on the [audit-coverage] prefix: the budgeter also
+  # writes a per-file [audit-coverage] ... <f> truncated at N of M bytes ... marker AT each cut,
+  # one belongs inline, where the file stops. Diff content lines all carry a +/-/space prefix, so
+  # a column-0 match can only be the budgeter speaking.
   if [ -f "$EB" ] && command -v python3 >/dev/null 2>&1; then
-    printf '%s\n' "$FILES" | python3 "$EB" --base "origin/$BASE" --cap "$CAP"
+    EBOUT=$(printf '%s\n' "$FILES" | python3 "$EB" --base "origin/$BASE" --cap "$CAP")
   else
     # Fall back to the old shape rather than printing nothing, and SAY the budget did not run --
     # a silent fallback would reintroduce the alphabetical blindness with no way to notice.
     if [ -f "$EB" ]; then EBWHY="python3 is not on PATH"; else EBWHY="evidence-budget.py was not found at $EB"; fi
-    echo "[audit-coverage] WEAKENED · BUDGET-UNAVAILABLE — $EBWHY, so the evidence cap is applied by simple truncation and files late in the list may be entirely absent. Run /flow:doctor to check the install. A clean result here is PARTIAL — say so, and recommend splitting the PR. This is NOT a clean pass."
     DIFFTXT=$(printf '%s\n' "$FILES" | while IFS= read -r f; do
       [ -n "$f" ] || continue
       git diff "origin/$BASE..HEAD" -- "$f" 2>/dev/null
       git diff HEAD -- "$f" 2>/dev/null
     done)
-    printf '%s\n' "$DIFFTXT" | head -c "$CAP"
+    EBOUT="[audit-coverage] WEAKENED · BUDGET-UNAVAILABLE — $EBWHY, so the evidence cap is applied by simple truncation and files late in the list may be entirely absent. Run /flow:doctor to check the install. A clean result here is PARTIAL — say so, and recommend splitting the PR. This is NOT a clean pass.
+$(printf '%s\n' "$DIFFTXT" | head -c "$CAP")"
     if [ "$(printf '%s' "$DIFFTXT" | wc -c)" -gt "$CAP" ]; then
-      echo; echo "[audit-coverage] WEAKENED · TRUNCATED — diff exceeds ${CAP} bytes; behavior past the cap was NOT audited."
+      EBOUT="[audit-coverage] WEAKENED · TRUNCATED — diff exceeds ${CAP} bytes; behavior past the cap was NOT audited. A clean result here is PARTIAL — say so, and recommend splitting the PR.
+$EBOUT"
     fi
   fi
+  # The budgeter must SPEAK when there is anything to say about (the INVENTORY-UNAVAILABLE guard
+  # 30 lines up exists for the same reason). An exception inside it would otherwise yield the
+  # delimiter followed by silence and zero tokens -- the exact shape this PR's own security review
+  # found behind a user git-config.
+  if [ -z "$(printf '%s' "$EBOUT" | tr -d '[:space:]')" ] && [ -n "$(printf '%s' "$FILES" | tr -d '[:space:]')" ]; then
+    EBOUT="[audit-coverage] WEAKENED · BUDGET-UNAVAILABLE — the evidence budgeter produced no output at all for a non-empty file list, so NO diff was audited. Run /flow:doctor. This is NOT a clean pass."
+  fi
+  printf '%s\n' "$EBOUT" | grep '^\[audit-coverage\] WEAKENED · ' || :
+  echo "----- diff -----"
+  printf '%s\n' "$EBOUT" | grep -v '^\[audit-coverage\] WEAKENED · ' || :
   # Untracked new source files = new behavior with no prior baseline; surface them
   # explicitly. Skip anything not present on disk (a DELETED file appears in the
   # name-only union but its removal is already visible in the diff above — don't

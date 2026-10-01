@@ -140,7 +140,13 @@ def main(argv=None) -> int:
     ap.add_argument("--cap", type=int, required=True)
     args = ap.parse_args(argv)
 
-    files = [ln.strip() for ln in sys.stdin.read().splitlines() if ln.strip()]
+    # DROP EMPTIES ONLY -- never strip. `strip()` collapsed " app.py" onto "app.py", so the two
+    # became ONE dict key: measured, the leading-space file's content vanished entirely, the real
+    # file's blob was written twice and charged twice against the budget, and because total > 0 no
+    # weakening fired. It also stripped the whitespace that `_risky()` exists to detect, so the
+    # per-file fallback could never see the path it was written for. `git diff --name-only` does
+    # not quote a leading space, and " app.py" still matches sourceFilePatterns.
+    files = [ln for ln in sys.stdin.read().split("\n") if ln]
     if not files:
         return 0
     blobs = _diff_all(args.base, files)
