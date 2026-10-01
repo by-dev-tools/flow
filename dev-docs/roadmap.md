@@ -1902,6 +1902,19 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
   for a recall number. Fix is continuation-line joining plus a warning naming every truncated bullet;
   re-measure recall afterwards with enough runs to see past the variance.
 
+  **Second failure mode in the same reader, found at CV1's merge gate and worse than the first:**
+  a wrapped bullet's continuation line that *begins* with a bold span **terminates the whole
+  block**. `walk_extract.py`'s bold-label terminator cannot tell "a new section heading" from
+  "this bullet's second line happens to open with `**`", so every criterion after it is silently
+  dropped — not truncated, *gone*. Measured on CV1's own plan: one continuation line reading
+  `**This flips cases.py's …` cut the declared set from **15 criteria to 5**, and
+  `/flow:audit-coverage` therefore audited this PR against a third of its own plan. Nothing warns;
+  the `warnings` list stays empty. Fixed in the plan by de-bolding that one line, which is treating
+  the symptom — the reader needs to require a *blank line before* a bold-label terminator, or to
+  track bullet continuation explicitly. Same fix pass as the first-line truncation above, and the
+  same paired test shape: a wrapped bullet whose continuation opens with `**` must keep every later
+  criterion, paired with a genuine bold-label heading that must still terminate.
+
 - **Decide whether `/flow:ship` Step 2 runs `/flow:audit-coverage` twice and unions — CV1 reopened
   this.** `audit-coverage/SKILL.md`'s "Running this more than once" section justified a single pass
   with "a gain measured at zero", on three diff-mode runs that found identical gaps, and explicitly

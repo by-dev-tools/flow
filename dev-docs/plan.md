@@ -131,7 +131,7 @@ screens on measurement discipline.)*
       measured separately by its own pins above.
 - [x] **B moves the known positive off 0/5.** *Pinned by:* `tools/coverage-recall` on the `pr159` case with
       the slot set — the five gaps live in `audit-coverage/SKILL.md`, which must now reach the reviewer.
-      **This flips `cases.py`'s `structural_blindness` pin, which was written to fail loudly exactly here**
+      This flips `cases.py`'s `structural_blindness` pin, which was written to fail loudly exactly here**
       ("if the exclusion is ever fixed this case fails loudly and is re-classified"). Expected, and I am
       the intended trigger; the case gets re-classified from structural to recall with its number recorded.
 - [x] **The negative: a pure-prose edit INSIDE a matched file produces no coverage findings.** *Pinned by:*
@@ -152,6 +152,37 @@ screens on measurement discipline.)*
 - [x] **Instrument validated:** `tools/coverage-recall --selftest` must show it can fail before any number
       is reported; and I will mutation-test the three parts (revert the union, revert the fair-share, drop
       the DOC-BLIND line) and confirm each is caught.
+- [x] **ADDED AT THE MERGE GATE, on the orchestrator's approval (2026-10-01).** `/flow:audit-coverage`
+      ran against this PR's own diff and flagged four behaviours no criterion covered — the
+      structural pattern this repo's own `workflow.md` names: behaviour added during `/simplify`
+      and `/flow:staff-review` lands *after* the Spec-walk was written. They were routed to the
+      draft manifest rather than self-declared, and the orchestrator approved all four as drafted.
+      Each is pinned by a passing eval, named per item:
+- [x] **An invalid `behaviorBearingDocPatterns` emits `DOC-SLOT-INVALID`, disables the doc union for
+      that run, and a newline-bearing value cannot produce a second control line above the
+      delimiter.** *Pinned by:* `run_coverage_docblind_evals.py` § 2b — the malformed-slot case, the
+      three forgery cases, and the paired positive that a benign config still emits real
+      above-delimiter control lines. Mutation-tested: reverting the sanitisation turns it red.
+- [x] **Under the cap the budgeter's output is byte-identical to the old concatenation; over the cap
+      every file receives at least its fair share and every cut file is named with its byte counts;
+      and when the budgeter cannot run the fallback is loud, never silent.** *Pinned by:*
+      `run_coverage_docblind_evals.py` § 3 — content-not-filename contribution, the cut names, the
+      under-cap negative, three hostile git-config cases, and the `BUDGET-UNAVAILABLE` floor.
+- [x] **A non-empty file selection that yields zero diff bytes emits `EVIDENCE-EMPTY` and is not
+      readable as a clean pass.** *Pinned by:* `run_coverage_docblind_evals.py` § 3's
+      zero-byte-selection case, plus § 2c asserting the weakening lands ABOVE the delimiter where
+      the prose rule makes it count.
+- [x] **A hyphenated stale slot count is reported, a hyphenated CORRECT count is not, and the two
+      measured compound-adjective false positives (`FB-0058 boolean-slot`, `Step 4 config-slot`)
+      stay unreported.** *Pinned by:* `run_merge_status_evals.py` — the hyphenated positive, the
+      correct-count negative that was the missing half, and the compound-adjective negative; seven
+      shapes verified. **Why a different skill's scanner ships here, not as a separate PR:** this
+      change takes the schema 36 → 37, the scanner's expected count is read from that schema
+      (`expected=len(props)`), and a contract-value change obliges the `general.md` item-2 sweep.
+      The sweep surfaced `README.md`'s "A 24-slot" — and the old `\d+\s+slots?` could not match a
+      hyphen, so the sweep this PR's own slot addition required reported clean over the front page.
+      Fixing the regex was the only way to finish that sweep; it then exposed the comparison bug
+      (`claim.split()[0]` compared "37-slot" against "37"), fixed with it.
 - [x] **Docs:** FB entry (the rule: an exclusion tuned for one repo shape becomes a blind spot in another,
       and the gate must say which shape it assumed), history entry, `workflow.md`'s honest-limitation
       paragraph updated to describe the opt-in, schema slot documented, roadmap entries closed.
