@@ -571,10 +571,12 @@ def test_bold_continuation_keeps_every_criterion() -> None:
         ("Visual-walk", _BOLD_CONT_VISUAL, "extract-visual-states.py"),
     ):
         code, out = run_cli(LIB / script, text)
-        # Derive the list key from the output instead of guessing it. Guessing cost a wrong
-        # number in this very test's failure message: the visual front-end's key is `assertions`,
-        # not `visual_states`, so a missing key read as 0 extracted when the real figure is 1 — a
-        # test that misstates the magnitude of what it caught.
+        # Derive the list key from the output instead of guessing it. Each front-end emits
+        # exactly one non-warnings list key -- `criteria` here, `assertions` for the visual
+        # front-end -- and guessing the latter as `visual_states` read a missing key as "0
+        # extracted" when the measured figure is 2 of 3. A test that misstates the magnitude of
+        # what it caught is its own small version of the truncation this fixture exists to catch.
+        # Paired control (continuation line removed): both front-ends give 3 of 3.
         key = next(k for k, v in out.items() if isinstance(v, list) and k != "warnings")
         got = len(out.get(key, []))
         check(f"{label}: a bold continuation line keeps all 3 criteria",
