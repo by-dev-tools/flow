@@ -16,8 +16,8 @@ extract_session.load_plan_file — the report feeds the reviewer prompt); stdin 
 unguarded by design (the caller owns that trust boundary).
 
 Block parsing REUSES the shared parser primitives in
-`skills/verify-build/lib/walk_extract.py` (heading_re / CHECKBOX_RE /
-is_terminator) — the established cross-skill lib precedent
+`skills/verify-build/lib/walk_extract.py` (heading_re / collect_items) — the
+established cross-skill lib precedent
 (visual-significance.py, pr-coherence.py) — so "what counts as a walk block"
 has one source of truth. One deliberate difference from
 `walk_extract.extract_block`: that function scopes to the FIRST block (the
@@ -50,7 +50,7 @@ from pathlib import Path
 _WALK_LIB = Path(__file__).resolve().parents[2] / "verify-build" / "lib"
 sys.path.insert(0, str(_WALK_LIB))
 try:
-    from walk_extract import CHECKBOX_RE, heading_re, is_terminator  # noqa: E402
+    from walk_extract import collect_items, heading_re  # noqa: E402
 except ImportError as e:  # loud, not silent — the SKILL preamble catches this
     sys.stderr.write(
         f"walk-pin-lint: ⚠️ cannot import shared walk_extract from {_WALK_LIB} "
@@ -67,9 +67,15 @@ BACKTICK_TEST_RE = re.compile(r"`[Tt]est[^`]*`|`[\w.]*[._][Tt]est[^`]*`")
 # ...or an explicit non-test artifact pin: a pin marker followed by a concrete
 # verification artifact.
 PIN_MARKERS = ("→", "->", "pinned by", "verify:", "verified by")
+# `\b` treats `_` as a word character, so `eval` inside `run_coverage_docblind_evals.py`
+# -- this repo's own naming convention for the artifacts it asks authors to cite -- never
+# matched, and a criterion pinned to a real eval file read as unpinned. That was one of the
+# two causes of #171's red pin gate. The boundaries below are alphanumeric-only, so a token
+# bounded by `_`, `-`, `.` or `/` counts while a longer WORD still does not: `evaluate`
+# fails the trailing lookahead exactly as `\b` made it fail.
 ARTIFACT_RE = re.compile(
-    r"\b(grep|frame|on-sim|simulator|screenshot|doc-diff|diff|report|eval|"
-    r"snapshot|fixture|walkthrough|recording)s?\b",
+    r"(?<![A-Za-z0-9])(grep|frame|on-sim|simulator|screenshot|doc-diff|diff|report|eval|"
+    r"snapshot|fixture|walkthrough|recording)s?(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
 
@@ -90,25 +96,23 @@ def is_pinned(text: str) -> bool:
 
 
 def collect_spec_walk_blocks(text: str) -> list[tuple[str, list[str]]]:
-    """All (heading, checkbox-texts) Spec-walk blocks in document order, using
-    the shared walk_extract primitives for heading match, checkbox shape, and
-    block termination."""
+    """All (heading, checkbox-texts) Spec-walk blocks in document order.
+
+    The per-block collection is `walk_extract.collect_items` — the SAME function
+    `extract_block` uses — rather than a second copy of its loop. It was a second copy,
+    and the copy carried the same two defects after the original was written: it took
+    only each bullet's first physical line (so a pin on a wrapped line read as unpinned)
+    and it ended the block on an indented continuation line opening with a bold span (so
+    this lint read a fraction of the plan and reported it clean). Only the all-blocks
+    iteration is local; `extract_block` is first-active-block-only and this lint needs
+    every block, which is why it cannot just call that instead."""
     hre = heading_re(LABEL)
     lines = text.splitlines()
     blocks: list[tuple[str, list[str]]] = []
     for i, line in enumerate(lines):
         if not hre.match(line):
             continue
-        items: list[str] = []
-        for j in range(i + 1, len(lines)):
-            cb = CHECKBOX_RE.match(lines[j])
-            if cb:
-                item_text = cb.group("text").strip()
-                if item_text:
-                    items.append(item_text)
-                continue
-            if is_terminator(lines[j]):
-                break
+        items, _warnings, _ended_at = collect_items(lines, i)
         blocks.append((line.strip(), items))
     return blocks
 

@@ -640,6 +640,32 @@ def test_is_pinned_accepts_an_evals_filename() -> None:
           "if the widened pattern accepts prose with no artifact, the lint stops distinguishing "
           "anything and every plan reads as fully pinned")
 
+    # And pin the DECISION, not just the two examples: the widening is confined to underscore
+    # adjacency. Replay the OLD `\b`-bounded pattern beside the shipped one over a corpus that
+    # straddles the boundary, and assert the set they disagree on is exactly the `_`-adjacent
+    # cases. Without this, a later "widen it a bit more" that starts matching `evaluate` or
+    # `different` passes both checks above while quietly making every plan read as pinned.
+    import re as _re
+    old = _re.compile(r"\b(grep|frame|on-sim|simulator|screenshot|doc-diff|diff|report|eval|"
+                      r"snapshot|fixture|walkthrough|recording)s?\b", _re.IGNORECASE)
+    corpus = {
+        "run_coverage_docblind_evals.py": True,    # `_`-adjacent: the case this fix exists for
+        "a_report_b": True,                        # `_`-adjacent on both sides
+        "the eval": False,                         # already matched; unchanged
+        "eval-driven": False,                      # `-` was already a boundary
+        "re-evaluate the tradeoff": False,         # longer WORD: must stay unmatched
+        "indifferent": False,                      # `diff` inside a word: must stay unmatched
+        "eval2": False,                            # digit-adjacent: must stay unmatched
+        "frames/0001.png": False,                  # `/`-adjacent; already matched
+    }
+    disagreed = {s for s in corpus if bool(old.search(s)) != bool(wpl.ARTIFACT_RE.search(s))}
+    expected = {s for s, differs in corpus.items() if differs}
+    check("the widening is confined to underscore adjacency",
+          disagreed == expected,
+          f"old and new patterns disagree on {sorted(disagreed)}, expected exactly "
+          f"{sorted(expected)} — anything else means the boundary change reaches further than "
+          f"`_` and the lint's discrimination moved with it")
+
 
 def test_second_scan_site_also_keeps_criteria() -> None:
     """walk-pin-lint re-implements the scan, so a fix in extract_block does not reach it."""
