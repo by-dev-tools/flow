@@ -30,12 +30,24 @@ measurement -- that is what makes this measurable rather than arguable:
            with 10 -- but the number is judgment now, not blindness, and `visibility` asserts
            both directions of that so the classification cannot rot again silently.
 
-           One more thing CV1 measured here and did not fix: 12 of the 12 criteria this case
-           declares are WRAPPED bullets, and `walk_extract.py`'s `CHECKBOX_RE` takes only the
-           first physical line of each, silently -- 1,143 of 5,819 characters reach the
-           reviewer. An arm with the criteria untruncated scored 1-of-5 rather than 2-of-5
-           (disjoint gap), so truncation is NOT the explanation for any number above; it is
-           tracked as its own silent-skip defect in `dev-docs/roadmap.md` § Next.
+           **THE CRITERIA THIS CASE FEEDS CHANGED IN v1.56.0, SO READ THE NUMBERS ABOVE WITH
+           THAT IN MIND.** CV1 measured, and did not fix, that 12 of the 12 criteria this case
+           declares are WRAPPED bullets while `walk_extract.py` took only the first physical
+           line of each: 1,143 characters reached the reviewer out of a ~5,830-character block
+           (CV1 recorded the total as 5,819, counting the same block marginally differently).
+           The CV1 follow-up fixed it -- `collect_items` folds indented continuation lines into
+           their item -- so the same invocation now feeds **5,831 characters, and the criterion
+           COUNT is unchanged at 12**, which is exactly why neither the harness nor any eval
+           noticed for as long as it ran.
+
+           So the 2-of-5 / 1-of-5 / union-3-of-5 headline above was measured over TRUNCATED
+           criteria and is no longer reproducible by re-running this case: the input moved. The
+           comparable pre-existing number is CV1's own untruncated arm, which scored **1-of-5**
+           (a disjoint gap). Any post-v1.56.0 run of this case is measuring full criteria
+           against that, not against the headline -- and a reader who compares a new single-run
+           score to the 2-of-5 without reading this paragraph will attribute a prompt effect to
+           an input change. Do not re-baseline the headline silently: it is a record of what was
+           measured, over evidence that no longer exists.
   pr158    the five named verbatim in #158's draft manifest, which its ship-time run
            found 2 of.
 

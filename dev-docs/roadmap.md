@@ -1885,66 +1885,58 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
   Re-measure then, and choose between raising the cap and intra-file selection rather than raising it
   blind.
 
-- **Every declared criterion reaches both reviewers as its first physical line only, silently (CV1
-  measurement).** `verify-build/lib/walk_extract.py:272`'s `CHECKBOX_RE` matches one physical line. A
-  wrapped `- [ ]` bullet's continuation lines match neither `is_terminator` nor `_MALFORMED_CB_RE`, so
-  the loop `continue`s past them: they reach no consumer and add no `warnings` entry — in a function
-  that already has a warnings channel and uses it for three other conditions (`general.md` item 1,
-  silent-skip, with the defense already built and not wired to this case). **Measured at #159's
-  ship-time HEAD (`bd29167`): 12 of 12 criteria are wrapped, and 1,143 of 5,819 characters reach the
-  reviewer — 80% of the declared text is dropped.** Criterion 1 arrives ending mid-sentence at
-  `"...byte-identical to today's, and the"`. Two consumers, so this is not one skill's bug:
-  `/flow:audit-coverage` judges against this set, and `/flow:verify-build` Step 3 feeds these same
-  strings to bundled `/verify`. **What is deliberately NOT claimed:** a controlled arm with the
-  criteria untruncated did *not* raise recall on #159 — it scored 1/5 where the truncated arm scored
-  2/5, finding a *disjoint* gap. One run per arm cannot be separated from ordinary run-to-run
-  variance, so this is filed as a silent-skip defect **on its own merits**, never as the explanation
-  for a recall number. Fix is continuation-line joining plus a warning naming every truncated bullet;
-  re-measure recall afterwards with enough runs to see past the variance.
+- **~~Every declared criterion reaches both reviewers as its first physical line only, and a
+  `**`-leading continuation line silently ends the block~~ — ✅ FIXED (v1.56.0, CV1 follow-up
+  item 3).** Both failure modes in this bullet were one reader and are closed together; the
+  record is kept because the measurements are the reason the fix was specified the way it was.
 
-  **▶ SECOND FAILURE MODE IN THE SAME READER, AND THE MORE SEVERE OF THE TWO — severity raised by
-  the orchestrator at CV1's merge gate (2026-10-01). Any consumer's plan can silently lose most of
-  its declared criteria, and every downstream gate then reports green against a fraction of it.**
+  **What was wrong.** `walk_extract.py`'s item loop `continue`d past a wrapped bullet's
+  continuation lines, so they reached no consumer and added no `warnings` entry — in a function
+  that already had a warnings channel and used it for three other conditions (`general.md`
+  item 1, with the defense built and not wired to this case). Worse, a continuation line
+  beginning with a bold span matched the bold-label *terminator*, so the block ENDED there and
+  later criteria were not shortened but gone, with `warnings` still empty.
 
-  **(1) The trigger.** A wrapped bullet whose CONTINUATION line begins with a bold span. Nothing
-  about it looks wrong to an author: `- [ ] criterion one` followed by an indented `**A bolded
-  note.**` is ordinary prose. `walk_extract.py`'s bold-label terminator cannot tell "a new section
-  heading" from "this bullet's second line happens to open with two asterisks", so it ends the
-  block there.
+  **Measured, and both numbers are why this was filed on its own merits.** At #159's ship-time
+  HEAD (`bd29167`) 12 of 12 criteria are wrapped and **1,143 of ~5,830 characters reached the
+  reviewer** — criterion 1 arrived ending mid-sentence at `"...byte-identical to today's, and
+  the"`. On CV1's own plan, one continuation line reading `**This flips cases.py's` cut the
+  declared set from **15 criteria to 5**, so `/flow:audit-coverage` audited that PR against a
+  third of its own plan while reporting as if the comparison were complete. Isolated on a 3-item
+  fixture with a control, on both front-ends: 2 of 3 extracted, 0 warnings; delete the
+  continuation line and it is 3 of 3.
 
-  **(2) The measured effect — silent, total, and not truncation.** Criteria after the trigger are
-  not shortened, they are *gone*, and the `warnings` list stays EMPTY, so nothing downstream can
-  tell. Measured twice. On CV1's own plan, one continuation line reading `**This flips cases.py's`
-  cut the declared set from **15 criteria to 5** — so `/flow:audit-coverage` audited that PR
-  against a third of its own plan while reporting as if the comparison were complete. Isolated on a
-  3-item fixture with a control, on both front-ends: **1 of 3 extracted, 0 warnings**; delete the
-  one bold continuation line and it is 3 of 3.
+  **What shipped.** `walk_extract.collect_items` — one definition of "what a block contains",
+  replacing two copies. An indented non-checkbox line under an item is folded into that item
+  (which markdown already says it is), and a block that ends at a terminator reports the line
+  and the item count in `warnings`, so a truncated read and a complete one stop looking alike
+  (FB-0121). Running to EOF stays silent, with a paired fixture on the silence as well as the
+  announcement. #159's plan now feeds **5,831 characters** with the criterion count unchanged at
+  12 — the count never moved, which is why nothing caught this for as long as it ran.
 
-  **(3) Every reader it feeds, by name.** `walk_extract.py` has TWO front-ends, so this is not one
-  gate's bug: `extract-criteria.py` (label `Spec-walk`) and `extract-visual-states.py` (label
-  `Visual-walk`) — the visual half loses declared visual states the same way. Consumers:
-  **`/flow:audit-coverage`** (the declared-criteria set it judges against); **`/flow:verify-build`**
-  (feeds the criteria to bundled `/verify`, and `lib/criterion-specificity.py` +
-  `lib/visual-significance.py` read the same lists); **`/flow:plan-discipline`** (the rule-skill
-  that polices plan shape); **`/flow:prototype`** via `lib/prototype-gate.py` (D1 gate-1's "a plan
-  always exists" assertion); **`/flow:audit-skips`** via `lib/skip-audit-checks.py` (plan-mode
-  detection, which decides whether a skip is legitimate); **`/flow:critique-plan`** via
-  `lib/walk-pin-lint.py`; and **`/flow:ship`** via `lib/manifest_contract.py`. #171's Arm A reads it
-  too. It is the most widely shared reader in the plugin, and the same quiet-loss shape as
-  `if not symbol: continue` in #171 — the gate reads less than it reports.
+  **The second scan site was the load-bearing half.** `critique-plan/lib/walk-pin-lint.py`
+  imported the primitives and re-scanned, because it needs every block rather than the first.
+  Both copies carried both defects, so fixing `extract_block` alone would have left
+  `/flow:critique-plan`'s pin lint reading a fraction of every plan and reporting it clean.
+  That is `general.md` item 2 — a contract spelled in two places where a change touches one.
 
-  **(4) The fix must ship PAIRED; neither half alone is sufficient.** (a) The extractor either
-  **loses no criteria** — require a blank line before a bold-label terminator, or track bullet
-  continuation explicitly — **or it flags the early end** loudly in `warnings`, so a truncated set
-  can never pass as a complete one. (b) **A test proves that a plan whose bullet carries a
-  `**`-leading continuation line keeps ALL of its criteria**, paired with a genuine bold-label
-  heading that must still terminate — otherwise the fix is satisfiable by never terminating, which
-  breaks the multi-block plans this repo actually has. Both front-ends in the test, since both
-  share the reader. Same pass as the first-line truncation above: one reader, one fix, one harness.
+  **Paired as this bullet demanded**, and the pairings matter: a genuine bold-label heading must
+  still terminate (or the fix is satisfiable by never terminating, which breaks every
+  multi-block plan this repo has), both front-ends are in the test since both share the reader,
+  and the `ARTIFACT_RE` widening is pinned by replaying the old pattern beside the new one over
+  a corpus that straddles the boundary rather than by two examples.
 
-  **Not fixed in CV1, deliberately.** Shared reader, eight-plus consumers, and the correct fix
-  changes block-boundary semantics for every plan in every consuming repo — its own change with its
-  own measurement, not a rider on a coverage-gate PR.
+  **What is still deliberately NOT claimed, unchanged from the original capture:** a controlled
+  arm with the criteria untruncated did *not* raise recall on #159 — it scored 1/5 where the
+  truncated arm scored 2/5, finding a *disjoint* gap. One run per arm cannot be separated from
+  run-to-run variance, so this shipped as a silent-skip fix, never as a recall improvement.
+  Because the fix changes what this case feeds, `tools/coverage-recall/cases.py` now warns that
+  the 2-of-5 headline was measured over evidence that no longer exists.
+
+  **One limit, deliberate and documented in the docstring:** a continuation must be INDENTED.
+  Markdown also permits a lazy flush-left continuation, but a flush-left line is genuinely
+  ambiguous with a new paragraph or heading, and resolving it the other way would merge real
+  blocks.
 
 - **Decide whether `/flow:ship` Step 2 runs `/flow:audit-coverage` twice and unions — CV1 reopened
   this.** `audit-coverage/SKILL.md`'s "Running this more than once" section justified a single pass
