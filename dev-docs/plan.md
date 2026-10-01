@@ -2,6 +2,269 @@
 
 ## Current Focus
 
+
+**▶ EXECUTED, shipping (this branch `conductor/cv1-audit-coverage-md-blindness`, v1.55.0, FB-0126/FB-0127): CV1 — `/flow:audit-coverage` cannot see `.md`, so most of this plugin is invisible to it.** Measured end to end: #159's reconstruction moves from **0 gaps found at baseline** (both arms A-off) to **2-of-5 and 1-of-5 single-run, union 3-of-5**, zero false positives, plus the paired prose negative. Four follow-ups this measurement produced are in `roadmap.md` § Next, none of them fixed here.
+
+**Mode:** feature · **Surface:** non-visual
+
+### What I measured before designing (the roadmap's constraints, re-derived — two of them shift)
+
+`.md` never matches `sourceFilePatterns` in the first place, so `EXCL`'s `|\.md$` is belt-and-braces:
+**this is an inclusion change, not an exclusion edit.**
+
+| case | base | files changed | reach the reviewer today | + behaviour-bearing `.md` | total vs 60 KB cap |
+|---|---|---|---|---|---|
+| #159 (the motivating case) | `f278aec` | 18 | 3 (2,085 B) | 2 (28,329 B) | **30,414 B — half the cap** |
+| #158 | `5a2aaf3` | 63 | 4 (54,605 B, **under**) | 11 (49,180 B) | **103,785 B — the `.md` CAUSES the overflow** |
+| #160 | `1218d2f` | 35 | 6 (78,629 B, **already OVER**) | 2 (28,493 B) | 107,122 B |
+
+**CORRECTED AT THE PLAN GATE — the first draft of this table was wrong and `/flow:critique-plan` caught
+it.** I measured #158 by diffing its head against **today's** `main` rather than against its own base, so
+the reverse-diff pulled in files that landed *after* #158 — the block I presented as "#158" named
+`change-inventory.py` and `tools/coverage-recall/*`, which are **#160's**. The critic re-ran the skill's own
+filter and got 63/4/54,605 B; I re-derived it independently with `1218d2f^1...2ccad9e` and reproduce their
+figures exactly. The #159 row was right and reproduces byte-for-byte, so the defect was the base, not the
+method. Recording it because "measured" is the word this plan leans on hardest.
+
+**What the corrected numbers actually say — and it is a better argument than the one I had.** Both claims
+are true, *of different PRs*:
+
+- On **#158** the diff is **under** the cap today and the `.md` inclusion **causes** the overflow
+  (54,605 → 103,785 B). So C is **not separable from B**: shipping B alone knowingly pushes this PR shape
+  past the cap.
+- On **#160** the diff is **already over** at 78,629 B with no `.md` at all. So C is **also** justified on
+  today's evidence, independently of B.
+- On **#159**, the motivating case, everything fits in half the cap and no capping work is needed at all.
+
+**The starvation is real, but only post-fix, and I re-measured it on the correct base.** My first draft
+claimed "3 of 10 entirely invisible" on #158 — that came from the same contaminated run and does **not**
+reproduce. On #160 as it stands today: **0 of 6 entirely invisible**, one partially cut. On **#158 in its
+post-fix shape** (source + behaviour-bearing `.md`, the shape B produces):
+
+```
+2 of 15 files ENTIRELY INVISIBLE, under ONE generic warning that does not name them
+  21898B  plugins/flow/skills/prototype/SKILL.md            shown
+  52517B  plugins/flow/skills/prototype/lib/prototype-gate.py  partially cut (17092 of 52517)
+   5518B  plugins/flow/skills/review-brief/SKILL.md         *** ENTIRELY INVISIBLE ***
+   2842B  plugins/flow/skills/workflow-help/SKILL.md        *** ENTIRELY INVISIBLE ***
+```
+
+Chosen by `sort -u` position, not by relevance. That is still the "nothing there vs I could not see"
+class, and it is still unnamed — but it is a consequence of B, which is the honest framing.
+
+**Constraint 1 stands unchanged** — `sourceFilePatterns`/`EXCL` are a published contract — and it is what
+forces the opt-in shape below. **Constraint 3 stands**, with one correction the critic forced: nothing here touches the matcher or the
+judging **rubric**, so v1.49.0's recall numbers stay comparable — but A *does* add one enumerated instance
+to the judging prompt's `WEAKENED ·` list, and the before/after must therefore hold A constant. Both are
+Spec-walk items below rather than assurances here.
+
+### The design — three parts, deliberately separable, only one of which changes any verdict
+
+**A. SAY IT (ships for every consumer, opt-in or not; changes no verdict).** When the diff contains files
+the behaviour filter dropped that are doc-shaped but plausibly behaviour-bearing, emit `[audit-coverage] WEAKENED · DOC-BLIND — N changed
+file(s) carry prose that may be deployed surface and were NOT read: <paths>. On a project whose behaviour
+lives in markdown this is not a completeness gate over that behaviour.` Today that blindness is **silent**,
+and `workflow.md` carries the honest statement while the *gate output* does not. This is the half that
+matters most for consumers who never opt in — it converts silent blindness into stated blindness, which is
+the fourth instance of the FB-0121 distinction and the one the orchestrator named.
+
+**A's trigger, stated explicitly — a built-in predicate, with the slot as an OVERRIDE.** When
+`behaviorBearingDocPatterns` is **set**, A warns about paths matching *it* that the filter dropped. When
+**unset**, A falls back to a built-in doc-shape predicate — `.md` under a `skills/`, `agents/` or `rules/`
+directory — and **says in the line which one it used**, so a suggestion is never mistaken for the project's
+own declaration. *(Restored at the audit gate. My fix for critic ISSUE 3 deleted the explicit parenthetical
+and left only "A reads the same slot" — which at the documented empty default matches nothing and fires for
+nobody, i.e. silence: precisely the state A exists to end. The slot must override the judgment, not supply
+it. Worth noting how it got lost: that edit was a `str.replace` I did not assert on, so it silently
+no-opped and I reported it as applied — the silent-no-op class, self-inflicted, in the session that has
+been catching it elsewhere.)*
+
+**Why a built-in predicate is right for A and wrong for B** (critic ISSUE 3, accepted — the distinction is
+the point): A only ever *says something*; B changes what the gate *reads*. A suggestion costs a consumer one
+line they can silence by declaring the slot; a reading changes their gate's verdict unasked.
+
+**B. SEE IT (opt-in; the only part that changes what the gate reads).** New `behaviorBearingDocPatterns`
+slot, **defaulting to empty** — so **no consumer's gate changes until they opt in**, which is constraint 1
+discharged exactly. Matching paths are added to the behaviour diff (union with `sourceFilePatterns`, and
+exempt from `EXCL`'s `.md`/`docs?/` clauses). Flow sets it for itself to
+`(^|/)(skills|agents|rules)/.*\.md$`. I am converging on the roadmap's own hypothesis here rather than
+inventing one; the part I add is that A ships independently of B, so the blindness is *stated* even at the
+default.
+
+**C. FIT IT (fair-share cap; justified by its own pre-existing failure).** Replace `head -c` over a
+concatenation with a **fair-share allocation**: each file gets `cap / N`, unused share from small files is
+redistributed to large ones, and **every truncated file is named individually**. **Simulated on the corrected `1218d2f^1...2ccad9e` set** (15 files, share 4,000 B; 12 sit under their share,
+releasing 12,049 B to each of the 3 over it): **0 entirely invisible, 2 named as truncated**
+(`prototype/SKILL.md` 21,898→12,049 B, `prototype/lib/prototype-gate.py` 52,517→12,049 B) — versus **2 of
+15 entirely invisible and unnamed** under `head -c` today. *(Corrected at the audit gate: this paragraph
+still carried "3 invisible → 4 named" from the run I had retracted eight paragraphs earlier. I fixed the
+measurement block and left the paragraph citing it stale — the fan-out class, in the plan that spends two
+screens on measurement discipline.)*
+
+### Spec-walk
+
+- [x] **A fires on a doc-shaped diff and names the paths.** *Pinned by:* a new eval case — a diff touching
+      only `skills/x/SKILL.md` emits `DOC-BLIND` naming it, **paired** with: a diff touching no doc-shaped
+      files does NOT emit it (or the line becomes noise on every PR).
+- [x] **B is genuinely opt-in.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 2 — with the slot unset, the file list is **byte-identical** to
+      today's on all three measured cases — the strongest form of "no consumer's gate changes", and a
+      negative that is paired with the positive below rather than standing alone.
+- [x] **`DOC-BLIND` is added to the judging prompt's instance enumeration.** *Pinned by:* the `run_coverage_vocab_evals.py` eval — an assertion
+      that `audit-coverage/SKILL.md`'s `WEAKENED ·` instance list names it. **Critic ISSUE 2, accepted:**
+      `:493` instructs the reviewer to quote any `WEAKENED ·` line verbatim and `:497` enumerates every
+      instance by name — with a footnote recording that omitting a new instance from that list is a
+      regression **that already happened once**. So A *does* touch the judging prompt, and my "nothing here
+      touches the matcher or the judging prompt" claim was wrong as written. Corrected: nothing here
+      touches **the matcher or the judging rubric**; A adds one enumerated weakening instance, which is
+      exactly the kind of change that list exists to absorb.
+- [x] **B's before/after is measured with A held constant.** *Pinned by:* the `tools/coverage-recall` report, both arms. **Satisfied only on a second pass.**
+      The first before-arm run had A **ON**, and its output quoted the `DOC-BLIND` line naming
+      `audit-coverage/SKILL.md` — precisely the pointer this criterion exists to withhold. Re-rendered
+      from a block with A's emit stripped: the baseline is then **0 gaps found with no pointer given**,
+      and the after arms are A-off by construction (A is silent when nothing is dropped). The
+      confounded run is reported alongside, not discarded. *Pinned by:* both arms run with A **off**.
+      **Critic ISSUE 2, second half, accepted and it is the sharper catch:** A fires only when a file was
+      *dropped*, so in the natural setup it is present in the before arm (slot unset → the file with the
+      five gaps is dropped → DOC-BLIND names that exact file) and absent in the after arm — and the recorded
+      0/5 baseline was taken without A at all. Measuring B against that baseline would move two variables
+      and hand the reviewer a pointer to the answer in one arm only. Both arms A-off; A's own effect is
+      measured separately by its own pins above.
+- [x] **B moves the known positive off 0/5.** *Pinned by:* the `tools/coverage-recall` report on the `pr159` case with
+      the slot set — the five gaps live in `audit-coverage/SKILL.md`, which must now reach the reviewer.
+      This flips `cases.py`'s `structural_blindness` pin, which was written to fail loudly exactly here**
+      ("if the exclusion is ever fixed this case fails loudly and is re-classified"). Expected, and I am
+      the intended trigger; the case gets re-classified from structural to recall with its number recorded.
+- [x] **The negative: a pure-prose edit INSIDE a matched file produces no coverage findings.** *Pinned by:* an eval fixture pair —
+      a case whose diff is a wording change in `plugins/flow/skills/ship/SKILL.md` — a path the slot
+      **matches** — **with the slot set**, scored at 0 findings and mutation-tested like the other parts.
+      *(Specified at the audit gate. "A docs-only-prose case" was vacuous: a prose edit to `dev-docs/*.md`
+      matches no pattern, so the behaviour diff is empty and the existing branch prints `SKIPPED` — 0
+      findings before B and 0 after, whatever B does to prose noise. A pin that passes in both the honored
+      and the broken world is general.md item 4, in the plan that applies item 4 to `--selftest` and forgot
+      it here.)*
+- [x] **C: no file is entirely invisible when the cap binds.** *Pinned by:* the `run_coverage_docblind_evals.py` eval over the #158 shape — assert every
+      file contributes ≥1 byte and each truncated file is named. Paired with: under the cap, output is
+      **byte-identical** to today (no gratuitous reflow of the common case).
+- [x] **Per-file cap behaviour reported on the 176 KB case**, as asked. *Pinned by:* `run_coverage_docblind_evals.py` § 3. Note the distinction I will report
+      rather than blur: 177,768 B is `ship/SKILL.md`'s **file size**, which binds in **source mode**
+      (whole files are `cat`-ed, `SOURCE_CAP` = 120,000 B, so it is ~1.5× over *alone*). Its **diff** in a
+      realistic PR is ~3 KB. The 44,687 B single-file diff in #158 is the real diff-mode starvation case.
+- [x] **Instrument validated:** *Pinned by:* the `tools/coverage-recall --selftest` report, which must show it can fail before any number
+      is reported; and I will mutation-test the three parts (revert the union, revert the fair-share, drop
+      the DOC-BLIND line) and confirm each is caught.
+**ADDED AT THE MERGE GATE, on the orchestrator's approval (2026-10-01).** `/flow:audit-coverage`
+      ran against this PR's own diff and flagged four behaviours no criterion covered — the
+      structural pattern this repo's own `workflow.md` names: behaviour added during `/simplify`
+      and `/flow:staff-review` lands *after* the Spec-walk was written. They were routed to the
+      draft manifest rather than self-declared, and the orchestrator approved all four as drafted.
+      Each is pinned by a passing eval, named per item:
+- [x] **An invalid `behaviorBearingDocPatterns` emits `DOC-SLOT-INVALID`.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 2b. It disables the doc union for
+      that run, and a newline-bearing value cannot produce a second control line above the
+      delimiter.** *Pinned by:* `run_coverage_docblind_evals.py` § 2b — the malformed-slot case, the
+      three forgery cases, and the paired positive that a benign config still emits real
+      above-delimiter control lines. Mutation-tested: reverting the sanitisation turns it red.
+- [x] **The budgeter allocates fairly.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 3. Under the cap its output is byte-identical to the old concatenation; over the cap
+      every file receives at least its fair share and every cut file is named with its byte counts;
+      and when the budgeter cannot run the fallback is loud, never silent.** *Pinned by:*
+      `run_coverage_docblind_evals.py` § 3 — content-not-filename contribution, the cut names, the
+      under-cap negative, three hostile git-config cases, and the `BUDGET-UNAVAILABLE` floor.
+- [x] **A zero-byte selection emits `EVIDENCE-EMPTY`.** *Pinned by:* `run_coverage_docblind_evals.py` § 3. A non-empty file selection that yields zero diff bytes is not
+      readable as a clean pass.** *Pinned by:* `run_coverage_docblind_evals.py` § 3's
+      zero-byte-selection case, plus § 2c asserting the weakening lands ABOVE the delimiter where
+      the prose rule makes it count.
+- [x] **The slot-count scanner reads hyphens.** *Pinned by:* the `run_merge_status_evals.py` eval. A hyphenated stale count is reported, a hyphenated CORRECT count is not, and the two
+      measured compound-adjective false positives (`FB-0058 boolean-slot`, `Step 4 config-slot`)
+      stay unreported.** *Pinned by:* `run_merge_status_evals.py` — the hyphenated positive, the
+      correct-count negative that was the missing half, and the compound-adjective negative; seven
+      shapes verified. **Why a different skill's scanner ships here, not as a separate PR:** this
+      change takes the schema 36 → 37, the scanner's expected count is read from that schema
+      (`expected=len(props)`), and a contract-value change obliges the `general.md` item-2 sweep.
+      The sweep surfaced `README.md`'s "A 24-slot" — and the old `\d+\s+slots?` could not match a
+      hyphen, so the sweep this PR's own slot addition required reported clean over the front page.
+      Fixing the regex was the only way to finish that sweep; it then exposed the comparison bug
+      (`claim.split()[0]` compared "37-slot" against "37"), fixed with it.
+- [x] **A catastrophic slot regex is bounded.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 2b. The value yields `DOC-SLOT-INVALID` within the five-second
+      bound, and the `timeout`-absent fallback is a stated residual rather than an implicit one.**
+      *Pinned by:* `run_coverage_docblind_evals.py` § 2b's catastrophic-ERE case (measured 5.2s,
+      evidence still produced, slot named as the cause). *Approved at the merge gate 2026-10-01.*
+      The residual is stated in the block's own comment: where coreutils `timeout` is absent the
+      probe runs unbounded, which is a smaller blast radius than skipping validation entirely.
+- [x] **Config values cannot forge a control line.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 2b and § 2b-cap. A newline-bearing `defaultBranch`, `planPath` and slot value each produce no column-0
+      control line above the delimiter — and the length cap degrades LOUDLY, never into a silent
+      wrong answer.** *Pinned by:* `run_coverage_docblind_evals.py` § 2b's three forgery cases plus
+      their paired positive (a benign config must still emit real above-delimiter control lines),
+      and § 2b-cap for the cap half: an over-cap `defaultBranch` refuses with `BASE-UNRESOLVED`, an
+      over-cap `planPath` is announced by the criteria block, each paired with an under-cap negative
+      so the checks are not satisfied by a gate that always complains. *Approved at the merge gate
+      2026-10-01 on condition the cap half be tested, because it was the only part with no test —
+      declaring a criterion nothing checks is the defect the "ADDED AT THE MERGE GATE" bullet was
+      de-checkboxed for.* **The cap test initially passed for the wrong reason** and is recorded
+      because of it: the fixture never created the over-long ref, so `BASE-UNRESOLVED` fired whether
+      the cap had truncated the name or not, and removing the cap did not turn the check red. The
+      fixture now creates the ref for real, so the mutation fails as it must (general.md item 4 —
+      an instrument validated only where it should fire).
+- [x] **Each selected path receives its own hunks and no other path's.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 3.
+      At the composed shell layer — three non-default diff
+      renderers (`diff.noprefix`, `diff.mnemonicPrefix`, `color.diff=always`), the whitespace-path
+      collision, and the risky-path routing; the rename arm (`a/old b/new`) verified by hand, each
+      file's content appearing exactly once and correctly attributed. *Approved at the merge gate
+      2026-10-01.* **Why this needed declaring even though it was tested:** batching means
+      attribution is decided by parsing git's own per-file header, and a mis-key yields `total > 0`,
+      so it takes no weakening branch — unlike the total-blindness case, which `EVIDENCE-EMPTY`
+      covers. **Stated residual:** an UNKNOWN renderer shape no test can anticipate. Pinning
+      `--src-prefix`/`--dst-prefix`/`--no-ext-diff`/`--no-color` exists to prevent that rather than
+      detect it, which is the honest limit of this criterion.
+- [x] **Docs:** *Pinned by:* a doc-diff — `dev-docs/feedback/FB-0126-*.md` + `dev-docs/history/2026-09-30-*.md` existing. FB entry (the rule: an exclusion tuned for one repo shape becomes a blind spot in another,
+      and the gate must say which shape it assumed), history entry, `workflow.md`'s honest-limitation
+      paragraph updated to describe the opt-in, schema slot documented, roadmap entries closed.
+
+### Open questions for the gate — I have NOT acted on these
+
+- **OQ1 — does C belong in this PR? RESOLVED by the corrected measurement; flagging rather than asking.**
+  My original framing ("pre-existing breakage, arguably its own PR") rested on the wrong #158 row. Corrected:
+  on #158 the `.md` inclusion **causes** the overflow (54,605 → 103,785 B), so C is **not separable** from B
+  — shipping B alone would knowingly push that PR shape past the cap and leave 2 of 15 files invisible. C is
+  *additionally* justified on today's evidence by #160 (78,629 B, already over, no `.md`). **Include.** Say
+  so if you disagree; I am no longer treating it as open.
+- **OQ2 — should `behaviorBearingDocPatterns` really default to empty? (Narrowed by ISSUE 3.)** Now that A
+  reads the same slot, the cost of an empty default is only that an un-opted-in consumer gets a *suggestion*
+  line rather than a reading — not silence. That makes empty clearly safer, and this question is close to
+  moot. Left open only because the alternative is still defensible: It discharges constraint 1
+  perfectly, but it means a prompt-shaped consumer stays blind until they discover a slot. The alternative
+  — default to `(^|/)(skills|agents)/.*\.md$`, which is inert in a repo with no such directories — changes
+  no gate in practice for an app repo while helping prompt-shaped ones by default. I lean **empty** (the
+  roadmap's hypothesis, and silent contract changes are what constraint 1 forbids), with `/flow:doctor`
+  surfacing the suggestion as a separate item. Flagging because the alternative is defensible.
+- **OQ3 — source mode.** `ship/SKILL.md` alone is 1.5× `SOURCE_CAP`. Source mode has the same starvation
+  problem, worse. **D1 Phase 3 (`/flow:autoplan`) builds on source mode**, so changing its capping changes
+  what that machine gate reads. I propose to **leave source mode alone** in this PR and report the number,
+  rather than move a surface Track B is building on. Confirm.
+
+### Coordination — you asked specifically
+
+- **Track B `/flow:autoplan` (`conductor/track-b-d1-phase-3-autoplan-machine-gate`, 5 commits): touches
+  `dev-docs/plan.md` ONLY.** No source-file collision with CV1. **But there is a semantic dependency
+  without a file collision:** `prototype/SKILL.md:217` points `/flow:audit-coverage` **in source mode** at
+  the approved prototype, so anything I change about source-mode file selection or capping changes what
+  that gate reads. That is the reason for OQ3, and it is the answer to your question: *no shared files,
+  one shared surface.*
+- **S0 (`conductor/s0-rule-skills-never-load-option-c`) — 25 files, and it DOES collide.** *(Corrected at
+  the audit gate. My first answer came from `git diff --name-only | head -12`, whose cut-off entry was
+  `plugins/flow/.claude-plugin/plugin.json` — so everything under `plugins/flow/docs/` and
+  `plugins/flow/skills/` sorted after it and was never displayed. Truncated output read as complete.)*
+  S0 touches **`plugins/flow/docs/workflow.md`** — **the exact file this plan's Docs item commits to
+  editing** — plus five shipped `skills/*/SKILL.md`, three `evals/*.py` and `ship/lib/plugin-provenance.py`.
+  None is `audit-coverage`, so the *code* collision is still nil; the `workflow.md` one is real.
+- **`plugins/flow/docs/workflow.md` is a THREE-WAY collision**: S0, **#166 (mine, open)** and CV1 all
+  rewrite it, all three on the honest-limitation paragraph. My last report gave #166's collision as
+  `schema/flow.config.schema.json` only — incomplete for the same truncation reason. Whoever lands last
+  rebases; I will take the paragraph as it stands rather than reverting either.
+- **#167 version-provenance:** dev-docs only.
+- **#166 (mine, open):** touches `schema/flow.config.schema.json`, which CV1's new slot also needs — a
+  real collision, self-inflicted. If #166 merges first this is a clean add; if not I will rebase onto it.
+- Version and FB numbers **claimed at ship time**, not now, per your instruction.
+
+
 *The active work item sits here, above the merged blocks, so the walk parsers name it regardless of whether anyone else's merged headings carry a demotion qualifier. The demotions below are correct and independently true; this placement means the extractor does not depend on them surviving another worker's rebase.*
 
 **▶ EXECUTED, shipping — D1 Phase 3: the auto-written technical plan and its MACHINE gate** (this branch, `conductor/track-b-d1-phase-3-autoplan-machine-gate`, **v1.54.0**, **FB-0125**). Plan approved by the orchestrator after eight rounds of `/flow:critique-plan`; open calls 2 and 3 answered there, **call 4 decided by Ben on 2026-09-29 (option (a))**.
@@ -317,6 +580,7 @@ Three properties that make it answerable rather than a document: **the resolutio
 
 ---
 
+
 **▶ EXECUTED, shipping (this branch, `conductor/s0-rule-skills-never-load-option-c`, v1.53.0, FB-0124): S0 option (c) — the four rule-skills earn their trigger from their descriptions, and the descriptions currently forbid it.** Ben chose (c) at the human gate: stop trying to path-activate, let Claude load them by judgment. The substance is not deleting `paths:` — it is that all four descriptions end with **"Not user-invocable — path-activated only."**, a sentence telling the model the skill is not its to invoke, while model invocation is the only mechanism (c) has. Ships rewritten `description` + new `when_to_use` on all four, removal of `paths:`, **a re-based `_is_rule_skill()` in `plugin-provenance.py` (which keys on `paths:` and would silently break)**, an honest `/flow:doctor` Check 3.2, deterministic evals with a negative control, and an A/B measurement in fresh sessions.
 
 **Mode:** feature · **Surface:** non-visual
@@ -505,6 +769,7 @@ Rebase on `main` immediately before ship and re-check the version then — the D
 3. **Neutral repo for arms A/B/D.** I plan to base throwaway workspaces on an existing public repo and create nothing under Ben's account. Say the word if you would rather I use a scratch repo in the org and I will ask before creating it.
 4. **Write §2's correction back into `dev-docs/research/2026-09-agents-md-vs-skills.md` §5.1?** It is marked point-in-time and not maintained, so convention would leave it. This one earns an exception: its over-claim is what the roadmap's wrong diagnosis was built on, and S0 is cited from six places. **Recommendation: correct in place with a dated note**, not a rewrite — and state the narrowed claim from §2, not round 1's stronger one.
 5. **⟢ NEW — `/flow:doctor` loses `[READY]` permanently, for every consumer.** A5 is HIGH, so the activation `[WARN]` is **unclearable by construction**. Doctor's contract (`doctor/SKILL.md:881-882`) reserves `[READY]` for "all checks pass" and `[READY with WARN-level items]` for "N optional items can be addressed at your discretion" — so every consumer would permanently see a non-`[READY]` verdict naming an optional item **no consumer can ever address**, and the same argument would then be available for retiring `[READY]` from the schema. `/flow:critique-plan` flagged this and it is a headline-contract change neither round-1 §10 nor §12 surfaced. Three shapes: **(i)** accept the permanent WARN and amend the contract text at `:881-882` plus the Section 3 summary line so it is documented rather than surprising; **(ii)** add a new `[INFO]` / "not checkable" class excluded from the verdict arithmetic, so activation is reported without consuming the verdict; **(iii)** report activation only in Check 3.2's body with no verdict-bearing marker at all. **Recommendation: (ii)** — it keeps FB-0121's requirement (a gate must distinguish "nothing wrong" from "I could not see") while leaving `[READY]` meaningful, and "unchecked" is genuinely a third thing rather than a mild failure. **This is the one call I would most like overridden if you disagree**, because it changes a surface every consumer sees on every `/flow:doctor` run.
+
 **▶ EXECUTED, shipping (this branch `conductor/docs-only-verify-build-na`, v1.52.0, FB-0122): a docs-only PR is N/A, not unverified — and was unmergeable.**
 
 **Mode:** feature · **Surface:** non-visual
@@ -596,6 +861,7 @@ in a pushed manifest, so the ceiling read 1.50.0; taking the orchestrator's word
 it rather than colliding). **Overlap:** S0 also edits `roadmap.md`/`plan.md`; this branch keeps its
 diff to `verify-build`, `audit-skips`, their evals, one feedback file, one history file, the two
 manifests and these two doc blocks.
+
 
 
 

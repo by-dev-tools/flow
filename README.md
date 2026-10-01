@@ -29,7 +29,7 @@ The workflow is a progression of skills held together by two human gates — one
 | ↳ `/flow:security-review` | XSS, secrets, unsafe URLs, path traversal, dependency and persistence risk. Skips doc-only diffs. |
 | ↳ `/flow:accessibility-review` | WCAG 2.1 AA audit. Skips non-UI diffs. |
 | ↳ `/flow:verify-build` | Runs the built artifact, adversarially tested against the plan's criteria. A failure keeps the PR a draft with a `🚫 NOT READY TO MERGE` manifest — and it is the one blocker you cannot waive to ready. On a visually-significant change, captured frames are required — zero frames is `Unknown`, never a pass. |
-| ↳ `/flow:audit-coverage` | Flags changed behavior no criterion covers — the gap between "what was tested" and "what changed." Pass a path (`/flow:audit-coverage <prototype>`) to run the same check over an approved prototype's source before any diff exists. |
+| ↳ `/flow:audit-coverage` | Flags changed behavior no criterion covers — the gap between "what was tested" and "what changed." Pass a path (`/flow:audit-coverage <prototype>`) to run the same check over an approved prototype's source before any diff exists. If your repo ships **prose as deployed surface** (prompts, skill files, agent definitions), set `behaviorBearingDocPatterns` — a `.md` path never matches `sourceFilePatterns`, so those files are outside the behaviour diff by default, and a run says so rather than passing quietly. |
 | ↳ `/flow:audit-skips` | Audits every stage skip for legitimacy — on the spike path too, which produces the most skips — a skip is trusted only if the diff/config backs it, and a "ran" claim only if its output artifact exists for HEAD. A self-certified short-circuit becomes a decision you answer at hand-off. |
 | **Gate 2 · you merge the PR** | Claude never runs `gh pr merge`. |
 
@@ -86,7 +86,7 @@ Adoption guides: [new project](docs/bootstrap.md) · [existing project](docs/mig
 
 - **2 review agents** (`auditor`, `plan-critic`) + **4 staff-review lenses** (engineer, UX, design-engineer, push-further) + the **D1 `lens-experience` agent** (experience/ambition + push-further-on-quality, reached via `/flow:review-brief`) + 2 context-isolation helpers (`planner`, `docs`).
 - **4 rule-skills** Claude loads by judgment from their descriptions — workflow discipline, plan requirements, doc format, exploration triggers. Model-invoked, not path-activated: a plugin cannot ship `.claude/rules/*.md`, so these raise the floor rather than acting as a gate.
-- **A 24-slot `flow.config.json`** ([schema](plugins/flow/schema/flow.config.schema.json)) so every doc path, command, and branch name is configurable, never hardcoded.
+- **A 37-slot `flow.config.json`** ([schema](plugins/flow/schema/flow.config.schema.json)) so every doc path, command, and branch name is configurable, never hardcoded.
 - **A template directory** (`template/`) with per-stack overlays for web, Swift, and Tauri/Rust/TS — the scaffolding `bootstrap.sh` copies in.
 - **No runtime dependencies.** Python stdlib for preprocessing; Markdown for everything else. No API calls — the plugin delegates to Claude Code subagents.
 

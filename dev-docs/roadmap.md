@@ -25,7 +25,9 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 > replaced by whatever Ben sets next — not silently carried forward as the implied stopping point
 > once it's been reached.
 
-**Plugin at v1.54.0 (this PR — D1 Phase 3: the technical plan is auto-written against the approved prototype and gated by MACHINE, FB-0125. `/flow:autoplan` + three arms: criterion quality (deterministic, read from output rather than exit status — both tools exit 0 on every verdict), completeness (`/flow:audit-coverage` source-mode union, the finder wins, never passes on silence), and conformance + experience (`/flow:review-brief` generalized to any reviewed artifact and pointed at the plan). GREEN requires every arm to have RUN; silence is evidence of nothing. Runs on the prototype-first path only — where the human gate did not move, there is nothing to replace. Escalation pauses through worker → orchestrator → human, decided by Ben 2026-09-29. **D1 is now complete end to end.**)**
+**Previously: v1.54.0 (shipped #171 — D1 Phase 3: the technical plan is auto-written against the approved prototype and gated by MACHINE, FB-0125. `/flow:autoplan` + three arms: criterion quality (deterministic, read from output rather than exit status — both tools exit 0 on every verdict), completeness (`/flow:audit-coverage` source-mode union, the finder wins, never passes on silence), and conformance + experience (`/flow:review-brief` generalized to any reviewed artifact and pointed at the plan). GREEN requires every arm to have RUN; silence is evidence of nothing. Runs on the prototype-first path only — where the human gate did not move, there is nothing to replace. Escalation pauses through worker → orchestrator → human, decided by Ben 2026-09-29. **D1 is now complete end to end.**)**
+
+**Plugin at v1.55.0 (this PR — `/flow:audit-coverage` can read behaviour-bearing prose, FB-0126/FB-0127). A `.md` path never matched `sourceFilePatterns`, so the completeness gate was structurally blind to prose — on a plugin that ships PROMPTS, most of what this repo changes. Three parts: (A) say it — with the new slot unset a run prints `WEAKENED · DOC-BLIND` naming every changed doc-shaped file it did NOT read, and prints the built-in guess so the value is copy-pasteable; (B) see it — the `behaviorBearingDocPatterns` slot (schema 36 → 37), **empty by default**, unioned in after the source filter; (C) fit it — `head -c` over a concatenation made files late in `sort -u` order entirely invisible once the 60 KB cap bound, replaced by max-min fair-share allocation that names every file it cut. **Measured, not asserted:** #159's reconstruction moves from **0 of 5** at baseline to **2/5 and 1/5 single-run, union 3/5**, zero false positives, via `tools/coverage-recall/` with `--selftest` passing first — plus the paired negative that a wording-only `.md` change returns `No issues flagged.` Recall is still weak and is reported as such: the likeliest cause is in § Next, found independently by two review lenses — Stage 1 still tells the reviewer that doc changes are not behaviours, so B feeds it a `SKILL.md` and the prompt hands it a rule for discarding it. See `dev-docs/history/2026-09-30-audit-coverage-reads-behaviour-bearing-prose.md`.)**
 
 **Previously: v1.53.0 (shipped #170 — S0 resolved, and the measurement says the feature is still not fixed for consumers, FB-0124). The four rule-skills (`general`, `plan-discipline`, `documentation`, `exploration`) are now honestly labelled **model-invoked**: `paths:` is gone (it *narrows* a description-driven activation rather than triggering one), the descriptions no longer end "Not user-invocable — path-activated only.", and each carries a `when_to_use`. **59 probe sessions, 0 discarded: 25 ran at plugin scope and produced ZERO invocations — all four rules, old and new descriptions, both models — while the identical rewrite fires 3/3 at project scope.** Scope is the decisive variable, not the description; the *name* does most of the work (a deliberately vague description still fired). So S0's code change is right on its own merits and is **not** a fix for the advertised feature: `/flow:doctor` Check 3.2 stops reporting `[PASS]` over a claim it never checked (new `[UNCHECKED]` marker, outside the verdict arithmetic, printed inline as `[READY] (N unchecked)`), `plugin-provenance.py` no longer silently reclassifies all four as command skills, and `template/base/CLAUDE.md.template` stops pointing at the `rules/` directory deleted in v1.33.0 — a **write-once** surface `bootstrap.sh` copies into every consumer repo. One shared `plugins/flow/lib/rule_skills.py` replaces five copies of the roster + three languages' worth of the predicate, and a claim lint makes a tenth false path-activation claim impossible rather than the ninth corrected. **Open for Ben: is S0 done at "honest, raises the floor", or does it need the `SessionStart` hook?** — see § "A plugin `SessionStart` hook".)** Recently shipped: **v1.52.0 ([#166](https://github.com/by-dev-tools/flow/pull/166) — a docs-only PR is N/A, not unverified, FB-0122), v1.50.0 ([#165](https://github.com/by-dev-tools/flow/pull/165) — a slash-command argument never touches a shell again, FB-0116/FB-0117), v1.49.0 ([#160](https://github.com/by-dev-tools/flow/pull/160) — `/flow:audit-coverage` enumerates before it judges, FB-0115), v1.47.0 (#159 — source-tree input mode + a verified RCE in typed arguments), v1.45.0 (#157 — the §4.10 orchestrator skill suite, FB-0110).**
 
@@ -240,7 +242,7 @@ The strongest argument for the orchestrator is **not** speed: today each skill r
 
 **FOLLOW-UP — DEFERRED at the Phase 2 plan gate (2026-09-20), still open.** Ben cut it from Phase 2 on scope discipline: the test applied was *"does this PR make the statement false?"*, and a new Lens-A question is a **feature addition to an agent prompt**, not a claim D1 Phase 2 invalidates (unlike the `role` doctor check and the brief word cap, which it does falsify and which shipped with it). Needs its own small PR: one new Lens-A question **plus** a re-authored fixture demonstrating it, per "prompt change = code change". **Surfaces when:** `lens-experience.md` is next touched, or a brief review misses an accessibility/timing concern in practice. Original finding follows. Lens A's question set (journey/edge-states/friction/feel) names no accessibility or timing dimension. The lens's own worked fixture (`brief_low_ambition.md`, a 5-second auto-dismissing undo link with no way to extend or disable the timer) is a near-perfect worked example of a WCAG 2.1 SC 2.2.1 (Timing Adjustable) concern the pinned expected output never names — it raises the ambition ceiling on reassurance/confidence grounds but misses the accessibility angle entirely. Real scope expansion (a new Lens-A question + a re-authored fixture demonstrating it, per this repo's own "prompt change = code change" rule), not something to fold into Phase 1 silently. Whoever picks up D1 Phase 2 (when the lens becomes load-bearing rather than standalone-only) should fold an explicit accessibility/timing question into Lens A before then.
 
-### CV1 — `/flow:audit-coverage` cannot see `.md`, so most of this plugin is invisible to it
+### CV1 — `/flow:audit-coverage` cannot see `.md`, so most of this plugin is invisible to it — ✅ SHIPPED (v1.55.0, FB-0126/FB-0127)
 
 **Surfaces when:** `/flow:audit-coverage`'s `EXCL` filter is next touched, or any PR whose substance is prompt text reports "no undeclared changes".
 
@@ -251,6 +253,8 @@ Found while re-deriving the recall series for #158, and it is larger than the re
 **Why this is not just "widen the regex".** `.md` is genuinely documentation in most consumer repos, which is why the exclusion exists and is right there. The fix has to distinguish *prose about the product* from *prose that IS the product* — plausibly by treating paths under a plugin's `skills/` and `agents/` as source regardless of extension, or by reading a config slot. That is a design call, not a one-line edit, which is why this is an entry rather than a patch.
 
 **Do not fix by deleting the exclusion.** A repo-wide `.md` inclusion would make every docs PR read as a behaviour change and drown the signal — the failure the exclusion was added to prevent.
+
+**Shipped as three parts (v1.55.0).** (A) **say it** — with the slot unset a run prints `WEAKENED · DOC-BLIND` naming every changed doc-shaped file it did not read, so an un-opted-in consumer gets a stated blind spot rather than a clean pass; (B) **see it** — the new `behaviorBearingDocPatterns` slot (**empty by default**, so no consumer's result changes silently) unions matching paths back in *after* the source filter, which is the right shape because `.md` never matched `sourceFilePatterns` in the first place: this was an inclusion bug, not an exclusion one, and the `|\.md$` clause was belt-and-braces; (C) **fit it** — `head -c` over a concatenation made files late in `sort -u` order entirely invisible once the 60 KB cap bound, replaced by max-min fair-share allocation (`lib/evidence-budget.py`) that names every cut file. **Measured end to end:** #159's reconstruction moves from a structural 0-of-5 to **2-of-5 and 1-of-5 single-run, union 3-of-5**, with zero false positives, via `tools/coverage-recall/` with `--selftest` passing first; paired with the negative that a wording-only `.md` change returns `No issues flagged.` while one added rule in the same file is flagged. Two follow-ups this measurement produced are in § Next: criterion truncation (80% of declared text silently dropped) and whether ship Step 2 should union two passes.
 
 ### D1c — Gate-1's hand-off is the last unrendered hand-off in the loop
 
@@ -1870,6 +1874,242 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 - **Resume umbrella retirement.** md-manager PRs 5 (dogfood) + 6 (delete duplicates + retire umbrella) per `dev-docs/handoffs/md-manager-pr4-6-spec.md`. Flow-side: standing by for PR 5's feedback intake; may surface additional rough edges worth a second follow-up bundle.
 - **Carryover PR-2 FOLLOW-UPs not yet absorbed** (items 3-8 in `dev-docs/plan.md` § "PR 3+ follow-ups from PR 2 review"). Most are MEDIUM-priority polish or v1.2 hygiene; pick up opportunistically rather than as a focused PR.
 
+- **Source mode's cap is 1.5x too small for this repo's own largest skill — deliberately deferred
+  (CV1 measurement).** `SOURCE_CAP` is **120,000 B**; `plugins/flow/skills/ship/SKILL.md` alone is
+  **177,768 B**. Pointing `/flow:audit-coverage <path>` at flow's own skill tree therefore truncates
+  *inside a single file* before it ever reaches a second one. CV1 fixed the **diff**-mode cap by
+  replacing `head -c` over a concatenation with max-min fair allocation across files, and that shape
+  does not help here — there is nothing to share a budget with when one file is 1.5x the whole
+  budget. **Deliberately not fixed in CV1** because `prototype/SKILL.md:217` points source mode at an
+  approved *prototype*, not at a repo, so the input that motivates a fix arrives with D1 Phase 3.
+  Re-measure then, and choose between raising the cap and intra-file selection rather than raising it
+  blind.
+
+- **Every declared criterion reaches both reviewers as its first physical line only, silently (CV1
+  measurement).** `verify-build/lib/walk_extract.py:272`'s `CHECKBOX_RE` matches one physical line. A
+  wrapped `- [ ]` bullet's continuation lines match neither `is_terminator` nor `_MALFORMED_CB_RE`, so
+  the loop `continue`s past them: they reach no consumer and add no `warnings` entry — in a function
+  that already has a warnings channel and uses it for three other conditions (`general.md` item 1,
+  silent-skip, with the defense already built and not wired to this case). **Measured at #159's
+  ship-time HEAD (`bd29167`): 12 of 12 criteria are wrapped, and 1,143 of 5,819 characters reach the
+  reviewer — 80% of the declared text is dropped.** Criterion 1 arrives ending mid-sentence at
+  `"...byte-identical to today's, and the"`. Two consumers, so this is not one skill's bug:
+  `/flow:audit-coverage` judges against this set, and `/flow:verify-build` Step 3 feeds these same
+  strings to bundled `/verify`. **What is deliberately NOT claimed:** a controlled arm with the
+  criteria untruncated did *not* raise recall on #159 — it scored 1/5 where the truncated arm scored
+  2/5, finding a *disjoint* gap. One run per arm cannot be separated from ordinary run-to-run
+  variance, so this is filed as a silent-skip defect **on its own merits**, never as the explanation
+  for a recall number. Fix is continuation-line joining plus a warning naming every truncated bullet;
+  re-measure recall afterwards with enough runs to see past the variance.
+
+  **▶ SECOND FAILURE MODE IN THE SAME READER, AND THE MORE SEVERE OF THE TWO — severity raised by
+  the orchestrator at CV1's merge gate (2026-10-01). Any consumer's plan can silently lose most of
+  its declared criteria, and every downstream gate then reports green against a fraction of it.**
+
+  **(1) The trigger.** A wrapped bullet whose CONTINUATION line begins with a bold span. Nothing
+  about it looks wrong to an author: `- [ ] criterion one` followed by an indented `**A bolded
+  note.**` is ordinary prose. `walk_extract.py`'s bold-label terminator cannot tell "a new section
+  heading" from "this bullet's second line happens to open with two asterisks", so it ends the
+  block there.
+
+  **(2) The measured effect — silent, total, and not truncation.** Criteria after the trigger are
+  not shortened, they are *gone*, and the `warnings` list stays EMPTY, so nothing downstream can
+  tell. Measured twice. On CV1's own plan, one continuation line reading `**This flips cases.py's`
+  cut the declared set from **15 criteria to 5** — so `/flow:audit-coverage` audited that PR
+  against a third of its own plan while reporting as if the comparison were complete. Isolated on a
+  3-item fixture with a control, on both front-ends: **1 of 3 extracted, 0 warnings**; delete the
+  one bold continuation line and it is 3 of 3.
+
+  **(3) Every reader it feeds, by name.** `walk_extract.py` has TWO front-ends, so this is not one
+  gate's bug: `extract-criteria.py` (label `Spec-walk`) and `extract-visual-states.py` (label
+  `Visual-walk`) — the visual half loses declared visual states the same way. Consumers:
+  **`/flow:audit-coverage`** (the declared-criteria set it judges against); **`/flow:verify-build`**
+  (feeds the criteria to bundled `/verify`, and `lib/criterion-specificity.py` +
+  `lib/visual-significance.py` read the same lists); **`/flow:plan-discipline`** (the rule-skill
+  that polices plan shape); **`/flow:prototype`** via `lib/prototype-gate.py` (D1 gate-1's "a plan
+  always exists" assertion); **`/flow:audit-skips`** via `lib/skip-audit-checks.py` (plan-mode
+  detection, which decides whether a skip is legitimate); **`/flow:critique-plan`** via
+  `lib/walk-pin-lint.py`; and **`/flow:ship`** via `lib/manifest_contract.py`. #171's Arm A reads it
+  too. It is the most widely shared reader in the plugin, and the same quiet-loss shape as
+  `if not symbol: continue` in #171 — the gate reads less than it reports.
+
+  **(4) The fix must ship PAIRED; neither half alone is sufficient.** (a) The extractor either
+  **loses no criteria** — require a blank line before a bold-label terminator, or track bullet
+  continuation explicitly — **or it flags the early end** loudly in `warnings`, so a truncated set
+  can never pass as a complete one. (b) **A test proves that a plan whose bullet carries a
+  `**`-leading continuation line keeps ALL of its criteria**, paired with a genuine bold-label
+  heading that must still terminate — otherwise the fix is satisfiable by never terminating, which
+  breaks the multi-block plans this repo actually has. Both front-ends in the test, since both
+  share the reader. Same pass as the first-line truncation above: one reader, one fix, one harness.
+
+  **Not fixed in CV1, deliberately.** Shared reader, eight-plus consumers, and the correct fix
+  changes block-boundary semantics for every plan in every consuming repo — its own change with its
+  own measurement, not a rider on a coverage-gate PR.
+
+- **Decide whether `/flow:ship` Step 2 runs `/flow:audit-coverage` twice and unions — CV1 reopened
+  this.** `audit-coverage/SKILL.md`'s "Running this more than once" section justified a single pass
+  with "a gain measured at zero", on three diff-mode runs that found identical gaps, and explicitly
+  asked for a second diff-mode case before treating that as settled. CV1 ran it and got the opposite:
+  two runs over **byte-identical** evidence scored 2/5 and 1/5 with **disjoint** gaps — union 60%,
+  **+30pp**, zero false positives in either. The dead premise is now out of the shipped paragraph and
+  the single-pass decision left standing, which turns this into an open **cost** question rather than
+  a measurement one: two cases point opposite ways and nothing predicts in advance which diff carries
+  harvestable variance. **Do not decide this from the two datapoints on record** — it needs a third
+  and fourth diff-mode case first.
+
+- **`/flow:audit-coverage` has no defined verdict for "I enumerated nothing but the diff was not
+  empty", so the reviewer invents one (CV1 measurement).** The two-stage prompt asks Stage 1 to
+  enumerate behaviours and Stage 2 to judge coverage. When Stage 1 legitimately finds zero
+  behaviours in a non-empty inventory, the schema offers only `ISSUE` / `AUDIT SUMMARY` /
+  `No issues flagged.` — and none is right: there is nothing to flag, and "no issues" would certify
+  a comparison that never happened. **Measured across CV1's eight reviewer runs: three improvised a
+  shape outside the schema, and all three were DIFFERENT** — prose ("Stage 1 enumerated no
+  user-perceptible behavior…"), an invented header (`EVIDENCE/ENUMERATION DISAGREEMENT — this is
+  not a clean pass.`), and — worst — a token-shaped line, `[audit-coverage] EMPTY-ENUMERATION`.
+  `git grep` finds none of the three anywhere in the plugin. The token-shaped one is the sharpest
+  argument for closing this: it is indistinguishable IN FORM from a defined control line, so a
+  downstream reader keying on the `[audit-coverage] ` prefix would treat a model invention as
+  skill output. Three runs, three spellings, is what an undefined contract looks like. The improvisation is
+  *good judgment* — one run even inferred the blind spot from the **absence** of a `WEAKENED ·`
+  line — which is exactly why it should be a contract instead of a coincidence. **Why it matters
+  beyond tidiness:** `/flow:ship` Step 2 routes coverage results into the draft manifest, and an
+  improvised shape is neither a gap entry nor a clean signal, so the most epistemically careful
+  output the reviewer can produce is the one the pipeline is least able to read. It is also the
+  `.claude/rules/general.md` item 4 shape at the *output* layer: "nothing found" and "I could not
+  compare" must not render the same, and here the second has nowhere to render at all. Fix is a
+  fourth defined verdict with a fixed token, plus routing for it at ship Step 2 and an eval pinning
+  that the token is emitted rather than narrated. **Not fixed in CV1**: CV1 only *adds vocabulary*
+  to the judging prompt, and changing its verdict schema plus a ship routing path is a larger,
+  separately-measurable change.
+
+- **▶ THE LIKELIEST EXPLANATION FOR CV1's RECALL NUMBER: the judgment layer still tells the
+  reviewer to discard the files the selection layer now feeds it.** Found INDEPENDENTLY by two of
+  four `/flow:staff-review` lenses (staff-engineer and push-further), which is why it leads this
+  list. `plugins/flow/skills/audit-coverage/SKILL.md`'s Stage 1 enumeration rule says "Refactors,
+  renames, formatting, comments, dependency bumps, pure-internal helpers, and **test/doc changes
+  are not behaviors**", and `plugins/flow/agents/auditor.md` carries the matching carve-out. Stage
+  1's own `NOT BEHAVIOR` template even models the disposal (`H9 test-only`). So on a repo that sets
+  `behaviorBearingDocPatterns`, CV1 hands the reviewer a `SKILL.md` diff **and the prompt hands it
+  a rule for throwing that diff away**. CV1 moved the mechanism and did not sweep the contract —
+  the fan-out class, inside the change that cites it. **It predicts the shape of the measurement,
+  not merely fits it:** perfect precision with *disjoint* misses across two runs is what you get
+  when a reviewer is deciding case-by-case whether a prose hunk is admissible at all. Note
+  `run_coverage_docblind_evals.py` pins 20+ properties and every one is about SELECTION; nothing
+  pins what the reviewer should DO with a selected `.md`. **Fix sketch** (from push-further, and it
+  is testable rather than hopeful): emit `$DOCF` — the paths that entered via the slot, which the
+  block already computes and then discards — as an informational line above the delimiter (NOT a
+  `WEAKENED ·` line), then one clause in both prompts keyed to it: for a file on that list the
+  doc-only carve-out does not apply, because the consumer has *declared* that file deployed
+  surface; a changed or added rule/instruction/contract in it is a behaviour change, while changed
+  rationale, commentary or example prose still is not. The discriminator is exactly what CV1's
+  paired prose negative already measures, so `tools/coverage-recall/` scores the upside and the
+  wording-only negative guards the over-fire. **Do this before deciding the union question below**
+  — union's cost/benefit should be measured against a reviewer that is allowed to answer.
+
+- **Finish the convergence half of DOC-BLIND: `/flow:doctor` should propose the pattern once per
+  project, not once per PR.** CV1 did the cheap half — the unset-slot warning now prints
+  `$DOC_BUILTIN` so the value is copy-pasteable instead of requiring a trip to the schema. The
+  durable half is still open: a warning that fires on every PR for a once-per-project config fact
+  is one people learn to read past, which is how a *stated* blind spot decays back into a silent
+  one. Add a `/flow:doctor` check that fires when `git ls-files` shows tracked `skills|agents|rules`
+  `.md` and the slot is unset, printing the same proposed line once — `slot_count_scan.py` is the
+  precedent for doctor reading shipped config facts. Narrow the proposal to the directory segments
+  actually present rather than the full union, and derive it from `DOC_BUILTIN` rather than
+  re-typing it (item 2).
+
+- **`DOC-BLIND` inverts the control-line family's naming grammar.** Every sibling is
+  `<SUBJECT>-<STATE-OF-THAT-SUBJECT>`: `BASE-UNRESOLVED`, `INVENTORY-EMPTY`, `INVENTORY-TRUNCATED`,
+  `SOURCE-TRUNCATED`, `ROOT-UNRESOLVED`, `JQ-MISSING`, `EVIDENCE-EMPTY`, `BUDGET-UNAVAILABLE`.
+  `DOC-BLIND` reads the other way — the docs are not blind; the *run* is blind to them — and
+  `DOC-UNREAD` is both parallel and literally what the message body says ("were NOT read").
+  **Deliberately not renamed in CV1:** ~35 occurrences across ten files including two dev-docs
+  narratives, an eval *filename* (`run_coverage_docblind_evals.py`) and its CI wiring, so the churn
+  is real and the token is not wrong, merely off-grammar. Do it with the family, not alone.
+  (`DOC-PATTERN-INVALID` → `DOC-SLOT-INVALID` WAS done in CV1: that one was a genuine prefix
+  collision — `DOC-` denoting the documents in one token and the config pattern in the other,
+  shipped in the same release — and its radius was nine occurrences.)
+
+- **A path git has to quote is silently unreadable, end to end.** With default `core.quotePath`,
+  `git diff --name-only` emits `"\303\274.md"`, so the file list carries the escaped literal, the
+  budgeter keys zero bytes for it, and DOC-BLIND will not mention it either. Pre-existing (the
+  per-file loop CV1 replaced also diffed nothing), so not a regression — but a non-ASCII `SKILL.md`
+  name is not exotic in every consumer repo, and `EVIDENCE-EMPTY` will now at least refuse the
+  clean reading. Fix is `-z` on the name-only calls plus `-c core.quotePath=false`; deferred because
+  it touches the shared file-list construction `change-inventory.py` also consumes.
+
+- **The built-in doc guess and flow's own three-surface boundary disagree about `.claude/agents/`.**
+  `DOC_BUILTIN` matches `.claude/agents/*.md`, which `CLAUDE.md` § Repository Layout classifies as
+  **project-dev infra, not deployed surface**. Most flow consumers have that directory, so the
+  guess's judgment contradicts flow's own taxonomy. Deciding whether project-dev agent definitions
+  are behaviour is a scope call on the slot's semantics, not a copy fix. Next slot revision.
+
+- **DOC-BLIND has no acknowledgement path.** A consumer who has decided a matching file is *not*
+  deployed surface sees the same line on every PR forever — alarm fatigue on a correct-by-design
+  exclusion, which is how weakening lines stop being read. Needs a design (an `acknowledged` list
+  vs. a negative pattern), not a wording tweak. After the slot has real consumer usage.
+
+- **`designLanguagePath` has no grammar for PROMPT artifacts, so control-line craft is taste
+  rather than citation.** `dev-docs/design-language.md` scopes itself to the `/flow:verify-build`
+  HTML report only. Three of CV1's staff-review findings therefore cited *observed family
+  regularity* instead of a written rule — exactly the degradation the skill's own gotcha warns
+  about. A short "§ Control-line vocabulary" (subject-predicate naming; `WEAKENED · <TOKEN>` as
+  canonical across markdown **and** JSON; the what → consequence → remediation message shape)
+  would convert them. Third instance of the roadmap's existing "designLanguagePath has no entry
+  pointing at this surface" gap.
+
+- **Two smaller CV1 leftovers.** (a) `evidence-budget.py`'s `allocate()` is pure and reusable but
+  its CLI is welded to diff mode (`--base` plus an internal `_diff_all`), so the roadmapped
+  source-mode cap fix needs a signature change rather than a call — ~6 lines either way, recorded
+  so it is not rediscovered. (b) `SKILL.md` still carries design-rationale commentary aimed at
+  neither audience (the reviewing model needs the current contract; the human invoker does not read
+  this file), including a retraction of a prior version of its own footnote. CV1 trimmed the
+  variance narration; the rest is a keep/move judgment pass over ~60 KB whose destination is
+  `dev-docs/history/`, not a mechanical edit.
+
+- **The rigor gate has the SAME `.md` blindness CV1 just fixed — in the mechanism that certifies
+  reviews ran.** `/flow:ship` Step 1.0a keys on a marker whose fingerprint
+  (`skills/ship/lib/rigor-marker.py:98`) is built by filtering `git diff --name-only` through
+  `sourceFilePatterns`. Measured on CV1's own PR: 29 changed files, 16 fingerprinted, **0 of the 11
+  changed `.md` files** — `audit-coverage/SKILL.md` among them. A `SKILL.md` change committed
+  *after* the marker was written left the gate reporting `ok`. Consequence on a
+  prompts-are-the-product repo: **a prompt-only PR cannot invalidate its own staff-review marker**,
+  so FB-0047's "enforce, don't attest" degrades to attestation for exactly the changes this repo
+  makes most. **Fix is not "reuse behaviorBearingDocPatterns here"** — that slot is opt-in and a
+  gate that only enforces when configured is not an enforcement mechanism; the marker should
+  fingerprint *every* changed tracked file, since its question ("did the tree move since review?")
+  has no reason to care what language a file is in. Cheap: one predicate, plus an eval asserting a
+  `.md`-only change invalidates the marker (paired with the positive that an unchanged tree does
+  not). **Deliberately not fixed in CV1:** `plugins/flow/skills/ship/**` is in flow's own
+  `sensitivePaths`, so it never auto-approves at the plan gate and never routes below the top
+  dispatch tier — it does not belong bundled into another change. See FB-0126's second site.
+
+- **The `$ARGUMENTS` Tier-2 channel's stamp proves FRESHNESS, not PROVENANCE — any writer at the
+  same head is trusted.** FB-0108's idiom has the model write a slash-command argument to
+  `.flow/audit-coverage-arg.<branch>.<head>.txt` and the shipped block read it; FB-0116/FB-0117
+  bound the stamp to repo+branch+head so a STALE argument from an earlier head can never be reused.
+  That part works. What the stamp cannot distinguish is *"the model wrote this as this invocation's
+  argument"* from *"something else wrote it at this head"* — so the presence of a correctly-stamped
+  file is treated as the user having passed an argument. **Measured at CV1's merge gate, and it
+  corrupted a measurement before it was noticed:** `run_coverage_source_mode_evals.py` runs one case
+  against the REAL repo (its known-positive instrument test over `annotation-layer.html`), so it
+  wrote a correctly-stamped argument file into the real `.flow/`. The next genuine invocation at that
+  same head read it, silently switched from **diff mode to SOURCE mode**, and audited
+  `annotation-layer.html` — a file the diff never touched — reporting **20 undeclared behaviours** in
+  it with every criterion marked UNDECLARED. Nothing was wrong with the gate; its input had been
+  poisoned, and the output was indistinguishable from a real result.
+
+  **The harness leak is fixed in CV1** (the eval now removes what it wrote, via `atexit` because the
+  module exits through `sys.exit`), and that closes the one writer we know about. The contract gap is
+  what stays open: mode selection is decided by *the existence of a file*, and a mode flip is not a
+  small difference — diff mode and source mode audit different things against the same criteria.
+  Candidate shapes, none chosen: have the block require an explicit opt-in marker inside the file
+  that only the invocation path writes; include a nonce the skill generates per run; or make source
+  mode require the argument to arrive through the placeholder and treat the file strictly as a
+  fallback that must be corroborated. **Pair whatever lands with the test this gap deserves:** a
+  stray correctly-stamped file must NOT flip the mode, paired with the positive that a genuine
+  argument still reaches source mode — a fix that just stops reading the file would break
+  `/flow:prototype`, which is the whole reason the channel exists.
+
 ## Later
 
 - **visual-significance net-delta (moved-block) detection (FB-0062 push-further).** `_diff_content_changed` in `visual-significance.py` is line-prefix-based, so a verbatim block move/reorder (same lines deleted then re-added elsewhere, zero net render delta) reads as content-changed → visually significant. It's a false-positive in the SAFE direction (costs a screenshot, never a missed regression), so not a bug — but the heuristic's real ceiling. A multiset-diff over a hunk's `+`/`-` bodies (~20 lines + a fixture) would treat a pure reorder as no-render-delta. **Surfaces when:** `_diff_content_changed` is next touched, OR a dogfood reports a pure-reorder PR flagged significant and resolving to a wasted Unknown.
@@ -1882,6 +2122,24 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
 - **`## Flow run` skip-vocabulary consistency check** (PR T staff-review FOLLOW-UP) — the skip-reason vocabulary (`skipped (spike)` / `skipped (tiny)` / `uiSurface:false` / `verifyEnabled:false` / `platform library|none`) + the `<✓ / skipped (reason)>` Status-cell shape now live in `/flow:ship` §7, `/flow:ship-spike` §7, and (by reference) the dev-side `.claude/skills/ship`. PR T guards drift with a one-PR spec-walk grep; the durable fix is a `/flow:doctor` check that diffs the skip-reason token set + Status-cell convention across those surfaces. Net-new check; fold into the Check 2.5 generalization above. **Surfaces when:** the `## Flow run` table wording is edited in any ship skill.
 
 ---
+
+- **"Is this file deployed surface?" is now asked four times, by four predicates, with four
+  defaults.** The honest generalisation behind CV1: `sourceFilePatterns` answers a *language*
+  question while every consumer of it is asking a *role* question. The repo already knows this
+  shape — `plugins/flow/lib/sensitive_paths.py` exists because the stakes/routing-floor role
+  predicate needed one definition and two readers. CV1 added a fourth path-role judgment
+  (`DOC_BUILTIN` + the slot) inline in shell, with its own default and its own failure mode, rather
+  than joining that pattern. The interesting version: a project declares its deployed surface once,
+  by role and language-agnostically, and `/flow:audit-coverage`, verify-build's visual-significance
+  predicate and `/flow:spawn`'s routing floor each project from it. **Why exploration and not a
+  scoped entry:** every existing slot is a published contract, and an umbrella slot that supersedes
+  two is config churn for consumers who are fine. There is likely a non-breaking read-side-only
+  framing (a shared `lib/deployed_surface.py` that composes the existing slots and owns the
+  built-in suggestions, changing no config) — but that is a guess, and it deserves a reader who has
+  seen a third gate want the same answer. **Surfaces when:** a third gate needs a path-role
+  predicate, OR `sourceFilePatterns` is next widened for a non-code deployed surface (`.mdx`,
+  `.txt`/YAML prompts, notebook cells), OR a consumer reports DOC-BLIND firing on files that are
+  not their deployed surface.
 
 ## § Exploration
 

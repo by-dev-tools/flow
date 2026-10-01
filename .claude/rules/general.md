@@ -53,6 +53,20 @@ Most recurring bug class flow's own development has surfaced (6 incidents across
    at the composed layer. Ask: *if the surface were broken and the unit were perfect, would anything
    fail?*
 
+   **Corollary — pin the DECISION, not a string that currently implies it.** An assertion that
+   greps for the literal a mechanism happens to be spelled with today goes green when the mechanism
+   is replaced rather than removed, because the literal is still sitting there with nothing reading
+   it. Measured, CV1: `tools/coverage-recall/cases.py`'s `structural_blindness` key asserted that
+   `|\.md$'` still appeared inside `EXCL`, and its own comment promised that "if the exclusion is
+   ever fixed this fails loudly and the case is re-classified". It did not fail. The fix unioned
+   doc-pattern matches back in **after** that filter, so the literal survived untouched while the
+   blindness it stood for was lifted — and the case kept describing itself as structurally unmeasurable
+   for a release. Worse, the literal named the **wrong mechanism**: a `.md` path never matched
+   `sourceFilePatterns` to begin with, so deleting the clause the pin guarded would have changed
+   nothing. The replacement replays the shipped block's own extracted regexes and asserts the
+   selection **outcome** for one path in both config states, paired. Ask: *if someone rewrote this
+   mechanism instead of deleting it, would my assertion notice?*
+
    Not a duplicate of item 3, and the difference decides the fix: item 3 is about an assertion's **logical shape** (a negative-only assertion passes whether the contract is honored *or* deleted); item 4 is about **instrument validation** (the detector was never exercised on a positive). Same symptom — unearned green — different defenses: pair with a positive assertion, versus run against a known positive. Live instance: a queue-conflict recipe shipped in `research/orchestrator-field-manual.md` § 7 grepped `'^<<<<<<<'` over old-form `merge-tree` output, which is diff-prefixed (`+<<<<<<<`), so it printed `0 = clean` for every pair. It was "validated" on a genuinely-disjoint pair, where `0` was right for the wrong reason (FB-0112).
 
 When in doubt, ask: "If a colleague greps for the old value tomorrow, will they find a contradiction?" If yes, fix it now. And: "If someone deleted the thing this check protects, would the check still pass?" If yes, it isn't a check yet.

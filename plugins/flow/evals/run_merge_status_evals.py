@@ -16,7 +16,7 @@ is prose the agent drives, but its LOAD-BEARING core is deterministic and pinned
                  (FB-0077: land's flag was cleared, so the Skill() call executes —
                  composition, not reimplementation and not a hand-off), uses `branch -d`
                  never `-D`, and writes NO feedbackPath repo doc in v1 (user-scope only).
-  schema       — the postMergeWaitSeconds slot exists and the slot count is 36 (a "N slots"
+  schema       — the postMergeWaitSeconds slot exists and the slot count is 37 (a "N slots"
                  fan-out is the most-recurring bug class this repo tracks — FB-0010).
 
 Stdlib only.
@@ -266,7 +266,7 @@ def main() -> int:
         # indistinguishable from having chosen the default. Declaring it was a
         # precondition for repointing it at a one-file-per-release directory.
         # 34 -> 36 with dispatchBackend + sensitivePaths (the orchestrator suite).
-        check("schema-slot-count-36", len(props) == 36, f"slot count = {len(props)} (want 36)")
+        check("schema-slot-count-37", len(props) == 37, f"slot count = {len(props)} (want 37)")
         # And no shipped surface may contradict it. Deliberately WRAP-TOLERANT: the
         # literal is matched across newlines, because the survivor that slipped this
         # PR's first sweep was `all 30\n  slots` wrapped inside doctor/SKILL.md's
@@ -276,7 +276,11 @@ def main() -> int:
         # the shell-parity check below for why that sharing is the point.
         root = Path(__file__).resolve().parents[3]
         stale, scanned = _slot_scan().scan_paths(
-            [root / "plugins", root / "template"], expected=len(props),
+            # README.md is a SHIPPED surface (CLAUDE.md's artifact table lists it) and this
+            # sweep never read it -- which is exactly why "A 24-slot flow.config.json" sat in
+            # the most-read file in the repo against a 37-slot schema while this check stayed
+            # green for release after release. A sweep that omits the front page is not a sweep.
+            [root / "plugins", root / "template", root / "README.md"], expected=len(props),
             exclude_substrings=("evals/", "plan-critic.md"),  # harnesses + the prose
                                                                # example teaching the failure
             root=root)
@@ -301,6 +305,39 @@ def main() -> int:
                   lib_scanned == 1 and any("30" in s for s in lib_stale),
                   f"scan_paths() did not catch a newline-wrapped '30\\n  slots' "
                   f"(scanned={lib_scanned}, stale={lib_stale}) — the exact FB-0079 miss")
+
+            # CV1 — the THIRD separator escape. `README.md:89` read "A 24-slot
+            # `flow.config.json`" against a 37-slot schema while every sweep above went
+            # green: `\d+\s+slots?` cannot match a hyphen. Paired with the two shapes that
+            # must NOT match, because "be more tolerant" is satisfiable by matching
+            # everything -- both were real false positives on the first, looser fix.
+            hyph = Path(scratch) / "HYPH.md"
+            hyph.write_text("- **A 30-slot `flow.config.json`** ships today.\n")
+            h_stale, h_scanned = _slot_scan().scan_paths([hyph], expected=len(props))
+            check("slot-count-scan-catches-hyphenated-fixture",
+                  h_scanned == 1 and any("30-slot" in s for s in h_stale),
+                  f"scan_paths() did not catch 'A 30-slot' (scanned={h_scanned}, "
+                  f"stale={h_stale}) — the exact CV1 miss, in the most-read shipped file")
+            quiet = Path(scratch) / "QUIET.md"
+            quiet.write_text("(FB-0058 boolean-slot footgun) and the Step 4 config-slot "
+                             "consumers are not counts.\n")
+            q_stale, q_scanned = _slot_scan().scan_paths([quiet], expected=len(props))
+            # PAIRED NEGATIVE for the hyphen support, and it is the one that was missing: the
+            # positive above ("30-slot" against 37) passed even while the comparison was broken,
+            # because a broken comparison flags EVERY hyphenated form whatever its number. Only
+            # a correct-count hyphenated fixture can tell the two apart (general.md item 4 --
+            # validate the instrument on the case where it must stay quiet, too).
+            okhyph = Path(scratch) / "OKHYPH.md"
+            okhyph.write_text(f"- **A {len(props)}-slot `flow.config.json`** ships today.\n")
+            ok_stale, ok_scanned = _slot_scan().scan_paths([okhyph], expected=len(props))
+            check("slot-count-scan-does-not-flag-a CORRECT hyphenated count",
+                  ok_scanned == 1 and not ok_stale,
+                  f"a hyphenated count that MATCHES the schema was reported stale: {ok_stale} "
+                  "— the matcher reads the hyphen but the comparison does not")
+            check("slot-count-scan-does-not-flag-hyphenated-compound-adjectives",
+                  q_scanned == 1 and not q_stale,
+                  "an issue number followed by a hyphenated compound adjective is not a "
+                  f"slot count; flagging it is how a scanner stops being read: {q_stale}")
 
             doctor_skill_text = SKILL_DOCTOR.read_text(encoding="utf-8") if SKILL_DOCTOR.exists() else ""
             check("doctor-check-2.5-invokes-shared-scan",

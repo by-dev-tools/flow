@@ -47,6 +47,52 @@ ARG_TOKEN = "$" + "ARGUMENTS"
 BLOCK_RE = re.compile(r"^!`\n(.*?)^`$", re.MULTILINE | re.DOTALL)
 FRONTMATTER_RE = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
 
+# ------------------------------------------------------- file-selection replay (CV1)
+# pr159's `visibility` key is asserted by REPLAYING the shipped block's own selection
+# decision for one path, in both slot states -- not by grepping for a pattern literal.
+# The literal form is what these pins used to do, and it stayed green over a premise that
+# had become false; see `cases.py`'s `visibility` comment for the post-mortem.
+#
+# This is a REPLAY, not a reimplementation: every pattern below is extracted from the
+# shipped block at call time, so a pattern edit moves the pins with it. What is duplicated
+# is only the COMBINATION (source-filter, then doc-union), and `unions` asserts that
+# combination still exists rather than assuming it.
+
+# The union step, byte-exact from the block. A negative-only visibility pin would pass if
+# this line were deleted; asserting it positively is the item-3 pairing.
+UNION_SIG = """FILES=$(printf '%s\\n%s\\n' "$FILES" "$DOCF\""""
+
+
+def _sq(block: str, name: str) -> str:
+    """The value of a top-level single-quoted shell assignment in the shipped block."""
+    m = re.search(r"^%s='([^']*)'" % re.escape(name), block, re.M)
+    assert m, "no single-quoted `%s=` assignment in the shipped block" % name
+    return m.group(1)
+
+
+def doc_union_wiring(block: str) -> dict:
+    """Extract the four patterns and the union flag the selection decision depends on."""
+    sp = re.search(r"""^\[ -z "\$SP" \] && SP='([^']*)'""", block, re.M)
+    assert sp, "the SP default literal is gone from the shipped block"
+    # TESTDIRS is now a NAMED literal the doc branch reuses, so the bespoke "dig it back out of
+    # the DOCF line" regex this used to need is gone -- and EXCL is COMPOSED from it, so the two
+    # cannot drift apart. Reconstruct EXCL the way the shell does rather than reading a literal.
+    testdirs, testfiles = _sq(block, "TESTDIRS"), _sq(block, "TESTFILES")
+    excl_tail = re.search(r'^EXCL="\$TESTDIRS\|\$TESTFILES"\'([^\']*)\'', block, re.M)
+    assert excl_tail, "EXCL is no longer composed from TESTDIRS|TESTFILES — re-read the block"
+    return {"sp": sp.group(1), "excl": testdirs + "|" + testfiles + excl_tail.group(1),
+            "builtin": _sq(block, "DOC_BUILTIN"), "doc_excl": testdirs,
+            "unions": UNION_SIG in block}
+
+
+def selects(w: dict, path: str, slot: str) -> bool:
+    """Would the shipped block put `path` in FILES, with behaviorBearingDocPatterns=slot?"""
+    src = bool(re.search(w["sp"], path)) and not re.search(w["excl"], path)
+    if not slot:
+        return src                 # the doc union is gated on a non-empty slot
+    return src or (bool(re.search(slot, path)) and not re.search(w["doc_excl"], path))
+
+
 # The flagged region starts at the first of these. Everything above it -- including the new
 # BEHAVIOR INVENTORY and COVERAGE MAP -- is enumeration, not a finding, and must not score.
 # One fragment, composed twice — the two regexes must agree about what an ISSUE header looks
@@ -74,8 +120,32 @@ def skill_text(before: bool) -> str:
     return out.stdout
 
 
+def _assert_base_not_stale(workdir: Path, base: str) -> None:
+    """Refuse to render across a moved base. FB-0008 / `/flow:ship` Step 1a, which every shipped
+    skill enforces and this harness did not.
+
+    MEASURED, and it cost a whole reviewer pass: a render taken minutes before #171 merged was
+    scored after it merged, so `origin/main..HEAD` showed #171's ADDITIONS as deletions. The
+    reviewer produced a confident, well-formed audit reporting that the diff deleted
+    `/flow:autoplan`, its 1005-line gate engine and its CI eval — six "undeclared change"
+    findings about work the branch had never touched. Nothing in the output marked it as suspect,
+    because a phantom-deletion diff is a perfectly valid diff. The only tell was the clock.
+    """
+    r = subprocess.run(["git", "merge-base", "--is-ancestor", f"origin/{base}", "HEAD"],
+                       cwd=str(workdir), capture_output=True)
+    if r.returncode == 0:
+        return
+    behind = subprocess.run(["git", "rev-list", "--count", f"HEAD..origin/{base}"],
+                            cwd=str(workdir), capture_output=True, text=True).stdout.strip()
+    raise SystemExit(
+        f"[recall] REFUSING TO RENDER: origin/{base} is not an ancestor of HEAD in {workdir} "
+        f"(behind by {behind} commit(s)). The diff would show the base's commits as DELETIONS, "
+        "and a reviewer cannot tell a phantom deletion from a real one. Rebase, then re-render.")
+
+
 def render(case_name: str, before: bool, workdir: Path) -> str:
     case = CASES[case_name]
+    _assert_base_not_stale(workdir, "main")
     text = skill_text(before)
     body = FRONTMATTER_RE.sub("", text)
     env = dict(os.environ)
@@ -92,7 +162,7 @@ def render(case_name: str, before: bool, workdir: Path) -> str:
     return BLOCK_RE.sub(run_block, body)
 
 
-def prepare(case_name: str, td: Path):
+def prepare(case_name: str, td: Path, doc_slot: str = ""):
     """Set up the directory the blocks run in. Returns (dir, cleanup-callable).
 
     A DIFF CASE GETS A CLONE WITH `origin/main` REWRITTEN TO THE CASE'S BASE, and that is
@@ -172,14 +242,84 @@ def prepare(case_name: str, td: Path):
     want = git("rev-parse", base).stdout.strip()
     if got != want or not got:
         raise SystemExit(f"origin/main rewrite did not take: {got!r} != {want!r}")
+    # CV1 — inject behaviorBearingDocPatterns so the with-B arm can be measured. The clone is
+    # checked out at the case's OWN worktree ref, whose config predates the slot, so without this
+    # the "after" arm would silently measure the "before" gate. Written BEFORE the dirty-check
+    # below, and flow.config.json is not a .md, so the check would reject it -- hence it is
+    # committed rather than left dirty.
+    if doc_slot:
+        # The slot has to reach the block, and every route costs something. Committing it onto
+        # the case ref puts it in `origin/main..HEAD`; leaving it dirty puts it in `git diff
+        # HEAD`; and replaying the case onto a slot-injected base does not work here at all --
+        # measured: `git rebase --onto` on a `--shared --no-checkout` clone fails with "unable
+        # to read sha1 file" because the borrowed object store is not materialised. (An earlier
+        # version of this comment guessed the cause was a flow.config.json conflict in the
+        # case's own commits; #159 does not touch that file, so the guess was wrong.)
+        #
+        # The contamination used to be ACCEPTED AND DISCLOSED here, on the reasoning that one
+        # disclosed extra hunk "cannot affect the question being measured". Measured: it did.
+        # The first slot-set run flagged that hunk and nothing else, so the disclosure was
+        # true and the conclusion drawn from it was wrong -- a note on stderr is not read by
+        # the reviewer. It is now hidden with git's own `--skip-worktree`, asserted rather
+        # than assumed (below).
+        # A slot broad enough to match the plan path would feed the reviewer its own declared
+        # criteria back as behaviour-bearing evidence -- the plan doc is left dirty on purpose
+        # (see below), so it would enter the file list. Refuse rather than measure that.
+        if re.search(doc_slot, case["plan"]):
+            raise SystemExit(
+                "[recall] --doc-slot %r matches this case's plan path %r. The plan doc is left "
+                "uncommitted on purpose, so that slot would put the criteria themselves into "
+                "the audited evidence. Refusing to render." % (doc_slot, case["plan"]))
+        cfgp = clone / "flow.config.json"
+        try:
+            data = json.loads(cfgp.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raise SystemExit("cannot read the clone's flow.config.json to inject the doc slot")
+        data["behaviorBearingDocPatterns"] = doc_slot
+        cfgp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        # HIDE THE INSTRUMENT SETTING FROM THE AUDITED DIFF, and measured why it matters: the
+        # first slot-set run of this case flagged exactly ONE issue, and it was this injected
+        # hunk (`flow.config.json:30`, tier UNCOMMITTED) -- the harness auditing its own setup,
+        # scored as a false-positive candidate against a case whose five real gaps went
+        # unflagged. A disclaimer on stderr does not remove a hunk from the reviewer's
+        # evidence. `--skip-worktree` does, using git's own bookkeeping: the block reads the
+        # config from the WORKING TREE (`jq ... flow.config.json`) but builds the file list
+        # from `git diff`, so the setting stays live while its hunk disappears.
+        sw = subprocess.run(["git", "update-index", "--skip-worktree", "flow.config.json"],
+                            cwd=str(clone), capture_output=True, text=True)
+        # Item 1: never a bare fallback. Assert the positive -- the path really is gone from
+        # the diff git will be asked for -- because a silently-failed hide means the next run
+        # re-contaminates the evidence and nothing says so.
+        still = subprocess.run(["git", "diff", "HEAD", "--name-only"], cwd=str(clone),
+                               capture_output=True, text=True).stdout.split()
+        if sw.returncode != 0 or "flow.config.json" in still:
+            raise SystemExit(
+                "[recall] cannot hide the injected doc slot from the audited diff "
+                "(update-index rc=%d %s). Refusing to render: the evidence would carry the "
+                "harness's own setup as a hunk and the reviewer would flag it instead of the "
+                "case's gaps." % (sw.returncode, sw.stderr.strip()))
+        print("[recall] DISCLOSURE: behaviorBearingDocPatterns was injected as an uncommitted "
+              "edit to flow.config.json and then marked --skip-worktree, so the slot is LIVE "
+              "for the block's `jq` read while contributing no hunk to the audited diff. The "
+              "config content the reviewer sees is therefore origin/main's, not the injected "
+              "one; only file SELECTION differs between the arms, which is the variable under "
+              "test.", file=sys.stderr)
+
     section = case.get("plan_first_section")
     if section:
         # Keep only the case's own section of the plan doc, so the FIRST `**Spec-walk:**`
         # block -- the only one extract-criteria.py reads -- is the one that describes this
-        # diff. Left UNCOMMITTED on purpose: `.md` is excluded from the behaviour diff, so a
-        # dirty plan doc cannot enter the evidence, and committing it would instead make the
-        # plan the newest commit and empty the POST-PLAN window -- destroying the one property
-        # this case exists to measure.
+        # diff. Left UNCOMMITTED on purpose: committing it would make the plan the newest
+        # commit and empty the POST-PLAN window -- destroying the one property this case
+        # exists to measure.
+        #
+        # THIS USED TO SAY "`.md` is excluded from the behaviour diff, so a dirty plan doc
+        # cannot enter the evidence". CV1 falsified that premise: with
+        # `behaviorBearingDocPatterns` set, `.md` paths CAN enter. It stays safe here only
+        # because no doc pattern this harness passes matches the plan path -- a narrower
+        # guarantee than the one the old comment claimed, and a conditional one. A slot broad
+        # enough to match the plan doc would feed the reviewer its own criteria as evidence,
+        # so `selftest` asserts the non-match rather than trusting this paragraph.
         planp = clone / case["plan"]
         text = planp.read_text(encoding="utf-8")
         idx = text.index(section)
@@ -191,8 +331,17 @@ def prepare(case_name: str, td: Path):
     # dirty path is exactly the bug the first version of this harness shipped (it audited its
     # own flow.config.json edit and reported five hunks of the setup). So the check is scoped,
     # and it is a positive assertion about WHICH files may differ, not a blanket skip.
+    # CV1 — the exemption for `.md` was unconditional, resting on "`.md` is excluded from the
+    # behaviour diff". That premise is FALSE once behaviorBearingDocPatterns is set: a dirty
+    # SKILL.md would then enter the evidence and the harness would audit its own setup again --
+    # the exact bug its first version shipped. So a `.md` is safely-dirty only while the
+    # effective doc pattern cannot see it.
     dirty = [l[3:] for l in git("status", "--porcelain").stdout.splitlines() if l.strip()]
-    stray = [f for f in dirty if not f.endswith(".md")]
+    _visible_md = re.compile(doc_slot) if doc_slot else None
+    _sanctioned = {"flow.config.json"} if doc_slot else set()
+    stray = [f for f in dirty
+             if f not in _sanctioned
+             and (not f.endswith(".md") or (_visible_md and _visible_md.search(f)))]
     if stray:
         raise SystemExit("the prepared clone is dirty in a file the behaviour diff CAN see, "
                          "so the harness would audit its own setup: " + ", ".join(stray))
@@ -457,24 +606,50 @@ def selftest() -> int:
 
     # 10. THE STRUCTURAL CASE'S OWN ASSERTION, paired positive+negative. #159's `0-of-5` is
     #    not a recall result -- the file its five gaps live in never reached the reviewer,
-    #    because the behaviour diff excludes `.md`. Asserting the blindness POSITIVELY (the
-    #    exclusion clause is present in the shipped block AND the gaps' file matches it)
-    #    means that if the exclusion is ever fixed, this fails loudly and the case is
-    #    re-classified -- instead of silently becoming a recall case whose recorded 0 nobody
-    #    can explain. A bare "pr159 is not scored" comment would have rotted in a week.
-    sb = CASES["pr159"].get("structural_blindness") or {}
-    if sb:
+    #    because the behaviour diff never SELECTED the file the gaps live in. Asserted by
+    #    replaying the shipped block's own extracted regexes over that path in both slot
+    #    states -- not by grepping for the exclusion literal, which is what the previous
+    #    version of these two pins did. That version promised to "fail loudly if the
+    #    exclusion is ever fixed" and then did not: CV1 unioned doc matches back in AFTER the
+    #    filter, so the literal was still there and the pin stayed green over a premise that
+    #    had become false. See `cases.py`'s `visibility` comment for the full post-mortem.
+    # The plan doc is left dirty in every case's clone, so a doc pattern that matched the
+    # plan path would feed the reviewer its own criteria as evidence. `prepare` refuses that
+    # at runtime; this asserts the SHIPPED builtin is not such a pattern, paired with a
+    # pattern that IS -- because a non-match assertion alone passes just as well when the
+    # matcher is broken (item 4: validate the instrument on a known positive).
+    _builtin = _sq((REPO / SKILL_REL).read_text(encoding="utf-8"), "DOC_BUILTIN")
+    ck("the shipped doc builtin matches no case's plan path",
+       not any(re.search(_builtin, c["plan"]) for c in CASES.values() if c.get("plan")),
+       "a case's criteria would enter its own evidence as behaviour-bearing prose")
+    ck("...and a deliberately broad pattern DOES match one (the check can fire)",
+       any(re.search(r"\.md$", c["plan"]) for c in CASES.values() if c.get("plan")),
+       "no case has a .md plan path, so the assertion above is vacuous")
+
+    vis = CASES["pr159"].get("visibility") or {}
+    if vis:
         block = (REPO / SKILL_REL).read_text(encoding="utf-8")
-        # Strict form only: the exclusion must appear as an alternation branch inside EXCL,
-        # not merely somewhere in the file. The earlier `or <loose>` disjunct could never
-        # change the result (the strict operand CONTAINS the loose one), so it read as a
-        # fallback while enforcing nothing.
-        ck("the shipped block still carries the exclusion that blinded #159",
-           "|" + sb["excluded_by"] + "'" in block,
-           "the .md exclusion is gone or moved — re-classify pr159 as a recall case and re-measure")
-        ck("...and #159's five gaps really do live in a file that exclusion matches",
-           sb["gaps_live_in"].endswith(".md"),
-           "the structural claim no longer matches the case")
+        path = vis["gaps_live_in"]
+        try:
+            wiring, decided = doc_union_wiring(block), True
+        except AssertionError as e:                       # the block stopped being readable
+            ck("the shipped block's file-selection regexes are still extractable", False, str(e))
+            wiring, decided = {}, False
+        if decided:
+            # POSITIVE assertion of the wiring, so that deleting the union cannot make the
+            # pair below pass by making the question unaskable (item 3).
+            ck("the shipped block still unions doc matches back into FILES",
+               wiring["unions"],
+               "the doc-union step is gone — pr159's slot_set direction is unreachable, "
+               "re-classify the case rather than letting this pass")
+            ck("with behaviorBearingDocPatterns UNSET, #159's gap file is still not selected",
+               selects(wiring, path, slot="") is vis["selected_slot_unset"],
+               "the unset default changed: #159's 0-of-5 is no longer explained by file "
+               "selection, so re-measure it as judgment recall before quoting the number")
+            ck("...and with the slot SET it IS selected (the paired positive)",
+               selects(wiring, path, slot=wiring["builtin"]) is vis["selected_slot_set"],
+               "the fix under test does not make the gap file visible — no recall number "
+               "from the set-slot arm means anything")
 
     print()
     if fails:
@@ -492,6 +667,12 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("render"); r.add_argument("case", choices=sorted(CASES))
     r.add_argument("--before", action="store_true"); r.add_argument("-o", "--out", required=True)
+    # CV1: the with-B arm. Injected into the CLONE's config, because the case's own worktree ref
+    # predates the slot and would otherwise silently render the pre-fix gate.
+    r.add_argument("--doc-slot", default="",
+                   metavar="ERE",
+                   help="set behaviorBearingDocPatterns in the prepared clone, so the rendered "
+                        "evidence reflects a project that has opted behaviour-bearing prose in")
     s = sub.add_parser("score"); s.add_argument("case", choices=sorted(CASES))
     s.add_argument("output")
     sub.add_parser("selftest")
@@ -512,7 +693,7 @@ def main(argv=None):
 
     if a.cmd == "render":
         with tempfile.TemporaryDirectory() as td:
-            target, undo = prepare(a.case, Path(td))
+            target, undo = prepare(a.case, Path(td), a.doc_slot)
             try:
                 text = render(a.case, a.before, target)
             finally:

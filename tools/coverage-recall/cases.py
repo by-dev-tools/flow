@@ -10,16 +10,32 @@ measurement -- that is what makes this measurable rather than arguable:
            this exact input (10-of-10 hand-run, then 5-of-10), so it is the one case with
            a recorded instrument-variance measurement already attached.
   pr159    the five criteria commit `0b69457` declared, which its own ship-time coverage
-           run returned "No issues flagged" over. **NOT A RECALL CASE, and measuring it is
+           run returned "No issues flagged" over. **WAS NOT A RECALL CASE, and measuring it is
            how that was discovered.** Reconstructed faithfully (clone with `origin/main`
            rewritten to `f278aec`), the run's file list is `marketplace.json`, `ci.yml` and
            `plugin.json` -- a version bump. All five gaps were added in
-           `skills/audit-coverage/SKILL.md`, 212 insertions, which the behaviour diff
-           EXCLUDES as `.md` (the `|\.md$` clause is byte-identical in the installed 1.29.0
-           that produced the run and in the f278aec-era tree). The reviewer was never shown
-           the code, so no prompt change can move this number. Kept as a STRUCTURAL case:
-           `structural_blindness` asserts the blindness deterministically instead of
-           scoring it as judgment.
+           `skills/audit-coverage/SKILL.md`, 212 insertions, which the behaviour diff never
+           SELECTED: a `.md` path does not match `sourceFilePatterns` at all, so EXCL's
+           `|\.md$` clause was belt-and-braces rather than the cause. The reviewer was never
+           shown the code, so **no prompt change could have moved this number** -- which is
+           why it was filed as structural instead of scored as judgment.
+
+           **RE-CLASSIFIED BY CV1, AND IT MOVED.** CV1 added the
+           `behaviorBearingDocPatterns` slot, which unions doc-pattern matches back into the
+           file list after the source filter, so the file the five gaps live in now reaches
+           the reviewer. Measured with that slot set, over byte-identical evidence: **2-of-5
+           (40%) and 1-of-5 (20%) single-run, finding DISJOINT gaps; union 3-of-5 (60%); zero
+           false-positive candidates in either run.** Still reported apart from the prototype
+           series -- a diff-mode case with 5 keyed gaps is not comparable to a source-mode one
+           with 10 -- but the number is judgment now, not blindness, and `visibility` asserts
+           both directions of that so the classification cannot rot again silently.
+
+           One more thing CV1 measured here and did not fix: 12 of the 12 criteria this case
+           declares are WRAPPED bullets, and `walk_extract.py`'s `CHECKBOX_RE` takes only the
+           first physical line of each, silently -- 1,143 of 5,819 characters reach the
+           reviewer. An arm with the criteria untruncated scored 1-of-5 rather than 2-of-5
+           (disjoint gap), so truncation is NOT the explanation for any number above; it is
+           tracked as its own silent-skip defect in `dev-docs/roadmap.md` § Next.
   pr158    the five named verbatim in #158's draft manifest, which its ship-time run
            found 2 of.
 
@@ -30,8 +46,12 @@ showed its `0-of-5` is a FILE-FILTER result, not a judgment one (see pr159 below
 
   judgment recall   10-of-10 (hand-run, source) - 5-of-10 (source, same input)
                     - 2-of-5 (#158, diff). Three runs, worst case 40%.
-  structural miss   0-of-5 (#159, diff) -- the file the gaps live in never reached the
-                    reviewer. Not recall. Reported separately, never averaged in.
+  structural miss   0-of-5 (#159, diff, PRE-CV1) -- the file the gaps live in never reached
+                    the reviewer. Not recall. Reported separately, never averaged in. **CV1
+                    lifted it**: with `behaviorBearingDocPatterns` set the same case scores
+                    2-of-5 and 1-of-5 single-run (disjoint gaps), union 3-of-5. The 0 stays on
+                    the record as what a structurally-blind gate returns -- which is the whole
+                    point of having measured it instead of assuming judgment.
   degenerate        80% / 100% (pr158, diff) -- the HIGHEST scores in the corpus, and they
                     measure nothing: the criteria describe a different PR, so every behaviour
                     is trivially undeclared. `report` labels this case rather than printing it
@@ -151,14 +171,29 @@ CASES = {
         "argument": None,
         "base": "f278aec",                    # origin/main when #159 branched
         "gaps": PR159_GAPS,
-        "recorded": "0-of-5 at ship (#159) — STRUCTURAL, not recall",
+        "recorded": "0-of-5 at ship (#159, blind) -> 2-of-5 / 1-of-5 single-run, union 3-of-5 with the doc slot set (CV1)",
         # Asserted by `selftest`: the reviewer's own file list must NOT contain the file the
-        # five gaps live in. A positive assertion of the blindness, so that if the exclusion
-        # is ever fixed this case fails loudly and is re-classified, rather than silently
-        # becoming a recall case whose recorded number is 0 for a reason nobody remembers.
-        "structural_blindness": {
+        # five gaps live in.
+        #
+        # THIS KEY REPLACED `structural_blindness`, AND WHY IT HAD TO (CV1). The old key
+        # asserted a STRING -- that `|\.md$'` still appeared inside EXCL -- and its comment
+        # promised that "if the exclusion is ever fixed this fails loudly and the case is
+        # re-classified". It did not fail. CV1 fixed the blindness by UNIONING doc-pattern
+        # matches back in AFTER that filter, so the literal survived untouched while the
+        # property it stood for was lifted: a proxy that stayed green over a premise which had
+        # become false (`.claude/rules/general.md` Consistency item 4, the pin-it-where-it-is-
+        # CLAIMED corollary). It also named the wrong mechanism -- a `.md` path never matched
+        # `SP` to begin with, so EXCL's `.md` clause was belt-and-braces and removing it would
+        # have changed nothing. The replacement asserts the SELECTION DECISION for this path in
+        # both slot states, computed from the block's own regexes, which is the thing #159 is a
+        # case about. Delete the doc-union and the `slot_set` direction fails; re-blind `SP` and
+        # the `slot_unset` direction stops being the reason, and both are loud.
+        "visibility": {
             "gaps_live_in": "plugins/flow/skills/audit-coverage/SKILL.md",
-            "excluded_by": r"\.md$",
+            # The DECISION the shipped block reaches for that path, per slot state. Replayed
+            # from the block's own extracted regexes by `selftest`, both directions.
+            "selected_slot_unset": False,
+            "selected_slot_set": True,
         },
     },
     "pr158": {

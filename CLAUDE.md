@@ -30,6 +30,7 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/contribute/SKILL.md` | `/flow:contribute` — drains the lesson-harvest queue + disagreement store into a draft PR back to flow (FB-0059) |
 | `plugins/flow/skills/audit-skips/SKILL.md` | `/flow:audit-skips` — skip-legitimacy audit at `/flow:ship` Step 2a **and `/flow:ship-spike` Step 2a**; deterministic engine in `lib/skip-audit-checks.py` (FB-0062) |
 | `plugins/flow/skills/audit-coverage/lib/change-inventory.py` | Deterministic hunk inventory + plan-relation tiers (`POST-PLAN` / `SAME-COMMIT` / `pre-plan` / `PLAN-PREDATES-BRANCH`) that `/flow:audit-coverage`'s Stage 1 must account for (FB-0115) |
+| `plugins/flow/skills/audit-coverage/lib/evidence-budget.py` | Max-min fair-share allocation of the evidence cap — `head -c` over a concatenation made files late in `sort -u` order entirely invisible; this one names every file it cut (CV1) |
 | `plugins/flow/skills/verify-build/lib/visual-significance.py` | Shared visual-significance predicate, reused by verify-build + ship (FB-0062) |
 | `plugins/flow/skills/ship/lib/plugin-provenance.py` | Which flow version actually ran this pipeline — four labelled `## Flow run` rows, reused by ship/ship-spike (FB-0107) |
 | `plugins/flow/skills/ship/lib/pr-coherence.py` | Deterministic PR body↔draft coherence + read-back engine, reused by ship/doctor/land (FB-0067) |
