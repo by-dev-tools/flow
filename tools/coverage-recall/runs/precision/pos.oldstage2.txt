@@ -1,0 +1,26 @@
+BEHAVIOR INVENTORY
+B1  A config with `perMinute` set to 0 now refuses to run: the skill prints `throttle: REFUSED — perMinute is 0, which would admit nothing`, exits 3, and issues no request.  [H4, H5]
+NOT BEHAVIOR
+H1 rewording · H2 rename · H3 rewording
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  B1 UNDECLARED
+
+ISSUE · Undeclared change
+
+Claim:
+> +If `perMinute` is set to 0, the skill refuses to run: it prints
+> +`throttle: REFUSED — perMinute is 0, which would admit nothing` and exits 3 without
+> +issuing any request.
+> ...
+> +- `3` -- `perMinute` is 0.
+
+Hunk: `skills/throttle/SKILL.md:25` (H4, +5) and `skills/throttle/SKILL.md:34` (H5, +1) — a declared-surface skill file adds a new refusal path: a present-but-zero `perMinute` aborts startup with a specific stderr/stdout line and a brand-new exit code 3, where previously the documented exit set was `0` and `1` only.
+
+Why uncovered: checked all four declared criteria. "`perMinute` absent from the config falls back to 60" covers an *absent* slot, not a present `0`, and its pin (`test_default_cap`) would pass unchanged whether 0 refuses or admits nothing. "a request that would exceed the cap waits for the next window rather than failing" describes the opposite disposition (wait, don't fail) and applies per-request after startup, not to a refusal to start. "each wait emits one log line naming the request id and the remaining seconds" covers the wait log, not the `REFUSED` line. "an unparseable config file exits 1" covers a parse failure and names exit 1; a parseable config with a zero value exiting 3 is a different input and a different exit code, so nothing would cause anyone to test exit 3. The evidence block also reports `PLAN-PREDATES-BRANCH`: `plan.md` was never touched on this branch, so no criterion above was written against any hunk in this diff — the declared set is empty with respect to this change, and these four criteria are the pre-existing ones.
+
+Suggested: add a `**Spec-walk:**` criterion for the zero-cap refusal — that `perMinute: 0` exits 3, emits the exact `throttle: REFUSED` line, and admits no request — with a test pinning the exit code and the message, then re-run coverage.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.
