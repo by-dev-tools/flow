@@ -9,43 +9,52 @@ exactly the three fixes below and nothing else.
 
 **Mode:** feature · **Surface:** non-visual
 
-### What I measured before designing, and two corrections to the review that produced these items
+### What I got wrong before designing, corrected by `/flow:critique-plan`
 
-**Item 1's instruction lives in ONE place, not two.** Both the staff-engineer and push-further
-lenses cited it at `audit-coverage/SKILL.md:616` as well as in the agent. It is not there:
-`git grep 'test-only / doc-only'` returns exactly one hit, `plugins/flow/agents/auditor.md:27`.
-Acting on the lens reports unchecked would have meant editing a second site that does not exist.
+**MY FIRST CORRECTION WAS ITSELF WRONG, and the way it was wrong matters more than the fact.**
+This plan originally claimed the doc-only instruction lives in one place, `agents/auditor.md:27`,
+and that the two review lenses citing a second site in `audit-coverage/SKILL.md` were mistaken.
+**They were right and I was not.** The clause is at `audit-coverage/SKILL.md:662`, at the END of a
+long line: "...persisted preference. Refactors, renames, formatting, comments, dependency bumps,
+pure-internal helpers, and test/doc changes are **not** behaviors."
 
-**It is already scoped to coverage, so the shared-agent risk is smaller than the dispatch assumed.**
-`auditor.md` carries five categories. Only the fifth, `Undeclared change`, is marked
-*(coverage mode only)* and contains the clause, and only `/flow:audit-coverage` restricts the agent
-to it (its prompt says "one category only: Undeclared change ... Ignore your other four
-categories"). `/flow:audit-plan` and `/flow:audit-completion` use the other four and never name the
-fifth. Residual, stated rather than waved away: they do not *explicitly* exclude it either, so a
-model reading the agent for those modes still sees the bullet — but its declared evidence base (a
-diff plus Spec-walk criteria) is not supplied in those modes.
+How the error happened, recorded because it is a repeat: my grep DID match line 662 — `Refactors`
+is in it — but I piped the output through `cut -c1-170`, so the matching text was cut off, I read
+the visible prefix as a non-match, and **inferred absence from a truncated line.** That is the same
+mistake I was corrected for earlier in this program (an orchestrator collision answer taken from a
+`head -12`). The defence is the one the critic names: grep the RULE, not one site's spelling, and
+never conclude absence from output you truncated.
 
-**And the fix is better aimed than "remove the instruction".** The skill already carries a rule that
-the suppression rules in the system prompt govern Stage 2 only, naming four of them: default to
-covered, do not invent findings, flag only gaps that affect correctness, and the disprove
-self-check. The doc-only clause is NOT among the four, so its stage scope is undefined while its
-siblings' is declared. The evidence agrees: across CV1's runs Stage 1 enumerated 12 to 20 SKILL.md
-behaviours, so enumeration is not being suppressed. The dismissal happens at Stage 2, where the
-clause legitimately applies. So this is a scoping gap, not a wrong instruction, and that distinction
-is what protects precision.
+**And it inverts this plan's premise.** Line 662 sits under `## Stage 1 — enumerate (recall only)`
+(heading at 658), so the clause has a twin that is unambiguously **Stage-1** scoped. The original
+plan argued the clause's stage scope was undefined and a Stage-2 carve-out would therefore suffice.
+It would not: the same section states that in Stage 1 the only error is omission and **a behavior
+you leave out here can never be found later**, so no Stage-2 rule can recover a behaviour Stage 1
+was instructed not to enumerate.
 
-### Item 1 — give the doc-only clause a declared stage scope, and carve out declared surface
+**What survives.** The scoping analysis still holds and is still the answer to the dispatch's
+shared-agent worry. `auditor.md` carries five categories; only the fifth, `Undeclared change`, is
+marked *(coverage mode only)* and holds the clause, and only `/flow:audit-coverage` restricts the
+agent to it ("one category only ... Ignore your other four categories"). `/flow:audit-plan` and
+`/flow:audit-completion` use the other four and never name the fifth. The second site is in the
+coverage skill itself, so it is coverage-only by construction. Residual, stated: those two skills do
+not *explicitly* exclude the fifth category either.
+
+### Item 1 — exempt declared surface in BOTH stages, not one
+
+Two sites, because there are two instructions:
+- `audit-coverage/SKILL.md:662` (Stage 1, enumeration) — the one that must change first, since an
+  un-enumerated behaviour is unrecoverable downstream.
+- `agents/auditor.md:27` (Stage 2, the coverage-only category) — the matching clause.
 
 The mechanism the block already computes and then discards: `$DOCF`, the paths that entered via
 `behaviorBearingDocPatterns`. Emit it as an informational provenance line above the delimiter
 (`files selected via behaviorBearingDocPatterns: ...`) — **not** a `WEAKENED` line, since it is not
-a weakening and must not be routed as one. Then one clause in `auditor.md:27`, keyed to that list:
-for a file on it the doc-only carve-out does not apply, because the consumer has *declared* that
-file deployed surface. A changed or added rule, instruction or contract in such a file is a
-behaviour change; changed rationale, commentary or example prose still is not.
-
-That discriminator is exactly what CV1's prose negative already measures, which is why this is
-testable rather than hopeful — and why it does not license flagging wording edits.
+a weakening and must not be routed as one. Then one clause at each site, keyed to that list: for a
+file on it the doc-only carve-out does not apply, because the consumer has *declared* that file
+deployed surface. A changed or added rule, instruction or contract in such a file is a behaviour
+change; changed rationale, commentary or example prose still is not. That discriminator is exactly
+what CV1's prose negative measures, which is what keeps this from licensing wording-edit findings.
 
 ### Item 2 — `rigor-marker.py` fingerprints only `sourceFilePatterns`
 
@@ -56,39 +65,61 @@ prompts-are-the-product repo a prompt-only PR cannot invalidate its own staff-re
 (`ship/SKILL.md:101`, `staff-review/SKILL.md:218`, `skip-audit-checks.py:269`) and
 `run_docs_only_evals.py:262` pins the default's byte-identity between producer and engine.
 
-**OPEN DECISION — OD1, and I am not picking it quietly because the dispatch and my own roadmap
-entry disagree.** The dispatch says include the behaviour-bearing doc patterns. The roadmap entry
-I wrote argues the opposite: that slot is **opt-in**, so a gate that only enforces when configured
-is not an enforcement mechanism, and a consumer who never sets it still gets no protection for
-prompt edits.
-- **(a) Union `behaviorBearingDocPatterns`** — the dispatch's instruction. Smallest change, no
-  behaviour change for anyone who has not opted in. Weakness: protection is opt-in, which is the
-  wrong shape for an enforcement mechanism.
-- **(b) Fingerprint every changed tracked file** — my recommendation. The question the marker asks
-  is "did the tree move since review?", which has no reason to care what language a file is in. No
-  new argument, no three-caller fan-out. Cost: every existing marker goes stale once on upgrade, a
-  one-time false "re-review needed" — which at least fails toward review rather than away from it.
+**OPEN DECISION — OD1.** The dispatch and my own roadmap entry disagree, so this goes to the gate
+rather than being quietly picked.
+- **(a) Union `behaviorBearingDocPatterns`** — the dispatch's instruction. Smallest diff. Weakness:
+  protection is opt-in, which is the wrong shape for an enforcement mechanism, so a consumer who
+  never sets the slot still gets no protection for prompt edits.
+- **(b) Fingerprint every changed tracked file** — my recommendation. "Did the tree move since
+  review?" has no reason to care what language a file is in. **Cost, corrected by the critic:** (b)
+  does NOT avoid the fan-out. `--source-pattern` is declared only on the `source-sha` subcommand
+  (`rigor-marker.py:180-182`) and all three sites pass it there, so under (b) the flag has no
+  remaining consumer — either three call sites keep passing an inert argument, or all three plus
+  `run_docs_only_evals.py:262` change. (b) must therefore say which: **drop the flag and update the
+  three sites plus the pin.** Plus the one-time staleness of every existing marker on upgrade, which
+  at least fails toward re-review.
 
-### Item 3 — `walk_extract.py` ends a block early when a continuation line opens with `**`
+### Item 3 — `walk_extract.py`: THREE loops, and a re-diagnosed motivation
 
-**Motivation, and it is the third-time evidence.** This defect bit three separate times inside one
-session, each time silently: CV1's original six criteria, the two added at its merge gate, and the
-single criterion written to close its loop. The third time, #171's brand-new plan gate went red with
-"15 of 16 criteria name no verification artifact" on a plan where all 16 were pinned by passing
-evals. Nothing warned; `warnings` stayed empty. A defect that catches its own author three times in
-one sitting is not a cosmetic reader quirk.
+**The motivation was misattributed, and the critic caught it.** This plan cited #171's gate going
+red with "15 of 16 criteria name no verification artifact" as the third strike of the early-block-end
+defect. It cannot be: "15 of 16" means all 16 were **extracted** and then failed the pin predicate,
+whereas the early-end defect makes criteria *disappear* (15→5, 1 of 3). Two distinct mechanisms in
+`walk_extract.py`, and I merged them:
+- **one-physical-line capture** (`CHECKBOX_RE`, line 272) — the bullet's later lines are dropped, so
+  a pin written on line 2 is invisible. **This** is what made #171's gate red on this program's plan.
+- **early block end** — a continuation line opening with a bold span terminates the block, so later
+  criteria vanish entirely. Measured 15→5 on CV1's plan, and 1-of-3 with 0 warnings on a controlled
+  3-item fixture, on both front-ends.
 
-Measured twice: 15 criteria became 5 on CV1's plan, and on a 3-item fixture with a control, both
-front-ends extracted 1 of 3 with 0 warnings, where deleting the one bold continuation line gave
-3 of 3. Both front-ends matter — `extract-criteria.py` (Spec-walk) and `extract-visual-states.py`
-(Visual-walk) — so declared visual states are lost the same way, which exposes D1's visual gate too.
+A third, independent cause is live and untouched by either: `walk-pin-lint.py`'s `PIN_MARKERS` is
+`("→", "->", "pinned by", "verify:", "verified by")`, so the `*Verified:*` idiom recent plan blocks
+use reads as **unpinned** while `*Pinned by:*` reads as pinned — verified directly against the
+module. That is a fourth defect in the same family and is NOT in this PR's scope; it is noted so the
+next reader does not re-diagnose it.
 
-Paired fix, neither half sufficient alone: the extractor **loses no criteria** (require a blank line
-before a bold-label terminator, or track bullet continuation explicitly) **and** it **flags an early
-end loudly** in `warnings`, so a truncated set can never pass as a complete one.
+**And the fix has three targets, not two.** `walk-pin-lint.py:53` imports only `CHECKBOX_RE`,
+`heading_re` and `is_terminator` — never `extract_block` — and re-implements the block scan at
+`:92`. So a fix inside `extract_block` reaches both front-ends and leaves `/flow:critique-plan`'s own
+lint still cutting the block: a gate reading a third of a plan and reporting clean.
+
+**OPEN DECISION — OD2, scope.** The dispatch says exactly three fixes, and item 3 was named as the
+early-block-end. The roadmap bullet this closes carries BOTH failure modes and says "same pass as
+the first-line truncation above: one reader, one fix, one harness". Fixing only the early end leaves
+the measured 80%-of-declared-text-dropped half open under a bullet that would otherwise read as
+closed.
+- **(b1) Early end only** — honours the dispatch's scope literally. Then the roadmap bullet must be
+  SPLIT, closing only the early-end half and leaving the truncation half open with its measurement
+  intact, per the critic's FOLLOW-UP.
+- **(b2) Both halves plus the third loop** — my recommendation, because the #171 instance that
+  motivates item 3 is caused by the half (b1) excludes, so (b1) ships a fix that does not address
+  its own stated evidence. Larger diff, one reader, one harness.
 
 ### Spec-walk
 
+- [ ] **Item 1 changes BOTH sites, Stage 1 first.** *Pinned by:* a new eval asserting the declared-surface exemption is present at `audit-coverage/SKILL.md`'s Stage-1 enumeration rule AND at `agents/auditor.md`'s coverage-only category.
+      A Stage-2-only change cannot recover a behaviour Stage 1 was told not to enumerate, which the skill itself states.
+- [ ] **Item 3 fixes all THREE scan loops.** *Pinned by:* a new `run_walk_extract_evals.py` eval case asserting the fixture's criteria survive via both front-ends AND via `walk-pin-lint.py`'s own output, since that file re-implements the scan and imports only the primitives.
 - [ ] **Item 1 scopes to the coverage path only.** *Pinned by:* a new eval asserting the edited clause sits inside the `(coverage mode only)` category and that `audit-plan` + `audit-completion` do not restrict the agent to `Undeclared change`.
       If execution shows the edit must touch shared text instead, this criterion fails and the measurement set grows to those two reviewers, per the dispatch.
 - [ ] **A declared-surface file is no longer dismissed on doc-only grounds at Stage 2.** *Pinned by:* an eval fixture pair over the `pr159` case, plus the `$DOCF` provenance line asserted present above the delimiter and asserted NOT to carry the `WEAKENED` token.
