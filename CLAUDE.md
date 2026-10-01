@@ -47,6 +47,7 @@ These files are published when the plugin is installed.
 | `plugins/flow/skills/handoff/SKILL.md` | `/flow:handoff` — orchestrator succession + archive safety (§4.9) |
 | `plugins/flow/skills/gate/SKILL.md` | `/flow:gate` — four-axis plan/merge gate classification (§4.8). **Classifies only; never merges** |
 | `plugins/flow/lib/sensitive_paths.py` | Shared stakes/routing-floor predicate — one definition, two readers (`gate-classify.py`, `/flow:spawn`) |
+| `plugins/flow/lib/doc_patterns.py` | Which doc-shaped paths carry deployed **behaviour** — one definition, two readers (`/flow:audit-coverage`'s shell literal and `/flow:ship`'s rigor fingerprint). `sourceFilePatterns` matches no `.md` at all by design, so "is it source?" and "does it carry behaviour?" are different questions (CV1 follow-up) |
 | `plugins/flow/lib/arg_placeholders.py` | Where the host substitutes a slash-command argument, and where that is safe — the host's own regexes transcribed, plus a faithful render emulation (FB-0116) |
 | `plugins/flow/skills/gate/lib/gate-classify.py` | The §4.8 combination rule as a truth table; every undeclared axis escalates |
 | `plugins/flow/lib/dispatch_backend.py` | `dispatchBackend` resolve/validate/render — closed placeholder set, refuses rather than escapes |

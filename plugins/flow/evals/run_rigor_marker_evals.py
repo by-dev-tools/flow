@@ -15,6 +15,7 @@ branch-slug path). Stdlib only.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import tempfile
@@ -107,6 +108,108 @@ def main() -> int:
         # And the new file's content must actually be IN the fingerprint (not silently dropped).
         check("source-sha-new-file-detected", h_untracked.strip() != h_committed.strip(),
               f"new untracked file did not move the fingerprint: {h_untracked.strip()!r}")
+
+    # ------------------------------------------------------ CV1 follow-up, item 2
+    # FIXTURES FIRST. The fingerprint is the evidence that /simplify + /flow:staff-review ran on
+    # THIS source. It was computed through `sourceFilePatterns` alone, which matches no `.md`
+    # path at all -- so on #172, 0 of 13 changed `.md` files were in it, and the two SHIPPED
+    # skill prose files could be rewritten after staff-review with the gate still reading "ok".
+    # Prompt and skill prose IS deployed surface in this plugin (CLAUDE.md: "Prompt changes are
+    # code changes"), so this is the rigor gate failing open on the surface flow mostly is.
+    #
+    # Each arm below varies ONE thing inside ONE repo. Writing flow.config.json differently
+    # between two arms would move the fingerprint by itself -- flow.config.json matches
+    # `sourceFilePatterns` -- and the test would pass for that reason instead of the slot's.
+    # So the config is committed in the BASE and only the prose file is added afterwards.
+    def seeded_repo(repo, config=None):
+        """Base commit (a.py + optional flow.config.json) with an origin/main ref."""
+        git(repo, "init", "-q")
+        git(repo, "config", "user.email", "t@t"); git(repo, "config", "user.name", "t")
+        (Path(repo) / "a.py").write_text("x = 1\n")
+        if config is not None:
+            (Path(repo) / "flow.config.json").write_text(config)
+        git(repo, "add", "-A"); git(repo, "commit", "-q", "-m", "base")
+        git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+        rc, h = run(["source-sha", "--default-branch", "main"], cwd=repo)
+        return h.strip()
+
+    def add_and_hash(repo, relpath, body="prose\n"):
+        f = Path(repo) / relpath
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(body)
+        rc, h = run(["source-sha", "--default-branch", "main"], cwd=repo)
+        return h.strip()
+
+    # (1) Shipped skill prose must be IN the fingerprint.
+    with tempfile.TemporaryDirectory() as repo:
+        h0 = seeded_repo(repo)
+        h1 = add_and_hash(repo, "skills/audit-coverage/SKILL.md")
+        check("doc-builtin-shipped-prose-moves-the-fingerprint", h0 != h1,
+              "a changed skills/**/SKILL.md left the fingerprint untouched, so skill prose can "
+              "be rewritten after staff-review and the rigor gate still reads ok")
+        h2 = add_and_hash(repo, "agents/auditor.md")
+        check("doc-builtin-covers-agents-too", h1 != h2,
+              "an agents/*.md change left the fingerprint untouched")
+
+    # (2) PAIRED NEGATIVE, and the one that decides the design: a dev-tracking doc must NOT
+    # move it. /flow:ship Step 5 rewrites planPath in the same commit that carries the code, so
+    # if plan/history/feedback docs entered the fingerprint the gate would report source-drift
+    # on EVERY ship run -- a gate that always fires is one people learn to click past.
+    with tempfile.TemporaryDirectory() as repo:
+        h0 = seeded_repo(repo)
+        h1 = add_and_hash(repo, "dev-docs/plan.md")
+        check("dev-tracking-docs-do-NOT-move-the-fingerprint", h0 == h1,
+              "a dev-docs/ edit moved the fingerprint; every ship run rewrites the plan doc, so "
+              "the rigor gate would report source-drift on all of them")
+        h2 = add_and_hash(repo, "notes/scratch.md")
+        check("...nor does an arbitrary non-surface .md", h0 == h2,
+              "an unrelated .md moved the fingerprint: the union is matching every doc, not "
+              "declared surface")
+
+    # (3) The configurable slot, both directions, one repo per slot state.
+    with tempfile.TemporaryDirectory() as repo:
+        h0 = seeded_repo(repo, config='{"behaviorBearingDocPatterns": "(^|/)prompts/.*[.]md$"}\n')
+        h1 = add_and_hash(repo, "prompts/system.md")
+        check("doc-slot-set-brings-a-consumer-surface-in", h0 != h1,
+              "behaviorBearingDocPatterns was set and a matching prose file still did not reach "
+              "the fingerprint -- the slot is declared for coverage but ignored for rigor")
+    with tempfile.TemporaryDirectory() as repo:
+        h0 = seeded_repo(repo, config='{}\n')
+        h1 = add_and_hash(repo, "prompts/system.md")
+        check("doc-slot-UNSET-leaves-it-out (paired)", h0 == h1,
+              "with the slot unset a prompts/ file entered the fingerprint anyway, so the slot "
+              "is not what is doing the work and the measurement above proves nothing")
+
+    # (4) An invalid slot must WARN, not silently narrow (general.md item 1). The builtin half
+    # must survive it: a config typo cannot be allowed to quietly restore the doc-blind gate.
+    with tempfile.TemporaryDirectory() as repo:
+        h0 = seeded_repo(repo, config='{"behaviorBearingDocPatterns": "(^|/)[prompts/"}\n')
+        rc, out = run(["source-sha", "--default-branch", "main"], cwd=repo)
+        check("invalid-doc-slot-still-exits-0", rc == 0, f"rc={rc} out={out!r}")
+        check("invalid-doc-slot-is-announced", "doc" in out.lower() and
+              ("warn" in out.lower() or "invalid" in out.lower()),
+              f"an unusable behaviorBearingDocPatterns was swallowed; the operator cannot tell "
+              f"a narrowed fingerprint from a working one: {out!r}")
+        h1 = add_and_hash(repo, "skills/x/SKILL.md")
+        check("invalid-doc-slot-keeps-the-builtin-half", h0 != h1,
+              "a bad config value took the shipped builtin down with it, silently restoring the "
+              "doc-blind fingerprint this fix exists to close")
+
+    # (5) ONE definition of the builtin. The shell literal in audit-coverage/SKILL.md and the
+    # Python constant are two readers of one contract (general.md item 2); assert byte-equality
+    # rather than trusting they were copied correctly.
+    sys.path.insert(0, str(HERE.parent / "lib"))
+    import doc_patterns  # noqa: E402
+    import eval_utils  # noqa: E402
+    skill = (HERE.parent / "skills" / "audit-coverage" / "SKILL.md").read_text(encoding="utf-8")
+    shell_literals = re.findall(r"DOC_BUILTIN='([^']*)'", "\n".join(eval_utils.bang_blocks(skill)))
+    check("the shell declares the builtin exactly once", len(shell_literals) == 1,
+          f"found {len(shell_literals)} DOC_BUILTIN literals in audit-coverage's bang blocks: "
+          f"{shell_literals} — two copies is the fan-out this check exists to prevent")
+    check("doc-builtin-is-byte-identical-in-shell-and-python",
+          bool(shell_literals) and shell_literals[0] == doc_patterns.DOC_BUILTIN,
+          f"shell={shell_literals[:1]!r} python={doc_patterns.DOC_BUILTIN!r} — the coverage gate "
+          f"and the rigor gate would disagree about what counts as deployed prose")
 
     print(f"\n{total - fails} passed, {fails} failed")
     return 1 if fails else 0
