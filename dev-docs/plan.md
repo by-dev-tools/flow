@@ -203,6 +203,17 @@ screens on measurement discipline.)*
       the cap had truncated the name or not, and removing the cap did not turn the check red. The
       fixture now creates the ref for real, so the mutation fails as it must (general.md item 4 —
       an instrument validated only where it should fire).
+- [x] **Each selected path receives its own hunks and no other path's.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 3.
+      At the composed shell layer — three non-default diff
+      renderers (`diff.noprefix`, `diff.mnemonicPrefix`, `color.diff=always`), the whitespace-path
+      collision, and the risky-path routing; the rename arm (`a/old b/new`) verified by hand, each
+      file's content appearing exactly once and correctly attributed. *Approved at the merge gate
+      2026-10-01.* **Why this needed declaring even though it was tested:** batching means
+      attribution is decided by parsing git's own per-file header, and a mis-key yields `total > 0`,
+      so it takes no weakening branch — unlike the total-blindness case, which `EVIDENCE-EMPTY`
+      covers. **Stated residual:** an UNKNOWN renderer shape no test can anticipate. Pinning
+      `--src-prefix`/`--dst-prefix`/`--no-ext-diff`/`--no-color` exists to prevent that rather than
+      detect it, which is the honest limit of this criterion.
 - [x] **Docs:** *Pinned by:* a doc-diff — `dev-docs/feedback/FB-0126-*.md` + `dev-docs/history/2026-09-30-*.md` existing. FB entry (the rule: an exclusion tuned for one repo shape becomes a blind spot in another,
       and the gate must say which shape it assumed), history entry, `workflow.md`'s honest-limitation
       paragraph updated to describe the opt-in, schema slot documented, roadmap entries closed.
