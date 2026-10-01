@@ -32,4 +32,28 @@
   And the diagnostic habit: **before widening a filter, check which clause actually excluded the file.**
   Two clauses can both match, and fixing the wrong one ships a no-op with a convincing rationale.
 
+- **Second measured site, found while shipping the first fix — and it is the gate that certifies
+  reviews ran.** `/flow:ship` Step 1.0a's rigor gate asks "did `/simplify` + `/flow:staff-review`
+  actually run on this source?" and answers it from a fingerprint that
+  `skills/ship/lib/rigor-marker.py:98` builds by filtering `git diff --name-only` through
+  **`sourceFilePatterns`** — the same allowlist, with the same `.md` gap. Measured on this very PR:
+  of 29 changed files, 16 are fingerprinted and **0 of the 11 changed `.md` files are**, including
+  `plugins/flow/skills/audit-coverage/SKILL.md`. I changed that file in a commit made *after*
+  writing the marker, and the gate still reported `ok`. So on a repo whose deployed surface is
+  prompts, **a PR that changes only prompts can never invalidate its own staff-review marker** —
+  the enforcement mechanism for "reviews ran on this source" is structurally unable to see the
+  source. The reviews did happen here (the lenses cite `SKILL.md` line numbers throughout); what is
+  broken is the mechanism's ability to *prove* it, which is the whole point of FB-0047's
+  "enforce, don't attest".
+
+  It generalises the rule above rather than repeating it: **one filter, written for one question,
+  gets reused as the answer to a different question.** `sourceFilePatterns` was written to answer
+  "is this diff worth a security review / a preflight run?" — a cost-and-risk question about
+  *language*. Four gates now consume it as if it answered "is this file deployed surface?", a
+  question about *role*. Before reusing a path filter, ask what question it was written for; if
+  that differs from yours, you have inherited its blind spots along with its convenience.
+  Tracked in `dev-docs/roadmap.md` § Next. Not fixed alongside the first site:
+  `plugins/flow/skills/ship/**` is in flow's own `sensitivePaths`, so it never routes below the top
+  tier and does not belong bundled into another change's scope.
+
 - **Applies to:** workflow, code, architecture — any gate whose scope comes from a path pattern.
