@@ -2083,6 +2083,33 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
   `sensitivePaths`, so it never auto-approves at the plan gate and never routes below the top
   dispatch tier — it does not belong bundled into another change. See FB-0126's second site.
 
+- **The `$ARGUMENTS` Tier-2 channel's stamp proves FRESHNESS, not PROVENANCE — any writer at the
+  same head is trusted.** FB-0108's idiom has the model write a slash-command argument to
+  `.flow/audit-coverage-arg.<branch>.<head>.txt` and the shipped block read it; FB-0116/FB-0117
+  bound the stamp to repo+branch+head so a STALE argument from an earlier head can never be reused.
+  That part works. What the stamp cannot distinguish is *"the model wrote this as this invocation's
+  argument"* from *"something else wrote it at this head"* — so the presence of a correctly-stamped
+  file is treated as the user having passed an argument. **Measured at CV1's merge gate, and it
+  corrupted a measurement before it was noticed:** `run_coverage_source_mode_evals.py` runs one case
+  against the REAL repo (its known-positive instrument test over `annotation-layer.html`), so it
+  wrote a correctly-stamped argument file into the real `.flow/`. The next genuine invocation at that
+  same head read it, silently switched from **diff mode to SOURCE mode**, and audited
+  `annotation-layer.html` — a file the diff never touched — reporting **20 undeclared behaviours** in
+  it with every criterion marked UNDECLARED. Nothing was wrong with the gate; its input had been
+  poisoned, and the output was indistinguishable from a real result.
+
+  **The harness leak is fixed in CV1** (the eval now removes what it wrote, via `atexit` because the
+  module exits through `sys.exit`), and that closes the one writer we know about. The contract gap is
+  what stays open: mode selection is decided by *the existence of a file*, and a mode flip is not a
+  small difference — diff mode and source mode audit different things against the same criteria.
+  Candidate shapes, none chosen: have the block require an explicit opt-in marker inside the file
+  that only the invocation path writes; include a nonce the skill generates per run; or make source
+  mode require the argument to arrive through the placeholder and treat the file strictly as a
+  fallback that must be corroborated. **Pair whatever lands with the test this gap deserves:** a
+  stray correctly-stamped file must NOT flip the mode, paired with the positive that a genuine
+  argument still reaches source mode — a fix that just stops reading the file would break
+  `/flow:prototype`, which is the whole reason the channel exists.
+
 ## Later
 
 - **visual-significance net-delta (moved-block) detection (FB-0062 push-further).** `_diff_content_changed` in `visual-significance.py` is line-prefix-based, so a verbatim block move/reorder (same lines deleted then re-added elsewhere, zero net render delta) reads as content-changed → visually significant. It's a false-positive in the SAFE direction (costs a screenshot, never a missed regression), so not a bug — but the heuristic's real ceiling. A multiset-diff over a hunk's `+`/`-` bodies (~20 lines + a fixture) would treat a pure reorder as no-render-delta. **Surfaces when:** `_diff_content_changed` is next touched, OR a dogfood reports a pure-reorder PR flagged significant and resolving to a wasted Unknown.

@@ -44,6 +44,7 @@ Stdlib only. No network. Run:
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
 import subprocess
@@ -135,6 +136,33 @@ check("the evidence block carries both modes",
       and "SKIPPED — no behavior-bearing source files" in EVIDENCE)
 
 
+# Argument files this harness writes into a REAL repo's scratch dir, removed at interpreter exit.
+#
+# WHY THIS EXISTS (measured at CV1's merge gate). One case runs source mode against the REAL repo
+# -- the known-positive instrument test over annotation-layer.html -- so its argument file lands in
+# the real .flow/, stamped with the real branch and HEAD. That stamp is exactly what the shipped
+# block TRUSTS: it was bound to repo+branch+head to stop a STALE argument being reused, and it does
+# that correctly. What it cannot do is tell "the model wrote this as this invocation's argument"
+# from "something else wrote it at this head". So a leftover from a test run made the next real
+# invocation at the same head silently switch to SOURCE mode and audit annotation-layer.html
+# instead of the workspace diff -- 20 undeclared behaviours reported in a file the diff never
+# touched. The gate was fine; the harness had poisoned its input. atexit, not a finally: this
+# module runs its checks at import time and exits via sys.exit(1) on failure.
+_leaked: list = []
+
+
+def _clean_leaked() -> None:
+    for f in _leaked:
+        try:
+            f.unlink()
+        except OSError:
+            pass
+    _leaked.clear()
+
+
+atexit.register(_clean_leaked)
+
+
 def run(block: str, cwd: Path, arguments=None, project_dir=None) -> str:
     """Render the block the way the PREPROCESSOR does, then run it.
 
@@ -175,6 +203,7 @@ def run(block: str, cwd: Path, arguments=None, project_dir=None) -> str:
         argf = cwd / ".flow" / f"audit-coverage-arg.{br}.{head}.txt"
         argf.parent.mkdir(parents=True, exist_ok=True)
         argf.write_text(arguments, encoding="utf-8")
+        _leaked.append(argf)
     # Substitution is STILL applied, deliberately, even though the block should contain no
     # placeholder. If a future edit reintroduces one, the injection cases below must still be
     # able to reach it -- a harness that stopped substituting would go quiet about exactly the
