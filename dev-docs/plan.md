@@ -183,6 +183,26 @@ screens on measurement discipline.)*
       hyphen, so the sweep this PR's own slot addition required reported clean over the front page.
       Fixing the regex was the only way to finish that sweep; it then exposed the comparison bug
       (`claim.split()[0]` compared "37-slot" against "37"), fixed with it.
+- [x] **A catastrophic-backtracking slot value yields `DOC-SLOT-INVALID` within the five-second
+      bound, and the `timeout`-absent fallback is a stated residual rather than an implicit one.**
+      *Pinned by:* `run_coverage_docblind_evals.py` § 2b's catastrophic-ERE case (measured 5.2s,
+      evidence still produced, slot named as the cause). *Approved at the merge gate 2026-10-01.*
+      The residual is stated in the block's own comment: where coreutils `timeout` is absent the
+      probe runs unbounded, which is a smaller blast radius than skipping validation entirely.
+- [x] **A newline-bearing `defaultBranch`, `planPath` and slot value each produce no column-0
+      control line above the delimiter — and the length cap degrades LOUDLY, never into a silent
+      wrong answer.** *Pinned by:* `run_coverage_docblind_evals.py` § 2b's three forgery cases plus
+      their paired positive (a benign config must still emit real above-delimiter control lines),
+      and § 2b-cap for the cap half: an over-cap `defaultBranch` refuses with `BASE-UNRESOLVED`, an
+      over-cap `planPath` is announced by the criteria block, each paired with an under-cap negative
+      so the checks are not satisfied by a gate that always complains. *Approved at the merge gate
+      2026-10-01 on condition the cap half be tested, because it was the only part with no test —
+      declaring a criterion nothing checks is the defect the "ADDED AT THE MERGE GATE" bullet was
+      de-checkboxed for.* **The cap test initially passed for the wrong reason** and is recorded
+      because of it: the fixture never created the over-long ref, so `BASE-UNRESOLVED` fired whether
+      the cap had truncated the name or not, and removing the cap did not turn the check red. The
+      fixture now creates the ref for real, so the mutation fails as it must (general.md item 4 —
+      an instrument validated only where it should fire).
 - [x] **Docs:** FB entry (the rule: an exclusion tuned for one repo shape becomes a blind spot in another,
       and the gate must say which shape it assumed), history entry, `workflow.md`'s honest-limitation
       paragraph updated to describe the opt-in, schema slot documented, roadmap entries closed.

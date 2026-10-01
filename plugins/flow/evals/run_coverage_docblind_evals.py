@@ -74,14 +74,25 @@ def evidence_block() -> str:
     return cand[0]
 
 
+def criteria_block() -> str:
+    """The OTHER bang-span: the one that resolves planPath and extracts the declared criteria.
+    planPath's over-cap degradation is announced here, not in the evidence block, so a test that
+    only ran the evidence block would conclude the cap is silent when it is not."""
+    cand = [b for b in bang_blocks((SKILLS / "audit-coverage" / "SKILL.md").read_text(encoding="utf-8"))
+            if "extract-criteria.py" in b]
+    assert cand, "could not extract the criteria block"
+    return cand[0]
+
+
 BLOCK = evidence_block()
+CRIT_BLOCK = criteria_block()
 check("the shipped evidence block was extracted, not restated",
       "DOC-BLIND" in BLOCK and "evidence-budget.py" in BLOCK,
       "extraction returned a block without A or C; every case below would prove nothing")
 
 
 def scenario(tmp, label, added, cfg_extra=None, base_files=None, git_config=None,
-             origin_head=True):
+             origin_head=True, block=None, extra_branch=None):
     files = {"plan.md": "# Plan\n\n**Spec-walk:**\n\n- [ ] a thing\n"}
     files.update(base_files or {})
     cfg = {"defaultBranch": "main", "planPath": "plan.md"}
@@ -91,6 +102,12 @@ def scenario(tmp, label, added, cfg_extra=None, base_files=None, git_config=None
     cmds = [["git", "remote", "add", "origin", str(repo)]]
     if origin_head:
         cmds.append(["git", "update-ref", "refs/remotes/origin/main", "main"])
+    if extra_branch:
+        # Create the ref for real, so an over-cap NAME is one that would resolve uncapped. A
+        # fixture that omits it makes the cap test pass for the wrong reason: the ref is missing
+        # either way, so removing the cap does not change the verdict (general.md item 4).
+        cmds.append(["git", "branch", extra_branch, "main"])
+        cmds.append(["git", "update-ref", "refs/remotes/origin/" + extra_branch, extra_branch])
     cmds.append(["git", "checkout", "-q", "-b", "work"])
     for c in cmds:
         subprocess.run(c, cwd=str(repo), capture_output=True)
@@ -99,7 +116,7 @@ def scenario(tmp, label, added, cfg_extra=None, base_files=None, git_config=None
     commit(repo, added, label)
     env = dict(os.environ)
     env["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN)
-    p = subprocess.run(["sh", "-c", BLOCK], cwd=str(repo), env=env,
+    p = subprocess.run(["sh", "-c", block or BLOCK], cwd=str(repo), env=env,
                        capture_output=True, text=True, timeout=90)
     return p.stdout + p.stderr
 
@@ -280,6 +297,38 @@ def main() -> int:
               "Behavior-bearing files changed" in o, o[:300])
         check("...and says the slot is the problem",
               "DOC-SLOT-INVALID" in o, o[:300])
+
+        print("\n2b-cap. THE LENGTH CAP DEGRADES LOUDLY, never into a silent wrong answer")
+        # Sanitising config values caps their length (BASE 200, PLANDOC 300). That is the half of
+        # the sanitisation with no test, and the orchestrator required one before declaring the
+        # criterion: declaring a criterion nothing checks is the defect that the "ADDED AT THE
+        # MERGE GATE" bullet was de-checkboxed for. What matters is NOT that long values are
+        # rejected -- it is that a legitimately over-cap value can never produce output that looks
+        # correct. git permits refs far longer than 200 chars, so this is reachable without malice.
+        LONGB = "feature/" + "a" * 250          # 258 chars, a valid ref name
+        o = scenario(tmp, "cap-base", SRC, cfg_extra={"defaultBranch": LONGB},
+                     extra_branch=LONGB)
+        check("an over-cap defaultBranch refuses LOUDLY (BASE-UNRESOLVED), never silently",
+              "WEAKENED · BASE-UNRESOLVED" in o,
+              "the capped ref cannot resolve, so the diff is empty for a reason that is NOT "
+              f"'nothing changed' -- and that must be said: {o[:280]!r}")
+        # PAIRED NEGATIVE: an UNDER-cap legitimate value must NOT warn, or the check above is
+        # satisfied by a gate that always complains.
+        o = scenario(tmp, "cap-base-ok", SRC)
+        check("...and an under-cap branch does NOT warn (the pair's negative)",
+              "BASE-UNRESOLVED" not in o, o[:240])
+
+        # planPath's cap is announced by the CRITERIA block, not the evidence block. Running only
+        # the evidence block here would have concluded the cap was silent when it is not.
+        LONGP = "dev-docs/" + "b" * 320 + ".md"      # 332 chars
+        o = scenario(tmp, "cap-plan", SRC, cfg_extra={"planPath": LONGP}, block=CRIT_BLOCK)
+        check("an over-cap planPath is announced by the criteria block, never silently empty",
+              "no plan" in o,
+              "truncating the path makes the plan unreadable; an empty criteria set that does not "
+              f"say why is indistinguishable from 'nothing was declared': {o[:280]!r}")
+        o = scenario(tmp, "cap-plan-ok", SRC, cfg_extra={"planPath": "plan.md"}, block=CRIT_BLOCK)
+        check("...and a normal planPath resolves without that warning (the pair's negative)",
+              "no plan" not in o, o[:240])
 
         print("\n2c. WEAKENINGS LAND ABOVE THE DELIMITER, where the rule makes them count")
         # The budgeter ran AFTER the delimiter was printed, so TRUNCATED -- the line saying a

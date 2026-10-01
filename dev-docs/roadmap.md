@@ -1902,18 +1902,49 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
   for a recall number. Fix is continuation-line joining plus a warning naming every truncated bullet;
   re-measure recall afterwards with enough runs to see past the variance.
 
-  **Second failure mode in the same reader, found at CV1's merge gate and worse than the first:**
-  a wrapped bullet's continuation line that *begins* with a bold span **terminates the whole
-  block**. `walk_extract.py`'s bold-label terminator cannot tell "a new section heading" from
-  "this bullet's second line happens to open with `**`", so every criterion after it is silently
-  dropped — not truncated, *gone*. Measured on CV1's own plan: one continuation line reading
-  `**This flips cases.py's …` cut the declared set from **15 criteria to 5**, and
-  `/flow:audit-coverage` therefore audited this PR against a third of its own plan. Nothing warns;
-  the `warnings` list stays empty. Fixed in the plan by de-bolding that one line, which is treating
-  the symptom — the reader needs to require a *blank line before* a bold-label terminator, or to
-  track bullet continuation explicitly. Same fix pass as the first-line truncation above, and the
-  same paired test shape: a wrapped bullet whose continuation opens with `**` must keep every later
-  criterion, paired with a genuine bold-label heading that must still terminate.
+  **▶ SECOND FAILURE MODE IN THE SAME READER, AND THE MORE SEVERE OF THE TWO — severity raised by
+  the orchestrator at CV1's merge gate (2026-10-01). Any consumer's plan can silently lose most of
+  its declared criteria, and every downstream gate then reports green against a fraction of it.**
+
+  **(1) The trigger.** A wrapped bullet whose CONTINUATION line begins with a bold span. Nothing
+  about it looks wrong to an author: `- [ ] criterion one` followed by an indented `**A bolded
+  note.**` is ordinary prose. `walk_extract.py`'s bold-label terminator cannot tell "a new section
+  heading" from "this bullet's second line happens to open with two asterisks", so it ends the
+  block there.
+
+  **(2) The measured effect — silent, total, and not truncation.** Criteria after the trigger are
+  not shortened, they are *gone*, and the `warnings` list stays EMPTY, so nothing downstream can
+  tell. Measured twice. On CV1's own plan, one continuation line reading `**This flips cases.py's`
+  cut the declared set from **15 criteria to 5** — so `/flow:audit-coverage` audited that PR
+  against a third of its own plan while reporting as if the comparison were complete. Isolated on a
+  3-item fixture with a control, on both front-ends: **1 of 3 extracted, 0 warnings**; delete the
+  one bold continuation line and it is 3 of 3.
+
+  **(3) Every reader it feeds, by name.** `walk_extract.py` has TWO front-ends, so this is not one
+  gate's bug: `extract-criteria.py` (label `Spec-walk`) and `extract-visual-states.py` (label
+  `Visual-walk`) — the visual half loses declared visual states the same way. Consumers:
+  **`/flow:audit-coverage`** (the declared-criteria set it judges against); **`/flow:verify-build`**
+  (feeds the criteria to bundled `/verify`, and `lib/criterion-specificity.py` +
+  `lib/visual-significance.py` read the same lists); **`/flow:plan-discipline`** (the rule-skill
+  that polices plan shape); **`/flow:prototype`** via `lib/prototype-gate.py` (D1 gate-1's "a plan
+  always exists" assertion); **`/flow:audit-skips`** via `lib/skip-audit-checks.py` (plan-mode
+  detection, which decides whether a skip is legitimate); **`/flow:critique-plan`** via
+  `lib/walk-pin-lint.py`; and **`/flow:ship`** via `lib/manifest_contract.py`. #171's Arm A reads it
+  too. It is the most widely shared reader in the plugin, and the same quiet-loss shape as
+  `if not symbol: continue` in #171 — the gate reads less than it reports.
+
+  **(4) The fix must ship PAIRED; neither half alone is sufficient.** (a) The extractor either
+  **loses no criteria** — require a blank line before a bold-label terminator, or track bullet
+  continuation explicitly — **or it flags the early end** loudly in `warnings`, so a truncated set
+  can never pass as a complete one. (b) **A test proves that a plan whose bullet carries a
+  `**`-leading continuation line keeps ALL of its criteria**, paired with a genuine bold-label
+  heading that must still terminate — otherwise the fix is satisfiable by never terminating, which
+  breaks the multi-block plans this repo actually has. Both front-ends in the test, since both
+  share the reader. Same pass as the first-line truncation above: one reader, one fix, one harness.
+
+  **Not fixed in CV1, deliberately.** Shared reader, eight-plus consumers, and the correct fix
+  changes block-boundary semantics for every plan in every consuming repo — its own change with its
+  own measurement, not a rider on a coverage-gate PR.
 
 - **Decide whether `/flow:ship` Step 2 runs `/flow:audit-coverage` twice and unions — CV1 reopened
   this.** `audit-coverage/SKILL.md`'s "Running this more than once" section justified a single pass
