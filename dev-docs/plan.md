@@ -106,10 +106,10 @@ screens on measurement discipline.)*
 - [x] **A fires on a doc-shaped diff and names the paths.** *Pinned by:* a new eval case — a diff touching
       only `skills/x/SKILL.md` emits `DOC-BLIND` naming it, **paired** with: a diff touching no doc-shaped
       files does NOT emit it (or the line becomes noise on every PR).
-- [x] **B is genuinely opt-in.** *Pinned by:* with the slot unset, the file list is **byte-identical** to
+- [x] **B is genuinely opt-in.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 2 — with the slot unset, the file list is **byte-identical** to
       today's on all three measured cases — the strongest form of "no consumer's gate changes", and a
       negative that is paired with the positive below rather than standing alone.
-- [x] **`DOC-BLIND` is added to the judging prompt's instance enumeration.** *Pinned by:* an assertion
+- [x] **`DOC-BLIND` is added to the judging prompt's instance enumeration.** *Pinned by:* the `run_coverage_vocab_evals.py` eval — an assertion
       that `audit-coverage/SKILL.md`'s `WEAKENED ·` instance list names it. **Critic ISSUE 2, accepted:**
       `:493` instructs the reviewer to quote any `WEAKENED ·` line verbatim and `:497` enumerates every
       instance by name — with a footnote recording that omitting a new instance from that list is a
@@ -117,7 +117,7 @@ screens on measurement discipline.)*
       touches the matcher or the judging prompt" claim was wrong as written. Corrected: nothing here
       touches **the matcher or the judging rubric**; A adds one enumerated weakening instance, which is
       exactly the kind of change that list exists to absorb.
-- [x] **B's before/after is measured with A held constant.** **Satisfied only on a second pass.**
+- [x] **B's before/after is measured with A held constant.** *Pinned by:* the `tools/coverage-recall` report, both arms. **Satisfied only on a second pass.**
       The first before-arm run had A **ON**, and its output quoted the `DOC-BLIND` line naming
       `audit-coverage/SKILL.md` — precisely the pointer this criterion exists to withhold. Re-rendered
       from a block with A's emit stripped: the baseline is then **0 gaps found with no pointer given**,
@@ -129,12 +129,12 @@ screens on measurement discipline.)*
       0/5 baseline was taken without A at all. Measuring B against that baseline would move two variables
       and hand the reviewer a pointer to the answer in one arm only. Both arms A-off; A's own effect is
       measured separately by its own pins above.
-- [x] **B moves the known positive off 0/5.** *Pinned by:* `tools/coverage-recall` on the `pr159` case with
+- [x] **B moves the known positive off 0/5.** *Pinned by:* the `tools/coverage-recall` report on the `pr159` case with
       the slot set — the five gaps live in `audit-coverage/SKILL.md`, which must now reach the reviewer.
       This flips `cases.py`'s `structural_blindness` pin, which was written to fail loudly exactly here**
       ("if the exclusion is ever fixed this case fails loudly and is re-classified"). Expected, and I am
       the intended trigger; the case gets re-classified from structural to recall with its number recorded.
-- [x] **The negative: a pure-prose edit INSIDE a matched file produces no coverage findings.** *Pinned by:*
+- [x] **The negative: a pure-prose edit INSIDE a matched file produces no coverage findings.** *Pinned by:* an eval fixture pair —
       a case whose diff is a wording change in `plugins/flow/skills/ship/SKILL.md` — a path the slot
       **matches** — **with the slot set**, scored at 0 findings and mutation-tested like the other parts.
       *(Specified at the audit gate. "A docs-only-prose case" was vacuous: a prose edit to `dev-docs/*.md`
@@ -142,14 +142,14 @@ screens on measurement discipline.)*
       findings before B and 0 after, whatever B does to prose noise. A pin that passes in both the honored
       and the broken world is general.md item 4, in the plan that applies item 4 to `--selftest` and forgot
       it here.)*
-- [x] **C: no file is entirely invisible when the cap binds.** *Pinned by:* the #158 shape — assert every
+- [x] **C: no file is entirely invisible when the cap binds.** *Pinned by:* the `run_coverage_docblind_evals.py` eval over the #158 shape — assert every
       file contributes ≥1 byte and each truncated file is named. Paired with: under the cap, output is
       **byte-identical** to today (no gratuitous reflow of the common case).
-- [x] **Per-file cap behaviour reported on the 176 KB case**, as asked. Note the distinction I will report
+- [x] **Per-file cap behaviour reported on the 176 KB case**, as asked. *Pinned by:* `run_coverage_docblind_evals.py` § 3. Note the distinction I will report
       rather than blur: 177,768 B is `ship/SKILL.md`'s **file size**, which binds in **source mode**
       (whole files are `cat`-ed, `SOURCE_CAP` = 120,000 B, so it is ~1.5× over *alone*). Its **diff** in a
       realistic PR is ~3 KB. The 44,687 B single-file diff in #158 is the real diff-mode starvation case.
-- [x] **Instrument validated:** `tools/coverage-recall --selftest` must show it can fail before any number
+- [x] **Instrument validated:** *Pinned by:* the `tools/coverage-recall --selftest` report, which must show it can fail before any number
       is reported; and I will mutation-test the three parts (revert the union, revert the fair-share, drop
       the DOC-BLIND line) and confirm each is caught.
 **ADDED AT THE MERGE GATE, on the orchestrator's approval (2026-10-01).** `/flow:audit-coverage`
@@ -158,21 +158,21 @@ screens on measurement discipline.)*
       and `/flow:staff-review` lands *after* the Spec-walk was written. They were routed to the
       draft manifest rather than self-declared, and the orchestrator approved all four as drafted.
       Each is pinned by a passing eval, named per item:
-- [x] **An invalid `behaviorBearingDocPatterns` emits `DOC-SLOT-INVALID`, disables the doc union for
+- [x] **An invalid `behaviorBearingDocPatterns` emits `DOC-SLOT-INVALID`.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 2b. It disables the doc union for
       that run, and a newline-bearing value cannot produce a second control line above the
       delimiter.** *Pinned by:* `run_coverage_docblind_evals.py` § 2b — the malformed-slot case, the
       three forgery cases, and the paired positive that a benign config still emits real
       above-delimiter control lines. Mutation-tested: reverting the sanitisation turns it red.
-- [x] **Under the cap the budgeter's output is byte-identical to the old concatenation; over the cap
+- [x] **The budgeter allocates fairly.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 3. Under the cap its output is byte-identical to the old concatenation; over the cap
       every file receives at least its fair share and every cut file is named with its byte counts;
       and when the budgeter cannot run the fallback is loud, never silent.** *Pinned by:*
       `run_coverage_docblind_evals.py` § 3 — content-not-filename contribution, the cut names, the
       under-cap negative, three hostile git-config cases, and the `BUDGET-UNAVAILABLE` floor.
-- [x] **A non-empty file selection that yields zero diff bytes emits `EVIDENCE-EMPTY` and is not
+- [x] **A zero-byte selection emits `EVIDENCE-EMPTY`.** *Pinned by:* `run_coverage_docblind_evals.py` § 3. A non-empty file selection that yields zero diff bytes is not
       readable as a clean pass.** *Pinned by:* `run_coverage_docblind_evals.py` § 3's
       zero-byte-selection case, plus § 2c asserting the weakening lands ABOVE the delimiter where
       the prose rule makes it count.
-- [x] **A hyphenated stale slot count is reported, a hyphenated CORRECT count is not, and the two
+- [x] **The slot-count scanner reads hyphens.** *Pinned by:* the `run_merge_status_evals.py` eval. A hyphenated stale count is reported, a hyphenated CORRECT count is not, and the two
       measured compound-adjective false positives (`FB-0058 boolean-slot`, `Step 4 config-slot`)
       stay unreported.** *Pinned by:* `run_merge_status_evals.py` — the hyphenated positive, the
       correct-count negative that was the missing half, and the compound-adjective negative; seven
@@ -183,13 +183,13 @@ screens on measurement discipline.)*
       hyphen, so the sweep this PR's own slot addition required reported clean over the front page.
       Fixing the regex was the only way to finish that sweep; it then exposed the comparison bug
       (`claim.split()[0]` compared "37-slot" against "37"), fixed with it.
-- [x] **A catastrophic-backtracking slot value yields `DOC-SLOT-INVALID` within the five-second
+- [x] **A catastrophic slot regex is bounded.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 2b. The value yields `DOC-SLOT-INVALID` within the five-second
       bound, and the `timeout`-absent fallback is a stated residual rather than an implicit one.**
       *Pinned by:* `run_coverage_docblind_evals.py` § 2b's catastrophic-ERE case (measured 5.2s,
       evidence still produced, slot named as the cause). *Approved at the merge gate 2026-10-01.*
       The residual is stated in the block's own comment: where coreutils `timeout` is absent the
       probe runs unbounded, which is a smaller blast radius than skipping validation entirely.
-- [x] **A newline-bearing `defaultBranch`, `planPath` and slot value each produce no column-0
+- [x] **Config values cannot forge a control line.** *Pinned by:* the `run_coverage_docblind_evals.py` eval § 2b and § 2b-cap. A newline-bearing `defaultBranch`, `planPath` and slot value each produce no column-0
       control line above the delimiter — and the length cap degrades LOUDLY, never into a silent
       wrong answer.** *Pinned by:* `run_coverage_docblind_evals.py` § 2b's three forgery cases plus
       their paired positive (a benign config must still emit real above-delimiter control lines),
@@ -203,7 +203,7 @@ screens on measurement discipline.)*
       the cap had truncated the name or not, and removing the cap did not turn the check red. The
       fixture now creates the ref for real, so the mutation fails as it must (general.md item 4 —
       an instrument validated only where it should fire).
-- [x] **Docs:** FB entry (the rule: an exclusion tuned for one repo shape becomes a blind spot in another,
+- [x] **Docs:** *Pinned by:* a doc-diff — `dev-docs/feedback/FB-0126-*.md` + `dev-docs/history/2026-09-30-*.md` existing. FB entry (the rule: an exclusion tuned for one repo shape becomes a blind spot in another,
       and the gate must say which shape it assumed), history entry, `workflow.md`'s honest-limitation
       paragraph updated to describe the opt-in, schema slot documented, roadmap entries closed.
 
