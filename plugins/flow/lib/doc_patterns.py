@@ -13,8 +13,13 @@ contract spelled in two places where a change touches one):
 
   - `/flow:audit-coverage`'s evidence block, which unions doc matches back into the file list
     after the source filter so behaviour-bearing prose reaches the reviewer (CV1, v1.55.0).
-    That reader is a shell block and keeps its own `DOC_BUILTIN=` literal, because a `!`-span
-    cannot import Python; `evals/run_rigor_marker_evals.py` asserts the two are byte-identical.
+    That reader is a shell block and keeps its own `DOC_BUILTIN=` literal, with
+    `evals/run_rigor_marker_evals.py` asserting the two are byte-identical. **The reason is
+    fail-safe direction, not inability** -- that block already invokes `python3` twice, and the
+    sibling `sensitive_paths.py` ships a `--print-defaults` CLI for exactly this. But a shelled-out
+    read degrades to an EMPTY pattern when python3 is missing, and `grep -E ""` matches every line,
+    so the gate would announce every changed file as deployed prose. The literal fails safe where
+    a subprocess fails open; that is why it is duplicated rather than fetched.
   - `/flow:ship`'s rigor fingerprint via `skills/ship/lib/rigor-marker.py` (CV1 follow-up),
     which was computed through `sourceFilePatterns` alone — so on #172, 0 of 13 changed `.md`
     files were in it and both changed SKILL.md files could have been rewritten after
@@ -36,6 +41,10 @@ Widening it is a live decision, deliberately NOT taken here: `docs/` would pull 
 consumer's `docs/` tree, and the right boundary is a config question rather than a guess. That
 is what `behaviorBearingDocPatterns` is for, and a consumer who needs `docs/` can say so today.
 
+**Deletion criterion (FB-0088):** delete when it has fewer than two readers — fold the
+constant back into whichever one survives rather than keeping a shared module for a single
+caller. Today: two (the coverage block's literal, pinned byte-identical; the rigor fingerprint).
+
 Stdlib only. Python 3.7+.
 """
 
@@ -54,6 +63,11 @@ DOC_BUILTIN = r"(^|/)(skills|agents|rules)/.*\.md$"
 # The consumer-configurable extension. Empty by default (CV1): a repo whose prose is not
 # behaviour-bearing pays nothing, and a repo whose prose is says where it lives.
 SLOT = "behaviorBearingDocPatterns"
+
+# Warning prefix, matching the sibling shared lib in this directory (`sensitive_paths.py`'s
+# `PREFIX`) so two libs doing the same slot-reading job do not grow two warning vocabularies.
+# The `⚠️` is required by CLAUDE.md for a config-slot degrade, not decoration.
+PREFIX = "[doc-patterns]"
 
 # Guard against a pasted essay rather than a pattern. Long ERE alternations are legitimate, so
 # this is deliberately generous; it exists so a corrupt config cannot be compiled at all.
@@ -89,29 +103,29 @@ def read_slot(root: str | None = None) -> "tuple[str, list[str]]":
     try:
         data = json.loads(cfg.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
-        warnings.append(f"[WARN] flow.config.json is unreadable or not valid JSON ({e}); "
-                        f"{SLOT} was NOT applied — doc coverage is the builtin set only.")
+        warnings.append(f"{PREFIX} [WARN] ⚠️ flow.config.json is unreadable or not valid JSON ({e}); "
+                        f"{SLOT} was NOT applied — doc coverage falls back to the built-in set ({DOC_BUILTIN}) only.")
         return "", warnings
     if not isinstance(data, dict):
-        warnings.append(f"[WARN] flow.config.json is not a JSON object; {SLOT} was NOT applied "
-                        f"— doc coverage is the builtin set only.")
+        warnings.append(f"{PREFIX} [WARN] ⚠️ flow.config.json is not a JSON object; {SLOT} was NOT applied "
+                        f"— doc coverage falls back to the built-in set ({DOC_BUILTIN}) only.")
         return "", warnings
 
     raw = data.get(SLOT, "")
     if raw in ("", None):
         return "", warnings
     if not isinstance(raw, str):
-        warnings.append(f"[WARN] {SLOT} is {type(raw).__name__}, not a string; it was NOT "
-                        f"applied — doc coverage is the builtin set only.")
+        warnings.append(f"{PREFIX} [WARN] ⚠️ {SLOT} is {type(raw).__name__}, not a string; it was NOT "
+                        f"applied — doc coverage falls back to the built-in set ({DOC_BUILTIN}) only.")
         return "", warnings
     if len(raw) > MAX_SLOT_LEN:
-        warnings.append(f"[WARN] {SLOT} is {len(raw)} chars (cap {MAX_SLOT_LEN}); it was NOT "
-                        f"applied — doc coverage is the builtin set only.")
+        warnings.append(f"{PREFIX} [WARN] ⚠️ {SLOT} is {len(raw)} chars (cap {MAX_SLOT_LEN}); it was NOT "
+                        f"applied — doc coverage falls back to the built-in set ({DOC_BUILTIN}) only.")
         return "", warnings
     try:
         re.compile(raw)
     except re.error as e:
-        warnings.append(f"[WARN] {SLOT} is not a valid regex ({e}); it was NOT applied — doc "
+        warnings.append(f"{PREFIX} [WARN] ⚠️ {SLOT} is not a valid regex ({e}); it was NOT applied — doc "
                         f"coverage is the builtin set only. Pattern was: {raw[:120]!r}")
         return "", warnings
     return raw, warnings
@@ -126,6 +140,6 @@ def doc_pattern(slot: str | None = None, root: str | None = None) -> "tuple[str,
         try:
             re.compile(slot)
         except re.error as e:
-            warnings.append(f"[WARN] {SLOT} is not a valid regex ({e}); it was NOT applied.")
+            warnings.append(f"{PREFIX} [WARN] ⚠️ {SLOT} is not a valid regex ({e}); it was NOT applied.")
             slot = ""
     return (f"{DOC_BUILTIN}|{slot}" if slot else DOC_BUILTIN), warnings

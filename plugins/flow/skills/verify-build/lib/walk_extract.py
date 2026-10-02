@@ -235,11 +235,23 @@ def collect_items(
         # ends the active block.
         if is_terminator(line):
             ended_at = j
-            warnings.append(
-                f"the block ended at line {j + 1} ({line.strip()[:60]!r}) with "
-                f"{len(items)} item(s) collected; anything below that line belongs to "
-                f"another block and was NOT read."
-            )
+            # WARN ONLY WHEN THE CLOSE LOOKS WRONG. The first version of this warned on EVERY
+            # terminator close, which a review lens correctly called out: `extract_block` is
+            # first-active-block-only by design, so a terminator is the NORMAL way nearly every
+            # real plan's block ends. It fired on this repo's own healthy plan. Before, truncation
+            # was silent; after, truncation and success emitted the same sentence -- still
+            # non-discriminating, now with added noise. That is the failure `rigor-marker.py` in
+            # this same change warns about in its own comment: a gate that always fires is one
+            # people learn to click past. A zero-item close is the signal worth a warning: the
+            # heading matched and nothing came out of it. Where the read STOPPED is provenance,
+            # not an alarm, so it is returned as `ended_at` and surfaced as `ended_at_line`.
+            if not items:
+                warnings.append(
+                    f"the block ended at line {j + 1} ({line.strip()[:60]!r}) having collected "
+                    f"NO items — the heading matched but nothing was read under it. This is not "
+                    f"an empty plan: check for a blank line or a stray heading between the "
+                    f"heading and its checkboxes."
+                )
             break
 
     return items, warnings, ended_at
@@ -353,7 +365,7 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
     # duplicated return shape is a fan-out contradiction waiting to happen).
     scan_end = len(lines) if co_located is not False else first + 1
 
-    items, item_warnings, _ended_at = collect_items(lines, first, scan_end)
+    items, item_warnings, ended_at = collect_items(lines, first, scan_end)
     warnings.extend(item_warnings)
 
     return {
@@ -368,6 +380,11 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
         # the line number back out of the warning prose above -- an instrument that breaks
         # the next time that sentence is reworded.
         "first_heading_line": first + 1,
+        # 1-indexed line of the terminator that CLOSED the block, or None when it ran to EOF.
+        # Provenance, deliberately not a warning: it answers "how far did you read?" on every
+        # call, including the healthy ones, which is what distinguishes a truncated read from a
+        # complete one (FB-0121) without making every clean block shout.
+        "ended_at_line": (ended_at + 1) if ended_at is not None else None,
         "co_located": co_located,
         "all_demoted": False,
         "warnings": warnings,
@@ -462,6 +479,13 @@ def cli_main(
                 "source_path": str(plan_path),
                 "source_heading": block["first_heading"],
                 "source_heading_line": block["first_heading_line"],
+                # Carried through to the COMPOSED surface, not just the library result. The
+                # first version of this field existed only on `extract_block`'s dict, which no
+                # consumer reads -- every one of them shells out to this CLI. A contract that is
+                # correct one layer below the surface it describes is the claim-layer mismatch
+                # `general.md` item 4 names, and it was reproduced here while fixing an instance
+                # of it: `extract_block` said 196, the JSON said nothing at all.
+                "ended_at_line": block.get("ended_at_line"),
                 "block_count": block["block_count"],
                 "co_located": block["co_located"],
                 "all_demoted": block["all_demoted"],

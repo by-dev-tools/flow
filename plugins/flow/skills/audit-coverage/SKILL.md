@@ -470,9 +470,27 @@ fi
 # says MORE was. Tagging it as a weakening would make the reviewer append the "this audit is
 # weaker than a normal one" note on exactly the runs that are stronger, and would pull it into
 # the vocabulary eval's weakening enumeration where it does not belong.
-DOCSEL=$(printf '%s\n' "$FILES" | grep -E "$DOCALL")
-if [ -n "$DOCSEL" ]; then
-  echo "[audit-coverage] DOC-SURFACE — $(printf '%s\n' "$DOCSEL" | grep -c .) doc-shaped file(s) in the evidence below are DECLARED SURFACE in this repo: flow.config.json.behaviorBearingDocPatterns matched them, so the project asserts their prose is deployed behaviour rather than documentation. They are: $(printf '%s' "$DOCSEL" | tr '\n' ' '). Enumerate the behaviour their prose changes, exactly as you would for code. The doc suppression in your instructions does NOT apply to a file the project has declared. This is not a weakening: more was read than usual, not less."
+# TWO PREDICATES, SO TWO SENTENCES -- the same split DOC-BLIND makes 40 lines up, and for the
+# same reason: "the message is then true by construction rather than by the reader checking".
+# DECLARED means the CONSUMER's slot matched. $DOCALL is wider than $BBDP (it carries the
+# built-in guess), so grepping $FILES with $DOCALL and then crediting the slot would attribute
+# a declaration the project never made. Today no '.md' can reach $FILES except through $DOCF --
+# EXCL ends with a '.md' clause -- so the single-sentence version was true; but it was true BECAUSE of an
+# exclusion clause CV1's own history entry calls "belt-and-braces rather than the cause", i.e. a
+# documented deletion candidate. A control line whose honesty depends on a clause someone has
+# been told is redundant is one cleanup away from lying. Split by matching predicate instead.
+DOCSEL_DECL=""; DOCSEL_GUESS=""
+if [ -n "$BBDP" ]; then
+  DOCSEL_DECL=$(printf '%s\n' "$FILES" | grep -E "$BBDP")
+  DOCSEL_GUESS=$(printf '%s\n' "$FILES" | grep -E "$DOC_BUILTIN" | grep -vE "$BBDP")
+else
+  DOCSEL_GUESS=$(printf '%s\n' "$FILES" | grep -E "$DOC_BUILTIN")
+fi
+if [ -n "$DOCSEL_DECL" ]; then
+  echo "[audit-coverage] DOC-SURFACE — $(printf '%s\n' "$DOCSEL_DECL" | grep -c .) doc-shaped file(s) in the evidence below are DECLARED SURFACE in this repo: flow.config.json.behaviorBearingDocPatterns matched them, so the project asserts their prose is deployed behaviour rather than documentation. They are: $(printf '%s' "$DOCSEL_DECL" | tr '\n' ' '). Findings against their prose are expected here, not anomalies. Not a weakening: more was read than usual, not less."
+fi
+if [ -n "$DOCSEL_GUESS" ]; then
+  echo "[audit-coverage] DOC-SURFACE — $(printf '%s\n' "$DOCSEL_GUESS" | grep -c .) doc-shaped file(s) in the evidence below reached it WITHOUT being declared: $(printf '%s' "$DOCSEL_GUESS" | tr '\n' ' '). They match flow's built-in guess at where deployed prose lives, not this project's flow.config.json.behaviorBearingDocPatterns. Treat the surface claim as flow's guess, not the project's assertion; set that slot to make it one. Not a weakening: more was read than usual, not less."
 fi
 # THE SKIP LINE IS GATED ON THE BASE HAVING RESOLVED. Every git call above ends 2>/dev/null,
 # so an unresolvable origin/$BASE makes all three contribute nothing, $FILES is empty, and the
@@ -667,6 +685,7 @@ The house rule this follows, with the full mechanism and the two tiers, is
   `Note: <the control line, verbatim> — this audit is weaker than a normal one, not equal to it.`
 
   Append it whether or not you flag anything. "I checked every hunk" and "I checked the ones I happened to notice" must not read alike. The instances today, all carrying the token: **`BASE-UNRESOLVED`** (the default branch does not resolve, so the diff is empty for a reason that is not "nothing changed"), **`INVENTORY-UNAVAILABLE`** (no deterministic hunk checklist could be built, so Stage 1 enumerates unaided), **`EVIDENCE-EMPTY`** (files were selected but produced zero diff bytes — all new/untracked, or this repo's diff rendering could not be parsed; either way no evidence was audited), **`INVENTORY-EMPTY`** (one or more listed files produced no hunks — a binary file, a `-diff` gitattribute, a mode-only change — so their behavior is absent from the checklist), **`INVENTORY-TRUNCATED`** (the hunk cap was reached, so the checklist is partial), **`TRUNCATED`** and **`SOURCE-TRUNCATED`** (behavior past the evidence cap was never read). **`DOC-BLIND`** (changed files carry prose that may be deployed surface and were not read — see `behaviorBearingDocPatterns`), **`DOC-SLOT-INVALID`** (that slot is not a valid extended regex, so behaviour-bearing prose was not selected), **`BUDGET-UNAVAILABLE`** (the evidence budgeter was unreachable, so the cap fell back to simple truncation and files late in the list may be absent). *Two of these shipped in the same release that added this bullet and were initially left unnamed here — which is the bullet's own argument. **That sentence used to claim the list was "pinned by an eval rather than by this sentence"; it was not — no such eval existed, and the list stayed complete by memory alone.** `evals/run_coverage_vocab_evals.py` now derives the emitter's tokens from the shipped source and fails if any is missing here, so the claim is true as of v1.55.0. Plus one MODEL-emitted instance added in v1.50.0: `FILTERS-ADVISORY`, which path 2 of `## Argument` requires when the reviewer read the source itself rather than the evidence block. It is listed separately because the emitter does not produce it -- the distinction this bullet's own footnote warns about.
+- **`DOC-SURFACE` is NOT a weakening either, and it carries no `WEAKENED ·` token.** It reports that doc-shaped files reached your evidence *on purpose* — more was read than usual, not less — and it comes in two forms you must not conflate. **DECLARED** (the project's `behaviorBearingDocPatterns` matched): its prose is deployed surface the project asserts, so the doc suppression in your system prompt does not apply to it. **Undeclared** (flow's built-in guess matched, the slot did not): the file is still in front of you and you should still judge its prose, but the surface claim is flow's guess rather than the project's, so weigh a finding there accordingly and say which form you were given. Absent the line entirely, the doc suppression stands.
 - **`PLAN-PREDATES-BRANCH` is NOT a weakening — it is the opposite, and it carries no `WEAKENED ·` token.** It means the plan doc was never touched on this branch, so **no** declared criterion was written against **any** hunk. Your evidence is complete; the *declared set* is empty. Treat every behavior as undeclared until a criterion is named for it, and say so — this is the one case where a long list of findings is the correct output rather than a suspicious one.
 - Otherwise, run **Stage 1** and then **Stage 2** below, in that order, and show both. They are the same single judgment this skill has always applied — `**Undeclared change**` from your system prompt, nothing added — split into the two steps it was always really doing.
 

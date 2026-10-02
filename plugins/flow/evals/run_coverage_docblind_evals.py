@@ -462,6 +462,47 @@ def main() -> int:
                    and "prompts/system.md" in out_sel.split("DOC-BLIND", 1)[-1][:400]),
               f"the same path is reported as both read and unread: {out_sel[:400]}")
 
+        # PROVENANCE: the line must credit the predicate that ACTUALLY matched. $DOCALL is wider
+        # than the consumer's slot (it carries flow's built-in guess), so one sentence crediting
+        # the slot for every match would attribute a declaration the project never made.
+        check("a slot-matched file is announced as DECLARED",
+              "DECLARED SURFACE" in out_sel and "behaviorBearingDocPatterns matched them" in out_sel,
+              f"the declared form is missing: {out_sel[:300]}")
+
+        # The undeclared branch is UNREACHABLE today -- EXCL ends with `\.md$`, so no .md enters
+        # $FILES except through the slot union. An assertion over the shipped block alone would
+        # therefore be vacuous and pass whatever the wording said. So REPLAY the block with that
+        # one exclusion clause removed -- the cleanup CV1's history entry invites by calling it
+        # "belt-and-braces rather than the cause" -- and assert the OUTCOME in that state. This
+        # pins the decision, not a string that currently implies it (general.md item 4).
+        import re as _re
+        blocks = [b for b in bang_blocks((SKILLS / "audit-coverage" / "SKILL.md")
+                                         .read_text(encoding="utf-8")) if "DOC_BUILTIN=" in b]
+        check("exactly one bang block carries the doc selection (the replay has one target)",
+              len(blocks) == 1, f"found {len(blocks)}")
+        mutated = blocks[0].replace("""'|(^|/)docs?/|\.md$'""", """'|(^|/)docs?/'""")
+        check("...and the replay actually removed the clause (the mutation is not a no-op)",
+              mutated != blocks[0],
+              "the EXCL literal moved; re-point this replay or it silently tests the shipped state")
+        # BOTH conditions are required to reach the branch, and the first fixture only had one:
+        # the clause removal lets a .md past EXCL, but it still has to be SELECTED, and the
+        # default sourceFilePatterns matches no .md either. A consumer who overrides that slot
+        # (documented, and the likeliest mis-config for a prose-shipping repo) supplies the
+        # second half. A fixture that reaches the branch for only one of the two reasons would
+        # have passed while testing nothing.
+        out_guess = scenario(tmp, "d-guess", {"skills/x/SKILL.md": "# x\n\nnew rule\n", **SRC},
+                             cfg_extra={"behaviorBearingDocPatterns": r"(^|/)prompts/.*[.]md$",
+                                        "sourceFilePatterns": r"\.py$|\.md$"},
+                             block=mutated)
+        check("a builtin-matched, UNdeclared file is not credited to the project's slot",
+              "behaviorBearingDocPatterns matched them" not in out_guess,
+              f"the line claims the consumer declared a file their slot does not match — the "
+              f"reviewer then drops a suppression on a false provenance claim: {out_guess[:400]}")
+        check("...and it IS still announced, as flow's guess (not silently dropped)",
+              "DOC-SURFACE" in out_guess and "built-in guess" in out_guess,
+              f"an undeclared doc-shaped file reached the evidence and nothing said so, which is "
+              f"the opposite failure: {out_guess[:400]}")
+
         # The instruction halves. Text assertions, PAIRED so the fix cannot be satisfied by
         # deleting the suppression -- which would make every README tweak an undeclared
         # behaviour and collapse precision (general.md item 3).

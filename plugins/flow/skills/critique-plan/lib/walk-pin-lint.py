@@ -112,7 +112,13 @@ def collect_spec_walk_blocks(text: str) -> list[tuple[str, list[str]]]:
     for i, line in enumerate(lines):
         if not hre.match(line):
             continue
-        items, _warnings, _ended_at = collect_items(lines, i)
+        items, warns, _ended_at = collect_items(lines, i)
+        # Surface the collector's warnings rather than dropping them. They only fire now when a
+        # block closed having collected NOTHING, which in this lint is the difference between
+        # "clean: 0 unpinned" and "I read nothing from that block" -- the unfalsifiable green
+        # this whole change exists to remove.
+        for w in warns:
+            sys.stderr.write(f"walk-pin-lint: ⚠️ {line.strip()[:60]}: {w}\n")
         blocks.append((line.strip(), items))
     return blocks
 

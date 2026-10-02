@@ -2112,16 +2112,27 @@ v1.56.0's three runs scored 40% / 60% / 60% single-run — the mean moved, the u
 **all three missed the same two gaps**, so the limit is not run-to-run variance and more passes
 will not reach 4 of 5.
 
-**The two it never finds, named, and the pattern they share.** From `tools/coverage-recall/cases.py`'s
-key: **`index`** ("the index line reads `files selected (N)`, one path per line, never 'read'") and
-**`readline`** ("source-mode output opens with a `Read: <files>` line"). The three it *does* find —
-`symlink`, `delim`, `relpath` — are a refusal, an authority boundary, and a path-matching rule.
-**Every found gap is a guard; every missed gap is the shape of the skill's own output line.** That
-is a sharper hypothesis than "recall is weak": the reviewer is enumerating behaviour that
-*protects* something and skipping behaviour that *prints* something, even though an output contract
-is exactly what a downstream reader keys on — the `[audit-coverage] ` prefix forgery class in this
-very skill is one of those. Worth testing against another case's key before acting on it; two
-anchors in one case is a pattern, not a finding.
+**The two it never finds, named — and the lever is NOT where I first said it was.** From
+`tools/coverage-recall/cases.py`'s key: **`index`** ("the index line reads `files selected (N)`, one
+path per line, never 'read'") and **`readline`** ("source-mode output opens with a `Read: <files>`
+line"). My first write-up called this a Stage 1 *enumeration* blind spot — "every found gap is a
+guard; every missed gap is the shape of the skill's own output line… the reviewer skips behaviour
+that prints something". **A review lens falsified that from the run artifacts this PR commits, and
+it is checkable without a re-run:** both anchors are enumerated in Stage 1 **verbatim, in 3 of 3
+runs**, and then marked `covered` in the COVERAGE MAP — `runs/pr159.followup.r1.txt:10` (`B9`,
+index) and `:13` (`B12`, read line), both `covered`; r2's `B5`/`B12`, both `covered`; r3's folded
+`B4`/`B12`, both `covered`.
+
+So Stage 1 needs no change, and this entry as first written pointed the next session at the one
+layer that is working. **The lever is the covered/UNDECLARED decision in Stage 2**, where a
+criterion naming the right *subject* ("source mode prints a header") is accepted as covering a
+contract on that output's *shape*. That is `general.md` item 4's "pin the claim at the layer where
+it is CLAIMED" corollary applied to a measurement write-up rather than to a test: I wrote the claim
+one layer above where my own committed evidence located the failure.
+
+**The cheap first step, needing no new reviewer spawns:** grep the other cases' committed runs for
+the same enumerate-then-map-`covered` shape. That turns a one-case pattern into a cross-case count
+for free; only after that is a new case's key worth cutting.
 
 **The confound to control for, which is this PR's own.** v1.56.0 item 3 changed what this case
 *feeds* a reviewer (criteria **1,143 → 5,831 characters**), so its runs are **not a clean prompt
@@ -2146,6 +2157,70 @@ exist cannot see the statement nobody wrote.
 commit history, assert `changelog/vX.Y.Z.md` exists) and it needs a decision first about which
 versions are in scope — pre-marketplace versions have no entries and never will, so a naive check
 starts red on history nobody intends to write. Scope it when it is picked up, not here.
+
+### `walk_extract` parser-semantics follow-ups from v1.56.0's staff-review (3 findings, each measured)
+
+All three were found by review lenses at v1.56.0's ship gate, verified against the tree, and
+deferred because each one changes extraction output for the **eight-plus** consumers of this
+parser — which wants its own red-green fixture and its own measurement, not a rider.
+
+1. **A blank line between the bullet and its bold continuation still truncates.** `collect_items`
+   requires `in_item`, and a blank line clears it, so an indented bold-only line that opens a
+   *second paragraph* of a list item still reaches `is_terminator`. Measured: a 3-item block of
+   `- [ ] one` / blank / `      **Note.**` returns `['one']` and drops items two and three. It now
+   warns only if zero items were collected, so this case is still silent. Latent rather than live:
+   `dev-docs/plan.md` has **0** occurrences of the shape today. Closing it means deciding whether a
+   blank line ends a list item — a parser-semantics call for every consumer.
+2. **A lazy flush-left line leaves `in_item` set, so a later indented line glues onto the wrong
+   item.** Measured: `- [ ] one` / `Lazy prose.` / `      indented` yields the indented text
+   attached to `one`. Previously that text was dropped; now it is *mis-attached*, so a pin inside
+   it can falsely satisfy `walk-pin-lint`. Cheap to fix (reset `in_item` before the terminator
+   test) but it changes output, so it wants its own fixture.
+3. **The rigor gate's TRIGGER was not unioned, only its fingerprint.** `ship/SKILL.md` computes
+   `$SRC` through `$SOURCE_PATTERN` alone and gates the whole check on `[ -n "$SRC" ]`. So on a PR
+   touching no `sourceFilePatterns` file, `RIGOR=ok` and the marker is never read — meaning a
+   **prose-only PR still cannot invalidate its own staff-review marker**, which is the stated
+   motivation for v1.56.0 item 2 and is only closed for *mixed* PRs like #172. Deferred because
+   changing the trigger changes which PRs get gated in every consuming repo.
+
+### Two control-line contracts v1.56.0 left unpinned, and one that needs a home
+
+- **Tier-C control lines are documented by memory.** `run_coverage_vocab_evals.py` derives only
+  `WEAKENED · <TOKEN>`, so `ROOT-UNRESOLVED`, `JQ-MISSING`, `SOURCE-UNRESOLVED`, `SKIPPED`,
+  `PLAN-PREDATES-BRANCH` and now `DOC-SURFACE` stay enumerated by hand — the precise failure that
+  file's own footnote confesses to ("that sentence used to claim the list was pinned by an eval; it
+  was not"). v1.56.0 added the second tier-C token without extending the instrument.
+- **A truncated criteria read has no token and no routing.** Evidence truncation gets
+  `WEAKENED · TRUNCATED`; *criteria* truncation — which makes every "covered" verdict vacuous —
+  gets prose in a `warnings` array. The severity ordering is inverted. The shape to copy already
+  exists: a named token plus a routing bullet in the `ROOT-UNRESOLVED` / `JQ-MISSING` style, plus
+  the vocab-eval enumeration. Deferred: it changes what a shipped reviewer prints.
+- **Flow's primary human surface has no design language.** `dev-docs/design-language.md` scopes
+  itself to the `/flow:verify-build` HTML report, yet what a consumer actually reads at a gate is
+  control lines in a PR body. Measured inventory across `plugins/flow`: `⚠️` ×287,
+  `[audit-coverage]` ×94, `[WARN]` ×92, `WEAKENED ·` ×48 — four conventions, no documented rule for
+  which applies when, and no length budget for a line a human skims. v1.56.0 trimmed its own new
+  line from 506 to ~300 characters by hand, which is the argument. Proposed: a `## Control lines`
+  section (severity-prefix taxonomy, human-clause-first rule, length budget).
+
+### `behaviorBearingDocPatterns` is validated by two regex engines that can disagree (v1.56.0)
+
+The shell validates the slot with `grep -E`; `doc_patterns.read_slot` validates and applies it with
+Python `re`. A POSIX class like `[[:alpha:]]` is valid in both and **means different things**, so
+the coverage gate and the rigor gate can select different file sets with no warning anywhere. Found
+by a review lens at v1.56.0's gate. Probably a documented ERE-subset constraint in the schema
+description rather than code — but it is currently an undocumented divergence between two readers
+the same release advertises as "one definition".
+
+### `warnings` is a channel eight consumers read and none treats as a verdict (v1.56.0 § Exploration candidate)
+
+v1.56.0's history entry records, as a measured fact, that **no** consumer of `walk_extract`'s
+`warnings` list treats a non-empty list as a verdict: `visual-significance.py` prefixes them into
+`signals`, `walk-pin-lint.py` now prints them to stderr, `prototype-gate.py` and
+`skip-audit-checks.py` read the same blocks. There is no shape for "advisory vs. gate-blocking",
+and inventing one across eight consumers was explicitly out of scope. **Surfaces when:** a second
+gate-blocking warning is added to `collect_items`, OR a dogfood run shows a consumer rendering a
+verdict over a block that warned.
 
 ## Later
 

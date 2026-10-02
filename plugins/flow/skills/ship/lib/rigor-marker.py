@@ -65,9 +65,14 @@ if str(_SHARED_LIB) not in sys.path:
     sys.path.insert(0, str(_SHARED_LIB))
 try:
     import doc_patterns  # type: ignore
-except ImportError as _e:  # pragma: no cover - defensive; a complete install always has it
+except Exception as _e:  # noqa: BLE001 - see below
+    # `except Exception`, not `except ImportError`: this module's documented contract is that
+    # `source-sha` ALWAYS exits 0, and a truncated or corrupt `doc_patterns.py` from a partial
+    # install raises SyntaxError, not ImportError. That escaped, tracebacked, and left
+    # `SRC_SHA=""` in the caller's `$( )` -- a fingerprint of nothing, which compares equal
+    # between writer and reader and silently passes the rigor gate.
     doc_patterns = None
-    _DOC_IMPORT_ERROR = str(_e)
+    _DOC_IMPORT_ERROR = f"{type(_e).__name__}: {_e}"
 
 # Default extended-regex source pattern — MUST match ship Step 1c / verify-build Step 2.
 DEFAULT_SOURCE_PATTERN = (

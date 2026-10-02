@@ -550,6 +550,18 @@ _PIN_ON_LINE_2 = """# Plan
       *Pinned by:* the `run_b_evals.py` eval
 """
 
+# A heading that matches and yields NOTHING: the one close shape worth a warning. An author who
+# leaves a stray heading between the walk heading and its checkboxes gets zero criteria, and
+# before the fix that rendered identically to a plan with no criteria at all.
+_EMPTY_BLOCK = """# Plan
+
+**Spec-walk:**
+
+### Coordination
+
+- [ ] this belongs to another block and must NOT be collected
+"""
+
 # A GENUINE bold-label heading, which must still terminate the block. Without this the fix is
 # satisfiable by never terminating, which breaks every multi-block plan this repo has.
 _GENUINE_TERMINATOR = """# Plan
@@ -596,18 +608,48 @@ def test_genuine_bold_heading_still_terminates() -> None:
 
 
 def test_early_end_is_announced() -> None:
-    """A block that genuinely ends early says so, paired with silence on a well-formed block."""
+    """A SUSPICIOUS close warns; a normal one reports where it stopped and stays quiet.
+
+    The first version of this test demanded a warning on EVERY terminator close, and the
+    implementation obliged. Both were wrong, and a review lens caught it at the ship gate:
+    `extract_block` is first-active-block-only by design, so a terminator is how nearly every
+    real plan's block ends -- it fired on this repo's own healthy plan. Before the fix truncation
+    was silent; after it, truncation and success emitted the same sentence. Still
+    non-discriminating, now with added noise, which is the failure `rigor-marker.py` names in its
+    own comment one file away: a gate that always fires is one people learn to click past.
+
+    The corrected contract splits the two jobs. `ended_at_line` is PROVENANCE and is always
+    reported, so "how far did you read?" is answerable on every call (FB-0121). The WARNING fires
+    only when the close looks wrong -- a heading that matched with nothing under it.
+    """
+    # A healthy block that ends at a real terminator: provenance, no alarm.
     code, out = run_cli(LIB / "extract-criteria.py", _GENUINE_TERMINATOR)
     warns = " ".join(out.get("warnings", []))
-    check("a genuine early end is announced in warnings",
-          "terminat" in warns.lower() or "ended" in warns.lower() or "heading" in warns.lower(),
-          f"the block ended at a heading and nothing said so; a truncated set that is silent "
-          f"cannot be told from a complete one: warnings={out.get('warnings')}")
-    code2, out2 = run_cli(LIB / "extract-criteria.py", _BOLD_CONT)
-    w2 = " ".join(out2.get("warnings", []))
-    check("...and a well-formed block does NOT claim an early end (paired negative)",
-          not ("terminat" in w2.lower() or "ended" in w2.lower()),
-          f"a clean block must not warn, or the warning carries no information: {out2.get('warnings')}")
+    check("a NORMAL terminator close does not warn",
+          "ended at line" not in warns,
+          f"warning on the healthy path is noise, and it makes the signal unreadable on the "
+          f"truncated one: {out.get('warnings')}")
+    check("...but it still reports WHERE the read stopped (provenance, not silence)",
+          isinstance(out.get("ended_at_line"), int) and out["ended_at_line"] > 1,
+          f"nothing says how far the read got, so a truncated read and a complete one are "
+          f"indistinguishable again: ended_at_line={out.get('ended_at_line')!r}")
+
+    # A block that runs to EOF has no terminator to report.
+    code, out_eof = run_cli(LIB / "extract-criteria.py", _BOLD_CONT)
+    check("a block that runs to EOF reports no terminator",
+          out_eof.get("ended_at_line") is None,
+          f"got {out_eof.get('ended_at_line')!r}, expected None")
+
+    # THE SUSPICIOUS CLOSE: a heading matched and nothing came out from under it.
+    code, out_empty = run_cli(LIB / "extract-criteria.py", _EMPTY_BLOCK)
+    w2 = " ".join(out_empty.get("warnings", []))
+    check("a zero-item close IS announced",
+          "NO items" in w2 and "ended at line" in w2,
+          f"the heading matched and nothing was read under it, and nothing said so — which "
+          f"renders as a clean empty plan downstream: {out_empty.get('warnings')}")
+    check("...and it is not reported as an empty plan",
+          out_empty.get("block_count", 0) >= 1 and out_empty.get("criteria") == [],
+          f"block_count={out_empty.get('block_count')!r} criteria={out_empty.get('criteria')!r}")
 
 
 def test_pin_reaches_the_consumer_on_a_continuation_line() -> None:
