@@ -2102,6 +2102,51 @@ PR letters TBD (post-PR-Q; PR R taken by the init-skill plan). **FB-0042** gover
   argument still reaches source mode — a fix that just stops reading the file would break
   `/flow:prototype`, which is the whole reason the channel exists.
 
+### `/flow:audit-coverage`'s recall ceiling on pr159 is two *output-contract* gaps, not variance (v1.56.0 measurement)
+
+**Do not tune toward this yet** — it is recorded as the next lever after the stopping point, with
+the measurement that makes it actionable.
+
+The union on the `pr159` case has sat at **3 of 5 across five runs and two prompt revisions**.
+v1.56.0's three runs scored 40% / 60% / 60% single-run — the mean moved, the union did not — and
+**all three missed the same two gaps**, so the limit is not run-to-run variance and more passes
+will not reach 4 of 5.
+
+**The two it never finds, named, and the pattern they share.** From `tools/coverage-recall/cases.py`'s
+key: **`index`** ("the index line reads `files selected (N)`, one path per line, never 'read'") and
+**`readline`** ("source-mode output opens with a `Read: <files>` line"). The three it *does* find —
+`symlink`, `delim`, `relpath` — are a refusal, an authority boundary, and a path-matching rule.
+**Every found gap is a guard; every missed gap is the shape of the skill's own output line.** That
+is a sharper hypothesis than "recall is weak": the reviewer is enumerating behaviour that
+*protects* something and skipping behaviour that *prints* something, even though an output contract
+is exactly what a downstream reader keys on — the `[audit-coverage] ` prefix forgery class in this
+very skill is one of those. Worth testing against another case's key before acting on it; two
+anchors in one case is a pattern, not a finding.
+
+**The confound to control for, which is this PR's own.** v1.56.0 item 3 changed what this case
+*feeds* a reviewer (criteria **1,143 → 5,831 characters**), so its runs are **not a clean prompt
+A/B** against CV1's headline — the comparable pre-existing arm is CV1's untruncated **1 of 5**. Any
+future attempt on this ceiling must re-baseline against the untruncated input, or it will measure
+item 3 again and call it a prompt win. `cases.py` carries this warning at the case.
+
+### A release can ship with no changelog entry and every check stays green (v1.56.0; #167 scope gap)
+
+**One line, no build.** v1.55.0 shipped **without** `changelog/v1.55.0.md` and nothing noticed;
+it was backfilled in v1.56.0's PR, marked as written after the fact.
+
+`dev-docs/check-version-provenance.py` (#167, FB-0123) is the obvious candidate to have caught it
+and **structurally cannot**: it validates that every *(PR#, version)* pairing stated in dev-docs
+matches what that PR actually shipped. It checks **claims**, and only claims tied to a PR number —
+deliberately, because an unpaired version mention is a description rather than a verifiable claim.
+A **missing** release artifact makes no claim at all, so there is nothing for it to contradict.
+Same shape as `general.md` item 3 from the other direction: an assertion over statements that
+exist cannot see the statement nobody wrote.
+
+**Not built now, on purpose.** The fix is cheap to imagine (for each version in `plugin.json`'s
+commit history, assert `changelog/vX.Y.Z.md` exists) and it needs a decision first about which
+versions are in scope — pre-marketplace versions have no entries and never will, so a naive check
+starts red on history nobody intends to write. Scope it when it is picked up, not here.
+
 ## Later
 
 - **visual-significance net-delta (moved-block) detection (FB-0062 push-further).** `_diff_content_changed` in `visual-significance.py` is line-prefix-based, so a verbatim block move/reorder (same lines deleted then re-added elsewhere, zero net render delta) reads as content-changed → visually significant. It's a false-positive in the SAFE direction (costs a screenshot, never a missed regression), so not a bug — but the heuristic's real ceiling. A multiset-diff over a hunk's `+`/`-` bodies (~20 lines + a fixture) would treat a pure reorder as no-render-delta. **Surfaces when:** `_diff_content_changed` is next touched, OR a dogfood reports a pure-reorder PR flagged significant and resolving to a wasted Unknown.

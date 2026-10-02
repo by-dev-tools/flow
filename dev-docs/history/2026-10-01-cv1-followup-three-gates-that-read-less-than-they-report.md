@@ -98,12 +98,29 @@ passes without exercising it.
   which ships to nobody. Over-inclusion costs one human decision; under-inclusion is the unsafe
   direction and `workflow.md` sits on it. Widening to `docs/` would guess for every consumer, and
   the slot already exists for consumers who need it. Raised rather than absorbed.
-- **The shared-agent edit is measured inert, and measured unnecessary.** `/flow:audit-completion`
-  matches its expected category under the new prompt; `/flow:audit-plan` returns an identical
-  summary under new and old. But the positive arm run under the OLD category flagged the added
-  rule just as precisely, so this edit's necessity is not demonstrated. It ships because dropping
-  it leaves Stage 1 carving out what Stage 2's text still forbids, and n=1 cannot show the old
-  category never suppresses — flagged for the orchestrator with both arms committed.
+- **The shared-agent edit ships, and the reasoning is recorded here precisely so nobody
+  "simplifies" it away later on the strength of my n=1.** I measured two things that pull in
+  opposite directions, raised both at the gate, and the orchestrator decided to keep the edit
+  (2026-10-02). Both arms are committed under `tools/coverage-recall/runs/precision/`:
+
+  - **Measured inert where it could do harm.** `crosscheck.audit-completion.txt` matches the
+    category in the committed `.expected.txt` under the new agent prompt;
+    `crosscheck.audit-plan.new.txt` and `.old.txt` return *identical* summary lines. Zero
+    `DOC-SURFACE` mentions and zero Undeclared-change findings in either command.
+  - **Measured not-necessary on one case.** `pos.oldstage2.txt` — the positive arm run under the
+    INSTALLED 1.29.0 category, which differs from this tree by exactly the one line I edited —
+    flagged the added rule just as precisely, off the Stage 1 prose alone. So Stage 1's exemption
+    was sufficient *there*.
+
+  **"It did not suppress on this one case" is n=1, and this program exists because gates quietly
+  read less than they report.** What the edit removes is a real contradiction, not a hypothetical:
+  Stage 1 now carves prose out as surface while Stage 2's text still tells the reviewer to discard
+  doc changes. A harmless edit that closes a known suppression path beats a smaller diff that
+  leaves it open. **If you are reading this while considering deleting that sentence: the evidence
+  that it is unnecessary is one run, the evidence that it is safe is two commands measured in both
+  prompt states, and the contradiction it resolves is still in the text.** Delete it only with a
+  measurement that the old category never suppresses an enumerated prose behaviour — not with a
+  diff-size argument.
 - **An always-on end-of-read warning, not a new result field.** `warnings` is the channel
   consumers already read, and checking first showed none treats a non-empty list as a verdict.
 - **Continuations must be INDENTED.** Markdown permits a lazy flush-left continuation, but a
