@@ -2,6 +2,334 @@
 
 ## Current Focus
 
+**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/mobile-options-1-3-hand-off-pr-images-preview-url`,
+version claimed mechanically at **v1.59.0** in `plugins/flow/.claude-plugin/plugin.json`, no new FB):
+PR A of two — mobile options 3 + 2. A hand-off that names a local file says so plainly, and the
+committed before/after frames render in the PR itself.** Spec: `dev-docs/research/2026-10-mobile-workflow.md`
+§§2–3 and § 8 options 2 + 3 (merged as #175). Option 1 (`conductor preview set`) is **PR B on this
+same branch, after PR A merges** — it is gated on Ben's measured iOS answers to § 6 Q1–Q5, which are
+pending.
+
+**Mode:** feature · **Surface:** non-visual (see Decision 0) · **Pre-execution gate:** plan
+
+### Hand-off for the fresh session that will execute this (read this first)
+
+This plan was written in a session whose *running* flow plugin was **1.29.0** — 27 releases stale, so
+`/flow:prototype`, `/flow:spawn`, `/flow:autoplan`, `/flow:gate`, `/flow:orchestrate` and
+`/flow:handoff` did not resolve in it at all, and `/flow:ship` resolved to its 1.29.0 ancestor
+(FB-0107: Claude Code resolves skills from the **installed** tree; the Bash tool resolves from the
+working tree). That install was updated **1.29.0 → 1.56.0** during planning, which fixes the disk and
+not the running session — `plugin update` needs a restart. So:
+
+1. **Confirm before you build.** `claude plugin list` must show `flow@flow 1.56.0` or later, and
+   `/flow:prototype` + `/flow:ship` must both resolve as skills in *your* session. If either does
+   not, stop and report `SKILL-ABSENT <name>` to the orchestrator — do not improvise a substitute.
+2. **Nothing has been executed.** The only non-doc change pushed at this gate is the version claim in
+   `plugins/flow/.claude-plugin/plugin.json` (1.56.0 → 1.59.0), pushed so other workers' sweeps can
+   see it. No skill, lib, eval or CI file has been touched.
+3. **Re-sweep both contested numbers at your first rebase**, per the dispatch: `git fetch --all` then
+   read `plugins/flow/.claude-plugin/plugin.json` on `origin/main` and every `origin/*` branch, and
+   `ls dev-docs/feedback/` + the same across branches. At plan time: main `v1.56.0`; highest open
+   claim `v1.57.0` (`origin/conductor/fix-plugin-currency-deadlock-visual-walk-n-a`, which the
+   dispatch says holds **1.57.0 and 1.58.0** and ships first) → **1.59.0** is the next free value.
+   Highest FB claimed anywhere: **FB-0131** → next free is FB-0132 (PR A claims none; see Decision 8).
+4. **The ship slot is shared and serialized.** The plugin-currency/Visual-walk worker ships first;
+   rebase onto its merge before invoking `/flow:ship`. If your ship trips the
+   `**Visual-walk:** N/A` → `visual_significant` TRUE false positive (roadmap § Next, fix in flight at
+   v1.58.0), waive it with "orchestrator applying Ben's #173 ruling". **This plan declares no
+   `Visual-walk` block at all**, deliberately, so it does not step into that trap itself.
+
+### What was measured at the gate, not assumed
+
+Two numbers decide option 2's whole design, and they were measured as a **pair** (`.claude/rules/general.md`
+§ Consistency item 4: an instrument that can only return one answer is not an instrument):
+
+| Probe | Result |
+|---|---|
+| `curl` an unauthenticated `raw.githubusercontent.com` URL for a **public** repo blob (`by-dev-tools/flow` @ `06c0eeb`, `README.md`) | `http=200`, 11,699 bytes |
+| the same shape for a **private** repo blob (`byamron/health-tracker` @ `c809384`, a committed `.png`) | `http=404`, 14 bytes |
+
+So a raw URL is a **public-repo-only** mechanism. Flow is public; a flow *consumer* may not be, and
+`uiSurface:true` consumers in private repos are the exact population option 2 is for. Hence the
+visibility gate in Decision 3 — the one inference step past the measurement is labelled there.
+
+Three further facts read from the tree, each of which changes the design:
+
+- **flow's own `visual-history.html` has 4 entries and not one committed frame** — every
+  `before_after` item is an inline CSS/SVG `recon` block (`grep -c vh-entry` = 4; no
+  `visual-history-assets/` directory exists in this repo). So **option 2 cannot be dogfooded here**:
+  its evidence has to be fixture-based, and its *most likely* real-world branch is "there is nothing
+  embeddable", which must degrade honestly rather than emit an empty section.
+- `insert-visual-history.py::render_before_after` emits `<img src="…" alt="…">` for a `src` item and a
+  `<div class="recon">` for an `html` item, inside `<figure><figcaption>`; `render_entry` writes the
+  branch into the entry meta as `<code>branch</code>`. That is the parse surface for Decision 2.
+- `pr-coherence.py` parses only `## Test plan` sections (heading → next sibling `## `) plus the
+  manifest markers from `manifest_contract.py`. A **new sibling `## ` heading is safe**, which is why
+  Decision 5 can place one — pinned by a paired eval rather than by that reading alone.
+
+### Decision 0 — this is `Surface: non-visual`, so the pre-execution gate is the plan gate
+
+`prototype-gate.py trigger --config flow.config.json` returns `pre_execution_gate: "plan"`,
+`path: "classic"` (it fails closed to the plan gate with no brief). Independently: none of the files
+PR A touches matches this repo's `uiFilePatterns`
+(`(annotation-layer|visual-history-skeleton)\.html$|(render-report|insert-visual-history)\.py$`).
+
+**Recommendation:** classic plan gate, no prototype phase. **Confidence: medium-high.** The honest
+counter-argument is that PR A changes what a human *looks at* in a PR body, and a PR body is
+prototypable. What makes the plan gate sufficient here is that the artifact **is literal markdown** —
+so the plan can carry the exact bytes, and it does, below ("The rendered section, verbatim"). Ben
+gets the same look-at-the-thing gate without a prototype phase. If he disagrees, Open call 1 routes it
+to `/flow:prototype` instead and nothing else in the plan changes.
+
+### Decision 1 — one deterministic renderer, not four prose edits
+
+**Recommendation:** add `plugins/flow/skills/ship/lib/artifact-handoff.py` (stdlib-only, ~200 lines),
+three subcommands + a self-test:
+
+- `local-line --kind walkthrough|prototype --path <p>` → the honest hand-off line for a local artifact.
+- `frames --visual-history <path> --branch <b> --sha <sha> [--repo <owner/name>] [--private auto|true|false]`
+  → the `## Before / after` markdown block, **or** a single explicit omission line naming the reason.
+- `--selftest` → runs its own known-positive and known-negative before anyone trusts a quiet result.
+
+`ship/SKILL.md`'s body template then carries a `{{rendered by lib/artifact-handoff.py}}` placeholder,
+the same idiom `{{rendered by lib/render-test-plan.py}}` and `{{provenance}}` already use.
+
+**Confidence: high.** **Why:** the research doc costs both options as "a string change", and for
+option 3 alone that is right. Option 2 is not a string change — it needs repo-visibility resolution,
+SHA pinning, a committed-asset check, a branch match and a recon-only fallback. A hand-composed raw
+URL that is subtly wrong renders in the PR body as a **broken image**, which is worse than today's
+honest absence, and nothing in the pipeline would catch it. Folding option 3's line into the same
+engine is then nearly free and makes both testable: a template string can only be pinned by a grep,
+which is the FB-0010 "consistency depends on author memory" class this repo keeps paying for.
+**Alternative considered and rejected:** prose-only edits at four sites (cheapest, ~30 min, zero new
+surface) — rejected because it leaves option 2 un-pinnable, not because option 3 needs the engine.
+
+### Decision 2 — the frames come from the COMMITTED record, never from the in-session entry
+
+**Recommendation:** `frames` reads the committed `flow.config.json.visualHistoryPath`, takes the
+**first** `<article class="vh-entry">` (the file is reverse-chronological, so first = this run's),
+**requires** that entry's meta `<code>…</code>` branch to equal `--branch`, extracts its
+`<img src="visual-history-assets/…">` refs, and emits a row only for a src whose file is **tracked at
+HEAD** (`git ls-files --error-unmatch`). Never from the `entry.json` §5c built in-session.
+
+**Confidence: high.** **Why:** this is the non-forgeable-projection discipline `render-test-plan.py`
+already enforces — the PR body cannot claim an image that is not committed, because the only source
+of truth it reads is the commit. The branch match is the load-bearing half: on a ship where §5c
+legitimately skipped, the newest entry belongs to a **previous** PR, and embedding those frames would
+show the reviewer a different change's before/after while labelling it this one's. That is a worse
+failure than no images at all, and it is the default behaviour if the branch is not checked.
+
+### Decision 3 — gate the embed on repo visibility, and fail CLOSED
+
+**Recommendation:** resolve visibility once via `gh repo view --json isPrivate,nameWithOwner`.
+Public → emit `![…](https://raw.githubusercontent.com/<owner>/<repo>/<sha>/<path>)` per frame.
+Private, **or** `gh` absent, **or** the query fails → emit no `<img>`; emit the committed frames as
+**blob links** (`https://github.com/<owner>/<repo>/blob/<sha>/<path>`, which an authorized viewer can
+open on any client, including a phone) plus one sentence saying inline previews are not available for
+a private repo. `--private true|false` overrides for tests; `auto` is the shipped path.
+
+**Confidence: high that the gate is right; medium on the private-repo render specifically.** The
+measurement proves a private raw URL is **unreachable without a credential** (404, paired against a
+public 200). The step beyond the measurement, labelled as inference: GitHub's markdown image fetch is
+unauthenticated, so that 404 surfaces to the reviewer as a broken image. **Why fail closed:** a
+wrongly-private verdict costs a missing image and a still-useful blob link; a wrongly-public verdict
+costs a broken image *and* a hand-off that claims something false — which is the exact defect option 3
+exists to remove, reintroduced by option 2. **Open call 2** offers Ben the alternative (always embed,
+accept broken images on private repos).
+
+### Decision 4 — pin the URL to the commit SHA
+
+**Recommendation:** `<sha>` = the pushed HEAD at PR-open time (`git rev-parse HEAD`, after Step 6's
+commit and push). Not the branch name, not `main`.
+
+**Confidence: high.** A branch-name URL 404s the moment the branch is deleted at merge — i.e. exactly
+when someone reads the PR back as history. `main` does not contain the asset yet at PR-open. A SHA
+resolves forever. Known residual, stated: if the PR takes further commits, the body's images stay
+pinned to the earlier SHA and show the frames as they were then. That is correct for a merge-gate
+record, and `/flow:land` does not re-render merged bodies — noted in the roadmap entry, not fixed here.
+
+### Decision 5 — the section goes directly after `## Summary`, above `## Test plan`
+
+**Recommendation:** a new `## Before / after` section between `## Summary` and `## Test plan`.
+
+**Confidence: medium-high.** **Why:** the mobile complaint Ben actually filed is about scroll cost —
+the thing he most wants to look at must not sit below a 14-row provenance table. Verified safe against
+`pr-coherence.py` by reading its parser (a sibling `## ` heading only terminates the Test-plan
+section, which is already terminated by `## Flow run`), and that reading is pinned by a **paired**
+eval: the same body with and without the new section must produce identical `pr-coherence` verdicts.
+**Alternative considered:** fold the images into the existing `Visual deliverable` row of the
+`## Flow run` table (zero new sections, lowest risk) — rejected because a markdown table cell is the
+single worst place to render an image on a narrow screen.
+
+### Decision 6 — option 3 edits exactly four sites, and says nothing about iOS
+
+**Recommendation:** four sites, no more:
+
+1. `ship/SKILL.md:1400` — the producer instruction that currently composes `Walkthrough (local, uncommitted): <verifyReportPath>`.
+2. `ship/SKILL.md:1532` — the `## Flow run` Visual-deliverable row template.
+3. `ship/SKILL.md:1552` — the closing hand-off line ("open it at the path named in the Visual-deliverable row").
+4. `prototype/SKILL.md:176` — gate 1's message item 1 ("The `file://` path … so they can open it").
+
+The replacement wording states a property of the **artifact**, not of any client: *a path on one
+machine's disk, reachable only from the sandbox that produced it, and not from this page.* It must
+**not** claim "not openable from iOS".
+
+**Confidence: high.** **Why the client is left unnamed:** research § 6 Q1/Q2 — whether the iOS app
+opens a session-produced HTML file, and what a tapped `file://` path does there — are **open, put to
+Ben, unanswered**. Writing "iOS cannot open this" would be exactly the unverified completion claim
+`/flow:audit-completion` exists to catch, and it would be *wrong* in the Mac-app-with-Sync-files case.
+Stating the artifact's own property is true on every client and survives whatever Ben's answers turn
+out to be — which is also why PR A does not block on them and PR B does.
+
+**Deliberately NOT touched:** `verify-build/SKILL.md:534/536`. Its `[verify-build] report: <path>` line
+hands the path to **`/flow:ship`**, machine-readable, not to a human — nothing there is dishonest.
+`verify-build` is PR B's surface (it is where a `conductor preview` would be started), and keeping it
+out of PR A keeps a `sensitivePaths` file out of a PR that does not need it.
+
+### Decision 7 — `/flow:ship-spike` is out of scope, by dispatch
+
+`ship-spike/SKILL.md:537` has its own `## Flow run` table and can produce a walkthrough
+(`ship-spike:202` activates verify-build §5a on a `Visual-walk` block), so it carries the same two
+defects. But the dispatch's write scope is `plugins/flow/skills/{ship,verify-build,prototype}/**`, and
+`ship-spike/` is none of those. **Recommendation:** leave it, and file it as a named residual in the
+roadmap D7 entry so the gap is recorded rather than discovered later. **Confidence: high** — this is a
+scope boundary the orchestrator set, not a judgment call I should quietly widen.
+
+### Decision 8 — no new FB; one new roadmap entry
+
+**Recommendation:** claim no feedback id. `dev-docs/feedback/` records *corrections to my approach*;
+Ben asked for ranked options and the research doc already captured the complaint. Instead add **one**
+roadmap section under the Designer-signal track — **`### D7 — Reachability: the human can look at what
+the gate asks them to look at`** (D7 is free; D1a–D1h, D2–D6 are taken) — with sub-rows for option 3
+(this PR), option 2 (this PR), option 1 (PR B), and one line recording that options 4 and 5 are
+dispatched to other workers so nobody duplicates them. D7 cites D1a/D1c/D1d explicitly as *adjacent,
+not duplicated*: D1a is durability, D1c is the hand-off's **shape**, D1d is whether anything rendered
+the page — D7 is **reachability**, and a phone that cannot reach the file never reaches D1d's failure.
+
+**Confidence: medium-high.** **Why medium:** if Ben reads "running them at all" as a correction of
+flow's hand-off design rather than a feature request, it earns an FB. **Open call 3** asks; if yes,
+the fresh session claims **FB-0132** by pushing the file (next free at plan time; re-sweep first).
+
+### The rendered section, verbatim — this is the artifact to approve
+
+Public repo, two committed frames (the full-value case):
+
+```markdown
+## Before / after
+
+Committed frames from this PR's visual-history entry, pinned to `a1b2c3d`.
+
+**Before — activity feed, empty**
+![blank gray panel with no call to action](https://raw.githubusercontent.com/acme/app/a1b2c3d/core-docs/visual-history-assets/feed-empty-before.png)
+
+**After — activity feed, empty**
+![centered illustration, one-line explanation, "Add your first entry" button](https://raw.githubusercontent.com/acme/app/a1b2c3d/core-docs/visual-history-assets/feed-empty-after.png)
+
+The full record — rationale, decision test, questions carried — is `core-docs/visual-history.html`.
+GitHub shows that file's source, not the rendered page; the frames above are its pictures.
+```
+
+Private repo, two committed frames:
+
+```markdown
+## Before / after
+
+This repo is private, so GitHub cannot inline the committed frames (an unauthenticated image
+fetch of a private blob returns 404). Open them directly — you will be signed in already:
+
+- [Before — activity feed, empty](https://github.com/acme/app/blob/a1b2c3d/core-docs/visual-history-assets/feed-empty-before.png)
+- [After — activity feed, empty](https://github.com/acme/app/blob/a1b2c3d/core-docs/visual-history-assets/feed-empty-after.png)
+```
+
+Reconstruction-only entry — flow's own four entries, and the likeliest real case:
+
+```markdown
+## Before / after
+
+No frames to show: this PR's visual-history entry carries labelled CSS/SVG reconstructions, not
+captures, so there is no committed image to embed. See `dev-docs/visual-history.html` for the entry.
+```
+
+And option 3's two replacement hand-off lines:
+
+```markdown
+Walkthrough — a file on one machine's disk, not committed and not reachable from this page:
+`.flow/report.html` (openable only where this pipeline ran). The committed before/after frames
+are in "Before / after" above.
+```
+
+```markdown
+Prototype: `/abs/path/.flow/prototypes/<slug>/prototype.presented.html` — a local file, so it opens
+only where this session ran, not from a link. The small floating comment dock is flow's, not the design.
+```
+
+### Spec-walk
+
+- [ ] **`artifact-handoff.py frames` emits an `<img>` row only for a committed asset.** *Verify:* a
+      temp git repo with a visual-history entry citing two `src` frames, one `git add`-ed and one not;
+      stdout contains the added path's raw URL and does not contain the untracked one's.
+- [ ] **A visual-history entry whose branch differs from `--branch` yields zero image rows and a
+      stated reason.** *Verify:* paired fixture — identical entry, branch matching vs not; the
+      matching arm emits 2 rows, the non-matching arm emits 0 plus a reason line naming the mismatch.
+- [ ] **A private repo (or absent `gh`) emits blob links and zero `raw.githubusercontent.com`
+      strings.** *Verify:* three arms — `--private false`, `--private true`, and `auto` with `gh`
+      removed from `PATH`; assert `raw.githubusercontent.com` appears in arm 1 only, and that arms 2
+      and 3 both carry `/blob/` links for the same two frames.
+- [ ] **A recon-only entry emits the no-frames line, not an empty section.** *Verify:* fixture built
+      from this repo's own newest `dev-docs/visual-history.html` entry; stdout contains the reason and
+      no `![` sequence.
+- [ ] **Every emitted URL carries the 40-char SHA passed in, and no branch name.** *Verify:* assert
+      each URL matches `/<40 hex>/` and that the branch string appears nowhere in stdout.
+- [ ] **`local-line` names where the artifact can and cannot be opened, and names no client.**
+      *Verify:* both kinds' output contains "not committed"/"local file" and "only where", and
+      contains none of `iOS`, `iPhone`, `Android`, `Safari`, `Conductor`.
+- [ ] **`--selftest` fails when the engine is broken.** *Verify:* run it green, then mutate the
+      committed-asset check to return True unconditionally and assert it exits non-zero — the
+      known-positive this repo requires before trusting a quiet result.
+- [ ] **The four option-3 sites no longer contain the bare hand-off, and DO contain the honest one.**
+      *Verify:* paired grep per site — the new string present AND `Walkthrough (local, uncommitted)`
+      absent from `ship/SKILL.md`. (Negative alone would pass if someone deleted the line entirely —
+      `.claude/rules/general.md` § Consistency item 3.)
+- [ ] **`pr-coherence.py` returns identical verdicts with and without the `## Before / after`
+      section.** *Verify:* run its existing checks over one body in both shapes; assert same exit code
+      and same verdict line, on a READY body and on a NOT-READY one.
+- [ ] **`ship/SKILL.md` calls the renderer with the installed-else-checkout fallback** every other
+      helper in that skill uses, and the `## Before / after` placeholder is a `{{…}}` marker, not
+      hand-authored prose. *Verify:* grep the skill for both, in the new eval.
+- [ ] **`run_artifact_handoff_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
+      harness↔runner join step passes (it fails the build on an unwired harness, so this is
+      exit-code-driven, not a grep).
+- [ ] **Docs reconciled:** a `dev-docs/history/2026-10-??-*.md` entry, the roadmap D7 entry, this plan
+      block flipped to EXECUTED, `changelog/v1.59.0.md`. *Verify:* the dev-docs index CI job passes.
+
+### Open calls for the human gate
+
+1. **Is PR A `Surface: non-visual`?** *Recommendation: yes, classic plan gate* (confidence
+   medium-high, Decision 0) — the artifact is markdown and this plan carries its exact bytes. Say
+   "prototype it" and the fresh session routes through `/flow:prototype` instead.
+2. **Private repos: fail closed (blob links) or always embed?** *Recommendation: fail closed*
+   (confidence high, Decision 3) — a broken image plus a false claim is worse than a link that works.
+3. **Does "running them at all" earn an FB?** *Recommendation: no, a roadmap D7 entry*
+   (confidence medium-high, Decision 8). If yes, FB-0132 after a re-sweep.
+4. **PR B's blocking dependency:** PR B is specified against your § 6 Q1–Q5 answers, which are
+   pending. *Recommendation: hold PR B until they land* (confidence high) — building the preview-URL
+   branch against assumed iOS behaviour is the one thing the dispatch explicitly forbids. PR A does
+   not depend on them.
+
+### Files this PR touches
+
+| Path | Change |
+|---|---|
+| `plugins/flow/skills/ship/lib/artifact-handoff.py` | **new** — the renderer (Decisions 1–4) |
+| `plugins/flow/skills/ship/SKILL.md` | the `{{…}}` placeholder + renderer call; the three option-3 sites |
+| `plugins/flow/skills/prototype/SKILL.md` | § 8 item 1, the gate-1 `file://` line |
+| `plugins/flow/evals/run_artifact_handoff_evals.py` | **new** — the Spec-walk above, paired arms throughout |
+| `.github/workflows/ci.yml` | wire the new harness (CI fails the join otherwise) |
+| `plugins/flow/.claude-plugin/plugin.json` | 1.56.0 → **1.59.0** (**already pushed at this gate**) |
+| `dev-docs/{plan,roadmap}.md`, `dev-docs/history/…`, `changelog/v1.59.0.md` | doc reconciliation at ship |
+
+---
+
 **▶ PLAN GATE — NOT EXECUTED (this branch `conductor/cv1-followup-reviewer-rigor-walkextract`,
 version + FB at ship time, expect v1.56.0): CV1's unfinished half — three fixes, each one a gate
 that reads less than it reports.** Ben's call was (a), finish CV1 inside the stopping point. Scope is
