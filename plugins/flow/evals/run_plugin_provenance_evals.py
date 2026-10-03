@@ -1131,11 +1131,13 @@ def make_home_with_mute_engine(td: Path, version: str, mkt_version: str) -> Path
 
 
 def _hook_driver(td: Path, hook: Path | None = None):
-    """`hook` drives a COPY instead of the real script — used by the self-validating
-    mutation seed in test_hook_does_not_import_repo_code, which must prove the probe
-    fires against a deliberately-broken hook."""
-    """Shared PATH-shim `claude` that LOGS its invocations, so 'attempted no
-    update' is asserted against a real call log rather than inferred from output.
+    """Shared PATH-shim `claude` that LOGS its invocations, so 'attempted no update'
+    is asserted against a real call log rather than inferred from output.
+
+    `hook` drives a COPY instead of the real script — used by the self-validating
+    mutation seed in `test_hook_does_not_import_repo_code`, which must prove the probe
+    fires against a deliberately-broken hook. (The two docstrings this replaces were
+    adjacent string literals, the second of which was a dead expression statement.)
     """
     shim = td / "bin"
     shim.mkdir(exist_ok=True)
@@ -1539,6 +1541,77 @@ def test_hook_acts_when_the_engine_cannot_answer():
         check(so == "" and se == "", f"and it stays silent, got stdout={so!r} stderr={se!r}")
 
 
+def test_unpinned_note_offers_a_real_confirmation():
+    """The footnote's in-session check must actually discriminate.
+
+    Two earlier versions did not, and the second is the instructive one:
+
+    - v1: "start a fresh session and re-run" — on a host with no run-pinned signal
+      that reproduces the identical hedge. An action, not a confirmation.
+    - v2: keyed on `surface_drift.skills_missing_from_installed`, which is **checkout
+      minus installed** — skills this BRANCH declares that the installed copy lacks.
+      Those are missing from the older cached tree too, so their absence from the tool
+      list is identical in both worlds. The note nonetheless told the reader it proved
+      the session was "positively" running the older copy. Vacuous, and asserted as
+      conclusive. Caught by /flow:staff-review's staff-engineer lens.
+
+    The right direction is **installed minus older-cached**: a command the newly
+    installed version ships that the superseded one did not.
+
+    Three assertions, and the third is the one that would have caught v2:
+      (a) when a real discriminator exists, the note names it;
+      (b) when none exists, the note says so plainly and claims no confirmation;
+      (c) a checkout-only skill — present in NEITHER cached tree — is never offered,
+          because its absence proves nothing.
+    """
+    def _tree(base: Path, version: str, skills: list[str]) -> None:
+        d = base / version / "skills"
+        for s in skills:
+            (d / s).mkdir(parents=True, exist_ok=True)
+
+    # (a)+(c): installed 1.55.0 ships `spawn`; the superseded 1.29.0 does not; and the
+    # CHECKOUT declares `onlyinbranch`, which neither cached tree has.
+    with tempfile.TemporaryDirectory() as tmp:
+        td = Path(tmp)
+        home = make_home(td, registry("1.55.0"), marketplace_json("1.55.0"),
+                         cache_versions=["1.55.0", "1.29.0"])
+        base = home / ".claude" / "plugins" / "cache" / "flow" / "flow"
+        _tree(base, "1.55.0", ["ship", "spawn", "general"])
+        _tree(base, "1.29.0", ["ship"])
+        root = make_root(td, "1.55.0", skills=["ship", "spawn", "general", "onlyinbranch"])
+        d = jrun(home, root)
+        note = _engine.render_unpinned(d, home)
+    check("`/flow:spawn`" in note,
+          f"the note must name a command the INSTALLED tree gained over the superseded "
+          f"one — that is the only thing whose absence proves which tree ran. got:\n{note}")
+    check("onlyinbranch" not in note,
+          f"a CHECKOUT-only skill must never be offered as confirmation: it is absent "
+          f"from BOTH cached trees, so its absence proves nothing. This is the refuted "
+          f"v2 behaviour. got:\n{note}")
+    check("general" not in note,
+          f"rule-skills are model-invoked and never appear in a tool list (FB-0124), so "
+          f"naming one would read as a false negative on a current session. got:\n{note}")
+    check("positively" not in note.lower() or "`/flow:spawn`" in note,
+          "a conclusive claim is only allowed alongside a real discriminator")
+
+    # (b): one cached tree ⇒ no discriminator exists ⇒ say so, claim nothing.
+    with tempfile.TemporaryDirectory() as tmp:
+        td = Path(tmp)
+        home = make_home(td, registry("1.55.0"), marketplace_json("1.55.0"),
+                         cache_versions=["1.55.0"])
+        base = home / ".claude" / "plugins" / "cache" / "flow" / "flow"
+        _tree(base, "1.55.0", ["ship", "spawn"])
+        root = make_root(td, "1.55.0", skills=["ship", "spawn"])
+        d2 = jrun(home, root)
+        note2 = _engine.render_unpinned(d2, home)
+    check(bool(note2), "the note still fires — the reading is still registry-sourced")
+    check("no in-session check" in note2.lower(),
+          f"with no discriminator the note must SAY there is no in-session check rather "
+          f"than invent one. got:\n{note2}")
+    check("To confirm now" not in note2,
+          f"and must not promise a confirmation it cannot deliver. got:\n{note2}")
+
+
 def test_hook_does_not_import_repo_code():
     """`python3 -c` must not put this checkout on `sys.path`.
 
@@ -1583,9 +1656,6 @@ def test_hook_does_not_import_repo_code():
     def _probe(mutate: bool) -> list[str]:
         hit: list[str] = []
         for name in ("json", "re"):
-            shadow = REPO / f"{name}.py"
-            if shadow.exists():            # never clobber a real repo file
-                continue
             with tempfile.TemporaryDirectory() as tmp:
                 td = Path(tmp)
                 hook = None
@@ -1595,14 +1665,24 @@ def test_hook_does_not_import_repo_code():
                                     .replace("python3 -I -c", "python3 -c"))
                 drive = _hook_driver(td, hook=hook)
                 marker = td / f"IMPORTED-{name}"
-                shadow.write_text(f"open({str(marker)!r}, 'w').write({name!r})\n")
-                try:
-                    home = make_home_with_engine(td, "1.29.0", "1.43.0")
-                    rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.43.0")
-                    if marker.exists():
-                        hit.append(name)
-                finally:
-                    shadow.unlink(missing_ok=True)
+                # The shadow goes in the TEMP checkout `hide_engine` builds, never in
+                # the real repo. The first cut wrote `REPO/json.py` and relied on
+                # try/finally to remove it — which covers an exception but not SIGTERM
+                # or a cancelled CI job, and a leftover `re.py` at the repo root breaks
+                # every `python3 -c`/-m run with that cwd (including, silently, this
+                # probe's own `shadow.exists(): continue` guard on the next run).
+                # /flow:staff-review. `hide_engine` gives a cwd that satisfies the
+                # hook's repo-marker gate without being the repo.
+                fake = td / "noengine"
+                (fake / "plugins" / "flow" / ".claude-plugin").mkdir(parents=True,
+                                                                     exist_ok=True)
+                (fake / f"{name}.py").write_text(
+                    f"open({str(marker)!r}, 'w').write({name!r})\n")
+                home = make_home_with_engine(td, "1.29.0", "1.43.0")
+                rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.43.0",
+                                          hide_engine=True)
+                if marker.exists():
+                    hit.append(name)
         return hit
 
     check("python3 -I -c" in HOOK.read_text(encoding="utf-8"),
@@ -1869,6 +1949,7 @@ def main() -> int:
                test_hook_degrades_safely, test_hook_field_parse_no_shift,
                test_hook_bootstraps_an_engineless_install,
                test_hook_acts_when_the_engine_cannot_answer,
+               test_unpinned_note_offers_a_real_confirmation,
                test_hook_does_not_import_repo_code,
                test_hook_stdout_cannot_be_forged_by_the_registry,
                test_hook_never_claims_a_move_it_could_not_read,

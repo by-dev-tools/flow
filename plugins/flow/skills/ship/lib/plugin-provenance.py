@@ -883,7 +883,56 @@ def render_surface_row(d: dict) -> str:
                 "branch's skills and agents were available'.")
 
 
-def _unpinned_note(d: dict) -> str:
+def _restart_discriminator(d: dict, home: Path) -> list[str]:
+    """Skills the INSTALLED tree ships that an OLDER cached tree does not.
+
+    This is the only in-session discriminator available on a host with no
+    run-pinned signal, and getting it right took two tries. The first version used
+    `surface_drift.skills_missing_from_installed`, which is **checkout minus
+    installed** — skills this BRANCH declares that the installed copy lacks. Those
+    are missing from the older cached tree too, so their absence from the tool list
+    is identical in both worlds and tells the reader nothing. The note nonetheless
+    said it proved the session was "positively" running the older copy. Caught by
+    /flow:staff-review's staff-engineer lens; it is the fourth vacuous instrument
+    this change produced, and the one a previous lens round had asked me to restore.
+
+    The correct direction is **installed minus older-cached**: a command the newly
+    installed version ships and the superseded one did not. If that is absent from
+    the tool list, the session is genuinely running the older tree.
+    """
+    ip = installed_path = d.get("installed", {}).get("install_path")
+    cached = d.get("cached_versions") or []
+    cur = (d.get("installed") or {}).get("version")
+    if not ip or len(cached) < 2:
+        return []
+    base = Path(installed_path).parent
+    new_names = _names(Path(installed_path) / "skills", "")
+    if not new_names:
+        return []
+    for ver in (v for v in cached if v != cur):
+        old_names = _names(base / ver / "skills", "")
+        if old_names is None:
+            continue
+        gained = sorted(new_names - old_names)
+        if gained:
+            # RULE-SKILLS EXCLUDED, via the shared roster this module already loads —
+            # not a re-typed list of the four names. They are model-invoked and
+            # deliberately NOT user-invocable (FB-0124), so "check whether
+            # `/flow:documentation` is in your tool list" names something that is never
+            # in anyone's tool list and the probe would read as a false negative on a
+            # perfectly current session. The first cut named three of the four.
+            rs = _rule_skills()
+            cmds = [g for g in gained if not rs.is_rule_skill(g)]
+            # `_clean`-ed: these are directory names, and a directory name may carry
+            # `|`, backticks or newlines on Linux. They reach a PR body, which is the
+            # same sink `test_version_string_cannot_forge_the_table` protects.
+            out = [_clean(c) for c in cmds if _clean(c)]
+            if out:
+                return out
+    return []
+
+
+def _unpinned_note(d: dict, home: Path) -> str:
     """The provenance caveat, once, below the table — not inside a cell.
 
     Separate from REMEDY because the two answer different questions and fire on
@@ -891,50 +940,42 @@ def _unpinned_note(d: dict) -> str:
     only appears when something warned; this says "here is why the first row cannot
     be certain" and appears whenever the reading is registry-sourced.
 
-    Three things this got wrong before three lenses rendered it:
+    Two earlier versions were wrong in ways three review rounds caught: it told the
+    reader to "start a fresh session and re-run", which on a host with no pinned
+    signal reproduces the identical hedge (an action, not a confirmation); and it
+    cited `dev-docs/roadmap.md` plus an `FB-` number, which renders into ANY
+    consumer's PR body where neither exists.
 
-    - It told the reader to **start a fresh session and re-run**, which on a host with
-      no run-pinned signal produces the identical hedge — an action, not a
-      confirmation, and it discards the very session whose provenance was in question.
-      The in-session check it had replaced actually returns an answer, so it is back,
-      and it now names the surfaces this module has already computed rather than
-      asking the reader to work out what is new in the release.
-    - It cited `dev-docs/roadmap.md` and an `FB-` number. This string renders into
-      ANY consumer's PR body, where neither exists — `dev-docs/` is flow's own
-      tracking directory, and the quality bar is that plugin artifacts carry no
-      project-specific tokens. Dropped; the note is self-contained without it.
-    - It was titled by POSITION ("the first row") while the row titles itself by
-      subject. Retitled to match.
+    It now offers a real confirmation when one exists, and says plainly that none
+    does when it doesn't — rather than inventing one, which is what the vacuous
+    `surface_drift` probe amounted to.
     """
     if not (d.get("restart_pending") is None
             and d.get("ran_version_source") == "registry"):
         return ""
-    sd = d.get("surface_drift") or {}
-    missing = [s for s in (sd.get("skills_missing_from_installed") or []) if s]
-    if missing:
-        probe = (
-            "**The surface is the instrument.** This branch declares "
-            + ", ".join(f"`/flow:{s}`" for s in missing[:3])
-            + " and the installed copy does not ship "
-            + ("them" if len(missing) > 1 else "it")
-            + " — so if "
-            + ("those commands are" if len(missing) > 1 else "that command is")
-            + " absent from your tool list, this session is positively running the "
-            "older copy. That is confirmable now, without restarting."
+    head = (
+        "> **Note on the version that ran.** This host exposes no run-pinned signal "
+        "for the flow plugin, so the number above is read from the plugin registry — "
+        "which `claude plugin update` rewrites the moment it runs, even though the "
+        "update only takes effect on **restart**. A session that began before an "
+        "update is therefore still running the older copy while the registry already "
+        "names the newer one. "
+    )
+    gained = _restart_discriminator(d, home)
+    if gained:
+        names = ", ".join(f"`/flow:{g}`" for g in gained[:3])
+        return head + (
+            f"**To confirm now:** the installed version adds {names}, which the "
+            "superseded copy still on this machine does not ship. If "
+            f"{'those commands are' if len(gained) > 1 else 'that command is'} "
+            "absent from your tool list, this session is running the older copy and "
+            "needs a restart."
         )
-    else:
-        probe = (
-            "**To confirm:** check whether the `/flow:*` commands this release adds are "
-            "present in your tool list. If any is missing, this session is running the "
-            "older copy and a restart is needed before relying on it."
-        )
-    return (
-        "> **Note on the version that ran.** This host exposes no run-pinned signal for "
-        "the flow plugin, so the number above is read from the plugin registry — which "
-        "`claude plugin update` rewrites the moment it runs, even though the update only "
-        "takes effect on **restart**. A session that began before an update is therefore "
-        "still running the older copy while the registry already names the newer one. "
-        + probe
+    return head + (
+        "**There is no in-session check on this host** — the version number is the "
+        "only signal available and it cannot distinguish the two. Treat the number as "
+        "the version INSTALLED. If the plugin was updated during this session, restart "
+        "before relying on any `/flow:*` command."
     )
 
 
@@ -943,9 +984,9 @@ def render_remedy(rows: list[str]) -> str:
     return REMEDY if any("⚠️" in r for r in rows) else ""
 
 
-def render_unpinned(d: dict) -> str:
+def render_unpinned(d: dict, home: Path | None = None) -> str:
     """Thin wrapper; the copy and the gate both live in `_unpinned_note`."""
-    return _unpinned_note(d)
+    return _unpinned_note(d, home or Path.home())
 
 
 def render_block(d: dict, root: Path) -> str:

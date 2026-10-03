@@ -152,7 +152,14 @@ except Exception:
 # for a filesystem path; the 64-char bound is the same one the engine's `_clean` uses
 # at render time, for the same reason.
 registry_version() {
-    _registry_field version | sed -e 's/[^A-Za-z0-9._+-]//g' -e 's/^\(.\{0,64\}\).*/\1/'
+    # `LC_ALL=C` makes the filter BYTE-wise and locale-independent. Measured by
+    # /flow:staff-review: under a UTF-8 locale GNU sed's `[^…]` does not match an
+    # INVALID UTF-8 byte, so a registry version carrying one (Python's stdout emits it
+    # raw under surrogateescape) survived the strip and reached the model's context.
+    # Under `C` it is stripped. The impact was a stray byte rather than injection —
+    # the prose threat was already closed — but a sanitiser whose coverage depends on
+    # the ambient locale is not a sanitiser.
+    _registry_field version | LC_ALL=C sed -e 's/[^A-Za-z0-9._+-]//g' -e 's/^\(.\{0,64\}\).*/\1/'
 }
 
 # SECURITY: resolve the engine from the INSTALLED tree ONLY — never the checkout.

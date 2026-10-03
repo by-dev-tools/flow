@@ -2,6 +2,139 @@
 
 ## Current Focus
 
+**▶ APPROVED AT THE GATE, EXECUTED, shipping (this branch `conductor/fix-plugin-currency-deadlock-visual-walk-n-a`, **v1.57.0**, FB-0131): Fix 1 — no Conductor workspace ever updates its flow plugin, because the updater can only update installs that are already new enough not to need it.**
+
+**Mode:** feature · **Surface:** non-visual (no `Visual-walk` block, deliberately — this change renders nothing, and writing `**Visual-walk:** N/A` is the exact trap Fix 2 exists to remove)
+
+**Goal.** A cloud workspace's flow plugin converges on the version the repo develops. Today none of them do: every workspace boots from a snapshot carrying flow **1.29.0**, and the `SessionStart` hook written to close that gap **disables itself on exactly those installs**. Twenty-six releases of skill prose, four rule-skills and seven skills have been absent from every seat in this program while everyone believed otherwise — FB-0107's failure shape, one layer further back.
+
+### What I measured (re-verified in this sandbox, not inherited)
+
+| claim | measured here |
+|---|---|
+| installed flow version | **1.29.0**, `installPath …/cache/flow/flow/1.29.0`, `installedAt 2026-08-19T04:51:32.300Z` |
+| this branch declares | **1.55.0** — `release_gap: 26` |
+| the hook's behaviour on it | prints *"predates the provenance engine (added in v1.43.0), so this currency check is inactive"*, **exits 0, attempts nothing** |
+| why | `skills/ship/lib/plugin-provenance.py` is **absent** from the 1.29.0 install tree, and the hook resolves its engine from the installed tree only |
+| the local marketplace **clone** | also pinned at **1.29.0 / `cf783ac`** — so `update_available` would be meaningless even if the engine were present |
+| surfaces absent from the running seat | skills `autoplan, gate, handoff, orchestrate, prototype, review-brief, spawn`; rule-skills `documentation, exploration, general, plan-discipline`; agent `lens-experience` |
+| the hook's output visibility | **the agent never sees it.** It is all stderr by design; a probe session asked for its `[flow-currency]` line reported none |
+
+**The deadlock, stated precisely:** the engine that answers *"is the install current?"* ships **inside** the artifact being updated, so an install old enough to need the update is old enough to disable the updater. It is not a failed update. **Nothing is attempted.** That distinction matters because the roadmap currently records the cause as *"a **failed** update is silent"* (D1f) — correct about the symptom, wrong about the mechanism, and the wrong fix follows from it.
+
+### Decision 1 — run the two CLI commands from the hook, and say why that is not the thing CONTRIBUTING.md forbids
+
+`CONTRIBUTING.md`'s accepted residual is about **executing repository files**: the hook is a repo file, any branch can rewrite it, and it fires with no approval prompt. The mitigation it claims is narrower and exact — *"the hook no longer executes any **other** repository file"*, resolving its engine from the registry's `installPath` and refusing the checkout copy.
+
+`claude plugin marketplace update flow` and `claude plugin update flow@flow` are **not repository files**. They are subcommands of the user's own installed CLI, resolved from `PATH`, and **the hook already runs both on its non-bootstrap path** and has since `bb3bc60`. So the bootstrap arm adds no new class of execution; it removes an early-exit that sits in front of calls the file is already trusted to make. The engine refusal is untouched — a bootstrap run still never reads `plugins/flow/skills/ship/lib/plugin-provenance.py` from the checkout, and the paired structural assertion that pins that stays.
+
+What *does* change, and is stated rather than buried: the arm mutates the install on a path that previously did nothing, so a stale workspace now downloads on its next session start. Bounded (~1–3 s plus one fetch), loud, and it converges.
+
+### Decision 2 — do NOT add `.conductor/settings.toml`. It cannot work here, and shipping it would look like a fix.
+
+The provisioning-time idea is right in principle — setup runs before the agent, so the **first** session would be current, which the hook structurally can never deliver. It does not work in this environment, and I measured that rather than reasoning about it. Three independent facts agree:
+
+1. **Conductor's own worker code says so.** `/conductor/worker/index.js`, `UPDATE_REPOSITORY_SETUP_SCRIPT_TOOL_DESCRIPTION`: *"For cloud organizations, the saved setup script is the only one that runs — setup scripts defined in the repository's own `.conductor/settings.toml` or `conductor.json` files are **ignored**."* The bundled `computer-admin` skill repeats it and says a repo file *"still serves people running Conductor locally."*
+2. **A live probe.** A throwaway branch carrying a `.conductor/settings.toml` whose setup writes an unconditional marker as its **first** action; a fresh cloud workspace created from that branch. The file was present on disk at the right path on the right commit (the probe session pasted it back). The marker was **ABSENT**. Workspace archived, branch deleted.
+3. The marker-first ordering is the instrument validation (§ Consistency item 4): "ABSENT" can only mean the script never ran, not "it ran and the update failed."
+
+So a committed `scripts.setup` would be inert in exactly the environment it targets — **shipped, believed effective, never firing**, the FB-0085 class, and worse than the status quo because a future reader would read it as the provisioning fix and stop looking. **Recommended against, with the measurement recorded** so the next seat does not re-derive it.
+
+**The provisioning fix exists but is org config, not a PR.** It is the cloud organization's **saved per-repository setup script** (`UpdateRepositorySetupScript`), or the install script that bakes 1.29.0 into the snapshot in the first place — both reachable only from an admin workspace. That is Ben's to set, so it lands in the roadmap as **copy-paste commands** rather than as an investigation. **The saved script is per-repository**, so every repo that uses flow — `health-tracker` included — carries the identical gap and needs the identical one-time save.
+
+### The blocker this fix created (its criteria are in the Spec-walk below)
+
+**Found during validation, escalated rather than absorbed, and it is the reason this PR carries a
+version.** Moving the registry at session start made `plugin-provenance.py` report confidently wrong
+provenance — the rows CLAUDE.md tells every session to read before treating a green pipeline as
+evidence. Same session, skill list unchanged throughout (16 `flow:` skills, no `spawn` — 1.29.0's
+surface):
+
+| | the row labelled *"the version that ran this pipeline"* |
+|---|---|
+| before the hook ran | `1.29.0 (cf783ac)` · ⚠️ NOT this branch, 26 releases back — **correct** |
+| after the hook ran | `1.55.0 (a250b66)` · ✓ matches this branch — **false** |
+
+Cause: `restart_pending = bool(rv and reg_v and rv != reg_v)` needs `rv`, the PATH-pinned version —
+and **flow ships no `bin/`**, so that signal resolves on no host and `ran_version` always falls back
+to the registry, the mutable record FB-0107 lesson 4 rejects. Latent since v1.43.0, reachable only if
+a human ran `plugin update` by hand; this fix makes it automatic in every stale workspace. It landed
+on a real reader immediately: the validation probe read `ran_version: 1.55.0` / `restart_pending:
+false`, filed a "discrepancy", and concluded the hook's honest warning was *"pessimistic"*.
+
+### Spec-walk
+
+- [x] **On an install with no provenance engine the hook attempts BOTH commands.** Asserted against the PATH-shim's **call log**, not inferred from output — silence and inaction are different claims. This replaces `test_hook_degrades_safely`'s current negative (`"with no engine the hook must not blind-update"`), which pins the deadlock as correct. → `test_hook_degrades_safely`
+- [x] **PAIRED, and the pairing is the point** (§ Consistency item 3): the security refusal still holds on that same arm — engine resolved via `installed_plugins.json` / `installPath`, **no** checkout-relative engine path anywhere in executable code, and the `NOT falling back` sentence still present. A bootstrap that satisfied criterion 1 by reading the checkout's engine must be RED. → `test_hook_never_executes_the_checkout`
+- [x] **The bootstrap arm is distinguishable from the old no-op.** It prints the installed version **before → after**. RED if a run that bootstrapped produces stderr that a run which did nothing could also produce — the deadlock survived 26 releases precisely because "exits 0, prints a note" reads identically either way. → `test_hook_bootstraps_an_engineless_install`
+- [x] **The OUTCOME line is emitted on `stdout`; the diagnostics stay on `stderr`.** `SessionStart` is a hook event whose stdout is injected into the agent's context, and this hook's header comment currently says the opposite — *"All output to stderr so nothing is injected into the session's context."* That was a deliberate decision and this **reverses** it, so the comment is rewritten rather than quietly contradicted. Exactly one line reaches stdout when the hook acts (`installed flow X → Y`, or the `⚠️` when a "successful" update did not move the version); **stdout stays empty when the hook does nothing**, which is the pairing — a hook that printed its line unconditionally would satisfy the positive while making every current session noisier. RED if the already-current fast path writes anything to stdout. → `test_hook_outcome_reaches_stdout`, `test_hook_fast_path`
+- [x] **That injection claim is MEASURED, not assumed** (§ Consistency item 4, and "capability claims expire"): a fresh session in this workspace is asked whether it can see its own `[flow-currency]` line. The pre-fix answer is already recorded — a probe session reported **none**. If the post-fix answer is still "none", that is reported as a negative result, not smoothed over.
+- [x] **A bootstrap whose update FAILS is loud and still exits 0.** A session start must never be wedged; `FAILED` + `Do NOT assume` reach stderr. → `test_hook_degrades_safely`
+- [x] **A bootstrap that "succeeds" without moving the version says so.** `⚠️` naming the unmoved version, never a reassuring `X → X` arrow. This is the one new silent-confidence shape the arm introduces, so it is pinned in the failing direction. → `test_hook_bootstraps_an_engineless_install`
+- [x] **`FLOW_CURRENCY_DRY_RUN=1` mutates nothing on the bootstrap arm either, and still announces.** Today the arm it would exercise is unreachable in dry run — the engine check exits first — so dry run and real run print byte-identical output on a 1.29.0 install. Measured. → `test_hook_dry_run`
+- [x] **Regression: the engine-present paths are untouched.** A current install stays silent and attempts no update; an available update is still applied. RED if the new arm fires when the engine exists. → `test_hook_fast_path`
+- [x] **Validated on the real thing, both polarities** (§ Consistency item 4): the fixed hook run against this sandbox's genuine 1.29.0 install, and again after it has converged. Captured in the history entry, because a synthetic fixture alone cannot show the deadlock was the live state.
+- [x] **`CONTRIBUTING.md` states Decision 1's reasoning explicitly**, under its existing *"What is and is not mitigated"* heading — repo file vs plugin CLI — rather than leaving it implied. Paired with the positive that the file still carries the un-mitigated residual it already accepts.
+- [x] **`dev-docs/roadmap.md`: the `/flow:spawn` entry names this fix as what resolves it.** The measured cause is not habit: `/flow:spawn` (v1.45.0) is **not installed** in a 1.29.0 seat — `skills_missing_from_installed` lists it — so the seat could not have invoked it. The entry's second half (no re-dispatch path for a running worker) is a real design question and **survives**.
+- [x] **D1f's fourth bullet is corrected, not appended to**: cause is *never attempted*, not *failure is silent*; and it records that the hook's entire output is stderr-only, so the agent in the seat cannot see it at all.
+
+- [x] **`restart_pending` is three-valued** — `true` / `false` / `null`, and **never `false` when
+      nothing can tell**. Keyed on a real discriminator rather than on PATH alone: `claude plugin
+      update` leaves the previous version tree in the cache (measured — `1.29.0/` and `1.55.0/` both
+      present), so **two trees + no pinned signal = undeterminable**, one tree = unambiguous. →
+      `test_running_version_beats_the_registry`
+- [x] **An ambiguous registry-sourced "what ran" row cannot render `✓ matches this branch`.** It
+      names the registry as its source, says the session may still be running the older tree, and
+      gives the check — wording chosen to **agree with the currency hook's stdout line**, so a reader
+      who sees both reads one story. → `test_mid_session_update_cannot_forge_a_tick`
+- [x] **PAIRED** (§ Consistency item 3): a genuinely PATH-pinned version that matches **still ticks**,
+      and two cached trees *with* a PATH signal still tick — ambiguity alone must not suppress it,
+      only ambiguity with nothing to resolve it. Otherwise "never render a tick" is satisfied by
+      deleting the tick, which mutation E3 confirms. → `test_mid_session_update_cannot_forge_a_tick`
+- [x] **The eval replays the OBSERVED sequence**, not a synthetic one: the same session before and
+      after the registry moves, with the old tree still on disk. → `test_mid_session_update_cannot_forge_a_tick`
+- [x] **A healthy run still reads as healthy.** The hedge fires on real ambiguity only; a single
+      cached tree keeps its affirmative. A permanent warning is indistinguishable from the real
+      staleness signal. → `test_healthy_run_does_not_cry_wolf`
+- [x] **Deviation from the gate's literal constraint, recorded.** The instruction was that a
+      registry-sourced row can *never* tick. Taken literally that means flow's headline row never
+      ticks again — because with no `bin/`, registry-sourced is **100%** of real runs, not an edge
+      case. Gating on cache ambiguity serves the constraint's purpose (a false `✓` is the harm) while
+      keeping the signal usable. The `bin/` finding is its own roadmap entry with a reversal condition.
+
+### Confidence verdicts
+
+**Assumption:** the two `claude plugin` CLI commands are outside CONTRIBUTING.md's "do not execute repo code" decision.
+**Confidence:** HIGH
+**Why:** the decision's text scopes itself to repository files, and the same file already invokes both commands on its other path — unchanged since the PR that wrote the decision.
+**If it flips:** the arm degrades to printing the commands, which is today's behaviour, and the deadlock stands until the snapshot is rebuilt. Scoped, not structural.
+
+**Assumption:** `claude plugin marketplace update flow && claude plugin update flow@flow` actually moves a 1.29.0 install to marketplace HEAD.
+**Confidence:** HIGH
+**Why:** measured once in the orchestrator's sandbox (1.29.0 → 1.55.0, first try). The marketplace clone here is reachable (`git ls-remote` OK) and pinned at the same `cf783ac` the refresh exists to move.
+**If it flips:** the arm's loud-failure branch fires and reports it — which is strictly better than today, where nothing is attempted and nothing is said. Re-measured as the last Spec-walk item before ship.
+
+**Assumption:** a committed `.conductor/settings.toml` cannot fix provisioning in a Conductor cloud organization.
+**Confidence:** HIGH
+**Why:** three independent agreeing sources — the worker binary's own tool description, the bundled `computer-admin` skill, and a live probe whose marker was absent with the file provably on disk.
+**If it flips:** Decision 2 reverses and a setup script is added. The probe is reproducible in one workspace, so re-testing is cheap if Conductor's behaviour changes.
+
+### Risks / open questions
+
+- **Version: v1.57.0, reversing the gate's no-bump call — correctly.** The gate said no bump because Fix 1 was dev infrastructure. It stopped being that the moment the fix forced a change to `skills/ship/lib/plugin-provenance.py`, which is shipped gate behaviour, so by the same rule it takes a version. Fix 2 becomes v1.58.0. Merge order: #174 (v1.56.0) → Fix 1 → Fix 2.
+- **Convergence is still next-session.** `plugin update` applies on restart, so the session that bootstraps still runs 1.29.0. The PR body's four provenance rows remain the only thing that can say what actually ran — unchanged, and the reason the rows are the load-bearing half of FB-0107.
+- **If marketplace HEAD ever sat below v1.43.0** the arm would re-fire every session. Criterion 5's `⚠️` is what makes that visible instead of a silent per-session download.
+
+### Files touched
+
+`.claude/hooks/flow-plugin-currency.sh` · `plugins/flow/skills/ship/lib/plugin-provenance.py` · `plugins/flow/evals/run_plugin_provenance_evals.py` · `CONTRIBUTING.md` · `changelog/v1.57.0.md` · `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` · `dev-docs/roadmap.md` · `dev-docs/plan.md` · `dev-docs/history/2026-10-03-*.md` · `dev-docs/feedback/FB-0131-*.md`
+
+**Deliberately NOT touched:** `.conductor/settings.toml` (Decision 2) — and the `bin/` fix that would make the PATH signal work at all, which is its own roadmap entry with a reversal condition.
+
+**Not in scope:** `.conductor/settings.toml` (Decision 2) · the snapshot's baked 1.29.0 install (org config) · Fix 2, the `Visual-walk: N/A` forcing bug, which ships as a separate PR on top of this one.
+
+---
+
 **▶ PLAN GATE — NOT EXECUTED (this branch `conductor/cv1-followup-reviewer-rigor-walkextract`,
 version + FB at ship time, expect v1.56.0): CV1's unfinished half — three fixes, each one a gate
 that reads less than it reports.** Ben's call was (a), finish CV1 inside the stopping point. Scope is
@@ -217,139 +350,6 @@ is in flight on these files as of branching.
 
 
 
-
-**▶ APPROVED AT THE GATE, EXECUTED, shipping (this branch `conductor/fix-plugin-currency-deadlock-visual-walk-n-a`, **v1.57.0**, FB-0131): Fix 1 — no Conductor workspace ever updates its flow plugin, because the updater can only update installs that are already new enough not to need it.**
-
-**Mode:** feature · **Surface:** non-visual (no `Visual-walk` block, deliberately — this change renders nothing, and writing `**Visual-walk:** N/A` is the exact trap Fix 2 exists to remove)
-
-**Goal.** A cloud workspace's flow plugin converges on the version the repo develops. Today none of them do: every workspace boots from a snapshot carrying flow **1.29.0**, and the `SessionStart` hook written to close that gap **disables itself on exactly those installs**. Twenty-six releases of skill prose, four rule-skills and seven skills have been absent from every seat in this program while everyone believed otherwise — FB-0107's failure shape, one layer further back.
-
-### What I measured (re-verified in this sandbox, not inherited)
-
-| claim | measured here |
-|---|---|
-| installed flow version | **1.29.0**, `installPath …/cache/flow/flow/1.29.0`, `installedAt 2026-08-19T04:51:32.300Z` |
-| this branch declares | **1.55.0** — `release_gap: 26` |
-| the hook's behaviour on it | prints *"predates the provenance engine (added in v1.43.0), so this currency check is inactive"*, **exits 0, attempts nothing** |
-| why | `skills/ship/lib/plugin-provenance.py` is **absent** from the 1.29.0 install tree, and the hook resolves its engine from the installed tree only |
-| the local marketplace **clone** | also pinned at **1.29.0 / `cf783ac`** — so `update_available` would be meaningless even if the engine were present |
-| surfaces absent from the running seat | skills `autoplan, gate, handoff, orchestrate, prototype, review-brief, spawn`; rule-skills `documentation, exploration, general, plan-discipline`; agent `lens-experience` |
-| the hook's output visibility | **the agent never sees it.** It is all stderr by design; a probe session asked for its `[flow-currency]` line reported none |
-
-**The deadlock, stated precisely:** the engine that answers *"is the install current?"* ships **inside** the artifact being updated, so an install old enough to need the update is old enough to disable the updater. It is not a failed update. **Nothing is attempted.** That distinction matters because the roadmap currently records the cause as *"a **failed** update is silent"* (D1f) — correct about the symptom, wrong about the mechanism, and the wrong fix follows from it.
-
-### Decision 1 — run the two CLI commands from the hook, and say why that is not the thing CONTRIBUTING.md forbids
-
-`CONTRIBUTING.md`'s accepted residual is about **executing repository files**: the hook is a repo file, any branch can rewrite it, and it fires with no approval prompt. The mitigation it claims is narrower and exact — *"the hook no longer executes any **other** repository file"*, resolving its engine from the registry's `installPath` and refusing the checkout copy.
-
-`claude plugin marketplace update flow` and `claude plugin update flow@flow` are **not repository files**. They are subcommands of the user's own installed CLI, resolved from `PATH`, and **the hook already runs both on its non-bootstrap path** and has since `bb3bc60`. So the bootstrap arm adds no new class of execution; it removes an early-exit that sits in front of calls the file is already trusted to make. The engine refusal is untouched — a bootstrap run still never reads `plugins/flow/skills/ship/lib/plugin-provenance.py` from the checkout, and the paired structural assertion that pins that stays.
-
-What *does* change, and is stated rather than buried: the arm mutates the install on a path that previously did nothing, so a stale workspace now downloads on its next session start. Bounded (~1–3 s plus one fetch), loud, and it converges.
-
-### Decision 2 — do NOT add `.conductor/settings.toml`. It cannot work here, and shipping it would look like a fix.
-
-The provisioning-time idea is right in principle — setup runs before the agent, so the **first** session would be current, which the hook structurally can never deliver. It does not work in this environment, and I measured that rather than reasoning about it. Three independent facts agree:
-
-1. **Conductor's own worker code says so.** `/conductor/worker/index.js`, `UPDATE_REPOSITORY_SETUP_SCRIPT_TOOL_DESCRIPTION`: *"For cloud organizations, the saved setup script is the only one that runs — setup scripts defined in the repository's own `.conductor/settings.toml` or `conductor.json` files are **ignored**."* The bundled `computer-admin` skill repeats it and says a repo file *"still serves people running Conductor locally."*
-2. **A live probe.** A throwaway branch carrying a `.conductor/settings.toml` whose setup writes an unconditional marker as its **first** action; a fresh cloud workspace created from that branch. The file was present on disk at the right path on the right commit (the probe session pasted it back). The marker was **ABSENT**. Workspace archived, branch deleted.
-3. The marker-first ordering is the instrument validation (§ Consistency item 4): "ABSENT" can only mean the script never ran, not "it ran and the update failed."
-
-So a committed `scripts.setup` would be inert in exactly the environment it targets — **shipped, believed effective, never firing**, the FB-0085 class, and worse than the status quo because a future reader would read it as the provisioning fix and stop looking. **Recommended against, with the measurement recorded** so the next seat does not re-derive it.
-
-**The provisioning fix exists but is org config, not a PR.** It is the cloud organization's **saved per-repository setup script** (`UpdateRepositorySetupScript`), or the install script that bakes 1.29.0 into the snapshot in the first place — both reachable only from an admin workspace. That is Ben's to set, so it lands in the roadmap as **copy-paste commands** rather than as an investigation. **The saved script is per-repository**, so every repo that uses flow — `health-tracker` included — carries the identical gap and needs the identical one-time save.
-
-### The blocker this fix created (its criteria are in the Spec-walk below)
-
-**Found during validation, escalated rather than absorbed, and it is the reason this PR carries a
-version.** Moving the registry at session start made `plugin-provenance.py` report confidently wrong
-provenance — the rows CLAUDE.md tells every session to read before treating a green pipeline as
-evidence. Same session, skill list unchanged throughout (16 `flow:` skills, no `spawn` — 1.29.0's
-surface):
-
-| | the row labelled *"the version that ran this pipeline"* |
-|---|---|
-| before the hook ran | `1.29.0 (cf783ac)` · ⚠️ NOT this branch, 26 releases back — **correct** |
-| after the hook ran | `1.55.0 (a250b66)` · ✓ matches this branch — **false** |
-
-Cause: `restart_pending = bool(rv and reg_v and rv != reg_v)` needs `rv`, the PATH-pinned version —
-and **flow ships no `bin/`**, so that signal resolves on no host and `ran_version` always falls back
-to the registry, the mutable record FB-0107 lesson 4 rejects. Latent since v1.43.0, reachable only if
-a human ran `plugin update` by hand; this fix makes it automatic in every stale workspace. It landed
-on a real reader immediately: the validation probe read `ran_version: 1.55.0` / `restart_pending:
-false`, filed a "discrepancy", and concluded the hook's honest warning was *"pessimistic"*.
-
-### Spec-walk
-
-- [x] **On an install with no provenance engine the hook attempts BOTH commands.** Asserted against the PATH-shim's **call log**, not inferred from output — silence and inaction are different claims. This replaces `test_hook_degrades_safely`'s current negative (`"with no engine the hook must not blind-update"`), which pins the deadlock as correct. → `test_hook_degrades_safely`
-- [x] **PAIRED, and the pairing is the point** (§ Consistency item 3): the security refusal still holds on that same arm — engine resolved via `installed_plugins.json` / `installPath`, **no** checkout-relative engine path anywhere in executable code, and the `NOT falling back` sentence still present. A bootstrap that satisfied criterion 1 by reading the checkout's engine must be RED. → `test_hook_never_executes_the_checkout`
-- [x] **The bootstrap arm is distinguishable from the old no-op.** It prints the installed version **before → after**. RED if a run that bootstrapped produces stderr that a run which did nothing could also produce — the deadlock survived 26 releases precisely because "exits 0, prints a note" reads identically either way. → `test_hook_bootstraps_an_engineless_install`
-- [x] **The OUTCOME line is emitted on `stdout`; the diagnostics stay on `stderr`.** `SessionStart` is a hook event whose stdout is injected into the agent's context, and this hook's header comment currently says the opposite — *"All output to stderr so nothing is injected into the session's context."* That was a deliberate decision and this **reverses** it, so the comment is rewritten rather than quietly contradicted. Exactly one line reaches stdout when the hook acts (`installed flow X → Y`, or the `⚠️` when a "successful" update did not move the version); **stdout stays empty when the hook does nothing**, which is the pairing — a hook that printed its line unconditionally would satisfy the positive while making every current session noisier. RED if the already-current fast path writes anything to stdout. → `test_hook_outcome_reaches_stdout`, `test_hook_fast_path`
-- [x] **That injection claim is MEASURED, not assumed** (§ Consistency item 4, and "capability claims expire"): a fresh session in this workspace is asked whether it can see its own `[flow-currency]` line. The pre-fix answer is already recorded — a probe session reported **none**. If the post-fix answer is still "none", that is reported as a negative result, not smoothed over.
-- [x] **A bootstrap whose update FAILS is loud and still exits 0.** A session start must never be wedged; `FAILED` + `Do NOT assume` reach stderr. → `test_hook_degrades_safely`
-- [x] **A bootstrap that "succeeds" without moving the version says so.** `⚠️` naming the unmoved version, never a reassuring `X → X` arrow. This is the one new silent-confidence shape the arm introduces, so it is pinned in the failing direction. → `test_hook_bootstraps_an_engineless_install`
-- [x] **`FLOW_CURRENCY_DRY_RUN=1` mutates nothing on the bootstrap arm either, and still announces.** Today the arm it would exercise is unreachable in dry run — the engine check exits first — so dry run and real run print byte-identical output on a 1.29.0 install. Measured. → `test_hook_dry_run`
-- [x] **Regression: the engine-present paths are untouched.** A current install stays silent and attempts no update; an available update is still applied. RED if the new arm fires when the engine exists. → `test_hook_fast_path`
-- [x] **Validated on the real thing, both polarities** (§ Consistency item 4): the fixed hook run against this sandbox's genuine 1.29.0 install, and again after it has converged. Captured in the history entry, because a synthetic fixture alone cannot show the deadlock was the live state.
-- [x] **`CONTRIBUTING.md` states Decision 1's reasoning explicitly**, under its existing *"What is and is not mitigated"* heading — repo file vs plugin CLI — rather than leaving it implied. Paired with the positive that the file still carries the un-mitigated residual it already accepts.
-- [x] **`dev-docs/roadmap.md`: the `/flow:spawn` entry names this fix as what resolves it.** The measured cause is not habit: `/flow:spawn` (v1.45.0) is **not installed** in a 1.29.0 seat — `skills_missing_from_installed` lists it — so the seat could not have invoked it. The entry's second half (no re-dispatch path for a running worker) is a real design question and **survives**.
-- [x] **D1f's fourth bullet is corrected, not appended to**: cause is *never attempted*, not *failure is silent*; and it records that the hook's entire output is stderr-only, so the agent in the seat cannot see it at all.
-
-- [x] **`restart_pending` is three-valued** — `true` / `false` / `null`, and **never `false` when
-      nothing can tell**. Keyed on a real discriminator rather than on PATH alone: `claude plugin
-      update` leaves the previous version tree in the cache (measured — `1.29.0/` and `1.55.0/` both
-      present), so **two trees + no pinned signal = undeterminable**, one tree = unambiguous. →
-      `test_running_version_beats_the_registry`
-- [x] **An ambiguous registry-sourced "what ran" row cannot render `✓ matches this branch`.** It
-      names the registry as its source, says the session may still be running the older tree, and
-      gives the check — wording chosen to **agree with the currency hook's stdout line**, so a reader
-      who sees both reads one story. → `test_mid_session_update_cannot_forge_a_tick`
-- [x] **PAIRED** (§ Consistency item 3): a genuinely PATH-pinned version that matches **still ticks**,
-      and two cached trees *with* a PATH signal still tick — ambiguity alone must not suppress it,
-      only ambiguity with nothing to resolve it. Otherwise "never render a tick" is satisfied by
-      deleting the tick, which mutation E3 confirms. → `test_mid_session_update_cannot_forge_a_tick`
-- [x] **The eval replays the OBSERVED sequence**, not a synthetic one: the same session before and
-      after the registry moves, with the old tree still on disk. → `test_mid_session_update_cannot_forge_a_tick`
-- [x] **A healthy run still reads as healthy.** The hedge fires on real ambiguity only; a single
-      cached tree keeps its affirmative. A permanent warning is indistinguishable from the real
-      staleness signal. → `test_healthy_run_does_not_cry_wolf`
-- [x] **Deviation from the gate's literal constraint, recorded.** The instruction was that a
-      registry-sourced row can *never* tick. Taken literally that means flow's headline row never
-      ticks again — because with no `bin/`, registry-sourced is **100%** of real runs, not an edge
-      case. Gating on cache ambiguity serves the constraint's purpose (a false `✓` is the harm) while
-      keeping the signal usable. The `bin/` finding is its own roadmap entry with a reversal condition.
-
-### Confidence verdicts
-
-**Assumption:** the two `claude plugin` CLI commands are outside CONTRIBUTING.md's "do not execute repo code" decision.
-**Confidence:** HIGH
-**Why:** the decision's text scopes itself to repository files, and the same file already invokes both commands on its other path — unchanged since the PR that wrote the decision.
-**If it flips:** the arm degrades to printing the commands, which is today's behaviour, and the deadlock stands until the snapshot is rebuilt. Scoped, not structural.
-
-**Assumption:** `claude plugin marketplace update flow && claude plugin update flow@flow` actually moves a 1.29.0 install to marketplace HEAD.
-**Confidence:** HIGH
-**Why:** measured once in the orchestrator's sandbox (1.29.0 → 1.55.0, first try). The marketplace clone here is reachable (`git ls-remote` OK) and pinned at the same `cf783ac` the refresh exists to move.
-**If it flips:** the arm's loud-failure branch fires and reports it — which is strictly better than today, where nothing is attempted and nothing is said. Re-measured as the last Spec-walk item before ship.
-
-**Assumption:** a committed `.conductor/settings.toml` cannot fix provisioning in a Conductor cloud organization.
-**Confidence:** HIGH
-**Why:** three independent agreeing sources — the worker binary's own tool description, the bundled `computer-admin` skill, and a live probe whose marker was absent with the file provably on disk.
-**If it flips:** Decision 2 reverses and a setup script is added. The probe is reproducible in one workspace, so re-testing is cheap if Conductor's behaviour changes.
-
-### Risks / open questions
-
-- **Version: v1.57.0, reversing the gate's no-bump call — correctly.** The gate said no bump because Fix 1 was dev infrastructure. It stopped being that the moment the fix forced a change to `skills/ship/lib/plugin-provenance.py`, which is shipped gate behaviour, so by the same rule it takes a version. Fix 2 becomes v1.58.0. Merge order: #174 (v1.56.0) → Fix 1 → Fix 2.
-- **Convergence is still next-session.** `plugin update` applies on restart, so the session that bootstraps still runs 1.29.0. The PR body's four provenance rows remain the only thing that can say what actually ran — unchanged, and the reason the rows are the load-bearing half of FB-0107.
-- **If marketplace HEAD ever sat below v1.43.0** the arm would re-fire every session. Criterion 5's `⚠️` is what makes that visible instead of a silent per-session download.
-
-### Files touched
-
-`.claude/hooks/flow-plugin-currency.sh` · `plugins/flow/skills/ship/lib/plugin-provenance.py` · `plugins/flow/evals/run_plugin_provenance_evals.py` · `CONTRIBUTING.md` · `changelog/v1.57.0.md` · `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json` · `dev-docs/roadmap.md` · `dev-docs/plan.md` · `dev-docs/history/2026-10-03-*.md` · `dev-docs/feedback/FB-0131-*.md`
-
-**Deliberately NOT touched:** `.conductor/settings.toml` (Decision 2) — and the `bin/` fix that would make the PATH signal work at all, which is its own roadmap entry with a reversal condition.
-
-**Not in scope:** `.conductor/settings.toml` (Decision 2) · the snapshot's baked 1.29.0 install (org config) · Fix 2, the `Visual-walk: N/A` forcing bug, which ships as a separate PR on top of this one.
-
----
 
 **▶ EXECUTED, shipping (this branch `conductor/cv1-audit-coverage-md-blindness`, v1.55.0, FB-0126/FB-0127): CV1 — `/flow:audit-coverage` cannot see `.md`, so most of this plugin is invisible to it.** Measured end to end: #159's reconstruction moves from **0 gaps found at baseline** (both arms A-off) to **2-of-5 and 1-of-5 single-run, union 3-of-5**, zero false positives, plus the paired prose negative. Four follow-ups this measurement produced are in `roadmap.md` § Next, none of them fixed here.
 
