@@ -123,24 +123,17 @@ PLAN = """# Plan
 sys.path.insert(0, str(REPO / "plugins" / "flow" / "lib"))
 import doc_patterns  # noqa: E402
 
-# THE NEGATIVE ARM CAN GO VACUOUS TWO WAYS, and the clean result then means "there was nothing
-# to look at" -- the same answer with none of the meaning, which is what the 3-of-3 clean runs in
-# docs/workflow.md would be resting on. (1) A BASE_SKILL edit silently no-ops one of the
-# `.replace()` calls above, making the arm byte-identical to base; (2) the rendered arm carries no
-# reworded text at all. Both are asserted, at module scope so they cannot be skipped.
+# The negative arm can go vacuous two ways, and a clean verdict on a vacuous arm means "there
+# was nothing to look at" -- the same answer with none of the meaning, which is what the 3-of-3
+# clean runs in docs/workflow.md would be resting on. (1) A BASE_SKILL edit silently no-ops one
+# of the `.replace()` calls above, making the arm byte-identical to base; (2) the rendered arm
+# carries no reworded text at all. BOTH are caught by the single render-time check in `main()`,
+# which is strictly stronger: nothing can reach the prompt if the chain no-opped. These used to
+# be three additional `raise SystemExit`s at MODULE scope -- an import-time side effect, so a
+# broken tree could not even be imported by a test, which is the same class as the eager
+# `mkdtemp()` default this file also fixed.
 _REWORDS = ("Limits the rate at which", "How the decision is made",
             "would take the worker over the cap")
-if WORDING_ONLY == BASE_SKILL:
-    raise SystemExit("[precision-pair] REFUSING: the wording-only arm is byte-identical to base "
-                     "— a .replace() in the chain above no longer matches, so the negative arm "
-                     "has no diff and a clean verdict on it would mean nothing.")
-for _r in _REWORDS:
-    if _r not in WORDING_ONLY:
-        raise SystemExit(f"[precision-pair] REFUSING: the wording-only arm is missing {_r!r} — "
-                         f"a .replace() silently no-opped, so the arm is weaker than it reads.")
-if ADDED_RULE == WORDING_ONLY:
-    raise SystemExit("[precision-pair] REFUSING: the positive arm is byte-identical to the "
-                     "negative one — there is no added rule to detect.")
 
 CFG = json.dumps({"defaultBranch": "main", "planPath": "plan.md",
                   "behaviorBearingDocPatterns": doc_patterns.DOC_BUILTIN})
@@ -205,10 +198,13 @@ def main() -> int:
     # difference; the negative arm only PRINTED whether its file was in evidence, unasserted.
     # An instrument that refuses an untrustworthy positive and hands over an empty negative is
     # enforcing its own doctrine (general.md item 4) on one side only.
-    if not any(r in n for r in _REWORDS):
-        raise SystemExit("[precision-pair] REFUSING: none of the wording-only arm's reworded "
-                         "sentences reached the rendered evidence (the cap or the file filter "
-                         "dropped the hunk). A clean verdict would mean 'nothing was shown'.")
+    missing = [r for r in _REWORDS if r not in n]
+    if missing:
+        raise SystemExit(
+            f"[precision-pair] REFUSING: the wording-only arm's rendered evidence is missing "
+            f"{missing!r}. Either a `.replace()` in the chain above no longer matches its target, "
+            f"or the evidence cap/file filter dropped the hunk. Both make a clean verdict on this "
+            f"arm mean 'nothing was shown' rather than 'nothing was wrong'.")
     for label, b in (("negative", n), ("positive", p)):
         if "DOC-SURFACE" not in b:
             raise SystemExit(f"[precision-pair] REFUSING: the {label} arm carries no DOC-SURFACE "

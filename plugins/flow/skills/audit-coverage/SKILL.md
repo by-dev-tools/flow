@@ -479,6 +479,10 @@ fi
 # exclusion clause CV1's own history entry calls "belt-and-braces rather than the cause", i.e. a
 # documented deletion candidate. A control line whose honesty depends on a clause someone has
 # been told is redundant is one cleanup away from lying. Split by matching predicate instead.
+# The closing invariant, named ONCE. It was byte-duplicated across the two echoes below, and
+# it is also quoted in the control-line reading section and derived by the vocabulary eval --
+# three readers of one sentence, which is exactly the fan-out general.md item 2 warns about.
+DOCSEL_TAIL="Not a weakening: more was read than usual, not less."
 DOCSEL_DECL=""; DOCSEL_GUESS=""
 # Guard the whole selection on a non-empty file list. Without it the common cases -- an
 # unresolved base (every git call contributes nothing, so $FILES is empty) and a diff with no
@@ -490,10 +494,10 @@ elif [ -n "$FILES" ]; then
   DOCSEL_GUESS=$(printf '%s\n' "$FILES" | grep -E "$DOC_BUILTIN")
 fi
 if [ -n "$DOCSEL_DECL" ]; then
-  echo "[audit-coverage] DOC-SURFACE — $(printf '%s\n' "$DOCSEL_DECL" | grep -c .) doc-shaped file(s) in the evidence below are DECLARED SURFACE in this repo: flow.config.json.behaviorBearingDocPatterns matched them, so the project asserts their prose is deployed behaviour rather than documentation. They are: $(printf '%s' "$DOCSEL_DECL" | tr '\n' ' '). Findings against their prose are expected here, not anomalies. Not a weakening: more was read than usual, not less."
+  echo "[audit-coverage] DOC-SURFACE — $(printf '%s\n' "$DOCSEL_DECL" | grep -c .) doc-shaped file(s) in the evidence below are DECLARED SURFACE in this repo: flow.config.json.behaviorBearingDocPatterns matched them, so the project asserts their prose is deployed behaviour rather than documentation. They are: $(printf '%s' "$DOCSEL_DECL" | tr '\n' ' '). Findings against their prose are expected here, not anomalies. $DOCSEL_TAIL"
 fi
 if [ -n "$DOCSEL_GUESS" ]; then
-  echo "[audit-coverage] DOC-SURFACE — $(printf '%s\n' "$DOCSEL_GUESS" | grep -c .) doc-shaped file(s) in the evidence below reached it WITHOUT being declared: $(printf '%s' "$DOCSEL_GUESS" | tr '\n' ' '). They match flow's built-in guess at where deployed prose lives, not this project's flow.config.json.behaviorBearingDocPatterns. Treat the surface claim as flow's guess, not the project's assertion; set that slot to make it one. Not a weakening: more was read than usual, not less."
+  echo "[audit-coverage] DOC-SURFACE — $(printf '%s\n' "$DOCSEL_GUESS" | grep -c .) doc-shaped file(s) in the evidence below reached it WITHOUT being declared: $(printf '%s' "$DOCSEL_GUESS" | tr '\n' ' '). They match flow's built-in guess at where deployed prose lives, not this project's flow.config.json.behaviorBearingDocPatterns. Treat the surface claim as flow's guess, not the project's assertion; set that slot to make it one. $DOCSEL_TAIL"
 fi
 # THE SKIP LINE IS GATED ON THE BASE HAVING RESOLVED. Every git call above ends 2>/dev/null,
 # so an unresolvable origin/$BASE makes all three contribute nothing, $FILES is empty, and the

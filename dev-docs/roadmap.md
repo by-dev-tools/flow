@@ -2158,30 +2158,45 @@ commit history, assert `changelog/vX.Y.Z.md` exists) and it needs a decision fir
 versions are in scope — pre-marketplace versions have no entries and never will, so a naive check
 starts red on history nobody intends to write. Scope it when it is picked up, not here.
 
-### `walk_extract` parser-semantics follow-ups from v1.56.0's staff-review (3 findings, each measured)
+### `is_terminator` is not indent-aware: list items have a content column, headings don't float
 
-All three were found by review lenses at v1.56.0's ship gate, verified against the tree, and
-deferred because each one changes extraction output for the **eight-plus** consumers of this
-parser — which wants its own red-green fixture and its own measurement, not a rider.
+**One predicate edit, not three symptom fixes.** This entry replaces what were three separate
+deferrals from v1.56.0's review (first-line truncation leftovers, blank-line-then-bold, lazy
+flush-left mis-attachment). The altitude lens pointed out they are one bug: `_MD_HEADING_RE` and
+`_BOLD_LABEL_RE` both start `^\s*`, so an **indented** heading-shaped line is classified as a
+heading at any depth, and `collect_items` works around that with an `in_item` flag rather than
+correcting the predicate. Filed as three items they would be fixed three times.
 
-1. **A blank line between the bullet and its bold continuation still truncates.** `collect_items`
-   requires `in_item`, and a blank line clears it, so an indented bold-only line that opens a
-   *second paragraph* of a list item still reaches `is_terminator`. Measured: a 3-item block of
-   `- [ ] one` / blank / `      **Note.**` returns `['one']` and drops items two and three. It now
-   warns only if zero items were collected, so this case is still silent. Latent rather than live:
-   `dev-docs/plan.md` has **0** occurrences of the shape today. Closing it means deciding whether a
-   blank line ends a list item — a parser-semantics call for every consumer.
-2. **A lazy flush-left line leaves `in_item` set, so a later indented line glues onto the wrong
-   item.** Measured: `- [ ] one` / `Lazy prose.` / `      indented` yields the indented text
-   attached to `one`. Previously that text was dropped; now it is *mis-attached*, so a pin inside
-   it can falsely satisfy `walk-pin-lint`. Cheap to fix (reset `in_item` before the terminator
-   test) but it changes output, so it wants its own fixture.
-3. **The rigor gate's TRIGGER was not unioned, only its fingerprint.** `ship/SKILL.md` computes
-   `$SRC` through `$SOURCE_PATTERN` alone and gates the whole check on `[ -n "$SRC" ]`. So on a PR
-   touching no `sourceFilePatterns` file, `RIGOR=ok` and the marker is never read — meaning a
-   **prose-only PR still cannot invalidate its own staff-review marker**, which is the stated
-   motivation for v1.56.0 item 2 and is only closed for *mixed* PRs like #172. Deferred because
-   changing the trigger changes which PRs get gated in every consuming repo.
+The fix: make `is_terminator` indent-aware — a heading candidate indented past the enclosing
+item's content column is item content. CommonMark already caps ATX heading indentation at 3
+spaces, so this is the markdown-correct rule, not a flow convention. It closes, in one place and
+for all **eight-plus** consumers rather than only the callers routed through `collect_items`:
+
+1. the original truncation bug (already fixed at the `in_item` layer, which this would subsume);
+2. **a blank line before a bold continuation still truncates.** A blank line clears `in_item`, so
+   an indented bold-only line opening a *second paragraph* of a list item still reaches
+   `is_terminator`. Measured: a 3-item block of `- [ ] one` / blank / `      **Note.**` returns
+   `['one']` and drops two items, and it does NOT warn (the warning fires only on a zero-item
+   close). Latent, not live: `dev-docs/plan.md` has 0 occurrences today;
+3. **a lazy flush-left line leaves `in_item` set**, so a later indented line glues onto the wrong
+   item. Measured: `- [ ] one` / `Lazy prose.` / `      indented` attaches the indented text to
+   `one`. Previously that text was dropped; now it is *mis-attached*, so a pin inside it can
+   falsely satisfy `walk-pin-lint`;
+4. the same misclassification inside `heading_re` / `_heading_indices`, which `collect_items`
+   never touches.
+
+Why not now: it changes extraction output for every consumer, so it wants its own red-green
+fixture per case and its own measurement — not a rider on a three-fix PR.
+
+### The rigor gate's TRIGGER is still source-only, so a prose-only PR is never gated (v1.56.0)
+
+`ship/SKILL.md` computes `$SRC` through `$SOURCE_PATTERN` alone and gates the whole check on
+`[ -n "$SRC" ]`. v1.56.0 unioned the FINGERPRINT, not the trigger, so a PR touching no
+`sourceFilePatterns` file never reads the marker at all — meaning **a prose-only PR still cannot
+invalidate its own staff-review marker**, which is the stated motivation for that work and is
+closed only for *mixed* PRs like #172. v1.56.0 added an honest `NOT APPLICABLE` state so the
+blind spot is stated rather than silently green; widening the trigger is the real fix and is
+deferred because it changes which PRs get gated in every consuming repo.
 
 ### Two control-line contracts v1.56.0 left unpinned, and one that needs a home
 
@@ -2221,6 +2236,46 @@ v1.56.0's history entry records, as a measured fact, that **no** consumer of `wa
 and inventing one across eight consumers was explicitly out of scope. **Surfaces when:** a second
 gate-blocking warning is added to `collect_items`, OR a dogfood run shows a consumer rendering a
 verdict over a block that warned.
+
+### Four duplications v1.56.0's reuse lens found and did not fix (each needs a shared-helper edit)
+
+Each is a real duplicate; each fix touches a helper with many existing readers, which is why none
+landed in a three-fix PR. Listed newest-evidence-first.
+
+- **`origin/main` seeding is spelled in 8 tracked files.** `recall.py`, `precision_pair.py`, and
+  five `run_coverage_*`/`run_docs_only_*`/`run_visual_significance_*` harnesses each hand-roll
+  `git remote add origin` + `update-ref refs/remotes/origin/main` + `checkout -b work`. That
+  sequence is the fixture half that makes the shipped block's base-resolution tier fire at all,
+  so a drift in any one makes that harness measure a different base than its siblings **while
+  still printing a number.** Fix: `eval_utils.git_repo(path, files, origin=True, work_branch=...)`.
+- **Three slot-validate-and-warn ladders with three warning vocabularies.**
+  `verify-build/lib/file_patterns.py` (`resolve`/`compile_for`), `lib/sensitive_paths.py`
+  (`[sensitive-paths] ⚠️`) and the new `lib/doc_patterns.py` (`[doc-patterns] [WARN] ⚠️`) each own
+  "read a regex slot, treat non-string/empty as unset, warn rather than ignore, compile and
+  degrade to a built-in". The fit is partial — `resolve()` returns a default when unset while
+  `doc_patterns` needs `""` so it can union — but the type-check/compile-degrade half transfers.
+  The cost is already visible: `/flow:doctor` greps `[WARN]` formats, and a new "slot present but
+  junk" case must now be added in three places.
+- **`git rev-parse --show-toplevel` with an empty-string fallback, 5 copies.**
+  `scripts/flow_scratch.py`, `ship/lib/manifest-triage.py`, `ship/lib/plugin-provenance.py`,
+  `lib/arg_placeholders.py`, and now `lib/doc_patterns.py` — the last of which lands in the
+  *shared lib dir*, i.e. where the single definition belongs.
+- **A third `_CHECKBOX_RE` spelling.** `ship/lib/pr-coherence.py` and `ship/lib/render-test-plan.py`
+  each carry one with a "must match exactly" comment. v1.56.0's one-definition argument reached
+  `walk_extract` + `walk-pin-lint` and not these two.
+
+### Make the declared-surface exemption structural instead of two prose sites (v1.56.0 altitude)
+
+v1.56.0 teaches the reviewer, in two instruction sites, to honour a `DOC-SURFACE` line above the
+delimiter. The deeper shape: let the **selection carry the authority** — render declared prose in
+its own labelled evidence region (a `----- prose -----` section) so "doc-only changes are not
+behaviors" cannot apply to it by construction, and no reviewer has to recall an exemption. That
+also makes the delimiter-position guard structural rather than an instruction repeated per token.
+Pairs with the queued "control lines have no design language" item, where the other half lives: a
+per-run nonce in the `[audit-coverage]` prefix would make control-line forgery impossible instead
+of merely instructed-against. **Also outstanding and one line:** the pre-existing
+`PLAN-PREDATES-BRANCH` bullet has the same missing position qualifier v1.56.0 fixed on its own
+token, deliberately left alone there as out-of-scope.
 
 ## Later
 

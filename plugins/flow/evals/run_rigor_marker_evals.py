@@ -21,6 +21,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+from eval_utils import bang_blocks, git_repo  # noqa: E402
+
 HERE = Path(__file__).parent
 SCRIPT = HERE.parent / "skills" / "ship" / "lib" / "rigor-marker.py"
 
@@ -122,13 +125,19 @@ def main() -> int:
     # `sourceFilePatterns` -- and the test would pass for that reason instead of the slot's.
     # So the config is committed in the BASE and only the prose file is added afterwards.
     def seeded_repo(repo, config=None):
-        """Base commit (a.py + optional flow.config.json) with an origin/main ref."""
-        git(repo, "init", "-q")
-        git(repo, "config", "user.email", "t@t"); git(repo, "config", "user.name", "t")
-        (Path(repo) / "a.py").write_text("x = 1\n")
+        """Base commit (a.py + optional flow.config.json) with an origin/main ref.
+
+        Seeding goes through `eval_utils.git_repo`, not a hand-rolled init/config/commit: the
+        hand-rolled copy was both a duplicate AND already behind, since `git_repo` passes
+        `-b main` and this did not. eval_utils' own docstring states the policy -- five older
+        harnesses keep private copies so the eventual hoist is a deletion, and NEW harnesses
+        import -- and this file already imports from it further down, which is what made the
+        copy indefensible rather than merely redundant.
+        """
+        files = {"a.py": "x = 1\n"}
         if config is not None:
-            (Path(repo) / "flow.config.json").write_text(config)
-        git(repo, "add", "-A"); git(repo, "commit", "-q", "-m", "base")
+            files["flow.config.json"] = config
+        git_repo(Path(repo), files)
         git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
         rc, h = run(["source-sha", "--default-branch", "main"], cwd=repo)
         return h.strip()
@@ -200,9 +209,8 @@ def main() -> int:
     # rather than trusting they were copied correctly.
     sys.path.insert(0, str(HERE.parent / "lib"))
     import doc_patterns  # noqa: E402
-    import eval_utils  # noqa: E402
     skill = (HERE.parent / "skills" / "audit-coverage" / "SKILL.md").read_text(encoding="utf-8")
-    shell_literals = re.findall(r"DOC_BUILTIN='([^']*)'", "\n".join(eval_utils.bang_blocks(skill)))
+    shell_literals = re.findall(r"DOC_BUILTIN='([^']*)'", "\n".join(bang_blocks(skill)))
     check("the shell declares the builtin exactly once", len(shell_literals) == 1,
           f"found {len(shell_literals)} DOC_BUILTIN literals in audit-coverage's bang blocks: "
           f"{shell_literals} — two copies is the fan-out this check exists to prevent")
