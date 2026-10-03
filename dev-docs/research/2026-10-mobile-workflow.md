@@ -213,6 +213,9 @@ This cuts across §§2–4 rather than sitting beside them.
 
 ## 6. Open questions for Ben — each answerable in a word
 
+**Status: OPEN, put to Ben 2026-10-03.** Pending — not forgotten; answers land in a later edit
+of this doc when the orchestrator brings them back.
+
 1. Can you open an HTML file created in a cloud-workspace session from the iOS app at all (tap a
    path in chat), or only view text/diffs/images?
 2. Does a `file://` path or a plain filesystem path pasted in a chat message do anything when you
@@ -223,8 +226,14 @@ This cuts across §§2–4 rather than sitting beside them.
    Conductor app)?
 5. On the iOS app's PR view, does a long PR body's markdown table (e.g. a 14-row table) render
    fully, or does it get truncated/collapsed?
-6. Is the `conductor` CLI available and authenticated inside an ordinary worker's cloud sandbox
-   (not just the orchestrator seat), so a skill could call `conductor preview set` itself?
+
+**Answered, 2026-10-03 (orchestrator):** *is the `conductor` CLI available and authenticated
+inside an ordinary worker's cloud sandbox, not just the orchestrator seat?* **Yes.** The S0
+worker created seven workspaces with it from inside its own sandbox, and this investigation
+independently ran `conductor preview --help` / `conductor auth whoami` from an ordinary worker
+seat (not the orchestrator) to ground §1 — both are live evidence, not inference. This closes
+option 1 in §8's remaining open precondition: a flow skill *can* assume the CLI is reachable
+from whichever sandbox it runs in, without a capability probe first.
 
 ## 7. Further areas beyond Ben's two (named, not investigated to the same depth)
 
@@ -252,8 +261,10 @@ This cuts across §§2–4 rather than sitting beside them.
    Mechanism: `nohup python3 -m http.server <port> --bind 127.0.0.1 --directory <dir> &` then
    `conductor preview set --port <port>`; hand the human `<preview URL>/<file>.html`.
    **Cost:** small — a few lines in `prototype/SKILL.md` §8 and `verify-build`/`ship`'s hand-off
-   lines, gated on detecting the `conductor` CLI + an authenticated context, falling back to
-   today's `file://`/path string when absent.
+   lines. The CLI's own reachability from an ordinary worker sandbox is now confirmed (§6's
+   answered question — not just the orchestrator seat), so no capability probe is needed inside
+   Conductor; still fall back to today's `file://`/path string when the CLI or an authenticated
+   context is absent (any non-Conductor flow consumer).
    **Consumer impact:** Conductor-specific — a flow consumer not running inside Conductor cloud
    workspaces has no equivalent, so this must stay an optional best-effort branch, never a
    requirement (flow's "project-agnostic by default" principle, `CLAUDE.md`).
