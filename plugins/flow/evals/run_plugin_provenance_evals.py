@@ -1976,6 +1976,74 @@ def test_cached_versions_is_confined_to_the_cache():
               f"directories as plugin versions. got {d2.get('cached_versions')!r}")
 
 
+def test_normal_arm_reports_a_move_it_can_prove():
+    """The ENGINE-PRESENT arm's unmoved / unreadable verdicts, pinned on that arm.
+
+    /flow:simplify's reuse lens found that only the BOOTSTRAP copy of the "reported
+    SUCCESS but installed flow is STILL X" wording was pinned by an eval, leaving the
+    normal arm's copy free to drift unexercised. I fixed that by sharing the renderer
+    (`report_move`) — which makes both arms *render* identically but still leaves the
+    engine-present arm undriven. /flow:audit-coverage caught the difference: a
+    unit-layer fix for a claim made at the composed layer (§ Consistency item 4's
+    "pin a claim at the layer where it is CLAIMED", FB-0118).
+
+    Criterion 4 cannot cover it either — it pins stdout BY COUNT, and all three
+    `report_move` branches emit exactly one line, so a count assertion passes
+    identically whether the arm renders the warning or a reassuring arrow.
+
+    Three states on the engine-present arm, all paired against the arrow.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        drive = _hook_driver(td)
+
+        # (a) update exits 0 and the registry version does NOT move.
+        home = make_home_with_engine(td / "n1", "1.29.0", "1.40.0")
+        rc, so, se, calls = drive(home, cwd=REPO)          # no bump_to ⇒ nothing moves
+        line = so.strip()
+        check(rc == 0, f"must exit 0, got {rc}")
+        check(any("plugin update flow@flow" in c for c in calls),
+              f"the engine-present arm must have actually attempted the update, else this "
+              f"tests nothing. got {calls}")
+        check("STILL" in line and "⚠️" in line,
+              f"an engine-present update that moved nothing must WARN, got {line!r}")
+        check("→" not in line,
+              f"and must not print the arrow for a move that did not happen, got {line!r}")
+
+        # (b) the after-version cannot be read at all.
+        home = make_home_with_engine(td / "n2", "1.29.0", "1.40.0")
+        reg = home / ".claude" / "plugins" / "installed_plugins.json"
+        d = json.loads(reg.read_text())
+        inst_path = d["plugins"]["flow@flow"][0]["installPath"]
+        # The shim's bump rewrites `version`; drop it so the post-update read is empty
+        # while installPath still resolves the engine for the PRE-update read.
+        shim_bump = td / "bin" / "bump.py"
+        shim_bump.write_text(
+            "import json, sys\n"
+            "reg = sys.argv[1]\n"
+            "d = json.load(open(reg))\n"
+            "d['plugins']['flow@flow'][0].pop('version', None)\n"
+            "json.dump(d, open(reg, 'w'))\n")
+        rc, so, se, calls = drive(home, cwd=REPO, bump_to="irrelevant")
+        line = so.strip()
+        check("could not be read" in line and "⚠️" in line,
+              f"an unreadable after-version must say so rather than print 'unknown' in an "
+              f"arrow, got {line!r}")
+        check("→" not in line, f"and must not arrow, got {line!r}")
+
+    # (c) THE PAIR — a real move on the engine-present arm still arrows, or (a)/(b)
+    #     would pass on a renderer that never reports success.
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        drive = _hook_driver(td)
+        home = make_home_with_engine(td, "1.29.0", "1.40.0")
+        rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.40.0")
+    check("→" in so and "1.29.0" in so and "1.40.0" in so,
+          f"a genuine move on the engine-present arm must still render the arrow with "
+          f"both versions, got {so!r}")
+    check("STILL" not in so, f"and must not warn, got {so!r}")
+
+
 def test_hook_output_channels():
     """stdout is the seat-facing channel and carries AT MOST one verdict line.
 
@@ -2121,6 +2189,7 @@ def main() -> int:
                test_hook_drift_is_stderr_only_but_staleness_is_not,
                test_hook_path_is_not_mangled_by_the_version_filter,
                test_cached_versions_is_confined_to_the_cache,
+               test_normal_arm_reports_a_move_it_can_prove,
                test_hook_output_channels,
                test_capture_fixture, test_ci_wired):
         try:
