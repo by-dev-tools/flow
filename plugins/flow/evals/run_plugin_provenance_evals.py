@@ -1515,6 +1515,68 @@ def test_hook_acts_when_the_engine_cannot_answer():
         check(so == "" and se == "", f"and it stays silent, got stdout={so!r} stderr={se!r}")
 
 
+def test_hook_does_not_import_repo_code():
+    """`python3 -c` must not put this checkout on `sys.path`.
+
+    SECURITY, and it is the invariant CONTRIBUTING.md records as *mitigated*: "the
+    hook no longer executes any OTHER repository file." That was false. `python3 -c`
+    prepends the current directory to `sys.path` (`sys.path[0] == ''`), and this
+    hook's gate GUARANTEES the cwd is the flow checkout — its marker probe
+    `[ -f plugins/flow/.claude-plugin/plugin.json ]` is relative. So a repo-root
+    `json.py` was imported, i.e. executed, by the registry read — as the user, with
+    no approval prompt, on every session start.
+
+    Attacker path: a contributor's PR adds `json.py` at the repo root; a maintainer
+    runs `gh pr checkout <PR>` and opens a session. CONTRIBUTING.md accepts exactly
+    one residual — that the hook SCRIPT is a repo file — and a reviewer scanning a
+    diff reads `.claude/hooks/*.sh` with suspicion and a root-level `json.py` as
+    noise. Found by /flow:security-review; PRE-EXISTING (verified against the
+    pre-change hook, which writes the marker), though this change added a second
+    `-c` site and a sentence claiming the bootstrap arm "reports a version by
+    reading the plugin registry rather than by running repo code".
+
+    Structural pins cannot see this: `test_hook_never_executes_the_checkout` greps
+    for a checkout-relative engine *path*, and an implicit `sys.path` import names no
+    path at all. So this one is behavioural, and it is the known-positive that
+    validates it — the same probe fails against the unfixed hook.
+    """
+    # ONE shadow per run, and a payload that imports NOTHING.
+    #
+    # Both details are load-bearing, and the first cut got both wrong — it shadowed
+    # `json` and `re` together and wrote the marker via `pathlib`. Shadowing `re`
+    # MASKS the `json` hit: stdlib `json` imports `re`, our `re` imports `pathlib`,
+    # `pathlib` imports `re` and gets our half-initialised module, the whole program
+    # raises, and the hook's bare `except Exception` swallows it. Net result: no
+    # marker, a green test, and a mutation that removes `-I` sailing through. So each
+    # module is probed alone, and the payload uses the `open` builtin so the probe
+    # cannot break the very import it is trying to observe.
+    pwned = []
+    for name in ("json", "re"):
+        shadow = REPO / f"{name}.py"
+        if shadow.exists():        # never clobber a real repo file
+            continue
+        with tempfile.TemporaryDirectory() as t:
+            td = Path(t)
+            drive = _hook_driver(td)
+            marker = td / f"IMPORTED-{name}"
+            shadow.write_text(f"open({str(marker)!r}, 'w').write({name!r})\n")
+            try:
+                home = make_home_with_engine(td, "1.29.0", "1.43.0")
+                rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.43.0")
+                if marker.exists():
+                    pwned.append(name)
+            finally:
+                shadow.unlink(missing_ok=True)
+    check(not pwned,
+          f"the hook imported repo-root module(s) {pwned} — `python3 -c` runs with the "
+          f"checkout on sys.path, so this is arbitrary code execution from the branch "
+          f"under review. Use `python3 -I -c`.")
+    check(rc == 0, f"the hardened hook must still work, got rc={rc}")
+    check(any("plugin update flow@flow" in c for c in calls),
+          f"and must still do its job with -I — a fix that breaks the update is not a "
+          f"fix. got {calls}")
+
+
 def test_hook_stdout_cannot_be_forged_by_the_registry():
     """A hostile registry cannot inject extra lines into the model's context.
 
@@ -1547,6 +1609,26 @@ def test_hook_stdout_cannot_be_forged_by_the_registry():
           f"the payload's prose must not reach the model's context, got {so!r}")
     check("| forged |" not in so,
           f"the payload must not be able to forge markup, got {so!r}")
+
+    # THE OTHER ROUTE. The same registry value also reaches stdout via the ENGINE on
+    # the normal arm ($INST/$MKT/$BR), where it is cleaned by the engine's `_clean`
+    # rather than by `_registry_field`. /flow:security-review found the first version
+    # of this test drove only the bootstrap arm, so that route had no pin at all —
+    # one sanitiser covered, the other asserted by assumption.
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        drive = _hook_driver(td)
+        home = make_home_with_engine(td, "1.29.0", "1.43.0")
+        reg = home / ".claude" / "plugins" / "installed_plugins.json"
+        d = json.loads(reg.read_text())
+        d["plugins"]["flow@flow"][0]["version"] = payload
+        reg.write_text(json.dumps(d))
+        rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.43.0")
+    check(rc == 0, f"engine route: a hostile registry must not wedge, got {rc}")
+    check(len(so.strip().splitlines()) == 1,
+          f"engine route: still exactly ONE stdout line, got {so!r}")
+    check("IGNORE PREVIOUS INSTRUCTIONS" not in so,
+          f"engine route: the payload's prose must not reach the context, got {so!r}")
 
 
 def test_hook_never_claims_a_move_it_could_not_read():
@@ -1721,6 +1803,7 @@ def main() -> int:
                test_hook_degrades_safely, test_hook_field_parse_no_shift,
                test_hook_bootstraps_an_engineless_install,
                test_hook_acts_when_the_engine_cannot_answer,
+               test_hook_does_not_import_repo_code,
                test_hook_stdout_cannot_be_forged_by_the_registry,
                test_hook_never_claims_a_move_it_could_not_read,
                test_hook_output_channels,

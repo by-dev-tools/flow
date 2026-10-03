@@ -525,6 +525,15 @@ the eval harness's fixture builders are next touched.
    explicitly in the cost header that the host timeout is the bound. Deferred because it adds a new
    failure mode to reason about (a half-installed plugin) rather than removing one.
 
+**SECURITY, deferred because it is not in this diff:** skill and agent **directory names** from the
+checkout render unsanitised into the PR body — `plugin-provenance.py`'s `render_block`, fed by
+`surface_drift` → `_names()`. This is the identical forging class `test_version_string_cannot_forge_the_table`
+pins for the version string: a directory name may contain `|`, backticks and newlines on Linux, so a PR
+adding `plugins/flow/skills/<crafted>/` can close the markdown cell and forge a `✓ matches this branch`
+row in the body a human reads at the merge gate. `render_block` is untouched by v1.57.0, which is the
+only reason this is deferred rather than fixed — it is the same sink the v1.57.0 hardening is about.
+Route those names through `_clean` when next touched. (Found by `/flow:security-review`.)
+
 Two more, smaller, same provenance: the `✓` glyph means "ran" in `ship/SKILL.md`'s loop-step table and
 "healthy" in the provenance table 14 lines below, with one legend covering both; and there is no
 design-language section governing machine-to-human copy in rendered-markdown or terminal artifacts,
