@@ -283,8 +283,8 @@ for f in sorted((PLUGIN / "lib").glob("*.py")):
 # v1.53.0/FB-0124). An exact count, not a floor: a floor goes green when a file is added,
 # but also stays green when a skill is deleted and another grows a second lib. Bumping it is
 # therefore the intended cost of adding a shared lib, not friction to route around.
-check("the scan covered all 10 new shipped artifacts (an empty or partial sweep is a vacuous pass)",
-      scanned == 10, str(scanned))
+check("the scan covered all 11 new shipped artifacts (an empty or partial sweep is a vacuous pass)",
+      scanned == 11, str(scanned))
 # POSITIVE — without this, deleting the adapter entirely would turn every line above green.
 for name in SUITE:
     txt = (PLUGIN / "skills" / name / "SKILL.md").read_text(encoding="utf-8")

@@ -108,8 +108,20 @@ if [ -n "$SRC" ]; then
   else
     echo "[rigor-gate] ok — /flow:staff-review marker matches the current source."
   fi
+else
+  # A THIRD STATE, because `ok` is the INITIALIZED value and this branch reads no marker at all.
+  # On a diff touching no `sourceFilePatterns` file — a prose-only PR, which on a repo that
+  # ships prompts is a real shape — `$SRC` is empty, the check never runs, and the gate printed
+  # nothing while `$RIGOR` stayed `ok`. That is the same "reads less than it reports" class this
+  # step exists to catch, so it says so. Verdict-neutral: a prose-only diff is still not gated
+  # (the TRIGGER union is a separate, deferred change — see roadmap § Next), but the blind spot
+  # is now stated rather than silently green, the same way DOC-BLIND states its own.
+  RIGOR=not-applicable
+  echo "[rigor-gate] NOT APPLICABLE — this diff touches no sourceFilePatterns file, so no staff-review marker was read and this gate did NOT check anything. On a repo whose deployed surface is prose, that is a real blind spot, not a pass."
 fi
 ```
+
+**`$RIGOR` has exactly three values, and only one of them escalates:** `ok` (a fresh marker matched), `not-applicable` (the diff touches no `sourceFilePatterns` file, so nothing was read — see the branch above), and any other value (`missing` / `branch-mismatch` / `source-drift`), which is the escalating case. **`not-applicable` must NOT escalate**: it reports a stated blind spot on a diff this gate does not cover, and routing it to the draft manifest would hand the human a decision about a check that never ran. Spelled out because the sentence below carries that exclusion in a qualifier ("on a source-touching … ship") that a reader has to notice.
 
 If `$RIGOR` was not `ok` on a source-touching, non-spike/tiny ship, **first re-run
 `/flow:staff-review`** on the final tree and re-read the marker (auto-resolvable — the same

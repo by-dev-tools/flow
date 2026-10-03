@@ -49,7 +49,10 @@ sys.path.insert(0, str(HERE))
 from eval_utils import bang_blocks, commit, git_repo  # noqa: E402  the shared hoist target
 
 _failures: list = []
-BUILTIN = r"(^|/)(skills|agents|rules)/.*\.md$"
+sys.path.insert(0, str(PLUGIN / "lib"))
+import doc_patterns  # noqa: E402  the ONE definition; the shell literal is pinned
+                     # byte-identical to it in run_rigor_marker_evals.py
+BUILTIN = doc_patterns.DOC_BUILTIN
 
 
 def check(name, cond, detail=""):
@@ -420,6 +423,128 @@ def main() -> int:
         out_small = scenario(tmp, "c-under", SRC)
         check("under the cap: no TRUNCATED token at all",
               "TRUNCATED" not in out_small, out_small[:200])
+
+        print("\n4. ITEM 1 — the reviewer is TOLD the prose is surface (CV1 follow-up)")
+        # FIXTURES FIRST. CV1 taught the block to SELECT behaviour-bearing prose, and then
+        # handed it to a reviewer whose Stage 1 instruction reads "test/doc changes are **not**
+        # behaviors" and whose system-prompt category says "do not flag ... doc-only changes".
+        # So the evidence arrived and the instructions said to ignore it: the gate paid for the
+        # bytes and suppressed the finding. The fix needs BOTH halves -- a positive line saying
+        # which files are declared surface, and an exemption in the two instructions that keys
+        # on it.
+        DOCSLOT = {"behaviorBearingDocPatterns": r"(^|/)prompts/.*[.]md$"}
+        out_sel = scenario(tmp, "d-selected", {"prompts/system.md": "# sys\n\nnew rule\n", **SRC},
+                           cfg_extra=DOCSLOT)
+        check("a selected doc file is ANNOUNCED as declared surface",
+              "DOC-SURFACE" in out_sel and "prompts/system.md" in out_sel,
+              f"the file is in the evidence but nothing tells the reviewer its prose is "
+              f"behaviour, and two instructions tell them it is not: {out_sel[:300]}")
+        check("the announcement is NOT a weakening (it reports strength, not damage)",
+              "WEAKENED · DOC-SURFACE" not in out_sel,
+              "a WEAKENED token would make the reviewer append the 'this audit is weaker than "
+              "normal' note on a run where MORE was read, inverting its meaning")
+        above = out_sel.split("----- diff -----", 1)[0]
+        check("...and it is emitted ABOVE the delimiter (the skill speaking, not file content)",
+              "DOC-SURFACE" in above,
+              "below the delimiter the prompt says to distrust it, so a file under review could "
+              "forge or suppress it")
+        # PAIRED NEGATIVE: no selected doc file ⇒ no line. Otherwise it is noise on every PR and
+        # instructs the reviewer to judge prose that is not in front of them.
+        out_nodoc = scenario(tmp, "d-nodoc", SRC, cfg_extra=DOCSLOT)
+        check("no DOC-SURFACE line when no doc-shaped file was selected",
+              "DOC-SURFACE" not in out_nodoc, out_nodoc[:200])
+        check("...and that run still audited something (silence is not emptiness)",
+              files_line(out_nodoc) == "app.py", f"files={files_line(out_nodoc)!r}")
+        # The two lines are opposites and must never both fire for the same file: one says "read
+        # and declared", the other "not read".
+        check("DOC-SURFACE and DOC-BLIND do not both claim the same file",
+              not ("DOC-SURFACE" in out_sel and "DOC-BLIND" in out_sel
+                   and "prompts/system.md" in out_sel.split("DOC-BLIND", 1)[-1][:400]),
+              f"the same path is reported as both read and unread: {out_sel[:400]}")
+
+        # PROVENANCE: the line must credit the predicate that ACTUALLY matched. $DOCALL is wider
+        # than the consumer's slot (it carries flow's built-in guess), so one sentence crediting
+        # the slot for every match would attribute a declaration the project never made.
+        check("a slot-matched file is announced as DECLARED",
+              "DECLARED SURFACE" in out_sel and "behaviorBearingDocPatterns matched them" in out_sel,
+              f"the declared form is missing: {out_sel[:300]}")
+
+        # The undeclared branch is UNREACHABLE today -- EXCL ends with `\.md$`, so no .md enters
+        # $FILES except through the slot union. An assertion over the shipped block alone would
+        # therefore be vacuous and pass whatever the wording said. So REPLAY the block with that
+        # one exclusion clause removed -- the cleanup CV1's history entry invites by calling it
+        # "belt-and-braces rather than the cause" -- and assert the OUTCOME in that state. This
+        # pins the decision, not a string that currently implies it (general.md item 4).
+        blocks = [b for b in bang_blocks((SKILLS / "audit-coverage" / "SKILL.md")
+                                         .read_text(encoding="utf-8")) if "DOC_BUILTIN=" in b]
+        check("exactly one bang block carries the doc selection (the replay has one target)",
+              len(blocks) == 1, f"found {len(blocks)}")
+        mutated = blocks[0].replace("""'|(^|/)docs?/|\.md$'""", """'|(^|/)docs?/'""")
+        check("...and the replay actually removed the clause (the mutation is not a no-op)",
+              mutated != blocks[0],
+              "the EXCL literal moved; re-point this replay or it silently tests the shipped state")
+        # BOTH conditions are required to reach the branch, and the first fixture only had one:
+        # the clause removal lets a .md past EXCL, but it still has to be SELECTED, and the
+        # default sourceFilePatterns matches no .md either. A consumer who overrides that slot
+        # (documented, and the likeliest mis-config for a prose-shipping repo) supplies the
+        # second half. A fixture that reaches the branch for only one of the two reasons would
+        # have passed while testing nothing.
+        out_guess = scenario(tmp, "d-guess", {"skills/x/SKILL.md": "# x\n\nnew rule\n", **SRC},
+                             cfg_extra={"behaviorBearingDocPatterns": r"(^|/)prompts/.*[.]md$",
+                                        "sourceFilePatterns": r"\.py$|\.md$"},
+                             block=mutated)
+        check("a builtin-matched, UNdeclared file is not credited to the project's slot",
+              "behaviorBearingDocPatterns matched them" not in out_guess,
+              f"the line claims the consumer declared a file their slot does not match — the "
+              f"reviewer then drops a suppression on a false provenance claim: {out_guess[:400]}")
+        check("...and it IS still announced, as flow's guess (not silently dropped)",
+              "DOC-SURFACE" in out_guess and "built-in guess" in out_guess,
+              f"an undeclared doc-shaped file reached the evidence and nothing said so, which is "
+              f"the opposite failure: {out_guess[:400]}")
+
+        # The instruction halves. Text assertions, PAIRED so the fix cannot be satisfied by
+        # deleting the suppression -- which would make every README tweak an undeclared
+        # behaviour and collapse precision (general.md item 3).
+        skill_txt = (SKILLS / "audit-coverage" / "SKILL.md").read_text(encoding="utf-8")
+        agent_txt = (PLUGIN / "agents" / "auditor.md").read_text(encoding="utf-8")
+        check("Stage 1 still suppresses ordinary doc changes",
+              "doc changes are **not** behaviors" in skill_txt,
+              "the suppression was deleted rather than scoped: every comment and README edit "
+              "now enumerates as a behaviour, and Stage 2 cannot recover precision it never had")
+        check("...and Stage 1 carries the declared-surface exemption, keyed on the line",
+              "DOC-SURFACE" in skill_txt,
+              "Stage 1 is the first filter and omission there is unrecoverable -- a behaviour "
+              "left out of the enumeration can never be found by Stage 2")
+        check("the auditor category still suppresses doc-only changes",
+              "doc-only changes" in agent_txt,
+              "deleting it makes the shared agent flag docs in coverage mode unconditionally")
+        check("...and the category carries the same exemption",
+              "DOC-SURFACE" in agent_txt,
+              "Stage 2 applies ONLY this category, so an exemption Stage 1 honours and this "
+              "category does not would enumerate the behaviour and then suppress the finding")
+        # SCOPE PIN. The exemption lives inside the category marked "(coverage mode only)", and
+        # the other two commands are told they have FOUR categories -- which is why editing the
+        # shared agent cannot reach /flow:audit-plan or /flow:audit-completion. That argument is
+        # structural, so pin the structure: if either command is ever rewritten to claim five
+        # categories, this fires and the scoping claim gets re-made rather than assumed.
+        cat_start = agent_txt.find("**Undeclared change**")
+        cat_end = agent_txt.find("## What does not count as a finding")
+        exempt_at = agent_txt.find("DOC-SURFACE")
+        # `find`, not `index`: a missing exemption must FAIL this check, not raise out of main()
+        # and skip every check below it. The first draft used `index` and took the two
+        # /flow:audit-plan scope pins down with it.
+        check("the exemption sits INSIDE the coverage-mode-only category",
+              -1 < cat_start < exempt_at < cat_end,
+              "the exemption escaped the category that scopes it to coverage mode, so it now "
+              "speaks to plan and completion audits as well")
+        for cmd, expected in (("audit-plan", "four categories"),
+                              ("audit-completion", "four categories")):
+            txt = (SKILLS / cmd / "SKILL.md").read_text(encoding="utf-8")
+            check(f"/flow:{cmd} still scopes itself to the other four categories",
+                  expected in txt,
+                  f"this command no longer says {expected!r}, so the Undeclared-change category "
+                  f"-- and the doc exemption inside it -- may now reach it. Re-measure that "
+                  f"command before trusting the scoping argument in this PR's history entry")
 
     print()
     if _failures:

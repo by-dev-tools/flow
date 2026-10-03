@@ -15,6 +15,12 @@ Contract:
       "source_path": "<plan path>",
       "source_heading": "<the active Spec-walk heading line, for traceability>",
       "source_heading_line": <1-indexed line of that heading, or null>,
+      "ended_at_line": <1-indexed line of the terminator that CLOSED the block, or
+                        null when it ran to end-of-file. Provenance, present on EVERY
+                        call: it answers "how far did you read?" without warning on
+                        the healthy path, which is how a truncated read is told apart
+                        from a complete one (FB-0121). A terminator close that
+                        collected items does NOT warn -- only a zero-item close does>,
       "block_count": <how many Spec-walk blocks exist in the file>,
       "all_demoted": <true iff block_count > 0 but every one is qualified
                       shipped/merged/demoted — no active block, distinct from

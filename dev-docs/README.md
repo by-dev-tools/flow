@@ -3,6 +3,7 @@
 Flow's own development tracking. **Not shipped** — none of this is part of the plugin (see `CLAUDE.md` § Repository Layout for the three-surface boundary).
 
 This file exists because point-in-time docs get buried by default: `CLAUDE.md`'s Core Documents table listed only the five living docs, so `research/` and `handoffs/` were invisible to any agent orienting from it. **Every new doc under `research/` or `handoffs/` must be added here in the same PR that creates it** — see § Rules below.
+| `dev-docs/handoffs/2026-10-01-cv1-followup-dispatch.md` | CV1 follow-up: the orchestrator's dispatch verbatim — scope bound + both open decisions' authority (ACTIVE) |
 
 ---
 

@@ -2,6 +2,221 @@
 
 ## Current Focus
 
+**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/cv1-followup-reviewer-rigor-walkextract`,
+version + FB at ship time, expect v1.56.0): CV1's unfinished half — three fixes, each one a gate
+that reads less than it reports.** Ben's call was (a), finish CV1 inside the stopping point. Scope is
+exactly the three fixes below and nothing else. **The dispatch is quoted verbatim at `dev-docs/handoffs/2026-10-01-cv1-followup-dispatch.md`** —
+written to disk because `/flow:audit-plan` flagged that this plan cited it six times as the
+authority for its scope bound and for both open decisions while no artifact existed, so the gate
+could not check either side of a stated disagreement.
+
+**Mode:** feature · **Surface:** non-visual
+
+### What I got wrong before designing, corrected by `/flow:critique-plan`
+
+**MY FIRST CORRECTION WAS ITSELF WRONG, and the way it was wrong matters more than the fact.**
+This plan originally claimed the doc-only instruction lives in one place, `agents/auditor.md:27`,
+and that the two review lenses citing a second site in `audit-coverage/SKILL.md` were mistaken.
+**They were right and I was not.** The clause is at `audit-coverage/SKILL.md:662`, at the END of a
+long line: "...persisted preference. Refactors, renames, formatting, comments, dependency bumps,
+pure-internal helpers, and test/doc changes are **not** behaviors."
+
+How the error happened, recorded because it is a repeat: my grep DID match line 662 — `Refactors`
+is in it — but I piped the output through `cut -c1-170`, so the matching text was cut off, I read
+the visible prefix as a non-match, and **inferred absence from a truncated line.** That is the same
+mistake I was corrected for earlier in this program (an orchestrator collision answer taken from a
+`head -12`). The defence is the one the critic names: grep the RULE, not one site's spelling, and
+never conclude absence from output you truncated.
+
+**And it inverts this plan's premise.** Line 662 sits under `## Stage 1 — enumerate (recall only)`
+(heading at 658), so the clause has a twin that is unambiguously **Stage-1** scoped. The original
+plan argued the clause's stage scope was undefined and a Stage-2 carve-out would therefore suffice.
+It would not: the same section states that in Stage 1 the only error is omission and **a behavior
+you leave out here can never be found later**, so no Stage-2 rule can recover a behaviour Stage 1
+was instructed not to enumerate.
+
+**What survives.** The scoping analysis still holds and is still the answer to the dispatch's
+shared-agent worry (`dev-docs/handoffs/2026-10-01-cv1-followup-dispatch.md`). `auditor.md` carries five categories; only the fifth, `Undeclared change`, is
+marked *(coverage mode only)* and holds the clause, and only `/flow:audit-coverage` restricts the
+agent to it ("one category only ... Ignore your other four categories"). `/flow:audit-plan` and
+`/flow:audit-completion` use the other four and never name the fifth. The second site is in the
+coverage skill itself, so it is coverage-only by construction. Residual, stated: those two skills do
+not *explicitly* exclude the fifth category either.
+
+### Item 1 — exempt declared surface in BOTH stages, not one
+
+Two sites, because there are two instructions:
+- `audit-coverage/SKILL.md:662` (Stage 1, enumeration) — the one that must change first, since an
+  un-enumerated behaviour is unrecoverable downstream.
+- `agents/auditor.md:27` (Stage 2, the coverage-only category) — the matching clause.
+
+The mechanism the block already computes and then discards: `$DOCF`, the paths that entered via
+`behaviorBearingDocPatterns`. Emit it as an informational provenance line above the delimiter
+(`files selected via behaviorBearingDocPatterns: ...`) — **not** a `WEAKENED` line, since it is not
+a weakening and must not be routed as one. Then one clause at each site, keyed to that list: for a
+file on it the doc-only carve-out does not apply, because the consumer has *declared* that file
+deployed surface. A changed or added rule, instruction or contract in such a file is a behaviour
+change; changed rationale, commentary or example prose still is not.
+
+**THE DISCRIMINATOR IS UNTESTED, and the plan originally claimed otherwise.** This said CV1's prose
+negative already measures it. It does not, and `/flow:audit-plan` caught why: that negative scored
+0 findings against the prompt *as it stands*, with the doc-only carve-out still in force at both
+sites. A wording change was dismissed because the carve-out dismissed all doc changes — so the run
+never had to exercise a rule-versus-rationale judgment, because nothing asked it to. Item 1 removes
+exactly that shortcut. **So the three pure-prose runs are this discriminator's FIRST evidence, not a
+regression check against a baseline that covered it.** The consequence for how to read a bad result
+is the opposite of reassurance: a non-clean prose run means *the discriminator does not work yet*
+and Item 1 cannot ship, not that a previously-green control regressed.
+
+### Item 2 — `rigor-marker.py` fingerprints only `sourceFilePatterns`
+
+**DECISION (a′), and its mechanism, settled before building.** Fingerprint
+`sourceFilePatterns ∪ DOC_BUILTIN ∪ behaviorBearingDocPatterns` — the same union #172 used for
+`DROPPED`. **Measured on CV1's own merged diff:** today 16 of 29 files are fingerprinted and **0 of
+11 `.md` files**; under (a′) it is 19 of 29 and **3 of 11** — exactly `audit-coverage/SKILL.md`,
+`doctor/SKILL.md` and `.claude/rules/general.md`, while `README.md`, `CLAUDE.md`, `plan.md`,
+`roadmap.md`, the feedback and history entries, and `plugins/flow/docs/workflow.md` are left alone.
+A `SKILL.md` edit after review invalidates the marker; a README typo does not. That is why (a′)
+beats both (a), which fails open for anyone who has not set the slot, and (b), which fires on
+trivial edits and teaches people to ignore the gate.
+
+**`DOC_BUILTIN` is not importable today, so (a′)'s "one definition" needs a mechanism.** It is a
+SHELL literal at `audit-coverage/SKILL.md:391` inside a bang-span; the two things that reuse it
+re-extract it from the skill text, and `rigor-marker.py` imports stdlib only. Rejected: parsing the
+prompt file from a ship-time gate (couples ship to audit-coverage's internals), and duplicating the
+literal (the second definition (a′) exists to avoid). Taken: `plugins/flow/lib/doc_patterns.py`
+becomes the single source, `rigor-marker.py` imports it, the shell keeps its literal, and an eval
+asserts the two byte-equal — the house pattern already used by `sensitive_paths.py`,
+`arg_placeholders.py` and `dispatch_backend.py` in that same directory, and the same shape as
+`run_docs_only_evals.py:262`'s producer/engine pin. The module is the mechanism (a′) requires,
+flagged to the orchestrator as such rather than smuggled in as scope.
+
+Measured on CV1: 29 changed files, 16 fingerprinted, **0 of the 11 changed `.md` files**. A
+`SKILL.md` edit committed after the marker was written left the gate reporting `ok`, so on a
+prompts-are-the-product repo a prompt-only PR cannot invalidate its own staff-review marker.
+`source_sha()` selects with `pat.search(f)` at `rigor-marker.py:91`; three callers pass the pattern
+(`ship/SKILL.md:101`, `staff-review/SKILL.md:218`, `skip-audit-checks.py:269`) and
+`run_docs_only_evals.py:262` pins the default's byte-identity between producer and engine.
+
+**OD1 — DECIDED (orchestrator, 2026-10-01): (a′).** The dispatch and my own roadmap entry disagree, so this goes to the gate
+rather than being quietly picked.
+- **(a) Union `behaviorBearingDocPatterns`** — the dispatch's instruction (`dev-docs/handoffs/2026-10-01-cv1-followup-dispatch.md`, item 2).
+  Smallest diff. Weakness:
+  protection is opt-in, which is the wrong shape for an enforcement mechanism, so a consumer who
+  never sets the slot still gets no protection for prompt edits.
+- **(b) Fingerprint every changed tracked file** — my recommendation. "Did the tree move since
+  review?" has no reason to care what language a file is in. **Cost, corrected by the critic:** (b)
+  does NOT avoid the fan-out. `--source-pattern` is declared only on the `source-sha` subcommand
+  (`rigor-marker.py:180-182`) and all three sites pass it there, so under (b) the flag has no
+  remaining consumer — either three call sites keep passing an inert argument, or all three plus
+  `run_docs_only_evals.py:262` change. (b) must therefore say which: **drop the flag and update the
+  three sites plus the pin.** Plus the one-time staleness of every existing marker on upgrade, which
+  at least fails toward re-review.
+
+### Item 3 — `walk_extract.py`: THREE loops, and a re-diagnosed motivation
+
+**The motivation was misattributed, and the critic caught it.** This plan cited #171's gate going
+red with "15 of 16 criteria name no verification artifact" as the third strike of the early-block-end
+defect. It cannot be: "15 of 16" means all 16 were **extracted** and then failed the pin predicate,
+whereas the early-end defect makes criteria *disappear* (15→5, 1 of 3). Two distinct mechanisms in
+`walk_extract.py`, and I merged them:
+- **one-physical-line capture** (`CHECKBOX_RE`, line 272) — the bullet's later lines are dropped, so
+  a pin written on line 2 is invisible. This is one of **two** causes of #171's red gate, not the
+  whole of it: commit `bb9c675` on the base branch records both, and its message names the second —
+  `ARTIFACT_RE` matches a standalone artifact word, and `run_coverage_docblind_evals.py` fails it
+  because `_evals` has no word boundary before it. Verified live: `*Pinned by:* \`run_X_evals.py\``
+  reads UNPINNED; adding the bare word `eval` makes it pinned. Both causes had to be fixed to turn
+  that gate green, and attributing the instance to one of them is what made OD2's recommendation
+  look stronger than the evidence supports.
+- **early block end** — a continuation line opening with a bold span terminates the block, so later
+  criteria vanish entirely. Measured 15→5 on CV1's plan, and 1-of-3 with 0 warnings on a controlled
+  3-item fixture, on both front-ends.
+
+**`is_pinned` has TWO independent gaps, both live, neither in this PR's scope** — recorded in full
+so the next reader does not re-diagnose either, and because `grep -rn 'ARTIFACT_RE'` over
+`dev-docs/` shows the second is recorded in no roadmap, feedback or plan entry at all:
+- `PIN_MARKERS` is `("→", "->", "pinned by", "verify:", "verified by")`, so the `*Verified:*` idiom
+  recent plan blocks use reads as **unpinned** while `*Pinned by:*` reads as pinned.
+- `ARTIFACT_RE` requires a standalone artifact word, so every `run_*_evals.py` filename fails it —
+  the gap that has now fired twice in this program, and the one the dispatch's own resume message
+  named ("3 unpinned because of the `_evals` word-boundary issue").
+
+**And the fix has TWO sites, not three — the count in this plan's first draft was wrong.** Measured:
+`extract-criteria.py` and `extract-visual-states.py` contain **no scan of their own** (each is
+`from walk_extract import cli_main`, 0 references to `CHECKBOX_RE` or `is_terminator`), so the two
+front-ends share one loop. The production loops that can lose criteria are
+`verify-build/lib/walk_extract.py`'s `extract_block` and `critique-plan/lib/walk-pin-lint.py`'s
+re-implemented `collect_spec_walk_blocks` — the latter imports only `CHECKBOX_RE`, `heading_re` and
+`is_terminator`, never `extract_block`, so a fix in one does not reach the other. A fix in
+`extract_block` alone leaves `/flow:critique-plan`'s own lint cutting the block: a gate reading a
+third of a plan and reporting clean. The sites are named rather than counted, because a completeness
+criterion keyed to a quantity the tree does not contain certifies nothing.
+
+**OD2 — DECIDED (orchestrator, 2026-10-01): (b2).** The dispatch (`dev-docs/handoffs/2026-10-01-cv1-followup-dispatch.md`) says exactly three
+fixes, and names item 3 as the early-block-end. The roadmap bullet this closes carries BOTH failure modes and says "same pass as
+the first-line truncation above: one reader, one fix, one harness". Fixing only the early end leaves
+the measured 80%-of-declared-text-dropped half open under a bullet that would otherwise read as
+closed.
+- **(b1) Early end only — NOT taken.** It would have honoured the scope literally but required
+  splitting the roadmap bullet; under (b2) the bullet closes whole. The boundary stays exactly
+  where this plan drew it: the early-block-end, the `ARTIFACT_RE`/`_evals` word-boundary gap in
+  `is_pinned`, and the second scan site. Nothing else in `walk_extract` or `walk-pin-lint` —
+  notably NOT `PIN_MARKERS`' missing `verified:`, which stays recorded and out of scope. Each
+  half gets its own paired test. Formerly: Then the roadmap bullet must be
+  SPLIT, closing only the early-end half and leaving the truncation half open with its measurement
+  intact, per the critic's FOLLOW-UP.
+- **(b2) Both halves plus the second scan site — TAKEN.** Because the #171 instance that
+  motivates item 3 is caused by the half (b1) excludes, so (b1) ships a fix that does not address
+  its own stated evidence. Larger diff, one reader, one harness.
+
+### Spec-walk
+
+- [x] **Item 1 changes BOTH sites, Stage 1 first.** *Pinned by:* a new eval asserting the declared-surface exemption is present at `audit-coverage/SKILL.md`'s Stage-1 enumeration rule AND at `agents/auditor.md`'s coverage-only category.
+      A Stage-2-only change cannot recover a behaviour Stage 1 was told not to enumerate, which the skill itself states.
+- [x] **Item 3 fixes BOTH named scan sites.** *Pinned by:* a new `run_walk_extract_evals.py` eval case asserting the fixture's criteria survive through `walk_extract.extract_block` (exercised via both front-ends) AND through `walk-pin-lint.py`'s own output, which re-implements the scan.
+      Sites named, not counted: the front-ends carry no scan of their own, so "three loops" was wrong.
+- [x] **Item 1 scopes to the coverage path only.** *Pinned by:* a new eval asserting the edited clause sits inside the `(coverage mode only)` category and that `audit-plan` + `audit-completion` do not restrict the agent to `Undeclared change`.
+      If execution shows the edit must touch shared text instead, this criterion fails and the measurement set grows to those two reviewers, per the dispatch.
+      **Measured, not just pinned:** `/flow:audit-completion` over its committed fixture matches its expected category under the new agent prompt, and `/flow:audit-plan` returns an *identical* summary line under the new and old prompts — zero leakage in both. The edit is inert in the two commands that share the agent.
+- [x] **A declared-surface file is no longer dismissed on doc-only grounds at Stage 2.** *Pinned by:* an eval fixture pair over the `pr159` case, plus the `$DOCF` provenance line asserted present above the delimiter and asserted NOT to carry the `WEAKENED` token.
+      **Deviation:** the fixture pair is a purpose-built scenario (`d-selected` / `d-nodoc`), not the `pr159` case this criterion names; `pr159` carries the three *measured* runs instead. The `DOC-SURFACE` line is asserted present above the delimiter and asserted NOT to carry the `WEAKENED` token, as written.
+- [x] **Recall moves, measured on the same rig.** *Pinned by:* the `tools/coverage-recall` report on `pr159` with `--selftest` passing FIRST, reporting single-run scores and the union against today's 20 to 40 percent single-run and 60 percent union.
+      **2/5 (40%), 3/5 (60%), 3/5 (60%) — mean 53%, union 3/5 (60%).** Single-run mean moved (CV1's two arms were 40% and 20%); the **union did not move** and all three runs miss the same two gaps, so the ceiling is not variance. Confound disclosed: item 3 changed the criteria this case feeds (1,143 → 5,831 chars), so this is not a clean prompt A/B — CV1's comparable untruncated arm was 1/5.
+- [x] **Precision holds — and this is the discriminator's FIRST test, not a regression check.** *Pinned by:* the `tools/coverage-recall` report — the pure-prose negative run at least three times, each returning `No issues flagged.`, plus false-positive counts across every recall run. A drop is a regression, not a trade-off: stop and report, do not ship.
+      **Zero findings in 3 of 3 prose-negative runs; the paired positive flagged in 2 of 2.** Deviation from the literal wording: only 2 of the 3 returned `No issues flagged.` verbatim — the third returned zero findings via the roadmapped empty-enumeration shape. Across the recall runs: r1 fp=0; r2 and r3 each carried one unmatched finding, the *same* behaviour both times, adjudicated borderline-TRUE-positive and reported either way.
+- [x] **Item 2: a `.md`-only change after review makes the marker stale.** *Pinned by:* a new `run_rigor_marker_evals.py` eval case — fingerprint, edit only a `SKILL.md`, re-fingerprint, assert the digest changed, paired with the negative that an unchanged tree leaves it identical.
+- [x] **Item 2 keeps the producer and engine in agreement.** *Pinned by:* the existing `run_docs_only_evals.py` eval's byte-identity check, updated in the same commit as whichever option OD1 settles on.
+      Unchanged and still passing: OD1's (a′) unions the doc patterns into the FINGERPRINT only, leaving `DEFAULT_SOURCE_PATTERN` untouched — folding docs into the source ruler would have broken the docs-only early-exit.
+- [x] **Item 3: a `**`-leading continuation line keeps every criterion.** *Pinned by:* a new `run_walk_extract_evals.py` eval case over a plan whose bullet carries such a line, asserting all criteria survive, on BOTH front-ends.
+- [x] **Item 3: a bare `run_*_evals.py` filename counts as a named verification artifact.** *Pinned by:* `run_walk_extract_evals.py` asserting `is_pinned()` accepts a criterion pinned to such a filename, paired with the negatives that prose naming no artifact stays unpinned AND that the widening is confined to underscore adjacency — the old `\b` pattern replayed beside the new one over a corpus straddling the boundary, mutation-validated.
+      **Declared at the merge gate, not at plan time, and that is the finding.** `/flow:audit-coverage` caught that item 3 had TWO halves — the block scan and this pin predicate — and that all three of my item-3 criteria described only the scan. The three assertions already existed and passed; what was missing was the declaration. The widening makes `/flow:critique-plan`'s pin gate strictly MORE permissive, so the confinement check is what bounds it. Approved by the orchestrator 2026-10-03.
+- [x] **Item 3: a genuine bold-label heading still terminates the block.** *Pinned by:* the same eval — the paired negative, without which the fix is satisfiable by never terminating, which would break this repo's own multi-block plans.
+- [x] **Item 3: a block discloses where its read stopped, and warns only when the close looks wrong.** *Pinned by:* `run_walk_extract_evals.py` over the CLI (the composed surface, not the library result) — `ended_at_line` is the 1-indexed terminator line on a terminator close and `null` on an end-of-file close, present on every call; the WARNING fires only on a zero-item close ("the heading matched but nothing was read under it"), paired with the negative that a healthy terminator close warns nothing.
+      **This criterion was rewritten at the merge gate, and the rewrite is the finding.** As first declared it pinned "a non-empty `warnings` entry naming the early end" — and the implementation originally did exactly that, on EVERY terminator close. A review lens showed that fires on correct extraction (first-active-block-only means a terminator is the normal close), so truncation and success emitted the same sentence: non-discriminating, with added noise. The split — provenance in a field, alarm only on a suspicious close — is the corrected contract, so the criterion had to move with it rather than describing a warning the code no longer emits. `/flow:audit-coverage` caught that the field itself was named by no criterion while being a new key on the SHIPPED CLI output both front-ends emit.
+- [x] **Review-round fix: file class in the fingerprint.** *Pinned by:* `run_rigor_marker_evals.py` — fingerprint a tree with a matched regular `.md`, replace it with a symlink to byte-identical content, assert the digest MOVES (the target is deliberately not read), paired with the assertion that it still exits 0 with a 64-char digest rather than an empty one.
+      Security found that `read_bytes()` on a symlink to a device file raises `MemoryError`, which is not an `OSError` and so escaped the handler — crashing the process and leaving an empty fingerprint that compares equal to the other side's empty fingerprint.
+- [x] **Review-round fix: an invalid `sourceFilePatterns` degrades loudly, never to an empty fingerprint.** *Pinned by:* `run_rigor_marker_evals.py` — assert `source-sha` exits 0, emits the `[WARN] ⚠️` line naming the slot, and produces the DEFAULT-pattern digest, paired against the default run's digest so "degraded" cannot be satisfied by "produced nothing".
+- [x] **Review-round fix: the slot-refusal ladder returns the builtin set alone plus exactly one warning.** *Pinned by:* `run_rigor_marker_evals.py` over `doc_patterns_list` — four value-shape refusals (non-string, over-cap, invalid regex, nested quantifier) and three config-shape ones (unparseable JSON, non-object, non-string slot), each asserting one warning that names the slot and says `NOT applied`; paired with the positive that a VALID slot is applied and that an inline `(?i)` now scopes to its own pattern instead of leaking to the builtin clause.
+      **Known and accepted divergence, stated rather than implied:** the shell reader applies the slot via `grep -E` under `timeout 5` with no length cap and no nested-quantifier refusal, so for a pathological value the two readers consider different files behaviour-bearing. The consequences differ (evidence selection vs. the rigor fingerprint) and the schema now constrains the slot to the ERE∩Python subset; unifying the two is the § Next "one slot, two engines" item.
+      Writing this arm is what found that the length cap applied on the config path only, so a caller passing `slot=` directly bypassed it. Moved to the value-shape checks.
+- [x] **Review-round fix: a broken `doc_patterns.py` degrades to a source-only fingerprint, loudly — never to an empty one.** *Pinned by:* `run_rigor_marker_evals.py` — copy `rigor-marker.py` into a temp tree whose sibling `lib/doc_patterns.py` is a **SyntaxError** (the case the broadened `except Exception` exists for, not merely a missing file), then assert: exit 0; the `[WARN]` line names the module; the digest is NOT the empty-input hash; a source-only tree digests identically to a healthy run; and with a changed `.md` present the degraded digest DIFFERS — paired with the positive that the healthy run did widen for that same file, so the arm cannot pass by proving nothing.
+      **This is the one state in which the doc-blind gate this PR closes silently returns.** A partial install used to traceback out of a function contracted to always exit 0, leaving `SRC_SHA=""` on BOTH sides, where two empty fingerprints compare equal and the gate prints `ok`. The real module is never touched by the test: `rigor-marker` resolves its import as `parents[3]/"lib"`, so a copy under a temp tree imports from that tree.
+- [x] **Review-round fix: the rigor gate's third state is stated, and does not escalate.** *Pinned by:* `run_docs_only_evals.py` — assert the shipped `ship/SKILL.md` carries `RIGOR=not-applicable` and the `NOT APPLICABLE` line, that it says outright that this state must NOT escalate, and that all three values are named where the escalation is decided; paired with the positive that a source-touching non-`ok` result still routes to the draft manifest, so the assertions cannot be satisfied by deleting the gate.
+      **The claim worth pinning was the comment's own "verdict-neutral".** `ok` is the INITIALIZED value, so before this a diff touching no `sourceFilePatterns` file left the gate silent and `$RIGOR=ok` — a prose-only PR got a green from a check that never ran. The new state says so. It is genuinely non-escalating, but only because the escalation sentence carries the exclusion in a qualifier ("on a source-touching … ship") that a reader has to notice, so the contract is now spelled out where the decision is made.
+- [x] **Review-round fix: the new shared lib is classified top-tier.** *Pinned by:* `run_gate_evals.py` — assert `sensitive_paths.classify` returns sensitive for `plugins/flow/lib/doc_patterns.py` against this repo's own config, paired with the negative that an ordinary doc path does not (without which a pattern matching everything would satisfy it).
+      **Why it is a stakes decision and not a formatting edit:** that module decides which doc-shaped paths enter the rigor fingerprint AND the coverage evidence block, so the diff that narrows `DOC_BUILTIN` back to nothing would reopen both gates — and, unclassified, would itself be low-stakes: auto-approvable at the plan gate and routed to a cheap tier at dispatch. That is the self-weakening shape `sensitive_paths.py` exists to prevent, and it is the rationale that file already states for its own entry.
+- [x] **Fixtures first.** *Pinned by:* the git history — each prompt or reader change lands in a commit whose fixture was committed first or alongside, per this repo's prompt-changes-are-code-changes rule.
+- [x] **Docs.** *Pinned by:* a doc-diff — one `dev-docs/history/` entry, the FB entries the work earns, and the three roadmap entries closed rather than left open.
+
+### Coordination
+
+Branched from `main` at `a250b66` (v1.55.0, CV1 merged) after #172 landed, as instructed, because
+this edits the same `audit-coverage` files. Baseline on the branch: evals 43/43,
+`recall.py --selftest` passing. Version and FB numbers at ship time; expect v1.56.0. Nothing else
+is in flight on these files as of branching.
+
+
+
 
 **▶ EXECUTED, shipping (this branch `conductor/cv1-audit-coverage-md-blindness`, v1.55.0, FB-0126/FB-0127): CV1 — `/flow:audit-coverage` cannot see `.md`, so most of this plugin is invisible to it.** Measured end to end: #159's reconstruction moves from **0 gaps found at baseline** (both arms A-off) to **2-of-5 and 1-of-5 single-run, union 3-of-5**, zero false positives, plus the paired prose negative. Four follow-ups this measurement produced are in `roadmap.md` § Next, none of them fixed here.
 

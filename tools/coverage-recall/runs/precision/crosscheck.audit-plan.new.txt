@@ -1,0 +1,58 @@
+AUDIT SUMMARY
+4 issues flagged: 3 unverified assumption, 1 unverified recall
+
+---
+
+ISSUE 1 · Unverified assumption
+
+Claim:
+> 1. Update src/pages/pricing.tsx to wire the existing Stripe Checkout button to the configured Stripe SDK in lib/stripe.ts.
+
+(premise under review: "the existing Stripe Checkout button")
+
+Source of premise: silent — the user asked to "add stripe checkout to the pricing page"; nothing in the request or session establishes that a Checkout button is already present.
+Counterfactual: If this assumption is false, the plan would change because step 1 is no longer wiring an existing control but building the trigger UI from scratch, and step 4's "redirect to the Checkout URL on click" has no existing click handler to attach to. The only tool call in the session is a read of /repo/README.md; src/pages/pricing.tsx is listed as UNREAD.
+
+Suggested: Read src/pages/pricing.tsx and restate step 1 as either "wire the button at <line>" or "add the button", whichever the file supports.
+
+---
+
+ISSUE 2 · Unverified assumption
+
+Claim:
+> 1. Update src/pages/pricing.tsx to wire the existing Stripe Checkout button to the configured Stripe SDK in lib/stripe.ts.
+> 2. Add a /api/checkout endpoint that creates a Checkout Session using the standard server-side Stripe instance.
+
+(premise under review: lib/stripe.ts already exports a configured, server-side Stripe instance)
+
+Source of premise: stated but ungrounded — "the configured Stripe SDK in lib/stripe.ts" and "the standard server-side Stripe instance" both assert existing, correctly-scoped setup. lib/stripe.ts is listed as UNREAD and no tool call since the user's request opened it.
+Counterfactual: If this assumption is false, the plan would change because steps 1-2 gain prerequisite work the plan has no step for: initializing the SDK, and provisioning the secret key / environment configuration a server-side instance requires. If lib/stripe.ts exists but is a client-side (publishable-key) module, step 2's endpoint cannot use it at all.
+
+Suggested: Read lib/stripe.ts and state in the plan which export step 2 imports and whether it is secret-key-initialized.
+
+---
+
+ISSUE 3 · Unverified assumption
+
+Claim:
+> 3. Configure the existing Stripe webhook endpoint to handle the checkout.session.completed event and mark the user as subscribed in the database.
+
+Source of premise: stated but ungrounded — "the existing Stripe webhook endpoint". No file read, grep, or user statement in this session identifies a webhook route, and unlike pricing.tsx and lib/stripe.ts it does not even appear in the referenced-artifacts list, so no path was ever resolved for it.
+Counterfactual: If this assumption is false, the plan would change because step 3 becomes building a webhook route rather than configuring one: raw-body handling, signature verification against a new webhook signing secret, and endpoint registration in Stripe — work with its own deployment and configuration dependencies, not a handler added to an existing switch.
+
+Suggested: Locate the webhook route and name its path in step 3, or convert step 3 into an explicit "create the webhook endpoint" step with the signing-secret dependency called out.
+
+---
+
+ISSUE 4 · Unverified recall
+
+Claim:
+> This matches the pattern we used previously for the one-off donation flow.
+
+Source of premise: unnamed prior work — "the one-off donation flow" is referenced with no file, route, commit, or doc identified, and no artifact for it was read this session (the session's only tool call is a read of /repo/README.md).
+Why this flags high: this precedent is the sole justification for every "existing" and "standard" in the plan and for the plan's four-step shape, yet a one-off donation is a one-time payment, while the user asked for subscriptions — so if the recalled flow is what its name says, the Checkout Session parameters in step 2 and the event handling in step 3 do not transfer, and the plan inherits a payment-mode shape for a subscription feature.
+
+Suggested: Open the donation-flow implementation, cite its path in the plan, and state explicitly which parts carry over to a subscription and which do not.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

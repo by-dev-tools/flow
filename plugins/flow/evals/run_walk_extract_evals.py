@@ -515,6 +515,216 @@ def test_all_demoted_cli() -> None:
     check("all-demoted-cli-flag", out.get("all_demoted") is True, f"got {out.get('all_demoted')}")
 
 
+
+# ---------------------------------------------------------------- CV1 follow-up, item 3
+# FIXTURES FIRST. Three defects, each with its own paired test, written before any fix so each
+# one is observed failing. All three make a gate read LESS than it reports, with nothing said.
+
+# A plan whose SECOND criterion carries a continuation line opening with a bold span. Nothing
+# about it looks wrong to an author; `**A bolded note.**` indented under a bullet is ordinary
+# prose. Measured before the fix: 1 of 3 extracted, 0 warnings.
+_BOLD_CONT = """# Plan
+
+**Spec-walk:**
+
+- [ ] first criterion *Pinned by:* the `run_a_evals.py` eval
+- [ ] second criterion *Pinned by:* the `run_b_evals.py` eval
+      **A bolded note that is a continuation line, not a heading.**
+- [ ] third criterion *Pinned by:* the `run_c_evals.py` eval
+"""
+
+# The same shape for the OTHER front-end, since both share one loop.
+_BOLD_CONT_VISUAL = _BOLD_CONT.replace("**Spec-walk:**", "**Visual-walk** *(UI only)*:")
+
+# A plan whose pin sits on the bullet's SECOND physical line. The block is not cut short here —
+# all three criteria are extracted — but each arrives truncated to its first line, so the pin is
+# invisible to any consumer. This is the half that made #171's gate report "name no verification
+# artifact" over criteria that were all pinned.
+_PIN_ON_LINE_2 = """# Plan
+
+**Spec-walk:**
+
+- [ ] first criterion
+      *Pinned by:* the `run_a_evals.py` eval
+- [ ] second criterion
+      *Pinned by:* the `run_b_evals.py` eval
+"""
+
+# A heading that matches and yields NOTHING: the one close shape worth a warning. An author who
+# leaves a stray heading between the walk heading and its checkboxes gets zero criteria, and
+# before the fix that rendered identically to a plan with no criteria at all.
+_EMPTY_BLOCK = """# Plan
+
+**Spec-walk:**
+
+### Coordination
+
+- [ ] this belongs to another block and must NOT be collected
+"""
+
+# A GENUINE bold-label heading, which must still terminate the block. Without this the fix is
+# satisfiable by never terminating, which breaks every multi-block plan this repo has.
+_GENUINE_TERMINATOR = """# Plan
+
+**Spec-walk:**
+
+- [ ] first criterion *Pinned by:* the `run_a_evals.py` eval
+
+**Confidence verdicts:**
+
+- [ ] not a criterion, and must NOT be extracted
+"""
+
+
+def test_bold_continuation_keeps_every_criterion() -> None:
+    """A continuation line opening with `**` must not end the block (both front-ends)."""
+    for label, text, script in (
+        ("Spec-walk", _BOLD_CONT, "extract-criteria.py"),
+        ("Visual-walk", _BOLD_CONT_VISUAL, "extract-visual-states.py"),
+    ):
+        code, out = run_cli(LIB / script, text)
+        # Derive the list key from the output instead of guessing it. Each front-end emits
+        # exactly one non-warnings list key -- `criteria` here, `assertions` for the visual
+        # front-end -- and guessing the latter as `visual_states` read a missing key as "0
+        # extracted" when the measured figure is 2 of 3. A test that misstates the magnitude of
+        # what it caught is its own small version of the truncation this fixture exists to catch.
+        # Paired control (continuation line removed): both front-ends give 3 of 3.
+        key = next(k for k, v in out.items() if isinstance(v, list) and k != "warnings")
+        got = len(out.get(key, []))
+        check(f"{label}: a bold continuation line keeps all 3 criteria",
+              got == 3,
+              f"extracted {got} of 3 — a continuation line was read as a block terminator, so "
+              f"every later criterion vanished with no warning: {out.get(key)}")
+
+
+def test_genuine_bold_heading_still_terminates() -> None:
+    """The paired negative: a real bold-label heading must still end the block."""
+    code, out = run_cli(LIB / "extract-criteria.py", _GENUINE_TERMINATOR)
+    got = out.get("criteria", [])
+    check("a genuine bold-label heading still terminates the block",
+          len(got) == 1,
+          f"extracted {len(got)}, expected 1 — if the fix stopped terminating at real headings it "
+          f"would merge every block in a multi-block plan: {got}")
+
+
+def test_early_end_is_announced() -> None:
+    """A SUSPICIOUS close warns; a normal one reports where it stopped and stays quiet.
+
+    The first version of this test demanded a warning on EVERY terminator close, and the
+    implementation obliged. Both were wrong, and a review lens caught it at the ship gate:
+    `extract_block` is first-active-block-only by design, so a terminator is how nearly every
+    real plan's block ends -- it fired on this repo's own healthy plan. Before the fix truncation
+    was silent; after it, truncation and success emitted the same sentence. Still
+    non-discriminating, now with added noise, which is the failure `rigor-marker.py` names in its
+    own comment one file away: a gate that always fires is one people learn to click past.
+
+    The corrected contract splits the two jobs. `ended_at_line` is PROVENANCE and is always
+    reported, so "how far did you read?" is answerable on every call (FB-0121). The WARNING fires
+    only when the close looks wrong -- a heading that matched with nothing under it.
+    """
+    # A healthy block that ends at a real terminator: provenance, no alarm.
+    code, out = run_cli(LIB / "extract-criteria.py", _GENUINE_TERMINATOR)
+    warns = " ".join(out.get("warnings", []))
+    check("a NORMAL terminator close does not warn",
+          "ended at line" not in warns,
+          f"warning on the healthy path is noise, and it makes the signal unreadable on the "
+          f"truncated one: {out.get('warnings')}")
+    check("...but it still reports WHERE the read stopped (provenance, not silence)",
+          isinstance(out.get("ended_at_line"), int) and out["ended_at_line"] > 1,
+          f"nothing says how far the read got, so a truncated read and a complete one are "
+          f"indistinguishable again: ended_at_line={out.get('ended_at_line')!r}")
+
+    # A block that runs to EOF has no terminator to report.
+    code, out_eof = run_cli(LIB / "extract-criteria.py", _BOLD_CONT)
+    check("a block that runs to EOF reports no terminator",
+          out_eof.get("ended_at_line") is None,
+          f"got {out_eof.get('ended_at_line')!r}, expected None")
+
+    # THE SUSPICIOUS CLOSE: a heading matched and nothing came out from under it.
+    code, out_empty = run_cli(LIB / "extract-criteria.py", _EMPTY_BLOCK)
+    w2 = " ".join(out_empty.get("warnings", []))
+    check("a zero-item close IS announced",
+          "NO items" in w2 and "ended at line" in w2,
+          f"the heading matched and nothing was read under it, and nothing said so — which "
+          f"renders as a clean empty plan downstream: {out_empty.get('warnings')}")
+    check("...and it is not reported as an empty plan",
+          out_empty.get("block_count", 0) >= 1 and out_empty.get("criteria") == [],
+          f"block_count={out_empty.get('block_count')!r} criteria={out_empty.get('criteria')!r}")
+
+
+def test_pin_reaches_the_consumer_on_a_continuation_line() -> None:
+    """The one-physical-line half: a pin on line 2 must still reach the consumer."""
+    code, out = run_cli(LIB / "extract-criteria.py", _PIN_ON_LINE_2)
+    crit = out.get("criteria", [])
+    check("a pin written on a continuation line reaches the consumer",
+          len(crit) == 2 and all("Pinned by" in c for c in crit),
+          f"the reader keeps only each bullet's first physical line, so a pin on line 2 is "
+          f"invisible and an all-pinned plan reads as unpinned: {crit}")
+
+
+def test_is_pinned_accepts_an_evals_filename() -> None:
+    """`ARTIFACT_RE`'s word boundary: `run_X_evals.py` must count as naming an artifact."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent
+                          / "skills" / "critique-plan" / "lib"))
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "wpl", Path(__file__).resolve().parent.parent
+        / "skills" / "critique-plan" / "lib" / "walk-pin-lint.py")
+    wpl = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wpl)
+    check("a bare run_*_evals.py filename counts as a named artifact",
+          wpl.is_pinned("**X.** *Pinned by:* `run_coverage_docblind_evals.py`"),
+          "`\\beval\\b` cannot match across the underscore in `_evals`, so every eval filename in "
+          "the repo's own naming convention reads as unpinned — the second cause of #171's red gate")
+    # PAIRED NEGATIVE: widening must not make everything pinned.
+    check("...and a criterion naming NO artifact is still unpinned",
+          not wpl.is_pinned("**X.** it works correctly and the behaviour is obviously right"),
+          "if the widened pattern accepts prose with no artifact, the lint stops distinguishing "
+          "anything and every plan reads as fully pinned")
+
+    # And pin the DECISION, not just the two examples: the widening is confined to underscore
+    # adjacency. Replay the OLD `\b`-bounded pattern beside the shipped one over a corpus that
+    # straddles the boundary, and assert the set they disagree on is exactly the `_`-adjacent
+    # cases. Without this, a later "widen it a bit more" that starts matching `evaluate` or
+    # `different` passes both checks above while quietly making every plan read as pinned.
+    import re as _re
+    old = _re.compile(r"\b(grep|frame|on-sim|simulator|screenshot|doc-diff|diff|report|eval|"
+                      r"snapshot|fixture|walkthrough|recording)s?\b", _re.IGNORECASE)
+    corpus = {
+        "run_coverage_docblind_evals.py": True,    # `_`-adjacent: the case this fix exists for
+        "a_report_b": True,                        # `_`-adjacent on both sides
+        "the eval": False,                         # already matched; unchanged
+        "eval-driven": False,                      # `-` was already a boundary
+        "re-evaluate the tradeoff": False,         # longer WORD: must stay unmatched
+        "indifferent": False,                      # `diff` inside a word: must stay unmatched
+        "eval2": False,                            # digit-adjacent: must stay unmatched
+        "frames/0001.png": False,                  # `/`-adjacent; already matched
+    }
+    disagreed = {s for s in corpus if bool(old.search(s)) != bool(wpl.ARTIFACT_RE.search(s))}
+    expected = {s for s, differs in corpus.items() if differs}
+    check("the widening is confined to underscore adjacency",
+          disagreed == expected,
+          f"old and new patterns disagree on {sorted(disagreed)}, expected exactly "
+          f"{sorted(expected)} — anything else means the boundary change reaches further than "
+          f"`_` and the lint's discrimination moved with it")
+
+
+def test_second_scan_site_also_keeps_criteria() -> None:
+    """walk-pin-lint re-implements the scan, so a fix in extract_block does not reach it."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "wpl2", Path(__file__).resolve().parent.parent
+        / "skills" / "critique-plan" / "lib" / "walk-pin-lint.py")
+    wpl = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wpl)
+    blocks = wpl.collect_spec_walk_blocks(_BOLD_CONT)
+    items = blocks[0][1] if blocks else []
+    check("walk-pin-lint's own scan keeps all 3 criteria past a bold continuation",
+          len(items) == 3,
+          f"it collected {len(items)} of 3 — this file imports only the primitives and re-scans, "
+          f"so /flow:critique-plan's lint reads a fraction of the plan and reports clean: {items}")
+
+
 def main() -> int:
     for fn in [
         test_heading_forms,
@@ -530,6 +740,12 @@ def main() -> int:
         test_anchor_co_location_regression_guards,
         test_anchor_known_limitation_tiny_mode,
         test_anchor_known_limitation_retained_visual_first,
+        test_bold_continuation_keeps_every_criterion,
+        test_genuine_bold_heading_still_terminates,
+        test_early_end_is_announced,
+        test_pin_reaches_the_consumer_on_a_continuation_line,
+        test_is_pinned_accepts_an_evals_filename,
+        test_second_scan_site_also_keeps_criteria,
         test_anchor_co_location_cli,
         test_all_demoted,
         test_demoted_heading_skipped_regardless_of_order,

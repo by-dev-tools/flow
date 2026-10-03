@@ -1,0 +1,54 @@
+AUDIT SUMMARY
+4 issues flagged: 3 unverified assumption, 1 unverified recall
+
+---
+
+ISSUE 1 · Unverified assumption
+
+Claim:
+> Update src/pages/pricing.tsx to wire the existing Stripe Checkout button to the configured Stripe SDK in lib/stripe.ts.
+
+Source of premise: stated but ungrounded — "the existing Stripe Checkout button" asserts a UI affordance already present in src/pages/pricing.tsx. The file is listed under Referenced artifacts as UNREAD, and the only tool call in the session is [Read] /repo/README.md. The user's request ("add stripe checkout to the pricing page") asks for checkout to be added, which does not establish that the button exists.
+Counterfactual: If this assumption is false, the plan would change because steps 1 and 4 are written as wiring and redirect work against an existing control; with no button present they become UI construction — adding the element, its copy, its loading/disabled state, and its placement in the pricing layout — which is unscoped work the plan does not budget for.
+
+Suggested: Read src/pages/pricing.tsx and state what checkout affordance exists there, then re-scope steps 1 and 4 to either wire or create it.
+
+---
+
+ISSUE 2 · Unverified assumption
+
+Claim:
+> wire the existing Stripe Checkout button to the configured Stripe SDK in lib/stripe.ts.
+> Add a /api/checkout endpoint that creates a Checkout Session using the standard server-side Stripe instance.
+
+Source of premise: stated but ungrounded — "the configured Stripe SDK in lib/stripe.ts" and "the standard server-side Stripe instance" assert that lib/stripe.ts exists and already exports a server-side Stripe client with credentials wired. lib/stripe.ts is listed under Referenced artifacts as UNREAD; no tool call in the session opens it or greps for a Stripe export. This is independent of Issue 1 — a pricing-page button existing says nothing about the SDK module existing.
+Counterfactual: If this assumption is false, the plan would change because steps 1, 2 and 3 all consume that instance, so a missing or client-only lib/stripe.ts inserts prerequisite work ahead of all three: creating the module, resolving the secret key through the project's env/secret handling, and deciding server-vs-client boundaries. The plan's step order would no longer be executable as written.
+
+Suggested: Read lib/stripe.ts and confirm it exports a server-side Stripe instance with a configured secret key before treating steps 1-3 as wiring work.
+
+---
+
+ISSUE 3 · Unverified assumption
+
+Claim:
+> Configure the existing Stripe webhook endpoint to handle the checkout.session.completed event and mark the user as subscribed in the database.
+
+Source of premise: stated but ungrounded — "the existing Stripe webhook endpoint" asserts a deployed webhook route is already in place. No webhook path appears anywhere in the session: it is not in the user's request, not in the Referenced artifacts list (which names only src/pages/pricing.tsx and lib/stripe.ts), and no tool call searches for one. The premise names no artifact that could be checked.
+Counterfactual: If this assumption is false, the plan would change because step 3 shifts from adding one event case to standing up a webhook endpoint end to end — raw-body handling, signature verification against the endpoint secret, idempotency on repeated deliveries, and local delivery testing. That is the largest single piece of work in a subscription flow and the plan currently treats it as configuration.
+
+Suggested: Grep the repo for an existing Stripe webhook route and its signature-verification code; if none exists, add endpoint creation and signature verification as explicit plan steps.
+
+---
+
+ISSUE 4 · Unverified recall
+
+Claim:
+> This matches the pattern we used previously for the one-off donation flow.
+
+Source of premise: the one-off donation flow — named as prior work, but no artifact for it was read. The session's only tool call is [Read] /repo/README.md, which does not exercise any donation-flow code.
+Why this flags high: the recall is the sole stated justification for the plan's shape, and one-off payment and subscription are the two Stripe modes that differ most in exactly the places this plan touches — Checkout Session mode and line-item configuration, which webhook events signal success, and whether completion writes a one-time record or ongoing subscription state. Inheriting a donation-flow pattern unchecked is how a subscription ships that charges once.
+
+Suggested: Read the donation-flow checkout and webhook handler, then state in the plan which parts transfer and which differ for subscription mode.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

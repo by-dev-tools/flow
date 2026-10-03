@@ -1,0 +1,23 @@
+BEHAVIOR INVENTORY
+B1  A zero cap is now a refusal path: with `perMinute` set to 0 the skill prints `throttle: REFUSED — perMinute is 0, which would admit nothing`, exits 3, and issues no request at all — and `3` joins the documented exit-code contract.  [H4, H5]
+NOT BEHAVIOR
+H1 wording · H2 rename · H3 wording
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  B1 UNDECLARED
+
+ISSUE · Undeclared change
+
+Claim:
+> "an unparseable config file exits 1 *Pinned by:* `test_bad_config_exit_1`"
+(the fourth and last declared criterion — the only one that speaks to exit codes, and the Spec-walk set claims to enumerate the work)
+
+Hunk: `skills/throttle/SKILL.md:25` (H4, +5) adds "If `perMinute` is set to 0, the skill refuses to run: it prints `throttle: REFUSED — perMinute is 0, which would admit nothing` and exits 3 without issuing any request", and `skills/throttle/SKILL.md:34` (H5, +1) adds "- `3` -- `perMinute` is 0." to the exit-codes list. A user who sets `perMinute: 0` now observes a specific stderr/stdout line and process exit 3 where nothing was specified before, and no request is issued. This file is named on the evidence block's `[audit-coverage] DOC-SURFACE` line, so its prose is declared deployed behaviour, judged as code.
+
+Why uncovered: I checked all four declared criteria. `test_default_cap` covers only `perMinute` **absent** falling back to 60 — a zero value is present, not absent, and 0 is not 60, so nothing in that criterion makes anyone set the slot to 0. `test_waits_for_window` and `test_wait_log_shape` both describe the admitted-after-waiting path, which this hunk explicitly bypasses: no request starts and no wait line is emitted, so a test written from either criterion never reaches exit 3. `test_bad_config_exit_1` is the nearest miss and still a different behavior on both axes — its input is a config that cannot be parsed, while `perMinute: 0` parses fine, and its asserted exit is 1, not 3. No criterion names 0, `REFUSED`, or exit 3. The evidence block additionally reports `PLAN-PREDATES-BRANCH` — plan.md was never touched on this branch — so no declared criterion was written against any hunk here, and every behavior stands undeclared until a criterion is named for it; the declared set names B1 nowhere.
+
+Suggested: Declare a Spec-walk criterion for the zero-cap refusal — `perMinute: 0` exits 3, prints the REFUSED line, and admits no request — pinned by a test, or waive it explicitly at the ship gate so the exit-code contract is not shipping on an undeclared third value.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.

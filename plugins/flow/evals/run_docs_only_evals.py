@@ -421,6 +421,34 @@ def main() -> int:
         check("and records why grep cannot catch this class",
               "cannot find a premise that has merely become false" in sac)
 
+    # THE RIGOR GATE'S THIRD STATE (v1.56.0). `ok` is the INITIALIZED value, so before this a
+    # diff touching no sourceFilePatterns file left the gate silent and $RIGOR=ok -- a prose-only
+    # PR got a green from a check that never ran. The new `not-applicable` state says so. Its
+    # own comment claims to be "verdict-neutral", and THAT is the claim worth pinning: the
+    # downstream instruction excludes it only via a qualifier ("on a source-touching ... ship"),
+    # so this asserts the exclusion is stated outright AND that all three states are named.
+    # Flagged as undeclared by /flow:audit-coverage at v1.56.0's merge gate (round five).
+    ship = (SKILLS / "ship" / "SKILL.md").read_text(encoding="utf-8")
+    check("rigor gate: the not-applicable state exists in the shipped shell",
+          "RIGOR=not-applicable" in ship and "[rigor-gate] NOT APPLICABLE" in ship,
+          "a prose-only diff would leave $RIGOR at its initialized `ok` with nothing printed")
+    check("rigor gate: and it is stated NOT to escalate",
+          "`not-applicable` must NOT escalate" in ship,
+          "the exclusion lives only in the qualifier of the escalation sentence, which a reader "
+          "has to notice -- state it outright")
+    check("rigor gate: all three states are named where the escalation is decided",
+          all(s in ship for s in ("`ok` (a fresh marker matched)", "`not-applicable` (the diff "
+              "touches no", "which is the escalating case")),
+          "the three-value contract is not spelled out, so `not-applicable` can be read as "
+          "'not ok' and routed to the draft manifest")
+    # PAIRED POSITIVE: the escalating case is still escalating -- the fix must not have turned
+    # the gate off for the diffs it DOES cover.
+    check("rigor gate: a source-touching non-ok result still escalates (paired positive)",
+          "If `$RIGOR` was not `ok` on a source-touching" in ship
+          and "add to the draft manifest" in ship,
+          "the escalation path is gone, which would satisfy the check above by deleting the gate")
+
+
     print()
     if _failures:
         print(f"FAILED: {len(_failures)} eval(s): {', '.join(_failures)}")

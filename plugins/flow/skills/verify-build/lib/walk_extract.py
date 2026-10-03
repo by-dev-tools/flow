@@ -160,6 +160,106 @@ def _heading_indices(lines: list[str], label: str) -> list[int]:
     return [i for i, ln in enumerate(lines) if hre.match(ln)]
 
 
+def collect_items(
+    lines: list[str], start: int, end: int | None = None
+) -> "tuple[list[str], list[str], int | None]":
+    """Collect ONE block's checkbox items, scanning from just after heading index `start`.
+
+    Returns `(items, warnings, ended_at)`, where `ended_at` is the 0-indexed line of the
+    terminator that closed the block, or `None` if the scan ran to `end`/EOF.
+
+    This exists because "what a block contains" was written TWICE -- here and in
+    `critique-plan/lib/walk-pin-lint.py`, which imported the primitives and re-scanned
+    because it needs every block rather than the first. Both copies took only each
+    bullet's first physical line, and both ended the block on an indented continuation
+    line; fixing one would have left `/flow:critique-plan` reading a fraction of the plan
+    and reporting clean (general.md item 2 -- a contract spelled in two places where a
+    change touches one). One definition, two readers.
+
+    Two behaviours worth naming, because each was a silent defect:
+
+    - **An indented, non-checkbox line under an item is part of that item**, which is what
+      markdown says it is. Previously it fell through to `is_terminator`, and a
+      continuation line opening with a bold span (`      **A note.**`) matched the
+      bold-label heading pattern and ENDED the block -- every later criterion vanished
+      with nothing said. Measured on #159's plan: 12 criteria whose 67-line block carries
+      52 continuation lines reached a reviewer as 1,143 of ~5,850 characters.
+    - **A block that ends at a terminator says so.** A truncated read and a complete one
+      must not look alike to a consumer (FB-0121). Running to EOF is silent: there is
+      nothing to disclose, and a warning on every clean block would be noise.
+
+    Known limit, deliberate: a continuation must be INDENTED. Markdown also permits a
+    "lazy" flush-left continuation, but a flush-left line is genuinely ambiguous with a
+    new paragraph or heading, and resolving it the other way would merge real blocks.
+    """
+    stop = len(lines) if end is None else end
+    items: list[str] = []
+    warnings: list[str] = []
+    ended_at: int | None = None
+    in_item = False
+
+    for j in range(start + 1, stop):
+        line = lines[j]
+
+        cb = CHECKBOX_RE.match(line)
+        if cb:
+            item_text = cb.group("text").strip()
+            if item_text:
+                items.append(item_text)
+                in_item = True
+            else:
+                warnings.append(f"line {j + 1}: empty checkbox text; skipped")
+                in_item = False
+            continue
+
+        if not line.strip():
+            # A blank line closes the item: what follows is a new paragraph, not a wrap.
+            in_item = False
+            continue
+
+        # Checked BEFORE the continuation fold, so a malformed checkbox still warns when it
+        # is indented under an item instead of being quietly folded into the text above it.
+        if _MALFORMED_CB_RE.match(line):
+            warnings.append(
+                f"line {j + 1}: looks like a malformed checkbox "
+                f"(expected `- [ ]` or `- [x]`); skipped: {line.rstrip()[:80]}"
+            )
+            in_item = False
+            continue
+
+        # `in_item` is set True only on the line after an append, so it implies a non-empty
+        # `items`; an `and items` conjunct here could never be the deciding term and only
+        # made a reader prove that for themselves.
+        if in_item and line[:1].isspace():
+            items[-1] = f"{items[-1]} {line.strip()}"
+            continue
+
+        # The next heading (markdown, bold label, or the next walk heading of any label)
+        # ends the active block.
+        if is_terminator(line):
+            ended_at = j
+            # WARN ONLY WHEN THE CLOSE LOOKS WRONG. The first version of this warned on EVERY
+            # terminator close, which a review lens correctly called out: `extract_block` is
+            # first-active-block-only by design, so a terminator is the NORMAL way nearly every
+            # real plan's block ends. It fired on this repo's own healthy plan. Before, truncation
+            # was silent; after, truncation and success emitted the same sentence -- still
+            # non-discriminating, now with added noise. That is the failure `rigor-marker.py` in
+            # this same change warns about in its own comment: a gate that always fires is one
+            # people learn to click past. A zero-item close is the signal worth a warning: the
+            # heading matched and nothing came out of it. Where the read STOPPED is provenance,
+            # not an alarm, so it is returned as `ended_at` and surfaced as `ended_at_line`.
+            if not items:
+                warnings.append(
+                    f"the block ended at line {j + 1} ({line.strip()[:60]!r}) having collected "
+                    f"NO items — the heading matched but nothing was read under it. This is not "
+                    f"an empty plan: check for a blank line or a stray heading between the "
+                    f"heading and its checkboxes."
+                )
+            break
+
+    return items, warnings, ended_at
+
+
 def extract_block(text: str, label: str, anchor_label: str | None = None) -> dict:
     """
     Extract the FIRST (active) `<label>` block's checkbox items from `text`.
@@ -268,29 +368,8 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
     # duplicated return shape is a fan-out contradiction waiting to happen).
     scan_end = len(lines) if co_located is not False else first + 1
 
-    items: list[str] = []
-    for j in range(first + 1, scan_end):
-        line = lines[j]
-
-        cb = CHECKBOX_RE.match(line)
-        if cb:
-            item_text = cb.group("text").strip()
-            if item_text:
-                items.append(item_text)
-            else:
-                warnings.append(f"line {j + 1}: empty checkbox text; skipped")
-            continue
-
-        # The next heading (markdown, bold label, or the next walk heading of
-        # any label) ends the active block.
-        if is_terminator(line):
-            break
-
-        if _MALFORMED_CB_RE.match(line):
-            warnings.append(
-                f"line {j + 1}: looks like a malformed checkbox "
-                f"(expected `- [ ]` or `- [x]`); skipped: {line.rstrip()[:80]}"
-            )
+    items, item_warnings, ended_at = collect_items(lines, first, scan_end)
+    warnings.extend(item_warnings)
 
     return {
         "items": items,
@@ -304,6 +383,11 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
         # the line number back out of the warning prose above -- an instrument that breaks
         # the next time that sentence is reworded.
         "first_heading_line": first + 1,
+        # 1-indexed line of the terminator that CLOSED the block, or None when it ran to EOF.
+        # Provenance, deliberately not a warning: it answers "how far did you read?" on every
+        # call, including the healthy ones, which is what distinguishes a truncated read from a
+        # complete one (FB-0121) without making every clean block shout.
+        "ended_at_line": (ended_at + 1) if ended_at is not None else None,
         "co_located": co_located,
         "all_demoted": False,
         "warnings": warnings,
@@ -398,6 +482,13 @@ def cli_main(
                 "source_path": str(plan_path),
                 "source_heading": block["first_heading"],
                 "source_heading_line": block["first_heading_line"],
+                # Carried through to the COMPOSED surface, not just the library result. The
+                # first version of this field existed only on `extract_block`'s dict, which no
+                # consumer reads -- every one of them shells out to this CLI. A contract that is
+                # correct one layer below the surface it describes is the claim-layer mismatch
+                # `general.md` item 4 names, and it was reproduced here while fixing an instance
+                # of it: `extract_block` said 196, the JSON said nothing at all.
+                "ended_at_line": block.get("ended_at_line"),
                 "block_count": block["block_count"],
                 "co_located": block["co_located"],
                 "all_demoted": block["all_demoted"],

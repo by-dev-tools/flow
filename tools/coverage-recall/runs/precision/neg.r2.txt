@@ -1,0 +1,15 @@
+BEHAVIOR INVENTORY
+(none)
+NOT BEHAVIOR
+H1 rewording · H2 rename · H3 rewording
+UNACCOUNTED
+(none)
+
+COVERAGE MAP  (no behaviors enumerated)
+
+Stage 1 enumerated no behaviors from a diff that rendered 3 inventory rows — not a clean coverage pass but an empty enumeration, so the evidence and the enumeration disagree.
+All three rows edit declared surface (skills/throttle/SKILL.md is named on the DOC-SURFACE line, so its prose was judged as code), and all three are semantics-preserving edits: H1 "Limits how fast the worker issues outbound requests" -> "Limits the rate at which the worker issues outbound requests"; H2 the heading "## How it decides" -> "## How the decision is made"; H3 "A request that would exceed the cap waits until the next window opens" -> "A request that would take the worker over the cap waits for the next window to open". The instruction content an operator would act on — reading throttle.config.json, the perMinute cap, the 60-per-minute default, wait-rather-than-fail, one log line per wait naming the request id and the remaining seconds — appears only on unchanged context lines. No instruction, threshold, gate, default or suppression changed, so there is no behavior for a criterion to cover and nothing to flag.
+Note: PLAN-PREDATES-BRANCH — plan.md was never touched on this branch, so no declared criterion was written against any hunk; had Stage 1 found a behavior it would have been undeclared by construction. It found none.
+
+---
+If a finding is wrong, just say so. Your pushback will be logged for prompt tuning.
