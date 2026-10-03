@@ -2,6 +2,140 @@
 
 ## Current Focus
 
+**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/mobile-option-5-label`, version + FB at ship
+time, expect v1.59.0 / FB-0132): worker messages identifiable at a glance, and current state
+glanceable without scrolling chat.** Mobile research option 5 + the label convention. Ben reads
+worker messages on a phone; today every worker opens differently and "where things stand" exists
+only as scrollback.
+
+**Mode:** feature · **Surface:** non-visual (prose contracts + one skill path; no UI)
+
+### Goal
+
+Two things, one theme — make the orchestrator's chat scannable on a small screen:
+
+1. **One standard opener per worker→orchestrator message**, so the sender and the reason are
+   readable without parsing a sentence.
+2. **A glanceable "where things stand" surface**, derived on demand rather than maintained, so a
+   phone reader gets current state without scrolling.
+
+### Scope
+
+**In:** the label convention and its codification at every site that states the ping contract; a
+`status`-only path through `/flow:orchestrate` that prints a compact derived digest; the eval that
+pins the convention; docs.
+
+**Out:** notification push/pull (research §7, unanswered and upstream of all of this); the
+annotation layer's touch profile (option 4, explicitly out of scope in the research doc); anything
+under `skills/{ship,verify-build,prototype}/**` (other workers own those); `conductor preview set`
+(options 1–3, a different worker's lane).
+
+### Decisions — recommendation · confidence · justification
+
+**D1. The label shape: keep `[w:<short-name>] <STATUS>` as proposed. Recommendation: adopt as-is.
+Confidence: HIGH.** It is 4–6 tokens, the sender is first (so it survives truncation to one line on
+a narrow screen), and the bracket makes it greppable in a transcript. I considered `<name>/<STATUS>`
+(shorter) and rejected it: without a delimiter that reads as metadata, a worker name collides
+visually with prose. No change proposed.
+
+**D2. The STATUS set: `GATE / DONE / BLOCKED / FYI`, with an explicit mapping to the three ping
+triggers. Recommendation: keep four, and publish the mapping. Confidence: MEDIUM.** §4.8 rule 6
+names three triggers — completion, blocking question, **stall** — and the proposed set has no
+`STALLED`. My recommendation is that a stall reports as `BLOCKED`, because the orchestrator's next
+action is identical (unblock or re-dispatch) and the body carries the distinction; a fifth token
+costs scanning value at the exact moment the human is skimming. `GATE` then covers the case field
+manual §8 exists for — a worker at a plan gate is not a silent worker — and `FYI` is the
+no-action-needed channel. **Confidence is MEDIUM, not HIGH, because this is a taste call on Ben's
+own reading experience:** if he wants stalls visually distinct from blocks, `STALLED` is a
+one-line change and I would rather be told now than guess.
+
+**D3. Option 5 as a DERIVED digest, not a maintained doc. Recommendation: a `status`-only path
+through `/flow:orchestrate`. Confidence: HIGH on derived-over-maintained, MEDIUM on the shape.**
+`/flow:orchestrate` steps 2–4 already derive live worker state, sweep open branches and PRs, and
+find silent workers by last activity; step 7 already prints a one-line lay of the land. What is
+missing is a way to get *just that* without a full boot (steps 5–6 re-address the ping channel and
+load gate policy — boot-only, and re-running them mid-program is wrong). So: a documented
+status-only path that runs the derivation and prints the digest, and explicitly skips 5–6. This
+reuses the derivation rather than adding a second one, and nothing is stored, so it cannot go
+stale — the same rule step 2 already states ("never from a snapshot") and the reason the research
+doc disfavours a maintained doc. **MEDIUM on shape** because a sub-mode of an existing skill vs. a
+separate `/flow:status` skill is a real fork; I recommend the sub-mode, since a new skill for a
+read-only projection of an existing one is the duplication CLAUDE.md rule 6 warns about.
+
+**D4. Lean on Conductor's own per-workspace rows? Recommendation: NO, not as the plan's basis.
+Confidence: HIGH on not depending on it.** Research §8 option 5 offers it and research §7 records
+the supporting claim — *"mobile workspace rows now show the same status details as desktop"* — as
+**secondary, from search results rather than a fetched page, and explicitly worth confirming**.
+Building the answer on an unverified vendor claim would make this work's value unmeasurable. The
+derived digest is Conductor-independent and project-agnostic; if the rows do turn out to be
+sufficient, the digest costs one skill path and can be deleted against its own criterion.
+
+### Scope conflicts I cannot resolve myself — these need your call
+
+**C1. `plugins/flow/docs/workflow.md:731` states the ping contract and is NOT in my write scope.**
+It reads *"Workers ping the seat; the seat does not poll. Each brief tells its worker to report on
+completion, on a blocking question, and on a stall."* That is the **shipped, consumer-facing**
+statement of the contract, and it is where a consumer's worker learns the shape. It does not state
+a message format today, so it will not *contradict* the convention — but leaving it silent means
+the one doc a consumer reads omits the convention every other site states.
+**Recommendation: add one sentence there. Confidence: MEDIUM-HIGH.** The dispatch scoped it out, so
+I am asking rather than editing. If the answer is no, I will note the omission in the history entry
+so the next grep finds the reason rather than the gap.
+
+**C2. The convention needs an eval, and `plugins/flow/evals/**` is not in my write scope either.**
+This repo's quality bar is explicit: no new rule without a fixture. A prose convention with nothing
+asserting it is exactly the "consistency that depends on author memory" class (`general.md` item 2),
+and the pin has to live in `plugins/flow/evals/`. **Recommendation: grant `plugins/flow/evals/**`
+(or at least one new harness file). Confidence: HIGH that it is required.** What I would pin: the
+spawn brief's Contract block contains the label template and all four statuses, paired with the
+negative that a status outside the set is not listed — so the set cannot silently grow.
+
+**C3. `skills/handoff/SKILL.md` + `lib/brief-check.py` also carry the ping channel.**
+`brief-check.py` mechanically asserts a succession brief re-addresses the ping channel. If the
+label is part of the contract, a succession brief arguably has to carry it too. Both are outside my
+scope. **Recommendation: leave them this round and roadmap it. Confidence: MEDIUM.** Re-addressing
+the channel and labelling a message are separable concerns, and widening `brief-check.py` is a
+sensitive-path edit for a cosmetic gain.
+
+### Spec-walk
+
+- [ ] **The label convention is stated once and identically at every site that states the ping contract.** *Pinned by:* a new `run_ping_label_evals.py` eval asserting the template string and all four statuses appear in `/flow:spawn`'s Contract block, in §4.8 rule 6, and in the field manual, with the sites derived from a grep rather than a hardcoded list — so a fourth site added later fails rather than drifting.
+- [ ] **The status set cannot silently grow.** *Pinned by:* the same eval — assert exactly the four statuses are published, paired with the negative that an unlisted status (e.g. `STALLED`) appears nowhere, so adding one requires updating the contract rather than just a brief.
+- [ ] **Each of §4.8 rule 6's three ping triggers maps to exactly one status.** *Pinned by:* the same eval asserting the published mapping names completion, blocking question and stall, so the `BLOCKED`-covers-stall decision is recorded where the contract is read, not only in this plan.
+- [ ] **`/flow:orchestrate`'s status path skips the boot-only steps.** *Pinned by:* the same eval asserting the status section names steps 5 and 6 as skipped and says why — re-addressing the ping channel mid-program would point live workers at the wrong session.
+- [ ] **The digest is derived, never stored.** *Pinned by:* the same eval asserting the status path writes no file under `dev-docs/` and the skill text states the deletion criterion, paired with the positive that it names the derivation it reuses (steps 2–4).
+- [ ] **PR numbers in the digest are hyperlinked.** *Pinned by:* the same eval asserting the digest template carries a markdown link form, because field manual §3 records this as stated-not-optional and records that the lapse recurs *specifically inside status tables* — which is what this digest is.
+- [ ] **Docs.** *Pinned by:* a doc-diff — a `dev-docs/history/` entry, the FB entry this earns, the research doc's option 5 marked as acted on, and a roadmap entry for C3.
+
+### Confidence verdicts on load-bearing assumptions
+
+- **Workers will actually follow a prose convention in the brief. MEDIUM.** Evidence for: §4.8 rule 6 records the ping protocol firing unprompted across five workers (~9 pings). Evidence against: nothing mechanically enforces the opener, and the eval I propose pins the *brief*, not the worker's output. Stated as an honest limit rather than designed around — a mechanical enforcement point would need the backend to wrap worker messages, which flow does not control.
+- **A status-only path through `/flow:orchestrate` is cheap. MEDIUM-HIGH.** Steps 2–4 are already written and already derive everything the digest needs; the work is a documented entry point plus a format, not new derivation.
+- **`BLOCKED` adequately covers a stall. MEDIUM.** See D2 — a taste call on Ben's reading, flagged for a decision rather than assumed.
+- **Nothing here needs the `ship` slot before v1.59.0. HIGH.** Main is at 1.56.0, [#176](https://github.com/by-dev-tools/flow/pull/176) claims 1.57.0, Visual-walk takes 1.58.0 per the dispatch; swept both main and every open branch.
+
+### Risks
+
+- **The convention is unenforceable at the point it matters** (the worker's own message). Mitigated only by the brief; stated as a known gap, not solved.
+- **Option 5 may be answered upstream by notifications.** Research §7's first bullet: if reaching a gate does not push a phone notification, the human still has to know to look, and a better digest does not fix that. This plan improves the surface he lands on; it does not fix how he learns to land there.
+- **Four sites stating one contract is a fan-out.** The eval deriving its site list from a grep is the defense; a hardcoded list would be the bug.
+
+### Files touched
+
+`plugins/flow/skills/spawn/SKILL.md` (Contract block) · `plugins/flow/skills/orchestrate/SKILL.md`
+(status path) · `research/2026-08-23-flow-cloud-workflow-plan.md` §4.8 rule 6 ·
+`research/orchestrator-field-manual.md` · `dev-docs/plan.md` · `dev-docs/history/` ·
+`dev-docs/feedback/` · `dev-docs/research/2026-10-mobile-workflow.md` (mark option 5 acted on) ·
+`dev-docs/roadmap.md` — **plus, pending C1/C2:** `plugins/flow/docs/workflow.md`,
+`plugins/flow/evals/run_ping_label_evals.py`.
+
+**Note for the layout table:** top-level `research/` holds four docs and is **absent from
+`CLAUDE.md`'s repository-layout table**, which lists only `dev-docs/research/*.md`. Two of the
+files this plan edits live there. Flagging, not fixing — it is a one-row doc change owned by
+whoever next touches CLAUDE.md.
+
+---
+
 **▶ PLAN GATE — NOT EXECUTED (this branch `conductor/cv1-followup-reviewer-rigor-walkextract`,
 version + FB at ship time, expect v1.56.0): CV1's unfinished half — three fixes, each one a gate
 that reads less than it reports.** Ben's call was (a), finish CV1 inside the stopping point. Scope is
