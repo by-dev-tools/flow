@@ -357,6 +357,29 @@ sp = importlib.util.module_from_spec(sp_spec); sp_spec.loader.exec_module(sp)
 check("schema's sensitivePaths default is byte-identical to the lib's",
       schema["properties"]["sensitivePaths"]["default"] == sp.DEFAULT_SENSITIVE_PATHS)
 
+# THE NEW SHARED LIB'S STAKES (v1.56.0). `lib/doc_patterns.py` decides which doc-shaped paths
+# enter the rigor fingerprint AND the coverage evidence block, so a diff that narrows
+# DOC_BUILTIN back to nothing would reopen both gates -- and, unclassified, would itself be
+# low-stakes: auto-approvable at the plan gate and routed to a cheap tier at dispatch. That is
+# the self-weakening shape sensitive_paths.py exists to prevent, and the rationale that file
+# already states for its own entry. Flagged undeclared by /flow:audit-coverage (round six).
+# REPO, not a relative path: this harness is run both from the repo root and from the evals
+# directory, and a relative config path resolved to nothing in the second case -- which
+# `load_patterns` answers with the shape-based DEFAULTS, so the check went red for a reason
+# that had nothing to do with the contract. Found by running the suite from both places.
+_sp_pats = sp.load_patterns(str(REPO / "flow.config.json"))
+_sp_pats = _sp_pats[0] if isinstance(_sp_pats, tuple) else _sp_pats
+check("doc_patterns.py classifies as a sensitive path",
+      sp.classify(["plugins/flow/lib/doc_patterns.py"], _sp_pats).get("sensitive") is True,
+      "the module deciding what the rigor fingerprint covers is low-stakes, so the diff that "
+      "could narrow it back to nothing auto-approves at the plan gate")
+# PAIRED NEGATIVE: the predicate must still discriminate. Without this, a pattern matching
+# everything would satisfy the check above (general.md item 3).
+check("...and an ordinary doc path still does NOT",
+      sp.classify(["dev-docs/plan.md"], _sp_pats).get("sensitive") is False,
+      "sensitivePaths now matches a plain doc, so every plan touching any doc escalates and the "
+      "signal is gone")
+
 print()
 if _failures:
     print(f"FAILED: {len(_failures)} check(s)")
