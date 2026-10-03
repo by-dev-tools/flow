@@ -534,10 +534,24 @@ def test_mid_session_update_cannot_forge_a_tick():
           f"AFTER must say the running session may be older -- the wording that has to "
           f"agree with the currency hook's stdout line, so a reader seeing both reads one "
           f"story. got:\n{after}")
-    check("(see note)" in aline and "Note on the first row" in after,
-          f"the row must POINT at the footnote and the footnote must exist -- a caveat "
-          f"moved out of the cell is only honest if the cell says where it went. got "
-          f"row={aline!r}")
+    # Keyed on the JOIN, not on the footnote's title. These are two separate gates
+    # computed from the same facts (the row's `pending` branch and
+    # `render_unpinned`'s predicate), and if they ever disagree the row says "see
+    # note" and no note appears -- the failure /flow:staff-review asked me to check
+    # rather than assert. An earlier version of this pinned the literal title and
+    # went red the moment a review renamed it, which is the item-4 corollary:
+    # it reported on the phrasing, not on the contract.
+    check("(see note)" in aline,
+          f"the row must point the reader somewhere, got {aline!r}")
+    check(bool(_engine.render_unpinned(dafter)),
+          "the footnote's gate must agree with the row's -- a row that says 'see note' "
+          "while the footnote suppresses itself sends the reader nowhere")
+    check(_engine.render_unpinned(dafter).lstrip().startswith(">"),
+          "the footnote must render as a blockquote beneath the table, not as prose")
+    # NOTE: the negative pair for this lives in the PATH-pinned block below, NOT
+    # here. `before` is registry-sourced too (no PATH signal on any fixture without an
+    # explicit plugin bin), so it legitimately DOES get the footnote — asserting
+    # otherwise here was simply false, and the suite caught it.
     check("⚠️" not in aline,
           f"AFTER must not WARN: an unpinned reading is the steady state on every host "
           f"where flow has ever been updated, and a permanent warning is "
@@ -574,6 +588,13 @@ def test_mid_session_update_cannot_forge_a_tick():
           f"tick' is satisfied by deleting the tick path. got {pline!r}")
     check("registry" not in pline,
           f"a PATH-pinned row must not carry the registry hedge, got {pline!r}")
+    # The negative half of the row↔footnote join: a reading that needs no caveat must
+    # neither point at one nor emit one.
+    check("(see note)" not in pline,
+          f"a PATH-pinned row must not point at a footnote, got {pline!r}")
+    check(not _engine.render_unpinned(pj),
+          "and the footnote must suppress itself on a PATH-pinned reading, or it is "
+          "unconditional decoration rather than a caveat")
 
 
 def test_healthy_run_does_not_cry_wolf():
@@ -1109,7 +1130,10 @@ def make_home_with_mute_engine(td: Path, version: str, mkt_version: str) -> Path
                      marketplace_json(mkt_version))
 
 
-def _hook_driver(td: Path):
+def _hook_driver(td: Path, hook: Path | None = None):
+    """`hook` drives a COPY instead of the real script — used by the self-validating
+    mutation seed in test_hook_does_not_import_repo_code, which must prove the probe
+    fires against a deliberately-broken hook."""
     """Shared PATH-shim `claude` that LOGS its invocations, so 'attempted no
     update' is asserted against a real call log rather than inferred from output.
     """
@@ -1184,7 +1208,7 @@ def _hook_driver(td: Path):
             (run_cwd / "plugins" / "flow" / ".claude-plugin").mkdir(parents=True, exist_ok=True)
             (run_cwd / "plugins" / "flow" / ".claude-plugin" / "plugin.json").write_text(
                 json.dumps({"name": "flow", "version": "1.43.0"}))
-        p = subprocess.run(["bash", str(HOOK)], capture_output=True, text=True,
+        p = subprocess.run(["bash", str(hook or HOOK)], capture_output=True, text=True,
                            env=env, cwd=str(run_cwd))
         calls = [l for l in log.read_text().splitlines() if l.strip()]
         return p.returncode, p.stdout, p.stderr, calls
@@ -1550,31 +1574,73 @@ def test_hook_does_not_import_repo_code():
     # marker, a green test, and a mutation that removes `-I` sailing through. So each
     # module is probed alone, and the payload uses the `open` builtin so the probe
     # cannot break the very import it is trying to observe.
-    pwned = []
-    for name in ("json", "re"):
-        shadow = REPO / f"{name}.py"
-        if shadow.exists():        # never clobber a real repo file
-            continue
-        with tempfile.TemporaryDirectory() as t:
-            td = Path(t)
-            drive = _hook_driver(td)
-            marker = td / f"IMPORTED-{name}"
-            shadow.write_text(f"open({str(marker)!r}, 'w').write({name!r})\n")
-            try:
-                home = make_home_with_engine(td, "1.29.0", "1.43.0")
-                rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.43.0")
-                if marker.exists():
-                    pwned.append(name)
-            finally:
-                shadow.unlink(missing_ok=True)
+    #
+    # ONE implementation, driven twice. The seed below must validate THIS probe, not a
+    # copy of it: the first version of the seed wrote its own payload, so breaking the
+    # real probe's payload left the seed green — the duplicate-instrument defect, in
+    # the instrument built to catch instrument defects. Shared now, so a broken probe
+    # reddens the seed.
+    def _probe(mutate: bool) -> list[str]:
+        hit: list[str] = []
+        for name in ("json", "re"):
+            shadow = REPO / f"{name}.py"
+            if shadow.exists():            # never clobber a real repo file
+                continue
+            with tempfile.TemporaryDirectory() as tmp:
+                td = Path(tmp)
+                hook = None
+                if mutate:
+                    hook = td / "hook-unsafe.sh"
+                    hook.write_text(HOOK.read_text(encoding="utf-8")
+                                    .replace("python3 -I -c", "python3 -c"))
+                drive = _hook_driver(td, hook=hook)
+                marker = td / f"IMPORTED-{name}"
+                shadow.write_text(f"open({str(marker)!r}, 'w').write({name!r})\n")
+                try:
+                    home = make_home_with_engine(td, "1.29.0", "1.43.0")
+                    rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.43.0")
+                    if marker.exists():
+                        hit.append(name)
+                finally:
+                    shadow.unlink(missing_ok=True)
+        return hit
+
+    check("python3 -I -c" in HOOK.read_text(encoding="utf-8"),
+          "the mutation the seed applies must have something to remove, or the seed is "
+          "itself vacuous — the defect it exists to detect")
+
+    pwned = _probe(mutate=False)
     check(not pwned,
           f"the hook imported repo-root module(s) {pwned} — `python3 -c` runs with the "
           f"checkout on sys.path, so this is arbitrary code execution from the branch "
           f"under review. Use `python3 -I -c`.")
+
+    # ---------------------------------------------------------------- the seed
+    #
+    # SELF-VALIDATION, and it is the whole point of this block. This test's docstring
+    # claims "the same probe fails against the unfixed hook." Until now nothing ran
+    # that: the known-positive lived in prose, and a prose known-positive is an
+    # UNVALIDATED INSTRUMENT. It is how three assertions in this change shipped vacuous
+    # before they worked, each caught by a human running a mutation by hand — which
+    # does not re-run. Generalising this to a declared (source, mutation, test) table
+    # across the harness is the roadmap item; this is its seed, on the one instance
+    # whose docstring already promised it. (/flow:staff-review push-further, round 2.)
+    detected = _probe(mutate=True)
+    check(bool(detected),
+          "the probe did NOT fire against a hook with `-I` removed, so it cannot "
+          "distinguish a safe hook from an unsafe one and its negative result above "
+          "means nothing (.claude/rules/general.md § Consistency item 4)")
+
+    # And `-I` must not have broken the hook's actual job: a fix that silences the
+    # probe by breaking the update is not a fix.
+    with tempfile.TemporaryDirectory() as tmp:
+        td = Path(tmp)
+        drive = _hook_driver(td)
+        home = make_home_with_engine(td, "1.29.0", "1.43.0")
+        rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.43.0")
     check(rc == 0, f"the hardened hook must still work, got rc={rc}")
     check(any("plugin update flow@flow" in c for c in calls),
-          f"and must still do its job with -I — a fix that breaks the update is not a "
-          f"fix. got {calls}")
+          f"and must still do its job with -I. got {calls}")
 
 
 def test_hook_stdout_cannot_be_forged_by_the_registry():

@@ -736,32 +736,32 @@ def render_rows(d: dict) -> list[str]:
         # registry (the PATH signal carries no sha).
         val = (_paren(inst["version"], inst.get("git_sha"), "`")
                if d.get("ran_version_source") == "registry" else ran)
-        pending = ""
+        # SENTENCES, joined with a space — not a clause glued onto whatever the arm
+        # happened to end with. The first cut made the suffix a contrastive clause
+        # opening `" — but this is the version INSTALLED…"`, which composed with none
+        # of its three hosts: after a terminated sentence it rendered `rows. — but`
+        # (full stop, space, em dash, lowercase), and on the consumer path it produced
+        # the tautology `ℹ️ installed — but this is the version INSTALLED`, where the
+        # round-1 shortening had already cut the only predicate the hedge could
+        # contrast with. Found independently by the UX and design-engineer lenses, who
+        # rendered it rather than reading the strings. Each arm now contributes a
+        # complete sentence and the join is mechanical.
+        parts = []
         from_registry = d.get("ran_version_source") == "registry"
-        if d.get("restart_pending") is True:
-            pending = (f" **An update to {inst.get('version')} is installed but NOT applied** — "
-                       "it takes effect on restart, so this session still ran "
-                       f"{ran}.")
-        elif d.get("restart_pending") is None and from_registry:
-            # SHORT by design. The first cut put the whole mechanism in this cell:
-            # measured at 442-549 chars against 28-40 for the three sibling rows, so
-            # GitHub wrapped row 1 to a paragraph while the rest stayed one-liners and
-            # the table stopped being scannable — /flow:staff-review's design-engineer
-            # lens. The mechanism moved to a footnote under the table (`UNPINNED`),
-            # which is a shape this module already had for exactly this.
-            pending = (" — but this is the version INSTALLED; what actually ran is not "
-                       "confirmable on this host (see note).")
         if d["report_drift"] is True and stale:
             gap = d.get("release_gap")
             gap_txt = f", {gap} releases back" if gap else ""
-            note = (f"⚠️ NOT this branch{gap_txt}. This branch declares "
-                    f"{br.get('version')}, so the skill instructions and reviewers that "
-                    "ran here are an older release. Updating cannot fix THIS run — "
-                    "`plugin update` applies on restart, so re-running ship in a NEW "
-                    "session is what regenerates these rows." + pending)
+            parts.append(
+                f"⚠️ NOT this branch{gap_txt}. This branch declares "
+                f"{br.get('version')}, so the skill instructions and reviewers that "
+                "ran here are an older release. Updating cannot fix THIS run — "
+                "`plugin update` applies on restart, so re-running ship in a NEW "
+                "session is what regenerates these rows.")
         elif d["report_drift"] is True:
-            note = (f"ℹ️ expected — this branch declares {br.get('version')}, which is not "
-                    "released yet, and the install is otherwise current." + pending)
+            parts.append(
+                f"ℹ️ expected — this branch declares "
+                f"{br.get('version')}, which is not released yet, and the install is "
+                "otherwise current.")
         elif d["report_drift"] is False:
             # `✓ matches this branch` is a claim about what RAN, and a registry-sourced
             # reading cannot support it — so the tick is reachable only from a
@@ -773,11 +773,24 @@ def render_rows(d: dict) -> list[str]:
             # host where flow has ever been updated, and a warning that is always on is
             # indistinguishable from the real staleness signal (`_stale()` below). A
             # false ✓ and a permanent ⚠️ are both failures; `ℹ️` is the honest middle.
-            note = ("✓ matches this branch" + pending) if not pending else ("ℹ️ matches this branch" + pending)
+            parts.append(("✓ " if not from_registry else "ℹ️ ") + "matches this branch.")
         elif br.get("state") == "not_flow_checkout":
-            note = ("✓ installed and running" + pending) if not pending else ("ℹ️ installed" + pending)
+            # "and running" restored: it is the predicate the hedge contrasts with, and
+            # dropping it left `ℹ️ installed — but this is the version INSTALLED`.
+            parts.append(("✓ " if not from_registry else "ℹ️ ") + "installed and running.")
         else:
-            note = f"⚠️ cannot compare — {_why(br.get('state'))}"
+            parts.append(f"⚠️ cannot compare — {_why(br.get('state'))}")
+
+        if d.get("restart_pending") is True:
+            parts.append(
+                f"**An update to {inst.get('version')} is installed but NOT applied** — "
+                f"it takes effect on restart, so this session still ran {ran}.")
+        elif d.get("restart_pending") is None and from_registry:
+            # SHORT by design, and shorter again this round. The mechanism lives in the
+            # `UNPINNED` footnote; measured, the cell went 442-549 chars → 123-208 →
+            # this. Rows 2-4 sit at 30-42, and row 1 is the only one that wraps.
+            parts.append("Registry-sourced — what ran is not confirmable here (see note).")
+        note = " ".join(parts)
     else:
         val = "UNKNOWN"
         note = (f"⚠️ could not be read: {_why(inst.get('state'))}. Do not assume this run "
@@ -870,15 +883,59 @@ def render_surface_row(d: dict) -> str:
                 "branch's skills and agents were available'.")
 
 
-UNPINNED = (
-    "> **Note on the first row.** This host exposes no run-pinned signal for the flow "
-    "plugin, so the version above is read from the plugin registry — which "
-    "`claude plugin update` rewrites the moment it runs, even though the update only "
-    "takes effect on **restart**. A session that began before an update is therefore "
-    "still running the older copy while the registry already names the newer one. To "
-    "confirm what this session actually loaded, start a fresh session and re-run; see "
-    "`dev-docs/roadmap.md` § \"FB-0107's PATH signal has never resolved for flow\"."
-)
+def _unpinned_note(d: dict) -> str:
+    """The provenance caveat, once, below the table — not inside a cell.
+
+    Separate from REMEDY because the two answer different questions and fire on
+    different conditions: REMEDY says "here is how to make the next run current" and
+    only appears when something warned; this says "here is why the first row cannot
+    be certain" and appears whenever the reading is registry-sourced.
+
+    Three things this got wrong before three lenses rendered it:
+
+    - It told the reader to **start a fresh session and re-run**, which on a host with
+      no run-pinned signal produces the identical hedge — an action, not a
+      confirmation, and it discards the very session whose provenance was in question.
+      The in-session check it had replaced actually returns an answer, so it is back,
+      and it now names the surfaces this module has already computed rather than
+      asking the reader to work out what is new in the release.
+    - It cited `dev-docs/roadmap.md` and an `FB-` number. This string renders into
+      ANY consumer's PR body, where neither exists — `dev-docs/` is flow's own
+      tracking directory, and the quality bar is that plugin artifacts carry no
+      project-specific tokens. Dropped; the note is self-contained without it.
+    - It was titled by POSITION ("the first row") while the row titles itself by
+      subject. Retitled to match.
+    """
+    if not (d.get("restart_pending") is None
+            and d.get("ran_version_source") == "registry"):
+        return ""
+    sd = d.get("surface_drift") or {}
+    missing = [s for s in (sd.get("skills_missing_from_installed") or []) if s]
+    if missing:
+        probe = (
+            "**The surface is the instrument.** This branch declares "
+            + ", ".join(f"`/flow:{s}`" for s in missing[:3])
+            + " and the installed copy does not ship "
+            + ("them" if len(missing) > 1 else "it")
+            + " — so if "
+            + ("those commands are" if len(missing) > 1 else "that command is")
+            + " absent from your tool list, this session is positively running the "
+            "older copy. That is confirmable now, without restarting."
+        )
+    else:
+        probe = (
+            "**To confirm:** check whether the `/flow:*` commands this release adds are "
+            "present in your tool list. If any is missing, this session is running the "
+            "older copy and a restart is needed before relying on it."
+        )
+    return (
+        "> **Note on the version that ran.** This host exposes no run-pinned signal for "
+        "the flow plugin, so the number above is read from the plugin registry — which "
+        "`claude plugin update` rewrites the moment it runs, even though the update only "
+        "takes effect on **restart**. A session that began before an update is therefore "
+        "still running the older copy while the registry already names the newer one. "
+        + probe
+    )
 
 
 def render_remedy(rows: list[str]) -> str:
@@ -887,18 +944,8 @@ def render_remedy(rows: list[str]) -> str:
 
 
 def render_unpinned(d: dict) -> str:
-    """The provenance caveat, once, below the table — not inside a cell.
-
-    Separate from REMEDY because the two answer different questions and fire on
-    different conditions: REMEDY says "here is how to make the next run current"
-    and only appears when something warned; this says "here is why the first row
-    cannot be certain" and appears whenever the reading is registry-sourced, which
-    on this plugin is every run. Putting it in the cell made that cell 442-549
-    chars against 28-40 for its siblings, which is how a four-row comparison table
-    stops being readable.
-    """
-    return UNPINNED if (d.get("restart_pending") is None
-                        and d.get("ran_version_source") == "registry") else ""
+    """Thin wrapper; the copy and the gate both live in `_unpinned_note`."""
+    return _unpinned_note(d)
 
 
 def render_block(d: dict, root: Path) -> str:

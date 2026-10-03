@@ -286,7 +286,11 @@ report_move() {   # $1=before $2=after $3=context suffix (may be empty)
         # `plugin update` can exit 0 having moved nothing (a stale clone, or a
         # source that regressed). An unconditional "X → Y" arrow would read as
         # success while the seat stayed old AND re-paid the download every session.
-        verdict "⚠️ [flow-currency] the flow plugin update reported SUCCESS but installed flow is STILL $_a — treat the /flow:* machinery as stale, not current."
+        # The STEP is on the line, not only in the stderr detail. This verdict used to
+        # end at "treat it as stale" — a stance — with the diagnosis on `echo >&2`,
+        # i.e. the channel this very change documents as reaching nobody. Leaving the
+        # actionable half there would be the PR's own finding, committed.
+        verdict "⚠️ [flow-currency] the flow plugin update reported SUCCESS but installed flow is STILL $_a — treat the /flow:* machinery as stale. Run 'claude plugin list'; the marketplace clone may be pinned at the same commit as the install."
         echo "   This will re-run every session until the version moves: either the" >&2
         echo "   marketplace clone could not be refreshed, or its HEAD is not newer." >&2
         return
@@ -355,8 +359,10 @@ verdict() { say "$*"; printf '%s\n' "$*" >&2; }
 
         if ! apply_update; then
             verdict "⚠️ [flow-currency] bootstrap FAILED — 'claude plugin update flow@flow' did not succeed, so installed flow is still $_BEFORE and the /flow:* machinery is NOT current."
-            echo "   The installed plugin predates v1.43.0 and could not be moved; run" >&2
-            echo "   'claude plugin list' and the two commands above by hand first." >&2
+            echo "   The installed plugin predates v1.43.0 and could not be moved. Run," >&2
+            echo "   by hand:  claude plugin marketplace update flow" >&2
+            echo "             claude plugin update flow@flow" >&2
+            echo "             claude plugin list" >&2
             exit 0
         fi
 
@@ -491,7 +497,12 @@ EOF
             # so asserting what the session is *running* would contradict the hedge the
             # provenance engine now prints for exactly that reason — and the two
             # surfaces are meant to read as one story.
-            say "[flow-currency] the installed flow plugin is $INST and current with the marketplace, but this branch declares $BR — the /flow:* skills and reviewers here come from the INSTALLED copy, not your working tree."
+            # Opens with "expected", matching the engine's own `ℹ️ expected` for the
+            # identical state. This fires on every session of every flow feature
+            # branch — the comment above calls it the steady state — so a line that
+            # reads as a problem report trains the reader to skip it, and the ⚠️ lines
+            # are what then get skipped with it.
+            say "[flow-currency] expected on a feature branch — the installed flow plugin is $INST and current with the marketplace, while this branch declares $BR. The /flow:* skills and reviewers here come from the INSTALLED copy, not your working tree."
             echo "[flow-currency] installed flow $INST is current with the marketplace, but this" >&2
             echo "   branch declares $BR — the /flow:* skills and reviewers in THIS session run" >&2
             echo "   $INST, not your working tree. Check the PR's version rows, which name" >&2

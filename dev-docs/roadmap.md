@@ -483,6 +483,48 @@ probe becomes the primary signal rather than the substitute.
 **Deletion criterion:** delete when either flow ships a `bin/` and `ran_version_source` reads `PATH`
 on a real run, or the probe above refutes the mechanism and `read_running` is retired.
 
+### A known-positive validation that lives in a DOCSTRING is an unvalidated instrument — make the mutation sweep an artifact of the suite (2026-10-03, from v1.57.0's push-further lens)
+
+**Surfaces when:** any behavioural pin is added to an eval harness, or the next time someone writes
+"verified by mutation" in a commit message.
+
+**The evidence is one PR's own count.** v1.57.0 shipped **three** assertions that were vacuous before
+they worked, written by an author who had just authored the corollary warning against exactly that:
+
+1. the CLI-chatter check — the eval shim wrote to a log file, never stdout, so the assertion could not fail;
+2. the repo-code import probe — the marker lived in a `TemporaryDirectory` already deleted by the time
+   the assertion read it;
+3. the same probe again — shadowing `json` and `re` together **masked** the hit (stdlib `json` imports
+   `re`, the fake `re` imported `pathlib`, `pathlib` imports `re` and got the half-initialised module,
+   and the hook's bare `except` swallowed the lot).
+
+Each was caught by a review lens or a hand-run mutation, not by the suite.
+
+**The diagnosis is sharper than `general.md` item 4, and it is not "run it against a known positive"
+— that rule was obeyed all three times.** It is: **the known-positive run happened OUTSIDE the suite,
+by hand, so it never survived into regression.** `test_hook_does_not_import_repo_code`'s own docstring
+says *"it is the known-positive that validates it — the same probe fails against the unfixed hook."*
+Nothing in the file runs that. Thirteen mutations turning the suite red is recorded as a **sentence in
+a history entry**. The mutation is prose; the pin is code; prose does not re-run.
+
+**The mechanism:** a declared mutation table — `(source file, mutation expression, the test that must
+fail)` — plus a runner that applies each mutation to a **copy**, runs only the named test, asserts it
+goes red, and reverts. `_hook_driver`'s `drive()` already shells `bash str(HOOK)`, so pointing it at a
+patched copy is a few lines, and the hook being a single shell file is what makes this cheap to start
+here. **Gate the runner on its own `--selftest`** the way `tools/coverage-recall/recall.py` gates
+scoring, or it inherits the very defect it exists to remove. CI-wirable — no live session needed.
+
+**Precedent to generalise rather than invent:** `run_prototype_gate_evals.py::test_sweep_patterns_are_not_vacuous`
+already does this for *grep patterns* (it runs each detector against a committed known-positive seed).
+Nothing does it for *behavioural* pins.
+
+**Seeded in v1.57.0** with the single instance whose docstring already promised it — see
+`test_hook_does_not_import_repo_code`'s paired `-I`-stripped run. Generalising it to a declared table
+across the harness is the remaining work.
+
+**Deletion criterion:** delete when a mutation table exists with its own `--selftest` and CI runs it,
+so "verified by mutation" is a thing the suite asserts rather than a thing a commit message claims.
+
 ### Four deferred findings from v1.57.0's staff-review, all real, none in scope (2026-10-03)
 
 **Surfaces when:** `plugin-provenance.py`'s renderer, `plugins/flow/hooks/default-hooks.json`, or
