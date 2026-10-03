@@ -121,6 +121,8 @@ else
 fi
 ```
 
+**`$RIGOR` has exactly three values, and only one of them escalates:** `ok` (a fresh marker matched), `not-applicable` (the diff touches no `sourceFilePatterns` file, so nothing was read — see the branch above), and any other value (`missing` / `branch-mismatch` / `source-drift`), which is the escalating case. **`not-applicable` must NOT escalate**: it reports a stated blind spot on a diff this gate does not cover, and routing it to the draft manifest would hand the human a decision about a check that never ran. Spelled out because the sentence below carries that exclusion in a qualifier ("on a source-touching … ship") that a reader has to notice.
+
 If `$RIGOR` was not `ok` on a source-touching, non-spike/tiny ship, **first re-run
 `/flow:staff-review`** on the final tree and re-read the marker (auto-resolvable — the same
 discipline as Step 2a's `SHOULD-RE-RUN · auto-resolvable`; re-run once, don't loop). Only if the
