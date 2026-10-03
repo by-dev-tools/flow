@@ -107,6 +107,37 @@ sensitive-path edit for a cosmetic gain.
 - [ ] **PR numbers in the digest are hyperlinked.** *Pinned by:* the same eval asserting the digest template carries a markdown link form, because field manual §3 records this as stated-not-optional and records that the lapse recurs *specifically inside status tables* — which is what this digest is.
 - [ ] **Docs.** *Pinned by:* a doc-diff — a `dev-docs/history/` entry, the FB entry this earns, the research doc's option 5 marked as acted on, and a roadmap entry for C3.
 
+### Post-rebase check — MANDATORY before trusting any gate
+
+**A clean rebase can silently select another PR's Spec-walk.** Measured by another worker on
+2026-10-03: rebasing onto a `main` that carries plan blocks placed their block *second* in
+`dev-docs/plan.md` with **no conflict markers**, and `extract_block` — first-active-block-only by
+contract — then selected a different PR's block: 20 criteria that were not their change. Every
+gate that reads the plan (`/flow:verify-build`, `/flow:audit-coverage`, `/flow:autoplan` Arm A)
+then grades the wrong PR, and all of them look green while doing it.
+
+After **every** rebase, before trusting any gate:
+
+```sh
+python3 plugins/flow/skills/verify-build/lib/extract-criteria.py dev-docs/plan.md
+```
+
+Pass condition: `source_heading_line` is **this** block's line and the criteria listed are the
+seven below. If not, move this block back to the top of `## Current Focus`.
+
+**Two things that look like they would catch this and do not:**
+
+- **`source_heading` cannot identify the block.** It is the identical string `'### Spec-walk'` for
+  every block in the file (77 of them here), so it carries no identity at all.
+  `source_heading_line` is the only field in that contract that distinguishes *which* block was
+  read — which is precisely why it exists (`walk_extract.py` states that rationale on the field).
+  Check the LINE and the criteria text, never the heading.
+- **The multi-block warning is not the detector.** `extract-criteria.py` does warn that N blocks
+  exist and only the first was read, but with 77 retained blocks that warning fires on every run
+  of this repo's plan regardless of which block won. It cannot distinguish "the first block is
+  mine" from "the first block is someone else's", so a reader who treats its presence as the
+  signal learns nothing.
+
 ### Confidence verdicts on load-bearing assumptions
 
 - **Workers will actually follow a prose convention in the brief. MEDIUM.** Evidence for: §4.8 rule 6 records the ping protocol firing unprompted across five workers (~9 pings). Evidence against: nothing mechanically enforces the opener, and the eval I propose pins the *brief*, not the worker's output. Stated as an honest limit rather than designed around — a mechanical enforcement point would need the backend to wrap worker messages, which flow does not control.
