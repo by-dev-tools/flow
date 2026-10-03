@@ -47,6 +47,10 @@ def main() -> int:
             fails += 1
             print(f"FAIL  [{label}] {detail}")
 
+    # sha256 of no input — what an empty fingerprint hashes to, and what both sides
+    # compared equal on before the degrade paths were guarded.
+    EMPTY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
     with tempfile.TemporaryDirectory() as tmp:
         marker = str(Path(tmp) / "marker.json")
         SHA = "a" * 64
@@ -289,6 +293,62 @@ def main() -> int:
             check(f"config refusal ({label}): builtin only + one warning",
                   len(pats) == 1 and len(warns) == 1 and "NOT applied" in warns[0],
                   f"pats={len(pats)} warns={warns}")
+
+    # (4e) THE IMPORT-GUARD DEGRADE — the one state in which the doc-blind gate this whole
+    # change exists to close silently returns. A partial install, a truncated file, or a
+    # SyntaxError in `lib/doc_patterns.py` used to traceback out of a function contracted to
+    # always exit 0, leaving SRC_SHA="" in the caller's $( ) on BOTH sides, where the two empty
+    # fingerprints compare equal and the gate prints `ok`. Flagged as undeclared by
+    # /flow:audit-coverage at this PR's merge gate (round four).
+    #
+    # The real module is never touched: rigor-marker resolves its import as
+    # `parents[3]/"lib"`, so a copy at <tmp>/skills/ship/lib/ imports from <tmp>/lib/.
+    import shutil
+    with tempfile.TemporaryDirectory() as fake, tempfile.TemporaryDirectory() as repo:
+        fake_lib = Path(fake) / "skills" / "ship" / "lib"
+        fake_lib.mkdir(parents=True)
+        shutil.copy(SCRIPT, fake_lib / "rigor-marker.py")
+        (Path(fake) / "lib").mkdir()
+        # A SyntaxError, not a missing file: the case the broadened `except Exception` exists
+        # for, and the one an ImportError-only guard let escape.
+        (Path(fake) / "lib" / "doc_patterns.py").write_text("def (this is not python\n")
+        broken = str(fake_lib / "rigor-marker.py")
+
+        def run_broken(argv, cwd):
+            pr = subprocess.run([sys.executable, broken, *argv], capture_output=True,
+                                text=True, check=False, cwd=cwd)
+            return pr.returncode, (pr.stdout + pr.stderr)
+
+        h_base = seeded_repo(repo)
+        (Path(repo) / "b.py").write_text("y = 2\n")          # source-only change
+        rc_src, out_src = run_broken(["source-sha", "--default-branch", "main"], repo)
+        _, healthy_src = run(["source-sha", "--default-branch", "main"], cwd=repo)
+        d_src = [l.strip() for l in out_src.splitlines() if len(l.strip()) == 64]
+        check("broken doc_patterns: still exits 0", rc_src == 0, f"rc={rc_src}")
+        check("broken doc_patterns: ANNOUNCES the degrade, naming the module",
+              "doc_patterns" in out_src and "WARN" in out_src,
+              f"a partial install degraded silently: {out_src[:220]!r}")
+        check("broken doc_patterns: produces a real digest, NOT the empty-input hash",
+              bool(d_src) and d_src[-1] != EMPTY_SHA, f"got {d_src[-1:]!r}")
+        check("broken doc_patterns: a source-only tree digests IDENTICALLY to a healthy run",
+              bool(d_src) and d_src[-1] == healthy_src.strip(),
+              f"the degrade changed more than the doc half: {d_src[-1:]!r} vs "
+              f"{healthy_src.strip()!r}")
+        # ...and with a doc-shaped file present, the degraded digest MUST differ — that is the
+        # whole consequence the warning claims, asserted rather than trusted.
+        (Path(repo) / "skills").mkdir(parents=True, exist_ok=True)
+        (Path(repo) / "skills" / "x.md").write_text("deployed prose\n")
+        rc_doc, out_doc = run_broken(["source-sha", "--default-branch", "main"], repo)
+        _, healthy_doc = run(["source-sha", "--default-branch", "main"], cwd=repo)
+        d_doc = [l.strip() for l in out_doc.splitlines() if len(l.strip()) == 64]
+        check("broken doc_patterns: prose is DROPPED from the fingerprint (the stated cost)",
+              bool(d_doc) and d_doc[-1] != healthy_doc.strip(),
+              "the degraded and healthy digests match over a changed .md, so either the warning "
+              "overstates the cost or the healthy path never included prose")
+        check("...and the PAIRED positive: the healthy run DID widen for that .md",
+              healthy_doc.strip() != healthy_src.strip(),
+              "the healthy digest did not move when a doc-shaped file changed, so this arm "
+              "proves nothing about the degrade")
 
     # (5) ONE definition of the builtin. The shell literal in audit-coverage/SKILL.md and the
     # Python constant are two readers of one contract (general.md item 2); assert byte-equality
