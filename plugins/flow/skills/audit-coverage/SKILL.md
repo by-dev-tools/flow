@@ -480,10 +480,13 @@ fi
 # documented deletion candidate. A control line whose honesty depends on a clause someone has
 # been told is redundant is one cleanup away from lying. Split by matching predicate instead.
 DOCSEL_DECL=""; DOCSEL_GUESS=""
-if [ -n "$BBDP" ]; then
+# Guard the whole selection on a non-empty file list. Without it the common cases -- an
+# unresolved base (every git call contributes nothing, so $FILES is empty) and a diff with no
+# doc-shaped file -- still paid three printf|grep pipelines to produce nothing.
+if [ -n "$FILES" ] && [ -n "$BBDP" ]; then
   DOCSEL_DECL=$(printf '%s\n' "$FILES" | grep -E "$BBDP")
   DOCSEL_GUESS=$(printf '%s\n' "$FILES" | grep -E "$DOC_BUILTIN" | grep -vE "$BBDP")
-else
+elif [ -n "$FILES" ]; then
   DOCSEL_GUESS=$(printf '%s\n' "$FILES" | grep -E "$DOC_BUILTIN")
 fi
 if [ -n "$DOCSEL_DECL" ]; then
