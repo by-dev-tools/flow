@@ -2277,6 +2277,28 @@ of merely instructed-against. **Also outstanding and one line:** the pre-existin
 `PLAN-PREDATES-BRANCH` bullet has the same missing position qualifier v1.56.0 fixed on its own
 token, deliberately left alone there as out-of-scope.
 
+### Three CI evals grade the LIVE `plan.md` active block, so CI is coupled to whatever a PR writes there
+
+**Recorded, not a bug, and deliberately not "fixed" here.** `run_autoplan_evals.py`'s
+`real-predicate-tree-is-green`, `a-matching-expected-line-is-green` and
+`allow-unproven-is-an-explicit-escape` run #171's Arm A against the **current contents** of
+`dev-docs/plan.md`. That means any PR's plan-doc wording can turn the `evals` check red, and the
+red looks identical to a code regression in the diff.
+
+**Measured instance, v1.56.0 (#174).** An orchestrator-approved criterion was declared with
+`*Pinned by:* the same harness`, which names no verification artifact, so Arm A's pin check failed
+and three CI checks went red on a plan-doc sentence. The fix was the criterion's wording, not the
+eval. **Here the coupling earned its keep:** the machine gate caught a criterion a human had
+already approved, which is exactly the "GREEN requires every arm to have run" doctrine working on
+its author. So the property is not simply a liability.
+
+The cost is diagnosis time: the failure message ("1 criterion/criteria in the ACTIVE block name no
+verification artifact") does not say *which* criterion, and the reader's first hypothesis is a code
+regression. Cheapest improvement, if this recurs: have Arm A name the offending criterion text in
+its `reasons` line, so the red build points at the sentence rather than at the file. A deeper
+option — grading a committed fixture plan instead of the live one — would remove the coupling and
+with it the property that just caught this, so it is not obviously the right trade.
+
 ## Later
 
 - **visual-significance net-delta (moved-block) detection (FB-0062 push-further).** `_diff_content_changed` in `visual-significance.py` is line-prefix-based, so a verbatim block move/reorder (same lines deleted then re-added elsewhere, zero net render delta) reads as content-changed → visually significant. It's a false-positive in the SAFE direction (costs a screenshot, never a missed regression), so not a bug — but the heuristic's real ceiling. A multiset-diff over a hunk's `+`/`-` bodies (~20 lines + a fixture) would treat a pure reorder as no-render-delta. **Surfaces when:** `_diff_content_changed` is next touched, OR a dogfood reports a pure-reorder PR flagged significant and resolving to a wasted Unknown.
