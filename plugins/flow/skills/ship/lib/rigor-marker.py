@@ -130,7 +130,21 @@ def source_sha(default_branch: str | None, source_pattern: str | None) -> str:
         doc_expr, doc_warnings = doc_patterns.doc_pattern()
         for w in doc_warnings:
             print(f"rigor-marker: {w}", file=sys.stderr)
-        expr = f"{expr}|{doc_expr}"
+        # Compile the COMBINED expression here too, and degrade loudly rather than raising.
+        # `doc_pattern()` validated its own effective form, but this adds the consumer's
+        # `sourceFilePatterns` on top -- a third expression neither side has compiled. This
+        # function's documented contract is that it always exits 0; a traceback here instead
+        # leaves `SRC_SHA=""` in the caller's `$( )`, and an empty fingerprint compares EQUAL
+        # to the other side's empty fingerprint, so the gate prints `ok` over a source rewrite
+        # nobody reviewed. Fail-safe means keeping a real fingerprint, not keeping the union.
+        combined = f"{expr}|{doc_expr}"
+        try:
+            re.compile(combined)
+            expr = combined
+        except re.error as exc:
+            print(f"rigor-marker: [WARN] ⚠️ the source+doc pattern union is not a valid regex "
+                  f"({exc}); falling back to the source pattern alone, so behaviour-bearing DOC "
+                  f"changes are NOT in this fingerprint.", file=sys.stderr)
     else:
         print(f"rigor-marker: [WARN] cannot import doc_patterns from {_SHARED_LIB} "
               f"({_DOC_IMPORT_ERROR}) — behaviour-bearing DOC changes are NOT in this "
@@ -157,7 +171,20 @@ def source_sha(default_branch: str | None, source_pattern: str | None) -> str:
         # digest is stable across an untracked→committed transition. A path present only
         # because it was DELETED vs base has no working-tree bytes → a deletion sentinel.
         try:
-            h.update(Path(f).read_bytes())
+            # NEVER follow a symlink or read a non-regular file. This loop now covers `.md`
+            # paths, which is the file class a human reviewer is least likely to check for a
+            # symlink, and `read_bytes()` on a link to /dev/zero raises MemoryError -- which is
+            # not an OSError, so it escaped this handler, crashed the process, and produced the
+            # empty-fingerprint fail-open described above. A sentinel keeps the digest
+            # well-defined and keeps the path IN the fingerprint, so swapping a file for a link
+            # still moves it.
+            fp = Path(f)
+            if fp.is_symlink():
+                h.update(b"\2symlink-not-followed")
+            elif not fp.is_file():
+                h.update(b"\3not-a-regular-file")
+            else:
+                h.update(fp.read_bytes())
         except OSError:
             h.update(b"\1missing-or-deleted")
         h.update(b"\0")

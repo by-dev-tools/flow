@@ -149,6 +149,13 @@ CFG = json.dumps({"defaultBranch": "main", "planPath": "plan.md",
 def build(arm: str, new_skill: str, out: Path, scratch: Path):
     work = scratch / arm
     if work.exists():
+        # Refuse to rmtree through a symlink, or outside the scratch root. `--scratch` is
+        # caller-supplied, so `--scratch /some/dir` would otherwise delete /some/dir/negative
+        # without comment. Dev-only tool run by its own author, so this is cheap insurance
+        # rather than a threat model.
+        if work.is_symlink() or work.resolve().parent != scratch.resolve():
+            raise SystemExit(f"[precision-pair] REFUSING to remove {work}: it is a symlink or "
+                             f"resolves outside the scratch root {scratch}.")
         shutil.rmtree(work)
     repo = git_repo(work, {
         "skills/throttle/SKILL.md": BASE_SKILL,

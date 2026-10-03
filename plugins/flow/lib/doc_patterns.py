@@ -131,15 +131,53 @@ def read_slot(root: str | None = None) -> "tuple[str, list[str]]":
     return raw, warnings
 
 
+# Inline GLOBAL flags. `(?i)` and friends are legal mid-pattern when a regex is compiled alone,
+# but a union puts them mid-expression, where Python either raises (3.11+) or -- worse, and
+# measured on 3.9 -- applies the flag to the WHOLE union. A slot of `(?i)(^|/)skills/.*\.md$`
+# then silently makes the consumer's entire `sourceFilePatterns` case-insensitive: `APP.PY`
+# starts matching `\.py$`. The scoped form `(?i:...)` is fine and is deliberately not matched.
+_INLINE_GLOBAL_FLAGS = re.compile(r"\(\?[aiLmsux]+\)")
+
+# Nested quantifier shapes -- `(a+)+`, `(x*)*` -- are the classic catastrophic-backtracking
+# trigger. The SHELL side bounds the identical hazard with `timeout 5`, and GNU grep's DFA is
+# immune anyway, so this Python reader is the only unbounded one. A heuristic, and labelled as
+# one: it is a cheap refusal of the known-bad shape, not a proof of termination.
+_NESTED_QUANTIFIER = re.compile(r"\([^()]*[+*][^()]*\)\s*[+*]")
+
+
 def doc_pattern(slot: str | None = None, root: str | None = None) -> "tuple[str, list[str]]":
-    """`DOC_BUILTIN` unioned with the configured slot. Returns (pattern, warnings)."""
+    """`DOC_BUILTIN` unioned with the configured slot. Returns (effective_pattern, warnings).
+
+    **The EFFECTIVE expression is what gets validated**, not the slot in isolation. Validating
+    the slot alone was a fail-open: the value compiled on its own, then the union either raised
+    out of a function whose contract is to always exit 0, or changed the meaning of every other
+    clause in it. Whatever this returns has been compiled in the exact form the caller will use.
+    """
     warnings: list[str] = []
     if slot is None:
         slot, warnings = read_slot(root)
-    if slot:
-        try:
-            re.compile(slot)
-        except re.error as e:
-            warnings.append(f"{PREFIX} [WARN] ⚠️ {SLOT} is not a valid regex ({e}); it was NOT applied.")
-            slot = ""
-    return (f"{DOC_BUILTIN}|{slot}" if slot else DOC_BUILTIN), warnings
+    if slot and _INLINE_GLOBAL_FLAGS.search(slot):
+        warnings.append(
+            f"{PREFIX} [WARN] ⚠️ {SLOT} carries an inline global flag "
+            f"({_INLINE_GLOBAL_FLAGS.search(slot).group(0)}); it was NOT applied. Mid-union that "
+            f"flag either raises or silently applies to EVERY pattern it is combined with, "
+            f"including sourceFilePatterns. Use the scoped form, e.g. (?i:...) instead."
+        )
+        slot = ""
+    if slot and _NESTED_QUANTIFIER.search(slot):
+        warnings.append(
+            f"{PREFIX} [WARN] ⚠️ {SLOT} contains a nested quantifier "
+            f"({_NESTED_QUANTIFIER.search(slot).group(0)}); it was NOT applied, because this "
+            f"reader has no match timeout and that shape can backtrack unboundedly."
+        )
+        slot = ""
+    effective = f"{DOC_BUILTIN}|{slot}" if slot else DOC_BUILTIN
+    try:
+        re.compile(effective)
+    except re.error as e:
+        warnings.append(
+            f"{PREFIX} [WARN] ⚠️ {SLOT} is not usable in combination with the built-in set "
+            f"({e}); it was NOT applied. It may compile alone and still be invalid in a union."
+        )
+        effective = DOC_BUILTIN
+    return effective, warnings
