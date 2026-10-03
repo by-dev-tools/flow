@@ -1879,6 +1879,103 @@ def test_hook_drift_is_stderr_only_but_staleness_is_not():
               f"the bootstrap arm must still speak on stdout too, got {so!r}")
 
 
+def test_hook_path_is_not_mangled_by_the_version_filter():
+    """A long or space-bearing `installPath` must survive the version sanitiser.
+
+    Both halves of this were wrong in one commit. The strict filter was applied to
+    `_registry_field` generally, so it hit `installPath` too:
+
+    - the 64-char cap truncated it — measured, a macOS `/Users/first.lastname` install
+      path is **exactly** 64 characters — after which `ENGINE` never resolves and the
+      hook is pinned to the bootstrap arm forever, re-downloading on every session of
+      a perfectly healthy install;
+    - the charset allowlist strips spaces, so a home directory containing one was
+      rewritten into a DIFFERENT path, which the hook would then try to run an engine
+      from.
+
+    Found by /flow:security-review. The fix splits the filters: control characters and
+    a 4096-char bound at the read (a newline there would split the verdict), and the
+    strict charset + 64-char cap only in `registry_version`, whose value reaches the
+    model's context. This pins the split so a future tidy-up cannot re-merge them.
+    """
+    long_home = "a-very-long-user-name-that-pushes-past-sixty-four-characters-easily"
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        drive = _hook_driver(td)
+        # A real engine, reached through a path that is both >64 chars and has a space.
+        home = td / f"{long_home} with space" / "home"
+        inst = td / f"{long_home} with space" / "cachetree"
+        lib = inst / "skills" / "ship" / "lib"
+        lib.mkdir(parents=True, exist_ok=True)
+        (lib / "plugin-provenance.py").write_text(ENGINE.read_text(encoding="utf-8"))
+        (home / ".claude" / "plugins").mkdir(parents=True, exist_ok=True)
+        (home / ".claude" / "plugins" / "installed_plugins.json").write_text(
+            json.dumps(registry("1.29.0", install_path=str(inst))))
+        mp = home / ".claude" / "plugins" / "marketplaces" / "flow" / ".claude-plugin"
+        mp.mkdir(parents=True, exist_ok=True)
+        (mp / "marketplace.json").write_text(marketplace_json("1.40.0"))
+        check(len(str(inst)) > 64, f"the fixture path must exceed the cap, got {len(str(inst))}")
+        rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.40.0")
+    check(rc == 0, f"must exit 0, got {rc}")
+    # WHITESPACE-NORMALISED before matching. The hook wraps its stderr at ~80 columns
+    # with a 3-space hanging indent, so "predates the provenance engine" is split
+    # across two lines and a naive substring test silently never matches — which is
+    # exactly what happened: this assertion passed under a mutation that re-merged the
+    # filters, because it was testing the wrap rather than the behaviour. The same
+    # shape already bit once in this change (the "NOT falling back" refusal phrase).
+    se_flat = " ".join(se.split())
+    check("predates the provenance engine" not in se_flat,
+          f"the engine resolved through a long, space-bearing install path must be FOUND "
+          f"— a truncated or charset-stripped path sends the hook to the bootstrap arm "
+          f"forever on a healthy install. got {se_flat!r}")
+    check(any("plugin update flow@flow" in c for c in calls),
+          f"and the normal arm must still do its job, got {calls}")
+
+
+def test_cached_versions_is_confined_to_the_cache():
+    """`cached_versions` lists plugin versions, never an arbitrary directory.
+
+    Wrong twice in this change's own history, and only a comment held it: the first
+    cut followed an `installPath` of `/nonexistent` and enumerated the **root
+    filesystem** (`bin, boot, dev, etc, …` reported as plugin versions); the second
+    allowed `parent == cache` and enumerated **marketplace** directories. Both are
+    guard bugs in a function whose output reaches `report --json`, so both polarities
+    are pinned here rather than described.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        # POSITIVE: a genuine cache path lists the trees that are there.
+        home = make_home(td / "ok", registry("1.55.0"), marketplace_json("1.55.0"),
+                         cache_versions=["1.55.0", "1.29.0"])
+        d = jrun(home, make_root(td / "ok", "1.55.0"))
+        check(d.get("cached_versions") == ["1.29.0", "1.55.0"],
+              f"a real cache path must list its version trees, got {d.get('cached_versions')!r}")
+
+        # NEGATIVE 1: absent / nonexistent path — never a filesystem listing.
+        home = make_home(td / "ne", registry("1.55.0", install_path="/nonexistent"),
+                         marketplace_json("1.55.0"))
+        d1 = jrun(home, make_root(td / "ne", "1.55.0"))
+        check(d1.get("cached_versions") == [],
+              f"a nonexistent install path must yield [] — the first cut enumerated the "
+              f"ROOT FILESYSTEM here. got {d1.get('cached_versions')!r}")
+
+        # NEGATIVE 2: one level too shallow — never the marketplace listing.
+        shallow = home / ".claude" / "plugins" / "cache" / "flow"
+        shallow.mkdir(parents=True, exist_ok=True)
+        (shallow / "flow").mkdir(exist_ok=True)
+        (shallow / "someothermarketplace").mkdir(exist_ok=True)
+        home2 = make_home(td / "sh", registry("1.55.0", install_path=str(shallow)),
+                          marketplace_json("1.55.0"))
+        sh2 = home2 / ".claude" / "plugins" / "cache" / "flow"
+        sh2.mkdir(parents=True, exist_ok=True)
+        (sh2 / "flow").mkdir(exist_ok=True)
+        (sh2 / "someothermarketplace").mkdir(exist_ok=True)
+        d2 = jrun(home2, make_root(td / "sh", "1.55.0"))
+        check("someothermarketplace" not in (d2.get("cached_versions") or []),
+              f"a path one level above the version dir must not report MARKETPLACE "
+              f"directories as plugin versions. got {d2.get('cached_versions')!r}")
+
+
 def test_hook_output_channels():
     """stdout is the seat-facing channel and carries AT MOST one verdict line.
 
@@ -1933,6 +2030,16 @@ def test_hook_output_channels():
             ("update-failed", make_home_with_engine(td / "c4", "1.29.0", "1.43.0"),
              {"fail": True}, 1),
             ("dry-run", make_home_with_engine(td / "c5", live, live), {"dry": True}, 1),
+            # NON-ACTING but SPEAKING. Measured by /flow:audit-coverage against a
+            # criterion that claimed every non-acting path is silent — these three
+            # falsified it. "I could not tell whether you are current" is a verdict the
+            # seat must act on, so the discriminator is ACTIONABILITY, not activity.
+            ("claude-absent", make_home_with_engine(td / "c6", live, live),
+             {"strip_path": True}, 1),
+            ("engine-mute", make_home_with_mute_engine(td / "c7", "1.29.0", "1.40.0"),
+             {"bump_to": "1.40.0"}, 1),
+            # And the paired ZERO case, so "every arm speaks" cannot pass either.
+            ("current-undrifted", make_home_with_engine(td / "c8", live, live), {}, 0),
         ]
         for name, home, kw, want in cases:
             rc, so, se, calls = drive(home, cwd=REPO, **kw)
@@ -2012,6 +2119,8 @@ def main() -> int:
                test_hook_stdout_cannot_be_forged_by_the_registry,
                test_hook_never_claims_a_move_it_could_not_read,
                test_hook_drift_is_stderr_only_but_staleness_is_not,
+               test_hook_path_is_not_mangled_by_the_version_filter,
+               test_cached_versions_is_confined_to_the_cache,
                test_hook_output_channels,
                test_capture_fixture, test_ci_wired):
         try:
