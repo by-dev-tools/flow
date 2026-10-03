@@ -125,42 +125,45 @@ def source_sha(default_branch: str | None, source_pattern: str | None) -> str:
     # A dev-tracking doc must stay OUT -- /flow:ship Step 5 rewrites planPath in the same commit
     # that carries the code, so pulling plan/history/feedback docs in would report source-drift
     # on every ship run, and a gate that always fires is one people learn to click past.
-    expr = source_pattern or DEFAULT_SOURCE_PATTERN
+    # SEPARATELY COMPILED patterns, never a concatenation. A consumer's `sourceFilePatterns`
+    # and their `behaviorBearingDocPatterns` are two independent values; joining them with `|`
+    # created a third expression neither side had validated, and an inline flag in either one
+    # then changed the meaning of the other. Matching is `any(p.search(f))`.
+    pats = []
+    src_expr = source_pattern or DEFAULT_SOURCE_PATTERN
+    try:
+        pats.append(re.compile(src_expr))
+    except re.error as exc:
+        # Pre-existing fail-open on a line this change rewrites anyway: an invalid
+        # `sourceFilePatterns` raised out of a function contracted to always exit 0, leaving an
+        # EMPTY fingerprint that compares equal to the other side's empty fingerprint. Degrade
+        # to the documented default and say so.
+        print(f"rigor-marker: [WARN] ⚠️ sourceFilePatterns is not a valid regex ({exc}); using "
+              f"the built-in default instead.", file=sys.stderr)
+        pats.append(re.compile(DEFAULT_SOURCE_PATTERN))
     if doc_patterns is not None:
-        doc_expr, doc_warnings = doc_patterns.doc_pattern()
+        doc_pats, doc_warnings = doc_patterns.doc_patterns_list()
         for w in doc_warnings:
             print(f"rigor-marker: {w}", file=sys.stderr)
-        # Compile the COMBINED expression here too, and degrade loudly rather than raising.
-        # `doc_pattern()` validated its own effective form, but this adds the consumer's
-        # `sourceFilePatterns` on top -- a third expression neither side has compiled. This
-        # function's documented contract is that it always exits 0; a traceback here instead
-        # leaves `SRC_SHA=""` in the caller's `$( )`, and an empty fingerprint compares EQUAL
-        # to the other side's empty fingerprint, so the gate prints `ok` over a source rewrite
-        # nobody reviewed. Fail-safe means keeping a real fingerprint, not keeping the union.
-        combined = f"{expr}|{doc_expr}"
-        try:
-            re.compile(combined)
-            expr = combined
-        except re.error as exc:
-            print(f"rigor-marker: [WARN] ⚠️ the source+doc pattern union is not a valid regex "
-                  f"({exc}); falling back to the source pattern alone, so behaviour-bearing DOC "
-                  f"changes are NOT in this fingerprint.", file=sys.stderr)
+        pats.extend(doc_pats)
     else:
-        print(f"rigor-marker: [WARN] cannot import doc_patterns from {_SHARED_LIB} "
+        print(f"rigor-marker: [WARN] ⚠️ cannot import doc_patterns from {_SHARED_LIB} "
               f"({_DOC_IMPORT_ERROR}) — behaviour-bearing DOC changes are NOT in this "
               f"fingerprint, so prose edited after staff-review will not be detected. "
               f"Reinstall the plugin.", file=sys.stderr)
-    pat = re.compile(expr)
+
+    def _matches(path: str) -> bool:
+        return any(p.search(path) for p in pats)
 
     # Union of (tracked-and-changed-vs-base) and (untracked) source files — the two ways a
     # file can be part of this PR's source delta. A file moving between these two sets across a
     # commit is exactly the transition that must NOT change the digest.
     changed = {
-        f for f in _git(["diff", base, "--name-only"]).splitlines() if f and pat.search(f)
+        f for f in _git(["diff", base, "--name-only"]).splitlines() if f and _matches(f)
     }
     changed |= {
         f for f in _git(["ls-files", "--others", "--exclude-standard"]).splitlines()
-        if f and pat.search(f)
+        if f and _matches(f)
     }
 
     h = hashlib.sha256()

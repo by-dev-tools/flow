@@ -227,7 +227,10 @@ def collect_items(
             in_item = False
             continue
 
-        if in_item and items and line[:1].isspace():
+        # `in_item` is set True only on the line after an append, so it implies a non-empty
+        # `items`; an `and items` conjunct here could never be the deciding term and only
+        # made a reader prove that for themselves.
+        if in_item and line[:1].isspace():
             items[-1] = f"{items[-1]} {line.strip()}"
             continue
 

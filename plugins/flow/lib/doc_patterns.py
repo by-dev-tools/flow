@@ -85,6 +85,19 @@ def repo_root(default: str = ".") -> str:
     return root or default
 
 
+def _refuse(reason: str) -> "tuple[str, list[str]]":
+    """One refusal shape: ("", [one warning]).
+
+    Five branches below used to spell the prefix, the sigil and the consequence clause
+    themselves, and the fifth had ALREADY drifted ("doc coverage is the builtin set only" vs
+    "falls back to the built-in set (<value>) only") — four copies of a sentence and one of them
+    wrong, in the module whose whole purpose is to stop a contract being spelled twice. Each
+    branch now supplies only its distinguishing clause.
+    """
+    return "", [f"{PREFIX} [WARN] ⚠️ {reason} — it was NOT applied, so doc coverage falls back "
+                f"to the built-in set ({DOC_BUILTIN}) only."]
+
+
 def read_slot(root: str | None = None) -> "tuple[str, list[str]]":
     """Read `behaviorBearingDocPatterns` from flow.config.json. Returns (pattern, warnings).
 
@@ -96,88 +109,78 @@ def read_slot(root: str | None = None) -> "tuple[str, list[str]]":
     doc-blind gate it was supposed to close (`general.md` item 1 — pair every fallback with a
     loud branch).
     """
-    warnings: list[str] = []
     cfg = Path(root if root is not None else repo_root()) / "flow.config.json"
     if not cfg.is_file():
-        return "", warnings
+        return "", []
     try:
         data = json.loads(cfg.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
-        warnings.append(f"{PREFIX} [WARN] ⚠️ flow.config.json is unreadable or not valid JSON ({e}); "
-                        f"{SLOT} was NOT applied — doc coverage falls back to the built-in set ({DOC_BUILTIN}) only.")
-        return "", warnings
+        return _refuse(f"flow.config.json is unreadable or not valid JSON ({e})")
     if not isinstance(data, dict):
-        warnings.append(f"{PREFIX} [WARN] ⚠️ flow.config.json is not a JSON object; {SLOT} was NOT applied "
-                        f"— doc coverage falls back to the built-in set ({DOC_BUILTIN}) only.")
-        return "", warnings
+        return _refuse("flow.config.json is not a JSON object")
 
     raw = data.get(SLOT, "")
     if raw in ("", None):
-        return "", warnings
+        return "", []
     if not isinstance(raw, str):
-        warnings.append(f"{PREFIX} [WARN] ⚠️ {SLOT} is {type(raw).__name__}, not a string; it was NOT "
-                        f"applied — doc coverage falls back to the built-in set ({DOC_BUILTIN}) only.")
-        return "", warnings
+        return _refuse(f"{SLOT} is {type(raw).__name__}, not a string")
     if len(raw) > MAX_SLOT_LEN:
-        warnings.append(f"{PREFIX} [WARN] ⚠️ {SLOT} is {len(raw)} chars (cap {MAX_SLOT_LEN}); it was NOT "
-                        f"applied — doc coverage falls back to the built-in set ({DOC_BUILTIN}) only.")
-        return "", warnings
+        return _refuse(f"{SLOT} is {len(raw)} chars (cap {MAX_SLOT_LEN})")
     try:
         re.compile(raw)
     except re.error as e:
-        warnings.append(f"{PREFIX} [WARN] ⚠️ {SLOT} is not a valid regex ({e}); it was NOT applied — doc "
-                        f"coverage is the builtin set only. Pattern was: {raw[:120]!r}")
-        return "", warnings
-    return raw, warnings
+        # Kept even though the effective-union compile in `doc_pattern` would also reject this:
+        # the slot-alone error names the position in the VALUE the operator wrote, where the
+        # union's error points into a concatenation they never typed.
+        return _refuse(f"{SLOT} is not a valid regex ({e}); pattern was {raw[:120]!r}")
+    return raw, []
 
-
-# Inline GLOBAL flags. `(?i)` and friends are legal mid-pattern when a regex is compiled alone,
-# but a union puts them mid-expression, where Python either raises (3.11+) or -- worse, and
-# measured on 3.9 -- applies the flag to the WHOLE union. A slot of `(?i)(^|/)skills/.*\.md$`
-# then silently makes the consumer's entire `sourceFilePatterns` case-insensitive: `APP.PY`
-# starts matching `\.py$`. The scoped form `(?i:...)` is fine and is deliberately not matched.
-_INLINE_GLOBAL_FLAGS = re.compile(r"\(\?[aiLmsux]+\)")
 
 # Nested quantifier shapes -- `(a+)+`, `(x*)*` -- are the classic catastrophic-backtracking
 # trigger. The SHELL side bounds the identical hazard with `timeout 5`, and GNU grep's DFA is
 # immune anyway, so this Python reader is the only unbounded one. A heuristic, and labelled as
-# one: it is a cheap refusal of the known-bad shape, not a proof of termination.
+# one: a cheap refusal of the known-bad shape, not a proof of termination.
 _NESTED_QUANTIFIER = re.compile(r"\([^()]*[+*][^()]*\)\s*[+*]")
 
 
-def doc_pattern(slot: str | None = None, root: str | None = None) -> "tuple[str, list[str]]":
-    """`DOC_BUILTIN` unioned with the configured slot. Returns (effective_pattern, warnings).
+def doc_patterns_list(
+    slot: str | None = None, root: str | None = None
+) -> "tuple[list, list[str]]":
+    """The built-in set plus the configured slot, as SEPARATELY COMPILED patterns.
 
-    **The EFFECTIVE expression is what gets validated**, not the slot in isolation. Validating
-    the slot alone was a fail-open: the value compiled on its own, then the union either raised
-    out of a function whose contract is to always exit 0, or changed the meaning of every other
-    clause in it. Whatever this returns has been compiled in the exact form the caller will use.
+    Returns `(patterns, warnings)`; match with `any(p.search(path) for p in patterns)`.
+
+    **Separate compiles, not a union string, and that is the whole design.** The first version
+    returned one concatenated expression, and every hazard it then had to refuse came from the
+    concatenation itself: an inline `(?i)` is legal mid-pattern alone but mid-UNION it either
+    raises (Python 3.11+) or — measured on 3.9 — applies to every other clause, so a slot could
+    silently make the consumer's whole `sourceFilePatterns` case-insensitive. Compiled on its own,
+    that same `(?i)` scopes to its own pattern and does exactly what the consumer asked for. So
+    the inline-flag refusal and the union-compile refusal are both GONE rather than hardened,
+    and a caller can no longer build a third expression nobody validated.
+
+    This also makes the Python reader structurally match the shell one in
+    `audit-coverage/SKILL.md`, which has always applied `DOC_BUILTIN` and the slot as separate
+    `grep -E` invocations.
+
+    The nested-quantifier refusal stays: it is about unbounded backtracking in THIS reader
+    (which has no match timeout, where the shell side has `timeout 5`), not about concatenation.
     """
     warnings: list[str] = []
     if slot is None:
         slot, warnings = read_slot(root)
-    if slot and _INLINE_GLOBAL_FLAGS.search(slot):
-        warnings.append(
-            f"{PREFIX} [WARN] ⚠️ {SLOT} carries an inline global flag "
-            f"({_INLINE_GLOBAL_FLAGS.search(slot).group(0)}); it was NOT applied. Mid-union that "
-            f"flag either raises or silently applies to EVERY pattern it is combined with, "
-            f"including sourceFilePatterns. Use the scoped form, e.g. (?i:...) instead."
-        )
-        slot = ""
     if slot and _NESTED_QUANTIFIER.search(slot):
-        warnings.append(
-            f"{PREFIX} [WARN] ⚠️ {SLOT} contains a nested quantifier "
-            f"({_NESTED_QUANTIFIER.search(slot).group(0)}); it was NOT applied, because this "
-            f"reader has no match timeout and that shape can backtrack unboundedly."
-        )
-        slot = ""
-    effective = f"{DOC_BUILTIN}|{slot}" if slot else DOC_BUILTIN
-    try:
-        re.compile(effective)
-    except re.error as e:
-        warnings.append(
-            f"{PREFIX} [WARN] ⚠️ {SLOT} is not usable in combination with the built-in set "
-            f"({e}); it was NOT applied. It may compile alone and still be invalid in a union."
-        )
-        effective = DOC_BUILTIN
-    return effective, warnings
+        m = _NESTED_QUANTIFIER.search(slot)
+        slot, extra = _refuse(
+            f"{SLOT} contains a nested quantifier ({m.group(0)}); this reader has no match "
+            f"timeout and that shape can backtrack unboundedly")
+        warnings.extend(extra)
+
+    pats = [re.compile(DOC_BUILTIN)]
+    if slot:
+        try:
+            pats.append(re.compile(slot))
+        except re.error as e:  # pragma: no cover - read_slot already compiled it
+            _, extra = _refuse(f"{SLOT} failed to compile ({e})")
+            warnings.extend(extra)
+    return pats, warnings

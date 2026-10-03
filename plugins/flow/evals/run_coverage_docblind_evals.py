@@ -475,7 +475,6 @@ def main() -> int:
         # one exclusion clause removed -- the cleanup CV1's history entry invites by calling it
         # "belt-and-braces rather than the cause" -- and assert the OUTCOME in that state. This
         # pins the decision, not a string that currently implies it (general.md item 4).
-        import re as _re
         blocks = [b for b in bang_blocks((SKILLS / "audit-coverage" / "SKILL.md")
                                          .read_text(encoding="utf-8")) if "DOC_BUILTIN=" in b]
         check("exactly one bang block carries the doc selection (the replay has one target)",
