@@ -71,6 +71,35 @@ neither Claude nor the transcript.
 - **Before trusting an operational warning, measure that its reader gets it.** Cheap: one probe session
   asked to quote the line back.
 
+## Three corollaries the review pass added, each paid for
+
+**An eval can pin the bug as correct, so when you fix one, grep the suite for assertions that encode
+the old behaviour.** This happened **twice in one PR**, and the second instance survived the first
+fix: `"with no engine the hook must not blind-update"` *was* the deadlock, and
+`"an undeterminable comparison must not blind-update"` was the same deadlock one arm over, still
+green after the first was flipped. CI was green over the bug for 26 releases in the first case. The
+tell is an assertion phrased as *"must not act"* on a path where acting is the remedy. **Both halves
+of the replacement are required** (FB-0010 clause 3): it must act, *and* the thing the old assertion
+legitimately protected must still hold.
+
+**Mutate the mechanism the assertion protects, not only the feature under test.** A five-mutation
+sweep validated this change's hook arms and still missed that the new channel test was **vacuous** —
+the shim wrote its chatter to a log file, never stdout, so *"CLI chatter must never reach stdout"*
+could not fail. `/simplify`'s efficiency lens found it by deleting the `1>&2` redirect in `cc()` and
+watching the suite stay green. The sweep had mutated every branch the test *described* and never the
+one line it *depended on*. Before trusting a guard, ask what single edit would make it meaningless,
+and make that edit.
+
+**A hedge keyed on a permanent condition is a permanent warning, which is the same as no warning.**
+The ambiguity probe first keyed on "more than one version tree in the plugin cache" — and since
+`claude plugin update` never prunes the old tree, that is **permanently** true on any machine that
+has ever updated. Caught by two independent review lenses; the cry-wolf eval could not catch it
+because its fixture used an install path outside the cache, i.e. a state the fixture's own docstring
+calls impossible. Two rules: when a predicate gates a warning, check whether its condition ever
+becomes false again; and a severity decision belongs in the renderer, not in the predicate — the
+predicate should say what is *true* (undeterminable), and the renderer should decide how loudly to
+say it (`ℹ️`, not `⚠️`, when the state is the steady state).
+
 ## Also recorded here, because it cost a measurement
 
 `.conductor/settings.toml`'s `scripts.setup` was the obvious provisioning-time fix and **does not run
