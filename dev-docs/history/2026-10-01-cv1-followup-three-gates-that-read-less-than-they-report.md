@@ -142,6 +142,60 @@ passes without exercising it.
 - The claim "this plan would have been cut" was **wrong**, and measuring it is what showed the
   terminator does not fire on a bold span with trailing prose.
 
+## What the ship-gate reviewers found, and what it cost
+
+The review round at `/flow:ship` found more defects than the change itself did. Recording the
+yield because it is the argument for running the whole pipeline rather than the parts that feel
+owed.
+
+**My own eval runner was the worst finding.** It keyed on each harness's LAST OUTPUT LINE instead
+of its exit code, and `run_dispatch_backend_evals.py` prints `FAILED: 1 check(s)` on the
+*second*-to-last line. That harness had been RED since `doc_patterns.py` was added — it asserts a
+hard-coded count of shipped artifacts and the new shared lib is the 11th — so **every "43
+harnesses green" in this branch's earlier commits and in my reports was wrong**: 42 green and one
+red, CI-wired, for five commits. This is `general.md` item 4's own corollary ("prefer a tool's
+exit code over a grep of its output") violated in the instrument used to check everything else.
+
+**Security found three fail-open paths in the gate this PR was hardening**, all the same shape —
+a fingerprint that silently becomes empty, which then compares equal to the other side's empty
+fingerprint and prints `ok`. (a) The config slot was validated *alone* and used in a *union*: a
+slot of `(?i)(^|/)skills/.*\.md$` — a case-insensitive variant of the pattern `DOC-BLIND` tells
+operators to copy — compiles alone, and in the union the flag leaks to every other clause
+(measured on 3.9: `APP.PY` starts matching `\.py$`), or raises on 3.11+. (b) A committed symlink
+to `/dev/zero` could empty the fingerprint with no config access, and this PR is what extended
+that read loop to `.md` — the file class nobody checks for a symlink; `MemoryError` is not an
+`OSError`, so it escaped the handler. (c) The new `DOC-SURFACE` rule omitted the
+above-the-delimiter qualifier, and the emitter runs only in diff mode *after* source mode exits —
+so every `DOC-SURFACE` line a source-mode reviewer sees is necessarily file content, and an
+audited file could publish a discount-this-file instruction about itself.
+
+**`/simplify`'s altitude lens then deleted two of those fixes by asking a better question.** Why
+is there a union at all? A consumer's `sourceFilePatterns` and their `behaviorBearingDocPatterns`
+are independent values; concatenating them created a third expression neither side validated.
+Compiled separately, `(?i)` scopes to its own pattern and does what the consumer asked — so the
+inline-flag and union-compile refusals are *gone* rather than hardened, the Python reader now
+matches the shell one structurally, and a slot that used to be refused now works.
+
+**The coverage audit found the one undeclared behaviour** and it is this PR's own: item 3 had two
+halves, and all three of its criteria describe only the block scan. The `is_pinned` boundary
+widening — which makes `/flow:critique-plan`'s pin gate *more permissive* — has no declared
+criterion. The assertions exist and pass; the declaration does not. Routed as a decision rather
+than self-declared.
+
+**The skip-auditor contradicted its own engine**, reporting staff-review as `SHOULD-RE-RUN — no
+fresh rigor marker exists for HEAD`. The marker existed, its `source_sha` matched the tree
+byte-for-byte, the gate returned `ok`, and the engine's own row read "ran; fresh rigor marker
+matches the current source". The marker is commit-invariant by design (FB-0047), so keying
+freshness to HEAD is the wrong question. Its *other* flag was right and I was wrong: `/simplify`
+genuinely had not run, and my skip reason leaned on a claim the same audit had just flagged.
+
+Two more of my own instrument errors, both caught before they reached a number: a `json.dumps`
+round-trip applied to the config schema reflowed 179 lines and ASCII-escaped every em-dash, so
+`—` became `\u2014` and the slot-count scanner read the number 2014 as a slot claim (a JSON
+round-trip is not a text edit); and a guard-validation probe placed in `/tmp` failed with
+`IndexError` because `parents[2]` cannot resolve from there, which looked like the guard not
+firing when it was the probe that was broken.
+
 ## Open
 
 - CV1's `pr159` numbers were never committed as raw outputs; that baseline exists in prose only.
