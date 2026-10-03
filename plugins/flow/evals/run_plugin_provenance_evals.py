@@ -1821,6 +1821,64 @@ def test_hook_never_claims_a_move_it_could_not_read():
               f"a real move must still render the arrow, got {so!r}")
 
 
+def test_hook_drift_is_stderr_only_but_staleness_is_not():
+    """Version-drift stays off stdout; a genuinely stale install does NOT.
+
+    The pairing is the orchestrator's condition for moving the drift verdict to
+    stderr (2026-10-03), and it is the right condition: the risk of taking a line
+    off the seat-facing channel is that it hides the line that matters.
+
+    Why drift moved. On the non-acting path, drift is the NORMAL dev-branch state —
+    a feature branch declares the next unreleased version by construction, so every
+    session of every flow branch sees "installed is behind the branch". It was
+    therefore the most-read line in the hook and the least actionable: there is
+    nothing to do about it, and a restart cannot make an installed release match an
+    unreleased branch. One stdout line per session is the budget; spending it on the
+    steady state is what trains a reader to skip the channel.
+
+    Why that is safe. Everything actionable is still on stdout — the bootstrap, the
+    applied update, the failed update, and the cannot-tell verdict — and at ship time
+    the PR's provenance rows carry the same fact. This test pins both halves so the
+    move cannot silently widen into "the hook stopped speaking".
+    """
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        drive = _hook_driver(td)
+
+        # (a) DRIFTED but current: install == marketplace, branch declares something
+        #     else. stdout silent; stderr still explains.
+        live = live_branch_version()
+        home = make_home_with_engine(td / "d-cur", "1.40.0", "1.40.0")
+        rc, so, se, calls = drive(home, cwd=REPO)
+        check(rc == 0, f"drifted-but-current must exit 0, got {rc}")
+        check(so == "",
+              f"version-drift alone must NOT reach stdout — it is the steady state of "
+              f"every feature branch and there is nothing to act on. got {so!r}")
+        check("branch declares" in se and live in se,
+              f"but stderr must still explain it, naming the branch version. got {se!r}")
+        check(not any("plugin update" in c for c in calls),
+              f"and it must attempt no update, got {calls}")
+
+        # (b) THE PAIR. A genuinely stale install — behind the MARKETPLACE, not merely
+        #     behind the branch — must still produce a stdout verdict. If this ever
+        #     goes quiet, moving (a) off stdout has hidden the real signal, which is
+        #     the whole risk of the change.
+        home = make_home_with_engine(td / "d-stale", "1.29.0", "1.40.0")
+        rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.40.0")
+        check(rc == 0, f"stale install must exit 0, got {rc}")
+        check(len(so.strip().splitlines()) == 1,
+              f"a genuinely stale install MUST still speak on stdout, in one line — "
+              f"otherwise moving the drift line hid the verdict that matters. got {so!r}")
+        check("1.29.0" in so and "1.40.0" in so,
+              f"and that line must name the before and after versions, got {so!r}")
+
+        # (c) And the no-engine bootstrap path, the other genuinely-stale shape.
+        home = make_home(td / "d-boot", registry("1.29.0"), marketplace_json("1.40.0"))
+        rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.40.0")
+        check(len(so.strip().splitlines()) == 1 and "1.29.0" in so,
+              f"the bootstrap arm must still speak on stdout too, got {so!r}")
+
+
 def test_hook_output_channels():
     """stdout is the seat-facing channel and carries AT MOST one verdict line.
 
@@ -1953,6 +2011,7 @@ def main() -> int:
                test_hook_does_not_import_repo_code,
                test_hook_stdout_cannot_be_forged_by_the_registry,
                test_hook_never_claims_a_move_it_could_not_read,
+               test_hook_drift_is_stderr_only_but_staleness_is_not,
                test_hook_output_channels,
                test_capture_fixture, test_ci_wired):
         try:

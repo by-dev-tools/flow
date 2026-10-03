@@ -100,6 +100,22 @@ becomes false again; and a severity decision belongs in the renderer, not in the
 predicate should say what is *true* (undeterminable), and the renderer should decide how loudly to
 say it (`ℹ️`, not `⚠️`, when the state is the steady state).
 
+**A clean merge is not evidence the document is right — and for a positionally-parsed doc it can be
+actively wrong.** After rebasing onto a `main` that had gained a PR, `dev-docs/plan.md` merged with no
+conflicts and the result placed this PR's plan block **second**. `extract_block` takes the first
+non-demoted `Spec-walk`, so it selected the other PR's 20 criteria as this change's active plan, and
+`/flow:verify-build` + `/flow:audit-coverage` would have graded this diff against them and reported
+green. Git chose the order; no author made a mistake; nothing warned.
+
+**How to apply:** after any rebase or merge that touches a positionally-parsed document, run the
+parser and confirm it selected *your* block — do not infer it from the absence of conflict markers.
+One command: `python3 ${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-criteria.py <planPath>`
+and check `source_heading_line` against your own block. The generalizable form is wider than plan
+docs: **a text merge preserves content but not ORDER, so any consumer that derives meaning from
+position can be silently rewritten by a merge it never saw** (field-manual T4 is the same lesson for
+keep-both conflict resolution; this is the no-conflict case, which is worse because there is no prompt
+to think at).
+
 ## Also recorded here, because it cost a measurement
 
 `.conductor/settings.toml`'s `scripts.setup` was the obvious provisioning-time fix and **does not run

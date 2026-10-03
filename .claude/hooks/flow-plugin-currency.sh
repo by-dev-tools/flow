@@ -499,21 +499,30 @@ EOF
         # the only thing that can say so on a session whose installed ship prose is
         # too old to carry the provenance rows at all. Report; never act on it.
         if [ "$RDRIFT" = "True" ]; then
-            # Says "the INSTALLED plugin is $INST", not "this session runs $INST".
-            # The number comes from the registry, which a mid-session update rewrites,
-            # so asserting what the session is *running* would contradict the hedge the
-            # provenance engine now prints for exactly that reason — and the two
-            # surfaces are meant to read as one story.
-            # Opens with "expected", matching the engine's own `ℹ️ expected` for the
-            # identical state. This fires on every session of every flow feature
-            # branch — the comment above calls it the steady state — so a line that
-            # reads as a problem report trains the reader to skip it, and the ⚠️ lines
-            # are what then get skipped with it.
-            say "[flow-currency] expected on a feature branch — the installed flow plugin is $INST and current with the marketplace, while this branch declares $BR. The /flow:* skills and reviewers here come from the INSTALLED copy, not your working tree."
+            # STDERR ONLY, deliberately — this verdict does NOT go to the seat.
+            #
+            # Decided by the orchestrator, 2026-10-03, reversing the first cut. On this
+            # non-acting path, drift is overwhelmingly the NORMAL dev-branch case: a
+            # feature branch declares the next unreleased version by construction, so
+            # the install is "behind the branch" on every session of every flow branch.
+            # That made it the most-read line in the hook and the least actionable —
+            # there is nothing to do about it, and the restart it used to suggest cannot
+            # make an installed release match an unreleased branch.
+            #
+            # The cases that DO matter — an install genuinely behind the latest release
+            # — are already on stdout via the acting verdicts (bootstrap, update
+            # applied, update failed, cannot-tell), and at ship time via the PR's
+            # provenance rows. So nothing actionable was moved off the channel the seat
+            # reads; only the steady state was. One stdout line per session, spent on a
+            # state that needs a decision, is the whole point of the channel split.
+            #
+            # PAIRED, at the orchestrator's condition: a genuinely stale install must
+            # STILL produce a stdout verdict, so moving this line cannot hide the real
+            # one — `test_hook_drift_is_stderr_only_but_staleness_is_not`.
             echo "[flow-currency] installed flow $INST is current with the marketplace, but this" >&2
-            echo "   branch declares $BR — the /flow:* skills and reviewers in THIS session run" >&2
-            echo "   $INST, not your working tree. Check the PR's version rows, which name" >&2
-            echo "   what ran. Restart Claude Code if this session will run any /flow:* command." >&2
+            echo "   branch declares $BR — the /flow:* skills and reviewers in THIS session come" >&2
+            echo "   from the INSTALLED copy, not your working tree. Expected on a feature" >&2
+            echo "   branch. Check the PR's version rows, which name what ran." >&2
         fi
         exit 0
     fi
