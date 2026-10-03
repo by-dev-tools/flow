@@ -465,6 +465,41 @@ generalizes beyond this seat:** S0's own measurement work lost 19 of 28 probe se
 identical limit and had to discard and re-run them — this is not an orchestrator-seat-specific
 failure mode.
 
+**▶ REVISIT AFTER THE STOPPING POINT — Ben, 2026-10-03.** Ben chose not to build anything further now and asked
+for this to be recorded *in the repo* so it survives an orchestrator rotation. **Surfaces when:** the program's
+stopping point is reached (S0, D1 Phase 3, CV1 + its follow-up all merged) and the next front is chosen.
+
+**The gap got worse after this entry was written, not better.** From 2026-09-29 to 2026-10-03, the CV1 worker
+alone was limit-killed four more times, and **every stall ended only when Ben's next message prompted the
+orchestrator to look**: idle ~2h after a reset (2026-10-01 12:07 → 15:25); ~11h waiting on an orchestrator
+decision nobody was alerted to (2026-10-01 16:42 → 2026-10-02 03:40); ~17h after a reset, mid-`/flow:ship`
+(2026-10-02 06:15 → 2026-10-03 01:30). Plus 2026-09-30 (CV1, ~7h) and 2026-09-29 16:32 (two workers, ~9h).
+
+**What was tried, and why it is not the answer.** The seat ran an in-sandbox watcher: poll `conductor
+session status` every 5 min; on an idle worker read its last assistant text; if it matches
+`You've hit your session limit · resets H:MMam/pm (UTC)`, send a resume message at reset + 5 min (cap 3);
+otherwise ping the orchestrator's own session, debounced across one full poll so a worker waiting on its own
+subagents is not reported. It worked whenever the seat was alive — **and the seat's sandbox is recycled when
+idle (four reboots observed, 2026-09-30 → 10-03), which is exactly when the watcher is needed.** A process
+inside the orchestrator's sandbox cannot watch over the periods the orchestrator is absent.
+
+**Three traps it hit, each a confident wrong answer** (`.claude/rules/general.md` § Consistency item 4 — record
+them so the next build does not repeat them): (1) a liveness check of `pgrep -f watch.py` matched *its own*
+command line, so it reported "alive" for a dead watcher — check a pid file and `/proc/<pid>/cmdline`, and
+validate against a process that is not the watcher; (2) the transcript reader paginated with a silent
+`off > 4000` cap, so for a worker past 4,000 messages it returned a stale "last message" for an hour;
+(3) `git fetch -q origin 'refs/pull/N/head:refs/tmp/N'` without a leading `+` silently refuses a force-pushed
+PR head, so merge simulations ran against the pre-rebase tree — always `+refs/pull/N/head:…`.
+
+**Ruled out so far:** Conductor's docs (FAQ, agent-behavior) document no auto-resume after a usage limit, no
+scheduler, and nothing about cloud-sandbox lifetime. **The surviving options run outside any workspace:** a
+scheduled GitHub Action calling Conductor's public API (cost: a Conductor token stored as a repo secret that
+can message and create workspaces — a security decision, Ben's); or a scheduled Claude Code cloud routine
+(cost: a session per tick; whether it can reach Conductor is unverified). Claude Code's native agent view (§
+Exploration) remains the in-product candidate. **Until one ships, the honest operating rule is: the
+orchestrator checks every worker's last message on every turn, and gaps are expected between human
+check-ins.**
+
 ### The orchestrator seat does not use `/flow:spawn` (2026-09-29, orchestrator seat)
 
 **Surfaces when:** `/flow:spawn` or its `usage.tsv` logging is next touched, or a re-dispatch path
