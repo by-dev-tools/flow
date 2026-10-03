@@ -193,11 +193,22 @@ def make_install_tree(td: Path, skills: list[str], agents: list[str]) -> Path:
 
 
 def run(home: Path, root: Path, *, as_json: bool = True,
-        plugin_root: str | None = None) -> tuple[int, str]:
+        plugin_root: str | None = None, env_path: str | None = None) -> tuple[int, str]:
+    """Invoke the engine. `env_path` sets PATH + HOME for the PATH-pinned cases.
+
+    `env_path` exists so the PATH-signal tests do not hand-roll a fourth spelling of
+    this invocation. Two already existed (a `with_path` closure, and an inline block
+    in the mid-session replay test), each re-deriving the env dict AND the
+    `CLAUDE_PLUGIN_ROOT` pop — which is correctness-critical and exactly the step a
+    hand-rolled copy omits. Found by /simplify's reuse lens.
+    """
     env = dict(os.environ)
     env.pop("CLAUDE_PLUGIN_ROOT", None)
     if plugin_root is not None:
         env["CLAUDE_PLUGIN_ROOT"] = plugin_root
+    if env_path is not None:
+        env["PATH"] = env_path
+        env["HOME"] = str(home)
     cmd = [sys.executable, str(ENGINE), "report", "--home", str(home), "--root", str(root)]
     if as_json:
         cmd.append("--json")
@@ -380,16 +391,8 @@ def test_running_version_beats_the_registry():
         binp.mkdir(parents=True, exist_ok=True)
         env_path = f"{binp}{os.pathsep}/usr/bin"
 
-        def with_path(as_json):
-            env = dict(os.environ, PATH=env_path, HOME=str(home))
-            env.pop("CLAUDE_PLUGIN_ROOT", None)
-            cmd = [sys.executable, str(ENGINE), "report", "--home", str(home),
-                   "--root", str(root)] + (["--json"] if as_json else [])
-            return subprocess.run(cmd, capture_output=True, text=True, env=env,
-                                  cwd=str(root)).stdout
-
-        d = json.loads(with_path(True))
-        out = with_path(False)
+        d = jrun(home, root, env_path=env_path)
+        _, out = run(home, root, as_json=False, env_path=env_path)
 
     check(d.get("ran_version") == "1.29.0",
           f"the RUNNING version must come from PATH, got {d.get('ran_version')!r}")
@@ -533,14 +536,9 @@ def test_mid_session_update_cannot_forge_a_tick():
                          cache_versions=["1.55.0", "1.29.0"])
         binp = home / ".claude" / "plugins" / "cache" / "flow" / "flow" / "1.55.0" / "bin"
         binp.mkdir(parents=True, exist_ok=True)
-        env = dict(os.environ, PATH=f"{binp}{os.pathsep}/usr/bin", HOME=str(home))
-        env.pop("CLAUDE_PLUGIN_ROOT", None)
-        cmd = [sys.executable, str(ENGINE), "report", "--home", str(home),
-               "--root", str(root)]
-        pinned = subprocess.run(cmd, capture_output=True, text=True, env=env,
-                                cwd=str(root)).stdout
-        pj = json.loads(subprocess.run(cmd + ["--json"], capture_output=True, text=True,
-                                       env=env, cwd=str(root)).stdout)
+        ep = f"{binp}{os.pathsep}/usr/bin"
+        _, pinned = run(home, root, as_json=False, env_path=ep)
+        pj = jrun(home, root, env_path=ep)
     pline = pinned.splitlines()[0]
     check(pj.get("ran_version_source") == "PATH",
           f"the pair needs a genuinely PATH-pinned reading, got {pj.get('ran_version_source')!r}")
@@ -1006,8 +1004,10 @@ def test_hook_loud_failure():
     for l in touching:
         check("|| true" not in l,
               f"the update must NOT be suffixed `|| true`: {l.strip()!r}")
-    check("FAILED" in txt and "Do NOT assume" in txt,
-          "a failed update must print a warning naming what may be stale")
+    check("FAILED" in txt and "not assume" in txt.lower(),
+          "a failed update must print a warning naming what may be stale "
+          "(case-insensitive: the phrase occurs both sentence-initial and mid-sentence, "
+          "and pinning one capitalisation reports on the capitalisation)")
 
     # BEHAVIOURAL, both arms, both polarities. A failing update must say FAILED and
     # still exit 0; a succeeding one must NOT say FAILED. Without the second half,
@@ -1015,22 +1015,24 @@ def test_hook_loud_failure():
     with tempfile.TemporaryDirectory() as tmp:
         td = Path(tmp)
         drive = _hook_driver(td)
-        for name, home, bump in (
-            ("normal", make_home_with_engine(td / "l1", "1.29.0", "1.43.0"), "1.43.0"),
+        for name, home, ok, bump in (
+            ("normal", make_home_with_engine(td / "l1", "1.29.0", "1.43.0"),
+             make_home_with_engine(td / "l1ok", "1.29.0", "1.43.0"), "1.43.0"),
             ("bootstrap", make_home(td / "l2", registry("1.29.0"),
-                                    marketplace_json("1.55.0")), "1.55.0"),
+                                    marketplace_json("1.55.0")),
+             make_home(td / "l2ok", registry("1.29.0"),
+                       marketplace_json("1.55.0")), "1.55.0"),
         ):
-            rc, so, se, calls = drive(home, cwd=REPO, fail=True)
+            rc, so, se, _ = drive(home, cwd=REPO, fail=True)
             check(rc == 0, f"[{name}] a failed update must still exit 0, got {rc}")
             check("FAILED" in se and "FAILED" in so,
                   f"[{name}] a failed update must be loud on BOTH channels -- stderr for "
                   f"the detail, stdout because that is the only one the seat sees. "
                   f"got stdout={so!r} stderr={se!r}")
-            # POSITIVE PAIR: success must not print it.
-            ok = make_home_with_engine(td / f"{name}-ok", "1.29.0", "1.43.0") \
-                if name == "normal" else \
-                make_home(td / f"{name}-ok", registry("1.29.0"), marketplace_json("1.55.0"))
-            rc, so, se, calls = drive(ok, cwd=REPO, bump_to=bump)
+            # POSITIVE PAIR: success must not print it. Both homes now come from the
+            # loop tuple -- the in-loop `if name == "normal"` was re-deriving a
+            # distinction the tuple already carried.
+            rc, so, se, _ = drive(ok, cwd=REPO, bump_to=bump)
             check("FAILED" not in so and "FAILED" not in se,
                   f"[{name}] a SUCCESSFUL update must not report FAILED, got "
                   f"stdout={so!r} stderr={se!r}")
@@ -1066,6 +1068,23 @@ def make_home_with_engine(td: Path, version: str, mkt_version: str) -> Path:
                      marketplace_json(mkt_version))
 
 
+def make_home_with_mute_engine(td: Path, version: str, mkt_version: str) -> Path:
+    """An installed tree whose engine is PRESENT but answers nothing.
+
+    Distinct from both other fixtures and the distinction is the point: with no
+    engine the hook takes the bootstrap arm; with a working engine it takes the
+    normal arm; with a PRESENT-BUT-BROKEN engine it used to take neither and simply
+    exit 0 — the same deadlock as the no-engine case, one arm over, and the one
+    /simplify's altitude lens caught surviving the first cut of this fix.
+    """
+    inst = td / "mutetree"
+    lib = inst / "skills" / "ship" / "lib"
+    lib.mkdir(parents=True, exist_ok=True)
+    (lib / "plugin-provenance.py").write_text("import sys\nsys.exit(0)\n")
+    return make_home(td, registry(version, install_path=str(inst)),
+                     marketplace_json(mkt_version))
+
+
 def _hook_driver(td: Path):
     """Shared PATH-shim `claude` that LOGS its invocations, so 'attempted no
     update' is asserted against a real call log rather than inferred from output.
@@ -1088,13 +1107,24 @@ def _hook_driver(td: Path):
         "if 'installPath' in e:\n"
         "    e['installPath'] = e['installPath'].rsplit('/', 1)[0] + '/' + ver\n"
         "json.dump(d, open(reg, 'w'))\n")
+    # The shim MUST write chatter to its own stdout. Without this line the
+    # "CLI chatter never reaches stdout" assertion in test_hook_output_channels is
+    # VACUOUS -- the real `claude plugin update` prints "Checking for updates…" and
+    # "✔ Plugin "flow" updated from X to Y" on stdout, and a shim that only appends
+    # to a log file can never reproduce the leak the assertion guards against.
+    # Caught by mutation: deleting `1>&2` from the hook's `cc()` left that test
+    # entirely green. `.claude/rules/general.md` § Consistency item 4 -- an
+    # instrument validated only on inputs where it should stay quiet cannot tell a
+    # working detector from a broken one.
     (shim / "claude").write_text(
         "#!/bin/bash\necho \"claude $*\" >> %s\n"
+        "echo \"Checking for updates for plugin \\\"flow@flow\\\"…\"\n"
         "case \"$*\" in\n"
         "  'plugin update'*)\n"
         "    [ \"$FAIL_UPDATE\" = 1 ] && exit 1\n"
         "    [ -n \"$BUMP_TO\" ] && python3 %s/bump.py \\\n"
         "        \"$HOME/.claude/plugins/installed_plugins.json\" \"$BUMP_TO\" 2>/dev/null\n"
+        "    echo \"✔ Plugin \\\"flow\\\" updated. Restart to apply changes.\"\n"
         "    exit 0 ;;\n"
         "  *) exit 0 ;;\nesac\n" % (log, shim))
     (shim / "claude").chmod(0o755)
@@ -1225,7 +1255,7 @@ def test_hook_degrades_safely():
 
         rc, so, se, calls = drive(home, cwd=REPO, fail=True)
         check(rc == 0, f"a failed update must still exit 0, got {rc}")
-        check("FAILED" in se and "Do NOT assume" in se,
+        check("FAILED" in se and "not assume" in se.lower(),
               f"a failed update must be loud, got {se!r}")
 
         rc, so, se, calls = drive(home, cwd=REPO, strip_path=True)
@@ -1314,8 +1344,21 @@ def test_hook_field_parse_no_shift():
     check("UNKNOWN" in se and "same as 'no'" in se.lower().replace("not ", "not "),
           "an undeterminable comparison must say UNKNOWN and explicitly distinguish "
           f"itself from 'no', got {se!r}")
-    check(not any("plugin update" in c for c in calls),
-          f"an undeterminable comparison must not blind-update, got {calls}")
+    # FLIPPED 2026-10-03 (FB-0131), and this is the SECOND eval found pinning the
+    # deadlock as correct. It read "an undeterminable comparison must not
+    # blind-update" — i.e. when the engine cannot reach a verdict, do nothing. That
+    # is the engine disabling the updater by failing to answer: the identical class
+    # as the no-engine arm, which this PR had already fixed while leaving this one
+    # standing. The rule is "a mechanism that updates X must not depend on X to
+    # decide whether to run"; the engine may SUPPRESS the update only by
+    # affirmatively answering "already current".
+    #
+    # PAIRED (FB-0010 clause 3): it must act, AND it must still say UNKNOWN rather
+    # than quietly pretending it knew — the assertion above. Acting silently would
+    # be a different bug, and dropping either half would hide one of them.
+    check(any("plugin update flow@flow" in c for c in calls),
+          f"an undeterminable comparison must still UPDATE — 'I cannot tell' is not a "
+          f"reason to leave the seat stale, and the update is idempotent. got {calls}")
 
 
 def test_hook_bootstraps_an_engineless_install():
@@ -1393,6 +1436,59 @@ def test_hook_bootstraps_an_engineless_install():
               f"a dry-run bootstrap must still announce itself in one stdout line, got {so!r}")
         check("would run: claude plugin update flow@flow" in se,
               f"the dry run must name what a real run would do, got {se!r}")
+
+
+def test_hook_acts_when_the_engine_cannot_answer():
+    """A PRESENT engine that reaches no verdict must not disable the updater.
+
+    FB-0131's rule is "a mechanism that updates X must not depend on X to decide
+    whether to run". The first cut of the fix applied it only where it had bitten —
+    the engine absent from a pre-v1.43.0 install — and left the engine GATING the
+    action in two other shapes: it produced no output, or it produced an
+    undeterminable comparison. Both exited 0 having attempted nothing. Same class,
+    two more live instances; found by /simplify's altitude lens, and one of them
+    (`no output`) was initially fixed with NO test, which a mutation then showed by
+    passing green with the fix reverted.
+
+    The correct general form: the engine may SUPPRESS the update only by
+    affirmatively answering "already current". Asserted here against the shim's call
+    log, and PAIRED with the already-current case — otherwise "always acts" would
+    pass on a hook that ignored the engine entirely and re-downloaded every session.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        drive = _hook_driver(td)
+
+        # (a) engine present, answers NOTHING → must still update.
+        home = make_home_with_mute_engine(td / "m1", "1.29.0", "1.55.0")
+        rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.55.0")
+        check(rc == 0, f"a mute engine must still exit 0, got {rc}")
+        check(any("plugin update flow@flow" in c for c in calls),
+              f"an engine that cannot answer must NOT disable the updater — that is the "
+              f"deadlock this whole change is about. got {calls}")
+        check(len(so.strip().splitlines()) == 1 and "1.29.0" in so and "1.55.0" in so,
+              f"the outcome must still reach the seat in one line naming both versions, "
+              f"got {so!r}")
+        check("engine" in se.lower(),
+              f"stderr must say WHY it acted blind, got {se!r}")
+
+        # (b) the mute engine's update FAILS → loud on both channels, still exit 0.
+        home = make_home_with_mute_engine(td / "m2", "1.29.0", "1.55.0")
+        rc, so, se, calls = drive(home, cwd=REPO, fail=True)
+        check(rc == 0, f"a failed blind update must still exit 0, got {rc}")
+        check("FAILED" in so and "FAILED" in se,
+              f"a failed blind update must be loud on BOTH channels, got stdout={so!r}")
+
+        # (c) PAIRED — a WORKING engine that says "current" still suppresses the
+        #     update. Without this, (a) passes on a hook that never asks at all and
+        #     re-downloads the plugin on every healthy session start.
+        live = live_branch_version()
+        home = make_home_with_engine(td / "m3", live, live)
+        rc, so, se, calls = drive(home, cwd=REPO)
+        check(not any("plugin update" in c for c in calls),
+              f"an affirmative 'already current' is the ONE answer that may suppress the "
+              f"update — otherwise every healthy session re-downloads. got {calls}")
+        check(so == "" and se == "", f"and it stays silent, got stdout={so!r} stderr={se!r}")
 
 
 def test_hook_output_channels():
@@ -1522,6 +1618,7 @@ def main() -> int:
                test_hook_fast_path, test_hook_dry_run,
                test_hook_degrades_safely, test_hook_field_parse_no_shift,
                test_hook_bootstraps_an_engineless_install,
+               test_hook_acts_when_the_engine_cannot_answer,
                test_hook_output_channels,
                test_capture_fixture, test_ci_wired):
         try:

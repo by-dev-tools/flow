@@ -36,6 +36,21 @@
 # COST, stated rather than hidden (measured; /simplify efficiency lens). One
 # `claude plugin` CLI boot is ~379 ms on a cloud sandbox, and the clone refresh
 # below is unconditional, so this adds roughly 1-3 s of blocking session start.
+#
+# RE-MEASURED for the bootstrap arm (FB-0131), because the budget above described
+# the normal arm only. That arm used to be `echo; exit 0` — zero CLI boots — and it
+# is the arm EVERY Conductor cloud workspace takes, since the snapshot bakes in flow
+# 1.29.0. It now runs two commands: ~760 ms of boots plus the download, on the first
+# session. That is the work, not waste. Two consequences worth naming here rather
+# than leaving to be discovered:
+#   * An already-current session is UNCHANGED. The engine still short-circuits it;
+#     the fix only stops an engine FAILURE from doing the same (see "the engine
+#     ADVISES, it does not GATE" below). The common path did not get slower.
+#   * The "reported success but did not move" branch re-pays both boots EVERY
+#     session, with no backoff, until the version actually moves. Deliberate: the
+#     alternative is a time-based suppression on the one mechanism whose purpose is
+#     preventing silent staleness, and a wrong default there reintroduces the bug.
+#     The ⚠️ it prints is what makes the repetition legible instead of mysterious.
 # Two optimisations were identified and deliberately NOT taken here — both are on
 # the roadmap with their reasoning:
 #   1. `"matcher": "startup|resume"` in settings.json, so this stops re-running on
@@ -84,37 +99,37 @@ grep -q '"name"[[:space:]]*:[[:space:]]*"flow"' plugins/flow/.claude-plugin/plug
 #
 # Consumers are unaffected either way: `.claude/` is project-dev infra and is not part
 # of the published plugin (the marketplace entry's source is ./plugins/flow).
-ENGINE=""
 _reg="$HOME/.claude/plugins/installed_plugins.json"
-if [ -f "$_reg" ]; then
-    _ip=$(python3 -c "
-import json,sys
-try:
-    d=json.load(open(sys.argv[1]))
-    e=(d.get('plugins') or {}).get('flow@flow') or []
-    print(e[0].get('installPath','') if e and isinstance(e[0],dict) else '')
-except Exception:
-    print('')" "$_reg" 2>/dev/null)
-    [ -n "$_ip" ] && [ -f "$_ip/skills/ship/lib/plugin-provenance.py" ] \
-        && ENGINE="$_ip/skills/ship/lib/plugin-provenance.py"
-fi
 
-# The installed VERSION, straight from the registry — needed on the bootstrap arm
-# below, which by definition has no engine to ask. Deliberately NOT a second
-# version *comparison*: the predicate still lives in exactly one place (the
-# engine). This reads one field so a before/after line can name a number, which
-# is the only thing that makes a bootstrap run distinguishable from a no-op.
-registry_version() {
+# ONE parser of the registry's shape, not two. The first cut of this file had the
+# `installPath` read inline here and a near-verbatim copy inside `registry_version`
+# differing only in which key it printed — two copies of the same traversal
+# contract, which is the FB-0010 clause-2 fan-out this very diff hoisted
+# `refresh_marketplace`/`apply_update` to remove. Found by /simplify's reuse lens,
+# in the diff that was supposed to be de-duplicating.
+_registry_field() {
     [ -f "$_reg" ] || return 0
     python3 -c "
 import json,sys
 try:
     d=json.load(open(sys.argv[1]))
     e=(d.get('plugins') or {}).get('flow@flow') or []
-    print(str((e[0].get('version') or '') if e and isinstance(e[0],dict) else ''))
+    print(str((e[0].get(sys.argv[2]) or '') if e and isinstance(e[0],dict) else ''))
 except Exception:
-    print('')" "$_reg" 2>/dev/null
+    print('')" "$_reg" "$1" 2>/dev/null
 }
+
+# The installed VERSION. Deliberately NOT a second version *comparison*: the
+# predicate still lives in exactly one place (the engine). This reads one field so
+# a before/after line can name a number, which is the only thing that makes an
+# acting run distinguishable from a no-op.
+registry_version() { _registry_field version; }
+
+# SECURITY: resolve the engine from the INSTALLED tree ONLY — never the checkout.
+ENGINE=""
+_ip=$(_registry_field installPath)
+[ -n "$_ip" ] && [ -f "$_ip/skills/ship/lib/plugin-provenance.py" ] \
+    && ENGINE="$_ip/skills/ship/lib/plugin-provenance.py"
 
 # FLOW_CURRENCY_DRY_RUN=1 inspects the decision WITHOUT mutating anything: no
 # clone refresh, no install. It exists because the update is not freely
@@ -206,11 +221,46 @@ refresh_marketplace() {
 # escalation it accepts is that more hosts now pull automatically, and loudness is
 # the mitigation.)
 apply_update() { cc plugin update flow@flow; }
+
+# ONE renderer for "did the install actually move?", called by both arms with the
+# values each arm measured.
+#
+# The first cut kept a copy per arm, on the stated grounds that "the two have
+# different 'before' sources (engine vs registry) and merging them would mean one
+# reads a value it did not measure." /simplify's altitude lens checked that and it
+# is FALSE: the engine's `installed.version` is this same registry field, minus a
+# render sanitiser that cannot change a well-formed semver. The justification did
+# not survive checking, and the duplication had already produced a real cost — the
+# reuse lens found that only the BOOTSTRAP copy of the `STILL` wording was pinned
+# by an eval, so the normal arm's copy was free to drift unexercised. Passing the
+# measured values in preserves "each arm reports what it measured"; sharing the
+# renderer is what stops the two texts diverging.
+report_move() {   # $1=before $2=after $3=context suffix (may be empty)
+    _b="${1:-unknown}"; _a="${2:-unknown}"; _ctx="$3"
+    if [ -n "$2" ] && [ "$2" = "$1" ]; then
+        # `plugin update` can exit 0 having moved nothing (a stale clone, or a
+        # source that regressed). An unconditional "X → Y" arrow would read as
+        # success while the seat stayed old AND re-paid the download every session.
+        verdict "⚠️ [flow-currency] the flow plugin update reported SUCCESS but installed flow is STILL $_a — treat the /flow:* machinery as stale, not current."
+        echo "   This will re-run every session until the version moves: either the" >&2
+        echo "   marketplace clone could not be refreshed, or its HEAD is not newer." >&2
+        return
+    fi
+    say "[flow-currency] installed flow $_b → $_a${_ctx}. THIS session still runs $_b — restart Claude Code before relying on any /flow:* command."
+    echo "[flow-currency] installed flow: $_b → $_a. 'restart required to apply' —" >&2
+    echo "   THIS session is NOT fixed by it. The PR body's version rows report what ran." >&2
+}
+
+# Emit a verdict on BOTH channels from one string. Eight paths previously wrote
+# `say "…"` and then re-typed an `echo … >&2`, and two of those pairs had already
+# drifted inside a single diff ("could NOT be checked or refreshed" on stdout vs
+# "CANNOT be refreshed" on stderr) — the fan-out shape this file lectures about
+# three comments above, committed by the commit that added the lecture. Lines that
+# add genuine extra detail still use their own `echo … >&2` below.
+verdict() { say "$*"; printf '%s\n' "$*" >&2; }
 {
     if ! command -v claude >/dev/null 2>&1; then
-        say "⚠️ [flow-currency] \`claude\` is not on PATH, so the installed flow plugin could NOT be checked or refreshed — do NOT assume the /flow:* machinery is current."
-        echo "⚠️ [flow-currency] \`claude\` is not on PATH — the flow plugin CANNOT be" >&2
-        echo "   refreshed from here. Do NOT assume the /flow:* machinery is current." >&2
+        verdict "⚠️ [flow-currency] \`claude\` is not on PATH, so the installed flow plugin could NOT be checked or refreshed — do NOT assume the /flow:* machinery is current."
         exit 0
     fi
 
@@ -235,8 +285,8 @@ apply_update() { cc plugin update flow@flow; }
     # distinction is the whole security argument: see `apply_update` above. A
     # version number is reported by reading the REGISTRY, not by running repo code.
     if [ -z "$ENGINE" ] || [ ! -f "$ENGINE" ]; then
-        _BEFORE=$(registry_version)
-        echo "[flow-currency] the installed flow plugin (${_BEFORE:-unreadable}) predates the" >&2
+        _BEFORE=$(registry_version); : "${_BEFORE:=unknown}"
+        echo "[flow-currency] the installed flow plugin ($_BEFORE) predates the" >&2
         echo "   provenance engine (added in v1.43.0), so there is no engine to ask whether an" >&2
         echo "   update exists — which is itself the answer. Bootstrapping unconditionally with" >&2
         echo "   claude plugin marketplace update flow && claude plugin update flow@flow" >&2
@@ -259,10 +309,9 @@ apply_update() { cc plugin update flow@flow; }
         fi
 
         if ! apply_update; then
-            say "⚠️ [flow-currency] bootstrap FAILED — 'claude plugin update flow@flow' did not succeed, so installed flow is still ${_BEFORE:-unknown} and the /flow:* machinery is NOT current."
-            echo "⚠️ [flow-currency] the bootstrap update FAILED. The installed plugin predates" >&2
-            echo "   v1.43.0 and could not be moved; run 'claude plugin list' and the two" >&2
-            echo "   commands above by hand before relying on any /flow:* command." >&2
+            verdict "⚠️ [flow-currency] bootstrap FAILED — 'claude plugin update flow@flow' did not succeed, so installed flow is still $_BEFORE and the /flow:* machinery is NOT current."
+            echo "   The installed plugin predates v1.43.0 and could not be moved; run" >&2
+            echo "   'claude plugin list' and the two commands above by hand first." >&2
             exit 0
         fi
 
@@ -272,17 +321,7 @@ apply_update() { cc plugin update flow@flow; }
         # marketplace clone is stale, or the source regressed below v1.43.0), and
         # an unconditional "X → Y" line would then read as success while the seat
         # stayed on the old version AND re-paid the download every session.
-        if [ -n "$_AFTER" ] && [ "$_AFTER" = "$_BEFORE" ]; then
-            say "⚠️ [flow-currency] the flow plugin update reported SUCCESS but installed flow is STILL $_AFTER — treat the /flow:* machinery as stale, not current."
-            echo "⚠️ [flow-currency] update exited 0 but the registry still reports $_AFTER." >&2
-            echo "   Either the marketplace clone could not be refreshed, or its HEAD predates" >&2
-            echo "   v1.43.0. This arm will re-run every session until the version moves." >&2
-            exit 0
-        fi
-        say "[flow-currency] installed flow ${_BEFORE:-unknown} → ${_AFTER:-unknown} (it predated the provenance engine). THIS session still runs ${_BEFORE:-the old version} — restart Claude Code before relying on any /flow:* command."
-        echo "[flow-currency] bootstrap complete: ${_BEFORE:-unknown} → ${_AFTER:-unknown}." >&2
-        echo "   'restart required to apply' — THIS session is NOT fixed by it. The PR body's" >&2
-        echo "   version rows report what actually ran." >&2
+        report_move "$_BEFORE" "$_AFTER" " (it predated the provenance engine)"
         exit 0
     fi
 
@@ -309,11 +348,35 @@ apply_update() { cc plugin update flow@flow; }
         echo "   against a possibly stale clone — treat the installed version as UNVERIFIED." >&2
     }
 
+    # ------------------------------------------- the engine ADVISES, it does not GATE
+    #
+    # FB-0131's rule is "a mechanism that updates X must not depend on X to decide
+    # whether to run". The first cut of this fix applied it only on the arm where it
+    # had bitten (no engine installed) and left the engine gating the action
+    # everywhere else — so an engine that was present but BROKEN, or that could not
+    # reach a verdict, still silently disabled the updater. Same deadlock class, two
+    # more instances, both still live. Found by /simplify's altitude lens.
+    #
+    # The correct general form, and the one implemented below: the engine may
+    # SUPPRESS the update only by affirmatively answering "already current". Every
+    # other outcome — no output, an unreadable comparison, no engine at all — falls
+    # through to running the two CLI commands. Depending on a successful measurement
+    # is fine; depending on the measurement being AVAILABLE is the bug.
+    #
+    # This costs nothing on the healthy path (the one case where the engine answers),
+    # so the file's cost budget is unchanged for an already-current session.
     PROV=$(python3 "$ENGINE" report --json 2>/dev/null)
     if [ -z "$PROV" ]; then
-        say "⚠️ [flow-currency] the flow provenance engine produced no output, so whether the installed plugin is current is UNKNOWN — do not assume the /flow:* machinery is current."
-        echo "⚠️ [flow-currency] the provenance engine produced no output — cannot determine" >&2
-        echo "   whether the installed flow plugin is current." >&2
+        _BEFORE=$(registry_version); : "${_BEFORE:=unknown}"
+        echo "⚠️ [flow-currency] the provenance engine produced no output, so whether the" >&2
+        echo "   install is current cannot be determined — updating anyway rather than" >&2
+        echo "   skipping, because an engine that cannot answer must not disable the" >&2
+        echo "   updater (that is the deadlock this file exists to have fixed)." >&2
+        if ! apply_update; then
+            verdict "⚠️ [flow-currency] the provenance engine gave no answer AND 'claude plugin update flow@flow' FAILED — installed flow may still be $_BEFORE; do NOT assume the /flow:* machinery is current."
+            exit 0
+        fi
+        report_move "$_BEFORE" "$(registry_version)" " (the engine could not be read)"
         exit 0
     fi
 
@@ -367,7 +430,12 @@ EOF
         # the only thing that can say so on a session whose installed ship prose is
         # too old to carry the provenance rows at all. Report; never act on it.
         if [ "$RDRIFT" = "True" ]; then
-            say "[flow-currency] installed flow $INST is current with the marketplace, but this branch declares $BR — the /flow:* skills and reviewers in THIS session run $INST, not your working tree."
+            # Says "the INSTALLED plugin is $INST", not "this session runs $INST".
+            # The number comes from the registry, which a mid-session update rewrites,
+            # so asserting what the session is *running* would contradict the hedge the
+            # provenance engine now prints for exactly that reason — and the two
+            # surfaces are meant to read as one story.
+            say "[flow-currency] the installed flow plugin is $INST and current with the marketplace, but this branch declares $BR — the /flow:* skills and reviewers here come from the INSTALLED copy, not your working tree."
             echo "[flow-currency] installed flow $INST is current with the marketplace, but this" >&2
             echo "   branch declares $BR — the /flow:* skills and reviewers in THIS session run" >&2
             echo "   $INST, not your working tree. Check the PR's version rows, which name" >&2
@@ -376,45 +444,34 @@ EOF
         exit 0
     fi
     if [ "$AVAIL" != "True" ]; then
-        say "⚠️ [flow-currency] could not compare installed flow (${INST:-unreadable}) against marketplace HEAD (${MKT:-unreadable}) — whether an update exists is UNKNOWN, which is NOT the same as 'no'."
+        # UNKNOWN is not "no" — and, per the rule above, not a reason to stop either.
+        # Previously this exited 0, which is the engine disabling the updater by
+        # failing to reach a verdict.
         echo "⚠️ [flow-currency] could not compare installed (${INST:-unreadable}) against" >&2
         echo "   marketplace HEAD (${MKT:-unreadable}) — whether an update exists is UNKNOWN," >&2
-        echo "   which is NOT the same as 'no'. Run 'claude plugin list' before relying on the" >&2
-        echo "   /flow:* machinery being current." >&2
-        exit 0
+        echo "   which is NOT the same as 'no'. Updating anyway; the update is idempotent and" >&2
+        echo "   a no-op costs one CLI boot, while skipping costs a whole session's staleness." >&2
+    else
+        echo "[flow-currency] installed flow $INST · marketplace HEAD $MKT · this branch declares $BR" >&2
+        echo "[flow-currency] updating the installed plugin…" >&2
     fi
-
-    echo "[flow-currency] installed flow $INST · marketplace HEAD $MKT · this branch declares $BR" >&2
-    echo "[flow-currency] updating the installed plugin…" >&2
 
     # Fails loud by contract; the reasoning lives on `apply_update` above, once.
     if ! apply_update; then
-        say "⚠️ [flow-currency] 'claude plugin update flow@flow' FAILED — installed flow may still be $INST and the marketplace may be unreachable; do NOT assume the /flow:* machinery is current."
-        echo "⚠️ [flow-currency] 'claude plugin update flow@flow' FAILED — the flow plugin" >&2
-        echo "   may be stale or the marketplace unreachable. Do NOT assume the /flow:*" >&2
-        echo "   machinery is current; run 'claude plugin list' before relying on it." >&2
+        verdict "⚠️ [flow-currency] 'claude plugin update flow@flow' FAILED — installed flow may still be $INST and the marketplace may be unreachable; do NOT assume the /flow:* machinery is current."
+        echo "   Run 'claude plugin list' before relying on the /flow:* machinery." >&2
         exit 0
     fi
 
-    NEW=$(python3 "$ENGINE" report --json 2>/dev/null \
-          | python3 -c "import json,sys;print((json.load(sys.stdin).get('installed') or {}).get('version',''))" 2>/dev/null)
-    if [ -n "$NEW" ] && [ "$NEW" = "$INST" ]; then
-        # Same pin as the bootstrap arm, for the same reason: `plugin update` can
-        # exit 0 having moved nothing, and an unconditional arrow would read as
-        # success. Kept in both arms rather than hoisted, because the two have
-        # different "before" sources (engine vs registry) and merging them would
-        # mean one of the two reads a value it did not measure.
-        say "⚠️ [flow-currency] the flow plugin update reported SUCCESS but installed flow is STILL $NEW — treat the /flow:* machinery as stale, not current."
-    else
-        say "[flow-currency] installed flow $INST → ${NEW:-unknown}. THIS session still runs $INST — restart Claude Code before relying on any /flow:* command."
-    fi
-    echo "[flow-currency] installed flow: $INST → ${NEW:-unknown}" >&2
-    echo "[flow-currency] NOTE: 'restart required to apply' — THIS session still runs" >&2
-    echo "   $INST. The PR body's version rows report what actually ran." >&2
-    echo "   → Restart Claude Code now if this session will run any /flow:* command." >&2
+    # `registry_version`, not a second engine spawn: the engine's `installed.version`
+    # IS this registry field (minus a render sanitiser that cannot change a semver),
+    # so re-running the whole report to read one key was both a duplicate reader and
+    # a wasted interpreter boot. `$INST` is the same field read before the update.
+    #
     # No trailing `claude plugin list`: it was a ~380ms CLI boot whose output merely
-    # restated the "$INST → $NEW" line immediately above, which the engine already
-    # sourced from the registry. #116 prints it because it has no engine to ask.
+    # restated the before → after line, which `report_move` already sources from the
+    # registry. #116 prints it because it has no engine to ask.
+    report_move "$INST" "$(registry_version)" ""
 # The `1>&2` that used to close this block is GONE — see the output contract
 # above. Every intentional diagnostic still carries its own `>&2`, and the only
 # commands in here that write to stdout at all are `say` and the plugin CLI,

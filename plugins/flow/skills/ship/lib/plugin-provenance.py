@@ -113,6 +113,17 @@ CHECKOUT_PLUGIN = "plugins/flow"
 # class: an empty resolution is a failure, not an empty set.
 
 
+def _cache_root(home: Path) -> Path:
+    """`~/.claude/plugins/cache`, spelled once.
+
+    Two readers depend on this path and they are load-bearing AGAINST each other:
+    `read_running` anchors its PATH regex on it, and `cached_versions` confines its
+    directory scan to it. Were the spellings to diverge, the guard and the matcher
+    would describe different directories and neither would say so.
+    """
+    return (home / ".claude" / "plugins" / "cache").resolve()
+
+
 def read_installed(home: Path) -> dict:
     """The version that actually ran the skills, agents and `!`-blocks."""
     reg = home / ".claude" / "plugins" / "installed_plugins.json"
@@ -166,13 +177,25 @@ def read_running(path_env: str | None, home: Path) -> dict:
     process actually loaded and cannot be moved by a later update. Best-effort: a
     plugin with no `bin/` never appears on PATH, so callers fall back to the registry
     and must say which one they used.
+
+    ⚠️ UNVERIFIED FOR FLOW -- do NOT cite this docstring as evidence the mechanism
+    works. The sentence above is where the claim originates, and it has never been
+    observed for this plugin for a simple reason: **flow ships no `bin/` directory**,
+    so this function returns `not_on_path` on every host and `ran_version` is ALWAYS
+    registry-sourced. See `dev-docs/roadmap.md` § "FB-0107's PATH signal has never
+    resolved for flow" for the probe that would settle it and the condition that
+    would reverse it. `cached_versions` is the discriminator that substitutes for
+    this one meanwhile.
     """
     if not path_env:
         return {"state": "no_path"}
-    root = str((home / ".claude" / "plugins" / "cache").resolve())
+    root = str(_cache_root(home))
     pat = re.compile(re.escape(root) + r"/[^/]+/[^/]+/([^/]+)/bin/?$")
     for entry in path_env.split(os.pathsep):
-        m = pat.match(entry.rstrip("/") + ("/bin" if not entry.rstrip("/").endswith("bin") else ""))
+        # One match, not two: the first of this pair was immediately overwritten by
+        # the second, so it was a wasted regex per PATH entry and a reader's
+        # double-take. Dead on arrival in bb3bc60; swept here because this function
+        # is the subject of the change.
         m = pat.match(entry.rstrip("/"))
         if m:
             return {"state": "ok", "version": _clean(m.group(1)), "path": entry}
@@ -199,11 +222,22 @@ def cached_versions(home: Path, installed: dict) -> list[str]:
     prepending the resolved plugin's `bin/` to PATH, and **flow ships no `bin/`**,
     so that signal resolves for this plugin on no host, ever. See the roadmap item
     -- giving flow a `bin/` is the real fix and is not this one.
+
+    **THE CONDITION THAT WOULD REVERSE THIS:** the probe rests on "Claude Code leaves
+    the previous version tree in place after an update" -- undocumented host
+    behaviour, measured once (2026-10-03). If a future version PRUNES the old tree,
+    one tree plus a moved registry renders a confident tick for a session running the
+    older code, silently, which is exactly the harm this exists to prevent. The
+    re-check needs no harness: run `ls ~/.claude/plugins/cache/flow/flow/` straight
+    after a `claude plugin update` and confirm more than one version directory is
+    there. If only one is, this probe is dead and `restart_pending` must fall back to
+    `None` whenever `ran_version_source == "registry"` -- accepting the permanent
+    hedge, because a false tick is worse than a standing caveat.
     """
     ip = installed.get("install_path")
     if not ip:
         return []
-    cache = (home / ".claude" / "plugins" / "cache").resolve()
+    cache = _cache_root(home)
     try:
         parent = Path(ip).resolve().parent
         # The install path comes from the registry, which is machine state this
