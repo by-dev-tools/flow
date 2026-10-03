@@ -595,24 +595,34 @@ def collect(home: Path, root: Path, plugin_root: str | None) -> dict:
     cached = cached_versions(home, installed)
     if rv and reg_v:
         restart_pending = rv != reg_v
-    elif reg_v:
-        # No run-pinned signal at all, so a restart may well be pending and nothing
-        # here can see it. `None`, never `False` -- "not pending" and "I have no
-        # instrument" are different claims (FB-0082), and collapsing them is what let
-        # a mid-session `plugin update` render a tick on the row labelled "the version
-        # that ran this pipeline".
+    elif reg_v and len(cached) > 1:
+        # No run-pinned signal AND more than one version tree on disk: a restart may
+        # well be pending and nothing here can see which tree this process loaded.
+        # `None`, never `False` — "not pending" and "I have no instrument" are
+        # different claims (FB-0082), and collapsing them is what let a mid-session
+        # `plugin update` render a tick on the row labelled "the version that ran".
         #
-        # An earlier cut gated this on `len(cached) > 1`, reasoning that one tree means
-        # the registry reading cannot be wrong. /flow:staff-review's UX and
-        # design-engineer lenses both refuted it: Claude Code never prunes the old
-        # tree, so on any machine that has EVER updated, `len(cached) > 1` is
-        # permanently true and the row warned forever -- the exact "a permanent warning
-        # is indistinguishable from the real staleness signal" failure `_stale()` below
-        # forbids. Multi-tree is the steady state, not a signal. The severity fix is in
-        # the renderer (an informational note, never a ⚠️); the honest predicate is
-        # just "no pinned signal ⇒ cannot tell".
+        # THE GATE IS CACHE AMBIGUITY, and getting here took a correction in each
+        # direction. The first cut keyed on this and rendered `⚠️` — which the UX and
+        # design-engineer lenses showed is PERMANENT, because `claude plugin update`
+        # never prunes the old tree, so on any machine that has ever updated the row
+        # warned forever. Fixing that, I removed the `len(cached) > 1` gate as well as
+        # demoting the severity — and `/flow:audit-coverage` then measured the
+        # over-correction: a never-updated install with exactly ONE tree is
+        # unambiguous (there is no other tree it could have loaded), yet it was being
+        # hedged. That is 100% of fresh consumer installs.
+        #
+        # Only the SEVERITY change was needed. It lives in the renderer (`ℹ️`, not
+        # `⚠️`), which is where a severity decision belongs; the predicate's job is to
+        # say what is TRUE. Both lens findings are satisfied: no permanent warning, and
+        # no hedge on a reading that cannot be wrong.
         restart_pending = None
     else:
+        # Either a PATH signal agreed, or at most one tree it could have been.
+        # `cached == []` lands here too — no install path, or one outside the cache,
+        # which a correctly installed plugin cannot be in and which the `installed`
+        # row already reports on. `cached_versions` is in the JSON so a reader can see
+        # which of the two produced this.
         restart_pending = False
     bv = branch.get("version") if branch.get("state") == "ok" else None
     mv = marketplace.get("version") if marketplace.get("state") == "ok" else None
@@ -748,6 +758,12 @@ def render_rows(d: dict) -> list[str]:
         # complete sentence and the join is mechanical.
         parts = []
         from_registry = d.get("ran_version_source") == "registry"
+        # The glyph keys on whether the reading can be WRONG, not on where it came
+        # from. A registry reading with one cache tree cannot be wrong — there is no
+        # other tree the session could have loaded — so it keeps its affirmative, which
+        # is what criterion 22 declares and what a fresh consumer install always is.
+        # Only `restart_pending is None` (ambiguous, unpinned) is demoted.
+        hedged = d.get("restart_pending") is None and from_registry
         if d["report_drift"] is True and stale:
             gap = d.get("release_gap")
             gap_txt = f", {gap} releases back" if gap else ""
@@ -773,11 +789,11 @@ def render_rows(d: dict) -> list[str]:
             # host where flow has ever been updated, and a warning that is always on is
             # indistinguishable from the real staleness signal (`_stale()` below). A
             # false ✓ and a permanent ⚠️ are both failures; `ℹ️` is the honest middle.
-            parts.append(("✓ " if not from_registry else "ℹ️ ") + "matches this branch.")
+            parts.append(("ℹ️ " if hedged else "✓ ") + "matches this branch.")
         elif br.get("state") == "not_flow_checkout":
             # "and running" restored: it is the predicate the hedge contrasts with, and
             # dropping it left `ℹ️ installed — but this is the version INSTALLED`.
-            parts.append(("✓ " if not from_registry else "ℹ️ ") + "installed and running.")
+            parts.append(("ℹ️ " if hedged else "✓ ") + "installed and running.")
         else:
             parts.append(f"⚠️ cannot compare — {_why(br.get('state'))}")
 

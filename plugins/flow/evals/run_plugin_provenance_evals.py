@@ -180,8 +180,20 @@ def make_root(td: Path, branch_version: str | None, *, flow_marker: bool = True,
     return root
 
 
-def make_install_tree(td: Path, skills: list[str], agents: list[str]) -> Path:
-    it = td / "installed"
+def make_install_tree(td: Path, skills: list[str], agents: list[str],
+                      *, in_cache_of: Path | None = None, version: str = "0.0.0") -> Path:
+    """Build a synthetic installed tree.
+
+    `in_cache_of` places it at `<home>/.claude/plugins/cache/flow/flow/<version>`,
+    i.e. where a REAL install lives — which matters because `cached_versions` derives
+    the cache directory from `installPath`'s parent, so a tree built *beside* the
+    cache makes the inventory read `[]` and the hedge branch unreachable. Passing
+    `cache_versions=` to `make_home` instead does not work here: that rewrites
+    `installPath` to a bare version directory with no `skills/`, which then reads as
+    total surface drift and puts a ⚠️ on an otherwise healthy fixture.
+    """
+    it = (in_cache_of / ".claude" / "plugins" / "cache" / "flow" / "flow" / version
+          if in_cache_of is not None else td / "installed")
     for s in skills:
         (it / "skills" / s).mkdir(parents=True, exist_ok=True)
     (it / "agents").mkdir(parents=True, exist_ok=True)
@@ -435,9 +447,16 @@ def test_running_version_beats_the_registry():
     # disagreement is perfectly possible; what was missing was an instrument. With
     # exactly ONE version tree in the cache the claim becomes true for a different
     # and real reason: there is no other tree this process could have loaded.
-    check(d2.get("restart_pending") is None,
-          f"no PATH signal at all: which version this session loaded is UNDETERMINABLE "
-          f"and must never be reported as False -- got {d2.get('restart_pending')!r}")
+    # CORRECTED AGAIN (and the correction is the interesting part). This briefly read
+    # `is None`, on the reasoning "no PATH signal ⇒ undeterminable, full stop". That
+    # over-corrected: with exactly ONE tree in the cache the registry reading cannot be
+    # wrong, because there is no other tree the session could have loaded. Measured by
+    # /flow:audit-coverage, which found the shipped predicate contradicting three of
+    # this PR's own criteria. `False` here is a real measurement; the multi-tree case
+    # below is the `None` one.
+    check(d2.get("restart_pending") is False,
+          f"one cached tree and no PATH signal: nothing else could have been loaded, so "
+          f"not-pending is a real measurement -- got {d2.get('restart_pending')!r}")
     check(d2.get("cached_versions") == ["1.41.0"],
           f"the cache inventory is still REPORTED (a reader can audit it) even though it "
           f"no longer drives the verdict, got {d2.get('cached_versions')!r}")
@@ -617,10 +636,16 @@ def test_healthy_run_does_not_cry_wolf():
     """
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
-        inst = make_install_tree(td / "h", ["ship"], ["auditor"])
-        # HEALTHY: install == marketplace == latest release; branch one minor ahead.
-        healthy = make_home(td / "h", registry("1.42.0", install_path=str(inst)),
-                            marketplace_json("1.42.0"))
+        # The install tree is built INSIDE the synthetic cache, so the SINGLE-TREE
+        # verdict is actually exercised. /flow:audit-coverage: "its own eval builds its
+        # fixture with no cache_versions at all, so it never exercises the single-tree
+        # claim and cannot catch the divergence" — which is exactly how a shipped
+        # predicate came to contradict three declared criteria unnoticed.
+        healthy = make_home(td / "h", None, marketplace_json("1.42.0"))
+        inst = make_install_tree(td / "h", ["ship"], ["auditor"],
+                                 in_cache_of=healthy, version="1.42.0")
+        (healthy / ".claude" / "plugins" / "installed_plugins.json").write_text(
+            json.dumps(registry("1.42.0", install_path=str(inst))))
         root = make_root(td / "h", "1.43.0", skills=["ship"], agents=["auditor"])
         _, out = run(healthy, root, as_json=False, plugin_root=str(inst))
         d = jrun(healthy, root, plugin_root=str(inst))
@@ -1594,13 +1619,17 @@ def test_unpinned_note_offers_a_real_confirmation():
     check("positively" not in note.lower() or "`/flow:spawn`" in note,
           "a conclusive claim is only allowed alongside a real discriminator")
 
-    # (b): one cached tree ⇒ no discriminator exists ⇒ say so, claim nothing.
+    # (b): TWO trees — so the reading IS ambiguous and the note fires — but their skill
+    # sets are IDENTICAL, so no discriminator exists. (A one-tree fixture is the wrong
+    # shape here: one tree is unambiguous, so the note correctly does not fire at all
+    # and there is nothing to assert about its wording.)
     with tempfile.TemporaryDirectory() as tmp:
         td = Path(tmp)
         home = make_home(td, registry("1.55.0"), marketplace_json("1.55.0"),
-                         cache_versions=["1.55.0"])
+                         cache_versions=["1.55.0", "1.29.0"])
         base = home / ".claude" / "plugins" / "cache" / "flow" / "flow"
         _tree(base, "1.55.0", ["ship", "spawn"])
+        _tree(base, "1.29.0", ["ship", "spawn"])
         root = make_root(td, "1.55.0", skills=["ship", "spawn"])
         d2 = jrun(home, root)
         note2 = _engine.render_unpinned(d2, home)
