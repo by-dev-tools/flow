@@ -179,6 +179,49 @@ def read_running(path_env: str | None, home: Path) -> dict:
     return {"state": "not_on_path"}
 
 
+def cached_versions(home: Path, installed: dict) -> list[str]:
+    """Every version of this plugin still present on disk in the plugin cache.
+
+    The AMBIGUITY probe, and it is an observation rather than a heuristic. Claude
+    Code does not remove the previous version tree when `plugin update` runs --
+    measured 2026-10-03, `cache/flow/flow/` held both `1.29.0/` and `1.55.0/`
+    immediately afterwards. So:
+
+      exactly one tree  -> the registry reading cannot be wrong; there is nothing
+                           else it could have loaded.
+      more than one     -> this machine has updated at some point, the pre-update
+                           tree is still there, and WITHOUT a run-pinned signal
+                           nothing here can say which one this process holds.
+
+    That second state is exactly the restart-pending state, and it is the one the
+    currency hook's bootstrap arm now produces automatically (FB-0131). It is also
+    the only way flow can detect it at all: `read_running` keys on Claude Code
+    prepending the resolved plugin's `bin/` to PATH, and **flow ships no `bin/`**,
+    so that signal resolves for this plugin on no host, ever. See the roadmap item
+    -- giving flow a `bin/` is the real fix and is not this one.
+    """
+    ip = installed.get("install_path")
+    if not ip:
+        return []
+    cache = (home / ".claude" / "plugins" / "cache").resolve()
+    try:
+        parent = Path(ip).resolve().parent
+        # The install path comes from the registry, which is machine state this
+        # module already treats as untrusted enough to sanitise. Confining the scan
+        # to the plugin cache is not ceremony: the first cut of this function did
+        # `Path(ip).parent.iterdir()` unguarded, and the eval's `/nonexistent`
+        # fixture made it enumerate the ROOT FILESYSTEM and report `bin, boot, dev,
+        # etc, …` as plugin versions. A relative or absent install path must yield
+        # "no evidence", not a directory listing of somewhere else.
+        if cache not in parent.parents and parent != cache:
+            return []
+        if not parent.is_dir():
+            return []
+        return sorted(d.name for d in parent.iterdir() if d.is_dir())
+    except OSError:
+        return []
+
+
 def read_marketplace(home: Path) -> dict:
     """What an update would fetch.
 
@@ -492,7 +535,39 @@ def collect(home: Path, root: Path, plugin_root: str | None) -> dict:
     # What RAN takes precedence over what is registered. When they disagree an update
     # has landed but not been applied -- the restart-pending state.
     iv = rv or reg_v
-    restart_pending = bool(rv and reg_v and rv != reg_v)
+    # THREE-VALUED, and `False` is the answer it must never give when it cannot
+    # tell. This was `bool(rv and reg_v and rv != reg_v)`, which collapses "no
+    # restart is pending" and "I have no signal that could detect one" into the
+    # same `False` -- the FB-0082 rule (absent must stay distinguishable) violated
+    # inside the module written to enforce it.
+    #
+    # It matters because `rv` is unresolvable on a whole class of host. Claude Code
+    # prepends the resolved plugin's `bin/` to PATH, but a plugin with no `bin/`
+    # never appears there, and MEASURED 2026-10-03 a Conductor cloud sandbox has no
+    # such entry at all (`running: {"state": "not_on_path"}`, PATH is
+    # `/conductor/bin:...`). On every one of those hosts the old expression returned
+    # `False` unconditionally, so the restart-pending state was structurally
+    # undetectable while reporting as "not pending".
+    #
+    # That became live rather than theoretical when `.claude/hooks/
+    # flow-plugin-currency.sh` gained its bootstrap arm (FB-0131): the registry now
+    # moves mid-session, automatically, in every stale workspace -- which is exactly
+    # the state this field exists to name.
+    cached = cached_versions(home, installed)
+    if rv and reg_v:
+        restart_pending = rv != reg_v
+    elif reg_v and len(cached) > 1:
+        # No run-pinned signal AND more than one version tree on disk: a restart may
+        # well be pending and nothing available here can tell. `None`, never `False`.
+        restart_pending = None
+    else:
+        # Either a PATH signal agreed, or there is at most one tree it could have
+        # been. `cached == []` lands here too -- no install path, or one outside the
+        # cache, which for a correctly installed plugin does not occur and which the
+        # `installed` row already reports on. "No evidence of a second tree" is not
+        # the same claim as "I looked and found one", so `cached_versions` is in the
+        # JSON and a reader can see which of the two this was.
+        restart_pending = False
     bv = branch.get("version") if branch.get("state") == "ok" else None
     mv = marketplace.get("version") if marketplace.get("state") == "ok" else None
 
@@ -508,6 +583,7 @@ def collect(home: Path, root: Path, plugin_root: str | None) -> dict:
         "ran_version": iv,
         "ran_version_source": ("PATH" if rv else ("registry" if reg_v else None)),
         "restart_pending": restart_pending,
+        "cached_versions": cached,
         "marketplace_head": marketplace,
         "branch": branch,
         "libs": libs,
@@ -615,10 +691,37 @@ def render_rows(d: dict) -> list[str]:
         val = (_paren(inst["version"], inst.get("git_sha"), "`")
                if d.get("ran_version_source") == "registry" else ran)
         pending = ""
-        if d.get("restart_pending"):
+        from_registry = d.get("ran_version_source") == "registry"
+        if d.get("restart_pending") is True:
             pending = (f" **An update to {inst.get('version')} is installed but NOT applied** — "
                        "it takes effect on restart, so this session still ran "
                        f"{ran}.")
+        elif d.get("restart_pending") is None and from_registry:
+            # The hedge. Reaching here means the only reading available came from the
+            # plugin REGISTRY, and `claude plugin update` rewrites that the instant it
+            # runs even though the update "requires a restart to apply" -- FB-0107's
+            # lesson 4, "a tool that reports what ran must read a signal pinned at run
+            # start, not a mutable record". PATH is that pinned signal and it is absent
+            # on this host, so this number is the version INSTALLED, not demonstrably
+            # the version that ran.
+            #
+            # Observed, which is why the wording is this blunt: in one session whose
+            # registered skill list never changed, this row moved from a correct
+            # "⚠️ NOT this branch, 26 releases back" to "1.55.0 ✓ matches this branch"
+            # the moment the currency hook updated the install. A reviewer -- and then
+            # an agent, measured -- read the tick and concluded the session's own
+            # honest "this session still runs 1.29.0" warning was pessimistic.
+            # No leading marker: the `report_drift is False` arm renders `"⚠️" + pending`,
+            # and the drift arms already open with their own ⚠️. Carrying one here too
+            # produced "⚠️ ⚠️".
+            others = ", ".join(v for v in d.get("cached_versions", []) if v != ran)
+            pending = (" **Read from the plugin registry, and this machine also still has "
+                       f"{others} on disk** — `claude plugin update` rewrites the registry "
+                       "immediately even though the update applies only on RESTART, so a "
+                       "session that began before it is still running the older tree. This "
+                       "number is the version INSTALLED, not confirmed as the version that "
+                       "ran. Check whether the `/flow:*` skills this release ships are in "
+                       "your tool list; if they are missing, restart.")
         if d["report_drift"] is True and stale:
             gap = d.get("release_gap")
             gap_txt = f", {gap} releases back" if gap else ""
@@ -631,6 +734,11 @@ def render_rows(d: dict) -> list[str]:
             note = (f"ℹ️ expected — this branch declares {br.get('version')}, which is not "
                     "released yet, and the install is otherwise current." + pending)
         elif d["report_drift"] is False:
+            # `✓ matches this branch` is a claim about what RAN. A registry-sourced
+            # reading cannot support it -- see the hedge above -- so the tick is
+            # reachable only from a PATH-pinned version. Paired, deliberately: the
+            # tick must still appear when the signal IS pinned and does match, or
+            # this fix would pass just as well on a renderer that never ticks.
             note = ("✓ matches this branch" + pending) if not pending else ("⚠️" + pending)
         elif br.get("state") == "not_flow_checkout":
             note = ("✓ installed and running" + pending) if not pending else ("⚠️" + pending)

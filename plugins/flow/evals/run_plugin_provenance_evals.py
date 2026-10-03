@@ -92,11 +92,27 @@ def check(cond: bool, msg: str) -> bool:
 # ----------------------------------------------------------------- scaffolding
 
 
-def make_home(td: Path, installed: dict | str | None, marketplace: str | None) -> Path:
+def make_home(td: Path, installed: dict | str | None, marketplace: str | None,
+              cache_versions: list[str] | None = None) -> Path:
     """A synthetic HOME. `installed`/`marketplace` of None means ABSENT, and a
-    str means write it verbatim (so malformed JSON can be exercised)."""
+    str means write it verbatim (so malformed JSON can be exercised).
+
+    `cache_versions` materialises `~/.claude/plugins/cache/flow/flow/<v>/` for each
+    entry and repoints the registry's `installPath` at the FIRST one. That is the
+    ambiguity signal the engine reads: Claude Code leaves the previous version tree
+    in place after an update (measured), so two trees plus no run-pinned signal
+    means nothing can say which one this process loaded. Fixtures that render the
+    "what ran" row should set this, because a registry whose `installPath` points
+    nowhere is not a state a correctly installed plugin can be in."""
     home = td / "home"
     (home / ".claude" / "plugins").mkdir(parents=True, exist_ok=True)
+    if cache_versions:
+        base = home / ".claude" / "plugins" / "cache" / "flow" / "flow"
+        for v in cache_versions:
+            (base / v).mkdir(parents=True, exist_ok=True)
+        if isinstance(installed, dict):
+            installed = json.loads(json.dumps(installed))
+            installed["plugins"]["flow@flow"][0]["installPath"] = str(base / cache_versions[0])
     if installed is not None:
         txt = installed if isinstance(installed, str) else json.dumps(installed)
         (home / ".claude" / "plugins" / "installed_plugins.json").write_text(txt)
@@ -394,15 +410,148 @@ def test_running_version_beats_the_registry():
     # and SAYS it did, rather than silently reporting a version it cannot source.
     with tempfile.TemporaryDirectory() as t:
         td = Path(t)
-        home = make_home(td, registry("1.41.0"), marketplace_json("1.41.0"))
+        home = make_home(td, registry("1.41.0"), marketplace_json("1.41.0"),
+                         cache_versions=["1.41.0"])
         root = make_root(td, "1.43.0")
         d2 = jrun(home, root)
     check(d2.get("ran_version") == "1.41.0",
           "with no PATH signal, fall back to the registry")
     check(d2.get("ran_version_source") == "registry",
           f"the fallback must be LABELLED, got {d2.get('ran_version_source')!r}")
+    # CORRECTED 2026-10-03 (FB-0131). The rationale here used to be "no disagreement
+    # is possible when there is only one source", which is backwards -- a
+    # disagreement is perfectly possible; what was missing was an instrument. With
+    # exactly ONE version tree in the cache the claim becomes true for a different
+    # and real reason: there is no other tree this process could have loaded.
     check(d2.get("restart_pending") is False,
-          "no disagreement is possible when there is only one source")
+          f"one cached tree and no PATH signal: nothing else could have been loaded, so "
+          f"not-pending is a real measurement -- got {d2.get('restart_pending')!r}")
+    check(d2.get("cached_versions") == ["1.41.0"],
+          f"the basis for that verdict must be auditable in the JSON, got "
+          f"{d2.get('cached_versions')!r}")
+
+    # PAIRED: add a second tree and the SAME inputs must become undeterminable. This
+    # is the state `claude plugin update` leaves behind (it does not remove the old
+    # tree -- measured), so it is the state the currency hook now produces in every
+    # stale workspace. `None`, never `False`.
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        home = make_home(td, registry("1.55.0"), marketplace_json("1.55.0"),
+                         cache_versions=["1.55.0", "1.29.0"])
+        root = make_root(td, "1.55.0")
+        d3 = jrun(home, root)
+    check(d3.get("restart_pending") is None,
+          f"two cached trees and no PATH signal: which one this session loaded is "
+          f"UNDETERMINABLE and must not be reported as False -- got "
+          f"{d3.get('restart_pending')!r}")
+
+
+def test_mid_session_update_cannot_forge_a_tick():
+    """Replay of an observed sequence: ONE session, before and after the currency
+    hook moves the registry under it.
+
+    This is not a synthetic case. It happened on 2026-10-03 in the workspace that
+    built the hook's bootstrap arm, and the sequence is the whole argument:
+
+      before — `| ... | 1.29.0 (cf783ac) | ⚠️ NOT this branch, 26 releases back |`
+      after  — `| ... | 1.55.0 (a250b66) | ✓ matches this branch |`
+
+    The session's registered skill list never changed across those two readings --
+    16 `flow:` skills, no `spawn`/`gate`/`orchestrate`, i.e. 1.29.0's surface
+    throughout. Only the registry moved. So the "after" row is false, and it is the
+    row CLAUDE.md instructs every session to read before treating a green pipeline
+    as evidence.
+
+    It is reachable because `running: {"state": "not_on_path"}` on this class of
+    host (a Conductor cloud sandbox has no plugin `bin/` on PATH at all), so the
+    PATH signal FB-0107 lesson 4 introduced is unavailable and `ran_version` falls
+    back to the registry -- the mutable record that lesson rejects. Latent since
+    v1.43.0; it became automatic and universal when the hook started updating.
+
+    Measured consequence, which is why the wording must be blunt rather than
+    merely accurate: the probe agent sent to verify the hook read `ran_version:
+    1.55.0` / `restart_pending: false`, filed a "discrepancy", and concluded the
+    session's own honest "THIS session still runs 1.29.0" warning was
+    "pessimistic". The tick inverted a correct warning for the first reader it met.
+
+    PAIRED (FB-0010 clause 3), because "never renders a tick" is satisfiable by
+    deleting the tick: a genuine PATH-pinned version that matches the branch MUST
+    still render `✓ matches this branch`.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        root = make_root(td, "1.55.0")
+
+        # BEFORE: registry 1.29.0, no PATH signal. Correct today and must stay so --
+        # the hedge must not turn an already-honest warning into noise.
+        home = make_home(td / "before", registry("1.29.0"), marketplace_json("1.55.0"),
+                         cache_versions=["1.29.0"])
+        rc, before = run(home, root, as_json=False)
+        dbefore = jrun(home, root)
+
+        # AFTER: the hook ran. Same session, same host, registry now 1.55.0.
+        # The hook has run: registry moved, and 1.29.0 is STILL on disk -- measured,
+        # `claude plugin update` leaves the previous tree in place.
+        home2 = make_home(td / "after", registry("1.55.0"), marketplace_json("1.55.0"),
+                          cache_versions=["1.55.0", "1.29.0"])
+        rc, after = run(home2, root, as_json=False)
+        dafter = jrun(home2, root)
+
+    bline, aline = before.splitlines()[0], after.splitlines()[0]
+    check("1.29.0" in bline and "⚠️" in bline,
+          f"BEFORE must stay a loud warning naming the old version, got {bline!r}")
+    check(dbefore.get("report_drift") is True,
+          "BEFORE must still report drift -- the hedge must not mask a real mismatch")
+
+    # THE REGRESSION. One assertion per half of what went wrong.
+    check("✓" not in aline,
+          f"AFTER must NOT render a tick: the number came from the registry, which "
+          f"`claude plugin update` rewrites the instant it runs even though the update "
+          f"applies on restart. got {aline!r}")
+    check("registry" in aline,
+          f"AFTER must NAME the registry as its source, so a reader can see the claim is "
+          f"about what is INSTALLED and not about what ran. got {aline!r}")
+    check("restart" in aline.lower(),
+          f"AFTER must say the running session may be older -- this is the wording that "
+          f"has to agree with the currency hook's own stdout line, so a reader seeing both "
+          f"reads one story rather than a contradiction. got {aline!r}")
+    check(dafter.get("restart_pending") is None,
+          f"AFTER: restart-pending is UNDETERMINABLE on a host with no PATH signal, never "
+          f"False -- got {dafter.get('restart_pending')!r}")
+    check(dafter.get("ran_version_source") == "registry",
+          "AFTER: the fallback must still be labelled in the JSON")
+
+    # THE PAIR. A real PATH-pinned match still ticks, so the fix cannot be satisfied
+    # by a renderer that simply never ticks.
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        root = make_root(td, "1.55.0")
+        # Two trees AND a PATH signal: the signal wins, so the row still ticks. This
+        # is what makes the pair sharp -- ambiguity alone must not suppress the tick,
+        # only ambiguity with nothing to resolve it.
+        home = make_home(td, registry("1.55.0"), marketplace_json("1.55.0"),
+                         cache_versions=["1.55.0", "1.29.0"])
+        binp = home / ".claude" / "plugins" / "cache" / "flow" / "flow" / "1.55.0" / "bin"
+        binp.mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ, PATH=f"{binp}{os.pathsep}/usr/bin", HOME=str(home))
+        env.pop("CLAUDE_PLUGIN_ROOT", None)
+        cmd = [sys.executable, str(ENGINE), "report", "--home", str(home),
+               "--root", str(root)]
+        pinned = subprocess.run(cmd, capture_output=True, text=True, env=env,
+                                cwd=str(root)).stdout
+        pj = json.loads(subprocess.run(cmd + ["--json"], capture_output=True, text=True,
+                                       env=env, cwd=str(root)).stdout)
+    pline = pinned.splitlines()[0]
+    check(pj.get("ran_version_source") == "PATH",
+          f"the pair needs a genuinely PATH-pinned reading, got {pj.get('ran_version_source')!r}")
+    check(pj.get("restart_pending") is False,
+          f"with a PATH signal that AGREES with the registry, not-pending is a real "
+          f"measurement and must be False, not None -- got {pj.get('restart_pending')!r}")
+    check("✓ matches this branch" in pline,
+          f"a PATH-pinned version matching the branch MUST still tick, or 'never renders a "
+          f"tick' is satisfied by deleting the tick path. got {pline!r}")
+    check("registry" not in pline,
+          f"a PATH-pinned row must not carry the registry hedge, got {pline!r}")
 
 
 def test_healthy_run_does_not_cry_wolf():
@@ -1360,6 +1509,7 @@ def test_ci_wired():
 def main() -> int:
     for fn in (test_installed_states, test_executor_arms, test_split_predicates,
                test_running_version_beats_the_registry,
+               test_mid_session_update_cannot_forge_a_tick,
                test_healthy_run_does_not_cry_wolf,
                test_no_internal_state_leaks_to_the_reader,
                test_callout_splits_rule_skills_from_command_skills,

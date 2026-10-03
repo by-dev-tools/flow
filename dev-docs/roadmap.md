@@ -27,7 +27,9 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 **Previously: v1.54.0 (shipped #171 — D1 Phase 3: the technical plan is auto-written against the approved prototype and gated by MACHINE, FB-0125. `/flow:autoplan` + three arms: criterion quality (deterministic, read from output rather than exit status — both tools exit 0 on every verdict), completeness (`/flow:audit-coverage` source-mode union, the finder wins, never passes on silence), and conformance + experience (`/flow:review-brief` generalized to any reviewed artifact and pointed at the plan). GREEN requires every arm to have RUN; silence is evidence of nothing. Runs on the prototype-first path only — where the human gate did not move, there is nothing to replace. Escalation pauses through worker → orchestrator → human, decided by Ben 2026-09-29. **D1 is now complete end to end.**)**
 
-**Plugin at v1.55.0 (this PR — `/flow:audit-coverage` can read behaviour-bearing prose, FB-0126/FB-0127). A `.md` path never matched `sourceFilePatterns`, so the completeness gate was structurally blind to prose — on a plugin that ships PROMPTS, most of what this repo changes. Three parts: (A) say it — with the new slot unset a run prints `WEAKENED · DOC-BLIND` naming every changed doc-shaped file it did NOT read, and prints the built-in guess so the value is copy-pasteable; (B) see it — the `behaviorBearingDocPatterns` slot (schema 36 → 37), **empty by default**, unioned in after the source filter; (C) fit it — `head -c` over a concatenation made files late in `sort -u` order entirely invisible once the 60 KB cap bound, replaced by max-min fair-share allocation that names every file it cut. **Measured, not asserted:** #159's reconstruction moves from **0 of 5** at baseline to **2/5 and 1/5 single-run, union 3/5**, zero false positives, via `tools/coverage-recall/` with `--selftest` passing first — plus the paired negative that a wording-only `.md` change returns `No issues flagged.` Recall is still weak and is reported as such: the likeliest cause is in § Next, found independently by two review lenses — Stage 1 still tells the reviewer that doc changes are not behaviours, so B feeds it a `SKILL.md` and the prompt hands it a rule for discarding it. See `dev-docs/history/2026-09-30-audit-coverage-reads-behaviour-bearing-prose.md`.)**
+**Plugin at v1.57.0 (this PR — the plugin auto-updater could only update installs that did not need updating, FB-0131). `.claude/hooks/flow-plugin-currency.sh` existed to keep this repo's installed plugin current and had never once updated anything: the provenance engine it consults ships INSIDE the plugin (v1.43.0), the hook resolves it from the installed tree only (correctly — it fires with no approval prompt), so a 1.29.0 install had no engine and the hook printed the two commands and ran neither. Measured: every Conductor cloud workspace boots from a snapshot carrying 1.29.0 against a tree at 1.55.0, `release_gap: 26`, with the local marketplace clone pinned at the same `cf783ac`. The bootstrap arm runs both commands; the verdict goes to `stdout`, the one `SessionStart` channel Claude Code injects into context — stderr on a zero exit "goes to the debug log only, never the transcript, and Claude never sees it", so the hook's entire output previously had no reader. **The fix forced a second one:** moving the registry mid-session flipped the row labelled "the version that ran this pipeline" from a correct `⚠️ 26 releases back` to a false `✓ matches this branch`, so `restart_pending` is now three-valued and an ambiguous registry reading cannot tick. `.conductor/settings.toml` was evaluated and rejected — measured three ways that a cloud organization ignores repo-defined setup scripts.)**
+
+**Previously: v1.55.0 (shipped #172 — `/flow:audit-coverage` can read behaviour-bearing prose, FB-0126/FB-0127). A `.md` path never matched `sourceFilePatterns`, so the completeness gate was structurally blind to prose — on a plugin that ships PROMPTS, most of what this repo changes. Three parts: (A) say it — with the new slot unset a run prints `WEAKENED · DOC-BLIND` naming every changed doc-shaped file it did NOT read, and prints the built-in guess so the value is copy-pasteable; (B) see it — the `behaviorBearingDocPatterns` slot (schema 36 → 37), **empty by default**, unioned in after the source filter; (C) fit it — `head -c` over a concatenation made files late in `sort -u` order entirely invisible once the 60 KB cap bound, replaced by max-min fair-share allocation that names every file it cut. **Measured, not asserted:** #159's reconstruction moves from **0 of 5** at baseline to **2/5 and 1/5 single-run, union 3/5**, zero false positives, via `tools/coverage-recall/` with `--selftest` passing first — plus the paired negative that a wording-only `.md` change returns `No issues flagged.` Recall is still weak and is reported as such: the likeliest cause is in § Next, found independently by two review lenses — Stage 1 still tells the reviewer that doc changes are not behaviours, so B feeds it a `SKILL.md` and the prompt hands it a rule for discarding it. See `dev-docs/history/2026-09-30-audit-coverage-reads-behaviour-bearing-prose.md`.)**
 
 **Previously: v1.53.0 (shipped #170 — S0 resolved, and the measurement says the feature is still not fixed for consumers, FB-0124). The four rule-skills (`general`, `plan-discipline`, `documentation`, `exploration`) are now honestly labelled **model-invoked**: `paths:` is gone (it *narrows* a description-driven activation rather than triggering one), the descriptions no longer end "Not user-invocable — path-activated only.", and each carries a `when_to_use`. **59 probe sessions, 0 discarded: 25 ran at plugin scope and produced ZERO invocations — all four rules, old and new descriptions, both models — while the identical rewrite fires 3/3 at project scope.** Scope is the decisive variable, not the description; the *name* does most of the work (a deliberately vague description still fired). So S0's code change is right on its own merits and is **not** a fix for the advertised feature: `/flow:doctor` Check 3.2 stops reporting `[PASS]` over a claim it never checked (new `[UNCHECKED]` marker, outside the verdict arithmetic, printed inline as `[READY] (N unchecked)`), `plugin-provenance.py` no longer silently reclassifies all four as command skills, and `template/base/CLAUDE.md.template` stops pointing at the `rules/` directory deleted in v1.33.0 — a **write-once** surface `bootstrap.sh` copies into every consumer repo. One shared `plugins/flow/lib/rule_skills.py` replaces five copies of the roster + three languages' worth of the predicate, and a claim lint makes a tenth false path-activation claim impossible rather than the ninth corrected. **Open for Ben: is S0 done at "honest, raises the floor", or does it need the `SessionStart` hook?** — see § "A plugin `SessionStart` hook".)** Recently shipped: **v1.52.0 ([#166](https://github.com/by-dev-tools/flow/pull/166) — a docs-only PR is N/A, not unverified, FB-0122), v1.50.0 ([#165](https://github.com/by-dev-tools/flow/pull/165) — a slash-command argument never touches a shell again, FB-0116/FB-0117), v1.49.0 ([#160](https://github.com/by-dev-tools/flow/pull/160) — `/flow:audit-coverage` enumerates before it judges, FB-0115), v1.47.0 (#159 — source-tree input mode + a verified RCE in typed arguments), v1.45.0 (#157 — the §4.10 orchestrator skill suite, FB-0110).**
 
@@ -442,6 +444,44 @@ third state — retained, but triggered rather than scheduled; and add the `comp
 **Deletion criterion:** delete once §4.9 states the triggered-not-routine rule directly and the
 `compact` hook ships; a fresh reader should get this from the canonical doc, not from a roadmap
 entry describing how the doc came to be wrong.
+
+### FB-0107's PATH signal has never resolved for flow — the plugin ships no `bin/` (measured v1.57.0)
+
+**Surfaces when:** `plugin-provenance.py`'s `read_running` / `restart_pending` / the "what ran" row is
+next touched, or anyone cites "we read PATH, not the registry" as a property flow actually has.
+
+FB-0107's lesson 4 is *"a tool that reports what ran must read a signal pinned at run start, not a
+mutable record"*, and the fix was to read the plugin's `bin/` directory off `PATH`, which Claude Code
+prepends at session start. The engine's own docstring hedges correctly — *"a plugin with no `bin/`
+never appears on PATH, so callers fall back to the registry"* — and **flow has no `bin/`**:
+`plugins/flow/` holds `agents, docs, evals, hooks, lib, schema, scripts, skills, tools` and nothing
+else, and neither does the installed tree. So `running` is `{"state": "not_on_path"}` on every host,
+`ran_version_source` is `"registry"` on **100%** of real runs, and the mutable record the lesson
+rejects is the only source flow ever has.
+
+**The eval validated it against a state that cannot occur.** `test_running_version_beats_the_registry`
+creates `cache/flow/flow/1.29.0/bin/` itself and puts it on `PATH`. The PATH branch works — it is just
+unreachable for this plugin. That is `.claude/rules/general.md` § Consistency item 4 in its purest
+form: an instrument exercised only on an input the real system cannot produce.
+
+**v1.57.0 substituted an ambiguity probe, not a fix.** `cached_versions` counts version trees left in
+the plugin cache (`claude plugin update` does not remove the old one — measured), and two trees plus
+no pinned signal is reported as undeterminable. That catches the dangerous case and keeps clean
+installs clean, but it is weaker than a pinned signal: it cannot say *which* tree ran, only that it
+cannot tell.
+
+**The real fix is to give flow a `bin/`** — one directory, with something inert in it — so the PATH
+mechanism starts functioning as designed and `ran_version` becomes a measurement again. **Do not ship
+it on the assumption above.** The claim "Claude Code prepends the resolved plugin's `bin` directory at
+session start" is quoted from this engine's docstring and has never been verified for flow, because
+flow has never had one to verify with. Measure it first: add a `bin/` to a scratch plugin, install it,
+and read `PATH` in a fresh session. **THE CONDITION THAT WOULD REVERSE THIS:** if that probe shows
+Claude Code does *not* prepend plugin `bin/` directories on current versions, then FB-0107's lesson-4
+mechanism is dead for every plugin, `read_running` should be retired rather than fed, and the cache
+probe becomes the primary signal rather than the substitute.
+
+**Deletion criterion:** delete when either flow ships a `bin/` and `ran_version_source` reads `PATH`
+on a real run, or the probe above refutes the mechanism and `read_running` is retired.
 
 ### ▶ FOR BEN — one org-level save per repo, and the FIRST session of every new workspace is current (2026-10-03, FB-0131)
 
