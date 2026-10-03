@@ -292,7 +292,7 @@ Both raised while writing the D1 Phase 3 plan (`/flow:critique-plan` round 5), t
 - **The `[decision-required]` escalation will have two engines behind one format.** FB-0075's renderer already ships as `manifest-triage.py render-decisions`, emitting `**Decisions for you** — answer by number.`, and Phase 3's gate needs the same user-facing shape. It cannot reuse the engine: `render_decisions` consumes `result["residual"]`, keys every entry on `class ∈ {ask, auto, blocked}` and a `kind` matched against `KIND_COPY`, and its copy speaks in PR-readiness — while the Phase 3 gate runs *before any PR exists* and has no manifest to classify. Phase 3 therefore matches the **wording** and forks the implementation, which takes the human-facing half of the win and leaves the drift risk. The real fix is a shared entry-shape both callers render from; that is a refactor of a shipped ship-path engine and wants its own PR.
 - **Blockers should carry a drafted resolution the way findings do.** `/flow:staff-review` (push-further + UX, v1.54.0): for a *finding* the machine drafts the fix; for *"Arm B errored with a 429"* the machine **knows** the fix (re-run that arm) and, as shipped, only states it as a trailing `→` clause rather than routing it through the same answerable-question apparatus. Doing it properly means `blockers` becomes a list of dicts instead of a list of strings — a schema bump that several evals assert substrings of — so it wants the same PR as the entry-shape unification above, not a separate pass.
 - **The escalation says what happens if you answer and the re-run passes, and not if it fails.** One clause; belongs with whichever change rewrites the header.
-- **The `SessionStart` plugin-currency hook is not converging in this workspace, and nothing notices.** **⚠️ On D1 Phase 3's critical path, not adjacent to it:** Phase 3's gate goes RED on a document-blind reviewer (correctly — a reviewer that cannot read the rules has not reviewed), and every reviewer in this workspace is document-blind for exactly this reason, so the gate's `Clean ⇒ proceed` path cannot be demonstrated here until this converges. FB-0107 measured the installed plugin at **1.29.0** on 2026-09-12 and built the provenance rows around that. Measured again on **2026-09-27**: still **1.29.0**, against a working tree at **1.50.0** — twenty-one releases. The hook exists (`.claude/hooks/flow-plugin-currency.sh`, `bb3bc60`) and deliberately refuses to fall back to this checkout's copy, which is the right security call; what is missing is that a *failed* update is silent. The cost is measurable and was paid here: 1.29.0's `extract_session.py` predates the comma-splitting fix at `:1064`, so this repo's `referenceGlob` (`dev-docs/*.md,dev-docs/feedback/*.md`, 114 files) resolved **zero**, and all five `/flow:critique-plan` rounds on the Phase 3 plan ran **document-blind** — no Spec-violation category assessable in any of them. FB-0082's warning machinery worked exactly as designed and said so every time, which is the only reason this was visible. **A hook whose failure mode is "nothing happens" needs a loud one.**
+- **The `SessionStart` plugin-currency hook is not converging in this workspace, and nothing notices.** **⚠️ On D1 Phase 3's critical path, not adjacent to it:** Phase 3's gate goes RED on a document-blind reviewer (correctly — a reviewer that cannot read the rules has not reviewed), and every reviewer in this workspace is document-blind for exactly this reason, so the gate's `Clean ⇒ proceed` path cannot be demonstrated here until this converges. FB-0107 measured the installed plugin at **1.29.0** on 2026-09-12 and built the provenance rows around that. Measured again on **2026-09-27**: still **1.29.0**, against a working tree at **1.50.0** — twenty-one releases. The hook exists (`.claude/hooks/flow-plugin-currency.sh`, `bb3bc60`) and deliberately refuses to fall back to this checkout's copy, which is the right security call. **✅ FIXED 2026-10-03 (FB-0131) — and the cause recorded here was WRONG in a way that pointed at the wrong fix.** This bullet said *"what is missing is that a **failed** update is silent."* Measured: the update never **failed**, it was never **attempted**. The provenance engine ships inside the plugin (added v1.43.0) and the hook resolves it from the installed tree only, so a 1.29.0 install had no engine, the hook printed the two commands and exited 0 — the updater could only update installs already new enough not to need it. A bootstrap deadlock, not a swallowed error, and a loudness fix alone would have made the silence legible without ever moving a version. Two further measurements the entry did not have: the local marketplace **clone** is pinned at the same `cf783ac`, so the comparison would have been meaningless even with an engine; and the hook's output was **entirely stderr**, which Claude Code's hook docs say "goes to the debug log only, never the transcript, and Claude never sees it" — so the seat could not have read the note either way (confirmed: a fresh session asked for its `[flow-currency]` line reported none). The fix runs both commands on the engineless arm and emits the outcome on `stdout`, the one `SessionStart` channel that reaches the session's context. The cost recorded below was real and is why this was on Phase 3's critical path: 1.29.0's `extract_session.py` predates the comma-splitting fix at `:1064`, so this repo's `referenceGlob` (`dev-docs/*.md,dev-docs/feedback/*.md`, 114 files) resolved **zero**, and all five `/flow:critique-plan` rounds on the Phase 3 plan ran **document-blind** — no Spec-violation category assessable in any of them. FB-0082's warning machinery worked exactly as designed and said so every time, which is the only reason this was visible. **A hook whose failure mode is "nothing happens" needs a loud one — and first it needs to actually do the thing.**
 
 ### D1g — Three copies of the CWE-59 path guard, and they have already drifted
 
@@ -443,6 +443,64 @@ third state — retained, but triggered rather than scheduled; and add the `comp
 `compact` hook ships; a fresh reader should get this from the canonical doc, not from a roadmap
 entry describing how the doc came to be wrong.
 
+### ▶ FOR BEN — one org-level save per repo, and the FIRST session of every new workspace is current (2026-10-03, FB-0131)
+
+**Surfaces when:** a new cloud workspace is created for any repo that uses flow — i.e. several times a
+day, today.
+
+**The repo-side half is fixed and the gap is not closed.** FB-0131's bootstrap arm converges a stale
+install, but `claude plugin update` applies **on restart**, so the hook can only ever make the
+**next** session current. The **first** session of every new workspace still boots stale, and that is
+the session that does the work.
+
+**Only provisioning can fix the first session, and in a Conductor cloud organization that is org
+config, not repository content.** Measured 2026-10-03, three agreeing ways — so do not re-derive it:
+
+1. Conductor's worker code (`/conductor/worker/index.js`,
+   `UPDATE_REPOSITORY_SETUP_SCRIPT_TOOL_DESCRIPTION`): *"For cloud organizations, the saved setup
+   script is the only one that runs — setup scripts defined in the repository's own
+   `.conductor/settings.toml` or `conductor.json` files are **ignored**."*
+2. The bundled `computer-admin` skill repeats it, and adds that a repo file *"still serves people
+   running Conductor locally."*
+3. A live probe: a branch carrying a `.conductor/settings.toml` whose setup writes an unconditional
+   marker as its **first** action, and a fresh cloud workspace created from that branch. The file was
+   on disk at the right path and commit; the marker was **ABSENT**. Marker-first is the instrument
+   validation — "absent" can only mean never-ran, not ran-and-failed.
+
+So **a committed `.conductor/settings.toml` was considered and rejected**: it would be inert in
+exactly the environment it targets, and worse than nothing, because the next reader would take it for
+the provisioning fix and stop looking.
+
+**What to do — in an admin workspace for the cloud computer** (the `computer-admin` skill and its
+`ListComputers` / `GetComputerConfiguration` / `CreateComputerConfiguration` /
+`UpdateRepositorySetupScript` tools are only available there). Save this as the **per-repository
+setup script** for `flow`:
+
+```sh
+# Keep the installed flow plugin current at workspace-creation time, so the FIRST
+# session is current rather than the next one. Both commands are needed: the
+# marketplace clone in the snapshot is pinned at the same stale commit as the
+# install, so updating without refreshing it installs nothing.
+claude plugin marketplace update flow || claude plugin marketplace add by-dev-tools/flow ||   echo "⚠️ could not refresh the flow marketplace clone"
+claude plugin update flow@flow || echo "⚠️ 'claude plugin update flow@flow' FAILED"
+claude plugin list
+```
+
+**The saved script is PER-REPOSITORY, so every repo that uses flow needs its own copy** —
+`health-tracker` has the identical gap and the identical remedy. There is no org-wide setting that
+covers them all.
+
+**The better fix, if the snapshot is being rebuilt anyway:** the baked install is what creates this.
+Every workspace reports `installPath …/cache/flow/flow/1.29.0` with an *identical*
+`installedAt: 2026-08-19T04:51:32.300Z`, which is a snapshot artifact, not a per-workspace install.
+Moving the **install script** to install flow at build time (or to stop baking it, letting the setup
+script own it) removes the 26-release floor rather than patching over it each time.
+
+**Deletion criterion:** delete this section once a saved setup script (or a rebuilt install script)
+exists for every flow-using repo and a fresh workspace's first session reports a current
+`claude plugin list`. Verify with `claude plugin list` in a brand-new workspace — **not** by reading
+this entry.
+
 ### Workers killed by the account session limit read identical to workers that finished (2026-09-27/29, orchestrator seat)
 
 **Surfaces when:** an idle worker is found with no explanation, or a dispatch is being planned
@@ -505,12 +563,24 @@ check-ins.**
 **Surfaces when:** `/flow:spawn` or its `usage.tsv` logging is next touched, or a re-dispatch path
 for an already-running worker is designed.
 
+**CAUSE FOUND, and it is not habit — `/flow:spawn` was never installed in any seat. Resolved by the
+`SessionStart` currency-hook bootstrap fix (FB-0131, 2026-10-03).** Measured with
+`plugin-provenance.py report --json` in two independent cloud workspaces: installed flow **1.29.0**,
+`release_gap: 26`, and `surface_drift.skills_missing_from_installed` listing `autoplan`, `gate`,
+`handoff`, `orchestrate`, `prototype`, `review-brief`, **`spawn`**. `/flow:spawn` shipped in v1.45.0;
+the runtime in a 1.29.0 seat has no tool for it at all, so a seat asked to invoke it would correctly
+conclude it does not exist. **Not a discipline failure, and filing it as one sent the next reader
+looking in the wrong place** — the identical pre-`/flow:spawn` observation from the
+session-efficiency program is what made "the seat does not use it" the obvious reading. The fix is
+the bootstrap arm in `.claude/hooks/flow-plugin-currency.sh`: an engineless install now runs
+`claude plugin marketplace update flow && claude plugin update flow@flow` instead of printing them,
+so the **next** session in a workspace has the skill. **Re-check before reopening this** (§ 9): run
+`claude plugin list`, and if it reports ≥ 1.45.0 the dispatch-logging half of this entry is closed.
+
 `/flow:spawn` shipped in #157 specifically to record `model · effort · why` per dispatch into
 `.flow/usage.tsv`, so routing decisions survive the session that made them. This seat dispatched
 every worker this week with raw `conductor` CLI calls instead, so this week's routing rationale
-exists only in chat messages — nowhere durable. The session-efficiency program recorded the
-identical gap **before `/flow:spawn` existed** (*"no dispatch in this program had logged a routing
-rationale"*); it is still true, now measured by the very seat that shipped the fix.
+exists only in chat messages — nowhere durable.
 
 **Also genuinely unclear, not just unused:** `/flow:spawn` creates a *new* workspace, so it has no
 path for re-dispatching an already-running idle worker — which, per the entry above, is the

@@ -218,7 +218,7 @@ is in flight on these files as of branching.
 
 
 
-**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/fix-plugin-currency-deadlock-visual-walk-n-a`, v1.57.0, FB-0131): Fix 1 — no Conductor workspace ever updates its flow plugin, because the updater can only update installs that are already new enough not to need it.**
+**▶ APPROVED AT THE GATE, EXECUTING (this branch `conductor/fix-plugin-currency-deadlock-visual-walk-n-a`, FB-0131, **no version bump — dev infra**): Fix 1 — no Conductor workspace ever updates its flow plugin, because the updater can only update installs that are already new enough not to need it.**
 
 **Mode:** feature · **Surface:** non-visual (no `Visual-walk` block, deliberately — this change renders nothing, and writing `**Visual-walk:** N/A` is the exact trap Fix 2 exists to remove)
 
@@ -256,13 +256,15 @@ The provisioning-time idea is right in principle — setup runs before the agent
 
 So a committed `scripts.setup` would be inert in exactly the environment it targets — **shipped, believed effective, never firing**, the FB-0085 class, and worse than the status quo because a future reader would read it as the provisioning fix and stop looking. **Recommended against, with the measurement recorded** so the next seat does not re-derive it.
 
-**The provisioning fix exists but is org config, not a PR.** It is the cloud organization's **saved per-repository setup script** (`UpdateRepositorySetupScript`), or the install script that bakes 1.29.0 into the snapshot in the first place — both reachable only from an admin workspace. That is Ben's to set; I will name it in the roadmap with the exact commands so it is a copy-paste, not an investigation.
+**The provisioning fix exists but is org config, not a PR.** It is the cloud organization's **saved per-repository setup script** (`UpdateRepositorySetupScript`), or the install script that bakes 1.29.0 into the snapshot in the first place — both reachable only from an admin workspace. That is Ben's to set, so it lands in the roadmap as **copy-paste commands** rather than as an investigation. **The saved script is per-repository**, so every repo that uses flow — `health-tracker` included — carries the identical gap and needs the identical one-time save.
 
 ### Spec-walk
 
 - [ ] **On an install with no provenance engine the hook attempts BOTH commands.** Asserted against the PATH-shim's **call log**, not inferred from output — silence and inaction are different claims. This replaces `test_hook_degrades_safely`'s current negative (`"with no engine the hook must not blind-update"`), which pins the deadlock as correct. → `test_hook_degrades_safely`
 - [ ] **PAIRED, and the pairing is the point** (§ Consistency item 3): the security refusal still holds on that same arm — engine resolved via `installed_plugins.json` / `installPath`, **no** checkout-relative engine path anywhere in executable code, and the `NOT falling back` sentence still present. A bootstrap that satisfied criterion 1 by reading the checkout's engine must be RED. → `test_hook_never_executes_the_checkout`
 - [ ] **The bootstrap arm is distinguishable from the old no-op.** It prints the installed version **before → after**. RED if a run that bootstrapped produces stderr that a run which did nothing could also produce — the deadlock survived 26 releases precisely because "exits 0, prints a note" reads identically either way. → `test_hook_bootstraps_an_engineless_install`
+- [ ] **The OUTCOME line is emitted on `stdout`; the diagnostics stay on `stderr`.** `SessionStart` is a hook event whose stdout is injected into the agent's context, and this hook's header comment currently says the opposite — *"All output to stderr so nothing is injected into the session's context."* That was a deliberate decision and this **reverses** it, so the comment is rewritten rather than quietly contradicted. Exactly one line reaches stdout when the hook acts (`installed flow X → Y`, or the `⚠️` when a "successful" update did not move the version); **stdout stays empty when the hook does nothing**, which is the pairing — a hook that printed its line unconditionally would satisfy the positive while making every current session noisier. RED if the already-current fast path writes anything to stdout. → `test_hook_outcome_reaches_stdout`, `test_hook_fast_path`
+- [ ] **That injection claim is MEASURED, not assumed** (§ Consistency item 4, and "capability claims expire"): a fresh session in this workspace is asked whether it can see its own `[flow-currency]` line. The pre-fix answer is already recorded — a probe session reported **none**. If the post-fix answer is still "none", that is reported as a negative result, not smoothed over.
 - [ ] **A bootstrap whose update FAILS is loud and still exits 0.** A session start must never be wedged; `FAILED` + `Do NOT assume` reach stderr. → `test_hook_degrades_safely`
 - [ ] **A bootstrap that "succeeds" without moving the version says so.** `⚠️` naming the unmoved version, never a reassuring `X → X` arrow. This is the one new silent-confidence shape the arm introduces, so it is pinned in the failing direction. → `test_hook_bootstraps_an_engineless_install`
 - [ ] **`FLOW_CURRENCY_DRY_RUN=1` mutates nothing on the bootstrap arm either, and still announces.** Today the arm it would exercise is unreachable in dry run — the engine check exits first — so dry run and real run print byte-identical output on a 1.29.0 install. Measured. → `test_hook_dry_run`
@@ -291,13 +293,15 @@ So a committed `scripts.setup` would be inert in exactly the environment it targ
 
 ### Risks / open questions
 
-- **Does a dev-infra change earn a version bump?** The code change is `.claude/` (project-dev infra, not shipped); the eval is `plugins/flow/evals/` (a plugin artifact). `/flow:ship`'s doc-currency gate compares `plugin.json` against roadmap *Now* + plan *Current Focus*, and would pass with **no** bump. Taking **v1.57.0** on repo convention (one version per PR; v1.56.0 is CV1's follow-up). Flagged rather than assumed.
+- **RESOLVED at the gate — no version bump.** This is dev infrastructure and an eval is not shipped behaviour, so Fix 1 takes **FB-0131 only**; **v1.57.0 goes to Fix 2**, which does change shipped gate behaviour. If a CI check refuses a no-bump PR that touches `plugins/flow/evals/`, report what it asserts rather than bumping to satisfy it.
 - **Convergence is still next-session.** `plugin update` applies on restart, so the session that bootstraps still runs 1.29.0. The PR body's four provenance rows remain the only thing that can say what actually ran — unchanged, and the reason the rows are the load-bearing half of FB-0107.
 - **If marketplace HEAD ever sat below v1.43.0** the arm would re-fire every session. Criterion 5's `⚠️` is what makes that visible instead of a silent per-session download.
 
 ### Files touched
 
-`.claude/hooks/flow-plugin-currency.sh` · `plugins/flow/evals/run_plugin_provenance_evals.py` · `CONTRIBUTING.md` · `dev-docs/roadmap.md` · `dev-docs/plan.md` · `dev-docs/history/2026-10-03-*.md` · `dev-docs/feedback/FB-0131-*.md` · `CHANGELOG.md` · `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`
+`.claude/hooks/flow-plugin-currency.sh` · `plugins/flow/evals/run_plugin_provenance_evals.py` · `CONTRIBUTING.md` · `dev-docs/roadmap.md` · `dev-docs/plan.md` · `dev-docs/history/2026-10-03-*.md` · `dev-docs/feedback/FB-0131-*.md`
+
+**Deliberately NOT touched:** `plugins/flow/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `CHANGELOG.md` — no version bump (above).
 
 **Not in scope:** `.conductor/settings.toml` (Decision 2) · the snapshot's baked 1.29.0 install (org config) · Fix 2, the `Visual-walk: N/A` forcing bug, which ships as a separate PR on top of this one.
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -828,15 +829,62 @@ def test_hook_loud_failure():
     body = hook_body()
     upd = [l for l in body if "plugin update flow@flow" in l]
     check(bool(upd), "the hook must invoke `plugin update flow@flow`")
-    # POSITIVE: the failure branch and its warning exist.
-    check(any("if ! " in l and "plugin update flow@flow" in l for l in upd),
-          "the update must sit inside an `if ! ...` failure branch")
-    check("FAILED" in txt and "Do NOT assume" in txt,
-          "a failed update must print a warning naming what may be stale")
-    # NEGATIVE, paired with the positives above: never swallowed.
+
+    # This claim is pinned BEHAVIOURALLY below, not by greping for a shape, and the
+    # history of this check is the argument for that. It used to read
+    # `any("if ! " in l and "plugin update flow@flow" in l ...)` and went RED the
+    # moment the two call sites were deduplicated behind a one-line wrapper -- the
+    # mechanism was refactored, not removed, and the decision it protects ("a failed
+    # update never reads as a clean run") was still true at both sites. The first
+    # replacement derived call sites and asserted the guard on each, which then
+    # flagged every `echo` that merely QUOTES the command in a warning message, plus
+    # the dry-run invocation that legitimately cannot fail. Two wrong structural
+    # pins in a row is the signal: the claim is about what happens at RUNTIME, so it
+    # belongs at that layer (FB-0118). What stays structural is only what a run
+    # cannot show -- that nothing swallows the status outright.
+    invokers = {"plugin update flow@flow"}
     for l in upd:
+        m = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\)\s*\{", l)
+        if m:
+            invokers.add(m.group(1))
+    touching = [l for l in body if any(k in l for k in invokers)]
+    # INSTRUMENT VALIDATION (FB-0104's vacuous-criterion class): an empty list makes
+    # the loop below a no-op that prints PASS. The count is NOT pinned -- only that
+    # it is non-empty, so splitting or merging call sites stays free.
+    check(bool(touching),
+          f"derived ZERO lines touching the updater from {sorted(invokers)} -- the "
+          f"derivation is broken, so the assertion below would be vacuous")
+    for l in touching:
         check("|| true" not in l,
               f"the update must NOT be suffixed `|| true`: {l.strip()!r}")
+    check("FAILED" in txt and "Do NOT assume" in txt,
+          "a failed update must print a warning naming what may be stale")
+
+    # BEHAVIOURAL, both arms, both polarities. A failing update must say FAILED and
+    # still exit 0; a succeeding one must NOT say FAILED. Without the second half,
+    # the first would pass on a hook that cried wolf unconditionally.
+    with tempfile.TemporaryDirectory() as tmp:
+        td = Path(tmp)
+        drive = _hook_driver(td)
+        for name, home, bump in (
+            ("normal", make_home_with_engine(td / "l1", "1.29.0", "1.43.0"), "1.43.0"),
+            ("bootstrap", make_home(td / "l2", registry("1.29.0"),
+                                    marketplace_json("1.55.0")), "1.55.0"),
+        ):
+            rc, so, se, calls = drive(home, cwd=REPO, fail=True)
+            check(rc == 0, f"[{name}] a failed update must still exit 0, got {rc}")
+            check("FAILED" in se and "FAILED" in so,
+                  f"[{name}] a failed update must be loud on BOTH channels -- stderr for "
+                  f"the detail, stdout because that is the only one the seat sees. "
+                  f"got stdout={so!r} stderr={se!r}")
+            # POSITIVE PAIR: success must not print it.
+            ok = make_home_with_engine(td / f"{name}-ok", "1.29.0", "1.43.0") \
+                if name == "normal" else \
+                make_home(td / f"{name}-ok", registry("1.29.0"), marketplace_json("1.55.0"))
+            rc, so, se, calls = drive(ok, cwd=REPO, bump_to=bump)
+            check("FAILED" not in so and "FAILED" not in se,
+                  f"[{name}] a SUCCESSFUL update must not report FAILED, got "
+                  f"stdout={so!r} stderr={se!r}")
     # The gate is ground truth, not an env var (the FB-0085 lesson).
     check("plugins/flow/.claude-plugin/plugin.json" in txt and '"name"' in txt,
           "the hook must gate on the repo marker file — and on the SAME spelling the 12 "
@@ -876,15 +924,35 @@ def _hook_driver(td: Path):
     shim = td / "bin"
     shim.mkdir(exist_ok=True)
     log = td / "calls.log"
+    # `plugin update` REWRITES the registry version, as the real CLI does, when
+    # BUMP_TO is set. Required to test the bootstrap arm at all: that arm reports
+    # before -> after by reading the registry (it has no engine to ask), so a shim
+    # that never moves the version can only ever exercise the "reported success
+    # but did not move" branch. Asserting only that branch would be half a pair --
+    # it passes just as well on a hook that can never succeed.
+    (shim / "bump.py").write_text(
+        "import json, sys\n"
+        "reg, ver = sys.argv[1], sys.argv[2]\n"
+        "d = json.load(open(reg))\n"
+        "e = d['plugins']['flow@flow'][0]\n"
+        "e['version'] = ver\n"
+        "if 'installPath' in e:\n"
+        "    e['installPath'] = e['installPath'].rsplit('/', 1)[0] + '/' + ver\n"
+        "json.dump(d, open(reg, 'w'))\n")
     (shim / "claude").write_text(
         "#!/bin/bash\necho \"claude $*\" >> %s\n"
         "case \"$*\" in\n"
-        "  'plugin update'*) [ \"$FAIL_UPDATE\" = 1 ] && exit 1 ; exit 0 ;;\n"
-        "  *) exit 0 ;;\nesac\n" % log)
+        "  'plugin update'*)\n"
+        "    [ \"$FAIL_UPDATE\" = 1 ] && exit 1\n"
+        "    [ -n \"$BUMP_TO\" ] && python3 %s/bump.py \\\n"
+        "        \"$HOME/.claude/plugins/installed_plugins.json\" \"$BUMP_TO\" 2>/dev/null\n"
+        "    exit 0 ;;\n"
+        "  *) exit 0 ;;\nesac\n" % (log, shim))
     (shim / "claude").chmod(0o755)
 
     def drive(home: Path, *, cwd: Path, fail: bool = False, dry: bool = False,
-              strip_path: bool = False, hide_engine: bool = False):
+              strip_path: bool = False, hide_engine: bool = False,
+              bump_to: str | None = None):
         log.write_text("")
         if strip_path:
             # Drop only the directories that PROVIDE `claude`, keeping bash and
@@ -901,6 +969,8 @@ def _hook_driver(td: Path):
             env["FAIL_UPDATE"] = "1"
         if dry:
             env["FLOW_CURRENCY_DRY_RUN"] = "1"
+        if bump_to:
+            env["BUMP_TO"] = bump_to
         run_cwd = cwd
         if hide_engine:
             # A checkout that IS flow but has no engine: the hook must say it cannot
@@ -942,7 +1012,10 @@ def test_hook_fast_path():
 
         rc, so, se, calls = drive(home, cwd=REPO)
         check(rc == 0, f"fast path must exit 0, got {rc}")
-        check(so == "", f"the hook must never write to stdout, got {so!r}")
+        check(so == "",
+              f"a current, undrifted install must write NOTHING to stdout -- stdout is the "
+              f"seat-facing channel now, so an unconditional line would be noise on every "
+              f"healthy session and would make the acting case unreadable again. got {so!r}")
         check(se == "", f"a current install must be silent, got {se!r}")
         check(not any("plugin update" in c for c in calls),
               f"a current install must attempt NO plugin update, got {calls}")
@@ -950,12 +1023,20 @@ def test_hook_fast_path():
         # POSITIVE pair: with an update genuinely available it MUST act -- else
         # "attempted no update" would pass in a world where it never updates.
         home2 = make_home_with_engine(td / "s2", "1.29.0", "1.43.0")
-        rc, so, se, calls = drive(home2, cwd=REPO)
-        check(rc == 0 and so == "", f"update path: rc={rc} stdout={so!r}")
+        rc, so, se, calls = drive(home2, cwd=REPO, bump_to="1.43.0")
+        check(rc == 0, f"update path: rc={rc}")
         check(any("plugin update flow@flow" in c for c in calls),
               f"an available update must be applied, got {calls}")
         check("restart required" in se,
               "the hook must state that THIS session is not fixed by the update")
+        # The acting case MUST reach the seat, and in exactly one line. This is the
+        # other half of the fast path's `so == ""`: silence when nothing happened,
+        # one line when something did. Asserting only the silence would pass on the
+        # hook as it shipped, whose stdout was empty on EVERY path.
+        check(len(so.strip().splitlines()) == 1,
+              f"an applied update must emit exactly ONE stdout line, got {so!r}")
+        check("1.29.0" in so and "1.43.0" in so,
+              f"the stdout line must name the before AND after version, got {so!r}")
 
 
 def test_hook_dry_run():
@@ -974,7 +1055,10 @@ def test_hook_dry_run():
         live = live_branch_version()
         home = make_home_with_engine(td, live, live)
         rc, so, se, calls = drive(home, cwd=REPO, dry=True)
-    check(rc == 0 and so == "", f"dry run: rc={rc} stdout={so!r}")
+    check(rc == 0, f"dry run: rc={rc}")
+    check(len(so.strip().splitlines()) == 1 and "dry-run" in so,
+          f"a dry run must announce itself on stdout in exactly one line -- it reports "
+          f"UNCONDITIONALLY, so silence is the one output it must never produce. got {so!r}")
     check("dry-run" in se, "dry run must announce itself")
     check(calls == [], f"dry run must invoke NOTHING, got {calls}")
     check("restart required" in se, "dry run must still surface the restart caveat")
@@ -999,16 +1083,39 @@ def test_hook_degrades_safely():
         check(rc == 0, f"absent claude must still exit 0, got {rc}")
         check("not on PATH" in se, f"absent claude must be loud, got {se!r}")
         check(calls == [], "absent claude must invoke nothing")
+        # "I could not tell" is a currency verdict, so it reaches the seat as well.
+        # Loud on a channel nobody reads is the failure this PR is about.
+        check(len(so.strip().splitlines()) == 1 and "not on PATH" in so,
+              f"an undeterminable verdict must reach stdout in one line, got {so!r}")
 
-        # No engine in the INSTALLED tree: the hook must refuse rather than fall back
-        # to the checkout copy, and must say why.
+        # No engine in the INSTALLED tree. TWO things must hold AT ONCE, and this
+        # replaces an assertion that pinned the bug as correct: it used to read
+        # "with no engine the hook must not blind-update", which is exactly the
+        # bootstrap deadlock -- the engine that answers "is this current?" ships
+        # inside the artifact being updated, so an install old enough to need the
+        # update was old enough to disable the updater. Measured on every Conductor
+        # cloud workspace: 1.29.0 against a tree at 1.55.0, 26 releases, forever.
+        #
+        # The pair (FB-0010 clause 3): the hook MUST run the two CLI commands, AND
+        # it must still refuse to execute a repository file. Either assertion alone
+        # passes in a world the other one forbids -- the first alone would accept a
+        # hook that bootstrapped by running the checkout's engine; the second alone
+        # is the deadlock we just removed.
         bare = make_home(td / "d2", registry("1.29.0"), marketplace_json("1.43.0"))
-        rc, so, se, calls = drive(bare, cwd=REPO)
+        rc, so, se, calls = drive(bare, cwd=REPO, bump_to="1.43.0")
         check(rc == 0, f"absent installed engine must still exit 0, got {rc}")
         check("NOT falling back" in se,
               f"absent installed engine must refuse the checkout copy loudly, got {se!r}")
-        check(not any("plugin update" in c for c in calls),
-              "with no engine the hook must not blind-update")
+        # POSITIVE: both commands actually run.
+        check(any("plugin update flow@flow" in c for c in calls),
+              f"with no engine the hook MUST bootstrap via the plugin CLI, got {calls}")
+        check(any("plugin marketplace" in c for c in calls),
+              f"the bootstrap must refresh the marketplace clone first -- the clone can be "
+              f"pinned at the same stale commit as the install (measured: both at cf783ac), "
+              f"so updating without refreshing installs nothing. got {calls}")
+        # NEGATIVE, paired: it got there without running repo code.
+        check(not any(str(REPO) in c for c in calls),
+              f"the bootstrap must not invoke anything from the checkout, got {calls}")
 
 
 def test_hook_field_parse_no_shift():
@@ -1060,6 +1167,149 @@ def test_hook_field_parse_no_shift():
           f"itself from 'no', got {se!r}")
     check(not any("plugin update" in c for c in calls),
           f"an undeterminable comparison must not blind-update, got {calls}")
+
+
+def test_hook_bootstraps_an_engineless_install():
+    """The bootstrap arm converges an install too old to carry the engine — and is
+    DISTINGUISHABLE from the no-op it replaced.
+
+    THE DEADLOCK. `plugin-provenance.py` ships inside the plugin (v1.43.0), and the
+    hook resolves it from the installed tree only (correctly — see
+    test_hook_never_executes_the_checkout). So an install predating v1.43.0 had no
+    engine, the hook printed a note and exited 0, and the updater could only ever
+    update installs that were already new enough not to need it. Measured
+    2026-10-03: every Conductor cloud workspace boots from a snapshot carrying
+    1.29.0 with an identical `installedAt`, and the local marketplace clone is
+    pinned at the same `cf783ac` — so no seat had ever converged, across 26
+    releases, while a provenance REPORT about exactly this skew shipped and passed.
+
+    Why "distinguishable" is a criterion and not polish: the reason this survived
+    26 releases is that "exits 0, prints a note" reads identically whether anything
+    happened or not. So the arm must name the version it moved FROM and TO, and the
+    two outcomes below are asserted as a pair — moved, and claimed-but-unmoved.
+    """
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        drive = _hook_driver(td)
+
+        # (a) MOVED. No engine installed, marketplace ahead, update actually lands.
+        home = make_home(td / "b1", registry("1.29.0"), marketplace_json("1.55.0"))
+        rc, so, se, calls = drive(home, cwd=REPO, bump_to="1.55.0")
+        check(rc == 0, f"a bootstrap must still exit 0, got {rc}")
+        line = so.strip()
+        check(len(line.splitlines()) == 1,
+              f"the bootstrap must emit exactly ONE stdout line, got {so!r}")
+        check("1.29.0" in line and "1.55.0" in line,
+              f"the line must name the version it moved FROM and TO -- that is the whole "
+              f"difference from the no-op it replaced. got {line!r}")
+        check("restart" in line.lower(),
+              f"the line must say THIS session is not fixed by it: the update applies on "
+              f"restart, so a seat that reads 'updated' and keeps going is still stale. "
+              f"got {line!r}")
+        check("⚠️" not in line, f"a successful bootstrap must not cry wolf, got {line!r}")
+
+        # (b) CLAIMED BUT UNMOVED -- the one new silent-confidence shape the arm
+        #     introduces, pinned in the FAILING direction. `plugin update` can exit 0
+        #     having changed nothing (stale clone, or a source that predates v1.43.0),
+        #     and an unconditional "X -> Y" arrow would then read as success while the
+        #     seat stayed old AND re-paid the download every session. Without this
+        #     case, assertion (a) alone would pass on a hook that always printed the
+        #     arrow regardless of outcome.
+        home = make_home(td / "b2", registry("1.29.0"), marketplace_json("1.55.0"))
+        rc, so, se, calls = drive(home, cwd=REPO)          # no bump_to: nothing moves
+        check(rc == 0, f"an unmoved bootstrap must still exit 0, got {rc}")
+        line = so.strip()
+        check(len(line.splitlines()) == 1 and "⚠️" in line and "STILL" in line,
+              f"an update that reports success without moving the version must warn, in "
+              f"one line, rather than print a reassuring arrow. got {so!r}")
+        check("1.29.0" in line, f"the warning must name the version it is stuck on, got {line!r}")
+
+        # (c) The arm must NOT fire when the engine IS present. Otherwise criterion
+        #     (a) is satisfied by a hook that bootstraps unconditionally, which would
+        #     re-download on every healthy session.
+        home = make_home_with_engine(td / "b3", live_branch_version(), live_branch_version())
+        rc, so, se, calls = drive(home, cwd=REPO)
+        check("predates the provenance engine" not in se,
+              f"the bootstrap arm must not be reached when the engine exists, got {se!r}")
+        check(so == "", f"an engine-present current install must stay silent, got {so!r}")
+
+        # (d) Dry run reaches the arm and mutates NOTHING. Pre-fix this was
+        #     unreachable -- the engine check exited first, so dry run and real run
+        #     printed byte-identical output on a 1.29.0 install.
+        home = make_home(td / "b4", registry("1.29.0"), marketplace_json("1.55.0"))
+        rc, so, se, calls = drive(home, cwd=REPO, dry=True)
+        check(rc == 0 and calls == [],
+              f"a dry-run bootstrap must invoke NOTHING, got rc={rc} calls={calls}")
+        check(len(so.strip().splitlines()) == 1 and "dry-run" in so,
+              f"a dry-run bootstrap must still announce itself in one stdout line, got {so!r}")
+        check("would run: claude plugin update flow@flow" in se,
+              f"the dry run must name what a real run would do, got {se!r}")
+
+
+def test_hook_output_channels():
+    """stdout is the seat-facing channel and carries AT MOST one verdict line.
+
+    Claude Code's hook docs: for `SessionStart`, plain-text stdout "is added to
+    Claude's context", while "stderr from a hook that exits 0 goes to the debug log
+    only, never the transcript, and Claude never sees it." This hook always exits
+    0, so before this change its ENTIRE output was invisible to the agent and to
+    the human -- readable only under `--debug`. Measured: a fresh session asked for
+    its `[flow-currency]` line reported none. That is how a 26-release skew
+    survived inside a program that had already built a report about it.
+
+    The contract is a PAIR, and both halves are load-bearing: a verdict reaches
+    stdout, and nothing else does. Asserting only the first would pass on a hook
+    that dumped the plugin CLI's progress chatter into every session's context;
+    asserting only the second is the pre-fix behaviour.
+    """
+    txt = HOOK.read_text(encoding="utf-8")
+    body = "\n".join(hook_body())
+    # The blanket redirect is the thing being reversed -- if it comes back, every
+    # `say` below is silently swallowed again and nothing else would notice.
+    check("} 1>&2" not in body,
+          "the blanket `{ ... } 1>&2` wrapper must stay gone: it routed every verdict to "
+          "a channel the docs say Claude never sees")
+    check("say()" in body, "the hook must define the one-line stdout emitter")
+    check("Claude never sees it" in txt,
+          "the reversal must be explained where the next maintainer will read it -- this "
+          "file previously carried the OPPOSITE comment ('All output to stderr so nothing "
+          "is injected') as a deliberate decision, so flipping it silently would leave a "
+          "contradiction rather than a decision")
+    # NOT paired with `"All output to stderr" not in txt`. That assertion was
+    # written here first and is WRONG for the same reason the CLAUDE_CODE_REMOTE
+    # check below scopes itself to the non-comment body: the hook deliberately
+    # QUOTES the superseded comment in order to explain the reversal, and a check
+    # that forbade the string outright would forbid documenting the decision --
+    # the opposite of what it is for. The real pairing is already above: the
+    # explanation must exist (positive, here) AND the blanket redirect must be gone
+    # (negative, the `} 1>&2` check). Neither can be satisfied by deleting the
+    # other's subject.
+
+    with tempfile.TemporaryDirectory() as t:
+        td = Path(t)
+        drive = _hook_driver(td)
+        live = live_branch_version()
+
+        # Every arm: at most ONE stdout line, and never the CLI's own chatter.
+        cases = [
+            ("current", make_home_with_engine(td / "c1", live, live), {}, 0),
+            ("update-available", make_home_with_engine(td / "c2", "1.29.0", "1.43.0"),
+             {"bump_to": "1.43.0"}, 1),
+            ("bootstrap", make_home(td / "c3", registry("1.29.0"), marketplace_json("1.55.0")),
+             {"bump_to": "1.55.0"}, 1),
+            ("update-failed", make_home_with_engine(td / "c4", "1.29.0", "1.43.0"),
+             {"fail": True}, 1),
+            ("dry-run", make_home_with_engine(td / "c5", live, live), {"dry": True}, 1),
+        ]
+        for name, home, kw, want in cases:
+            rc, so, se, calls = drive(home, cwd=REPO, **kw)
+            got = len(so.strip().splitlines()) if so.strip() else 0
+            check(rc == 0, f"[{name}] must exit 0, got {rc}")
+            check(got == want,
+                  f"[{name}] expected {want} stdout line(s), got {got}: {so!r}")
+            check("Checking for updates" not in so and "updated from" not in so,
+                  f"[{name}] the plugin CLI's own chatter must never reach stdout -- it is "
+                  f"injected into the session's context. got {so!r}")
 
 
 def test_capture_fixture():
@@ -1121,6 +1371,8 @@ def main() -> int:
                test_version_string_cannot_forge_the_table,
                test_hook_fast_path, test_hook_dry_run,
                test_hook_degrades_safely, test_hook_field_parse_no_shift,
+               test_hook_bootstraps_an_engineless_install,
+               test_hook_output_channels,
                test_capture_fixture, test_ci_wired):
         try:
             fn()
