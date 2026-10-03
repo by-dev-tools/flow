@@ -483,6 +483,54 @@ probe becomes the primary signal rather than the substitute.
 **Deletion criterion:** delete when either flow ships a `bin/` and `ran_version_source` reads `PATH`
 on a real run, or the probe above refutes the mechanism and `read_running` is retired.
 
+### Four deferred findings from v1.57.0's staff-review, all real, none in scope (2026-10-03)
+
+**Surfaces when:** `plugin-provenance.py`'s renderer, `plugins/flow/hooks/default-hooks.json`, or
+the eval harness's fixture builders are next touched.
+
+1. **`CLAUDE_PLUGIN_ROOT` is a candidate run-pinned signal, and it costs nothing to try** (push-further
+   lens). The `bin/` entry above frames the choice as *`bin/` or the cache probe*, and that is a false
+   pair. `CLAUDE_PLUGIN_ROOT` **encodes the version in its path** (`…/cache/flow/flow/1.29.0`), is set
+   by the host at skill-resolution time — the pinning moment FB-0107 lesson 4 actually asks for — and
+   is **already** read by `collect(..., plugin_root)` and `resolve_libs`, which throw the version away.
+   **Live evidence from this very PR's ship run:** `/flow:ship` resolved from
+   `.../cache/flow/flow/1.29.0/skills/ship` while the registry said 1.55.0 — the path was right where
+   the registry was wrong. Caveat: it is unset in Bash-tool calls, so it strengthens the `!`-block
+   reading only — which is the reading the row is made from. **Probe:** read it in a `!`-block before
+   and after a mid-session `plugin update` and see whether it moves. Amend the `bin/` entry with this
+   as candidate 0 rather than opening a second one; it is the same decision.
+
+2. **A SHIPPED hook warns on a channel nobody reads — this PR's own lesson, unswept.**
+   `plugins/flow/hooks/default-hooks.json` Hook 2 is a `PreToolUse` path-validation warning whose
+   entire output is one `echo … >&2` and which exits 0. Per the hook docs this PR quotes three times,
+   stderr from a hook that exits 0 "goes to the debug log only, never the transcript, and Claude never
+   sees it". So flow ships consumers a warning that cannot warn anyone — the FB-0085 class, in shipped
+   code, found by sweeping FB-0131's own "know which channel your audience reads" corollary. Options:
+   emit via the hook's JSON output (`permissionDecisionReason` / `systemMessage`), or delete it and let
+   the in-script cwd constraint stand alone, which its own `$comment` already calls the primary
+   defense. **Pick by probe, not by docs** — ask a fresh session to quote the line back, exactly as
+   FB-0131 did. Shipped surface: needs a version and an eval.
+
+3. **The render fixtures still mostly exercise an install state the system cannot produce.** Only 5 of
+   ~25 `make_home` fixtures pass `cache_versions=`, so most row-rendering tests run against a registry
+   whose `installPath` points outside the plugin cache — which `make_home`'s own docstring calls "not a
+   state a correctly installed plugin can be in". v1.57.0's redesign made the hedge fire on every
+   registry-sourced reading, so the render path IS now exercised everywhere; what remains is that the
+   `cached_versions` inventory is `[]` in most fixtures rather than realistic. Migrate the
+   row-rendering fixtures onto `cache_versions=`.
+
+4. **The bootstrap arm's download has no bound.** `.claude/hooks/flow-plugin-currency.sh` now runs
+   `claude plugin update` at session start; a hung or slow registry blocks session start until Claude
+   Code's own hook timeout kills it, possibly mid-install. Either wrap in `timeout 60` or state
+   explicitly in the cost header that the host timeout is the bound. Deferred because it adds a new
+   failure mode to reason about (a half-installed plugin) rather than removing one.
+
+Two more, smaller, same provenance: the `✓` glyph means "ran" in `ship/SKILL.md`'s loop-step table and
+"healthy" in the provenance table 14 lines below, with one legend covering both; and there is no
+design-language section governing machine-to-human copy in rendered-markdown or terminal artifacts,
+which is how that collision went unnoticed. Fold the latter into the existing `designLanguagePath`
+coverage item rather than opening a new one.
+
 ### ▶ FOR BEN — one org-level save per repo, and the FIRST session of every new workspace is current (2026-10-03, FB-0131)
 
 **Surfaces when:** a new cloud workspace is created for any repo that uses flow — i.e. several times a

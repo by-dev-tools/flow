@@ -247,7 +247,12 @@ def cached_versions(home: Path, installed: dict) -> list[str]:
         # fixture made it enumerate the ROOT FILESYSTEM and report `bin, boot, dev,
         # etc, …` as plugin versions. A relative or absent install path must yield
         # "no evidence", not a directory listing of somewhere else.
-        if cache not in parent.parents and parent != cache:
+        # FULL DEPTH, mirroring `read_running`'s regex (`cache/X/Y/VER/bin`). The first
+        # cut allowed `parent == cache`, so an installPath of `…/cache/<anything>` made
+        # this enumerate MARKETPLACE directories and report them as plugin versions —
+        # spurious inventory from the function whose docstring promises the guard and
+        # the matcher describe the same shape (/flow:staff-review).
+        if parent.parent.parent != cache:
             return []
         if not parent.is_dir():
             return []
@@ -590,17 +595,24 @@ def collect(home: Path, root: Path, plugin_root: str | None) -> dict:
     cached = cached_versions(home, installed)
     if rv and reg_v:
         restart_pending = rv != reg_v
-    elif reg_v and len(cached) > 1:
-        # No run-pinned signal AND more than one version tree on disk: a restart may
-        # well be pending and nothing available here can tell. `None`, never `False`.
+    elif reg_v:
+        # No run-pinned signal at all, so a restart may well be pending and nothing
+        # here can see it. `None`, never `False` -- "not pending" and "I have no
+        # instrument" are different claims (FB-0082), and collapsing them is what let
+        # a mid-session `plugin update` render a tick on the row labelled "the version
+        # that ran this pipeline".
+        #
+        # An earlier cut gated this on `len(cached) > 1`, reasoning that one tree means
+        # the registry reading cannot be wrong. /flow:staff-review's UX and
+        # design-engineer lenses both refuted it: Claude Code never prunes the old
+        # tree, so on any machine that has EVER updated, `len(cached) > 1` is
+        # permanently true and the row warned forever -- the exact "a permanent warning
+        # is indistinguishable from the real staleness signal" failure `_stale()` below
+        # forbids. Multi-tree is the steady state, not a signal. The severity fix is in
+        # the renderer (an informational note, never a ⚠️); the honest predicate is
+        # just "no pinned signal ⇒ cannot tell".
         restart_pending = None
     else:
-        # Either a PATH signal agreed, or there is at most one tree it could have
-        # been. `cached == []` lands here too -- no install path, or one outside the
-        # cache, which for a correctly installed plugin does not occur and which the
-        # `installed` row already reports on. "No evidence of a second tree" is not
-        # the same claim as "I looked and found one", so `cached_versions` is in the
-        # JSON and a reader can see which of the two this was.
         restart_pending = False
     bv = branch.get("version") if branch.get("state") == "ok" else None
     mv = marketplace.get("version") if marketplace.get("state") == "ok" else None
@@ -731,31 +743,14 @@ def render_rows(d: dict) -> list[str]:
                        "it takes effect on restart, so this session still ran "
                        f"{ran}.")
         elif d.get("restart_pending") is None and from_registry:
-            # The hedge. Reaching here means the only reading available came from the
-            # plugin REGISTRY, and `claude plugin update` rewrites that the instant it
-            # runs even though the update "requires a restart to apply" -- FB-0107's
-            # lesson 4, "a tool that reports what ran must read a signal pinned at run
-            # start, not a mutable record". PATH is that pinned signal and it is absent
-            # on this host, so this number is the version INSTALLED, not demonstrably
-            # the version that ran.
-            #
-            # Observed, which is why the wording is this blunt: in one session whose
-            # registered skill list never changed, this row moved from a correct
-            # "⚠️ NOT this branch, 26 releases back" to "1.55.0 ✓ matches this branch"
-            # the moment the currency hook updated the install. A reviewer -- and then
-            # an agent, measured -- read the tick and concluded the session's own
-            # honest "this session still runs 1.29.0" warning was pessimistic.
-            # No leading marker: the `report_drift is False` arm renders `"⚠️" + pending`,
-            # and the drift arms already open with their own ⚠️. Carrying one here too
-            # produced "⚠️ ⚠️".
-            others = ", ".join(v for v in d.get("cached_versions", []) if v != ran)
-            pending = (" **Read from the plugin registry, and this machine also still has "
-                       f"{others} on disk** — `claude plugin update` rewrites the registry "
-                       "immediately even though the update applies only on RESTART, so a "
-                       "session that began before it is still running the older tree. This "
-                       "number is the version INSTALLED, not confirmed as the version that "
-                       "ran. Check whether the `/flow:*` skills this release ships are in "
-                       "your tool list; if they are missing, restart.")
+            # SHORT by design. The first cut put the whole mechanism in this cell:
+            # measured at 442-549 chars against 28-40 for the three sibling rows, so
+            # GitHub wrapped row 1 to a paragraph while the rest stayed one-liners and
+            # the table stopped being scannable — /flow:staff-review's design-engineer
+            # lens. The mechanism moved to a footnote under the table (`UNPINNED`),
+            # which is a shape this module already had for exactly this.
+            pending = (" — but this is the version INSTALLED; what actually ran is not "
+                       "confirmable on this host (see note).")
         if d["report_drift"] is True and stale:
             gap = d.get("release_gap")
             gap_txt = f", {gap} releases back" if gap else ""
@@ -768,14 +763,19 @@ def render_rows(d: dict) -> list[str]:
             note = (f"ℹ️ expected — this branch declares {br.get('version')}, which is not "
                     "released yet, and the install is otherwise current." + pending)
         elif d["report_drift"] is False:
-            # `✓ matches this branch` is a claim about what RAN. A registry-sourced
-            # reading cannot support it -- see the hedge above -- so the tick is
-            # reachable only from a PATH-pinned version. Paired, deliberately: the
-            # tick must still appear when the signal IS pinned and does match, or
-            # this fix would pass just as well on a renderer that never ticks.
-            note = ("✓ matches this branch" + pending) if not pending else ("⚠️" + pending)
+            # `✓ matches this branch` is a claim about what RAN, and a registry-sourced
+            # reading cannot support it — so the tick is reachable only from a
+            # PATH-pinned version. Paired, deliberately: the tick must still appear
+            # when the signal IS pinned and does match, or this would pass just as well
+            # on a renderer that never ticks.
+            #
+            # The unpinned case renders `ℹ️`, NOT `⚠️`. It is the steady state on every
+            # host where flow has ever been updated, and a warning that is always on is
+            # indistinguishable from the real staleness signal (`_stale()` below). A
+            # false ✓ and a permanent ⚠️ are both failures; `ℹ️` is the honest middle.
+            note = ("✓ matches this branch" + pending) if not pending else ("ℹ️ matches this branch" + pending)
         elif br.get("state") == "not_flow_checkout":
-            note = ("✓ installed and running" + pending) if not pending else ("⚠️" + pending)
+            note = ("✓ installed and running" + pending) if not pending else ("ℹ️ installed" + pending)
         else:
             note = f"⚠️ cannot compare — {_why(br.get('state'))}"
     else:
@@ -870,9 +870,35 @@ def render_surface_row(d: dict) -> str:
                 "branch's skills and agents were available'.")
 
 
+UNPINNED = (
+    "> **Note on the first row.** This host exposes no run-pinned signal for the flow "
+    "plugin, so the version above is read from the plugin registry — which "
+    "`claude plugin update` rewrites the moment it runs, even though the update only "
+    "takes effect on **restart**. A session that began before an update is therefore "
+    "still running the older copy while the registry already names the newer one. To "
+    "confirm what this session actually loaded, start a fresh session and re-run; see "
+    "`dev-docs/roadmap.md` § \"FB-0107's PATH signal has never resolved for flow\"."
+)
+
+
 def render_remedy(rows: list[str]) -> str:
     """The remedy footnote, once, only when something warned."""
     return REMEDY if any("⚠️" in r for r in rows) else ""
+
+
+def render_unpinned(d: dict) -> str:
+    """The provenance caveat, once, below the table — not inside a cell.
+
+    Separate from REMEDY because the two answer different questions and fire on
+    different conditions: REMEDY says "here is how to make the next run current"
+    and only appears when something warned; this says "here is why the first row
+    cannot be certain" and appears whenever the reading is registry-sourced, which
+    on this plugin is every run. Putting it in the cell made that cell 442-549
+    chars against 28-40 for its siblings, which is how a four-row comparison table
+    stops being readable.
+    """
+    return UNPINNED if (d.get("restart_pending") is None
+                        and d.get("ran_version_source") == "registry") else ""
 
 
 def render_block(d: dict, root: Path) -> str:
@@ -957,6 +983,12 @@ def main(argv: list[str] | None = None) -> int:
         rows.append(surface_row)
     print("\n".join(rows))
     remedy = render_remedy(rows)
+    unpinned = render_unpinned(data)
+    # Caveat before remedy: it explains the first row, which the reader has just
+    # read; the remedy is about the next run.
+    if unpinned:
+        print()
+        print(unpinned)
     if remedy:
         print()
         print(remedy)
