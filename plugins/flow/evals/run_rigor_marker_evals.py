@@ -204,6 +204,92 @@ def main() -> int:
               "a bad config value took the shipped builtin down with it, silently restoring the "
               "doc-blind fingerprint this fix exists to close")
 
+    # (4b) FILE CLASS in the digest. The loop now covers `.md` paths, and `read_bytes()` on a
+    # symlink to /dev/zero raises MemoryError -- not an OSError, so it escaped the handler,
+    # crashed the process, and left an EMPTY fingerprint that compares equal to the other
+    # side's empty fingerprint. Symlinks and non-regular files feed a sentinel instead. Flagged
+    # as undeclared by /flow:audit-coverage at this PR's own merge gate.
+    with tempfile.TemporaryDirectory() as repo:
+        h0 = seeded_repo(repo)
+        body = "deployed prose\n"
+        (Path(repo) / "skills").mkdir(parents=True, exist_ok=True)
+        (Path(repo) / "skills" / "real.md").write_text(body)
+        rc, h_regular = run(["source-sha", "--default-branch", "main"], cwd=repo)
+        check("file-class: a matched regular file is in the fingerprint",
+              h_regular.strip() != h0, "adding skills/real.md did not move the digest")
+        # Same CONTENT, reached through a symlink: the digest must still move, because the
+        # bytes are deliberately not followed.
+        (Path(repo) / "skills" / "real.md").unlink()
+        (Path(repo) / "target.txt").write_text(body)
+        (Path(repo) / "skills" / "real.md").symlink_to(Path(repo) / "target.txt")
+        rc, h_link = run(["source-sha", "--default-branch", "main"], cwd=repo)
+        check("file-class: a symlink to identical content is NOT followed",
+              h_link.strip() != h_regular.strip(),
+              "the digest is unchanged, so the symlink's target was read — which is the path "
+              "that could crash on a device file and empty the fingerprint")
+        check("file-class: and it still exits 0 with a real digest, never empty",
+              rc == 0 and len(h_link.strip()) == 64,
+              f"rc={rc} digest={h_link.strip()!r}")
+
+    # (4c) An invalid `sourceFilePatterns` used to raise out of a function contracted to
+    # always exit 0, leaving an empty fingerprint. It must degrade to the documented default,
+    # loudly. Also flagged as undeclared by the merge-gate coverage audit.
+    with tempfile.TemporaryDirectory() as repo:
+        seeded_repo(repo)
+        (Path(repo) / "b.py").write_text("y = 2\n")
+        rc_bad, out_bad = run(["source-sha", "--default-branch", "main",
+                               "--source-pattern", "(["], cwd=repo)
+        rc_def, out_def = run(["source-sha", "--default-branch", "main"], cwd=repo)
+        check("invalid sourceFilePatterns still exits 0", rc_bad == 0, f"rc={rc_bad}")
+        check("...and is ANNOUNCED, not swallowed",
+              "sourceFilePatterns" in out_bad and "WARN" in out_bad,
+              f"a malformed slot degraded silently: {out_bad[:200]!r}")
+        bad_digest = [l for l in out_bad.splitlines() if len(l.strip()) == 64]
+        check("...and yields the DEFAULT-pattern digest, never an empty one",
+              bool(bad_digest) and bad_digest[-1].strip() == out_def.strip(),
+              f"expected the default-pattern digest {out_def.strip()[:16]}, got "
+              f"{(bad_digest[-1].strip()[:16] if bad_digest else None)} — an empty or divergent "
+              f"fingerprint is the fail-open this guard exists to close")
+
+    # (4d) The slot-refusal ladder. Each refusal must return the builtin set ALONE plus exactly
+    # one warning — never a silently narrowed pattern list and never a crash.
+    sys.path.insert(0, str(HERE.parent / "lib"))
+    import doc_patterns as dp  # noqa: E402
+    for label, slot in (("non-string", 12345),
+                        ("over the length cap", "x" * (dp.MAX_SLOT_LEN + 1)),
+                        ("invalid regex", "(^|/)[oops"),
+                        ("nested quantifier", "(a+)+$")):
+        if isinstance(slot, str):
+            pats, warns = dp.doc_patterns_list(slot=slot)
+        else:
+            continue  # a non-string can only arrive via the config file; covered below
+        check(f"slot refusal ({label}): builtin set only",
+              len(pats) == 1 and pats[0].pattern == dp.DOC_BUILTIN,
+              f"got {[x.pattern for x in pats]}")
+        check(f"slot refusal ({label}): exactly one warning, naming the slot",
+              len(warns) == 1 and dp.SLOT in warns[0] and "NOT applied" in warns[0],
+              f"got {warns}")
+    # PAIRED POSITIVE: a valid slot is APPLIED, and an inline flag now scopes to itself
+    # instead of being refused (the altitude fix).
+    pats_ok, warns_ok = dp.doc_patterns_list(slot=r"(?i)(^|/)prompts/.*[.]md$")
+    m = lambda path: any(x.search(path) for x in pats_ok)
+    check("a valid slot (even with an inline flag) IS applied",
+          len(pats_ok) == 2 and not warns_ok and m("PROMPTS/SYS.MD"),
+          f"pats={len(pats_ok)} warns={warns_ok}")
+    check("...and the flag does NOT leak to the builtin clause",
+          not m("SKILLS/X/SKILL.MD") and m("skills/x/SKILL.md"),
+          "the inline flag escaped its own pattern — the leak the union shape caused")
+    # And the refusal ladder's config-file paths (unparseable / non-object / non-string).
+    for label, raw in (("unparseable JSON", "{not json"),
+                       ("not an object", "[1,2,3]"),
+                       ("non-string slot", '{"behaviorBearingDocPatterns": 12345}')):
+        with tempfile.TemporaryDirectory() as cfgdir:
+            (Path(cfgdir) / "flow.config.json").write_text(raw)
+            pats, warns = dp.doc_patterns_list(root=cfgdir)
+            check(f"config refusal ({label}): builtin only + one warning",
+                  len(pats) == 1 and len(warns) == 1 and "NOT applied" in warns[0],
+                  f"pats={len(pats)} warns={warns}")
+
     # (5) ONE definition of the builtin. The shell literal in audit-coverage/SKILL.md and the
     # Python constant are two readers of one contract (general.md item 2); assert byte-equality
     # rather than trusting they were copied correctly.

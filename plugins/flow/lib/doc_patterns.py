@@ -124,8 +124,6 @@ def read_slot(root: str | None = None) -> "tuple[str, list[str]]":
         return "", []
     if not isinstance(raw, str):
         return _refuse(f"{SLOT} is {type(raw).__name__}, not a string")
-    if len(raw) > MAX_SLOT_LEN:
-        return _refuse(f"{SLOT} is {len(raw)} chars (cap {MAX_SLOT_LEN})")
     try:
         re.compile(raw)
     except re.error as e:
@@ -169,6 +167,13 @@ def doc_patterns_list(
     warnings: list[str] = []
     if slot is None:
         slot, warnings = read_slot(root)
+    # VALUE-SHAPE refusals live here, not in `read_slot`, so they apply on BOTH entry paths.
+    # The length cap used to sit on the config path only, so a caller passing `slot=` directly
+    # bypassed it -- an asymmetry found by the eval written for this very ladder, after
+    # /flow:audit-coverage flagged the ladder as undeclared at this PR's merge gate.
+    if slot and len(slot) > MAX_SLOT_LEN:
+        slot, extra = _refuse(f"{SLOT} is {len(slot)} chars (cap {MAX_SLOT_LEN})")
+        warnings.extend(extra)
     if slot and _NESTED_QUANTIFIER.search(slot):
         m = _NESTED_QUANTIFIER.search(slot)
         slot, extra = _refuse(
