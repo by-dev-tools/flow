@@ -100,6 +100,39 @@ becomes false again; and a severity decision belongs in the renderer, not in the
 predicate should say what is *true* (undeterminable), and the renderer should decide how loudly to
 say it (`ℹ️`, not `⚠️`, when the state is the steady state).
 
+**The sweep I used to say "full eval sweep clean" could not see a failing harness — and I had written
+the rule it broke.** Measured: `run_autoplan_evals.py` exits **1** while its last output line reads
+`241/244 checks passed`. My ad-hoc sweep was `out=$(python3 "$f" 2>&1 | tail -1); case "$out" in
+*FAIL*|*Traceback*|*rror*)` — a grep of the last line. No failure token appears in that line, so the
+sweep reported the suite clean on **four consecutive pushes** while CI was red on the same SHAs, and
+the phrase went into four commit messages and a readiness report to the orchestrator.
+
+`.claude/rules/general.md` § Consistency item 4 already states the corollary: *"prefer a tool's own
+exit code over a grep of its output … an exit code is a signal the tool's author designed and
+maintains against their own output format."* I quoted that rule into this file's corollaries and then
+violated it in the instrument I used to make the claim. The CV1 worker hit the identical defect a day
+earlier (its runner read the last line and reported 43 green with one red), which is what makes this a
+**class rather than a slip**: a convenience grep is the default thing a shell loop reaches for, and
+nothing about writing it feels like a decision.
+
+**How to apply.** Three things, in order of how much they buy:
+
+1. **Never key a pass/fail loop on output text when the tool exits non-zero.** `if ! cmd; then` is
+   shorter than the `case` statement it replaces. `tools/eval-sweep.sh` now exists so the loop is not
+   retyped per session — a one-liner retyped is a one-liner re-broken.
+2. **Give the runner a `--selftest` that proves it can report RED**, and make the decoy reproduce the
+   shape that fooled the last one — non-zero exit, innocuous last line. A runner validated only
+   against passing harnesses cannot be distinguished from a broken one.
+3. **A green local sweep is not CI.** The ship pipeline never reads CI status, so "ready" in a PR body
+   is not evidence that checks pass. Run `gh pr checks <N>` and read it before saying ready. I said
+   ready on a PR GitHub was reporting as `BLOCKED`.
+
+**The general shape, which is the part worth carrying:** when an instrument and an independent
+authority disagree about the same artifact, the instrument is the thing to doubt first — and if the
+instrument has only ever returned one answer, it has produced no evidence at all. Two surfaces
+disagreeing on one SHA is the cheapest possible signal that one of them is broken; it should trigger
+an investigation of the measurement, not a re-read of the thing measured.
+
 **A clean merge is not evidence the document is right — and for a positionally-parsed doc it can be
 actively wrong.** After rebasing onto a `main` that had gained a PR, `dev-docs/plan.md` merged with no
 conflicts and the result placed this PR's plan block **second**. `extract_block` takes the first
