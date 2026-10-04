@@ -754,6 +754,40 @@ reporting half that is now satisfied and a sweep half that is not. Picking one r
 whether the *sweep* should classify at all, or whether classification is correctly the digest's job —
 and that is a design call about where derivation belongs, not a doc edit.
 
+### `/flow:ship` Step 4c.iv guarantees a stale rigor marker on every lesson-harvesting ship (v1.61.0, measured on this PR)
+
+**Surfaces when:** `plugins/flow/skills/ship/lib/rigor-marker.py`, `/flow:ship` Step 4c.iv, or
+`/flow:staff-review` Step 5a is next touched.
+
+**The ordering is self-defeating.** `/flow:staff-review` Step 5a writes the rigor marker,
+fingerprinting `sourceFilePatterns ∪ behaviorBearingDocPatterns`. `/flow:ship` Step 4c.iv then
+flushes harvested lessons to `.flow-lessons/*.json` **and `git add`s them** — and the built-in
+`DEFAULT_SOURCE_PATTERN` includes `\.(json|ya?ml|toml)$`, so those records land *inside* the
+fingerprint. Measured on this PR: marker written, four lessons flushed, marker immediately reads
+`source-drift` with the only delta being four JSON blobs the pipeline itself generated
+downstream of the review.
+
+So **any** ship whose harvest pre-scan trips ends with a stale marker, and the prescribed
+auto-resolution is "re-run `/flow:staff-review`" — a full four-lens re-review triggered by data
+the review could not have seen and has no opinion about. Left alone it trains the exact habit
+`rigor-marker.py`'s own docstring warns about, having already fixed one false-drift class ("a
+FALSE source-drift at ship Step 1.0a on every new-file PR").
+
+**Candidate fixes, cheapest first.** (a) Exclude the flush directory from the fingerprint — it
+is pipeline output, never reviewable source, and the same argument the docstring already makes
+for keeping dev-tracking docs out applies verbatim ("a gate that always fires is one people
+learn to click past"). (b) Move Step 4c.iv's flush *before* staff-review in the loop, which is
+wrong — the harvest reads the session, so it has to run late. (c) Have Step 4c.iv re-stamp the
+marker after flushing, which hides the ordering rather than fixing it. **(a) is the right
+shape**, and it is one entry in the exclusion the fingerprint already maintains.
+
+**Note the near-miss in how this was found:** the first diagnostic run against it used
+`jq -r .sourceFilePatterns` where the pipeline uses `jq -r '.sourceFilePatterns // empty'`. The
+slot is unset here, so the raw form yields the literal string `null`, which was then passed as
+the regex — fingerprinting against a pattern matching nothing and "explaining" the drift as
+coming from no files at all. The `// empty` form is load-bearing at every call site, and a
+diagnostic that disagrees with the pipeline about its own input is worse than no diagnostic.
+
 ### The digest flattens the one distinction the body-line rule exists to carry (v1.61.0 push-further)
 
 **Surfaces when:** `/flow:orchestrate` §8's State table or `Needs you` paragraph is next
