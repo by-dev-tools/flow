@@ -70,6 +70,31 @@ sessions to go get it). Needed a different source entirely.
   doing so would have required assumptions about exactly which turns' usage records survive a
   reset, which I couldn't verify from the data available.
 
+## Revision after orchestrator review
+
+The orchestrator reviewed a first draft and flagged two claims as stronger than the measurement:
+
+1. **The orchestrator's own "134 idle hours after a rate-limit rejection" was being presented as
+   limit-caused waste without checking whether anything was actually blocked.** Re-checked: of
+   the 12 qualifying gaps, every one resolves on exactly one message — a content-free "continue"
+   from Ben, arriving at the very end of the gap. Nothing shows a worker report or decision
+   sitting queued during the gap. Reclassified as "mechanical-restart lag" (real and measured,
+   but not evidence of blocked work) and demoted to the bottom of the ranked waste list, replaced
+   at #1 by a worker-side finding that IS directly confirmed in-transcript — the orchestrator's
+   own resume message to a worker states outright that the worker's window reset at 04:30 but
+   wasn't re-pinged until 14:30.
+2. **The subagent-vs-workspace recommendation for the S0 probe suite was treating all 95 sessions
+   as equivalent.** Reading the actual first-message setup commands for each arm showed arms
+   `c2`/`c-old`/`c-v1` explicitly reinstall a specific `flow@flow` snapshot at plugin scope
+   (`claude plugin marketplace add` + `claude plugin install`) — machine-wide state a subagent
+   can't hold independently of its parent's own install. Only arms `a`/`b`/`d`/`c` (no reinstall
+   step) support the subagent recommendation; the doc and recommendation were rescoped
+   accordingly.
+
+Lesson for next time: when a measurement correlates two events (a rejection and a gap, a workspace
+and a probe type), check what's actually inside the gap / what the setup commands actually do
+before generalizing the correlation into a claim about cause or into a blanket recommendation.
+
 ## Lessons learned
 
 - Claude Code's own `result`/`modelUsage` events are a much better source of ground truth for
