@@ -101,6 +101,18 @@ naming -- `wall 1`, `store 1` -- which is the FB-0010 fan-out class in a single 
   orch-pr-hyperlinked -- the digest template hyperlinks PR numbers (field manual § 3).
   orch-writes-no-doc-slot -- no doc-slot write in the status path, asserted by shape: no
                        Write-tool instruction and no shell redirect into a doc slot.
+  orch-superset-relation -- THE PIN THAT MATTERS. Parses the State table's `Set` column and
+                       asserts the two sets as SETS: message == the four contract statuses,
+                       digest a STRICT superset, difference == {WORKING, SILENT}. Added after
+                       review measured that the prose-keyed pins below passed all three real
+                       regressions -- opening the message bullet, deleting a digest row, and
+                       relabelling a derived row as reported (unify-by-reclassification, a third
+                       failure mode the two-direction sentence cannot express).
+  orch-message-bullet-closed -- the MESSAGE SET bullet enumerates exactly the four, parsed from
+                       the bullet. Needed because `orchestrate/SKILL.md` is NOT a contract site,
+                       so `status-set-exact`/`no-extra-status` never run against it -- the
+                       section's own claim that "the eval enforces the closure at every contract
+                       site" was false for the file the sentence lives in.
   orch-two-vocabularies-not-unified -- BOTH state sets are named (the closed four-value message
                        set and the six-value digest set), with the reason they differ and an
                        explicit do-not-unify rule pinned in both directions. User direction:
@@ -423,6 +435,85 @@ def p_orch_sanitizes_refs(sec):
                 f"reduction-stated={'[A-Za-z0-9._/-]' in sec})")
 
 
+# The `Set` column of §8's State table, parsed. This is the RELATION handle: it is what makes
+# the do-not-unify rule checkable as a set relation rather than as a sentence that happens to
+# be present. A UX review proposed cutting the column as redundant with "Where it comes from";
+# it is not redundant any more, it is load-bearing -- see p_orch_superset_relation.
+STATE_ROW = re.compile(r"^\|((?:\s*`[A-Z]+`)+)\s*\|\s*(message \+ digest|digest only)\s*\|", re.M)
+
+
+def _state_sets(sec):
+    """(message_set, digest_set) as parsed from §8's State table.
+
+    message_set = values whose row is marked `message + digest`; digest_set = every value in the
+    table. Returns (None, None) when the table cannot be parsed, so callers fail rather than
+    silently comparing two empty sets -- an empty==empty pass is the fail-open this whole file
+    is written against.
+    """
+    rows = STATE_ROW.findall(sec)
+    if not rows:
+        return None, None
+    msg, dig = set(), set()
+    for values, which in rows:
+        toks = set(re.findall(r"`([A-Z]+)`", values))
+        dig |= toks
+        if which == "message + digest":
+            msg |= toks
+    return msg, dig
+
+
+def p_orch_superset_relation(sec):
+    """The two sets stand in the stated RELATION -- asserted as sets, not as prose.
+
+    THIS IS THE PIN THAT MATTERS, and the first version of this section did not have it. Review
+    MEASURED three regressions that the prose-keyed conjuncts all passed:
+
+      * appending `WORKING`/`SILENT` to the MESSAGE SET bullet -- i.e. opening the closed
+        contract, the exact first half of the section's own prohibition -- 124/124 green;
+      * deleting the `SILENT` row from the State table -- the exact second half -- all green;
+      * relabelling `WORKING` as `message + digest` -- a THIRD failure mode (unify by
+        reclassification) that the two-direction sentence cannot even express -- all green.
+
+    All five prose conjuncts survived every one of those, because each keys on a sentence in the
+    surrounding paragraph and both tokens still occur there. The mutation named
+    `message-set-opened` did not open the set either -- it deleted the claim -- so the
+    instrument had only ever been validated against claim-deletion, never against the
+    regression. That is general.md § Consistency item 4's CV1 corollary verbatim: *if someone
+    rewrote this mechanism instead of deleting it, would my assertion notice?*
+
+    `STATUSES` is not a tautological comparand here: `status-set-exact` parses the same four
+    values back out of the four shipped contract docs, so this ties §8's table to the message
+    contract rather than to a literal in this file.
+    """
+    msg, dig = _state_sets(sec)
+    if msg is None:
+        return False, ("the State table's Set column could not be parsed, so the set relation "
+                       "was NOT checked -- do not read this as a pass")
+    derived = dig - msg
+    ok = (msg == STATUSES and dig > msg and derived == {"WORKING", "SILENT"})
+    return ok, (f"state-set relation violated: message={sorted(msg)} digest={sorted(dig)} "
+                f"derived={sorted(derived)}; expected message=={sorted(STATUSES)}, "
+                "digest a strict superset, derived=={'SILENT', 'WORKING'}")
+
+
+def p_orch_message_bullet_closed(sec):
+    """The MESSAGE SET bullet enumerates exactly the four, parsed from the bullet itself.
+
+    `orchestrate/SKILL.md` is NOT a contract site -- it carries no `CONTRACT_PHRASE` and is not
+    in `KNOWN_SITES` -- so `status-set-exact` and `no-extra-status` never run against it. The
+    section's prose claimed "the eval enforces the closure at every contract site", which was
+    simply false for the file the sentence lives in. This is the local enforcement that makes
+    the claim true.
+    """
+    m = re.search(r"THE MESSAGE SET[^\n]*\*\*\s*((?:`[A-Z]+`(?:\s*\u00b7\s*)?)+)", sec)
+    if not m:
+        return False, "the THE MESSAGE SET bullet's value list could not be parsed"
+    found = set(re.findall(r"`([A-Z]+)`", m.group(1)))
+    return found == STATUSES, (f"the MESSAGE SET bullet lists {sorted(found)}, expected exactly "
+                               f"{sorted(STATUSES)} -- a derived value was added to the closed "
+                               "message contract")
+
+
 def p_orch_two_vocabularies(sec):
     """Both state sets are named explicitly, with the reason they differ and a do-not-unify rule.
 
@@ -435,13 +526,20 @@ def p_orch_two_vocabularies(sec):
     Pinned in both directions, because the regression has two forms: adding a derived value to
     the closed MESSAGE contract, and deleting a derived value from the DIGEST.
     """
-    named_both = "THE MESSAGE SET" in sec and "THE DIGEST SET" in sec
-    closure = "exactly four, closed, never a fifth" in sec
-    reason = ("different sets by construction" in sec
-              and "not a duplication to be deduplicated" in sec)
-    both_directions = ("adding a derived value to the MESSAGE contract is wrong" in sec
-                       and "removing a derived value from" in sec)
-    why_silent = "no turn in which to ping" in sec and "idle" in sec
+    # Whitespace-NORMALIZED, via the same helper the prose pins use: these are sentences, and a
+    # sentence that wraps across a line is the same sentence. Keying on the unwrapped literal
+    # made this fail the moment the prose was re-wrapped, which prices clarity.
+    n = _norm(sec)
+    named_both = "THE MESSAGE SET" in n and "THE DIGEST SET" in n
+    closure = "exactly four, closed, never a fifth" in n
+    reason = ("different sets by construction" in n
+              and "not a duplication to be deduplicated" in n)
+    # THREE clauses now, not two: review measured that unify-by-reclassification is a distinct
+    # failure mode the two-clause sentence could not express.
+    both_directions = ("Adding a derived value to the MESSAGE contract is wrong" in n
+                       and "Removing a derived value from the DIGEST is wrong" in n
+                       and "relabelling a derived row as" in n)
+    why_silent = "no turn in which to ping" in n and "idle" in n
     ok = named_both and closure and reason and both_directions and why_silent
     return ok, ("the two state vocabularies are not both named with the reason they differ "
                 f"(named={named_both} closure={closure} reason={reason} "
@@ -449,7 +547,7 @@ def p_orch_two_vocabularies(sec):
 
 
 def p_orch_derived_marked(sec):
-    """The digest's State column is a SUPERSET of the message vocabulary, and says which is which.
+    """Every derived cell in the RENDERED template is marked, and the footnote exists.
 
     Added after a review found the digest reusing the four message statuses for a column that
     also has to describe workers who have said nothing -- so there was no value for "working
@@ -537,6 +635,8 @@ ORCH_PREDICATES = {
     "needs-you-leads": p_orch_needs_you_first,
     "sanitizes-repo-derived-refs": p_orch_sanitizes_refs,
     "two-vocabularies-not-unified": p_orch_two_vocabularies,
+    "superset-relation": p_orch_superset_relation,
+    "message-bullet-closed": p_orch_message_bullet_closed,
 }
 
 
@@ -684,15 +784,30 @@ ORCH_MUTATIONS = {
         ["sanitizes-repo-derived-refs"]),
     # The regression has two directions and each must be caught. Deleting a derived value from
     # the digest is the one a well-meaning "cleanup" produces.
-    "message-set-opened": (
+    # Renamed: this one DELETES THE CLAIM. Keeping it (the claim is worth pinning) but no
+    # longer pretending it tests the regression.
+    "closure-claim-dropped": (
         lambda s: s.replace("exactly four, closed, never a fifth", "four or so"),
         ["two-vocabularies-not-unified"]),
+    # The three REAL regressions, each measured green against the prose-only pins.
+    "message-set-opened": (
+        lambda s: s.replace("`GATE` \u00b7 `DONE` \u00b7 `BLOCKED` \u00b7 `FYI`.",
+                            "`GATE` \u00b7 `DONE` \u00b7 `BLOCKED` \u00b7 `FYI` \u00b7 `WORKING`.", 1),
+        ["message-bullet-closed"]),
+    "digest-value-removed": (
+        lambda s: re.sub(r"^\| `SILENT` \| digest only \|[^\n]*\n", "", s, flags=re.M),
+        ["superset-relation"]),
+    "derived-value-reclassified-as-reported": (
+        lambda s: s.replace("| `WORKING` | digest only |", "| `WORKING` | message + digest |"),
+        ["superset-relation"]),
     "unify-rationale-dropped": (
         lambda s: s.replace("not a duplication to be deduplicated", "much the same thing"),
         ["two-vocabularies-not-unified"]),
     "do-not-unify-rule-dropped": (
-        lambda s: s.replace("adding a derived value to the MESSAGE contract is wrong",
-                            "the sets may be aligned"),
+        lambda s: s.replace("Adding a derived value to the MESSAGE contract", "The sets align"),
+        ["two-vocabularies-not-unified"]),
+    "reclassification-clause-dropped": (
+        lambda s: s.replace("relabelling a derived row as", "nothing else is"),
         ["two-vocabularies-not-unified"]),
     "why-silent-matters-dropped": (
         lambda s: s.replace("no turn in which to ping", "less to say"),

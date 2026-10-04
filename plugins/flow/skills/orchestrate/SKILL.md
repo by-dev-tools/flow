@@ -234,8 +234,10 @@ because the obvious-looking "cleanup" is to collapse them and that would delete 
 whole reason for existing.
 
 - **THE MESSAGE SET — exactly four, closed, never a fifth.** `GATE` · `DONE` · `BLOCKED` · `FYI`.
-  This is what a *worker* may put in the `[w:…]` opener. It is a closed vocabulary and the eval
-  enforces the closure at every contract site.
+  This is what a *worker* may put in the `[w:…]` opener. It is a closed vocabulary, enforced at
+  the four contract docs **and separately here** — this file is not one of those four, so the
+  pin that covers this bullet is `orch-message-bullet-closed`, which parses the list above and
+  asserts it is exactly those four.
 - **THE DIGEST SET — the four above, plus two derived values.** `WORKING` and `SILENT`. This is
   what the *seat* may render in the `State` column.
 
@@ -249,9 +251,10 @@ whole reason for existing.
 questions. A message answers *"what is this worker telling me?"* — so it can only contain things
 a worker is able to say, and a worker that has stopped speaking cannot send a status reporting
 that it has stopped speaking. The digest answers *"where does everything stand?"* — which must
-cover workers that said nothing at all, so it needs words no worker can send. **A set that is
-closed over what a sender can utter and a set that is closed over what an observer can conclude
-are different sets by construction.** They are not a duplication to be deduplicated.
+cover workers that said nothing at all, so it needs words no worker can send. **One set is limited to what a worker can
+say; the other has to cover what you can conclude. They cannot be the same size.** Formally: **a
+set that is closed over what a sender can utter and a set that is closed over what an observer
+can conclude are different sets by construction.** They are not a duplication to be deduplicated.
 
 **And the asymmetry is not cosmetic: `SILENT` is the single most valuable cell in the table.**
 A worker killed by the rate limit has no turn in which to ping, so it reports nothing and its
@@ -261,12 +264,24 @@ built to surface. Likewise, dropping `WORKING` would force "working normally" in
 then means both *"fine"* and *"possibly dead"* — collapsing the one distinction the human is
 scanning for.
 
-**So: adding a derived value to the MESSAGE contract is wrong, and removing a derived value from
-the DIGEST is wrong.** If you find yourself making the two sets equal in either direction, the
-change is a regression and this paragraph is the reason. (User direction, 2026-10-04.)
+**Three ways to break this, all regressions.** Adding a derived value to the MESSAGE contract
+is wrong. Removing a derived value from the DIGEST is wrong. And **relabelling a derived row as
+`message + digest` is wrong** — that unifies the sets by reclassification without adding to one
+or removing from the other, which is why the prohibition needs three clauses rather than two.
+Review found the third by measurement after the first draft of this section stated only two.
 
-**Mark every derived cell with `†` and footnote it once per digest**, exactly as the template
-above does, so the human can see which states a worker claimed and which you inferred. **Every
+**All three are pinned as a set relation, not as a sentence** (`orch-superset-relation`): the
+`Set` column below is parsed, and the message set must equal the four, the digest set must be a
+strict superset, and the difference must be exactly `WORKING` and `SILENT`. **Do not cut the
+`Set` column as redundant with "Where it comes from"** — a review proposed exactly that, and it
+is the parse handle that makes this checkable. Reword the prose freely; the relation is what
+holds. (FB-0132.)
+
+### Marking a derived cell
+
+**Mark every derived cell with `†` and footnote it once per digest**, exactly as the digest
+template under *The digest* above does (not the reference table just above, which defines values
+rather than rendering them), so the human can see which states a worker claimed and which you inferred. **Every
 derived cell, including the modal `WORKING` row** — a marker applied only to the alarming value
 tells the reader nothing, because then an unmarked cell means both "the worker said so" and "it
 is fine".
@@ -274,6 +289,8 @@ is fine".
 `†` rather than `*`: a lone `*` is the one glyph markdown owns, and a naive client's
 `\*([^*]+)\*` pairs the marker in one row with the next row's and italicises everything
 between — in exactly the non-rendering clients the no-backticks rule above is written for.
+
+### Telling `SILENT` from `GATE`
 
 **`SILENT` and `GATE` must be told apart mechanically, never by feel.** This is the distinction
 that cost three wasted chases in one program (field manual § 8), and it is decidable from step
@@ -286,6 +303,8 @@ worker reads as a parked one:
   last-activity timestamp. This is the one to worry about.
 - Neither shape matching is itself a result: say "could not classify" rather than defaulting to
   `GATE`, because `GATE` is the reassuring answer and defaulting to it is how the asymmetry bites.
+
+### Untrusted repository-derived refs
 
 **`<slug>` and `<branch>` are REPOSITORY-DERIVED, so treat them as untrusted — this block is
 the one place in this section where a value you did not author reaches a command line.** Step 3's
@@ -313,6 +332,8 @@ git log -1 --format=%s -- 'origin/<branch>'          # subject starts with "plan
 If a name does not survive that reduction, **say you could not classify the worker** rather than
 running the command on the raw value — the same refuse-rather-than-escape policy
 `lib/dispatch_backend.py` applies to every rendered verb.
+
+### The rest of the cells
 
 **The `Quiet` column is a raw duration, not a verdict** — it is there so the human can disagree
 with your classification, which is why `SILENT` is marked derived. Step 4 sets the threshold

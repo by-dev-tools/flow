@@ -64,12 +64,40 @@ four; digest shows derived states) **and make the docs name both sets and say wh
 nobody "unifies" them later.**
 
 That last clause is an instruction about a *future editor*, which changes what has to be pinned.
-A section listing the six values would satisfy any token grep and still invite the collapse — so
-`p_orch_two_vocabularies` pins the **argument**: both sets named, the closure of the message set,
-the construction reason (a set closed over what a sender can *utter* is not the same set as one
-closed over what an observer can *conclude*), why `SILENT` specifically matters, and the
-prohibition **in both directions** — because the regression has two forms and the dangerous one is
-a well-meaning cleanup *deleting* a derived value, not adding one. Four mutations cover it.
+My first attempt pinned the **argument** — both sets named, the closure claim, the construction
+reason, why `SILENT` matters, the prohibition — in five prose conjuncts with four mutations. **It
+did not work, and the way it failed is the most useful thing in this entry.**
+
+**Two review lenses independently measured that the exact regression the section prohibits passed
+124/124 green.** Appending `WORKING`/`SILENT` to the MESSAGE SET bullet — the literal first half
+of my own rule, leaving "exactly four, closed, never a fifth" sitting directly above a six-value
+list — was accepted. So was deleting the `SILENT` row from the State table, the literal second
+half. So was a **third** failure mode neither I nor the two-clause sentence could express:
+relabelling `WORKING` as `message + digest`, which unifies the sets by *reclassification* without
+adding to one or removing from the other.
+
+**Why every conjunct missed it:** each keyed on a sentence in the surrounding paragraph, and both
+tokens still occurred there. And the mutation I had *named* `message-set-opened` did not open the
+set — it deleted the claim (`"exactly four, closed, never a fifth"` → `"four or so"`). So the
+instrument had only ever been validated against claim-deletion, never against the regression it
+was named for. That is `general.md` § Consistency item 4's CV1 corollary verbatim: *if someone
+rewrote this mechanism instead of deleting it, would my assertion notice?* It would not.
+
+**The fix is a set relation, not a sentence.** `orch-superset-relation` parses the `Set` column —
+message set := rows marked `message + digest`, digest set := every row — and asserts
+`message == STATUSES`, `digest ⊃ message`, `digest − message == {WORKING, SILENT}`. `STATUSES` is
+non-tautological here because `status-set-exact` parses the same four values back out of the four
+shipped contract docs, so §8's table is tied to the message contract rather than to a literal in
+the eval. `orch-message-bullet-closed` covers the bullet, which needed its own pin because
+`orchestrate/SKILL.md` is **not** a contract site — it carries no trigger phrase and is not in
+`KNOWN_SITES`, so the four-site predicates never ran against it, and the section's own claim that
+"the eval enforces the closure at every contract site" was false for the file the sentence lives
+in. All three bypasses now fail by name; the three real mutations replace the fake one, which was
+renamed `closure-claim-dropped` to say what it actually tests.
+
+**A UX lens proposed cutting the `Set` column as redundant with "Where it comes from". It is not
+redundant any more — it is the parse handle**, and the section now says so, because the next
+reader would otherwise make exactly that simplification and silently remove the enforcement.
 
 ## Tradeoffs
 

@@ -1,0 +1,34 @@
+{
+  "id": "20261004-150103-rule-edit-name-a-mutation-after-what-it-does-and-verify-it",
+  "schema_version": 1,
+  "created_utc": "2026-10-04T15:01:03.622849+00:00",
+  "status": "queued",
+  "provenance": {
+    "project_slug": "flow",
+    "pr": "conductor/mobile-option-5-label",
+    "branch": "conductor/mobile-option-5-label",
+    "session_id": "sha256:5dd5b41c400fa73e"
+  },
+  "source_type": "error",
+  "artifact_kind": "rule-edit",
+  "lesson": {
+    "summary": "Name a mutation after what it DOES, and verify it performs the regression it is named for",
+    "synthesized_rule": "A mutation test named for a regression but implemented as claim-deletion validates nothing about the regression. Measured: a mutation called message-set-opened rewrote the sentence 'exactly four, closed, never a fifth' instead of actually adding a fifth value -- so five prose conjuncts were 'validated' while the real regression passed 124/124 green, twice over, in two directions the rule explicitly forbade. Two checks before trusting a mutation suite: (1) does each mutation PERFORM the forbidden change rather than delete the sentence forbidding it; (2) is the forbidden change expressible as a RELATION over parsed values rather than as the presence of prose. If a rule can be stated as a set relation, pin the relation -- prose pins price clarity and miss reclassification entirely.",
+    "target_hint": "general.md Consistency item 4 (CV1 corollary); eval-authoring guidance"
+  },
+  "evidence": {
+    "window_path": "(not committed - raw transcript window, see README)",
+    "evidence_strength": "direct-quote",
+    "lesson_hash": "sha256:f0b34912c677f63960547f98f6b0ccbe2b603692b241751745d612428d8f7099",
+    "window_path_original_basename": "20261004-150103-name-a-mutation-after-what-it-does-and-verify-it.window.jsonl"
+  },
+  "signals": {
+    "source_type": "error",
+    "source_weight": 0.6,
+    "evidence_strength": "direct-quote",
+    "evidence_weight": 1.0,
+    "recurrence_count": 1,
+    "sanitization_clean": null
+  },
+  "confidence": 0.6
+}
