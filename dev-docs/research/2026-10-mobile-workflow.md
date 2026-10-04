@@ -346,7 +346,23 @@ from whichever sandbox it runs in, without a capability probe first.
    regression for mouse users.
    **Security:** none.
 
-5. **A durable, glanceable "where things stand" surface**, so a human doesn't have to scroll
+5. **✅ ACTED ON (v1.61.0) — but as a DERIVED digest, not a durable surface.** The option as
+   written below proposed a *durable* surface; the shipped answer deliberately inverted that,
+   because a stored status table was measured stale within minutes (it read "dispatched" for
+   three workspaces the API already reported deleted). What shipped is `/flow:orchestrate` §8:
+   a status-only path that re-runs the existing derivation (steps 2–4), prints one phone-sized
+   table, stores nothing, and skips the two boot-only steps. The option's second limb —
+   "simply leaning on Conductor's own per-workspace status list" — was **declined as the
+   basis**, because §7 records that claim as secondary (from search results, not a fetched
+   page) and unconfirmed; building on it would make the work's value unmeasurable. The digest
+   is Conductor-independent and carries a deletion criterion naming exactly that surface, so
+   if the rows do turn out to be sufficient this costs one skill section to delete.
+   Shipped alongside it: the `[w:<short-name>] <STATUS>` message-label convention, which is
+   where the "mostly a convention change" estimate below landed.
+
+   **Original text, for the record:**
+
+   **A durable, glanceable "where things stand" surface**, so a human doesn't have to scroll
    chat history to find the current gate state on a small screen — in the spirit of D1c's proposed
    deterministic `handoff_lines[]`, or simply leaning on Conductor's own per-workspace status
    list (§7) instead of flow inventing a second one.

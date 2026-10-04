@@ -103,7 +103,7 @@ To customize: edit `flow.config.json` at the project root. The schema lives at `
 | `/flow:ship-spike` | Lightweight ship pipeline for `mode: spike` PRs |
 | `/flow:workflow-help` | (This skill) print the loop and project config |
 | `/flow:doctor` | Verify flow is installed + configured (PASS/FAIL/WARN punch-list) |
-| `/flow:orchestrate` | Boot/re-boot an orchestrator seat: re-derive live workers, sweep open branches + PRs, silent-worker sweep, re-address the ping channel, load the gate policy |
+| `/flow:orchestrate` | Boot/re-boot an orchestrator seat: re-derive live workers, sweep open branches + PRs, silent-worker sweep, re-address the ping channel, load the gate policy. Also a **digest-only path** — ask for "status" and it prints where things stand, derived on demand, skipping the boot-only steps |
 | `/flow:spawn` | Dispatch one worker: admission control, `model · effort · why` routing (floored for `sensitivePaths`), the brief, the workspace |
 | `/flow:handoff` | Orchestrator succession: flush durable currency, externalize sandbox-local artifacts, hand over a mechanically-checked brief, archive-safety verdict |
 | `/flow:gate` | Four-axis plan-gate + merge-gate classification, ships-or-paperwork pre-check, escalation formatting. Classifies only — never merges |

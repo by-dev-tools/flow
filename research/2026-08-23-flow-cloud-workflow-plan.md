@@ -474,6 +474,30 @@ message the orchestrator sends the human, not only gate escalations:
    reacts to pings rather than sweeping. [✅ 2026-09-11 dogfood: ~9 pings across five workers;
    completion and blocking-question pings both fired unprompted.]
 
+   **Every such message opens with `[w:<short-name>] <STATUS>` on its own first line**, `<STATUS>` being
+   exactly one of `GATE` · `DONE` · `BLOCKED` · `FYI` — never a fifth value. The mapping from
+   this rule's three triggers is fixed:
+   completion → `DONE` · blocking question → `BLOCKED` · stall → `BLOCKED` (same next action;
+   the body carries the distinction) · parked at a plan gate → `GATE` · no action needed →
+   `FYI`.
+   A stall is not given its own status because the seat's next action is identical to a block's
+   (unblock or re-dispatch) and a fifth token costs scanning value at the moment the human is
+   skimming. Short-names must be unique across live workers — two workers on one label defeats
+   the convention.
+
+   The convention exists because the human reads these on a phone: the sender is first so the
+   line survives truncation, and the bracket makes the opener greppable in a transcript.
+   **Nothing mechanically enforces it** — flow does not wrap worker messages — so it is a brief
+   obligation, pinned at the brief rather than at the worker's output.
+
+   **One content rule, because the channel itself drops messages.** Report a localhost or
+   loopback health check in **plain text, never inside a code span** — the message channel's
+   firewall silently drops a message carrying a loopback URL in backticks, and the identical
+   text without them delivers.
+   Measured by a worker on 2026-10-04: the send reports success and the message never arrives,
+   so this is a delivery failure wearing the costume of a formatting nit. Any worker — or any
+   future skill — that reports a local server's health must state the URL bare.
+
    **Known gap — a rate-limited worker cannot ping.** The failure this protocol most needs to
    report is the one it cannot: a worker that has exhausted the shared five-hour window has no
    turn in which to send the message, so silence is ambiguous between "still working", "done and

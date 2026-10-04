@@ -145,6 +145,30 @@ depending on an author remembering to demote.
   own, always resolve where the *intended* recipient ended up — do not assume a duplicate.
 - **Large text blocks read worse than an agent assumes.** Stated directly: a verbose
   orchestrator recreates the exact attention cost the seat exists to remove (§1 requirement 5).
+- **Every worker→seat message opens with `[w:<short-name>] <STATUS>` on its own first line.** The brief
+  instructs each worker to report on completion, on a blocking question, and on a stall (§4.8
+  rule 6 of the cloud-workflow plan); `<STATUS>` is exactly one of `GATE` · `DONE` · `BLOCKED` ·
+  `FYI` — never a fifth value — and the mapping is fixed:
+  completion → `DONE` · blocking question → `BLOCKED` · stall → `BLOCKED` (same next action;
+  the body carries the distinction) · parked at a plan gate → `GATE` · no action needed →
+  `FYI`.
+  Short-names must be unique across live workers — two workers on one label defeats the
+  convention. **This one was earned the obvious way:** a seat sent its own status pings under
+  a short-name a live research worker already held, so two senders shared one label and the
+  opener stopped identifying anyone. Check the name against the live-worker sweep before the
+  first message, not after a collision.
+
+  Stated directly, because the human reads worker traffic on a phone: the sender comes first so
+  the line survives truncation to one row, and the bracket keeps the opener greppable. Nothing
+  enforces it mechanically — flow does not wrap worker messages — so a seat that drops the
+  opener fails silently and only the human notices.
+
+  **And one content rule about the channel, not the convention.** Report a localhost or
+  loopback health check in **plain text, never inside a code span** — the message channel's
+  firewall silently drops a message carrying a loopback URL in backticks, and the identical
+  text without them delivers. Measured by
+  a worker on 2026-10-04; the send reports success, so the loss is invisible from the sending
+  end. Treat it as a delivery constraint rather than a style preference.
 
 ## 4. Program facts a fresh seat asks for in its first hour
 

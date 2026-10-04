@@ -2,11 +2,22 @@
 
 ## Current Focus
 
-**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/mobile-option-5-label`, version + FB at ship
-time, expect v1.59.0 / FB-0132): worker messages identifiable at a glance, and current state
-glanceable without scrolling chat.** Mobile research option 5 + the label convention. Ben reads
-worker messages on a phone; today every worker opens differently and "where things stand" exists
-only as scrollback.
+**▶ EXECUTED — AT PR (this branch `conductor/mobile-option-5-label`, **v1.61.0 / FB-0132**):
+worker messages identifiable at a glance, and current state glanceable without scrolling chat.**
+Plan approved by Ben 2026-10-04 with D1–D4 adopted as recommended, C1 + C2 **granted**, C3
+deferred to the roadmap. Mobile research option 5 + the label convention. Ben reads worker
+messages on a phone; today every worker opens differently and "where things stand" exists only
+as scrollback.
+
+**The version was contested TWICE during this one ship, which is the useful record here.**
+v1.59.0 was taken by `conductor/mobile-options-1-3` between plan and execution, so the ship
+swept all remote heads — **not only open PRs**, which is load-bearing: only one PR was open and
+1.59.0 sat on a branch without one, so an open-PR-only sweep would have collided — and took
+1.60.0. **That then collided too**, with `conductor/mobile-option-1-preview-url`, during the
+review rounds. Re-swept and took **v1.61.0**; `main` had meanwhile advanced to 1.57.0. The
+lesson is the dispatch's own rule stated as a frequency: on a fleet this size the sweep is not a
+once-per-ship step, it is a once-per-*rebase-or-long-pause* step, and a ship that spends an hour
+in review rounds has had a long pause. FB-0132 re-swept at the same time and still free.
 
 **Mode:** feature · **Surface:** non-visual (prose contracts + one skill path; no UI)
 
@@ -99,13 +110,15 @@ sensitive-path edit for a cosmetic gain.
 
 ### Spec-walk
 
-- [ ] **The label convention is stated once and identically at every site that states the ping contract.** *Pinned by:* a new `run_ping_label_evals.py` eval asserting the template string and all four statuses appear in `/flow:spawn`'s Contract block, in §4.8 rule 6, and in the field manual, with the sites derived from a grep rather than a hardcoded list — so a fourth site added later fails rather than drifting.
-- [ ] **The status set cannot silently grow.** *Pinned by:* the same eval — assert exactly the four statuses are published, paired with the negative that an unlisted status (e.g. `STALLED`) appears nowhere, so adding one requires updating the contract rather than just a brief.
-- [ ] **Each of §4.8 rule 6's three ping triggers maps to exactly one status.** *Pinned by:* the same eval asserting the published mapping names completion, blocking question and stall, so the `BLOCKED`-covers-stall decision is recorded where the contract is read, not only in this plan.
-- [ ] **`/flow:orchestrate`'s status path skips the boot-only steps.** *Pinned by:* the same eval asserting the status section names steps 5 and 6 as skipped and says why — re-addressing the ping channel mid-program would point live workers at the wrong session.
-- [ ] **The digest is derived, never stored.** *Pinned by:* the same eval asserting the status path writes no file under `dev-docs/` and the skill text states the deletion criterion, paired with the positive that it names the derivation it reuses (steps 2–4).
-- [ ] **PR numbers in the digest are hyperlinked.** *Pinned by:* the same eval asserting the digest template carries a markdown link form, because field manual §3 records this as stated-not-optional and records that the lapse recurs *specifically inside status tables* — which is what this digest is.
-- [ ] **Docs.** *Pinned by:* a doc-diff — a `dev-docs/history/` entry, the FB entry this earns, the research doc's option 5 marked as acted on, and a roadmap entry for C3.
+- [x] **The label convention is stated once and identically at every site that states the ping contract.** *Pinned by:* a new `run_ping_label_evals.py` eval asserting the template string and all four statuses appear in `/flow:spawn`'s Contract block, in §4.8 rule 6, and in the field manual, with the sites derived from a grep rather than a hardcoded list — so a fourth site added later fails rather than drifting.
+- [x] **The status set cannot silently grow.** *Pinned by:* the same eval — assert exactly the four statuses are published, paired with the negative that an unlisted status (e.g. `STALLED`) appears nowhere, so adding one requires updating the contract rather than just a brief.
+- [x] **Each of §4.8 rule 6's three ping triggers maps to exactly one status.** *Pinned by:* the same eval asserting the published mapping names completion, blocking question and stall, so the `BLOCKED`-covers-stall decision is recorded where the contract is read, not only in this plan.
+- [x] **`/flow:orchestrate`'s status path skips the boot-only steps.** *Pinned by:* the same eval asserting the status section names steps 5 and 6 as skipped and says why — re-addressing the ping channel mid-program would point live workers at the wrong session.
+- [x] **The digest is derived, never stored.** *Pinned by:* the same eval asserting the status path writes no file under `dev-docs/` and the skill text states the deletion criterion, paired with the positive that it names the derivation it reuses (steps 2–4).
+- [x] **PR numbers in the digest are hyperlinked.** *Pinned by:* the same eval asserting the digest template carries a markdown link form, because field manual §3 records this as stated-not-optional and records that the lapse recurs *specifically inside status tables* — which is what this digest is.
+- [x] **Short-names are unique across live workers.** *Added mid-execution by Ben, after a live collision:* this seat had been labelling its own messages `[w:mobile]`, the research worker's name, so two senders shared one label and the opener identified nobody. *Pinned by:* the same eval asserting the uniqueness sentence verbatim at every site, plus `/flow:spawn` §3 telling the seat to check the name against the backend's **`listWorkers`** verb before writing the brief — the convention is only worth stating if the names it carries are distinct. **Corrected during the ship run, disclosed in the PR's blocker list:** this criterion originally pinned "step 1's sweep", which `/flow:staff-review` showed *structurally cannot* surface a collision — step 1 greps branches filtered by the current item's slug, so a differently-slugged live worker's name never appears in its output, and the check would have returned clean for the very collision that earned FB-0132. A criterion pinning a removed mechanism is worse than a missing one (it passes while testing nothing), so the pin was re-pointed rather than left stale. The paired *unavailable-verb* reporting path is **not** self-declared — it is a decision-required entry on the draft manifest.
+- [x] **The convention states the loopback-in-a-code-span delivery failure.** *Added mid-execution by Ben, from the touch worker's measurement:* the message channel's firewall drops any message carrying a localhost/loopback URL inside a markdown code span; the identical text without backticks delivers. *Pinned by:* the same eval asserting the rule verbatim at every site, **and** a roadmap § Next entry recording the cause — because the eval pins shipped prose and cannot observe a message the firewall ate, so the convention line is a mitigation and the roadmap row is the honest statement of what is still open.
+- [x] **Docs.** *Pinned by:* a doc-diff — a `dev-docs/history/` entry, the FB entry this earns, the research doc's option 5 marked as acted on, and a roadmap entry for C3.
 
 ### Post-rebase check — MANDATORY before trusting any gate
 
