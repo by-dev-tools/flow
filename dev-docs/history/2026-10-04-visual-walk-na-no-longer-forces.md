@@ -226,6 +226,17 @@ is "the author is told", and that claim is made in `visual_signals`. Case `8l` p
 layer, and reddens 6 checks under the same mutation. That is the third time this release that a
 test sat one layer below the claim it was written for.
 
+**One process slip worth recording, because it is the FB-0131 lesson in a new disguise.** I ran
+`tools/eval-sweep.sh && git commit && git push` as one compound command. The sweep printed
+`1 of 43 harnesses RED` — and the push went through anyway, because `&&` chains on the *exit code
+of the last command*, and I had put the gate at the front of a chain rather than in front of a
+decision. v1.57.0's lesson was "read the exit code, not the last line of output"; this is the same
+mistake one layer out — I read the exit code and then wrote a command that ignored it. The failure
+was two of this round's own new criteria naming bare check labels, which Arm A's pin lint does not
+count as a verification artifact (`→ 8h-…` instead of `→ run_visual_significance_evals.py checks
+8h-…`). Fixed by repinning the criteria, not by loosening the lint. **A gate belongs in its own
+invocation, with the next step conditioned on what it said.**
+
 **Verification (final):** 226/226 `run_walk_extract_evals.py` · 88/88
 `run_visual_significance_evals.py` · 8/8 `test_plan_text_not_quoted.py` · 6/6 security test files ·
 43/43 harnesses green **by exit code** (1m17s measured). Four mutations run on the new surface,
