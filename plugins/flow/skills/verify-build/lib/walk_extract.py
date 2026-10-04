@@ -163,6 +163,47 @@ _NA_TAIL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A DEFERRAL is not a denial, and separating the two is the whole difficulty.
+#
+# The guard above went through two wrong versions before this one, and the second is
+# the instructive failure. v1 used `(?![A-Za-z0-9])`, which accepts whitespace, so
+# `None yet, will fill in` matched. v2 "fixed" it by requiring a separator — and a
+# deferral is spelled with separators too, so `None, will fill in later`,
+# `N/A - to be filled in at Step 8`, `NA: pending the prototype`, `None (TBD)` and
+# `none. TODO before the gate` all still matched. `None yet, will fill in` was
+# rejected only because the word `yet` happened to sit between `None` and the comma;
+# reorder the same sentence and it suppressed again. The 22-row table pinned the three
+# shapes its author happened to write, not the class. Found by /flow:staff-review.
+#
+# So the boundary is not where the discrimination lives. What distinguishes the two is
+# that a deferral says WHEN rather than WHY: it carries a forward-looking marker. This
+# rejects on that marker instead of trying to spell the separator set correctly.
+# Checked against every accept row — `nothing visual`, `backend only`, `no file
+# matching uiFilePatterns is in scope` carry none of these.
+# TWO rejection intents, one regex, because both are the tail UN-DENYING what the
+# token denied — and in both the consequence is identical: a visual surface exists
+# and suppressing the override would hide it.
+#
+#   DEFERRAL — "later". `None, will fill in later` · `N/A - to be filled in at
+#   Step 8` · `NA: pending the prototype` · `None (TBD)`.
+#
+#   REDIRECTION — "elsewhere". `Not applicable, see the prototype for frames`. This
+#   one is the subtler of the two and it is a plausible authoring on D1's
+#   prototype-first path, where frames really were reviewed at gate 1. It is still
+#   rejected, because the sentence asserts that visual artifacts EXIST; whether the
+#   review already happened is the human's call at the merge gate, not something a
+#   parser should infer from prose. The author who means it can omit the block.
+#
+# Deliberately NOT keyed on the word "visual": `N/A — nothing visual` is a genuine
+# denial and an accept row. The markers below name artifacts that EXIST, not the
+# adjective.
+_UNDENIAL_RE = re.compile(
+    r"\b(?:yet|tbd|todo|pending|will\s|to\s+be\b|coming|later|for\s+now|"
+    r"not\s+done|unfilled|fill\s+in|filled\s+in|"
+    r"frames?|screenshots?|prototype|walkthrough|recording|capture[sd]?)",
+    re.IGNORECASE,
+)
+
 
 def heading_declares_na(line: str, label: str) -> bool:
     """True if `line` is a `<label>` heading whose tail opens with a denial token.
@@ -183,7 +224,12 @@ def heading_declares_na(line: str, label: str) -> bool:
     # no case behaved differently with it removed). This also covers the separator an
     # author puts between the label and the reason.
     tail = tail.lstrip(" \t:\u2013\u2014-.")
-    return bool(_NA_TAIL_RE.match(tail))
+    if not _NA_TAIL_RE.match(tail):
+        return False
+    # A denial that defers or redirects is not a denial. Checked on the WHOLE tail,
+    # so the marker is found wherever in the reason it appears: `N/A - to be filled
+    # in at Step 8` denies and then un-denies, and the un-denial is what matters.
+    return not _UNDENIAL_RE.search(tail)
 
 
 def _is_demoted_heading(line: str) -> bool:
@@ -469,7 +515,16 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
         # roadmap's option (a) got wrong was exactly "zero assertions" without a
         # declaration. Sibling of `all_demoted`: both mean "this block declares
         # nothing active", for different reasons.
-        "declared_na": bool(not items and heading_declares_na(first_heading, label)),
+        # `co_located is not False` is part of the conjunction, not an afterthought.
+        # When the match is non-co-located, `scan_end` force-empties `items`, so
+        # `not items` is VACUOUSLY true and a retained PR's `**Visual-walk:** N/A`
+        # carrying two real assertions returned `declared_na: True` — contradicting
+        # this field's own documented meaning ("declares N/A AND zero assertions").
+        # Not live, because both readers conjoin with `co_located` themselves, but a
+        # field whose docstring is false is a trap for the next reader
+        # (/flow:staff-review).
+        "declared_na": bool(co_located is not False and not items
+                            and heading_declares_na(first_heading, label)),
         "warnings": warnings,
     }
 

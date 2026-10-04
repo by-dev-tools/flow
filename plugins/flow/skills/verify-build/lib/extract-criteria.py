@@ -22,6 +22,11 @@ Contract:
                         from a complete one (FB-0121). A terminator close that
                         collected items does NOT warn -- only a zero-item close does>,
       "block_count": <how many Spec-walk blocks exist in the file>,
+      "declared_na": <true iff the heading declares N/A (`N/A`, `none`, `nil`,
+                      `not applicable`) AND the block parsed zero items.
+                      MEANINGFUL FOR Visual-walk ONLY — emitted here because
+                      `cli_main` is shared; no consumer reads it off this
+                      extractor. See walk_extract.extract_block>,
       "all_demoted": <true iff block_count > 0 but every one is qualified
                       shipped/merged/demoted — no active block, distinct from
                       block_count == 0 (no heading at all)>,

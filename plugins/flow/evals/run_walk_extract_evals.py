@@ -781,6 +781,32 @@ def test_declared_na() -> None:
           f"a bare 0-assertion block means 'states unenumerated', not 'no visual "
           f"surface'; got {b['declared_na']}")
 
+    # NON-CO-LOCATED: `scan_end` force-empties `items`, so `not items` is VACUOUSLY
+    # true there and a retained PR's `**Visual-walk:** N/A` carrying real assertions
+    # returned `declared_na: True` — contradicting the field's own documented meaning.
+    # Not live (both readers conjoin with `co_located`), but a field whose docstring
+    # is false is a trap for the next reader (/flow:staff-review).
+    _RETAINED_NA_WITH_ITEMS = """# Plan
+
+**Spec-walk:**
+- [ ] active criterion *Pinned by:* the `run_a_evals.py` eval
+
+## Retained PR
+
+**Spec-walk (merged #99):**
+- [x] old
+
+**Visual-walk:** N/A — but actually
+- [ ] empty state renders
+- [ ] error state renders
+"""
+    b = extract_block(_RETAINED_NA_WITH_ITEMS, "Visual-walk", anchor_label="Spec-walk")
+    check("declared-na-false-when-not-co-located", b["declared_na"] is False,
+          f"a non-co-located block is not the active declaration, and its items were "
+          f"force-emptied by the scan bound — got {b['declared_na']}")
+    check("declared-na-not-co-located-guard", b["co_located"] is False,
+          f"fixture must actually exercise the non-co-located path; got {b['co_located']}")
+
     # And the sibling field is unaffected in all three.
     for label, txt in (("na", _NA_PLAN), ("items", _NA_WITH_ITEMS), ("bare", _BARE_EMPTY)):
         b = extract_block(txt, "Visual-walk", anchor_label="Spec-walk")
@@ -832,6 +858,27 @@ def test_na_token_set_is_anchored() -> None:
         # clears a waivable entry. The right way round — a false force costs a
         # waiver, a false suppression ships an unseen UI with a green report.
         "**Visual-walk:** N/A for this PR",
+        # THE DEFERRAL CLASS. The separator guard above was the SECOND wrong version,
+        # and these are what it still let through — a deferral is spelled with
+        # separators too. `None yet, will fill in` was rejected only because `yet`
+        # happened to sit between `None` and the comma; reorder the same sentence and
+        # it suppressed. The table pinned three shapes its author happened to write,
+        # not the class (/flow:staff-review). The discrimination is not the boundary:
+        # a deferral says WHEN rather than WHY, so it is rejected on that marker.
+        "**Visual-walk:** None, will fill in later",
+        "**Visual-walk:** N/A - to be filled in at Step 8",
+        "**Visual-walk:** NA: pending the prototype",
+        "**Visual-walk:** None (TBD)",
+        "**Visual-walk:** none. TODO before the gate",
+        # THE REDIRECTION CLASS — subtler, and a plausible authoring on D1's
+        # prototype-first path where frames really were reviewed at gate 1. Still
+        # rejected: the sentence asserts visual artifacts EXIST, and whether the
+        # review already happened is the human's call at the merge gate, not
+        # something a parser should infer from prose. An author who means it omits
+        # the block. Deliberately NOT keyed on the word "visual" — `N/A — nothing
+        # visual` is an accept row above.
+        "**Visual-walk:** Not applicable, see the prototype for frames",
+        "**Visual-walk:** N/A — screenshots are in the PR body",
     ]
     for line in accept:
         check(f"na-accept::{line[:44]}", heading_declares_na(line, "Visual-walk"),

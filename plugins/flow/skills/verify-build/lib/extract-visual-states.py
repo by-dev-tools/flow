@@ -36,6 +36,13 @@ Contract:
                         from a complete one (FB-0121). A terminator close that
                         collected items does NOT warn -- only a zero-item close does>,
       "block_count": <how many Visual-walk blocks exist in the file>,
+      "declared_na": <true iff the heading declares N/A (`N/A`, `none`, `nil`,
+                      `not applicable`, `na`, `n.a.`) AND zero assertions — the
+                      author declared this change has NO visual surface. §5a
+                      skips capture on it; `visual-significance.py` suppresses
+                      the override. A DEFERRAL or a REDIRECTION in the reason
+                      ("will fill in", "see the prototype for frames") is not a
+                      denial and does not set this>,
       "all_demoted": <true iff block_count > 0 but every one is qualified
                       shipped/merged/demoted — no active block>,
       "warnings": ["..."]

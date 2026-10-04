@@ -981,6 +981,45 @@ probe becomes the primary signal rather than the substitute.
 **Deletion criterion:** delete when either flow ships a `bin/` and `ran_version_source` reads `PATH`
 on a real run, or the probe above refutes the mechanism and `read_running` is retired.
 
+### The same presence-not-content defect, unfixed, on Spec-walk — and `declared_na` already reaches the call site unread (2026-10-04, v1.60.0's push-further lens)
+
+**Surfaces when:** `audit-skips/lib/skip-audit-checks.py`'s `spec_blocks` derivation is next touched,
+or anyone decides whether `**Spec-walk:** N/A` is sanctioned authoring. **Filed, not fixed** — it
+needs a convention decision first, and guessing it is what would make this worse.
+
+**The shape is the one v1.60.0 just fixed for Visual-walk, one skill over.** `skip-audit-checks.py:783`:
+
+```py
+spec_blocks = 0 if _blk.get("all_demoted") or _blk.get("first_heading") is None else _blk.get("block_count", 0)
+```
+
+Presence, with the content unread. **Measured on this tree:** a plan carrying `**Spec-walk:** N/A — no
+behaviour to verify` yields `block_count=1, items=[], declared_na=True`, so `spec_blocks == 1`. Running
+`classify` directly, an `audit-coverage` stage skipped with *"no Spec-walk block in plan"* returns
+**`SHOULD-RE-RUN`** (*"skip claims no Spec-walk but the plan has 1 block(s)"*); **omit the heading
+entirely and the identical skip returns `LEGITIMATE`.** Explicitness punished, omission rewarded —
+v1.60.0's own sentence, in a different skill.
+
+**Two aggravators, both measured.** `/flow:audit-coverage` keys on criteria *content* ("the criteria
+list has no criteria"), so it skips **correctly** — and audit-skips then calls that correct skip
+illegitimate, so two flow surfaces disagree about one plan and the honest one loses. And v1.60.0
+itself now delivers `declared_na` to **this exact call site**, where nothing reads it;
+`walk_extract.py`'s new docstring records that "no consumer reads it off this extractor", which is
+true as of that commit and is the reason this stays broken.
+
+**Do NOT just add `or _blk.get("declared_na")`.** `plan-discipline` sanctions the `N/A` form for
+**Visual-walk only**, and `tiny` / non-visual `spike` plans legitimately carry no Spec-walk at all, so
+the convention has to be decided before the predicate changes. Two coherent shapes:
+
+- **(a) Sanction it** — one clause at `:783`, one published sentence in plan-discipline field (4), and
+  one paired eval (an `N/A` heading ⇒ `LEGITIMATE`; a bare heading *with* criteria ⇒ `SHOULD-RE-RUN`).
+- **(b) Refuse it** — emit a `[WARN]` naming the heading, so an author sees the shape is unrecognised
+  instead of receiving a re-run demand with no stated cause.
+
+**Sweep in the same pass:** the canonical skip wording `"no declared **Spec-walk:** criteria to compare
+against"` currently falls through to `NEEDS-JUDGMENT`, because `_reason_has`'s needles are
+`"no spec-walk"` / `"no plan"`. Pre-existing wording drift, same blast radius, ~45 min for the lot.
+
 ### `/flow:ship` never reads CI, so every "ready" it produces is uninformed about checks (measured 2026-10-04, v1.57.0)
 
 **Surfaces when:** `/flow:ship` Step 7a.5/7a.6 (the draft decision), Step 7b (the coherence gate), or
