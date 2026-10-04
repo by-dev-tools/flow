@@ -423,12 +423,21 @@ def main(argv):
                 # "capture the primary/launch state only" — so suppressing on emptiness
                 # would retire a documented behaviour by reinterpreting it. The denial
                 # has to be declared. See `walk_extract.heading_declares_na`.
+                # CLASSIFY, NEVER QUOTE. This string lands in `visual_signals`, which
+                # `skip-audit-checks.py` copies into its `context` and prints to stdout,
+                # which `audit-skips/SKILL.md` splices into the FORKED skip-auditor's
+                # prompt. Quoting the heading verbatim therefore handed any writer of
+                # the plan doc ~120 characters of free text inside the prompt of the
+                # gate an adversary would most want to soften — the exact surface
+                # v1.38.0's security review removed from `read_plan_mode`, whose
+                # docstring says "CLASSIFY, never quote" for this reason. A LINE NUMBER
+                # is non-forgeable and tells an operator everything the quote did.
                 signals.append(
-                    "[WARN] the active Visual-walk block DECLARES non-applicability "
-                    "(%r) and lists no assertions — NOT treating it as an override. "
-                    "This is the correct reading of an explicit N/A; omitting the block "
-                    "entirely gives the same verdict."
-                    % (blk.get("first_heading") or "")[:120]
+                    "[WARN] the active Visual-walk block at line %s DECLARES "
+                    "non-applicability and lists no assertions — NOT treating it as an "
+                    "override. This is the correct reading of an explicit N/A; omitting "
+                    "the block entirely gives the same verdict."
+                    % (blk.get("first_heading_line") or "?")
                 )
                 signals.extend(f"[WARN] {w}" for w in blk.get("warnings", []))
             elif blk.get("block_count", 0) >= 1:
