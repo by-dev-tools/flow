@@ -529,14 +529,35 @@ def main(argv):
                                        "instead of ending the heading or being followed "
                                        "by a separator",
                     }[near]
+                    # The REMEDY depends on whether the block also lists assertions,
+                    # and conflating the two shipped a false statement. "Omit the block
+                    # entirely — both give the same verdict" is true for a zero-item
+                    # block and WRONG when items are present: omitting it also drops
+                    # §5a's per-assertion capture targets and the declared states
+                    # themselves, so the two are not the same verdict at all
+                    # (/flow:audit-coverage, which flagged this as an undeclared
+                    # behaviour and was right — every case I wrote used a zero-item
+                    # block, so nothing sent me to the authoring path that has items).
+                    if n_items:
+                        remedy = (
+                            "Your %d listed assertion%s ARE being used, so nothing is "
+                            "lost — but the heading's denial was not read. If you meant "
+                            "there is no visual surface, remove the assertions as well; "
+                            "if the assertions are what you meant, drop the denial from "
+                            "the heading." % (n_items, "" if n_items == 1 else "s")
+                        )
+                    else:
+                        remedy = (
+                            "If you meant there is no visual surface, write "
+                            "`**Visual-walk:** N/A — <reason>` with a reason that states "
+                            "WHY rather than when or where, or omit the block entirely "
+                            "— with no assertions listed, both give the same verdict."
+                        )
                     signals.append(
                         "[WARN] the active Visual-walk heading at line %s LOOKS like a "
                         "denial but was NOT read as one: %s. This change is therefore "
-                        "treated as visually significant. If you meant there is no "
-                        "visual surface, write `**Visual-walk:** N/A — <reason>` with a "
-                        "reason that states WHY rather than when or where, or omit the "
-                        "block entirely — both give the same verdict."
-                        % (blk.get("first_heading_line") or "?", why)
+                        "treated as visually significant. %s"
+                        % (blk.get("first_heading_line") or "?", why, remedy)
                     )
                 if heading_declares_na is not None and heading_declares_na(
                         blk.get("first_heading") or "", "Visual-walk"):

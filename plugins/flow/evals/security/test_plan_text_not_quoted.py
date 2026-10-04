@@ -52,6 +52,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+# The exempt-warning constant comes from the shipped module, so the exemption cannot
+# drift from the text actually emitted.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]
+                       / "skills" / "verify-build" / "lib"))
+from walk_extract import EMPTY_WARNING_NA  # noqa: E402
+
 HERE = Path(__file__).resolve().parent
 PLUGIN = HERE.parent.parent              # plugins/flow
 ENGINE = PLUGIN / "skills" / "audit-skips" / "lib" / "skip-audit-checks.py"
@@ -122,33 +128,36 @@ def run_engine(tmp: Path, engine: Path) -> dict:
     return json.loads(proc.stdout)
 
 
-def assert_no_leak(label: str, tmp: Path, plan_text: str, engine: Path) -> bool:
-    """True if the payload is absent from the engine's whole stdout."""
-    setup_inputs(tmp, plan_text)
+def measure_leak(tmp: Path, engine: Path) -> dict:
+    """Run the engine over already-written inputs and return BOTH leak measurements.
+
+    Factored out so the selftest's mutant run computes the same two numbers the live
+    assertions do. Before this, the selftest only checked `PAYLOAD in stdout` — so the
+    class-level `carried` invariant, the one assertion that generalizes to warnings
+    nobody has written yet, was never validated by the mutation harness that exists to
+    justify this file's verdicts. An instrument validating one of its two assertions
+    reports the same "selftest: OK" as one validating both (v1.62.0 security review).
+    """
     data = run_engine(tmp, engine)
-    blob = json.dumps(data)
+    # `ensure_ascii=False` is LOAD-BEARING, not tidiness. With the default, `—` and `§`
+    # become `\u2014` / `\u00a7` in the haystack while the warning string holds the raw
+    # codepoint, so `w in blob` can never match a warning containing non-ASCII — which
+    # is most prose this repo writes. Found by the v1.62.0 security review, which
+    # measured 0 matches shipped vs 2 with this flag.
+    #
+    # Precise about what each of the two fixes buys, because the first draft of this
+    # note overclaimed: the 60-char prefix test below independently rescues TODAY's
+    # carrier2, since that warning's em dash happens to fall past character 60. What
+    # `ensure_ascii=False` covers and the prefix test cannot is a warning carrying
+    # non-ASCII EARLY — verified: a warning opening with `§` matches neither
+    # whole-string nor prefix against an escaped haystack, and matches whole-string
+    # against a raw one. Both fixes stay, for different inputs.
+    #
+    # The payload assertion kept working throughout, because the payload itself is
+    # ASCII. That is exactly how a half-vacuous instrument reads as a working one.
+    blob = json.dumps(data, ensure_ascii=False)
     signals = data.get("context", {}).get("visual_signals", [])
 
-    # The harness must have actually exercised the new arm. Without this, an empty
-    # signals list would read as "no leak" and the test would be vacuous.
-    reached = any("DECLARES" in s for s in signals)
-    check(f"{label}::arm-reached", reached,
-          f"declared_na arm never ran; signals={signals!r}")
-
-    leaked = PAYLOAD in blob
-    check(f"{label}::no-payload-in-stdout", not leaked,
-          f"payload reached stdout: {[s for s in signals if PAYLOAD in s]!r}")
-
-    # THE INVARIANT, not just today's two carriers (v1.62.0 push-further lens). The
-    # two payload cases above enumerate the parser warnings that exist NOW; a third
-    # warning added later that interpolates plan text would pass them silently,
-    # because nobody will remember to author a third carrier. That is the same
-    # "pins the shapes its author thought of, not the class" failure this release
-    # hit twice elsewhere.
-    #
-    # So ask the extractor for its warning list independently, and assert that no
-    # warning the parser produced appears in the composed engine's stdout at all.
-    # Any future warning is covered the day it is written.
     extractor = PLUGIN / "skills" / "verify-build" / "lib" / "extract-visual-states.py"
     proc = subprocess.run([sys.executable, str(extractor), str(tmp / "plan.md")],
                           capture_output=True, text=True, timeout=60)
@@ -158,23 +167,56 @@ def assert_no_leak(label: str, tmp: Path, plan_text: str, engine: Path) -> bool:
             parser_warnings = json.loads(proc.stdout).get("warnings") or []
         except ValueError:
             parser_warnings = []
-    # The probe must have something to assert over, or it is vacuous: both crafted
-    # plans provoke warnings by construction, so an empty list means the extractor
-    # did not run, not that the engine is clean.
-    check(f"{label}::parser-warnings-observed", bool(parser_warnings),
+
+    exempt = EMPTY_WARNING_NA.strip()
+    carried = []
+    for w in parser_warnings:
+        w = w.strip()
+        if not w or w == exempt:
+            continue
+        # Whole-warning containment, PLUS a bounded prefix: a future passthrough that
+        # truncates (`w[:200]`) would carry plan text and pass a whole-string check.
+        if w in blob or (len(w) > 60 and w[:60] in blob):
+            carried.append(w)
+
+    return {
+        "payload_leaked": PAYLOAD in blob,
+        "carried": carried,
+        "parser_warnings": parser_warnings,
+        "signals": signals,
+        "arm_reached": any("DECLARES" in s for s in signals),
+        "extractor_rc": proc.returncode,
+        "extractor_stderr": proc.stderr[:200],
+    }
+
+
+def assert_no_leak(label: str, tmp: Path, plan_text: str, engine: Path) -> bool:
+    """True if neither leak measurement fires."""
+    setup_inputs(tmp, plan_text)
+    m = measure_leak(tmp, engine)
+
+    # The harness must have actually exercised the new arm. Without this, an empty
+    # signals list would read as "no leak" and the test would be vacuous — it DID read
+    # that way once during authoring, when a malformed `flow.config.json` made the
+    # engine exit 1 and the payload was absent from its EMPTY stdout.
+    check(f"{label}::arm-reached", m["arm_reached"],
+          f"declared_na arm never ran; signals={m['signals']!r}")
+
+    check(f"{label}::no-payload-in-stdout", not m["payload_leaked"],
+          f"payload reached stdout: "
+          f"{[s for s in m['signals'] if PAYLOAD in s]!r}")
+
+    # The probe must have something to assert over, or the invariant is vacuous: both
+    # crafted plans provoke warnings by construction, so an empty list means the
+    # extractor did not run, not that the engine is clean.
+    check(f"{label}::parser-warnings-observed", bool(m["parser_warnings"]),
           f"the extractor produced no warnings, so the invariant below is vacuous "
-          f"(rc={proc.returncode}, stderr={proc.stderr[:200]!r})")
-    # `declared_na`'s own skip note is the ONE warning the engine may legitimately
-    # echo — it is static text this repo writes, carries no plan input, and exists to
-    # tell §5a not to capture. Everything else is suspect by default, which is the
-    # right polarity: a new warning is covered unless someone exempts it on purpose.
-    allowed = "§5a skips capture"
-    carried = [w for w in parser_warnings
-               if allowed not in w and w.strip() and w.strip() in blob]
-    check(f"{label}::no-parser-warning-text-in-stdout", not carried,
+          f"(rc={m['extractor_rc']}, stderr={m['extractor_stderr']!r})")
+
+    check(f"{label}::no-parser-warning-text-in-stdout", not m["carried"],
           f"parser warning text reached the gate's stdout, so a future warning "
-          f"carrying plan input would too: {[w[:90] for w in carried]!r}")
-    return not leaked
+          f"carrying plan input would too: {[w[:90] for w in m['carried']]!r}")
+    return not m["payload_leaked"]
 
 
 def main(argv: list[str]) -> int:
@@ -229,26 +271,41 @@ def main(argv: list[str]) -> int:
                       "passthrough.", file=sys.stderr)
                 return 2
 
-            leaks = []
+            # BOTH assertions must go red, on BOTH carriers. Requiring only the
+            # payload half is what let the `ensure_ascii` defect hide: the generalizing
+            # assertion was dead on carrier2 and the selftest still printed OK.
+            leaks, generalizing = [], []
             for label, plan in (("MUTANT-carrier1", PLAN_CHECKBOXES),
                                 ("MUTANT-carrier2", PLAN_MULTIBLOCK)):
                 try:
                     setup_inputs(tmp, plan)
-                    data = run_engine(tmp, eng_dir / ENGINE.name)
+                    m = measure_leak(tmp, eng_dir / ENGINE.name)
                 except Exception as exc:                       # noqa: BLE001
                     print(f"SELFTEST INCONCLUSIVE - mutant engine did not run for "
                           f"{label}: {type(exc).__name__}: {exc}", file=sys.stderr)
                     return 2
-                if PAYLOAD in json.dumps(data):
+                if m["payload_leaked"]:
                     leaks.append(label)
+                if m["carried"]:
+                    generalizing.append(label)
             if len(leaks) != 2:
-                print(f"SELFTEST FAILED - restoring the passthrough reproduced the leak "
-                      f"on {leaks or 'NEITHER carrier'}, not both. This test cannot "
-                      f"detect the bug it claims to guard; treat its pass as "
-                      f"meaningless.", file=sys.stderr)
+                print(f"SELFTEST FAILED - restoring the passthrough reproduced the "
+                      f"PAYLOAD leak on {leaks or 'NEITHER carrier'}, not both. This "
+                      f"test cannot detect the bug it claims to guard; treat its pass "
+                      f"as meaningless.", file=sys.stderr)
+                return 1
+            if len(generalizing) != 2:
+                print(f"SELFTEST FAILED - the class-level invariant "
+                      f"(no-parser-warning-text-in-stdout) fired on "
+                      f"{generalizing or 'NEITHER carrier'}, not both, so it is dead "
+                      f"for the warnings it did not fire on. That assertion is the "
+                      f"only one that covers warnings nobody has written yet; a pass "
+                      f"from the payload half alone does NOT validate it.",
+                      file=sys.stderr)
                 return 1
             print("selftest: OK - both carriers leak through the COMPOSED engine when "
-                  "the passthrough returns, and are clean without it.")
+                  "the passthrough returns (payload AND class-level invariant), and "
+                  "both are clean without it.")
 
     total = _passes + len(_failures)
     if _failures:

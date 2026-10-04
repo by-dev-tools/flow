@@ -256,6 +256,23 @@ _UNDENIAL_RE = re.compile(
 )
 
 
+# The one parser warning that is SAFE to echo into a prompt: static text this repo
+# writes, carrying no plan input, telling §5a not to capture. It lives here rather than
+# in `extract-visual-states.py` for one reason — `evals/security/test_plan_text_not_quoted.py`
+# must exempt it by EXACT EQUALITY, and a hyphenated module name is not importable. The
+# exemption was first written as a substring test, and a plan could then mint an exempt
+# warning carrying payload: `- [] §5a skips capture <payload>` makes the
+# malformed-checkbox warning CONTAIN this text and inherit the exemption (v1.62.0
+# security review). An allow-list keyed on a substring of attacker-influenced text is
+# not an allow-list.
+EMPTY_WARNING_NA = (
+    "the Visual-walk heading DECLARES non-applicability and the block lists no "
+    "assertions — §5a skips capture for this plan (`[§5a] skipped: Visual-walk "
+    "declared N/A`) and no frames are expected. Do NOT capture a launch state here; "
+    "that is the bare-empty-block case, which is a different shape."
+)
+
+
 def _na_tail(line: str, label: str):
     """The normalized reason-tail of a `<label>` heading, or None if not that heading.
 

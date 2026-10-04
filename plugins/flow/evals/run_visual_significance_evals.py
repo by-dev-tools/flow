@@ -598,6 +598,48 @@ def main() -> int:
                   o.get("visual_significant") is True,
                   f"a rejected denial must still force: {o}")
 
+        # 8m. THE NEAR-MISS SIGNAL ON A BLOCK THAT LISTS ASSERTIONS. All three 8l rows
+        #     use zero-item blocks, so nothing exercised the authoring path where the
+        #     remedy's claim is FALSE: "omit the block entirely — both give the same
+        #     verdict" is true with no assertions and wrong with them, because omitting
+        #     also drops §5a's per-assertion capture targets. Flagged by
+        #     /flow:audit-coverage as an undeclared behaviour.
+        #
+        #     Note which branch this reaches: `N/A — TBD` is REJECTED by the un-denial
+        #     guard, so `heading_declares_na` is false and the contradiction warning
+        #     (8d) never fires — the near-miss warning is the only signal, which is why
+        #     8d does not already cover it.
+        na_with_items = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                         "**Visual-walk:** N/A — TBD\n"
+                         "- [ ] the empty state renders centered\n"
+                         "- [ ] the error state is reachable\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=na_with_items)
+        near = [x for x in o.get("visual_signals", [])
+                if "LOOKS like a denial but was NOT read as one" in x]
+        check("8m-near-miss-fires-with-assertions", len(near) == 1,
+              f"the near-miss signal must still fire: {o.get('visual_signals')}")
+        check("8m-remedy-does-not-claim-omitting-is-equivalent",
+              near and "both give the same verdict" not in near[0],
+              f"with assertions present, omitting the block is NOT the same verdict — "
+              f"it also drops §5a's capture targets: {near}")
+        check("8m-remedy-says-the-assertions-are-used",
+              near and "ARE being used" in near[0] and "2 listed assertions" in near[0],
+              f"the remedy must tell the author their assertions are not lost: {near}")
+        check("8m-still-forces", o.get("visual_significant") is True,
+              f"a rejected denial with assertions must force: {o}")
+        # PAIRED with 8l: the zero-item wording must still carry the equivalence claim,
+        # or this assertion would pass by deleting the sentence from both branches.
+        bare_na_tbd = "## PR\n\n**Spec-walk:**\n- [ ] x\n\n**Visual-walk:** N/A — TBD\n"
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=bare_na_tbd)
+        near0 = [x for x in o.get("visual_signals", [])
+                 if "LOOKS like a denial but was NOT read as one" in x]
+        check("8m-paired-zero-item-keeps-the-equivalence-claim",
+              near0 and "both give the same verdict" in near0[0],
+              f"with no assertions, omitting the block IS equivalent and the copy must "
+              f"still say so — otherwise 8m passes by deleting the sentence: {near0}")
+
         # 9. override suppressed by uiSurface:false (recorded, not honored).
         rc, o = run(tmp, config={"uiSurface": False}, files="M\tsrc/logic.py", plan=plan)
         sup = any("SUPPRESSED" in s for s in o.get("visual_signals", []))

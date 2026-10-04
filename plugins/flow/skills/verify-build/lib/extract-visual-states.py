@@ -77,7 +77,7 @@ import re
 import sys
 
 # Sibling import: lib dir is sys.path[0] when run as a script.
-from walk_extract import cli_main
+from walk_extract import EMPTY_WARNING_NA, cli_main
 
 LABEL = "Visual-walk"
 
@@ -95,17 +95,10 @@ EMPTY_WARNING = (
 )
 
 
-# The DECLARED-N/A counterpart. `EMPTY_WARNING` above is correct for a bare empty
-# block ("a visual surface, states unenumerated" — capture the launch state), and
-# actively wrong for a declared denial, where §5a skips. §5a is agent-executed from
-# this script's JSON, so emitting the capture nudge there made the primary data source
-# contradict `verify-build/SKILL.md` §5a's own skip line (v1.62.0 staff-review).
-EMPTY_WARNING_NA = (
-    "the Visual-walk heading DECLARES non-applicability and the block lists no "
-    "assertions — §5a skips capture for this plan (`[§5a] skipped: Visual-walk "
-    "declared N/A`) and no frames are expected. Do NOT capture a launch state here; "
-    "that is the bare-empty-block case, which is a different shape."
-)
+# The DECLARED-N/A counterpart lives in `walk_extract` beside the `declared_na` field
+# it belongs to, because the leak eval must pin it by exact equality and cannot import a
+# hyphenated module. Imported, never re-spelled — two copies of an allow-listed string
+# is the FB-0010 shape on the one value a security test keys on.
 
 
 def parse_assertion(text: str) -> dict:
