@@ -292,17 +292,41 @@ between — in exactly the non-rendering clients the no-backticks rule above is 
 
 ### Telling `SILENT` from `GATE`
 
-**`SILENT` and `GATE` must be told apart mechanically, never by feel.** This is the distinction
-that cost three wasted chases in one program (field manual § 8), and it is decidable from step
-3's ground truth. Run both halves of the test — carrying only the positive half is how a dead
-worker reads as a parked one:
+**`SILENT` and `GATE` must be told apart mechanically, never by feel** — and **git state alone
+cannot do it.** Field manual § 8's branch/PR/`plan:` test is the rule for deciding *whether to
+chase*, and it is right for that. It is **not sufficient here**, because the two states it
+separates can produce identical git state:
 
-- **`GATE`** — branch exists, **no open PR**, HEAD subject begins `plan:`. A worker told to stop
-  at the plan gate and doing exactly that. Go read the plan; do not chase it for status.
-- **`SILENT`** — **no branch on the remote at all**, or a branch with no new commits and a stale
-  last-activity timestamp. This is the one to worry about.
-- Neither shape matching is itself a result: say "could not classify" rather than defaulting to
-  `GATE`, because `GATE` is the reassuring answer and defaulting to it is how the asymmetry bites.
+> *"This week's costliest case was precisely that shape: Track B had pushed `plan:` commits and
+> then died on the session limit, idle for two days. Under your rule it reads **parked, fine**,
+> the cheap-looking answer you yourself warned about."* (Ben, 2026-10-04.)
+
+**The discriminator is in the transcript, not in git.** Check it FIRST, and only fall through to
+the git shape once it is ruled out:
+
+1. **Read the worker's last assistant message.** If it is a session-limit kill — *"You've hit
+   your session limit · resets …"* or equivalent — the worker is **`SILENT`**, *regardless of
+   git state*. A `plan:` HEAD does not make a limit-killed worker parked; it makes it a dead
+   worker wearing a parked worker's git signature. This is the case the digest most exists to
+   surface, so it is the first question asked, not a caveat on the last.
+2. **Only if a limit kill is ruled out**, apply the git shape:
+   - **`GATE`** — branch exists, **no open PR**, HEAD subject begins `plan:`. A worker told to
+     stop at the plan gate and doing exactly that. Go read the plan; do not chase it for status.
+   - **`SILENT`** — **no branch on the remote at all**, or a branch with no new commits and a
+     stale last-activity timestamp.
+3. **If you cannot read the last message, you may not say `GATE`.** Render **"parked or dead —
+   can't tell"** and mark it derived. Saying `GATE` on an unread transcript is asserting the
+   reassuring answer from evidence that does not support it, which is exactly how the two-day
+   case stayed invisible. "I could not look" and "I looked and it is fine" must never render
+   identically.
+4. Neither shape matching is itself a result either: say "could not classify" rather than
+   defaulting to `GATE`, because `GATE` is the reassuring answer and defaulting to it is how the
+   asymmetry bites.
+
+**Paired, so the rule is testable in both directions:** a limit-killed worker with a `plan:` HEAD
+reads `SILENT`; a genuinely parked worker — last message is its own plan hand-off, not a kill —
+reads `GATE`. A rule that only produced `GATE` for the second case without producing `SILENT` for
+the first would be the half-test § 8 warns about, one level up.
 
 ### Untrusted repository-derived refs
 

@@ -123,10 +123,14 @@ naming -- `wall 1`, `store 1` -- which is the FB-0010 fan-out class in a single 
                        the rule AND its OBSERVANCE in the rendered template (every derived cell
                        carries the dagger, and the footnote exists) -- the prose-only version of
                        this check let the template contradict the rule eleven lines below it.
-  orch-gate-vs-silent-both-halves -- both halves of field manual § 8's detector plus the
-                       explicit no-default-to-GATE guard. Keyed on the guard's own clause, not
-                       on the bare phrase "could not classify", which occurs twice in the
-                       section and made the conjunct satisfiable without the guard.
+  orch-gate-vs-silent-both-halves -- field manual § 8's git shape, the no-default-to-GATE
+                       guard, AND the limit-kill discriminator that git state cannot provide:
+                       a worker whose last assistant message is a session-limit kill is SILENT
+                       regardless of git state, consulted FIRST; an unreadable transcript
+                       renders "parked or dead - can't tell", never GATE; and the rule is paired
+                       in both directions. The git-shape-only version shipped once and rendered
+                       the measured two-day Track B case as "parked, fine" (user correction,
+                       2026-10-04).
   orch-edge-states-stated -- zero live workers (distinguishing "nothing in flight" from "could
                        not derive"), the nothing-needed case, the dash-for-absent convention,
                        and the opener-less ping.
@@ -588,11 +592,28 @@ def p_orch_gate_vs_silent(sec):
     # NOT keyed on the bare phrase "could not classify": that literal ALSO appears in the
     # shell-safety paragraph, so the conjunct was satisfied twice over and deleting this entire
     # bullet measured green. Keyed on the no-default sentence's own distinguishing clause.
-    ok = ("no branch on the remote at all" in sec
-          and "could not classify" in sec
-          and "defaulting to it is how the asymmetry bites" in sec)
-    return ok, ("the gated-vs-silent test is missing a half: needs the trouble shape "
-                "AND the explicit no-default-to-GATE guard")
+    n = _norm(sec)
+    git_shape = ("no branch on the remote at all" in n
+                 and "could not classify" in n
+                 and "defaulting to it is how the asymmetry bites" in n)
+    # THE LIMIT-KILL DISCRIMINATOR (user correction, 2026-10-04). The git shape alone is NOT
+    # sufficient and shipping it alone was a real defect: a worker that pushed `plan:` commits
+    # and then died on the session limit has the *identical* git signature to a parked one, so
+    # the rule as first written rendered the measured two-day case as "parked, fine" -- the
+    # reassuring answer, which is the exact asymmetry field manual § 8 is about. The
+    # discriminator lives in the transcript, so the pin has to require it, require that it is
+    # consulted FIRST, and require the can't-read fallback.
+    limit_kill = ("session limit" in n
+                  and "regardless of" in n
+                  and "git state alone" in n)
+    cannot_read = ("parked or dead" in n and "can't tell" in n)
+    paired = ("a limit-killed worker with a `plan:` HEAD" in n
+              and "reads `SILENT`" in n)
+    ok = git_shape and limit_kill and cannot_read and paired
+    return ok, ("the gated-vs-silent test is incomplete "
+                f"(git-shape={git_shape} limit-kill-discriminator={limit_kill} "
+                f"cannot-read-fallback={cannot_read} paired-both-directions={paired}) -- "
+                "git state alone cannot separate parked from limit-killed")
 
 
 def p_orch_edge_states(sec):
@@ -772,6 +793,17 @@ ORCH_MUTATIONS = {
                                ["derived-states-marked"]),
     "silent-half-dropped": (lambda s: s.replace("no branch on the remote at all", "it is quiet"),
                             ["gate-vs-silent-both-halves"]),
+    # The three new halves, each its own mutation -- the discriminator, the fallback, and the
+    # pairing. Deleting any one of them reinstates the defect that shipped the first time.
+    "limit-kill-discriminator-dropped": (
+        lambda s: s.replace("session limit", "quiet spell"),
+        ["gate-vs-silent-both-halves"]),
+    "cannot-read-fallback-dropped": (
+        lambda s: s.replace("parked or dead", "probably parked"),
+        ["gate-vs-silent-both-halves"]),
+    "limit-kill-pairing-dropped": (
+        lambda s: s.replace("a limit-killed worker with a `plan:` HEAD", "a parked worker"),
+        ["gate-vs-silent-both-halves"]),
     "edge-states-dropped": (lambda s: s.replace("Zero live workers", "Some workers"),
                             ["edge-states-stated"]),
     # Moves the action line BELOW the table, which is the ordering the review corrected.
@@ -819,7 +851,7 @@ ORCH_MUTATIONS = {
         lambda s: s.replace("\u2020 derived by me", "x derived by me"),
         ["derived-states-marked"]),
     "no-default-guard-dropped": (
-        lambda s: s.replace("defaulting to it is how the asymmetry bites", "it is usually right"),
+        lambda s: s.replace("asymmetry bites", "usually right"),
         ["gate-vs-silent-both-halves"]),
     "dash-convention-dropped": (
         lambda s: s.replace("An absent value in any cell", "Some value in a cell"),

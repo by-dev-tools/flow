@@ -99,6 +99,36 @@ renamed `closure-claim-dropped` to say what it actually tests.
 redundant any more — it is the parse handle**, and the section now says so, because the next
 reader would otherwise make exactly that simplification and silently remove the enforcement.
 
+## The coverage decisions were declared, not waived — and one of them was wrong
+
+Ben's call at the merge gate: **declare all of them, waive none.** His reasoning on the security
+one is the general form — *"'Waived' would leave the highest-consequence change in the PR with
+nothing pinning it."* So all eight became criteria in the Spec-walk, including the one I had
+already waived on his earlier instruction: waiving it had been defensible when nothing pinned the
+two-vocabulary rule, and stopped being defensible once `orch-superset-relation` did.
+
+**Decision 3 was wrong as I drafted it, and the way it was wrong is the most useful thing here.**
+I had written: branch exists, no open PR, HEAD subject begins `plan:` → parked at a gate. That is
+`orchestrator-field-manual.md` § 8's rule, and it is correct **for deciding whether to chase a
+quiet worker**. I used it as a **liveness classifier**, which it cannot be:
+
+> *"This week's costliest case was precisely that shape: Track B had pushed `plan:` commits and
+> then died on the session limit, idle for two days. Under your rule it reads **parked, fine**,
+> the cheap-looking answer you yourself warned about."* (Ben.)
+
+A worker that pushed `plan:` commits and then died has a **byte-identical git signature** to one
+parked at a gate, so no amount of rigor over git state recovers the missing bit. The
+discriminator is in the transcript: a last assistant message that is a session-limit kill means
+`SILENT` regardless of branch state. The rule is now three steps — transcript first, git shape
+only once a kill is ruled out, and *"parked or dead — can't tell"* when the transcript cannot be
+read — paired in both directions and pinned with four mutations. `FB-0134` records the
+generalizable form: **a borrowed rule inherits the question it was written to answer**, and a
+citation makes a domain error look sourced.
+
+I had written, in the same section, that `GATE` "is the reassuring answer and defaulting to it is
+how the asymmetry bites" — and then shipped a rule that defaults to it. Worth stating plainly
+rather than smoothing over.
+
 ## Tradeoffs
 
 - **The convention is unenforceable at the point that matters, and that is stated rather than
