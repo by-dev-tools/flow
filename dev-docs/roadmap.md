@@ -988,8 +988,12 @@ on a real run, or the probe above refutes the mechanism and `read_running` is re
 ### `**Mode:**` is a contract a parser enforces, and two plausible spellings are misread (2026-10-04, v1.62.0's push-further lens)
 
 **Surfaces when:** `audit-skips/lib/skip-audit-checks.py`'s `read_plan_mode` is next touched.
-**Filed, not fixed** — the *documentation* half shipped in v1.62.0 (one sentence in plan-discipline
-field (1), stating the contract and the measured forms); the *parser* half is here.
+**Filed, not fixed — neither half.** A one-sentence documentation fix for this *was* written and
+pushed during v1.62.0's staff-review pass, then **reverted before ship**: the orchestrator scoped Mode
+out of that PR, and `/flow:audit-coverage` independently flagged the sentence as an undeclared
+behaviour change to a declared-surface skill (it alters what every plan written under this rule-skill
+looks like). Both reasons point the same way, so the whole finding lives here. The wording is
+preserved below and is ready to paste.
 
 `read_plan_mode` matches `^[ \t]*\*\*Mode:?\*\*:?[ \t]*(.+)$` under `re.M`. Measured on this tree:
 
@@ -1009,6 +1013,13 @@ declared mode to resolve whether a `/simplify` or `/flow:staff-review` skip was 
 `plan-discipline`'s numbered field list renders its *own* field names in exactly the em-dash form
 (`1. **Mode** — \`feature\` …`), so the easiest thing for an author to copy is the thing that
 misparses.
+
+**The documentation sentence, ready to paste into field (1):** *"This is a contract a parser
+enforces, not prose — `/flow:audit-skips` reads it to resolve whether a `/simplify` or
+`/flow:staff-review` skip was legitimate. Write it as its own bold-label line with the value FIRST:
+`**Mode:** spike`. A `· **Surface:** …` suffix on the same line is fine. A bulleted or numbered form
+is not seen at all, and the em-dash form reads as `other` — which is how this very list renders its
+own field names, so it is the easy mistake to copy."*
 
 **Shape:** widen the matcher to accept a leading list marker and an em-dash separator — or, if
 widening a gate's parser is the wrong direction, make an unrecognised-but-Mode-shaped line emit a

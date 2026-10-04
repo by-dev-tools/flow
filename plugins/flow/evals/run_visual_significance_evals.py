@@ -382,9 +382,46 @@ def main() -> int:
                     "**Spec-walk:**\n- [ ] x\n")
         rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
                     plan=na_items)
+        contradiction_warn = any("declares non-applicability but" in s
+                                 for s in o.get("visual_signals", []))
         check("8d-na-with-assertions-still-forces",
               o.get("visual_significant") is True and o.get("override") == "visual-walk-block",
               f"a block that lists assertions must force whatever its heading says: {o}")
+        # The VERDICT alone is not the contract. A test asserting only
+        # `visual_significant: true` passes whether or not the operator is told the
+        # heading contradicted itself — including when the guarded `walk_extract`
+        # import fell back to None. /flow:audit-coverage flagged the signal as
+        # undeclared and unpinned; criterion 7 had scoped itself to the SUPPRESSED
+        # branch only.
+        check("8d-contradiction-is-reported",
+              contradiction_warn,
+              f"the contradiction must be NAMED to the operator, not silently resolved: {o}")
+
+        # 8g. THE UN-DENIAL ARM — the one where a false match SUPPRESSES, which is the
+        #     dangerous polarity. A deferral says WHEN and a redirection says ELSEWHERE;
+        #     both assert a visual surface exists, so both must keep forcing. Three
+        #     shapes, because the guard admitted a whole class twice before it worked.
+        for label, heading in (
+            ("deferral",    "**Visual-walk:** None, will fill in later"),
+            ("deferral-tbd", "**Visual-walk:** N/A — TBD"),
+            ("redirection", "**Visual-walk:** N/A, see the prototype for frames"),
+        ):
+            plan_u = (f"## PR\n\n{heading}\n\n**Spec-walk:**\n- [ ] x\n")
+            rc, o = run(tmp, config={"uiSurface": True},
+                        files="M\tdev-docs/roadmap.md", plan=plan_u)
+            check(f"8g-{label}-still-forces",
+                  o.get("visual_significant") is True
+                  and o.get("override") == "visual-walk-block",
+                  f"a denial that {label[:11]}s is not a denial — it asserts a visual "
+                  f"surface exists, so it must keep forcing: {o}")
+        # PAIRED against a genuine denial in the same block of assertions, or
+        # "everything forces" would pass the three rows above.
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=na_plan)
+        check("8g-paired-real-denial-still-suppresses",
+              o.get("visual_significant") is False,
+              f"and a real denial must still suppress, or the un-denial rows above are "
+              f"satisfied by a predicate that never suppresses: {o}")
 
         # 8e. PAIRED — a BARE empty block still forces. verify-build §5a: "0 assertions
         #     in a present block → capture the primary/launch state only". That shape

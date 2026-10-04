@@ -27,7 +27,7 @@ A plan that contradicts one of these silently is a wasted iteration. Surface the
 
 Every plan written to the plan doc must include:
 
-1. **Mode** — `feature` (default), `spike`, or `tiny`. See `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` for what each skips. **This is a contract a parser enforces, not prose** — `/flow:audit-skips` reads it to resolve whether a `/simplify` or `/flow:staff-review` skip was legitimate. Write it as its own bold-label line with the value FIRST: `**Mode:** spike`. A `· **Surface:** …` suffix on the same line is fine. Measured: `**Mode:** tiny · **Surface:** non-visual` reads as `tiny`, but **`**Mode** — tiny` reads as `other`** — which the auditor takes as "a mode WAS declared and it is not spike", a positive and wrong claim — and a bulleted (`- **Mode:** tiny`) or numbered form is not seen at all. The em-dash form is how this very list renders its field names, so it is the easy mistake to copy.
+1. **Mode** — `feature` (default), `spike`, or `tiny`. See `${CLAUDE_PLUGIN_ROOT}/docs/workflow.md` for what each skips.
 2. **Goal** — 1–3 sentences in user terms.
 3. **Scope (in)** / **Scope (out)** — what's deliberately not happening.
 4. **Spec-walk checkboxes** — every numbered/bulleted requirement from the spec or user request becomes a checkbox. For each: the user-perceptible behavior, and the test or verification step that pins it. Test-first for spec contracts.
