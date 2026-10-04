@@ -49,6 +49,28 @@ would make the work's value unmeasurable. The digest is Conductor-independent an
 deletion criterion naming exactly that surface, so if the rows do turn out to be sufficient this
 costs one section to delete.
 
+## The two-vocabulary decision, and why it is pinned rather than just written
+
+Review found that reusing the four message statuses for the digest's `State` column left no word
+for "working normally" — the modal row — so it would have landed in `FYI`, which then meant both
+*"fine"* and *"possibly dead"*. I added derived `WORKING` and `SILENT` and flagged it to Ben as
+the one change that pushed past his approved D2 taste call, offering to revert.
+
+**He kept them, and named the reason I had under-argued:** `SILENT` is the state that cost this
+program the most — a limit-killed worker has no turn in which to ping, so it reports nothing and
+the backend reads `idle`, indistinguishable from healthy. A digest with no word for that is blind
+to the thing it exists for. His direction was to keep the line drawn (message contract stays at
+four; digest shows derived states) **and make the docs name both sets and say why they differ, so
+nobody "unifies" them later.**
+
+That last clause is an instruction about a *future editor*, which changes what has to be pinned.
+A section listing the six values would satisfy any token grep and still invite the collapse — so
+`p_orch_two_vocabularies` pins the **argument**: both sets named, the closure of the message set,
+the construction reason (a set closed over what a sender can *utter* is not the same set as one
+closed over what an observer can *conclude*), why `SILENT` specifically matters, and the
+prohibition **in both directions** — because the regression has two forms and the dangerous one is
+a well-meaning cleanup *deleting* a derived value, not adding one. Four mutations cover it.
+
 ## Tradeoffs
 
 - **The convention is unenforceable at the point that matters, and that is stated rather than

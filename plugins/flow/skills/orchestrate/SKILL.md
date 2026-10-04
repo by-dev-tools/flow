@@ -227,23 +227,49 @@ was dropped to avoid. That is the deliberate trade: the hyperlink is stated-as-n
 (see below) and a tappable PR number is worth more on a phone than a shorter raw row. Stated
 rather than left for someone to rediscover as a contradiction.
 
-**The `State` vocabulary is a SUPERSET of the message vocabulary, and the extra values are
-derived rather than reported.** A worker's own ping carries exactly one of the four contract
-statuses — `GATE` · `DONE` · `BLOCKED` · `FYI`, never a fifth. But the digest must also describe
-workers that have said nothing, and "has not spoken" is not a status a worker can send. So:
+### Two vocabularies, deliberately different sizes — do not unify them
 
-| State | Where it comes from |
-|---|---|
-| `GATE` `DONE` `BLOCKED` `FYI` | **Reported** — the worker's own last ping said so |
-| `WORKING` | **Derived** — live, recent activity, nothing outstanding. The modal row |
-| `SILENT` | **Derived** — quiet longer than its work should take, and not at a gate |
+**There are exactly two sets here, and they are not the same set.** Naming both explicitly,
+because the obvious-looking "cleanup" is to collapse them and that would delete the digest's
+whole reason for existing.
+
+- **THE MESSAGE SET — exactly four, closed, never a fifth.** `GATE` · `DONE` · `BLOCKED` · `FYI`.
+  This is what a *worker* may put in the `[w:…]` opener. It is a closed vocabulary and the eval
+  enforces the closure at every contract site.
+- **THE DIGEST SET — the four above, plus two derived values.** `WORKING` and `SILENT`. This is
+  what the *seat* may render in the `State` column.
+
+| State | Set | Where it comes from |
+|---|---|---|
+| `GATE` `DONE` `BLOCKED` `FYI` | message + digest | **Reported** — the worker's own last ping said so |
+| `WORKING` | digest only | **Derived** — live, recent activity, nothing outstanding. The modal row |
+| `SILENT` | digest only | **Derived** — quiet longer than its work should take, and not at a gate |
+
+**Why they differ, which is the part a future editor needs.** The two sets answer different
+questions. A message answers *"what is this worker telling me?"* — so it can only contain things
+a worker is able to say, and a worker that has stopped speaking cannot send a status reporting
+that it has stopped speaking. The digest answers *"where does everything stand?"* — which must
+cover workers that said nothing at all, so it needs words no worker can send. **A set that is
+closed over what a sender can utter and a set that is closed over what an observer can conclude
+are different sets by construction.** They are not a duplication to be deduplicated.
+
+**And the asymmetry is not cosmetic: `SILENT` is the single most valuable cell in the table.**
+A worker killed by the rate limit has no turn in which to ping, so it reports nothing and its
+backend status reads `idle` — indistinguishable from healthy. That is the failure this program
+has paid for most, and a digest with no word for it would be blind to the exact thing it was
+built to surface. Likewise, dropping `WORKING` would force "working normally" into `FYI`, which
+then means both *"fine"* and *"possibly dead"* — collapsing the one distinction the human is
+scanning for.
+
+**So: adding a derived value to the MESSAGE contract is wrong, and removing a derived value from
+the DIGEST is wrong.** If you find yourself making the two sets equal in either direction, the
+change is a regression and this paragraph is the reason. (User direction, 2026-10-04.)
 
 **Mark every derived cell with `†` and footnote it once per digest**, exactly as the template
 above does, so the human can see which states a worker claimed and which you inferred. **Every
 derived cell, including the modal `WORKING` row** — a marker applied only to the alarming value
 tells the reader nothing, because then an unmarked cell means both "the worker said so" and "it
-is fine". Do not add a derived value to the four-status *message* contract: these two
-vocabularies are allowed to differ precisely because one is sent and the other is computed.
+is fine".
 
 `†` rather than `*`: a lone `*` is the one glyph markdown owns, and a naive client's
 `\*([^*]+)\*` pairs the marker in one row with the next row's and italicises everything

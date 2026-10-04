@@ -101,8 +101,13 @@ naming -- `wall 1`, `store 1` -- which is the FB-0010 fan-out class in a single 
   orch-pr-hyperlinked -- the digest template hyperlinks PR numbers (field manual § 3).
   orch-writes-no-doc-slot -- no doc-slot write in the status path, asserted by shape: no
                        Write-tool instruction and no shell redirect into a doc slot.
-  orch-derived-states-marked -- the digest's State column is a SUPERSET of the message
-                       vocabulary, and says which values are reported and which derived. Asserts
+  orch-two-vocabularies-not-unified -- BOTH state sets are named (the closed four-value message
+                       set and the six-value digest set), with the reason they differ and an
+                       explicit do-not-unify rule pinned in both directions. User direction:
+                       keep the derived values, and make the docs say why "so nobody unifies
+                       them later" -- so the REASON is pinned, not only the tokens.
+  orch-derived-states-marked -- the digest's State column names which values are reported and
+                       which derived. Asserts
                        the rule AND its OBSERVANCE in the rendered template (every derived cell
                        carries the dagger, and the footnote exists) -- the prose-only version of
                        this check let the template contradict the rule eleven lines below it.
@@ -418,6 +423,31 @@ def p_orch_sanitizes_refs(sec):
                 f"reduction-stated={'[A-Za-z0-9._/-]' in sec})")
 
 
+def p_orch_two_vocabularies(sec):
+    """Both state sets are named explicitly, with the reason they differ and a do-not-unify rule.
+
+    User direction, 2026-10-04: keep the derived `WORKING`/`SILENT` values, and make the docs
+    name BOTH sets and say WHY they differ "so nobody 'unifies' them later." That instruction is
+    about a future editor, so the thing to pin is the REASON and the prohibition -- not just the
+    tokens. A section that listed the values without the argument would satisfy a token grep and
+    still invite the collapse.
+
+    Pinned in both directions, because the regression has two forms: adding a derived value to
+    the closed MESSAGE contract, and deleting a derived value from the DIGEST.
+    """
+    named_both = "THE MESSAGE SET" in sec and "THE DIGEST SET" in sec
+    closure = "exactly four, closed, never a fifth" in sec
+    reason = ("different sets by construction" in sec
+              and "not a duplication to be deduplicated" in sec)
+    both_directions = ("adding a derived value to the MESSAGE contract is wrong" in sec
+                       and "removing a derived value from" in sec)
+    why_silent = "no turn in which to ping" in sec and "idle" in sec
+    ok = named_both and closure and reason and both_directions and why_silent
+    return ok, ("the two state vocabularies are not both named with the reason they differ "
+                f"(named={named_both} closure={closure} reason={reason} "
+                f"both-directions={both_directions} why-SILENT-matters={why_silent})")
+
+
 def p_orch_derived_marked(sec):
     """The digest's State column is a SUPERSET of the message vocabulary, and says which is which.
 
@@ -427,7 +457,7 @@ def p_orch_derived_marked(sec):
     derived values, which is only safe if the digest states that they are derived and marks
     them; otherwise the human cannot tell a worker's claim from the agent's inference.
     """
-    stated = ("SUPERSET of the message vocabulary" in sec
+    stated = ("THE MESSAGE SET" in sec and "THE DIGEST SET" in sec
               and "WORKING" in sec and "SILENT" in sec
               and "Reported" in sec and "Derived" in sec
               and "Mark every derived cell" in sec)
@@ -506,6 +536,7 @@ ORCH_PREDICATES = {
     "edge-states-stated": p_orch_edge_states,
     "needs-you-leads": p_orch_needs_you_first,
     "sanitizes-repo-derived-refs": p_orch_sanitizes_refs,
+    "two-vocabularies-not-unified": p_orch_two_vocabularies,
 }
 
 
@@ -651,6 +682,21 @@ ORCH_MUTATIONS = {
     "reduction-instruction-dropped": (
         lambda s: s.replace("[A-Za-z0-9._/-]", "whatever you like"),
         ["sanitizes-repo-derived-refs"]),
+    # The regression has two directions and each must be caught. Deleting a derived value from
+    # the digest is the one a well-meaning "cleanup" produces.
+    "message-set-opened": (
+        lambda s: s.replace("exactly four, closed, never a fifth", "four or so"),
+        ["two-vocabularies-not-unified"]),
+    "unify-rationale-dropped": (
+        lambda s: s.replace("not a duplication to be deduplicated", "much the same thing"),
+        ["two-vocabularies-not-unified"]),
+    "do-not-unify-rule-dropped": (
+        lambda s: s.replace("adding a derived value to the MESSAGE contract is wrong",
+                            "the sets may be aligned"),
+        ["two-vocabularies-not-unified"]),
+    "why-silent-matters-dropped": (
+        lambda s: s.replace("no turn in which to ping", "less to say"),
+        ["two-vocabularies-not-unified"]),
     "derived-marker-stripped-from-template": (
         lambda s: s.replace("WORKING\u2020", "WORKING"),
         ["derived-states-marked"]),
