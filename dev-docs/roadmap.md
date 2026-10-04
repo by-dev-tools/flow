@@ -2737,6 +2737,29 @@ with it the property that just caught this, so it is not obviously the right tra
 
 ## § Exploration
 
+### Durable-execution precedent (Temporal / AWS Step Functions) for R1/R4's checker shape — found by the push-further lens, 2026-10-04
+
+**Surfaces when:** `autoplan/lib/gate.py`, `gate/lib/gate-classify.py`, or a new implementation
+file for `dev-docs/research/2026-10-agentic-graphs.md`'s R1 (Step 8 ship-readiness checker) or
+R4 (Step 8→9 resume marker) is next touched.
+
+That research spike's own strongest finding is that flow already hand-writes small deterministic
+state machines (`gate.py`, `gate-classify.py`, `manifest-triage.py`, `skip-audit-checks.py`)
+exactly where judgment-only prose had failed — and sourced its evidence entirely from the
+LLM-agent-framework vocabulary (Anthropic, OpenAI, LangGraph, Google ADK, Microsoft Agent
+Framework, two arXiv papers written against that same frame). A staff-review push-further pass
+flagged that this pattern — "a hand-rolled state machine that needs checkpointing across process
+boundaries" — maps at least as directly onto the older, non-LLM-specific durable-execution class
+(Temporal's "workflow as code, not a DAG definition"; AWS Step Functions' Amazon States Language)
+as it does onto LangGraph, and without the substrate-mismatch disqualifier the research doc's § 3
+raises against LangGraph specifically (R1/R4 run in-process, not across separate cloud sandboxes).
+
+Not a reason to redo the spike — CLAUDE.md's stdlib-only quality bar already answers "should flow
+depend on one of these" the same way R2 answers it for LangGraph. If R1 or R4 is ever actually
+built, a 30-minute check of Step Functions'/Temporal's documented state-machine and checkpoint
+semantics (the design pattern, not the dependency) against the proposed checker's artifact schema
+may sharpen it before code is written.
+
 ### What does "no" do? — the machine gate offers two doors and builds one
 
 **Surfaces when:** anyone touches `autoplan/lib/gate.py`'s verdict computation, its `SCHEMA_VERSION`, or D1f's unification of the two escalation renderers — the waiver question has to be answered once for both or it gets answered twice, differently.
