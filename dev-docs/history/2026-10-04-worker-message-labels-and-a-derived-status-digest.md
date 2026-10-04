@@ -1,6 +1,6 @@
 # 2026-10-04 — Worker-message labels, and a status digest that is derived rather than stored
 
-**Version:** v1.61.0 · **Feedback:** FB-0132 · **Branch:** `conductor/mobile-option-5-label`
+**Version:** v1.61.0 · **Feedback:** FB-0132, FB-0133 · **Branch:** `conductor/mobile-option-5-label`
 **Mode:** feature · **Surface:** non-visual (prose contracts + one skill section; no UI)
 
 ## What
@@ -92,6 +92,15 @@ Worth recording because they are the failure classes this repo keeps re-earning.
    and is caught faster, but it is the same root cause: a negative assertion shipped without being
    run against a case whose answer is known.
 
+3. **`git grep` could not see three of the files this PR adds, so a fan-out sweep I reported
+   closed was not** — and one survivor was the user-facing changelog, re-advertising the
+   superseded mechanism as the feature. `git grep` searches tracked files only; the three
+   survivors were `changelog/`, `dev-docs/history/` and `dev-docs/feedback/` entries this PR was
+   creating. Found by a reviewer with plain `grep -rn`. Written up as **FB-0133**, because the
+   blind spot is structural rather than incidental: on a repo with one-file-per-entry docs, every
+   contract change adds several untracked files that restate the contract, and the failure reads
+   as progress (fewer hits) rather than as a narrower search.
+
 The selftest that caught (1) runs on **every** invocation, not behind `--selftest`. A validation
 step you have to remember to pass a flag for is a validation step that does not run in CI. It
 mutates the real shipped text (label removed, fifth status added, a trigger unmapped, a trigger
@@ -133,8 +142,25 @@ just open PRs — load-bearing here, because only one PR is open and 1.59.0 sits
 one, so an open-PR-only sweep would have collided. Took **v1.61.0**. FB-0132 re-swept across every
 remote `dev-docs/feedback/` tree and confirmed free (highest claimed anywhere: 0131).
 
-**Post-rebase extractor check** run per the plan's mandatory step: `extract-criteria.py` reports
-`source_heading_line: 103` with this block's nine criteria, not another PR's.
+## The version was contested twice, and the rebase check earned its place
+
+**Two collisions in one ship.** v1.59.0 went to `conductor/mobile-options-1-3` between plan and
+execution; the sweep then took 1.60.0, and **that collided too** — with
+`conductor/mobile-option-1-preview-url` — during the review rounds. Took **v1.61.0**. The sweep
+that matters is *all remote heads*, not open PRs: only one PR was open and both colliding claims
+sat on branches without one. The generalizable form: on a fleet this size the sweep is not
+once-per-ship, it is once-per-rebase-or-long-pause, and a ship that spends an hour in review
+rounds has had a long pause.
+
+**The mandatory post-rebase check caught exactly what it was written for.** `main` advanced to
+1.57.0 mid-ship (#176 merged), and the rebase conflicted on `dev-docs/plan.md` because #176's
+plan block now occupies the top of `## Current Focus`. Git surfaced this one as a real conflict
+rather than the silent reorder the plan's warning describes — but the *resolution* was the live
+risk: block order is the gate's input, since `extract_block` is first-active-block-only by
+contract. Resolved with this block first and #176's retained below, then verified:
+`extract-criteria.py` reports `source_heading_line: 111`, `block_count: 78`, and all nine
+criteria are this PR's. Had it been resolved the other way, every gate reading the plan would
+have graded #176's twenty criteria while reporting green.
 
 ## Files
 

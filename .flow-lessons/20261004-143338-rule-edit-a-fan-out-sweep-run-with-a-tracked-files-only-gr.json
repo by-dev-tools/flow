@@ -1,0 +1,34 @@
+{
+  "id": "20261004-143338-rule-edit-a-fan-out-sweep-run-with-a-tracked-files-only-gr",
+  "schema_version": 1,
+  "created_utc": "2026-10-04T14:33:38.553146+00:00",
+  "status": "queued",
+  "provenance": {
+    "project_slug": "flow",
+    "pr": "conductor/mobile-option-5-label",
+    "branch": "conductor/mobile-option-5-label",
+    "session_id": "sha256:5dd5b41c400fa73e"
+  },
+  "source_type": "correction",
+  "artifact_kind": "rule-edit",
+  "lesson": {
+    "summary": "A fan-out sweep run with a tracked-files-only grep cannot see the files the change adds",
+    "synthesized_rule": "When sweeping for survivors of a contract change, use a grep that includes UNTRACKED files. A tracked-files-only grep is blind to exactly the files the change is adding -- the changelog, history and feedback entries a ship pipeline creates -- and those are the files most likely to restate the contract and the most user-visible. Fewer hits reads as progress rather than as a narrower search, so the failure is self-concealing. State the tool in the rule, not just the intent.",
+    "target_hint": "general.md Consistency item 2; ship SKILL.md step 5"
+  },
+  "evidence": {
+    "window_path": "(not committed - raw transcript window, see README)",
+    "evidence_strength": "direct-quote",
+    "lesson_hash": "sha256:a5d264d36a19c145d2cdccd20826382e7b5800ba16f8a623f5bb667a76b26d77",
+    "window_path_original_basename": "20261004-143338-a-fan-out-sweep-run-with-a-tracked-files-only-gr.window.jsonl"
+  },
+  "signals": {
+    "source_type": "correction",
+    "source_weight": 0.8,
+    "evidence_strength": "direct-quote",
+    "evidence_weight": 1.0,
+    "recurrence_count": 1,
+    "sanitization_clean": null
+  },
+  "confidence": 0.8
+}
