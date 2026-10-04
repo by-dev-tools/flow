@@ -25,6 +25,41 @@ the branch's files on disk where an automatic hook can reach them.
   under review.
 - **Not mitigated:** the hook script itself. It lives in the repo and any branch can rewrite it.
 
+### The hook runs `claude plugin` subcommands, and that is NOT the thing above
+
+Stated explicitly because it looks adjacent to the residual and is not, and because the distinction
+is what let the bootstrap deadlock be fixed without reopening anything.
+
+The hook invokes `claude plugin marketplace update flow` and `claude plugin update flow@flow`,
+including on the arm that handles an install too old to carry the provenance engine — which, measured
+2026-10-03, is every Conductor cloud workspace (flow **1.29.0** baked into the snapshot, against a
+`main` at 1.55.0). Before that arm ran them, the updater could only update installs that were already
+new enough not to need it: the engine it asks "are you current?" ships *inside* the artifact being
+updated, so an install old enough to need the update was old enough to disable the updater.
+
+**Those two commands are not repository files.** They are subcommands of your own installed `claude`
+CLI, resolved from `PATH`. The decision recorded above is about this hook executing *a file in the
+repository* — its claimed mitigation is specifically that "the hook no longer executes any **other**
+repository file" — and the hook has invoked both commands on its normal path since `bb3bc60`, under
+the same already-approved `settings.json` command string. So running them on the bootstrap arm adds
+no new class of execution; it removes an early exit standing in front of calls this file was already
+trusted to make.
+
+**What stays refused, and is asserted both ways.** A bootstrap run still never reads
+`plugins/flow/skills/ship/lib/plugin-provenance.py` from the checkout, and it reports a version by
+reading the plugin registry rather than by running repo code.
+`run_plugin_provenance_evals.py::test_hook_never_executes_the_checkout` keeps the structural pin
+(engine resolved via `installPath`; no checkout-relative engine path in executable code), and
+`test_hook_degrades_safely` now carries the **pair** — with no engine the hook *must* run the two CLI
+commands **and** must still not invoke anything from the checkout. Either half alone passes in a
+world the other forbids, so neither ships alone.
+
+**What this does escalate, said plainly:** more hosts now pull from the marketplace automatically,
+and on a stale workspace the hook mutates the install on a path that previously did nothing. The
+mitigation is loudness, not silence — the outcome goes to the hook's `stdout`, which for
+`SessionStart` is the one channel Claude Code adds to the session's context, so the agent in the seat
+can read what version it is actually running.
+
 ### Why this is documented rather than fixed
 
 The obvious fix is to make a change to the hook re-trigger Claude Code's approval prompt — either by

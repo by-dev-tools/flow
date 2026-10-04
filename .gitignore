@@ -21,6 +21,7 @@ tools/*
 !tools/doc-fragment/
 !tools/coverage-recall/
 !tools/rule-activation/
+!tools/eval-sweep.sh
 # ...but the GENERATED artifacts inside those packages stay ignored. Last matching
 # pattern wins, so these must come after the negations above. `samples/` holds
 # shadow-sampler logs containing session-transcript excerpts: un-ignoring them made

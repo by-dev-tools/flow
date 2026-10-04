@@ -27,7 +27,11 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 **Previously: v1.54.0 (shipped #171 — D1 Phase 3: the technical plan is auto-written against the approved prototype and gated by MACHINE, FB-0125. `/flow:autoplan` + three arms: criterion quality (deterministic, read from output rather than exit status — both tools exit 0 on every verdict), completeness (`/flow:audit-coverage` source-mode union, the finder wins, never passes on silence), and conformance + experience (`/flow:review-brief` generalized to any reviewed artifact and pointed at the plan). GREEN requires every arm to have RUN; silence is evidence of nothing. Runs on the prototype-first path only — where the human gate did not move, there is nothing to replace. Escalation pauses through worker → orchestrator → human, decided by Ben 2026-09-29. **D1 is now complete end to end.**)**
 
-**Plugin at v1.55.0 (this PR — `/flow:audit-coverage` can read behaviour-bearing prose, FB-0126/FB-0127). A `.md` path never matched `sourceFilePatterns`, so the completeness gate was structurally blind to prose — on a plugin that ships PROMPTS, most of what this repo changes. Three parts: (A) say it — with the new slot unset a run prints `WEAKENED · DOC-BLIND` naming every changed doc-shaped file it did NOT read, and prints the built-in guess so the value is copy-pasteable; (B) see it — the `behaviorBearingDocPatterns` slot (schema 36 → 37), **empty by default**, unioned in after the source filter; (C) fit it — `head -c` over a concatenation made files late in `sort -u` order entirely invisible once the 60 KB cap bound, replaced by max-min fair-share allocation that names every file it cut. **Measured, not asserted:** #159's reconstruction moves from **0 of 5** at baseline to **2/5 and 1/5 single-run, union 3/5**, zero false positives, via `tools/coverage-recall/` with `--selftest` passing first — plus the paired negative that a wording-only `.md` change returns `No issues flagged.` Recall is still weak and is reported as such: the likeliest cause is in § Next, found independently by two review lenses — Stage 1 still tells the reviewer that doc changes are not behaviours, so B feeds it a `SKILL.md` and the prompt hands it a rule for discarding it. See `dev-docs/history/2026-09-30-audit-coverage-reads-behaviour-bearing-prose.md`.)**
+**Previously: v1.56.0 (shipped [#174](https://github.com/by-dev-tools/flow/pull/174) — finish CV1: tell the reviewer the prose counts, fingerprint it, and stop losing criteria.)**
+
+**Plugin at v1.57.0 (this PR — the plugin auto-updater could only update installs that did not need updating, FB-0131). `.claude/hooks/flow-plugin-currency.sh` existed to keep this repo's installed plugin current and had never once updated anything: the provenance engine it consults ships INSIDE the plugin (v1.43.0), the hook resolves it from the installed tree only (correctly — it fires with no approval prompt), so a 1.29.0 install had no engine and the hook printed the two commands and ran neither. Measured: every Conductor cloud workspace boots from a snapshot carrying 1.29.0 against a tree at 1.55.0, `release_gap: 26`, with the local marketplace clone pinned at the same `cf783ac`. The bootstrap arm runs both commands; the verdict goes to `stdout`, the one `SessionStart` channel Claude Code injects into context — stderr on a zero exit "goes to the debug log only, never the transcript, and Claude never sees it", so the hook's entire output previously had no reader. **The fix forced a second one:** moving the registry mid-session flipped the row labelled "the version that ran this pipeline" from a correct `⚠️ 26 releases back` to a false `✓ matches this branch`, so `restart_pending` is now three-valued and an ambiguous registry reading cannot tick. `.conductor/settings.toml` was evaluated and rejected — measured three ways that a cloud organization ignores repo-defined setup scripts.)**
+
+**Previously: v1.55.0 (shipped #172 — `/flow:audit-coverage` can read behaviour-bearing prose, FB-0126/FB-0127). A `.md` path never matched `sourceFilePatterns`, so the completeness gate was structurally blind to prose — on a plugin that ships PROMPTS, most of what this repo changes. Three parts: (A) say it — with the new slot unset a run prints `WEAKENED · DOC-BLIND` naming every changed doc-shaped file it did NOT read, and prints the built-in guess so the value is copy-pasteable; (B) see it — the `behaviorBearingDocPatterns` slot (schema 36 → 37), **empty by default**, unioned in after the source filter; (C) fit it — `head -c` over a concatenation made files late in `sort -u` order entirely invisible once the 60 KB cap bound, replaced by max-min fair-share allocation that names every file it cut. **Measured, not asserted:** #159's reconstruction moves from **0 of 5** at baseline to **2/5 and 1/5 single-run, union 3/5**, zero false positives, via `tools/coverage-recall/` with `--selftest` passing first — plus the paired negative that a wording-only `.md` change returns `No issues flagged.` Recall is still weak and is reported as such: the likeliest cause is in § Next, found independently by two review lenses — Stage 1 still tells the reviewer that doc changes are not behaviours, so B feeds it a `SKILL.md` and the prompt hands it a rule for discarding it. See `dev-docs/history/2026-09-30-audit-coverage-reads-behaviour-bearing-prose.md`.)**
 
 **Previously: v1.53.0 (shipped #170 — S0 resolved, and the measurement says the feature is still not fixed for consumers, FB-0124). The four rule-skills (`general`, `plan-discipline`, `documentation`, `exploration`) are now honestly labelled **model-invoked**: `paths:` is gone (it *narrows* a description-driven activation rather than triggering one), the descriptions no longer end "Not user-invocable — path-activated only.", and each carries a `when_to_use`. **59 probe sessions, 0 discarded: 25 ran at plugin scope and produced ZERO invocations — all four rules, old and new descriptions, both models — while the identical rewrite fires 3/3 at project scope.** Scope is the decisive variable, not the description; the *name* does most of the work (a deliberately vague description still fired). So S0's code change is right on its own merits and is **not** a fix for the advertised feature: `/flow:doctor` Check 3.2 stops reporting `[PASS]` over a claim it never checked (new `[UNCHECKED]` marker, outside the verdict arithmetic, printed inline as `[READY] (N unchecked)`), `plugin-provenance.py` no longer silently reclassifies all four as command skills, and `template/base/CLAUDE.md.template` stops pointing at the `rules/` directory deleted in v1.33.0 — a **write-once** surface `bootstrap.sh` copies into every consumer repo. One shared `plugins/flow/lib/rule_skills.py` replaces five copies of the roster + three languages' worth of the predicate, and a claim lint makes a tenth false path-activation claim impossible rather than the ninth corrected. **Open for Ben: is S0 done at "honest, raises the floor", or does it need the `SessionStart` hook?** — see § "A plugin `SessionStart` hook".)** Recently shipped: **v1.52.0 ([#166](https://github.com/by-dev-tools/flow/pull/166) — a docs-only PR is N/A, not unverified, FB-0122), v1.50.0 ([#165](https://github.com/by-dev-tools/flow/pull/165) — a slash-command argument never touches a shell again, FB-0116/FB-0117), v1.49.0 ([#160](https://github.com/by-dev-tools/flow/pull/160) — `/flow:audit-coverage` enumerates before it judges, FB-0115), v1.47.0 (#159 — source-tree input mode + a verified RCE in typed arguments), v1.45.0 (#157 — the §4.10 orchestrator skill suite, FB-0110).**
 
@@ -292,7 +296,7 @@ Both raised while writing the D1 Phase 3 plan (`/flow:critique-plan` round 5), t
 - **The `[decision-required]` escalation will have two engines behind one format.** FB-0075's renderer already ships as `manifest-triage.py render-decisions`, emitting `**Decisions for you** — answer by number.`, and Phase 3's gate needs the same user-facing shape. It cannot reuse the engine: `render_decisions` consumes `result["residual"]`, keys every entry on `class ∈ {ask, auto, blocked}` and a `kind` matched against `KIND_COPY`, and its copy speaks in PR-readiness — while the Phase 3 gate runs *before any PR exists* and has no manifest to classify. Phase 3 therefore matches the **wording** and forks the implementation, which takes the human-facing half of the win and leaves the drift risk. The real fix is a shared entry-shape both callers render from; that is a refactor of a shipped ship-path engine and wants its own PR.
 - **Blockers should carry a drafted resolution the way findings do.** `/flow:staff-review` (push-further + UX, v1.54.0): for a *finding* the machine drafts the fix; for *"Arm B errored with a 429"* the machine **knows** the fix (re-run that arm) and, as shipped, only states it as a trailing `→` clause rather than routing it through the same answerable-question apparatus. Doing it properly means `blockers` becomes a list of dicts instead of a list of strings — a schema bump that several evals assert substrings of — so it wants the same PR as the entry-shape unification above, not a separate pass.
 - **The escalation says what happens if you answer and the re-run passes, and not if it fails.** One clause; belongs with whichever change rewrites the header.
-- **The `SessionStart` plugin-currency hook is not converging in this workspace, and nothing notices.** **⚠️ On D1 Phase 3's critical path, not adjacent to it:** Phase 3's gate goes RED on a document-blind reviewer (correctly — a reviewer that cannot read the rules has not reviewed), and every reviewer in this workspace is document-blind for exactly this reason, so the gate's `Clean ⇒ proceed` path cannot be demonstrated here until this converges. FB-0107 measured the installed plugin at **1.29.0** on 2026-09-12 and built the provenance rows around that. Measured again on **2026-09-27**: still **1.29.0**, against a working tree at **1.50.0** — twenty-one releases. The hook exists (`.claude/hooks/flow-plugin-currency.sh`, `bb3bc60`) and deliberately refuses to fall back to this checkout's copy, which is the right security call; what is missing is that a *failed* update is silent. The cost is measurable and was paid here: 1.29.0's `extract_session.py` predates the comma-splitting fix at `:1064`, so this repo's `referenceGlob` (`dev-docs/*.md,dev-docs/feedback/*.md`, 114 files) resolved **zero**, and all five `/flow:critique-plan` rounds on the Phase 3 plan ran **document-blind** — no Spec-violation category assessable in any of them. FB-0082's warning machinery worked exactly as designed and said so every time, which is the only reason this was visible. **A hook whose failure mode is "nothing happens" needs a loud one.**
+- **The `SessionStart` plugin-currency hook is not converging in this workspace, and nothing notices.** **⚠️ On D1 Phase 3's critical path, not adjacent to it:** Phase 3's gate goes RED on a document-blind reviewer (correctly — a reviewer that cannot read the rules has not reviewed), and every reviewer in this workspace is document-blind for exactly this reason, so the gate's `Clean ⇒ proceed` path cannot be demonstrated here until this converges. FB-0107 measured the installed plugin at **1.29.0** on 2026-09-12 and built the provenance rows around that. Measured again on **2026-09-27**: still **1.29.0**, against a working tree at **1.50.0** — twenty-one releases. The hook exists (`.claude/hooks/flow-plugin-currency.sh`, `bb3bc60`) and deliberately refuses to fall back to this checkout's copy, which is the right security call. **✅ FIXED 2026-10-03 (FB-0131) — and the cause recorded here was WRONG in a way that pointed at the wrong fix.** This bullet said *"what is missing is that a **failed** update is silent."* Measured: the update never **failed**, it was never **attempted**. The provenance engine ships inside the plugin (added v1.43.0) and the hook resolves it from the installed tree only, so a 1.29.0 install had no engine, the hook printed the two commands and exited 0 — the updater could only update installs already new enough not to need it. A bootstrap deadlock, not a swallowed error, and a loudness fix alone would have made the silence legible without ever moving a version. Two further measurements the entry did not have: the local marketplace **clone** is pinned at the same `cf783ac`, so the comparison would have been meaningless even with an engine; and the hook's output was **entirely stderr**, which Claude Code's hook docs say "goes to the debug log only, never the transcript, and Claude never sees it" — so the seat could not have read the note either way (confirmed: a fresh session asked for its `[flow-currency]` line reported none). The fix runs both commands on the engineless arm and emits the outcome on `stdout`, the one `SessionStart` channel that reaches the session's context. The cost recorded below was real and is why this was on Phase 3's critical path: 1.29.0's `extract_session.py` predates the comma-splitting fix at `:1064`, so this repo's `referenceGlob` (`dev-docs/*.md,dev-docs/feedback/*.md`, 114 files) resolved **zero**, and all five `/flow:critique-plan` rounds on the Phase 3 plan ran **document-blind** — no Spec-violation category assessable in any of them. FB-0082's warning machinery worked exactly as designed and said so every time, which is the only reason this was visible. **A hook whose failure mode is "nothing happens" needs a loud one — and first it needs to actually do the thing.**
 
 ### D1g — Three copies of the CWE-59 path guard, and they have already drifted
 
@@ -443,6 +447,201 @@ third state — retained, but triggered rather than scheduled; and add the `comp
 `compact` hook ships; a fresh reader should get this from the canonical doc, not from a roadmap
 entry describing how the doc came to be wrong.
 
+### FB-0107's PATH signal has never resolved for flow — the plugin ships no `bin/` (measured v1.57.0)
+
+**Surfaces when:** `plugin-provenance.py`'s `read_running` / `restart_pending` / the "what ran" row is
+next touched, or anyone cites "we read PATH, not the registry" as a property flow actually has.
+
+FB-0107's lesson 4 is *"a tool that reports what ran must read a signal pinned at run start, not a
+mutable record"*, and the fix was to read the plugin's `bin/` directory off `PATH`, which Claude Code
+prepends at session start. The engine's own docstring hedges correctly — *"a plugin with no `bin/`
+never appears on PATH, so callers fall back to the registry"* — and **flow has no `bin/`**:
+`plugins/flow/` holds `agents, docs, evals, hooks, lib, schema, scripts, skills, tools` and nothing
+else, and neither does the installed tree. So `running` is `{"state": "not_on_path"}` on every host,
+`ran_version_source` is `"registry"` on **100%** of real runs, and the mutable record the lesson
+rejects is the only source flow ever has.
+
+**The eval validated it against a state that cannot occur.** `test_running_version_beats_the_registry`
+creates `cache/flow/flow/1.29.0/bin/` itself and puts it on `PATH`. The PATH branch works — it is just
+unreachable for this plugin. That is `.claude/rules/general.md` § Consistency item 4 in its purest
+form: an instrument exercised only on an input the real system cannot produce.
+
+**v1.57.0 substituted an ambiguity probe, not a fix.** `cached_versions` counts version trees left in
+the plugin cache (`claude plugin update` does not remove the old one — measured), and two trees plus
+no pinned signal is reported as undeterminable. That catches the dangerous case and keeps clean
+installs clean, but it is weaker than a pinned signal: it cannot say *which* tree ran, only that it
+cannot tell.
+
+**The real fix is to give flow a `bin/`** — one directory, with something inert in it — so the PATH
+mechanism starts functioning as designed and `ran_version` becomes a measurement again. **Do not ship
+it on the assumption above.** The claim "Claude Code prepends the resolved plugin's `bin` directory at
+session start" is quoted from this engine's docstring and has never been verified for flow, because
+flow has never had one to verify with. Measure it first: add a `bin/` to a scratch plugin, install it,
+and read `PATH` in a fresh session. **THE CONDITION THAT WOULD REVERSE THIS:** if that probe shows
+Claude Code does *not* prepend plugin `bin/` directories on current versions, then FB-0107's lesson-4
+mechanism is dead for every plugin, `read_running` should be retired rather than fed, and the cache
+probe becomes the primary signal rather than the substitute.
+
+**Deletion criterion:** delete when either flow ships a `bin/` and `ran_version_source` reads `PATH`
+on a real run, or the probe above refutes the mechanism and `read_running` is retired.
+
+### A known-positive validation that lives in a DOCSTRING is an unvalidated instrument — make the mutation sweep an artifact of the suite (2026-10-03, from v1.57.0's push-further lens)
+
+**Surfaces when:** any behavioural pin is added to an eval harness, or the next time someone writes
+"verified by mutation" in a commit message.
+
+**The evidence is one PR's own count.** v1.57.0 shipped **three** assertions that were vacuous before
+they worked, written by an author who had just authored the corollary warning against exactly that:
+
+1. the CLI-chatter check — the eval shim wrote to a log file, never stdout, so the assertion could not fail;
+2. the repo-code import probe — the marker lived in a `TemporaryDirectory` already deleted by the time
+   the assertion read it;
+3. the same probe again — shadowing `json` and `re` together **masked** the hit (stdlib `json` imports
+   `re`, the fake `re` imported `pathlib`, `pathlib` imports `re` and got the half-initialised module,
+   and the hook's bare `except` swallowed the lot).
+
+Each was caught by a review lens or a hand-run mutation, not by the suite.
+
+**The diagnosis is sharper than `general.md` item 4, and it is not "run it against a known positive"
+— that rule was obeyed all three times.** It is: **the known-positive run happened OUTSIDE the suite,
+by hand, so it never survived into regression.** `test_hook_does_not_import_repo_code`'s own docstring
+says *"it is the known-positive that validates it — the same probe fails against the unfixed hook."*
+Nothing in the file runs that. Thirteen mutations turning the suite red is recorded as a **sentence in
+a history entry**. The mutation is prose; the pin is code; prose does not re-run.
+
+**The mechanism:** a declared mutation table — `(source file, mutation expression, the test that must
+fail)` — plus a runner that applies each mutation to a **copy**, runs only the named test, asserts it
+goes red, and reverts. `_hook_driver`'s `drive()` already shells `bash str(HOOK)`, so pointing it at a
+patched copy is a few lines, and the hook being a single shell file is what makes this cheap to start
+here. **Gate the runner on its own `--selftest`** the way `tools/coverage-recall/recall.py` gates
+scoring, or it inherits the very defect it exists to remove. CI-wirable — no live session needed.
+
+**Precedent to generalise rather than invent:** `run_prototype_gate_evals.py::test_sweep_patterns_are_not_vacuous`
+already does this for *grep patterns* (it runs each detector against a committed known-positive seed).
+Nothing does it for *behavioural* pins.
+
+**Seeded in v1.57.0** with the single instance whose docstring already promised it — see
+`test_hook_does_not_import_repo_code`'s paired `-I`-stripped run. Generalising it to a declared table
+across the harness is the remaining work.
+
+**Deletion criterion:** delete when a mutation table exists with its own `--selftest` and CI runs it,
+so "verified by mutation" is a thing the suite asserts rather than a thing a commit message claims.
+
+### Four deferred findings from v1.57.0's staff-review, all real, none in scope (2026-10-03)
+
+**Surfaces when:** `plugin-provenance.py`'s renderer, `plugins/flow/hooks/default-hooks.json`, or
+the eval harness's fixture builders are next touched.
+
+1. **`CLAUDE_PLUGIN_ROOT` is a candidate run-pinned signal, and it costs nothing to try** (push-further
+   lens). The `bin/` entry above frames the choice as *`bin/` or the cache probe*, and that is a false
+   pair. `CLAUDE_PLUGIN_ROOT` **encodes the version in its path** (`…/cache/flow/flow/1.29.0`), is set
+   by the host at skill-resolution time — the pinning moment FB-0107 lesson 4 actually asks for — and
+   is **already** read by `collect(..., plugin_root)` and `resolve_libs`, which throw the version away.
+   **Live evidence from this very PR's ship run:** `/flow:ship` resolved from
+   `.../cache/flow/flow/1.29.0/skills/ship` while the registry said 1.55.0 — the path was right where
+   the registry was wrong. Caveat: it is unset in Bash-tool calls, so it strengthens the `!`-block
+   reading only — which is the reading the row is made from. **Probe:** read it in a `!`-block before
+   and after a mid-session `plugin update` and see whether it moves. Amend the `bin/` entry with this
+   as candidate 0 rather than opening a second one; it is the same decision.
+
+2. **A SHIPPED hook warns on a channel nobody reads — this PR's own lesson, unswept.**
+   `plugins/flow/hooks/default-hooks.json` Hook 2 is a `PreToolUse` path-validation warning whose
+   entire output is one `echo … >&2` and which exits 0. Per the hook docs this PR quotes three times,
+   stderr from a hook that exits 0 "goes to the debug log only, never the transcript, and Claude never
+   sees it". So flow ships consumers a warning that cannot warn anyone — the FB-0085 class, in shipped
+   code, found by sweeping FB-0131's own "know which channel your audience reads" corollary. Options:
+   emit via the hook's JSON output (`permissionDecisionReason` / `systemMessage`), or delete it and let
+   the in-script cwd constraint stand alone, which its own `$comment` already calls the primary
+   defense. **Pick by probe, not by docs** — ask a fresh session to quote the line back, exactly as
+   FB-0131 did. Shipped surface: needs a version and an eval.
+
+3. **The render fixtures still mostly exercise an install state the system cannot produce.** Only 5 of
+   ~25 `make_home` fixtures pass `cache_versions=`, so most row-rendering tests run against a registry
+   whose `installPath` points outside the plugin cache — which `make_home`'s own docstring calls "not a
+   state a correctly installed plugin can be in". v1.57.0's redesign made the hedge fire on every
+   registry-sourced reading, so the render path IS now exercised everywhere; what remains is that the
+   `cached_versions` inventory is `[]` in most fixtures rather than realistic. Migrate the
+   row-rendering fixtures onto `cache_versions=`.
+
+4. **The bootstrap arm's download has no bound.** `.claude/hooks/flow-plugin-currency.sh` now runs
+   `claude plugin update` at session start; a hung or slow registry blocks session start until Claude
+   Code's own hook timeout kills it, possibly mid-install. Either wrap in `timeout 60` or state
+   explicitly in the cost header that the host timeout is the bound. Deferred because it adds a new
+   failure mode to reason about (a half-installed plugin) rather than removing one.
+
+**SECURITY, deferred because it is not in this diff:** skill and agent **directory names** from the
+checkout render unsanitised into the PR body — `plugin-provenance.py`'s `render_block`, fed by
+`surface_drift` → `_names()`. This is the identical forging class `test_version_string_cannot_forge_the_table`
+pins for the version string: a directory name may contain `|`, backticks and newlines on Linux, so a PR
+adding `plugins/flow/skills/<crafted>/` can close the markdown cell and forge a `✓ matches this branch`
+row in the body a human reads at the merge gate. `render_block` is untouched by v1.57.0, which is the
+only reason this is deferred rather than fixed — it is the same sink the v1.57.0 hardening is about.
+Route those names through `_clean` when next touched. (Found by `/flow:security-review`.)
+
+Two more, smaller, same provenance: the `✓` glyph means "ran" in `ship/SKILL.md`'s loop-step table and
+"healthy" in the provenance table 14 lines below, with one legend covering both; and there is no
+design-language section governing machine-to-human copy in rendered-markdown or terminal artifacts,
+which is how that collision went unnoticed. Fold the latter into the existing `designLanguagePath`
+coverage item rather than opening a new one.
+
+### ▶ FOR BEN — one org-level save per repo, and the FIRST session of every new workspace is current (2026-10-03, FB-0131)
+
+**Surfaces when:** a new cloud workspace is created for any repo that uses flow — i.e. several times a
+day, today.
+
+**The repo-side half is fixed and the gap is not closed.** FB-0131's bootstrap arm converges a stale
+install, but `claude plugin update` applies **on restart**, so the hook can only ever make the
+**next** session current. The **first** session of every new workspace still boots stale, and that is
+the session that does the work.
+
+**Only provisioning can fix the first session, and in a Conductor cloud organization that is org
+config, not repository content.** Measured 2026-10-03, three agreeing ways — so do not re-derive it:
+
+1. Conductor's worker code (`/conductor/worker/index.js`,
+   `UPDATE_REPOSITORY_SETUP_SCRIPT_TOOL_DESCRIPTION`): *"For cloud organizations, the saved setup
+   script is the only one that runs — setup scripts defined in the repository's own
+   `.conductor/settings.toml` or `conductor.json` files are **ignored**."*
+2. The bundled `computer-admin` skill repeats it, and adds that a repo file *"still serves people
+   running Conductor locally."*
+3. A live probe: a branch carrying a `.conductor/settings.toml` whose setup writes an unconditional
+   marker as its **first** action, and a fresh cloud workspace created from that branch. The file was
+   on disk at the right path and commit; the marker was **ABSENT**. Marker-first is the instrument
+   validation — "absent" can only mean never-ran, not ran-and-failed.
+
+So **a committed `.conductor/settings.toml` was considered and rejected**: it would be inert in
+exactly the environment it targets, and worse than nothing, because the next reader would take it for
+the provisioning fix and stop looking.
+
+**What to do — in an admin workspace for the cloud computer** (the `computer-admin` skill and its
+`ListComputers` / `GetComputerConfiguration` / `CreateComputerConfiguration` /
+`UpdateRepositorySetupScript` tools are only available there). Save this as the **per-repository
+setup script** for `flow`:
+
+```sh
+# Keep the installed flow plugin current at workspace-creation time, so the FIRST
+# session is current rather than the next one. Both commands are needed: the
+# marketplace clone in the snapshot is pinned at the same stale commit as the
+# install, so updating without refreshing it installs nothing.
+claude plugin marketplace update flow || claude plugin marketplace add by-dev-tools/flow ||   echo "⚠️ could not refresh the flow marketplace clone"
+claude plugin update flow@flow || echo "⚠️ 'claude plugin update flow@flow' FAILED"
+claude plugin list
+```
+
+**The saved script is PER-REPOSITORY, so every repo that uses flow needs its own copy** —
+`health-tracker` has the identical gap and the identical remedy. There is no org-wide setting that
+covers them all.
+
+**The better fix, if the snapshot is being rebuilt anyway:** the baked install is what creates this.
+Every workspace reports `installPath …/cache/flow/flow/1.29.0` with an *identical*
+`installedAt: 2026-08-19T04:51:32.300Z`, which is a snapshot artifact, not a per-workspace install.
+Moving the **install script** to install flow at build time (or to stop baking it, letting the setup
+script own it) removes the 26-release floor rather than patching over it each time.
+
+**Deletion criterion:** delete this section once a saved setup script (or a rebuilt install script)
+exists for every flow-using repo and a fresh workspace's first session reports a current
+`claude plugin list`. Verify with `claude plugin list` in a brand-new workspace — **not** by reading
+this entry.
+
 ### Workers killed by the account session limit read identical to workers that finished (2026-09-27/29, orchestrator seat)
 
 **Surfaces when:** an idle worker is found with no explanation, or a dispatch is being planned
@@ -505,12 +704,24 @@ check-ins.**
 **Surfaces when:** `/flow:spawn` or its `usage.tsv` logging is next touched, or a re-dispatch path
 for an already-running worker is designed.
 
+**CAUSE FOUND, and it is not habit — `/flow:spawn` was never installed in any seat. Resolved by the
+`SessionStart` currency-hook bootstrap fix (FB-0131, 2026-10-03).** Measured with
+`plugin-provenance.py report --json` in two independent cloud workspaces: installed flow **1.29.0**,
+`release_gap: 26`, and `surface_drift.skills_missing_from_installed` listing `autoplan`, `gate`,
+`handoff`, `orchestrate`, `prototype`, `review-brief`, **`spawn`**. `/flow:spawn` shipped in v1.45.0;
+the runtime in a 1.29.0 seat has no tool for it at all, so a seat asked to invoke it would correctly
+conclude it does not exist. **Not a discipline failure, and filing it as one sent the next reader
+looking in the wrong place** — the identical pre-`/flow:spawn` observation from the
+session-efficiency program is what made "the seat does not use it" the obvious reading. The fix is
+the bootstrap arm in `.claude/hooks/flow-plugin-currency.sh`: an engineless install now runs
+`claude plugin marketplace update flow && claude plugin update flow@flow` instead of printing them,
+so the **next** session in a workspace has the skill. **Re-check before reopening this** (§ 9): run
+`claude plugin list`, and if it reports ≥ 1.45.0 the dispatch-logging half of this entry is closed.
+
 `/flow:spawn` shipped in #157 specifically to record `model · effort · why` per dispatch into
 `.flow/usage.tsv`, so routing decisions survive the session that made them. This seat dispatched
 every worker this week with raw `conductor` CLI calls instead, so this week's routing rationale
-exists only in chat messages — nowhere durable. The session-efficiency program recorded the
-identical gap **before `/flow:spawn` existed** (*"no dispatch in this program had logged a routing
-rationale"*); it is still true, now measured by the very seat that shipped the fix.
+exists only in chat messages — nowhere durable.
 
 **Also genuinely unclear, not just unused:** `/flow:spawn` creates a *new* workspace, so it has no
 path for re-dispatching an already-running idle worker — which, per the entry above, is the
@@ -1686,6 +1897,16 @@ Anchor co-location (`walk_extract.extract_block(..., anchor_label="Spec-walk")`)
 - **The gaps — two shapes defeat the proxy, both silent.** (1) *No active anchor.* `rules/plan-discipline.md` § Required plan fields: `tiny` mode "skips (4) and (5) entirely" and a non-visual `spike` replaces (4) with a Research-question line. For such an active PR, `anchor_idxs[0]` lands in the first *retained* section, so a retained `Visual-walk` between anchors 0 and 1 reads as co-located. (2) *Retained section authored visual-first.* A retained `Visual-walk` placed above its own section's `Spec-walk` precedes `anchor_idxs[1]` and so falls inside the computed region — and it is indistinguishable by order alone from the legitimate active shape the parser deliberately supports (`VISUAL_BEFORE_SPEC`). Both are pre-existing (verified: the pre-fix module leaks identically on each), and anchoring is a strict improvement for feature-mode plans, so neither blocks. Pinned by `test_anchor_known_limitation_tiny_mode` + `test_anchor_known_limitation_retained_visual_first` in `run_walk_extract_evals.py` so the gaps stay visible rather than being rediscovered as fresh bugs.
 - **Quadratic backtracking in `_BOLD_LABEL_RE` (from the v1.20.x security review).** The tail `\s*:?\s*$` is ambiguous — two adjacent `\s*` runs split by an optional colon — so a non-matching line with a long whitespace run costs O(n²). Measured independently via `is_terminator()`: 0.085s at 5k chars, 1.28s at 20k, 7.86s at 50k. Reachable because `is_terminator` runs on every line of the scanned block. Not a security finding — polynomial not exponential, and the only source is a plan doc the developer authored or cloned, so a hang is a nuisance on your own repo rather than a privilege boundary. Fix by collapsing the tail to `[\s:]*$` (or an atomic group), re-running `run_walk_extract_evals.py` since the 47 baseline checks pin the current heading semantics. `heading_re()` itself was tested and is flat (0.0000s at 16k `**` pairs) — no action there. **Surfaces when:** `walk_extract.py` is next touched.
 - **Lost-update race on `dismissed.json` (from the same review).** `cmd_dismiss` is read-modify-write with no lock, so two concurrent drains in different projects can drop one dismissal. Pre-existing and orthogonal to the exit-3/4 split, but the new exit-4 recurrence signal *depends on dismissal records being durable* — a lost dismissal silently degrades a recurrence back into a "novel" lesson, which is the exact signal the split exists to preserve. Needs an `fcntl.flock` around the store. **Surfaces when:** `contribution_store.py` storage is next touched.
+- **▶ A CLEAN REBASE CAN SILENTLY HAND THE EXTRACTOR ANOTHER PR'S CRITERIA — measured 2026-10-03, v1.57.0.** This is the sharpest argument on the list for a real boundary marker, because it needs no authoring mistake at all: **git produced it, with no conflict markers and no warning.**
+
+  The sequence, exactly as it happened. `#174` merged while this worker was idle, so its branch rebased onto the new `main`. Four files collided; the two version files conflicted and were resolved by hand. **`dev-docs/plan.md` merged CLEANLY** — and the clean result interleaved the two PRs' blocks so that *this* PR's plan block landed **second**. `extract_block` selects the first non-demoted `Spec-walk` heading, so it then selected the OTHER PR's block: **20 criteria that belonged to a different change**, reported as this PR's active plan. Nothing in the pipeline objected. `/flow:verify-build` and `/flow:audit-coverage` would both have graded this diff against another branch's criteria and reported green — the §2a laundered-PASS hazard, reached through a rebase rather than through a missing demote qualifier.
+
+  It was caught only because the worker ran the extractor after the rebase and compared the reported line number against its own block, rather than reading the file and seeing no conflict markers. **"The merge was clean" is not evidence the document is right.** The orchestrator has warned the other three workers: after any rebase, run the extractor and confirm it selects your own block.
+
+  Why this belongs to *this* entry rather than being its own: the existing gaps here are all about the region-boundary PROXY being defeated by how an author happens to order their headings. This one is the same proxy defeated by how **git** happens to order them — which no authoring convention can fix, because no author chose it. A per-PR boundary marker is the only shape that survives a merge reordering blocks, and that makes it the strongest item in favour of taking this decision rather than continuing to harden the proxy.
+
+  **The cheap interim, which is not a fix:** `extract-criteria.py` already emits `source_heading_line`, and `/flow:autoplan`'s Arm A already compares it against a recorded line to prove which block it graded (v1.54.0). Generalising that assertion to `/flow:verify-build` and `/flow:audit-coverage` — refuse to grade unless the selected block is the current PR's — is the `assert-block` shape health-tracker#116 built, and it would have turned this into a loud refusal instead of a silent wrong answer.
+
 - **Also on the list when this is picked up:** a *second* `Spec-walk` heading inside the active section (e.g. `**Spec-walk (revised):**`) cuts `region_end` short and produces a false refusal whose warning names the wrong cause — loud-wrong rather than silent-wrong, so lower severity, but the same root fix covers it. And `visual-significance.py`'s override predicate and §5a's activation predicate now derive from the same parse but apply it separately — collapse them to one helper so the next contract change can't update only one (the fan-out shape this repo keeps hitting).
 - **Why it wasn't just fixed here.** The obvious candidate anchors each fail somewhere: `Mode` is field 1 of every plan but retained blocks are commonly trimmed of it (and `feature` is the documented default, so authors omit it); ATX section headings vary in level and are used for sub-sections inside a single PR, so "second `##`" can cut the active section short and produce false refusals on legitimate plans. A robust answer is a decision about **the plan format** — declaring one marker every PR block must carry — not a parser tweak, and picking it unattended risks trading a silent-wrong for a loud-wrong on valid plans.
 - **Candidate resolutions.** (a) Require an explicit per-PR delimiter in the plan format (e.g. a mandatory `**Mode:**` in every retained block, or an explicit `<!-- flow:pr-boundary -->` fence) and anchor on that; (b) take the *earliest* boundary among several available anchors, accepting false refusals as the safe direction; (c) have the active PR's Visual-walk be found by adjacency to whatever field the active block *does* have.
