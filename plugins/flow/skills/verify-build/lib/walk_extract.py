@@ -126,6 +126,50 @@ _DEMOTED_QUALIFIER_RE = re.compile(
 )
 
 
+# A heading that DECLARES non-applicability: `**Visual-walk:** N/A — no UI here`.
+#
+# Matched against the heading's TAIL (what follows the label and its punctuation),
+# anchored at the start, against a CLOSED token set. Two properties make this safe
+# where the roadmap entry feared a string match would not be:
+#
+#   * It is only ever consulted when the block parsed ZERO assertions, so a miss
+#     fails SAFE — the caller keeps today's behaviour, which is to force. The
+#     fragile direction would be a match that suppresses something real; this
+#     cannot, because there is nothing declared to suppress.
+#   * Anchoring means it recognises a CONVENTION rather than interpreting prose. A
+#     heading whose tail is a sentence that happens to contain "none" somewhere does
+#     not match; `**Visual-walk:** N/A — …` does.
+#
+# The trailing guard is `(?![A-Za-z0-9])`, so `native`, `nonetheless` and `nasty` do
+# not match while `n/a`, `none,` and `N.A.` do. `-` and `_` are deliberately NOT in
+# the guard class: `n/a-ish` is not a word anyone writes, and excluding them would
+# make `none-of-this-applies` fail for no benefit.
+_NA_TAIL_RE = re.compile(
+    r"^(?:not\s+applicable|n\s*/\s*a|n\.\s*a\.?|none|nil|na)(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+
+
+def heading_declares_na(line: str, label: str) -> bool:
+    """True if `line` is a `<label>` heading whose tail opens with a denial token.
+
+    Strips markdown decoration first so one rule covers all three heading forms
+    (`**Label:** N/A`, `**Label** *(UI only)*: N/A`, `### Label — N/A`).
+    """
+    bare = re.sub(r"[*_#`]+", " ", line)
+    m = re.search(re.escape(label) + r"\b", bare, re.IGNORECASE)
+    if not m:
+        return False
+    tail = bare[m.end():]
+    tail = re.sub(r"^\s*\([^)]*\)", "", tail)      # a parenthetical qualifier
+    tail = tail.lstrip()
+    if tail[:1] == ":":
+        tail = tail[1:]
+    # The separator an author puts between the label and the reason.
+    tail = tail.lstrip(" \t:\u2013\u2014-.")
+    return bool(_NA_TAIL_RE.match(tail))
+
+
 def _is_demoted_heading(line: str) -> bool:
     """True if `line` is a walk heading qualified as already-shipped."""
     return bool(_DEMOTED_QUALIFIER_RE.search(line))
@@ -272,6 +316,7 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
         "first_heading_line": <int> | None,        # 1-indexed line of that heading
         "co_located":    True | False | None,      # vs anchor_label's active region
         "all_demoted":   True | False,              # every block is qualified shipped/merged/demoted
+        "declared_na":   True | False,              # heading declares N/A AND zero assertions
         "warnings":      ["..."],
       }
 
@@ -301,6 +346,7 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
             "first_heading_line": None,
             "co_located": None,
             "all_demoted": False,
+            "declared_na": False,
             "warnings": warnings,
         }
 
@@ -321,6 +367,7 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
             "first_heading_line": None,
             "co_located": None,
             "all_demoted": True,
+            "declared_na": False,
             "warnings": warnings,
         }
 
@@ -390,6 +437,13 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
         "ended_at_line": (ended_at + 1) if ended_at is not None else None,
         "co_located": co_located,
         "all_demoted": False,
+        # DECLARED non-applicability: the heading says N/A **and** the block parsed
+        # zero assertions. Both halves are folded in here on purpose, so a consumer
+        # reads one boolean and cannot forget the items check — the direction the
+        # roadmap's option (a) got wrong was exactly "zero assertions" without a
+        # declaration. Sibling of `all_demoted`: both mean "this block declares
+        # nothing active", for different reasons.
+        "declared_na": bool(not items and heading_declares_na(first_heading, label)),
         "warnings": warnings,
     }
 
@@ -492,6 +546,7 @@ def cli_main(
                 "block_count": block["block_count"],
                 "co_located": block["co_located"],
                 "all_demoted": block["all_demoted"],
+                "declared_na": block["declared_na"],
                 "warnings": warnings,
             },
             indent=2,

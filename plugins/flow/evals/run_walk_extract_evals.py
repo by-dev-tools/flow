@@ -29,7 +29,7 @@ from pathlib import Path
 LIB = Path(__file__).resolve().parent.parent / "skills" / "verify-build" / "lib"
 sys.path.insert(0, str(LIB))
 
-from walk_extract import extract_block, heading_re, is_terminator  # noqa: E402
+from walk_extract import extract_block, heading_declares_na, heading_re, is_terminator  # noqa: E402
 
 CRITERIA = LIB / "extract-criteria.py"
 VISUAL = LIB / "extract-visual-states.py"
@@ -725,6 +725,119 @@ def test_second_scan_site_also_keeps_criteria() -> None:
           f"so /flow:critique-plan's lint reads a fraction of the plan and reports clean: {items}")
 
 
+# ---------------------------------------------------------------- FB-0132: declared_na
+
+_NA_PLAN = """# Plan
+
+**Visual-walk:** N/A — no file matching `uiFilePatterns` is in scope.
+
+**Spec-walk:**
+- [ ] a criterion *Pinned by:* the `run_a_evals.py` eval
+"""
+
+_NA_WITH_ITEMS = """# Plan
+
+**Visual-walk:** N/A — no UI
+- [ ] empty state renders centered
+
+**Spec-walk:**
+- [ ] a criterion *Pinned by:* the `run_a_evals.py` eval
+"""
+
+_BARE_EMPTY = """# Plan
+
+**Visual-walk:**
+
+**Spec-walk:**
+- [ ] a criterion *Pinned by:* the `run_a_evals.py` eval
+"""
+
+
+def test_declared_na() -> None:
+    """`declared_na` means the heading DENIES a visual surface and lists nothing.
+
+    Both halves are folded into the field so a consumer reads one boolean and
+    cannot forget the items check — which is the direction the roadmap's option (a)
+    got wrong. It proposed suppressing on "zero parsed assertions" alone, but
+    `verify-build/SKILL.md` §5a assigns a bare 0-assertion block its own meaning
+    ("capture the primary/launch state only"), so emptiness-keyed suppression would
+    retire a documented behaviour by reinterpreting it.
+    """
+    b = extract_block(_NA_PLAN, "Visual-walk", anchor_label="Spec-walk")
+    check("declared-na-true", b["declared_na"] is True, f"got {b['declared_na']}")
+    check("declared-na-items-empty", b["items"] == [], f"got {b['items']}")
+    check("declared-na-block-counted", b["block_count"] == 1, f"got {b['block_count']}")
+
+    # PAIRED: assertions present ⇒ NOT a denial, whatever the heading says.
+    b = extract_block(_NA_WITH_ITEMS, "Visual-walk", anchor_label="Spec-walk")
+    check("declared-na-false-with-items", b["declared_na"] is False,
+          f"a block that lists assertions is not a denial; got {b['declared_na']}")
+
+    # PAIRED: a BARE empty block is not a denial either — it is §5a's launch-state
+    # shape. This is the assertion that stops a future "simplification" to plain
+    # zero-assertion from landing silently.
+    b = extract_block(_BARE_EMPTY, "Visual-walk", anchor_label="Spec-walk")
+    check("declared-na-false-when-bare", b["declared_na"] is False,
+          f"a bare 0-assertion block means 'states unenumerated', not 'no visual "
+          f"surface'; got {b['declared_na']}")
+
+    # And the sibling field is unaffected in all three.
+    for label, txt in (("na", _NA_PLAN), ("items", _NA_WITH_ITEMS), ("bare", _BARE_EMPTY)):
+        b = extract_block(txt, "Visual-walk", anchor_label="Spec-walk")
+        check(f"declared-na-{label}-not-demoted", b["all_demoted"] is False,
+              f"got {b['all_demoted']}")
+
+
+def test_na_token_set_is_anchored() -> None:
+    """The denial match is a CLOSED set anchored at the heading tail, not a search.
+
+    The roadmap entry's objection to a string match was that `n/a`, `none`,
+    `not applicable` and a prose sentence are all plausible. Anchoring is what makes
+    it recognise a convention instead of interpreting prose: a tail that merely
+    CONTAINS a denial word does not match. Paired in both directions, because an
+    accept-everything matcher and a reject-everything matcher each pass one half.
+    """
+    accept = [
+        "**Visual-walk:** N/A",
+        "**Visual-walk:** N/A — no file matching `uiFilePatterns` is in scope.",
+        "**Visual-walk:** n/a - nothing visual",
+        "**Visual-walk:** None — backend only",
+        "**Visual-walk:** not applicable",
+        "**Visual-walk:** N.A.",
+        "**Visual-walk:** nil",
+        "**Visual-walk** *(UI only)*: N/A",
+        "### Visual-walk — N/A",
+    ]
+    reject = [
+        "**Visual-walk:**",                                   # bare
+        "**Visual-walk:** native rendering is unchanged",      # `na` prefix of a word
+        "**Visual-walk:** nonetheless we captured frames",     # `none` prefix of a word
+        "**Visual-walk:** the empty state renders centered",   # a real assertion inline
+        "**Visual-walk:** there is none of this in scope",     # denial word, not anchored
+        "**Spec-walk:** N/A",                                  # wrong label
+    ]
+    for line in accept:
+        check(f"na-accept::{line[:44]}", heading_declares_na(line, "Visual-walk"),
+              "should be read as a denial")
+    for line in reject:
+        check(f"na-reject::{line[:44]}", not heading_declares_na(line, "Visual-walk"),
+              "should NOT be read as a denial")
+
+
+def test_declared_na_cli() -> None:
+    """Both consumers carry the field — `cli_main` is shared, so adding a key for one
+    silently changes the other's output contract (the FB-0125 lesson, same shape)."""
+    rc, out = run_cli(VISUAL, _NA_PLAN)
+    check("declared-na-cli-exit", rc == 0, f"exit {rc}")
+    check("declared-na-cli-flag", out.get("declared_na") is True, f"got {out.get('declared_na')}")
+    check("declared-na-cli-assertions", out.get("assertions") == [], f"got {out.get('assertions')}")
+    # The Spec-walk consumer emits the key too, and for ITS block it is false.
+    rc, out = run_cli(CRITERIA, _NA_PLAN)
+    check("declared-na-cli-criteria-exit", rc == 0, f"exit {rc}")
+    check("declared-na-cli-criteria-flag", out.get("declared_na") is False,
+          f"the Spec-walk block is not a denial; got {out.get('declared_na')}")
+
+
 def main() -> int:
     for fn in [
         test_heading_forms,
@@ -750,6 +863,9 @@ def main() -> int:
         test_all_demoted,
         test_demoted_heading_skipped_regardless_of_order,
         test_all_demoted_cli,
+        test_declared_na,
+        test_na_token_set_is_anchored,
+        test_declared_na_cli,
     ]:
         fn()
 

@@ -402,6 +402,29 @@ def main(argv):
                     "no action needed)"
                 )
                 signals.extend(f"[WARN] {w}" for w in blk.get("warnings", []))
+            elif blk.get("declared_na"):
+                # The author DECLARED non-applicability and listed no states, so the
+                # block is a denial rather than a declaration. Before this, the
+                # override keyed on `block_count >= 1` and never read the block — so
+                # `**Visual-walk:** N/A — no UI in this change` flipped
+                # `visual_significant` to TRUE and `/flow:ship` §7a then demanded a
+                # rendered walkthrough and a visual-history entry for a diff with no
+                # UI. Omitting the block entirely gave the right answer, so the
+                # predicate rewarded careless authoring and punished careful authoring.
+                #
+                # NOT keyed on "zero assertions" alone, which is what the roadmap entry
+                # proposed. §5a assigns a bare 0-assertion block its own meaning —
+                # "capture the primary/launch state only" — so suppressing on emptiness
+                # would retire a documented behaviour by reinterpreting it. The denial
+                # has to be declared. See `walk_extract.heading_declares_na`.
+                signals.append(
+                    "[WARN] the active Visual-walk block DECLARES non-applicability "
+                    "(%r) and lists no assertions — NOT treating it as an override. "
+                    "This is the correct reading of an explicit N/A; omitting the block "
+                    "entirely gives the same verdict."
+                    % (blk.get("first_heading") or "")[:120]
+                )
+                signals.extend(f"[WARN] {w}" for w in blk.get("warnings", []))
             elif blk.get("block_count", 0) >= 1:
                 override = "visual-walk-block"
                 override_signal = "plan declares a Visual-walk block"

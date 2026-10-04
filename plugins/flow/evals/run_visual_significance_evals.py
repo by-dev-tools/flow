@@ -348,6 +348,67 @@ def main() -> int:
         check("visual-walk-all-demoted-no-override",
               o.get("visual_significant") is False and o.get("override") is None and demoted_warn, f"{o}")
 
+        # --- FB-0132: an explicit N/A declaration must not force --------------
+        #
+        # Being conscientious was punished and being careless rewarded: the override
+        # keyed on `block_count >= 1` and never read the block, so
+        # `**Visual-walk:** N/A — no UI in this change` flipped `visual_significant`
+        # to TRUE and ship §7a then demanded a walkthrough plus a visual-history
+        # entry for a diff with no UI — artifacts that cannot be produced. Omitting
+        # the block entirely gave the right verdict.
+        #
+        # FOUR cases, and they are a matrix rather than a case plus a sanity check.
+        # Any one alone is satisfiable by a wrong implementation:
+        #   - 8c alone  → passes on a predicate that never forces at all.
+        #   - 8d alone  → passes on today's broken code.
+        #   - 8e alone  → passes on a predicate keyed on emptiness, which would
+        #                 retire §5a's launch-state behaviour (the roadmap's option
+        #                 (a), deliberately NOT taken).
+        #   - 8f alone  → passes on a predicate that ignores the plan entirely.
+        na_plan = ("## PR\n\n**Visual-walk:** N/A — no UI in this change\n\n"
+                   "**Spec-walk:**\n- [ ] the roadmap entry is corrected\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=na_plan)
+        na_warn = any("DECLARES non-applicability" in s for s in o.get("visual_signals", []))
+        check("8c-na-block-does-not-force",
+              o.get("visual_significant") is False and o.get("override") is None and na_warn,
+              f"an explicit N/A with zero assertions must NOT force, and must SAY it "
+              f"decided that (never a silent suppression): {o}")
+
+        # 8d. PAIRED — N/A text WITH assertions still forces. Contradictory authoring;
+        #     the assertions win, because the author named states to capture.
+        na_items = ("## PR\n\n**Visual-walk:** N/A — no UI\n"
+                    "- [ ] empty state renders centered\n\n"
+                    "**Spec-walk:**\n- [ ] x\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=na_items)
+        check("8d-na-with-assertions-still-forces",
+              o.get("visual_significant") is True and o.get("override") == "visual-walk-block",
+              f"a block that lists assertions must force whatever its heading says: {o}")
+
+        # 8e. PAIRED — a BARE empty block still forces. verify-build §5a: "0 assertions
+        #     in a present block → capture the primary/launch state only". That shape
+        #     means "a visual surface, states unenumerated", not "no visual surface".
+        #     Keying the fix on emptiness would retire that behaviour by reinterpreting
+        #     it — the roadmap's option (a), rejected for this reason.
+        bare_plan = "## PR\n\n**Visual-walk:**\n\n**Spec-walk:**\n- [ ] x\n"
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=bare_plan)
+        check("8e-bare-empty-block-still-forces",
+              o.get("visual_significant") is True and o.get("override") == "visual-walk-block",
+              f"a bare 0-assertion block must STILL force — §5a gives it meaning, and a "
+              f"false non-force ships an unseen UI with a green report: {o}")
+
+        # 8f. PAIRED — an N/A declaration cannot suppress a REAL render delta. The
+        #     file-pattern heuristic is the path that does not depend on the plan, and
+        #     the fix must not have disabled it.
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tsrc/Button.tsx",
+                    diff=REAL_TSX_DIFF, plan=na_plan)
+        check("8f-na-cannot-mask-a-real-ui-diff",
+              o.get("visual_significant") is True,
+              f"an N/A declaration must never suppress a genuine render delta — the "
+              f"heuristic runs underneath the override: {o}")
+
         # 9. override suppressed by uiSurface:false (recorded, not honored).
         rc, o = run(tmp, config={"uiSurface": False}, files="M\tsrc/logic.py", plan=plan)
         sup = any("SUPPRESSED" in s for s in o.get("visual_signals", []))
