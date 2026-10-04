@@ -306,7 +306,7 @@ Your prototype is a local file — you can only open it where this session ran, 
       stated reason.** *Verify:* paired fixture — identical entry, branch matching vs not; the
       matching arm emits 2 rows, the non-matching arm emits 0 plus a reason line naming the mismatch.
       *Pinned by:* `run_artifact_handoff_evals.py::test_branch_match_paired`.
-- [ ] **A private repo (or absent `gh`) emits blob links and zero `raw.githubusercontent.com`
+- [x] **A private repo (or absent `gh`) emits blob links and zero `raw.githubusercontent.com`
       strings.** *Verify:* three arms — `--private false`, `--private true`, and `auto` with `gh`
       removed from `PATH`; assert `raw.githubusercontent.com` appears in arm 1 only, and that arms 2
       and 3 both carry `/blob/` links for the same two frames.
@@ -443,9 +443,11 @@ Your prototype is a local file — you can only open it where this session ran, 
       §5c and §7a already read, so a third notion of "visually significant" cannot appear.
       *Verify:* both skills name the shared predicate and the omit rule. *Pinned by:*
       `run_artifact_handoff_evals.py::test_ship_wiring` (`wiring/*-omits-section-when-not-visual`).
-- [ ] **Docs reconciled:** a `dev-docs/history/2026-10-??-*.md` entry, the roadmap D7 entry, this plan
-      block flipped to EXECUTED, `changelog/v1.59.0.md`. *Verified by:* the dev-docs index CI job's
-      own exit code, plus the doc-diff showing all four files present.
+- [x] **Docs reconciled:** `dev-docs/history/2026-10-03-honest-local-artifact-handoffs-and-pr-body-frames.md`,
+      the roadmap **D7** entry (now also carrying Ben's measured iOS results, which unblock PR B),
+      this plan block flipped to EXECUTED, `changelog/v1.59.0.md`, and two `CLAUDE.md` artifact rows.
+      *Verified by:* the dev-docs index and version-provenance CI jobs' own exit codes on #178 (both
+      green), plus the doc-diff showing every file present.
 
 ### Open calls for the human gate
 
