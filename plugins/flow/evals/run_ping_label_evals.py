@@ -140,6 +140,16 @@ naming -- `wall 1`, `store 1` -- which is the FB-0010 fan-out class in a single 
                        reduce-to-[A-Za-z0-9._/-] rule. Pinned because a review MEASURED that
                        stripping the quotes was accepted by every other predicate here -- the
                        one claim with a security consequence was the one with no pin.
+  cross-trigger-surface-stated -- a status request REACHES \u00a78: the frontmatter description
+                       advertises the status phrasing, \u00a78 states the boot-is-a-superset
+                       tie-break, and `/flow:workflow-help`'s catalog row names it. The entry
+                       condition every other \u00a78 check silently assumed.
+  cross-step5-precondition-at-step-5 -- step 5 carries its own precondition (and the reason),
+                       not only \u00a78's skip rationale -- step 5 is on the BOOT path too, so a
+                       \u00a78-scoped pin would let the rule vanish from the step that acts.
+  cross-brief-budget-matches-reality -- `/flow:spawn` \u00a73's stated line budget is RECOUNTED
+                       against the rendered brief rather than asserted as a literal. Both
+                       figures were already wrong by ~75% once.
   orch-0-section-present -- the status section exists at all; a gate, since an absent section
                        makes every orch check above vacuous.
 
@@ -710,6 +720,88 @@ def test_per_site(sites: list[Path]) -> None:
             check(f"{name}:{rel}", ok, detail)
 
 
+# ---------------------------------------------------- 6. CROSS-SITE / WHOLE-FILE CHECKS
+# These three take whole FILES rather than the §8 section, so they cannot be ORCH_PREDICATES
+# (which are handed `sec`). Each closes an "undeclared behaviour" `/flow:audit-coverage` found
+# after the first round of declarations -- i.e. each was a real behaviour with no pin.
+
+SPAWN = PLUGIN / "skills" / "spawn" / "SKILL.md"
+WORKFLOW_HELP = PLUGIN / "skills" / "workflow-help" / "SKILL.md"
+
+
+def c_trigger_surface():
+    """A status request actually REACHES §8 — the precondition every other §8 check assumes.
+
+    Declared criteria all pinned what the digest renders *once the path is reached*; nothing
+    pinned the entry condition. Three surfaces have to agree: the frontmatter description (what
+    the model routes on), §8's own tie-break, and the printed command catalog a human reads.
+    """
+    orch = ORCH.read_text(encoding="utf-8")
+    fm = orch.split("---", 2)[1] if orch.startswith("---") else ""
+    desc_advertises = "status" in fm and "where do things stand" in fm
+    sec = status_section(orch)
+    tie_break = _norm(sec).count("do the full boot") >= 1 and "superset" in _norm(sec)
+    catalog = "status" in WORKFLOW_HELP.read_text(encoding="utf-8")
+    ok = desc_advertises and tie_break and catalog
+    return ok, (f"the status path's entry condition is not stated at all three surfaces "
+                f"(description={desc_advertises} tie-break={tie_break} catalog={catalog})")
+
+
+def c_step5_precondition():
+    """Step 5's precondition lives AT STEP 5, not only in §8's skip rationale.
+
+    §8's pin is scoped to §8's text, so deleting the blockquote at step 5 left that pin green
+    while the rule vanished from the step that performs the action. Step 5 is on the BOOT path
+    too, so this is not a status-path behaviour.
+    """
+    orch = _norm(ORCH.read_text(encoding="utf-8"))
+    at_step_5 = ("Precondition \u2014 run this ONLY from the session that is becoming the addressee"
+                 in orch)
+    says_why = "points the whole fleet at" in orch
+    ok = at_step_5 and says_why
+    return ok, (f"step 5 does not carry its own precondition (stated={at_step_5} "
+                f"reason={says_why}) -- the rule would survive only in the caller")
+
+
+def c_brief_budget_matches():
+    """`/flow:spawn` §3's stated line budget matches the ACTUAL rendered contract block.
+
+    Counted, not asserted as a literal: the two figures were already wrong by ~75% once (the
+    fixed part alone exceeded the stated total) and the only durable pin is one that recounts.
+    """
+    t = SPAWN.read_text(encoding="utf-8")
+    m = re.search(r"```markdown\n([\s\S]*?)```", t)
+    if not m:
+        return False, "the brief template fence could not be found"
+    tmpl = m.group(1).rstrip()
+    total = len(tmpl.splitlines())
+    if "## Contract" not in tmpl:
+        return False, "the template has no '## Contract' block to measure"
+    contract = len(tmpl[tmpl.index("## Contract"):].rstrip().splitlines())
+    stated_total = re.search(r"keep it under ~(\d+) lines", t)
+    stated_fixed = re.search(r"contract block below is \*\*~(\d+) lines\*\*", t)
+    if not (stated_total and stated_fixed):
+        return False, "the stated budget figures could not be parsed from §3"
+    st, sf = int(stated_total.group(1)), int(stated_fixed.group(1))
+    ok = total <= st and abs(contract - sf) <= 2
+    return ok, (f"§3's stated budget does not match the rendered brief: actual total={total} "
+                f"(stated cap ~{st}), actual contract block={contract} (stated ~{sf})")
+
+
+CROSS_SITE = {
+    "trigger-surface-stated": c_trigger_surface,
+    "step5-precondition-at-step-5": c_step5_precondition,
+    "brief-budget-matches-reality": c_brief_budget_matches,
+}
+
+
+def test_cross_site() -> None:
+    print("\n6. CROSS-SITE -- whole-file behaviours the \u00a78 section checks cannot reach")
+    for name, fn in sorted(CROSS_SITE.items()):
+        ok, detail = fn()
+        check(f"cross-{name}", ok, detail)
+
+
 def test_docstring_covers_every_check() -> None:
     """Every predicate this file RUNS must have a row in WHAT IT COVERS.
 
@@ -731,6 +823,9 @@ def test_docstring_covers_every_check() -> None:
     for name in sorted(ORCH_PREDICATES):
         check(f"documented:orch-{name}", f"orch-{name}" in doc,
               f"predicate orch-{name!r} runs but WHAT IT COVERS has no row for it")
+    for name in sorted(CROSS_SITE):
+        check(f"documented:cross-{name}", f"cross-{name}" in doc,
+              f"check cross-{name!r} runs but WHAT IT COVERS has no row for it")
     check("documented:orch-0-section-present", "orch-0-section-present" in doc,
           "the section-present gate prints but is undocumented")
 
@@ -915,6 +1010,7 @@ def main() -> int:
     # to pass a flag for is a validation step that does not run in CI -- and CI passes no
     # flags. Hence no `--selftest` option: it would have been a flag whose only effect was
     # to say it had no effect.
+    test_cross_site()
     test_docstring_covers_every_check()
     test_selftest(sites)
     print(f"\n{'passed' if fails == 0 else 'FAILED'}: {fails} failing check(s)")
