@@ -34,6 +34,10 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 **Previously: v1.57.0 (shipped [#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131). `.claude/hooks/flow-plugin-currency.sh` existed to keep this repo's installed plugin current and had never once updated anything: the provenance engine it consults ships INSIDE the plugin (v1.43.0), the hook resolves it from the installed tree only (correctly — it fires with no approval prompt), so a 1.29.0 install had no engine and the hook printed the two commands and ran neither. Measured: every Conductor cloud workspace boots from a snapshot carrying 1.29.0 against a tree at 1.55.0, `release_gap: 26`, with the local marketplace clone pinned at the same `cf783ac`. The bootstrap arm runs both commands; the verdict goes to `stdout`, the one `SessionStart` channel Claude Code injects into context — stderr on a zero exit "goes to the debug log only, never the transcript, and Claude never sees it", so the hook's entire output previously had no reader. **The fix forced a second one:** moving the registry mid-session flipped the row labelled "the version that ran this pipeline" from a correct `⚠️ 26 releases back` to a false `✓ matches this branch`, so `restart_pending` is now three-valued and an ambiguous registry reading cannot tick. `.conductor/settings.toml` was evaluated and rejected — measured three ways that a cloud organization ignores repo-defined setup scripts.)**
 **Previously: v1.56.0 (shipped [#174](https://github.com/by-dev-tools/flow/pull/174) — finish CV1: tell the reviewer the prose counts, fingerprint it, and stop losing criteria.)**
 
+**Plugin at v1.62.0 (this PR — an explicit `**Visual-walk:** N/A` no longer forces `visual_significant` TRUE, FB-0132). The override keyed on `block_count >= 1` and never read the block, so writing `**Visual-walk:** N/A — no UI in this change` to be explicit flipped the verdict to *visually significant* and `/flow:ship` §7a then demanded a rendered walkthrough plus a visual-history entry for a diff with no UI — artifacts that cannot be produced. Omitting the block entirely gave the right answer, so the predicate **rewarded careless authoring and punished careful authoring**. The fix keys on a DECLARED denial (`heading_declares_na` + a shared `declared_na` field in `walk_extract.py`, read by `visual-significance.py` and by §5a), deliberately NOT on zero assertions — §5a assigns a bare 0-assertion block its own meaning ("capture the primary/launch state only"), so the roadmap's option (a) would have retired a documented behaviour by reinterpreting it. The denial guard took **three** versions: a whitespace-tolerant boundary, then a separator boundary that still admitted every deferral (`None, will fill in later`), and finally a rejection on the un-denial itself — a deferral says WHEN and a redirection says ELSEWHERE, and both mean a visual surface exists. 28-row accept/reject table. `plan-discipline` now publishes the convention, which had never been stated to the authors it was matching.)**
+
+**Previously: v1.57.0 (shipped [#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131). `.claude/hooks/flow-plugin-currency.sh` existed to keep this repo's installed plugin current and had never once updated anything: the provenance engine it consults ships INSIDE the plugin (v1.43.0), the hook resolves it from the installed tree only (correctly — it fires with no approval prompt), so a 1.29.0 install had no engine and the hook printed the two commands and ran neither. Measured: every Conductor cloud workspace boots from a snapshot carrying 1.29.0 against a tree at 1.55.0, `release_gap: 26`, with the local marketplace clone pinned at the same `cf783ac`. The bootstrap arm runs both commands; the verdict goes to `stdout`, the one `SessionStart` channel Claude Code injects into context — stderr on a zero exit "goes to the debug log only, never the transcript, and Claude never sees it", so the hook's entire output previously had no reader. **The fix forced a second one:** moving the registry mid-session flipped the row labelled "the version that ran this pipeline" from a correct `⚠️ 26 releases back` to a false `✓ matches this branch`, so `restart_pending` is now three-valued and an ambiguous registry reading cannot tick. `.conductor/settings.toml` was evaluated and rejected — measured three ways that a cloud organization ignores repo-defined setup scripts.)**
+
 
 **Previously: v1.55.0 (shipped #172 — `/flow:audit-coverage` can read behaviour-bearing prose, FB-0126/FB-0127). A `.md` path never matched `sourceFilePatterns`, so the completeness gate was structurally blind to prose — on a plugin that ships PROMPTS, most of what this repo changes. Three parts: (A) say it — with the new slot unset a run prints `WEAKENED · DOC-BLIND` naming every changed doc-shaped file it did NOT read, and prints the built-in guess so the value is copy-pasteable; (B) see it — the `behaviorBearingDocPatterns` slot (schema 36 → 37), **empty by default**, unioned in after the source filter; (C) fit it — `head -c` over a concatenation made files late in `sort -u` order entirely invisible once the 60 KB cap bound, replaced by max-min fair-share allocation that names every file it cut. **Measured, not asserted:** #159's reconstruction moves from **0 of 5** at baseline to **2/5 and 1/5 single-run, union 3/5**, zero false positives, via `tools/coverage-recall/` with `--selftest` passing first — plus the paired negative that a wording-only `.md` change returns `No issues flagged.` Recall is still weak and is reported as such: the likeliest cause is in § Next, found independently by two review lenses — Stage 1 still tells the reviewer that doc changes are not behaviours, so B feeds it a `SKILL.md` and the prompt hands it a rule for discarding it. See `dev-docs/history/2026-09-30-audit-coverage-reads-behaviour-bearing-prose.md`.)**
 
@@ -980,6 +984,41 @@ probe becomes the primary signal rather than the substitute.
 
 **Deletion criterion:** delete when either flow ships a `bin/` and `ran_version_source` reads `PATH`
 on a real run, or the probe above refutes the mechanism and `read_running` is retired.
+
+### `**Mode:**` is a contract a parser enforces, and two plausible spellings are misread (2026-10-04, v1.62.0's push-further lens)
+
+**Surfaces when:** `audit-skips/lib/skip-audit-checks.py`'s `read_plan_mode` is next touched.
+**Filed, not fixed** — the *documentation* half shipped in v1.62.0 (one sentence in plan-discipline
+field (1), stating the contract and the measured forms); the *parser* half is here.
+
+`read_plan_mode` matches `^[ \t]*\*\*Mode:?\*\*:?[ \t]*(.+)$` under `re.M`. Measured on this tree:
+
+| written as | parsed |
+|---|---|
+| `**Mode:** tiny · **Surface:** non-visual` | `tiny` ✓ |
+| `**Mode:** spike` | `spike` ✓ |
+| **`**Mode** — tiny`** | **`other`** |
+| `- **Mode:** tiny` | `None`, `occurrences: 0` |
+| `1. **Mode** — tiny` | `None`, `occurrences: 0` |
+
+**The `other` row is the dangerous one, and it is reachable by copying the skill's own formatting.**
+`read_plan_mode`'s module comment states that the auditor reads `other` as *"a mode WAS declared and
+it isn't spike"* — a positive claim, and wrong: the author wrote `tiny`. `/flow:audit-skips` uses the
+declared mode to resolve whether a `/simplify` or `/flow:staff-review` skip was legitimate, so a
+`tiny` plan misread as `other` turns a legitimate skip into a re-run demand. And
+`plan-discipline`'s numbered field list renders its *own* field names in exactly the em-dash form
+(`1. **Mode** — \`feature\` …`), so the easiest thing for an author to copy is the thing that
+misparses.
+
+**Shape:** widen the matcher to accept a leading list marker and an em-dash separator — or, if
+widening a gate's parser is the wrong direction, make an unrecognised-but-Mode-shaped line emit a
+`[WARN]` naming it, so "I could not read your mode" is distinguishable from "you declared `other`".
+The second is the FB-0082 shape and is probably right: `other` should mean *the author wrote something
+outside the vocabulary*, never *the parser could not see it*. Pair whichever lands: a canonical form
+still reads, and the misread forms no longer resolve to a confident wrong value.
+
+**Deletion criterion:** delete when `**Mode** — tiny` either parses as `tiny` or reports itself
+unreadable, and an eval pins both plus the canonical form.
 
 ### The same presence-not-content defect, unfixed, on Spec-walk — and `declared_na` already reaches the call site unread (2026-10-04, v1.60.0's push-further lens)
 
