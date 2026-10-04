@@ -981,6 +981,49 @@ probe becomes the primary signal rather than the substitute.
 **Deletion criterion:** delete when either flow ships a `bin/` and `ran_version_source` reads `PATH`
 on a real run, or the probe above refutes the mechanism and `read_running` is retired.
 
+### `/flow:ship` never reads CI, so every "ready" it produces is uninformed about checks (measured 2026-10-04, v1.57.0)
+
+**Surfaces when:** `/flow:ship` Step 7a.5/7a.6 (the draft decision), Step 7b (the coherence gate), or
+`/flow:land`'s pre-merge check is next touched. **Not built here** — filed at the orchestrator's
+direction so Ben can decide whether it goes next.
+
+**Measured, on this repo, on #176.** The `evals` job was red on **four consecutive pushes**
+(`e60c32b`, `3ad2a90`, `8bc9a5c`, `7d7032a`; run 37132795680). Over the same four pushes:
+
+- every flow gate was green — `/flow:audit-skips` all-legitimate, `/flow:audit-coverage` clean,
+  body↔draft coherence PASS, Test-plan provenance PASS;
+- `manifest-triage classify` returned `READY`, so §7a.6 marked the PR **ready for review**;
+- the PR body said *"Ready."*;
+- and GitHub reported `mergeStateStatus=BLOCKED` the whole time.
+
+Nothing in the pipeline looked. `/flow:ship` reads the verify-build buffer, the manifest, the plan,
+the live PR body and the live draft state — and never once asks whether the repo's own checks pass.
+`pr-coherence.py` re-fetches the PR specifically to assert the body matches the draft state, so the
+data was one `--json statusCheckRollup` away at a call site that was already paying for the fetch.
+
+**Why this is a gate bug and not just one agent's mistake.** §7b exists to make "a ready-looking PR
+that is not ready" impossible, and it enforces exactly one invariant — *not draft ⇒ no NOT-READY
+manifest*. A red required check is the same failure in a different field, and the step that would
+naturally own it is already there. The local cause on this occasion was an eval sweep that keyed on
+output text rather than exit codes (fixed in `tools/eval-sweep.sh`), but that is what made the wrong
+claim *easy*; what made it *possible* is that nothing downstream could contradict it.
+
+**The shape, and the half that is easy to get wrong.** Ship's ready verdict has to be
+conditioned on `gh pr checks` — and treat **"checks still pending" as its own state, never as passing.** A naive
+`all(state == "SUCCESS")` is false on a fresh push where every check is `QUEUED`, so the
+cheapest-looking implementation inverts the bug into "ready because nothing has failed yet", which is
+the FB-0082 absent-vs-no collapse. Three outcomes, not two: `pass` → may be ready; `fail` → stays a
+draft with a `[ci]` manifest entry; `pending` → explicitly *unknown*, reported as such and not
+silently treated as either. The same discipline `restart_pending` needed in v1.57.0.
+
+**Also worth deciding at the same time:** `/flow:land` refuses a PR that is not already merged, so it
+inherits GitHub's own protection — but it is the other place a human is told "this is ready", and the
+check belongs in one shared predicate rather than two.
+
+**Deletion criterion:** delete when a ship run on a repo with a red required check cannot produce a
+non-draft PR, and when a run with checks still pending says so rather than proceeding — both pinned
+by an eval over a synthetic `statusCheckRollup`, including the all-pending case.
+
 ### A known-positive validation that lives in a DOCSTRING is an unvalidated instrument — make the mutation sweep an artifact of the suite (2026-10-03, from v1.57.0's push-further lens)
 
 **Surfaces when:** any behavioural pin is added to an eval harness, or the next time someone writes

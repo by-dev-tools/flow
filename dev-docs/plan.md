@@ -2,6 +2,85 @@
 
 ## Current Focus
 
+**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/fix-visual-walk-na-forces-significance`, stacked on #176, **v1.58.0**, FB-0132): Fix 2 — an explicit `**Visual-walk:** N/A` forces `visual_significant` TRUE, so being conscientious is punished and being careless is rewarded.**
+
+**Mode:** feature · **Surface:** non-visual · **Stacked on [#176](https://github.com/by-dev-tools/flow/pull/176) — must merge second**
+
+**No `Visual-walk` block, and that is the bug.** `plan-discipline` scopes the field to UI changes and this diff has none, so omitting it is the correct authoring. Writing `**Visual-walk:** N/A` to be explicit would trigger the exact defect this PR fixes — which is the whole finding in one sentence. Once this ships, writing it becomes safe.
+
+**Goal.** An author who writes `**Visual-walk:** N/A — no UI in this change` gets the verdict they declared, instead of the opposite one. Today that declaration flips `visual_significant` to true and `/flow:ship` §7a then demands a rendered walkthrough and a visual-history entry for a diff with no UI — artifacts that cannot be produced. Omitting the block entirely gives the right answer, so the predicate currently rewards carelessness and punishes care.
+
+### Re-measured on this branch, not inherited
+
+Reproduced on the #173 shape (a docs-only diff, `uiSurface: true`, an N/A block):
+
+```
+visual_significant: true · override: "visual-walk-block"
+```
+
+And the block as the parser actually sees it:
+
+| field | value |
+|---|---|
+| `items` | `[]` |
+| `block_count` | `1` |
+| `co_located` | `true` |
+| `first_heading` | `**Visual-walk:** N/A — no file matching \`uiFilePatterns\` is in scope.` |
+
+So the N/A text sits **on the heading line**, the block parses with **zero assertions**, and `visual-significance.py:406` keys on `block_count >= 1` and never reads either fact. The forcing signal is *the presence of a heading*, which an explicit denial satisfies.
+
+### The decision the brief asked me to make and justify
+
+**A bare `**Visual-walk:**` with zero assertions and no N/A declaration KEEPS forcing. Only an N/A-declaring heading stops forcing.** This departs from the roadmap entry's own option (a) ("treat a block with zero parsed assertions as non-forcing"), and the departure is the point:
+
+1. **Option (a)'s premise is false against §5a.** The roadmap argues a 0-assertion block "declares nothing to capture". `verify-build/SKILL.md` §5a says the opposite, verbatim: *"0 assertions in a present block → capture the primary/launch state only."* Taking (a) literally would silently retire a documented behaviour — a prohibition satisfied by deletion, in doc form.
+2. **The two errors are not symmetric.** A false *force* costs a waivable draft-manifest entry the author can clear. A false *non-force* ships a UI surface with zero captured frames while `/flow:verify-build` reports green — the Potemkin class the gate exists to catch. Where intent is ambiguous, forcing is the safe side.
+3. **It buys option (b)'s virtue at option (a)'s cost.** The roadmap's option (b) was "require an explicit `**Visual surface:** none` field, making non-applicability a *declared* value rather than an inferred one" — right, but a plan-format change. Reading an N/A declaration the author already writes makes non-applicability declared without inventing a field.
+
+**On the roadmap's fragility objection** — it warns that "detect the string `N/A`" is "precisely the fragile shape the predicate is built to avoid (`n/a`, `none`, `not applicable`, `—`, a prose sentence…)". Two things defang it here: the match is gated behind `items == []`, so a miss can only fail **safe** (status quo: force); and it is anchored to the **start of the heading tail** against a closed token set, so it recognises a convention rather than interpreting prose. A prose sentence that does not open with a denial token simply keeps today's behaviour.
+
+### Spec-walk
+
+- [ ] **An N/A-declaring heading with ZERO assertions does not force.** `**Visual-walk:** N/A — …` on a `uiSurface:true` project with a docs-only diff yields `visual_significant: false`, `override: null`. → `test_visual_walk_na_does_not_force` in `run_visual_significance_evals.py`
+- [ ] **PAIRED — a block with real assertions STILL forces**, N/A text or not. A heading that says `N/A` *and* lists `- [ ]` items is contradictory authoring; the assertions win, because the author named states to capture. RED if either case flips. → `test_visual_walk_na_does_not_force`
+- [ ] **PAIRED — a BARE empty block (no denial token) still forces**, preserving §5a's "capture the launch state" semantics. This is the decided case above, pinned in the failing direction so a future "simplification" to plain zero-assertion cannot land silently. → `test_visual_walk_bare_empty_still_forces`
+- [ ] **PAIRED — the file-pattern heuristic still fires on a real UI diff.** An N/A block must not disable the *other* path to significance: a diff touching `uiFilePatterns` is significant regardless of what the plan says. RED if the fix makes an N/A declaration able to suppress a genuine render delta. → `test_visual_walk_na_does_not_mask_a_real_ui_diff`
+- [ ] **The predicate is ONE definition with the declaration exposed in the shared contract.** It lands in `walk_extract.py` beside `all_demoted` (which it is the sibling of — both mean "this block declares nothing active"), is emitted by `cli_main` so both `extract-criteria.py` and `extract-visual-states.py` carry it, and `visual-significance.py` reads it rather than re-deriving. Four consumers already read `all_demoted`; a second spelling of this one would be the FB-0010 fan-out. → `run_walk_extract_evals.py`
+- [ ] **The token set is closed, anchored, and documented as a convention.** Matched at the start of the heading tail after markdown/punctuation stripping, case-insensitive: `n/a`, `n.a.`, `na`, `none`, `nil`, `not applicable`. A trailing-boundary guard so `native` and `nonetheless` do not match. RED if an unanchored substring search returns. → `test_na_token_set_is_anchored`
+- [ ] **The signal is RECORDED, not silent.** Like the demoted-block branch, the suppressed override appends a `[WARN]` naming the heading line and what it decided, so an operator sees a decision rather than an absence. → `test_visual_walk_na_does_not_force`
+- [ ] **§5a is wired too, or the asymmetry is recorded.** `extract-visual-states.py` drives §5a's capture on the same block; an N/A declaration that stops `visual_significant` but still triggers frame capture is the same bug one layer over. *Flagged for the gate rather than assumed* — see the open question below. → grep `plugins/flow/skills/verify-build/SKILL.md` §5a for the new guard if the gate approves wiring it, or `dev-docs/roadmap.md` for the recorded asymmetry if it does not; exactly one of the two must match, and a diff where neither does means the decision was dropped rather than taken.
+- [ ] **Causes 2 and 3 are RECORDED, not fixed** (per the dispatch). Cause 2 (the N/A line sits above #171's own `**Spec-walk:**`, so `co_located` reads `true` for the active section) goes to `walk_extract.py`'s KNOWN-LIMITATION 2 and the roadmap's per-PR boundary-marker entry. Cause 3 (nothing demoted the merged blocks) goes to the field manual's § 2a "the demote qualifier has no producer". Each gets the measured figures from this branch, with the observed version — per field manual § 9, an entry without one rots. → grep `plugins/flow/skills/verify-build/lib/walk_extract.py` for "KNOWN LIMITATIONS" (cause 2) and `research/orchestrator-field-manual.md` for "the demote qualifier has no producer" (cause 3); both must carry a 2026-10-04 measurement after this PR.
+- [ ] **`/flow:ship` does not read CI status** — filed in roadmap § Next with the measured case, **not built** (orchestrator, 2026-10-04): four pushes with a red `evals` job, a PR body saying "ready", GitHub reporting `BLOCKED`, and every flow gate green. Framing: ship's ready verdict must be conditioned on `gh pr checks`, and "checks still pending" is its own state, never treated as passing. → `grep \`dev-docs/roadmap.md\` for "conditioned on \`gh pr checks\`"
+
+### Confidence verdicts
+
+**Assumption:** an N/A-declaring heading with zero assertions is unambiguously "this change has no visual surface", so suppressing the override cannot lose a real signal.
+**Confidence:** HIGH
+**Why:** the author wrote a denial; there are no declared states to capture; and the file-pattern heuristic still runs underneath, so a genuine UI diff is still caught by the path that does not depend on the plan at all.
+**If it flips:** the fix would need option (b)'s explicit field instead of reading the heading. Scoped to this predicate; nothing else changes.
+
+**Assumption:** a bare 0-assertion block genuinely means "capture the launch state" and not "I forgot to fill this in".
+**Confidence:** MEDIUM
+**Why:** §5a states it verbatim, so it is the documented contract — but I have not measured whether any real plan has ever used it that way, and "author forgot" is a plausible second reading.
+**If it flips:** the bare-empty case would also stop forcing, which converges on the roadmap's option (a). Surfaced at Step 8 rather than decided here, because the safe direction (keep forcing) is also the status quo, so a wrong guess costs a waivable manifest entry rather than a missed visual regression.
+
+### Risks / open questions
+
+- **OPEN FOR THE GATE — should §5a stop capturing on an N/A block too?** The dispatch scoped this PR to cause 1 (`visual-significance.py`). Wiring `extract-visual-states.py` is one sentence in `verify-build/SKILL.md` plus the shared field, and leaving it means §5a captures a launch-state frame for a change whose author declared no visual surface — wasted work and a confusing report, though not a wrong gate verdict, since `visual_significant` is what `/flow:ship` §7a reads. **I recommend wiring it** (the two surfaces are documented as keying on "the same lifecycle predicate", and leaving them split is the FB-0085 shape), but it widens the diff into §5a's activation clause, so it is the gate's call.
+- **`sensitivePaths`.** `plugins/flow/skills/verify-build/**` is a declared sensitive path: a wrong verdict here fails silently, because a mis-classifying gate passes bad work. Hence no auto-approval at the plan gate and the top routing tier.
+- **The stack.** This branch sits on #176. If #176 merges first I must rebase — and **run the extractor afterwards to confirm it selects this PR's block**, because a clean merge reordered plan blocks on #176 and handed the extractor another PR's 20 criteria with no conflict markers.
+- **Version/FB re-swept at ship**, per the standing direction: a number swept at plan time is stale by ship time (FB-0125).
+
+### Files touched
+
+`plugins/flow/skills/verify-build/lib/walk_extract.py` · `plugins/flow/skills/verify-build/lib/visual-significance.py` · `plugins/flow/skills/verify-build/lib/extract-visual-states.py` *(contract only)* · `plugins/flow/evals/run_visual_significance_evals.py` · `plugins/flow/evals/run_walk_extract_evals.py` · `dev-docs/roadmap.md` · `research/orchestrator-field-manual.md` · `dev-docs/plan.md` · `dev-docs/history/2026-10-04-*.md` · `dev-docs/feedback/FB-0132-*.md` · `changelog/v1.58.0.md` · `plugins/flow/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`
+
+**Conditional:** `plugins/flow/skills/verify-build/SKILL.md` §5a — only if the gate approves wiring §5a.
+
+**Not in scope:** causes 2 and 3 (recorded only) · the `/flow:ship` CI-status gate (filed only) · a plan-format boundary marker.
+
+---
+
 **▶ EXECUTED — AT PR (this branch `conductor/mobile-option-5-label`, **v1.61.0 / FB-0132**):
 worker messages identifiable at a glance, and current state glanceable without scrolling chat.**
 Plan approved by Ben 2026-10-04 with D1–D4 adopted as recommended, C1 + C2 **granted**, C3
