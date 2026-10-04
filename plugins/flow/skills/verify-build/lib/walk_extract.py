@@ -140,12 +140,26 @@ _DEMOTED_QUALIFIER_RE = re.compile(
 #     heading whose tail is a sentence that happens to contain "none" somewhere does
 #     not match; `**Visual-walk:** N/A — …` does.
 #
-# The trailing guard is `(?![A-Za-z0-9])`, so `native`, `nonetheless` and `nasty` do
-# not match while `n/a`, `none,` and `N.A.` do. `-` and `_` are deliberately NOT in
-# the guard class: `n/a-ish` is not a word anyone writes, and excluding them would
-# make `none-of-this-applies` fail for no benefit.
+# The trailing guard requires the token to END the tail or be followed by a
+# SEPARATOR — not merely by a non-alphanumeric.
+#
+# The first cut used `(?![A-Za-z0-9])`, which accepts whitespace, so
+# `**Visual-walk:** None yet, will fill in` and `**Visual-walk:** None of the states
+# change` both matched and would have SUPPRESSED the override. That is the dangerous
+# direction and the one the "a miss fails safe" argument does not cover: failing safe
+# protects against missed denials, not against invented ones — and "None yet" is
+# precisely the author-forgot reading this predicate must not adopt. Found by
+# /simplify's altitude lens.
+#
+# The accepted tradeoff: `N/A for this PR` now misses, so that heading keeps forcing
+# and the author clears a waivable manifest entry. That is the right way round — a
+# false force costs a waiver, a false suppression ships an unseen UI with a green
+# report. Measured on flow's own history, the dominant form is `N/A — <reason>`
+# (19 Visual-walk headings, all denials, 17 of them the identical boilerplate), so
+# the narrower guard matches what authors actually write.
 _NA_TAIL_RE = re.compile(
-    r"^(?:not\s+applicable|n\s*/\s*a|n\.\s*a\.?|none|nil|na)(?![A-Za-z0-9])",
+    r"^(?:not\s+applicable|n\s*/\s*a|n\.\s*a\.?|none|nil|na)"
+    r"(?=\s*(?:$|[\u2014\u2013:.,;(\-]))",
     re.IGNORECASE,
 )
 
@@ -163,9 +177,11 @@ def heading_declares_na(line: str, label: str) -> bool:
     tail = bare[m.end():]
     tail = re.sub(r"^\s*\([^)]*\)", "", tail)      # a parenthetical qualifier
     tail = tail.lstrip()
-    if tail[:1] == ":":
-        tail = tail[1:]
-    # The separator an author puts between the label and the reason.
+    # One strip, not two: the class below already contains `:`, so the separate
+    # colon-drop that used to sit here was dead on every input (/simplify's reuse
+    # lens; verified across the pinned accept/reject table plus four extra shapes —
+    # no case behaved differently with it removed). This also covers the separator an
+    # author puts between the label and the reason.
     tail = tail.lstrip(" \t:\u2013\u2014-.")
     return bool(_NA_TAIL_RE.match(tail))
 
@@ -317,6 +333,7 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
         "co_located":    True | False | None,      # vs anchor_label's active region
         "all_demoted":   True | False,              # every block is qualified shipped/merged/demoted
         "declared_na":   True | False,              # heading declares N/A AND zero assertions
+                                                    # (meaningful for Visual-walk only — see below)
         "warnings":      ["..."],
       }
 
@@ -333,6 +350,15 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
     per-label first-block scoping cannot see; see the module docstring.
     `co_located` is `None` when co-location is undefined (no `anchor_label`
     passed, no anchor heading present, or no block of `label` at all).
+
+    `declared_na` is computed for whatever `label` is passed, but it is only
+    MEANINGFUL for `Visual-walk`: it answers "did the author declare there is no
+    visual surface?", and no consumer asks that of a `Spec-walk` block. A
+    `**Spec-walk:** N/A` heading with no checkboxes will set it true on
+    `extract-criteria.py`'s output, where nothing reads it. Said here rather than
+    special-cased, because a label check inside the parser would be a second place
+    that knows which labels exist (/simplify's altitude lens flagged the latent
+    misread).
     """
     lines = text.splitlines()
     warnings: list[str] = []

@@ -67,9 +67,15 @@ from pathlib import Path
 # detection cannot drift from the verify-build extractors (FB-0010).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
-    from walk_extract import extract_block  # type: ignore
+    # `heading_declares_na` is imported alongside `extract_block` rather than
+    # re-implemented: the denial vocabulary has exactly one definition, and the
+    # `declared_na` field below is derived from the same function (FB-0010). It is
+    # used here only for the contradictory-authoring warning — the decision itself
+    # reads the field.
+    from walk_extract import extract_block, heading_declares_na  # type: ignore
 except Exception:  # pragma: no cover - defensive; walk_extract ships alongside
     extract_block = None
+    heading_declares_na = None
 
 # Pattern resolution lives in file_patterns (FB-0079) — ONE definition of the
 # visualFilePatterns → uiFilePatterns → default chain, shared with
@@ -428,6 +434,22 @@ def main(argv):
             elif blk.get("block_count", 0) >= 1:
                 override = "visual-walk-block"
                 override_signal = "plan declares a Visual-walk block"
+                # A heading that DENIES a visual surface while listing assertions is
+                # contradictory authoring. The verdict is right — the assertions win,
+                # because the author named states to capture — but taking it silently
+                # leaves the author believing their `N/A` was read. Found by
+                # /simplify's reuse lens inside its own "nothing to flag" section;
+                # this file's standing discipline is that every decision is recorded.
+                if heading_declares_na is not None and heading_declares_na(
+                        blk.get("first_heading") or "", "Visual-walk"):
+                    signals.append(
+                        "[WARN] the active Visual-walk heading declares "
+                        "non-applicability but the block LISTS %d assertion(s) — the "
+                        "assertions win and this change is treated as visually "
+                        "significant. Remove the assertions if the N/A is what you "
+                        "meant, or drop the N/A if the assertions are."
+                        % len(blk.get("items") or [])
+                    )
 
     def emit(significant, reason):
         out = {

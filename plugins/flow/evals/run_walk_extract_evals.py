@@ -801,6 +801,9 @@ def test_na_token_set_is_anchored() -> None:
         "**Visual-walk:** N/A",
         "**Visual-walk:** N/A — no file matching `uiFilePatterns` is in scope.",
         "**Visual-walk:** n/a - nothing visual",
+        "**Visual-walk:** N/A: nothing visual",
+        "**Visual-walk:** N/A, nothing visual",
+        "**Visual-walk:** N/A (nothing visual)",
         "**Visual-walk:** None — backend only",
         "**Visual-walk:** not applicable",
         "**Visual-walk:** N.A.",
@@ -815,6 +818,20 @@ def test_na_token_set_is_anchored() -> None:
         "**Visual-walk:** the empty state renders centered",   # a real assertion inline
         "**Visual-walk:** there is none of this in scope",     # denial word, not anchored
         "**Spec-walk:** N/A",                                  # wrong label
+        # THE FALSE-POSITIVE ROWS, and they are the ones that matter most. The first
+        # cut's guard was `(?![A-Za-z0-9])`, which accepts whitespace, so these three
+        # MATCHED and would have SUPPRESSED the override — the author-forgot reading
+        # adopted as a denial. "Fails safe" protects against missed denials, not
+        # against invented ones, so there was nothing underneath this. The guard now
+        # requires end-of-tail or a separator. (/simplify altitude lens.)
+        "**Visual-walk:** None yet, will fill in",
+        "**Visual-walk:** None of the states change",
+        "**Visual-walk:** none so far",
+        # Accepted collateral of that guard, pinned so it is a decision and not a
+        # surprise: this denial misses, so the block keeps forcing and the author
+        # clears a waivable entry. The right way round — a false force costs a
+        # waiver, a false suppression ships an unseen UI with a green report.
+        "**Visual-walk:** N/A for this PR",
     ]
     for line in accept:
         check(f"na-accept::{line[:44]}", heading_declares_na(line, "Visual-walk"),
