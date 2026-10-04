@@ -122,6 +122,20 @@ The strongest remedy on offer is the one the *consumer* project already built:
 refuses to verify unless the selected block is the current PR's — failing loudly instead of
 depending on an author remembering to demote.
 
+**Still live, re-measured 2026-10-04 on installed 1.56.0 (v1.58.0 ship).** The third of three stacked
+causes behind the `**Visual-walk:** N/A` misfire was this one: #172's and #171's plan blocks sat at the
+top of `plan.md` **unqualified** after merging, so `all_demoted` was `False` and the parser treated a
+merged PR's block as active. Nothing had demoted them, because — as this section says — nothing
+writes the qualifier. Recorded with the version per § 9: a reader on a later release should re-run
+`git show origin/main:dev-docs/plan.md | grep -c '^\*\*Visual-walk'` and the demoted count before
+treating this as open.
+
+**Not fixed in v1.58.0 by instruction**, and worth being precise about why the N/A fix does not
+subsume it: that fix makes a *declared denial* non-forcing, which removes one way a stale block
+misleads. It does nothing about a stale block carrying real **assertions** — that still grades a new
+diff against a merged PR's criteria, which is this section's actual hazard. The two causes composed on
+one PR and are independent.
+
 **Deletion criterion:** delete this section when a producer writes the qualifier, or when an
 `assert-block` equivalent ships in flow and the selection can no longer be silently wrong.
 

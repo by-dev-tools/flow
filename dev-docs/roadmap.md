@@ -1674,7 +1674,31 @@ that cannot produce either. Omitting the block entirely is correct (`plan-discip
 to UI changes) and gives the right verdict, so **the careless authoring is rewarded and the
 conscientious authoring is punished** — measured on v1.49.0's own ship, which hit exactly this.
 
-**Not fixed here on purpose.** The obvious patch — detect the string `N/A` in the block — is precisely
+**✅ FIXED v1.58.0 (FB-0132) — and option (a) was deliberately NOT taken. Do not "simplify" back to it.**
+The fix keys on a **declared** denial (`heading_declares_na` + the shared `declared_na` field in
+`walk_extract.py`), not on zero assertions. Option (a) below reads "treat a block with zero parsed
+assertions as non-forcing, since … a block with no `- [ ]` lines declares nothing to capture" — and
+that premise is **false against `verify-build/SKILL.md` §5a**, which says verbatim: *"0 assertions in
+a present block → capture the primary/launch state only."* A bare empty block means "a visual surface,
+states unenumerated"; suppressing on emptiness would retire that documented behaviour by
+reinterpreting it rather than by deciding to remove it. The error polarity settles it independently: a
+false *force* costs a waivable draft-manifest entry an author can clear, while a false *non-force*
+ships a UI surface with zero captured frames and `/flow:verify-build` reporting green — the Potemkin
+class the gate exists to catch.
+
+The fragility objection recorded below was real and is addressed rather than ignored: the match is
+**gated behind `items == []`**, so a miss can only fail *safe* (status quo: force), and it is
+**anchored at the start of the heading tail** against a closed token set, so it recognises a
+convention instead of interpreting prose. `**Visual-walk:** there is none of this in scope` does not
+match; `**Visual-walk:** N/A — …` does. Pinned by a 15-case accept/reject table plus four paired
+end-to-end cases, and `run_walk_extract_evals.py` asserts the bare-empty case still forces — which is
+the assertion that would redden if someone took option (a) later.
+
+§5a was wired to the same field in the same PR (orchestrator's call): an N/A block skips capture with
+an explicit `[§5a] skipped: Visual-walk declared N/A`, never silence, while a bare empty block still
+captures the launch state.
+
+**Historical record of the decision, retained:** The obvious patch — detect the string `N/A` in the block — is precisely
 the fragile shape the predicate is built to avoid (`n/a`, `none`, `not applicable`, `—`, a prose
 sentence…). Two candidate real fixes: (a) treat a block with **zero parsed assertions** as
 non-forcing, since `extract-visual-states.py` already returns the assertion list and a block with no
@@ -2436,6 +2460,8 @@ Anchor co-location (`walk_extract.extract_block(..., anchor_label="Spec-walk")`)
 - **The gaps — two shapes defeat the proxy, both silent.** (1) *No active anchor.* `rules/plan-discipline.md` § Required plan fields: `tiny` mode "skips (4) and (5) entirely" and a non-visual `spike` replaces (4) with a Research-question line. For such an active PR, `anchor_idxs[0]` lands in the first *retained* section, so a retained `Visual-walk` between anchors 0 and 1 reads as co-located. (2) *Retained section authored visual-first.* A retained `Visual-walk` placed above its own section's `Spec-walk` precedes `anchor_idxs[1]` and so falls inside the computed region — and it is indistinguishable by order alone from the legitimate active shape the parser deliberately supports (`VISUAL_BEFORE_SPEC`). Both are pre-existing (verified: the pre-fix module leaks identically on each), and anchoring is a strict improvement for feature-mode plans, so neither blocks. Pinned by `test_anchor_known_limitation_tiny_mode` + `test_anchor_known_limitation_retained_visual_first` in `run_walk_extract_evals.py` so the gaps stay visible rather than being rediscovered as fresh bugs.
 - **Quadratic backtracking in `_BOLD_LABEL_RE` (from the v1.20.x security review).** The tail `\s*:?\s*$` is ambiguous — two adjacent `\s*` runs split by an optional colon — so a non-matching line with a long whitespace run costs O(n²). Measured independently via `is_terminator()`: 0.085s at 5k chars, 1.28s at 20k, 7.86s at 50k. Reachable because `is_terminator` runs on every line of the scanned block. Not a security finding — polynomial not exponential, and the only source is a plan doc the developer authored or cloned, so a hang is a nuisance on your own repo rather than a privilege boundary. Fix by collapsing the tail to `[\s:]*$` (or an atomic group), re-running `run_walk_extract_evals.py` since the 47 baseline checks pin the current heading semantics. `heading_re()` itself was tested and is flat (0.0000s at 16k `**` pairs) — no action there. **Surfaces when:** `walk_extract.py` is next touched.
 - **Lost-update race on `dismissed.json` (from the same review).** `cmd_dismiss` is read-modify-write with no lock, so two concurrent drains in different projects can drop one dismissal. Pre-existing and orthogonal to the exit-3/4 split, but the new exit-4 recurrence signal *depends on dismissal records being durable* — a lost dismissal silently degrades a recurrence back into a "novel" lesson, which is the exact signal the split exists to preserve. Needs an `fcntl.flock` around the store. **Surfaces when:** `contribution_store.py` storage is next touched.
+- **Measured instance of KNOWN-LIMITATION 2, from the v1.58.0 ship (2026-10-04, observed on installed 1.56.0).** Recorded per § 9 so the next reader re-checks rather than inherits. On `main` at that date, `dev-docs/plan.md` carried `**Visual-walk:** N/A — no file matching \`uiFilePatterns\` is in scope.` at ~line 435, belonging to [#171](https://github.com/by-dev-tools/flow/pull/171)'s section — but sitting **above** #171's own `**Spec-walk:**` at ~line 439. So `extract_block(..., anchor_label="Spec-walk")` computed the active region as everything before the *second* Spec-walk heading, that N/A block fell inside it, and `co_located` read **`true`** for a completely different PR's section. Exactly the shape `walk_extract.py`'s KNOWN-LIMITATION 2 describes ("a retained section is authored Visual-walk-above-Spec-walk … so it falls inside the computed region"), now with a live instance and a date. **Not fixed in v1.58.0 by instruction** — the N/A fix made it harmless *for that particular block* (a declared denial no longer forces whichever section it is read as belonging to), but the limitation itself is untouched: a retained section whose Visual-walk carries real **assertions** still leaks them into the active PR, and `co_located` still reports the wrong section. The N/A fix narrowed the blast radius; it did not close this.
+
 - **▶ A CLEAN REBASE CAN SILENTLY HAND THE EXTRACTOR ANOTHER PR'S CRITERIA — measured 2026-10-03, v1.57.0.** This is the sharpest argument on the list for a real boundary marker, because it needs no authoring mistake at all: **git produced it, with no conflict markers and no warning.**
 
   The sequence, exactly as it happened. `#174` merged while this worker was idle, so its branch rebased onto the new `main`. Four files collided; the two version files conflicted and were resolved by hand. **`dev-docs/plan.md` merged CLEANLY** — and the clean result interleaved the two PRs' blocks so that *this* PR's plan block landed **second**. `extract_block` selects the first non-demoted `Spec-walk` heading, so it then selected the OTHER PR's block: **20 criteria that belonged to a different change**, reported as this PR's active plan. Nothing in the pipeline objected. `/flow:verify-build` and `/flow:audit-coverage` would both have graded this diff against another branch's criteria and reported green — the §2a laundered-PASS hazard, reached through a rebase rather than through a missing demote qualifier.
