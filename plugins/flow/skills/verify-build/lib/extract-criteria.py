@@ -22,11 +22,16 @@ Contract:
                         from a complete one (FB-0121). A terminator close that
                         collected items does NOT warn -- only a zero-item close does>,
       "block_count": <how many Spec-walk blocks exist in the file>,
-      "declared_na": <true iff the heading declares N/A (`N/A`, `none`, `nil`,
-                      `not applicable`) AND the block parsed zero items.
+      "declared_na": <true iff the heading declares non-applicability AND the block
+                      parsed zero items. The token set and the deferral/redirection
+                      exclusions have ONE definition, in
+                      `walk_extract.heading_declares_na` — do not restate them here.
+                      (They were restated, and the two extractors' contracts then
+                      disagreed about whether `NA` counts, which is the FB-0010
+                      fan-out shape inside a pair of docstrings; v1.62.0.)
                       MEANINGFUL FOR Visual-walk ONLY — emitted here because
                       `cli_main` is shared; no consumer reads it off this
-                      extractor. See walk_extract.extract_block>,
+                      extractor>,
       "all_demoted": <true iff block_count > 0 but every one is qualified
                       shipped/merged/demoted — no active block, distinct from
                       block_count == 0 (no heading at all)>,

@@ -34,7 +34,7 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 **Previously: v1.57.0 (shipped [#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131). `.claude/hooks/flow-plugin-currency.sh` existed to keep this repo's installed plugin current and had never once updated anything: the provenance engine it consults ships INSIDE the plugin (v1.43.0), the hook resolves it from the installed tree only (correctly — it fires with no approval prompt), so a 1.29.0 install had no engine and the hook printed the two commands and ran neither. Measured: every Conductor cloud workspace boots from a snapshot carrying 1.29.0 against a tree at 1.55.0, `release_gap: 26`, with the local marketplace clone pinned at the same `cf783ac`. The bootstrap arm runs both commands; the verdict goes to `stdout`, the one `SessionStart` channel Claude Code injects into context — stderr on a zero exit "goes to the debug log only, never the transcript, and Claude never sees it", so the hook's entire output previously had no reader. **The fix forced a second one:** moving the registry mid-session flipped the row labelled "the version that ran this pipeline" from a correct `⚠️ 26 releases back` to a false `✓ matches this branch`, so `restart_pending` is now three-valued and an ambiguous registry reading cannot tick. `.conductor/settings.toml` was evaluated and rejected — measured three ways that a cloud organization ignores repo-defined setup scripts.)**
 **Previously: v1.56.0 (shipped [#174](https://github.com/by-dev-tools/flow/pull/174) — finish CV1: tell the reviewer the prose counts, fingerprint it, and stop losing criteria.)**
 
-**Plugin at v1.62.0 (this PR — an explicit `**Visual-walk:** N/A` no longer forces `visual_significant` TRUE, FB-0132). The override keyed on `block_count >= 1` and never read the block, so writing `**Visual-walk:** N/A — no UI in this change` to be explicit flipped the verdict to *visually significant* and `/flow:ship` §7a then demanded a rendered walkthrough plus a visual-history entry for a diff with no UI — artifacts that cannot be produced. Omitting the block entirely gave the right answer, so the predicate **rewarded careless authoring and punished careful authoring**. The fix keys on a DECLARED denial (`heading_declares_na` + a shared `declared_na` field in `walk_extract.py`, read by `visual-significance.py` and by §5a), deliberately NOT on zero assertions — §5a assigns a bare 0-assertion block its own meaning ("capture the primary/launch state only"), so the roadmap's option (a) would have retired a documented behaviour by reinterpreting it. The denial guard took **three** versions: a whitespace-tolerant boundary, then a separator boundary that still admitted every deferral (`None, will fill in later`), and finally a rejection on the un-denial itself — a deferral says WHEN and a redirection says ELSEWHERE, and both mean a visual surface exists. 28-row accept/reject table. `plan-discipline` now publishes the convention, which had never been stated to the authors it was matching.)**
+**Plugin at v1.62.0 (this PR — an explicit `**Visual-walk:** N/A` no longer forces `visual_significant` TRUE, FB-0132). The override keyed on `block_count >= 1` and never read the block, so writing `**Visual-walk:** N/A — no UI in this change` to be explicit flipped the verdict to *visually significant* and `/flow:ship` §7a then demanded a rendered walkthrough plus a visual-history entry for a diff with no UI — artifacts that cannot be produced. Omitting the block entirely gave the right answer, so the predicate **rewarded careless authoring and punished careful authoring**. The fix keys on a DECLARED denial (`heading_declares_na` + a shared `declared_na` field in `walk_extract.py`, read by `visual-significance.py` and by §5a), deliberately NOT on zero assertions — §5a assigns a bare 0-assertion block its own meaning ("capture the primary/launch state only"), so the roadmap's option (a) would have retired a documented behaviour by reinterpreting it. The denial guard took **three** versions: a whitespace-tolerant boundary, then a separator boundary that still admitted every deferral (`None, will fill in later`), and finally a rejection on the un-denial itself — a deferral says WHEN and a redirection says ELSEWHERE, and both mean a visual surface exists. 55-row accept/reject table. `plan-discipline` now publishes the convention, which had never been stated to the authors it was matching.)**
 
 **Previously: v1.57.0 (shipped [#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131). `.claude/hooks/flow-plugin-currency.sh` existed to keep this repo's installed plugin current and had never once updated anything: the provenance engine it consults ships INSIDE the plugin (v1.43.0), the hook resolves it from the installed tree only (correctly — it fires with no approval prompt), so a 1.29.0 install had no engine and the hook printed the two commands and ran neither. Measured: every Conductor cloud workspace boots from a snapshot carrying 1.29.0 against a tree at 1.55.0, `release_gap: 26`, with the local marketplace clone pinned at the same `cf783ac`. The bootstrap arm runs both commands; the verdict goes to `stdout`, the one `SessionStart` channel Claude Code injects into context — stderr on a zero exit "goes to the debug log only, never the transcript, and Claude never sees it", so the hook's entire output previously had no reader. **The fix forced a second one:** moving the registry mid-session flipped the row labelled "the version that ran this pipeline" from a correct `⚠️ 26 releases back` to a false `✓ matches this branch`, so `restart_pending` is now three-valued and an ambiguous registry reading cannot tick. `.conductor/settings.toml` was evaluated and rejected — measured three ways that a cloud organization ignores repo-defined setup scripts.)**
 
@@ -1060,6 +1060,117 @@ leak by design** — the assertion would fail, and the honest move is to fix the
 this entry rather than to add a red test or a weakened one now. Whoever does that work should expect
 the mutation harness to need no changes at all.
 
+### `declared_na` is emitted for every label but means something for only one (2026-10-04, v1.62.0's staff-engineer lens)
+
+**Surfaces when:** `walk_extract.cli_main`'s output contract is next touched, or a second
+consumer starts reading `declared_na`.
+
+`extract_block` derives `declared_na` for whatever label it was given, so
+`extract-criteria.py`'s public JSON now carries a key that can be `true` for a
+`**Spec-walk:** N/A` and means nothing — no consumer reads it off that extractor, and its
+own docstring says so. Shipping a field documented as "ignore me" invites exactly the
+misreading the Spec-walk entry below describes, where a *different* gate reaches a
+confident verdict from a plan declaration it half-understands.
+
+**Shape:** a guard at the `cli_main` level, not the parser level — emit the key only for
+labels whose consumers read it. Keeping it in `extract_block` preserves the one-definition
+property (FB-0010) that is the whole reason the field exists; suppressing it at the
+serialization boundary is what stops a misleading key from shipping. Cheap, but it is an
+output-contract change for both extractors, so it wants its own pin either way.
+
+**Deletion criterion:** delete when `extract-criteria.py`'s JSON either omits
+`declared_na` or has a consumer that reads it.
+
+### An author-facing example block for the Visual-walk convention (2026-10-04, v1.62.0's UX lens)
+
+**Surfaces when:** `skills/plan-discipline/SKILL.md` field 8 is next edited.
+
+v1.62.0 restructured that field so the sanctioned shape leads and the four non-denials are
+a bullet list rather than four clauses of one paragraph — the readability half of the
+finding. What is still missing is a **fenced example**: one good form and one rejected form,
+shown rather than described. Field 8 is the only parser-enforced field in that list, so it
+is the one that earns an example even though every sibling field is prose-only.
+
+Deferred because it is an information-architecture change to the whole field list (a fenced
+block in one of nine prose items reads as an accident), not a one-line edit. Pair it with
+whoever next revisits that list.
+
+### The denial guard is a BLACKLIST on the dangerous side — invert the polarity (2026-10-04, v1.62.0's push-further + design-engineer lenses)
+
+**Surfaces when:** `walk_extract._DEFERRAL_MARKERS` / `_REDIRECTION_MARKERS` is next
+extended. **Filed, not fixed — and the entry exists specifically to stop the next person
+adding tokens and calling the class closed.**
+
+**Three leaks in three versions is what a blacklist on the wrong polarity looks like.**
+`heading_declares_na` suppresses the visual-significance override, so a false *suppression*
+ships an unseen UI with a green report while a false *force* costs one waivable manifest
+entry. The file argues that asymmetry correctly — and then implements the dangerous side as
+a deny-list, so every phrasing nobody enumerated defaults to **suppress**:
+
+| version | guard | leaked |
+|---|---|---|
+| v1 | `(?![A-Za-z0-9])` | accepted whitespace: `None yet, will fill in` |
+| v2 | require a separator | the whole deferral class — deferrals use separators too |
+| v3 | reject on the un-denial | the deferral **vocabulary**: `deferred`, `next PR`, `punted`, `awaiting`, `blocked on`, `in progress`, and every design-tool noun (`figma`, `mockup`, `wireframe`, `video`, `gif`) |
+
+v3's leak is the sharpest evidence, because the word `deferred` — whose dictionary
+definition *is* the class the guard is named after — was absent, and `N/A - deferred to
+later` was caught only because `later` happened to be in the sentence. Delete that one word
+and the identical sentence suppressed: v2's failure verbatim, one vocabulary over. Found
+independently by two lenses in the same pass, which is why it is here rather than in a NIT.
+
+**Why the eval could not see it.** Every reject row hit a marker the list already
+contained, so the table had only ever been validated against its own vocabulary — §
+Consistency discipline item 4, an instrument never run against a known positive outside
+its own set. The 22 rows added in v1.62.0 share no token with the pre-fix regex, which is
+the only kind of row that could have caught it. That is a patch to the instrument, not to
+the structure.
+
+**The shape:** require the reason tail to be positively **denial-shaped** rather than
+merely not-un-denial-shaped. Accept when the tail is empty or separator-only, **or**
+carries a negation / scope-limiter (`no`, `not`, `nothing`, `none`, `zero`, `non-`,
+`without`, `unchanged`, `only`). Unknown prose then **forces**, which is the cheap
+direction, and new author vocabulary can never open a suppression.
+
+**Measured cost, so it does not have to be re-derived:** checked against all 16 accept
+rows, 15 pass unchanged. The single casualty is `N/A — prose change to ship Step 2a`,
+which flips to force and costs one waivable entry. ~1h with the table rewrite.
+
+**It also subsumes a known wart.** Negated artifact nouns currently force —
+`N/A — nothing to capture`, `N/A — no screenshots needed`, `N/A — no frames for this PR` —
+because the artifact markers match without regard to a preceding negation. That is friction
+on correct authoring in the safe direction, and `plan-discipline` now documents it
+explicitly rather than leaving authors to discover it. Do **not** fix it by adding negative
+lookbehinds to the blacklist: `(?<!no\s)` would let `N/A — no walkthrough recorded` through,
+which is genuinely ambiguous. The polarity inversion handles the whole family correctly,
+because a negation is exactly what the whitelist is looking for.
+
+**Deletion criterion:** delete when a denial spelled in vocabulary absent from the source
+file forces rather than suppresses, pinned by a reject row that shares no token with any
+list in `walk_extract.py`.
+
+### Assert the leak INVARIANT across every parser warning, not a per-label allow-list (2026-10-04, v1.62.0's push-further lens)
+
+**Surfaces when:** a new warning is added to `walk_extract.extract_block`, or
+`evals/security/test_plan_text_not_quoted.py` is next touched. **Partly done in v1.62.0 —
+this entry covers what is left.**
+
+That test now asks the extractor for its warning list independently and asserts no warning
+text reaches the composed engine's stdout, so a *future* warning carrying plan input is
+covered the day it is written rather than when someone remembers to author a third carrier.
+What is left is the **exemption mechanism**: the one legitimate echo (`declared_na`'s §5a
+skip note) is matched by a substring literal in the test. That is a prohibition keyed on a
+string, so rewording the skip note silently widens the exemption to nothing — or, worse,
+a *new* warning containing that substring inherits the exemption for free.
+
+**Shape:** mark the exempt warning at its source — a structured `warnings` entry
+(`{"text": …, "safe_to_echo": True}`) or a separate `notes` list — so the test exempts by
+provenance rather than by phrasing. That is the same change `warnings_safe` wants in the
+sibling entry above, and the two should land together rather than twice.
+
+**Deletion criterion:** delete when rewording the §5a skip note cannot change which
+warnings the leak test permits.
+
 ### An `N/A` that redirects to an ISSUE NUMBER is read as a denial (2026-10-04, v1.62.0's security review, NIT)
 
 **Surfaces when:** `walk_extract._UNDENIAL_RE` is next touched. **Filed, not fixed — deliberately.**
@@ -1139,13 +1250,13 @@ still reads, and the misread forms no longer resolve to a confident wrong value.
 **Deletion criterion:** delete when `**Mode** — tiny` either parses as `tiny` or reports itself
 unreadable, and an eval pins both plus the canonical form.
 
-### The same presence-not-content defect, unfixed, on Spec-walk — and `declared_na` already reaches the call site unread (2026-10-04, v1.60.0's push-further lens)
+### The same presence-not-content defect, unfixed, on Spec-walk — and `declared_na` already reaches the call site unread (2026-10-04, v1.62.0's push-further lens)
 
 **Surfaces when:** `audit-skips/lib/skip-audit-checks.py`'s `spec_blocks` derivation is next touched,
 or anyone decides whether `**Spec-walk:** N/A` is sanctioned authoring. **Filed, not fixed** — it
 needs a convention decision first, and guessing it is what would make this worse.
 
-**The shape is the one v1.60.0 just fixed for Visual-walk, one skill over.** `skip-audit-checks.py:783`:
+**The shape is the one v1.62.0 just fixed for Visual-walk, one skill over.** `skip-audit-checks.py:783`:
 
 ```py
 spec_blocks = 0 if _blk.get("all_demoted") or _blk.get("first_heading") is None else _blk.get("block_count", 0)
@@ -1156,11 +1267,11 @@ behaviour to verify` yields `block_count=1, items=[], declared_na=True`, so `spe
 `classify` directly, an `audit-coverage` stage skipped with *"no Spec-walk block in plan"* returns
 **`SHOULD-RE-RUN`** (*"skip claims no Spec-walk but the plan has 1 block(s)"*); **omit the heading
 entirely and the identical skip returns `LEGITIMATE`.** Explicitness punished, omission rewarded —
-v1.60.0's own sentence, in a different skill.
+v1.62.0's own sentence, in a different skill.
 
 **Two aggravators, both measured.** `/flow:audit-coverage` keys on criteria *content* ("the criteria
 list has no criteria"), so it skips **correctly** — and audit-skips then calls that correct skip
-illegitimate, so two flow surfaces disagree about one plan and the honest one loses. And v1.60.0
+illegitimate, so two flow surfaces disagree about one plan and the honest one loses. And v1.62.0
 itself now delivers `declared_na` to **this exact call site**, where nothing reads it;
 `walk_extract.py`'s new docstring records that "no consumer reads it off this extractor", which is
 true as of that commit and is the reason this stays broken.
@@ -1220,6 +1331,29 @@ check belongs in one shared predicate rather than two.
 **Deletion criterion:** delete when a ship run on a repo with a red required check cannot produce a
 non-draft PR, and when a run with checks still pending says so rather than proceeding — both pinned
 by an eval over a synthetic `statusCheckRollup`, including the all-pending case.
+
+**The same hole from the other side, found at v1.62.0's ship: flow's own `preflightCmd` is UNSET.**
+`/flow:ship` Step 1c is the bounded-retry mechanical gate — typecheck + lint + fast tests, before any
+reviewer spawns — and it reads `flow.config.json.preflightCmd`. flow does not set that slot, so every
+ship run in this repo prints `⚠️ preflightCmd not set; skipping mechanical preflight` and proceeds.
+Measured at v1.62.0's ship: unset, alongside `typecheckCmd`.
+
+So this repo ships a **43-harness eval suite that its own ship pipeline never runs.** That is the
+local cause recorded above ("an eval sweep that keyed on output text") one layer down: the agent's
+hand-rolled sweep was the *only* thing standing between a red suite and a ready PR, which is why its
+wrong claim went straight through. Two independent gates were absent at once — nothing ran the tests,
+and nothing read CI's verdict about the tests — and a single fix to either would have caught it.
+
+**Shape:** set `preflightCmd` to `./tools/eval-sweep.sh`, which already exits non-zero on any red
+harness and carries a `--selftest` proving it can report RED. Cheap, and it makes Step 1c's existing
+retry/oscillation machinery live in this repo for the first time. **Do not treat it as a substitute
+for the CI-status fix above** — a local sweep and a required check answer different questions, and
+this entry's whole point is that both were missing. Note the one real decision: eval-sweep runs all
+43 harnesses, so confirm the wall-clock is acceptable inside a retry loop capped at 3 attempts, and
+if it is not, give the slot a fast subset and leave the full suite to CI. **Measured at v1.62.0, so
+nobody has to re-measure: 1m17s for all 43 harnesses**, i.e. ~4 minutes at the N=3 retry cap. That is
+inside the budget a ship run already spends on four reviewer spawns, so the full suite is the right
+default and the fast-subset fallback is not needed today.
 
 ### A known-positive validation that lives in a DOCSTRING is an unvalidated instrument — make the mutation sweep an artifact of the suite (2026-10-03, from v1.57.0's push-further lens)
 
@@ -1871,7 +2005,7 @@ that cannot produce either. Omitting the block entirely is correct (`plan-discip
 to UI changes) and gives the right verdict, so **the careless authoring is rewarded and the
 conscientious authoring is punished** — measured on v1.49.0's own ship, which hit exactly this.
 
-**✅ FIXED v1.58.0 (FB-0132) — and option (a) was deliberately NOT taken. Do not "simplify" back to it.**
+**✅ FIXED v1.62.0 (FB-0132) — and option (a) was deliberately NOT taken. Do not "simplify" back to it.**
 The fix keys on a **declared** denial (`heading_declares_na` + the shared `declared_na` field in
 `walk_extract.py`), not on zero assertions. Option (a) below reads "treat a block with zero parsed
 assertions as non-forcing, since … a block with no `- [ ]` lines declares nothing to capture" — and
@@ -1887,7 +2021,7 @@ The fragility objection recorded below was real and is addressed rather than ign
 **gated behind `items == []`**, so a miss can only fail *safe* (status quo: force), and it is
 **anchored at the start of the heading tail** against a closed token set, so it recognises a
 convention instead of interpreting prose. `**Visual-walk:** there is none of this in scope` does not
-match; `**Visual-walk:** N/A — …` does. Pinned by a 15-case accept/reject table plus four paired
+match; `**Visual-walk:** N/A — …` does. Pinned by a 55-case accept/reject table plus four paired
 end-to-end cases, and `run_walk_extract_evals.py` asserts the bare-empty case still forces — which is
 the assertion that would redden if someone took option (a) later.
 
@@ -2657,7 +2791,7 @@ Anchor co-location (`walk_extract.extract_block(..., anchor_label="Spec-walk")`)
 - **The gaps — two shapes defeat the proxy, both silent.** (1) *No active anchor.* `rules/plan-discipline.md` § Required plan fields: `tiny` mode "skips (4) and (5) entirely" and a non-visual `spike` replaces (4) with a Research-question line. For such an active PR, `anchor_idxs[0]` lands in the first *retained* section, so a retained `Visual-walk` between anchors 0 and 1 reads as co-located. (2) *Retained section authored visual-first.* A retained `Visual-walk` placed above its own section's `Spec-walk` precedes `anchor_idxs[1]` and so falls inside the computed region — and it is indistinguishable by order alone from the legitimate active shape the parser deliberately supports (`VISUAL_BEFORE_SPEC`). Both are pre-existing (verified: the pre-fix module leaks identically on each), and anchoring is a strict improvement for feature-mode plans, so neither blocks. Pinned by `test_anchor_known_limitation_tiny_mode` + `test_anchor_known_limitation_retained_visual_first` in `run_walk_extract_evals.py` so the gaps stay visible rather than being rediscovered as fresh bugs.
 - **Quadratic backtracking in `_BOLD_LABEL_RE` (from the v1.20.x security review).** The tail `\s*:?\s*$` is ambiguous — two adjacent `\s*` runs split by an optional colon — so a non-matching line with a long whitespace run costs O(n²). Measured independently via `is_terminator()`: 0.085s at 5k chars, 1.28s at 20k, 7.86s at 50k. Reachable because `is_terminator` runs on every line of the scanned block. Not a security finding — polynomial not exponential, and the only source is a plan doc the developer authored or cloned, so a hang is a nuisance on your own repo rather than a privilege boundary. Fix by collapsing the tail to `[\s:]*$` (or an atomic group), re-running `run_walk_extract_evals.py` since the 47 baseline checks pin the current heading semantics. `heading_re()` itself was tested and is flat (0.0000s at 16k `**` pairs) — no action there. **Surfaces when:** `walk_extract.py` is next touched.
 - **Lost-update race on `dismissed.json` (from the same review).** `cmd_dismiss` is read-modify-write with no lock, so two concurrent drains in different projects can drop one dismissal. Pre-existing and orthogonal to the exit-3/4 split, but the new exit-4 recurrence signal *depends on dismissal records being durable* — a lost dismissal silently degrades a recurrence back into a "novel" lesson, which is the exact signal the split exists to preserve. Needs an `fcntl.flock` around the store. **Surfaces when:** `contribution_store.py` storage is next touched.
-- **Measured instance of KNOWN-LIMITATION 2, from the v1.58.0 ship (2026-10-04, observed on installed 1.56.0).** Recorded per § 9 so the next reader re-checks rather than inherits. On `main` at that date, `dev-docs/plan.md` carried `**Visual-walk:** N/A — no file matching \`uiFilePatterns\` is in scope.` at ~line 435, belonging to [#171](https://github.com/by-dev-tools/flow/pull/171)'s section — but sitting **above** #171's own `**Spec-walk:**` at ~line 439. So `extract_block(..., anchor_label="Spec-walk")` computed the active region as everything before the *second* Spec-walk heading, that N/A block fell inside it, and `co_located` read **`true`** for a completely different PR's section. Exactly the shape `walk_extract.py`'s KNOWN-LIMITATION 2 describes ("a retained section is authored Visual-walk-above-Spec-walk … so it falls inside the computed region"), now with a live instance and a date. **Not fixed in v1.58.0 by instruction** — the N/A fix made it harmless *for that particular block* (a declared denial no longer forces whichever section it is read as belonging to), but the limitation itself is untouched: a retained section whose Visual-walk carries real **assertions** still leaks them into the active PR, and `co_located` still reports the wrong section. The N/A fix narrowed the blast radius; it did not close this.
+- **Measured instance of KNOWN-LIMITATION 2, from the v1.62.0 ship (2026-10-04, observed on installed 1.57.0).** Recorded per § 9 so the next reader re-checks rather than inherits. On `main` at that date, `dev-docs/plan.md` carried `**Visual-walk:** N/A — no file matching \`uiFilePatterns\` is in scope.` at ~line 435, belonging to [#171](https://github.com/by-dev-tools/flow/pull/171)'s section — but sitting **above** #171's own `**Spec-walk:**` at ~line 439. So `extract_block(..., anchor_label="Spec-walk")` computed the active region as everything before the *second* Spec-walk heading, that N/A block fell inside it, and `co_located` read **`true`** for a completely different PR's section. Exactly the shape `walk_extract.py`'s KNOWN-LIMITATION 2 describes ("a retained section is authored Visual-walk-above-Spec-walk … so it falls inside the computed region"), now with a live instance and a date. **Not fixed in v1.62.0 by instruction** — the N/A fix made it harmless *for that particular block* (a declared denial no longer forces whichever section it is read as belonging to), but the limitation itself is untouched: a retained section whose Visual-walk carries real **assertions** still leaks them into the active PR, and `co_located` still reports the wrong section. The N/A fix narrowed the blast radius; it did not close this.
 
 - **▶ A CLEAN REBASE CAN SILENTLY HAND THE EXTRACTOR ANOTHER PR'S CRITERIA — measured 2026-10-03, v1.57.0.** This is the sharpest argument on the list for a real boundary marker, because it needs no authoring mistake at all: **git produced it, with no conflict markers and no warning.**
 

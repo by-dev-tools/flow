@@ -138,6 +138,42 @@ def assert_no_leak(label: str, tmp: Path, plan_text: str, engine: Path) -> bool:
     leaked = PAYLOAD in blob
     check(f"{label}::no-payload-in-stdout", not leaked,
           f"payload reached stdout: {[s for s in signals if PAYLOAD in s]!r}")
+
+    # THE INVARIANT, not just today's two carriers (v1.62.0 push-further lens). The
+    # two payload cases above enumerate the parser warnings that exist NOW; a third
+    # warning added later that interpolates plan text would pass them silently,
+    # because nobody will remember to author a third carrier. That is the same
+    # "pins the shapes its author thought of, not the class" failure this release
+    # hit twice elsewhere.
+    #
+    # So ask the extractor for its warning list independently, and assert that no
+    # warning the parser produced appears in the composed engine's stdout at all.
+    # Any future warning is covered the day it is written.
+    extractor = PLUGIN / "skills" / "verify-build" / "lib" / "extract-visual-states.py"
+    proc = subprocess.run([sys.executable, str(extractor), str(tmp / "plan.md")],
+                          capture_output=True, text=True, timeout=60)
+    parser_warnings = []
+    if proc.returncode == 0:
+        try:
+            parser_warnings = json.loads(proc.stdout).get("warnings") or []
+        except ValueError:
+            parser_warnings = []
+    # The probe must have something to assert over, or it is vacuous: both crafted
+    # plans provoke warnings by construction, so an empty list means the extractor
+    # did not run, not that the engine is clean.
+    check(f"{label}::parser-warnings-observed", bool(parser_warnings),
+          f"the extractor produced no warnings, so the invariant below is vacuous "
+          f"(rc={proc.returncode}, stderr={proc.stderr[:200]!r})")
+    # `declared_na`'s own skip note is the ONE warning the engine may legitimately
+    # echo — it is static text this repo writes, carries no plan input, and exists to
+    # tell §5a not to capture. Everything else is suspect by default, which is the
+    # right polarity: a new warning is covered unless someone exempts it on purpose.
+    allowed = "§5a skips capture"
+    carried = [w for w in parser_warnings
+               if allowed not in w and w.strip() and w.strip() in blob]
+    check(f"{label}::no-parser-warning-text-in-stdout", not carried,
+          f"parser warning text reached the gate's stdout, so a future warning "
+          f"carrying plan input would too: {[w[:90] for w in carried]!r}")
     return not leaked
 
 
@@ -193,7 +229,6 @@ def main(argv: list[str]) -> int:
                       "passthrough.", file=sys.stderr)
                 return 2
 
-            before = len(_failures)
             leaks = []
             for label, plan in (("MUTANT-carrier1", PLAN_CHECKBOXES),
                                 ("MUTANT-carrier2", PLAN_MULTIBLOCK)):
@@ -206,8 +241,6 @@ def main(argv: list[str]) -> int:
                     return 2
                 if PAYLOAD in json.dumps(data):
                     leaks.append(label)
-            # Discard failures the mutant run queued; a red mutant is the point.
-            del _failures[before:]
             if len(leaks) != 2:
                 print(f"SELFTEST FAILED - restoring the passthrough reproduced the leak "
                       f"on {leaks or 'NEITHER carrier'}, not both. This test cannot "

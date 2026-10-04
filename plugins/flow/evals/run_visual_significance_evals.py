@@ -461,10 +461,20 @@ def main() -> int:
         rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
                     plan=na_plan)
         na_warns = [x for x in o.get("visual_signals", []) if x.startswith("[WARN]")]
-        check("8h-clean-na-emits-exactly-one-warn",
-              len(na_warns) == 1 and "DECLARES" in na_warns[0],
-              f"a spotless N/A must emit only its declaration signal — a second [WARN] "
-              f"here is permanent noise on the happy path: {na_warns}")
+        # Tightened from `len(na_warns) == 1` when the declaration signal lost its
+        # `[WARN]` prefix (push-further lens): ZERO warnings is the stronger claim, and
+        # it is paired with the positive assertion below so the pair cannot be satisfied
+        # by deleting the signal altogether (item 3). Still red under the
+        # `len(warnings)` mutation, which is what 8h was written to catch.
+        check("8h-clean-na-emits-no-warnings-at-all",
+              not na_warns,
+              f"a terminal-CORRECT reading must not warn — a [WARN] here is permanent "
+              f"noise on the happy path for the life of the project: {na_warns}")
+        decl = [x for x in o.get("visual_signals", []) if "DECLARES" in x]
+        check("8h-clean-na-still-records-the-decision",
+              len(decl) == 1 and not decl[0].startswith("[WARN]"),
+              f"the decision must still be RECORDED, unprefixed — silence here would "
+              f"satisfy the assertion above by deletion: {o.get('visual_signals')}")
         # Keyed on a marker only the PLAN carries, not on the absence of the string
         # "N/A" — the signal's own static prose says "an explicit N/A", so asserting
         # that was testing the message's wording rather than whether it quotes input.
@@ -520,6 +530,73 @@ def main() -> int:
               o.get("visual_significant") is False,
               f"malformed checkbox lines are not assertions, so the N/A still "
               f"governs: {o}")
+
+        # 8k. THE POSITIVE HALF OF "the removal is SCOPED to the declared_na branch".
+        #     Written because it was MISSING, and the plan criterion asserting it
+        #     claimed the pairing existed (v1.62.0 staff-review). Measured: deleting
+        #     BOTH surviving `signals.extend(... warnings ...)` lines left 74/74,
+        #     166/166 and the security test all green — so the negative assertion
+        #     ("the N/A branch forwards nothing") passed in two opposite worlds, the
+        #     contract honoured AND the feature deleted. § Consistency discipline item
+        #     3, in the criterion written to invoke item 3.
+        #
+        #     The two branches below are ABNORMAL plan states, and their warning text
+        #     IS the operator's remedy — "the block sits below the active section, move
+        #     it" cannot be replaced by a line number without losing the instruction.
+        #     That is exactly why the N/A branch (a terminal CORRECT reading) drops its
+        #     passthrough and these keep theirs, and why "scoped" is the claim rather
+        #     than "removed".
+        noncolocated = (
+            "## Active PR\n\n**Spec-walk:**\n- [ ] x\n\n## Older PR\n\n"
+            "**Spec-walk:**\n- [x] y\n\n**Visual-walk:**\n- [ ] the panel renders\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=noncolocated)
+        check("8k-noncolocated-still-forwards-the-remedy",
+              any("sits BELOW the active PR's section" in x
+                  for x in o.get("visual_signals", [])),
+              f"the retained-block branch must still forward the parser warning that "
+              f"tells the author to move it: {o.get('visual_signals')}")
+
+        demoted_only = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                        "**Visual-walk (merged #99):**\n- [ ] old\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=demoted_only)
+        check("8k-all-demoted-still-forwards-the-remedy",
+              any("qualified as already-shipped/merged/demoted" in x
+                  for x in o.get("visual_signals", [])),
+              f"the all-demoted branch must still forward its parser warning: "
+              f"{o.get('visual_signals')}")
+
+        # 8l. THE NEAR-MISS SIGNAL AT THE COMPOSED LAYER. Added because mutating
+        #     `na_near_miss` to always return None — i.e. restoring the exact silence
+        #     the UX blocker described — reddened 9 checks in
+        #     run_walk_extract_evals.py and left THIS suite at 76/76. The classifier
+        #     was pinned; the thing an author actually sees was not. The claim is "the
+        #     author is told", and that claim is made in `visual_signals`, not in a
+        #     return value (§ Consistency discipline item 4's layer corollary).
+        for tail, want in (("N/A for this PR", "runs straight into prose"),
+                           ("N/A — TBD", "says WHEN"),
+                           ("N/A — see Figma", "kept ELSEWHERE")):
+            near_plan = f"## PR\n\n**Spec-walk:**\n- [ ] x\n\n**Visual-walk:** {tail}\n"
+            rc, o = run(tmp, config={"uiSurface": True},
+                        files="M\tdev-docs/roadmap.md", plan=near_plan)
+            sig = o.get("visual_signals", [])
+            check(f"8l-near-miss-is-reported::{tail[:22]}",
+                  any("LOOKS like a denial but was NOT read as one" in x for x in sig),
+                  f"a rejected denial must not be silent — this is the FB-0132 symptom "
+                  f"on near-miss spellings: {sig}")
+            check(f"8l-near-miss-names-the-reason::{tail[:22]}",
+                  any(want in x for x in sig),
+                  f"the signal must say WHICH reading it took (expected {want!r}): {sig}")
+            check(f"8l-near-miss-does-not-quote-the-heading::{tail[:22]}",
+                  not any(tail in x for x in sig),
+                  f"CLASSIFY, never quote — this crosses into the forked "
+                  f"skip-auditor's prompt: {sig}")
+            # Paired: the verdict is unchanged by the new signal. A near miss still
+            # forces, which is the behaviour the signal EXPLAINS rather than alters.
+            check(f"8l-near-miss-still-forces::{tail[:22]}",
+                  o.get("visual_significant") is True,
+                  f"a rejected denial must still force: {o}")
 
         # 9. override suppressed by uiSurface:false (recorded, not honored).
         rc, o = run(tmp, config={"uiSurface": False}, files="M\tsrc/logic.py", plan=plan)

@@ -72,10 +72,15 @@ try:
     # `declared_na` field below is derived from the same function (FB-0010). It is
     # used here only for the contradictory-authoring warning — the decision itself
     # reads the field.
-    from walk_extract import extract_block, heading_declares_na  # type: ignore
+    # `na_near_miss` rides the same import for the same reason: it explains a verdict
+    # `heading_declares_na` reached, so it must be the copy that reached it.
+    from walk_extract import (  # type: ignore
+        extract_block, heading_declares_na, na_near_miss,
+    )
 except Exception:  # pragma: no cover - defensive; walk_extract ships alongside
     extract_block = None
     heading_declares_na = None
+    na_near_miss = None
 
 # Pattern resolution lives in file_patterns (FB-0079) — ONE definition of the
 # visualFilePatterns → uiFilePatterns → default chain, shared with
@@ -432,11 +437,21 @@ def main(argv):
                 # v1.38.0's security review removed from `read_plan_mode`, whose
                 # docstring says "CLASSIFY, never quote" for this reason. A LINE NUMBER
                 # is non-forgeable and tells an operator everything the quote did.
+                # NOT prefixed `[WARN]`, and that is a deliberate correction within
+                # this release. This file reserves `[WARN]` for degraded or abnormal
+                # state (missing config, invalid regex, a retained block, all-demoted);
+                # ordinary decision signals — `uiSurface=true`, `diff touches no UI or
+                # asset files` — are unprefixed. A terminal-CORRECT reading announced at
+                # warning severity would put a permanent `[WARN]` on the happy path for
+                # the life of the project, which is v1.57.0's permanent-⚠️ hedge
+                # mistake, and this release's own history doc argues against it two
+                # paragraphs before the branch that committed it. The line number stays:
+                # it is non-forgeable and it is what replaced the quoted heading.
                 signals.append(
-                    "[WARN] the active Visual-walk block at line %s DECLARES "
+                    "the active Visual-walk block at line %s DECLARES "
                     "non-applicability and lists no assertions — NOT treating it as an "
                     "override. This is the correct reading of an explicit N/A; omitting "
-                    "the block entirely gives the same verdict."
+                    "the block entirely gives the same verdict. No action needed."
                     % (blk.get("first_heading_line") or "?")
                 )
                 # DO NOT forward blk["warnings"] here, and the reason is specific to
@@ -470,8 +485,12 @@ def main(argv):
                     signals.append(
                         "[WARN] %d Visual-walk blocks are present and only the FIRST was "
                         "read — the one that declares N/A. If a later block holds this "
-                        "PR's real assertions, move it above the others; run "
-                        "`extract-visual-states.py <plan>` to see which was taken."
+                        "PR's real assertions, either demote the earlier headings "
+                        "(`**Visual-walk (merged #NN):**`, which is what the "
+                        "all-demoted path keys on) or move yours above them. To see "
+                        "which was taken, run: python3 "
+                        "\"${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/"
+                        "extract-visual-states.py\" <plan>"
                         % blocks
                     )
             elif blk.get("block_count", 0) >= 1:
@@ -483,15 +502,51 @@ def main(argv):
                 # leaves the author believing their `N/A` was read. Found by
                 # /simplify's reuse lens inside its own "nothing to flag" section;
                 # this file's standing discipline is that every decision is recorded.
+                n_items = len(blk.get("items") or [])
+                # A denial-SHAPED heading that this guard REJECTED must say so. Before
+                # this, `**Visual-walk:** N/A for this PR` and `N/A — TBD` produced
+                # output byte-identical to a bare `**Visual-walk:**` — so an author who
+                # wrote a denial read back "plan declares a Visual-walk block", a
+                # sentence contradicting their own text, and then got §7a's demand for a
+                # walkthrough they cannot produce. That is FB-0132's original symptom
+                # intact on every near-miss spelling, and the published convention makes
+                # near misses the predictable failure rather than an exotic one. The
+                # verdict was always right; the SILENCE was the defect — the same
+                # absent-vs-no collapse (FB-0082) this release's roadmap entry names as
+                # a bug for `**Mode:**`. A CATEGORY, never the heading text: this string
+                # crosses into the forked skip-auditor's prompt.
+                near = (na_near_miss(blk.get("first_heading") or "", "Visual-walk")
+                        if na_near_miss is not None else None)
+                if near is not None:
+                    why = {
+                        "defers": "it also says WHEN the visual work will happen, so it "
+                                  "reads as a deferral — and a deferral means a visual "
+                                  "surface exists",
+                        "redirects": "it also points at visual artifacts kept ELSEWHERE, "
+                                     "so it reads as a redirection — and that means a "
+                                     "visual surface exists",
+                        "unseparated": "the denial token runs straight into prose "
+                                       "instead of ending the heading or being followed "
+                                       "by a separator",
+                    }[near]
+                    signals.append(
+                        "[WARN] the active Visual-walk heading at line %s LOOKS like a "
+                        "denial but was NOT read as one: %s. This change is therefore "
+                        "treated as visually significant. If you meant there is no "
+                        "visual surface, write `**Visual-walk:** N/A — <reason>` with a "
+                        "reason that states WHY rather than when or where, or omit the "
+                        "block entirely — both give the same verdict."
+                        % (blk.get("first_heading_line") or "?", why)
+                    )
                 if heading_declares_na is not None and heading_declares_na(
                         blk.get("first_heading") or "", "Visual-walk"):
                     signals.append(
                         "[WARN] the active Visual-walk heading declares "
-                        "non-applicability but the block LISTS %d assertion(s) — the "
+                        "non-applicability but the block LISTS %d %s — the "
                         "assertions win and this change is treated as visually "
                         "significant. Remove the assertions if the N/A is what you "
                         "meant, or drop the N/A if the assertions are."
-                        % len(blk.get("items") or [])
+                        % (n_items, "assertion" if n_items == 1 else "assertions")
                     )
 
     def emit(significant, reason):

@@ -29,7 +29,9 @@ from pathlib import Path
 LIB = Path(__file__).resolve().parent.parent / "skills" / "verify-build" / "lib"
 sys.path.insert(0, str(LIB))
 
-from walk_extract import extract_block, heading_declares_na, heading_re, is_terminator  # noqa: E402
+from walk_extract import (  # noqa: E402
+    extract_block, heading_declares_na, heading_re, is_terminator, na_near_miss,
+)
 
 CRITERIA = LIB / "extract-criteria.py"
 VISUAL = LIB / "extract-visual-states.py"
@@ -894,6 +896,40 @@ def test_na_token_set_is_anchored() -> None:
         # visual` is an accept row above.
         "**Visual-walk:** Not applicable, see the prototype for frames",
         "**Visual-walk:** N/A — screenshots are in the PR body",
+        # THE THIRD LEAK (v1.62.0 staff-review — found independently by the
+        # design-engineer AND push-further lenses, which is why it is not a NIT).
+        # Every row above hit a marker the list already contained, so the table had
+        # only ever been validated against its own vocabulary — and the word
+        # `deferred`, whose definition IS the deferral class, was absent. All of
+        # these SUPPRESSED before the fix, i.e. a deferral silently shipped an unseen
+        # UI with a green report. `N/A - deferred to later` was caught only because
+        # `later` happened to sit in the sentence; that is v2's failure verbatim, one
+        # vocabulary over. Keep these rows: they are the ones that share no token with
+        # the pre-fix regex, which is the only kind of row that could have caught it.
+        "**Visual-walk:** N/A — deferred",
+        "**Visual-walk:** N/A - deferred to the follow-up PR",
+        "**Visual-walk:** None — deferred until design signs off",
+        "**Visual-walk:** N/A — awaiting design",
+        "**Visual-walk:** N/A - in the next PR",
+        "**Visual-walk:** N/A — blocked on the design review",
+        "**Visual-walk:** N/A - in progress",
+        "**Visual-walk:** none (deferred)",
+        "**Visual-walk:** N/A — punted",
+        "**Visual-walk:** N/A - once the API is ready",
+        "**Visual-walk:** N/A — skipping for this pass",
+        # …and the redirection half, which was missing three releases of design-tool
+        # vocabulary while `frames`/`screenshots`/`prototype` were present.
+        "**Visual-walk:** N/A — see Figma",
+        "**Visual-walk:** N/A - mockups attached",
+        "**Visual-walk:** N/A — wireframes in the ticket",
+        "**Visual-walk:** N/A - video in the PR body",
+        "**Visual-walk:** N/A — gif in the description",
+        "**Visual-walk:** N/A - before/after images below",
+        "**Visual-walk:** N/A — states enumerated in the design doc",
+        "**Visual-walk:** N/A - covered elsewhere",
+        "**Visual-walk:** N/A — see below",
+        "**Visual-walk:** N/A - covered by #456",
+        "**Visual-walk:** N/A — documented in the PR body",
     ]
     for line in accept:
         check(f"na-accept::{line[:44]}", heading_declares_na(line, "Visual-walk"),
@@ -903,25 +939,182 @@ def test_na_token_set_is_anchored() -> None:
               "should NOT be read as a denial")
 
 
+def test_declared_na_empty_warning_is_label_specific() -> None:
+    """A declared N/A and a bare empty block are both "zero items" and must NOT get the
+    same nudge — §5a is agent-executed from this JSON (v1.62.0 staff-review).
+
+    Paired in both directions, and the pair is the point: asserting only that the
+    capture nudge is absent would pass if the warning were deleted outright, and
+    asserting only that the N/A message appears would pass if it were emitted on every
+    empty block. Also asserts the OTHER consumer is untouched — `empty_warning_na` is
+    opt-in, so `extract-criteria.py` must still emit its own single message, which is
+    what keeps this from being a behaviour change for consumers with no N/A semantics.
+    """
+    rc, out = run_cli(VISUAL, _NA_PLAN)
+    warns = " ".join(out.get("warnings") or [])
+    check("na-empty-warning-says-skip", "§5a skips capture" in warns,
+          f"a declared N/A must say §5a SKIPS: {out.get('warnings')}")
+    check("na-empty-warning-not-capture-nudge",
+          "capture the primary/launch state only" not in warns,
+          f"the capture nudge is wrong on a declared N/A: {out.get('warnings')}")
+
+    # The BARE empty block keeps the capture nudge — the shape §5a still captures for.
+    bare = "## PR\n\n**Spec-walk:**\n- [ ] x\n\n**Visual-walk:**\n"
+    rc, out = run_cli(VISUAL, bare)
+    warns = " ".join(out.get("warnings") or [])
+    check("bare-empty-keeps-capture-nudge",
+          "capture the primary/launch state only" in warns,
+          f"a bare empty block must still be told to capture: {out.get('warnings')}")
+    check("bare-empty-not-told-to-skip", "§5a skips capture" not in warns,
+          f"a bare empty block must NOT be told to skip: {out.get('warnings')}")
+
+    # The Spec-walk consumer passes no `empty_warning_na`, so it is unaffected.
+    rc, out = run_cli(CRITERIA, "**Spec-walk:** N/A - nothing behavioural\n")
+    warns = " ".join(out.get("warnings") or [])
+    check("criteria-consumer-unaffected", "§5a skips capture" not in warns,
+          f"extract-criteria opted out and must not inherit the message: "
+          f"{out.get('warnings')}")
+
+
+def test_na_near_miss() -> None:
+    """A rejected denial is explained by CATEGORY; a non-denial is never accused.
+
+    Three-way partition, and all three arms are load-bearing:
+
+    - an ACCEPTED denial returns None — there is nothing to explain, and emitting a
+      near-miss note there would contradict the verdict;
+    - a REJECTED denial-shaped heading returns its category, which is the whole point
+      (silence here was the UX blocker: `N/A for this PR` was indistinguishable from a
+      bare block, so the author read back a sentence denying what they wrote);
+    - a heading with NO denial intent returns None. This is the false-accusation arm
+      and it is why the probe uses `_NA_TOKEN_RE` (a standalone token) rather than a
+      prefix match: `native rendering is unchanged` and `nonetheless we captured
+      frames` both START with `na`/`none` as word prefixes, and telling their authors
+      "your denial was rejected" would be a confident lie about text that never tried
+      to be a denial.
+    """
+    accepted = ["**Visual-walk:** N/A", "**Visual-walk:** N/A — no UI surface",
+                "**Visual-walk:** None — backend only", "### Visual-walk — N/A"]
+    for line in accepted:
+        check(f"near-miss-none-when-accepted::{line[:40]}",
+              na_near_miss(line, "Visual-walk") is None,
+              "an accepted denial has nothing to explain")
+
+    categorized = {
+        "**Visual-walk:** N/A for this PR": "unseparated",
+        "**Visual-walk:** N/A: nothing visual for now": "defers",
+        "**Visual-walk:** N/A — TBD": "defers",
+        "**Visual-walk:** N/A — deferred": "defers",
+        "**Visual-walk:** None, will fill in later": "defers",
+        "**Visual-walk:** N/A — see Figma": "redirects",
+        "**Visual-walk:** N/A — mockups attached": "redirects",
+        "**Visual-walk:** Not applicable, see the prototype for frames": "redirects",
+    }
+    for line, want in categorized.items():
+        got = na_near_miss(line, "Visual-walk")
+        check(f"near-miss-category::{line[:40]}", got == want,
+              f"expected {want!r}, got {got!r}")
+        # Paired with the predicate: a category must only ever accompany a rejection.
+        check(f"near-miss-implies-rejected::{line[:40]}",
+              not heading_declares_na(line, "Visual-walk"),
+              "a categorized near miss must not also read as a denial")
+
+    innocent = ["**Visual-walk:**",
+                "**Visual-walk:** native rendering is unchanged",
+                "**Visual-walk:** nonetheless we captured frames",
+                "**Visual-walk:** the empty state renders centered",
+                "**Spec-walk:** N/A"]
+    for line in innocent:
+        check(f"near-miss-no-false-accusation::{line[:40]}",
+              na_near_miss(line, "Visual-walk") is None,
+              "a heading with no denial intent must not be told its denial failed")
+
+    # A tail carrying BOTH reports the deferral: "when" is the more actionable half.
+    check("near-miss-deferral-wins-over-redirection",
+          na_near_miss("**Visual-walk:** N/A — frames later", "Visual-walk") == "defers",
+          "deferral is reported in preference when a tail carries both")
+
+
+# The shipped authoring convention, transcribed from `plan-discipline/SKILL.md` field 8.
+# Two readers of one rule — a regex and a doc that tells authors what the regex does —
+# which is the FB-0010 fan-out shape, and the doc half had already drifted WIDER than
+# the code (it promised that any separator-followed denial counts, while the predicate
+# rejects `N/A — no frames needed`; v1.62.0 staff-review BLOCKER).
+_DOC_READS_AS_DENIAL = [
+    "N/A — backend only",
+    "N/A — nothing visual",
+    "N/A — no file matching uiFilePatterns is in scope",
+]
+_DOC_KEEPS_FORCING = [
+    "N/A — no frames needed",
+    "N/A — nothing to capture",
+    "N/A — no screenshots in this change",
+    "N/A for this PR",
+    "N/A — deferred",
+    "N/A — awaiting design",
+    "N/A — in the next PR",
+    "N/A, see the prototype for frames",
+    "N/A — mockups attached",
+    "N/A — see Figma",
+    "N/A — covered by #456",
+]
+
+
+def test_published_convention_matches_the_predicate() -> None:
+    """Every example `plan-discipline` shows an author must behave as it says.
+
+    THREE assertions per example, and the third is what makes this a join rather than
+    two independent lists: the literal must still be PRESENT in the shipped SKILL.md.
+    Without it, someone could reword the doc's examples and this test would keep
+    passing against strings nobody ships — a pin on a copy instead of on the contract
+    (§ Consistency discipline item 4's "pin the DECISION, not a string that currently
+    implies it", one level over).
+    """
+    skill = (Path(__file__).resolve().parents[1]
+             / "skills" / "plan-discipline" / "SKILL.md")
+    check("convention-doc-exists", skill.is_file(), f"missing {skill}")
+    doc = skill.read_text(encoding="utf-8") if skill.is_file() else ""
+
+    for ex in _DOC_READS_AS_DENIAL:
+        check(f"doc-denial::{ex[:40]}",
+              heading_declares_na(f"**Visual-walk:** {ex}", "Visual-walk"),
+              "plan-discipline tells authors this reads as a denial")
+        check(f"doc-denial-present::{ex[:40]}", ex in doc,
+              "the doc no longer shows this example — re-sync this list or the doc")
+    for ex in _DOC_KEEPS_FORCING:
+        check(f"doc-forces::{ex[:40]}",
+              not heading_declares_na(f"**Visual-walk:** {ex}", "Visual-walk"),
+              "plan-discipline tells authors this does NOT read as a denial")
+        check(f"doc-forces-present::{ex[:40]}", ex in doc,
+              "the doc no longer shows this example — re-sync this list or the doc")
+
+
 def test_na_known_limitation_issue_redirection() -> None:
     """A denial that redirects to an ISSUE NUMBER is accepted. Pinned as a decision.
 
-    `N/A — covered by #456` is a redirection in the same family as the rejected
-    `N/A — screenshots are in the PR body`, and it is the one gap the v1.62.0
-    security review's NIT correctly identified: no shipped token matches it. It is
-    NOT closed here, because `#\d` cannot distinguish the two readings it spans —
-    "this PR has UI and the walk lives over there" (should reject) from "the UI
-    landed in #120, so this PR genuinely has none" (should accept). Closing it would
-    trade a missed walk for a forced walk on a non-visual PR, and which of those is
-    worse is a judgment call that belongs to a human at the plan gate, not to a
-    parser guessing from prose.
+    The UNAMBIGUOUS half closed during the same release's staff-review pass, which is
+    why this docstring is narrower than it was an hour ago: `covered by #456` and
+    `see #456` name a redirection VERB, so `covered\s+(?:in|by|elsewhere)` and `see\s`
+    now reject them. (This test went red when that landed — which is the test doing
+    its job, and the reason it is asserted in the accept direction at all.)
+
+    What is left is genuinely ambiguous, and it is the bare reference with no verb of
+    redirection: `handled in #123`, `the UI landed in #120`, `shipped in #120`. A
+    pattern over `#\d` cannot separate the two readings those span — "this PR has UI
+    and the walk lives over there" (should reject) from "the UI landed in #120, so
+    this PR genuinely has none" (should accept). Closing it trades a missed walk for a
+    FORCED walk on a non-visual PR, which is the exact failure v1.62.0 shipped to
+    remove, and which of the two is worse is a judgment call that belongs to a human
+    at the plan gate, not to a parser guessing from prose.
 
     Asserted in the ACCEPT direction deliberately, so this records today's real
-    behaviour rather than a wish: if someone closes the gap, this test goes red and
-    they must delete it on purpose. Tracked in `dev-docs/roadmap.md` § Next.
+    behaviour rather than a wish: if someone closes the rest of the gap, this test
+    goes red and they must delete it on purpose. Tracked in `dev-docs/roadmap.md`
+    § Next, which carries the measured split between the two halves.
     """
-    for line in ["**Visual-walk:** N/A — covered by #456",
-                 "**Visual-walk:** N/A - handled in #123"]:
+    for line in ["**Visual-walk:** N/A - handled in #123",
+                 "**Visual-walk:** N/A — the UI landed in #120",
+                 "**Visual-walk:** N/A - shipped in #120"]:
         check(f"na-known-limitation::{line[:44]}",
               heading_declares_na(line, "Visual-walk"),
               "today's behaviour is ACCEPT; see the docstring before changing it")
@@ -968,6 +1161,9 @@ def main() -> int:
         test_all_demoted_cli,
         test_declared_na,
         test_na_token_set_is_anchored,
+        test_na_near_miss,
+        test_declared_na_empty_warning_is_label_specific,
+        test_published_convention_matches_the_predicate,
         test_na_known_limitation_issue_redirection,
         test_declared_na_cli,
     ]:

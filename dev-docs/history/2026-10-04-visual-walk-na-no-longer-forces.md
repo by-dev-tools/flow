@@ -61,7 +61,7 @@ from "review this".
 
 **Verification:**
 
-- 28-row accept/reject table on the predicate; four paired end-to-end cases (N/A + zero assertions
+- 55-row accept/reject table on the predicate; four paired end-to-end cases (N/A + zero assertions
   doesn't force · N/A + assertions still forces · bare empty still forces · an N/A declaration cannot
   mask a real render delta).
 - Nine mutations red, each on the assertion meant to catch it — including reverting to option (a),
@@ -162,7 +162,73 @@ it is red under the mutation and green without it. The transferable bit is that 
 at all — I had the reasoning written down in a comment and still would have shipped a suite that
 could not tell the two keys apart, because the numbers coincided on the inputs I happened to pick.
 
-**Verification (final):** 143/143 `run_walk_extract_evals.py` · 73/73
-`run_visual_significance_evals.py` · 6/6 security test files · 43/43 harnesses green **by exit code**.
-Mutations run on the new surface: restoring the passthrough (red on 8h and on the composed-layer
-security test), and re-keying the count on the warning total (red on 8j only).
+**The staff-review pass found the guard was still wrong — a third time — and two lenses
+found it independently.**
+
+`/flow:ship`'s rigor gate reported `missing`, not stale: the security commits had landed after
+the earlier review, so the final tree had never been staff-reviewed. Re-running it was the
+prescribed auto-resolution and it was not a formality.
+
+The design-engineer and push-further lenses separately reported that `_UNDENIAL_RE` **does not
+contain the word `deferred`** — the word whose dictionary definition *is* the class the guard is
+named after. Measured: `N/A — deferred`, `N/A — next PR`, `N/A — punted`, `N/A — awaiting design`,
+`N/A — blocked on the design review`, `N/A — in progress`, `N/A — see Figma`,
+`N/A — mockups attached` all SUPPRESSED, which is the direction that ships an unseen UI with a
+green report. `N/A — deferred to later` was caught only because `later` happened to sit in the
+sentence — delete that one word and the identical sentence suppressed. That is v2's failure
+verbatim, one vocabulary over.
+
+**Why my own eval could not see it, which is the part worth carrying.** Every reject row in the
+table hit a marker the list already contained. So the table had only ever been validated against
+its own vocabulary — item 4, an instrument never run against a known positive from *outside* the
+set it was built from. And the comment three lines above the regex faults v2 for exactly this
+("pinned the three shapes its author happened to write, not the class"). I wrote that sentence
+and then reproduced it one abstraction level up, in the same function. The 22 new reject rows
+share no token with the pre-fix regex, which is the only kind of row that could have caught it.
+
+The structural reading came from push-further and is now the roadmap entry: three leaks in three
+versions is what a **blacklist on the dangerous polarity** looks like. Suppression is the
+expensive direction, and the guard implements it as a deny-list, so every phrasing nobody
+enumerated defaults to suppress. The fix — require the tail to be positively denial-*shaped* — is
+filed with its one measured casualty, deliberately not taken here. Adding tokens treats symptoms;
+the entry exists to stop the next person adding more and calling the class closed.
+
+**Four more findings, each a different shape of the same disease:**
+
+1. **My criterion claimed a pairing that did not exist** (staff-engineer). "The removal is SCOPED
+   to the `declared_na` branch" was asserted to be paired with "the two inherited branches still
+   forward theirs" — and nothing asserted it. Deleting **both** surviving passthroughs left 76/76,
+   200/200 and the security test green. Item 3, inside the criterion written to invoke item 3.
+   Now pinned by `8k`, red on both halves under the deletion.
+2. **§5a's own data source contradicted §5a's prose** (staff-engineer). `extract-visual-states.py`
+   emitted "§5a should capture the primary/launch state only" on a declared N/A — and §5a is
+   agent-executed from exactly that JSON. The prose said skip; the data said capture. Fixed with
+   an opt-in `empty_warning_na` so `extract-criteria.py` is untouched, and paired three ways.
+3. **A rejected near-miss was silent** (UX). `N/A for this PR` and `N/A — TBD` produced output
+   byte-identical to a bare block, so an author who wrote a denial read back "plan declares a
+   Visual-walk block" and then got a demand for a walkthrough they cannot produce — FB-0132's
+   symptom intact on every near-miss spelling, and the FB-0082 absent-vs-no collapse. The verdict
+   was right; the silence was the defect. New `na_near_miss` returns a *category*, never the
+   heading text, and returns None for headings with no denial intent so it cannot accuse
+   `native rendering is unchanged` of a failed denial.
+4. **The published convention was wider than the predicate** (staff-engineer). `plan-discipline`
+   promised any separator-followed denial counts, while `N/A — no frames needed` and
+   `N/A — nothing to capture` keep forcing: an artifact noun reads as "these exist somewhere"
+   even when negated. Documented explicitly rather than patched, because loosening the regex moves
+   toward suppression. The 14 examples are now pinned **both** against the predicate and against
+   their own continued presence in the shipped file, so rewording the doc cannot leave the test
+   checking strings nobody ships.
+
+**And one I caught by mutating my own new test.** Making `na_near_miss` always return None — the
+exact pre-fix silence — reddened 9 checks in the parser suite and left the visual-significance
+suite at **76/76**. The classifier was pinned; the thing an author actually sees was not. The claim
+is "the author is told", and that claim is made in `visual_signals`. Case `8l` pins it at that
+layer, and reddens 6 checks under the same mutation. That is the third time this release that a
+test sat one layer below the claim it was written for.
+
+**Verification (final):** 226/226 `run_walk_extract_evals.py` · 88/88
+`run_visual_significance_evals.py` · 8/8 `test_plan_text_not_quoted.py` · 6/6 security test files ·
+43/43 harnesses green **by exit code** (1m17s measured). Four mutations run on the new surface,
+each red on the assertion meant to catch it and no other: restoring the warnings passthrough
+(8h + the composed security test), re-keying the count on the warning total (8j only), deleting
+both inherited passthroughs (8k only), and silencing `na_near_miss` (8l + the parser rows).

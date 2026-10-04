@@ -36,13 +36,15 @@ Contract:
                         from a complete one (FB-0121). A terminator close that
                         collected items does NOT warn -- only a zero-item close does>,
       "block_count": <how many Visual-walk blocks exist in the file>,
-      "declared_na": <true iff the heading declares N/A (`N/A`, `none`, `nil`,
-                      `not applicable`, `na`, `n.a.`) AND zero assertions — the
-                      author declared this change has NO visual surface. §5a
-                      skips capture on it; `visual-significance.py` suppresses
-                      the override. A DEFERRAL or a REDIRECTION in the reason
-                      ("will fill in", "see the prototype for frames") is not a
-                      denial and does not set this>,
+      "declared_na": <true iff the heading declares non-applicability AND zero
+                      assertions — the author declared this change has NO visual
+                      surface. §5a skips capture on it (and `warnings` then carries
+                      the skip note, not the capture nudge);
+                      `visual-significance.py` suppresses the override. The token
+                      set and the deferral/redirection exclusions have ONE
+                      definition, in `walk_extract.heading_declares_na`; the
+                      author-facing statement of the convention is
+                      `skills/plan-discipline/SKILL.md` field 8>,
       "all_demoted": <true iff block_count > 0 but every one is qualified
                       shipped/merged/demoted — no active block>,
       "warnings": ["..."]
@@ -93,6 +95,19 @@ EMPTY_WARNING = (
 )
 
 
+# The DECLARED-N/A counterpart. `EMPTY_WARNING` above is correct for a bare empty
+# block ("a visual surface, states unenumerated" — capture the launch state), and
+# actively wrong for a declared denial, where §5a skips. §5a is agent-executed from
+# this script's JSON, so emitting the capture nudge there made the primary data source
+# contradict `verify-build/SKILL.md` §5a's own skip line (v1.62.0 staff-review).
+EMPTY_WARNING_NA = (
+    "the Visual-walk heading DECLARES non-applicability and the block lists no "
+    "assertions — §5a skips capture for this plan (`[§5a] skipped: Visual-walk "
+    "declared N/A`) and no frames are expected. Do NOT capture a launch state here; "
+    "that is the bare-empty-block case, which is a different shape."
+)
+
+
 def parse_assertion(text: str) -> dict:
     """Split an optional leading `[category: …]` tag off an assertion line."""
     m = _CATEGORY_RE.match(text)
@@ -112,5 +127,6 @@ if __name__ == "__main__":
             anchor_label="Spec-walk",
             transform_item=parse_assertion,
             empty_warning=EMPTY_WARNING,
+            empty_warning_na=EMPTY_WARNING_NA,
         )
     )
