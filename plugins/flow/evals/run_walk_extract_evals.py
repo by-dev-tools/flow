@@ -836,6 +836,21 @@ def test_na_token_set_is_anchored() -> None:
         "**Visual-walk:** nil",
         "**Visual-walk** *(UI only)*: N/A",
         "### Visual-walk — N/A",
+        # THE DECLINED-TIGHTENING ROWS (v1.62.0 security review, NIT). The review
+        # proposed widening `_UNDENIAL_RE` with `add(ed|ing)\b`, `after\b`,
+        # `step \d` and `#\d` to catch more deferrals. Measured before accepting:
+        # the first three reject these four legitimate denials, and "no UI added" is
+        # the most natural way an author phrases a true N/A — so that widening would
+        # have re-broken the exact bug this release fixes, on the commonest wording.
+        # It would also have bought nothing: 3 of the NIT's 4 motivating deferrals
+        # ("frames added at step 8", "added after the prototype lands", "will be
+        # added later") are ALREADY rejected above via `frames`, `prototype` and
+        # `will `. These rows exist so the next person to "tighten the guard" sees
+        # red instead of silently reverting the fix.
+        "**Visual-walk:** N/A — no UI added",
+        "**Visual-walk:** N/A - nothing added to any rendered surface",
+        "**Visual-walk:** N/A — prose change to ship Step 2a",
+        "**Visual-walk:** N/A — no visual change after the refactor",
     ]
     reject = [
         "**Visual-walk:**",                                   # bare
@@ -888,6 +903,30 @@ def test_na_token_set_is_anchored() -> None:
               "should NOT be read as a denial")
 
 
+def test_na_known_limitation_issue_redirection() -> None:
+    """A denial that redirects to an ISSUE NUMBER is accepted. Pinned as a decision.
+
+    `N/A — covered by #456` is a redirection in the same family as the rejected
+    `N/A — screenshots are in the PR body`, and it is the one gap the v1.62.0
+    security review's NIT correctly identified: no shipped token matches it. It is
+    NOT closed here, because `#\d` cannot distinguish the two readings it spans —
+    "this PR has UI and the walk lives over there" (should reject) from "the UI
+    landed in #120, so this PR genuinely has none" (should accept). Closing it would
+    trade a missed walk for a forced walk on a non-visual PR, and which of those is
+    worse is a judgment call that belongs to a human at the plan gate, not to a
+    parser guessing from prose.
+
+    Asserted in the ACCEPT direction deliberately, so this records today's real
+    behaviour rather than a wish: if someone closes the gap, this test goes red and
+    they must delete it on purpose. Tracked in `dev-docs/roadmap.md` § Next.
+    """
+    for line in ["**Visual-walk:** N/A — covered by #456",
+                 "**Visual-walk:** N/A - handled in #123"]:
+        check(f"na-known-limitation::{line[:44]}",
+              heading_declares_na(line, "Visual-walk"),
+              "today's behaviour is ACCEPT; see the docstring before changing it")
+
+
 def test_declared_na_cli() -> None:
     """Both consumers carry the field — `cli_main` is shared, so adding a key for one
     silently changes the other's output contract (the FB-0125 lesson, same shape)."""
@@ -929,6 +968,7 @@ def main() -> int:
         test_all_demoted_cli,
         test_declared_na,
         test_na_token_set_is_anchored,
+        test_na_known_limitation_issue_redirection,
         test_declared_na_cli,
     ]:
         fn()

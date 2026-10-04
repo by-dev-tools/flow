@@ -439,7 +439,41 @@ def main(argv):
                     "the block entirely gives the same verdict."
                     % (blk.get("first_heading_line") or "?")
                 )
-                signals.extend(f"[WARN] {w}" for w in blk.get("warnings", []))
+                # DO NOT forward blk["warnings"] here, and the reason is specific to
+                # this branch. Pre-diff, a plan shaped like this took the
+                # `block_count >= 1` arm below, which forwards nothing; the passthrough
+                # existed only on the two ABNORMAL states (`co_located is False`,
+                # `all_demoted`), where the warning text IS the remedy ("move the block
+                # under the current heading"). Adding it here would route the HAPPY path
+                # — a correctly-authored N/A — through a passthrough for the first time,
+                # and the carried strings are attacker-shaped: the malformed-checkbox
+                # warning interpolates `line.rstrip()[:80]` unescaped, once per bad line
+                # with no cap, and the multi-block warning interpolates `first_heading`
+                # UNTRUNCATED (measured: 424 chars from a 3x-repeated payload). Both land
+                # in `visual_signals`, which `skip-audit-checks.py` puts on stdout and
+                # into the forked skip-auditor's prompt — the same sink the line-number
+                # fix above exists to close. `declared_na` is a TERMINAL CORRECT reading,
+                # so there is no remedy an operator needs in that text.
+                #
+                # The one warning that carries a live remedy on this path is "N blocks
+                # found, I read only the first": an author whose SECOND block holds the
+                # real assertions would otherwise see silence. Keyed on the COUNT, which
+                # is an int and non-forgeable — NOT on `len(warnings)`, which would fire
+                # on every clean N/A forever, because `declared_na` requires `not items`
+                # and the empty-assertions warning therefore always fires. (Measured: a
+                # spotless `**Visual-walk:** N/A — no UI surface` carries exactly 1
+                # warning.) That warning's own advice — "capture the primary/launch state
+                # only" — is also wrong here, since §5a skips on `declared_na`, so
+                # counting it would be both permanent and misleading.
+                blocks = blk.get("block_count") or 0
+                if blocks > 1:
+                    signals.append(
+                        "[WARN] %d Visual-walk blocks are present and only the FIRST was "
+                        "read — the one that declares N/A. If a later block holds this "
+                        "PR's real assertions, move it above the others; run "
+                        "`extract-visual-states.py <plan>` to see which was taken."
+                        % blocks
+                    )
             elif blk.get("block_count", 0) >= 1:
                 override = "visual-walk-block"
                 override_signal = "plan declares a Visual-walk block"

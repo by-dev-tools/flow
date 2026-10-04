@@ -446,6 +446,81 @@ def main() -> int:
               f"an N/A declaration must never suppress a genuine render delta — the "
               f"heuristic runs underneath the override: {o}")
 
+        # 8h. THE SIGNAL BUDGET ON THE SUPPRESSION PATH. Two assertions, and they are
+        #     a pair: the branch must stay SILENT about the parser's warnings (they
+        #     carry plan text into the forked skip-auditor's prompt — see
+        #     evals/security/test_plan_text_not_quoted.py, which owns that claim at the
+        #     composed layer) while still reporting the one remedy it genuinely owes an
+        #     author. A clean N/A therefore emits EXACTLY its declaration line.
+        #
+        #     The negative half matters because the first cut keyed the surviving
+        #     report on `len(warnings)`, and `declared_na` requires `not items`, so the
+        #     empty-assertions warning fires on every clean N/A FOREVER. That shipped
+        #     as a permanent misleading [WARN] on the happy path in v1.57.0 (the ⚠️
+        #     hedge) and must not recur: the count is keyed on `block_count`.
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=na_plan)
+        na_warns = [x for x in o.get("visual_signals", []) if x.startswith("[WARN]")]
+        check("8h-clean-na-emits-exactly-one-warn",
+              len(na_warns) == 1 and "DECLARES" in na_warns[0],
+              f"a spotless N/A must emit only its declaration signal — a second [WARN] "
+              f"here is permanent noise on the happy path: {na_warns}")
+        # Keyed on a marker only the PLAN carries, not on the absence of the string
+        # "N/A" — the signal's own static prose says "an explicit N/A", so asserting
+        # that was testing the message's wording rather than whether it quotes input.
+        marked_na = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                     "**Visual-walk:** N/A - ZZPLANMARKER no UI here\n")
+        rc, o2 = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                     plan=marked_na)
+        check("8h-clean-na-warn-names-a-line-number-not-the-heading",
+              any("Visual-walk block at line" in x for x in o2.get("visual_signals", []))
+              and "ZZPLANMARKER" not in json.dumps(o2.get("visual_signals", [])),
+              f"the signal must identify the block by LINE and carry no plan text: "
+              f"{o2.get('visual_signals')}")
+
+        # 8i. PAIRED with 8h — a SECOND Visual-walk block is the one case where the
+        #     suppression path still owes the author a remedy: only the first block is
+        #     read, so an author whose later block holds the real assertions would see
+        #     silence. Reported as a COUNT (an int, non-forgeable), never as the text.
+        two_block_na = (
+            "## PR\n\n**Spec-walk:**\n- [ ] x\n\n**Visual-walk:** N/A - no UI\n\n"
+            "## An older PR\n\n**Visual-walk:** N/A\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=two_block_na)
+        two_warns = [x for x in o.get("visual_signals", []) if x.startswith("[WARN]")]
+        check("8i-two-block-na-adds-the-count-line",
+              any("2 Visual-walk blocks are present" in x for x in two_warns),
+              f"a second block must be reported, by count: {two_warns}")
+        check("8i-two-block-na-still-suppresses",
+              o.get("visual_significant") is False,
+              f"the count is advisory — the declared N/A still governs the verdict: {o}")
+
+        # 8j. THE DISCRIMINATING CASE, and it exists because 8h+8i did NOT catch the
+        #     mutation they were written to catch. Re-keying the count on
+        #     `len(blk["warnings"])` instead of `block_count` left BOTH green: 8h's
+        #     clean plan carries 1 warning (`1 > 1` is false, so no line appears), and
+        #     8i's two-block plan carries exactly 2 warnings, so the wrong key printed
+        #     the RIGHT NUMBER by coincidence. Two assertions agreeing with a mutant is
+        #     the "pin the DECISION, not a string that currently implies it" corollary.
+        #
+        #     This shape separates them: ONE Visual-walk block, TWO parser warnings.
+        #     Correct code says nothing; the mutant claims "2 Visual-walk blocks are
+        #     present" about a plan that has one — a false statement to an operator.
+        one_block_two_warnings = (
+            "**Spec-walk:**\n- [x] x\n\n**Visual-walk:** N/A - no UI\n"
+            "- [] stray one\n- [] stray two\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=one_block_two_warnings)
+        check("8j-count-is-keyed-on-blocks-not-warnings",
+              not any("Visual-walk blocks are present" in x
+                      for x in o.get("visual_signals", [])),
+              f"one block must never be reported as several — if this fires, the count "
+              f"is keyed on the warning total: {o.get('visual_signals')}")
+        check("8j-still-suppresses-with-malformed-lines",
+              o.get("visual_significant") is False,
+              f"malformed checkbox lines are not assertions, so the N/A still "
+              f"governs: {o}")
+
         # 9. override suppressed by uiSurface:false (recorded, not honored).
         rc, o = run(tmp, config={"uiSurface": False}, files="M\tsrc/logic.py", plan=plan)
         sup = any("SUPPRESSED" in s for s in o.get("visual_signals", []))
