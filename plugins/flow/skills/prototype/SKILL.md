@@ -112,6 +112,8 @@ Resolve every `decision-required` finding **with the human** before prototyping.
 
 Build an HTML prototype at `$PROTO_DIR/prototype.html`. Self-contained, no build step, openable via `file://`.
 
+**It MUST declare `<meta charset="utf-8">` in its `<head>`.** Not style — a measured defect. A page served without a charset *header* (`python3 -m http.server` sends none, and that is what `.claude/launch.json` uses) leaves the browser to guess, and Safari on iOS falls back to Latin-1: measured 2026-10-04, a `✓` rendered as `âœ“`. Step 8 then injects the annotation layer into this file, and both that layer's UI and flow's own copy are full of non-ASCII glyphs — so the page the human is asked to approve is the one that garbles. `verify-build/lib/render-report.py` and `ship/lib/visual-history-skeleton.html` already declare it; an agent-authored prototype is the one surface with nothing enforcing it.
+
 - **Show the states the surface actually has** — empty, loading, error, focus — not only the happy path. Step 7's UX lens grades them, and a prototype that only shows the good case hides the decisions most worth a designer's opinion.
 - **Frame a mobile prototype at a realistic viewport.** FB-0113 makes HTML the first build medium for mobile too, so a desktop-width page can pass the feasibility read as an honest proxy while being a poor one. The feasibility read covers native *translation*; it does not cover viewport *fidelity*.
 
@@ -173,7 +175,12 @@ This writes **`prototype.presented.html`** — the prototype plus the existing c
 
 **Budget: ~100 words.** This is the one message the human is guaranteed to read, and the complaint this whole phase answers is *"the messages I come to are too long and I don't really read them and I just end up approving anyway."* A gate that relocates the reading burden instead of removing it has not fixed anything. Link first, costs next, everything else on request. Note the asymmetry this corrects: the brief — which only reviewer agents read — carries a hard ~80-word cap, so applying no budget here would have disciplined the artifact the robots read and exempted the one the human reads.
 
-1. **The `file://` path** to the file `present` names in `presented` — so they can open it. Mention that the small floating comment dock is **flow's**, not part of the design.
+1. **Where the prototype is, and where it can be opened.** Render this line rather than composing one — a path presented as if it were a link is the defect this fixes, and the message must name no client (research § 6 Q1/Q2 are open):
+   ```sh
+   AH="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/artifact-handoff.py"; [ -f "$AH" ] || AH="plugins/flow/skills/ship/lib/artifact-handoff.py"
+   python3 "$AH" local-line --kind prototype --path "$PROTO_DIR/prototype.presented.html" || echo "⚠️ [artifact-handoff] renderer absent at $AH — say by hand that this is a local file that opens only where this session ran, and name no client." >&2
+   ```
+   Its two sentences carry the openable-only-here property and the path, then the note that the small floating comment dock is **flow's**, not part of the design. Paste both.
 2. **The feasibility summary**, leading, whenever `must_surface[]` is non-empty. Name each expensive/infeasible affordance and its cost.
 3. **What approval commits them to** — this look is what the technical plan gets written against.
 4. **How to send feedback** — click an element to pin a comment, press **"Copy all"**, paste back. Quote that label exactly; it is what the toolbar says. Each iteration round re-enters Step 5.

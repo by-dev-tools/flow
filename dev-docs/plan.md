@@ -2,8 +2,20 @@
 
 ## Current Focus
 
-**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/mobile-options-1-3-hand-off-pr-images-preview-url`,
-version claimed mechanically at **v1.59.0** in `plugins/flow/.claude-plugin/plugin.json`, no new FB):
+**▶ EXECUTED, shipping (this branch `conductor/mobile-options-1-3-hand-off-pr-images-preview-url`,
+version claimed mechanically at **v1.59.0** in `plugins/flow/.claude-plugin/plugin.json`, no new FB).
+Plan APPROVED at the gate with all four open calls answered: (1) `Surface: non-visual`, classic plan
+gate — the artifact is markdown and the plan carries its exact bytes; (2) private repos fail CLOSED
+to `/blob/` links; (3) no FB, one roadmap entry (D7); (4) PR B holds for Ben's measured iOS answers.
+**Plus two scope additions the orchestrator made at the gate, both fan-out fixes inside what PR A
+already touched** — `/flow:ship-spike` gets the same two fixes (Decision 7 is thereby REVERSED, with
+the dispatch's write scope widened by the orchestrator who set it), and the stale `uiSurface:false`
+self-claim is corrected at every live site. Executed by a FRESH session on installed flow **1.56.0**
+(the planning session ran 1.29.0; FB-0107). Re-swept at execution: main `v1.56.0`, highest other open
+claim `v1.57.0`, so **v1.59.0 stands**; highest FB anywhere **FB-0131**, and PR A claims none.
+Pre-existing red CI found and fixed: this plan's own Spec-walk had 5 criteria naming no verification
+artifact, which `run_autoplan_evals.py` grades on the ACTIVE block — it was failing at the plan
+commit. Original gate framing:
 PR A of two — mobile options 3 + 2. A hand-off that names a local file says so plainly, and the
 committed before/after frames render in the PR itself.** Spec: `dev-docs/research/2026-10-mobile-workflow.md`
 §§2–3 and § 8 options 2 + 3 (merged as #175). Option 1 (`conductor preview set`) is **PR B on this
@@ -212,95 +224,228 @@ the fresh session claims **FB-0132** by pushing the file (next free at plan time
 
 ### The rendered section, verbatim — this is the artifact to approve
 
+**CORRECTED AT SHIP to the bytes that actually render** (`/flow:staff-review`, design-engineer
+lens). A block labelled "this is the artifact to approve" has to be the artifact, so each
+divergence from what was approved is listed with its reason rather than quietly left stale:
+
+1. **The URL carries the full 40-character SHA**, not the `a1b2c3d` shown for readability. The
+   Spec-walk criterion requires it, and it is the load-bearing one.
+2. **The walkthrough hand-off lost its third sentence** ("The committed before/after frames are
+   in "Before / after" above."). `frames` is a separate subcommand whose *common* output is an
+   omission line, and both skills are instructed to delete the heading when the renderer is
+   absent — so that sentence produced a body asserting frames exist directly below a line saying
+   they do not. Exactly the defect this engine removes, reintroduced one layer in.
+3. **Prose is one logical line per paragraph.** GitHub renders a soft newline in a PR body as a
+   hard `<br>`, so the approved block's source-column wraps became forced breaks — ragged
+   two-level wrapping on the narrow viewport this whole change targets.
+4. **Both link arms lead with the action, not the mechanism**, and no longer assert the reader's
+   auth state ("you will be signed in already" → "they need the same GitHub sign-in this page
+   did"). The renderer cannot know whether a forwarded body still has a session.
+5. **All three arms close the same way** — record pointer *and* SHA pin. The private and unknown
+   arms named neither, so the one population option 2 exists for got the thinner hand-off and was
+   never told the frames are pinned to a commit.
+6. **Omission lines carry the record caveat.** Six of them handed over the same path with a bare
+   `See \`X\``, while the happy path explained that GitHub shows the file's *source*. The
+   asymmetry landed hardest on the recon-only branch — the only branch flow itself ever emits.
+
 Public repo, two committed frames (the full-value case):
 
 ```markdown
 ## Before / after
 
-Committed frames from this PR's visual-history entry, pinned to `a1b2c3d`.
+Committed frames from this PR's visual-history entry, pinned to `cc8c0e3`.
 
 **Before — activity feed, empty**
-![blank gray panel with no call to action](https://raw.githubusercontent.com/acme/app/a1b2c3d/core-docs/visual-history-assets/feed-empty-before.png)
+![blank gray panel with no call to action](https://raw.githubusercontent.com/acme/app/cc8c0e342c8025945a42c5c58bda8ff07f913f7a/core-docs/visual-history-assets/feed-empty-before.png)
 
 **After — activity feed, empty**
-![centered illustration, one-line explanation, "Add your first entry" button](https://raw.githubusercontent.com/acme/app/a1b2c3d/core-docs/visual-history-assets/feed-empty-after.png)
+![centered illustration, one-line explanation, "Add your first entry" button](https://raw.githubusercontent.com/acme/app/cc8c0e342c8025945a42c5c58bda8ff07f913f7a/core-docs/visual-history-assets/feed-empty-after.png)
 
-The full record — rationale, decision test, questions carried — is `core-docs/visual-history.html`.
-GitHub shows that file's source, not the rendered page; the frames above are its pictures.
+The full record — rationale, decision test, questions carried — is `core-docs/visual-history.html`. GitHub shows that file's source, not the rendered page; these frames are its pictures.
 ```
 
-Private repo, two committed frames:
+Private repo (and, with different wording, the "could not tell" arm), two committed frames:
 
 ```markdown
 ## Before / after
 
-This repo is private, so GitHub cannot inline the committed frames (an unauthenticated image
-fetch of a private blob returns 404). Open them directly — you will be signed in already:
+Private repo, so GitHub can't show these inline. Open them directly — they need the same GitHub sign-in this page did:
 
-- [Before — activity feed, empty](https://github.com/acme/app/blob/a1b2c3d/core-docs/visual-history-assets/feed-empty-before.png)
-- [After — activity feed, empty](https://github.com/acme/app/blob/a1b2c3d/core-docs/visual-history-assets/feed-empty-after.png)
+- [Before — activity feed, empty](https://github.com/acme/app/blob/cc8c0e342c8025945a42c5c58bda8ff07f913f7a/core-docs/visual-history-assets/feed-empty-before.png)
+- [After — activity feed, empty](https://github.com/acme/app/blob/cc8c0e342c8025945a42c5c58bda8ff07f913f7a/core-docs/visual-history-assets/feed-empty-after.png)
+
+Pinned to `cc8c0e3`. The full record — rationale, decision test, questions carried — is `core-docs/visual-history.html`. GitHub shows that file's source, not the rendered page; these frames are its pictures.
 ```
 
-Reconstruction-only entry — flow's own four entries, and the likeliest real case:
+Reconstruction-only — flow's own four entries, and **the branch every flow ship takes** (rendered
+here from this repo's real record, not a fixture):
 
 ```markdown
 ## Before / after
 
-No frames to show: this PR's visual-history entry carries labelled CSS/SVG reconstructions, not
-captures, so there is no committed image to embed. See `dev-docs/visual-history.html` for the entry.
+No frames to show: this PR's visual-history entry carries labelled CSS/SVG reconstructions, not captures, so there is no committed image to embed. The record is `dev-docs/visual-history.html` — note that GitHub shows that file's source, not the rendered page.
 ```
 
-And option 3's two replacement hand-off lines:
+And the two hand-off lines, as shipped:
 
 ```markdown
-Walkthrough — a file on one machine's disk, not committed and not reachable from this page:
-`.flow/report.html` (openable only where this pipeline ran). The committed before/after frames
-are in "Before / after" above.
+Walkthrough — a file on one machine's disk, not committed and not reachable from this page. You can only open it where this pipeline ran: `.flow/report.html`.
 ```
 
 ```markdown
-Prototype: `/abs/path/.flow/prototypes/<slug>/prototype.presented.html` — a local file, so it opens
-only where this session ran, not from a link. The small floating comment dock is flow's, not the design.
+Your prototype is a local file — you can only open it where this session ran, not from a link: `/abs/path/.flow/prototypes/<slug>/prototype.presented.html`. The small floating comment dock is flow's, not the design.
 ```
 
 ### Spec-walk
 
-- [ ] **`artifact-handoff.py frames` emits an `<img>` row only for a committed asset.** *Verify:* a
+- [x] **`artifact-handoff.py frames` emits an `<img>` row only for a committed asset.** *Verify:* a
       temp git repo with a visual-history entry citing two `src` frames, one `git add`-ed and one not;
       stdout contains the added path's raw URL and does not contain the untracked one's.
-- [ ] **A visual-history entry whose branch differs from `--branch` yields zero image rows and a
+      *Pinned by:* `run_artifact_handoff_evals.py::test_committed_only`.
+- [x] **A visual-history entry whose branch differs from `--branch` yields zero image rows and a
       stated reason.** *Verify:* paired fixture — identical entry, branch matching vs not; the
       matching arm emits 2 rows, the non-matching arm emits 0 plus a reason line naming the mismatch.
+      *Pinned by:* `run_artifact_handoff_evals.py::test_branch_match_paired`.
 - [ ] **A private repo (or absent `gh`) emits blob links and zero `raw.githubusercontent.com`
       strings.** *Verify:* three arms — `--private false`, `--private true`, and `auto` with `gh`
       removed from `PATH`; assert `raw.githubusercontent.com` appears in arm 1 only, and that arms 2
       and 3 both carry `/blob/` links for the same two frames.
-- [ ] **A recon-only entry emits the no-frames line, not an empty section.** *Verify:* fixture built
+      *Pinned by:* `run_artifact_handoff_evals.py::test_visibility_three_arms`.
+- [x] **A recon-only entry emits the no-frames line, not an empty section.** *Verify:* fixture built
       from this repo's own newest `dev-docs/visual-history.html` entry; stdout contains the reason and
-      no `![` sequence.
-- [ ] **Every emitted URL carries the 40-char SHA passed in, and no branch name.** *Verify:* assert
-      each URL matches `/<40 hex>/` and that the branch string appears nowhere in stdout.
-- [ ] **`local-line` names where the artifact can and cannot be opened, and names no client.**
+      no `![` sequence. *Pinned by:* `run_artifact_handoff_evals.py::test_recon_only_live_entry`,
+      which also asserts the premise (that entry is still recon-only) rather than assuming it.
+- [x] **Every emitted URL carries the 40-char SHA passed in, and no branch name.** *Verify:* assert
+      each URL matches `/<40 hex>/` and that the branch string appears nowhere in stdout; a short or
+      branch-shaped `--sha` is refused outright. *Pinned by:* the `run_artifact_handoff_evals.py`
+      fixture `test_url_shape`. **Resolved against the plan's own example:** the verbatim block above
+      shows `a1b2c3d` inside the URL for readability; the shipped URL carries the full 40 characters,
+      because this criterion is the load-bearing one.
+- [x] **`local-line` names where the artifact can and cannot be opened, and names no client.**
       *Verify:* both kinds' output contains "not committed"/"local file" and "only where", and
-      contains none of `iOS`, `iPhone`, `Android`, `Safari`, `Conductor`.
-- [ ] **`--selftest` fails when the engine is broken.** *Verify:* run it green, then mutate the
+      contains none of `iOS`, `iPhone`, `iPad`, `Android`, `Safari`, `Conductor` — asserted in the
+      engine itself too, so a future reword cannot reintroduce one.
+      *Pinned by:* `run_artifact_handoff_evals.py::test_local_line`.
+- [x] **`--selftest` fails when the engine is broken.** *Verify:* run it green, then mutate the
       committed-asset check to return True unconditionally and assert it exits non-zero — the
-      known-positive this repo requires before trusting a quiet result.
-- [ ] **The four option-3 sites no longer contain the bare hand-off, and DO contain the honest one.**
+      known-positive this repo requires before trusting a quiet result. The mutation is applied to a
+      temp copy, and the anchor it keys on is itself asserted present, so a reshaped `git_tracked`
+      re-keys the mutation loudly instead of silently disarming it.
+      *Pinned by:* `run_artifact_handoff_evals.py::test_selftest_is_mutation_sensitive`.
+- [x] **The four option-3 sites no longer contain the bare hand-off, and DO contain the honest one.**
       *Verify:* paired grep per site — the new string present AND `Walkthrough (local, uncommitted)`
       absent from `ship/SKILL.md`. (Negative alone would pass if someone deleted the line entirely —
       `.claude/rules/general.md` § Consistency item 3.)
-- [ ] **`pr-coherence.py` returns identical verdicts with and without the `## Before / after`
+      *Pinned by:* `run_artifact_handoff_evals.py::test_option_3_sites_paired`.
+- [x] **`pr-coherence.py` returns identical verdicts with and without the `## Before / after`
       section.** *Verify:* run its existing checks over one body in both shapes; assert same exit code
-      and same verdict line, on a READY body and on a NOT-READY one.
-- [ ] **`ship/SKILL.md` calls the renderer with the installed-else-checkout fallback** every other
+      and same verdict line, on a READY body and on a NOT-READY one — preceded by an assertion that
+      the engine actually reached a verdict, since two arms that both crashed are also identical.
+      *Pinned by:* the `run_artifact_handoff_evals.py` fixture
+      `test_coherence_is_blind_to_the_new_section`.
+- [x] **`ship/SKILL.md` calls the renderer with the installed-else-checkout fallback** every other
       helper in that skill uses, and the `## Before / after` placeholder is a `{{…}}` marker, not
-      hand-authored prose. *Verify:* grep the skill for both, in the new eval.
-- [ ] **`run_artifact_handoff_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
+      hand-authored prose. *Verify:* grep the skill for both, in the new eval — extended to all three
+      call sites (ship, ship-spike, prototype) and to the section's placement above `## Test plan`.
+      *Pinned by:* `run_artifact_handoff_evals.py::test_ship_wiring`.
+- [x] **`run_artifact_handoff_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
       harness↔runner join step passes (it fails the build on an unwired harness, so this is
       exit-code-driven, not a grep).
+- [x] **SCOPE ADDITION (orchestrator, at the gate): `/flow:ship-spike` carries BOTH fixes.**
+      Decision 7 excluded it on the dispatch's write scope; the orchestrator widened the scope,
+      because `ship-spike/SKILL.md` is a second hand-off surface for the same two artifacts and
+      leaving it would ship a contradiction between them (`.claude/rules/general.md` § Consistency
+      item 2). Its `## Before / after` placeholder sits exactly where `/flow:ship` puts its own —
+      one convention, deliberately, since a second placement rule in the second surface would
+      recreate a smaller version of the defect being fixed. *Verify:* the spike skill carries the
+      `frames` call, the `local-line` call, a `## Before / after` heading, and names no client.
+      *Pinned by:* the `run_artifact_handoff_evals.py` fixture `test_option_3_sites_paired`.
+- [x] **SCOPE ADDITION (orchestrator, at the gate): the stale `uiSurface:false` self-claim is gone
+      from every live site, paired with the true claim.** Flow has been `uiSurface: true` since
+      v1.24.0. Two shipped sites asserted otherwise: `schema/flow.config.schema.json:130` and
+      `ship/SKILL.md` §5c's FB-0016 validation note (doubly stale — V3b's entry shape is recorded
+      VALIDATED in the roadmap). A repo-wide grep found no third *live* site; the surviving
+      occurrences are point-in-time records (`CHANGELOG.md`, `dev-docs/handoffs/*`, the merged
+      research doc) and are deliberately untouched, as are the many correct references to
+      `uiSurface:false` as a *consumer* state. *Verify:* each absence is paired with the presence
+      of the corrected claim, plus an assertion that the live `flow.config.json` still backs it and
+      that the generic consumer-facing mechanism text survived.
+      *Pinned by:* `run_artifact_handoff_evals.py::test_stale_ui_surface_claim`.
+- [x] **DECLARED AT SHIP (`/flow:audit-coverage`, 5 undeclared changes): every PR-body read-back
+      forbids the renderer-marker PREFIXES, at all six call sites, and NOT a bare `{{`.** The
+      audit caught a real self-inflicted defect, not just a gap: `--forbid` is a plain substring
+      test, so the first cut's bare `{{` would have failed the read-back on a *correct* body — this
+      PR's own, which describes those slots — halting hand-off after a successful write. *Verify:*
+      every `flow_verify_pr_write` call in both skills carries `--forbid "{{rendered by"` **and**
+      `--forbid "{{provenance"`, and none carries the bare form (paired, so neither direction
+      passes by deletion). *Pinned by:* the `run_artifact_handoff_evals.py` fixtures
+      `wiring/*-every-readback-forbids-markers` + `wiring/*-forbid-is-not-overbroad`, which key on
+      the decision per call site rather than on one whole-file literal.
+- [x] **DECLARED AT SHIP: record-derived text is markdown-neutralized by ONE shared policy, and
+      `render-test-plan.py` renders unchanged after the extraction.** `md_safe.py` escapes
+      `\ \` * _ [ ] <` for text positions, contains with backticks for code positions, collapses to
+      one line and caps at 200 chars. *Verify:* a metacharacter-bearing string escapes (`<` never
+      survives unescaped), a code position does **not** escape (backslashes are literal inside a
+      code span, so `code_span(inline(x))` would show them), truncation leaves no dangling escape,
+      and the engine uses each in its own position. Plus the extraction is behaviour-preserving.
+      *Pinned by:* `run_artifact_handoff_evals.py::test_md_safety_layering` and the 17 existing
+      checks in `run_render_evals.py`, which cover `render-test-plan.py`'s rendered output and pass
+      unchanged across the hoist.
+- [x] **DECLARED AT SHIP: a figure with no caption and no alt still carries a text alternative, and
+      never renders `****`.** An empty `alt` is markdown's *decorative* signal, so a screen-reader
+      user at the merge gate is told nothing is there — in the one section moved to the top of the
+      body for the reader who most needs the text. `insert-visual-history.py` defaults `label` to
+      `""` and only warns on a missing `alt`, so this input arrives without malice. *Verify:* no
+      `****`, no `![](`, the alt names the file, and the caption is suppressed when it would merely
+      duplicate the alt. *Pinned by:* the engine's `--selftest` (`bare/*` arms), which
+      `run_artifact_handoff_evals.py::test_selftest_is_mutation_sensitive` runs and mutates.
+- [x] **DECLARED AT SHIP: a frame URL cannot break out of its markdown construct.** The accepted
+      path was the last unneutralized sink in the engine — `label`/`alt` and *rejected* `src` were
+      all neutralized, the emitted path was not — so a committed frame whose filename embeds a
+      newline plus markdown rendered the attacker's lines as live markdown in the body, potentially
+      including a forged `## Test plan` heading above the real one. Found by
+      `/flow:security-review` (one BLOCKER, `[auto-fixable]`). Percent-encoding also subsumes the
+      space/paren cases an angle-bracketed destination was special-casing, and unlike `<…>` it
+      survives a line ending. Threat model stated: the precondition is a *tracked* file with
+      control characters in its name, authored by a collaborator — low severity, fixed because an
+      unneutralized sink in a published artifact should not exist. *Verify:* a committed frame named
+      with a newline, brackets, a space and parens yields exactly one image row, every hostile byte
+      percent-encoded, path separators still literal, no standalone live link — paired with an
+      ordinary filename that is **not** encoded, so the fix cannot be "encode everything".
+      *Pinned by:* `run_artifact_handoff_evals.py::test_url_path_is_the_last_unneutralized_sink`.
+- [x] **DECLARED AT SHIP: on a re-ship `## Before / after` stays pinned to the SHA it was rendered
+      at, while `## Test plan` re-renders.** The two rendered sections have *opposite* re-ship
+      rules, and the PR-OPEN checklist named only one of them — so an agent re-shipping would
+      reasonably hand-edit or re-pin the other, rewriting the record of what the merge gate was
+      actually shown. *Verify:* the PR-OPEN instruction states both rules. *Pinned by:*
+      `run_artifact_handoff_evals.py::test_ship_wiring` (`wiring/reship-names-before-after`).
+- [x] **DECLARED AT SHIP (Ben's measured iPhone results, 2026-10-04): every HTML surface flow emits
+      declares UTF-8, and the agent-authored prototype is now REQUIRED to.** Measured: a page served
+      by `python3 -m http.server` — which sends no charset parameter, and is what
+      `.claude/launch.json` uses — left Safari on iOS to guess and it fell back to Latin-1, so `✓`
+      rendered as `âœ“`. The orchestrator asked for an audit of flow's report and prototype
+      templates; the answer was asymmetric: `render-report.py` and `visual-history-skeleton.html`
+      already declared it, but the **prototype is agent-authored and nothing required it** — and
+      `/flow:prototype` Step 8 injects the glyph-bearing annotation layer into exactly that file, so
+      the page the human is asked to approve was the one that would garble. One clause in a file this
+      PR already edits. *Verify:* both renderers declare `charset="utf-8"`, `prototype/SKILL.md`
+      states the requirement, and the annotation layer is asserted to still be a *fragment* (it
+      inherits its host's charset, so a future reader must not "fix" it by adding a second `<head>`).
+      *Pinned by:* `run_artifact_handoff_evals.py::test_served_html_declares_utf8`.
+- [x] **DECLARED AT SHIP (found by running this pipeline on its own change): the
+      `## Before / after` section is OMITTED entirely when the change is not visually
+      significant.** The slot was unconditional, so this very PR — which touches no UI file and
+      whose own visual-significance verdict is `false` — would have published "No frames to show:
+      the newest visual-history entry belongs to a different change…" into its body. That is the
+      right output for a *visual* change with no committed frames, and noise on the majority of
+      PRs, which have no visual surface at all: an explanation for an absence nobody expected. Both
+      surfaces now read the **same** shared `verify-build/lib/visual-significance.py` verdict that
+      §5c and §7a already read, so a third notion of "visually significant" cannot appear.
+      *Verify:* both skills name the shared predicate and the omit rule. *Pinned by:*
+      `run_artifact_handoff_evals.py::test_ship_wiring` (`wiring/*-omits-section-when-not-visual`).
 - [ ] **Docs reconciled:** a `dev-docs/history/2026-10-??-*.md` entry, the roadmap D7 entry, this plan
-      block flipped to EXECUTED, `changelog/v1.59.0.md`. *Verify:* the dev-docs index CI job passes.
+      block flipped to EXECUTED, `changelog/v1.59.0.md`. *Verified by:* the dev-docs index CI job's
+      own exit code, plus the doc-diff showing all four files present.
 
 ### Open calls for the human gate
 

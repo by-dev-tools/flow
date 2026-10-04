@@ -64,6 +64,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from md_safe import code_span, md_escape  # noqa: E402  (sibling-module import, house pattern)
+
 # Canonical provenance stamp (FB-0074). Every block this renderer emits carries it, and
 # NOTHING else does — so its presence in a published PR body is the only evidence that the
 # "## Test plan" came from this renderer rather than an agent's keyboard. The prose markers
@@ -181,36 +184,6 @@ def _checkbox(aggregated_verdict: str, provenance: str) -> str:
     return "[x]" if provenance in _MACHINE_JUDGED else "[~]"
 
 
-# Markdown metacharacters that let buffer text break out into a link, emphasis,
-# inline code, or an HTML comment in the rendered PR body. Escaping the opener of
-# each vector is sufficient: `\` (escape), backtick (code), `*`/`_` (emphasis),
-# `[`/`]` (link text), `<` (HTML/comment opener). `>` is omitted deliberately — it
-# is only a blockquote at line-start, and rendered buffer text never starts a line
-# (every line is prefixed `- ` / `  ↳ `), so escaping it would only add noise to the
-# common `>1 viewport`-style not_tested items.
-_MD_ACTIVE = set("\\`*_[]<")
-
-
-def _md_escape(text: str) -> str:
-    """Neutralize Markdown-active characters in machine-extracted buffer strings
-    (criterion text, judge notes, not_tested items) so crafted content from an
-    app-under-test that the judge narrates verbatim cannot inject links, emphasis,
-    or hidden HTML comments into the PR body a human reviews at the merge gate.
-    Evidence uses _code_span instead — a literal observation reads better as a code
-    span, which also neutralizes."""
-    return "".join("\\" + ch if ch in _MD_ACTIVE else ch for ch in str(text))
-
-
-def _code_span(text: str) -> str:
-    """Wrap machine-extracted text in a backtick code span so Markdown-active
-    characters in it (``*`` ``_`` ``#`` ``>``) can't reflow the PR body. Use a
-    longer fence if the text itself contains a backtick."""
-    s = str(text).strip()
-    fence = "`"
-    while fence in s:
-        fence += "`"
-    pad = " " if (s.startswith("`") or s.endswith("`")) else ""
-    return f"{fence}{pad}{s}{pad}{fence}"
 
 
 def _first_evidence(dimension: dict) -> str:
@@ -220,7 +193,7 @@ def _first_evidence(dimension: dict) -> str:
 
 def render_criterion(crit: dict, spike: bool) -> str:
     """One Test-plan line (plus an evidence/why sub-line) for a criterion."""
-    text = _md_escape(str(crit.get("text", "(missing criterion text)")).strip())
+    text = md_escape(str(crit.get("text", "(missing criterion text)")).strip())
     agg = str(crit.get("aggregated_verdict", "Unknown"))
     prov = _provenance(crit)
     verdicts = crit.get("verdicts") or {}
@@ -239,12 +212,12 @@ def render_criterion(crit: dict, spike: bool) -> str:
                    "not checked by an independent judge that ran the app")
             ev = _first_evidence(verdicts.get("correctness") or {})
             if ev:
-                sub += f"\n  ↳ stated evidence (unverified): {_code_span(ev)}"
+                sub += f"\n  ↳ stated evidence (unverified): {code_span(ev)}"
         else:
             # Surface the observation that backs the pass (correctness evidence #1).
             ev = _first_evidence(verdicts.get("correctness") or {})
             if ev:
-                sub = f"\n  ↳ evidence: {_code_span(ev)}"
+                sub = f"\n  ↳ evidence: {code_span(ev)}"
     else:
         # Not green: surface WHY, per non-PASS dimension. In spike mode only
         # `correctness` is meaningful (regression/scope-creep are placeholder
@@ -256,7 +229,7 @@ def render_criterion(crit: dict, spike: bool) -> str:
             if dv.get("verdict") != "PASS":
                 note = str(dv.get("notes", "")).strip()
                 if note:
-                    reasons.append(f"{d}: {_md_escape(note)}")
+                    reasons.append(f"{d}: {md_escape(note)}")
         if reasons:
             sub = "".join(f"\n  ↳ {r}" for r in reasons)
         else:
@@ -289,8 +262,8 @@ def render_not_tested(not_tested: list) -> str:
             continue
         prefix = "✓ tested — " if entry.get("tested") else ""
         rationale = str(entry.get("rationale", "")).strip()
-        suffix = f" — {_md_escape(rationale)}" if rationale else ""
-        lines.append(f"- {prefix}{_md_escape(item)}{suffix}")
+        suffix = f" — {md_escape(rationale)}" if rationale else ""
+        lines.append(f"- {prefix}{md_escape(item)}{suffix}")
     return "\n".join(lines)
 
 
@@ -313,15 +286,15 @@ def render_frame_integrity_failures(frame_integrity: list) -> str:
     for f in fails:
         label = str(f.get("state") or f.get("frame") or "captured frame").strip()
         items = [str(i).strip() for i in (f.get("failing_items") or []) if str(i).strip()]
-        detail = f" — {_md_escape('; '.join(items))}" if items else ""
-        lines.append(f"- {_md_escape(label)}{detail}")
+        detail = f" — {md_escape('; '.join(items))}" if items else ""
+        lines.append(f"- {md_escape(label)}{detail}")
         # Surface one line of the judge's own described evidence inline (not just the
         # checklist-item names) so the committed PR body is legible on its own, without
         # requiring the human to open the separate ephemeral HTML report to see WHY
         # (ux-designer finding: the checklist-item names alone don't explain the defect).
         evidence = str(f.get("background_continuity") or "").strip()
         if evidence:
-            lines.append(f"  ↳ {_md_escape(evidence)}")
+            lines.append(f"  ↳ {md_escape(evidence)}")
     return "\n".join(lines)
 
 
