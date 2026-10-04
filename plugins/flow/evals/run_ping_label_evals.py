@@ -131,6 +131,12 @@ naming -- `wall 1`, `store 1` -- which is the FB-0010 fan-out class in a single 
                        in both directions. The git-shape-only version shipped once and rendered
                        the measured two-day Track B case as "parked, fine" (user correction,
                        2026-10-04).
+  orch-unlabelled-ping-is-derived -- a ping arriving with NO `[w:...]` opener is rendered as
+                       derived (marked, state taken from step 3's ground truth) and its status
+                       is never read out of the message body. Both halves pinned: one keeps the
+                       row from looking reported, the other keeps the digest from laundering an
+                       unlabelled ping into a status nobody sent. This is the rule that keeps
+                       the convention's own unenforceable gap visible.
   orch-edge-states-stated -- zero live workers (distinguishing "nothing in flight" from "could
                        not derive"), the nothing-needed case, the dash-for-absent convention,
                        and the opener-less ping.
@@ -626,6 +632,29 @@ def p_orch_gate_vs_silent(sec):
                 "git state alone cannot separate parked from limit-killed")
 
 
+def p_orch_unlabelled_ping(sec):
+    """An opener-less ping is rendered as DERIVED, and its status is never read from its prose.
+
+    This is the one rule whose whole purpose is to keep the convention's own unenforceable gap
+    VISIBLE — the contract is prose, nothing wraps worker messages, so a worker ignoring the
+    opener is the predicted failure and the digest is where the human would notice it. Both
+    halves are pinned because they fail differently: without the derive-and-mark half the row
+    looks reported; without the never-read-from-prose half the digest launders an unlabelled
+    ping into a status it was never sent, which is worse than showing the gap.
+    """
+    n = _norm(sec)
+    present = "A ping with no opener" in n
+    derive_and_mark = ("derive the state from step 3's ground truth" in n
+                       and "mark it `\u2020` like any other derived cell" in n)
+    never_from_prose = "Never read a status out of the prose" in n
+    not_identical = "must not look identical" in n
+    ok = present and derive_and_mark and never_from_prose and not_identical
+    return ok, ("the opener-less-ping rule is incomplete "
+                f"(present={present} derive-and-mark={derive_and_mark} "
+                f"never-read-from-prose={never_from_prose} "
+                f"must-differ={not_identical})")
+
+
 def p_orch_edge_states(sec):
     # The absent-value conjunct was NAMED in this detail string and asserted nowhere -- measured:
     # deleting the dash-convention bullet was accepted. A failure message that names a rule the
@@ -666,6 +695,7 @@ ORCH_PREDICATES = {
     "needs-you-leads": p_orch_needs_you_first,
     "sanitizes-repo-derived-refs": p_orch_sanitizes_refs,
     "two-vocabularies-not-unified": p_orch_two_vocabularies,
+    "unlabelled-ping-is-derived": p_orch_unlabelled_ping,
     "superset-relation": p_orch_superset_relation,
     "message-bullet-closed": p_orch_message_bullet_closed,
 }
@@ -899,6 +929,12 @@ ORCH_MUTATIONS = {
     "limit-kill-pairing-dropped": (
         lambda s: s.replace("a limit-killed worker with a `plan:` HEAD", "a parked worker"),
         ["gate-vs-silent-both-halves"]),
+    "unlabelled-ping-prose-read-allowed": (
+        lambda s: s.replace("Never read a status out of the prose", "Read the status from the prose"),
+        ["unlabelled-ping-is-derived"]),
+    "unlabelled-ping-mark-dropped": (
+        lambda s: s.replace("mark it `\u2020` like any other derived cell", "render it plainly"),
+        ["unlabelled-ping-is-derived"]),
     "edge-states-dropped": (lambda s: s.replace("Zero live workers", "Some workers"),
                             ["edge-states-stated"]),
     # Moves the action line BELOW the table, which is the ordering the review corrected.
