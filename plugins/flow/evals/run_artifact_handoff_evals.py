@@ -541,9 +541,11 @@ def test_md_safety_layering():
     # why the real guarantee is the behavioural property in
     # test_every_record_field_is_neutralized — that one does not care how a new sink
     # is spelled. Re-key this number deliberately if a position is genuinely added.
-    check("mdsafe/exactly-three-text-positions-escape", n_inline == 3,
-          "the engine has three markdown TEXT positions (figcaption, alt, last-resort "
-          "alt) and each must be wrapped in inline(); found %d call site(s)." % n_inline)
+    check("mdsafe/exactly-four-text-positions-escape", n_inline == 4,
+          "the engine has four markdown TEXT positions (figcaption, alt, last-resort alt, "
+          "and the preview audience clause added at v1.60.0) and each must be wrapped in "
+          "inline(); found %d call site(s). Re-key this number deliberately when a "
+          "position is genuinely added — that is the intended cost." % n_inline)
     # A raw count comparison was wrong here (code_span=11, one_line=9) because two
     # code_span calls wrap `sha[:7]`, which is validated hex and needs no collapsing.
     # Assert the PROPERTY instead: every code_span argument is a one_line(...) call,
@@ -891,8 +893,25 @@ def test_option_3_sites_paired():
           "local-line --kind prototype" in proto, "prototype no longer renders the gate-1 line")
     check("sites/prototype-bare-so-they-can-open-gone",
           "— so they can open it. Mention that the small floating comment dock" not in proto)
-    check("sites/prototype-keeps-the-dock-note",
-          "comment dock is **flow's**" in proto, "the dock note was lost in the rewrite")
+    # Pin the note where it is DELIVERED, not where it is described. v1.59.0 asserted
+    # the phrase in the skill's prose, which was right while the prose composed the
+    # line; now the renderer composes it, so the prose only *refers* to the note and a
+    # prose-level pin would go red on any reword while the actual contract held. The
+    # contract is that a human presented with a prototype is told the comment dock is
+    # flow's and not part of the design.
+    import importlib.util as _il
+    _s = _il.spec_from_file_location("_ah_dock", ENGINE)
+    _m = _il.module_from_spec(_s); _s.loader.exec_module(_m)
+    for label, kwargs in (("unserved", {}),
+                          ("served", {"url": "https://x.test/p-ab12.html",
+                                      "audience": "org members"})):
+        out = _m.render_local_line("prototype", "/abs/p.html", **kwargs)
+        check("sites/prototype-%s-keeps-the-dock-note" % label,
+              "comment dock is flow's, not the design" in out,
+              "the dock note must reach the human in BOTH forms: %r" % out)
+    check("sites/prototype-prose-still-refers-to-the-dock",
+          "dock note" in proto or "comment dock" in proto,
+          "the skill should still tell the author the note is part of the message")
 
     # The fan-out half (Consistency item 2): ship-spike is a second hand-off
     # surface for the same two artifacts, so leaving it would ship a contradiction.

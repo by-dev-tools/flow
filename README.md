@@ -86,7 +86,7 @@ Adoption guides: [new project](docs/bootstrap.md) · [existing project](docs/mig
 
 - **2 review agents** (`auditor`, `plan-critic`) + **4 staff-review lenses** (engineer, UX, design-engineer, push-further) + the **D1 `lens-experience` agent** (experience/ambition + push-further-on-quality, reached via `/flow:review-brief`) + 2 context-isolation helpers (`planner`, `docs`).
 - **4 rule-skills** Claude loads by judgment from their descriptions — workflow discipline, plan requirements, doc format, exploration triggers. Model-invoked, not path-activated: a plugin cannot ship `.claude/rules/*.md`, so these raise the floor rather than acting as a gate.
-- **A 37-slot `flow.config.json`** ([schema](plugins/flow/schema/flow.config.schema.json)) so every doc path, command, and branch name is configurable, never hardcoded.
+- **A 38-slot `flow.config.json`** ([schema](plugins/flow/schema/flow.config.schema.json)) so every doc path, command, and branch name is configurable, never hardcoded.
 - **A template directory** (`template/`) with per-stack overlays for web, Swift, and Tauri/Rust/TS — the scaffolding `bootstrap.sh` copies in.
 - **No runtime dependencies.** Python stdlib for preprocessing; Markdown for everything else. No API calls — the plugin delegates to Claude Code subagents.
 

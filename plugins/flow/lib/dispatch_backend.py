@@ -267,56 +267,81 @@ def validate(backend):
     return report
 
 
-def render(backend, verb, values):
-    """Return (argv, error). `argv` is None when the command cannot be rendered.
+def render_template(tmpl, verb, required, known, values, prefix, manual, slot,
+                    shell_operator_hint="", placeholder_hint=""):
+    """The shared refusal policy: (argv, error). PUBLIC, and deliberately so.
 
-    Split with `shlex`, not `str.split()`. Values are already restricted to a
-    charset shlex cannot misparse, but the TEMPLATE is the consumer's prose and may
+    `preview_backend.render` calls this too. Everything that varies between the two
+    adapters is a parameter — the verb table, the vocabulary, the log prefix, the
+    config slot name, the manual fallback — and everything that must NOT vary is the
+    control flow below: template present, no shell operator, no unknown placeholder,
+    no missing required, no unsupplied value, every value inside the safe charset and
+    not flag-shaped, then `shlex.split`.
+
+    The two `*_hint` parameters exist so sharing the policy does not flatten the
+    REMEDIATION.
+    The refusal is identical for both adapters; the useful next move is not — a
+    preview author needs to be told to put the backgrounding inside a script the
+    template calls, which is meaningless advice for a dispatch verb. A shared message
+    that dropped that was the first cut, and it made the refusal correct and useless.
+
+    It is one function because it was briefly two. The second copy had already
+    diverged in one direction (its `validate` flagged an unexpanded `~/` that its
+    `render` passed through), which is the fan-out class this repo keeps paying for —
+    caught by review before it shipped, and closed structurally rather than by
+    remembering to edit both.
+
+    Split with `shlex`, not `str.split()`. Values are already restricted to a charset
+    shlex cannot misparse, but the TEMPLATE is the consumer's prose and may
     legitimately quote a placeholder (`--message-file "{messageFile}"`) — a naive
     split leaves the quotes inside the argument and the backend reports a
     file-not-found on a path that exists. Refusing to remember an escape is this
-    module's whole argument; making an ad-hoc quoting decision here would undercut it.
+    module's whole argument; an ad-hoc quoting decision here would undercut it.
     """
-    if verb not in VERBS:
-        return None, f"{PREFIX} ⚠️ unknown verb {verb!r}. Known: {', '.join(sorted(VERBS))}."
-    required, _purpose, manual = VERBS[verb]
-    tmpl = backend.get(verb)
     if not isinstance(tmpl, str) or not tmpl.strip():
         return None, (
-            f"{PREFIX} ⚠️ `{verb}` is not configured in flow.config.json.dispatchBackend. "
+            f"{prefix} ⚠️ `{verb}` is not configured in flow.config.json.{slot}. "
             f"Do this by hand instead: {manual}. This step was NOT performed."
         )
     for bad in _TEMPLATE_FORBIDDEN:
         if bad in tmpl:
             return None, (
-                f"{PREFIX} ⚠️ refusing to render `{verb}`: its template contains {bad!r}, a shell "
+                f"{prefix} ⚠️ refusing to render `{verb}`: its template contains {bad!r}, a shell "
                 f"operator. Fix the slot; flow will not run a template it cannot bound."
+                f"{shell_operator_hint}"
+            )
+    for warn in _TEMPLATE_REJECT_UNEXPANDED:
+        if warn in tmpl:
+            return None, (
+                f"{prefix} ⚠️ refusing to render `{verb}`: its template contains {warn!r}, which is "
+                f"single-quoted at render and so reaches the backend literally instead of "
+                f"expanding — silently different from what you wrote. Use an absolute path."
             )
     found = set(_PLACEHOLDER_RE.findall(tmpl))
-    unknown = sorted(found - KNOWN_PLACEHOLDERS)
+    unknown = sorted(found - known)
     if unknown:
         return None, (
-            f"{PREFIX} ⚠️ refusing to render `{verb}`: unknown placeholder(s) "
-            f"{', '.join('{%s}' % u for u in unknown)}. The vocabulary is closed; there is no "
-            f"`{{message}}` because message bodies travel as a path, never as an argument."
+            f"{prefix} ⚠️ refusing to render `{verb}`: unknown placeholder(s) "
+            f"{', '.join('{%s}' % u for u in unknown)}. The vocabulary is closed to "
+            f"{', '.join('{%s}' % k for k in sorted(known))}.{placeholder_hint}"
         )
     missing_required = sorted(required - found)
     if missing_required:
         return None, (
-            f"{PREFIX} ⚠️ refusing to render `{verb}`: template is missing required placeholder(s) "
+            f"{prefix} ⚠️ refusing to render `{verb}`: template is missing required placeholder(s) "
             f"{', '.join('{%s}' % m for m in missing_required)}."
         )
     unsupplied = sorted(found - set(values))
     if unsupplied:
         return None, (
-            f"{PREFIX} ⚠️ refusing to render `{verb}`: no value supplied for "
+            f"{prefix} ⚠️ refusing to render `{verb}`: no value supplied for "
             f"{', '.join('{%s}' % u for u in unsupplied)}."
         )
     for key in sorted(found):
         val = str(values[key])
         if not _SAFE_VALUE_RE.match(val):
             return None, (
-                f"{PREFIX} ⚠️ refusing to render `{verb}`: value for {{{key}}} contains characters "
+                f"{prefix} ⚠️ refusing to render `{verb}`: value for {{{key}}} contains characters "
                 f"outside the safe set [A-Za-z0-9._/@:+=-] (no spaces, quotes or shell "
                 f"metacharacters). Refused rather than escaped — an escape is something an author "
                 f"has to remember (field manual T6, which fired four times in one session among "
@@ -324,22 +349,36 @@ def render(backend, verb, values):
             )
         if val.startswith("-"):
             return None, (
-                f"{PREFIX} ⚠️ refusing to render `{verb}`: value for {{{key}}} starts with '-' and "
+                f"{prefix} ⚠️ refusing to render `{verb}`: value for {{{key}}} starts with '-' and "
                 f"would be read as a flag by the backend."
             )
     rendered = _PLACEHOLDER_RE.sub(lambda m: str(values[m.group(1)]), tmpl)
     try:
         return shlex.split(rendered), None
     except ValueError as exc:
-        # Never a traceback. Every other failure in this module returns the loud refusal
-        # plus the named manual fallback, and an unparseable template is not the one
-        # place to make the caller guess what happened.
         return None, (
-            f"{PREFIX} ⚠️ refusing to render `{verb}`: the template is not parseable as a "
+            f"{prefix} ⚠️ refusing to render `{verb}`: the template is not parseable as a "
             f"command line ({exc}) — most likely an unbalanced quote in "
-            f"flow.config.json.dispatchBackend. Do this by hand instead: {manual}. "
+            f"flow.config.json.{slot}. Do this by hand instead: {manual}. "
             f"This step was NOT performed."
         )
+
+
+def render(backend, verb, values):
+    """Return (argv, error). `argv` is None when the command cannot be rendered."""
+    if verb not in VERBS:
+        return None, f"{PREFIX} ⚠️ unknown verb {verb!r}. Known: {', '.join(sorted(VERBS))}."
+    required, _purpose, manual = VERBS[verb]
+    return render_template(
+        backend.get(verb), verb, required, KNOWN_PLACEHOLDERS, values, PREFIX, manual,
+        "dispatchBackend",
+        # Restored deliberately: generic-ising the message dropped this clause from the
+        # refusal an author actually HITS at dispatch time, while `validate` kept it —
+        # so nothing went red and the one sentence that stops someone re-adding
+        # `{message}` was gone from the place it is needed (FB-0108).
+        placeholder_hint=(" In particular there is no `{message}`: a brief or a status "
+                          "line is agent-composed prose and travels as `{messageFile}`, "
+                          "a PATH, never as an argument."))
 
 
 def main(argv=None) -> int:

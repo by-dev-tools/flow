@@ -17,8 +17,17 @@ other PR in flight. See "Recently Completed" below for the one-line summary + re
 
 ## Current Focus — other active branches (retained below, not this PR's)
 
-**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/mobile-option-1-preview-url`, version
-claimed mechanically at **v1.60.0** in both manifests, no new FB): PR B of two — mobile option 1.
+**▶ EXECUTED, shipping (this branch `conductor/mobile-option-1-preview-url`, version claimed
+mechanically at **v1.60.0** in both manifests, no new FB). Plan APPROVED with all four open calls
+answered: (1) non-visual, classic plan gate; (2) inline chat images ship SEPARATELY — now a roadmap
+§ Next item with finding 5 as its evidence, and the orchestrator is recommending it to Ben as the
+next mobile item; (3) publish and leave, with the access statement placed **next to the link**, not
+only in docs; (4) `/flow:doctor` gets a WARN. **Plus one orchestrator addition that mattered:** flow's
+own `flow.config.json` must SET `previewBackend`, or we ship a feature that is off everywhere and
+never exercised — the FB-0085 shape. Vendor names stay out of plugin artifacts; `flow.config.json`
+is project config, so naming one there is fine. The `dispatchBackend` unset gap in this repo is
+recorded in § Next and deliberately NOT fixed here. Original gate framing: PR B of two — mobile
+option 1.
 Serve the two ephemeral HTML artifacts at a sign-in-gated URL a phone can open, as an optional
 host adapter, without ever removing the honest local line PR A shipped.** Spec:
 `dev-docs/research/2026-10-mobile-workflow.md` § 8 option 1 (merged as #175, point-in-time) and
@@ -182,38 +191,38 @@ only open it where this pipeline ran: `.flow/report.html`.
 
 ### Spec-walk
 
-- [ ] **With `previewBackend` unset, every hand-off is byte-identical to PR A's.** The default path
+- [x] **With `previewBackend` unset, every hand-off is byte-identical to PR A's.** The default path
       must not move at all. *Verify:* render both kinds with no slot and diff against PR A's
       expected strings. *Pinned by:* `run_preview_backend_evals.py::test_unset_is_byte_identical`.
-- [ ] **An unknown placeholder is a hard error at load, not a failure at publish time.** *Verify:*
+- [x] **An unknown placeholder is a hard error at load, not a failure at publish time.** *Verify:*
       paired — a template using `{url}` or `{branch}` is refused by `validate`, and the three legal
       placeholders are accepted. *Pinned by:* `run_preview_backend_evals.py::test_closed_vocabulary`, mirroring
       `run_dispatch_backend_evals.py`'s shape.
-- [ ] **No host CLI is named anywhere in a plugin artifact.** *Verify:* `git grep -n 'conductor'
+- [x] **No host CLI is named anywhere in a plugin artifact.** *Verify:* `git grep -n 'conductor'
       plugins/flow/` returns only doc/example occurrences inside a `previewBackend` *example* value,
       never an executable line. *Pinned by:* `run_preview_backend_evals.py::test_no_vendor_token_in_plugin` — paired with the
       positive that the example value IS present in the schema, so the check cannot pass by deleting
       the documentation.
-- [ ] **A dead or unreachable adapter degrades to PR A's line and says why, never to a broken URL.**
+- [x] **A dead or unreachable adapter degrades to PR A's line and says why, never to a broken URL.**
       *Verify:* three arms — slot unset, `serve` exits non-zero, `publish` prints no URL — each
       yields the honest local line plus one stated reason, and zero `http` strings.
       *Pinned by:* `run_preview_backend_evals.py::test_degrades_loudly`.
-- [ ] **The emitted URL is an autolink, never a code span**, and the local path still IS a code span.
+- [x] **The emitted URL is an autolink, never a code span**, and the local path still IS a code span.
       *Verify:* assert the URL is not wrapped in backticks and the path is — the two treatments are
       deliberately opposite (Decision 4). *Pinned by:* `run_preview_backend_evals.py::test_url_is_tappable_path_is_not`.
-- [ ] **One URL serves both artifacts.** *Verify:* the serve directory contains both files and the
+- [x] **One URL serves both artifacts.** *Verify:* the serve directory contains both files and the
       two hand-offs differ only in the trailing filename; re-publishing for the second artifact does
       not change the URL. *Pinned by:* `run_preview_backend_evals.py::test_one_url_two_paths`.
-- [ ] **Flow never publishes a port nothing is listening on.** *Verify:* with a template whose
+- [x] **Flow never publishes a port nothing is listening on.** *Verify:* with a template whose
       `serve` is a no-op, `publish` is not invoked and the reason is stated. *Pinned by:*
       `run_preview_backend_evals.py::test_listen_check_precedes_publish` — validated against a known-positive (a real
       `http.server` on a temp port) so a check that can only say "not listening" is not trusted.
-- [ ] **Both served documents declare UTF-8.** *Verify:* assert the report renderer emits it and the
+- [x] **Both served documents declare UTF-8.** *Verify:* assert the report renderer emits it and the
       prototype skill requires it (both already true as of v1.59.0 — this asserts, it does not fix).
       *Pinned by:* reuse `run_artifact_handoff_evals.py::test_served_html_declares_utf8`.
-- [ ] **`run_preview_backend_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
+- [x] **`run_preview_backend_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
       harness↔runner join step passes — exit-code-driven, not a grep.
-- [ ] **Docs reconciled:** a `dev-docs/history/` entry, roadmap D7 updated with option 1 shipped +
+- [x] **Docs reconciled:** a `dev-docs/history/` entry, roadmap D7 updated with option 1 shipped +
       its residuals, this block flipped to EXECUTED, `changelog/v1.60.0.md`, and the new slot
       documented in the schema (37 → 38 slots) **and** in `/flow:doctor`'s slot coverage if it
       qualifies. *Verified by:* the dev-docs index and version-provenance CI jobs' own exit codes,

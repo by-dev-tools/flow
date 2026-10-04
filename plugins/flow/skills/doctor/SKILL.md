@@ -274,7 +274,7 @@ Existence-checks the doc-path slots a fresh project is expected to scaffold: `pl
 
 The unset-slot fallback below builds `dev-docs/<slot>.md` — matching `flow.config.schema.json`'s own declared `default` for every doc-path slot, and the convention every *other* call site in the plugin already uses (16 sites across `ship`, `ship-spike`, `land`, `verify-build`, `staff-review`, `security-review`, `accessibility-review`, `audit-coverage`, `audit-skips`, `planner`, `docs` — all `dev-docs/`). Before FB-0098 this line was the *only* `core-docs/` outlier against that convention (FB-0098's own root cause, caught mid-fix: setting flow's own `flow.config.json` slots explicitly would have masked the symptom on this one dogfood repo while leaving the same false-WARN live for every other consumer with an unset slot — the fix belongs in the default, not the config).
 
-**This loop is deliberately not exhaustive over all 37 schema slots** — see the frontmatter for the honest scope claim. Not existence-checked here, on purpose:
+**This loop is deliberately not exhaustive over all 38 schema slots** — see the frontmatter for the honest scope claim. Not existence-checked here, on purpose:
 - `verifyFindingsPath`, `verifyReportPath`, `visualHistoryPath`, `lastHarvestedPath` — ephemeral or CREATED ON FIRST WRITE by design (not scaffolded by `bootstrap.sh`); a missing file is the correct steady state.
 - `statusDocs`, `statusSurfaceCandidates` (Check 2.7/2.9), `flowRepoPath`, `contributionsQueuePath` (Check 2.8) — path-shaped but already existence/coherence-checked by a different check (arrays or dev-tooling paths, not scalar doc paths).
 - `referenceGlob` — a glob, not a single path; a zero-match glob isn't inherently wrong.
@@ -982,6 +982,48 @@ else
     echo "       $PH. There is no {message}: a brief or a"
     echo "       status line is agent-composed prose and travels as a PATH, never as an argument."
     echo "       Affected skills degrade to a documented manual step; they do not silently no-op."
+  fi
+fi
+```
+
+**Check 2.13 — `previewBackend` adapter shape (served hand-offs, roadmap D7)**
+
+Validates the adapter that puts the gate-1 prototype and the merge-gate walkthrough at a URL another device can open. **Silent when the slot is absent** — unset is the documented default and the full, correct behaviour (the hand-off names the local file and says where it can be opened), so nagging about it would be noise. WARN, never FAIL, when present but malformed.
+
+Why it exists: the failure mode is **invisible**. A malformed template makes the feature fail *open* to the local-path hand-off, which is honest and correct — so nothing looks wrong, and a project that believes it configured a preview silently never serves one. That is the shipped-but-never-running class this repo keeps finding, and setup is the only cheap place to catch it.
+
+**Deletion criterion (FB-0088):** delete when `previewBackend` goes, or when schema validation can express the verb/placeholder contract well enough to subsume this.
+
+```sh
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] previewBackend adapter — jq not on PATH (see Check 4.1)."
+elif [ ! -f flow.config.json ]; then
+  : # no config at all — Check 2.1 already reports it; the slot is optional anyway
+elif ! jq -e 'has("previewBackend")' flow.config.json >/dev/null 2>&1; then
+  : # deliberately silent: no preview adapter is the normal case and the correct default
+else
+  # stdout ONLY — the lib writes its notes to stderr, and folding them into the capture
+  # makes the JSON unparseable in exactly the case that needs the detail.
+  PREVIEW_OUT=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/preview_backend.py" check 2>/dev/null)
+  if echo "$PREVIEW_OUT" | jq -e '.usable' >/dev/null 2>&1; then
+    NV=$(echo "$PREVIEW_OUT" | jq -r '.configured // 0' 2>/dev/null || echo "?")
+    echo "[PASS] previewBackend: $NV verb(s) valid — ephemeral artifacts can be served"
+  else
+    echo "[WARN] previewBackend is present but incomplete or malformed, so nothing will be served."
+    echo "       The hand-off still names the local file, so this fails OPEN and INVISIBLY —"
+    echo "       which is why it is checked here rather than discovered at the gate."
+    # `manual_fallback` is printed, not just `problems`. It is the one moment a human
+    # reads this report, and the engine already carries a sentence saying what to do by
+    # hand for each verb — authored and, before this, reaching nobody.
+    echo "$PREVIEW_OUT" | jq -r '.verbs | to_entries[] | select(.value.state != "ok") | "       - \(.key): \(.value.state)\(if .value.essential then " (essential)" else " (optional)" end) — \(.value.problems // [] | join("; "))\n         by hand instead: \(.value.manual_fallback)"' 2>/dev/null \
+      || echo "       (could not parse the adapter report; run the check above by hand)"
+    PH=$(printf '%s' "$PREVIEW_OUT" | jq -r '[.known_placeholders[] | "{" + . + "}"] | join(" ")' 2>/dev/null)
+    [ -n "$PH" ] || PH="(could not read the vocabulary from the adapter report)"
+    echo "       Fix: \`serve\` and \`publish\` are the essential verbs. Placeholders are a CLOSED set —"
+    echo "       $PH. There is no {url}: the URL is the adapter's OUTPUT, read from"
+    echo "       \`publish\`'s stdout, never a value a template supplies."
+    echo "       A template carrying a shell operator (& > ; | \`) is refused — put any"
+    echo "       backgrounding inside a script the template CALLS."
   fi
 fi
 ```

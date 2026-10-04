@@ -27,7 +27,9 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 **Previously: v1.54.0 (shipped #171 — D1 Phase 3: the technical plan is auto-written against the approved prototype and gated by MACHINE, FB-0125. `/flow:autoplan` + three arms: criterion quality (deterministic, read from output rather than exit status — both tools exit 0 on every verdict), completeness (`/flow:audit-coverage` source-mode union, the finder wins, never passes on silence), and conformance + experience (`/flow:review-brief` generalized to any reviewed artifact and pointed at the plan). GREEN requires every arm to have RUN; silence is evidence of nothing. Runs on the prototype-first path only — where the human gate did not move, there is nothing to replace. Escalation pauses through worker → orchestrator → human, decided by Ben 2026-09-29. **D1 is now complete end to end.**)**
 
-**Plugin at v1.59.0 (this PR — a hand-off that names a local file says so plainly, and the committed before/after frames render in the PR itself; roadmap D7, no new FB). Mobile options 3 + 2 from `dev-docs/research/2026-10-mobile-workflow.md` § 8: Ben was reviewing from a phone, and a gate that hands over a sandbox-local path has not asked anyone to look at anything. One stdlib engine, `skills/ship/lib/artifact-handoff.py`, replaces hand-authored hand-off strings at four prose sites and renders a new `## Before / after` PR-body section. The section is a projection of the **commit**, not of the session: the committed visual-history record, the newest entry's branch matched against this PR's, and a row only for a frame tracked at HEAD — because a hand-composed image URL that is subtly wrong renders as a **broken image**, which is worse than today's honest absence, and nothing downstream would catch it. **Measured as a pair, 2026-10-03:** an unauthenticated `raw.githubusercontent.com` fetch of a public blob is `200` (11,699 bytes) and of a private blob is `404` (14 bytes), so inline images are a public-repo-only mechanism and everything else fails CLOSED to `/blob/` links an authorised viewer can open on any client. The hand-off line **names no client**: research § 6 Q1/Q2 are open, so "iOS cannot open this" would be an unverified completion claim and also wrong in the sync-to-a-laptop case. Two fan-out fixes the orchestrator added at the gate: `/flow:ship-spike` gets both fixes (a second hand-off surface for the same two artifacts — leaving it would ship a contradiction), and the stale `uiSurface:false` self-claim is corrected at its two live sites (flow has been `uiSurface: true` since v1.24.0; `ship/SKILL.md` §5c also still said the §5c entry shape was unvalidated, which the roadmap has recorded as VALIDATED for releases). **Flow cannot dogfood the interesting half** — all four of its own visual-history entries are CSS/SVG reconstructions, so every flow ship takes the no-frames branch; the frame branch is pinned against a temp git repo in `evals/run_artifact_handoff_evals.py`, whose `--selftest` is proven mutation-sensitive rather than merely green. Option 1 (`conductor preview set`) is PR B, held on Ben's measured iOS answers. See `dev-docs/history/2026-10-03-honest-local-artifact-handoffs-and-pr-body-frames.md`.)**
+**Plugin at v1.60.0 (this PR — the two ephemeral HTML artifacts can be served at a sign-in-gated URL a phone can open; roadmap D7 option 1, no new FB). A `previewBackend` host adapter modelled on `dispatchBackend`: three verbs, a CLOSED `{dir}`/`{port}` vocabulary with deliberately **no `{url}`** — the URL is the adapter's output, read from `publish`'s stdout, never a value a template composes, because a template that could compose it would let config decide what the hand-off claims. No host CLI is named in any plugin artifact; the existing `run_dispatch_backend_evals.py` § 7 sweep already covers `plugins/flow/lib/`, and its exact artifact count is what noticed the new file. **The constraint that reshaped the feature came from the host CLI's own `--help`, not from an assumption:** a workspace has ONE preview URL and pointing it at a different port *keeps* that URL, so two artifacts cannot hold two live links — both are staged into one `.flow/preview/` directory and handed out as `<url>/<file>`. A second port would have silently re-pointed the first link while leaving it looking valid, which is the exact defect v1.59.0 removed. The URL is **additive**: measured, a served preview stops serving when its workspace sleeps while the registration survives, so the honest local line stays as the floor. The URL is a bare autolink and the path stays a code span — deliberately opposite, since a code span is untappable on a measured touch client; the rule *render it the way the reader can act on it* is written into the engine so the two are not later harmonised. Flow's own `flow.config.json` sets the slot (FB-0085: a slot unset everywhere is a feature exercised nowhere), with `serve` calling a `.claude/bin/` script because the adapter refuses a template carrying a shell operator. `/flow:doctor` Check 2.13 WARNs on a malformed template, because this feature fails **open and invisible**. Schema 37 → 38 slots, fan-out fixed at four shipped sites. See `dev-docs/history/2026-10-04-serve-the-ephemeral-artifacts-at-a-url.md`.)**
+
+**Previously: v1.59.0 (shipped #178 — a hand-off that names a local file says so plainly, and the committed before/after frames render in the PR itself; roadmap D7, no new FB). Mobile options 3 + 2 from `dev-docs/research/2026-10-mobile-workflow.md` § 8: Ben was reviewing from a phone, and a gate that hands over a sandbox-local path has not asked anyone to look at anything. One stdlib engine, `skills/ship/lib/artifact-handoff.py`, replaces hand-authored hand-off strings at four prose sites and renders a new `## Before / after` PR-body section. The section is a projection of the **commit**, not of the session: the committed visual-history record, the newest entry's branch matched against this PR's, and a row only for a frame tracked at HEAD — because a hand-composed image URL that is subtly wrong renders as a **broken image**, which is worse than today's honest absence, and nothing downstream would catch it. **Measured as a pair, 2026-10-03:** an unauthenticated `raw.githubusercontent.com` fetch of a public blob is `200` (11,699 bytes) and of a private blob is `404` (14 bytes), so inline images are a public-repo-only mechanism and everything else fails CLOSED to `/blob/` links an authorised viewer can open on any client. The hand-off line **names no client**: research § 6 Q1/Q2 are open, so "iOS cannot open this" would be an unverified completion claim and also wrong in the sync-to-a-laptop case. Two fan-out fixes the orchestrator added at the gate: `/flow:ship-spike` gets both fixes (a second hand-off surface for the same two artifacts — leaving it would ship a contradiction), and the stale `uiSurface:false` self-claim is corrected at its two live sites (flow has been `uiSurface: true` since v1.24.0; `ship/SKILL.md` §5c also still said the §5c entry shape was unvalidated, which the roadmap has recorded as VALIDATED for releases). **Flow cannot dogfood the interesting half** — all four of its own visual-history entries are CSS/SVG reconstructions, so every flow ship takes the no-frames branch; the frame branch is pinned against a temp git repo in `evals/run_artifact_handoff_evals.py`, whose `--selftest` is proven mutation-sensitive rather than merely green. Option 1 (`conductor preview set`) is PR B, held on Ben's measured iOS answers. See `dev-docs/history/2026-10-03-honest-local-artifact-handoffs-and-pr-body-frames.md`.)**
 
 **Previously: v1.57.0 (shipped [#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131). `.claude/hooks/flow-plugin-currency.sh` existed to keep this repo's installed plugin current and had never once updated anything: the provenance engine it consults ships INSIDE the plugin (v1.43.0), the hook resolves it from the installed tree only (correctly — it fires with no approval prompt), so a 1.29.0 install had no engine and the hook printed the two commands and ran neither. Measured: every Conductor cloud workspace boots from a snapshot carrying 1.29.0 against a tree at 1.55.0, `release_gap: 26`, with the local marketplace clone pinned at the same `cf783ac`. The bootstrap arm runs both commands; the verdict goes to `stdout`, the one `SessionStart` channel Claude Code injects into context — stderr on a zero exit "goes to the debug log only, never the transcript, and Claude never sees it", so the hook's entire output previously had no reader. **The fix forced a second one:** moving the registry mid-session flipped the row labelled "the version that ran this pipeline" from a correct `⚠️ 26 releases back` to a false `✓ matches this branch`, so `restart_pending` is now three-valued and an ambiguous registry reading cannot tick. `.conductor/settings.toml` was evaluated and rejected — measured three ways that a cloud organization ignores repo-defined setup scripts.)**
 **Previously: v1.56.0 (shipped [#174](https://github.com/by-dev-tools/flow/pull/174) — finish CV1: tell the reviewer the prose counts, fingerprint it, and stop losing criteria.)**
@@ -376,8 +378,24 @@ other workers, so nobody should duplicate them here.
   an unauthenticated `raw.githubusercontent.com` fetch is 200 for a public blob and **404** for a
   private one — and `/blob/` links, openable by any authorised viewer on any client, in every other
   case including "`gh` could not tell us".
-- **Option 1 — `conductor preview set`. PR B, now UNBLOCKED.** Serve the gate-1 prototype and the
-  verify-build walkthrough at a sign-in-gated preview URL, falling back loudly to today's path.
+- **Option 1 — a served preview URL. SHIPPED v1.60.0**, as a `previewBackend` host adapter
+  rather than a hardcoded vendor CLI: three verbs (`serve`/`publish`/`unpublish`), a closed
+  `{dir}`/`{port}` vocabulary with **no `{url}`** (the URL is output, never something a
+  template composes), unset by default so v1.59.0's behaviour is byte-identical, and the URL
+  strictly **additive** to the honest local line. Flow's own `flow.config.json` sets it, so the
+  feature is actually exercised here (FB-0085: a slot unset everywhere is a feature that runs
+  nowhere). **Measured 2026-10-04, paired:** an unauthenticated fetch of a served page returns
+  `401` + "Sign in to view this preview." (30 bytes) against a local control of `200`
+  (86 bytes) — the sign-in gate is real, not merely documented.
+
+  **Residuals, stated rather than discovered later:** one orphaned static server per workspace
+  (teardown is `unpublish`, called only by `/flow:post-merge`, because a ship may be followed
+  by a human reading the page minutes later); the link's audience is the **org**, not the
+  public, and persists until the workspace sleeps or is archived; and the biggest one — **a
+  reviewer without workspace read access gets nothing from the link, and the local line is all
+  they have.** That last is inference, not measurement: Ben's test was his own account on his
+  own workspace, and nobody has tested a second viewer. It is a standing reason the local line
+  is not optional.
 
   **Ben's measured iPhone results (Conductor iOS app), 2026-10-04 — research § 6 Q1–Q5 answered.**
   These replace the assumptions PR A deliberately refused to make, and they do not all point the
@@ -479,6 +497,45 @@ other workers, so nobody should duplicate them here.
   paragraph — on the narrow viewport this work targets. A `first three … (+N more)` treatment is
   cheap. Low priority: the arm is rare. Same horizon as the frame-weight guard above.
 
+- **Staging copies ONE file, so a multi-file prototype serves with broken links.**
+  `flow_serve_preview` stages a single artifact and composes `<url>/<file>`; a prototype that
+  references a sibling CSS/JS/image file loses it. Both of flow's own served artifacts are
+  self-contained by construction (`render-report.py` base64-inlines its frames; `/flow:prototype`
+  requires a self-contained page), so this is a latent limit rather than a live defect — but
+  "self-contained" is a convention, not an assertion. Cheapest honest fix: stage the artifact's
+  whole directory when a sibling-reference is detected, or assert self-containment at the serve
+  boundary and refuse loudly. *Surfaces when:* either renderer stops inlining, or a consumer
+  reports a preview with missing styles.
+- **`previewBackend.validate` couples to `render`'s prose.** It computes problems by calling
+  `render` and stripping the `refusing to render \`<verb>\`:` prefix with a regex. That is the right
+  DEPTH (the thing validated is the thing that will run, which is how `dispatchBackend` closed its
+  "passes check, refuses at dispatch" class), and it fails soft — reword the message and the
+  problem text degrades to the full string rather than lying. But it is still a cross-module
+  string dependency. Structural fix: have `render_template` return `(code, message)` so callers
+  key on the code. Deferred because it touches `dispatch_backend`'s return contract, which four
+  skills read. *Surfaces when:* `render_template`'s messages are next reworded.
+- **Reusing an existing server is an optimisation the host contract may not require.** The helper
+  reuses a live server on the configured port (verified by root sentinel) to avoid orphaning one
+  per ship. But the host's own contract is that pointing the preview at a *different* port keeps
+  the same URL — so binding a fresh ephemeral port each time would also work, and would delete
+  the whole reuse-and-verify path. It would trade ~35 lines of sentinel machinery for one orphaned
+  server per ship, which Decision 6 already accepts. Worth measuring before choosing. *Surfaces
+  when:* the serve helper or `.claude/bin/flow-preview-serve.sh` is next touched.
+- **`render_template`'s remediation hints are two trailing strings, not a per-branch mapping.**
+  `shell_operator_hint` and `placeholder_hint` cover the two refusal branches that needed
+  adapter-specific advice; the other five share one message. That is honest for two adapters and
+  would not be for a third. *Surfaces when:* a third `*Backend` adapter appears.
+
+- **`.flow/staff-diff.patch` survives between PRs, so a reviewer pointed at the default path can
+  silently review the previous one.** Found during PR B's review: the file still carried PR A's
+  `branch=…` / `head=…` header. The stamped header is exactly the defence (`/flow:staff-review`
+  instructs each lens to stop if it names another workspace), and it worked — the lens checked and
+  said so. But nothing *removes* the stale file, so the defence depends on every lens remembering
+  to verify, and a lens that forgets reviews the wrong diff and reports clean. Cheapest fix:
+  `/flow:staff-review` Step 2 deletes the previous capture before writing, so a missing file fails
+  loudly rather than an old one passing quietly. *Surfaces when:* `/flow:staff-review` Step 2 or
+  any `.flow/*-diff.patch` writer is next touched.
+
 **§ Exploration candidates this PR surfaced** (open-ended, no shape yet):
 - **An omitted section should probably not sit where a present one does.** The `## Before / after`
   heading survives every omission branch and sits directly after `## Summary`, so on every flow
@@ -555,6 +612,52 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 **Sequencing rationale:** V1 is the input, V2 is the gate that makes autonomy safe, V3 is the deliverable, V4 is the flywheel. V3-before-V2 produces an unverified-but-pretty walkthrough; V4-before-V1 gives the loop nothing structured to check against.
 
 ## Next
+
+### Inline chat images as the always-available route for still frames (D7, option 1's sibling)
+
+**Recommended to Ben as the next mobile item** (orchestrator, 2026-10-04), and deliberately **not**
+folded into v1.60.0's adapter PR: that would have widened "an adapter" into "an adapter plus a
+capture path".
+
+**Evidence — measured by Ben on an iPhone, 2026-10-04 (finding 5):** a markdown image pointing at a
+file *inside the workspace* **renders inline in the Conductor iOS chat**. No server, no public repo,
+no process that can die.
+
+That last clause is why it matters more than it looks. Every other route flow has for getting a
+picture to a phone depends on something staying alive or public:
+- the **preview URL** (v1.60.0) stops serving when its workspace sleeps — measured;
+- the **PR-body image** (v1.59.0) needs the repo to be public — measured, 200 public / 404 private;
+- the **local path** is honest and unreachable by construction.
+
+Inline chat images are the only route with no such dependency, so they are the natural floor under
+all three rather than a fourth alternative.
+
+**Why it is not trivial.** It needs a captured frame, and `/flow:prototype` Step 7's frame capture is
+explicitly *optional* today — so this is a capture-path change, not a string change. And it spends
+the one budget gate 1 protects: the ~100-word cap exists because *"the messages I come to are too
+long and I don't really read them and I just end up approving anyway."* An image is not free
+attention, so "when to include one" is the actual design question, not "how".
+
+**Surfaces when:** `/flow:prototype` Step 7's capture step, `verify-build`'s frame persistence, or
+any gate-1 message format is next touched.
+
+### `dispatchBackend` has the same unset gap in THIS repo that `previewBackend` just closed
+
+Recorded at the orchestrator's instruction, 2026-10-04, and **deliberately not fixed in v1.60.0.**
+
+v1.60.0 set `previewBackend` in flow's own `flow.config.json` for a specific reason (FB-0085): a slot
+unset by default is a feature that runs nowhere, including here, and so is never exercised. The same
+argument applies to `dispatchBackend`, which is **also unset in this repo** — with the observed
+consequence that `/flow:spawn` could not create workspaces here, because the adapter it dispatches
+through was never configured.
+
+Not fixed in the same PR on purpose: it is the orchestrator suite's wiring, not the preview
+feature's, and bundling it would make a reviewer of a hand-off PR adjudicate an orchestration
+change. The asymmetry is now written down instead of being rediscovered.
+
+**Surfaces when:** `/flow:spawn` or `/flow:orchestrate` next fails to reach a host, or when
+`flow.config.json` is next edited.
+
 
 ### Orchestrator seat policy — compaction is the default, rotation is triggered, and the flush moves onto decisions (Ben, 2026-09-28/29)
 

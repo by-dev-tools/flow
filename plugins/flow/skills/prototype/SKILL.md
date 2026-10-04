@@ -175,12 +175,23 @@ This writes **`prototype.presented.html`** — the prototype plus the existing c
 
 **Budget: ~100 words.** This is the one message the human is guaranteed to read, and the complaint this whole phase answers is *"the messages I come to are too long and I don't really read them and I just end up approving anyway."* A gate that relocates the reading burden instead of removing it has not fixed anything. Link first, costs next, everything else on request. Note the asymmetry this corrects: the brief — which only reviewer agents read — carries a hard ~80-word cap, so applying no budget here would have disciplined the artifact the robots read and exempted the one the human reads.
 
-1. **Where the prototype is, and where it can be opened.** Render this line rather than composing one — a path presented as if it were a link is the defect this fixes, and the message must name no client (research § 6 Q1/Q2 are open):
+1. **Where the prototype is, and where it can be opened.** Render this line rather than composing one — a path presented as if it were a link is the defect this fixes, and flow's own wording must name no client.
+
+   **Serve it first if this project configured a preview adapter.** `previewBackend` is optional and **unset is correct** — the line then names the local file, exactly as v1.59.0 does. The serve/publish block is canonical in `/flow:ship` § "Serve it first, if this project has a preview adapter"; run it with `ARTIFACT="$PROTO_DIR/prototype.presented.html"`, which stages into the shared `$FLOW_ROOT/.flow/preview/` directory. **Run it and the render below in the SAME Bash call / same fenced block** — shell state does not survive between Bash tool calls, so a `$PREVIEW_URL` set in a separate call is empty when read, and the serve would succeed while its URL was silently dropped. **One directory on purpose:** a workspace has ONE preview URL, so publishing a second port for the walkthrough later would silently re-point this link while leaving it looking valid.
+
+   The URL is **additive**, never a replacement: a served preview lives only as long as the process serving it, and the link can outlive that process, so a reader who finds the link dead still has the honest local path. And the URL is emitted as a bare autolink while the path stays a code span — deliberately opposite: on a measured touch client a code span renders as monospace text and is not tappable, so a code-spanned URL is unusable there. The rule is *render it the way the reader can act on it*; `artifact-handoff.py::render_local_line` carries the measurement.
+
    ```sh
    AH="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/artifact-handoff.py"; [ -f "$AH" ] || AH="plugins/flow/skills/ship/lib/artifact-handoff.py"
-   python3 "$AH" local-line --kind prototype --path "$PROTO_DIR/prototype.presented.html" || echo "⚠️ [artifact-handoff] renderer absent at $AH — say by hand that this is a local file that opens only where this session ran, and name no client." >&2
+   SP="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/serve-preview.sh"; [ -f "$SP" ] || SP="plugins/flow/skills/ship/lib/serve-preview.sh"
+   [ -f "$SP" ] && { . "$SP"; flow_serve_preview "$PROTO_DIR/prototype.presented.html"; } || PREVIEW_URL=""
+   python3 "$AH" local-line --kind prototype --path "$PROTO_DIR/prototype.presented.html" \
+     ${PREVIEW_URL:+--url "$PREVIEW_URL"} ${PREVIEW_AUDIENCE:+--audience "$PREVIEW_AUDIENCE"} \
+     || echo "⚠️ [artifact-handoff] renderer absent at $AH — say by hand that this is a local file that opens only where this session ran, and name no client." >&2
    ```
-   Its two sentences carry the openable-only-here property and the path, then the note that the small floating comment dock is **flow's**, not part of the design. Paste both.
+
+   **It still has to fit the ~100-word budget.** Measured: the served form is 48 words, the fallback 35. If you are at the cap, drop detail from items 2–4, never the reachability clause — a reader who cannot open the artifact is the problem this phase exists to solve.
+   Unserved it is two sentences (the openable-only-here property and the path, then the dock note); served it is three (the link and its audience, the dock note, then the fallback). Paste all of it.
 2. **The feasibility summary**, leading, whenever `must_surface[]` is non-empty. Name each expensive/infeasible affordance and its cost.
 3. **What approval commits them to** — this look is what the technical plan gets written against.
 4. **How to send feedback** — click an element to pin a comment, press **"Copy all"**, paste back. Quote that label exactly; it is what the toolbar says. Each iteration round re-enters Step 5.

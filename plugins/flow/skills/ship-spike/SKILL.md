@@ -597,11 +597,22 @@ RPT=$(jq -r '.verifyReportPath // ".flow/verify-report.html"' flow.config.json 2
 if [ -f "$AH" ]; then
   python3 "$AH" frames --visual-history "$VH" --branch "$(git branch --show-current)" --sha "$(git rev-parse HEAD)"
   # Only if §5a rendered a walkthrough this run:
-  python3 "$AH" local-line --kind walkthrough --path "$RPT"
+  SP="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/serve-preview.sh"; [ -f "$SP" ] || SP="plugins/flow/skills/ship/lib/serve-preview.sh"
+  [ -f "$SP" ] && { . "$SP"; flow_serve_preview "$RPT"; } || PREVIEW_URL=""
+  python3 "$AH" local-line --kind walkthrough --path "$RPT" ${PREVIEW_URL:+--url "$PREVIEW_URL"} ${PREVIEW_AUDIENCE:+--audience "$PREVIEW_AUDIENCE"}
 else
   echo "⚠️ [artifact-handoff] renderer absent at $AH — DELETE both placeholder lines rather than hand-composing them. A hand-written image URL is a broken image in the body, and a hand-written path claim is an unverified one." >&2
 fi
 ```
+
+**A served URL, if this project configured one.** `previewBackend` is optional and unset is
+correct — the hand-off then names the local file, exactly as v1.59.0 does. The block above sources
+`ship/lib/serve-preview.sh` and calls `flow_serve_preview`, which stages, serves, and composes
+`<url>/<file>`, setting `PREVIEW_URL` only when every step succeeded. Sourcing is load-bearing:
+shell state does not cross Bash tool calls, so the helper must run in the same block as the render.
+Spike-specific: a workspace has **one** preview URL, so a spike that serves its walkthrough
+re-points whatever a gate-1 prototype published earlier — both are staged into the one shared
+`.flow/preview/` directory under filenames stamped from their source path (not their content) rather than on two ports.
 
 Paste each stdout verbatim over its `{{…}}` line. If the renderer is absent, or if §5a produced no
 walkthrough, **delete the placeholder line and its heading/comment** — never publish a `{{…}}`
