@@ -8,6 +8,11 @@
 > the checkout, not the install. Conductor facts are read from Conductor's own CLI (`conductor
 > --help`, installed v0.1.0, authenticated) and conductor.build's changelog/docs, dated per
 > entry; anything from a third party is labeled **[secondary]**.
+>
+> **Updated 2026-10-04:** §6's five questions are now answered (3 fully, 2 partially) from a live
+> 7-item test kit Ben ran on his iPhone, replacing guesswork with observation — see §6 for the
+> measured results and §8 for a new option (inline workspace images in chat) that this same test
+> surfaced.
 
 ## 0. The real shape of the question (Ben, mid-task correction)
 
@@ -211,21 +216,54 @@ This cuts across §§2–4 rather than sitting beside them.
   one of the two*. That's a narrower, more tractable problem than data loss, and worth stating
   that way to avoid over-scoping a fix.
 
-## 6. Open questions for Ben — each answerable in a word
+## 6. Open questions for Ben — answered by observation, 2026-10-04
 
-**Status: OPEN, put to Ben 2026-10-03.** Pending — not forgotten; answers land in a later edit
-of this doc when the orchestrator brings them back.
+**Status: ANSWERED, from a live 7-item test kit Ben ran on his iPhone, 2026-10-04 (Conductor
+iOS app), reported back from his screenshots.** The test kit was a self-contained HTML page (a
+heading, a paragraph, an image, one button with an obvious tap response, one link) served from a
+worker sandbox via `nohup python3 -m http.server --bind 127.0.0.1` + `conductor preview set`
+(§8 option 1's own mechanism) — the research questions below were answered by *observation*,
+not guessed. Original numbering preserved; each item now carries its measured result.
 
-1. Can you open an HTML file created in a cloud-workspace session from the iOS app at all (tap a
-   path in chat), or only view text/diffs/images?
-2. Does a `file://` path or a plain filesystem path pasted in a chat message do anything when you
-   tap it on iOS (open in Safari, open in-app, nothing)?
-3. When a screenshot is embedded via Markdown image syntax pointing at a `.context/` path in a
-   chat reply, does it render as an image for you on the iOS app?
-4. Can you open a `conductor preview set` URL directly in mobile Safari (not just inside the
-   Conductor app)?
-5. On the iOS app's PR view, does a long PR body's markdown table (e.g. a 14-row table) render
-   fully, or does it get truncated/collapsed?
+1. **Can you open an HTML file created in a cloud-workspace session from the iOS app at all?**
+   **Partially, and the route matters.** A `conductor preview set` URL tapped in chat: **YES** —
+   opened in Safari (the iOS "◀ Conductor" back indicator confirmed the handoff) and the page's
+   JS ran. A plain filesystem path or a `file://` URL: **NOT tappable** — see Q2. So "yes" is
+   conditional on the artifact being served over a real URL, not on the artifact merely existing
+   in the session.
+   - **Side finding, unplanned but load-bearing for option 1:** the test page's button text
+     ("✓ Button worked") rendered as mojibake ("âœ“") in Safari. Cause: the test page had no
+     `<meta charset="utf-8">`, and Python's `http.server` sends `Content-Type: text/html` with
+     **no charset parameter**, so Safari fell back to Latin-1 on a UTF-8 payload. **Any HTML
+     served by option 1's mechanism must declare UTF-8 explicitly** (a `<meta charset="utf-8">`
+     tag is sufficient and is the cheap fix — flow's own `annotation-layer.html` and
+     `render-report.py`'s output should be checked for this before option 1 ships). Folded into
+     option 1's cost in §8.
+2. **Does a `file://` path or a plain filesystem path pasted in a chat message do anything when
+   tapped on iOS?** **Not tappable as tested.** Both were sent inside markdown code spans
+   (` `` ` `), and the iOS app rendered them as inert monospace text, not links — there was
+   nothing to tap. **This does not confirm `file://` itself is dead on iOS** — only that a
+   *code-formatted* `file://`/path string is inert. Whether a bare, unformatted `file://` URL
+   (not inside a code span) becomes a tappable link on iOS is **untested** and worth a fast
+   follow-up before concluding anything stronger than "code-formatting kills it."
+3. **Does a screenshot embedded via Markdown image syntax pointing at a `.context/` path render
+   as an image on iOS?** **YES — rendered inline in the chat message itself**, no tap required.
+   This is the strongest single result of the test kit; see the new §8 option below.
+4. **Can you open a `conductor preview set` URL directly in mobile Safari?** **Tapped from
+   chat: confirmed working (Q1).** Pasted directly into Safari with no chat intermediary: **not
+   reported** — Ben's results didn't cover this sub-case independently, so whether the preview
+   URL works as a bookmark/shared link outside a Conductor chat context remains open.
+5. **Does a long PR-body markdown table render fully on the iOS PR view, or truncate?**
+   **Not reported.** Ben did not report back on PR #174's 14-row `## Flow run` table; still open.
+
+**Also answered, not one of the original five:** tapping a `raw.githubusercontent.com` image URL
+— **WORKED**, opened in Safari. (Flow's own repo has zero committed images anywhere on `main`, so
+this used a substitute public GitHub asset at the identical URL shape; the mechanism under test —
+not the specific image — is what's confirmed.) This is now measured evidence for §8 option 2
+(embedding PR-body images via `raw.githubusercontent.com`), not just a reasoned prediction.
+
+**Still genuinely open:** Q4's direct-Safari-paste case, and Q5 (long PR table on iOS). Worth a
+second short test round if either becomes load-bearing for a build decision.
 
 **Answered, 2026-10-03 (orchestrator):** *is the `conductor` CLI available and authenticated
 inside an ordinary worker's cloud sandbox, not just the orchestrator seat?* **Yes.** The S0
@@ -264,7 +302,11 @@ from whichever sandbox it runs in, without a capability probe first.
    lines. The CLI's own reachability from an ordinary worker sandbox is now confirmed (§6's
    answered question — not just the orchestrator seat), so no capability probe is needed inside
    Conductor; still fall back to today's `file://`/path string when the CLI or an authenticated
-   context is absent (any non-Conductor flow consumer).
+   context is absent (any non-Conductor flow consumer). **One more line of cost, measured
+   2026-10-04:** `python3 -m http.server` serves `text/html` with no charset, so a UTF-8 page
+   (any character beyond ASCII — the annotation layer's own ✛/✓ glyphs included) renders as
+   mojibake in Safari without an explicit `<meta charset="utf-8">` in the served HTML. Check both
+   `annotation-layer.html` and `render-report.py`'s output for this before shipping option 1.
    **Consumer impact:** Conductor-specific — a flow consumer not running inside Conductor cloud
    workspaces has no equivalent, so this must stay an optional best-effort branch, never a
    requirement (flow's "project-agnostic by default" principle, `CLAUDE.md`).
@@ -313,6 +355,26 @@ from whichever sandbox it runs in, without a capability probe first.
    **Consumer impact:** mainly orchestrator-seat workflows, not every flow consumer — lower
    priority for the plugin itself, more relevant to how Ben specifically runs this program.
    **Security:** none.
+
+6. **Inline a screenshot in the chat message itself, via Markdown image syntax pointing at a
+   workspace-local path (e.g. `.context/…png`), instead of (or in addition to) any of the above.**
+   Added 2026-10-04 — **this is the one option with a direct, positive, same-day measurement
+   behind it, not a reasoned prediction**: §6's test kit confirmed it renders inline in the
+   Conductor iOS chat, no tap, no server, no public repo involved.
+   **Cost:** effectively zero — no new mechanism; a worker or orchestrator already has the
+   `Write` tool and the `![alt](path)` convention this very session's own system instructions
+   already use. Nothing to build.
+   **Consumer impact:** universal for any Conductor-driven flow user on any client — it does not
+   depend on `conductor preview set`, a committed repo asset, or the diff being on GitHub at all,
+   so it is strictly cheaper than options 1 and 2 for the specific case of "show the human one
+   frame right now." Its ceiling is lower than option 1's, though: a static image in chat has no
+   annotation layer, no multi-frame walkthrough, and scrolls away with the conversation — it is
+   the cheapest channel, not a replacement for a durable or interactive artifact.
+   **Security:** none — the image never leaves the session transcript; no URL, no hosting
+   decision, no exposure question to make.
+   **Where this fits:** the natural first move for `/flow:prototype` §8's gate-1 hand-off and any
+   other "show the human a glance of this, not the whole report" moment ahead of building the
+   heavier options 1–2. Cheapest-first suggests this ships before option 1, not after it.
 
 ## 9. Sources
 
