@@ -253,10 +253,25 @@ Worth noting how the first attempt failed: I defined the shared clause *between*
 rather than by a test, because no test covers "these branches are mutually exclusive". Hoisted above
 the chain, where `uis` is already in scope.
 
-**Verification (final):** 226/226 `run_walk_extract_evals.py` · 102/102
+**Round four found a false suppression reachable by moving one word.** The parenthetical strip —
+`**Visual-walk** *(UI only)*: N/A`, pre-existing and correct for its purpose — ran *before* the
+un-denial search, so a deferral written inside the parenthetical was deleted before it could be
+searched for. `**Visual-walk (TBD):** N/A` suppressed the override **silently**: no near-miss
+warning, and not a demoted qualifier either, so no path reported it. Five spellings measured, all
+suppressing. This is the fourth distinct leak in the same guard, and the third in this release —
+which is itself the strongest argument for the polarity inversion already filed, since each one has
+been a different way for unenumerated input to reach "suppress" by default.
+
+The fix separates the two tails: the denial token anchors on the stripped tail (that strip is why
+the token is findable at all), while the un-denial searches the full one. Paired three ways,
+because "reject every parenthetical" would satisfy the obvious two assertions by breaking the
+feature the strip exists for.
+
+**Verification (final):** 242/242 `run_walk_extract_evals.py` · 102/102
 `run_visual_significance_evals.py` · 8/8 `test_plan_text_not_quoted.py` · 6/6 security test files ·
-43/43 harnesses green **by exit code** (1m17s measured). Five mutations run on the new surface,
+43/43 harnesses green **by exit code** (1m17s measured). Six mutations run on the new surface,
 each red on the assertion meant to catch it and no other: restoring the warnings passthrough
 (8h + the composed security test), re-keying the count on the warning total (8j only), deleting
 both inherited passthroughs (8k only), silencing `na_near_miss` (8l + the parser rows), and making
-the outcome clause unconditional again (8n's two `uiSurface:false` arms only).
+the outcome clause unconditional again (8n's two `uiSurface:false` arms only), and reverting the
+un-denial search to the stripped tail (10 checks, all in the parenthetical test).

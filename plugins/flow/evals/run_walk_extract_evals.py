@@ -1089,6 +1089,50 @@ def test_published_convention_matches_the_predicate() -> None:
               "the doc no longer shows this example — re-sync this list or the doc")
 
 
+def test_parenthetical_cannot_smuggle_an_undenial() -> None:
+    """A deferral moved INSIDE the label's parenthetical must not suppress.
+
+    The parenthetical strip exists so the denial TOKEN is findable after a qualifier
+    (`**Visual-walk** *(UI only)*: N/A`). But the un-denial search ran on the stripped
+    tail, so a marker written four characters to the left was DELETED BEFORE IT COULD
+    BE SEARCHED FOR — `**Visual-walk (TBD):** N/A` suppressed the override silently,
+    with no near-miss warning, and is not a demoted qualifier so it did not take that
+    path either (v1.62.0, /flow:audit-coverage round 4). That is the false-suppression
+    polarity this whole guard exists to prevent: an unseen UI with a green report.
+
+    PAIRED three ways, because each assertion alone passes in a world the others
+    forbid: the smuggled markers must be REJECTED, they must also be EXPLAINED (a
+    rejection the near-miss arm cannot account for is the FB-0082 silence this release
+    fixed elsewhere), and the benign qualifiers the strip exists for must still DENY —
+    otherwise "reject parentheticals" would satisfy the first two by breaking the
+    feature.
+    """
+    smuggled = ["**Visual-walk (TBD):** N/A",
+                "**Visual-walk (deferred to #200):** N/A",
+                "**Visual-walk (frames pending):** N/A",
+                "**Visual-walk (see Figma):** N/A",
+                "**Visual-walk (awaiting design):** N/A"]
+    for line in smuggled:
+        check(f"paren-smuggle-rejected::{line[:42]}",
+              not heading_declares_na(line, "Visual-walk"),
+              "an un-denial inside the parenthetical must not suppress")
+        check(f"paren-smuggle-explained::{line[:42]}",
+              na_near_miss(line, "Visual-walk") in ("defers", "redirects"),
+              "the rejection must be explainable, not silent")
+
+    # The qualifiers the strip was built for. If these break, the fix broke the feature.
+    benign = ["**Visual-walk** *(UI only)*: N/A",
+              "**Visual-walk (post-merge):** N/A — backend only",
+              "**Visual-walk (UI changes only):** N/A — nothing visual"]
+    for line in benign:
+        check(f"paren-benign-still-denies::{line[:42]}",
+              heading_declares_na(line, "Visual-walk"),
+              "a benign qualifier must still allow the denial through")
+        check(f"paren-benign-no-near-miss::{line[:42]}",
+              na_near_miss(line, "Visual-walk") is None,
+              "an accepted denial has nothing to explain")
+
+
 def test_na_known_limitation_issue_redirection() -> None:
     """A denial that redirects to an ISSUE NUMBER is accepted. Pinned as a decision.
 
@@ -1162,6 +1206,7 @@ def main() -> int:
         test_declared_na,
         test_na_token_set_is_anchored,
         test_na_near_miss,
+        test_parenthetical_cannot_smuggle_an_undenial,
         test_declared_na_empty_warning_is_label_specific,
         test_published_convention_matches_the_predicate,
         test_na_known_limitation_issue_redirection,

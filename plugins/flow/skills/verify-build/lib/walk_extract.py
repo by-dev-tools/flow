@@ -274,39 +274,64 @@ EMPTY_WARNING_NA = (
 
 
 def _na_tail(line: str, label: str):
-    """The normalized reason-tail of a `<label>` heading, or None if not that heading.
+    """Normalized reason-tail of a `<label>` heading as `(anchored, full)`, or None.
 
     Factored out of `heading_declares_na` so the near-miss classifier below reads the
     SAME tail by construction. Two copies of this normalization would be a contract
     with nothing asserting the join — and the classifier's whole purpose is to explain
     a verdict the other function reached, so a divergence would make it explain the
     wrong one (FB-0010: one definition, N readers).
+
+    TWO tails, not one, and the difference is a false-suppression hole that shipped
+    briefly (v1.62.0, /flow:audit-coverage round 4):
+
+    - `anchored` has a leading parenthetical qualifier removed, because the DENIAL
+      TOKEN has to be findable after one (`**Visual-walk** *(UI only)*: N/A`). That
+      strip is why the token match works at all.
+    - `full` keeps everything, because the UN-DENIAL search must see the parenthetical
+      too. Searching only `anchored` meant a deferral written four characters to the
+      left was *deleted before it could be searched for*: measured,
+      `**Visual-walk (TBD):** N/A`, `(deferred to #200)`, `(frames pending)`,
+      `(see Figma)` and `(awaiting design)` ALL suppressed the override with no
+      near-miss warning — the precise "a false suppression ships an unseen UI with a
+      green report" polarity the comments above say this guard exists to prevent.
+      None of them is a demoted qualifier, so they do not take the `all_demoted` path
+      either.
+
+    The cost is accepted and is in the safe direction: a benign qualifier that happens
+    to contain a marker (`(see below for scope)`) now forces, which costs one waivable
+    manifest entry. Verified the qualifiers the strip exists for are unaffected —
+    `(UI only)`, `(post-merge)`, `(UI changes only)` carry no marker.
     """
     bare = re.sub(r"[*_#`]+", " ", line)
     m = re.search(re.escape(label) + r"\b", bare, re.IGNORECASE)
     if not m:
         return None
-    tail = bare[m.end():]
-    tail = re.sub(r"^\s*\([^)]*\)", "", tail)      # a parenthetical qualifier
-    tail = tail.lstrip()
+    full = bare[m.end():]
+    anchored = re.sub(r"^\s*\([^)]*\)", "", full)   # a parenthetical qualifier
+    anchored = anchored.lstrip()
     # One strip, not two: the class below already contains `:`, so the separate
     # colon-drop that used to sit here was dead on every input (/simplify's reuse
     # lens; verified across the pinned accept/reject table plus four extra shapes —
     # no case behaved differently with it removed). This also covers the separator an
     # author puts between the label and the reason.
-    tail = tail.lstrip(" \t:\u2013\u2014-.")
-    return tail
+    anchored = anchored.lstrip(" \t:\u2013\u2014-.")
+    return anchored, full
 
 
 def heading_declares_na(line: str, label: str) -> bool:
     """True if `line` is a `<label>` heading whose tail opens with a denial token."""
-    tail = _na_tail(line, label)
-    if tail is None or not _NA_TAIL_RE.match(tail):
+    tails = _na_tail(line, label)
+    if tails is None:
         return False
-    # A denial that defers or redirects is not a denial. Checked on the WHOLE tail,
-    # so the marker is found wherever in the reason it appears: `N/A - to be filled
-    # in at Step 8` denies and then un-denies, and the un-denial is what matters.
-    return not _UNDENIAL_RE.search(tail)
+    anchored, full = tails
+    if not _NA_TAIL_RE.match(anchored):
+        return False
+    # A denial that defers or redirects is not a denial. Searched on the FULL tail —
+    # parenthetical included — so the marker is found wherever in the heading it
+    # appears: `N/A - to be filled in at Step 8` denies and then un-denies, and
+    # `**Visual-walk (TBD):** N/A` un-denies before it denies. Both are un-denials.
+    return not _UNDENIAL_RE.search(full)
 
 
 # A bare `na` prefix of an ordinary word (`native`, `nonetheless`) must not register
@@ -347,17 +372,22 @@ def na_near_miss(line: str, label: str):
     which reaches a forked reviewer's prompt, and the CLASSIFY-never-quote rule
     (`read_plan_mode`, v1.38.0) applies to every value crossing that boundary.
     """
-    tail = _na_tail(line, label)
-    if tail is None or not _NA_TOKEN_RE.match(tail):
+    tails = _na_tail(line, label)
+    if tails is None:
+        return None
+    anchored, full = tails
+    if not _NA_TOKEN_RE.match(anchored):
         return None                      # no denial intent to misread
-    if not _NA_TAIL_RE.match(tail):
+    if not _NA_TAIL_RE.match(anchored):
         return "unseparated"             # `N/A for this PR` — token runs into prose
-    if not _UNDENIAL_RE.search(tail):
+    if not _UNDENIAL_RE.search(full):
         return None                      # accepted as a denial; nothing to explain
     # Deferral is reported in preference to redirection when a tail carries both
     # (`N/A - frames later`): "when" is the more actionable half, because the author
-    # can simply write the block once the frames exist.
-    return "defers" if _DEFERRAL_RE.search(tail) else "redirects"
+    # can simply write the block once the frames exist. Searched on `full` so a
+    # parenthetical deferral is both REJECTED and EXPLAINED, rather than rejected
+    # with the near-miss arm unable to say why.
+    return "defers" if _DEFERRAL_RE.search(full) else "redirects"
 
 
 def _is_demoted_heading(line: str) -> bool:
