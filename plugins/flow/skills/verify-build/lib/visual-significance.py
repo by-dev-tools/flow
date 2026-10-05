@@ -373,6 +373,24 @@ def main(argv):
     # --- detect overrides (recorded even when suppressed by uiSurface:false) ---
     override = None
     override_signal = None
+    # The OUTCOME clause the two forcing-arm warnings below share. Defined here, above
+    # the chain, for two reasons: override detection runs BEFORE Gate 1 (`if not uis`),
+    # and defining it inside the chain would break the `if/elif` sequence that makes
+    # these branches mutually exclusive — which is exactly what happened on the first
+    # attempt at this fix.
+    #
+    # An unconditional "treated as visually significant" is FALSE on a
+    # `uiSurface:false` project: the same JSON then carries
+    # `visual_significant: false` and `override SUPPRESSED by uiSurface=false`.
+    # Measured on a `uiSurface:false` config with `**Visual-walk:** N/A for this PR`
+    # plus one assertion — the signal list contradicted itself
+    # (/flow:audit-coverage). The wording is lifted from this file's own fail-closed
+    # path above rather than invented a second time.
+    forced = ("This change is therefore treated as visually significant."
+              if uis else
+              "That reading would make this change visually significant, except that "
+              "this project declares no UI surface (uiSurface:false), which still "
+              "wins.")
     if args.flag_significant:
         override = "agent-flag"
         reason = args.flag_reason or "(no reason given)"
@@ -540,11 +558,13 @@ def main(argv):
                     # block, so nothing sent me to the authoring path that has items).
                     if n_items:
                         remedy = (
-                            "Your %d listed assertion%s ARE being used, so nothing is "
+                            "Your %d listed assertion%s %s being used, so nothing is "
                             "lost — but the heading's denial was not read. If you meant "
                             "there is no visual surface, remove the assertions as well; "
                             "if the assertions are what you meant, drop the denial from "
-                            "the heading." % (n_items, "" if n_items == 1 else "s")
+                            "the heading."
+                            % (n_items, "" if n_items == 1 else "s",
+                               "IS" if n_items == 1 else "ARE")
                         )
                     else:
                         remedy = (
@@ -555,19 +575,18 @@ def main(argv):
                         )
                     signals.append(
                         "[WARN] the active Visual-walk heading at line %s LOOKS like a "
-                        "denial but was NOT read as one: %s. This change is therefore "
-                        "treated as visually significant. %s"
-                        % (blk.get("first_heading_line") or "?", why, remedy)
+                        "denial but was NOT read as one: %s. %s %s"
+                        % (blk.get("first_heading_line") or "?", why, forced, remedy)
                     )
                 if heading_declares_na is not None and heading_declares_na(
                         blk.get("first_heading") or "", "Visual-walk"):
                     signals.append(
                         "[WARN] the active Visual-walk heading declares "
                         "non-applicability but the block LISTS %d %s — the "
-                        "assertions win and this change is treated as visually "
-                        "significant. Remove the assertions if the N/A is what you "
-                        "meant, or drop the N/A if the assertions are."
-                        % (n_items, "assertion" if n_items == 1 else "assertions")
+                        "assertions win. %s Remove the assertions if the N/A is what "
+                        "you meant, or drop the N/A if the assertions are."
+                        % (n_items, "assertion" if n_items == 1 else "assertions",
+                           forced)
                     )
 
     def emit(significant, reason):

@@ -640,6 +640,57 @@ def main() -> int:
               f"with no assertions, omitting the block IS equivalent and the copy must "
               f"still say so — otherwise 8m passes by deleting the sentence: {near0}")
 
+        # 8n. THE OUTCOME CLAUSE MUST AGREE WITH THE VERDICT. Override detection runs
+        #     BEFORE Gate 1, so both forcing-arm warnings used to assert "this change
+        #     is therefore treated as visually significant" inside the same JSON that
+        #     carried `visual_significant: false` and `override SUPPRESSED by
+        #     uiSurface=false` — a signal list contradicting itself
+        #     (/flow:audit-coverage). None of the 25 declared criteria exercised
+        #     `uiSurface:false`, which is why nothing sent anyone here.
+        #
+        #     PAIRED across the config axis in BOTH branches: asserting only that the
+        #     unconditional sentence is absent would pass if the clause were deleted
+        #     entirely, so the uiSurface:true arm must still assert it.
+        near_items = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                      "**Visual-walk:** N/A for this PR\n- [ ] the panel renders\n")
+        contra = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                  "**Visual-walk:** N/A — backend only\n- [ ] the panel renders\n")
+        for plan_label, plan_text, needle in (
+                ("near-miss", near_items, "LOOKS like a denial"),
+                ("contradiction", contra, "declares non-applicability but the block")):
+            rc, o_off = run(tmp, config={"uiSurface": False},
+                            files="M\tsrc/Button.tsx", diff=REAL_TSX_DIFF, plan=plan_text)
+            rc, o_on = run(tmp, config={"uiSurface": True},
+                           files="M\tsrc/Button.tsx", diff=REAL_TSX_DIFF, plan=plan_text)
+            w_off = [x for x in o_off.get("visual_signals", []) if needle in x]
+            w_on = [x for x in o_on.get("visual_signals", []) if needle in x]
+            check(f"8n-{plan_label}-fires-on-both-configs",
+                  len(w_off) == 1 and len(w_on) == 1,
+                  f"the warning must be recorded either way: off={w_off} on={w_on}")
+            check(f"8n-{plan_label}-no-false-significance-claim-when-uisurface-false",
+                  w_off and "which still wins" in w_off[0]
+                  and "is therefore treated as visually significant" not in w_off[0],
+                  f"on uiSurface:false the verdict is {o_off.get('visual_significant')}, "
+                  f"so the warning must not assert significance: {w_off}")
+            check(f"8n-{plan_label}-paired-claims-significance-when-uisurface-true",
+                  w_on and "is therefore treated as visually significant" in w_on[0],
+                  f"on uiSurface:true it must still say so — otherwise the assertion "
+                  f"above passes by deleting the clause: {w_on}")
+            check(f"8n-{plan_label}-verdict-matches-config",
+                  o_off.get("visual_significant") is False
+                  and o_on.get("visual_significant") is True,
+                  f"off={o_off.get('visual_significant')} on={o_on.get('visual_significant')}")
+
+        # Verb agreement on the items arm — the count is in hand, so use it.
+        one_item = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                    "**Visual-walk:** N/A for this PR\n- [ ] only one\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=one_item)
+        w = [x for x in o.get("visual_signals", []) if "LOOKS like a denial" in x]
+        check("8n-singular-verb-agreement",
+              w and "1 listed assertion IS being used" in w[0],
+              f"singular must read 'assertion IS', not 'assertion ARE': {w}")
+
         # 9. override suppressed by uiSurface:false (recorded, not honored).
         rc, o = run(tmp, config={"uiSurface": False}, files="M\tsrc/logic.py", plan=plan)
         sup = any("SUPPRESSED" in s for s in o.get("visual_signals", []))

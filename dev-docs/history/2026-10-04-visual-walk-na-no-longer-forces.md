@@ -237,9 +237,26 @@ count as a verification artifact (`→ 8h-…` instead of `→ run_visual_signif
 8h-…`). Fixed by repinning the criteria, not by loosening the lint. **A gate belongs in its own
 invocation, with the next step conditioned on what it said.**
 
-**Verification (final):** 226/226 `run_walk_extract_evals.py` · 88/88
+**A third audit-coverage round, and the gap it names about my own criteria is the useful part.**
+Both forcing-arm warnings asserted "this change is therefore treated as visually significant" —
+and override detection runs *before* Gate 1, so on a `uiSurface:false` project that sentence sat in
+the same JSON as `visual_significant: false` and `override SUPPRESSED by uiSurface=false`. The
+signal list contradicted itself. What made it invisible is declared in the criterion that fixes it:
+**none of the 25 criteria exercised `uiSurface:false` at all**, so no declared behaviour sent anyone
+to the one configuration where the claim is false. The clause now reuses this file's own fail-closed
+wording from 60 lines up rather than a second phrasing, and is paired across the config axis in both
+branches.
+
+Worth noting how the first attempt failed: I defined the shared clause *between* two arms of the
+`if/elif` chain, which silently converted `elif declared_na` into a separate `if` — so an
+`all_demoted` block would have evaluated both. Caught by reading the chain back (`grep -nE '^ +(if|elif) '`)
+rather than by a test, because no test covers "these branches are mutually exclusive". Hoisted above
+the chain, where `uis` is already in scope.
+
+**Verification (final):** 226/226 `run_walk_extract_evals.py` · 102/102
 `run_visual_significance_evals.py` · 8/8 `test_plan_text_not_quoted.py` · 6/6 security test files ·
-43/43 harnesses green **by exit code** (1m17s measured). Four mutations run on the new surface,
+43/43 harnesses green **by exit code** (1m17s measured). Five mutations run on the new surface,
 each red on the assertion meant to catch it and no other: restoring the warnings passthrough
 (8h + the composed security test), re-keying the count on the warning total (8j only), deleting
-both inherited passthroughs (8k only), and silencing `na_near_miss` (8l + the parser rows).
+both inherited passthroughs (8k only), silencing `na_near_miss` (8l + the parser rows), and making
+the outcome clause unconditional again (8n's two `uiSurface:false` arms only).
