@@ -67,6 +67,32 @@ Most recurring bug class flow's own development has surfaced (6 incidents across
    selection **outcome** for one path in both config states, paired. Ask: *if someone rewrote this
    mechanism instead of deleting it, would my assertion notice?*
 
+   **Corollary — the known positive must come from OUTSIDE the instrument's own
+   enumeration, and every assertion needs its own mutation.** This is the failure that
+   survives after someone has diligently followed the rule above. Measured, v1.62.0,
+   three times in one release (FB-0136):
+
+   A detector that IS a list — a regex alternation, a token set, an allow-list — and is
+   validated on inputs drawn from that list has been tested for transcription accuracy,
+   not for coverage. "The list is complete" and "the list is missing a whole class"
+   predict identical output on in-list inputs. `_UNDENIAL_RE`'s 33-row accept/reject
+   table did not contain the word `deferred` — the word whose definition *is* the class
+   the guard is named after — and every reject row hit a marker the regex already had,
+   so the table was green for four releases. **At least one case must share no token
+   with any entry in the list.** If you cannot write one, you do not yet know what the
+   list is for.
+
+   And when a test carries N assertions, the mutation that validates it must show
+   **each** of them going red. A leak test's selftest validated one of its two
+   assertions, so the one that generalized was dead on half its inputs while the harness
+   printed `selftest: OK` — the suite going red is not evidence that the assertion you
+   care about is alive. Name them individually in the failure message.
+
+   Finally: when a detector leaks **repeatedly** despite good tests, stop auditing the
+   vocabulary and check the polarity. All four leaks in that guard were a blacklist on
+   the expensive side, so unenumerated input defaulted to the dangerous answer. No
+   amount of list-auditing fixes a default.
+
    Not a duplicate of item 3, and the difference decides the fix: item 3 is about an assertion's **logical shape** (a negative-only assertion passes whether the contract is honored *or* deleted); item 4 is about **instrument validation** (the detector was never exercised on a positive). Same symptom — unearned green — different defenses: pair with a positive assertion, versus run against a known positive. Live instance: a queue-conflict recipe shipped in `research/orchestrator-field-manual.md` § 7 grepped `'^<<<<<<<'` over old-form `merge-tree` output, which is diff-prefixed (`+<<<<<<<`), so it printed `0 = clean` for every pair. It was "validated" on a genuinely-disjoint pair, where `0` was right for the wrong reason (FB-0112).
 
 When in doubt, ask: "If a colleague greps for the old value tomorrow, will they find a contradiction?" If yes, fix it now. And: "If someone deleted the thing this check protects, would the check still pass?" If yes, it isn't a check yet.
