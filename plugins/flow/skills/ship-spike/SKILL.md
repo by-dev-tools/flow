@@ -507,7 +507,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ## 7. Push and open PR
 
-**PR-OPEN (re-ship into an existing spike PR):** push the new commits to the existing PR. If you update its body and `gh pr edit`/`gh pr ready` fails with a `GraphQL: Projects (classic) … projectCards` error (classic-projects repos on affected `gh` versions), use the **canonical `gh`-resilience fallback** — see `/flow:ship` Step 7 § "gh resilience" (REST `gh api -X PATCH …/pulls/N -F body=@file` for the body; `markPullRequestReadyForReview` / `convertPullRequestToDraft` mutations for draft state). Don't route around `gh pr` pre-emptively — only on the explicit `projectCards` error. **After any body/draft write, read-back-verify (FB-0067):** source `${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh` and call `flow_verify_pr_write "$N" --expect "<a substring you just wrote>"` (run the write as its own checked statement first — never pipe it into a filter). A spike PR is not gated by the NOT-READY manifest, but the read-back still catches a silent write that never landed.
+**PR-OPEN (re-ship into an existing spike PR):** push the new commits to the existing PR. If you update its body and `gh pr edit`/`gh pr ready` fails with a `GraphQL: Projects (classic) … projectCards` error (classic-projects repos on affected `gh` versions), use the **canonical `gh`-resilience fallback** — see `/flow:ship` Step 7 § "gh resilience" (REST `gh api -X PATCH …/pulls/N -F body=@file` for the body; `markPullRequestReadyForReview` / `convertPullRequestToDraft` mutations for draft state). Don't route around `gh pr` pre-emptively — only on the explicit `projectCards` error. **After any body/draft write, read-back-verify (FB-0067):** source `${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh` and call `flow_verify_pr_write "$N" --expect "<a substring you just wrote>" --forbid "{{rendered by" --forbid "{{provenance"` (run the write as its own checked statement first — never pipe it into a filter). A spike PR is not gated by the NOT-READY manifest, but the read-back still catches a silent write that never landed.
 
 **LOCAL-ONLY (new spike PR):** push with `-u` if needed. PR base from the resolved default branch:
 
@@ -530,6 +530,9 @@ Recommendation detail below is kept in full, not replaced.>
 
 ## Recommendation
 proceed | pivot | abandon — <one-line reasoning>
+
+## Before / after
+{{rendered by lib/artifact-handoff.py frames — see "Render the visual hand-offs" below; paste its stdout here verbatim, replacing this line}}
 
 ## Disposability
 <what happens to the code: deleted, flagged, gates next PR>
@@ -564,6 +567,46 @@ produced; `—` when routine. Resolve every `<...>` placeholder before publishin
 
 {{provenance-footnote-and-callout}}
 
+**Render the visual hand-offs — do NOT hand-author either one.** Same engine, same contract, same
+reasons: **`/flow:ship` § "Render the `## Before / after` section" is canonical — read it there, it
+is not restated here.** (Duplicating the rationale behind a pointer that asserts the two agree is
+how the copy goes stale invisibly; the shell block below is duplicated because resolve-and-call
+blocks are house style, the prose is not.)
+
+**Omit the whole section when the change is not visually significant** — the same gate `/flow:ship`
+applies, reading the same shared `verify-build/lib/visual-significance.py` verdict. A reason line for
+an absence nobody expected is noise; it earns its place only where a reader might have been looking
+for a picture.
+
+Spike-specific, and the only part that differs: **a spike with a `Visual-walk` block most often has
+nothing to show, and "no frames, and here is why" is the correct output** — not an empty section, and not a reason to skip
+the renderer. A spike is not exempt from the hand-off contract; leaving it out would make flow's
+two hand-off surfaces contradict each other on the same question.
+
+```sh
+AH="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/artifact-handoff.py"; [ -f "$AH" ] || AH="plugins/flow/skills/ship/lib/artifact-handoff.py"
+VH=$(jq -r '.visualHistoryPath // "core-docs/visual-history.html"' flow.config.json 2>/dev/null)
+# Pair the fallback with a WARN (general.md item 1): an empty read otherwise makes the
+# renderer print "there is no visual-history record at `core-docs/…`" into a published
+# body while a real record sits at the configured path.
+if [ -z "$VH" ]; then
+  echo "⚠️ [artifact-handoff] could not read visualHistoryPath from flow.config.json — falling back to core-docs/visual-history.html; the section may wrongly say there is no record." >&2
+  VH=core-docs/visual-history.html
+fi
+RPT=$(jq -r '.verifyReportPath // ".flow/verify-report.html"' flow.config.json 2>/dev/null); [ -z "$RPT" ] && RPT=.flow/verify-report.html
+if [ -f "$AH" ]; then
+  python3 "$AH" frames --visual-history "$VH" --branch "$(git branch --show-current)" --sha "$(git rev-parse HEAD)"
+  # Only if §5a rendered a walkthrough this run:
+  python3 "$AH" local-line --kind walkthrough --path "$RPT"
+else
+  echo "⚠️ [artifact-handoff] renderer absent at $AH — DELETE both placeholder lines rather than hand-composing them. A hand-written image URL is a broken image in the body, and a hand-written path claim is an unverified one." >&2
+fi
+```
+
+Paste each stdout verbatim over its `{{…}}` line. If the renderer is absent, or if §5a produced no
+walkthrough, **delete the placeholder line and its heading/comment** — never publish a `{{…}}`
+marker, and never fill one in by hand.
+
 **Render those four rows — do NOT hand-author them (FB-0107).** A spike PR needs this *more*
 than a full ship, not less: a spike's deliverable is the history entry, i.e. a claim about what
 was learned, and "which version produced that learning" is part of the claim. A `/flow:*` skill
@@ -596,6 +639,12 @@ Paste its stdout verbatim: the rows in place of the `{{provenance}}` rows, and a
 them (a remedy footnote and any `<!-- flow:provenance -->` block) in place of
 `{{provenance-footnote-and-callout}}`. Reports; never gates.
 
+<!-- WALKTHROUGH HAND-OFF. Keep the line below only if §5a actually rendered a
+     walkthrough this run (a Visual-walk block was declared and frames were captured).
+     If it did not, delete this comment AND the line — an empty hand-off is worse than
+     none. Never hand-compose it; see "Render the visual hand-offs" below. -->
+{{rendered by lib/artifact-handoff.py local-line --kind walkthrough — paste its stdout here, or delete this line}}
+
 ## Full writeup
 See the history doc entry "Spike: <title>".
 
@@ -609,7 +658,7 @@ EOF
 )"
 ```
 
-**After the create, read-back-verify (FB-0067):** same rule as the PR-OPEN path above — `gh pr create` can still land a truncated or unintended body. Note the PR number `gh pr create` returns, then source `${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh` and call `flow_verify_pr_write "$N" --expect "<a stable substring from the body just written>"` before handing off. A spike PR isn't gated by the NOT-READY manifest, so no `--want-draft`/`--forbid` assertion is needed here — the read-back exists purely to confirm the create wasn't silently truncated.
+**After the create, read-back-verify (FB-0067):** same rule as the PR-OPEN path above — `gh pr create` can still land a truncated or unintended body. Note the PR number `gh pr create` returns, then source `${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh` and call `flow_verify_pr_write "$N" --expect "<a stable substring from the body just written>" --forbid "{{rendered by" --forbid "{{provenance"` before handing off. A spike PR isn't gated by the NOT-READY manifest, so no `--want-draft` assertion is needed — but the two marker-prefix forbids **are** needed now that this body carries two renderer slots: a published marker is a renderer that never ran, and nothing else would notice. Match the prefixes, not a bare `{{`, which would also reject a body quoting a template.
 
 `/simplify` and `/flow:staff-review` are pre-marked `skipped (spike)` — spike mode
 always skips them (workflow.md § Spike mode), and they are the *only* two rows that

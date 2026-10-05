@@ -1236,7 +1236,10 @@ If the gate printed a `skipped` line, **stop here — do not author an entry.** 
    - `title` — the decision, not the PR (e.g. "Empty-state for the activity feed"), **no italic/emphasis** (the helper strips it, but author it clean).
    - `date` (`YYYY-MM-DD`), optional `pr` / `branch`.
    - `grounding` — `type` + `statement` (the user-need or design-language/craft rationale that changed the read) + optional `decision_test` + `citations` resolved from `flow.config.json.specPath` / `designLanguagePath` (**never** hardcoded doc names — project-agnostic).
-   - `before_after` — **lean asset refs** preferred. Copy the cited persisted frames out of the ephemeral report's assets dir into a committed, sibling `visual-history-assets/` dir next to `$VHPATH`, then reference them by relative path:
+   - `before_after` — **lean asset refs** preferred. **List order IS render order:** the
+     frames appear in the PR body's `## Before / after` section in exactly this order, and
+     nothing normalizes or infers it from the labels — so author before, then after, or the
+     section reads backwards under a heading that reads chronologically. Copy the cited persisted frames out of the ephemeral report's assets dir into a committed, sibling `visual-history-assets/` dir next to `$VHPATH`, then reference them by relative path:
      ```sh
      VHDIR="$(dirname "$VHPATH")"; mkdir -p "$VHDIR/visual-history-assets"
      # Each cited frame's buffer observations[].content is RELATIVE TO THE REPORT DIR ($REPORT_DIR) —
@@ -1259,7 +1262,7 @@ If the gate printed a `skipped` line, **stop here — do not author an entry.** 
    The helper prepends the entry (reverse-chronological), regenerates the anchor-link TOC, and strips any heading emphasis. On a malformed target or invalid entry it fails loudly and writes nothing (your existing record is never corrupted) — fix the input, don't route around it.
 5. **Stage** `$VHPATH` + the copied `visual-history-assets/` frames with the rest of the commit (Step 6). The ephemeral `verifyReportPath` stays **un-committed** (distill-then-discard).
 
-> **Validation status (FB-0016):** the durable-record entry shape is **provisional pending a UI-surface dogfood.** flow's own repo is `uiSurface:false` → this step always self-skips here, so the shape is pinned by evals over a synthetic buffer, not yet by a live curated entry. The first real curated entry comes from the tracked health-tracker (iOS) cold-run follow-up (`roadmap.md` § Deliverable-quality track V3b). Treat the rendered entry as structurally-correct-but-editorially-unvalidated until then.
+> **Validation status (FB-0016): VALIDATED.** The entry shape was provisional only until a UI-surface cold-run exercised it; the health-tracker (iOS) run did (§5c fired, authored an editorially-sound curated entry, and caught a real `assets/`-path-doubling bug fixed in v1.8.1). Flow's own repo is **`uiSurface: true`** — since v1.24.0, not `false` — so this step is live here too and `dev-docs/visual-history.html` carries real entries. What flow's own entries do *not* exercise is the committed-frame path: every one of them is an inline CSS/SVG reconstruction, so `visual-history-assets/` does not exist in this repo and the `## Before / after` embed degrades to its no-frames branch on every flow ship. That branch is the one dogfooded here; the frame branch is pinned by `evals/run_artifact_handoff_evals.py` over a temp git repo.
 
 ## 6. Commit
 
@@ -1294,10 +1297,10 @@ Push with `-u` if the branch isn't tracking yet.
 > ```sh
 > if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then . "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"; else . "plugins/flow/skills/ship/lib/verify-pr-body.sh"; fi
 > # ... do the write as its OWN checked statement (see the HARD RULE below) ...
-> flow_verify_pr_write "$N" --expect "## Summary" --forbid "🚫 NOT READY TO MERGE" --want-draft false \
+> flow_verify_pr_write "$N" --expect "## Summary" --forbid "🚫 NOT READY TO MERGE" --forbid "{{rendered by" --forbid "{{provenance" --want-draft false \
 >   || { echo "read-back failed — the PR body on GitHub is NOT what you wrote; re-apply + re-verify, do not proceed" >&2; exit 1; }
 > ```
-> `flow_verify_pr_write` re-fetches (with the same projectCards→REST fallback above) and asserts, via `lib/pr-coherence.py`, that every `--expect` substring is present, every `--forbid` substring is absent, the draft state matches `--want-draft`, AND the body↔draft coherence invariant holds. On mismatch it fails loud — **do not report success on an unverified write.** The `exit 1` is load-bearing, not decorative: a bare `|| { echo ...; }` with no exit lets the compound command return 0 regardless of the check's outcome, so the pipeline sails through to hand-off having "reported" the failure without actually stopping for it — the exact silent-no-op class this fix exists to close, one abstraction level up. Every `flow_verify_pr_write` / `flow_assert_pr_coherent` call in this skill must end its failure block in `exit 1` (or a retry-then-`exit 1`), never a log-only echo.
+> `flow_verify_pr_write` re-fetches (with the same projectCards→REST fallback above) and asserts, via `lib/pr-coherence.py`, that every `--expect` substring is present, every `--forbid` substring is absent, the draft state matches `--want-draft`, AND the body↔draft coherence invariant holds. **The marker-prefix forbids are not decoration:** this body carries three renderer slots (`## Before / after`, `## Test plan`, the provenance rows), and an unreplaced marker published to GitHub is a slot whose renderer never ran — visible to a human, invisible to every other gate. They match the marker PREFIXES rather than a bare `{{`, because `--forbid` is a plain substring test and a bare `{{` would also reject a body that legitimately quotes a template. On mismatch it fails loud — **do not report success on an unverified write.** The `exit 1` is load-bearing, not decorative: a bare `|| { echo ...; }` with no exit lets the compound command return 0 regardless of the check's outcome, so the pipeline sails through to hand-off having "reported" the failure without actually stopping for it — the exact silent-no-op class this fix exists to close, one abstraction level up. Every `flow_verify_pr_write` / `flow_assert_pr_coherent` call in this skill must end its failure block in `exit 1` (or a retry-then-`exit 1`), never a log-only echo.
 >
 > **HARD RULE — a gh write is its own checked statement; never pipe it into a filter.** `gh pr edit "$N" --body-file f | tail -1 && gh pr ready "$N"` is forbidden: the pipe makes the pipeline's exit status `tail`'s `0`, masking gh's non-zero, so a failed body write looks like it succeeded and the stale manifest survives (the original silent failure). Run the write, then read back — do not fold the two into one masked pipeline.
 
@@ -1397,7 +1400,13 @@ python3 "$TRIAGE" add-entry --kind visual-deliverable \
   --needs re-run \
   --finding-file "<absolute path CALL 1 printed, 1st>" --resolution-file "<absolute path CALL 1 printed, 2nd>" \
   >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the visual-deliverable entry was NOT recorded." >&2; exit 1; }
-``` Because the attempt is recorded, Step 7a.5 classifies it `ask` rather than re-attempting — it becomes a question, not a silent second try. Because the walkthrough is **ephemeral/local (not committed)**, also record its local path in the PR-body handoff (the `## Flow run` table's visual row + the closing line) so the human can open it at the merge gate: `Walkthrough (local, uncommitted): <verifyReportPath>`.
+``` Because the attempt is recorded, Step 7a.5 classifies it `ask` rather than re-attempting — it becomes a question, not a silent second try. Because the walkthrough is **ephemeral/local (not committed)**, also record its local path in the PR-body handoff (the `## Flow run` table's visual row + the closing line) so the human can open it at the merge gate. **Do NOT hand-compose that line** — a hand-off that names a local path must say where that path can and cannot be opened, and must name no client (whether any given app opens a session-produced HTML file is unmeasured). Render it:
+
+```sh
+AH="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/artifact-handoff.py"; [ -f "$AH" ] || AH="plugins/flow/skills/ship/lib/artifact-handoff.py"
+RPT=$(jq -r '.verifyReportPath // ".flow/verify-report.html"' flow.config.json 2>/dev/null); [ -z "$RPT" ] && RPT=.flow/verify-report.html
+python3 "$AH" local-line --kind walkthrough --path "$RPT" || echo "⚠️ [artifact-handoff] renderer absent at $AH — write the hand-off by hand, and state that the file is NOT committed and opens only where this pipeline ran. Name no client." >&2
+```
 
 ### 7a.5. Manifest triage — a draft PR is a last resort, not a deliverable (FB-0075)
 
@@ -1463,7 +1472,7 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
 
 **LOCAL-ONLY**: `gh pr create --base $BASE_BRANCH` (add `--draft` iff `verdict != READY`) with:
 
-> **After the create, read-back-verify (FB-0067).** `gh pr create` is unaffected by the projectCards deprecation, but a create can still land a body you didn't intend (a truncated `--body-file`, a race). Re-fetch and assert before handing off: source the helper and call `flow_verify_pr_write "$N"` — with `--forbid "🚫 NOT READY TO MERGE" --want-draft false` when `verdict == READY`, or `--expect "🚫 NOT READY TO MERGE" --want-draft true` otherwise. **Key on the verdict, not on manifest emptiness** — they diverge exactly in the case this change introduces: waive every non-`verify-build` entry and the manifest file is still non-empty while `verdict` is `READY` and `render-manifest` returns nothing, so an emptiness-keyed assertion would demand a manifest that is correctly absent and wedge Step 7. A mismatch means the body↔draft state on GitHub contradicts the manifest decision — fix it before Step 8, don't hand off a PR you never confirmed.
+> **After the create, read-back-verify (FB-0067).** `gh pr create` is unaffected by the projectCards deprecation, but a create can still land a body you didn't intend (a truncated `--body-file`, a race). Re-fetch and assert before handing off: source the helper and call `flow_verify_pr_write "$N"` — **always with `--forbid "{{rendered by" --forbid "{{provenance"`**, plus `--forbid "🚫 NOT READY TO MERGE" --want-draft false` when `verdict == READY`, or `--expect "🚫 NOT READY TO MERGE" --want-draft true` otherwise. Those two are not optional and not only illustrative: this body carries three renderer slots, a first publish is the likeliest place one survives unreplaced, and a published marker is a renderer that never ran — visible to a human, invisible to every other gate. **Forbid the marker PREFIXES, never a bare `{{`** — `--forbid` is a plain substring match, so a bare `{{` also fails a body that legitimately quotes a Handlebars/Jinja/Vue template, halting hand-off after a *successful* write. **Key on the verdict, not on manifest emptiness** — they diverge exactly in the case this change introduces: waive every non-`verify-build` entry and the manifest file is still non-empty while `verdict` is `READY` and `render-manifest` returns nothing, so an emptiness-keyed assertion would demand a manifest that is correctly absent and wedge Step 7. A mismatch means the body↔draft state on GitHub contradicts the manifest decision — fix it before Step 8, don't hand off a PR you never confirmed.
 
 - Short title (under 70 chars).
 - **Harvested-lesson manifest (FB-0102).** If `$FLOW_ROOT/.flow/lesson-manifest.md` exists and is
@@ -1507,6 +1516,9 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
   - <why this exists + the specifics a reviewer needs — KEEP these; the plain-language
     line is a new top layer, not a substitute. Never trim detail just because the opener exists.>
 
+  ## Before / after
+  {{rendered by lib/artifact-handoff.py frames — see "Render the `## Before / after` section" below; paste its stdout here verbatim, replacing this line}}
+
   ## Test plan
   {{rendered by lib/render-test-plan.py — see "Render the Test plan" below; paste its stdout here verbatim, replacing this line}}
 
@@ -1529,7 +1541,7 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
   | /flow:audit-coverage | <✓ / skipped (reason)> | <undeclared changes → draft / "no undeclared changes" / —> |
   | /flow:audit-skips | ✓ | <all N stage skips legitimate / all N legitimate, K owe the manifest (toolchain) → draft / N should-re-run → re-ran M, K → draft> |
   | Manifest triage (§7a.5) | <✓ / n/a (nothing on the manifest)> | <N entries: A auto-resolved, B decisions surfaced at hand-off, C need you outside the session / —> |
-  | Visual deliverable (§7a) | <✓ / n/a (not visually significant)> | <both present / draft: missing <walkthrough · visual-history entry>; Walkthrough (local, uncommitted): <verifyReportPath> / —> |
+  | Visual deliverable (§7a) | <✓ / n/a (not visually significant)> | <both present / draft: missing <walkthrough · visual-history entry> (the hand-off block below names the file) / —> |
   | Doc synthesis | ✓ | <docs updated> |
   | Status surface (§5a.5) | <✓ / skipped (status unchanged)> | <N candidates scanned, none drifted / draft: <path> stale ("<quote>") / —> |
   | Visual history (§5c) | <✓ / skipped (reason)> | <curated entry: "<decision>" / hand-authored (visual_significant) / skipped (uiSurface:false · no load-bearing visual decision) / —> |
@@ -1545,14 +1557,93 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
 
   {{provenance-footnote-and-callout}}
 
+  <!-- WALKTHROUGH HAND-OFF. Keep the line below only if §7a routed a
+       [visual-deliverable] draft, i.e. there IS a local walkthrough to open.
+       Otherwise delete this comment AND the line — never publish a {{…}} marker,
+       and never hand-compose the line (it must state where the file
+       can and cannot be opened while naming no client, and it is a rendered string,
+       not a sentence to compose). -->
+  {{rendered by lib/artifact-handoff.py local-line --kind walkthrough — paste its stdout here, or delete this line}}
+
   If a not-ready blockers block is present above, this PR is a **draft** — the table's reviewer rows name the unresolved `[decision-required]` finding(s); resolve them per the manifest, not here.
   <!-- Never write the literal 🚫 sentinel in this sentence. `pr-coherence.py::has_manifest`
        substring-matches it (inline backticks do not exempt it), so on a READY PR the
        explanatory line alone trips the §7b coherence gate and halts a clean ship —
-       and makes /flow:land report a false "merged in a not-ready state". --> For a `[visual-deliverable]` draft, the ephemeral walkthrough is **local + uncommitted** — open it at the path named in the Visual-deliverable row before reviewing. Deferred follow-ups: see the configured roadmap and plan docs.
+       and makes /flow:land report a false "merged in a not-ready state". --> For a `[visual-deliverable]` draft, see the walkthrough hand-off block above — it names the file and why you may not be able to open it. Deferred follow-ups: see the configured roadmap and plan docs.
 
   🤖 Generated with [Claude Code](https://claude.com/claude-code)
   ```
+
+  **Render the `## Before / after` section — do NOT hand-author it.** The
+  committed before/after frames belong IN the PR body: a merge gate that asks a
+  human to look at a picture, then hands them a page that shows the HTML file's
+  source, has not asked them to look at anything. But a hand-composed image URL
+  that is subtly wrong renders as a **broken image**, which is worse than
+  today's honest absence, and nothing downstream would catch it.
+
+  So the section is a projection of the **commit**, not of this session: the
+  renderer reads the committed `visualHistoryPath` record, requires the newest
+  entry's branch to be this one, and emits a row only for a frame that is
+  actually tracked at HEAD. It emits `raw.githubusercontent.com` images **only**
+  for a confirmed-public repo (measured: an unauthenticated raw fetch of a
+  private blob returns 404, against 200 for a public one), and `/blob/` links —
+  which an authorised viewer can open anywhere — in every other case, including
+  when `gh` cannot tell it. "No frames, and here is why" is a correct, common
+  output; a recon-only entry and a legitimately-skipped §5c both land there.
+
+  ```sh
+  AH="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/artifact-handoff.py"; [ -f "$AH" ] || AH="plugins/flow/skills/ship/lib/artifact-handoff.py"
+  VH=$(jq -r '.visualHistoryPath // "core-docs/visual-history.html"' flow.config.json 2>/dev/null)
+  # Pair the fallback with a WARN (general.md item 1). Without it, an empty jq read
+  # made the renderer print the plausible-but-FALSE "there is no visual-history record
+  # at `core-docs/visual-history.html`" into a published PR body, while a real record
+  # sat at the configured path. A wrong reason in the body is worse than no section.
+  if [ -z "$VH" ]; then
+    echo "⚠️ [artifact-handoff] could not read visualHistoryPath from flow.config.json — falling back to core-docs/visual-history.html. If your record lives elsewhere, the section below will say there is no record when there is one." >&2
+    VH=core-docs/visual-history.html
+  fi
+  # The SHA is the PUSHED HEAD, after Step 6's commit + push — not the branch name
+  # (which 404s the moment the branch is deleted at merge, i.e. exactly when someone
+  # reads the PR back as history) and not `main` (which does not contain the asset yet).
+  python3 "$AH" frames --visual-history "$VH" --branch "$(git branch --show-current)" --sha "$(git rev-parse HEAD)" \
+    || echo "⚠️ [artifact-handoff] renderer absent at $AH — omit the section rather than hand-composing image URLs; a wrong URL is a broken image in the body." >&2
+  ```
+
+  **OMIT the whole section when the change is not visually significant.** Read the
+  same authoritative verdict §5c and §7a read — `metadata.visual_significant` from the
+  findings buffer, else `lib/visual-significance.py` — and when it is `false`, delete
+  the heading and the placeholder and render nothing. "No frames to show, and here is
+  why" is the right output for a visual change that has no committed frames; on a
+  change with no visual surface at all it is an explanation for an absence nobody
+  expected, published on the majority of PRs. The reason line earns its place only
+  where a reader might have been looking for a picture.
+
+  ```sh
+  VS="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/visual-significance.py"; [ -f "$VS" ] || VS="plugins/flow/skills/verify-build/lib/visual-significance.py"
+  BUF=$(jq -r '.verifyFindingsPath // ".flow/verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$BUF" ] && BUF=.flow/verify-findings.json
+  VISSIG=""
+  [ -f "$BUF" ] && VISSIG=$(jq -r '.metadata.visual_significant // empty' "$BUF" 2>/dev/null)
+  if [ -z "$VISSIG" ]; then
+    PLAN_P=$(jq -r '.planPath // "dev-docs/plan.md"' flow.config.json 2>/dev/null); [ -z "$PLAN_P" ] && PLAN_P=dev-docs/plan.md
+    PLAN_A=""; { [ -f "$PLAN_P" ] && PLAN_A="--plan $PLAN_P"; } || echo "⚠️ [ship] no plan doc at $PLAN_P — running WITHOUT plan context. This is NOT the same as \"the plan declares no criteria\": check flow.config.json.planPath." >&2
+    VISSIG=$(python3 "$VS" --config flow.config.json $PLAN_A 2>/dev/null | jq -r '.visual_significant // false')
+  fi
+  echo "[before-after] visual_significant=$VISSIG"
+  ```
+
+  **Placement — the rule is "the first thing the human wants to look at", and the
+  position it implies differs by PR kind.** Here that is the frames, so the section
+  sits directly after `## Summary`: the complaint this answers is scroll cost, and
+  the thing they came to look at must not sit below a 14-row provenance table.
+  `/flow:ship-spike` applies the same rule and lands elsewhere — a spike's
+  deliverable *is* the research question and its answer, so the section goes after
+  `## Recommendation`. One rule, two positions; do not "fix" the difference.
+
+  Paste its stdout verbatim in place of the `{{…}}` line. If the renderer is
+  absent, **delete the placeholder line and the heading** — do not hand-author
+  frames. `pr-coherence.py` parses only the `## Test plan` section and the
+  manifest markers, so adding or omitting this sibling heading does not move its
+  verdict either way (pinned by a paired eval, not by that reading alone).
 
   **Render the `## Test plan` — do NOT hand-author it.** The Test plan is a
   non-forgeable projection of the `/flow:verify-build` findings buffer:
@@ -1711,12 +1802,12 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
   table's closing line only points at them. The PR is still never merged by
   Claude (Step 8).
 
-**PR-OPEN**: push the new commits. If `verdict != READY`, ensure the PR is a draft (`gh pr ready --undo <num>` if it was marked ready) and refresh the `🚫 NOT READY TO MERGE` block; if `verdict == READY` (blockers since resolved), remove the block and `gh pr ready <num>` to mark it ready. Key on the verdict, never on manifest emptiness — same reason as §7a.6. Otherwise update the body only if the summary/test plan/Flow-run table needs to reflect the latest scope — and **re-render the `## Test plan` via `lib/render-test-plan.py`** (above), don't hand-edit it, so a re-ship after new commits reflects the fresh buffer (or correctly falls back if HEAD moved past the last verify-build run).
+**PR-OPEN**: push the new commits. If `verdict != READY`, ensure the PR is a draft (`gh pr ready --undo <num>` if it was marked ready) and refresh the `🚫 NOT READY TO MERGE` block; if `verdict == READY` (blockers since resolved), remove the block and `gh pr ready <num>` to mark it ready. Key on the verdict, never on manifest emptiness — same reason as §7a.6. Otherwise update the body only if the summary/test plan/Flow-run table needs to reflect the latest scope — and **re-render the `## Test plan` via `lib/render-test-plan.py`** (above), don't hand-edit it, so a re-ship after new commits reflects the fresh buffer (or correctly falls back if HEAD moved past the last verify-build run). **Leave `## Before / after` pinned to the SHA it was rendered at, and never hand-edit it** — its URLs are a record of what the merge gate was shown, so re-pinning them to a later HEAD would rewrite that record; re-render it only if the visual-history entry itself changed this re-ship.
 
 **Every body/draft write on the PR-OPEN path is read-back-verified (FB-0067).** This path is where the recurring bug bit: the manifest scrub + `gh pr ready` is coupled to a full re-ship, and a masked write left a ready PR carrying the manifest. So each write is its own checked statement, followed by `flow_verify_pr_write` (source the helper per the § "gh resilience" read-back block above):
-- **`verdict == READY` → scrub + ready:** write the manifest-free body, run `gh pr ready <num>` (with the projectCards→`markPullRequestReadyForReview` fallback if it errors), then `flow_verify_pr_write "$N" --forbid "🚫 NOT READY TO MERGE" --want-draft false`. The `--forbid` + `--want-draft false` is the exact assertion that would have caught the original silent failure.
-- **`verdict != READY` → refresh + draft:** write the refreshed block, ensure draft, then `flow_verify_pr_write "$N" --expect "🚫 NOT READY TO MERGE" --want-draft true`.
-- **Body-only refresh (manifest unchanged):** after the edit, `flow_verify_pr_write "$N" --expect "<a stable substring you just wrote>"` so a no-op write can't pass silently.
+- **`verdict == READY` → scrub + ready:** write the manifest-free body, run `gh pr ready <num>` (with the projectCards→`markPullRequestReadyForReview` fallback if it errors), then `flow_verify_pr_write "$N" --forbid "🚫 NOT READY TO MERGE" --forbid "{{rendered by" --forbid "{{provenance" --want-draft false`. The manifest `--forbid` + `--want-draft false` is the exact assertion that would have caught the original silent failure; the two marker-prefix forbids catch an unreplaced renderer slot, which a re-ship re-introduces every time it re-renders the body.
+- **`verdict != READY` → refresh + draft:** write the refreshed block, ensure draft, then `flow_verify_pr_write "$N" --expect "🚫 NOT READY TO MERGE" --forbid "{{rendered by" --forbid "{{provenance" --want-draft true`.
+- **Body-only refresh (manifest unchanged):** after the edit, `flow_verify_pr_write "$N" --expect "<a stable substring you just wrote>" --forbid "{{rendered by" --forbid "{{provenance"` so neither a no-op write nor an unreplaced renderer slot can pass silently.
 
 ### 7b. Body↔draft coherence + Test-plan provenance (FB-0067, FB-0074 — the final gate before hand-off)
 

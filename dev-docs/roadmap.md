@@ -27,9 +27,11 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 
 **Previously: v1.54.0 (shipped #171 — D1 Phase 3: the technical plan is auto-written against the approved prototype and gated by MACHINE, FB-0125. `/flow:autoplan` + three arms: criterion quality (deterministic, read from output rather than exit status — both tools exit 0 on every verdict), completeness (`/flow:audit-coverage` source-mode union, the finder wins, never passes on silence), and conformance + experience (`/flow:review-brief` generalized to any reviewed artifact and pointed at the plan). GREEN requires every arm to have RUN; silence is evidence of nothing. Runs on the prototype-first path only — where the human gate did not move, there is nothing to replace. Escalation pauses through worker → orchestrator → human, decided by Ben 2026-09-29. **D1 is now complete end to end.**)**
 
+**Plugin at v1.59.0 (this PR — a hand-off that names a local file says so plainly, and the committed before/after frames render in the PR itself; roadmap D7, no new FB). Mobile options 3 + 2 from `dev-docs/research/2026-10-mobile-workflow.md` § 8: Ben was reviewing from a phone, and a gate that hands over a sandbox-local path has not asked anyone to look at anything. One stdlib engine, `skills/ship/lib/artifact-handoff.py`, replaces hand-authored hand-off strings at four prose sites and renders a new `## Before / after` PR-body section. The section is a projection of the **commit**, not of the session: the committed visual-history record, the newest entry's branch matched against this PR's, and a row only for a frame tracked at HEAD — because a hand-composed image URL that is subtly wrong renders as a **broken image**, which is worse than today's honest absence, and nothing downstream would catch it. **Measured as a pair, 2026-10-03:** an unauthenticated `raw.githubusercontent.com` fetch of a public blob is `200` (11,699 bytes) and of a private blob is `404` (14 bytes), so inline images are a public-repo-only mechanism and everything else fails CLOSED to `/blob/` links an authorised viewer can open on any client. The hand-off line **names no client**: research § 6 Q1/Q2 are open, so "iOS cannot open this" would be an unverified completion claim and also wrong in the sync-to-a-laptop case. Two fan-out fixes the orchestrator added at the gate: `/flow:ship-spike` gets both fixes (a second hand-off surface for the same two artifacts — leaving it would ship a contradiction), and the stale `uiSurface:false` self-claim is corrected at its two live sites (flow has been `uiSurface: true` since v1.24.0; `ship/SKILL.md` §5c also still said the §5c entry shape was unvalidated, which the roadmap has recorded as VALIDATED for releases). **Flow cannot dogfood the interesting half** — all four of its own visual-history entries are CSS/SVG reconstructions, so every flow ship takes the no-frames branch; the frame branch is pinned against a temp git repo in `evals/run_artifact_handoff_evals.py`, whose `--selftest` is proven mutation-sensitive rather than merely green. Option 1 (`conductor preview set`) is PR B, held on Ben's measured iOS answers. See `dev-docs/history/2026-10-03-honest-local-artifact-handoffs-and-pr-body-frames.md`.)**
+
+**Previously: v1.57.0 (shipped [#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131). `.claude/hooks/flow-plugin-currency.sh` existed to keep this repo's installed plugin current and had never once updated anything: the provenance engine it consults ships INSIDE the plugin (v1.43.0), the hook resolves it from the installed tree only (correctly — it fires with no approval prompt), so a 1.29.0 install had no engine and the hook printed the two commands and ran neither. Measured: every Conductor cloud workspace boots from a snapshot carrying 1.29.0 against a tree at 1.55.0, `release_gap: 26`, with the local marketplace clone pinned at the same `cf783ac`. The bootstrap arm runs both commands; the verdict goes to `stdout`, the one `SessionStart` channel Claude Code injects into context — stderr on a zero exit "goes to the debug log only, never the transcript, and Claude never sees it", so the hook's entire output previously had no reader. **The fix forced a second one:** moving the registry mid-session flipped the row labelled "the version that ran this pipeline" from a correct `⚠️ 26 releases back` to a false `✓ matches this branch`, so `restart_pending` is now three-valued and an ambiguous registry reading cannot tick. `.conductor/settings.toml` was evaluated and rejected — measured three ways that a cloud organization ignores repo-defined setup scripts.)**
 **Previously: v1.56.0 (shipped [#174](https://github.com/by-dev-tools/flow/pull/174) — finish CV1: tell the reviewer the prose counts, fingerprint it, and stop losing criteria.)**
 
-**Plugin at v1.57.0 (this PR — the plugin auto-updater could only update installs that did not need updating, FB-0131). `.claude/hooks/flow-plugin-currency.sh` existed to keep this repo's installed plugin current and had never once updated anything: the provenance engine it consults ships INSIDE the plugin (v1.43.0), the hook resolves it from the installed tree only (correctly — it fires with no approval prompt), so a 1.29.0 install had no engine and the hook printed the two commands and ran neither. Measured: every Conductor cloud workspace boots from a snapshot carrying 1.29.0 against a tree at 1.55.0, `release_gap: 26`, with the local marketplace clone pinned at the same `cf783ac`. The bootstrap arm runs both commands; the verdict goes to `stdout`, the one `SessionStart` channel Claude Code injects into context — stderr on a zero exit "goes to the debug log only, never the transcript, and Claude never sees it", so the hook's entire output previously had no reader. **The fix forced a second one:** moving the registry mid-session flipped the row labelled "the version that ran this pipeline" from a correct `⚠️ 26 releases back` to a false `✓ matches this branch`, so `restart_pending` is now three-valued and an ambiguous registry reading cannot tick. `.conductor/settings.toml` was evaluated and rejected — measured three ways that a cloud organization ignores repo-defined setup scripts.)**
 
 **Previously: v1.55.0 (shipped #172 — `/flow:audit-coverage` can read behaviour-bearing prose, FB-0126/FB-0127). A `.md` path never matched `sourceFilePatterns`, so the completeness gate was structurally blind to prose — on a plugin that ships PROMPTS, most of what this repo changes. Three parts: (A) say it — with the new slot unset a run prints `WEAKENED · DOC-BLIND` naming every changed doc-shaped file it did NOT read, and prints the built-in guess so the value is copy-pasteable; (B) see it — the `behaviorBearingDocPatterns` slot (schema 36 → 37), **empty by default**, unioned in after the source filter; (C) fit it — `head -c` over a concatenation made files late in `sort -u` order entirely invisible once the 60 KB cap bound, replaced by max-min fair-share allocation that names every file it cut. **Measured, not asserted:** #159's reconstruction moves from **0 of 5** at baseline to **2/5 and 1/5 single-run, union 3/5**, zero false positives, via `tools/coverage-recall/` with `--selftest` passing first — plus the paired negative that a wording-only `.md` change returns `No issues flagged.` Recall is still weak and is reported as such: the likeliest cause is in § Next, found independently by two review lenses — Stage 1 still tells the reviewer that doc changes are not behaviours, so B feeds it a `SKILL.md` and the prompt hands it a rule for discarding it. See `dev-docs/history/2026-09-30-audit-coverage-reads-behaviour-bearing-prose.md`.)**
 
@@ -349,6 +351,153 @@ Prototype artifacts live in gitignored `.flow/prototypes/<branch>/`, so they do 
 ### D6 — Voice-first annotation input — **PARKED, do not build**
 
 Investigated at length; see `dev-docs/research/voice-annotation-pipeline-2026-07.md`. The Web Speech API is unusable here (Chrome returns `ERROR:network` reaching Google's backend, reproduced in an A/B mic-check). macOS system dictation into the annotation layer's textarea solves the actual need with **zero code** and was confirmed working. Kept in the track only so the question is not re-opened from scratch.
+
+### D7 — Reachability: the human can look at what the gate asks them to look at
+
+**Surfaces when:** any `/flow:*` hand-off that names a `file://` path or a local artifact is next
+touched (`ship` §7a, `ship-spike` §7, `prototype` §8, `verify-build` §5a), or when `conductor
+preview` becomes a dependency anyone is willing to take.
+
+Ben, 2026-10-03, reviewing from a phone: a gate that hands over a sandbox-local path has not asked
+anyone to look at anything. Spec: `dev-docs/research/2026-10-mobile-workflow.md` §§2–3 and § 8
+(merged as #175, point-in-time — do not edit it). Ranked options 1–5; 4 and 5 are dispatched to
+other workers, so nobody should duplicate them here.
+
+- **Option 3 — an honest hand-off. SHIPPED v1.59.0.** Every hand-off naming an uncommitted local
+  artifact now states where that file can and cannot be opened, and **names no client**: research
+  § 6 Q1/Q2 (what the iOS app does with a session-produced HTML file, and with a tapped `file://`)
+  are open and unanswered, so "iOS cannot open this" would be an unverified completion claim *and*
+  wrong in the sync-to-a-laptop case. Four sites, rendered by one engine
+  (`skills/ship/lib/artifact-handoff.py local-line`) rather than pinned by grep.
+- **Option 2 — committed frames render in the PR body. SHIPPED v1.59.0.** `artifact-handoff.py
+  frames` emits the `## Before / after` section as a projection of the **commit**: the committed
+  visual-history record, the newest entry's branch matched against this PR's, and a row only for a
+  frame tracked at HEAD. Inline images **only** for a confirmed-public repo — measured 2026-10-03,
+  an unauthenticated `raw.githubusercontent.com` fetch is 200 for a public blob and **404** for a
+  private one — and `/blob/` links, openable by any authorised viewer on any client, in every other
+  case including "`gh` could not tell us".
+- **Option 1 — `conductor preview set`. PR B, now UNBLOCKED.** Serve the gate-1 prototype and the
+  verify-build walkthrough at a sign-in-gated preview URL, falling back loudly to today's path.
+
+  **Ben's measured iPhone results (Conductor iOS app), 2026-10-04 — research § 6 Q1–Q5 answered.**
+  These replace the assumptions PR A deliberately refused to make, and they do not all point the
+  same way:
+  - **A preview URL tapped in chat WORKS.** It opens in Safari, the page renders, and its JS runs.
+  - **But the backend dies when the serving workspace sleeps** (measured by the touch worker), while
+    the URL *registration* survives — so a live-looking link can be a dead one. **Treat the preview
+    as a convenience and always pair it with a process-independent route.** This is why PR B's
+    fallback is not optional garnish.
+  - **A `raw.githubusercontent.com` image link WORKS**, opening in Safari — independent confirmation
+    of option 2's mechanism from the client that motivated it.
+  - **A markdown image pointing at a file inside the workspace RENDERS INLINE in the iOS chat.** So
+    a still frame can reach Ben's phone with **no server and no public repo** — the one route that
+    does not depend on a process staying alive. PR B should treat this as the always-available path
+    for stills, alongside option 2's PR images.
+  - **A filesystem path and a `file://` link were NOT tappable** as sent — they were in code spans,
+    which iOS renders as monospace text. Plain-text form is untested. **Never put a path you expect
+    someone to tap inside a code span.**
+  - **Served HTML must declare `<meta charset="utf-8">`.** A test page without it rendered `✓` as
+    `âœ“`: `python3 -m http.server` sends `text/html` with no charset parameter, so Safari fell back
+    to Latin-1. Audited in this PR — `render-report.py` and `visual-history-skeleton.html` already
+    declared it; the **agent-authored prototype** had nothing requiring it, and `/flow:prototype`
+    Step 8 injects the glyph-bearing annotation layer into exactly that file. Now required by the
+    skill and pinned by `run_artifact_handoff_evals.py::test_served_html_declares_utf8`.
+
+  **Note how the code-span finding lands on PR A, and why it is not a defect here.** PR A wraps the
+  local path in a code span *deliberately* — that path is one nobody can tap from the page, and the
+  monospace rendering is the honest signal for exactly that. The rule bites where a path IS meant to
+  be opened, which is PR B's surface, not this one. The pointers PR A emits that a reader *should*
+  follow are real markdown links (`/blob/` URLs), never code spans.
+
+**Named residuals, recorded rather than discovered later:**
+- `verify-build/SKILL.md:534/536` is deliberately untouched. Its `[verify-build] report: <path>`
+  line hands the path to `/flow:ship`, machine-readable — nothing there is dishonest — and it is
+  PR B's surface. Keeping it out kept one more `sensitivePaths` file out of PR A.
+- The `## Before / after` URL is pinned to the PR-open SHA. If the PR takes further commits the
+  body's frames stay pinned to the earlier SHA, and `/flow:land` does not re-render merged bodies.
+  Correct for a merge-gate record; stated so nobody reads it as a bug.
+- Flow cannot dogfood option 2's interesting half: all four entries in its own
+  `dev-docs/visual-history.html` are inline CSS/SVG reconstructions, so `visual-history-assets/`
+  does not exist here and every flow ship takes the no-frames branch. The frame branch is pinned
+  against a temp git repo (`evals/run_artifact_handoff_evals.py`), not against a live ship.
+
+**Deferred findings from this PR's own `/flow:staff-review`, routed rather than absorbed:**
+- **Two stacked full-width frames are not a *comparison* on a phone.** The reader scrolls one out
+  of view to see the other, and ordering depends entirely on the record's figure order — nothing
+  asserts Before precedes After. A two-column layout or a single composited frame would be a real
+  comparison, but it needs a change on the **capture** side of the visual-history pipeline, not in
+  this renderer. *Surfaces when:* `verify-build/lib/extract-visual-states.py` or
+  `ship/lib/insert-visual-history.py`'s `before_after` shape is next touched.
+- **A hand-authored entry with a different `<img>` attribute order parses to zero figures.**
+  `ship/SKILL.md` §5c explicitly permits hand-authoring, and the reader's regex is attribute-order
+  and attribute-set sensitive, so `<img alt="…" src="…">` or an added `width=` degrades to "carries
+  no before/after figures" — an honest-sounding line that is factually wrong. The generated path is
+  covered (a round-trip eval drives the real writer), so this is the hand-authored gap only. The
+  real fix is the shared writer/reader contract module below. *Surfaces when:* either side of that
+  markup is next touched.
+- **The `vh-entry` markup contract has two independent definitions.** `insert-visual-history.py`
+  emits the `<article class="vh-entry">` / `<div class="meta">` / `<figure>` / `<img>` / `recon`
+  literals; `artifact-handoff.py` re-derives them. This is the shape `manifest_contract.py` was
+  created to retire, and the fix needs the **writer** in the PR's write scope. Mitigated for now by
+  `run_artifact_handoff_evals.py::test_reader_matches_the_writer`, which drives the real writer and
+  asserts the reader parses every field — validated by mutating the writer's attribute order and
+  watching it go red.
+- **No frame-weight guard on the PR-body path.** `design-language.md` warns above ~500 KB per frame
+  for the HTML report; the body path has no equivalent, and two heavy frames are precisely the slow
+  case on the mobile viewport this work targets. A `[WARN]` at >500 KB is cheap. *Surfaces when:*
+  `artifact-handoff.py frames` is next touched.
+- **`md_safe` should type its slots.** Both markdown BLOCKERs this PR shipped-then-fixed —
+  `code_span(inline(x))` double-processing, and an unguarded link **destination** — are one missing
+  type distinction: `text()` / `code()` / `url()` would make a call site unable to compose two
+  neutralizers. Today the destination is handled by a private `_dest()` in the engine and the
+  layering is held by an eval. *Surfaces when:* a third reader needs `md_safe`.
+- **The merge-gate PR body is now a substantial text UI with no design-language entry.**
+  `design-language.md` scopes itself to the verify-build HTML report "only" and already names two
+  ungrounded siblings; this adds a third and larger one, whose rules (placement by "the first thing
+  the human wants to look at", mechanism-in-a-parenthetical, path honesty) are stated only inside
+  `ship/SKILL.md`. Folds into the existing roadmap item for the ungrounded siblings.
+
+- **`local-line` publishes whatever path it is handed, including an absolute one.** A consumer
+  whose `verifyReportPath` or `$PROTO_DIR` is absolute therefore publishes a home-directory path —
+  hence a username — into a PR body that is public on a public repo. **Unchanged behaviour:** the
+  string this replaced (`Walkthrough (local, uncommitted): <verifyReportPath>`) did exactly the
+  same, and in flow's own repo the slot is relative (`.flow/report.html`), so nothing regressed
+  here. Raised by `/flow:security-review` as a FOLLOW-UP. Candidate fix: render the basename, or a
+  `$HOME`-relative form, and say which machine it is on without naming the user. *Surfaces when:*
+  `artifact-handoff.py local-line` or either `verifyReportPath` call site is next touched.
+
+- **Require `alt` at the WRITER instead of compensating at the renderer.**
+  `insert-visual-history.py` warns about a missing `alt` and then emits `alt=""` anyway, and every
+  text-alternative concern in `artifact-handoff.py` exists to paper over that. Making it a hard
+  failure — or synthesising alt from the label at write time — would make the renderer's fallback
+  chain unreachable, retiring the problem at its source rather than downstream. Distinct from the
+  writer/reader contract-module item above, which is about markup *parsing*, not alt enforcement.
+  Deferred because the writer is outside this PR's write scope. *Surfaces when:*
+  `insert-visual-history.py` is next touched.
+- **The cited-frame list in the not-in-the-commit reason is unbounded in LENGTH.** Each path is
+  capped at 120 chars, but an entry citing eight frames produces a wall of code spans in one
+  paragraph — on the narrow viewport this work targets. A `first three … (+N more)` treatment is
+  cheap. Low priority: the arm is rare. Same horizon as the frame-weight guard above.
+
+**§ Exploration candidates this PR surfaced** (open-ended, no shape yet):
+- **An omitted section should probably not sit where a present one does.** The `## Before / after`
+  heading survives every omission branch and sits directly after `## Summary`, so on every flow
+  ship the phone reader's first screen after the summary is three lines saying there is nothing to
+  see. The placement rule ("the first thing the human wants to look at") inverts when there is
+  nothing to look at — worth testing whether the renderer should signal the skill to place an
+  omitted section below `## Test plan`. *Surfaces when:* `ship/SKILL.md`'s body template order is
+  next touched.
+- **Gate 1 is now honest and still unactionable on a phone.** The new line tells a reader the
+  artifact they are being asked to approve cannot be reached from their device, and stops. Strictly
+  better than the false affordance it replaces, but it converts that into a dead end whose only
+  remaining move is to approve unread — the original complaint. Option 1 (the preview URL, PR B) is
+  the intended answer; recording here that **gate 1 is unfinished until it lands**, so the gap is
+  not mistaken for a design choice. *Surfaces when:* PR B starts, or `prototype/SKILL.md` §8 is
+  next touched.
+
+**Adjacent, not duplicated:** D1a is durability of the prototype artifact; D1c is the hand-off's
+*shape*; D1d is whether anything *rendered* the page. D7 is **reachability** — and a reader who
+cannot reach the file never reaches D1d's failure.
 
 ## Deliverable-quality track — toward the autonomous high-quality deliverable
 
