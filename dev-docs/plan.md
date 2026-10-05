@@ -1,5 +1,224 @@
 # Plan
 
+## Current Focus — this branch (`conductor/efficiency-follow-up-checking-subagents-routing`)
+
+**▶ PLAN ONLY — STOPPED at the plan gate per dispatch. Blocked on #179 merging before execution starts.**
+
+**Mode:** feature · **Surface:** non-visual (skill prose + one lib edit + a field-manual bullet; no UI). **Pre-execution gate:** plan.
+
+**Trigger:** Ben's efficiency-follow-up brief (2026-10-05), the direct follow-on to the measured
+findings in `dev-docs/research/2026-10-efficiency-audit.md` (merged [#181](https://github.com/by-dev-tools/flow/pull/181)).
+This replaces an earlier worker whose workspace was archived by mistake before it pushed anything —
+there is nothing of that attempt to recover; this plan starts fresh from the merged audit.
+
+Ben's priority, stated directly (2026-10-05) and carried verbatim into Decision 4 below: *"If I run
+out of usage I run out of usage, I just want to make sure that we're not wasting the tokens we have.
+Lost time isn't a concern right now… If I do get a higher tier in the future, flow should already be
+tuned to be as efficient as possible."* No overage or tier change now; a higher tier would be
+preferred over overage if that ever changes. **This plan proposes no spend change** — every decision
+below is a process fix, not a capacity ask.
+
+### Hand-off (read this before executing)
+
+- **Do not execute any decision below until PR [#179](https://github.com/by-dev-tools/flow/pull/179)
+  merges.** #179 (open at plan time) edits `plugins/flow/skills/orchestrate/SKILL.md` and
+  `plugins/flow/skills/spawn/SKILL.md` — the exact two files Decisions 2 and 3 also touch. Executing
+  against the pre-#179 shape would hand-author a merge conflict at best, and at worst silently drop
+  #179's worker-message-label contract (the `[w:<name>] <STATUS>` convention and the §8 status digest)
+  if this plan's edits land first and #179 rebases over them instead of the other way around.
+- **Re-sweep version + FB numbers at execution time — the numbers below are a plan-time snapshot,
+  not a claim** (FB-0125: a number swept at plan time is stale by ship time). Swept 2026-10-05: `main`
+  is `v1.59.0`; highest version claimed on any open branch is **v1.62.0**
+  (`conductor/fix-visual-walk-na-forces-significance`, unrelated in-flight work); highest FB claimed
+  anywhere is **FB-0135** (`conductor/mobile-option-5-label-r2`, which is PR #179 itself — #179's own
+  description confirms it supersedes that branch 1:1). Both will have moved by the time execution
+  starts, especially once #179 merges. This plan claims **zero** FB numbers and **zero** version bump —
+  nothing ships from this push; each decision's eventual FB number and the version bump are claimed at
+  execution/ship time against a fresh sweep, not against the numbers in this paragraph.
+- Confirm `claude plugin list` shows `flow@flow 1.59.0` or later (and, once merged, that #179's two
+  skill files resolve with the new §8 digest + message-label content) before executing — this plan was
+  written in a session that started on a stale 1.29.0 install; the currency hook brought it to 1.59.0
+  before any work began, confirmed by the plan-time `claude plugin list` check this dispatch required.
+
+### What's already true, and not reopened here
+
+- `/flow:spawn` step 2 (current `main`) already states "right-sizing, not rationing" and "never
+  decline a worker that has real work for budget reasons; right-size it instead." That rule protects
+  against **not dispatching** a legitimate worker. The audit's §4 finding is the opposite-direction
+  failure — an **already-justified** job gets its own effort downshifted to free capacity for a
+  *different* job. Decision 4 below closes that specific gap; it does not restate the existing rule.
+- `/flow:staff-review`'s four parallel lenses are already a correctly-provisioned subagent fan-out
+  (audit §5) — nothing to change there, and Decision 3's new table says so explicitly so it reads as
+  confirmed-correct rather than silently unaddressed.
+- `plugins/flow/lib/dispatch_backend.py`'s five verbs (`listWorkers`, `createWorker`, `sendMessage`,
+  `workerStatus`, `selfSession`) are **not** touched by #179 — Decision 1 can be designed now without
+  waiting on #179's shape, even though the actual edit still waits for the shared ship slot.
+
+### Decision 1 — add a sixth verb, `readSince`, to `dispatch_backend.py`'s closed vocabulary (optional)
+
+**The done-means item asks whether a host-agnostic, optional read-after-cursor verb is warranted.**
+
+**Recommendation: yes — add `readSince {session} {cursor}`, optional (an absent slot degrades to the
+existing full-read fallback, loudly, exactly like every other optional-in-practice verb already
+does).**
+
+**Why this is warranted, not just plausible — measured, not assumed:**
+- The dispatch's own reference point is a measured before/after: *"the seat's cursor reader read 573
+  messages in 6 API calls once, then 1 call / 0.6 s per re-read; the old reader walked every message on
+  every check."* The audit independently found the same shape from the other direction (§3): raw
+  transcript-polling (`session message`, `message get`) is the orchestrator's 3rd-largest Bash-output
+  bucket — 62 calls, 105,385 characters — over 22 days, because each check re-walked history rather than
+  reading forward from a cursor.
+- `workerStatus` is the nearest existing verb and is deliberately scoped to one question — "last-activity
+  timestamp for the silent-worker sweep." Overloading it to also mean "catch me up on new messages" repeats
+  the exact shape `/flow:spawn` step 2 already split in two for a different pair (`--globs-file` vs
+  `--files-file`: "one predicate asked two different questions has two correct answers"). One verb, one
+  question; `readSince` is a new question, so it gets a new verb.
+- Why not fold it into `listWorkers` instead: that verb takes **no placeholders** today — it has no
+  per-worker addressing, and a cursor is inherently per-session state. Giving it a `{session}` and a
+  cursor argument would make one verb name cover two call shapes.
+
+**Design, scoped tightly against the exact defect this file's own comments already warn about** (a
+placeholder the schema advertises that nothing supplies — the retired `{branch}` case, caught only
+because `validate()` was changed to actually call `render()`):
+- `KNOWN_PLACEHOLDERS` gains `cursor`. Required for `readSince`: `{session}`, `{cursor}`. No other verb
+  may reference `{cursor}` — enforced for free by the existing "extra placeholder" check in `validate()`.
+- `cursor` is opaque: the backend returns it (from a prior `readSince` or from `createWorker`'s reply,
+  if the host provides one) and flow stores/replays it verbatim, the same posture as `selfSession`'s
+  returned id. Flow never parses or constructs a cursor value itself.
+- A backend that doesn't configure `readSince` reports `absent` (not `invalid` — it's optional) via
+  `check`, with the manual fallback: "read the worker's full history by hand, or use `workerStatus` for
+  a last-activity-only check." The orchestrator workflow still applies in full; it only loses the cheap
+  path.
+- `/flow:orchestrate` step 4 (Sweep for SILENT workers) and #179's new §8 digest both read via
+  `readSince` when configured, falling back to the current full-read behavior when it's absent. This is
+  additive to #179's shape, not a conflicting edit — confirmed above that #179 never touches
+  `dispatch_backend.py`.
+
+**Confidence: high** that the verb itself is warranted (measured, two independent findings point the
+same way). **Confidence: medium** on the exact placeholder name — see Open call 1.
+
+**Evals (new case under `plugins/flow/evals/`, file named at execution):** pair, don't assert alone
+(`.claude/rules/general.md` § Consistency item 3) — (a) backend missing `readSince` → `absent`,
+workflow still applies, manual fallback named; (b) `{session}{cursor}` on `readSince` → renders; (c)
+`{session}` alone on `readSince` (missing required) → `invalid`; (d) `{cursor}` referenced on any other
+verb → `invalid` via the existing extra-placeholder check. Same shape the file's own `{branch}` postmortem
+already documents it needed.
+
+### Decision 2 — codify "since-cursor, not full history" as the default read, in `/flow:orchestrate`
+
+**Recommendation:** add one paragraph to `/flow:orchestrate` step 4 (Sweep for SILENT workers) and to
+#179's new §8 digest, stating the default contract plainly: **reading a worker means messages since the
+last-read cursor, never the whole history.** Mechanism when `readSince` is configured (Decision 1);
+fallback when it isn't is a **narrow** query — `workerStatus` for a timestamp-only check, or
+`gh ... --json <fields>` rather than an unscoped `gh pr list` / full transcript dump. Cite the measured
+573-vs-1-call contrast and the audit's 105,385-character transcript-polling figure as the stated reason,
+rather than asserting the rule needs no justification — this repo's convention (§3 of this same plan,
+Decision 1) is to show the measurement, not just assert the practice.
+
+**Scope check:** step 3's open-PR sweep (`gh pr list --state open --json number,title,headRefName,isDraft`)
+is already narrow — this decision does not touch it. The gap is specifically step 4's worker-read path,
+which is also the only one the audit's §3 bucket table and the dispatch's own reference point both land on.
+
+**Confidence: high.** This restates an already-measured practice as a stated rule — the lowest-risk
+edit shape this repo makes.
+
+### Decision 3 — a workspace-vs-subagent decision table, as a new step at the top of `/flow:spawn`
+
+**Recommendation:** insert a new step before the current "## 0. Resolve the backend" (renumbering 0→6
+to 1→7), titled something like "## 0. Choose the primitive — workspace or subagent", stating the rule
+the audit's §5 measurement supports:
+
+| Signal | Primitive |
+|---|---|
+| Needs its own branch/PR, independent `/flow:ship` pipeline, or must outlive this session | **Workspace** |
+| Needs its own distinct **installed-plugin state** (a Claude Code install is machine-scope, not session-scope — confirmed by the S0 probe suite's `c2`/`c-old`/`c-v1` arms, which reinstall a specific flow snapshot and could not have been subagents without clobbering the parent's or a sibling's own install) | **Workspace** |
+| Read-mostly, single-purpose, finishes inside the calling session's own turn, touches no shared install state (the S0 suite's arms `a`/`b`/`d`/`c`, and `/flow:staff-review`'s four lenses) | **Subagent** |
+
+**The one nuance the done-means item explicitly calls for and the audit's rule-of-thumb line doesn't
+state on its own:** a subagent's output lands directly in the **calling session's own context** — there
+is no separate thread to inspect later. On a short-lived caller this is free; on a long-lived seat like
+the orchestrator (899 main-thread turns over 22 days per the audit, §3) it compounds exactly like the
+865,545 characters of raw Bash output already identified as the largest tool-result category. So the
+table above is necessary but not sufficient — a subagent dispatch should also be scoped to return a
+short, structured result (the four staff-review lenses' pattern) rather than "go explore broadly and
+report everything back," which would just relocate the audit's Bash-output problem into the Agent tool
+instead of fixing it.
+
+**Also states, explicitly, what the audit found already correct** (so a future reader doesn't re-litigate
+it): `/flow:staff-review`'s four parallel lenses are the one place this is already done right, and the
+S0 probe suite's `c2`/`c-old`/`c-v1` arms + the `9c542643` exploration session are workspaces that could
+not have been anything else.
+
+**Confidence: high** on the rule's content (directly measured in the audit, §5). **Confidence: medium**
+on renumbering the whole skill's steps vs. prepending without renumbering — see Open call 2.
+
+### Decision 4 — forbid "needs the capacity" as a routing justification; record Ben's rule verbatim
+
+**Recommendation, two edits:**
+
+1. In `plugins/flow/skills/spawn/SKILL.md` step 2, immediately after the existing "right-sizing, not
+   rationing" paragraph, add a named negative example: downshifting one job's model/effort **to free
+   shared capacity for a different job** is the mirror-image failure of under-dispatching, and is named
+   explicitly because the audit (§4) found exactly this in a live dispatch brief — *"It's reversible, and
+   the program's one critical-path worker needs the account's capacity."* The fix: route each job by what
+   **that job** needs; if the account is genuinely out of room, that is an admission-control decision
+   (this same skill's step 1: "rate window near exhausted? ... hold the queue") made **explicitly**, never
+   a silent per-job effort cut dressed as routing judgment.
+2. In `research/orchestrator-field-manual.md` § 3 ("Presentation rules the human has stated directly"),
+   add a new bullet carrying Ben's 2026-10-05 priority **verbatim**, matching the section's existing
+   convention of direct, dated quotes with no paraphrase:
+
+   > **Token efficiency over schedule speed, and overage/tier changes are Ben's call, never flow's to
+   > propose (2026-10-05):** *"If I run out of usage I run out of usage, I just want to make sure that
+   > we're not wasting the tokens we have. Lost time isn't a concern right now… If I do get a higher
+   > tier in the future, flow should already be tuned to be as efficient as possible."* See the "needs
+   > the capacity" routing failure this priority rules out, `/flow:spawn` step 2.
+
+**Confidence: high.** Both edits state a rule Ben has already given directly; nothing here is inferred
+or extrapolated.
+
+### Spec-walk
+
+- [ ] `dispatch_backend.py` gains `readSince` in `KNOWN_PLACEHOLDERS` and `VERBS`, marked optional — a
+  backend missing it reports `absent` (not `invalid`) with the named manual fallback. Verify:
+  `python3 plugins/flow/lib/dispatch_backend.py check --config <fixture-without-readSince>`.
+- [ ] A backend config supplying `readSince` with `{session}{cursor}` renders via `render()`; a config
+  referencing `{cursor}` on any other verb fails `check`. Verify: new eval case, run via
+  `tools/eval-sweep.sh`.
+- [ ] `/flow:orchestrate` step 4 states the cursor-first read contract and cites both measured figures
+  (573-vs-1-call; 105,385 characters). Verify: read-through, grep the figures appear verbatim.
+- [ ] A new "## 0. Choose the primitive" step exists in `/flow:spawn`, before the (renumbered) backend
+  step, carrying the three-row table above plus the context-cost nuance. Verify: read-through.
+- [ ] `/flow:spawn` step 2 names the "needs the capacity" downshift as forbidden, immediately after
+  "right-sizing, not rationing," quoting the audit's exact phrase. Verify: read-through.
+- [ ] `research/orchestrator-field-manual.md` § 3 carries Ben's 2026-10-05 quote verbatim, dated,
+  matching the section's existing direct-quote convention. Verify: diff against the quote above,
+  byte-for-byte.
+- [ ] A new FB entry synthesizes the "capacity is not a routing reason" correction. Number claimed at
+  execution time via a fresh sweep, not reserved here.
+- [ ] `tools/eval-sweep.sh` reports all-GREEN by exit code after the new eval case lands.
+
+### Open calls for the human gate
+
+1. **Placeholder name: `cursor` vs `since`.** `cursor` signals "opaque, backend-owned" (matches
+   `selfSession`'s own id, which flow never constructs); `since` reads more naturally if a host's cursor
+   actually is a plain timestamp. **Recommendation: `cursor`, confidence medium** — cheap to change
+   either way since nothing is configured against it yet.
+2. **Renumber `/flow:spawn`'s existing steps 0→6 to 1→7, vs. prepend the new step without renumbering
+   (e.g. "## 0a.").** Renumbering keeps the skill internally consistent (every step name matches its
+   position) but touches every existing step heading in a file this repo treats as deployed surface.
+   **Recommendation: renumber, confidence medium** — the skill is short (7 steps total after the
+   insert) and a stale number in a checklist a worker follows top-to-bottom is the kind of small
+   confusion this repo has been burned by before (`.claude/rules/general.md` § Consistency item 2).
+3. **Whether Decision 3's table lives in `/flow:spawn` alone, or also gets a one-line pointer from
+   `/flow:orchestrate`'s own dispatch-adjacent text.** The done-means item names `/flow:spawn`'s table
+   specifically; `/flow:orchestrate` never decides to create a workspace itself (it dispatches via
+   `/flow:spawn`), so **recommendation: `/flow:spawn` only, confidence high** — a pointer from
+   `/flow:orchestrate` would be restating state that already lives at its one authoritative site.
+
+---
+
 ## Current Focus — this branch (`conductor/audit-flow-token-efficiency`)
 
 **▶ SPIKE, EXECUTED, shipping: measured token-efficiency audit across the program's Conductor workspaces.**
