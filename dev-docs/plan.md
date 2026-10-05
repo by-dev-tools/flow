@@ -1,6 +1,21 @@
 # Plan
 
-## Current Focus
+## Current Focus — this branch (`conductor/audit-flow-token-efficiency`)
+
+**▶ SPIKE, EXECUTED, shipping: measured token-efficiency audit across the program's Conductor workspaces.**
+
+**Mode:** spike · **Surface:** non-visual (no UI/visual work; this is a research doc)
+
+**Research question.** Is the program's token/cost spend across Conductor workspaces productive, or is some of it wasteful — asked directly by Ben after the account started hitting rate limits.
+
+**Disposability.** No code produced. The deliverable is
+`dev-docs/research/2026-10-efficiency-audit.md` + its `dev-docs/README.md` index row +
+`dev-docs/history/2026-10-04-token-efficiency-audit.md`; nothing here gates or is gated by any
+other PR in flight. See "Recently Completed" below for the one-line summary + recommendation.
+
+---
+
+## Current Focus — other active branches (retained below, not this PR's)
 
 **▶ EXECUTED, shipping (this branch `conductor/mobile-options-1-3-hand-off-pr-images-preview-url`,
 version claimed mechanically at **v1.59.0** in `plugins/flow/.claude-plugin/plugin.json`, no new FB).
@@ -8282,6 +8297,14 @@ Status: all spec-walk checkboxes complete; PR opened at [by-dev-tools/flow#5](ht
 
 _Last few shipped; full detail in `dev-docs/history.md`. (Merged PR blocks above are kept as historical records — a deeper archive-prune is a tracked follow-up.)_
 
+- **Spike: token-efficiency audit** (`conductor/audit-flow-token-efficiency`, 2026-10-04) —
+  **proceed on recommendations #2–#6, #1 is Ben's cost decision.** Measured ≈$1,900 spend across
+  the program since 2026-09-06; 76% in 5 workspaces. Model routing held up everywhere checked.
+  The confirmed waste is worker-side rate-limit coordination lag (10 events this week, directly
+  quoted in-transcript), not the orchestrator's own 134 idle-hours (those resolve to Ben's own
+  "continue," not blocked work). CV1's fix cost $582 across a defeated-then-escalated retry. The
+  S0 probe suite's subagent-vs-workspace call splits by arm (some need a distinct installed
+  plugin version, most don't). Full findings: `dev-docs/research/2026-10-efficiency-audit.md`.
 - **SV2-spike handoff clarity** (docs PR, 2026-06-08) — wired the spike's resolved capture-and-persist mechanism into the roadmap PR-1 acceptance checkbox + added a ▶ V2 handoff pointer to Handoff Notes, so a fresh-session agent inherits the answer from the checklist it acts on (FB-0010 fan-out across the spike→feature seam).
 - **SV2-spike — `/verify` screenshot-structure question** (spike PR, 2026-06-08) — **proceed.** Resolved `rubric.md:68`: bundled `/verify` is narration-only to verify-build's fresh-context judges (frames stay image-blocks in the orchestrator's context; no path even with `save_to_disk`). **V2 = branch (B)**, an explicit capture-and-persist step. Deliverable = `history.md` "SV2-spike".
 - **PR DC — doc-currency in the ship pipeline** (#39, v1.5.2, 2026-06-05) — `/flow:ship` Step 5a reconciliation + 5b mechanical gate; a stale-docs ship is now blocked automatically.
