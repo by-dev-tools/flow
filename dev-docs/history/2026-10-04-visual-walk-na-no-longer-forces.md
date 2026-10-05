@@ -267,7 +267,78 @@ the token is findable at all), while the un-denial searches the full one. Paired
 because "reject every parenthetical" would satisfy the obvious two assertions by breaking the
 feature the strip exists for.
 
-**Verification (final):** 242/242 `run_walk_extract_evals.py` · 102/102
+**The re-review the stale rigor marker forced was worth it, and the two lenses converged.**
+`/flow:audit-skips` reported `staff-review: SHOULD-RE-RUN` — the marker predated three commits of
+real logic. Re-running all four lenses on the final tree found, among other things, that the
+near-miss warning I had just added to *end* a silence was **asserting something false**: its
+`redirects` explanation said "it also points at visual artifacts kept ELSEWHERE" for
+`N/A — no screenshots in this change`, which is the opposite of what the author wrote — and is one
+of the three phrasings `plan-discipline` itself flags as the counter-intuitive ones people reach
+for. Before this release the near miss was silent, which was worse but at least not *wrong*; naming
+a category without naming the mechanism traded silence for a false imputation on the likeliest
+spelling. That is the same defect as the outcome clause two commits earlier, which is twice in one
+release that a signal I added to improve honesty asserted a falsehood.
+
+**Both the UX and push-further lenses independently flagged the same consumer-facing overclaim**,
+which is the strongest signal in the pass: `plan-discipline` closed with "so a near miss is never
+silent." Measured by two lenses separately, one pass each: **22 of 29** hand-written denial
+phrasings suppress *silently* — `postponed`, `waiting on design`, `tracked in #200`,
+`storybook covers it`, and nine lemma-siblings of words already in the lists (`waiting on` vs the
+listed `awaiting`; `forthcoming` vs `coming`; `second pass` vs `next pass`). The universal was true
+only over the marker vocabulary, in the one artifact that ships to consumers and shapes their
+authoring. It is now scoped to what a word list can do, and says plainly that it is a word list and
+not an understanding.
+
+**I did not add those tokens, and that was the harder call.** It is the fifth vocabulary round; the
+file's own comment forbids it, both lenses recommended against it, and a fifth round buys another
+release of false confidence. The measured leak set is filed instead, together with the instrument
+that would have caught it — a held-out-vocabulary corpus asserted in the **leak** direction, which
+goes red the moment the polarity inversion lands and forces re-classification rather than silent
+carry. Push-further's observation is the one to keep: relative to the *current* regex the 39-row
+reject table now has **zero** rows drawn from outside its own vocabulary, so it is back in exactly
+the state its own comment diagnoses for v2 and v3. Hence FB-0136.
+
+**Also found: a markdown bug I introduced.** The convention body sat at column 0 inside numbered
+item 8, which terminates an ordered list in CommonMark — so the body rendered detached from its own
+number while four places pointed readers at "field 8". Hoisted to its own section (field 8 keeps its
+number, because the spike/tiny overrides key on field numbers), taking it from 66% of the skill to
+9%. All four pointers re-aimed.
+
+**The staff-engineer lens returned no blocker and verified far more than it flagged** — chain
+integrity after my botched first attempt, exact mutation counts (10 and 2, not "about"), the
+fan-out sweep, and branch exclusivity brute-forced over **736 shapes with 0 divergences**. Its
+most useful observation is a property I had not noticed: because a false rejection requires the
+token to match *and* an un-denial to be found, every new false rejection the parenthetical fix can
+produce is also **explained** — never the silent shape. That is the right invariant and it was
+luck, not design, so it is now asserted.
+
+Its three real findings were all the same lesson pointed at me:
+
+1. **A silent fail-open in a `sensitivePaths` gate.** With `walk_extract` unimportable, a plan
+   declaring `**Visual-walk:**` with an assertion returned `false`, exit 0, **zero signals** — "I
+   could not look" rendered identically to "I looked and found nothing". Item 1 verbatim. The
+   asymmetry was self-documenting: the `file_patterns` import *five lines below* already captures
+   its exception and fails CLOSED, with a comment giving this exact reason. Nobody noticed because
+   both are `# pragma: no cover` defensive blocks. Made loud here; fail-closed filed, because it
+   changes the verdict a broken install produces.
+2. **The round-4 fix was pinned one layer below its claim** — 10 parser checks against a changelog
+   sentence making a *gate* claim; reverting it left the composed suite at 102/102. The `8l` block
+   I wrote two rounds earlier exists to apply exactly that corollary, and I did not apply it to the
+   next round's fix. Third time this release.
+3. **"These branches are mutually exclusive" was an invariant nothing asserted** — and my botched
+   first attempt at the `uiSurface` fix had already broken it once, caught by reading the chain
+   back rather than by a test. Now asserted at the parser layer over every pinned row × 8
+   qualifiers, paired with a corpus-size check so a reorder fails loudly rather than going vacuous.
+
+**A process error of mine it also caught, worth recording.** I began applying the other three
+lenses' fixes while this one was still reading, so the tree moved under it mid-review — and it was
+running `cp`-based mutation experiments in that same tree. It flagged this itself, said it could
+not *prove* it had clobbered nothing, and hashed its backups against HEAD to bound the risk. I
+verified afterwards that all seven of my edits survived and that the three engine files parse, and
+the suite is green — but the correct sequencing is to collect all four lens reports *before*
+editing, and I will not get a second warning that clearly.
+
+**Verification (final):** 344/344 `run_walk_extract_evals.py` · 110/110
 `run_visual_significance_evals.py` · 8/8 `test_plan_text_not_quoted.py` · 6/6 security test files ·
 43/43 harnesses green **by exit code** (1m17s measured). Six mutations run on the new surface,
 each red on the assertion meant to catch it and no other: restoring the warnings passthrough

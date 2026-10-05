@@ -184,7 +184,7 @@ def measure_leak(tmp: Path, engine: Path) -> dict:
         "carried": carried,
         "parser_warnings": parser_warnings,
         "signals": signals,
-        "arm_reached": any("DECLARES" in s for s in signals),
+        "arm_reached": any("declares N/A" in s for s in signals),
         "extractor_rc": proc.returncode,
         "extractor_stderr": proc.stderr[:200],
     }

@@ -816,6 +816,10 @@ def test_declared_na() -> None:
               f"got {b['all_demoted']}")
 
 
+_ACCEPT_ROWS: list = []
+_REJECT_ROWS: list = []
+
+
 def test_na_token_set_is_anchored() -> None:
     """The denial match is a CLOSED set anchored at the heading tail, not a search.
 
@@ -931,6 +935,8 @@ def test_na_token_set_is_anchored() -> None:
         "**Visual-walk:** N/A - covered by #456",
         "**Visual-walk:** N/A — documented in the PR body",
     ]
+    _ACCEPT_ROWS[:] = accept
+    _REJECT_ROWS[:] = reject
     for line in accept:
         check(f"na-accept::{line[:44]}", heading_declares_na(line, "Visual-walk"),
               "should be read as a denial")
@@ -1034,8 +1040,37 @@ def test_na_near_miss() -> None:
           na_near_miss("**Visual-walk:** N/A — frames later", "Visual-walk") == "defers",
           "deferral is reported in preference when a tail carries both")
 
+    # THE EXCLUSIVITY INVARIANT, over every pinned row plus parenthetical variants.
+    # `visual-significance.py` evaluates the near-miss arm and the contradiction arm as
+    # two separate `if`s inside one chain branch, so if a heading could BOTH declare a
+    # denial and register a near miss, the shared outcome clause would be appended
+    # twice and the author would be told two contradictory things. Nothing asserted
+    # that. The first attempt at the uiSurface fix broke chain exclusivity and was
+    # caught by reading the code back — a future edit gets no such luck, and the
+    # property that actually guarantees it is this one, at the parser layer
+    # (/flow:staff-review, staff-engineer lens, which brute-forced 736 shapes by hand).
+    quals = ["", " (UI only)", " (post-merge)", " (TBD)", " (merged #99)",
+             " (see Figma)", " (scope: data layer)", " (UI changes only)"]
+    pairs = 0
+    for row in _ACCEPT_ROWS + _REJECT_ROWS:
+        for q in quals:
+            line = row.replace("**Visual-walk", "**Visual-walk" + q, 1) if q else row
+            pairs += 1
+            if heading_declares_na(line, "Visual-walk"):
+                check(f"exclusivity::{line[:46]}",
+                      na_near_miss(line, "Visual-walk") is None,
+                      "a heading read AS a denial must register no near miss — both "
+                      "arms firing would append the outcome clause twice")
+    # Paired with a non-emptiness assertion so deleting the table cannot green this.
+    check("exclusivity-corpus-is-non-empty", pairs >= 400,
+          f"only {pairs} shapes exercised — the corpus collapsed, so the invariant "
+          f"above is near-vacuous")
 
-# The shipped authoring convention, transcribed from `plan-discipline/SKILL.md` field 8.
+
+# The shipped authoring convention, transcribed from `plan-discipline/SKILL.md`
+# § "Visual-walk: the N/A convention" (hoisted out of field 8 in v1.62.0 — a
+# column-0 paragraph inside the numbered item terminated the ordered list in
+# CommonMark, so field 8's body rendered detached from its own number).
 # Two readers of one rule — a regex and a doc that tells authors what the regex does —
 # which is the FB-0010 fan-out shape, and the doc half had already drifted WIDER than
 # the code (it promised that any separator-followed denial counts, while the predicate
@@ -1057,6 +1092,19 @@ _DOC_KEEPS_FORCING = [
     "N/A — mockups attached",
     "N/A — see Figma",
     "N/A — covered by #456",
+]
+# The parenthetical rule, published in the same section. Its own list because these are
+# whole HEADINGS rather than reason-tails, so the harness must not prefix
+# `**Visual-walk:** `. Without a row here the published-convention pin could not notice
+# a doc/predicate divergence on this rule — the exact drift the v1.62.0 staff-review
+# BLOCKER was about, one rule over (/flow:staff-review, staff-engineer lens).
+_DOC_PAREN_FORCES = [
+    "**Visual-walk (TBD):** N/A",
+    "**Visual-walk (see Figma):** N/A",
+]
+_DOC_PAREN_DENIES = [
+    "**Visual-walk** *(UI only)*: N/A",
+    "**Visual-walk (post-merge):** N/A — backend only",
 ]
 
 
@@ -1086,6 +1134,19 @@ def test_published_convention_matches_the_predicate() -> None:
               not heading_declares_na(f"**Visual-walk:** {ex}", "Visual-walk"),
               "plan-discipline tells authors this does NOT read as a denial")
         check(f"doc-forces-present::{ex[:40]}", ex in doc,
+              "the doc no longer shows this example — re-sync this list or the doc")
+    # The parenthetical rule, both directions, same three-assertion shape.
+    for ex in _DOC_PAREN_FORCES:
+        check(f"doc-paren-forces::{ex[:40]}",
+              not heading_declares_na(ex, "Visual-walk"),
+              "the doc says a qualifier carrying a deferral/redirection keeps forcing")
+        check(f"doc-paren-forces-present::{ex[:40]}", ex in doc,
+              "the doc no longer shows this example — re-sync this list or the doc")
+    for ex in _DOC_PAREN_DENIES:
+        check(f"doc-paren-denies::{ex[:40]}",
+              heading_declares_na(ex, "Visual-walk"),
+              "the doc says a qualifier with no such word reads normally")
+        check(f"doc-paren-denies-present::{ex[:40]}", ex in doc,
               "the doc no longer shows this example — re-sync this list or the doc")
 
 

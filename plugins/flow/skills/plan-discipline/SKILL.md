@@ -34,18 +34,7 @@ Every plan written to the plan doc must include:
 5. **Confidence verdict per load-bearing assumption** — see below.
 6. **Risks / open questions**.
 7. **Files touched** — anticipated paths.
-8. **Visual-walk** *(UI changes only — when `flow.config.json.uiSurface` is true and the diff has a UI surface)* — declared visual/UX acceptance criteria, parallel to Spec-walk. Each is a checkable assertion naming a user-perceptible visual state and how it's checked. Cover more than the happy-path look — span static state, token/motion, AND interaction/a11y: e.g. "empty/loading/error state renders correctly, not a blank panel"; "primary button uses the accent token, not a hardcoded hex"; "enter motion ≤ 200ms"; "opening the dialog moves focus into it and Esc closes it"; "the submit control shows a loading state and is disabled while the request is in flight". Write them against the design-language doc (`flow.config.json.designLanguagePath`). These are the criteria the agent dials in against at Step 8/9 (`${CLAUDE_PLUGIN_ROOT}/docs/workflow.md`) and the human signs off on at the merge gate. **When there is no visual surface, write `**Visual-walk:** N/A — <reason>`.** This is a *contract*, not a style note: `/flow:verify-build` parses it, and getting the shape wrong makes `/flow:ship` demand a rendered walkthrough and a visual-history entry for a change that has no UI. Omitting the block entirely means exactly the same thing, so either is correct.
-
-The rule, stated once: the heading text must **open** with `N/A`, `N.A.`, `NA`, `none`, `nil` or `not applicable`, that token must be followed by **nothing or a separator**, the block must list **no** `- [ ]` items, and **the reason must say WHY there is no surface** — not when one is coming, not where to find it. Four shapes therefore do *not* mean it:
-
-- **A bare `**Visual-walk:**`** with no items means something different and deliberate: "there is a visual surface whose states I am not enumerating." §5a captures the launch state. It is not a denial, and it is not a typo.
-- **A denial heading that still lists items** is read as listing items — the assertions win, and you get a warning naming the contradiction.
-- **A deferral** — `None, will fill in later`, `N/A — TBD`, `NA: pending the prototype`, `N/A — deferred`, `N/A — awaiting design`, `N/A — in the next PR`. These say *when*, and a thing that arrives later exists.
-- **A redirection** — `N/A, see the prototype for frames`, `N/A — mockups attached`, `N/A — see Figma`, `N/A — covered by #456`. These say *where*, and a thing kept elsewhere exists. Whether the review already happened is the human's call at the merge gate, not something a parser should infer from prose.
-
-**The one counter-intuitive part, so you don't hit it:** naming a visual artifact in the reason reads as a redirection **even when you negate it**. `N/A — no frames needed`, `N/A — nothing to capture` and `N/A — no screenshots in this change` all keep forcing, because `frames` / `capture` / `screenshots` / `mockups` / `prototype` / `recording` are read as "these exist somewhere". Say why the surface is absent instead — `N/A — backend only`, `N/A — nothing visual`, `N/A — no file matching uiFilePatterns is in scope` all read correctly. `N/A for this PR` is also not recognised: the token has to be followed by a separator, not run into prose. In every one of these cases you get a `[WARN]` naming the line and which reading it took, so a near miss is never silent.
-
-Prefer the em-dash form, `**Visual-walk:** N/A — <reason>`.
+8. **Visual-walk** *(UI changes only — when `flow.config.json.uiSurface` is true and the diff has a UI surface)* — declared visual/UX acceptance criteria, parallel to Spec-walk. Each is a checkable assertion naming a user-perceptible visual state and how it's checked. Cover more than the happy-path look — span static state, token/motion, AND interaction/a11y: e.g. "empty/loading/error state renders correctly, not a blank panel"; "primary button uses the accent token, not a hardcoded hex"; "enter motion ≤ 200ms"; "opening the dialog moves focus into it and Esc closes it"; "the submit control shows a loading state and is disabled while the request is in flight". Write them against the design-language doc (`flow.config.json.designLanguagePath`). These are the criteria the agent dials in against at Step 8/9 (`${CLAUDE_PLUGIN_ROOT}/docs/workflow.md`) and the human signs off on at the merge gate. **When there is no visual surface, write `**Visual-walk:** N/A — <reason>`** — this is a *contract* `/flow:verify-build` parses, not a style note. The exact rule, the four shapes that do **not** mean it, and one counter-intuitive case are in [§ Visual-walk: the N/A convention](#visual-walk-the-na-convention) below.
 
 **Visual-walk criteria are declaration only** — they are not yet mechanically verified (that's a later link in the Deliverable-quality roadmap track); today's consumers are the agent's visual dial-in and the human at both gates.
 
@@ -57,6 +46,29 @@ One case placement alone can't fix: an active PR that declares a **Spec-walk** b
 
 **That scoping is a proxy, and it does not cover every plan shape.** It needs the active PR to have a `Spec-walk`, and it reads a retained section's Visual-walk as active if that section was authored Visual-walk-first. So in two shapes a retained block can still be adopted silently: (a) an active `tiny` PR, or a non-visual `spike` — neither has a `Spec-walk` anchor (per the mode overrides above); (b) a retained section whose `Visual-walk` precedes its own `Spec-walk`. On those plans, check the parser's `co_located` and `source_heading` by hand before trusting a capture state-set — `python3 ${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/extract-visual-states.py <plan>` prints both. Closing this properly needs a per-PR boundary marker in the plan format; see `dev-docs/roadmap.md` § "A universal per-PR boundary marker for the walk parsers".
 
+
+## Visual-walk: the N/A convention
+
+Field 8 above is the only plan field a parser enforces, so its exact shape is written out here rather than inline.
+
+**When there is no visual surface, write `**Visual-walk:** N/A — <reason>`.** This is a *contract*, not a style note: `/flow:verify-build` parses it, and getting the shape wrong makes `/flow:ship` demand a rendered walkthrough and a visual-history entry for a change that has no UI. Omitting the block entirely means exactly the same thing, so either is correct.
+
+The rule, stated once: the heading text must **open** with `N/A`, `N.A.`, `NA`, `none`, `nil` or `not applicable`, that token must be followed by **nothing or a separator**, the block must list **no** `- [ ]` items, and **the reason must say WHY there is no surface** — not when one is coming, not where to find it. Four shapes therefore do *not* mean it:
+
+- **A bare `**Visual-walk:**`** with no items means something different and deliberate: "there is a visual surface whose states I am not enumerating." §5a captures the launch state. It is not a denial, and it is not a typo.
+- **A denial heading that still lists items** is read as listing items — the assertions win, and you get a warning naming the contradiction.
+- **A deferral** — `None, will fill in later`, `N/A — TBD`, `NA: pending the prototype`, `N/A — deferred`, `N/A — awaiting design`, `N/A — in the next PR`. These say *when*, and a thing that arrives later exists.
+- **A redirection** — `N/A, see the prototype for frames`, `N/A — mockups attached`, `N/A — see Figma`, `N/A — covered by #456`. These say *where*, and a thing kept elsewhere exists. Whether the review already happened is the human's call at the merge gate, not something a parser should infer from prose.
+
+**The one counter-intuitive part, so you don't hit it:** naming a visual artifact in the reason reads as a redirection **even when you negate it**. `N/A — no frames needed`, `N/A — nothing to capture` and `N/A — no screenshots in this change` all keep forcing, because `frames` / `capture` / `screenshots` / `mockups` / `prototype` / `recording` are read as "these exist somewhere". Say why the surface is absent instead — `N/A — backend only`, `N/A — nothing visual`, `N/A — no file matching uiFilePatterns is in scope` all read correctly. `N/A for this PR` is also not recognised: the token has to be followed by a separator, not run into prose. For the deferral and redirection wordings the parser recognises, you get a `[WARN]` naming the line and which reading it took. **Be aware what that recognition is:** a word list, not an understanding. An unusual phrasing — `postponed`, `waiting on design`, `tracked in #200`, `storybook covers it` — is read as a plain denial and skips capture **with no warning at all**. That is a known limitation of the current implementation, not a judgment about your plan, and it is why the `N/A — <why the surface is absent>` form is worth preferring over a creative one.
+
+**The same rule applies inside a qualifier on the label.** If you write
+`**Visual-walk (TBD):** N/A` or `**Visual-walk (see Figma):** N/A`, the deferral or redirection
+counts exactly as it would in the reason — the heading keeps forcing, and you get the same
+`[WARN]`. A qualifier that carries no such word is fine and reads normally
+(`**Visual-walk** *(UI only)*: N/A`, `**Visual-walk (post-merge):** N/A — backend only`).
+
+Prefer the em-dash form, `**Visual-walk:** N/A — <reason>`.
 
 ## The moved gate (D1 prototype-first path)
 

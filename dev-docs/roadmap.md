@@ -1083,7 +1083,8 @@ output-contract change for both extractors, so it wants its own pin either way.
 
 ### An author-facing example block for the Visual-walk convention (2026-10-04, v1.62.0's UX lens)
 
-**Surfaces when:** `skills/plan-discipline/SKILL.md` field 8 is next edited.
+**Surfaces when:** `skills/plan-discipline/SKILL.md` § "Visual-walk: the N/A convention"
+(hoisted out of field 8 in v1.62.0) is next edited.
 
 v1.62.0 restructured that field so the sanctioned shape leads and the four non-denials are
 a bullet list rather than four clauses of one paragraph — the readability half of the
@@ -1094,6 +1095,165 @@ is the one that earns an example even though every sibling field is prose-only.
 Deferred because it is an information-architecture change to the whole field list (a fenced
 block in one of nine prose items reads as an accident), not a one-line edit. Pair it with
 whoever next revisits that list.
+
+### The `walk_extract` import should fail CLOSED like its sibling five lines below (2026-10-05, v1.62.0's staff-engineer lens)
+
+**Surfaces when:** `visual-significance.py`'s import block is next touched. **The LOUD half
+shipped in v1.62.0; the fail-CLOSED decision is deferred.**
+
+**Measured.** With `walk_extract` unimportable (a partial install), a plan declaring
+`**Visual-walk:**` with one assertion returned `visual_significant: false`, `override: null`,
+**exit 0, and zero signals** — no hint that the plan had not been read at all. § Consistency
+discipline item 1 verbatim, on the dangerous polarity, inside a `sensitivePaths` gate.
+
+**The asymmetry was self-documenting, which is what makes this worth an entry.** The
+`file_patterns` import *five lines below* already captures its exception and produces a loud
+**fail-CLOSED** verdict, and its comment gives this exact reason: "this script's only caller
+treats a crash as `visual_significant: false` — a FAIL-OPEN skip of the very gate this file
+exists to enforce." The sibling import never got the same treatment, and nobody noticed
+because both are `# pragma: no cover` defensive blocks.
+
+**What v1.62.0 did:** captured the exception and appended a `[WARN]` saying the plan was NOT
+read, that no block can force or suppress on this run, and that a `false` verdict therefore
+means "I could not look" rather than "the plan declared nothing" — the FB-0082 distinction.
+Pinned by `8p`, paired against the healthy path so the warning cannot be emitted
+unconditionally.
+
+**What is left, and why it is a decision rather than a fix:** making it fail-CLOSED changes
+the verdict a broken install produces — from `false` to forcing — which is the safe polarity
+but is a behaviour change on a pre-existing surface that this release only touched by adding
+`na_near_miss` to the same `except`. Taking it needs its own criterion and its own eval for
+the forced-on-broken-install case. **Shape:** mirror `_PATTERNS_IMPORT_ERROR` exactly —
+same capture, same loud verdict, same placement — so the two siblings read identically and
+neither can drift again.
+
+**Deletion criterion:** delete when a run with an unimportable `walk_extract` cannot produce
+a non-forcing verdict, pinned by an eval over a mirrored lib dir (the `8p` harness already
+builds one, so the fixture cost is zero).
+
+### A held-out-vocabulary leak corpus for the denial guard — the table cannot see leak #5 (2026-10-05, v1.62.0's push-further + design-engineer lenses)
+
+**Surfaces when:** the denial guard's marker lists are next touched, or the polarity
+inversion below lands. **Filed, not fixed.** Pairs with the inversion entry below; the
+inversion is the fix, this is the instrument that would have *measured* it.
+
+**The table is, to the letter, back in the state its own comment diagnoses.** Every one of
+the 39 reject rows hits a marker the lists already contain. Round 4's comment says of its 22
+new rows that "they are the ones that share no token with the pre-fix regex, which is the
+only kind of row that could have caught it" — true retrospectively, and that is exactly the
+problem: relative to the **current** regex there are now zero such rows. § Consistency
+discipline item 4's new corollary (FB-0136) names this shape.
+
+**Measured, two lenses independently, one pass each.** 22 of 29 hand-written denial-shaped
+tails suppress, all with `na_near_miss() == None` — i.e. **silently**, the failure mode round
+4 just closed for parentheticals. The sharpest subset is lemma-siblings of words already
+listed, which is the `deferred` shape over again rather than a new class:
+
+| listed marker | sibling that leaks |
+|---|---|
+| `awaiting`, `blocked\s+on` | `waiting on design` |
+| `coming` | `forthcoming`, `upcoming` |
+| `follow-?ups?` | `follows in PR 2` |
+| `next\s+pass` | `second pass` |
+| `documented\s+in` | `tracked in #200` |
+| `recording` | `screencast in the PR body` |
+| `once\s` | `when the API lands` |
+
+Plus, with no sibling at all: `postponed`, `on hold`, `parked`, `shelved`,
+`after the design review`, `needs design input`, `storybook covers it`,
+`snapshot tests cover this`, `Chromatic diffs it`, `Loom attached`, `demo attached`,
+`comps in the ticket`, `sketch in Notion`, `linked below`, `in the PR description`,
+`next sprint`, `UI is behind a flag`.
+
+**Deliberately NOT fixed by adding these tokens**, and the entry exists partly to stop that:
+`walk_extract.py`'s own comment forbids it, four leaks in four versions is the polarity
+finding, and a fifth vocabulary round would buy another release of false confidence. The
+residual risk is **accepted** for now on measured grounds: the file-pattern floor catches
+every one of them on any diff that touches a pattern-matching file (verified — a declared N/A
+plus a real render delta on a `uiFilePatterns` file still returns `true`), so the live
+exposure is the *intersection* of an unlisted phrasing **and** a UI file outside the pattern.
+
+**Shape:** `test_na_known_leaks_blacklist_polarity`, ~25 lines, modelled on
+`test_na_known_limitation_issue_redirection` — seeded with the spellings above and asserted
+in the **LEAK** direction (`heading_declares_na(...) is True`), with a comment stating these
+are the measured cost of the blacklist and MUST flip when the inversion lands. Three
+properties the current table lacks: the leak set becomes a number instead of prose in a
+comment; the test goes red the moment the inversion ships, forcing re-classification rather
+than silent carry; and it is the first row-set in that file's history not sourced from the
+regex it tests. Pair it with an assertion that the set is **non-empty**, so deleting rows
+cannot green it (item 3).
+
+**Deletion criterion:** delete when the inversion has landed and this corpus asserts
+non-suppression instead — i.e. when the file contains a row-set whose provenance is author
+phrasing rather than the regex.
+
+### `uiFilePatterns` as an allow-list is the last remaining suppression lever (2026-10-05, v1.62.0's design-engineer lens)
+
+**Surfaces when:** `uiFilePatterns` / `visualFilePatterns` is narrowed, or a new browser-UI
+file is added to this repo. **Filed, not fixed; the cheap half WAS taken in v1.62.0.**
+
+**Measured:** `A plugins/flow/skills/verify-build/lib/new-overlay.html` under flow's own
+config yields `visual_significant: false` **with no plan involved at all**, because flow's
+`uiFilePatterns` names four specific files. The same path under the built-in
+`DEFAULT_UI_PATTERN` yields `true`. So this is not a guard leak — it is the floor's declared
+scope, and this repo narrowed it deliberately (a repo-wide extension match would make every
+docs PR read as a UI change).
+
+**Severity, stated rather than hedged: FOLLOW-UP, and the parenthetical fix did not change it
+— only its prominence.** Unlike the four leaks already fixed, this one is **not
+plan-authorable**: reaching it requires editing `flow.config.json`, a reviewable diff on a
+`sensitivePaths`-shaped file, not a parenthetical nobody reads. What changed is that it is now
+the only lever left. v1.62.0 took the cheap half — the suppressing floor now names the pattern
+that decided it and says a file outside it is not examined (`8o`, paired with the forcing
+branch) — so the silent version of this is gone even though the hole is not.
+
+**Shape, and it is NOT the polarity inversion:** a locality heuristic — *did this diff add a
+file the pattern does not match, in a directory that already contains pattern-matching
+files?* Fully inside the predicate's declared scope, and it would have caught the
+`new-overlay.html` probe with no allow-list maintenance. Deferred because a new heuristic
+brings its own false-positive profile and deserves its own eval matrix rather than riding on
+a suppression-hole fix.
+
+### `/flow:ship`'s two fallback readers discard `visual_signals` (2026-10-05, v1.62.0's design-engineer lens)
+
+**Surfaces when:** `skills/ship/SKILL.md`'s §5c or §7a visual-significance calls are next
+touched. **Filed, not fixed — it is another skill's surface and this PR does not own it.**
+
+Both sites run `python3 "$VS" … 2>/dev/null | jq -r '.visual_significant // false'`, so every
+explanatory signal is thrown away with stderr. Mixed rather than simply bad:
+`/flow:verify-build` §2c `cat`s the full JSON, so on the normal path the near-miss, the
+contradiction and the two-block warnings all reach the transcript. But ship's **no-buffer**
+path — spike mode, or a short-circuited verify-build, i.e. precisely the degraded runs — keeps
+only the boolean. The two-block suppression is visible *only* via its `[WARN]`, so on that
+path a live suppression goes unexplained.
+
+Worth noting where these signals actually live: no **rendered** surface shows them
+(`render-report.py` never reads `visual_signals`); their human-facing home is a transcript,
+and their only structured consumer is the forked skip-auditor's prompt — which is why they are
+classified rather than quoted.
+
+**Shape:** capture to a variable and `echo` `.visual_signals[]` beside the verdict, as §2c
+already does. **Deletion criterion:** delete when a ship run on the no-buffer path prints the
+signals, pinned by an eval over a synthetic engine output.
+
+### The bare `**Visual-walk:**` arm explains nothing, and it is the least-evidenced reading (2026-10-05, v1.62.0's UX lens)
+
+**Surfaces when:** `visual-significance.py`'s `block_count >= 1` arm is next touched.
+**Filed, not fixed — a new signal on an arm this PR did not otherwise change.**
+
+Measured: a bare block emits only `plan declares a Visual-walk block → forces
+visually-significant`. No line number, no statement of the interpretation ("a visual surface
+whose states I am not enumerating"), no note that §5a will capture a launch state. Meanwhile
+`plan.md` records that this shape has **zero instances** in flow's plan history and the
+confidence is MEDIUM — so the least-evidenced reading in the whole predicate is the one arm
+that declines to explain itself, against this file's own stated discipline that every decision
+is recorded. The other two non-forcing arms and both forcing arms now all name a line and a
+reason; this one is the outlier.
+
+Related, same altitude: on `uiSurface:false` all three forcing-arm warnings still tell the
+author to edit their heading, on a project where no heading changes the verdict. Suppressing
+the *remedy* clause (keeping the `why`) when `not uis` would be right, but it is a third
+conditional in copy that already carries two — hence deferred together with the above.
 
 ### The denial guard is a BLACKLIST on the dangerous side — invert the polarity (2026-10-04, v1.62.0's push-further + design-engineer lenses)
 

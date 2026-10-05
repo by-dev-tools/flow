@@ -44,7 +44,8 @@ Contract:
                       set and the deferral/redirection exclusions have ONE
                       definition, in `walk_extract.heading_declares_na`; the
                       author-facing statement of the convention is
-                      `skills/plan-discipline/SKILL.md` field 8>,
+                      `skills/plan-discipline/SKILL.md` § "Visual-walk: the N/A
+                      convention">,
       "all_demoted": <true iff block_count > 0 but every one is qualified
                       shipped/merged/demoted — no active block>,
       "warnings": ["..."]

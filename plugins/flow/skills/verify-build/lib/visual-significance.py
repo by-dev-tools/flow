@@ -77,10 +77,27 @@ try:
     from walk_extract import (  # type: ignore
         extract_block, heading_declares_na, na_near_miss,
     )
-except Exception:  # pragma: no cover - defensive; walk_extract ships alongside
+except Exception as _wexc:  # pragma: no cover - defensive; walk_extract ships alongside
+    # CAPTURED, not swallowed. This block used to null the three names and say nothing,
+    # so a partial install made the ENTIRE plan-override path vanish silently: measured,
+    # a plan declaring `**Visual-walk:**` with one assertion returned
+    # `visual_significant: false`, `override: null`, exit 0, and ZERO signals — no hint
+    # that the plan had not been read. That is § Consistency discipline item 1 on the
+    # dangerous polarity, inside a `sensitivePaths` gate, and the asymmetry was
+    # self-documenting: the `file_patterns` import immediately below already captures
+    # its exception and fails CLOSED, with a comment giving this exact reason
+    # (/flow:staff-review, staff-engineer lens).
+    #
+    # This makes it LOUD, which is the cheap half. Making it fail-CLOSED like its
+    # sibling changes the verdict a broken install produces and is a decision in its own
+    # right — filed in `dev-docs/roadmap.md` § Next rather than taken here, because the
+    # import is pre-existing and this release only added `na_near_miss` to it.
+    _WALK_IMPORT_ERROR = _wexc
     extract_block = None
     heading_declares_na = None
     na_near_miss = None
+else:
+    _WALK_IMPORT_ERROR = None
 
 # Pattern resolution lives in file_patterns (FB-0079) — ONE definition of the
 # visualFilePatterns → uiFilePatterns → default chain, shared with
@@ -363,6 +380,17 @@ def main(argv):
     # knob produced this scoping.
     visual_re, visual_src, pat_warnings = compile_for(cfg, VISUAL)
     signals.extend(pat_warnings)
+    if _WALK_IMPORT_ERROR is not None:
+        # Named as a BLIND SPOT, not a style note: with the parser absent, no plan can
+        # force, suppress, or explain anything, so a `false` verdict here means "I could
+        # not look" rather than "I looked and found nothing" — the FB-0082 distinction.
+        signals.append(
+            "[WARN] the shared walk parser could not be imported (%s: %s), so the plan "
+            "was NOT read at all: no Visual-walk block can force, suppress, or report a "
+            "near miss on this run. A `false` verdict below therefore means I COULD NOT "
+            "LOOK, not that the plan declared nothing. Reinstall the flow plugin."
+            % (type(_WALK_IMPORT_ERROR).__name__, _WALK_IMPORT_ERROR)
+        )
     asset_pat = args.asset_patterns or DEFAULT_ASSET_PATTERN
     try:
         asset_re = re.compile(asset_pat)
@@ -388,9 +416,8 @@ def main(argv):
     # path above rather than invented a second time.
     forced = ("This change is therefore treated as visually significant."
               if uis else
-              "That reading would make this change visually significant, except that "
-              "this project declares no UI surface (uiSurface:false), which still "
-              "wins.")
+              "This project declares no UI surface (uiSurface:false), so the verdict "
+              "stays not-significant regardless.")
     if args.flag_significant:
         override = "agent-flag"
         reason = args.flag_reason or "(no reason given)"
@@ -465,11 +492,13 @@ def main(argv):
                 # mistake, and this release's own history doc argues against it two
                 # paragraphs before the branch that committed it. The line number stays:
                 # it is non-forgeable and it is what replaced the quoted heading.
+                # Calm, and the shortest of the three outcomes rather than the
+                # longest. Dropping `[WARN]` was right; ALL-CAPS emphasis on a
+                # "you're fine" signal is the typographic equivalent of putting it
+                # back (/flow:staff-review, UX lens).
                 signals.append(
-                    "the active Visual-walk block at line %s DECLARES "
-                    "non-applicability and lists no assertions — NOT treating it as an "
-                    "override. This is the correct reading of an explicit N/A; omitting "
-                    "the block entirely gives the same verdict. No action needed."
+                    "Visual-walk at line %s declares N/A with no assertions — not an "
+                    "override, same verdict as omitting the block. No action needed."
                     % (blk.get("first_heading_line") or "?")
                 )
                 # DO NOT forward blk["warnings"] here, and the reason is specific to
@@ -536,16 +565,29 @@ def main(argv):
                 near = (na_near_miss(blk.get("first_heading") or "", "Visual-walk")
                         if na_near_miss is not None else None)
                 if near is not None:
+                    # The `redirects` wording describes the MECHANISM, not an intent.
+                    # It used to say "it also points at visual artifacts kept
+                    # ELSEWHERE" — which asserts the opposite of what the author wrote
+                    # for `N/A — no screenshots in this change`, `no frames needed` and
+                    # `nothing to capture`: the three phrasings `plan-discipline` itself
+                    # flags as the counter-intuitive ones people will naturally reach
+                    # for. Same defect as the outcome clause two commits back: a warning
+                    # asserting something untrue. Before this release the near miss was
+                    # silent, which was worse but at least not WRONG; naming a category
+                    # without naming the mechanism traded silence for a false imputation
+                    # on the likeliest spelling (/flow:staff-review, UX lens).
                     why = {
-                        "defers": "it also says WHEN the visual work will happen, so it "
-                                  "reads as a deferral — and a deferral means a visual "
-                                  "surface exists",
-                        "redirects": "it also points at visual artifacts kept ELSEWHERE, "
-                                     "so it reads as a redirection — and that means a "
-                                     "visual surface exists",
+                        "defers": "the reason says WHEN the visual work will happen, and "
+                                  "a thing that arrives later exists",
+                        "redirects": "the reason names a visual artifact (frames, "
+                                     "captures, screenshots, mockups, a prototype, a "
+                                     "recording), and an artifact noun is read as "
+                                     "\"those exist somewhere\" EVEN WHEN YOU NEGATE IT "
+                                     "— this is the documented counter-intuitive case, "
+                                     "see plan-discipline's N/A-convention section",
                         "unseparated": "the denial token runs straight into prose "
                                        "instead of ending the heading or being followed "
-                                       "by a separator",
+                                       "by a separator such as `—`, `:` or `,`",
                     }[near]
                     # The REMEDY depends on whether the block also lists assertions,
                     # and conflating the two shipped a false statement. "Omit the block
@@ -559,8 +601,8 @@ def main(argv):
                     if n_items:
                         remedy = (
                             "Your %d listed assertion%s %s being used, so nothing is "
-                            "lost — but the heading's denial was not read. If you meant "
-                            "there is no visual surface, remove the assertions as well; "
+                            "lost. If you meant there is no visual surface, remove the "
+                            "assertions too and write `**Visual-walk:** N/A — <reason>`; "
                             "if the assertions are what you meant, drop the denial from "
                             "the heading."
                             % (n_items, "" if n_items == 1 else "s",
@@ -570,8 +612,9 @@ def main(argv):
                         remedy = (
                             "If you meant there is no visual surface, write "
                             "`**Visual-walk:** N/A — <reason>` with a reason that states "
-                            "WHY rather than when or where, or omit the block entirely "
-                            "— with no assertions listed, both give the same verdict."
+                            "WHY rather than when or where. You have no assertions "
+                            "listed, so omitting the block entirely gives the same "
+                            "verdict."
                         )
                     signals.append(
                         "[WARN] the active Visual-walk heading at line %s LOOKS like a "
@@ -581,11 +624,12 @@ def main(argv):
                 if heading_declares_na is not None and heading_declares_na(
                         blk.get("first_heading") or "", "Visual-walk"):
                     signals.append(
-                        "[WARN] the active Visual-walk heading declares "
+                        "[WARN] the active Visual-walk heading at line %s declares "
                         "non-applicability but the block LISTS %d %s — the "
                         "assertions win. %s Remove the assertions if the N/A is what "
                         "you meant, or drop the N/A if the assertions are."
-                        % (n_items, "assertion" if n_items == 1 else "assertions",
+                        % (blk.get("first_heading_line") or "?",
+                           n_items, "assertion" if n_items == 1 else "assertions",
                            forced)
                     )
 
@@ -661,7 +705,21 @@ def main(argv):
         return emit(True, f"override ({override}) forces visually-significant")
 
     if not matched:
-        signals.append("diff touches no UI or asset files")
+        # Name the pattern that DECIDED this, mirroring the forcing branch above.
+        # "diff touches no UI or asset files" reads as a measurement of the diff when
+        # it is actually a decision by an allow-list — and on a project that has
+        # narrowed `uiFilePatterns` (flow's own names four files) a brand-new browser-UI
+        # file produces exactly this line. That is the absent-vs-no collapse (FB-0082)
+        # sitting on the SUPPRESSING polarity, which is the expensive one: this is now
+        # the last remaining way to reach a false suppression, since it is the floor
+        # every non-forcing plan arm falls through to. Making it self-describing is the
+        # cheap half of the mitigation; the structural half is the roadmap entry
+        # (/flow:staff-review, design-engineer lens).
+        signals.append(
+            f"diff touches no UI or asset files (UI pattern from {visual_src}; "
+            f"asset pattern {'from --asset-patterns' if args.asset_patterns else 'built-in default'}) — "
+            f"a file outside those patterns is NOT examined for a render delta"
+        )
         return emit(False, "no UI/asset files in the diff: not visually significant")
 
     if not content_changed:
