@@ -1,21 +1,6 @@
 # Plan
 
-## Current Focus — this branch (`conductor/audit-flow-token-efficiency`)
-
-**▶ SPIKE, EXECUTED, shipping: measured token-efficiency audit across the program's Conductor workspaces.**
-
-**Mode:** spike · **Surface:** non-visual (no UI/visual work; this is a research doc)
-
-**Research question.** Is the program's token/cost spend across Conductor workspaces productive, or is some of it wasteful — asked directly by Ben after the account started hitting rate limits.
-
-**Disposability.** No code produced. The deliverable is
-`dev-docs/research/2026-10-efficiency-audit.md` + its `dev-docs/README.md` index row +
-`dev-docs/history/2026-10-04-token-efficiency-audit.md`; nothing here gates or is gated by any
-other PR in flight. See "Recently Completed" below for the one-line summary + recommendation.
-
----
-
-## Current Focus — other active branches (retained below, not this PR's)
+## Current Focus
 
 **▶ EXECUTED, shipping (this branch `conductor/mobile-option-1-preview-url`, version claimed
 mechanically at **v1.60.0** in both manifests, no new FB). Plan APPROVED with all four open calls
@@ -31,8 +16,10 @@ option 1.
 Serve the two ephemeral HTML artifacts at a sign-in-gated URL a phone can open, as an optional
 host adapter, without ever removing the honest local line PR A shipped.** Spec:
 `dev-docs/research/2026-10-mobile-workflow.md` § 8 option 1 (merged as #175, point-in-time) and
-roadmap **D7**, which now carries Ben's measured iOS results. **Stacked on PR A (#178)** — it
-extends `skills/ship/lib/artifact-handoff.py`, which #178 adds. Rebase onto `main` once #178 merges.
+roadmap **D7**, which now carries Ben's measured iOS results. It extends
+`skills/ship/lib/artifact-handoff.py`, which PR A shipped; PR A **merged as #178** on 2026-10-05 and
+this branch has been rebased onto `main`, so the PR now targets `main` directly and its diff is this
+work alone.
 
 **Mode:** feature · **Surface:** non-visual (see Decision 0) · **Pre-execution gate:** plan
 
@@ -274,6 +261,21 @@ only open it where this pipeline ran: `.flow/report.html`.
    named residual instead.
 
 ---
+
+**▶ SPIKE, EXECUTED, shipping: measured token-efficiency audit across the program's Conductor workspaces.**
+
+**Mode:** spike · **Surface:** non-visual (no UI/visual work; this is a research doc)
+
+**Research question.** Is the program's token/cost spend across Conductor workspaces productive, or is some of it wasteful — asked directly by Ben after the account started hitting rate limits.
+
+**Disposability.** No code produced. The deliverable is
+`dev-docs/research/2026-10-efficiency-audit.md` + its `dev-docs/README.md` index row +
+`dev-docs/history/2026-10-04-token-efficiency-audit.md`; nothing here gates or is gated by any
+other PR in flight. See "Recently Completed" below for the one-line summary + recommendation.
+
+---
+
+## Current Focus — other active branches (retained below, not this PR's)
 
 **▶ EXECUTED, shipping (this branch `conductor/mobile-options-1-3-hand-off-pr-images-preview-url`,
 version claimed mechanically at **v1.59.0** in `plugins/flow/.claude-plugin/plugin.json`, no new FB).
