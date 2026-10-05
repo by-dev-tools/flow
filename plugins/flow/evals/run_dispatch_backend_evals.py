@@ -278,13 +278,15 @@ for f in sorted((PLUGIN / "lib").glob("*.py")):
     txt = f.read_text(encoding="utf-8")
     for lit in HOST_LITERALS:
         check(f"{f.name} carries no host/roster literal {lit!r}", lit.lower() not in txt.lower())
-# 4 SKILL.md + 2 skill libs (gate, handoff) + 4 shared libs in plugins/flow/lib/
+# 4 SKILL.md + 2 skill libs (gate, handoff) + 5 shared libs in plugins/flow/lib/
 # (dispatch_backend, sensitive_paths, arg_placeholders at v1.50.0/FB-0116, rule_skills at
-# v1.53.0/FB-0124). An exact count, not a floor: a floor goes green when a file is added,
-# but also stays green when a skill is deleted and another grows a second lib. Bumping it is
-# therefore the intended cost of adding a shared lib, not friction to route around.
-check("the scan covered all 11 new shipped artifacts (an empty or partial sweep is a vacuous pass)",
-      scanned == 11, str(scanned))
+# v1.53.0/FB-0124, preview_backend at v1.60.0). An exact count, not a floor: a floor goes
+# green when a file is added, but also stays green when a skill is deleted and another grows
+# a second lib. Bumping it is therefore the intended cost of adding a shared lib, not friction
+# to route around — and it worked: `preview_backend.py` landed in this directory and this line
+# is what noticed, which is also why that file needs no host-literal check of its own.
+check("the scan covered all 12 new shipped artifacts (an empty or partial sweep is a vacuous pass)",
+      scanned == 12, str(scanned))
 # POSITIVE — without this, deleting the adapter entirely would turn every line above green.
 for name in SUITE:
     txt = (PLUGIN / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
@@ -292,6 +294,29 @@ for name in SUITE:
           "dispatch_backend.py" in txt or "sensitive_paths.py" in txt)
 check("POSITIVE: the adapter still defines all five verbs",
       set(D.VERBS) == {"listWorkers", "createWorker", "sendMessage", "workerStatus", "selfSession"})
+
+print("\n§7b  the render extraction's one behavioural delta, measured")
+# Extracting `render_template` (v1.60.0) made `render` refuse an unexpanded `~/`, which
+# it previously passed STRAIGHT THROUGH while only `validate` flagged it. That is the
+# extraction's sole behaviour change and nothing pinned it: §7's `_TILDE` fixture
+# exercises `validate` alone. Safe (a consumer with `~/` was already told the template
+# was invalid, and was already getting a literal unexpanded tilde at dispatch), but
+# "safe and unmeasured" is how the next one ships unnoticed.
+_tilde_b = {"listWorkers": "cli list --home ~/x"}
+_a, _e = D.render(_tilde_b, "listWorkers", {})
+check("render REFUSES an unexpanded ~/ (not just validate)", _a is None and bool(_e))
+check("...and says it reaches the backend literally rather than expanding",
+      "expanding" in (_e or ""), str(_e)[:120])
+# PAIRED: an otherwise-identical template without the tilde still renders, so the
+# refusal is about the tilde and not about the verb.
+_a2, _e2 = D.render({"listWorkers": "cli list --home /abs/x"}, "listWorkers", {})
+check("PAIRED: the same template with an absolute path still renders",
+      _a2 == ["cli", "list", "--home", "/abs/x"], str(_a2))
+# And the shared policy keeps each adapter's own remediation (the hint params).
+_a3, _e3 = D.render({"sendMessage": "cli send {message}"}, "sendMessage",
+                    {"session": "s", "messageFile": "/p"})
+check("dispatch's unknown-placeholder refusal still teaches the {message} rule",
+      "{message}" in (_e3 or "") and "PATH" in (_e3 or ""), str(_e3)[:140])
 
 print("\n§8  malformed input degrades without crashing")
 for verb, vals in (("nope", {}), ("sendMessage", {}), ("sendMessage", {"session": "a"})):

@@ -1,6 +1,266 @@
 # Plan
 
-## Current Focus — this branch (`conductor/audit-flow-token-efficiency`)
+## Current Focus
+
+**▶ EXECUTED, shipping (this branch `conductor/mobile-option-1-preview-url`, version claimed
+mechanically at **v1.60.0** in both manifests, no new FB). Plan APPROVED with all four open calls
+answered: (1) non-visual, classic plan gate; (2) inline chat images ship SEPARATELY — now a roadmap
+§ Next item with finding 5 as its evidence, and the orchestrator is recommending it to Ben as the
+next mobile item; (3) publish and leave, with the access statement placed **next to the link**, not
+only in docs; (4) `/flow:doctor` gets a WARN. **Plus one orchestrator addition that mattered:** flow's
+own `flow.config.json` must SET `previewBackend`, or we ship a feature that is off everywhere and
+never exercised — the FB-0085 shape. Vendor names stay out of plugin artifacts; `flow.config.json`
+is project config, so naming one there is fine. The `dispatchBackend` unset gap in this repo is
+recorded in § Next and deliberately NOT fixed here. Original gate framing: PR B of two — mobile
+option 1.
+Serve the two ephemeral HTML artifacts at a sign-in-gated URL a phone can open, as an optional
+host adapter, without ever removing the honest local line PR A shipped.** Spec:
+`dev-docs/research/2026-10-mobile-workflow.md` § 8 option 1 (merged as #175, point-in-time) and
+roadmap **D7**, which now carries Ben's measured iOS results. It extends
+`skills/ship/lib/artifact-handoff.py`, which PR A shipped; PR A **merged as #178** on 2026-10-05 and
+this branch has been rebased onto `main`, so the PR now targets `main` directly and its diff is this
+work alone.
+
+**Mode:** feature · **Surface:** non-visual (see Decision 0) · **Pre-execution gate:** plan
+
+### What is measured, and what is still inference
+
+PR A refused to build against assumptions about iOS. Those answers now exist, so this plan is built
+on them — and on the CLI's own `--help`, which is primary source for the mechanism.
+
+| Fact | Source | Consequence for this plan |
+|---|---|---|
+| A preview URL tapped in the iOS chat opens in Safari, renders, and runs its JS | Ben, measured 2026-10-04 | option 1 works at all — the premise holds |
+| `raw.githubusercontent.com` image links open from iOS | Ben, measured | PR A's option 2 confirmed on the client that motivated it |
+| A markdown image of a workspace-local file **renders inline in the iOS chat** | Ben, measured | a still frame can reach the phone with **no server and no public repo** — Decision 5 |
+| A path in a **code span** is not tappable on iOS | Ben, measured | Decision 4: the URL must NOT be a code span — the opposite treatment from PR A's local path |
+| Served HTML without a charset header → Safari falls back to Latin-1 (`✓` → `âœ“`) | Ben, measured | already fixed in PR A for the prototype; Decision 8 confirms the served report too |
+| **One preview URL per workspace**; "setting a different port keeps the URL" | `conductor preview set --help`, primary | **Decision 2 — the constraint that reshapes this feature** |
+| "Something must be listening on the port inside the workspace" | same | Decision 6: a background server is part of the mechanism, not an implementation detail |
+| "The URL stops serving while the workspace sleeps… deleted when the workspace is archived" | same, and independently measured by the touch worker | Decision 3: a live-looking link can be dead. The honest local line must survive |
+| "Viewers sign in with Conductor and need read access to the workspace" | same | Decision 7: not public, but broader and longer-lived than the moment of approval |
+
+**Inference, labelled as such:** that an *authenticated* viewer with read access sees the page as
+the producing workspace serves it. Not tested by anyone — Ben's own test was from his own account on
+his own workspace. If a reviewer without workspace access is ever the audience, this feature does
+nothing for them, and the local line is all they get. That is one reason Decision 3 is not optional.
+
+### Decision 0 — `Surface: non-visual`, so the pre-execution gate is the plan gate
+
+Same shape as PR A: the artifacts this changes are a chat message and a PR-body line, so the plan can
+carry their exact bytes, and does (below). The honest counter-argument is the same too — this changes
+what a human *looks at*. **Recommendation: classic plan gate. Confidence: medium-high.** Say
+"prototype it" and this routes through `/flow:prototype` instead with nothing else changing.
+
+### Decision 1 — a `previewBackend` host adapter, NOT a hardcoded `conductor preview`
+
+**Recommendation:** a new `previewBackend` config slot modelled directly on the existing
+`dispatchBackend` — command templates the *project* supplies, with a **closed** placeholder
+vocabulary, validated at load and refusing rather than escaping. Default **unset → the feature is
+off and today's behaviour is byte-identical**. **Confidence: high.**
+
+**Why:** flow's quality bar forbids project-specific tokens in plugin artifacts, and `conductor` is
+one vendor's CLI. `dispatchBackend` already solved exactly this problem for the orchestrator suite —
+"the plugin ships the workflow, your config supplies the mechanics" — and its engine
+(`plugins/flow/lib/dispatch_backend.py`) already has the validate/render machinery, the closed-vocabulary
+hard error, and the "untrusted text travels as a PATH, never a shell word" rule (FB-0108). Reusing
+that shape means no host CLI is named anywhere in the plugin, and a consumer outside Conductor is not
+carrying a dead dependency — they simply never set the slot.
+
+**Proposed verbs (closed, three):** `serve` (start a server for a directory on a port), `publish`
+(share that port, print the URL), `unpublish`. **Proposed placeholders (closed):** `{dir}`, `{port}`,
+`{file}`. Deliberately **no `{url}`** — the URL is the adapter's *output*, parsed from `publish`'s
+stdout, never something a template interpolates.
+
+**Alternative considered and rejected:** a single `previewCmd` string like `typecheckCmd`. Rejected
+because this needs *three* operations with an output to parse and a teardown, and because a one-shot
+string gives nowhere to put the port/dir contract — exactly the "a count the author has to remember"
+shape `dispatchBackend`'s closed vocabulary exists to remove.
+
+### Decision 2 — ONE URL per workspace, so serve ONE directory containing both artifacts
+
+**This is the constraint that reshapes option 1**, and it is not in the research doc or in Ben's
+results — it comes from the CLI's own help: *"Each workspace has one preview URL; setting a different
+port keeps the URL."*
+
+So the obvious design — serve the prototype on one port and the walkthrough on another, handing out
+two stable links — **cannot work**. Re-pointing the preview to a second port silently breaks the
+first link while leaving it looking valid, which is the exact defect class PR A exists to remove.
+
+**Recommendation:** serve **one** directory (`$FLOW_SCRATCH/preview/`), symlink-or-copy both artifacts
+into it, and hand out `<preview URL>/<file>.html`. One port, one URL, two stable paths under it.
+**Confidence: high** on the constraint (primary source), **medium-high** on this being the best
+response — the alternative is "only ever one artifact is live", which is simpler but means a gate-1
+prototype link dies the moment a ship renders a walkthrough.
+
+### Decision 3 — the URL is ADDITIVE. The honest local line never goes away
+
+**Recommendation:** `artifact-handoff.py local-line` gains an optional `--url` and emits **both** —
+the URL first (it is the actionable thing), then the local path and its property. Never a
+replacement. **Confidence: high.**
+
+**Why:** measured, twice — the preview's backend dies when the workspace sleeps while the URL
+registration survives. A link that looks live and is dead is strictly worse than a path that is
+honest about being local, and it is the same failure PR A removed. The local line is the
+process-independent floor; the URL is the convenience on top.
+
+### Decision 4 — the URL is a bare autolink, NOT a code span
+
+**Recommendation:** emit the URL as a plain markdown autolink. **Confidence: high.**
+
+**Why:** measured — iOS renders a code span as monospace text, not a link, so a code-spanned URL is
+untappable on the exact client this whole workstream is for. Note this is the **opposite** treatment
+from PR A's local path, deliberately and for the same reason: there, monospace is the honest signal
+that the thing *cannot* be opened; here, the thing *can* be, so it must look like it. **The rule is
+"render it the way the reader can act on it," and the two cases differ because the reader's available
+action differs.** Worth stating in the skill so a future reader does not "harmonise" them.
+
+### Decision 5 — inline chat images for stills, as the only process-independent route
+
+**Recommendation:** at gate 1, when a frame of the prototype exists, also embed it as a markdown
+image in the chat message. **Confidence: medium — this is Open call 2.**
+
+**Why it is tempting:** it is the single finding with no moving parts — no server, no public repo, no
+process that can die. **Why it is only medium:** gate 1's message carries a hard ~100-word budget
+precisely because the complaint was *"the messages I come to are too long and I just end up approving
+anyway"*, and an image is not free attention. It also needs a captured frame, which `/flow:prototype`
+does not currently produce (Step 7's frame capture is explicitly optional).
+
+### Decision 6 — who starts the server, and what stops it
+
+**Recommendation:** the `serve` verb is the project's own template (so `nohup … http.server … &` is
+*their* line, not flow's), flow checks the port is listening before publishing, and **flow does not
+kill the server** — it is the workspace's, and a ship may be followed by a human reading the page
+minutes later. `unpublish` is offered as a verb but called only by `/flow:post-merge`. **Confidence:
+medium-high.** The honest residual: an orphaned server per workspace, which is cheap but real.
+
+### Decision 7 — the exposure is wider and longer-lived than the approval moment
+
+The URL is not public, but it is reachable by **anyone with workspace read access**, and it persists
+until the workspace sleeps or is archived — not just while the human is looking.
+
+**Recommendation:** state it in the hand-off (one clause: who can open this), and do **not** try to
+time-box it. **Confidence: medium — this is Open call 3**, because the alternative (publish, then
+`unpublish` as soon as approval is captured) is genuinely defensible and I do not think I should pick
+it unilaterally: it trades a narrower window for a link that dies while the human is still reading.
+
+### Decision 8 — UTF-8 is already handled, and this verifies rather than assumes it
+
+PR A made `<meta charset="utf-8">` a requirement for the agent-authored prototype, and
+`render-report.py` already emits it. Serving them is what makes the charset load-bearing, so this PR
+**asserts** both rather than re-fixing them. **Confidence: high.**
+
+### The hand-off, verbatim — this is the artifact to approve
+
+Gate 1 (prototype served, inside the ~100-word budget):
+
+```markdown
+Prototype: https://preview-abc123.conductor.build/prototype.presented.html — open it on any device
+you're signed in to Conductor on. It stops working when this workspace sleeps; if it does, the file
+is at `/abs/path/.flow/prototypes/<slug>/prototype.presented.html`, openable only where this session
+ran. The small floating comment dock is flow's, not the design.
+```
+
+Merge gate (walkthrough served):
+
+```markdown
+Walkthrough: https://preview-abc123.conductor.build/report.html — open it on any device you're
+signed in to Conductor on, with read access to this workspace. It stops serving when the workspace
+sleeps; the file itself is at `.flow/report.html`, openable only where this pipeline ran.
+```
+
+And unchanged from PR A when the slot is unset or the adapter fails:
+
+```markdown
+Walkthrough — a file on one machine's disk, not committed and not reachable from this page. You can
+only open it where this pipeline ran: `.flow/report.html`.
+```
+
+### Spec-walk
+
+- [x] **With `previewBackend` unset, every hand-off is byte-identical to PR A's.** The default path
+      must not move at all. *Verify:* render both kinds with no slot and diff against PR A's
+      expected strings. *Pinned by:* `run_preview_backend_evals.py::test_unset_is_byte_identical`.
+- [x] **An unknown placeholder is a hard error at load, not a failure at publish time.** *Verify:*
+      paired — a template using `{url}` or `{branch}` is refused by `validate`, and the three legal
+      placeholders are accepted. *Pinned by:* `run_preview_backend_evals.py::test_closed_vocabulary`, mirroring
+      `run_dispatch_backend_evals.py`'s shape.
+- [x] **No host CLI is named anywhere in a plugin artifact.** *Verify:* `git grep -n 'conductor'
+      plugins/flow/` returns only doc/example occurrences inside a `previewBackend` *example* value,
+      never an executable line. *Pinned by:* `run_preview_backend_evals.py::test_no_vendor_token_in_plugin` — paired with the
+      positive that the example value IS present in the schema, so the check cannot pass by deleting
+      the documentation.
+- [x] **A dead or unreachable adapter degrades to PR A's line and says why, never to a broken URL.**
+      *Verify:* three arms — slot unset, `serve` exits non-zero, `publish` prints no URL — each
+      yields the honest local line plus one stated reason, and zero `http` strings.
+      *Pinned by:* `run_preview_backend_evals.py::test_degrades_loudly`.
+- [x] **The emitted URL is an autolink, never a code span**, and the local path still IS a code span.
+      *Verify:* assert the URL is not wrapped in backticks and the path is — the two treatments are
+      deliberately opposite (Decision 4). *Pinned by:* `run_preview_backend_evals.py::test_url_is_tappable_path_is_not`.
+- [x] **One URL serves both artifacts.** *Verify:* the serve directory contains both files and the
+      two hand-offs differ only in the trailing filename; re-publishing for the second artifact does
+      not change the URL. *Pinned by:* `run_preview_backend_evals.py::test_one_url_two_paths`.
+- [x] **Flow never publishes a port nothing is listening on.** *Verify:* with a template whose
+      `serve` is a no-op, `publish` is not invoked and the reason is stated. *Pinned by:*
+      `run_preview_backend_evals.py::test_listen_check_precedes_publish` — validated against a known-positive (a real
+      `http.server` on a temp port) so a check that can only say "not listening" is not trusted.
+- [x] **Both served documents declare UTF-8.** *Verify:* assert the report renderer emits it and the
+      prototype skill requires it (both already true as of v1.59.0 — this asserts, it does not fix).
+      *Pinned by:* reuse `run_artifact_handoff_evals.py::test_served_html_declares_utf8`.
+- [x] **`run_preview_backend_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
+      harness↔runner join step passes — exit-code-driven, not a grep.
+- [x] **Docs reconciled:** a `dev-docs/history/` entry, roadmap D7 updated with option 1 shipped +
+      its residuals, this block flipped to EXECUTED, `changelog/v1.60.0.md`, and the new slot
+      documented in the schema (37 → 38 slots) **and** in `/flow:doctor`'s slot coverage if it
+      qualifies. *Verified by:* the dev-docs index and version-provenance CI jobs' own exit codes,
+      plus the doc-diff showing every file present.
+
+### Risks
+
+- **The adapter is a third place a shell template can go wrong**, after `dispatchBackend` and the
+  `*Cmd` slots. Mitigated by reusing the existing engine rather than writing a second one — but it is
+  still new surface in a `sensitivePaths` area.
+- **An orphaned background server per workspace** (Decision 6). Cheap, real, and stated.
+- **The feature is invisible to most consumers.** A flow user not in a Conductor cloud workspace
+  never sets the slot and sees nothing change. That is the design, but it does mean this PR's value
+  is unmeasurable outside this one host — so its evals test the *adapter contract*, not the host.
+- **`/flow:doctor` may need a check**, and adding one is scope the plan should name rather than
+  discover. Flagged in Open call 4.
+
+### Files this PR touches
+
+| Path | Change |
+|---|---|
+| `plugins/flow/lib/preview_backend.py` | **new** — adapter resolve/validate/render, modelled on `dispatch_backend.py` |
+| `plugins/flow/schema/flow.config.schema.json` | **new slot** `previewBackend` (37 → 38) |
+| `plugins/flow/skills/ship/lib/artifact-handoff.py` | `local-line` gains `--url`; emits URL + honest line |
+| `plugins/flow/skills/prototype/SKILL.md` | §8 gate-1: serve + publish, then the rendered hand-off |
+| `plugins/flow/skills/ship/SKILL.md` · `ship-spike/SKILL.md` | the walkthrough hand-off gains the served URL |
+| `plugins/flow/skills/verify-build/SKILL.md` | §5a: write the report into the served directory |
+| `plugins/flow/evals/run_preview_backend_evals.py` | **new** |
+| `.github/workflows/ci.yml` | wire the new harness |
+| `plugins/flow/.claude-plugin/plugin.json` · `.claude-plugin/marketplace.json` | 1.59.0 → **1.60.0** (**already pushed at this gate**) |
+| `dev-docs/{plan,roadmap}.md`, `dev-docs/history/…`, `changelog/v1.60.0.md` | doc reconciliation at ship |
+
+### Open calls for the human gate
+
+1. **Is PR B `Surface: non-visual`?** *Recommendation: yes, classic plan gate* (confidence
+   medium-high, Decision 0) — the artifacts are a chat line and a PR-body line, quoted verbatim above.
+2. **Do inline chat images (your finding 5) ship in PR B, or separately?** *Recommendation: separately*
+   (confidence medium, Decision 5) — it is the only process-independent route and I want it, but it
+   needs a captured frame `/flow:prototype` does not currently produce, and it spends the one budget
+   gate 1 protects. Folding it in widens this PR from "an adapter" to "an adapter plus a capture
+   path".
+3. **Publish-and-leave, or publish-then-`unpublish`-on-approval?** *Recommendation: publish and leave,
+   state who can open it* (confidence medium, Decision 7). The counter-case is real: a narrower
+   exposure window, at the cost of a link that dies while the human is still reading. I do not think
+   I should pick this one alone.
+4. **Does `/flow:doctor` get a `previewBackend` check?** *Recommendation: yes, one WARN-level check*
+   (confidence medium-high) — every other adapter slot has one, and a silently-malformed template
+   would make the feature fail open to PR A's path, which is safe but invisible. Say no and it is a
+   named residual instead.
+
+---
 
 **▶ SPIKE, EXECUTED, shipping: measured token-efficiency audit across the program's Conductor workspaces.**
 

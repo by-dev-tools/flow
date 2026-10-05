@@ -1402,10 +1402,35 @@ python3 "$TRIAGE" add-entry --kind visual-deliverable \
   >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the visual-deliverable entry was NOT recorded." >&2; exit 1; }
 ``` Because the attempt is recorded, Step 7a.5 classifies it `ask` rather than re-attempting — it becomes a question, not a silent second try. Because the walkthrough is **ephemeral/local (not committed)**, also record its local path in the PR-body handoff (the `## Flow run` table's visual row + the closing line) so the human can open it at the merge gate. **Do NOT hand-compose that line** — a hand-off that names a local path must say where that path can and cannot be opened, and must name no client (whether any given app opens a session-produced HTML file is unmeasured). Render it:
 
+**Serve it first, if this project has a preview adapter — optional, and unset is correct.**
+`previewBackend` is unset by default and that is a fully-supported state: the hand-off then names
+the local file and says where it can be opened, exactly as v1.59.0 does. When it IS configured the
+URL is **additive** — a served preview lives only as long as the process serving it, and the link can outlive that process, so a link can look live and be dead. (Measured on one host, where the
+backend dies on workspace sleep while the registration survives; the emitted line states the
+general property, not that host's policy.) The local line is the floor; the URL is the convenience
+on top.
+
+`flow_serve_preview` stages the artifact into one shared `.flow/preview/` directory, serves it,
+and composes `<url>/<file>` — **one directory because a workspace has ONE preview URL**, and
+pointing it at a second port *keeps* that URL, so publishing twice would silently re-point the
+first link while leaving it looking valid. It sets `PREVIEW_URL`/`PREVIEW_AUDIENCE` only when every
+step succeeded (artifact exists, staged, served, published, one https URL read); on any other path
+it sets nothing and the render below is byte-identical to v1.59.0.
+
+**It is SOURCED, and that is load-bearing.** Shell state does not survive between Bash tool calls,
+so a URL produced in one call cannot be read in the next — sourcing puts the whole sequence inside
+this one block by construction rather than by an instruction three skills have to remember.
+
 ```sh
 AH="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/artifact-handoff.py"; [ -f "$AH" ] || AH="plugins/flow/skills/ship/lib/artifact-handoff.py"
 RPT=$(jq -r '.verifyReportPath // ".flow/verify-report.html"' flow.config.json 2>/dev/null); [ -z "$RPT" ] && RPT=.flow/verify-report.html
-python3 "$AH" local-line --kind walkthrough --path "$RPT" || echo "⚠️ [artifact-handoff] renderer absent at $AH — write the hand-off by hand, and state that the file is NOT committed and opens only where this pipeline ran. Name no client." >&2
+SP="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/serve-preview.sh"; [ -f "$SP" ] || SP="plugins/flow/skills/ship/lib/serve-preview.sh"
+# Never let an optional convenience fail a ship: the helper always returns 0 and simply
+# leaves PREVIEW_URL empty when it cannot serve.
+[ -f "$SP" ] && { . "$SP"; flow_serve_preview "$RPT"; } || PREVIEW_URL=""
+python3 "$AH" local-line --kind walkthrough --path "$RPT" \
+  ${PREVIEW_URL:+--url "$PREVIEW_URL"} ${PREVIEW_AUDIENCE:+--audience "$PREVIEW_AUDIENCE"} \
+  || echo "⚠️ [artifact-handoff] renderer absent at $AH — write the hand-off by hand, and state that the file is NOT committed and opens only where this pipeline ran. Name no client." >&2
 ```
 
 ### 7a.5. Manifest triage — a draft PR is a last resort, not a deliverable (FB-0075)

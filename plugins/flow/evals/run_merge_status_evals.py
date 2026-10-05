@@ -266,7 +266,7 @@ def main() -> int:
         # indistinguishable from having chosen the default. Declaring it was a
         # precondition for repointing it at a one-file-per-release directory.
         # 34 -> 36 with dispatchBackend + sensitivePaths (the orchestrator suite).
-        check("schema-slot-count-37", len(props) == 37, f"slot count = {len(props)} (want 37)")
+        check("schema-slot-count-38", len(props) == 38, f"slot count = {len(props)} (want 38)")
         # And no shipped surface may contradict it. Deliberately WRAP-TOLERANT: the
         # literal is matched across newlines, because the survivor that slipped this
         # PR's first sweep was `all 30\n  slots` wrapped inside doctor/SKILL.md's

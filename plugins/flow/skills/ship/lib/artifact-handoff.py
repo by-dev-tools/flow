@@ -76,27 +76,89 @@ def die(msg: str) -> "None":
     raise SystemExit(2)
 
 
+def _audience_clause(audience: "str | None") -> str:
+    """Who can open the link, stated NEXT TO the link.
+
+    Not only in docs: the reader deciding whether to forward a URL is the one who
+    needs to know its audience, and they are reading the hand-off, not the schema.
+    Absent on purpose when the caller does not know — flow states what it was told,
+    and inventing an audience would be the unverified-claim class this file exists
+    to remove.
+    """
+    a = inline((audience or "").rstrip("."), 160)
+    return (" — %s." % a) if a else ""
+
+
 # ---------------------------------------------------------------- local-line
 
-def render_local_line(kind: str, path: str) -> str:
+def render_local_line(kind: str, path: str, url: "str | None" = None,
+                      audience: "str | None" = None) -> str:
     """One honest sentence about an uncommitted, machine-local artifact.
 
     The wording states a property of the FILE -- not committed, reachable only
     from the machine that produced it, not from this page -- so it survives
     whatever any particular client turns out to do.
+
+    `url` is ADDITIVE and never a replacement. A served preview lives only as long as the process serving it, and the link can outlive that process — measured on one host, where the
+    backend dies on workspace sleep while the URL registration survives — so a link
+    can look live and be dead. The EMITTED line states the general property and not
+    that host's policy: flow has measured one vendor, and an adapter pointed at a
+    long-lived server has no sleep behaviour to describe. That is the same rule
+    FORBIDDEN_CLIENTS enforces below, applied to hosts rather than clients. The local line is the process-independent
+    floor; the URL is the convenience on top of it, and a reader who finds the link
+    dead still has something true to act on.
+
+    The URL is emitted as a BARE AUTOLINK, never a code span — the opposite of the
+    treatment the path gets, deliberately. Measured on iOS: a code span renders as
+    monospace text and is not tappable, so a code-spanned URL is unusable on the
+    exact client this work is for.
+
+    THE RULE: render it the way the reader can act on it. Monospace is the honest
+    signal for a path that CANNOT be opened from the page; a live link is the honest
+    signal for one that can. The two treatments look inconsistent and are not — they
+    differ because the reader's available action differs. Do not "harmonise" them.
+
+    `audience` goes NEXT TO the link, not only in docs — the person deciding whether
+    to paste a URL onward is the one who needs to know who can open it.
     """
+    if url and not str(url).lower().startswith("https://"):
+        # The adapter already refuses a non-https URL; this is the second gate,
+        # because `url` can also arrive from a caller that composed it by hand.
+        sys.stderr.write(
+            "⚠️ [artifact-handoff] ignoring a non-https preview URL %r — the served page is "
+            "sign-in-gated, so an unencrypted URL would downgrade the transport carrying that "
+            "session. Emitting the local-path hand-off only.\n" % url)
+        url = None
+    clause = _audience_clause(audience)
     if kind == "walkthrough":
-        line = (
-            "Walkthrough — a file on one machine's disk, not committed and not reachable "
-            "from this page. You can only open it where this pipeline ran: %s."
-            % code_span(one_line(path, 200))
-        )
+        if url:
+            line = (
+                "Walkthrough: %s%s If that link is dead, ask for it again and it will be "
+                "re-served. The file itself is at %s, openable only where this pipeline ran."
+                % (url, clause, code_span(one_line(path, 200)))
+            )
+        else:
+            line = (
+                "Walkthrough — a file on one machine's disk, not committed and not reachable "
+                "from this page. You can only open it where this pipeline ran: %s."
+                % code_span(one_line(path, 200))
+            )
     elif kind == "prototype":
-        line = (
-            "Your prototype is a local file — it lives at %s, and you can only open it "
-            "where this session ran, not from a link. The small floating comment dock is "
-            "flow's, not the design." % code_span(one_line(path, 200))
-        )
+        if url:
+            # The dock note sits directly after the audience, because it is the only
+            # item that matters while the link WORKS; the fallback closes the line.
+            line = (
+                "Prototype: %s%s The small floating comment dock is flow's, not the design. "
+                "If that link is dead, ask for it again and it will be re-served — or open "
+                "%s, which works only where this session ran."
+                % (url, clause, code_span(one_line(path, 200)))
+            )
+        else:
+            line = (
+                "Your prototype is a local file — it lives at %s, and you can only open it "
+                "where this session ran, not from a link. The small floating comment dock is "
+                "flow's, not the design." % code_span(one_line(path, 200))
+            )
     else:
         die("unknown --kind %r (expected walkthrough|prototype)" % kind)
         return ""
@@ -107,8 +169,23 @@ def render_local_line(kind: str, path: str) -> str:
     # `python3 "$AH" local-line … || echo "⚠️ … renderer absent at $AH"`, so a
     # reworded sentence printed a false "the renderer is missing" diagnosis and no
     # hand-off at all. A warning keeps the line flowing and still says what is wrong.
+    # Scope the guard to FLOW'S OWN wording by removing the interpolated values
+    # first. Its purpose is "flow must not claim a CLIENT'S BEHAVIOUR" — whether some
+    # app opens a session-produced file is unmeasured. The two values removed here are
+    # a different kind of statement and both legitimately contain a vendor name:
+    #   · the audience is a measured ACCESS fact from project config, and "who can
+    #     open this?" has no useful answer that avoids naming the sign-in;
+    #   · the URL is a real address whose HOSTNAME is the host's, not flow's prose.
+    # Checking the interpolated line flagged both, and a warning that fires on every
+    # correctly-served hand-off is how people learn to ignore the warning — the
+    # "teaches people to ignore the gate" failure this repo names explicitly.
+    authored = line
+    if clause:
+        authored = authored.replace(clause, "")
+    if url:
+        authored = authored.replace(str(url), "")
     for name in FORBIDDEN_CLIENTS:
-        if name.lower() in line.lower():
+        if name.lower() in authored.lower():
             sys.stderr.write(
                 "⚠️ [artifact-handoff] this hand-off names a client (%r). State the "
                 "artifact's property, not a client's behaviour — whether a given app "
@@ -717,6 +794,12 @@ def main(argv) -> int:
     ll = sub.add_parser("local-line", help="hand-off line for an uncommitted local artifact")
     ll.add_argument("--kind", required=True, choices=["walkthrough", "prototype"])
     ll.add_argument("--path", required=True)
+    ll.add_argument("--url", default=None,
+                    help="ADDITIVE served URL (https only). The local path is still "
+                         "emitted, because a served preview can die while its "
+                         "registration survives.")
+    ll.add_argument("--audience", default=None,
+                    help="who can open --url, stated next to the link")
 
     fr = sub.add_parser("frames", help="the `## Before / after` section, or why there is none")
     fr.add_argument("--visual-history", required=True,
@@ -741,7 +824,7 @@ def main(argv) -> int:
     if args.selftest:
         return selftest()
     if args.cmd == "local-line":
-        print(render_local_line(args.kind, args.path))
+        print(render_local_line(args.kind, args.path, args.url, args.audience))
         return 0
     if args.cmd == "frames":
         root = args.root or (_repo_root() or os.getcwd())
