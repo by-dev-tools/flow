@@ -594,8 +594,16 @@ if [ -z "$VH" ]; then
   VH=core-docs/visual-history.html
 fi
 RPT=$(jq -r '.verifyReportPath // ".flow/verify-report.html"' flow.config.json 2>/dev/null); [ -z "$RPT" ] && RPT=.flow/verify-report.html
+# WHICH FRAME SOURCE, decided by the capture adapter's own EXIT CODE rather than by
+# grepping a render (general.md item 4, exit-code corollary). A spike does not run
+# /flow:ship §5d, so `captures` here reads whatever an earlier full ship on this branch
+# committed — and reads NOTHING when there is none, which is the common, correct spike
+# outcome. With no capture adapter configured this is byte-identical to v1.60.0.
+SRC=record
+CF="${CLAUDE_PLUGIN_ROOT}/lib/capture_frames.py"; [ -f "$CF" ] || CF="plugins/flow/lib/capture_frames.py"
+python3 "$CF" check >/dev/null 2>&1 && SRC=captures
 if [ -f "$AH" ]; then
-  python3 "$AH" frames --visual-history "$VH" --branch "$(git branch --show-current)" --sha "$(git rev-parse HEAD)"
+  python3 "$AH" frames --source "$SRC" --visual-history "$VH" --branch "$(git branch --show-current)" --sha "$(git rev-parse HEAD)"
   # Only if §5a rendered a walkthrough this run:
   SP="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/serve-preview.sh"; [ -f "$SP" ] || SP="plugins/flow/skills/ship/lib/serve-preview.sh"
   [ -f "$SP" ] && { . "$SP"; flow_serve_preview "$RPT"; } || PREVIEW_URL=""

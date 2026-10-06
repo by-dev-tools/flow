@@ -1264,6 +1264,57 @@ If the gate printed a `skipped` line, **stop here — do not author an entry.** 
 
 > **Validation status (FB-0016): VALIDATED.** The entry shape was provisional only until a UI-surface cold-run exercised it; the health-tracker (iOS) run did (§5c fired, authored an editorially-sound curated entry, and caught a real `assets/`-path-doubling bug fixed in v1.8.1). Flow's own repo is **`uiSurface: true`** — since v1.24.0, not `false` — so this step is live here too and `dev-docs/visual-history.html` carries real entries. What flow's own entries do *not* exercise is the committed-frame path: every one of them is an inline CSS/SVG reconstruction, so `visual-history-assets/` does not exist in this repo and the `## Before / after` embed degrades to its no-frames branch on every flow ship. That branch is the one dogfooded here; the frame branch is pinned by `evals/run_artifact_handoff_evals.py` over a temp git repo.
 
+### 5d. Capture this PR's frames for the PR body (`captureBackend`, roadmap D7)
+
+The `## Before / after` section is the one place a reviewer is asked to *look* at something. v1.59.0 made it embed committed frames; this step produces them for a PR that has no curated visual-history record to draw on — a gate-1 prototype, or the verify-build walkthrough.
+
+**Optional, and skipping is the normal case.** `captureBackend` is unset by default; so is a UI surface on most PRs. Every skip prints its reason and nothing downstream changes — the section falls back to the visual-history source exactly as in v1.60.0.
+
+**Gated on the SAME authoritative verdict §5c and §7b read**, never a second opinion: `metadata.visual_significant` from the findings buffer, else `lib/visual-significance.py`. A non-visual change gets no frames and no section, because "no frames to show, and here is why" is an explanation for an absence nobody expected.
+
+**Committed under `<dir of visualHistoryPath>/pr-frames/<branch-slug>/`, NOT in `visual-history-assets/`.** §5c calls that record *curated, not a per-PR dump* and enforces a hard skip it describes as a mechanical floor against exactly that failure mode (FB-0042); writing every PR's screenshots there would defeat the one rule that keeps it readable. The per-PR directory also *is* the own-PR guard: another PR's frames are not excluded by a comparison, they are never listed. Budget, measured and accepted: **~20 KB per visual PR**, permanently.
+
+**One artifact, two widths, phone first.** The prototype wins when both exist — it is the surface the human approved, where the walkthrough is a verification report. 390×844 is the phone viewport the review actually happens on; 1280×900 is there because "works at exactly one width" is the defect a reviewer most wants to see and is invisible in a single frame.
+
+```sh
+CF="${CLAUDE_PLUGIN_ROOT}/lib/capture_frames.py"; [ -f "$CF" ] || CF="plugins/flow/lib/capture_frames.py"
+VHPATH=$(jq -r '.visualHistoryPath // "core-docs/visual-history.html"' flow.config.json 2>/dev/null); [ -z "$VHPATH" ] && VHPATH="core-docs/visual-history.html"
+REPORT=$(jq -r '.verifyReportPath // ".flow/verify-report.html"' flow.config.json 2>/dev/null); [ -z "$REPORT" ] && REPORT=".flow/verify-report.html"
+FINDINGS=$(jq -r '.verifyFindingsPath // ".flow/verify-findings.json"' flow.config.json 2>/dev/null); [ -z "$FINDINGS" ] && FINDINGS=".flow/verify-findings.json"
+VISSIG=""; [ -f "$FINDINGS" ] && VISSIG=$(jq -r '.metadata.visual_significant // empty' "$FINDINGS" 2>/dev/null)
+if [ -z "$VISSIG" ]; then
+  VS="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/visual-significance.py"; [ -f "$VS" ] || VS="plugins/flow/skills/verify-build/lib/visual-significance.py"
+  PLAN_P=$(jq -r '.planPath // "dev-docs/plan.md"' flow.config.json 2>/dev/null); [ -z "$PLAN_P" ] && PLAN_P="dev-docs/plan.md"
+  PLAN_A=""; { [ -f "$PLAN_P" ] && PLAN_A="--plan $PLAN_P"; } || echo "⚠️ [pr-frames] no plan doc at $PLAN_P — running WITHOUT plan context." >&2
+  VISSIG=$(python3 "$VS" --config flow.config.json $PLAN_A 2>/dev/null | jq -r '.visual_significant // false')
+fi
+
+# The capture target. Prototype first; the walkthrough only if there is no prototype.
+TARGET=""; LABEL=""
+PROTO=$(ls -1t .flow/prototypes/*/prototype.presented.html 2>/dev/null | head -1)
+if [ -n "$PROTO" ] && [ -f "$PROTO" ]; then TARGET="$PROTO"; LABEL=prototype
+elif [ -f "$REPORT" ]; then TARGET="$REPORT"; LABEL=walkthrough
+fi
+
+SLUG=$(python3 "$CF" slug --branch "$(git branch --show-current)" 2>/dev/null)
+if [ "$VISSIG" != "true" ]; then
+  echo "[pr-frames] skipped (visual_significant=false) — no frames, and no Before/after section."
+elif [ -z "$TARGET" ]; then
+  echo "[pr-frames] skipped — no prototype and no walkthrough to photograph."
+elif [ -z "$SLUG" ]; then
+  # A detached HEAD reads as an EMPTY branch name. Pair the fallback with a refusal,
+  # never a default directory: frames in a shared directory are another PR's frames.
+  echo "⚠️ [pr-frames] could not derive a per-PR directory from the branch name (a detached HEAD reads as empty), so nothing is captured — frames must never land in a directory another PR also writes to." >&2
+else
+  FRAME_DIR="$(dirname "$VHPATH")/pr-frames/$SLUG"
+  python3 "$CF" capture --target "$TARGET" --out-dir "$FRAME_DIR" --label "$LABEL" \
+    && git add "$FRAME_DIR" \
+    || echo "[pr-frames] no frames captured (see the reason above) — the Before/after section falls back to the visual-history record." >&2
+fi
+```
+
+**Stage them with Step 6's commit.** The PR body pins each frame to the *pushed* HEAD, and the renderer emits a row only for a path `git cat-file -t <sha>:<path>` reports as a blob — so an uncommitted frame is simply absent rather than a broken image. Measured and relied on: a raw URL pinned to a PR-branch SHA that a squash-merge discards **still returns 200**, so these links keep working after the branch is deleted at merge.
+
 ## 6. Commit
 
 Stage code changes + doc updates together (or in two commits if cleaner). Never stage `.env`, secrets, or credentials.
@@ -1627,10 +1678,25 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
     echo "⚠️ [artifact-handoff] could not read visualHistoryPath from flow.config.json — falling back to core-docs/visual-history.html. If your record lives elsewhere, the section below will say there is no record when there is one." >&2
     VH=core-docs/visual-history.html
   fi
+  # WHICH SOURCE. `captures` reads the per-PR frames §5d committed; `record` reads the
+  # curated visual-history entry. Decided by the capture adapter's OWN EXIT CODE, not by
+  # grepping a render for image syntax — an exit code is a signal the engine's author
+  # maintains against their own output, where a grep is one more thing to keep correct
+  # (.claude/rules/general.md item 4, exit-code corollary). A project with no capture
+  # adapter keeps v1.60.0's behaviour exactly.
+  SRC=record
+  CF="${CLAUDE_PLUGIN_ROOT}/lib/capture_frames.py"; [ -f "$CF" ] || CF="plugins/flow/lib/capture_frames.py"
+  python3 "$CF" check >/dev/null 2>&1 && SRC=captures
   # The SHA is the PUSHED HEAD, after Step 6's commit + push — not the branch name
   # (which 404s the moment the branch is deleted at merge, i.e. exactly when someone
   # reads the PR back as history) and not `main` (which does not contain the asset yet).
-  python3 "$AH" frames --visual-history "$VH" --branch "$(git branch --show-current)" --sha "$(git rev-parse HEAD)" \
+  #
+  # `--branch` means two different things across the two sources, deliberately and
+  # visibly: on `record` it is MATCHED against the branch recorded in the newest entry;
+  # on `captures` it is the SOURCE OF THE PER-PR DIRECTORY NAME. The engine binds them
+  # to different parameters (`branch_to_match` / `branch_for_dir`) so the collision is
+  # readable where it is used.
+  python3 "$AH" frames --source "$SRC" --visual-history "$VH" --branch "$(git branch --show-current)" --sha "$(git rev-parse HEAD)" \
     || echo "⚠️ [artifact-handoff] renderer absent at $AH — omit the section rather than hand-composing image URLs; a wrong URL is a broken image in the body." >&2
   ```
 

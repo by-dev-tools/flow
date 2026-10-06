@@ -58,6 +58,26 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from md_safe import code_span, inline, one_line  # noqa: E402  (sibling-module import, house pattern)
 
+# The frame table and the branch slug are IMPORTED, never re-derived. `capture_frames`
+# writes `pr-frames/<slug>/<label>-<name>.png`; this file reads it back. Two private
+# copies of either value would be a writer and a reader that agree today and diverge
+# the first time one is tidied -- and the divergence would be SILENT, because an empty
+# read renders as the ordinary "no frames to show" line. Degrades to the
+# visual-history source alone when the lib is unreachable, which is the pre-v1.63.0
+# behaviour and still correct.
+# `except Exception`, not `except ImportError`: computing the path can fail too.
+# `parents[3]` raises IndexError for a copy of this file sitting at a shallower depth --
+# which is exactly how `run_artifact_handoff_evals.py` runs its mutant (a temp-dir copy
+# with PYTHONPATH set), so an ImportError-only guard crashed the engine on import and
+# turned the MUTATION-SENSITIVITY pin red for a reason that had nothing to do with the
+# mutation. A degraded import must degrade, including when the degradation is in the
+# lookup rather than the module.
+try:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
+    from capture_frames import FRAMES, FRAME_NAMES, FRAME_SIZES, branch_slug  # noqa: E402
+except Exception:  # noqa: BLE001 - any failure means "no capture engine here"
+    FRAMES = FRAME_NAMES = FRAME_SIZES = branch_slug = None
+
 HEADING = "## Before / after"
 
 # The client names this engine must never emit. Research § 6 Q1/Q2 -- whether a
@@ -92,7 +112,8 @@ def _audience_clause(audience: "str | None") -> str:
 # ---------------------------------------------------------------- local-line
 
 def render_local_line(kind: str, path: str, url: "str | None" = None,
-                      audience: "str | None" = None) -> str:
+                      audience: "str | None" = None,
+                      chat_image: "str | None" = None) -> str:
     """One honest sentence about an uncommitted, machine-local artifact.
 
     The wording states a property of the FILE -- not committed, reachable only
@@ -120,6 +141,19 @@ def render_local_line(kind: str, path: str, url: "str | None" = None,
 
     `audience` goes NEXT TO the link, not only in docs — the person deciding whether
     to paste a URL onward is the one who needs to know who can open it.
+
+    `chat_image` embeds ONE captured frame, and it is for a CHAT MESSAGE ONLY — never a
+    PR body. The path is local and uncommitted, so in a PR body it would render as a
+    broken image, which is the exact defect the rest of this engine exists to refuse.
+    That is why it is accepted only for `--kind prototype`: the gate-1 presentation is
+    the one hand-off flow renders into a chat message. A caller that passes it anywhere
+    else gets a stated refusal, not a quietly-dropped flag.
+
+    ONE image, deliberately. The ~100-word budget on the gate-1 message exists because
+    "the messages I come to are too long and I don't really read them and I just end up
+    approving anyway" — and while markdown image syntax costs no prose words, an image
+    is not free attention. Two frames in a chat message is a scroll, which is the thing
+    being fixed. The desktop frame is still committed and still in the PR body.
     """
     if url and not str(url).lower().startswith("https://"):
         # The adapter already refuses a non-https URL; this is the second gate,
@@ -191,7 +225,45 @@ def render_local_line(kind: str, path: str, url: "str | None" = None,
                 "artifact's property, not a client's behaviour — whether a given app "
                 "opens a session-produced file is unmeasured. Emitting it anyway.\n"
                 % name)
+
+    if chat_image:
+        if kind != "prototype":
+            sys.stderr.write(
+                "⚠️ [artifact-handoff] ignoring --chat-image on --kind %s: a captured "
+                "frame is a LOCAL, uncommitted file, and the only hand-off flow renders "
+                "into a chat message is the gate-1 prototype. In a PR body that path is "
+                "a broken image.\n" % kind)
+        else:
+            img = Path(chat_image)
+            if not img.is_file():
+                # Never claim a frame that is not there. A markdown image pointing at a
+                # missing file is a broken image in the one message the human is
+                # guaranteed to read -- strictly worse than the line without it, which
+                # is already complete and correct.
+                sys.stderr.write(
+                    "⚠️ [artifact-handoff] no frame at %s, so the chat hand-off carries "
+                    "no image. The line itself is unchanged and still correct.\n"
+                    % chat_image)
+            else:
+                line += "\n\n![%s](%s)" % (_frame_alt(img.name, kind),
+                                           url_path(chat_image))
     return line
+
+
+def _frame_alt(filename: str, kind: str) -> str:
+    """Alt text for a captured frame, derived from the name the capture engine wrote.
+
+    Never empty: an empty alt is markdown's DECORATIVE signal, so the one reader who
+    most needs the text alternative -- someone reading this gate on a screen reader --
+    would be told nothing is there. Falls back to a generic that is true of any frame
+    rather than guessing at a width it cannot confirm.
+    """
+    split = _split_frame_name(filename) if FRAME_NAMES else None
+    if split:
+        _label, frame = split
+        w, h = FRAME_SIZES[frame]
+        return inline("%s at %s width (%d×%d)" % (kind.capitalize(), frame, w, h))
+    return inline("%s screenshot" % kind.capitalize())
 
 
 # ------------------------------------------------------- the committed record
@@ -366,9 +438,16 @@ def _omit_with_record(reason: str, vh_path: str) -> str:
                  "the rendered page." % (reason, code_span(one_line(vh_path, 160))))
 
 
-def render_frames(vh_path: str, branch: str, sha: str, root: str,
+def render_frames(vh_path: str, branch_to_match: str, sha: str, root: str,
                   repo_arg: "str | None", private_mode: str) -> str:
-    """The `## Before / after` section, or one line naming why there isn't one."""
+    """The `## Before / after` section, or one line naming why there isn't one.
+
+    `branch_to_match` is a value COMPARED against the branch recorded in the newest
+    visual-history entry. On the sibling `captures` source the same CLI flag means
+    something else entirely -- the source of a directory name -- so the two are bound
+    to different identifiers rather than one `branch` that means whichever the reader
+    assumes.
+    """
     if not SHA40.match(sha or ""):
         die("--sha must be a full 40-character commit sha (got %r). A short sha can "
             "become ambiguous and a branch name 404s once the branch is deleted at merge."
@@ -409,14 +488,17 @@ def render_frames(vh_path: str, branch: str, sha: str, root: str,
     # outcome this check exists to prevent, produced by the check itself. An absent
     # value is never a match (general.md item 4: a zero-match filter is not a
     # confirmation).
-    if not branch or not entry["branch"] or entry["branch"] != branch:
+    # Read as a VALUE TO MATCH, not as a path component — the other meaning the same
+    # CLI flag carries on the `captures` source, one function below.
+    if not branch_to_match or not entry["branch"] or entry["branch"] != branch_to_match:
         return _omit_with_record(
             "the newest visual-history entry belongs to a different change (its recorded "
             "branch is %s, and this PR's is %s), so embedding its frames would show you "
             "a different change's before/after under this PR's name."
             % (code_span(one_line(entry["branch"], 120)) if entry["branch"]
                else "not recorded",
-               code_span(one_line(branch, 120)) if branch else "not resolvable here"),
+               code_span(one_line(branch_to_match, 120)) if branch_to_match
+               else "not resolvable here"),
             vh_path)
 
     cited = [f for f in entry["figures"] if f["src"]]
@@ -455,11 +537,34 @@ def render_frames(vh_path: str, branch: str, sha: str, root: str,
               "its pictures." % code_span(one_line(vh_path, 160)))
 
     rows = []
+    for f in frames:
+        cap, alt = _caption_and_alt(f)
+        rows.append({"rel": f["rel"], "cap": cap, "alt": alt})
+    return _embed_section(
+        rows, slug, vis, sha,
+        public_lead="Committed frames from this PR's visual-history entry, pinned to %s."
+                    % code_span(sha[:7]),
+        closing=record)
+
+
+def _embed_section(rows, slug, vis, sha, public_lead, closing):
+    """The public/private/unknown embed policy — ONE copy, both frame sources.
+
+    `rows` is already normalised to [{"rel", "cap", "alt"}], which is the only thing
+    the two sources differ about: the visual-history source reads its captions out of
+    a figcaption, the capture source derives them from the shared `FRAMES` table. The
+    policy BELOW them — inline `<img>` only for a confirmed-public repo, `/blob/`
+    links otherwise, and the sha pin named in every arm — is identical, and a second
+    copy of it is the fan-out class this engine has already paid for once. Measured
+    constraint it encodes, unchanged from v1.59.0: an unauthenticated raw fetch of a
+    private blob returns 404, so a wrongly-public verdict costs a BROKEN image plus a
+    body that claims something false. It fails closed.
+    """
+    out = []
     if vis == "public":
-        for f in frames:
+        for r in rows:
             url = "https://raw.githubusercontent.com/%s/%s/%s" % (
-                slug, sha, url_path(f["rel"]))
-            cap, alt = _caption_and_alt(f)
+                slug, sha, url_path(r["rel"]))
             # The bold caption line is emitted only when there IS a caption: an empty
             # label rendered `****`, four literal asterisks, on the one branch a
             # reader actually looks at.
@@ -467,14 +572,14 @@ def render_frames(vh_path: str, branch: str, sha: str, root: str,
             # in this engine: GitHub renders it as a line break, which is what puts
             # the label directly above its frame. Every prose paragraph here is one
             # logical line for the opposite reason — do not "normalize" this one.
-            rows.append(("**%s**\n" % cap if cap else "") + "![%s](%s)" % (alt, url))
-        return "%s\n\nCommitted frames from this PR's visual-history entry, pinned to %s.\n\n%s\n\n%s" % (
-            HEADING, code_span(sha[:7]), "\n\n".join(rows), record)
+            out.append(("**%s**\n" % r["cap"] if r["cap"] else "")
+                       + "![%s](%s)" % (r["alt"], url))
+        return "%s\n\n%s\n\n%s\n\n%s" % (
+            HEADING, public_lead, "\n\n".join(out), closing)
 
-    for f in frames:
-        url = "https://github.com/%s/blob/%s/%s" % (slug, sha, url_path(f["rel"]))
-        cap, alt = _caption_and_alt(f)
-        rows.append("- [%s](%s)" % (cap or alt, url))
+    for r in rows:
+        url = "https://github.com/%s/blob/%s/%s" % (slug, sha, url_path(r["rel"]))
+        out.append("- [%s](%s)" % (r["cap"] or r["alt"], url))
 
     if vis == "private":
         lead = ("Private repo, so GitHub can't show these inline. Open them directly — they "
@@ -489,7 +594,159 @@ def render_frames(vh_path: str, branch: str, sha: str, root: str,
     # hand-off, and was never told the frames are pinned to a commit rather than to
     # the branch tip, which is the whole point of pinning them.
     return "%s\n\n%s\n\n%s\n\nPinned to %s. %s" % (
-        HEADING, lead, "\n".join(rows), code_span(sha[:7]), record)
+        HEADING, lead, "\n".join(out), code_span(sha[:7]), closing)
+
+
+PR_FRAMES_DIR = "pr-frames"
+
+
+def captures_dir(vh_path: str, branch: str) -> "str | None":
+    """Where THIS PR's captured frames live: `<dir of visualHistoryPath>/pr-frames/<slug>/`.
+
+    Deliberately NOT the curated `visual-history-assets/` directory. `/flow:ship` §5c
+    calls that record curated rather than a per-PR dump and enforces a hard skip it
+    describes as "a mechanical floor against the per-PR-dump failure mode" (FB-0042);
+    writing every PR's screenshots there would defeat the one rule that keeps it
+    readable.
+
+    THE OWN-PR GUARD IS THE DIRECTORY NAME, and that is a stronger guarantee than the
+    visual-history source's. There, a previous PR's frames are excluded by COMPARING a
+    recorded branch against this one -- a comparison that has already been wrong once
+    (two empty strings compared equal). Here another PR's frames are not reachable at
+    all: nothing outside this slug's directory is ever listed.
+    """
+    # `branch` is read here as the SOURCE OF A PATH COMPONENT -- which PR's directory
+    # to look in -- NOT as a value to match against a recorded branch. That is the
+    # other meaning the same flag carries on the `record` source, and the two are kept
+    # under different parameter names at every read point for exactly that reason.
+    if branch_slug is None:
+        return None
+    slug = branch_slug(branch)
+    if not slug:
+        return None
+    parent = str(Path(vh_path).parent)
+    rel = os.path.join(parent, PR_FRAMES_DIR, slug) if parent not in ("", ".") \
+        else os.path.join(PR_FRAMES_DIR, slug)
+    return rel.replace(os.sep, "/")
+
+
+def _split_frame_name(filename: str):
+    """`prototype-phone.png` -> ("prototype", "phone"), else None.
+
+    Split from the RIGHT against the known frame names, because a label may itself
+    contain a hyphen (`verify-walkthrough`) while a frame name never does. A file the
+    capture engine did not write returns None and is ignored -- the directory is
+    flow's, but a human can still drop something in it, and a stray file must not
+    become an unlabelled row in a PR body.
+    """
+    stem = filename[:-4] if filename.lower().endswith(".png") else None
+    if not stem:
+        return None
+    for name in (FRAME_NAMES or ()):
+        suffix = "-" + name
+        if stem.endswith(suffix) and len(stem) > len(suffix):
+            return stem[:-len(suffix)], name
+    return None
+
+
+def render_frames_from_captures(vh_path: str, branch_for_dir: str, sha: str, root: str,
+                                repo_arg: "str | None", private_mode: str) -> str:
+    """The `## Before / after` section built from this PR's COMMITTED captured frames.
+
+    Same discipline as the visual-history source and the same reason: the section is a
+    projection of the COMMIT, never of this session. A frame earns a row only when
+    `git cat-file -t <sha>:<path>` reports a blob, so the body cannot claim an image
+    the commit does not contain. The only thing that differs is where the candidate
+    list comes from -- a directory listing here, a parsed record there -- and the
+    embed policy below both is one function.
+
+    `branch_for_dir` names a DIRECTORY, not a value compared against anything. On the
+    record source the same CLI flag means "the branch the newest entry must match";
+    keeping one identifier for both meanings is how a guard quietly starts answering a
+    different question than its caller thinks.
+    """
+    if not SHA40.match(sha or ""):
+        die("--sha must be a full 40-character commit sha (got %r). A short sha can "
+            "become ambiguous and a branch name 404s once the branch is deleted at merge."
+            % sha)
+
+    if branch_slug is None:
+        return _omit("the capture engine could not be loaded, so this pipeline cannot "
+                     "tell which directory holds this PR's frames. Nothing is guessed.")
+
+    rel_dir = captures_dir(vh_path, branch_for_dir)
+    if rel_dir is None:
+        return _omit(
+            "this PR's branch name is %s, which yields no per-PR frame directory — so "
+            "there is no directory that belongs to this change alone, and frames are "
+            "never read from a shared one."
+            % (code_span(one_line(branch_for_dir, 120)) if branch_for_dir
+               else "not resolvable here (a detached HEAD reads as an empty branch)"))
+
+    abs_dir = Path(root) / rel_dir
+    try:
+        names = sorted(q.name for q in abs_dir.iterdir() if q.is_file())
+    except OSError:
+        names = []
+
+    # Order by the SHARED frame table, phone first — not by the directory listing,
+    # which sorts `desktop` above `phone` and would silently invert the one ordering
+    # decision the table records (the phone frame leads because phone review is the
+    # whole reason this exists).
+    parsed = []
+    for n in names:
+        split = _split_frame_name(n)
+        if split:
+            parsed.append((split[0], split[1], n))
+    parsed.sort(key=lambda t: (FRAME_NAMES.index(t[1]), t[0]))
+
+    if not parsed:
+        return _omit(
+            "this PR committed no captured frames under %s. That is the normal state "
+            "when the change has no visual surface, or when no capture adapter is "
+            "configured — both correct." % code_span(one_line(rel_dir, 160)))
+
+    cited = ["%s/%s" % (rel_dir, n) for _lbl, _fr, n in parsed]
+    kept = [(lbl, fr, n) for lbl, fr, n in parsed
+            if git_tracked("%s/%s" % (rel_dir, n), root, sha)]
+    if not kept:
+        return _omit(
+            "this PR captured %d %s that %s not in the commit this PR points at (%s), "
+            "so there is nothing GitHub can resolve. Frames have to be committed and "
+            "pushed before the body can name them."
+            % (len(cited), "frame" if len(cited) == 1 else "frames",
+               "is" if len(cited) == 1 else "are",
+               ", ".join(code_span(one_line(c, 120)) for c in cited)))
+
+    slug, vis = resolve_repo_and_visibility(private_mode, repo_arg, root)
+    if not slug:
+        return _omit("this pipeline couldn't confirm which GitHub repo to link to, so it "
+                     "isn't guessing at image URLs.")
+
+    rows = []
+    for lbl, fr, n in kept:
+        w, h = FRAME_SIZES[fr]
+        rows.append({
+            "rel": "%s/%s" % (rel_dir, n),
+            # Caption short enough to sit above the frame; alt carries the full
+            # description, because the alt is the whole content for a reader who
+            # cannot see the image and this section exists to be looked at.
+            "cap": inline("%s — %d×%d" % (fr.capitalize(), w, h)),
+            "alt": inline("%s at %s width, %d×%d" % (lbl, fr, w, h)),
+        })
+
+    labels = []
+    for lbl, _fr, _n in kept:
+        if lbl not in labels:
+            labels.append(lbl)
+    what = ", ".join(code_span(one_line(l, 60)) for l in labels)
+    lead = ("Frames captured from this PR's %s, pinned to %s — not to the branch tip, so "
+            "they keep resolving after the branch is deleted at merge."
+            % (what, code_span(sha[:7])))
+    closing = ("Committed under %s. They are this PR's own frames by construction: nothing "
+               "outside that per-PR directory is read."
+               % code_span(one_line(rel_dir, 160)))
+    return _embed_section(rows, slug, vis, sha, public_lead=lead, closing=closing)
 
 
 def _caption_and_alt(f: dict):
@@ -609,6 +866,98 @@ def _head_sha(root) -> str:
     """
     return subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
                           text=True, timeout=20).stdout.strip()
+
+
+def _selftest_captures(check, root, vh_rel, cap_rel, CSHA, SHA, _git, _head_sha):
+    """The captures + chat-image arms, split out so the engine-absent guard is ONE branch.
+
+    Reached only when the shared frame table imported. Inlining these under an `if`
+    would have put the whole block one indent deeper for a reason that is about imports,
+    not about the assertions.
+    """
+    cap = render_frames_from_captures(vh_rel, "feat/empty_feed", CSHA, root,
+                                      "acme/app", "false")
+    check("captures/two-images", cap.count("![") == 2, cap)
+    check("captures/phone-first", cap.index("Phone") < cap.index("Desktop"), cap)
+    check("captures/dimensions-labelled", "390×844" in cap and "1280×900" in cap, cap)
+    check("captures/names-the-label", "prototype" in cap, cap)
+    check("captures/ignores-non-frame-file", "stray" not in cap, cap)
+    check("captures/full-sha", len(re.findall(r"/[0-9a-f]{40}/", cap)) == 2, cap)
+    check("captures/alt-is-never-empty", "![](" not in cap, cap)
+
+    # KNOWN NEGATIVE, and the mutation target: an UNCOMMITTED frame never appears.
+    # It must carry a REAL frame suffix (`-phone`), or the non-frame-file filter
+    # excludes it first and this arm passes whether or not `git_tracked` works --
+    # which is what the first cut did, caught only by running the mutation.
+    Path(root, cap_rel, "draft-phone.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    mixed_cap = render_frames_from_captures(vh_rel, "feat/empty_feed", CSHA, root,
+                                            "acme/app", "false")
+    check("captures/uncommitted-excluded", "draft-phone" not in mixed_cap, mixed_cap)
+    check("captures/committed-still-emitted", mixed_cap.count("![") == 2, mixed_cap)
+    Path(root, cap_rel, "draft-phone.png").unlink()
+
+    # KNOWN NEGATIVE: ANOTHER PR's frames are unreachable -- not excluded by a
+    # comparison, but never listed. The second directory is committed so that the
+    # only thing stopping it is the slug, not trackedness.
+    other = "dev-docs/pr-frames/other-branch"
+    os.makedirs(os.path.join(root, other))
+    Path(root, other, "prototype-phone.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    _git(["add", other], root); _git(["commit", "-qm", "other"], root)
+    OSHA = _head_sha(root)
+    mine = render_frames_from_captures(vh_rel, "feat/empty_feed", OSHA, root,
+                                       "acme/app", "false")
+    check("captures/other-prs-frames-unreachable", "other-branch" not in mine, mine)
+    check("captures/mine-still-rendered", mine.count("![") == 2, mine)
+    theirs = render_frames_from_captures(vh_rel, "other/branch", OSHA, root,
+                                         "acme/app", "false")
+    check("captures/each-branch-sees-its-own",
+          "other-branch" in theirs and "feat-empty-feed" not in theirs, theirs)
+
+    # A sha PREDATING the frames emits nothing -- the predicate and the URL read
+    # the same ref, so they cannot disagree.
+    early_cap = render_frames_from_captures(vh_rel, "feat/empty_feed", SHA, root,
+                                            "acme/app", "false")
+    check("captures/sha-predating-frames-omits", "![" not in early_cap, early_cap)
+
+    # Private fails CLOSED here too -- the SAME policy function, not a second copy.
+    priv_cap = render_frames_from_captures(vh_rel, "feat/empty_feed", CSHA, root,
+                                           "acme/app", "true")
+    check("captures/private-no-raw-host",
+          "raw.githubusercontent.com" not in priv_cap and "![" not in priv_cap, priv_cap)
+    check("captures/private-two-blob-links",
+          priv_cap.count("/blob/%s/" % CSHA) == 2, priv_cap)
+
+    # A branch that slugs to nothing (a detached HEAD) gets no directory at all.
+    det = render_frames_from_captures(vh_rel, "", CSHA, root, "acme/app", "false")
+    check("captures/unsluggable-branch-omits",
+          "![" not in det and "no per-PR frame directory" in det, det)
+
+    # The curated record is UNTOUCHED by any of this -- paired with the positive
+    # that the per-PR directory is where the frames actually are.
+    curated = sorted(q.name for q in Path(root, "dev-docs/visual-history-assets").iterdir())
+    check("captures/curated-record-untouched",
+          curated == ["feed-empty-after.png", "feed-empty-before.png", "untracked.png"],
+          repr(curated))
+    check("captures/frames-live-in-the-per-pr-dir",
+          Path(root, cap_rel, "prototype-phone.png").is_file())
+
+    # ------------------------------------------------- the chat image
+    frame = os.path.join(root, cap_rel, "prototype-phone.png")
+    withimg = render_local_line("prototype", "/abs/p.presented.html",
+                                chat_image=frame)
+    check("chat/one-image", withimg.count("![") == 1, withimg)
+    check("chat/alt-describes-the-frame",
+          "phone width (390×844)" in withimg, withimg)
+    check("chat/line-still-intact", "local file" in withimg, withimg)
+    # NEGATIVE: a missing frame is never claimed.
+    noimg = render_local_line("prototype", "/abs/p.presented.html",
+                              chat_image=os.path.join(root, "nope.png"))
+    check("chat/missing-frame-claims-nothing", "![" not in noimg, noimg)
+    check("chat/line-unchanged-without-frame",
+          noimg == render_local_line("prototype", "/abs/p.presented.html"), noimg)
+    # NEGATIVE: never into a PR-body hand-off, where a local path is a broken image.
+    wrongkind = render_local_line("walkthrough", "/abs/r.html", chat_image=frame)
+    check("chat/refused-on-walkthrough", "![" not in wrongkind, wrongkind)
 
 
 def selftest() -> int:
@@ -763,6 +1112,30 @@ def selftest() -> int:
         gone = render_frames("dev-docs/nope.html", "feat/empty_feed", SHA, root, "acme/app", "false")
         check("missing/names-reason", "no visual-history record" in gone)
 
+        # ---------------------------------------------------- the captures source
+        # Same discipline, different candidate list. KNOWN POSITIVE first.
+        cap_rel = "dev-docs/pr-frames/feat-empty-feed"
+        os.makedirs(os.path.join(root, cap_rel))
+        for n in ("prototype-phone.png", "prototype-desktop.png", "prototype-stray.txt"):
+            Path(root, cap_rel, n).write_bytes(b"\x89PNG\r\n\x1a\n")
+        _git(["add", cap_rel + "/prototype-phone.png", cap_rel + "/prototype-desktop.png",
+              cap_rel + "/prototype-stray.txt"], root)
+        _git(["commit", "-qm", "frames"], root)
+        CSHA = _head_sha(root)
+
+        if FRAME_NAMES is None:
+            # The capture engine is unreachable -- this file running from a copy outside
+            # the plugin tree, which is how `run_artifact_handoff_evals.py` drives its
+            # mutant. Assert the DEGRADATION rather than skipping silently: no image
+            # syntax and a stated reason. Then stop, because every arm in the helper
+            # needs the shared frame table to say anything at all.
+            degraded = render_frames_from_captures(vh_rel, "feat/empty_feed", CSHA, root,
+                                                   "acme/app", "false")
+            check("captures/degrades-when-engine-absent",
+                  "![" not in degraded
+                  and "capture engine could not be loaded" in degraded, degraded)
+        else:
+            _selftest_captures(check, root, vh_rel, cap_rel, CSHA, SHA, _git, _head_sha)
     # --- local-line, both kinds.
     w = render_local_line("walkthrough", ".flow/report.html")
     p = render_local_line("prototype", "/abs/.flow/prototypes/s/prototype.presented.html")
@@ -778,7 +1151,7 @@ def selftest() -> int:
         for f in fails:
             print("  - %s" % f)
         return 1
-    print("[artifact-handoff] SELFTEST PASS — known-positive, known-negatives, both renderers")
+    print("[artifact-handoff] SELFTEST PASS — known-positive, known-negatives, all three renderers")
     return 0
 
 
@@ -800,6 +1173,10 @@ def main(argv) -> int:
                          "registration survives.")
     ll.add_argument("--audience", default=None,
                     help="who can open --url, stated next to the link")
+    ll.add_argument("--chat-image", default=None,
+                    help="ONE captured frame to embed. CHAT MESSAGE ONLY — the path is "
+                         "local and uncommitted, so in a PR body it is a broken image. "
+                         "Accepted only with --kind prototype.")
 
     fr = sub.add_parser("frames", help="the `## Before / after` section, or why there is none")
     fr.add_argument("--visual-history", required=True,
@@ -816,6 +1193,18 @@ def main(argv) -> int:
                     help="OVERRIDE for tests; shipped call sites must use the default "
                          "`auto` so the visibility gate actually runs")
     fr.add_argument("--root", default=None, help="repo root (default: cwd's toplevel)")
+    # A FLAG rather than a second subcommand, because the two sources share every
+    # downstream rule -- tracked-at-the-named-sha, public/private, the sha pin, the
+    # escaping -- and one surface is what keeps them from drifting apart. The cost is
+    # that `--branch` now carries two meanings: on `record` it is a value MATCHED
+    # against the newest entry's recorded branch, on `captures` it is the SOURCE OF A
+    # DIRECTORY NAME. They are bound to differently-named parameters inside
+    # (`branch_to_match` vs `branch_for_dir`) so the collision is visible where it is
+    # read, not only in the head of whoever wrote it.
+    fr.add_argument("--source", default="record", choices=["record", "captures"],
+                    help="`record` reads the committed visualHistoryPath entry (default, "
+                         "unchanged); `captures` reads this PR's committed frames under "
+                         "<dir of visualHistoryPath>/pr-frames/<branch-slug>/")
 
     args = ap.parse_args(argv)
     # argparse owns the flag. A pre-parse `"--selftest" in argv` scan matched it
@@ -824,10 +1213,15 @@ def main(argv) -> int:
     if args.selftest:
         return selftest()
     if args.cmd == "local-line":
-        print(render_local_line(args.kind, args.path, args.url, args.audience))
+        print(render_local_line(args.kind, args.path, args.url, args.audience,
+                                args.chat_image))
         return 0
     if args.cmd == "frames":
         root = args.root or (_repo_root() or os.getcwd())
+        if args.source == "captures":
+            print(render_frames_from_captures(args.visual_history, args.branch, args.sha,
+                                              root, args.repo, args.private))
+            return 0
         print(render_frames(args.visual_history, args.branch, args.sha, root,
                             args.repo, args.private))
         return 0

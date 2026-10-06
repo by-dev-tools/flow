@@ -2,8 +2,27 @@
 
 ## Current Focus
 
-**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/chat-and-pr-screenshots`, version claimed
-mechanically at **v1.63.0** in both manifests, no new FB): PR C — a worker's chat message carries a
+**▶ EXECUTED, shipping (this branch `conductor/chat-and-pr-screenshots`, version claimed
+mechanically at **v1.63.0** in both manifests, no new FB). Plan APPROVED with all four open calls
+answered: (1) **one** chat image, the phone frame, both frames in the PR body; (2) `frames --source
+captures` as a flag, with the orchestrator's added condition that the `--branch` collision be made
+visible **in the code** — bound to `branch_to_match` / `branch_for_dir` with a comment at each read
+point, not left in the author's head; (3) no pruning in `/flow:land`; (4) no FB. Plus one
+orchestrator routing call: the `render_template` hint-parameter finding goes to roadmap § Next
+**now**, not fixed here — three adapters is where two trailing hint params stop being honest, and
+bundling that refactor with a feature PR would make the feature's diff unreviewable for the one
+reason the refactor exists.
+
+**Three design calls made during execution, each recorded in the history entry rather than absorbed
+silently:** (a) flow's own `chatImagePath` is `.flow/chat-frames`, **not** `.context/` — `.flow/` is
+in the *committed* `.gitignore` while `.context/` is only in `.git/info/exclude`, so the dogfooded
+config is correct for anyone who clones; (b) `/flow:ship` and `/flow:ship-spike` pick the frame
+source from the adapter's **exit code**, so a project with no capture adapter keeps v1.60.0's record
+source unchanged rather than losing a shipped path; (c) the plan's "verify-build §5a: hand the
+rendered report to the capture engine" was **not** implemented as written — §5a's drive-then-assert
+ladder is the whole point of that step and a one-shot headless capture satisfies neither half, so
+§5a gained a boundary note saying why and the capture lives at `/flow:ship` §5d, after judging.
+Original gate framing: PR C — a worker's chat message carries a
 captured screenshot inline and the preview link; the PR description carries the screenshots.**
 Ben, 2026-10-05: *"ideally the agent could report with screenshots and preview links in the chat,
 and screenshots in PR descriptions."* Spec: roadmap **D7 § Next "Inline chat images"**, which this
@@ -185,58 +204,58 @@ Prototype: https://ws-abc.example.show/prototype.presented-2b7c91de.html — any
 
 ### Spec-walk
 
-- [ ] **With `captureBackend` unset, every hand-off is byte-identical to v1.60.0's.** *Verify:*
+- [x] **With `captureBackend` unset, every hand-off is byte-identical to v1.60.0's.** *Verify:*
       render the gate-1 and merge-gate lines with no slot and diff against v1.60.0's expected
       strings, written out rather than imported. *Pinned by:*
       `run_capture_frames_evals.py::test_unset_is_byte_identical`.
-- [ ] **A capture is accepted only on a valid PNG of the requested dimensions.** *Verify:* four
+- [x] **A capture is accepted only on a valid PNG of the requested dimensions.** *Verify:* four
       arms — a real capture (dimensions asserted), a command that exits 0 writing nothing, one
       writing a truncated non-PNG, and one writing a PNG of the wrong size; only the first is
       accepted. *Pinned by:* `run_capture_frames_evals.py::test_only_a_valid_png_counts`.
-- [ ] **dbus stderr noise is not read as failure.** *Verify:* a stub backend that writes a valid PNG
+- [x] **dbus stderr noise is not read as failure.** *Verify:* a stub backend that writes a valid PNG
       *and* prints to stderr is accepted — the measured real-world case. *Pinned by:* the
       `run_capture_frames_evals.py` fixture `test_stderr_noise_is_not_failure`.
-- [ ] **A page without a UTF-8 declaration is refused, with a reason, and never captured.**
+- [x] **A page without a UTF-8 declaration is refused, with a reason, and never captured.**
       *Verify:* paired — a page declaring `charset=utf-8` captures; the same page with the meta
       removed is refused and no file is written. *Pinned by:*
       `run_capture_frames_evals.py::test_utf8_is_required_before_capture`.
-- [ ] **An absent or failing browser degrades loudly and keeps the link and the local line.**
+- [x] **An absent or failing browser degrades loudly and keeps the link and the local line.**
       *Verify:* three arms — slot unset, command not on PATH, command exits non-zero — each yields
       zero image syntax, one stated reason, and a hand-off byte-identical to v1.60.0's.
       *Pinned by:* `run_capture_frames_evals.py::test_degrades_loudly`.
-- [ ] **`captureBackend`'s placeholder vocabulary is closed, and a shell operator is refused.**
+- [x] **`captureBackend`'s placeholder vocabulary is closed, and a shell operator is refused.**
       *Verify:* paired — `{url}`/`{out}`/`{width}`/`{height}` accepted, an unknown placeholder and
       a template containing `&` each refused at validate AND at render. *Pinned by:* the
       `run_capture_frames_evals.py` fixture `test_closed_vocabulary`, reusing
       `dispatch_backend.render_template` so there is no third copy of the policy.
-- [ ] **A PR-body frame is embedded only when the named SHA CONTAINS it as a blob.** *Verify:*
+- [x] **A PR-body frame is embedded only when the named SHA CONTAINS it as a blob.** *Verify:*
       paired — a committed frame emits a row; one staged-but-uncommitted, and one named by a SHA
       predating it, each emit none. *Pinned by:*
       `run_capture_frames_evals.py::test_only_frames_in_the_commit`.
-- [ ] **Another PR's frames are unreachable.** *Verify:* two `pr-frames/<slug>/` directories
+- [x] **Another PR's frames are unreachable.** *Verify:* two `pr-frames/<slug>/` directories
       committed; rendering for branch A emits only A's frames and names no file from B.
       *Pinned by:* `run_capture_frames_evals.py::test_own_pr_frames_only`.
-- [ ] **A private repo emits `/blob/` links and zero `raw.githubusercontent.com` strings.**
+- [x] **A private repo emits `/blob/` links and zero `raw.githubusercontent.com` strings.**
       *Verify:* three arms (`--private false|true|auto` with the resolver unreachable), reusing
       v1.59.0's policy rather than re-deriving it. *Pinned by:*
       `run_capture_frames_evals.py::test_private_fails_closed`.
-- [ ] **Captures never land in the curated visual-history record.** *Verify:* after a capture +
+- [x] **Captures never land in the curated visual-history record.** *Verify:* after a capture +
       embed cycle, `visual-history-assets/` is unchanged and `visualHistoryPath` is untouched —
       paired with the positive that `pr-frames/<slug>/` now holds exactly the two frames.
       *Pinned by:* `run_capture_frames_evals.py::test_curated_record_untouched`.
-- [ ] **The chat message holds ONE image and stays inside the budget.** *Verify:* the gate-1 line's
+- [x] **The chat message holds ONE image and stays inside the budget.** *Verify:* the gate-1 line's
       prose word count is ≤ 55 and exactly one `![` appears; the image path is resolved from
       `chatImagePath` and is absent when that slot is unset. *Pinned by:*
       `run_capture_frames_evals.py::test_chat_message_budget`.
-- [ ] **No vendor binary is named in any plugin artifact.** *Verify:* the existing
+- [x] **No vendor binary is named in any plugin artifact.** *Verify:* the existing
       `run_dispatch_backend_evals.py` § 7 host-literal sweep covers `plugins/flow/lib/` and its
       exact artifact count must be bumped for the new lib — paired with the positive that the
       schema documents a *generic* example and flow's own `flow.config.json` does name a real one.
       *Pinned by:* that sweep's count plus
       `run_capture_frames_evals.py::test_no_vendor_token_in_plugin`.
-- [ ] **`run_capture_frames_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
+- [x] **`run_capture_frames_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
       harness↔runner join step passes — exit-code-driven, not a grep.
-- [ ] **Docs reconciled:** a `dev-docs/history/` entry, roadmap **D7** with the "inline chat images"
+- [x] **Docs reconciled:** a `dev-docs/history/` entry, roadmap **D7** with the "inline chat images"
       § Next item CLOSED and moved into D7's shipped list, this block flipped to EXECUTED,
       `changelog/v1.63.0.md`, the new slots in the schema, and `/flow:doctor` coverage for
       `captureBackend`. *Verified by:* the dev-docs index and version-provenance CI jobs' own exit

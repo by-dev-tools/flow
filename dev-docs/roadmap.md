@@ -25,7 +25,9 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 > replaced by whatever Ben sets next — not silently carried forward as the implied stopping point
 > once it's been reached.
 
-**Plugin at v1.64.0 (shipped [#184](https://github.com/by-dev-tools/flow/pull/184) — `/flow:ship` never calls a PR "ready" that GitHub would block, FB-0137).** `gh pr checks` cannot carry a three-way verdict (passing / failing / not-yet-run) through its own exit code — measured, not assumed — so the gate reads the `--json` rollup instead and treats a still-running check as neither ready nor failed. `ship-spike` reports the same three states but drafts only on a genuine failure, keeping its existing halt-and-adjudicate shape rather than importing full draft-gating. **Autonomy correction mid-build:** the first design let the gate author, commit, and push a fix for a red check unsupervised; narrowed to propose-only (the same shape `coverage` gaps already take) because an unattended write to the branch is the risk class the autonomous-work guardrails exist for — the skill prose and the human-facing copy were updated together so neither promises a push the code no longer makes. Recently shipped: **v1.62.0 ([#183](https://github.com/by-dev-tools/flow/pull/183) — an explicit `Visual-walk: N/A` no longer forces a visual-significance false positive), v1.61.0 ([#179](https://github.com/by-dev-tools/flow/pull/179) — worker messages identifiable at a glance, and fleet state glanceable without scrolling chat; FB-0132/FB-0133), v1.57.0 ([#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131).**
+**Plugin at v1.65.0 (this PR — a captured still frame reaches the human in the chat message and in the PR description; roadmap D7's § Next "inline chat images" item, which this closes, no new FB). The third and last route to a reviewer's eye, and the only one with no dependency on something staying alive or public: v1.60.0's preview URL stops serving when its workspace sleeps, v1.59.0's PR-body image needs the repo to be public, and the local path is honest and unreachable by construction. A `captureBackend` host adapter modelled on `previewBackend` — **one** verb `screenshot`, a CLOSED `{url}`/`{out}`/`{width}`/`{height}` vocabulary in which **all four are required**, because a template that cannot be told a size produces two identical frames under two different size labels. **SUCCESS IS THE ARTIFACT, NEVER THE EXIT STREAM**, and that came from measurement rather than taste: every headless run prints `Failed to connect to the bus` to stderr and still exits 0 with a correct PNG, so a stderr-sensitive reader discards every working capture while an exit-code-trusting one accepts a truncated file. The engine reads the PNG magic bytes and the IHDR dimensions and consults the exit code only to make an already-failed reason specific. A page declaring no UTF-8 charset is **REFUSED before capture, not warned about** — a screenshot of a mojibake page is a picture that lies, published into the one message the human is guaranteed to read, and nothing downstream can tell it from a correct one. **ONE image in the chat, both in the PR body:** the ~100-word gate-1 budget exists because the messages were too long to read, and while image syntax costs no prose words, an image is not free attention. PR-body frames are committed per-PR under `<dir of visualHistoryPath>/pr-frames/<branch-slug>/` and deliberately NOT in the curated visual-history record, whose own §5c calls it curated rather than a per-PR dump — and the per-PR directory IS the own-PR guard: another PR's frames are not excluded by a comparison, they are never listed. ~20 KB per visual PR, measured and accepted. Schema 39 → 41 slots (`captureBackend`, `chatImagePath`), on top of v1.64.0's `ciWaitSeconds`, fan-out fixed at five shipped sites plus two eval harnesses whose hardcoded counts were re-keyed — and re-swept a second time at rebase, because #184 had concurrently swept the same five sites to 39 for its own new slot, so both branches were individually right and the merged tree was neither. `/flow:doctor` Check 2.14 WARNs on a malformed template, because this feature also fails **open and invisible**. See `dev-docs/history/2026-10-06-captured-frames-in-the-chat-and-the-pr-body.md`.)**
+
+**Previously: v1.64.0 (shipped [#184](https://github.com/by-dev-tools/flow/pull/184) — `/flow:ship` never calls a PR "ready" that GitHub would block, FB-0137).** `gh pr checks` cannot carry a three-way verdict (passing / failing / not-yet-run) through its own exit code — measured, not assumed — so the gate reads the `--json` rollup instead and treats a still-running check as neither ready nor failed. `ship-spike` reports the same three states but drafts only on a genuine failure, keeping its existing halt-and-adjudicate shape rather than importing full draft-gating. **Autonomy correction mid-build:** the first design let the gate author, commit, and push a fix for a red check unsupervised; narrowed to propose-only (the same shape `coverage` gaps already take) because an unattended write to the branch is the risk class the autonomous-work guardrails exist for — the skill prose and the human-facing copy were updated together so neither promises a push the code no longer makes. Recently shipped: **v1.62.0 ([#183](https://github.com/by-dev-tools/flow/pull/183) — an explicit `Visual-walk: N/A` no longer forces a visual-significance false positive), v1.61.0 ([#179](https://github.com/by-dev-tools/flow/pull/179) — worker messages identifiable at a glance, and fleet state glanceable without scrolling chat; FB-0132/FB-0133), v1.57.0 ([#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131).**
 
 **Roadmap-hygiene finding, not fixed here:** the `## Now` section above this headline still reads as the 2026-09-28 stopping-point narrative ("S0, CV1, D1 Phase 3 — then stop"), whose own stated deletion criterion ("remove this line when S0 + CV1 + D1 Phase 3 have shipped") fired weeks ago. Three PRs in a row (#180/#183/#184) bumped this headline's version without touching that narrative. Left for a dedicated pass rather than folded into this docs-only field-manual PR.
 
@@ -403,6 +405,16 @@ other workers, so nobody should duplicate them here.
   an unauthenticated `raw.githubusercontent.com` fetch is 200 for a public blob and **404** for a
   private one — and `/blob/` links, openable by any authorised viewer on any client, in every other
   case including "`gh` could not tell us".
+- **Still frames, captured. SHIPPED v1.63.0.** The gate-1 chat message carries one captured
+  phone-width frame, and the PR body carries both frames committed per-PR. A `captureBackend` host
+  adapter (one verb, a CLOSED `{url}`/`{out}`/`{width}`/`{height}` vocabulary, all four required)
+  plus a `chatImagePath` slot, both unset by default. **Success is the artifact, never the exit
+  stream** — measured, a headless run writes dbus noise to stderr on every invocation and still
+  exits 0 with a correct PNG, so the engine asserts a real PNG of exactly the requested dimensions
+  and consults the exit code only to make an already-failed reason specific. A page declaring no
+  UTF-8 charset is **refused**, not warned about: a screenshot of a mojibake page is a picture that
+  lies, published into the one message the human is guaranteed to read. Closes the § Next item
+  below. See `dev-docs/history/2026-10-06-captured-frames-in-the-chat-and-the-pr-body.md`.
 - **Option 1 — a served preview URL. SHIPPED v1.60.0**, as a `previewBackend` host adapter
   rather than a hardcoded vendor CLI: three verbs (`serve`/`publish`/`unpublish`), a closed
   `{dir}`/`{port}` vocabulary with **no `{url}`** (the URL is output, never something a
@@ -638,7 +650,14 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
-### Inline chat images as the always-available route for still frames (D7, option 1's sibling)
+### ~~Inline chat images as the always-available route for still frames (D7, option 1's sibling)~~ — ✅ SHIPPED v1.63.0
+
+**Closed by v1.63.0** (`captureBackend` + `chatImagePath`; see D7's third shipped bullet above and
+`dev-docs/history/2026-10-06-captured-frames-in-the-chat-and-the-pr-body.md`). Kept here rather than
+deleted because the reasoning below is what shaped the answer: the design question really was
+*when* to include an image, and the answer shipped is **one** — the phone frame — with the desktop
+frame committed into the PR body instead. The capture-path concern was also right: it became a new
+engine (`lib/capture_frames.py`), not a string change.
 
 **Recommended to Ben as the next mobile item** (orchestrator, 2026-10-04), and deliberately **not**
 folded into v1.60.0's adapter PR: that would have widened "an adapter" into "an adapter plus a
@@ -807,6 +826,28 @@ had already ruled on.
 
 **Surfaces when:** `/flow:staff-review` or `/simplify`'s orchestration is next touched, or when
 anyone asks why `/flow:ship` still needs an explicit "ship it" on a clean run.
+
+### `render_template`'s two trailing hint parameters stopped being honest at the third adapter
+
+**Found during v1.63.0, routed here deliberately rather than fixed in that PR** (orchestrator call):
+the fix is a refactor of a function three shipped adapters now call, and bundling it with a feature
+PR would make the feature's diff unreviewable for the one reason the refactor exists.
+
+`dispatch_backend.render_template` takes `shell_operator_hint=""` and `placeholder_hint=""` so that
+sharing the refusal POLICY does not flatten the REMEDIATION — the advice a preview author needs
+("put the backgrounding inside a script the template calls") is meaningless for a dispatch verb.
+That was a clean trade for two adapters. The v1.60.0 review said explicitly that it would stop being
+one at a third, and **v1.63.0 is that third**: `captureBackend` passes both hints, so the call sites
+now carry three unrelated remediation vocabularies threaded through two positional-ish keywords with
+no structure tying a hint to the refusal branch it belongs to.
+
+**Shape of the fix:** convert the two hints into a per-branch mapping the caller supplies —
+`{"shell_operator": "...", "unknown_placeholder": "..."}` — keyed by the refusal branch rather than
+by argument position, so adding a fourth refusal branch cannot silently ship with no advice. That is
+the trigger the v1.60.0 review already recorded; this entry is it firing.
+
+**Surfaces when:** `plugins/flow/lib/dispatch_backend.py::render_template` is next touched, or a
+fourth `*Backend` adapter is proposed.
 
 ### `dispatchBackend` has the same unset gap in THIS repo that `previewBackend` just closed
 

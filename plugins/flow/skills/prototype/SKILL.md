@@ -181,16 +181,34 @@ This writes **`prototype.presented.html`** — the prototype plus the existing c
 
    The URL is **additive**, never a replacement: a served preview lives only as long as the process serving it, and the link can outlive that process, so a reader who finds the link dead still has the honest local path. And the URL is emitted as a bare autolink while the path stays a code span — deliberately opposite: on a measured touch client a code span renders as monospace text and is not tappable, so a code-spanned URL is unusable there. The rule is *render it the way the reader can act on it*; `artifact-handoff.py::render_local_line` carries the measurement.
 
+   **Capture a still frame too, if this project configured a capture adapter.** `captureBackend` is optional and **unset is correct** — the message then carries no image, byte-identical to v1.60.0. A still is the only route to the reader's eye that needs no server, no sign-in and no public repo, so it is the one that still works when the link is dead. **ONE image, the phone frame, deliberately:** the ~100-word budget exists because the messages were too long to read, and while image syntax costs no prose words, an image is not free attention — two frames is a scroll, which is the thing being fixed. The desktop frame is captured at ship and lives in the PR body.
+
+   `--chat-image` is accepted **only** for `--kind prototype`, and that is a guard rather than a convenience: the captured frame is a local, uncommitted file, so the same syntax in a PR body is a broken image. Run the capture in the **same fenced block** as the render, for the same reason the serve is in it.
+
    ```sh
    AH="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/artifact-handoff.py"; [ -f "$AH" ] || AH="plugins/flow/skills/ship/lib/artifact-handoff.py"
    SP="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/serve-preview.sh"; [ -f "$SP" ] || SP="plugins/flow/skills/ship/lib/serve-preview.sh"
+   CF="${CLAUDE_PLUGIN_ROOT}/lib/capture_frames.py"; [ -f "$CF" ] || CF="plugins/flow/lib/capture_frames.py"
    [ -f "$SP" ] && { . "$SP"; flow_serve_preview "$PROTO_DIR/prototype.presented.html"; } || PREVIEW_URL=""
+   # Optional, and every failure path leaves CHAT_IMAGE empty so the line below is
+   # unchanged. `--only phone` is the budget expressed in the command, not in a comment.
+   CHAT_IMAGE=""
+   CHAT_DIR=$(python3 "$CF" chat-dir 2>/dev/null)
+   if [ -n "$CHAT_DIR" ] && [ -f "$CF" ]; then
+     python3 "$CF" capture --target "$PROTO_DIR/prototype.presented.html" \
+       --out-dir "$CHAT_DIR" --label prototype --only phone >/dev/null \
+       && CHAT_IMAGE="$CHAT_DIR/prototype-phone.png"
+     [ -f "$CHAT_IMAGE" ] || CHAT_IMAGE=""
+   fi
    python3 "$AH" local-line --kind prototype --path "$PROTO_DIR/prototype.presented.html" \
      ${PREVIEW_URL:+--url "$PREVIEW_URL"} ${PREVIEW_AUDIENCE:+--audience "$PREVIEW_AUDIENCE"} \
+     ${CHAT_IMAGE:+--chat-image "$CHAT_IMAGE"} \
      || echo "⚠️ [artifact-handoff] renderer absent at $AH — say by hand that this is a local file that opens only where this session ran, and name no client." >&2
    ```
 
-   **It still has to fit the ~100-word budget.** Measured: the served form is 48 words, the fallback 35. If you are at the cap, drop detail from items 2–4, never the reachability clause — a reader who cannot open the artifact is the problem this phase exists to solve.
+   **A frame is never claimed on a guess.** The engine refuses a page that declares no UTF-8 charset (a page without one renders non-ASCII as mojibake, and a screenshot of a garbled page is a picture that lies), refuses anything that is not a real PNG of exactly the requested size, and refuses when the adapter is unset or the command is missing. Every refusal states its reason on stderr and emits no image. It deliberately does **not** read the capture command's exit code or stderr as the verdict: a measured headless run writes `Failed to connect to the bus` to stderr on every invocation and still produces a correct frame.
+
+   **It still has to fit the ~100-word budget.** Measured: the served form is 48 words, the fallback 35, and the image adds **zero** prose words — markdown image syntax is not prose, which is exactly why one frame fits and a second one would still cost attention. If you are at the cap, drop detail from items 2–4, never the reachability clause — a reader who cannot open the artifact is the problem this phase exists to solve.
    Unserved it is two sentences (the openable-only-here property and the path, then the dock note); served it is three (the link and its audience, the dock note, then the fallback). Paste all of it.
 2. **The feasibility summary**, leading, whenever `must_surface[]` is non-empty. Name each expensive/infeasible affordance and its cost.
 3. **What approval commits them to** — this look is what the technical plan gets written against.
