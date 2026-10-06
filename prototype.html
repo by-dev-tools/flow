@@ -52,12 +52,26 @@
     border-radius: 8px; padding: 10px 12px; overflow-x: auto; white-space: pre;
   }
   table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  /* A wide table has to scroll INSIDE its own box. overflow-x on the body would let the
+     document grow past the viewport, which is the shifted-and-clipped failure; overflow-x
+     here keeps the document exactly viewport-wide and moves the scrolling into the card. */
+  .scroller {
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--surface); margin: 12px 0 6px;
+  }
+  .scroller table { min-width: 860px; }
+  .scroller th, .scroller td { white-space: nowrap; padding: 8px 12px; }
+  .scroller tr:last-child td { border-bottom: 0; }
+  .swipe-hint { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
   th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   a { color: var(--need); }
   label { display: block; font-size: 12.5px; color: var(--muted); margin: 10px 0 4px; }
   input[type=text] {
-    width: 100%; font: inherit; padding: 9px 10px; border-radius: 8px;
+    /* 16px, not inherit: inherit resolves to the 15px body size, and iOS Safari zooms the
+       page in on focusing any control under 16px -- then never zooms back out. */
+    width: 100%; font: inherit; font-size: 16px; padding: 9px 10px; border-radius: 8px;
     border: 1px solid var(--line); background: var(--surface); color: var(--ink);
   }
   footer { margin-top: 28px; font-size: 12px; color: var(--muted); }
@@ -115,6 +129,53 @@ flashHL on commit                       -&gt; fires</div>
     keydown. Tapping into this field should put the caret in it rather than pin a comment.</p>
   <label for="demo">Reviewer name</label>
   <input id="demo" type="text" placeholder="Type here — this should not become a comment">
+
+  <h2>4. A table too wide for the screen</h2>
+  <p>The status table above fits a phone, so it never exercised this path. This one cannot
+    fit by construction &mdash; seven columns of long values, 860px minimum. It should scroll
+    sideways <em>inside its own card</em> while the page itself stays exactly viewport-wide:
+    no shifting, no clipped text at the left edge, nothing to pinch out of.</p>
+  <p class="swipe-hint">Swipe the table sideways. The page underneath should not move.</p>
+  <div class="scroller">
+    <table>
+      <thead><tr>
+        <th>Criterion</th><th>Surface</th><th>Dimension</th><th>Observation</th>
+        <th>Evidence</th><th>Verdict</th><th>Routed to</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>Touch profile starts correct</td><td>annotation-layer.html</td><td>initial state</td>
+          <td>snapPreview resolved false on a coarse pointer</td><td>console, 03:26:44Z</td>
+          <td>PASS</td><td>&mdash;</td>
+        </tr>
+        <tr>
+          <td>Tap-through passes one event</td><td>annotation-layer.html</td><td>interaction</td>
+          <td>armed tap reached the anchor, zero comments added</td><td>navigation intercept</td>
+          <td>PASS</td><td>&mdash;</td>
+        </tr>
+        <tr>
+          <td>Desktop pointer path unchanged</td><td>annotation-layer.html</td><td>regression</td>
+          <td>hover outline, modifier passthrough, element walk all intact</td><td>paired desktop arm</td>
+          <td>PASS</td><td>&mdash;</td>
+        </tr>
+        <tr>
+          <td>Editor reachable at 390px</td><td>annotation-layer.html</td><td>layout</td>
+          <td>popover placed opposite the target, flash not occluded</td><td>frame at 390&times;844</td>
+          <td>PASS</td><td>&mdash;</td>
+        </tr>
+        <tr>
+          <td>Focus never stranded on body</td><td>annotation-layer.html</td><td>accessibility</td>
+          <td>restored to the dock after every sheet collapse</td><td>activeElement probe</td>
+          <td>PASS</td><td>&mdash;</td>
+        </tr>
+        <tr>
+          <td>Preview URL opens on iOS Safari</td><td>conductor preview</td><td>delivery</td>
+          <td>not reproducible from inside the sandbox</td><td>&mdash;</td>
+          <td>UNKNOWN</td><td>open question 4</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
   <h2>Open questions for you</h2>
   <div class="card">
@@ -209,7 +270,12 @@ flashHL on commit                       -&gt; fires</div>
   #an-fab:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 0;
     box-shadow: 0 0 0 4px var(--an-bg), 0 0 0 6px var(--an-ink); }
   /* one glyph: the count when there are comments, the add-mark when there are none */
-  #an-fab-label { display: block; }
+  /* One cell, two occupants: the count when there are comments, the bubble when there
+     are none. Both are grid-centred children of #an-fab, so neither reflows the other. */
+  #an-fab-label { display: none; }
+  #an-fab.has-notes #an-fab-label { display: block; }
+  #an-fab.has-notes #an-fab-icon { display: none; }
+  #an-fab-icon { width: 22px; height: 22px; display: block; }
 
   /* ---- picking ---- */
   html.an-picking, html.an-picking * { cursor: crosshair !important; }
@@ -253,6 +319,49 @@ flashHL on commit                       -&gt; fires</div>
     border: 1px solid var(--an-line); border-radius: 14px; box-shadow: var(--an-shadow);
   }
   #an-panel.open { display: flex; }
+
+  /* ---- bottom sheet (touch only) ---- */
+  /* A right-anchored 340px card is the shape that failed worst under the zoom bug above:
+     fixed geometry in layout pixels, so it slid off a shrinking visual viewport. Edge-to
+     edge, bottom-anchored, it degrades instead of disappearing. */
+  html.an-touch #an-panel {
+    display: flex; left: 0; right: 0; bottom: 0; top: auto;
+    width: auto; max-width: none; max-height: 82vh;
+    border-radius: 16px 16px 0 0; border-bottom: 0;
+    transform: translateY(100%); visibility: hidden;
+    transition: transform .24s cubic-bezier(.32,.72,0,1), visibility 0s linear .24s;
+  }
+  html.an-touch #an-panel.open {
+    transform: translateY(0); visibility: visible;
+    transition: transform .24s cubic-bezier(.32,.72,0,1), visibility 0s;
+  }
+  /* The sheet owns the bottom edge, so the inset belongs to its last child, not the
+     container - padding on the flex column would sit below a scrolling list. */
+  html.an-touch #an-pfoot { padding-bottom: calc(9px + env(safe-area-inset-bottom, 0px)); }
+  #an-grab { display: none; }
+  html.an-touch #an-grab {
+    display: block; flex-shrink: 0; padding: 9px 0 5px;
+    touch-action: none;                 /* the handle drags the sheet, it does not scroll */
+  }
+  html.an-touch #an-grab::after {
+    content: ""; display: block; width: 36px; height: 4px; border-radius: 999px;
+    background: var(--an-track); margin: 0 auto;
+  }
+  #an-scrim { display: none; }
+  html.an-touch #an-scrim {
+    display: block; position: fixed; inset: 0; z-index: 2147482900;
+    background: rgba(0,0,0,.3); opacity: 0; pointer-events: none;
+    transition: opacity .24s ease;
+  }
+  html.an-touch #an-scrim.on { opacity: 1; pointer-events: auto; }
+  /* The dock would float on top of its own sheet. The sheet carries a close button, a
+     grab handle and a scrim, so nothing is lost by standing it down while open. */
+  html.an-touch.an-sheet #an-dock { opacity: 0; pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) {
+    html.an-touch #an-panel, html.an-touch #an-scrim, html.an-touch.an-sheet #an-dock {
+      transition: none;
+    }
+  }
   #an-phead {
     display: flex; align-items: center; gap: 2px; padding: 9px 8px 9px 14px;
     border-bottom: 1px solid var(--an-line); flex-shrink: 0;
@@ -349,6 +458,31 @@ flashHL on commit                       -&gt; fires</div>
   #an-pfoot button:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 1px; }
   #an-wipe { color: var(--an-muted); flex: 0 0 auto; }
   #an-pfoot #an-wipe:hover { color: var(--an-danger); border-color: var(--an-danger); }
+
+  /* Semantic, subtle: a 10% tint carries the meaning and the hue carries the label. NOT a
+     solid fill - #an-pfoot #an-wipe.arm owns solid danger as the ARMED half of the two-tap
+     safety, and that escalation has to stay the louder of the two.
+
+     Selector is #an-pfoot #an-X, not #an-X: `#an-pfoot button` is 1-0-1 and would outrank a
+     bare id. Measured - written the short way first, both backgrounds computed to
+     rgba(0,0,0,0) and the rules were inert. The file already solves this the same way for
+     :hover and .arm, which is the hint I should have taken.
+
+     Width is deliberately NOT touched. The shipped `#an-wipe { flex: 0 0 auto }` loses to
+     that same `#an-pfoot button { flex: 1 }`, so both buttons have ALWAYS been equal width;
+     "fixing" it here would be an unrequested desktop layout change riding along with a
+     colour change. Left alone, and pinned as equal-width so it cannot drift silently. */
+  #an-pfoot #an-copy {
+    background: color-mix(in srgb, var(--an-accent) 10%, var(--an-bg));
+    border-color: color-mix(in srgb, var(--an-accent) 32%, var(--an-line));
+    color: var(--an-accent);
+  }
+  #an-pfoot #an-copy:hover { border-color: var(--an-accent); }
+  #an-pfoot #an-wipe {
+    background: color-mix(in srgb, var(--an-danger) 10%, var(--an-bg));
+    border-color: color-mix(in srgb, var(--an-danger) 32%, var(--an-line));
+    color: var(--an-danger);
+  }
   #an-pfoot #an-wipe.arm { background: var(--an-danger); border-color: var(--an-danger); color: var(--an-on-danger); }
   #an-list { overflow-y: auto; padding: 4px 0; flex: 1; }
   .an-item {
@@ -420,6 +554,13 @@ flashHL on commit                       -&gt; fires</div>
     font-size: 14px; line-height: 1.45;
   }
   #an-text:focus-visible { outline: 2px solid var(--an-accent); outline-offset: 1px; }
+  /* iOS Safari zooms the page in when a control under 16px takes focus, and does NOT
+     zoom back out on blur. The editor's textarea is focused on every single comment, so
+     one tap left the whole page zoomed for the rest of the session - fixed chrome keeps
+     its layout-pixel width while the visual viewport shrinks, which is the "shifted and
+     clipped" report. 16px removes the trigger outright. Scoped to touch so the desktop
+     type scale is untouched. */
+  html.an-touch #an-text { font-size: 16px; }
   #an-hint { font-size: 11px; line-height: 1.4; color: var(--an-muted); margin-top: 6px; }
   #an-prow { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
   #an-prow button {
@@ -480,11 +621,20 @@ flashHL on commit                       -&gt; fires</div>
   <!-- The minimized comment container. It is the whole floating surface: it reports
        whether commenting is live, how many comments exist, and expands to the panel. -->
   <button id="an-fab" type="button" aria-expanded="false" aria-controls="an-panel">
-    <span id="an-fab-label" aria-hidden="true">✛</span>
+    <svg id="an-fab-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+         stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+      <path d="M14 8.2c0 2.5-2.7 4.6-6 4.6-.6 0-1.1-.1-1.6-.2-.9.7-2.1 1.2-3.4 1.3.7-.7 1.1-1.5 1.2-2.3C2.9 10.8 2 9.6 2 8.2 2 5.7 4.7 3.6 8 3.6s6 2.1 6 4.6Z"/>
+    </svg>
+    <span id="an-fab-label" aria-hidden="true"></span>
   </button>
 </div>
 
+<div id="an-scrim"></div>
+
 <div id="an-panel" role="dialog" aria-label="Comments">
+  <!-- Touch-only affordance. aria-hidden: dragging it is a pointer gesture with two
+       keyboard-and-SR-reachable equivalents already present (the close button, Esc). -->
+  <div id="an-grab" aria-hidden="true"></div>
   <!-- Commenting decides whether a click on the page becomes a comment or reaches the
        page — the most consequential control here, so it sits FIRST and reads as the
        primary thing. The list below is secondary: its count is an eyebrow, not a peer. -->
@@ -500,7 +650,9 @@ flashHL on commit                       -&gt; fires</div>
   <div id="an-passrow">
     <button id="an-pass" type="button" aria-pressed="false">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-        <path d="M8 1.5v9"/><path d="M4.5 7 8 10.5 11.5 7"/><path d="M2 13.5h12"/>
+        <circle cx="8" cy="8" r="2.1" fill="currentColor" stroke="none"/>
+        <path d="M4.1 11.9a5.5 5.5 0 0 1 0-7.8" stroke-linecap="round"/>
+        <path d="M11.9 4.1a5.5 5.5 0 0 1 0 7.8" stroke-linecap="round"/>
       </svg>
       <span id="an-pass-label">Tap through once</span>
     </button>
@@ -523,8 +675,8 @@ flashHL on commit                       -&gt; fires</div>
 
   <div id="an-list" role="list"></div>
   <div id="an-pfoot">
-    <button id="an-copy" type="button" title="Copy all comments">Copy all</button>
     <button id="an-wipe" type="button" title="Delete all comments">Delete all</button>
+    <button id="an-copy" type="button" title="Copy all comments">Copy all</button>
   </div>
 </div>
 
@@ -549,7 +701,7 @@ flashHL on commit                       -&gt; fires</div>
   "use strict";
 
   var KEY = "flow-annotations-v2:" + location.pathname;
-  var CHROME = "#an-dock,#an-panel,#an-pop,#an-hl,#an-pins,#an-copybox,#an-copy-scratch";
+  var CHROME = "#an-dock,#an-panel,#an-pop,#an-hl,#an-pins,#an-copybox,#an-copy-scratch,#an-scrim";
   var SKIP = { HTML: 1, BODY: 1, SCRIPT: 1, STYLE: 1, HEAD: 1, META: 1, LINK: 1, BR: 1 };
   var HSEL = "h1,h2,h3,h4,h5,h6";
   var MIN = 8, DEF = { x: 0.5, y: 0.15 };
@@ -624,6 +776,14 @@ flashHL on commit                       -&gt; fires</div>
   }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function isChrome(el) { return !!(el && el.closest && el.closest(CHROME)); }
+  // Can this element actually receive focus right now? Two different hiding mechanisms are
+  // in play: display:none (desktop card) leaves no client rects, visibility:hidden (touch
+  // sheet) leaves rects but still refuses focus. focus() no-ops silently in both cases, so
+  // callers that branch on success need to ask first.
+  function canTakeFocus(el) {
+    if (!el || !el.getClientRects().length) return false;
+    try { return getComputedStyle(el).visibility !== "hidden"; } catch (e) { return true; }
+  }
   function cssesc(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, "\\$&"); }
   function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 
@@ -1012,7 +1172,10 @@ flashHL on commit                       -&gt; fires</div>
       }
       if (back && document.contains(back)) { try { back.focus(); } catch (e) {} }
     }
-    $("an-fab-label").textContent = notes.length ? String(notes.length) : "✛";
+    // The count still takes the cell whenever there is one; only the empty-state glyph
+    // changed, from an add-mark to a comment bubble.
+    $("an-fab-label").textContent = notes.length ? String(notes.length) : "";
+    $("an-fab").classList.toggle("has-notes", notes.length > 0);
     $("an-ptitle").textContent = notes.length === 0 ? "No comments"
       : notes.length === 1 ? "1 comment" : notes.length + " comments";
     updateFab();
@@ -1163,13 +1326,14 @@ flashHL on commit                       -&gt; fires</div>
     // Focus must land somewhere deliberate: the row/pin that opened this, else the dock.
     var t = returnFocusTo; returnFocusTo = null;
     // Containment is NOT enough. A row inside a collapsed panel is still "contained", but
-    // focus() on a display:none element is a silent no-op - the very hazard this file
-    // already documents where returnFocusTo is captured - and the early return then skips
-    // the FAB fallback, stranding focus on <body>. getClientRects() is empty for a hidden
-    // node AND for a detached one, so it subsumes the containment check. Measured as
-    // reachable via open-from-list then Cancel; the Save path escaped it only because
-    // render() rebuilds the row first.
-    if (t && t.getClientRects().length) { try { t.focus(); return; } catch (e) {} }
+    // focus() on a hidden element is a silent no-op - the very hazard this file already
+    // documents where returnFocusTo is captured - and the early return then skips the FAB
+    // fallback, stranding focus on <body>. Measured as reachable via open-from-list then
+    // Cancel; the Save path escaped it only because render() rebuilds the row first.
+    // canTakeFocus covers BOTH ways this panel hides: the desktop card uses display:none
+    // (no client rects) and the touch sheet uses visibility:hidden (rects, but still
+    // unfocusable). A rects-only test passed the sheet and re-stranded focus - measured.
+    if (t && canTakeFocus(t)) { try { t.focus(); return; } catch (e) {} }
     try { $("an-fab").focus(); } catch (e) {}
   }
   function commitNote() {
@@ -1198,14 +1362,53 @@ flashHL on commit                       -&gt; fires</div>
   });
 
   // ---- dock + panel ---------------------------------------------------------------
+  // The scrim and the stood-down dock are a FUNCTION of panel state, so they are
+  // re-derived rather than toggled alongside it - three call sites change .open, and
+  // keeping three copies of the consequence in sync is the bug this avoids.
+  function syncSheet() {
+    var open = $("an-panel").classList.contains("open") && touchProfile;
+    $("an-scrim").classList.toggle("on", open);
+    document.documentElement.classList.toggle("an-sheet", open);
+  }
   $("an-fab").addEventListener("click", function () {
     $("an-panel").classList.toggle("open");
-    disarm(); updateFab();
+    disarm(); updateFab(); syncSheet();
   });
+  // Tap outside to dismiss. The scrim is chrome, so eventIsOurs() already refuses to
+  // read this as a page click - it cannot pin a comment on the way past.
+  $("an-scrim").addEventListener("click", function () { collapsePanel(true); });
+
+  // Swipe the handle down to dismiss. Tracks the finger, then decides on release:
+  // past a third of the sheet's height, or a flick, closes it; anything less snaps back.
+  (function () {
+    var g = $("an-grab"), panel = $("an-panel");
+    var startY = 0, startT = 0, dy = 0, dragging = false;
+    if (!g) return;
+    g.addEventListener("touchstart", function (e) {
+      if (!touchProfile || !e.touches.length) return;
+      dragging = true; dy = 0; startY = e.touches[0].clientY; startT = Date.now();
+      panel.style.transition = "none";
+    }, { passive: true });
+    g.addEventListener("touchmove", function (e) {
+      if (!dragging || !e.touches.length) return;
+      dy = Math.max(0, e.touches[0].clientY - startY);   // down only; up must not lift it
+      panel.style.transform = "translateY(" + dy + "px)";
+    }, { passive: true });
+    function end() {
+      if (!dragging) return;
+      dragging = false;
+      panel.style.transition = "";
+      panel.style.transform = "";
+      var flick = dy > 24 && (Date.now() - startT) < 300;
+      if (flick || dy > panel.offsetHeight / 3) collapsePanel(true);
+    }
+    g.addEventListener("touchend", end);
+    g.addEventListener("touchcancel", end);
+  })();
   $("an-mode").addEventListener("click", function () { setCommenting(!commenting); });
   $("an-close").addEventListener("click", function () {
     $("an-panel").classList.remove("open");
-    disarm(); updateFab();
+    disarm(); updateFab(); syncSheet();
     try { $("an-fab").focus(); } catch (e) {}   // the panel just un-rendered the focused node
   });
   // SAFETY: static author-controlled markup, no user text — never interpolate a note here.
@@ -1300,6 +1503,7 @@ flashHL on commit                       -&gt; fires</div>
     p.classList.remove("open");
     disarm();
     updateFab();
+    syncSheet();
     if (moveFocusToFab) { try { $("an-fab").focus(); } catch (e) {} }
   }
 
