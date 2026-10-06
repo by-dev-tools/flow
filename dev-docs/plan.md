@@ -2,6 +2,240 @@
 
 ## Current Focus
 
+**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/ready-check-ship-reads-ci-step-8-predicate`,
+**v1.63.0**, FB-0137): `/flow:ship` never calls a PR "ready" that GitHub would block.** The Step 8
+ship-readiness verdict becomes computed rather than remembered: a deterministic stdlib checker
+evaluates all five existing conditions from committed artifacts **plus CI status as a live sixth**,
+and "ready" is printed only when every one of them passes. Spec: `dev-docs/research/2026-10-agentic-graphs.md`
+**R1** (the deterministic Step-8 checker, with its explicit CI caveat) and FB-0131's third corollary
+(*"A green local sweep is not CI… I said ready on a PR GitHub was reporting as `BLOCKED`"*). R1 states
+these are deliberately **one** item, not two — filing them separately would duplicate the "which
+artifact does this gate actually read" design question.
+
+**Scope note on the roadmap source.** The brief cites a roadmap § Next entry "`/flow:ship` does not read
+CI status" filed with #183. **It is not there** — swept `origin/main` and every remote branch including
+`origin/pr183`; no such entry exists in any `dev-docs/roadmap.md`. R1 + FB-0131 are therefore the
+authoritative spec, and **this PR files the missing roadmap entry** as part of its doc reconciliation.
+
+**Mode:** feature · **Surface:** non-visual (Decision 0) · **Pre-execution gate:** plan
+
+### What is measured, and what is still inference
+
+Every row below was measured on this host at the current HEAD (`1b99133`, `gh` 2.100.0, plugin 1.60.0
+confirmed current with `main`). The CI arm is a live external call, so measuring the instrument before
+designing against it is the whole point — FB-0131 is a feedback entry about trusting an unvalidated
+instrument.
+
+| Fact | Source | Consequence for this plan |
+|---|---|---|
+| `gh pr checks <N>` **exit 1 is ambiguous across at least three unlike worlds**: a check is failing (#176 shape), no checks are reported (#183), the PR/API call failed (#99999) | measured, all three | The exit code **cannot** carry the tri-state. This is the cheapest implementation and it is the bug |
+| `gh pr checks <N> --json bucket,name,state,link` returns one object per check in gh's own `bucket` vocabulary (`pass`/`fail`/`pending`/`skipping`/`cancel`) | measured on #179 — 6 checks, all `pass`, exit 0 | The deterministic instrument is the structured field, not the exit status |
+| "no checks reported" emits **no JSON at all** and exits 1, even with `--json` | measured on #183 | The checker must treat unparseable output as its own state, never as empty-and-fine |
+| #183 is an **open** PR with `statusCheckRollup: []` and `mergeStateStatus: DIRTY` (CONFLICTING) | measured | "no checks" ≠ "no CI configured". A conflicting PR never receives `pull_request` checks — they will never arrive, so a pure "pending" reading would be wrong *and* a "none configured, fine" reading would be worse |
+| flow's own CI triggers on `pull_request` + `merge_group` **only** | `.github/workflows/ci.yml` | **Before a PR exists there are zero checks.** The gate is only readable *after* `gh pr create` — Decision 2 |
+| merged #176 reports `mergeStateStatus: UNKNOWN` | measured | `mergeStateStatus` is meaningful only for an OPEN PR, so it can never be the sole source |
+| #176's branch had **six** consecutive failed CI runs (2026-10-03 14:43→15:18 UTC), each with exactly one failing job — `evals` — and five green | `gh run list --branch …` measured | The faithful eval fixture shape. **FB-0131 says "four pushes"; the run history shows six runs** — runs ≠ pushes (`cancel-in-progress` collapses some). The plan records the measured number |
+| `timeout 30 gh pr checks 179 --watch --fail-fast` → exit 0, elapsed 1s | measured | The blocking-wait-with-timeout primitive exists on this host. No agent polling loop is needed, so waiting costs zero tokens |
+| `manifest-triage.py`'s `CHECK_ONLY` comment already names *"a `CI red` kind"* as having identical semantics to `verify-build` | source, line 155 | The manifest integration is **prescribed by the existing design**, not invented here |
+| `post-merge/lib/merge-status.py classify` consumes a `gh pr view --json` blob on **stdin** and is pure; its eval pins that a transient "can't tell yet" never becomes a terminal verdict | source + `run_merge_status_evals.py` | The architecture to copy, and the reason every state — including `pending`, which cannot be produced on demand — is evalable from a fixture |
+| **Inference, not measured:** a PR that is already a draft reports `mergeStateStatus: "DRAFT"` | GitHub's documented enum; both open PRs here are non-draft | Pinned as a criterion to measure at execution, not assumed. It is why checks must come from `statusCheckRollup` and `mergeStateStatus` is only ever a cross-check |
+
+### Decisions — recommendation · confidence · justification
+
+**Decision 0 — Surface: non-visual.** The change is a Python checker plus skill prose; it renders no
+browser UI. `Visual-walk: N/A` with that reason stated, not an empty block.
+**Recommendation:** declare N/A explicitly. **Confidence: HIGH.**
+
+**Decision 1 — The instrument is the structured output; the exit code is a secondary signal.**
+`.claude/rules/general.md` § Consistency item 4's corollary prefers a tool's exit code over a grep of
+its output. Here the exit code is *strictly less* informative than the structured field — measured: `1`
+collapses failing / no-checks / API-error into one value — so `--json bucket` **is** the signal gh's
+authors designed and maintain, and the exit code is used only to separate "I read it" from "I could not
+look". **Recommendation:** parse `bucket`; use the exit code to detect unreadability.
+**Confidence: HIGH** — the ambiguity is measured on three real cases, not argued.
+
+**Decision 2 — The gate runs after `gh pr create`, as a new Step 7a.7, before Step 7b's read-back.**
+flow's CI fires on `pull_request`, so zero checks exist beforehand; there is no earlier point where the
+condition is readable. On a non-green verdict: add the manifest entry, re-render, convert to draft
+through the machinery Step 7c already has.
+**Recommendation:** 7a.7 after create. **Confidence: HIGH.**
+**Alternative considered and rejected:** always create as a draft and promote to ready. It would make
+every ship — including the green majority — pass through a draft, and FB-0075 is explicit that a draft
+PR is "a last resort, not a deliverable".
+**Honest residual, named rather than hidden:** there is a window in which the PR exists as ready before
+conversion. It is bounded inside one step and closes before hand-off, so no human sees a ready PR — but
+a watcher polling GitHub in that window would. Stating it; not claiming it away.
+
+**Decision 3 — Three manifest kinds, not one: `ci-failing`, `ci-pending`, `ci-unknown`, all three in
+`CHECK_ONLY`.** `KIND_COPY`'s own stated design is "everything kind-specific in ONE record per kind";
+one `ci` kind would force generic `means` copy and lose exactly the plain-language specificity that
+record exists to provide ("a check is failing: `evals`" vs "checks haven't finished" vs "I could not see
+CI status" are three different things to tell a human). All three are `CHECK_ONLY` because only a
+passing check clears any of them — a human's assertion cannot.
+**Recommendation:** three kinds. **Confidence: HIGH.**
+**The dead-end this could create, and its precedent:** `CHECK_ONLY` never offers "waive and ship
+as-is", so a consumer with slow CI could read `ci-pending` as unresolvable. `toolchain` already solved
+this: its copy says plainly that the block stays and that the human may mark the PR ready themselves.
+The three `ci-*` records use that same honest shape. This keeps the brief's requirement exact —
+flow never prints "ready" on pending — without wedging anyone.
+
+**Decision 4 — "No checks at all" is disambiguated by asking GitHub, not by parsing workflow YAML.**
+`statusCheckRollup: []` **and** `mergeStateStatus == CLEAN` → nothing blocks this PR; the condition is
+satisfied **with its reason stated**. `[]` with anything else (`BLOCKED`, `DIRTY`, `BEHIND`, `UNSTABLE`,
+`UNKNOWN`) → `ci-unknown`, never ready.
+**Recommendation:** delegate to GitHub's own computation. **Confidence: HIGH.**
+**Justification, three independent reasons:** scanning `.github/workflows/` would need a YAML parser
+flow does not have (stdlib-only quality bar); it is blind to non-Actions CI, which arrives as commit
+statuses; and it cannot see branch protection, which is what actually decides whether GitHub blocks.
+`mergeStateStatus` is GitHub's own answer to this PR's literal title.
+**Caveat carried into a criterion:** a draft PR reports `DRAFT` for that field (inferred, see the table),
+so `mergeStateStatus` is a cross-check and never the sole source.
+
+**Decision 5 — Waiting is a blocking `timeout <N> gh pr checks --watch`, never an agent loop; the budget
+comes from a new `ciWaitSeconds` slot (default 600).**
+**Recommendation:** add the slot. **Confidence: MEDIUM** — this is the call I would most like redirected.
+**For:** CI duration is genuinely project-shaped (flow's own evals job is 1m11s measured; a consumer's
+suite can be 20m), and a hardcoded ceiling either wastes wall-clock here or reports false "pending"
+there. The slot follows `postMergeWaitSeconds`' existing precedent exactly.
+**Against:** it is a real fan-out cost — schema slot count 38→39, `/flow:doctor` slot coverage, schema
+docs, and every "N slots" assertion (`.claude/rules/general.md` item 2 names this as the
+most-recurring bug class in this repo). A hardcoded 600s with a documented constant costs none of that.
+**Alignment with the stated constraint:** Ben, 2026-10-05 — *tokens matter, lost time doesn't*. A
+blocking wait is precisely right under that constraint: it costs zero tokens and converts a guess into
+a verdict. On timeout, report pending honestly; never upgrade a timeout to a pass.
+
+**Decision 6 — `/flow:ship-spike` runs the same checker but acts more narrowly: it reports the CI
+verdict in its hand-off and converts to draft only on `ci-failing`.** ship-spike opens a non-draft PR
+and is explicitly *not* gated by the NOT-READY manifest; its established pattern for this exact
+situation (Step 2a.3) is halt-and-adjudicate, not drafting.
+**Recommendation:** report all three states; draft only on `ci-failing`, because that is the only one
+where GitHub genuinely blocks. **Confidence: MEDIUM** — flagged for the gate.
+**Alternative:** full symmetry with `/flow:ship` (draft on any non-pass). More consistent, but it
+imports draft-gating into a mode that deliberately has none, which is a larger change to spike
+semantics than this PR's goal needs.
+
+**Decision 7 — Each condition returns `PASS` / `FAIL` / `UNDECLARED`, and `UNDECLARED` is never a pass.**
+R1's own falsification criterion predicted what this surfaces, and it is real: **condition 2 (no open
+BLOCKER from `/simplify` or `/flow:staff-review`) has no artifact carrying a BLOCKER count.**
+`rigor-marker.py check` answers whether staff-review ran against the current source, not what it found.
+So the checker reports that condition `UNDECLARED` by construction and **names the missing artifact** —
+which is exactly the useful signal R1 said this exercise would produce — rather than silently passing it.
+This is `autoplan/lib/gate.py`'s rule arriving at a second surface: *a GREEN verdict requires every arm
+to have RUN; absence of findings is never by itself a pass.*
+**Recommendation:** three-valued conditions; `UNDECLARED` blocks. **Confidence: HIGH.**
+**Scope guard:** this PR does **not** build the missing BLOCKER artifact. That is a roadmap follow-up
+this PR files, not scope it absorbs.
+
+**Decision 8 — The checker is pure and stdin-fed; the live `gh` call lives in the skill.** Exactly
+`merge-status.py classify`'s shape. This is what makes the `pending` state testable at all — I cannot
+produce a pending PR on demand, but I can fixture one, and the brief requires an eval per state.
+**Recommendation:** pure core, live edge. **Confidence: HIGH.**
+
+### Spec-walk
+
+- [ ] **The verdict names which condition failed, and only that one.** All six conditions are evaluated
+      and reported individually. *Verify:* paired — a fixture failing exactly one condition names that
+      condition and reports the other five as passing; an all-pass fixture returns ready.
+      *Pinned by:* `run_ship_readiness_evals.py::test_verdict_names_the_failing_condition`.
+- [ ] **CI passing → may be ready.** *Verify:* a fixture of six `pass` buckets with
+      `mergeStateStatus: CLEAN` yields a ready verdict. *Pinned by:*
+      `run_ship_readiness_evals.py::test_ci_passing`.
+- [ ] **CI failing → not ready, naming the failing check.** *Verify:* the verdict is not-ready and the
+      rendered text contains the failing check's name. *Pinned by:*
+      `run_ship_readiness_evals.py::test_ci_failing_names_the_check`.
+- [ ] **CI pending → "checks pending", never ready — and this is pinned as a PAIR.** The cheapest
+      implementation treats "nothing has failed yet" as passing, so a single arm cannot distinguish a
+      working checker from the bug. *Verify:* two fixtures differing in exactly one bucket — 5 `pass` +
+      1 `pending` → NOT ready with a pending-specific reason, and 6 `pass` → ready. Both arms, or
+      neither is evidence. *Pinned by:* `run_ship_readiness_evals.py::test_pending_is_not_passing`.
+- [ ] **`gh` absent or erroring → "CI status unknown", never ready — paired with the positive.**
+      *Verify:* `gh` unreachable yields `ci-unknown`; a *successful* all-pass read yields ready. Without
+      the second arm a checker hardwired to "unknown" would pass (FB-0121: "couldn't see" is not
+      "nothing there"; `.claude/rules/general.md` item 3: a prohibition satisfiable by deletion).
+      *Pinned by:* `run_ship_readiness_evals.py::test_unknown_requires_both_arms`.
+- [ ] **A consumer without GitHub is not broken — it degrades loudly, as other slots do.** *Verify:*
+      with `gh` absent the pipeline still completes and the PR step is reached; the failure is a printed
+      `⚠️` plus a `ci-unknown` manifest entry, never a halt and never a silent no-op. *Pinned by:*
+      `run_ship_readiness_evals.py::test_absent_gh_degrades_not_halts`.
+- [ ] **"No checks reported" is disambiguated, both arms.** *Verify:* `statusCheckRollup: []` +
+      `mergeStateStatus: CLEAN` → condition satisfied **with a stated reason**; `[]` + `DIRTY` (the
+      measured #183 shape) → not ready. *Pinned by:*
+      `run_ship_readiness_evals.py::test_no_checks_is_two_different_worlds`.
+- [ ] **#176's measured shape is replayed as the regression case.** *Verify:* a fixture of its six real
+      checks — five `pass`, `evals` `fail` — with `mergeStateStatus: BLOCKED`, and every artifact-side
+      condition green (manifest READY, body "ready"): the checker returns NOT ready and names `evals`.
+      This is the exact state flow called ready across six red CI runs. *Pinned by:*
+      `run_ship_readiness_evals.py::test_pr176_regression`.
+- [ ] **`UNDECLARED` never passes, and its reason is distinct from a failure.** *Verify:* a run with no
+      verify-build buffer returns not-ready with a reason distinguishable from "the build failed", and
+      condition 2 reports `UNDECLARED` naming the artifact that does not exist (Decision 7).
+      *Pinned by:* `run_ship_readiness_evals.py::test_undeclared_is_not_a_pass`.
+- [ ] **The wait is blocking, not polled — pinned as a positive AND a negative.** *Verify:* the skill
+      prose invokes `timeout … gh pr checks … --watch` (positive) **and** contains no sleep/poll loop
+      around a checks call (negative). A negative alone would pass if the whole wait were deleted.
+      *Pinned by:* `run_ship_readiness_evals.py::test_wait_is_blocking_not_polled`.
+- [ ] **A timeout reports pending honestly and is never upgraded to a pass.** *Verify:* the timeout path
+      yields the same `ci-pending` verdict as an observed pending state. *Pinned by:*
+      `run_ship_readiness_evals.py::test_timeout_reports_pending`.
+- [ ] **Three `ci-*` kinds exist with non-generic copy and all three are `CHECK_ONLY`.** *Verify:*
+      paired — each kind has its own `means`/`needs_you` text (not the generic fallback), and a waiver
+      on each is recorded but never subtracted from the residual set, so the PR stays a draft.
+      *Pinned by:* `run_ship_readiness_evals.py::test_three_ci_kinds_are_check_only`, reusing
+      `run_manifest_triage_evals.py`'s existing waiver-subtraction assertions.
+- [ ] **The instrument is validated against a known positive before any green is trusted.** *Verify:*
+      the harness demonstrates it can report NOT-ready on #176's shape; a suite that has only ever
+      returned "ready" has produced no evidence (`.claude/rules/general.md` item 4). *Pinned by:* the
+      `test_pr176_regression` arm above, which is this criterion's known-positive.
+- [ ] **`run_ship_readiness_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
+      harness↔runner join step passes — exit-code-driven, not a grep. An unwired harness gives zero
+      regression protection while looking identical to a wired one (FB-0074).
+- [ ] **Docs reconciled:** a `dev-docs/history/` entry, `FB-0137`, the **missing roadmap § Next entry**
+      this PR files (plus the condition-2 BLOCKER-artifact follow-up from Decision 7),
+      `changelog/v1.63.0.md`, this block flipped to EXECUTED, and — only if Decision 5 survives the gate
+      — the `ciWaitSeconds` slot in the schema and `/flow:doctor`'s slot coverage. *Verified by:*
+      `dev-docs/check-index.py` and `check-version-provenance.py` exit codes, plus a `git grep` sweep
+      of every "N slots" occurrence (`.claude/rules/general.md` item 2's fan-out defense — grep first,
+      edit second).
+
+### Visual-walk
+
+**N/A — this change renders no UI.** The deliverable is a stdlib Python checker, skill prose, and
+dev-docs. Declared explicitly rather than left empty, so nothing infers significance from an absent
+block.
+
+### Risks
+
+1. **A new live network dependency at a late pipeline step.** Mitigated by construction: bounded
+   `timeout`, and every unreadable path resolves to `ci-unknown` → not-ready. The PR is still created
+   either way, so a network failure degrades the verdict, never the pipeline.
+2. **`mergeStateStatus` is eventually consistent** and returns `UNKNOWN` while GitHub computes
+   mergeability. One bounded retry, then `ci-unknown`. Never a pass.
+3. **The post-create ready window** (Decision 2's named residual).
+4. **Scope is larger than "read CI status"** — six conditions, because R1 says these are one item.
+   Bounded by Decision 7: conditions 1–5 are re-derivations permitted to return `UNDECLARED`, and the
+   CI arm is the only new capability. No new artifact is built for condition 2.
+5. **Shared ship slot.** `plugins/flow/skills/ship/**` is contended — #179 and #183 are open and a
+   screenshots worker also edits `ship/SKILL.md`. Rebase and re-sweep at ship, and re-run
+   `extract-criteria.py` after every rebase to confirm this block is still the selected one (FB-0131:
+   a clean merge is not evidence the document is right).
+
+### Files touched
+
+- `plugins/flow/skills/ship/lib/ship-readiness.py` — new; the pure, stdin-fed checker.
+- `plugins/flow/skills/ship/SKILL.md` — new Step 7a.7; Step 7c re-runs the CI condition.
+- `plugins/flow/skills/ship/lib/manifest-triage.py` — three `KIND_COPY` records + three `CHECK_ONLY`
+  members.
+- `plugins/flow/skills/ship-spike/SKILL.md` — Decision 6's narrower hand-off.
+- `plugins/flow/evals/run_ship_readiness_evals.py` + fixtures — new.
+- `.github/workflows/ci.yml` — wire the harness.
+- `dev-docs/`: `history/`, `feedback/FB-0137-*.md`, `roadmap.md`, `plan.md`, `changelog/v1.63.0.md`.
+
+---
+
+---
+
+---
+
 **▶ EXECUTED, shipping (this branch `conductor/fix-visual-walk-na-forces-significance`, **v1.62.0**, FB-0138): Fix 2 — an explicit `**Visual-walk:** N/A` forces `visual_significant` TRUE, so being conscientious is punished and being careless is rewarded.**
 
 **Mode:** feature · **Surface:** non-visual · **#176 has merged, so this is no longer stacked** — rebased onto `main` with `--onto`, because #176 was squash-merged and a plain rebase would have replayed its 14 commits onto content that already had them. Extractor re-checked afterwards.
