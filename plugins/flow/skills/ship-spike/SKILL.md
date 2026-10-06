@@ -694,7 +694,15 @@ has none. Run the same engine, then act by state:
 ```sh
 # Re-resolve everything: this is its own Bash call.
 R="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ship-readiness.py"; [ -f "$R" ] || R="plugins/flow/skills/ship/lib/ship-readiness.py"
-CI_WAIT=$(jq -r '.ciWaitSeconds // 600' flow.config.json 2>/dev/null); case "$CI_WAIT" in ''|*[!0-9]*) CI_WAIT=600;; esac
+FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+[ -n "$FLOW_ROOT" ] || { echo "⚠️ BLOCKER: not inside a git repository — cannot run the CI gate." >&2; exit 1; }
+# Repo-root-relative, not CWD-relative: run from a subdirectory, a CWD-relative read finds
+# no config and the slot silently reverts to 600 — a config the user believes is in force
+# and is not. The `case` below degrades LOUDLY for the same reason.
+CI_WAIT=$(jq -r '.ciWaitSeconds // 600' "$FLOW_ROOT/flow.config.json" 2>/dev/null)
+case "$CI_WAIT" in
+  ''|*[!0-9]*) echo "⚠️ [ci-gate] flow.config.json.ciWaitSeconds is not a non-negative integer ('$CI_WAIT') — falling back to 600." >&2; CI_WAIT=600;;
+esac
 if ! command -v gh >/dev/null 2>&1; then
   echo "⚠️ [ci-gate] gh is not installed — CI status cannot be read. This is NOT a passing CI." >&2
   CI_OUT=$(python3 "$R" ci --gh-failed)

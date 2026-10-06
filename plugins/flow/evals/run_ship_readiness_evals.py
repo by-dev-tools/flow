@@ -297,6 +297,19 @@ check("test_timeout_reports_pending",
 check("test_timeout_matches_observed_pending_verdict",
       (t_out["verdict"], t_out["kind"]) == (pending["verdict"], pending["kind"]),
       f"{t_out['kind']} vs {pending['kind']}")
+# The boundary value, paired. MEASURED: `timeout 0` disables the timeout, so the slot's
+# documented "read once, do not wait" would become an UNBOUNDED wait if the guard were
+# dropped. The negative alone (no unguarded call) would pass if the whole wait were
+# deleted, so assert BOTH that the guard exists and that the `timeout` call it guards is
+# still there (general.md item 3).
+for _label, _src in (("ship", SHIP_SKILL.read_text()), ("ship-spike", SPIKE_SKILL.read_text())):
+    check(f"test_zero_wait_skips_the_blocking_call[{_label}:guard]",
+          '[ "$CI_WAIT" -gt 0 ]' in _src,
+          "ciWaitSeconds:0 reaches `timeout 0`, which DISABLES the timeout — unbounded wait")
+    check(f"test_zero_wait_skips_the_blocking_call[{_label}:call-still-there]",
+          "timeout \"$CI_WAIT\" gh pr checks" in _src,
+          "the guard is present but the timeout call it guards is gone")
+
 check("test_timeout_names_the_budget",
       "600" in t_out["reason"] and "ciWaitSeconds" in t_out["reason"], t_out["reason"])
 
@@ -529,6 +542,11 @@ for label, src in (("ship", ship_src), ("ship-spike", spike_src)):
     check(f"test_rc_capture_is_not_clobbered[{label}]",
           "|| RC_WATCH=$?" in src and not re.search(r"--fail-fast[^\n]*\|\|\s*true", src),
           "RC capture uses `|| true` before reading $?, which captures `true`")
+    check(f"test_ci_wait_slot_is_read_from_the_repo_root[{label}]",
+          '"$FLOW_ROOT/flow.config.json"' in src,
+          "the slot is read CWD-relative, so running from a subdirectory silently reverts "
+          "it to the default")
+
     check(f"test_ci_wait_slot_is_read_with_a_default[{label}]",
           ".ciWaitSeconds // 600" in src, "ciWaitSeconds is not read with a documented default")
 
@@ -545,12 +563,62 @@ check("test_spike_never_claims_pending_is_ready",
       re.search(r"never say \"ready\"", spike_src) is not None,
       "ship-spike does not forbid calling an unconfirmed state ready")
 
+# CWE-59, both halves. This repo has shipped the directory-only guard and then paid for it;
+# the comment at ship's Step 2a says "a guard at five of six sites is not a guard". Paired on
+# purpose: `rm -f` present AND the write it protects present, so satisfying this by deleting
+# the writer is not a pass (general.md item 3).
+check("test_ci_scratch_files_are_unlinked_before_write",
+      'rm -f "$CI_JSON" "$CI_JSON.raw"' in ship_src
+      and '[ -L "$FLOW_SCRATCH/.gitignore" ] && rm -f' in ship_src,
+      "the CI gate writes scratch files behind only a DIRECTORY-level symlink guard — a "
+      "planted .flow/ci-status.json symlink would be followed and the victim truncated")
+check("test_ci_scratch_writes_still_exist",
+      '> "$CI_JSON"' in ship_src and '> "$CI_JSON.raw"' in ship_src,
+      "the guarded writes are gone, so the guard above protects nothing")
+# Order is load-bearing: `[ -f ]` is false for a DANGLING symlink, so an unlink placed after
+# the .gitignore creation prevents nothing.
+# Scoped to the 7a.7 BLOCK, not the whole file. A file-wide `.index()` finds Step 2a's
+# `.gitignore` line hundreds of lines earlier and compares against the wrong occurrence —
+# which is how this assertion first failed. Pin the claim where it is made.
+_77 = ship_src[ship_src.index("### 7a.7."):ship_src.index("### 7b.")]
+check("test_unlinks_precede_the_gitignore_creation",
+      _77.index('rm -f "$CI_JSON" "$CI_JSON.raw"')
+      < _77.index('[ -f "$FLOW_SCRATCH/.gitignore" ] || printf'),
+      "within 7a.7, the unlinks come AFTER the .gitignore creation, where they prevent nothing")
+
 # The honest-window disclosure: the step must SAY the PR is created before CI is
 # readable, rather than implying the gate runs first.
 check("test_ship_discloses_the_post_create_window",
       "before the PR exists there are zero checks" in ship_src
       and "window closes before Step 8" in ship_src,
       "7a.7 does not disclose the post-create window")
+
+# =========================================================================
+# 12b. The prose predicate and the engine predicate must not drift apart.
+# =========================================================================
+print("\n[predicate join — prose vs engine]")
+
+GENERAL = PLUGIN / "skills" / "general" / "SKILL.md"
+WORKFLOW = PLUGIN / "docs" / "workflow.md"
+_gen = GENERAL.read_text()
+_wf = WORKFLOW.read_text()
+# The engine ships six conditions. Both prose surfaces that state the auto-advance rule
+# must mention CI, or an agent reads a five-condition predicate while the engine (and the
+# changelog) claim six — the fan-out contradiction class, which this repo tracks as its
+# most expensive recurring bug.
+check("test_rule_skill_predicate_includes_ci",
+      "CI checks observed green" in _gen,
+      "general/SKILL.md's auto-advance predicate omits the CI condition the engine ships")
+check("test_workflow_predicate_includes_ci",
+      "CI checks are green" in _wf and "pending" in _wf,
+      "workflow.md § Ship-readiness predicate omits the CI condition")
+check("test_workflow_invokes_the_engine",
+      "ship-readiness.py" in _wf and 'check --plan' in _wf,
+      "workflow.md states the predicate but never invokes the engine that evaluates it — "
+      "~250 shipped lines with no caller (the FB-0074 unwired-composition shape)")
+check("test_engine_still_declares_six_conditions",
+      len(eng.CONDITION_ORDER) == 6 and "ci" in eng.CONDITION_ORDER,
+      f"CONDITION_ORDER = {eng.CONDITION_ORDER}")
 
 # =========================================================================
 # 13. Schema: the slot exists, with the documented default and the swept count.

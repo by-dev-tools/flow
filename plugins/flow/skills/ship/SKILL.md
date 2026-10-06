@@ -1874,11 +1874,23 @@ FLOW_SCRATCH="$FLOW_ROOT/.flow"
 # Same CWE-59 refusal as every other .flow writer: an untrusted clone can ship
 # .flow as a symlink, and a redirect follows it.
 [ -L "$FLOW_SCRATCH" ] && { echo "⚠️ BLOCKER: $FLOW_SCRATCH is a symlink — refusing to write flow scratch through it." >&2; exit 1; }
-mkdir -p "$FLOW_SCRATCH"
-# Self-ignore, written HERE and not only in the Python helper: this block does its own
-# mkdir and writes two new files into the dir, and shell sites never call that helper.
-[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
+mkdir -p "$FLOW_SCRATCH" || { echo "⚠️ BLOCKER: cannot create $FLOW_SCRATCH — the CI gate cannot run." >&2; exit 1; }
 CI_JSON="$FLOW_SCRATCH/ci-status.json"
+# CWE-59, SECOND HALF. The `-L` check above protects the scratch DIRECTORY; these lines
+# protect the FILES written inside it. `.flow` can be a real directory that CONTAINS
+# `ci-status.json` as a symlink to ~/.claude/settings.json or a sibling repo's .git/config —
+# git checks that out happily, the directory guard passes, and `>` then FOLLOWS the link and
+# truncates the victim. This block adds TWO independently plantable names (`.json` and its
+# `.raw` sibling). `rm -f` unlinks the symlink itself rather than writing through it, and is
+# safe unconditionally because both files are ephemeral scratch this block is about to write.
+#
+# ORDER IS LOAD-BEARING: the unlinks must precede the `.gitignore` creation. `[ -f ]` is
+# FALSE for a DANGLING symlink, so placed after, the redirect has already created an
+# attacker-named file at the link target. Step 2a's comment records this verbatim; this site
+# is why "a guard at five of six sites is not a guard" was worth writing down.
+rm -f "$CI_JSON" "$CI_JSON.raw"
+[ -L "$FLOW_SCRATCH/.gitignore" ] && rm -f "$FLOW_SCRATCH/.gitignore"
+[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
 CI_WAIT=$(jq -r '.ciWaitSeconds // 600' "$FLOW_ROOT/flow.config.json" 2>/dev/null)
 # Loud, not silent: a typo'd slot that quietly becomes 600 is a config the user believes
 # is in force and is not (CLAUDE.md's never-silently-no-op rule).
@@ -1928,8 +1940,11 @@ else
       # --settled, so give the checks a chance to register and look once more. Only this
       # second look makes the absence evidence.
       if [ "$(jq -r '.state' "$CI_JSON")" = "no-checks-unsettled" ]; then
-        echo "[ci-gate] no checks reported yet — waiting ${CI_SETTLE:=20}s for them to register, then looking once more." >&2
-        sleep "$CI_SETTLE"
+        # A fixed constant, deliberately NOT an env knob or a config slot: it is a
+        # registration delay, not a CI duration, and an unvalidated `${CI_SETTLE:=…}`
+        # would be the one input in this block with no `case` guard on it.
+        echo "[ci-gate] no checks reported yet — waiting 20s for them to register, then looking once more." >&2
+        sleep 20
         if gh pr view "$N" --json statusCheckRollup,mergeStateStatus,isDraft > "$CI_JSON.raw" 2>/dev/null; then
           python3 "$R" ci --blob "$CI_JSON.raw" --settled > "$CI_JSON"
         fi

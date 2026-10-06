@@ -690,6 +690,28 @@ drafts only on `ci-failing`.
   §7a.7 and closed before the Step 8 hand-off, so no human is handed a ready-looking PR — but a
   watcher polling GitHub inside that window would see one.
 
+### The CWE-59 file-level guard is at three of six `.flow` writer sites (2026-10-06, v1.64.0 security review)
+
+`.flow` writers carry two distinct guards and only one of them is universal. The **directory**
+check (`[ -L "$FLOW_SCRATCH" ]`) is everywhere. The **file** half — `rm -f` the target names
+before writing, and unlink a *dangling* `.gitignore` symlink before the `[ -f ]` test that would
+otherwise create a file at its target — is not. `.flow` can be a real directory that *contains*
+`triage.json` as a symlink to `~/.claude/settings.json`; git checks that out happily, the
+directory guard passes, and `>` follows the link.
+
+Fixed at ship §7a.7 in v1.64.0 (its two new names made it the live instance). Step 2a and
+ship-spike §2a.1 already had it. **`$FLOW_SCRATCH/triage.json` at ship §7a.5 does not**, and
+neither do the remaining writers.
+
+The irony worth keeping: §7a.5's own comment is the sentence *"a guard at five of six sites is not
+a guard"* — written when the directory half was being swept, about the half that is now itself at
+three of six.
+
+**Not fixed in v1.64.0 on purpose:** those sites are not that change's diff, and a security sweep
+across six shell blocks in two skills is its own reviewable PR rather than a rider on a CI gate.
+
+**Surfaces when:** any `.flow` writer block is next edited, or a new one is added.
+
 ### Four deferred findings from v1.64.0's staff-review, all real, none in scope
 
 1. **`UNDECLARED` is one word for two different facts.** The render cannot tell a reader that
