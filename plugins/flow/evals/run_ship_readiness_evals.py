@@ -158,6 +158,19 @@ check("test_gh_absent_reason_is_not_a_pass",
       "unknown" in gh_absent["reason"].lower() and "not evidence" in gh_absent["reason"].lower(),
       gh_absent["reason"])
 
+# The degrade contract, pinned because a Spec-walk box claimed it: gh absent must yield a
+# verdict (never a crash, never a halt) AND the skills must warn loudly rather than
+# proceeding quietly. Paired: the warn text must exist in the prose, and the engine must
+# still exit 0 so the pipeline reaches the PR step instead of dying.
+_absent = subprocess.run([sys.executable, str(ENGINE), "ci", "--gh-failed"],
+                         capture_output=True, text=True)
+check("test_absent_gh_degrades_not_halts",
+      _absent.returncode == 0
+      and json.loads(_absent.stdout)["kind"] == "ci-unknown"
+      and "gh is not installed" in SHIP_SKILL.read_text()
+      and "NOT a passing CI" in SHIP_SKILL.read_text(),
+      f"rc={_absent.returncode}")
+
 empty = subprocess.run([sys.executable, str(ENGINE), "ci"], input="",
                        capture_output=True, text=True)
 check("test_empty_stdin_is_unknown_not_clean",
@@ -182,18 +195,49 @@ for fx in ("ci-unmapped-conclusion.json", "ci-unknown-node-type.json"):
 # =========================================================================
 print("\n[no checks reported — both arms]")
 
-clean = ci_fixture("ci-no-checks-clean.json")
+# `--settled` because that is what the shipped shell does on this branch: it looks once,
+# sees `no-checks-unsettled`, waits for checks to register, and looks again. The
+# unsettled-vs-settled pair is pinned separately above; this arm is about the SECOND look
+# genuinely distinguishing "no CI configured" from a blocked PR.
+clean = ci_cli("--blob", str(FIX / "ci-no-checks-clean.json"), "--settled")
 check("test_no_checks_is_two_different_worlds[clean]",
       clean["verdict"] == "PASS" and clean["state"] == "no-checks-clean"
       and "no checks are configured" in clean["reason"],
       json.dumps(clean))
-dirty = ci_fixture("ci-no-checks-dirty.json")
+# The dirty arm takes --settled too, so the ONLY difference between the two arms is the
+# merge state. Without that, this pair would be confounded by the settle flag and would
+# "disagree" for the wrong reason — a green test measuring something else.
+dirty = ci_cli("--blob", str(FIX / "ci-no-checks-dirty.json"), "--settled")
 check("test_no_checks_is_two_different_worlds[dirty]",
       dirty["verdict"] == "UNDECLARED" and dirty["kind"] == "ci-unknown"
       and "DIRTY" in dirty["reason"],
       json.dumps(dirty))
 check("test_no_checks_arms_disagree", clean["verdict"] != dirty["verdict"],
       "both arms returned the same verdict — the disambiguation is not happening")
+
+# An empty rollup with a CLEAN merge state is the ONE branch where PASS would come from an
+# absence, and ship 7a.7 runs in exactly the window where a brand-new PR looks like that.
+# Found by review and reproduced before fixing; pinned as a pair, because the whole point
+# is that the two reads of the SAME blob must disagree.
+_unsettled = ci_fixture("ci-no-checks-clean.json")
+_settled = ci_cli("--blob", str(FIX / "ci-no-checks-clean.json"), "--settled")
+check("test_empty_rollup_is_not_a_pass_until_settled",
+      _unsettled["verdict"] == "UNDECLARED"
+      and _unsettled["state"] == "no-checks-unsettled"
+      and _unsettled["kind"] == "ci-unknown"
+      and _settled["verdict"] == "PASS",
+      f"unsettled={_unsettled['verdict']} settled={_settled['verdict']}")
+check("test_settle_flag_changes_only_the_empty_clean_branch",
+      ci_cli("--blob", str(FIX / "ci-failing-pr176.json"), "--settled")["verdict"] == "FAIL"
+      and ci_cli("--blob", str(FIX / "ci-pending.json"), "--settled")["kind"] == "ci-pending"
+      and ci_cli("--blob", str(FIX / "ci-passing.json"), "--settled")["verdict"] == "PASS",
+      "--settled altered a verdict outside the empty-rollup branch")
+# And the shell must actually perform the second look — a flag no caller passes is a gate
+# that never closes (the FB-0074 unwired-composition shape).
+for _label, _src in (("ship", SHIP_SKILL.read_text()), ("ship-spike", SPIKE_SKILL.read_text())):
+    check(f"test_skill_performs_the_settle_reread[{_label}]",
+          "no-checks-unsettled" in _src and "--settled" in _src,
+          "the skill never re-reads with --settled, so the empty-rollup pass is unreachable")
 
 # =========================================================================
 # 4. mergeStateStatus is a cross-check, never the sole source.
@@ -226,6 +270,20 @@ sc_pend = ci_fixture("ci-status-context-pending.json")
 check("test_status_context_pending_is_mapped",
       sc_pend["verdict"] == "UNDECLARED" and sc_pend["kind"] == "ci-pending",
       json.dumps(sc_pend))
+# THE PASSING ARM. Without it, the only StatusContext assertions were "does not pass" —
+# and a mapper whose `_PASSING_STATES` was simply wrong would satisfy both of them. That
+# is general.md item 4 (a detector validated only where it should stay quiet), and it
+# lands hardest here, on the one family whose field names are transcribed from GitHub's
+# documented schema rather than measured.
+sc_pass = ci_fixture("ci-status-context-passing.json")
+check("test_status_context_passing_is_mapped",
+      sc_pass["verdict"] == "PASS" and sc_pass["state"] == "passing",
+      json.dumps(sc_pass))
+_sd = sorted(_diff_fields(
+    json.loads((FIX / "ci-status-context-passing.json").read_text()),
+    json.loads((FIX / "ci-status-context-pending.json").read_text())))
+check("test_status_context_pair_differs_only_in_state",
+      _sd and all(f.endswith(".state") for f in _sd), f"differing fields: {_sd}")
 
 # =========================================================================
 # 6. The timeout reports pending, and is never upgraded to a pass.
@@ -410,6 +468,18 @@ for k in CI_KINDS:
     check(f"test_ci_kind_offers_no_waive[{k}]",
           "waive_cost" not in mt.KIND_COPY.get(k, {}), "carries a waive_cost")
 
+# The per-kind CHECK_ONLY option, paired: the three CI kinds must each carry their own,
+# and `verify-build` must still fall through to the shared default. Without the second
+# half, deleting the default would pass.
+for k in CI_KINDS:
+    check(f"test_ci_kind_has_its_own_check_only_option[{k}]",
+          "check_only_option" in mt.KIND_COPY[k]
+          and "failing build" not in mt.KIND_COPY[k]["check_only_option"],
+          "missing, or still says 'failing build' for a non-failing state")
+check("test_verify_build_keeps_the_default_check_only_option",
+      "check_only_option" not in mt.KIND_COPY["verify-build"],
+      "verify-build grew its own option; the shared default is now unreachable for it")
+
 # Non-generic copy, PAIRED with the positive that the records exist at all. A
 # "copy is not generic" assertion alone passes if the kind is deleted.
 generic = {mt.KIND_COPY[k]["means"] for k in CI_KINDS}
@@ -428,8 +498,6 @@ for fx in sorted(FIX.glob("ci-*.json")):
     k = ci_fixture(fx.name)["kind"]
     if k:
         emitted.add(k)
-for k in (*CI_KINDS,):
-    pass
 check("test_every_emitted_kind_is_a_known_manifest_kind",
       emitted and emitted <= set(mt.KINDS), f"emitted={sorted(emitted)}")
 check("test_engine_can_emit_all_three_kinds", emitted == set(CI_KINDS), f"emitted={sorted(emitted)}")

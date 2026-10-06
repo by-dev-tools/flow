@@ -690,6 +690,37 @@ drafts only on `ci-failing`.
   §7a.7 and closed before the Step 8 hand-off, so no human is handed a ready-looking PR — but a
   watcher polling GitHub inside that window would see one.
 
+### Four deferred findings from v1.64.0's staff-review, all real, none in scope
+
+1. **`UNDECLARED` is one word for two different facts.** The render cannot tell a reader that
+   `no-blocker` means "an artifact does not exist yet, roadmap-filed, expected" while `ci` means
+   "something went wrong on *this run*". Both print identically, so after a few ships the line reads
+   as furniture — which is the state in which the next real `UNDECLARED` gets skipped. The engine
+   already defends against exactly this hazard for the `confidence` condition and says so in its own
+   docstring; condition 2 has no such escape. Fix shape: a `structural: true` field on the
+   by-construction arms, and two grouped lines in `render` instead of one. Deferred because it
+   changes an output shape three skills read.
+2. **Checkbox *state* still has two readers' worth of scan logic.** `ship-readiness.py` imports
+   `CHECKBOX_RE` and `extract_block` rather than re-deriving block extent — but it then re-walks the
+   block's lines itself, because `collect_items` discards checkbox state. Equivalent today, divergent
+   the next time `collect_items` changes. Proper fix is `collect_items(..., with_state=True)` so "what
+   counts as a checkbox in a block" stays one definition. Deferred: that lib has six-plus consumers
+   and two eval harnesses ride on its return shape.
+3. **The decision list never shows `needs_you`.** `render_decisions` prints `means`, the
+   recommendation and the options, but not the field written to be "answerable in a word" — that
+   appears only in the PR-body block. Deferred because it affects all eleven kinds and the triage
+   evals.
+4. **Draft-during-the-wait is unmeasured, not rejected.** `/flow:ship` §7a.7 now distinguishes *draft
+   as the deliverable* (rejected on FB-0075) from *draft during the wait* (`gh pr create --draft` →
+   block → `gh pr ready` on PASS), whose final state on the green path is byte-identical to today's
+   and whose failure direction is the safe one. It would close the post-create window entirely. The
+   blocking unknown is cheap and specific: **do `pull_request` workflows fire for a PR opened as a
+   draft?** If they do not, the approach cannot work at all, because the checks it waits for would
+   never start. One ship run answers it.
+
+**Surfaces when:** `plugins/flow/skills/ship/lib/ship-readiness.py`, `manifest-triage.py`'s render
+paths, or `walk_extract.py` is next touched.
+
 ### No artifact records the `/simplify` + `/flow:staff-review` BLOCKER count
 
 Surfaced by building the Step 8 checker (v1.64.0), and it is exactly the signal R1 predicted that

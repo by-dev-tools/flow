@@ -98,8 +98,6 @@ import re
 import sys
 from pathlib import Path
 
-SCHEMA_VERSION = 1
-
 # ---------------------------------------------------------------------------
 # Shared contracts, imported rather than restated.
 # ---------------------------------------------------------------------------
@@ -159,13 +157,22 @@ _FAILING_STATES = frozenset({"FAILURE", "ERROR"})
 # Merge states that mean GitHub itself would stand in the way. `DRAFT` is NOT
 # here and must never be: flow drafts PRs, so `DRAFT` is the expected state for
 # exactly the PRs this engine is asked about, and it says nothing about checks.
-# `UNKNOWN` means GitHub has not finished computing mergeability -- transient,
-# and handled as "could not confirm", never as a block and never as a pass.
+# `UNKNOWN` means GitHub has not finished computing mergeability -- transient, and
+# deliberately NOT a block: when every reported check has passed, an un-computed
+# mergeability is no reason to withhold ready. It only ever withholds a pass on the
+# EMPTY-rollup path, where it is handled as "could not confirm" (see `ci_condition`).
 _BLOCKING_MERGE_STATES = frozenset({"BLOCKED", "DIRTY", "BEHIND"})
 _MERGE_STATE_MEANING = {
     "BLOCKED": "GitHub reports the PR as BLOCKED (a required check or review is not satisfied)",
     "DIRTY": "GitHub reports the PR as DIRTY (it conflicts with the base branch, so checks may never run)",
     "BEHIND": "GitHub reports the PR as BEHIND (the base branch moved and an update is required)",
+    # UNKNOWN is glossed even though it is NOT in _BLOCKING_MERGE_STATES, and that is the
+    # point: ship 7a.7 runs immediately after the PR is created, which is precisely when
+    # the rollup is empty and GitHub has not finished computing mergeability. So this is
+    # the most likely `ci-unknown` a consumer ever sees, and it renders as the first line
+    # of a numbered question. Leaving it to the fallback leaked a raw GraphQL field name
+    # into that line.
+    "UNKNOWN": "GitHub has not finished working out whether this PR can merge",
 }
 
 KIND_FAILING = "ci-failing"
@@ -212,13 +219,37 @@ def _node_url(node: dict) -> str:
     return node.get("detailsUrl") or node.get("targetUrl") or ""
 
 
-def ci_condition(blob: dict | None, *, unreadable_reason: str | None = None) -> dict:
+def ci_condition(
+    blob: dict | None,
+    *,
+    unreadable_reason: str | None = None,
+    settled: bool = False,
+) -> dict:
     """The CI condition, as a pure function of a `gh pr view --json` blob.
 
     `blob is None` means the call could not be made or its output could not be
     parsed -- `gh` absent, unauthenticated, offline, PR missing. That is
     `UNDECLARED`/`ci-unknown`, never `PASS`. FB-0121: "couldn't see" is not
     "nothing there".
+
+    `settled` is the caller's POSITIVE ASSERTION that it gave checks a chance to
+    appear before this read. It gates exactly one branch -- empty rollup with a
+    `CLEAN` merge state -- and defaults to False, because that branch is the only
+    place in this engine where `PASS` is derived from an ABSENCE.
+
+    Why it has to exist (found by review, reproduced before fixing). Ship 7a.7 runs
+    immediately after `gh pr create`, and `gh pr checks --watch` does NOT wait for
+    checks to *appear* -- with zero checks reported it exits at once. So for the
+    seconds between creating a PR and Actions registering its run, the rollup is
+    `[]`; and on a repo with no branch protection `mergeStateStatus` is already
+    `CLEAN`. Without this flag the engine answered `PASS` / "no checks are
+    configured" there -- #176's exact shape ("nothing has failed") re-entering
+    through the one branch that reasons from absence of evidence. Flow's own repo
+    masked it, because required checks make a fresh PR `BLOCKED`.
+
+    So "this project has no CI" and "this PR is two seconds old" are two states, and
+    only a caller that waited can tell them apart. Same rule as
+    `autoplan/lib/gate.py`: a green verdict requires the arm to have RUN.
     """
     if blob is None:
         return {
@@ -308,19 +339,36 @@ def ci_condition(blob: dict | None, *, unreadable_reason: str | None = None) -> 
         # considers the PR blocked. Measured: #183 is an open PR with an empty
         # rollup and DIRTY, where `pull_request` checks will never arrive.
         if merge_state == "CLEAN":
+            if not settled:
+                # The caller has not asserted it waited, so this is indistinguishable
+                # from a PR created moments ago whose checks have not registered yet.
+                # Not a pass. The caller re-reads once with `--settled` after giving
+                # them a chance to appear; only then is the absence evidence.
+                result.update(
+                    state="no-checks-unsettled",
+                    verdict="UNDECLARED",
+                    kind=KIND_UNKNOWN,
+                    reason=(
+                        "no checks have been reported yet. GitHub reports the PR as CLEAN, "
+                        "but a PR created moments ago looks exactly like a project with no "
+                        "CI at all — so this is not yet evidence that there is nothing to "
+                        "wait for."
+                    ),
+                )
+                return result
             result.update(
                 state="no-checks-clean",
                 verdict="PASS",
                 kind=None,
                 reason=(
                     "no checks are configured or required for this PR, and GitHub reports "
-                    "it as CLEAN — nothing to wait for."
+                    "it as CLEAN after a second look — nothing to wait for."
                 ),
             )
             return result
         detail = _MERGE_STATE_MEANING.get(
             merge_state or "",
-            f"GitHub reports mergeStateStatus={merge_state or 'unavailable'}",
+            "GitHub did not report whether this PR can merge",
         )
         result.update(
             state="unknown",
@@ -376,8 +424,8 @@ def ci_timeout_condition(waited_seconds: int) -> dict:
         "merge_state": None,
         "counts": {"pass": 0, "fail": 0, "pending": 0, "unknown": 0},
         "reason": (
-            f"checks pending — stopped waiting after {waited_seconds}s "
-            "(ciWaitSeconds). Still running is not passing."
+            f"checks pending — stopped waiting after {waited_seconds}s (the ciWaitSeconds "
+            "setting in flow.config.json). Still running is not passing."
         ),
     }
 
@@ -412,6 +460,17 @@ def spec_walk_condition(plan_path: str | None) -> dict:
     # a green-looking UNDECLARED over a plan that is fully declared. Pinned by
     # `run_ship_readiness_evals.py::test_unchecked_criterion_fails_not_undeclared`,
     # which caught exactly that during this change.
+    # `all_demoted` is a DIFFERENT empty-items case from "there is no block", and
+    # `walk_extract.extract_block`'s docstring explicitly tells callers not to conflate
+    # them. Same UNDECLARED verdict, but the reason must not send a reader off to write a
+    # Spec-walk block that already exists and is merely marked shipped.
+    if block.get("all_demoted"):
+        return _cond(
+            "spec-walk",
+            "UNDECLARED",
+            "every Spec-walk block in the plan is demoted (marked merged/shipped), so the "
+            "active plan section declares none — expected just after a demote-at-merge.",
+        )
     start = block.get("first_heading_line")
     if not start:
         return _cond("spec-walk", "UNDECLARED", "the plan declares no Spec-walk block.")
@@ -432,6 +491,14 @@ def spec_walk_condition(plan_path: str | None) -> dict:
             unchecked.append(m.group("text")[:70])
     if total == 0:
         return _cond("spec-walk", "UNDECLARED", "the active Spec-walk block contains no criteria.")
+    # Carry the parser's own warnings + the line it graded. On a multi-PR plan
+    # `extract_block` grades the first active block and warns about the rest; dropping
+    # that left the reason unable to say WHICH block it read (FB-0131: a clean parse is
+    # not evidence the right block was selected).
+    where = f" [graded the block at line {start}]"
+    warns = block.get("warnings") or []
+    if warns:
+        where += " " + " ".join(f"[WARN] {w}" for w in warns)
     if unchecked:
         # Name a few, then count the rest. The full list is the plan itself; a reason
         # line that prints fifteen 70-character criteria is not read by anyone, which
@@ -441,9 +508,9 @@ def spec_walk_condition(plan_path: str | None) -> dict:
         return _cond(
             "spec-walk",
             "FAIL",
-            f"{len(unchecked)} of {total} Spec-walk criteria are still unchecked: {shown}{more}",
+            f"{len(unchecked)} of {total} Spec-walk criteria are still unchecked: {shown}{more}{where}",
         )
-    return _cond("spec-walk", "PASS", f"all {total} Spec-walk criteria are checked.")
+    return _cond("spec-walk", "PASS", f"all {total} Spec-walk criteria are checked.{where}")
 
 
 def no_blocker_condition(blockers_file: str | None) -> dict:
@@ -534,9 +601,20 @@ def verify_build_condition(findings_path: str | None) -> dict:
         return _cond("verify-build", "UNDECLARED", f"the verify-build buffer is unreadable ({exc}).")
     verdict = data.get("overall_verdict")
     if verdict == "PASS":
-        return _cond("verify-build", "PASS", "verify-build returned overall_verdict PASS.")
-    if verdict in ("FAIL", "Unknown"):
-        return _cond("verify-build", "FAIL", f"verify-build returned overall_verdict {verdict}.")
+        return _cond("verify-build", "PASS", "the behavioral gate ran and passed.")
+    if verdict == "FAIL":
+        return _cond("verify-build", "FAIL", "the behavioral gate ran and failed.")
+    if verdict == "Unknown":
+        # UNDECLARED, not FAIL. Both block `ready`, but this file's whole thesis is that
+        # "it did not pass" and "I could not tell" are different facts, and verify-build's
+        # `Unknown` is literally the second one. Putting it in `failed` would send a reader
+        # to debug a failure that was never observed.
+        return _cond(
+            "verify-build",
+            "UNDECLARED",
+            "the behavioral gate ran but could not certify the result (Unknown) — not a "
+            "failure, and not a pass.",
+        )
     return _cond(
         "verify-build",
         "UNDECLARED",
@@ -606,7 +684,6 @@ def combine(conditions: list[dict]) -> dict:
     failed = [c["id"] for c in conditions if c["verdict"] == "FAIL"]
     undeclared = [c["id"] for c in conditions if c["verdict"] == "UNDECLARED"]
     return {
-        "schema": SCHEMA_VERSION,
         "ready": not failed and not undeclared,
         "conditions": conditions,
         "failed": failed,
@@ -667,6 +744,12 @@ def main(argv: list[str] | None = None) -> int:
     p_ci.add_argument("--blob", help="path to the blob; default stdin")
     p_ci.add_argument("--gh-failed", action="store_true", help="gh could not be run at all")
     p_ci.add_argument("--timed-out", type=int, metavar="SECONDS", help="the blocking wait hit its ceiling")
+    p_ci.add_argument(
+        "--settled",
+        action="store_true",
+        help="assert the caller gave checks a chance to appear before this read; "
+             "required before an EMPTY check list may count as 'no CI configured'",
+    )
 
     p_check = sub.add_parser("check", help="the six-condition Step 8 predicate")
     p_check.add_argument("--plan")
@@ -674,6 +757,7 @@ def main(argv: list[str] | None = None) -> int:
     p_check.add_argument("--blockers-file")
     p_check.add_argument("--ci-blob", help="path to a gh pr view --json blob; omit if no PR exists yet")
     p_check.add_argument("--gh-failed", action="store_true")
+    p_check.add_argument("--ci-settled", action="store_true")
     p_check.add_argument("--render", action="store_true", help="human-readable instead of JSON")
 
     args = ap.parse_args(argv)
@@ -691,7 +775,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         else:
             blob, why = _read_blob(args.blob)
-            out = ci_condition(blob, unreadable_reason=why)
+            out = ci_condition(blob, unreadable_reason=why, settled=args.settled)
         print(json.dumps(out, indent=2, sort_keys=True))
         # Exit 0 whenever the mapping SUCCEEDED, whatever it concluded. The caller
         # reads `verdict`; a non-zero exit here would be indistinguishable from the
@@ -709,7 +793,7 @@ def main(argv: list[str] | None = None) -> int:
         ci = ci_condition(None, unreadable_reason="CI status unknown — gh could not be run.")
     elif args.ci_blob:
         blob, why = _read_blob(args.ci_blob)
-        ci = ci_condition(blob, unreadable_reason=why)
+        ci = ci_condition(blob, unreadable_reason=why, settled=args.ci_settled)
     else:
         ci = ci_condition(
             None,

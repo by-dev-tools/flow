@@ -199,7 +199,7 @@ produce a pending PR on demand, but I can fixture one, and the brief requires an
       regression protection while looking identical to a wired one (FB-0074).
 - [x] **Docs reconciled:** a `dev-docs/history/` entry, `FB-0137`, the **missing roadmap § Next entry**
       this PR files (plus the condition-2 BLOCKER-artifact follow-up from Decision 7),
-      `changelog/v1.63.0.md`, this block flipped to EXECUTED, and — only if Decision 5 survives the gate
+      `changelog/v1.64.0.md`, this block flipped to EXECUTED, and — only if Decision 5 survives the gate
       — the `ciWaitSeconds` slot in the schema and `/flow:doctor`'s slot coverage. *Verified by:*
       `dev-docs/check-index.py` and `check-version-provenance.py` exit codes, plus a `git grep` sweep
       of every "N slots" occurrence (`.claude/rules/general.md` item 2's fan-out defense — grep first,
@@ -217,7 +217,10 @@ block.
    `timeout`, and every unreadable path resolves to `ci-unknown` → not-ready. The PR is still created
    either way, so a network failure degrades the verdict, never the pipeline.
 2. **`mergeStateStatus` is eventually consistent** and returns `UNKNOWN` while GitHub computes
-   mergeability. One bounded retry, then `ci-unknown`. Never a pass.
+   mergeability. Resolved differently than planned, and the plan claimed something the code does not
+   do: there is no retry on `UNKNOWN`. When every reported check has passed, an un-computed merge
+   state is deliberately *not* a block — withholding ready there would stall every fast CI. It
+   withholds a pass only on the EMPTY-rollup branch, which the settle re-read covers.
 3. **The post-create ready window** (Decision 2's named residual).
 4. **Scope is larger than "read CI status"** — six conditions, because R1 says these are one item.
    Bounded by Decision 7: conditions 1–5 are re-derivations permitted to return `UNDECLARED`, and the
@@ -236,7 +239,7 @@ block.
 - `plugins/flow/skills/ship-spike/SKILL.md` — Decision 6's narrower hand-off.
 - `plugins/flow/evals/run_ship_readiness_evals.py` + fixtures — new.
 - `.github/workflows/ci.yml` — wire the harness.
-- `dev-docs/`: `history/`, `feedback/FB-0137-*.md`, `roadmap.md`, `plan.md`, `changelog/v1.63.0.md`.
+- `dev-docs/`: `history/`, `feedback/FB-0137-*.md`, `roadmap.md`, `plan.md`, `changelog/v1.64.0.md`.
 
 ---
 

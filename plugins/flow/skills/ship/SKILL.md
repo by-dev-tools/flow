@@ -1847,6 +1847,17 @@ is answerable. The consequence is a narrow, named window: the PR is created per 
 converted to a draft inside this step if CI is not green. The window closes before Step 8, so no human
 is handed a ready-looking PR — but it is a real window, not an absence of one, and the PR body says so.
 
+**Two different alternatives get rejected for two different reasons; do not collapse them.**
+*Draft as the deliverable* — open every PR as a draft and let the human promote it — is rejected on
+FB-0075: a draft PR is a last resort, not a deliverable, and this would route the green majority
+through one. *Draft during the wait* — `gh pr create --draft`, block here, then `gh pr ready` on a
+`PASS` verdict — is a different proposal, and FB-0075's argument does not reach it: its final state on
+the green path is byte-identical to today's, and its failure direction is the safe one (a crash
+mid-sequence leaves a draft, not a false "ready"). It is **not** rejected on principle; it is
+unmeasured. The open question is whether `pull_request` workflows fire at all for a PR opened as a
+draft — if they do not, draft-during-the-wait cannot work, because the checks it waits for would never
+start. That is one ship run to measure, and it is filed in the roadmap rather than assumed either way.
+
 **Wait with a blocking command, never a polling loop (FB-0137).** `timeout … --watch` produces the same
 verdict for **zero** model turns; an agent-driven poll re-reads its own output every cycle and bills
 for it. Ben's constraint — *tokens matter, lost time doesn't* — does not merely permit the blocking
@@ -1864,8 +1875,16 @@ FLOW_SCRATCH="$FLOW_ROOT/.flow"
 # .flow as a symlink, and a redirect follows it.
 [ -L "$FLOW_SCRATCH" ] && { echo "⚠️ BLOCKER: $FLOW_SCRATCH is a symlink — refusing to write flow scratch through it." >&2; exit 1; }
 mkdir -p "$FLOW_SCRATCH"
+# Self-ignore, written HERE and not only in the Python helper: this block does its own
+# mkdir and writes two new files into the dir, and shell sites never call that helper.
+[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
 CI_JSON="$FLOW_SCRATCH/ci-status.json"
-CI_WAIT=$(jq -r '.ciWaitSeconds // 600' flow.config.json 2>/dev/null); case "$CI_WAIT" in ''|*[!0-9]*) CI_WAIT=600;; esac
+CI_WAIT=$(jq -r '.ciWaitSeconds // 600' "$FLOW_ROOT/flow.config.json" 2>/dev/null)
+# Loud, not silent: a typo'd slot that quietly becomes 600 is a config the user believes
+# is in force and is not (CLAUDE.md's never-silently-no-op rule).
+case "$CI_WAIT" in
+  ''|*[!0-9]*) echo "⚠️ [ci-gate] flow.config.json.ciWaitSeconds is not a non-negative integer ('$CI_WAIT') — falling back to 600." >&2; CI_WAIT=600;;
+esac
 
 if ! command -v gh >/dev/null 2>&1; then
   # FB-0121: "couldn't see" is not "nothing there". An absent or unauthenticated gh
@@ -1887,10 +1906,34 @@ else
     # returned for a failing check, for "no checks reported", AND for a missing PR,
     # three unlike worlds in one value. It is used ONLY to detect `timeout`'s own 124.
     # RC capture is `|| RC=$?` and not `|| true; RC=$?`, which would capture `true`.
+    #
+    # `-gt 0` is LOAD-BEARING, not defensive. MEASURED (coreutils 8.32): `timeout 0`
+    # DISABLES the timeout — `timeout 0 sleep 3` runs the full 3s and exits 0, against
+    # `timeout 1 sleep 3` which exits 124 at 1s. So passing a documented `ciWaitSeconds: 0`
+    # ("read once, do not wait") straight to `timeout` produced an UNBOUNDED `--watch`
+    # wait: the exact opposite of the contract, on the one value a user sets to avoid
+    # waiting. Zero now skips the wait entirely and falls through to the single read below,
+    # which IS "read once".
     RC_WATCH=0
-    timeout "$CI_WAIT" gh pr checks "$N" --watch --fail-fast >/dev/null 2>&1 || RC_WATCH=$?
+    if [ "$CI_WAIT" -gt 0 ]; then
+      timeout "$CI_WAIT" gh pr checks "$N" --watch --fail-fast >/dev/null 2>&1 || RC_WATCH=$?
+    fi
     if gh pr view "$N" --json statusCheckRollup,mergeStateStatus,isDraft > "$CI_JSON.raw" 2>/dev/null; then
       python3 "$R" ci --blob "$CI_JSON.raw" > "$CI_JSON"
+      # SETTLE RE-READ — the one branch where PASS would come from an ABSENCE.
+      # `gh pr checks --watch` does not wait for checks to APPEAR: with zero reported it
+      # returns at once. So a PR created seconds ago has an empty rollup, and on a repo
+      # with no branch protection its merge state is already CLEAN — indistinguishable
+      # from a project with no CI. The engine refuses to call that a pass without
+      # --settled, so give the checks a chance to register and look once more. Only this
+      # second look makes the absence evidence.
+      if [ "$(jq -r '.state' "$CI_JSON")" = "no-checks-unsettled" ]; then
+        echo "[ci-gate] no checks reported yet — waiting ${CI_SETTLE:=20}s for them to register, then looking once more." >&2
+        sleep "$CI_SETTLE"
+        if gh pr view "$N" --json statusCheckRollup,mergeStateStatus,isDraft > "$CI_JSON.raw" 2>/dev/null; then
+          python3 "$R" ci --blob "$CI_JSON.raw" --settled > "$CI_JSON"
+        fi
+      fi
     elif [ "$RC_WATCH" -eq 124 ]; then
       python3 "$R" ci --timed-out "$CI_WAIT" > "$CI_JSON"
     else
@@ -1900,6 +1943,9 @@ else
   fi
 fi
 CI_VERDICT=$(jq -r '.verdict' "$CI_JSON"); CI_KIND=$(jq -r '.kind // empty' "$CI_JSON")
+# Echo the kind, because the table below and the add-entry sites branch on it. Shell state
+# dies with this call, so a $CI_KIND nothing prints is a variable the next step cannot read.
+echo "[ci-gate] verdict=$CI_VERDICT kind=${CI_KIND:-none}"
 # Positive assertion paired with every fallback above: the engine must have produced a
 # verdict. An empty one means no branch ran, which is not a pass either.
 [ -n "$CI_VERDICT" ] || { echo "⚠️ BLOCKER: the CI gate produced no verdict — treat as NOT ready." >&2; exit 1; }

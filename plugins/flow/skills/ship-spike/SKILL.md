@@ -701,23 +701,44 @@ if ! command -v gh >/dev/null 2>&1; then
 else
   N=$(gh pr view --json number --jq .number 2>/dev/null)
   if [ -z "$N" ]; then
+    echo "⚠️ [ci-gate] no PR found for this branch — CI status unknown, never assumed green." >&2
     CI_OUT=$(python3 "$R" ci --gh-failed)
   else
     # Blocking wait, bounded; its exit status is used only to detect timeout's 124
     # (measured: exit 1 means three unlike things). `|| RC=$?`, never `|| true; RC=$?`.
+    # `-gt 0`: MEASURED, `timeout 0` DISABLES the timeout (coreutils 8.32), so the
+    # documented ciWaitSeconds:0 "read once" would wait unbounded. Zero skips the wait.
     RC_WATCH=0
-    timeout "$CI_WAIT" gh pr checks "$N" --watch --fail-fast >/dev/null 2>&1 || RC_WATCH=$?
-    if gh pr view "$N" --json statusCheckRollup,mergeStateStatus,isDraft > /dev/null 2>&1; then
-      CI_OUT=$(gh pr view "$N" --json statusCheckRollup,mergeStateStatus,isDraft | python3 "$R" ci)
+    if [ "$CI_WAIT" -gt 0 ]; then
+      timeout "$CI_WAIT" gh pr checks "$N" --watch --fail-fast >/dev/null 2>&1 || RC_WATCH=$?
+    fi
+    # ONE fetch, captured. A probe-then-refetch pair can succeed and then fail, and that
+    # second failure arrives as empty stdin rather than the explicit --gh-failed state —
+    # exactly the ambiguity this engine exists to remove.
+    RAW=$(gh pr view "$N" --json statusCheckRollup,mergeStateStatus,isDraft 2>/dev/null)
+    if [ -n "$RAW" ]; then
+      CI_OUT=$(printf '%s' "$RAW" | python3 "$R" ci)
+      # Settle re-read — see /flow:ship §7a.7 for why an empty rollup on a seconds-old PR
+      # is not evidence that a project has no CI.
+      if [ "$(printf '%s' "$CI_OUT" | jq -r '.state')" = "no-checks-unsettled" ]; then
+        echo "[ci-gate] no checks reported yet — waiting 20s, then looking once more." >&2
+        sleep 20
+        RAW2=$(gh pr view "$N" --json statusCheckRollup,mergeStateStatus,isDraft 2>/dev/null)
+        [ -n "$RAW2" ] && CI_OUT=$(printf '%s' "$RAW2" | python3 "$R" ci --settled)
+      fi
     elif [ "$RC_WATCH" -eq 124 ]; then
       CI_OUT=$(python3 "$R" ci --timed-out "$CI_WAIT")
     else
+      echo "⚠️ [ci-gate] gh could not report this PR's status — treating CI as unknown, never as green." >&2
       CI_OUT=$(python3 "$R" ci --gh-failed)
     fi
   fi
 fi
+# Positive assertion paired with every fallback above. An empty CI_OUT means no branch ran,
+# and in the one file whose thesis is "silence is not a pass" it must not read as one.
+[ -n "$CI_OUT" ] || { echo "⚠️ BLOCKER: the CI gate produced no verdict — treat as NOT confirmed green." >&2; exit 1; }
 printf '%s' "$CI_OUT" | jq -r '"[ci-gate] " + .state + " — " + .reason'
-printf '%s' "$CI_OUT" | jq -r '.verdict'
+printf '%s' "$CI_OUT" | jq -r '"verdict=" + .verdict + " kind=" + (.kind // "none")'
 ```
 
 - **`PASS`** — say so in the hand-off and stop. Nothing changes.

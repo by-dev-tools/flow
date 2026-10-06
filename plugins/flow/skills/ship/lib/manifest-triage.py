@@ -314,8 +314,10 @@ KIND_COPY: dict[str, dict[str, str]] = {
     "ci-failing": {
         "clears_when": "push a fix, then re-read `gh pr checks` for the current head and confirm every check passes",
         "means": "GitHub is reporting a failing check on this PR, so GitHub itself would block the merge.",
-        "needs_you": ("Nothing, if you want me to fix it — tell me and I will. Otherwise mark the PR "
-                      "ready yourself; I will not call a PR with a red check shippable."),
+        "needs_you": ("One word — \"fix it\" and I will. Or mark the PR ready yourself; I will not "
+                      "call a PR with a red check shippable."),
+        "check_only_option": ("leave it — a red check will never become a ready PR from me; mark it "
+                             "ready on GitHub yourself if you accept the risk"),
         "why": "a red check is the one readiness signal that is not my judgement — GitHub is the authority here",
         "then": ("I apply the fix, push, and re-read the checks. A failing check never becomes a "
                  "ready PR automatically — if you accept the risk, you mark it ready yourself."),
@@ -324,20 +326,24 @@ KIND_COPY: dict[str, dict[str, str]] = {
         "clears_when": "re-read `gh pr checks` for the current head and confirm every check has finished and passed",
         "means": ("GitHub's checks had not finished when I stopped waiting. Nothing has failed — but "
                   "nothing has passed either."),
-        "needs_you": ("Nothing, usually — tell me to look again and I will. If you would rather not "
-                      "wait, mark the PR ready yourself once you have seen the checks go green."),
+        "needs_you": ("One word — \"look again\" and I will re-read them. Or mark the PR ready "
+                      "yourself once you have seen the checks go green."),
+        "check_only_option": ("leave it — I won't call unfinished checks a pass; mark it ready "
+                             "yourself once you've seen them go green"),
         "why": ("\"nothing has failed yet\" and \"everything passed\" are different states, and only one "
                 "of them is shippable"),
-        "then": "I re-read the checks. If they have all finished and passed, the PR becomes ready.",
+        "then": ("I re-read the checks. If they have all finished and passed, the PR becomes ready. "
+                 "If your checks routinely take longer than this, raise `ciWaitSeconds` in "
+                 "flow.config.json and I will wait that long next time."),
     },
     "ci-unknown": {
         "clears_when": "re-read `gh pr checks` for the current head and confirm every check passes",
-        "means": ("I could not confirm this PR's checks are green — GitHub reported no checks, an "
-                  "unrecognised check state, or `gh` could not be reached. This is a blind spot, not "
-                  "a clean bill of health."),
-        "needs_you": ("Check the PR's status yourself. If this project has no CI, that is fine — say so "
-                      "and mark the PR ready; I cannot tell \"no checks configured\" from \"checks I "
-                      "could not see\" when GitHub also reports the PR as blocked."),
+        "means": ("I could not confirm this PR's checks are green — the line above says why. This is "
+                  "a blind spot, not a clean bill of health."),
+        "needs_you": ("Check the PR's status yourself. If this project has no CI, that is fine — say "
+                      "so and mark the PR ready."),
+        "check_only_option": ("leave it — I won't report a check I couldn't see as green; mark it "
+                             "ready yourself if you know the project has no CI"),
         "why": "not being able to look is not the same as there being nothing there, so I will not report it as green",
         "then": "I look again. If every check reports and passes, the PR becomes ready.",
     },
@@ -900,8 +906,17 @@ def render_decisions(result: dict[str, Any]) -> str:
                 cost = _copy(kind, "waive_cost")
                 options.append("waive it and ship as-is" + (f" — {cost}" if cost else ""))
             elif kind in CHECK_ONLY:
-                options.append("leave it — I won't mark a failing build ready; you can do that "
-                               "yourself on GitHub if you accept the risk")
+                # Per-kind, because this is the ONLY line telling the reader what they can
+                # do instead, and a generic one is actively false for two of the five
+                # CHECK_ONLY kinds: "I won't mark a failing build ready" over checks that
+                # are merely still running contradicts that kind's own `means` line two rows
+                # above it ("Nothing has failed — but nothing has passed either"), so the
+                # question argues with itself. The `toolchain` comment above already
+                # identified this hazard for its own kind; the fallback stays as the default
+                # so `verify-build` is unchanged.
+                options.append(_copy(kind, "check_only_option",
+                                     "leave it — I won't mark a failing build ready; you can do "
+                                     "that yourself on GitHub if you accept the risk"))
             options.append("something else — tell me")
             out.append("   - Options:")
             for opt in options:
