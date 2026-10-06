@@ -664,6 +664,56 @@ attention, so "when to include one" is the actual design question, not "how".
 **Surfaces when:** `/flow:prototype` Step 7's capture step, `verify-build`'s frame persistence, or
 any gate-1 message format is next touched.
 
+### ~~`/flow:ship` does not read CI status~~ — ✅ SHIPPED (v1.64.0, FB-0131/FB-0137)
+
+**Filed late, and that is the point.** The dispatch brief for this work cited a § Next entry
+"`/flow:ship` does not read CI status, filed with #183". No such entry existed — swept `main` and
+every remote branch including #183's own. The authoritative spec was always
+`dev-docs/research/2026-10-agentic-graphs.md` **R1** plus FB-0131's third corollary; the roadmap
+citation was simply wrong. Recorded here rather than silently skipped, because a brief that cites a
+document nobody wrote is a failure mode worth leaving visible.
+
+R1 said this and the deterministic Step-8 checker are **one** item, not two, and that was right: both
+answer "which artifact does this gate actually read". Shipped together.
+
+**What shipped.** `skills/ship/lib/ship-readiness.py` — the six-condition Step 8 predicate, plus the
+live CI condition as a tri-state (`passing` / `failing` / **`pending`**). Three `CHECK_ONLY` manifest
+kinds (`ci-failing` / `ci-pending` / `ci-unknown`) carry a non-green verdict to a draft PR. New
+`ciWaitSeconds` slot (39 slots). `/flow:ship` §7a.7; `/flow:ship-spike` reports all three states and
+drafts only on `ci-failing`.
+
+**Two residuals, deliberately not fixed here:**
+
+- **Condition 2 has no artifact** (see the next entry). It reports `UNDECLARED`, which never passes.
+- **The post-create window.** Because CI fires on `pull_request`, checks are unreadable until the PR
+  exists, so the PR is created and *then* converted to a draft if CI is not green. Bounded inside
+  §7a.7 and closed before the Step 8 hand-off, so no human is handed a ready-looking PR — but a
+  watcher polling GitHub inside that window would see one.
+
+### No artifact records the `/simplify` + `/flow:staff-review` BLOCKER count
+
+Surfaced by building the Step 8 checker (v1.64.0), and it is exactly the signal R1 predicted that
+exercise would produce: *"a case where the checker says proceed but the agent correctly stopped
+identifies exactly which sub-condition the prose encodes that the artifacts don't yet carry."*
+
+Step 8 condition 2 is "no open BLOCKER from `/simplify` (Step 6) or `/flow:staff-review` (Step 7)".
+Nothing on disk answers it. `skills/ship/lib/rigor-marker.py check` answers a *different* question —
+whether staff-review ran against the current source — never what it found. So the checker returns
+`UNDECLARED` and names the gap, rather than assuming clean.
+
+**Why `UNDECLARED` is the honest state and not a bug.** It blocks Step 8 *auto-advance* only, which
+costs an explicit "ship it" and nothing else. It deliberately does **not** draft a PR: a human who
+typed `/flow:ship` has already decided, and drafting on an unreadable artifact would make every ship
+a draft.
+
+**What would close it.** A small findings artifact written by `/simplify` + `/flow:staff-review` at
+the end of their passes — `{"open_blockers": [...]}` — which `ship-readiness.py` already accepts via
+`--blockers-file` and tests against. The parameter exists so the condition becomes answerable without
+a second engine.
+
+**Surfaces when:** `/flow:staff-review` or `/simplify`'s orchestration is next touched, or when
+anyone asks why `/flow:ship` still needs an explicit "ship it" on a clean run.
+
 ### `dispatchBackend` has the same unset gap in THIS repo that `previewBackend` just closed
 
 Recorded at the orchestrator's instruction, 2026-10-04, and **deliberately not fixed in v1.60.0.**

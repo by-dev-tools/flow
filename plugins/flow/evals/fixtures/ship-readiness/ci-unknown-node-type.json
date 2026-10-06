@@ -1,0 +1,10 @@
+{
+  "isDraft": false,
+  "mergeStateStatus": "CLEAN",
+  "statusCheckRollup": [
+    {
+      "__typename": "FutureNodeType",
+      "name": "mystery"
+    }
+  ]
+}

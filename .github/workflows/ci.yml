@@ -73,6 +73,7 @@ jobs:
       - run: python3 plugins/flow/evals/run_coverage_vocab_evals.py
       - run: python3 plugins/flow/evals/run_coverage_docblind_evals.py
       - run: python3 plugins/flow/evals/run_manifest_triage_evals.py
+      - run: python3 plugins/flow/evals/run_ship_readiness_evals.py
       - run: python3 plugins/flow/evals/run_plugin_desc_evals.py
       - run: python3 plugins/flow/evals/run_jq_guard_evals.py
       - run: python3 plugins/flow/evals/run_role_slot_evals.py

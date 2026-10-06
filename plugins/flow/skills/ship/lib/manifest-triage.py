@@ -153,16 +153,20 @@ ATTEMPTED_MARKER = "already-attempted"
 
 # Kinds whose blocker a human's assertion CANNOT clear — only a passing check can.
 # Declared once here rather than spelled out as inline `kind == "verify-build"`
-# comparisons at every decision point: the property is real and will recur (a
-# "CI red" kind, a "migration not applied" kind have identical semantics), and
-# four coincidental string compares is how the next one gets added in three
-# places and forgotten in a fourth.
+# comparisons at every decision point: the property is real and HAS recurred —
+# this comment predicted "a `CI red` kind … identical semantics" and v1.64.0 added
+# three of them (`ci-failing`/`ci-pending`/`ci-unknown`, FB-0131/FB-0137), which
+# cost one edit here instead of the four-coincidental-string-compares it warned
+# about. A "migration not applied" kind would be the next one. Only `ci-failing`
+# is a check that FAILED; the other two are "a passing check has not been
+# OBSERVED", and that distinction is why all three belong here: no assertion by a
+# human turns an unobserved check into an observed pass.
 #
 # For these kinds: a waiver is RECORDED but never subtracted from the residual
 # set, and "waive and ship as-is" is never offered — because it would be a lie,
 # the PR stays a draft either way. SKILL.md:308,310 is unqualified: no
 # merge-ready PR on a non-PASS build.
-CHECK_ONLY = frozenset({"verify-build", "toolchain"})
+CHECK_ONLY = frozenset({"verify-build", "toolchain", "ci-failing", "ci-pending", "ci-unknown"})
 
 # Everything kind-specific in ONE record per kind, so adding a kind is one edit
 # and a missing field is visible at a glance (every read site is a .get() with a
@@ -292,6 +296,50 @@ KIND_COPY: dict[str, dict[str, str]] = {
                       "the body either way, so flow will ask you once more to confirm that the "
                       "merge was deliberate."),
         "why": "this machine cannot build the target at all, so there is no version of trying again here that works",
+    },
+    # --- The three CI kinds (v1.64.0, FB-0131 corollary 3 / FB-0137) -----------
+    # THREE kinds rather than one `ci`, because this dict's own design is "everything
+    # kind-specific in ONE record per kind". A single `ci` kind would have to carry
+    # generic `means` copy, and "a check is failing: evals" / "checks have not finished"
+    # / "I could not see CI at all" are three genuinely different things to tell a
+    # human — the first is a bug to fix, the second is a wait, the third is a blind
+    # spot. Collapsing them is how "pending" gets read as "passing".
+    #
+    # All three are CHECK_ONLY, so no "waive and ship as-is" is ever offered and none
+    # carries `waive_cost`. That is the brief's requirement stated mechanically: flow
+    # never prints "ready" on a PR whose checks are not observed green. The dead-end
+    # that would otherwise create — a consumer with slow CI unable to resolve the
+    # entry — is handled exactly as `toolchain` handles it: the copy says plainly that
+    # the human may mark the PR ready themselves, because they can, and flow cannot.
+    "ci-failing": {
+        "clears_when": "push a fix, then re-read `gh pr checks` for the current head and confirm every check passes",
+        "means": "GitHub is reporting a failing check on this PR, so GitHub itself would block the merge.",
+        "needs_you": ("Nothing, if you want me to fix it — tell me and I will. Otherwise mark the PR "
+                      "ready yourself; I will not call a PR with a red check shippable."),
+        "why": "a red check is the one readiness signal that is not my judgement — GitHub is the authority here",
+        "then": ("I apply the fix, push, and re-read the checks. A failing check never becomes a "
+                 "ready PR automatically — if you accept the risk, you mark it ready yourself."),
+    },
+    "ci-pending": {
+        "clears_when": "re-read `gh pr checks` for the current head and confirm every check has finished and passed",
+        "means": ("GitHub's checks had not finished when I stopped waiting. Nothing has failed — but "
+                  "nothing has passed either."),
+        "needs_you": ("Nothing, usually — tell me to look again and I will. If you would rather not "
+                      "wait, mark the PR ready yourself once you have seen the checks go green."),
+        "why": ("\"nothing has failed yet\" and \"everything passed\" are different states, and only one "
+                "of them is shippable"),
+        "then": "I re-read the checks. If they have all finished and passed, the PR becomes ready.",
+    },
+    "ci-unknown": {
+        "clears_when": "re-read `gh pr checks` for the current head and confirm every check passes",
+        "means": ("I could not confirm this PR's checks are green — GitHub reported no checks, an "
+                  "unrecognised check state, or `gh` could not be reached. This is a blind spot, not "
+                  "a clean bill of health."),
+        "needs_you": ("Check the PR's status yourself. If this project has no CI, that is fine — say so "
+                      "and mark the PR ready; I cannot tell \"no checks configured\" from \"checks I "
+                      "could not see\" when GitHub also reports the PR as blocked."),
+        "why": "not being able to look is not the same as there being nothing there, so I will not report it as green",
+        "then": "I look again. If every check reports and passes, the PR becomes ready.",
     },
 }
 

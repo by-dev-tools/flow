@@ -2,8 +2,16 @@
 
 ## Current Focus
 
-**▶ PLAN GATE — NOT EXECUTED (this branch `conductor/ready-check-ship-reads-ci-step-8-predicate`,
-**v1.63.0**, FB-0137): `/flow:ship` never calls a PR "ready" that GitHub would block.** The Step 8
+**▶ EXECUTED, shipping (this branch `conductor/ready-check-ship-reads-ci-step-8-predicate`,
+**v1.64.0**, FB-0137): `/flow:ship` never calls a PR "ready" that GitHub would block.** Plan
+APPROVED at the gate with both MEDIUM calls resolved: (1) **add the `ciWaitSeconds` slot**, on the
+condition that the slot-count fan-out sweep ships in *this* PR rather than as a follow-up — done, and
+it caught two stale counts nobody had noticed (`skills/doctor/SKILL.md`, `README.md`); (2)
+**`/flow:ship-spike` reports all three CI states and drafts only on `ci-failing`**, keeping spike's
+existing halt-and-adjudicate shape for the other two. **Version re-claimed 1.63.0 → 1.64.0** at the
+orchestrator's instruction: `conductor/chat-and-pr-screenshots` claimed 1.63.0 first and its plan was
+approved earlier. Filing the missing roadmap entry and deferring the BLOCKER-count artifact were both
+confirmed; the post-create residual window is accepted and named in the PR body. The Step 8
 ship-readiness verdict becomes computed rather than remembered: a deterministic stdlib checker
 evaluates all five existing conditions from committed artifacts **plus CI status as a live sixth**,
 and "ready" is printed only when every one of them passes. Spec: `dev-docs/research/2026-10-agentic-graphs.md`
@@ -133,63 +141,63 @@ produce a pending PR on demand, but I can fixture one, and the brief requires an
 
 ### Spec-walk
 
-- [ ] **The verdict names which condition failed, and only that one.** All six conditions are evaluated
+- [x] **The verdict names which condition failed, and only that one.** All six conditions are evaluated
       and reported individually. *Verify:* paired — a fixture failing exactly one condition names that
       condition and reports the other five as passing; an all-pass fixture returns ready.
       *Pinned by:* `run_ship_readiness_evals.py::test_verdict_names_the_failing_condition`.
-- [ ] **CI passing → may be ready.** *Verify:* a fixture of six `pass` buckets with
+- [x] **CI passing → may be ready.** *Verify:* a fixture of six `pass` buckets with
       `mergeStateStatus: CLEAN` yields a ready verdict. *Pinned by:*
       `run_ship_readiness_evals.py::test_ci_passing`.
-- [ ] **CI failing → not ready, naming the failing check.** *Verify:* the verdict is not-ready and the
+- [x] **CI failing → not ready, naming the failing check.** *Verify:* the verdict is not-ready and the
       rendered text contains the failing check's name. *Pinned by:*
       `run_ship_readiness_evals.py::test_ci_failing_names_the_check`.
-- [ ] **CI pending → "checks pending", never ready — and this is pinned as a PAIR.** The cheapest
+- [x] **CI pending → "checks pending", never ready — and this is pinned as a PAIR.** The cheapest
       implementation treats "nothing has failed yet" as passing, so a single arm cannot distinguish a
       working checker from the bug. *Verify:* two fixtures differing in exactly one bucket — 5 `pass` +
       1 `pending` → NOT ready with a pending-specific reason, and 6 `pass` → ready. Both arms, or
       neither is evidence. *Pinned by:* `run_ship_readiness_evals.py::test_pending_is_not_passing`.
-- [ ] **`gh` absent or erroring → "CI status unknown", never ready — paired with the positive.**
+- [x] **`gh` absent or erroring → "CI status unknown", never ready — paired with the positive.**
       *Verify:* `gh` unreachable yields `ci-unknown`; a *successful* all-pass read yields ready. Without
       the second arm a checker hardwired to "unknown" would pass (FB-0121: "couldn't see" is not
       "nothing there"; `.claude/rules/general.md` item 3: a prohibition satisfiable by deletion).
       *Pinned by:* `run_ship_readiness_evals.py::test_unknown_requires_both_arms`.
-- [ ] **A consumer without GitHub is not broken — it degrades loudly, as other slots do.** *Verify:*
+- [x] **A consumer without GitHub is not broken — it degrades loudly, as other slots do.** *Verify:*
       with `gh` absent the pipeline still completes and the PR step is reached; the failure is a printed
       `⚠️` plus a `ci-unknown` manifest entry, never a halt and never a silent no-op. *Pinned by:*
       `run_ship_readiness_evals.py::test_absent_gh_degrades_not_halts`.
-- [ ] **"No checks reported" is disambiguated, both arms.** *Verify:* `statusCheckRollup: []` +
+- [x] **"No checks reported" is disambiguated, both arms.** *Verify:* `statusCheckRollup: []` +
       `mergeStateStatus: CLEAN` → condition satisfied **with a stated reason**; `[]` + `DIRTY` (the
       measured #183 shape) → not ready. *Pinned by:*
       `run_ship_readiness_evals.py::test_no_checks_is_two_different_worlds`.
-- [ ] **#176's measured shape is replayed as the regression case.** *Verify:* a fixture of its six real
+- [x] **#176's measured shape is replayed as the regression case.** *Verify:* a fixture of its six real
       checks — five `pass`, `evals` `fail` — with `mergeStateStatus: BLOCKED`, and every artifact-side
       condition green (manifest READY, body "ready"): the checker returns NOT ready and names `evals`.
       This is the exact state flow called ready across six red CI runs. *Pinned by:*
       `run_ship_readiness_evals.py::test_pr176_regression`.
-- [ ] **`UNDECLARED` never passes, and its reason is distinct from a failure.** *Verify:* a run with no
+- [x] **`UNDECLARED` never passes, and its reason is distinct from a failure.** *Verify:* a run with no
       verify-build buffer returns not-ready with a reason distinguishable from "the build failed", and
       condition 2 reports `UNDECLARED` naming the artifact that does not exist (Decision 7).
       *Pinned by:* `run_ship_readiness_evals.py::test_undeclared_is_not_a_pass`.
-- [ ] **The wait is blocking, not polled — pinned as a positive AND a negative.** *Verify:* the skill
+- [x] **The wait is blocking, not polled — pinned as a positive AND a negative.** *Verify:* the skill
       prose invokes `timeout … gh pr checks … --watch` (positive) **and** contains no sleep/poll loop
       around a checks call (negative). A negative alone would pass if the whole wait were deleted.
       *Pinned by:* `run_ship_readiness_evals.py::test_wait_is_blocking_not_polled`.
-- [ ] **A timeout reports pending honestly and is never upgraded to a pass.** *Verify:* the timeout path
+- [x] **A timeout reports pending honestly and is never upgraded to a pass.** *Verify:* the timeout path
       yields the same `ci-pending` verdict as an observed pending state. *Pinned by:*
       `run_ship_readiness_evals.py::test_timeout_reports_pending`.
-- [ ] **Three `ci-*` kinds exist with non-generic copy and all three are `CHECK_ONLY`.** *Verify:*
+- [x] **Three `ci-*` kinds exist with non-generic copy and all three are `CHECK_ONLY`.** *Verify:*
       paired — each kind has its own `means`/`needs_you` text (not the generic fallback), and a waiver
       on each is recorded but never subtracted from the residual set, so the PR stays a draft.
       *Pinned by:* `run_ship_readiness_evals.py::test_three_ci_kinds_are_check_only`, reusing
       `run_manifest_triage_evals.py`'s existing waiver-subtraction assertions.
-- [ ] **The instrument is validated against a known positive before any green is trusted.** *Verify:*
+- [x] **The instrument is validated against a known positive before any green is trusted.** *Verify:*
       the harness demonstrates it can report NOT-ready on #176's shape; a suite that has only ever
       returned "ready" has produced no evidence (`.claude/rules/general.md` item 4). *Pinned by:* the
       `test_pr176_regression` arm above, which is this criterion's known-positive.
-- [ ] **`run_ship_readiness_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
+- [x] **`run_ship_readiness_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
       harness↔runner join step passes — exit-code-driven, not a grep. An unwired harness gives zero
       regression protection while looking identical to a wired one (FB-0074).
-- [ ] **Docs reconciled:** a `dev-docs/history/` entry, `FB-0137`, the **missing roadmap § Next entry**
+- [x] **Docs reconciled:** a `dev-docs/history/` entry, `FB-0137`, the **missing roadmap § Next entry**
       this PR files (plus the condition-2 BLOCKER-artifact follow-up from Decision 7),
       `changelog/v1.63.0.md`, this block flipped to EXECUTED, and — only if Decision 5 survives the gate
       — the `ciWaitSeconds` slot in the schema and `/flow:doctor`'s slot coverage. *Verified by:*

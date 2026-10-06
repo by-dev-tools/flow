@@ -685,6 +685,53 @@ Step 2.2 spike-mode invocation: `✓` with the 3-check rubric result if it ran, 
 itself; if it could not run, that is a halt at Step 2a.3, not a row you fill in with an
 excuse. **Notable** is genuine signal only — don't manufacture notes for a spike.
 
+### CI gate — report all three states; draft only on a red check (FB-0131 corollary 3, FB-0137)
+
+A spike PR is opened **non-draft** and is explicitly not gated by the NOT-READY manifest, so this step
+is deliberately narrower than `/flow:ship` §7a.7 — it does not import draft-gating into a mode that
+has none. Run the same engine, then act by state:
+
+```sh
+# Re-resolve everything: this is its own Bash call.
+R="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ship-readiness.py"; [ -f "$R" ] || R="plugins/flow/skills/ship/lib/ship-readiness.py"
+CI_WAIT=$(jq -r '.ciWaitSeconds // 600' flow.config.json 2>/dev/null); case "$CI_WAIT" in ''|*[!0-9]*) CI_WAIT=600;; esac
+if ! command -v gh >/dev/null 2>&1; then
+  echo "⚠️ [ci-gate] gh is not installed — CI status cannot be read. This is NOT a passing CI." >&2
+  CI_OUT=$(python3 "$R" ci --gh-failed)
+else
+  N=$(gh pr view --json number --jq .number 2>/dev/null)
+  if [ -z "$N" ]; then
+    CI_OUT=$(python3 "$R" ci --gh-failed)
+  else
+    # Blocking wait, bounded; its exit status is used only to detect timeout's 124
+    # (measured: exit 1 means three unlike things). `|| RC=$?`, never `|| true; RC=$?`.
+    RC_WATCH=0
+    timeout "$CI_WAIT" gh pr checks "$N" --watch --fail-fast >/dev/null 2>&1 || RC_WATCH=$?
+    if gh pr view "$N" --json statusCheckRollup,mergeStateStatus,isDraft > /dev/null 2>&1; then
+      CI_OUT=$(gh pr view "$N" --json statusCheckRollup,mergeStateStatus,isDraft | python3 "$R" ci)
+    elif [ "$RC_WATCH" -eq 124 ]; then
+      CI_OUT=$(python3 "$R" ci --timed-out "$CI_WAIT")
+    else
+      CI_OUT=$(python3 "$R" ci --gh-failed)
+    fi
+  fi
+fi
+printf '%s' "$CI_OUT" | jq -r '"[ci-gate] " + .state + " — " + .reason'
+printf '%s' "$CI_OUT" | jq -r '.verdict'
+```
+
+- **`PASS`** — say so in the hand-off and stop. Nothing changes.
+- **`ci-failing`** — GitHub itself would block this merge, so **convert the PR to a draft**
+  (`gh pr edit`/`convertPullRequestToDraft` per the gh-resilience fallback above) and name the failing
+  check in the hand-off. This is the one state where a non-draft spike PR would be actively misleading.
+- **`ci-pending` / `ci-unknown`** — **report it, do not draft.** Use spike mode's existing
+  halt-and-adjudicate shape (Step 2a.3): tell the user plainly that the checks have not been observed
+  green and let them decide. Never describe either state as passing, and never say "ready".
+
+Why not full symmetry with `/flow:ship`? Drafting on pending would make draft-gating part of spike mode,
+which is a larger change to spike semantics than reading CI status needs — and spike PRs already have a
+documented adjudication path for "a check could not confirm this".
+
 The PR title MUST start with `spike:` and the PR MUST have the `spike` label. Both are spike-mode-abuse guards: a feature accidentally shipped through `/flow:ship-spike` should be visually obvious and easy to reject.
 
 ## 8. Hand off
