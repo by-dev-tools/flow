@@ -74,9 +74,10 @@ from md_safe import code_span, inline, one_line  # noqa: E402  (sibling-module i
 # lookup rather than the module.
 try:
     sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
-    from capture_frames import FRAMES, FRAME_NAMES, FRAME_SIZES, branch_slug  # noqa: E402
+    from capture_frames import (  # noqa: E402
+        FRAMES, FRAME_NAMES, FRAME_SIZES, SIDECAR, branch_slug, frames_dir)
 except Exception:  # noqa: BLE001 - any failure means "no capture engine here"
-    FRAMES = FRAME_NAMES = FRAME_SIZES = branch_slug = None
+    FRAMES = FRAME_NAMES = FRAME_SIZES = SIDECAR = branch_slug = frames_dir = None
 
 HEADING = "## Before / after"
 
@@ -262,7 +263,8 @@ def _frame_alt(filename: str, kind: str) -> str:
     if split:
         _label, frame = split
         w, h = FRAME_SIZES[frame]
-        return inline("%s at %s width (%d×%d)" % (kind.capitalize(), frame, w, h))
+        return inline("%s — first screen at %s width (%d×%d)"
+                      % (kind.capitalize(), frame, w, h))
     return inline("%s screenshot" % kind.capitalize())
 
 
@@ -597,9 +599,6 @@ def _embed_section(rows, slug, vis, sha, public_lead, closing):
         HEADING, lead, "\n".join(out), code_span(sha[:7]), closing)
 
 
-PR_FRAMES_DIR = "pr-frames"
-
-
 def captures_dir(vh_path: str, branch: str) -> "str | None":
     """Where THIS PR's captured frames live: `<dir of visualHistoryPath>/pr-frames/<slug>/`.
 
@@ -619,15 +618,35 @@ def captures_dir(vh_path: str, branch: str) -> "str | None":
     # to look in -- NOT as a value to match against a recorded branch. That is the
     # other meaning the same flag carries on the `record` source, and the two are kept
     # under different parameter names at every read point for exactly that reason.
-    if branch_slug is None:
+    if frames_dir is None:
         return None
-    slug = branch_slug(branch)
-    if not slug:
-        return None
-    parent = str(Path(vh_path).parent)
-    rel = os.path.join(parent, PR_FRAMES_DIR, slug) if parent not in ("", ".") \
-        else os.path.join(PR_FRAMES_DIR, slug)
-    return rel.replace(os.sep, "/")
+    return frames_dir(vh_path, branch)
+
+
+def _committed_descriptions(rel_dir: str, root: str, sha: str) -> dict:
+    """label -> description, read from the sidecar AT THE NAMED SHA.
+
+    `git show <sha>:<path>`, not the working tree, for the same reason every other read
+    in this engine is pinned: the PR body is a projection of the commit, and a
+    description that exists only in this session is a claim the commit does not support.
+    Absent or unparseable is simply {} — the alt then names the label and the viewport,
+    which is correct, just thinner.
+    """
+    try:
+        r = subprocess.run(["git", "show", "%s:%s/%s" % (sha, rel_dir, SIDECAR)],
+                           cwd=root, capture_output=True, text=True, timeout=20)
+        if r.returncode != 0:
+            return {}
+        data = json.loads(r.stdout or "{}")
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out = {}
+    for k, v in data.items():
+        if isinstance(v, dict) and isinstance(v.get("title"), str) and v["title"].strip():
+            out[str(k)] = v["title"]
+    return out
 
 
 def _split_frame_name(filename: str):
@@ -649,8 +668,48 @@ def _split_frame_name(filename: str):
     return None
 
 
+def render_frames_auto(vh_path: str, branch: str, sha: str, root: str,
+                       repo_arg: "str | None", private_mode: str) -> str:
+    """Captures when this PR committed any, the curated record otherwise.
+
+    THE SHIPPED CALL SITES USE THIS, and the reason is a defect this engine had for
+    exactly one review cycle. `/flow:ship` chose its source from whether a capture
+    ADAPTER validates — which says nothing about whether §5d actually captured. Every
+    §5d skip (not visually significant, no prototype and no walkthrough, a refused
+    page, a detached HEAD) still selected the captures source, so a consumer who
+    configured the adapter AND had a curated visual-history entry with committed frames
+    got "No frames to show" in place of their images. Both skills' own prose promised
+    the opposite — "the section falls back to the visual-history record" — and that
+    fallback simply did not exist.
+
+    So the fall-through lives HERE, in the engine, rather than in two shell blocks that
+    would each have to remember it. `--source captures` stays available and strict, and
+    the evals drive that one: a mode whose failure is invisible must still be testable
+    on its own.
+    """
+    section, had_frames = _captures_section(vh_path, branch, sha, root, repo_arg,
+                                            private_mode)
+    if had_frames:
+        return section
+    return render_frames(vh_path, branch, sha, root, repo_arg, private_mode)
+
+
 def render_frames_from_captures(vh_path: str, branch_for_dir: str, sha: str, root: str,
                                 repo_arg: "str | None", private_mode: str) -> str:
+    """Captures ONLY — no fall-through. The strict mode the evals drive."""
+    return _captures_section(vh_path, branch_for_dir, sha, root, repo_arg,
+                             private_mode)[0]
+
+
+def _captures_section(vh_path: str, branch_for_dir: str, sha: str, root: str,
+                      repo_arg: "str | None", private_mode: str):
+    """-> (section, had_frames). `had_frames` is what lets the caller fall through.
+
+    A boolean rather than "did the text contain `![`": the private and unknown arms
+    emit links and no image syntax, so a text test would fall through for exactly the
+    population that most needs the frames (general.md item 4's exit-code corollary —
+    prefer the signal the producer maintains over a grep of its output).
+    """
     """The `## Before / after` section built from this PR's COMMITTED captured frames.
 
     Same discipline as the visual-history source and the same reason: the section is a
@@ -672,7 +731,7 @@ def render_frames_from_captures(vh_path: str, branch_for_dir: str, sha: str, roo
 
     if branch_slug is None:
         return _omit("the capture engine could not be loaded, so this pipeline cannot "
-                     "tell which directory holds this PR's frames. Nothing is guessed.")
+                     "tell which directory holds this PR's frames. Nothing is guessed."), False
 
     rel_dir = captures_dir(vh_path, branch_for_dir)
     if rel_dir is None:
@@ -681,7 +740,7 @@ def render_frames_from_captures(vh_path: str, branch_for_dir: str, sha: str, roo
             "there is no directory that belongs to this change alone, and frames are "
             "never read from a shared one."
             % (code_span(one_line(branch_for_dir, 120)) if branch_for_dir
-               else "not resolvable here (a detached HEAD reads as an empty branch)"))
+               else "not resolvable here (a detached HEAD reads as an empty branch)")), False
 
     abs_dir = Path(root) / rel_dir
     try:
@@ -703,8 +762,9 @@ def render_frames_from_captures(vh_path: str, branch_for_dir: str, sha: str, roo
     if not parsed:
         return _omit(
             "this PR committed no captured frames under %s. That is the normal state "
-            "when the change has no visual surface, or when no capture adapter is "
-            "configured — both correct." % code_span(one_line(rel_dir, 160)))
+            "when the change has no visual surface, when no page was available to "
+            "photograph, or when the capture was refused — each of which states its own "
+            "reason in the pipeline log." % code_span(one_line(rel_dir, 160))), False
 
     cited = ["%s/%s" % (rel_dir, n) for _lbl, _fr, n in parsed]
     kept = [(lbl, fr, n) for lbl, fr, n in parsed
@@ -716,37 +776,63 @@ def render_frames_from_captures(vh_path: str, branch_for_dir: str, sha: str, roo
             "pushed before the body can name them."
             % (len(cited), "frame" if len(cited) == 1 else "frames",
                "is" if len(cited) == 1 else "are",
-               ", ".join(code_span(one_line(c, 120)) for c in cited)))
+               ", ".join(code_span(one_line(c, 120)) for c in cited))), False
 
     slug, vis = resolve_repo_and_visibility(private_mode, repo_arg, root)
     if not slug:
+        # True, not False: frames DO exist in the commit — this pipeline just cannot name
+        # the repo to link them from. Falling through to the record would print a
+        # different, also-unresolvable section and bury the actual problem.
         return _omit("this pipeline couldn't confirm which GitHub repo to link to, so it "
-                     "isn't guessing at image URLs.")
-
-    rows = []
-    for lbl, fr, n in kept:
-        w, h = FRAME_SIZES[fr]
-        rows.append({
-            "rel": "%s/%s" % (rel_dir, n),
-            # Caption short enough to sit above the frame; alt carries the full
-            # description, because the alt is the whole content for a reader who
-            # cannot see the image and this section exists to be looked at.
-            "cap": inline("%s — %d×%d" % (fr.capitalize(), w, h)),
-            "alt": inline("%s at %s width, %d×%d" % (lbl, fr, w, h)),
-        })
+                     "isn't guessing at image URLs."), True
 
     labels = []
     for lbl, _fr, _n in kept:
         if lbl not in labels:
             labels.append(lbl)
-    what = ", ".join(code_span(one_line(l, 60)) for l in labels)
+    described = _committed_descriptions(rel_dir, root, sha)
+
+    rows = []
+    for lbl, fr, n in kept:
+        w, h = FRAME_SIZES[fr]
+        # The label is in the caption ONLY when it disambiguates. With two labels in one
+        # directory the captions were both "Phone — 390×844": two identical visible
+        # strings, and in the links arm two links with the same text pointing at
+        # different files (WCAG 2.4.4). With one label it is noise.
+        prefix = ("%s — " % lbl) if len(labels) > 1 else ""
+        what = described.get(lbl)
+        rows.append({
+            "rel": "%s/%s" % (rel_dir, n),
+            # "first screen", not just the dimensions: a capture is ONE SCREENFUL at
+            # that viewport, and a caption that reads as the page's size tells a reader
+            # who scrolled nothing that they saw the whole thing.
+            "cap": inline("%sFirst screen at %s width — %d×%d"
+                          % (prefix.capitalize(), fr, w, h)),
+            # The alt is the WHOLE content for someone who cannot see the image, so it
+            # leads with what the page is — read from the committed sidecar — and the
+            # viewport comes second. Without a description it degrades to naming the
+            # label, which is thin but true; it is never empty, because an empty alt is
+            # markdown's DECORATIVE signal and would tell a screen-reader user at the
+            # merge gate that nothing is there.
+            "alt": inline("%s — first screen at %s width, %d×%d"
+                          % (what or lbl, fr, w, h)),
+        })
+
+    what_all = ", ".join(code_span(one_line(l, 60)) for l in labels)
+    # Name the absence. The heading promises a comparison and this source renders one
+    # state at two widths; a reader arriving at "Before / after" should not have to work
+    # out for themselves that there is no before. (The heading itself is pinned at
+    # several sites and a per-source heading is a real fan-out — roadmap, not here.)
     lead = ("Frames captured from this PR's %s, pinned to %s — not to the branch tip, so "
-            "they keep resolving after the branch is deleted at merge."
-            % (what, code_span(sha[:7])))
+            "they keep resolving after the branch is deleted at merge. There is no "
+            "*before* here: these are the surface as this PR leaves it, at two widths, "
+            "each showing the first screen rather than the whole page."
+            % (what_all, code_span(sha[:7])))
     closing = ("Committed under %s. They are this PR's own frames by construction: nothing "
                "outside that per-PR directory is read."
                % code_span(one_line(rel_dir, 160)))
-    return _embed_section(rows, slug, vis, sha, public_lead=lead, closing=closing)
+    return _embed_section(rows, slug, vis, sha, public_lead=lead,
+                          closing=closing), True
 
 
 def _caption_and_alt(f: dict):
@@ -878,9 +964,12 @@ def _selftest_captures(check, root, vh_rel, cap_rel, CSHA, SHA, _git, _head_sha)
     cap = render_frames_from_captures(vh_rel, "feat/empty_feed", CSHA, root,
                                       "acme/app", "false")
     check("captures/two-images", cap.count("![") == 2, cap)
-    check("captures/phone-first", cap.index("Phone") < cap.index("Desktop"), cap)
+    check("captures/phone-first", cap.index("phone width") < cap.index("desktop width"),
+          cap)
     check("captures/dimensions-labelled", "390×844" in cap and "1280×900" in cap, cap)
     check("captures/names-the-label", "prototype" in cap, cap)
+    check("captures/says-it-is-the-first-screen", cap.count("first screen") >= 2, cap)
+    check("captures/names-the-absent-before", "no *before* here" in cap, cap)
     check("captures/ignores-non-frame-file", "stray" not in cap, cap)
     check("captures/full-sha", len(re.findall(r"/[0-9a-f]{40}/", cap)) == 2, cap)
     check("captures/alt-is-never-empty", "![](" not in cap, cap)
@@ -940,6 +1029,37 @@ def _selftest_captures(check, root, vh_rel, cap_rel, CSHA, SHA, _git, _head_sha)
           repr(curated))
     check("captures/frames-live-in-the-per-pr-dir",
           Path(root, cap_rel, "prototype-phone.png").is_file())
+
+    # --- THE FALL-THROUGH. A capture source that found nothing must not retire the
+    # curated record: that regression shipped for one review cycle and the only thing
+    # that caught it was driving both sources against one repo.
+    auto_hit = render_frames_auto(vh_rel, "feat/empty_feed", CSHA, root, "acme/app",
+                                  "false")
+    check("auto/prefers-captures-when-present",
+          "pr-frames" in auto_hit and auto_hit.count("![") == 2, auto_hit)
+    # Restore the two-figure record: an earlier arm left a recon-only entry in place, and
+    # falling back onto THAT would prove only that the fall-through reached a different
+    # omission. The arm has to land on a record that genuinely has frames.
+    Path(root, vh_rel).write_text(_VH % {
+        "branch": "feat/empty_feed",
+        "figs": "".join(_FIG_IMG % {
+            "label": lbl, "src": "visual-history-assets/" + f, "alt": alt}
+            for lbl, f, alt in [
+                ("Before — activity feed, empty", "feed-empty-before.png",
+                 "blank gray panel with no call to action"),
+                ("After — activity feed, empty", "feed-empty-after.png",
+                 "centered illustration and a button"),
+            ])}, encoding="utf-8")
+    auto_miss = render_frames_auto(vh_rel, "feat/empty_feed", SHA, root, "acme/app",
+                                   "false")
+    check("auto/falls-back-to-the-record",
+          "visual-history-assets" in auto_miss and auto_miss.count("![") == 2,
+          "a sha with no committed captures must render the RECORD's frames, not an "
+          "omission: %s" % auto_miss)
+    check("auto/strict-captures-still-omits",
+          "![" not in render_frames_from_captures(vh_rel, "feat/empty_feed", SHA, root,
+                                                  "acme/app", "false"),
+          "--source captures must stay strict; the fall-through belongs to `auto` alone")
 
     # ------------------------------------------------- the chat image
     frame = os.path.join(root, cap_rel, "prototype-phone.png")
@@ -1201,10 +1321,15 @@ def main(argv) -> int:
     # DIRECTORY NAME. They are bound to differently-named parameters inside
     # (`branch_to_match` vs `branch_for_dir`) so the collision is visible where it is
     # read, not only in the head of whoever wrote it.
-    fr.add_argument("--source", default="record", choices=["record", "captures"],
+    fr.add_argument("--source", default="record",
+                    choices=["record", "captures", "auto"],
                     help="`record` reads the committed visualHistoryPath entry (default, "
-                         "unchanged); `captures` reads this PR's committed frames under "
-                         "<dir of visualHistoryPath>/pr-frames/<branch-slug>/")
+                         "unchanged); `captures` reads ONLY this PR's committed frames "
+                         "under <dir of visualHistoryPath>/pr-frames/<branch-slug>/; "
+                         "`auto` prefers those frames and falls back to the record when "
+                         "this PR committed none. SHIPPED CALL SITES USE `auto` — a "
+                         "configured capture adapter must never retire a consumer's "
+                         "curated record.")
 
     args = ap.parse_args(argv)
     # argparse owns the flag. A pre-parse `"--selftest" in argv` scan matched it
@@ -1221,6 +1346,10 @@ def main(argv) -> int:
         if args.source == "captures":
             print(render_frames_from_captures(args.visual_history, args.branch, args.sha,
                                               root, args.repo, args.private))
+            return 0
+        if args.source == "auto":
+            print(render_frames_auto(args.visual_history, args.branch, args.sha, root,
+                                     args.repo, args.private))
             return 0
         print(render_frames(args.visual_history, args.branch, args.sha, root,
                             args.repo, args.private))

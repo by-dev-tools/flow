@@ -86,6 +86,8 @@ elif mode == 'truncated':
     open(out, 'wb').write(b'<html>not a png</html>')
 elif mode == 'ignores-size':
     open(out, 'wb').write(png(800, 600))
+elif mode == 'dpr':
+    open(out, 'wb').write(png(w * 2, h * 2))
 elif mode == 'fail':
     sys.stderr.write('could not start browser\\n'); sys.exit(3)
 """
@@ -101,9 +103,10 @@ def _be(td, mode):
     return {"screenshot": "python3 %s %s {url} {out} {width} {height}" % (_stub(td), mode)}
 
 
-def _page(td, name="p.html", charset=True):
+def _page(td, name="p.html", charset=True, title="Empty activity feed"):
     p = Path(td, name)
     p.write_text(('<!doctype html><meta charset="utf-8">' if charset else "<!doctype html>")
+                 + ("<title>%s</title>" % title if title else "")
                  + "<p>state ✓</p>", encoding="utf-8")
     return p
 
@@ -225,6 +228,19 @@ def test_only_a_valid_png_counts():
         check("png/wrong-size-refused", not got, repr(got))
         check("png/wrong-size-reason-names-both",
               any("800x600" in r and "390x844" in r for r in why), repr(why))
+        check("png/wrong-size-blames-the-template",
+              any("drops {width}/{height}" in r for r in why), repr(why))
+        # PAIRED: an exact-multiple mismatch is a DIFFERENT diagnosis. Sending a
+        # retina-capturing author to inspect a placeholder that is in fact correct is a
+        # refusal whose reason is wrong, which is worse than one that is merely strict.
+        got, why = C.capture(
+            {"screenshot": "python3 %s dpr {url} {out} {width} {height}" % _stub(td)},
+            page, out, "prototype")
+        check("png/dpr-refused", not got, repr(got))
+        check("png/dpr-named-as-dpr",
+              any("device-pixel-ratio 2" in r for r in why), repr(why))
+        check("png/dpr-does-not-blame-the-template",
+              not any("drops {width}/{height}" in r for r in why), repr(why))
 
 
 def test_stderr_noise_is_not_failure():
@@ -516,7 +532,151 @@ def test_curated_record_untouched():
               Path(root, "dev-docs", "visual-history.html").read_bytes() == vh_before)
         check("curated/frames-are-in-the-per-pr-dir",
               sorted(q.name for q in (root / out).iterdir())
-              == ["prototype-desktop.png", "prototype-phone.png"])
+              == [C.SIDECAR, "prototype-desktop.png", "prototype-phone.png"],
+              repr(sorted(q.name for q in (root / out).iterdir())))
+
+
+def test_auto_never_retires_the_record():
+    """THE BLOCKER v1.63.0's own staff-review caught, pinned so it cannot come back.
+
+    `/flow:ship` picks its source from whether the capture ADAPTER validates, which says
+    nothing about whether anything was captured. With `--source captures` that silently
+    replaced a consumer's curated visual-history frames with "No frames to show" the
+    moment they configured an adapter — and both skills' prose promised the opposite in
+    the same diff. The fall-through lives in the engine; this is the arm that proves it.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        root = _repo(td)
+        # A CURATED record with a real committed frame, and NO captures for this branch.
+        assets = root / "dev-docs" / "visual-history-assets"
+        assets.mkdir()
+        (assets / "before.png").write_bytes(_png(10, 10))
+        Path(root, "dev-docs", "visual-history.html").write_text(
+            '<!doctype html><html><body><article class="vh-entry"><h2>X</h2>'
+            '<div class="meta">#1<span class="sep">·</span>2026-10-06'
+            '<span class="sep">·</span><code>feat/a</code></div><div class="ba">'
+            '<figure><figcaption>Before — empty feed</figcaption>'
+            '<img src="visual-history-assets/before.png" '
+            'alt="blank gray panel with no call to action"></figure></div>'
+            '</article></body></html>', encoding="utf-8")
+        _git(["add", "-A"], root); _git(["commit", "-qm", "curated"], root)
+        SHA = _head(root)
+
+        auto = A.render_frames_auto("dev-docs/visual-history.html", "feat/a", SHA,
+                                    str(root), "acme/app", "false")
+        check("auto/falls-back-to-the-curated-record",
+              auto.count("![") == 1 and "visual-history-assets/before.png" in auto,
+              "a configured adapter with zero captures must NOT retire the record: %s" % auto)
+        check("auto/keeps-the-records-real-alt",
+              "blank gray panel with no call to action" in auto, auto)
+        # Paired: `captures` stays strict, so the fall-through is a property of `auto`
+        # alone rather than a behaviour nobody can test in isolation.
+        strict = A.render_frames_from_captures("dev-docs/visual-history.html", "feat/a",
+                                               SHA, str(root), "acme/app", "false")
+        check("auto/strict-captures-still-omits", "![" not in strict, strict)
+
+        # And when captures DO exist, auto prefers them.
+        d = root / "dev-docs" / "pr-frames" / "feat-a"
+        d.mkdir(parents=True)
+        for n, (w, h) in (("prototype-phone.png", (390, 844)),
+                          ("prototype-desktop.png", (1280, 900))):
+            (d / n).write_bytes(_png(w, h))
+        _git(["add", "-A"], root); _git(["commit", "-qm", "frames"], root)
+        SHA2 = _head(root)
+        auto2 = A.render_frames_auto("dev-docs/visual-history.html", "feat/a", SHA2,
+                                     str(root), "acme/app", "false")
+        check("auto/prefers-captures-when-present",
+              auto2.count("![") == 2 and "pr-frames" in auto2, auto2)
+
+        # The SHIPPED call sites must pass `auto`. Without this the engine is correct and
+        # the composed surface is still broken — the layer-mismatch corollary.
+        for name, f in (("ship", SHIP), ("ship-spike", SPIKE)):
+            txt = f.read_text(encoding="utf-8")
+            check("auto/%s-passes-auto-not-captures" % name,
+                  "SRC=auto" in txt and "SRC=captures" not in txt, name)
+
+
+def test_alt_text_says_what_the_frame_shows():
+    """The alt is the whole content for a reader who cannot see the image.
+
+    "prototype at phone width, 390×844" names the FRAME and says nothing about the page.
+    The sidecar carries the captured page's own <title>, read back out of the commit, so
+    the alt can lead with what the surface is.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        root = _repo(td)
+        d = root / "dev-docs" / "pr-frames" / "feat-a"
+        got, why = C.capture(_be(td, "ok"), _page(td, title="Activity feed — empty state"),
+                             d, "prototype")
+        check("alt/capture-succeeded", len(got) == 2, "%r %r" % (got, why))
+        check("alt/sidecar-written", (d / C.SIDECAR).is_file())
+        _git(["add", "-A"], root); _git(["commit", "-qm", "f"], root)
+        SHA = _head(root)
+
+        out = A.render_frames_from_captures("dev-docs/visual-history.html", "feat/a", SHA,
+                                            str(root), "acme/app", "false")
+        check("alt/leads-with-the-page",
+              out.count("![Activity feed — empty state —") == 2, out)
+        check("alt/still-names-the-viewport",
+              "390×844" in out and "1280×900" in out, out)
+        check("alt/says-it-is-the-first-screen", out.count("irst screen") >= 4,
+              "captions say `First screen`, alts say `first screen` — both must, or a "
+              "reader concludes the frame is the whole page: %s" % out)
+        check("alt/never-empty", "![](" not in out, out)
+
+        # DEGRADES, not breaks: with no sidecar in the commit the alt names the label.
+        # Read from the COMMIT, so deleting it from the working tree changes nothing —
+        # which is the projection discipline, asserted rather than assumed.
+        (d / C.SIDECAR).unlink()
+        same = A.render_frames_from_captures("dev-docs/visual-history.html", "feat/a",
+                                             SHA, str(root), "acme/app", "false")
+        check("alt/reads-the-commit-not-the-worktree", same == out,
+              "deleting the sidecar from the working tree changed the render, so the "
+              "renderer is reading the session rather than the commit")
+        _git(["rm", "-q", "--cached", "dev-docs/pr-frames/feat-a/%s" % C.SIDECAR], root)
+        _git(["commit", "-qm", "drop sidecar"], root)
+        SHA2 = _head(root)
+        thin = A.render_frames_from_captures("dev-docs/visual-history.html", "feat/a",
+                                             SHA2, str(root), "acme/app", "false")
+        check("alt/degrades-to-the-label", thin.count("![prototype —") == 2, thin)
+        check("alt/degraded-is-still-never-empty", "![](" not in thin, thin)
+
+
+def test_frames_dir_is_composed_once():
+    """The writer and the reader must resolve the SAME per-PR directory.
+
+    This is the one contract both halves agree on, and it was briefly a shell literal in
+    two SKILL.md files plus a Python constant in the renderer. The divergence would have
+    been silent: the reader's "committed no captured frames" line is indistinguishable
+    from a correct skip. Pinned at the COMPOSED layer — the shell's own command — not
+    just in the engine.
+    """
+    for vh, br, want in (("dev-docs/visual-history.html", "feat/empty_feed",
+                          "dev-docs/pr-frames/feat-empty-feed"),
+                         ("core-docs/visual-history.html", "conductor/x-y",
+                          "core-docs/pr-frames/conductor-x-y"),
+                         ("visual-history.html", "a/b", "pr-frames/a-b")):
+        check("frames-dir/engine %s" % br, C.frames_dir(vh, br) == want,
+              repr(C.frames_dir(vh, br)))
+        check("frames-dir/reader-agrees %s" % br, A.captures_dir(vh, br) == want,
+              repr(A.captures_dir(vh, br)))
+        # The CLI the shell actually calls, driven as the shell calls it.
+        r = subprocess.run([sys.executable, str(LIB), "frames-dir",
+                            "--visual-history", vh, "--branch", br],
+                           capture_output=True, text=True, timeout=30)
+        check("frames-dir/cli %s" % br, r.returncode == 0 and r.stdout.strip() == want,
+              "%r / %r" % (r.stdout, r.stderr))
+    r = subprocess.run([sys.executable, str(LIB), "frames-dir",
+                        "--visual-history", "dev-docs/visual-history.html", "--branch", ""],
+                       capture_output=True, text=True, timeout=30)
+    check("frames-dir/cli-refuses-unsluggable", r.returncode != 0 and not r.stdout.strip(),
+          "%r / %r" % (r.stdout, r.stderr))
+    # The SHELL must call it rather than compose the path itself.
+    ship = SHIP.read_text(encoding="utf-8")
+    check("frames-dir/ship-calls-the-engine", 'frames-dir --visual-history' in ship,
+          "ship must ask the engine for the directory, not compose `pr-frames/$SLUG`")
+    check("frames-dir/ship-composes-no-literal", '/pr-frames/$SLUG' not in ship,
+          "a shell literal here is a second copy of the one contract both halves share")
 
 
 def test_chat_message_budget():
@@ -633,6 +793,16 @@ def test_skills_wire_the_capture():
     proto = PROTO.read_text(encoding="utf-8")
     check("wiring/prototype-captures", "capture_frames.py" in proto)
     check("wiring/prototype-passes-chat-image", "--chat-image" in proto)
+    check("wiring/prototype-captures-the-unpresented-prototype",
+          '--target "$PROTO_DIR/prototype.html"' in proto, "")
+    check("wiring/prototype-does-not-swallow-the-reasons",
+          '"$CF" chat-dir 2>/dev/null' not in proto,
+          "chat-dir's whole output is the STATED REASON a frame did not happen; "
+          "suppressing it turns a stated reason into a silent skip")
+    check("wiring/prototype-reads-the-path-from-the-engine",
+          'd["frames"][0]["path"]' in proto,
+          "re-deriving `<label>-<frame>.png` in a skill is a second copy of the engine's "
+          "naming contract, and it fails silently")
     check("wiring/prototype-takes-one-frame", "--only phone" in proto,
           "the chat message's budget is ONE image; --only phone is how that is expressed "
           "in the command rather than in a comment")
@@ -640,6 +810,15 @@ def test_skills_wire_the_capture():
     check("wiring/ship-captures", "capture_frames.py" in ship)
     check("wiring/ship-renders-from-captures", 'frames --source "$SRC"' in ship)
     check("wiring/ship-stages-the-frames", 'git add "$FRAME_DIR"' in ship)
+    check("wiring/ship-captures-the-unpresented-prototype",
+          "prototypes/*/prototype.html" in ship
+          and "prototypes/*/prototype.presented.html" not in ship,
+          "a still of `presented.html` photographs flow's own annotation dock, which is "
+          "why the hand-off has to apologise for it in prose")
+    check("wiring/ship-distinguishes-a-missing-engine",
+          "capture engine not found at $CF" in ship,
+          "collapsing that into the branch-name arm diagnoses a detached HEAD for a "
+          "condition nobody measured")
     check("wiring/ship-gates-on-visual-significance",
           "visual-significance.py" in ship and "[pr-frames] skipped (visual_significant=false)" in ship,
           "capture must read the SAME authoritative verdict §5c and §7b read")
@@ -652,7 +831,7 @@ def test_skills_wire_the_capture():
     # (.claude/rules/general.md item 4, exit-code corollary).
     for name, txt in (("ship", ship), ("ship-spike", spike)):
         check("wiring/%s-chooses-source-by-exit-code" % name,
-              'check >/dev/null 2>&1 && SRC=captures' in txt, name)
+              'check >/dev/null 2>&1 && SRC=auto' in txt, name)
     # NEGATIVE paired with a POSITIVE: verify-build must NOT capture (it has no drive
     # primitive and no a11y assertion, so a frame from it would be "screenshot whatever
     # is on screen", which its own step 1c forbids) -- but it must SAY so, or this
@@ -674,6 +853,14 @@ def test_doctor_checks_the_slot():
     check("doctor/silent-when-absent",
           "deliberately silent: no capture adapter is the normal case" in doc)
     check("doctor/reports-the-chat-dir", "chatImagePath" in doc)
+    check("doctor/chat-dir-absent-is-not-a-warning",
+          "[WARN] captureBackend is configured but chatImagePath" not in doc,
+          "PR-body-frames-without-a-chat-image is a supported configuration; a warning "
+          "that fires on a correct setup teaches people to ignore the warnings")
+    check("doctor/does-not-reimplement-the-ignore-predicate",
+          "chat-dir --json" in doc and 'git check-ignore -q "$CIP"' not in doc,
+          "one predicate, one copy — and the engine's is a tristate, so `could not "
+          "measure` is never reported as `not ignored`")
     check("doctor/drives-the-engine",
           "lib/capture_frames.py\" check" in doc,
           "the check must DRIVE the engine, not re-implement its validation")
@@ -706,7 +893,9 @@ def main() -> int:
              test_degrades_loudly, test_closed_vocabulary,
              test_only_frames_in_the_commit, test_own_pr_frames_only,
              test_private_fails_closed, test_curated_record_untouched,
-             test_chat_message_budget, test_no_vendor_token_in_plugin,
+             test_chat_message_budget, test_auto_never_retires_the_record,
+             test_alt_text_says_what_the_frame_shows, test_frames_dir_is_composed_once,
+             test_no_vendor_token_in_plugin,
              test_schema_declares_the_slots, test_skills_wire_the_capture,
              test_doctor_checks_the_slot, test_ci_wired, test_engine_selftests_pass)
     print("[capture-frames] %d case groups" % len(tests))

@@ -827,6 +827,48 @@ had already ruled on.
 **Surfaces when:** `/flow:staff-review` or `/simplify`'s orchestration is next touched, or when
 anyone asks why `/flow:ship` still needs an explicit "ship it" on a clean run.
 
+### Captured frames: four craft findings from v1.65.0's staff-review, deliberately not fixed at ship
+
+All four are real, all four were raised by the lens agents, and none is a correctness bug. Routed
+here rather than absorbed because each widens the PR past "capture a frame and put it where the
+human is".
+
+1. **Frames are DPR-1, and the dimension check makes retina capture structurally impossible.**
+   `capture_frames.capture()` asserts `size == (width, height)` exactly, so a backend capturing at
+   device-pixel-ratio 2 is refused. A 390×844 PNG sits at 1:1 inside GitHub's ~800px body column —
+   visibly softer than every other screenshot on that page. v1.63.0 fixed only the *reason* (a 2x
+   capture now says so instead of blaming the template). The real fix is to accept an integer
+   multiple `k` and carry `k` into the row so the caption still states the CSS size.
+2. **Dark mode is never photographed.** `design-language.md` commits the walkthrough report to
+   `prefers-color-scheme` support; headless browsers default to light, so every frame is the light
+   arm and nothing says so. Either capture a dark frame (widening `FRAMES` and the per-PR byte
+   budget) or state the limitation beside the frames.
+3. **The two frames render at wildly different scale when stacked.** The phone frame is 390px wide
+   and 844 tall at 1:1; the desktop frame downscales 1280→~800 (≈540 tall). The "small" viewport is
+   the physically larger, sharper image, and a reader scrolls past 844px of phone to reach the thing
+   it is meant to be compared against. The fix (HTML `<img width>`, or a two-column table) collides
+   with `artifact-handoff.py`'s escaping policy and its one deliberate soft break, which is correct
+   as written and should not be traded casually.
+4. **`## Before / after` is the wrong heading for an after-only set.** v1.63.0 names the absence in
+   the lead ("there is no *before* here"), which is the honest minimum. A per-source heading is the
+   right answer and is a genuine fan-out: the string is pinned at ~8 sites including
+   `pr-coherence.py`'s body slot, both SKILL templates, and five eval arms.
+
+**Surfaces when:** `plugins/flow/lib/capture_frames.py`, `artifact-handoff.py`'s `_embed_section`,
+or `dev-docs/design-language.md` is next touched.
+
+### `design-language.md` governs one surface and flow now ships three
+
+`dev-docs/design-language.md` scopes itself to the `/flow:verify-build` HTML report, "that report
+only", and names the other surfaces as deliberately ungrounded. v1.63.0 adds a third reader surface
+(the PR-body frame embed) and a fourth (the gate-1 chat message), and the caption/alt altitude
+questions the UX lens raised have no doc to settle them against. The doc's own screenshot rule — cap
+display width at 600px, resize to ~460–620px, warn over ~500KB — is also now contradicted by
+committed 1280px frames that are never resized. Cheap in practice (~20 KB measured), wrong in
+principle, and the contradiction is the kind that gets discovered rather than decided.
+
+**Surfaces when:** `dev-docs/design-language.md` is next touched, or a fifth reader surface is added.
+
 ### `render_template`'s two trailing hint parameters stopped being honest at the third adapter
 
 **Found during v1.63.0, routed here deliberately rather than fixed in that PR** (orchestrator call):
@@ -840,6 +882,13 @@ That was a clean trade for two adapters. The v1.60.0 review said explicitly that
 one at a third, and **v1.63.0 is that third**: `captureBackend` passes both hints, so the call sites
 now carry three unrelated remediation vocabularies threaded through two positional-ish keywords with
 no structure tying a hint to the refusal branch it belongs to.
+
+**The same PR surfaced a second, larger copy of the same shape**, and it belongs in this item
+rather than in a third: `validate()` is now triplicated across `dispatch_backend`,
+`preview_backend` and `capture_frames` — 34 of 48 stripped lines identical between the latter two
+(the dummy-value render, the prefix strip, the `extra`-placeholders branch, the `ESSENTIAL` fold).
+Whoever does the hint refactor should lift `validate` at the same time; doing one without the other
+touches the same three files twice.
 
 **Shape of the fix:** convert the two hints into a per-branch mapping the caller supplies —
 `{"shell_operator": "...", "unknown_placeholder": "..."}` — keyed by the refusal branch rather than

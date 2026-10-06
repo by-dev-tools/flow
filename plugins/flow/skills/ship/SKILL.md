@@ -1290,28 +1290,48 @@ if [ -z "$VISSIG" ]; then
 fi
 
 # The capture target. Prototype first; the walkthrough only if there is no prototype.
+#
+# `prototype.html`, NOT `prototype.presented.html`. The presented file is the prototype
+# plus flow's click-to-pin annotation layer, and §8's hand-off has to carry the sentence
+# "The small floating comment dock is flow's, not the design" — a caption apologising
+# for the picture. In the live page that dock earns its pixels because it is clickable;
+# in a still it is pure furniture on top of the one image a phone reader sees, and a
+# reviewer cannot tell it from a floating affordance the design itself proposes.
+# `prototype.html` is also the file `approve` hashes, i.e. literally the thing being
+# approved. The UTF-8 precondition still holds: §8 already requires the agent-authored
+# prototype to declare the charset.
 TARGET=""; LABEL=""
-PROTO=$(ls -1t .flow/prototypes/*/prototype.presented.html 2>/dev/null | head -1)
+PROTO=$(ls -1t .flow/prototypes/*/prototype.html 2>/dev/null | head -1)
 if [ -n "$PROTO" ] && [ -f "$PROTO" ]; then TARGET="$PROTO"; LABEL=prototype
 elif [ -f "$REPORT" ]; then TARGET="$REPORT"; LABEL=walkthrough
 fi
 
-SLUG=$(python3 "$CF" slug --branch "$(git branch --show-current)" 2>/dev/null)
+# ONE composition of the per-PR directory, shared with the renderer that reads it back.
+# A shell literal here plus a Python constant there is the one contract both halves must
+# agree on, and its divergence would be SILENT — the reader's "committed no captured
+# frames" line is indistinguishable from a correct skip.
+FRAME_DIR=""
+[ -f "$CF" ] && FRAME_DIR=$(python3 "$CF" frames-dir --visual-history "$VHPATH" --branch "$(git branch --show-current)" 2>/dev/null)
 if [ "$VISSIG" != "true" ]; then
   echo "[pr-frames] skipped (visual_significant=false) — no frames, and no Before/after section."
+elif [ ! -f "$CF" ]; then
+  # DISTINCT from the branch arm below. Collapsing them printed "a detached HEAD reads
+  # as empty" for a missing engine — a confident diagnosis of a condition nobody measured.
+  echo "⚠️ [pr-frames] capture engine not found at $CF, so nothing is captured. The Before/after section falls back to the visual-history record." >&2
 elif [ -z "$TARGET" ]; then
   echo "[pr-frames] skipped — no prototype and no walkthrough to photograph."
-elif [ -z "$SLUG" ]; then
+elif [ -z "$FRAME_DIR" ]; then
   # A detached HEAD reads as an EMPTY branch name. Pair the fallback with a refusal,
   # never a default directory: frames in a shared directory are another PR's frames.
   echo "⚠️ [pr-frames] could not derive a per-PR directory from the branch name (a detached HEAD reads as empty), so nothing is captured — frames must never land in a directory another PR also writes to." >&2
 else
-  FRAME_DIR="$(dirname "$VHPATH")/pr-frames/$SLUG"
   python3 "$CF" capture --target "$TARGET" --out-dir "$FRAME_DIR" --label "$LABEL" \
     && git add "$FRAME_DIR" \
     || echo "[pr-frames] no frames captured (see the reason above) — the Before/after section falls back to the visual-history record." >&2
 fi
 ```
+
+`git add "$FRAME_DIR"` stages the whole directory, which includes the small `frames.json` the capture engine writes beside the frames. That sidecar carries the page's own `<title>`, and it is committed for one reason: it is what lets the PR body's **alt text** say what the frame shows. A PNG tells a reader nothing, the renderer never sees the HTML (it is ephemeral, and the renderer is deliberately a projection of the commit), and "prototype at phone width" is not a text alternative for someone at the merge gate who cannot see the image. Committing it keeps the projection discipline exactly: the renderer still refuses anything the named sha does not contain.
 
 **Stage them with Step 6's commit.** The PR body pins each frame to the *pushed* HEAD, and the renderer emits a row only for a path `git cat-file -t <sha>:<path>` reports as a blob — so an uncommitted frame is simply absent rather than a broken image. Measured and relied on: a raw URL pinned to a PR-branch SHA that a squash-merge discards **still returns 200**, so these links keep working after the branch is deleted at merge.
 
@@ -1678,15 +1698,23 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
     echo "⚠️ [artifact-handoff] could not read visualHistoryPath from flow.config.json — falling back to core-docs/visual-history.html. If your record lives elsewhere, the section below will say there is no record when there is one." >&2
     VH=core-docs/visual-history.html
   fi
-  # WHICH SOURCE. `captures` reads the per-PR frames §5d committed; `record` reads the
-  # curated visual-history entry. Decided by the capture adapter's OWN EXIT CODE, not by
-  # grepping a render for image syntax — an exit code is a signal the engine's author
-  # maintains against their own output, where a grep is one more thing to keep correct
-  # (.claude/rules/general.md item 4, exit-code corollary). A project with no capture
-  # adapter keeps v1.60.0's behaviour exactly.
+  # WHICH SOURCE. `auto` reads the per-PR frames §5d committed and FALLS BACK to the
+  # curated visual-history entry when there are none; `record` reads only the latter.
+  # Decided by the capture adapter's OWN EXIT CODE, not by grepping a render for image
+  # syntax — an exit code is a signal the engine's author maintains against their own
+  # output, where a grep is one more thing to keep correct (.claude/rules/general.md
+  # item 4, exit-code corollary). A project with no capture adapter keeps v1.60.0's
+  # behaviour exactly.
+  #
+  # `auto` rather than `captures`, and the difference is load-bearing: `check` only says
+  # the TEMPLATE is well-formed, which has nothing to do with whether §5d captured. Every
+  # §5d skip above still reaches this line, so `captures` would have replaced a
+  # consumer's real curated frames with "No frames to show" the moment they configured an
+  # adapter. The fall-through lives in the engine so two shell blocks do not each have to
+  # remember it.
   SRC=record
   CF="${CLAUDE_PLUGIN_ROOT}/lib/capture_frames.py"; [ -f "$CF" ] || CF="plugins/flow/lib/capture_frames.py"
-  python3 "$CF" check >/dev/null 2>&1 && SRC=captures
+  python3 "$CF" check >/dev/null 2>&1 && SRC=auto
   # The SHA is the PUSHED HEAD, after Step 6's commit + push — not the branch name
   # (which 404s the moment the branch is deleted at merge, i.e. exactly when someone
   # reads the PR back as history) and not `main` (which does not contain the asset yet).

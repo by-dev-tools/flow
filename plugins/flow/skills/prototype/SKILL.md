@@ -185,6 +185,10 @@ This writes **`prototype.presented.html`** — the prototype plus the existing c
 
    `--chat-image` is accepted **only** for `--kind prototype`, and that is a guard rather than a convenience: the captured frame is a local, uncommitted file, so the same syntax in a PR body is a broken image. Run the capture in the **same fenced block** as the render, for the same reason the serve is in it.
 
+   **The capture targets `prototype.html`, not `prototype.presented.html`** — deliberately the opposite file from the one you serve and name in the line. The presented file is the prototype *plus* flow's click-to-pin dock, which is why item 1's line has to carry "the dock is flow's, not the design": a caption apologising for the picture. In the live page the dock earns its pixels because it is clickable; in a still it is furniture sitting on the one image a phone reader sees before they approve, and they cannot tell it from a floating affordance the design itself proposes. `prototype.html` is also the file `approve` hashes — literally the thing being approved.
+
+   **The mechanism, measured 2026-10-04:** a markdown image pointing at a file *inside the workspace* renders inline in the chat. That is what makes this route work with no server and no public repo. Stated as the property that was measured and **naming no client** — which app does this is recorded in the history entry, not here, for the same reason the hand-off line itself names none.
+
    ```sh
    AH="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/artifact-handoff.py"; [ -f "$AH" ] || AH="plugins/flow/skills/ship/lib/artifact-handoff.py"
    SP="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/serve-preview.sh"; [ -f "$SP" ] || SP="plugins/flow/skills/ship/lib/serve-preview.sh"
@@ -192,13 +196,27 @@ This writes **`prototype.presented.html`** — the prototype plus the existing c
    [ -f "$SP" ] && { . "$SP"; flow_serve_preview "$PROTO_DIR/prototype.presented.html"; } || PREVIEW_URL=""
    # Optional, and every failure path leaves CHAT_IMAGE empty so the line below is
    # unchanged. `--only phone` is the budget expressed in the command, not in a comment.
+   #
+   # stderr is NOT suppressed, and that is the point: `chat-dir` and `capture` exist to
+   # STATE why a frame did not happen ("no `chatImagePath` slot, so the chat hand-off
+   # carries no image — that is the default and the line is still correct", the
+   # not-git-ignored note, the UTF-8 refusal). Swallowing them turns a stated reason into
+   # a silent skip, which is the one thing this repo's doctrine refuses. `$( )` captures
+   # stdout only, so letting stderr through costs nothing. Guard on `[ -f "$CF" ]` BEFORE
+   # the call so an absent engine is quiet rather than noisy.
    CHAT_IMAGE=""
-   CHAT_DIR=$(python3 "$CF" chat-dir 2>/dev/null)
-   if [ -n "$CHAT_DIR" ] && [ -f "$CF" ]; then
-     python3 "$CF" capture --target "$PROTO_DIR/prototype.presented.html" \
-       --out-dir "$CHAT_DIR" --label prototype --only phone >/dev/null \
-       && CHAT_IMAGE="$CHAT_DIR/prototype-phone.png"
-     [ -f "$CHAT_IMAGE" ] || CHAT_IMAGE=""
+   if [ -f "$CF" ]; then
+     CHAT_DIR=$(python3 "$CF" chat-dir)
+     if [ -n "$CHAT_DIR" ]; then
+       # Read the frame's path out of the engine's OWN output rather than re-deriving
+       # `<label>-<frame>.png` here. That filename is the engine's naming contract, and a
+       # second copy of it in a skill would fail silently — the `[ -f ]` guard below
+       # would simply blank CHAT_IMAGE and the message would quietly lose its image.
+       CHAT_IMAGE=$(python3 "$CF" capture --target "$PROTO_DIR/prototype.html" \
+         --out-dir "$CHAT_DIR" --label prototype --only phone \
+         | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["frames"][0]["path"] if d["frames"] else "")' 2>/dev/null)
+       [ -n "$CHAT_IMAGE" ] && [ -f "$CHAT_IMAGE" ] || CHAT_IMAGE=""
+     fi
    fi
    python3 "$AH" local-line --kind prototype --path "$PROTO_DIR/prototype.presented.html" \
      ${PREVIEW_URL:+--url "$PREVIEW_URL"} ${PREVIEW_AUDIENCE:+--audience "$PREVIEW_AUDIENCE"} \

@@ -1051,8 +1051,9 @@ else
   # makes the JSON unparseable in exactly the case that needs the detail.
   CAPTURE_OUT=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/capture_frames.py" check 2>/dev/null)
   if echo "$CAPTURE_OUT" | jq -e '.usable' >/dev/null 2>&1; then
-    NF=$(echo "$CAPTURE_OUT" | jq -r '.frames | length' 2>/dev/null || echo "?")
-    echo "[PASS] captureBackend: screenshot template valid — $NF frame size(s) capturable"
+    NF=$(echo "$CAPTURE_OUT" | jq -r '[.frames[].name] | join(" and ")' 2>/dev/null)
+    [ -n "$NF" ] || NF="the configured"
+    echo "[PASS] captureBackend: screenshot template valid — $NF frames will be captured"
   else
     echo "[WARN] captureBackend is present but incomplete or malformed, so no frame will be captured."
     echo "       The hand-off is still correct without one, so this fails OPEN and INVISIBLY —"
@@ -1071,17 +1072,31 @@ else
   fi
   # The paired slot, reported only when an adapter exists, so a project with no captures
   # is never told about a directory it has no use for.
-  CIP=$(jq -r '.chatImagePath // empty' flow.config.json 2>/dev/null)
+  #
+  # The ignore state comes from the ENGINE (`chat-dir --json`), not from a second
+  # `git check-ignore` here. One predicate, one copy — and the engine's version is a
+  # TRISTATE: `null` means "could not measure" (outside a repo, corrupt index, git
+  # absent), which must never be reported as "not ignored".
+  CHAT_OUT=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/capture_frames.py" chat-dir --json 2>/dev/null)
+  CIP=$(echo "$CHAT_OUT" | jq -r '.dir // empty' 2>/dev/null)
+  CIG=$(echo "$CHAT_OUT" | jq -r '.ignored' 2>/dev/null)
   if [ -z "$CIP" ]; then
-    echo "[WARN] captureBackend is configured but chatImagePath is not, so PR-body frames"
-    echo "       will be captured and the gate-1 chat message will carry no image."
-    echo "       Fix: set chatImagePath to a GIT-IGNORED directory (e.g. .flow/chat-frames)."
-  elif ! git check-ignore -q "$CIP" 2>/dev/null; then
+    # A NOTE, not a WARN. PR-body-frames-without-a-chat-image is a legitimate, fully
+    # supported configuration — the engine's own message for this state says "that is the
+    # default and the line is still correct". A warning that fires on a correct setup is
+    # how people learn to ignore the warnings, which this skill flags elsewhere as a
+    # failure in its own right.
+    echo "[PASS] chatImagePath unset — PR-body frames only; the gate-1 message carries no"
+    echo "       image, which is a supported state. To add one, point chatImagePath at a"
+    echo "       GIT-IGNORED directory (e.g. .flow/chat-frames)."
+  elif [ "$CIG" = "false" ]; then
     echo "[WARN] chatImagePath ($CIP) is not git-ignored, so captured chat frames will show"
     echo "       up as working-tree changes and can be committed by accident. These frames"
     echo "       are for the chat message; the PR-body frames are a separate, committed set."
-  else
+  elif [ "$CIG" = "true" ]; then
     echo "[PASS] chatImagePath: $CIP (git-ignored)"
+  else
+    echo "[SKIP] chatImagePath: $CIP — could not determine whether it is git-ignored."
   fi
 fi
 ```

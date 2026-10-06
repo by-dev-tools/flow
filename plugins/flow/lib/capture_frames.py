@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shlex
 import struct
@@ -81,13 +82,22 @@ ESSENTIAL = {"screenshot"}
 
 # THE FRAME SET, ORDERED, AND THE ORDER IS PHONE-FIRST ON PURPOSE. The whole
 # workstream exists because review happens on a phone, so the phone frame is the one
-# that leads — and when only ONE frame is wanted (the chat message's budget allows
-# exactly one) it is the first entry that gets taken, by construction rather than by a
-# caller remembering which index to slice.
+# that leads in every rendered section.
 #
 # 390x844 is the iPhone 14/15 logical viewport. 1280x900 is a desktop window a
 # prototype has to survive too: "works at exactly one width" is the defect a reviewer
 # most wants to see, and it is invisible in a single frame.
+#
+# A capture is ONE SCREENFUL at that viewport, not the whole page. That is deliberate --
+# the fold is a real design fact, and a full-page capture of a long prototype is
+# unreadable at PR-body width -- but it has to be SAID, so every caption and alt this
+# table feeds says "first screen" rather than implying the frame is the page.
+#
+# A THIRD ENTRY IS NOT FREE: it is a PR-body scroll-length and repo-size decision, and
+# the chat message takes exactly one frame by naming `--only phone` at its call site --
+# a literal, not an index, so reordering this table does NOT change which frame the chat
+# gets. (An earlier version of this comment claimed the opposite "by construction";
+# it was wrong, and the contract is the literal in prototype/SKILL.md section 8.)
 #
 # This table is the SHARED definition. `artifact-handoff.py` imports it to order and
 # caption the rows it renders, so the writer and the reader cannot disagree about
@@ -106,7 +116,26 @@ FRAME_SIZES = {n: (w, h) for n, w, h in FRAMES}
 # passes a literal.
 LABEL_RE = re.compile(r"\A[a-z0-9][a-z0-9-]{0,31}\Z")
 
+# The sidecar `capture` writes beside the frames, and the reader reads back OUT OF THE
+# COMMIT like everything else. It exists for one reason: the alt text.
+#
+# A PNG tells a reader nothing about what it shows, and the renderer never sees the HTML
+# — it is ephemeral and uncommitted, while the renderer is deliberately a projection of
+# the commit. So "prototype at phone width, 390x844" was the whole text alternative for
+# someone at the merge gate who cannot see the image: it names the frame and says
+# nothing about the page. Committing the page's own <title> alongside the frames keeps
+# the non-forgeable-projection discipline exactly (the reader still refuses anything the
+# named sha does not contain) while giving the alt something true to say.
+SIDECAR = "frames.json"
+
+_TITLE_RE = re.compile(rb"<title[^>]*>(.*?)</title>", re.I | re.S)
+
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+# Lines a working headless run writes on EVERY invocation. Measured, and the reason this
+# module reads the artifact rather than the exit stream — so they must not be offered as
+# the explanation when something else actually failed.
+_NOISE_RE = re.compile(r"Failed to connect to the bus|dbus|DevTools listening", re.I)
 
 # `<meta charset="utf-8">`, `charset=UTF-8` in a Content-Type meta, or an XML decl.
 # Case-insensitive, and `utf8` without the hyphen counts — browsers accept it.
@@ -115,6 +144,24 @@ _UTF8_RE = re.compile(rb"charset\s*=\s*[\"']?\s*utf-?8", re.I)
 
 # ----------------------------------------------------------------- config slot
 
+def _read_config(config_path, consequence):
+    """Return (data|None, notes). ONE copy of the file/parse prose, two callers.
+
+    `load_backend` and `chat_image_dir` carried near-identical fourteen-line blocks
+    differing only in the trailing clause — which is the clause `consequence` now is.
+    Two copies of an error message is the same fan-out class as two copies of a rule;
+    it just fails by drifting apart rather than by disagreeing.
+    """
+    p = Path(config_path)
+    if not p.is_file():
+        return None, [f"{PREFIX} {config_path} not found, so {consequence}"]
+    try:
+        return json.loads(p.read_text(encoding="utf-8")), []
+    except (OSError, ValueError) as exc:
+        return None, [f"{PREFIX} ⚠️ {config_path} could not be read or parsed ({exc}); "
+                      f"{consequence}"]
+
+
 def load_backend(config_path="flow.config.json"):
     """Return (backend_dict, notes). Missing slot ⇒ ({}, [note]).
 
@@ -122,20 +169,13 @@ def load_backend(config_path="flow.config.json"):
     and the caller's behaviour is correct without it, so the note says so. Nobody
     should read "no capture adapter" as a broken install.
     """
-    p = Path(config_path)
-    if not p.is_file():
-        return {}, [
-            f"{PREFIX} {config_path} not found, so no capture adapter is configured. "
-            f"No frames will be captured and no image will be claimed — the hand-off "
-            f"names the artifact and says where it can be opened, which is correct."
-        ]
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        return {}, [
-            f"{PREFIX} ⚠️ {config_path} could not be read or parsed ({exc}); no capture "
-            f"adapter is available. No frames will be captured."
-        ]
+    data, notes = _read_config(
+        config_path,
+        "no capture adapter is configured. No frames will be captured and no image will "
+        "be claimed — the hand-off names the artifact and says where it can be opened, "
+        "which is correct.")
+    if data is None:
+        return {}, notes
     backend = data.get("captureBackend")
     if backend is None:
         return {}, [
@@ -163,15 +203,11 @@ def chat_image_dir(config_path="flow.config.json"):
     Hardcoding it in a plugin artifact is precisely the project-specific-token mistake
     `previewBackend` exists to avoid (FB-0085).
     """
-    p = Path(config_path)
-    if not p.is_file():
-        return None, [f"{PREFIX} {config_path} not found, so no chat-image directory is "
-                      f"configured; the chat hand-off carries no image."]
-    try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        return None, [f"{PREFIX} ⚠️ {config_path} unreadable ({exc}); no chat-image "
-                      f"directory resolved."]
+    data, notes = _read_config(
+        config_path, "no chat-image directory is configured; the chat hand-off carries "
+                     "no image, and the line itself is still correct.")
+    if data is None:
+        return None, notes
     raw = data.get("chatImagePath")
     if raw is None:
         return None, [f"{PREFIX} no `chatImagePath` slot, so the chat hand-off carries no "
@@ -192,6 +228,10 @@ def validate(backend):
     catch an adapter that would fail invisibly, so a green report over a template that
     cannot render would defeat it entirely.
     """
+    # `warnings`, not `notes`: `preview_backend.validate` and `dispatch_backend.validate`
+    # both emit `warnings` for this exact field, and /flow:doctor Checks 2.12/2.13/2.14
+    # read the three reports side by side. A third adapter inventing a third key is the
+    # drift that makes a reader check which one they are holding.
     report = {"verbs": {}, "usable": False, "configured": 0,
               "known_placeholders": sorted(KNOWN_PLACEHOLDERS),
               "frames": [{"name": n, "width": w, "height": h} for n, w, h in FRAMES]}
@@ -298,6 +338,28 @@ def declares_utf8(path):
     return bool(_UTF8_RE.search(blob[:4096]))
 
 
+def page_title(path):
+    """The HTML <title>, collapsed, or "" — what the frame SHOWS, for the alt text.
+
+    Bytes, not text, for the same reason `declares_utf8` reads bytes: a page this is
+    about to describe may be the badly-encoded one. Decoded permissively and bounded,
+    because this ends up in a PR body a human reads and an over-long or exotic title is
+    the renderer's problem to avoid, not the reader's to endure.
+    """
+    try:
+        blob = Path(path).read_bytes()
+    except OSError:
+        return ""
+    m = _TITLE_RE.search(blob[:65536])
+    if not m:
+        return ""
+    text = m.group(1).decode("utf-8", "replace")
+    # Strip any nested markup and collapse. A <title> may not legally contain elements,
+    # but this reads a file flow did not necessarily author.
+    text = re.sub(r"<[^>]*>", "", text)
+    return re.sub(r"\s+", " ", text).strip()[:120]
+
+
 def file_url(path):
     """An absolute local path as a `file://` URL.
 
@@ -307,6 +369,30 @@ def file_url(path):
     stated refusal rather than a mis-targeted capture.
     """
     return Path(path).resolve().as_uri()
+
+
+PR_FRAMES_DIR = "pr-frames"
+
+
+def frames_dir(visual_history_path, branch):
+    """`<dir of visualHistoryPath>/pr-frames/<slug>/`, or None when the branch slugs to nothing.
+
+    THE WRITER AND THE READER CALL THIS SAME FUNCTION. It was briefly composed twice —
+    a shell literal in two SKILL.md files and a Python constant in the renderer — which
+    is the one contract both halves must agree on, duplicated in the one file whose own
+    comment says two copies "agree today and diverge the first time one is tidied, and
+    the divergence would be SILENT". It would have been: the reader's omission line
+    reads "this PR committed no captured frames under ...", which is indistinguishable
+    from a correct skip.
+    """
+    slug = branch_slug(branch)
+    if not slug:
+        return None
+    import posixpath
+    parent = str(Path(visual_history_path).parent)
+    if parent in ("", "."):
+        return posixpath.join(PR_FRAMES_DIR, slug)
+    return posixpath.join(parent.replace(os.sep, "/"), PR_FRAMES_DIR, slug)
 
 
 def branch_slug(branch):
@@ -414,22 +500,42 @@ def capture(backend, target, out_dir, label, frames=FRAMES, timeout=90, config_d
         # has already failed the check.
         size = png_size(dest)
         if size is None:
+            # Skip the lines this module's own header documents as universal noise.
+            # Offering `Failed to connect to the bus` as THE diagnosis points the reader
+            # at the one message that is present on every successful run too.
+            interesting = [ln for ln in serr.strip().splitlines()
+                           if ln.strip() and not _NOISE_RE.search(ln)]
             reasons.append(
                 f"{PREFIX} ⚠️ the {name} capture produced no valid PNG at {dest} "
                 f"(exit {rc}). Not emitting a frame."
-                + (f" The command said: {serr.strip().splitlines()[-1][:200]}"
-                   if serr.strip() else ""))
+                + (" The command said: " + " / ".join(x.strip()[:160]
+                                                      for x in interesting[-2:])
+                   if interesting else ""))
             try:
                 dest.unlink()
             except OSError:
                 pass
             continue
         if size != (width, height):
+            # TWO DIAGNOSES, not one. An exact-multiple mismatch is a device-pixel-ratio
+            # backend (a 2x capture of the right viewport); anything else is a template
+            # that is not being told the size at all. The first cut gave both the second
+            # explanation, which sends a retina-capturing author to look at a placeholder
+            # that is in fact correct. Both are still refused — accepting a 2x frame is a
+            # real change with its own tradeoffs, tracked on the roadmap — but a refusal
+            # whose reason is wrong is worse than one that is merely strict.
+            if size[0] % width == 0 and size[1] % height == 0 \
+                    and size[0] // width == size[1] // height:
+                k = size[0] // width
+                why = (f"that is exactly {k}x the requested viewport, so this backend is "
+                       f"capturing at device-pixel-ratio {k}. flow currently requires 1x "
+                       f"so the frame's pixel size and its caption cannot disagree")
+            else:
+                why = ("that is not a multiple of the requested viewport, so most likely "
+                       "the `screenshot` template drops {width}/{height}")
             reasons.append(
                 f"{PREFIX} ⚠️ the {name} capture is {size[0]}x{size[1]}, not the "
-                f"{width}x{height} that was asked for — so the frame and its label would "
-                f"disagree. Most likely the `screenshot` template drops {{width}}/"
-                f"{{height}}. Not emitting a frame.")
+                f"{width}x{height} that was asked for — {why}. Not emitting a frame.")
             try:
                 dest.unlink()
             except OSError:
@@ -437,7 +543,57 @@ def capture(backend, target, out_dir, label, frames=FRAMES, timeout=90, config_d
             continue
         captured.append({"name": name, "width": width, "height": height,
                          "path": str(dest), "rel": dest.name})
+
+    if captured:
+        # Merge rather than overwrite: a directory may legitimately hold two labels (a
+        # prototype and a walkthrough), and clobbering the sidecar would silently strip
+        # the other label's description from the PR body's alt text.
+        side = out / SIDECAR
+        try:
+            existing = json.loads(side.read_text(encoding="utf-8"))
+            if not isinstance(existing, dict):
+                existing = {}
+        except (OSError, ValueError):
+            existing = {}
+        title = page_title(tgt)
+        if title:
+            existing[label] = {"title": title}
+            try:
+                side.write_text(json.dumps(existing, indent=2, sort_keys=True) + "\n",
+                                encoding="utf-8")
+            except OSError as exc:
+                # Not a failure: the frames are real and the alt degrades to naming the
+                # label and the viewport, which is what shipped before the sidecar.
+                reasons.append(f"{PREFIX} note: could not write {side} ({exc}); the "
+                               f"frames are fine, their alt text will be less specific.")
+        else:
+            reasons.append(
+                f"{PREFIX} note: {tgt} has no <title>, so the committed frames carry no "
+                f"description and their alt text can only name the viewport. Give the "
+                f"page a <title> — it is the text alternative for a reader at the merge "
+                f"gate who cannot see the image.")
     return captured, reasons
+
+
+def is_git_ignored(path, root=None):
+    """-> True / False / None. None means "could not measure", and it is not False.
+
+    Only rc==1 is the honest negative. Outside a repo, with a corrupt index, or with git
+    absent, `check-ignore` exits 128 — and reporting a confident "is not git-ignored"
+    for a condition nobody measured is the unverified-claim class this whole engine
+    exists to refuse.
+    """
+    try:
+        r = subprocess.run(["git", "check-ignore", "-q", str(path)],
+                           cwd=str(root) if root else None, capture_output=True,
+                           text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode == 0:
+        return True
+    if r.returncode == 1:
+        return False
+    return None
 
 
 def warn_if_not_ignored(path, root=None):
@@ -450,13 +606,7 @@ def warn_if_not_ignored(path, root=None):
     "invisible and not fatal" is how a repo accumulates screenshots nobody chose to
     keep.
     """
-    try:
-        r = subprocess.run(["git", "check-ignore", "-q", str(path)],
-                           cwd=str(root) if root else None, capture_output=True,
-                           text=True, timeout=20)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if r.returncode == 0:
+    if is_git_ignored(path, root) is not False:
         return None
     return (f"{PREFIX} note: {path} is not git-ignored, so captured chat frames will show "
             f"up as working-tree changes and can be committed by accident. Add it to "
@@ -481,8 +631,11 @@ def selftest() -> int:
 
     with tempfile.TemporaryDirectory() as td:
         page = Path(td, "p.html")
-        page.write_text('<!doctype html><meta charset="utf-8"><p>ok ✓</p>',
-                        encoding="utf-8")
+        page.write_text('<!doctype html><meta charset="utf-8"><title>Empty feed</title>'
+                        '<p>ok ✓</p>', encoding="utf-8")
+        untitled = Path(td, "untitled.html")
+        untitled.write_text('<!doctype html><meta charset="utf-8"><p>ok</p>',
+                            encoding="utf-8")
         nocs = Path(td, "nocharset.html")
         nocs.write_text("<!doctype html><p>ok</p>", encoding="utf-8")
         helper = Path(td, "shot.py")
@@ -578,6 +731,39 @@ def selftest() -> int:
         got, _ = capture(be("ok"), page, outd, "proto2")
         check("utf8/paired-positive", len(got) == 2, repr(got))
 
+        # --- the sidecar: what the frame SHOWS, read back out of the directory.
+        side = json.loads(Path(outd, SIDECAR).read_text(encoding="utf-8"))
+        check("sidecar/title-recorded",
+              side.get("proto2", {}).get("title") == "Empty feed", repr(side))
+        got, why = capture(be("ok"), page, outd, "second")
+        side2 = json.loads(Path(outd, SIDECAR).read_text(encoding="utf-8"))
+        check("sidecar/merges-does-not-clobber",
+              set(side2) >= {"proto2", "second"},
+              "a second label overwrote the first's description: %r" % side2)
+        check("sidecar/title-extraction", page_title(page) == "Empty feed",
+              repr(page_title(page)))
+        # PAIRED NEGATIVE: a page with no <title> still captures, and SAYS the alt will
+        # be thinner rather than silently shipping a frame nobody can describe.
+        got, why = capture(be("ok"), untitled, outd, "untitled")
+        check("sidecar/no-title-still-captures", len(got) == 2, repr(got))
+        check("sidecar/no-title-says-so", any("has no <title>" in r for r in why),
+              repr(why))
+        check("sidecar/no-title-writes-no-entry",
+              "untitled" not in json.loads(
+                  Path(outd, SIDECAR).read_text(encoding="utf-8")),
+              "an empty description must be ABSENT, not an empty string the reader "
+              "would render as a blank alt")
+
+        # --- frames-dir: ONE composition, and it refuses an unsluggable branch.
+        check("frames-dir/composes",
+              frames_dir("dev-docs/visual-history.html", "feat/empty_feed")
+              == "dev-docs/pr-frames/feat-empty-feed",
+              repr(frames_dir("dev-docs/visual-history.html", "feat/empty_feed")))
+        check("frames-dir/bare-record-path",
+              frames_dir("visual-history.html", "a/b") == "pr-frames/a-b")
+        check("frames-dir/refuses-unsluggable",
+              frames_dir("dev-docs/visual-history.html", "") is None)
+
         # --- missing target -> one plain reason, no crash.
         got, why = capture(be("ok"), Path(td, "nope.html"), outd, "prototype")
         check("missing-target/refused", not got and len(why) == 1, repr(why))
@@ -656,6 +842,13 @@ def main(argv=None) -> int:
 
     cd = sub.add_parser("chat-dir", help="resolve flow.config.json.chatImagePath")
     cd.add_argument("--config", default="flow.config.json")
+    cd.add_argument("--json", action="store_true",
+                    help="emit {dir, ignored, notes} instead of the bare path, so a "
+                         "caller reports the ignore state without re-deriving it")
+
+    fd = sub.add_parser("frames-dir", help="this PR's committed frame directory")
+    fd.add_argument("--visual-history", required=True)
+    fd.add_argument("--branch", required=True)
 
     a = ap.parse_args(argv)
     # argparse owns the flag; a pre-parse `"--selftest" in argv` scan would match it
@@ -666,7 +859,7 @@ def main(argv=None) -> int:
     if a.cmd == "check":
         backend, notes = load_backend(a.config)
         rep = validate(backend)
-        rep["notes"] = notes
+        rep["warnings"] = notes
         print(json.dumps(rep, indent=2, sort_keys=True))
         return 0 if rep["usable"] else 1
     if a.cmd == "render":
@@ -709,13 +902,31 @@ def main(argv=None) -> int:
             sys.stderr.write(w + "\n")
         print(json.dumps({"frames": got, "reasons": why}, indent=2))
         return 0 if got else 1
+    if a.cmd == "frames-dir":
+        d = frames_dir(a.visual_history, a.branch)
+        if not d:
+            sys.stderr.write(
+                "%s ⚠️ %r slugs to nothing, so there is no per-PR frame directory. A "
+                "detached HEAD reads as an empty branch name; frames would land in a "
+                "directory another PR also writes to.\n" % (PREFIX, a.branch))
+            return 1
+        print(d)
+        return 0
     if a.cmd == "chat-dir":
         d, notes = chat_image_dir(a.config)
+        root = Path(a.config).resolve().parent
+        note = warn_if_not_ignored(d, root) if d else None
+        if a.json:
+            # `ignored` is a TRISTATE on purpose: null is "could not measure", which a
+            # caller must not render as "not ignored".
+            print(json.dumps({"dir": d, "ignored": is_git_ignored(d, root) if d else None,
+                              "notes": notes + ([note] if note else [])},
+                             indent=2, sort_keys=True))
+            return 0 if d else 1
         for n in notes:
             sys.stderr.write(n + "\n")
         if not d:
             return 1
-        note = warn_if_not_ignored(d, Path(a.config).resolve().parent)
         if note:
             sys.stderr.write(note + "\n")
         print(d)

@@ -160,6 +160,86 @@ they were already attending.
   behavioural load sits in `run_capture_frames_evals.py` — the same position `previewBackend` was in
   and for the same reason: `platform: library` means `/flow:verify-build` self-skips here.
 
+## What the staff-review caught, and why one of it was a shipping defect
+
+Four lenses ran in parallel against the committed diff. Three of the four independently found the
+same BLOCKER, which is worth stating because it is the strongest signal the pass produced.
+
+**BLOCKER — a configured capture adapter silently retired the curated visual-history source.**
+`/flow:ship` §7b chose its frame source from whether the adapter *validates* (`capture_frames.py
+check` exits 0 on a well-formed template), which says nothing about whether §5d actually captured
+anything. Every §5d skip — not visually significant, no prototype and no walkthrough, a refused
+page, a detached HEAD — still reached §7b with `SRC=captures`, so a consumer who set the slot *and*
+had a curated record with committed frames got "No frames to show" in place of their images. §5d's
+own operator message promised the opposite in the same diff: *"the Before/after section falls back
+to the visual-history record."* That fallback did not exist.
+
+Reproduced before fixing, against one repo holding a real curated entry. The fix puts the
+fall-through **in the engine** (`render_frames_auto`) rather than in two shell blocks that would
+each have to remember it, and keeps `--source captures` strict so the mode is still testable on its
+own. Both skills now pass `auto`. Pinned by `test_auto_never_retires_the_record`, which also asserts
+at the *composed* layer that the shipped call sites pass `auto` and not `captures` — the engine
+being right while the shell is wrong is the layer-mismatch class `general.md` item 4 names.
+
+Also worth recording: the changelog's "Breaking changes: none" was true only for the unset default.
+It is now true generally, which is what it should have said.
+
+**The still photographed flow's own chrome.** Both capture targets were
+`prototype.presented.html` — the prototype *plus* flow's click-to-pin dock, which is exactly why
+§8's hand-off has to carry the sentence "The small floating comment dock is flow's, not the design."
+That sentence is a caption apologising for the picture. In the live page the dock earns its pixels
+because it is clickable; in a still it is furniture on the one image a phone reader sees before they
+approve, and they cannot tell it from a floating affordance the design itself proposes. Both call
+sites now capture `prototype.html` — which is also the file `approve` hashes, i.e. literally the
+thing being approved.
+
+**The alt text named the frame and said nothing about the page.** `"prototype at phone width,
+390×844"` was the entire text alternative for a reader at the merge gate who cannot see the image,
+in the one section that exists to be looked at — and the sibling record path's own selftest pins
+`"blank gray panel with no call to action"`, so the project's bar was already higher. The renderer
+cannot read the HTML (it is ephemeral, and the renderer is deliberately a projection of the commit),
+so `capture` now writes a small `frames.json` beside the frames carrying the page's `<title>`, and
+the renderer reads it back with `git show <sha>:<path>` like everything else. The projection
+discipline is unchanged and asserted: `alt/reads-the-commit-not-the-worktree` deletes the sidecar
+from the working tree and requires the render to be byte-identical.
+
+**A capture is one screenful, and nothing said so.** Captions and alts now read "first screen at
+phone width — 390×844". The viewport-clipping itself is deliberate and correct — the fold is a real
+design fact and a full-page capture of a long prototype is unreadable at PR-body width — but it has
+to be said out loud, which is the same standard the UTF-8 refusal applies one notch louder.
+
+**The per-PR directory was composed twice.** A shell literal `pr-frames/$SLUG` in `/flow:ship` and a
+Python constant in the renderer: the one contract both halves must agree on, duplicated in the one
+file whose own comment says two copies "agree today and diverge the first time one is tidied — and
+the divergence would be SILENT." It would have been exactly that: the reader's "committed no
+captured frames" line is indistinguishable from a correct skip. There is now a `frames-dir` verb,
+the shell calls it, and `test_frames_dir_is_composed_once` pins the CLI the shell actually invokes
+rather than only the Python function underneath it.
+
+**Six smaller ones, all real:** `chat-dir`'s reasons were thrown away by `2>/dev/null` at its only
+shipped call site, so `warn_if_not_ignored`'s message could never reach a human — the silent-skip
+class, in the diff that adds it; the skill re-derived `<label>-<frame>.png` instead of reading the
+path the engine prints; `git check-ignore` returning 128 (outside a repo, corrupt index) was read as
+"not ignored", a confident claim about something nobody measured, so the predicate is now a tristate
+and `/flow:doctor` **calls** it rather than re-implementing it; `/flow:doctor` WARNed on
+PR-body-frames-without-a-chat-image, which is a supported configuration the engine's own message
+calls correct — a warning that fires on a correct setup is how people learn to ignore warnings; the
+wrong-size refusal blamed the template for a device-pixel-ratio capture, sending a retina-capturing
+author to inspect a placeholder that was in fact correct; and the surfaced command error was
+likely to be `Failed to connect to the bus`, the one line this module documents as present on every
+successful run.
+
+**And one comment that claimed a property the code did not have.** `FRAMES`'s header said the chat
+message takes the first entry "by construction rather than by a caller remembering which index to
+slice" — while the caller passes the literal `--only phone`. Reorder the table and the chat frame
+does not follow. The comment now says what is true and names where the contract actually lives.
+
+Four findings were routed to roadmap § Next rather than fixed: retina/DPR capture, dark mode never
+being photographed, the two frames rendering at very different scale when stacked, and
+`## Before / after` being the wrong heading for an after-only set (the string is pinned at ~8 sites,
+so a per-source heading is a genuine fan-out). `validate()`'s triplication across the three adapters
+joined the existing `render_template` hint-parameter item, since both are the same refactor.
+
 ## What the harness caught that review would not have
 
 Four defects, all found by running the instruments rather than reading them:
