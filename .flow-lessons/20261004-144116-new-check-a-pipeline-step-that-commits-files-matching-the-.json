@@ -1,0 +1,34 @@
+{
+  "id": "20261004-144116-new-check-a-pipeline-step-that-commits-files-matching-the-",
+  "schema_version": 1,
+  "created_utc": "2026-10-04T14:41:16.617224+00:00",
+  "status": "queued",
+  "provenance": {
+    "project_slug": "flow",
+    "pr": "conductor/mobile-option-5-label",
+    "branch": "conductor/mobile-option-5-label",
+    "session_id": "sha256:5dd5b41c400fa73e"
+  },
+  "source_type": "error",
+  "artifact_kind": "new-check",
+  "lesson": {
+    "summary": "A pipeline step that commits files matching the rigor fingerprint guarantees a stale marker every run",
+    "synthesized_rule": "A rigor/freshness fingerprint must exclude artifacts the pipeline itself generates downstream of the review it fingerprints. Measured: ship Step 4c.iv git-adds .flow-lessons/*.json, the default source pattern includes a json clause, and staff-review Step 5a wrote the marker earlier in the same run -- so every lesson-harvesting ship ends in source-drift with a delta the review could not have seen. The prescribed auto-resolution is a full four-lens re-review, which trains people to click past the gate. Exclude pipeline output from the fingerprint, the same way dev-tracking docs already are and for the same stated reason.",
+    "target_hint": "ship/lib/rigor-marker.py source_sha exclusions; ship SKILL.md 4c.iv"
+  },
+  "evidence": {
+    "window_path": "(not committed - raw transcript window, see README)",
+    "evidence_strength": "direct-quote",
+    "lesson_hash": "sha256:9326884f826c52acbdee125abdaccb1de9520037bf12ab23f6a0ebc1c38c1cae",
+    "window_path_original_basename": "20261004-144116-a-pipeline-step-that-commits-files-matching-the-.window.jsonl"
+  },
+  "signals": {
+    "source_type": "error",
+    "source_weight": 0.6,
+    "evidence_strength": "direct-quote",
+    "evidence_weight": 1.0,
+    "recurrence_count": 1,
+    "sanitization_clean": null
+  },
+  "confidence": 0.6
+}

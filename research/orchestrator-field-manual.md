@@ -145,6 +145,51 @@ depending on an author remembering to demote.
   own, always resolve where the *intended* recipient ended up — do not assume a duplicate.
 - **Large text blocks read worse than an agent assumes.** Stated directly: a verbose
   orchestrator recreates the exact attention cost the seat exists to remove (§1 requirement 5).
+- **End every message to Ben with a standing "Waiting on you" list.** Stated directly
+  (2026-10-04):
+
+  > *"End every orchestrator message to Ben with a short standing 'Waiting on you' list of the
+  > manual tests and decisions only he can do, kept even when the message is about something
+  > else, so worker and [watcher] messages can't push them out of view."*
+
+  Three parts, and the middle one is the part that gets dropped. **Short** — it is a list of
+  open asks, not a status report. **Only what he can do** — a manual test on his phone, a taste
+  call, a merge; not anything the seat could resolve itself (classify ships-or-paperwork first,
+  §7). And **kept even when the message is about something else**: the list is *standing*, so a
+  message reporting a worker's completion still carries it. That is the whole mechanism — the
+  failure it prevents is an open manual test scrolling out of view behind unrelated traffic,
+  which is the same attention cost §1 requirement 5 names, arriving by accumulation rather than
+  by verbosity.
+
+  Drop an item only when it is actually done, and say so when you drop it.
+- **The watcher's label is `[watcher]`.** Stated directly (2026-10-04): *"the watcher's label is
+  '[watcher]'."* It takes the same `[w:<short-name>] <STATUS>` opener shape as any other sender
+  (§4.8 rule 6 of the cloud-workflow plan) — `[watcher]` is its short-name, so a watcher message
+  reads `[watcher] FYI` and is greppable and distinguishable from worker traffic at a glance.
+- **Every worker→seat message opens with `[w:<short-name>] <STATUS>` on its own first line.** The brief
+  instructs each worker to report on completion, on a blocking question, and on a stall (§4.8
+  rule 6 of the cloud-workflow plan); `<STATUS>` is exactly one of `GATE` · `DONE` · `BLOCKED` ·
+  `FYI` — never a fifth value — and the mapping is fixed:
+  completion → `DONE` · blocking question → `BLOCKED` · stall → `BLOCKED` (same next action;
+  the body carries the distinction) · parked at a plan gate → `GATE` · no action needed →
+  `FYI`.
+  Short-names must be unique across live workers — two workers on one label defeats the
+  convention. **This one was earned the obvious way:** a seat sent its own status pings under
+  a short-name a live research worker already held, so two senders shared one label and the
+  opener stopped identifying anyone. Check the name against the live-worker sweep before the
+  first message, not after a collision.
+
+  Stated directly, because the human reads worker traffic on a phone: the sender comes first so
+  the line survives truncation to one row, and the bracket keeps the opener greppable. Nothing
+  enforces it mechanically — flow does not wrap worker messages — so a seat that drops the
+  opener fails silently and only the human notices.
+
+  **And one content rule about the channel, not the convention.** Report a localhost or
+  loopback health check in **plain text, never inside a code span** — the message channel's
+  firewall silently drops a message carrying a loopback URL in backticks, and the identical
+  text without them delivers. Measured by
+  a worker on 2026-10-04; the send reports success, so the loss is invisible from the sending
+  end. Treat it as a delivery constraint rather than a style preference.
 
 ## 4. Program facts a fresh seat asks for in its first hour
 
@@ -286,6 +331,27 @@ git log -1 --format=%s origin/<branch>          # "plan:" prefix?
 **The failure is asymmetric and that is why it recurs:** the cost of reading a plan you did not
 need to read is minutes; the cost of leaving an approved-and-ready worker parked is days of
 throughput. When the branch says "gate," go read the plan.
+
+**⚠️ But the three commands above decide whether to CHASE, and they cannot tell parked from
+dead.** Corrected 2026-10-04, after this rule was copied into `/flow:orchestrate` §8's digest as
+if it were a liveness test:
+
+> *"This week's costliest case was precisely that shape: Track B had pushed `plan:` commits and
+> then died on the session limit, idle for two days. Under your rule it reads **parked, fine**,
+> the cheap-looking answer you yourself warned about."* (Ben.)
+
+A worker that pushed `plan:` commits and then died on the session limit has the **identical git
+signature** to one parked at a gate. So git state is the second question, never the first. **The
+discriminator is in the transcript:** a worker whose last assistant message is a session-limit
+kill (*"You've hit your session limit · resets …"*) is dead regardless of its branch, and only
+once that is ruled out does the git shape above mean "parked". If the last message cannot be
+read, the honest answer is **"parked or dead — can't tell"**, never "parked".
+
+The asymmetry argument above still holds and now cuts both ways: reading a plan you did not need
+to costs minutes, leaving a ready worker parked costs days — and **reading a dead worker as
+parked costs days too, silently**. `/flow:orchestrate` §8 carries the corrected three-step
+version; this section is the chase rule, and should be cited as that rather than as a
+classifier.
 
 **Deletion criterion:** delete when `/flow:orchestrate` distinguishes gated from stalled workers
 in its own sweep and reports them separately.

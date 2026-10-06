@@ -120,9 +120,18 @@ This is not a ledger of live *state* — that is deleted by design, because stat
 
 **Deletion criterion (FB-0088):** delete when tiers are chosen by measurement rather than judgment, or when the host reports per-session model/effort directly.
 
-## 3. Render the brief — and keep it under ~30 lines
+## 3. Render the brief — and keep it under ~50 lines
 
-The fixed contract block below is ~20 lines before you write anything; keep **your** per-dispatch content (Outcome, Done means, You own, Context) under ~20 more. Past that, something in it belongs in the repo instead. Everything about *how to work* already lives in the project's `CLAUDE.md`, this plugin, and the rule-skills the worker can load itself; restating it here is duplicated state that drifts. (The plugin's four rule-skills are **model-invoked**, so a worker that must follow a specific rule is better told to load it by name than left to infer it.)
+The fixed contract block below is **~29 lines** before you write anything; keep **your**
+per-dispatch content (Outcome, Done means, You own, Context) under ~20 more. Past that,
+something in it belongs in the repo instead.
+
+**Both numbers are measured, not estimated, and they moved once already.** They read "~30" and
+"~20" until the message-label convention landed and pushed the fixed block to 35 — i.e. the
+fixed part alone exceeded the stated total, and a dispatching seat was budgeting against two
+false figures. Caught by review, not by the author. If you add to the contract block, re-count
+it and update both numbers in the same commit; a budget nobody re-measures is the fan-out class
+`general.md` § Consistency item 2 names. Everything about *how to work* already lives in the project's `CLAUDE.md`, this plugin, and the rule-skills the worker can load itself; restating it here is duplicated state that drifts. (The plugin's four rule-skills are **model-invoked**, so a worker that must follow a specific rule is better told to load it by name than left to infer it.)
 
 Write it with the **Write tool** to `.flow/brief-<item>.md`. Never compose it as a shell string.
 
@@ -157,6 +166,17 @@ ship slot: <held by you | held by <worker>; rebase when it lands>
 - Ping me at <session-id> on completion, on a blocking question, and on a stall. Compose the
   message into a file and send it with the backend's message-file form — never as a quoted
   shell argument.
+- **Open every message to me with `[w:<short-name>] <STATUS>` as its own first line**, where
+  `<short-name>` is `<worker-short-name>` and `<STATUS>` is exactly one of `GATE` · `DONE` ·
+  `BLOCKED` · `FYI` — never a fifth value. The mapping is fixed:
+  completion → `DONE` · blocking question → `BLOCKED` · stall → `BLOCKED` (same next action; the body carries the distinction) · parked at a plan gate → `GATE` · no action needed → `FYI`.
+  I read these on a phone, so the sender comes first and survives truncation to one line.
+  **A stall and a block share `BLOCKED`, so your first body line must say which:** open it
+  `waiting on: <what you need>` or `stalled on: <what you were doing>`. The status gets me to
+  the message; that line tells me whether to answer you or re-dispatch you.
+- **If you serve anything locally** (a dev server, a rendered report, a health check):
+  Report a localhost or loopback health check in **plain text, never inside a code span** — the message channel's firewall silently drops a message carrying a loopback URL in backticks, and the identical text without them delivers.
+  The send reports success and nothing arrives, so the loss is invisible from your end.
 - FIRST, before anything else: confirm `<the named skill>` actually resolves in YOUR environment
   (e.g. `claude plugin details`, or attempt it and read the error). A spawned workspace only has
   the skills INSTALLED there, and an installed plugin can be several releases behind this repo —
@@ -165,6 +185,31 @@ ship slot: <held by you | held by <worker>; rebase when it lands>
   silently. Then: run <the named skill>.
 - Never create workspaces or sessions. Never merge.
 ```
+
+**Pick `<worker-short-name>` yourself, and check it against `listWorkers` — not against step 1.**
+Short-names must be unique across live workers — two workers on one label defeats the convention. Measured here: a seat labelled its own messages with a short-name already held by
+a live research worker, so the human could not tell the two apart — which is the whole value of
+the opener. One or two words, `[a-z0-9-]`, derived from the item rather than the branch (branch
+names collide more often than items do); if the name you want is taken, qualify it rather than
+reusing it.
+
+**Step 1's sweep is the wrong instrument for this, and the first version of this rule named it
+anyway.** Step 1 enumerates *branches and open PRs filtered by `<item-slug>`* — so it cannot
+surface a differently-slugged live worker's name even in principle, which is exactly the
+collision that was measured. A check that can only return "clean" is not a check
+(`general.md` § Consistency item 4). The name is also deliberately derived from the item rather
+than the branch, so the one thing step 1 greps is the one thing the name is decoupled from.
+Use the verb that enumerates live workers:
+
+```sh
+python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/dispatch_backend.py" render listWorkers
+```
+
+Run the rendered command and compare your candidate against the names it returns. **If
+`listWorkers` is `absent`/`invalid`** (step 0's check prints which), say so in the dispatch
+report in those words — *"short-name uniqueness was NOT verified; no live-worker list was
+available"* — and do **not** silently proceed as though it had been checked. An unverified
+uniqueness claim and a verified one must not read identically.
 
 ## 4. Create the workspace — brief as the first message
 

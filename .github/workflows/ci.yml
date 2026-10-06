@@ -88,6 +88,7 @@ jobs:
       - run: python3 plugins/flow/evals/run_dispatch_backend_evals.py
       - run: python3 plugins/flow/evals/run_handoff_brief_evals.py
       - run: python3 plugins/flow/evals/run_arg_safety_evals.py
+      - run: python3 plugins/flow/evals/run_ping_label_evals.py
 
   dev-docs:
     name: dev-docs index

@@ -8,7 +8,10 @@ description: >
   the ping channel to this seat's session id, and load the gate policy — then
   report ready as one scannable decision, not a status dump. The standard first
   action of any orchestrator seat, and mandatory for a successor. Use on
-  "/flow:orchestrate", "boot the orchestrator", "take over the seat".
+  "/flow:orchestrate", "boot the orchestrator", "take over the seat". Also carries a
+  digest-only path for "where do things stand" / "status": it re-runs the derivation,
+  prints one phone-sized table, stores nothing, and deliberately skips the two
+  boot-only steps.
 disable-model-invocation: false
 allowed-tools: Read, Grep, Glob, Bash, Write, Skill
 ---
@@ -72,7 +75,7 @@ gh pr list --state open --json number,title,headRefName,isDraft --limit 60 2>/de
 
 A sweep that reads only the default branch **does not see open branches**, and that gap has produced repeated version/feedback-number collisions: a worker re-derived its number from the default branch correctly and still collided with three numbers claimed on an open branch. Whatever contested resource this project serializes (version numbers, feedback IDs, doc slots), sweep both.
 
-## 4. Sweep for SILENT workers — by last activity, never by status
+## 4. Sweep for `SILENT` workers — by last activity, never by status
 
 > **If you are a successor, do step 5 first.** Until the ping channel is re-addressed every
 > worker is silent *by construction* — they have all been pinging an address that died with
@@ -83,9 +86,17 @@ A sweep that reads only the default branch **does not see open branches**, and t
 
 Workers ping you when they finish or stall, so you react rather than poll. **But the failure this protocol most needs to report is the one it cannot:** a rate-limited worker has no turn in which to send anything. Its status reads `idle`, which is indistinguishable between "waiting at a gate", "done and forgot", and "died hours ago".
 
-So for each live worker, render `workerStatus` and read the **last-activity timestamp**. Flag anything quiet for materially longer than its work should take. Do not treat silence as progress, and do not let the ping protocol's existence be mistaken for coverage.
+So for each live worker, render `workerStatus` and read the **last-activity timestamp**. Flag anything quiet for materially longer than its work should take. **This sweep finds quiet workers; it does not classify them** — `SILENT` here is the same token §8's digest renders, and §8 carries the test that separates a genuinely stalled worker from one parked at a plan gate. Do not treat silence as progress, and do not let the ping protocol's existence be mistaken for coverage.
 
 ## 5. Re-address the ping channel — the successor's true first action (see step 4's note)
+
+> **Precondition — run this ONLY from the session that is becoming the addressee.** This step
+> tells every live worker where to ping. Run from the seat that is taking over, it is correct;
+> run from any other session, it points the whole fleet at **that** session and every
+> subsequent ping is lost to a seat nobody is reading. So it belongs to a boot or a succession
+> and to nothing else: any path that reuses steps 2–4 for *reporting* must skip it (§8 does).
+> Stated here, at the step, rather than only in the caller — a precondition kept in its callers
+> has to be re-remembered by each new one.
 
 Every live worker is pinging a session id. On a succession that id is the **outgoing** seat's, it died with the seat, and the failure is invisible from both ends: pings go nowhere and you read the resulting silence as "nothing needs me."
 
@@ -136,3 +147,250 @@ An unstated axis counts as `yes`, so a bare call classifies `behavioral` and you
 Then state explicitly, in one line each: how many workers are live, how many are **silent** (step 4), anything the sweep in step 3 contradicts, and any backend verb that was missing so a step went unperformed.
 
 **Large text blocks read worse than you assume.** A verbose orchestrator is the failure mode, not the thorough one.
+
+## 8. `status` — the digest-only path, when the human wants state and not a boot
+
+**Reached by what the human asked for, not by an argument.** "Where do things stand", "status",
+"what's live" — a request for current state — is this path. A boot or a succession is steps 0–7.
+If you cannot tell which was meant, do the full boot: it is a superset.
+
+**Run steps 2, 3 and 4, then stop.** Those three already derive everything a digest needs —
+live worker state from the backend (2), open branches and open PRs (3), last-activity quiet
+times (4). This path adds **no second derivation**; if you find yourself computing state some
+other way, you are on the wrong path.
+
+**Skip steps 5 and 6, and skip them deliberately:**
+
+- **Step 5 (re-address the ping channel) must not run mid-program.** It sends every live worker
+  a new ping address. Run from a seat that is *already* the addressee, it is a no-op's worth of
+  value for the cost of N messages; run from any other session, it points live workers at **that
+  session** instead of the orchestrator, and every subsequent ping is lost to a seat nobody is
+  reading. A status request is not a change of address, so it must never behave like one.
+- **Step 6 (load the gate policy) is boot setup, not reporting.** This path classifies nothing
+  and approves nothing, so it has no use for the four-axis rule. If reading the digest produces
+  a decision, invoke `Skill("flow:gate")` for *that* decision — which is step 6's actual
+  contract anyway.
+
+Steps 0 and 1 still apply: resolve the backend (0) or you have nothing to derive from, and a
+digest that silently resolved no plan slot reads exactly like a project with nothing in flight.
+
+### The digest — derived on demand, never stored
+
+**Write nothing.** No file under the project's doc slots, no scratch ledger, no status table on
+disk anywhere. A status table with a `status` column was measured stale **within minutes** — it
+read "dispatched" for three workspaces the API already reported deleted — which is the same
+reason step 2 says "never from a snapshot". The digest's correctness comes entirely from being
+recomputed; persist it and you have built the thing step 2 forbids.
+
+Render it to the human like this:
+
+```markdown
+**Needs you:** <the single most pressing item, one line>
+
+**Fleet** — 3 live · 1 silent · 2 open PRs · <UTC timestamp>
+
+| Worker | State | PR | Quiet |
+|---|---|---|---|
+| <short-name-a> | GATE | [#181](https://github.com/<owner>/<repo>/pull/181) | 40m |
+| <short-name-b> | WORKING† | [#182](https://github.com/<owner>/<repo>/pull/182) | 12m |
+| <short-name-c> | SILENT† | — | 3h |
+
+† derived by me, not reported by the worker.
+```
+
+When nothing needs the human, the first line is this instead — not omitted:
+
+```markdown
+**Needs you:** nothing — no worker is at a gate or blocked.
+```
+
+**`Needs you` comes FIRST, above the inventory.** Step 7 rule 4 is "lead with what is needed",
+and it applies to this surface more than any other: the table is the tallest, widest element
+here, so anything below it is what a narrow screen pushes off. The digest answers "where do
+things stand"; the single line above it answers "do I have to do something". If the answer is
+no, say so in those words — an omitted line is indistinguishable from a forgotten one.
+
+**Four columns, and `Branch` is deliberately not one of them.** Measured on this project: 136
+remote heads, mean branch-name length 34 characters, max 69. A row carrying one renders at
+~100 characters, which on a phone either scrolls sideways or wraps into exactly the mush this
+digest exists to replace. Four columns render at ~45. The branch is also the least necessary
+thing here — the short-name already identifies the worker, and the PR link reaches the branch
+in one tap. **If you add a column, re-check the width**; a template that fits only because its
+placeholders are short is a template that breaks on first real data.
+
+**No backticks in the cells.** A table cell is already delimited, and this is read in chat and
+notification clients where a code span renders as literal backtick characters.
+
+**The ~45-character figure assumes a client that RENDERS markdown.** In a raw-text client the
+PR link's markup is visible and a row runs 88–99 characters — near the ~100 the `Branch` column
+was dropped to avoid. That is the deliberate trade: the hyperlink is stated-as-not-optional
+(see below) and a tappable PR number is worth more on a phone than a shorter raw row. Stated
+rather than left for someone to rediscover as a contradiction.
+
+### Two vocabularies, deliberately different sizes — do not unify them
+
+**There are exactly two sets here, and they are not the same set.** Naming both explicitly,
+because the obvious-looking "cleanup" is to collapse them and that would delete the digest's
+whole reason for existing.
+
+- **THE MESSAGE SET — exactly four, closed, never a fifth.** `GATE` · `DONE` · `BLOCKED` · `FYI`.
+  This is what a *worker* may put in the `[w:…]` opener. It is a closed vocabulary, enforced at
+  the four contract docs **and separately here** — this file is not one of those four, so the
+  pin that covers this bullet is `orch-message-bullet-closed`, which parses the list above and
+  asserts it is exactly those four.
+- **THE DIGEST SET — the four above, plus two derived values.** `WORKING` and `SILENT`. This is
+  what the *seat* may render in the `State` column.
+
+| State | Set | Where it comes from |
+|---|---|---|
+| `GATE` `DONE` `BLOCKED` `FYI` | message + digest | **Reported** — the worker's own last ping said so |
+| `WORKING` | digest only | **Derived** — live, recent activity, nothing outstanding. The modal row |
+| `SILENT` | digest only | **Derived** — quiet longer than its work should take, and not at a gate |
+
+**Why they differ, which is the part a future editor needs.** The two sets answer different
+questions. A message answers *"what is this worker telling me?"* — so it can only contain things
+a worker is able to say, and a worker that has stopped speaking cannot send a status reporting
+that it has stopped speaking. The digest answers *"where does everything stand?"* — which must
+cover workers that said nothing at all, so it needs words no worker can send. **One set is limited to what a worker can
+say; the other has to cover what you can conclude. They cannot be the same size.** Formally: **a
+set that is closed over what a sender can utter and a set that is closed over what an observer
+can conclude are different sets by construction.** They are not a duplication to be deduplicated.
+
+**And the asymmetry is not cosmetic: `SILENT` is the single most valuable cell in the table.**
+A worker killed by the rate limit has no turn in which to ping, so it reports nothing and its
+backend status reads `idle` — indistinguishable from healthy. That is the failure this program
+has paid for most, and a digest with no word for it would be blind to the exact thing it was
+built to surface. Likewise, dropping `WORKING` would force "working normally" into `FYI`, which
+then means both *"fine"* and *"possibly dead"* — collapsing the one distinction the human is
+scanning for.
+
+**Three ways to break this, all regressions.** Adding a derived value to the MESSAGE contract
+is wrong. Removing a derived value from the DIGEST is wrong. And **relabelling a derived row as
+`message + digest` is wrong** — that unifies the sets by reclassification without adding to one
+or removing from the other, which is why the prohibition needs three clauses rather than two.
+Review found the third by measurement after the first draft of this section stated only two.
+
+**All three are pinned as a set relation, not as a sentence** (`orch-superset-relation`): the
+`Set` column below is parsed, and the message set must equal the four, the digest set must be a
+strict superset, and the difference must be exactly `WORKING` and `SILENT`. **Do not cut the
+`Set` column as redundant with "Where it comes from"** — a review proposed exactly that, and it
+is the parse handle that makes this checkable. Reword the prose freely; the relation is what
+holds. (FB-0132.)
+
+### Marking a derived cell
+
+**Mark every derived cell with `†` and footnote it once per digest**, exactly as the digest
+template under *The digest* above does (not the reference table just above, which defines values
+rather than rendering them), so the human can see which states a worker claimed and which you inferred. **Every
+derived cell, including the modal `WORKING` row** — a marker applied only to the alarming value
+tells the reader nothing, because then an unmarked cell means both "the worker said so" and "it
+is fine".
+
+`†` rather than `*`: a lone `*` is the one glyph markdown owns, and a naive client's
+`\*([^*]+)\*` pairs the marker in one row with the next row's and italicises everything
+between — in exactly the non-rendering clients the no-backticks rule above is written for.
+
+### Telling `SILENT` from `GATE`
+
+**`SILENT` and `GATE` must be told apart mechanically, never by feel** — and **git state alone
+cannot do it.** Field manual § 8's branch/PR/`plan:` test is the rule for deciding *whether to
+chase*, and it is right for that. It is **not sufficient here**, because the two states it
+separates can produce identical git state:
+
+> *"This week's costliest case was precisely that shape: Track B had pushed `plan:` commits and
+> then died on the session limit, idle for two days. Under your rule it reads **parked, fine**,
+> the cheap-looking answer you yourself warned about."* (Ben, 2026-10-04.)
+
+**The discriminator is in the transcript, not in git.** Check it FIRST, and only fall through to
+the git shape once it is ruled out:
+
+1. **Read the worker's last assistant message.** If it is a session-limit kill — *"You've hit
+   your session limit · resets …"* or equivalent — the worker is **`SILENT`**, *regardless of
+   git state*. A `plan:` HEAD does not make a limit-killed worker parked; it makes it a dead
+   worker wearing a parked worker's git signature. This is the case the digest most exists to
+   surface, so it is the first question asked, not a caveat on the last.
+2. **Only if a limit kill is ruled out**, apply the git shape:
+   - **`GATE`** — branch exists, **no open PR**, HEAD subject begins `plan:`. A worker told to
+     stop at the plan gate and doing exactly that. Go read the plan; do not chase it for status.
+   - **`SILENT`** — **no branch on the remote at all**, or a branch with no new commits and a
+     stale last-activity timestamp.
+3. **If you cannot read the last message, you may not say `GATE`.** Render **"parked or dead —
+   can't tell"** and mark it derived. Saying `GATE` on an unread transcript is asserting the
+   reassuring answer from evidence that does not support it, which is exactly how the two-day
+   case stayed invisible. "I could not look" and "I looked and it is fine" must never render
+   identically.
+4. Neither shape matching is itself a result either: say "could not classify" rather than
+   defaulting to `GATE`, because `GATE` is the reassuring answer and defaulting to it is how the
+   asymmetry bites.
+
+**Paired, so the rule is testable in both directions:** a limit-killed worker with a `plan:` HEAD
+reads `SILENT`; a genuinely parked worker — last message is its own plan hand-off, not a kill —
+reads `GATE`. A rule that only produced `GATE` for the second case without producing `SILENT` for
+the first would be the half-test § 8 warns about, one level up.
+
+### Untrusted repository-derived refs
+
+**`<slug>` and `<branch>` are REPOSITORY-DERIVED, so treat them as untrusted — this block is
+the one place in this section where a value you did not author reaches a command line.** Step 3's
+sweep hands you branch names from `git ls-remote` and `gh pr list --json headRefName`; on any repo
+that takes outside contributions, a fork's head-branch name is attacker-chosen. **`git
+check-ref-format` permits `;`, `$(…)`, backticks, `|` and `&` in a ref name** (verified, not
+assumed — it rejects only space, newline, `*`, `?`, `\`, `:`, `~`, `^`, `[`), and `${IFS}`
+substitutes for the one character it forbids. So an unquoted paste here executes the name.
+
+Apply `/flow:spawn` § 4's rule, **widened by one character**: reduce every interpolated value
+to `[A-Za-z0-9._/-]` before it reaches the command line, then single-quote it. Spawn's class is
+`[A-Za-z0-9._-]`; the slash is added here because a branch name legitimately contains one, and
+it is harmless inside quotes. **The reduction is the real defence, not the quoting** — git also
+permits an apostrophe in a ref name, so quotes alone would not hold. Quote anyway: the two
+together fail safe if one is forgotten.
+
+```sh
+# <slug>/<branch>: reduce to [A-Za-z0-9._/-] FIRST, then paste inside the quotes.
+# `grep -F --` also closes the incidental regex- and option-injection on <slug>.
+git ls-remote --heads origin | grep -F -- '<slug>'   # branch on the remote at all?
+gh pr list --head '<branch>' --json number           # PR open?
+git log -1 --format=%s -- 'origin/<branch>'          # subject starts with "plan:"?
+```
+
+If a name does not survive that reduction, **say you could not classify the worker** rather than
+running the command on the raw value — the same refuse-rather-than-escape policy
+`lib/dispatch_backend.py` applies to every rendered verb.
+
+### The rest of the cells
+
+**The `Quiet` column is a raw duration, not a verdict** — it is there so the human can disagree
+with your classification, which is why `SILENT` is marked derived. Step 4 sets the threshold
+("materially longer than its work should take"); it is per-worker judgment and the digest does
+not pretend otherwise.
+
+**Edge states — say them, don't improvise them.** Each run otherwise invents its own:
+
+- **Zero live workers.** Print the `Needs you` and `Fleet` lines with an explicit `0 live` and
+  one sentence distinguishing **"nothing is in flight"** from **"I could not derive the fleet"**
+  (a missing `listWorkers` verb, an unresolved backend). Never a bare header row: an empty table
+  and a failed derivation look identical, and §0 already makes this distinction for step 0.
+- **Nothing needs you.** The `Needs you` line still renders, with the words above.
+- **An absent value in any cell** — no PR, no branch, unknown duration — is `—`. One convention,
+  so a reader never has to wonder whether `n/a`, blank and `—` mean different things.
+- **A ping with no opener.** Nothing enforces the `[w:…]` convention, so this is the failure the
+  contract's own stated limit predicts — and it lands here, in the one surface where the human
+  would notice. Its status is **not** reported: derive the state from step 3's ground truth and
+  mark it `†` like any other derived cell. **Never read a status out of the prose** of an
+  unlabelled ping, and never render it as though it had carried one — an unlabelled ping and a
+  labelled one must not look identical, or the digest quietly launders the gap.
+
+**Hyperlink every PR number** — `[#181](https://github.com/<owner>/<repo>/pull/181)`, inline and
+**inside the table**. Stated as not optional, and the lapse recurs specifically inside status
+tables, which is exactly what this is.
+
+**The digest reports; it does not escalate.** If reading it produces a decision, that decision
+follows step 7's rules in its own message — one at a time, with recommendation, confidence and
+justification. The one-line `Needs you` *names* the item; it is not the escalation.
+
+**Deletion criterion:** delete this section when the backend (or Conductor's own per-workspace
+rows) reports live worker state, branch, open PR and quiet time in one view the human can read
+on a phone. The digest exists because that view does not demonstrably exist today — the vendor
+claim that mobile rows match desktop detail is recorded as **unconfirmed**, from search results
+rather than a fetched page. If it turns out to hold, this path costs one skill section and
+should be deleted against this criterion rather than maintained beside a better surface.

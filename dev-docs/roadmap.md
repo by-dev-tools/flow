@@ -25,7 +25,9 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 > replaced by whatever Ben sets next — not silently carried forward as the implied stopping point
 > once it's been reached.
 
-**Plugin at v1.60.0 (this PR — the two ephemeral HTML artifacts can be served at a sign-in-gated URL a phone can open; roadmap D7 option 1, no new FB). A `previewBackend` host adapter modelled on `dispatchBackend`: three verbs, a CLOSED `{dir}`/`{port}` vocabulary with deliberately **no `{url}`** — the URL is the adapter's output, read from `publish`'s stdout, never a value a template composes, because a template that could compose it would let config decide what the hand-off claims. No host CLI is named in any plugin artifact; the existing `run_dispatch_backend_evals.py` § 7 sweep already covers `plugins/flow/lib/`, and its exact artifact count is what noticed the new file. **The constraint that reshaped the feature came from the host CLI's own `--help`, not from an assumption:** a workspace has ONE preview URL and pointing it at a different port *keeps* that URL, so two artifacts cannot hold two live links — both are staged into one `.flow/preview/` directory and handed out as `<url>/<file>`. A second port would have silently re-pointed the first link while leaving it looking valid, which is the exact defect v1.59.0 removed. The URL is **additive**: measured, a served preview stops serving when its workspace sleeps while the registration survives, so the honest local line stays as the floor. The URL is a bare autolink and the path stays a code span — deliberately opposite, since a code span is untappable on a measured touch client; the rule *render it the way the reader can act on it* is written into the engine so the two are not later harmonised. Flow's own `flow.config.json` sets the slot (FB-0085: a slot unset everywhere is a feature exercised nowhere), with `serve` calling a `.claude/bin/` script because the adapter refuses a template carrying a shell operator. `/flow:doctor` Check 2.13 WARNs on a malformed template, because this feature fails **open and invisible**. Schema 37 → 38 slots, fan-out fixed at four shipped sites. See `dev-docs/history/2026-10-04-serve-the-ephemeral-artifacts-at-a-url.md`.)**
+**Plugin at v1.61.0 (this PR — worker messages identifiable at a glance, and fleet state glanceable without scrolling chat; FB-0132/FB-0133).** Worker→seat messages now open `[w:<short-name>] <STATUS>` over four statuses (`GATE` · `DONE` · `BLOCKED` · `FYI`), stated identically at the four docs that state the ping contract and pinned by a new CI-wired `run_ping_label_evals.py`. A stall reports as `BLOCKED` because the seat's next action is identical to a block's; the body's first line (`waiting on:` / `stalled on:`) carries the distinction. `/flow:orchestrate` gains a **digest-only `status` path**: it re-runs the derivation that already exists (steps 2–4), prints one phone-sized four-column table, and **stores nothing** — a stored status table was measured stale within minutes — and it skips steps 5 and 6, with step 5 now stating that precondition at its own site. **The eval derives its site list AND pins it:** the derived half alone was measurably insufficient — rewording one site's trigger phrase while adding a conforming fifth site left the harness green over a shipped doc carrying none of the contract. **SAFETY:** `/flow:security-review` found that the digest's classification block interpolated repository-derived branch names into shell commands, and `git check-ref-format` permits `;`, `$(…)` and backticks in a ref name — a fork's branch name could execute on the seat's host; values are now reduced and single-quoted, pinned by its own predicate after review measured that stripping the quotes passed every other check. **Eight review-driven behaviours ship UNDECLARED and route to the draft manifest** — the PR is a draft and names each as a decision. Recently shipped: **v1.57.0 ([#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131), v1.56.0 ([#174](https://github.com/by-dev-tools/flow/pull/174) — CV1's unfinished half: three gates that read less than they report).**
+
+**Previously: v1.60.0 (shipped [#180](https://github.com/by-dev-tools/flow/pull/180) — the two ephemeral HTML artifacts can be served at a sign-in-gated URL a phone can open; roadmap D7 option 1, no new FB). A `previewBackend` host adapter modelled on `dispatchBackend`: three verbs, a CLOSED `{dir}`/`{port}` vocabulary with deliberately **no `{url}`** — the URL is the adapter's output, read from `publish`'s stdout, never a value a template composes, because a template that could compose it would let config decide what the hand-off claims. No host CLI is named in any plugin artifact; the existing `run_dispatch_backend_evals.py` § 7 sweep already covers `plugins/flow/lib/`, and its exact artifact count is what noticed the new file. **The constraint that reshaped the feature came from the host CLI's own `--help`, not from an assumption:** a workspace has ONE preview URL and pointing it at a different port *keeps* that URL, so two artifacts cannot hold two live links — both are staged into one `.flow/preview/` directory and handed out as `<url>/<file>`. A second port would have silently re-pointed the first link while leaving it looking valid, which is the exact defect v1.59.0 removed. The URL is **additive**: measured, a served preview stops serving when its workspace sleeps while the registration survives, so the honest local line stays as the floor. The URL is a bare autolink and the path stays a code span — deliberately opposite, since a code span is untappable on a measured touch client; the rule *render it the way the reader can act on it* is written into the engine so the two are not later harmonised. Flow's own `flow.config.json` sets the slot (FB-0085: a slot unset everywhere is a feature exercised nowhere), with `serve` calling a `.claude/bin/` script because the adapter refuses a template carrying a shell operator. `/flow:doctor` Check 2.13 WARNs on a malformed template, because this feature fails **open and invisible**. Schema 37 → 38 slots, fan-out fixed at four shipped sites. See `dev-docs/history/2026-10-04-serve-the-ephemeral-artifacts-at-a-url.md`.)**
 
 **Previously: v1.59.0 (shipped #178 — a hand-off that names a local file says so plainly, and the committed before/after frames render in the PR itself; roadmap D7, no new FB). Mobile options 3 + 2 from `dev-docs/research/2026-10-mobile-workflow.md` § 8: Ben was reviewing from a phone, and a gate that hands over a sandbox-local path has not asked anyone to look at anything. One stdlib engine, `skills/ship/lib/artifact-handoff.py`, replaces hand-authored hand-off strings at four prose sites and renders a new `## Before / after` PR-body section. The section is a projection of the **commit**, not of the session: the committed visual-history record, the newest entry's branch matched against this PR's, and a row only for a frame tracked at HEAD — because a hand-composed image URL that is subtly wrong renders as a **broken image**, which is worse than today's honest absence, and nothing downstream would catch it. **Measured as a pair, 2026-10-03:** an unauthenticated `raw.githubusercontent.com` fetch of a public blob is `200` (11,699 bytes) and of a private blob is `404` (14 bytes), so inline images are a public-repo-only mechanism and everything else fails CLOSED to `/blob/` links an authorised viewer can open on any client. The hand-off line **names no client**: research § 6 Q1/Q2 are open, so "iOS cannot open this" would be an unverified completion claim and also wrong in the sync-to-a-laptop case. Two fan-out fixes the orchestrator added at the gate: `/flow:ship-spike` gets both fixes (a second hand-off surface for the same two artifacts — leaving it would ship a contradiction), and the stale `uiSurface:false` self-claim is corrected at its two live sites (flow has been `uiSurface: true` since v1.24.0; `ship/SKILL.md` §5c also still said the §5c entry shape was unvalidated, which the roadmap has recorded as VALIDATED for releases). **Flow cannot dogfood the interesting half** — all four of its own visual-history entries are CSS/SVG reconstructions, so every flow ship takes the no-frames branch; the frame branch is pinned against a temp git repo in `evals/run_artifact_handoff_evals.py`, whose `--selftest` is proven mutation-sensitive rather than merely green. Option 1 (`conductor preview set`) is PR B, held on Ben's measured iOS answers. See `dev-docs/history/2026-10-03-honest-local-artifact-handoffs-and-pr-body-frames.md`.)**
 
@@ -123,7 +125,24 @@ Canonical: `research/2026-08-23-flow-cloud-workflow-plan.md`. One orchestrator w
   parent would undo the tool-grant reasoning this idiom rests on.
   **Surfaces when:** any new `context: fork` skill takes a path argument; or
   `plugins/flow/agents/{auditor,plan-critic}.md` gain a tool beyond `Read, Grep`; or
-  `plugins/flow/lib/arg_placeholders.py` grows a second reader. — the five communication rules are described in four places and enforced in one.** `format_escalation` already enforces rules 3/4/5 and `ships_or_paperwork` enforces rule 7, but only `/flow:gate` routes through them; `/flow:orchestrate`, `/flow:spawn` and `/flow:handoff` each restate the rules as prose applied by hand. The suite's thesis is "wrap the checklists", and this is the one place a checklist stayed a checklist while an enforcer for it shipped in the same PR. The counter-argument is real and unresolved: skill bodies load independently, so a pointer costs a read the inline restatement does not, and forcing a *ready line* through an escalation formatter may be the wrong shape entirely. **Surfaces when:** any edit to the communication-rules block in `plugins/flow/skills/{orchestrate,spawn,handoff}/SKILL.md`, or when `gate-classify.py`'s `format_escalation` gains a sixth rule.
+  `plugins/flow/lib/arg_placeholders.py` grows a second reader.
+
+- **The five communication rules are described in four places and enforced in one.** `format_escalation` already enforces rules 3/4/5 and `ships_or_paperwork` enforces rule 7, but only `/flow:gate` routes through them; `/flow:orchestrate`, `/flow:spawn` and `/flow:handoff` each restate the rules as prose applied by hand. The suite's thesis is "wrap the checklists", and this is the one place a checklist stayed a checklist while an enforcer for it shipped in the same PR. The counter-argument is real and unresolved: skill bodies load independently, so a pointer costs a read the inline restatement does not, and forcing a *ready line* through an escalation formatter may be the wrong shape entirely. **Surfaces when:** any edit to the communication-rules block in `plugins/flow/skills/{orchestrate,spawn,handoff}/SKILL.md`, or when `gate-classify.py`'s `format_escalation` gains a sixth rule.
+
+  **▶ THE TRIGGER FIRED IN SPIRIT, v1.61.0 — and the letter of it did not, which is the useful
+  part.** `/flow:orchestrate` §8's digest does not *edit* the communication-rules block; it
+  becomes a **fifth hand-application** of it, citing step 7 rule 4 for the `Needs you` ordering
+  and step 7's recommendation/confidence/justification rule for what happens when reading the
+  digest produces a decision. So the count in this row's own title is now wrong (four places →
+  five), and the row's stated counter-argument — "a pointer costs a read the inline restatement
+  does not" — is now evidenced by a fifth site rather than argued in the abstract. Re-read the
+  trigger wording too: keyed on *editing* the block, it would never have fired on a new site
+  that merely applies the rules, which is the growth mode that actually occurs.
+  *(Housekeeping done in the same pass: this row had lost its bullet and bold title into the
+  tail of the preceding entry's `Surfaces when:` line — pre-existing on `main`, verified — so a
+  grep found its body attached to an unrelated item. Restored. Out of this PR's scope but in a
+  file it was already editing, and leaving it would have cost the next reader the same
+  confusion it cost this one.)*
 
 **FOLLOW-UPs routed from the orchestrator-suite `/simplify` pass (v1.45.0)** — each declined in that PR as a cross-cutting refactor of files it does not own, per § Scope discipline, and each real:
 
@@ -657,6 +676,231 @@ change. The asymmetry is now written down instead of being rediscovered.
 
 **Surfaces when:** `/flow:spawn` or `/flow:orchestrate` next fails to reach a host, or when
 `flow.config.json` is next edited.
+
+### The message channel DROPS any message carrying a loopback URL in a code span (measured 2026-10-04)
+
+**Surfaces when:** any skill, brief, or agent is written to report a local server's health back
+through the Conductor message channel — `/flow:prototype` §8 and `/flow:verify-build` are the
+two shipped surfaces closest to doing this, since both hand a human a locally-served artifact.
+
+**Cause, as measured:** a worker found that the channel's firewall blocks a message containing a
+localhost/loopback URL **inside a markdown code span**. The identical text *without* the
+backticks delivers. So the backticks — which every other rule in this repo's style would tell
+you to add around a URL — are what triggers the drop.
+
+**Why this needs a roadmap row rather than just the convention line it already got.** The
+failure is invisible from the sending end: the send reports success and nothing arrives. That is
+the silent-skip class (`general.md` § Consistency item 1) sitting *in the transport*, where none
+of this repo's defenses reach — no `[WARN]` branch, no paired positive assertion, no eval over
+shipped prose can observe a message the firewall ate. The convention line shipped in v1.61.0
+tells a worker to state loopback URLs bare; it does **not** stop a future skill from composing
+one in backticks, because nothing mechanically checks message bodies.
+
+**What would actually close it** (none done, in rough cost order): (a) a lint over shipped
+skill/brief text that flags a loopback URL inside a code span at the point it is *authored*;
+(b) a send-side helper that strips code spans from loopback URLs before handing the body to the
+backend, which is the only fix that survives an author who never reads this row; (c) a
+`dispatch_backend.py` `sendMessage` read-back — compose, send, re-fetch, assert it arrived —
+the same shape as `ship/lib/verify-pr-body.sh`'s gh read-back, and the only one of the three
+that detects the drop rather than preventing one known cause of it.
+
+**Not yet characterized, and worth one probe before building (b) or (c):** whether the trigger is
+specifically loopback-in-a-code-span, or a broader URL-in-a-code-span rule that loopback is just
+the observed instance of. The fix differs — (b) would need the wider predicate. Ask the worker
+that measured it before assuming the narrow form.
+
+### Worker→seat label convention: `/flow:handoff` + `brief-check.py` still don't carry it (C3, deferred at v1.61.0)
+
+**Surfaces when:** `plugins/flow/skills/handoff/SKILL.md` or
+`plugins/flow/skills/handoff/lib/brief-check.py` is next touched.
+
+`brief-check.py` mechanically asserts that a succession brief re-addresses the ping channel
+(§4.9). It does **not** assert that the brief carries the `[w:<short-name>] <STATUS>` label
+convention or the loopback-in-a-code-span rule, so a successor seat inherits the channel without
+inheriting the message contract that travels on it.
+
+**Deferred deliberately, and the reasoning is the thing to re-check rather than the conclusion:**
+re-addressing a channel and labelling a message on it are separable concerns, and widening
+`brief-check.py` is a `sensitivePaths` edit (gate machinery) for what is currently a cosmetic
+gain. That calculus changes if the convention ever becomes load-bearing for anything automated —
+if a digest, a lint, or a routing rule starts *parsing* the label rather than a human reading it,
+then a succession brief that omits it is a real break and this becomes a correctness item.
+
+The four sites that **do** state it are not a hardcoded list anywhere: `evals/run_ping_label_evals.py`
+derives them by grepping `plugins/flow/skills`, `plugins/flow/docs` and `research/` for the
+contract's trigger phrase, so adding the convention to `handoff/` would be picked up automatically
+and a fifth site that states the contract *without* the label fails the eval (measured — see that
+harness's docstring). Nothing needs rewiring to do this; it is scope, not plumbing.
+
+### `/flow:orchestrate` §8 half-satisfies field manual §8's deletion criterion, which still advertises the gap as open (v1.61.0 staff-review)
+
+**Surfaces when:** `research/orchestrator-field-manual.md` § 8, or `/flow:orchestrate`'s silent-worker
+sweep (step 4), is next touched.
+
+Field manual § 8 carries: *"Deletion criterion: delete when `/flow:orchestrate` distinguishes gated
+from stalled workers in its own sweep and reports them separately."* v1.61.0's digest now **reports**
+them separately — the `State` column derives `GATE` from branch+PR+`plan:`-subject and `SILENT` from
+the absence of a branch or a stale timestamp, both halves of § 8's own test, marked as derived. But
+**step 4's sweep itself still does not distinguish them**: it flags anything quiet and leaves the
+classification to the digest.
+
+So the criterion is half-met, and the document still describes the whole thing as open. That is the
+contract-with-a-document shape `general.md` § Consistency item 2 names — a citation resolving to a
+claim that is no longer true.
+
+**The decision to make, which is why this is a row and not a fix:** either narrow § 8's criterion to
+name step 4 specifically (honest, and keeps the retirement condition meaningful), or split it into a
+reporting half that is now satisfied and a sweep half that is not. Picking one requires deciding
+whether the *sweep* should classify at all, or whether classification is correctly the digest's job —
+and that is a design call about where derivation belongs, not a doc edit.
+
+### `/flow:ship` Step 4c.iv guarantees a stale rigor marker on every lesson-harvesting ship (v1.61.0, measured on this PR)
+
+**Surfaces when:** `plugins/flow/skills/ship/lib/rigor-marker.py`, `/flow:ship` Step 4c.iv, or
+`/flow:staff-review` Step 5a is next touched.
+
+**The ordering is self-defeating.** `/flow:staff-review` Step 5a writes the rigor marker,
+fingerprinting `sourceFilePatterns ∪ behaviorBearingDocPatterns`. `/flow:ship` Step 4c.iv then
+flushes harvested lessons to `.flow-lessons/*.json` **and `git add`s them** — and the built-in
+`DEFAULT_SOURCE_PATTERN` includes `\.(json|ya?ml|toml)$`, so those records land *inside* the
+fingerprint. Measured on this PR: marker written, four lessons flushed, marker immediately reads
+`source-drift` with the only delta being four JSON blobs the pipeline itself generated
+downstream of the review.
+
+So **any** ship whose harvest pre-scan trips ends with a stale marker, and the prescribed
+auto-resolution is "re-run `/flow:staff-review`" — a full four-lens re-review triggered by data
+the review could not have seen and has no opinion about. Left alone it trains the exact habit
+`rigor-marker.py`'s own docstring warns about, having already fixed one false-drift class ("a
+FALSE source-drift at ship Step 1.0a on every new-file PR").
+
+**Candidate fixes, cheapest first.** (a) Exclude the flush directory from the fingerprint — it
+is pipeline output, never reviewable source, and the same argument the docstring already makes
+for keeping dev-tracking docs out applies verbatim ("a gate that always fires is one people
+learn to click past"). (b) Move Step 4c.iv's flush *before* staff-review in the loop, which is
+wrong — the harvest reads the session, so it has to run late. (c) Have Step 4c.iv re-stamp the
+marker after flushing, which hides the ordering rather than fixing it. **(a) is the right
+shape**, and it is one entry in the exclusion the fingerprint already maintains.
+
+**Note the near-miss in how this was found:** the first diagnostic run against it used
+`jq -r .sourceFilePatterns` where the pipeline uses `jq -r '.sourceFilePatterns // empty'`. The
+slot is unset here, so the raw form yields the literal string `null`, which was then passed as
+the regex — fingerprinting against a pattern matching nothing and "explaining" the drift as
+coming from no files at all. The `// empty` form is load-bearing at every call site, and a
+diagnostic that disagrees with the pipeline about its own input is worse than no diagnostic.
+
+### The digest flattens the one distinction the body-line rule exists to carry (v1.61.0 push-further)
+
+**Surfaces when:** `/flow:orchestrate` §8's State table or `Needs you` paragraph is next
+touched, or the `waiting on:` / `stalled on:` body-line rule in `/flow:spawn` §3 is revisited.
+
+v1.61.0 ships both halves of a near-miss. D2 collapsed *stall* and *block* onto one status
+`BLOCKED`, on the stated reasoning that the body carries the distinction — and a review pass
+then added the thing that makes that true: a worker's first body line must open `waiting on:`
+or `stalled on:`, because the two imply **different orchestrator actions** (answer the worker
+versus re-dispatch it).
+
+**The digest, shipped in the same release to answer "do I have to do something", renders both
+as a bare `BLOCKED` cell.** So the distinction that decides the action survives in the message
+and is flattened at the surface built for glancing. The one-line `Needs you` names the *item*
+and does not name the *action* either.
+
+**Nothing new is needed to fix it, which is why this is a roadmap row and not an exploration
+item:** the seat has already read the body line by the time it composes the digest. Two shapes,
+cheapest first — (a) one clause on the `Needs you` paragraph requiring it to name the action;
+(b) split the reported `BLOCKED` row in the State table by what the body line said —
+`BLOCKED (waiting)` → answer, `BLOCKED (stalled)` → re-dispatch — explicitly as a *rendering of
+the body line*, not a fifth message status.
+
+**Why it was not done at ship:** (b) touches the State table in the same release that already
+widened it once under review, and the four-status message contract is Ben's approved taste call
+(D2). Rendering a parenthetical in a digest cell does not violate it — the eval's
+`no-extra-status` negative parses `<trigger> → STATUS` pairs in *contract prose*, not digest
+cells, so it stays valid either way — but "does the digest get its own sub-vocabulary" is a
+judgment worth making deliberately rather than inside a review round.
+
+### `PAIR`'s left-boundary grammar in `run_ping_label_evals.py` is still loose (v1.61.0 — the quadratic half was FIXED at ship)
+
+**Surfaces when:** `plugins/flow/evals/run_ping_label_evals.py` is next touched, or a fifth
+contract site is added.
+
+**What was fixed, so nobody re-fixes it.** Staff-review measured `PAIR`'s original `[a-z ]*` as
+O(n²) in a contiguous lowercase-and-space run — 5 KB 118 ms / 20 KB 1.77 s / 80 KB **28.1 s** —
+and `/flow:security-review` then showed it was *reachable from CI* (`ci.yml` runs on
+`pull_request`, and any `.md` under the contract roots carrying the trigger phrase becomes a
+site, so a fork PR could burn the runner toward its ceiling). Fixed in v1.61.0 by bounding the
+repetition to five words — `([a-z]+(?: [a-z]+){0,4})` — which is **1 ms / 4 ms / 16 ms** on the
+same inputs, a ~1750× improvement at 80 KB, and was verified to parse the **identical** pairs on
+all four sites before and after. Five is the cap because the longest real left-hand side is five
+words ("parked at a plan gate").
+
+**What is still open, and it is a grammar question rather than a performance one.** The left side
+is still unanchored, so it absorbs whatever lowercase prose precedes the first trigger: on
+`workflow.md` the first pair parses as `under the fixed mapping completion → DONE`, not
+`completion → DONE`. `p_triggers` compensates with `lhs.endswith(" " + trig)`, which is a
+tolerance, not a reading. The bound now caps the *cost* of that looseness; it does not make the
+grammar right.
+
+**Why it was not tightened at ship:** adding a `(?<![a-z ])` left anchor changes the parsed pairs
+on **all four** sites (measured), so it is not a drop-in — it means re-deciding what a trigger's
+left boundary *is*, dropping `p_triggers`' `endswith` tolerance, and adding a selftest mutation
+covering the new boundary. One line of regex, a contract change behind it. Do it when the grammar
+is being revisited anyway, not as a cleanup.
+
+### The ping-label contract's canonical text lives in a TEST, and the operative copy is transcribed by a model (v1.61.0 /simplify altitude finding)
+
+**Surfaces when:** `plugins/flow/skills/spawn/SKILL.md` §3–4, or
+`plugins/flow/evals/run_ping_label_evals.py`, is next touched.
+
+v1.61.0 states the `[w:<short-name>] <STATUS>` convention at four prose sites and pins them
+identical with an eval. The eval's four module constants (`TEMPLATE`, `MAPPING`, `UNIQUE`,
+`FIREWALL`) are therefore a **fifth copy — and the only one labelled canonical.** That inverts
+the pattern this repo already established in `plugins/flow/lib/doc_patterns.py`, where the
+*shipped* lib owns the definition and the duplicate literal is pinned against it. Here the
+authority sits in `evals/`, which no runtime surface reads.
+
+**The sharp end is the one site where the text is operative.** `/flow:spawn`'s Contract block is
+the enforcement point — the research doc concedes nothing mechanically enforces the convention —
+but that block is *transcribed by a model* into `.flow/brief-<item>.md`. A paraphrase at write
+time breaks the convention, and the eval stays green because it pins the **skill file**, not the
+**rendered brief**. So the measured gap is not "four copies"; it is that the copy which actually
+reaches a worker is the one nothing checks.
+
+**Candidate fix, with the precedent that makes it cheap:** move the clause to a shipped partial
+(`skills/spawn/lib/ping-contract.md`) — `skills/verify-build/lib/{rubric,adversarial,frame-integrity-checklist}.md`
+are already shipped partials referenced through `${CLAUDE_PLUGIN_ROOT}`, so the shape exists.
+Have §4's existing shell block `cat` it into the brief file, making the operative copy mechanical
+rather than transcribed, and have the eval read the partial instead of defining constants. The
+three descriptive sites then pin against shipped text rather than against a test fixture.
+
+**Deliberately not done in v1.61.0:** it changes how the brief is rendered, which is beyond a
+convention-codification PR, and the plan's declared scope named the four prose sites. The
+four-way prose duplication *itself* was judged correct and should stay — a SKILL.md has no
+render-time include except a `!` preprocessor block, there is no doc-generation step in this
+repo, and a consumer reading `workflow.md`'s orchestrator section should not have to open
+`/flow:spawn` §3 to learn the protocol. **Duplicate-and-pin is the right altitude; this item is
+about where the canonical copy lives, not about de-duplicating.**
+
+### `run_ping_label_evals.py` is a §4.10-shaped harness that is absent from the §4.10 artifact registry (v1.61.0)
+
+**Surfaces when:** `plugins/flow/evals/run_gate_evals.py` §9, or the §4.10 artifact table in
+`research/2026-08-23-flow-cloud-workflow-plan.md`, is next touched.
+
+`run_gate_evals.py` §9 enumerates the orchestrator suite's artifacts and asserts each states a
+deletion criterion, with a count pin — `len(ARTIFACTS) + 2 + 1 == 14` — whose comment says it
+matches the plan's table. `run_ping_label_evals.py` pins `orchestrate/SKILL.md` and
+`spawn/SKILL.md`, so it is arguably a fifth harness in that family, and it is not listed.
+
+**Not added in v1.61.0 on purpose:** the count literal is pinned *to a table in the canonical
+plan doc*, so adding a row means editing that table too — a change to the §4.10 inventory
+contract, not to this PR's subject. The cheap half was done instead: the harness now states its
+own deletion criterion in its docstring, matching its three siblings, so adopting it into
+`ARTIFACTS` later is a one-line edit plus the count bump rather than a prerequisite fix.
+
+**The judgment to re-make, rather than inherit:** is a harness that pins a *convention* a §4.10
+artifact at all? The other three pin the *skills*. If the answer is no, the right outcome is a
+sentence in `run_gate_evals.py` §9 saying what the registry deliberately excludes — because
+"absent because it does not belong" and "absent because nobody added it" currently render
+identically, which is the shape this repo keeps re-earning.
 
 
 ### Orchestrator seat policy — compaction is the default, rotation is triggered, and the flush moves onto decisions (Ben, 2026-09-28/29)
@@ -2971,9 +3215,37 @@ not unknown.
 
 ### A copy/console-voice section for flow's human-facing text surfaces (staff-review UX + design-engineer lenses)
 
-**Surfaces when:** a fourth human-facing rendered surface appears, OR the existing roadmap item
+**Surfaces when:** a fifth human-facing rendered surface appears, OR the existing roadmap item
 "`designLanguagePath` has no entry pointing at this surface" (annotation overlay + visual-history
 skeleton) is picked up — **the PR-body lesson manifest belongs in that same entry.**
+
+**▶ THE TRIGGER FIRED, v1.61.0 — the fourth surface is `/flow:orchestrate` §8's status digest.**
+Recorded here rather than as a new row, because this entry already holds the PR-body manifest and
+the console lines and the question is the same one. The digest's copy is a set of fresh voice
+decisions with no arbitrating doc: `**Fleet** — 3 live · 1 silent · 2 open PRs`, `**Needs you:**`,
+the `State`/`Quiet` column names, the `—`-for-absent convention, and a `*` marker meaning "I
+derived this rather than being told it". Both the UX and design-engineer lenses had to
+*reconstruct* flow's prose conventions by grepping — `·` and `→` as separators, `<angle>`
+placeholders, `|---|---|` delimiter rows, `PASS  [id]` report shape, `§` anchors — rather than cite
+a rule, and both said so independently. That is the cost this entry predicts, now paid twice.
+
+**One concrete, unanswered accessibility question this surface raises**, raised by the UX lens
+and *not* answerable by `/flow:accessibility-review` — that gate is scoped to `uiFilePatterns`
+(browser UI) and correctly skipped this PR, so no existing gate owns it. At default
+NVDA/VoiceOver punctuation levels, `U+00B7` (`·`) and `U+2192` (`→`) are commonly **unannounced**.
+That would make `3 live · 1 silent · 2 open PRs` read as a run-on, and the status mapping's arrows
+vanish entirely — turning `completion → DONE` into `completion DONE`. Both glyphs are now load-
+bearing in shipped consumer prose (`workflow.md`) and pinned verbatim by an eval, so changing them
+later is a five-file edit. **Needs one real AT pass before anyone commits to the glyphs**; it is
+recorded as unverified rather than assumed either way, because I could not test Conductor's iOS
+client.
+
+**The open question that keeps it in § Exploration rather than Next:** whether a digest table, a
+PR-body manifest block and a console line share a voice *at all*. If they do not, the deliverable
+is three short sections rather than one, and writing one would force a false consistency. Next
+trigger for promotion: a fifth rendered surface, or the first time two of these four disagree on
+how to say "nothing needs you" — which is now a real phrase in the digest, so the collision is
+observable rather than hypothetical.
 
 `dev-docs/design-language.md` is scoped to the verify-build HTML report *only* (correctly — that
 scope was just re-confirmed). But flow's highest-traffic human surfaces are **PR-body blocks and

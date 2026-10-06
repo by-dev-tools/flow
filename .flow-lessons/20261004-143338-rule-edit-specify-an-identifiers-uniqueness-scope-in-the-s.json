@@ -1,0 +1,34 @@
+{
+  "id": "20261004-143338-rule-edit-specify-an-identifiers-uniqueness-scope-in-the-s",
+  "schema_version": 1,
+  "created_utc": "2026-10-04T14:33:38.811369+00:00",
+  "status": "queued",
+  "provenance": {
+    "project_slug": "flow",
+    "pr": "conductor/mobile-option-5-label",
+    "branch": "conductor/mobile-option-5-label",
+    "session_id": "sha256:5dd5b41c400fa73e"
+  },
+  "source_type": "taste",
+  "artifact_kind": "rule-edit",
+  "lesson": {
+    "summary": "Specify an identifier's uniqueness SCOPE in the same breath as its format, and name the sweep that enforces it",
+    "synthesized_rule": "A naming convention that specifies only the format produces identifiers that look well-formed and identify nobody. Uniqueness is the one property invisible from inside a single instance -- it is a property of the SET -- so an author reasoning about one message/record never has it in view. State the scope across which the value must be distinct, and name the instrument that checks it. If nothing checks, say so in the text rather than leaving it implied; and verify the named instrument can actually observe the set (a sweep filtered by the current item cannot see a sibling's name).",
+    "target_hint": "plan-discipline / general.md; spawn SKILL.md"
+  },
+  "evidence": {
+    "window_path": "(not committed - raw transcript window, see README)",
+    "evidence_strength": "direct-quote",
+    "lesson_hash": "sha256:e0adcc6ceccc289f6ed17b5f7838b96c56ab865fa98bae080abdc3e709177548",
+    "window_path_original_basename": "20261004-143338-specify-an-identifiers-uniqueness-scope-in-the-s.window.jsonl"
+  },
+  "signals": {
+    "source_type": "taste",
+    "source_weight": 0.9,
+    "evidence_strength": "direct-quote",
+    "evidence_weight": 1.0,
+    "recurrence_count": 1,
+    "sanitization_clean": null
+  },
+  "confidence": 0.9
+}

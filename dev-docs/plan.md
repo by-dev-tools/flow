@@ -2,6 +2,197 @@
 
 ## Current Focus
 
+**▶ EXECUTED — AT PR (this branch `conductor/mobile-option-5-label`, **v1.61.0 / FB-0132**):
+worker messages identifiable at a glance, and current state glanceable without scrolling chat.**
+Plan approved by Ben 2026-10-04 with D1–D4 adopted as recommended, C1 + C2 **granted**, C3
+deferred to the roadmap. Mobile research option 5 + the label convention. Ben reads worker
+messages on a phone; today every worker opens differently and "where things stand" exists only
+as scrollback.
+
+**The version was contested TWICE during this one ship, which is the useful record here.**
+v1.59.0 was taken by `conductor/mobile-options-1-3` between plan and execution, so the ship
+swept all remote heads — **not only open PRs**, which is load-bearing: only one PR was open and
+1.59.0 sat on a branch without one, so an open-PR-only sweep would have collided — and took
+1.60.0. **That then collided too**, with `conductor/mobile-option-1-preview-url`, during the
+review rounds. Re-swept and took **v1.61.0**; `main` had meanwhile advanced to 1.57.0. The
+lesson is the dispatch's own rule stated as a frequency: on a fleet this size the sweep is not a
+once-per-ship step, it is a once-per-*rebase-or-long-pause* step, and a ship that spends an hour
+in review rounds has had a long pause. FB-0132 re-swept at the same time and still free.
+
+**Mode:** feature · **Surface:** non-visual (prose contracts + one skill path; no UI)
+
+### Goal
+
+Two things, one theme — make the orchestrator's chat scannable on a small screen:
+
+1. **One standard opener per worker→orchestrator message**, so the sender and the reason are
+   readable without parsing a sentence.
+2. **A glanceable "where things stand" surface**, derived on demand rather than maintained, so a
+   phone reader gets current state without scrolling.
+
+### Scope
+
+**In:** the label convention and its codification at every site that states the ping contract; a
+`status`-only path through `/flow:orchestrate` that prints a compact derived digest; the eval that
+pins the convention; docs.
+
+**Out:** notification push/pull (research §7, unanswered and upstream of all of this); the
+annotation layer's touch profile (option 4, explicitly out of scope in the research doc); anything
+under `skills/{ship,verify-build,prototype}/**` (other workers own those); `conductor preview set`
+(options 1–3, a different worker's lane).
+
+### Decisions — recommendation · confidence · justification
+
+**D1. The label shape: keep `[w:<short-name>] <STATUS>` as proposed. Recommendation: adopt as-is.
+Confidence: HIGH.** It is 4–6 tokens, the sender is first (so it survives truncation to one line on
+a narrow screen), and the bracket makes it greppable in a transcript. I considered `<name>/<STATUS>`
+(shorter) and rejected it: without a delimiter that reads as metadata, a worker name collides
+visually with prose. No change proposed.
+
+**D2. The STATUS set: `GATE / DONE / BLOCKED / FYI`, with an explicit mapping to the three ping
+triggers. Recommendation: keep four, and publish the mapping. Confidence: MEDIUM.** §4.8 rule 6
+names three triggers — completion, blocking question, **stall** — and the proposed set has no
+`STALLED`. My recommendation is that a stall reports as `BLOCKED`, because the orchestrator's next
+action is identical (unblock or re-dispatch) and the body carries the distinction; a fifth token
+costs scanning value at the exact moment the human is skimming. `GATE` then covers the case field
+manual §8 exists for — a worker at a plan gate is not a silent worker — and `FYI` is the
+no-action-needed channel. **Confidence is MEDIUM, not HIGH, because this is a taste call on Ben's
+own reading experience:** if he wants stalls visually distinct from blocks, `STALLED` is a
+one-line change and I would rather be told now than guess.
+
+**D3. Option 5 as a DERIVED digest, not a maintained doc. Recommendation: a `status`-only path
+through `/flow:orchestrate`. Confidence: HIGH on derived-over-maintained, MEDIUM on the shape.**
+`/flow:orchestrate` steps 2–4 already derive live worker state, sweep open branches and PRs, and
+find silent workers by last activity; step 7 already prints a one-line lay of the land. What is
+missing is a way to get *just that* without a full boot (steps 5–6 re-address the ping channel and
+load gate policy — boot-only, and re-running them mid-program is wrong). So: a documented
+status-only path that runs the derivation and prints the digest, and explicitly skips 5–6. This
+reuses the derivation rather than adding a second one, and nothing is stored, so it cannot go
+stale — the same rule step 2 already states ("never from a snapshot") and the reason the research
+doc disfavours a maintained doc. **MEDIUM on shape** because a sub-mode of an existing skill vs. a
+separate `/flow:status` skill is a real fork; I recommend the sub-mode, since a new skill for a
+read-only projection of an existing one is the duplication CLAUDE.md rule 6 warns about.
+
+**D4. Lean on Conductor's own per-workspace rows? Recommendation: NO, not as the plan's basis.
+Confidence: HIGH on not depending on it.** Research §8 option 5 offers it and research §7 records
+the supporting claim — *"mobile workspace rows now show the same status details as desktop"* — as
+**secondary, from search results rather than a fetched page, and explicitly worth confirming**.
+Building the answer on an unverified vendor claim would make this work's value unmeasurable. The
+derived digest is Conductor-independent and project-agnostic; if the rows do turn out to be
+sufficient, the digest costs one skill path and can be deleted against its own criterion.
+
+### Scope conflicts I cannot resolve myself — these need your call
+
+**C1. `plugins/flow/docs/workflow.md:731` states the ping contract and is NOT in my write scope.**
+It reads *"Workers ping the seat; the seat does not poll. Each brief tells its worker to report on
+completion, on a blocking question, and on a stall."* That is the **shipped, consumer-facing**
+statement of the contract, and it is where a consumer's worker learns the shape. It does not state
+a message format today, so it will not *contradict* the convention — but leaving it silent means
+the one doc a consumer reads omits the convention every other site states.
+**Recommendation: add one sentence there. Confidence: MEDIUM-HIGH.** The dispatch scoped it out, so
+I am asking rather than editing. If the answer is no, I will note the omission in the history entry
+so the next grep finds the reason rather than the gap.
+
+**C2. The convention needs an eval, and `plugins/flow/evals/**` is not in my write scope either.**
+This repo's quality bar is explicit: no new rule without a fixture. A prose convention with nothing
+asserting it is exactly the "consistency that depends on author memory" class (`general.md` item 2),
+and the pin has to live in `plugins/flow/evals/`. **Recommendation: grant `plugins/flow/evals/**`
+(or at least one new harness file). Confidence: HIGH that it is required.** What I would pin: the
+spawn brief's Contract block contains the label template and all four statuses, paired with the
+negative that a status outside the set is not listed — so the set cannot silently grow.
+
+**C3. `skills/handoff/SKILL.md` + `lib/brief-check.py` also carry the ping channel.**
+`brief-check.py` mechanically asserts a succession brief re-addresses the ping channel. If the
+label is part of the contract, a succession brief arguably has to carry it too. Both are outside my
+scope. **Recommendation: leave them this round and roadmap it. Confidence: MEDIUM.** Re-addressing
+the channel and labelling a message are separable concerns, and widening `brief-check.py` is a
+sensitive-path edit for a cosmetic gain.
+
+### Spec-walk
+
+- [x] **The label convention is stated once and identically at every site that states the ping contract.** *Pinned by:* a new `run_ping_label_evals.py` eval asserting the template string and all four statuses appear in `/flow:spawn`'s Contract block, in §4.8 rule 6, and in the field manual, with the sites derived from a grep rather than a hardcoded list — so a fourth site added later fails rather than drifting.
+- [x] **The status set cannot silently grow.** *Pinned by:* the same eval — assert exactly the four statuses are published, paired with the negative that an unlisted status (e.g. `STALLED`) appears nowhere, so adding one requires updating the contract rather than just a brief.
+- [x] **Each of §4.8 rule 6's three ping triggers maps to exactly one status.** *Pinned by:* the same eval asserting the published mapping names completion, blocking question and stall, so the `BLOCKED`-covers-stall decision is recorded where the contract is read, not only in this plan.
+- [x] **`/flow:orchestrate`'s status path skips the boot-only steps.** *Pinned by:* the same eval asserting the status section names steps 5 and 6 as skipped and says why — re-addressing the ping channel mid-program would point live workers at the wrong session.
+- [x] **The digest is derived, never stored.** *Pinned by:* the same eval asserting the status path writes no file under `dev-docs/` and the skill text states the deletion criterion, paired with the positive that it names the derivation it reuses (steps 2–4).
+- [x] **PR numbers in the digest are hyperlinked.** *Pinned by:* the same eval asserting the digest template carries a markdown link form, because field manual §3 records this as stated-not-optional and records that the lapse recurs *specifically inside status tables* — which is what this digest is.
+- [x] **Short-names are unique across live workers.** *Added mid-execution by Ben, after a live collision:* this seat had been labelling its own messages `[w:mobile]`, the research worker's name, so two senders shared one label and the opener identified nobody. *Pinned by:* the same eval asserting the uniqueness sentence verbatim at every site, plus `/flow:spawn` §3 telling the seat to check the name against the backend's **`listWorkers`** verb before writing the brief — the convention is only worth stating if the names it carries are distinct. **Corrected during the ship run, disclosed in the PR's blocker list:** this criterion originally pinned "step 1's sweep", which `/flow:staff-review` showed *structurally cannot* surface a collision — step 1 greps branches filtered by the current item's slug, so a differently-slugged live worker's name never appears in its output, and the check would have returned clean for the very collision that earned FB-0132. A criterion pinning a removed mechanism is worse than a missing one (it passes while testing nothing), so the pin was re-pointed rather than left stale. The paired *unavailable-verb* reporting path is **not** self-declared — it is a decision-required entry on the draft manifest.
+- [x] **The convention states the loopback-in-a-code-span delivery failure.** *Added mid-execution by Ben, from the touch worker's measurement:* the message channel's firewall drops any message carrying a localhost/loopback URL inside a markdown code span; the identical text without backticks delivers. *Pinned by:* the same eval asserting the rule verbatim at every site, **and** a roadmap § Next entry recording the cause — because the eval pins shipped prose and cannot observe a message the firewall ate, so the convention line is a mitigation and the roadmap row is the honest statement of what is still open.
+- [x] **A repository-derived ref never reaches a command line unreduced.** *Declared at Ben's direction after `/flow:security-review` found it mid-ship (coverage decision 1).* A name that fails the `[A-Za-z0-9._/-]` reduction produces "could not classify" and never a rendered command; all three classification commands single-quote their interpolations and the grep uses `-F --`. *Pinned by:* the `plugins/flow/evals/run_ping_label_evals.py` eval — `orch-sanitizes-repo-derived-refs`, with the `quotes-stripped` and `reduction-instruction-dropped` mutations — added because review measured that stripping the quotes passed every other predicate. **Not waived:** this is the highest-consequence change in the PR, and waiving would leave it with nothing pinning it (Ben, 2026-10-04).
+- [x] **An unverified short-name uniqueness check never reads as a verified one.** *Declared (coverage decision 2).* When `listWorkers` is absent/invalid, the dispatch report states that uniqueness was **NOT verified**, in those words. *Pinned by:* a doc-diff on `/flow:spawn` §3's explicit unavailable-verb branch; this criterion's own pin was re-pointed from step 1's sweep — which structurally cannot surface a collision — to `listWorkers`.
+- [x] **A limit-killed worker is never rendered as parked.** *Declared WITH Ben's correction (coverage decision 3) — the version I drafted was wrong and would have hidden the failure `SILENT` exists for.* Git state cannot separate parked from dead: Track B pushed `plan:` commits and then died on the session limit, idle two days, and the git-shape rule renders exactly that as "parked, fine". So the transcript is consulted **first** — a last assistant message that is a session-limit kill means `SILENT` regardless of git state — the git shape applies only once that is ruled out, and an unreadable transcript renders "parked or dead — can't tell", never `GATE`. *Pinned by:* the `plugins/flow/evals/run_ping_label_evals.py` eval — `orch-gate-vs-silent-both-halves`, now requiring the discriminator, the fallback and the pairing, with the `limit-kill-discriminator-dropped`, `cannot-read-fallback-dropped`, `limit-kill-pairing-dropped` and `no-default-guard-dropped` mutations.
+- [x] **The message set stays closed at four while the digest carries two derived values, and the two cannot be unified.** *Declared rather than waived (coverage decision 4): it is now pinned, which removes the reason to waive it.* *Pinned by:* the `plugins/flow/evals/run_ping_label_evals.py` eval — `orch-superset-relation` parses the `Set` column and asserts message == the four, digest a strict superset, difference == `{WORKING, SILENT}` — plus `orch-message-bullet-closed`, with three real mutations. Review measured that the earlier prose-only pin passed all three regressions: opening the message bullet, deleting a digest row, and relabelling a derived row as reported.
+- [x] **An empty digest distinguishes "nothing in flight" from "I could not derive the fleet".** *Declared (coverage decision 5).* Zero live workers prints an explicit `0 live` plus one sentence naming which cause; `—` is the single absent-value convention; the nothing-needed case still renders the action line. *Pinned by:* the `plugins/flow/evals/run_ping_label_evals.py` eval — `orch-edge-states-stated`, with the `edge-states-dropped` and `dash-convention-dropped` mutations.
+- [x] **The digest fits a phone.** *Declared (coverage decision 6).* Four columns, `Branch` excluded on a measured width argument — 136 remote heads, mean 34 chars, max 69, so a row carrying one renders ~100 chars against ~45 without — and no code spans in cells. *Pinned by:* the `plugins/flow/evals/run_ping_label_evals.py` eval — `orch-pr-hyperlinked` for the link form; the column set is stated in §8 and verified by the one manual Test-plan item only Ben can run (a screenshot on his phone is the artifact).
+- [x] **The action line precedes the inventory, and renders when nothing is needed.** *Declared (coverage decision 7).* *Pinned by:* the `plugins/flow/evals/run_ping_label_evals.py` eval — `orch-needs-you-leads`, with the `needs-you-demoted` mutation.
+- [x] **A `BLOCKED` ping says whether it is a block or a stall.** *Declared (coverage decision 8).* The body's first line opens `waiting on:` or `stalled on:` — the mitigation that makes D2's four-status collapse work in practice, since the two imply different orchestrator actions. *Pinned by:* a doc-diff on `/flow:spawn` §3's Contract block, plus the `plugins/flow/evals/run_ping_label_evals.py` eval's four-site check on the mapping it mitigates.
+- [x] **An opener-less ping is rendered as derived, and its status is never read from its prose.** *Declared after the third `/flow:audit-coverage` pass (round-3, the last finding).* This is the one rule whose entire purpose is to keep the convention's **own unenforceable gap visible**: nothing wraps worker messages, so a worker ignoring the opener is the failure the stated limit predicts, and the digest is where a human would notice. Its state comes from step 3's ground truth and is `†`-marked like any other derived cell; the status is never lifted out of the body, and a labelled and unlabelled ping must not look identical — otherwise the digest launders the gap into a status nobody sent. *Pinned by:* the `plugins/flow/evals/run_ping_label_evals.py` eval — `orch-unlabelled-ping-is-derived` asserts **both halves** (they fail differently), with the `unlabelled-ping-prose-read-allowed` and `unlabelled-ping-mark-dropped` mutations.
+- [x] **A status request actually reaches §8.** *Declared after the second `/flow:audit-coverage` pass (round-2 decision 1) — this is the precondition every other §8 criterion silently assumed, and nothing pinned it.* Three surfaces must agree: the frontmatter description advertises the status phrasing, §8 states the boot-is-a-superset tie-break for the ambiguous case, and `/flow:workflow-help`'s catalog row names the path. *Pinned by:* the `plugins/flow/evals/run_ping_label_evals.py` eval — `cross-trigger-surface-stated`, validated by deleting the description clause.
+- [x] **Every derived cell in a rendered digest is marked `†` and footnoted once, including the modal `WORKING` row.** *Declared (round-2 decision 2).* `†` not `*`, because a lone `*` is the glyph markdown owns and a naive client pairs it across rows. A marker applied only to the alarming value tells the reader nothing, since an unmarked cell would then mean both "the worker said so" and "it is fine". *Pinned by:* the `plugins/flow/evals/run_ping_label_evals.py` eval — `orch-derived-states-marked` asserts the marker **in the rendered template**, not in the prose describing it, with the `derived-marker-stripped-from-template` and `footnote-dropped` mutations.
+- [x] **Step 5 carries its own precondition, not only §8's skip rationale.** *Declared (round-2 decision 3).* Step 5 is on the **boot** path too, so a §8-scoped pin would let the rule vanish from the step that performs the action while the pin stayed green. *Pinned by:* the `plugins/flow/evals/run_ping_label_evals.py` eval — `cross-step5-precondition-at-step-5`, validated by deleting the blockquote.
+- [x] **`/flow:spawn` §3's stated line budget matches the rendered brief.** *Declared (round-2 decision 4).* Both figures were already wrong by ~75% once — the fixed block alone exceeded the stated total — so the pin **recounts the fenced template** rather than asserting the literals. *Pinned by:* the `plugins/flow/evals/run_ping_label_evals.py` eval — `cross-brief-budget-matches-reality`, validated by lowering the stated cap.
+- [x] **Every orchestrator message to Ben ends with a standing "Waiting on you" list, and the watcher's label is `[watcher]`.** *Added by Ben 2026-10-04; durable preference, so it lives in git rather than seat memory (FB-0130).* *Pinned by:* a doc-diff — `research/orchestrator-field-manual.md` § 3, with Ben's words quoted.
+- [x] **Docs.** *Pinned by:* a doc-diff — a `dev-docs/history/` entry, the FB entry this earns, the research doc's option 5 marked as acted on, and a roadmap entry for C3.
+
+### Post-rebase check — MANDATORY before trusting any gate
+
+**A clean rebase can silently select another PR's Spec-walk.** Measured by another worker on
+2026-10-03: rebasing onto a `main` that carries plan blocks placed their block *second* in
+`dev-docs/plan.md` with **no conflict markers**, and `extract_block` — first-active-block-only by
+contract — then selected a different PR's block: 20 criteria that were not their change. Every
+gate that reads the plan (`/flow:verify-build`, `/flow:audit-coverage`, `/flow:autoplan` Arm A)
+then grades the wrong PR, and all of them look green while doing it.
+
+After **every** rebase, before trusting any gate:
+
+```sh
+python3 plugins/flow/skills/verify-build/lib/extract-criteria.py dev-docs/plan.md
+```
+
+Pass condition: `source_heading_line` is **this** block's line and the criteria listed are the
+seven below. If not, move this block back to the top of `## Current Focus`.
+
+**Two things that look like they would catch this and do not:**
+
+- **`source_heading` cannot identify the block.** It is the identical string `'### Spec-walk'` for
+  every block in the file (77 of them here), so it carries no identity at all.
+  `source_heading_line` is the only field in that contract that distinguishes *which* block was
+  read — which is precisely why it exists (`walk_extract.py` states that rationale on the field).
+  Check the LINE and the criteria text, never the heading.
+- **The multi-block warning is not the detector.** `extract-criteria.py` does warn that N blocks
+  exist and only the first was read, but with 77 retained blocks that warning fires on every run
+  of this repo's plan regardless of which block won. It cannot distinguish "the first block is
+  mine" from "the first block is someone else's", so a reader who treats its presence as the
+  signal learns nothing.
+
+### Confidence verdicts on load-bearing assumptions
+
+- **Workers will actually follow a prose convention in the brief. MEDIUM.** Evidence for: §4.8 rule 6 records the ping protocol firing unprompted across five workers (~9 pings). Evidence against: nothing mechanically enforces the opener, and the eval I propose pins the *brief*, not the worker's output. Stated as an honest limit rather than designed around — a mechanical enforcement point would need the backend to wrap worker messages, which flow does not control.
+- **A status-only path through `/flow:orchestrate` is cheap. MEDIUM-HIGH.** Steps 2–4 are already written and already derive everything the digest needs; the work is a documented entry point plus a format, not new derivation.
+- **`BLOCKED` adequately covers a stall. MEDIUM.** See D2 — a taste call on Ben's reading, flagged for a decision rather than assumed.
+- **Nothing here needs the `ship` slot before v1.59.0. HIGH.** Main is at 1.56.0, [#176](https://github.com/by-dev-tools/flow/pull/176) claims 1.57.0, Visual-walk takes 1.58.0 per the dispatch; swept both main and every open branch.
+
+### Risks
+
+- **The convention is unenforceable at the point it matters** (the worker's own message). Mitigated only by the brief; stated as a known gap, not solved.
+- **Option 5 may be answered upstream by notifications.** Research §7's first bullet: if reaching a gate does not push a phone notification, the human still has to know to look, and a better digest does not fix that. This plan improves the surface he lands on; it does not fix how he learns to land there.
+- **Four sites stating one contract is a fan-out.** The eval deriving its site list from a grep is the defense; a hardcoded list would be the bug.
+
+### Files touched
+
+`plugins/flow/skills/spawn/SKILL.md` (Contract block) · `plugins/flow/skills/orchestrate/SKILL.md`
+(status path) · `research/2026-08-23-flow-cloud-workflow-plan.md` §4.8 rule 6 ·
+`research/orchestrator-field-manual.md` · `dev-docs/plan.md` · `dev-docs/history/` ·
+`dev-docs/feedback/` · `dev-docs/research/2026-10-mobile-workflow.md` (mark option 5 acted on) ·
+`dev-docs/roadmap.md` — **plus, pending C1/C2:** `plugins/flow/docs/workflow.md`,
+`plugins/flow/evals/run_ping_label_evals.py`.
+
+**Note for the layout table:** top-level `research/` holds four docs and is **absent from
+`CLAUDE.md`'s repository-layout table**, which lists only `dev-docs/research/*.md`. Two of the
+files this plan edits live there. Flagging, not fixing — it is a one-row doc change owned by
+whoever next touches CLAUDE.md.
+
+
 **▶ EXECUTED, shipping (this branch `conductor/mobile-option-1-preview-url`, version claimed
 mechanically at **v1.60.0** in both manifests, no new FB). Plan APPROVED with all four open calls
 answered: (1) non-visual, classic plan gate; (2) inline chat images ship SEPARATELY — now a roadmap
