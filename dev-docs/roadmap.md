@@ -857,17 +857,19 @@ human is".
 **Surfaces when:** `plugins/flow/lib/capture_frames.py`, `artifact-handoff.py`'s `_embed_section`,
 or `dev-docs/design-language.md` is next touched.
 
-### `design-language.md` governs one surface and flow now ships three
+### The design-language doc's screenshot rule is now contradicted by a shipped surface
 
-`dev-docs/design-language.md` scopes itself to the `/flow:verify-build` HTML report, "that report
-only", and names the other surfaces as deliberately ungrounded. v1.63.0 adds a third reader surface
-(the PR-body frame embed) and a fourth (the gate-1 chat message), and the caption/alt altitude
-questions the UX lens raised have no doc to settle them against. The doc's own screenshot rule — cap
-display width at 600px, resize to ~460–620px, warn over ~500KB — is also now contradicted by
-committed 1280px frames that are never resized. Cheap in practice (~20 KB measured), wrong in
-principle, and the contradiction is the kind that gets discovered rather than decided.
+**NOT a new item — this is evidence for § Exploration's "A copy/console-voice section for flow's
+human-facing text surfaces", whose trigger ("a fourth human-facing rendered surface appears") this
+PR fires.** Recorded here only because it is a *concrete contradiction* rather than a gap, and a
+contradiction that nobody wrote down gets discovered instead of decided. Fold it into that entry
+when it is picked up; do not build a rival item.
 
-**Surfaces when:** `dev-docs/design-language.md` is next touched, or a fifth reader surface is added.
+`dev-docs/design-language.md` line 36 sets flow's only screenshot policy: cap display width at
+600px, resize to ~460–620px before persisting, warn over ~500KB. v1.63.0 commits 1280px frames that
+are never resized and carry no size warning. Cheap in practice (~20 KB measured) and wrong in
+principle. Both of the new surfaces — the PR-body frame embed and the gate-1 chat message — are
+ungrounded by that doc's own scope line, which is the gap the Exploration entry already names.
 
 ### `render_template`'s two trailing hint parameters stopped being honest at the third adapter
 
