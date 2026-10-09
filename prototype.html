@@ -320,30 +320,43 @@ flashHL on commit                       -&gt; fires</div>
   }
   #an-panel.open { display: flex; }
 
-  /* ---- bottom sheet (touch only) ---- */
-  /* A right-anchored 340px card is the shape that failed worst under the zoom bug above:
+  /* ---- bottom sheet (touch only) ----
+     ONE definition, TWO surfaces: the comment list and the per-element editor. They are
+     the same component - same geometry, same grab handle, same scrim, same swipe - and
+     differ only in which flag carries their open state (.open vs the hidden attribute).
+     Writing it twice is exactly how two sheets end up with different dismiss behaviour.
+
+     A right-anchored fixed-width card is the shape that failed worst under the zoom bug:
      fixed geometry in layout pixels, so it slid off a shrinking visual viewport. Edge-to
-     edge, bottom-anchored, it degrades instead of disappearing. */
-  html.an-touch #an-panel {
-    display: flex; left: 0; right: 0; bottom: 0; top: auto;
+     edge and bottom-anchored, it degrades instead of disappearing. */
+  html.an-touch #an-panel,
+  html.an-touch #an-pop {
+    left: 0; right: 0; bottom: 0; top: auto;
     width: auto; max-width: none; max-height: 82vh;
     border-radius: 16px 16px 0 0; border-bottom: 0;
-    transform: translateY(100%); visibility: hidden;
     transition: transform .24s cubic-bezier(.32,.72,0,1), visibility 0s linear .24s;
   }
-  html.an-touch #an-panel.open {
+  /* Down. The editor keeps its `hidden` attribute as the source of truth - overriding the
+     UA display:none is what lets it animate - and visibility:hidden still removes it from
+     the accessibility tree, so `hidden` keeps meaning what it says. */
+  html.an-touch #an-panel { display: flex; transform: translateY(100%); visibility: hidden; }
+  html.an-touch #an-pop[hidden] { display: block; transform: translateY(100%); visibility: hidden; }
+  /* Up. */
+  html.an-touch #an-panel.open,
+  html.an-touch #an-pop:not([hidden]) {
     transform: translateY(0); visibility: visible;
     transition: transform .24s cubic-bezier(.32,.72,0,1), visibility 0s;
   }
   /* The sheet owns the bottom edge, so the inset belongs to its last child, not the
      container - padding on the flex column would sit below a scrolling list. */
   html.an-touch #an-pfoot { padding-bottom: calc(9px + env(safe-area-inset-bottom, 0px)); }
-  #an-grab { display: none; }
-  html.an-touch #an-grab {
+  /* A class, not an id: both sheets carry one. */
+  .an-sheet-grab { display: none; }
+  html.an-touch .an-sheet-grab {
     display: block; flex-shrink: 0; padding: 9px 0 5px;
     touch-action: none;                 /* the handle drags the sheet, it does not scroll */
   }
-  html.an-touch #an-grab::after {
+  html.an-touch .an-sheet-grab::after {
     content: ""; display: block; width: 36px; height: 4px; border-radius: 999px;
     background: var(--an-track); margin: 0 auto;
   }
@@ -358,7 +371,8 @@ flashHL on commit                       -&gt; fires</div>
      grab handle and a scrim, so nothing is lost by standing it down while open. */
   html.an-touch.an-sheet #an-dock { opacity: 0; pointer-events: none; }
   @media (prefers-reduced-motion: reduce) {
-    html.an-touch #an-panel, html.an-touch #an-scrim, html.an-touch.an-sheet #an-dock {
+    html.an-touch #an-panel, html.an-touch #an-pop,
+    html.an-touch #an-scrim, html.an-touch.an-sheet #an-dock {
       transition: none;
     }
   }
@@ -576,13 +590,26 @@ flashHL on commit                       -&gt; fires</div>
   #an-save { background: var(--an-accent); border-color: var(--an-accent); color: var(--an-on-accent); }
   #an-del { margin-right: auto; color: var(--an-muted); }
   #an-prow #an-del:hover { color: var(--an-danger); border-color: var(--an-danger); }
-  /* P7a pins the editor flush to the bottom edge on touch - the home-indicator gesture
-     strip P1 added insets for everywhere else. `h` is read from offsetHeight AFTER
-     unhiding, so the inset is absorbed into the measured height and the clamp holds.
-     Save/Cancel/Delete are the MAIN path - every comment passes through them - so they
-     earn the touch target at least as much as the correction controls. */
-  html.an-touch #an-pop { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
-  html.an-touch #an-prow button { min-height: 44px; padding: 6px 14px; }
+  /* The editor sheet owns the bottom edge, which is the home-indicator gesture strip
+     P1 added insets for everywhere else. padding-top is trimmed because the grab handle
+     supplies the top spacing now. */
+  html.an-touch #an-pop {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    padding-top: 2px;
+  }
+  /* ONE size for every button that lives in a sheet. They sit in the same surface and a
+     thumb does not care which row it is in, so a per-row size is just three numbers that
+     drift. 44px is Apple's HIG minimum - the figure the rest of this profile already
+     uses - and 16px matches the type size the profile settled on elsewhere.
+     Ordered after the per-control rules above so it wins on source order at equal
+     specificity; #an-pass in particular was 12.5px. */
+  html.an-touch #an-pass,
+  html.an-touch #an-pfoot button,
+  html.an-touch #an-prow button {
+    min-height: 44px; font-size: 16px;
+  }
+  html.an-touch #an-prow button { padding: 8px 14px; }
+  html.an-touch #an-pfoot button { padding: 8px 12px; }
 
   @media (prefers-reduced-motion: reduce) {
     #an-fab, #an-mode, #an-mode::after, #an-hl.an-flash, .an-item .an-row-act { transition: none; }
@@ -634,7 +661,7 @@ flashHL on commit                       -&gt; fires</div>
 <div id="an-panel" role="dialog" aria-label="Comments">
   <!-- Touch-only affordance. aria-hidden: dragging it is a pointer gesture with two
        keyboard-and-SR-reachable equivalents already present (the close button, Esc). -->
-  <div id="an-grab" aria-hidden="true"></div>
+  <div id="an-grab" class="an-sheet-grab" aria-hidden="true"></div>
   <!-- Commenting decides whether a click on the page becomes a comment or reaches the
        page — the most consequential control here, so it sits FIRST and reads as the
        primary thing. The list below is secondary: its count is an eyebrow, not a peer. -->
@@ -684,6 +711,9 @@ flashHL on commit                       -&gt; fires</div>
 <div id="an-pins"></div>
 
 <div id="an-pop" hidden role="dialog" aria-label="Edit comment">
+  <!-- Same affordance, same class, same swipe handler as the comment list's. aria-hidden:
+       dragging is a pointer gesture, and Cancel/Esc are the reachable equivalents. -->
+  <div id="an-pop-grab" class="an-sheet-grab" aria-hidden="true"></div>
   <div id="an-meta"></div>
   <textarea id="an-text" placeholder="What about this element?"
             aria-label="Comment" aria-describedby="an-meta an-hint"></textarea>
@@ -1030,6 +1060,23 @@ flashHL on commit                       -&gt; fires</div>
     hl.style.width = r.width + "px"; hl.style.height = r.height + "px";
   }
   function setTarget(el, force) { current = el; drawHL(el, force); }
+
+  // The editor sheet owns the bottom of the screen on touch, so an element pinned low in
+  // the viewport would sit behind it - and the commit flash is the only preview a touch
+  // reviewer gets. Scroll just enough to clear it. This is what carries the intent of the
+  // old "opposite half" placement into the sheet.
+  function revealAboveSheet(el) {
+    if (!el) return;
+    var pop = $("an-pop");
+    var sheetTop = window.innerHeight - pop.offsetHeight;
+    var r = el.getBoundingClientRect(), margin = 12, by = 0;
+    if (r.bottom > sheetTop - margin) by = r.bottom - (sheetTop - margin);
+    else if (r.top < margin) by = r.top - margin;
+    if (!by) return;
+    var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    try { window.scrollBy({ top: by, behavior: reduce ? "auto" : "smooth" }); }
+    catch (e) { window.scrollBy(0, by); }        // older Safari: no options object
+  }
   // current / upStack / targetFromPointer are one fact in three variables — clear them together.
   function clearTarget() { current = null; upStack = []; targetFromPointer = false; drawHL(null); }
 
@@ -1301,6 +1348,7 @@ flashHL on commit                       -&gt; fires</div>
     if (touchProfile) collapsePanel(false);
     var pop = $("an-pop");
     pop.hidden = false;
+    syncSheet();                 // the editor is a sheet too: it owns the scrim while up
 
     var w = 320, h = pop.offsetHeight || 210, pad = 14, x, y;
     if (el) {
@@ -1308,21 +1356,25 @@ flashHL on commit                       -&gt; fires</div>
       x = r.left + r.width * n.off.x + 16;
       y = r.top + r.height * n.off.y - 10;
     } else { x = window.innerWidth - w - pad; y = 80; }
-    // On touch the editor is near-full-width (min(320px, 100vw - 28px)), so placing it
-    // beside the anchor puts it OVER the element just flashed - hiding the one affordance
-    // that replaced the hover outline. Drop it to whichever half the target is not in.
-    if (touchProfile && el) {
-      var tr = el.getBoundingClientRect();
-      var mid = (tr.top + tr.bottom) / 2;
-      y = (mid < window.innerHeight / 2) ? (window.innerHeight - h - pad) : pad;
-      x = window.innerWidth - w - pad;
+    if (touchProfile) {
+      // On touch the editor IS a sheet - the same component as the comment list - and the
+      // sheet CSS owns its position from the bottom edge. Inline left/top are INLINE, so
+      // they would beat that stylesheet; they are cleared rather than computed.
+      //
+      // This supersedes the earlier "put it in whichever half the target is not in" rule.
+      // That rule's PURPOSE was that the commit flash stays visible, and the purpose
+      // survives: revealAboveSheet() scrolls the pinned element clear of the sheet.
+      pop.style.left = ""; pop.style.top = "";
+      revealAboveSheet(el);
+    } else {
+      pop.style.left = Math.max(pad, Math.min(x, window.innerWidth - w - pad)) + "px";
+      pop.style.top = Math.max(pad, Math.min(y, window.innerHeight - h - pad)) + "px";
     }
-    pop.style.left = Math.max(pad, Math.min(x, window.innerWidth - w - pad)) + "px";
-    pop.style.top = Math.max(pad, Math.min(y, window.innerHeight - h - pad)) + "px";
     $("an-text").focus();
   }
   function closeEditor() {
     $("an-pop").hidden = true; active = null;
+    syncSheet();                 // ... and releases it on the way out
     // Focus must land somewhere deliberate: the row/pin that opened this, else the dock.
     var t = returnFocusTo; returnFocusTo = null;
     // Containment is NOT enough. A row inside a collapsed panel is still "contained", but
@@ -1366,9 +1418,19 @@ flashHL on commit                       -&gt; fires</div>
   // re-derived rather than toggled alongside it - three call sites change .open, and
   // keeping three copies of the consequence in sync is the bug this avoids.
   function syncSheet() {
-    var open = $("an-panel").classList.contains("open") && touchProfile;
-    $("an-scrim").classList.toggle("on", open);
-    document.documentElement.classList.toggle("an-sheet", open);
+    // Either sheet being up means the same thing to the scrim and the dock, so this asks
+    // about both rather than about the panel. On touch, opening the editor collapses the
+    // panel, so in practice at most one is up at a time.
+    var up = touchProfile &&
+      ($("an-panel").classList.contains("open") || !$("an-pop").hidden);
+    $("an-scrim").classList.toggle("on", up);
+    document.documentElement.classList.toggle("an-sheet", up);
+  }
+  // Disposing of the editor the way a click elsewhere would: keep typed text, drop an
+  // empty note. Shared by the scrim and the swipe handler so a dismiss means one thing.
+  function dismissEditor() {
+    if ($("an-text").value.trim()) commitNote();
+    else { dropEmpty(); closeEditor(); }
   }
   $("an-fab").addEventListener("click", function () {
     $("an-panel").classList.toggle("open");
@@ -1376,35 +1438,41 @@ flashHL on commit                       -&gt; fires</div>
   });
   // Tap outside to dismiss. The scrim is chrome, so eventIsOurs() already refuses to
   // read this as a page click - it cannot pin a comment on the way past.
-  $("an-scrim").addEventListener("click", function () { collapsePanel(true); });
+  $("an-scrim").addEventListener("click", function () {
+    if (!$("an-pop").hidden) { dismissEditor(); return; }   // editor wins: it is on top
+    collapsePanel(true);
+  });
 
-  // Swipe the handle down to dismiss. Tracks the finger, then decides on release:
+  // Swipe a handle down to dismiss its sheet. Tracks the finger, then decides on release:
   // past a third of the sheet's height, or a flick, closes it; anything less snaps back.
-  (function () {
-    var g = $("an-grab"), panel = $("an-panel");
+  // ONE implementation, bound twice - a second copy is how two sheets end up with
+  // different thresholds and a reviewer learns two gestures for one idea.
+  function attachSheetSwipe(handle, surface, dismiss) {
+    if (!handle || !surface) return;
     var startY = 0, startT = 0, dy = 0, dragging = false;
-    if (!g) return;
-    g.addEventListener("touchstart", function (e) {
+    handle.addEventListener("touchstart", function (e) {
       if (!touchProfile || !e.touches.length) return;
       dragging = true; dy = 0; startY = e.touches[0].clientY; startT = Date.now();
-      panel.style.transition = "none";
+      surface.style.transition = "none";
     }, { passive: true });
-    g.addEventListener("touchmove", function (e) {
+    handle.addEventListener("touchmove", function (e) {
       if (!dragging || !e.touches.length) return;
       dy = Math.max(0, e.touches[0].clientY - startY);   // down only; up must not lift it
-      panel.style.transform = "translateY(" + dy + "px)";
+      surface.style.transform = "translateY(" + dy + "px)";
     }, { passive: true });
     function end() {
       if (!dragging) return;
       dragging = false;
-      panel.style.transition = "";
-      panel.style.transform = "";
+      surface.style.transition = "";
+      surface.style.transform = "";
       var flick = dy > 24 && (Date.now() - startT) < 300;
-      if (flick || dy > panel.offsetHeight / 3) collapsePanel(true);
+      if (flick || dy > surface.offsetHeight / 3) dismiss();
     }
-    g.addEventListener("touchend", end);
-    g.addEventListener("touchcancel", end);
-  })();
+    handle.addEventListener("touchend", end);
+    handle.addEventListener("touchcancel", end);
+  }
+  attachSheetSwipe($("an-grab"), $("an-panel"), function () { collapsePanel(true); });
+  attachSheetSwipe($("an-pop-grab"), $("an-pop"), dismissEditor);
   $("an-mode").addEventListener("click", function () { setCommenting(!commenting); });
   $("an-close").addEventListener("click", function () {
     $("an-panel").classList.remove("open");
