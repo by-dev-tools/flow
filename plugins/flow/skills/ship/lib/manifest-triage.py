@@ -320,13 +320,15 @@ KIND_COPY: dict[str, dict[str, str]] = {
     "ci-failing": {
         "clears_when": "push a fix, then re-read `gh pr checks` for the current head and confirm every check passes",
         "means": "GitHub is reporting a failing check on this PR, so GitHub itself would block the merge.",
-        "needs_you": ("One word — \"fix it\" and I will. Or mark the PR ready yourself; I will not "
-                      "call a PR with a red check shippable."),
+        "needs_you": ("Approve the fix I drafted and I will apply it. Or mark the PR ready "
+                      "yourself; I will not call a PR with a red check shippable."),
         "check_only_option": ("leave it — a red check will never become a ready PR from me; mark it "
                              "ready on GitHub yourself if you accept the risk"),
         "why": "a red check is the one readiness signal that is not my judgement — GitHub is the authority here",
-        "then": ("I apply the fix, push, and re-read the checks. A failing check never becomes a "
-                 "ready PR automatically — if you accept the risk, you mark it ready yourself."),
+        "then": ("I apply the fix you approved, push, and re-read the checks. I never push a fix "
+                 "to a red check without your approval — proposing is mine, applying is yours to "
+                 "authorise. A failing check never becomes a ready PR automatically; if you accept "
+                 "the risk, you mark it ready yourself."),
     },
     "ci-pending": {
         "clears_when": "re-read `gh pr checks` for the current head and confirm every check has finished and passed",

@@ -734,6 +734,37 @@ check("test_spike_never_claims_pending_is_ready",
 # surface was deleted rather than guarded. Asserting the guards now would pin machinery
 # that should not exist.
 
+# The gate PROPOSES a fix for a red check; it never applies one. Decided at the gate,
+# 2026-10-09: a gate writing to the branch with no human in the loop is the
+# permanence/risk category general.md § Autonomous work guardrails reserves for an
+# explicit decision, and every other auto-fix in this pipeline is proposal-only.
+#
+# PAIRED, three ways, because each half alone is satisfiable the wrong way:
+#   positive  -- the propose instruction must be present (a negative alone passes if the
+#                whole red-check path is deleted; general.md item 3)
+#   negative  -- the §7a.7 block must not instruct a commit/push on a red check
+#   copy join -- the manifest kind the human actually READS must not promise a push the
+#                skill no longer performs (the fan-out class, in user-facing copy)
+_77_PROSE = ship_src[ship_src.index("### 7a.7."):ship_src.index("### 7b.")]
+check("test_red_check_is_proposed_not_applied[positive]",
+      "PROPOSE the fix — do not apply it" in _77_PROSE
+      and "candidate resolutions:" in _77_PROSE,
+      "the red-check path no longer tells the agent to draft the fix as a decision")
+check("test_red_check_is_proposed_not_applied[negative]",
+      not re.search(r"attempt \*\*once\*\*, commit, push", _77_PROSE)
+      and "record-attempt --kind ci-failing" not in _77_PROSE,
+      "the gate still instructs an unapproved commit/push on a red check")
+check("test_red_check_copy_does_not_promise_a_push",
+      "apply the fix you approved" in mt.KIND_COPY["ci-failing"]["then"]
+      and "Approve the fix I drafted" in mt.KIND_COPY["ci-failing"]["needs_you"],
+      "the ci-failing kind's copy promises to push a fix the skill will not push without "
+      "approval — the human reads this, so it is the half that matters most")
+# And the approved path must still exist: approval routes through the §7c reconcile, so
+# "propose-only" must not have left the fix with nowhere to go.
+check("test_approved_fix_still_has_a_route",
+      "Step 7c reconcile fast-path" in _77_PROSE,
+      "propose-only with no apply route — the human's approval would dead-end")
+
 # The honest-window disclosure: the step must SAY the PR is created before CI is
 # readable, rather than implying the gate runs first.
 check("test_ship_discloses_the_post_create_window",

@@ -264,6 +264,17 @@ produce a pending PR on demand, but I can fixture one, and the brief requires an
       *Pinned by:* `run_ship_readiness_evals.py::test_every_check_only_kind_has_its_own_option` +
       `::test_check_only_options_are_all_distinct` +
       `::test_only_the_build_kind_mentions_a_failing_build`.
+- [x] **A red check is PROPOSED, never applied.** The gate diagnoses the failing job and drafts the
+      change for approval; it does not commit or push. A gate that writes to the branch to change
+      what the code does — from inside the decision about whether that code is ready — is the
+      permanence/risk category the autonomous-work guardrails reserve for an explicit human
+      decision, and every other auto-fix in this pipeline is proposal-only. *Verify:* four arms —
+      the propose instruction is present (positive), §7a.7 carries no commit/push instruction for a
+      red check (negative, since the negative alone would pass if the whole path were deleted), the
+      `ci-failing` copy the human reads does not promise a push the skill will not make, and an
+      approved fix still has a route (§7c) so approval cannot dead-end. *Pinned by:*
+      `run_ship_readiness_evals.py::test_red_check_is_proposed_not_applied` +
+      `::test_red_check_copy_does_not_promise_a_push` + `::test_approved_fix_still_has_a_route`.
 - [x] **`run_ship_readiness_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
       harness↔runner join step passes — exit-code-driven, not a grep. An unwired harness gives zero
       regression protection while looking identical to a wired one (FB-0074).
@@ -282,15 +293,13 @@ them did not exist when the plan was written — they were *introduced by the st
 immediately; the **declarations** were held for the human, because drafting a criterion is the
 agent's job and declaring its own work covered is not. Approved by the orchestrator, 2026-10-09.
 
-**One finding declared as a question rather than a criterion (ISSUE 4).** §7a.7's closing paragraph
-tells the agent that on a red check it may author a fix, **commit it, and push to the branch** —
-one bounded attempt, with a recorded marker so a later reconcile asks instead of re-trying. That is
-precedented (§7a does the same for the visual deliverable) but it is a *write* action inside a gate,
-and this plan's own guardrails reserve those for an explicit decision. It is left in the prose
-unchanged and un-pinned deliberately: pinning attempt-once would imply the behaviour is settled,
-and whether a readiness gate should push commits at all is the orchestrator's call, not mine. Filed
-to the roadmap with that framing. The bound itself is real — the marker is written either way — so
-the un-pinned risk is a second attempt, not an unbounded loop.
+**ISSUE 4 went to the gate as a question and came back decided (2026-10-09): propose only.**
+`/flow:audit-coverage` found §7a.7 telling the agent it could author a fix for a red check, commit
+it and push. It is now proposal-only — diagnose, draft into the entry's candidate resolutions, and
+apply through §7c once the human approves. The reasoning is in `roadmap.md`; the short version is
+that §7a's bounded attempt re-runs a *capture*, while this would write to the branch to change what
+the code *does*, from inside the gate judging it. Declared as a criterion below rather than left in
+prose, because the decision is now settled.
 
 ### Visual-walk
 

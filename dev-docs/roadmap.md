@@ -717,29 +717,34 @@ across six shell blocks in two skills is its own reviewable PR rather than a rid
 
 **Surfaces when:** any `.flow` writer block is next edited, or a new one is added.
 
-### Should a readiness gate push commits? (v1.64.0 §7a.7, undeclared on purpose)
+### ~~Should a readiness gate push commits?~~ — **DECIDED: no. Propose only** (v1.64.0 §7a.7)
 
-`/flow:ship` §7a.7's closing paragraph tells the agent that on a red check it may author a fix,
-**commit it, and push to the branch** — one bounded attempt, with a `record-attempt` marker so a
-later reconcile asks instead of re-trying. Found undeclared by `/flow:audit-coverage` at ship.
+Raised by `/flow:audit-coverage` at ship, when it found §7a.7's closing paragraph telling the agent
+it could author a fix for a red check, **commit it, and push**. Surfaced as a question rather than
+pinned, because the real issue was not whether the behaviour was tested but whether it should exist.
 
-**Precedented but not obviously right.** §7a does the same for the visual deliverable, so the shape
-is not new. But this is a *write* action taken inside a gate whose entire job is to decide whether
-something is ready, and `.claude/rules/general.md` § Autonomous work guardrails reserves
-permanence-adjacent actions for an explicit decision. A gate that fixes what it is measuring is a
-different kind of thing from a gate that reports.
+**Decided at the gate, 2026-10-09: narrow it to propose, the same shape a `coverage` gap already
+takes.** The gate now diagnoses the failing job and drafts the change into the entry's
+`candidate resolutions:` field; the human approves; the fix is applied through the Step 7c reconcile
+like any other answered decision.
 
-**Left in the prose, un-pinned, deliberately.** Pinning attempt-once would imply the behaviour is
-settled; the open question is whether it should exist at all, which is a human call. The bound is
-real either way — the marker is written whether the attempt succeeds or fails — so the un-pinned
-risk is a second attempt, not an unbounded loop.
+**The reasoning, recorded because the superficially-similar case will come up again.** It looked
+symmetrical with §7a's bounded attempt, and it is not: §7a re-runs a *capture* and produces a
+missing artifact, while this would write to the human's branch to change what the code *does* — from
+inside the gate deciding whether that code is ready. That is the permanence-and-risk category
+`.claude/rules/general.md` § Autonomous work guardrails reserves for an explicit decision, and every
+other auto-fix in this pipeline is proposal-only for the same reason. Keeping it would have made a
+gate silently editing what it measures the **default** rather than an exception, which is a far
+larger change to flow's autonomy boundary than "read CI status" required.
 
-**Three ways it could go:** keep it (and pin attempt-once); narrow it to *propose* the fix and let
-the human apply it, matching how `coverage` entries already work; or drop the attempt and let a red
-check simply draft.
+**The rejected option, and what would reopen it.** "Keep and pin attempt-once" was rejected on the
+above. If proposal-only proves too slow for one-line fixes, that is a future proposal **with its own
+evidence** — measured round-trip cost on real red checks — not a default to ship pre-emptively.
 
-**Surfaces when:** §7a.7 or §7a's bounded-attempt prose is next touched, or the first time the
-attempt actually fires on a consumer's branch.
+Pinned four ways (`run_ship_readiness_evals.py::test_red_check_is_proposed_not_applied` ×2,
+`::test_red_check_copy_does_not_promise_a_push`, `::test_approved_fix_still_has_a_route`), including
+the copy join: the manifest kind the human actually reads must not promise a push the skill will not
+make, and the approval must not dead-end.
 
 ### Four deferred findings from v1.64.0's staff-review, all real, none in scope
 

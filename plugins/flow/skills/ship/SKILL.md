@@ -1961,11 +1961,26 @@ ensure draft). All three `ci-*` kinds are `CHECK_ONLY`: a waiver on any of them 
 subtracted, so the PR **stays a draft** until a check is actually observed passing. If the human accepts
 the risk, they mark it ready on GitHub themselves — you do not.
 
-**On `ci-failing`, fix it if you can.** A red `evals` or typecheck job is usually a real, cheap defect,
-and §7a's bounded-attempt discipline applies here too: attempt **once**, commit, push, re-read the
-checks, and re-assert. Record the attempt (`record-attempt --kind ci-failing`) either way so a later
-reconcile asks rather than silently re-trying. Never iterate past one attempt — a loop that keeps
-pushing at a red check is the shape that burns a budget without converging.
+**On `ci-failing`, PROPOSE the fix — do not apply it.** A red `evals` or typecheck job is usually a
+real, cheap defect, and it is tempting to let this gate author the fix, commit it and push. It must
+not. Read the failing job's log, diagnose it, and **draft** the change into the manifest entry's
+`candidate resolutions:` field — exactly the shape a `coverage` gap already takes: *here is what is
+red, here is what I would change, approve it or tell me otherwise.* You do the work of proposing;
+the human supplies the approval.
+
+**Why this is not symmetrical with §7a's bounded attempt, even though it looks like it.** §7a
+re-runs a *capture* — it produces an artifact that was missing. This would write to the human's
+branch to change what the code *does*, from inside the gate that is deciding whether that code is
+ready. That is the permanence-and-risk category `.claude/rules/general.md` § Autonomous work
+guardrails reserves for an explicit decision, and every other auto-fix in this pipeline is
+proposal-only for the same reason. A gate that silently edits what it is measuring is a different
+kind of thing from a gate that reports — and making it the default would be a far larger change to
+flow's autonomy boundary than "read CI status" needs. If proposal-only turns out to be too slow for
+a one-line fix, that is a future proposal with its own evidence, not a default to ship now.
+
+Once the human approves, apply it through the **Step 7c reconcile fast-path** like any other
+answered decision — push, re-read the checks, re-classify. Never iterate on a red check: a loop
+that keeps pushing is the shape that burns a budget without converging.
 
 ### 7b. Body↔draft coherence + Test-plan provenance (FB-0067, FB-0074 — the final gate before hand-off)
 

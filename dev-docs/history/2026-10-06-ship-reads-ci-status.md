@@ -110,6 +110,25 @@ discipline rather than by luck.
    declared plan. Caught by `test_unchecked_criterion_fails_not_undeclared`, which is why that test
    asserts FAIL-vs-UNDECLARED rather than merely "not ready".
 
+**10. A red check is proposed, not fixed — decided at the gate, against my first draft.** §7a.7
+originally told the agent it could author a fix for a red check, commit it, and push, reasoning from
+§7a's bounded-attempt precedent. `/flow:audit-coverage` found it undeclared; I surfaced it as a
+question rather than pinning it, and the gate decided: **propose only**.
+
+The reasoning is worth keeping, because the next near-miss will look the same. §7a's attempt re-runs
+a **capture** — it produces an artifact that was missing, and changes nothing about what the code
+does. This would have written to the human's branch to change behaviour, from inside the gate
+deciding whether that behaviour is ready. A gate that silently edits what it measures is a different
+kind of thing, it is the permanence-and-risk category `.claude/rules/general.md` reserves for an
+explicit decision, and keeping it would have made that the *default* rather than an exception — a
+much larger move in flow's autonomy boundary than "read CI status" called for. Every other auto-fix
+in this pipeline is proposal-only; this one now matches.
+
+The copy mattered as much as the prose: the `ci-failing` kind told the human *"one word and I
+will"* and *"I apply the fix, push"*, so leaving that while narrowing the skill would have shipped
+one promise to the reader and a different behaviour underneath — the fan-out class in user-facing
+text. Both halves changed together, and the join is asserted.
+
 ## Verification
 
 - `run_ship_readiness_evals.py` — 69 checks. **Every CI state is pinned as a pair**, because a
