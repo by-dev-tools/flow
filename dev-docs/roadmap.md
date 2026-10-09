@@ -34,7 +34,7 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 **Previously: v1.57.0 (shipped [#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131). `.claude/hooks/flow-plugin-currency.sh` existed to keep this repo's installed plugin current and had never once updated anything: the provenance engine it consults ships INSIDE the plugin (v1.43.0), the hook resolves it from the installed tree only (correctly — it fires with no approval prompt), so a 1.29.0 install had no engine and the hook printed the two commands and ran neither. Measured: every Conductor cloud workspace boots from a snapshot carrying 1.29.0 against a tree at 1.55.0, `release_gap: 26`, with the local marketplace clone pinned at the same `cf783ac`. The bootstrap arm runs both commands; the verdict goes to `stdout`, the one `SessionStart` channel Claude Code injects into context — stderr on a zero exit "goes to the debug log only, never the transcript, and Claude never sees it", so the hook's entire output previously had no reader. **The fix forced a second one:** moving the registry mid-session flipped the row labelled "the version that ran this pipeline" from a correct `⚠️ 26 releases back` to a false `✓ matches this branch`, so `restart_pending` is now three-valued and an ambiguous registry reading cannot tick. `.conductor/settings.toml` was evaluated and rejected — measured three ways that a cloud organization ignores repo-defined setup scripts.)**
 **Previously: v1.56.0 (shipped [#174](https://github.com/by-dev-tools/flow/pull/174) — finish CV1: tell the reviewer the prose counts, fingerprint it, and stop losing criteria.)**
 
-**Plugin at v1.62.0 (this PR — an explicit `**Visual-walk:** N/A` no longer forces `visual_significant` TRUE, FB-0132). The override keyed on `block_count >= 1` and never read the block, so writing `**Visual-walk:** N/A — no UI in this change` to be explicit flipped the verdict to *visually significant* and `/flow:ship` §7a then demanded a rendered walkthrough plus a visual-history entry for a diff with no UI — artifacts that cannot be produced. Omitting the block entirely gave the right answer, so the predicate **rewarded careless authoring and punished careful authoring**. The fix keys on a DECLARED denial (`heading_declares_na` + a shared `declared_na` field in `walk_extract.py`, read by `visual-significance.py` and by §5a), deliberately NOT on zero assertions — §5a assigns a bare 0-assertion block its own meaning ("capture the primary/launch state only"), so the roadmap's option (a) would have retired a documented behaviour by reinterpreting it. The denial guard took **three** versions: a whitespace-tolerant boundary, then a separator boundary that still admitted every deferral (`None, will fill in later`), and finally a rejection on the un-denial itself — a deferral says WHEN and a redirection says ELSEWHERE, and both mean a visual surface exists. 55-row accept/reject table. `plan-discipline` now publishes the convention, which had never been stated to the authors it was matching.)**
+**Plugin at v1.62.0 (this PR — an explicit `**Visual-walk:** N/A` no longer forces `visual_significant` TRUE, FB-0138). The override keyed on `block_count >= 1` and never read the block, so writing `**Visual-walk:** N/A — no UI in this change` to be explicit flipped the verdict to *visually significant* and `/flow:ship` §7a then demanded a rendered walkthrough plus a visual-history entry for a diff with no UI — artifacts that cannot be produced. Omitting the block entirely gave the right answer, so the predicate **rewarded careless authoring and punished careful authoring**. The fix keys on a DECLARED denial (`heading_declares_na` + a shared `declared_na` field in `walk_extract.py`, read by `visual-significance.py` and by §5a), deliberately NOT on zero assertions — §5a assigns a bare 0-assertion block its own meaning ("capture the primary/launch state only"), so the roadmap's option (a) would have retired a documented behaviour by reinterpreting it. The denial guard took **three** versions: a whitespace-tolerant boundary, then a separator boundary that still admitted every deferral (`None, will fill in later`), and finally a rejection on the un-denial itself — a deferral says WHEN and a redirection says ELSEWHERE, and both mean a visual surface exists. 55-row accept/reject table. `plan-discipline` now publishes the convention, which had never been stated to the authors it was matching.)**
 
 **Previously: v1.57.0 (shipped [#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131). `.claude/hooks/flow-plugin-currency.sh` existed to keep this repo's installed plugin current and had never once updated anything: the provenance engine it consults ships INSIDE the plugin (v1.43.0), the hook resolves it from the installed tree only (correctly — it fires with no approval prompt), so a 1.29.0 install had no engine and the hook printed the two commands and ran neither. Measured: every Conductor cloud workspace boots from a snapshot carrying 1.29.0 against a tree at 1.55.0, `release_gap: 26`, with the local marketplace clone pinned at the same `cf783ac`. The bootstrap arm runs both commands; the verdict goes to `stdout`, the one `SessionStart` channel Claude Code injects into context — stderr on a zero exit "goes to the debug log only, never the transcript, and Claude never sees it", so the hook's entire output previously had no reader. **The fix forced a second one:** moving the registry mid-session flipped the row labelled "the version that ran this pipeline" from a correct `⚠️ 26 releases back` to a false `✓ matches this branch`, so `restart_pending` is now three-valued and an ambiguous registry reading cannot tick. `.conductor/settings.toml` was evaluated and rejected — measured three ways that a cloud organization ignores repo-defined setup scripts.)**
 
@@ -1131,6 +1131,86 @@ neither can drift again.
 a non-forcing verdict, pinned by an eval over a mirrored lib dir (the `8p` harness already
 builds one, so the fixture cost is zero).
 
+### "Pushing the file IS the claim" only collides when two authors pick the same SLUG (measured 2026-10-09, during #183's fourth rebase)
+
+**Surfaces when:** two branches claim the same `FB-XXXX` concurrently, or the
+one-file-per-entry protocol in `.claude/rules/general.md` § Documentation discipline is
+next edited.
+
+**The protocol's stated guarantee does not hold.** v1.40.0 deleted
+`reserved-feedback-numbers.md` and replaced it with: *"Creating and pushing that file IS
+the claim: a racing branch gets a both-added filename conflict, which git cannot
+auto-merge and no protocol can forget."* That is true **only if both authors choose the
+same filename**. The filename is `FB-XXXX-<kebab-slug-of-the-headline>.md`, and two
+authors writing two different lessons necessarily choose two different slugs — so git
+sees two *distinct* added files, merges both cleanly, and the repository ends up with two
+entries bearing the same number and no signal anywhere.
+
+**Measured, not hypothetical.** [#179](https://github.com/by-dev-tools/flow/pull/179)
+merged `FB-0132-a-label-identifies-a-sender-only-if-it-is-unique.md` on 2026-10-06. #183
+carried `FB-0132-a-gate-that-reads-a-declaration-s-presence-not-its-content.md`, written
+earlier. The 2026-10-09 rebase of #183 onto that main produced **three** conflicts — both
+version manifests and `plan.md` — and **not one** on the feedback directory. Both
+FB-0132 files sat side by side in the rebased tree. It surfaced only because the rebase
+was followed by a deliberate file-overlap diff between the two branches; nothing in the
+pipeline would have caught it, and `/flow:doctor` has no check for it.
+
+The irony is worth recording rather than smoothing over: #179's own `FB-0132` is *"a
+label identifies a sender only if it is unique"*, and it shipped along`FB-0133` —
+*"git grep does not see the files this PR is adding"*. Both are the same class as the
+defect their numbering then committed.
+
+**Shape — the cheap half first, and it is RED ON ARRIVAL, which the implementer needs to
+know before writing it.** A CI step asserting `ls dev-docs/feedback/ | grep -oE
+'FB-[0-9]{4}' | sort | uniq -d` is empty catches the duplicate **once both are in one
+tree**, which is the rebase moment above and is strictly better than nothing.
+
+I ran that exact command before filing this entry, and it reported **`FB-0072`** — not
+the collision above, which was already fixed by then, but a *second, pre-existing* pair:
+`FB-0072-*-a.md` and `FB-0072-*-b.md`. Those are **deliberate**, added by the same commit
+(#146, the one-file-per-entry fragmentation) and documented in
+`dev-docs/feedback/README.md` § "Known duplicate — scheduled, not lost". So the naive
+check fails on its first run against a case that is correct. Ship it with the `-a`/`-b`
+suffix pair excluded by that documented convention — **not** with `FB-0072` hardcoded,
+which would rot the moment that entry is finally split. A check that is red on arrival
+gets weakened or disabled rather than fixed, which is how it would end up protecting
+nothing.
+
+The working form, validated both ways (clean on the current tree; `DETECTED` against a
+planted duplicate). Note the `sort -u` placement — collapsing the suffix makes the pair's
+two filenames *identical*, so filenames must be deduped **before** the numbers are
+extracted; doing it the other way round still reports `FB-0072`, which is the first way I
+wrote it:
+
+```sh
+DUPES=$(ls dev-docs/feedback/ | grep -E '^FB-[0-9]{4}' \
+          | sed -E 's/-(a|b)\.md$/.md/' | sort -u \
+          | grep -oE '^FB-[0-9]{4}' | sort | uniq -d)
+[ -z "$DUPES" ] || { echo "::error::two feedback entries claim one number: $DUPES"; exit 1; }
+```
+
+Worth noting what this says about the instrument: the check found a positive its author
+did not know existed, on its first run, which is the § Consistency discipline item 4
+validation this repo asks for — and it also proves the duplicate state is reachable and
+survivable, since one has sat in `main` since v1.40.0. It does not
+catch the race at claim time, because neither branch can see the other's unpushed file —
+and that is the honest limit: a number claimed in a branch is invisible until pushed, so
+no in-tree check makes the claim atomic. The sweep every worker is already told to run
+(`git ls-tree` across `origin/main` plus every open branch) is the real defence, and it
+is **author memory**, which is what this repo's § Consistency discipline opens by naming
+as its most recurring bug class.
+
+**The alternative worth costing:** derive the identifier from something that cannot
+collide — a date-prefixed slug (`2026-10-09-presence-not-content.md`, matching the
+`history/` convention, which has never collided for exactly this reason) — and keep
+`FB-XXXX` only as a human-facing label inside the file, assigned at merge. That removes
+the race by construction rather than by a check, and the `history/` directory is the
+existence proof in this same repo.
+
+**Deletion criterion:** delete when two branches can claim the same feedback number and
+something mechanical fails before both land — either a CI duplicate check (partial) or a
+collision-free naming scheme (complete).
+
 ### A held-out-vocabulary leak corpus for the denial guard — the table cannot see leak #5 (2026-10-05, v1.62.0's push-further + design-engineer lenses)
 
 **Surfaces when:** the denial guard's marker lists are next touched, or the polarity
@@ -2165,7 +2245,7 @@ that cannot produce either. Omitting the block entirely is correct (`plan-discip
 to UI changes) and gives the right verdict, so **the careless authoring is rewarded and the
 conscientious authoring is punished** — measured on v1.49.0's own ship, which hit exactly this.
 
-**✅ FIXED v1.62.0 (FB-0132) — and option (a) was deliberately NOT taken. Do not "simplify" back to it.**
+**✅ FIXED v1.62.0 (FB-0138) — and option (a) was deliberately NOT taken. Do not "simplify" back to it.**
 The fix keys on a **declared** denial (`heading_declares_na` + the shared `declared_na` field in
 `walk_extract.py`), not on zero assertions. Option (a) below reads "treat a block with zero parsed
 assertions as non-forcing, since … a block with no `- [ ]` lines declares nothing to capture" — and

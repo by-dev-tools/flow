@@ -1,5 +1,5 @@
 ## 2026-10-04 — An explicit `**Visual-walk:** N/A` no longer forces `visual_significant` TRUE
-**Branch:** conductor/fix-visual-walk-na-forces-significance · **SHA:** 9beb5c4…HEAD · **v1.62.0** · **FB-0132**
+**Branch:** conductor/fix-visual-walk-na-forces-significance · **SHA:** 9beb5c4…HEAD · **v1.62.0** · **FB-0138**
 
 **What was done:**
 
@@ -206,7 +206,7 @@ the entry exists to stop the next person adding more and calling the class close
    an opt-in `empty_warning_na` so `extract-criteria.py` is untouched, and paired three ways.
 3. **A rejected near-miss was silent** (UX). `N/A for this PR` and `N/A — TBD` produced output
    byte-identical to a bare block, so an author who wrote a denial read back "plan declares a
-   Visual-walk block" and then got a demand for a walkthrough they cannot produce — FB-0132's
+   Visual-walk block" and then got a demand for a walkthrough they cannot produce — FB-0138's
    symptom intact on every near-miss spelling, and the FB-0082 absent-vs-no collapse. The verdict
    was right; the silence was the defect. New `na_near_miss` returns a *category*, never the
    heading text, and returns None for headings with no denial intent so it cannot accuse

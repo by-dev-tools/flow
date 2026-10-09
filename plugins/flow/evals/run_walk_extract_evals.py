@@ -727,7 +727,7 @@ def test_second_scan_site_also_keeps_criteria() -> None:
           f"so /flow:critique-plan's lint reads a fraction of the plan and reports clean: {items}")
 
 
-# ---------------------------------------------------------------- FB-0132: declared_na
+# ---------------------------------------------------------------- FB-0138: declared_na
 
 _NA_PLAN = """# Plan
 

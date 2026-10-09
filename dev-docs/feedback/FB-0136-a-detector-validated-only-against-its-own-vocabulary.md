@@ -40,7 +40,7 @@ where the validating input comes from — and it is the failure that survives af
 diligently followed item 4. In this release it cost four rounds of review on one guard, with each
 round finding a real defect the previous round's tests had been green over. Links:
 [[FB-0131-a-self-updater-that-asks-the-artifact-whether-to-update]] (an instrument that cannot
-report the one state it exists to detect), [[FB-0132-a-gate-that-reads-a-declaration-s-presence-not-its-content]]
+report the one state it exists to detect), [[FB-0138-a-gate-that-reads-a-declaration-s-presence-not-its-content]]
 (the gate this all hangs off).
 
 **Structural note, not a lesson:** all four leaks in that guard were the same polarity — a

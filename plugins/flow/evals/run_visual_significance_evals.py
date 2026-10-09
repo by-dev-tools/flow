@@ -348,7 +348,7 @@ def main() -> int:
         check("visual-walk-all-demoted-no-override",
               o.get("visual_significant") is False and o.get("override") is None and demoted_warn, f"{o}")
 
-        # --- FB-0132: an explicit N/A declaration must not force --------------
+        # --- FB-0138: an explicit N/A declaration must not force --------------
         #
         # Being conscientious was punished and being careless rewarded: the override
         # keyed on `block_count >= 1` and never read the block, so
@@ -596,7 +596,7 @@ def main() -> int:
             sig = o.get("visual_signals", [])
             check(f"8l-near-miss-is-reported::{tail[:22]}",
                   any("LOOKS like a denial but was NOT read as one" in x for x in sig),
-                  f"a rejected denial must not be silent — this is the FB-0132 symptom "
+                  f"a rejected denial must not be silent — this is the FB-0138 symptom "
                   f"on near-miss spellings: {sig}")
             check(f"8l-near-miss-names-the-reason::{tail[:22]}",
                   any(want in x for x in sig),

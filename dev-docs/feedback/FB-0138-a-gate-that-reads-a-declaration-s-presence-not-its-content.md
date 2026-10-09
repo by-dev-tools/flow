@@ -1,11 +1,20 @@
 ---
-name: fb-0132-presence-not-content
+name: fb-0138-presence-not-content
 description: A gate that reads a declaration's PRESENCE rather than its CONTENT inverts the incentive to be explicit
 metadata:
   type: feedback
 ---
 
-# FB-0132 — A gate that reads a declaration's PRESENCE, not its CONTENT, punishes being explicit
+# FB-0138 — A gate that reads a declaration's PRESENCE, not its CONTENT, punishes being explicit
+
+> **Renumbered from FB-0132 on 2026-10-09.** [#179](https://github.com/by-dev-tools/flow/pull/179)
+> merged its own `FB-0132` (*"a label identifies a sender only if it is unique"*) on 2026-10-06,
+> before this branch landed. Both files used the number with **different slugs**, so the filenames
+> differed and git reported **no conflict** — the two entries simply coexisted after the rebase.
+> That is the gap in "pushing the file IS the claim": the claim is only collision-*proof* when two
+> authors pick the same slug. Theirs merged first, so this one moved. **This branch's commit
+> messages predate the renumber and still say FB-0132** — they are left as written rather than
+> rewritten, since the history is accurate about what was believed at the time.
 
 **Date:** 2026-10-04 · **Source:** Ben, via the orchestrator seat · **Shipped:** v1.62.0
 

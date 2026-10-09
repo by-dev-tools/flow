@@ -359,7 +359,7 @@ def na_near_miss(line: str, label: str):
 
     So an author who wrote `N/A` read back `plan declares a Visual-walk block` — a
     sentence contradicting their own text — and then got a demand for a walkthrough
-    they cannot produce. That is the original FB-0132 symptom, intact, on every
+    they cannot produce. That is the original FB-0138 symptom, intact, on every
     near-miss spelling. The verdict is right in each case and is NOT what changed; the
     SILENCE was the defect. It is the same `absent`-vs-`no` collapse (FB-0082) this
     release's own roadmap entry names as a bug for `**Mode:**`.

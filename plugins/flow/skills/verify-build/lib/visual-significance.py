@@ -555,7 +555,7 @@ def main(argv):
                 # output byte-identical to a bare `**Visual-walk:**` — so an author who
                 # wrote a denial read back "plan declares a Visual-walk block", a
                 # sentence contradicting their own text, and then got §7a's demand for a
-                # walkthrough they cannot produce. That is FB-0132's original symptom
+                # walkthrough they cannot produce. That is FB-0138's original symptom
                 # intact on every near-miss spelling, and the published convention makes
                 # near misses the predictable failure rather than an exotic one. The
                 # verdict was always right; the SILENCE was the defect — the same
