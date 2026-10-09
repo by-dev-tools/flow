@@ -37,11 +37,26 @@ PLUGIN = HERE.parent
 ENGINE = PLUGIN / "skills" / "ship" / "lib" / "ship-readiness.py"
 TRIAGE = PLUGIN / "skills" / "ship" / "lib" / "manifest-triage.py"
 SHIP_SKILL = PLUGIN / "skills" / "ship" / "SKILL.md"
+CI_GATE = PLUGIN / "skills" / "ship" / "lib" / "ci-gate.sh"
 SPIKE_SKILL = PLUGIN / "skills" / "ship-spike" / "SKILL.md"
 FIX = HERE / "fixtures" / "ship-readiness"
 
 fails = 0
 ran = 0
+
+# Read each skill ONCE. These are large files (ship/SKILL.md is ~204 KB) and were
+# previously re-read at five separate sites, including twice inside one boolean
+# expression and once per iteration of two loops.
+SHIP_SRC = SHIP_SKILL.read_text()
+SPIKE_SRC = SPIKE_SKILL.read_text()
+GATE_SRC = CI_GATE.read_text()
+# EXECUTABLE lines only. The file's comments EXPLAIN what it deliberately no longer does
+# ("dragged in a mkdir", "a self-ignore write"), so a bare substring test over the whole
+# text reads its own rationale as the behaviour it forbids. `.github/workflows/ci.yml`'s
+# harness-join step scopes itself the same way, for the same reason.
+GATE_CODE = "\n".join(
+    ln for ln in GATE_SRC.splitlines() if not ln.lstrip().startswith("#")
+)
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -65,6 +80,9 @@ def _engine():
     return _load(ENGINE, "ship_readiness")
 
 
+_CLI_CACHE: dict[tuple[str, ...], dict] = {}
+
+
 def ci_cli(*args: str) -> dict:
     """Drive the engine through its CLI, not its functions.
 
@@ -72,12 +90,19 @@ def ci_cli(*args: str) -> dict:
     would pin a surface nothing invokes. `.claude/rules/general.md` item 4's
     third corollary -- pin the claim at the layer where it is CLAIMED.
     """
+    # Memoized on the arg tuple. EVERY DISTINCT arg-vector still crosses the CLI
+    # boundary exactly once, so this does not weaken the surface-layer property above —
+    # it only removes re-running the identical command. 13 of 41 spawns were duplicates.
+    if args in _CLI_CACHE:
+        return _CLI_CACHE[args]
     out = subprocess.run(
         [sys.executable, str(ENGINE), "ci", *args],
         capture_output=True, text=True,
     )
     assert out.returncode == 0, f"engine exited {out.returncode}: {out.stderr}"
-    return json.loads(out.stdout)
+    parsed = json.loads(out.stdout)
+    _CLI_CACHE[args] = parsed
+    return parsed
 
 
 def ci_fixture(name: str) -> dict:
@@ -162,14 +187,13 @@ check("test_gh_absent_reason_is_not_a_pass",
 # verdict (never a crash, never a halt) AND the skills must warn loudly rather than
 # proceeding quietly. Paired: the warn text must exist in the prose, and the engine must
 # still exit 0 so the pipeline reaches the PR step instead of dying.
-_absent = subprocess.run([sys.executable, str(ENGINE), "ci", "--gh-failed"],
-                         capture_output=True, text=True)
+# Reuses `gh_absent` from above rather than re-spawning: `ci_cli` already asserts
+# returncode == 0, so the "does not halt" arm is proved by that call having returned.
 check("test_absent_gh_degrades_not_halts",
-      _absent.returncode == 0
-      and json.loads(_absent.stdout)["kind"] == "ci-unknown"
-      and "gh is not installed" in SHIP_SKILL.read_text()
-      and "NOT a passing CI" in SHIP_SKILL.read_text(),
-      f"rc={_absent.returncode}")
+      gh_absent["kind"] == "ci-unknown"
+      and "gh is not installed" in GATE_SRC
+      and "NOT a passing CI" in GATE_SRC,
+      json.dumps(gh_absent))
 
 empty = subprocess.run([sys.executable, str(ENGINE), "ci"], input="",
                        capture_output=True, text=True)
@@ -234,10 +258,9 @@ check("test_settle_flag_changes_only_the_empty_clean_branch",
       "--settled altered a verdict outside the empty-rollup branch")
 # And the shell must actually perform the second look — a flag no caller passes is a gate
 # that never closes (the FB-0074 unwired-composition shape).
-for _label, _src in (("ship", SHIP_SKILL.read_text()), ("ship-spike", SPIKE_SKILL.read_text())):
-    check(f"test_skill_performs_the_settle_reread[{_label}]",
-          "no-checks-unsettled" in _src and "--settled" in _src,
-          "the skill never re-reads with --settled, so the empty-rollup pass is unreachable")
+check("test_gate_performs_the_settle_reread",
+      "no-checks-unsettled" in GATE_SRC and "--settled" in GATE_SRC,
+      "ci-gate.sh never re-reads with --settled, so the empty-rollup pass is unreachable")
 
 # =========================================================================
 # 4. mergeStateStatus is a cross-check, never the sole source.
@@ -302,13 +325,12 @@ check("test_timeout_matches_observed_pending_verdict",
 # dropped. The negative alone (no unguarded call) would pass if the whole wait were
 # deleted, so assert BOTH that the guard exists and that the `timeout` call it guards is
 # still there (general.md item 3).
-for _label, _src in (("ship", SHIP_SKILL.read_text()), ("ship-spike", SPIKE_SKILL.read_text())):
-    check(f"test_zero_wait_skips_the_blocking_call[{_label}:guard]",
-          '[ "$CI_WAIT" -gt 0 ]' in _src,
-          "ciWaitSeconds:0 reaches `timeout 0`, which DISABLES the timeout — unbounded wait")
-    check(f"test_zero_wait_skips_the_blocking_call[{_label}:call-still-there]",
-          "timeout \"$CI_WAIT\" gh pr checks" in _src,
-          "the guard is present but the timeout call it guards is gone")
+check("test_zero_wait_skips_the_blocking_call[guard]",
+      '[ "$_wait" -gt 0 ]' in GATE_SRC,
+      "ciWaitSeconds:0 reaches `timeout 0`, which DISABLES the timeout — unbounded wait")
+check("test_zero_wait_skips_the_blocking_call[call-still-there]",
+      'timeout "$_wait" gh pr checks' in GATE_SRC,
+      "the guard is present but the timeout call it guards is gone")
 
 check("test_timeout_names_the_budget",
       "600" in t_out["reason"] and "ciWaitSeconds" in t_out["reason"], t_out["reason"])
@@ -489,9 +511,22 @@ for k in CI_KINDS:
           "check_only_option" in mt.KIND_COPY[k]
           and "failing build" not in mt.KIND_COPY[k]["check_only_option"],
           "missing, or still says 'failing build' for a non-failing state")
-check("test_verify_build_keeps_the_default_check_only_option",
-      "check_only_option" not in mt.KIND_COPY["verify-build"],
-      "verify-build grew its own option; the shared default is now unreachable for it")
+# REQUIRED for every CHECK_ONLY kind, with no shared default. Applied to only the three
+# new kinds, it left `toolchain` printing "I won't mark a failing build ready" on a kind
+# where nothing was built — the hazard that kind's own comment already named. A fallback
+# is what let that be silently wrong, so there isn't one.
+for k in sorted(mt.CHECK_ONLY):
+    check(f"test_every_check_only_kind_has_its_own_option[{k}]",
+          "check_only_option" in mt.KIND_COPY[k],
+          "a CHECK_ONLY kind with no option line — _copy() would return the generic "
+          "schema backstop, which says nothing a reader can act on")
+check("test_check_only_options_are_all_distinct",
+      len({mt.KIND_COPY[k]["check_only_option"] for k in mt.CHECK_ONLY}) == len(mt.CHECK_ONLY),
+      "two CHECK_ONLY kinds share an option line, so one of them is describing the other")
+check("test_only_the_build_kind_mentions_a_failing_build",
+      [k for k in sorted(mt.CHECK_ONLY)
+       if "failing build" in mt.KIND_COPY[k]["check_only_option"]] == ["verify-build"],
+      "a non-build kind tells the reader the refusal is about a failing build")
 
 # Non-generic copy, PAIRED with the positive that the records exist at all. A
 # "copy is not generic" assertion alone passes if the kind is deleted.
@@ -520,35 +555,67 @@ check("test_engine_can_emit_all_three_kinds", emitted == set(CI_KINDS), f"emitte
 # =========================================================================
 print("\n[skill contract]")
 
-ship_src = SHIP_SKILL.read_text()
-spike_src = SPIKE_SKILL.read_text()
+ship_src = SHIP_SRC
+spike_src = SPIKE_SRC
 
+# THE MECHANISM lives in ci-gate.sh now; the skills COMPOSE it. Assert each where it is
+# made — a mechanism assertion aimed at the skills would pass on prose that merely
+# mentions the helper.
+# POSITIVE first. A negative-only assertion ("contains no poll loop") passes if the whole
+# wait is deleted — general.md item 3's prohibition-satisfiable-by-deletion shape, which
+# this repo has shipped twice.
+check("test_wait_is_blocking_not_polled[positive]",
+      "--watch" in GATE_SRC
+      and re.search(r'timeout\s+"\$_wait"\s+gh pr checks', GATE_SRC) is not None,
+      'no `timeout "$_wait" gh pr checks … --watch` found in ci-gate.sh')
+# NEGATIVE: no sleep-poll loop around a checks call. The settle re-read is a single
+# guarded `sleep`, not a loop, so this must still hold.
+check("test_wait_is_blocking_not_polled[negative]",
+      not re.search(r"(while|until)\b[^\n]*\n(?:[^\n]*\n){0,6}?[^\n]*\bsleep\b", GATE_SRC),
+      "a sleep-poll loop appears in ci-gate.sh")
+check("test_gate_resolves_the_engine",
+      "ship-readiness.py" in GATE_SRC and "CLAUDE_PLUGIN_ROOT" in GATE_SRC,
+      "ci-gate.sh does not resolve ship-readiness.py with a plugin-root fallback")
+# The RC-capture bug this release caught in its own first draft: `|| true` followed by
+# `$?` captures `true`, so a timeout reads as success.
+check("test_rc_capture_is_not_clobbered",
+      "|| _rc=$?" in GATE_SRC
+      and not re.search(r"--fail-fast[^\n]*\|\|\s*true", GATE_SRC),
+      "RC capture uses `|| true` before reading $?, which captures `true`")
+check("test_ci_wait_slot_is_read_from_the_repo_root",
+      '"$_root/flow.config.json"' in GATE_SRC,
+      "the slot is read CWD-relative, so running from a subdirectory silently reverts it "
+      "to the default — which is the drift that motivated this shared helper")
+check("test_ci_wait_slot_is_read_with_a_default",
+      ".ciWaitSeconds // 600" in GATE_SRC,
+      "ciWaitSeconds is not read with a documented default")
+check("test_settle_seconds_has_one_definition",
+      GATE_SRC.count("FLOW_CI_SETTLE_SECONDS:=20") == 1
+      and "sleep 20" not in SHIP_SRC and "sleep 20" not in SPIKE_SRC,
+      "the settle delay is a literal in more than one place")
+
+# THE COMPOSITION: both skills must SOURCE the helper and act on its verdict. A skill that
+# merely names the file would satisfy a substring test, so assert the call too.
 for label, src in (("ship", ship_src), ("ship-spike", spike_src)):
-    # POSITIVE first. A negative-only assertion ("contains no poll loop") passes
-    # if the whole wait is deleted -- general.md item 3's prohibition-satisfiable-
-    # by-deletion shape, which this repo has shipped twice.
-    check(f"test_wait_is_blocking_not_polled[{label}:positive]",
-          "--watch" in src and re.search(r"timeout\s+\"\$CI_WAIT\"\s+gh pr checks", src) is not None,
-          "no `timeout \"$CI_WAIT\" gh pr checks … --watch` found")
-    # NEGATIVE: no sleep-poll loop around a checks call.
-    check(f"test_wait_is_blocking_not_polled[{label}:negative]",
-          not re.search(r"(while|until)\b[^\n]*\n(?:[^\n]*\n){0,6}?[^\n]*\bsleep\b", src),
-          "a sleep-poll loop appears in the skill")
-    check(f"test_ci_gate_resolves_the_engine[{label}]",
-          "ship-readiness.py" in src and "CLAUDE_PLUGIN_ROOT" in src,
-          "the CI gate does not resolve ship-readiness.py with a plugin-root fallback")
-    # The RC-capture bug this release caught in its own first draft: `|| true`
-    # followed by `$?` captures `true`, so a timeout reads as success.
-    check(f"test_rc_capture_is_not_clobbered[{label}]",
-          "|| RC_WATCH=$?" in src and not re.search(r"--fail-fast[^\n]*\|\|\s*true", src),
-          "RC capture uses `|| true` before reading $?, which captures `true`")
-    check(f"test_ci_wait_slot_is_read_from_the_repo_root[{label}]",
-          '"$FLOW_ROOT/flow.config.json"' in src,
-          "the slot is read CWD-relative, so running from a subdirectory silently reverts "
-          "it to the default")
+    check(f"test_skill_sources_the_shared_gate[{label}]",
+          "ci-gate.sh" in src and "flow_ci_status" in src and ". \"$CG\"" in src,
+          "the skill does not source ci-gate.sh and call flow_ci_status")
+    check(f"test_skill_refuses_when_the_gate_is_absent[{label}]",
+          "ci-gate.sh not found" in src and "NOT confirmed green" in src,
+          "a missing helper degrades silently instead of refusing — an unreadable gate is "
+          "not a passing gate")
 
-    check(f"test_ci_wait_slot_is_read_with_a_default[{label}]",
-          ".ciWaitSeconds // 600" in src, "ciWaitSeconds is not read with a documented default")
+# The gate writes NO scratch files, which is why it needs no CWE-59 preamble. Paired: the
+# absence of file writes AND the presence of the variable that replaced them, so this
+# cannot be satisfied by deleting the acquisition entirely.
+check("test_gate_writes_no_scratch_files",
+      "FLOW_SCRATCH" not in GATE_CODE and "mkdir" not in GATE_CODE
+      and ".gitignore" not in GATE_CODE,
+      "the gate stages status through a file again, which re-introduces the CWE-59 surface "
+      "that deleting the file removed")
+check("test_gate_still_captures_the_status",
+      "FLOW_CI_JSON=" in GATE_CODE and "_raw=$(gh pr view" in GATE_CODE,
+      "the acquisition is gone, so the assertion above protects nothing")
 
 # ship names all three kinds at real add-entry sites; ship-spike deliberately
 # drafts on ci-failing ONLY (Decision 2) and must NOT import the manifest.
@@ -563,28 +630,12 @@ check("test_spike_never_claims_pending_is_ready",
       re.search(r"never say \"ready\"", spike_src) is not None,
       "ship-spike does not forbid calling an unconfirmed state ready")
 
-# CWE-59, both halves. This repo has shipped the directory-only guard and then paid for it;
-# the comment at ship's Step 2a says "a guard at five of six sites is not a guard". Paired on
-# purpose: `rm -f` present AND the write it protects present, so satisfying this by deleting
-# the writer is not a pass (general.md item 3).
-check("test_ci_scratch_files_are_unlinked_before_write",
-      'rm -f "$CI_JSON" "$CI_JSON.raw"' in ship_src
-      and '[ -L "$FLOW_SCRATCH/.gitignore" ] && rm -f' in ship_src,
-      "the CI gate writes scratch files behind only a DIRECTORY-level symlink guard — a "
-      "planted .flow/ci-status.json symlink would be followed and the victim truncated")
-check("test_ci_scratch_writes_still_exist",
-      '> "$CI_JSON"' in ship_src and '> "$CI_JSON.raw"' in ship_src,
-      "the guarded writes are gone, so the guard above protects nothing")
-# Order is load-bearing: `[ -f ]` is false for a DANGLING symlink, so an unlink placed after
-# the .gitignore creation prevents nothing.
-# Scoped to the 7a.7 BLOCK, not the whole file. A file-wide `.index()` finds Step 2a's
-# `.gitignore` line hundreds of lines earlier and compares against the wrong occurrence —
-# which is how this assertion first failed. Pin the claim where it is made.
-_77 = ship_src[ship_src.index("### 7a.7."):ship_src.index("### 7b.")]
-check("test_unlinks_precede_the_gitignore_creation",
-      _77.index('rm -f "$CI_JSON" "$CI_JSON.raw"')
-      < _77.index('[ -f "$FLOW_SCRATCH/.gitignore" ] || printf'),
-      "within 7a.7, the unlinks come AFTER the .gitignore creation, where they prevent nothing")
+# NOTE: the CWE-59 file-guard assertions that stood here are deliberately GONE, replaced
+# by `test_gate_writes_no_scratch_files` above. The gate used to stage its status JSON
+# through `.flow/`, which required a mkdir, a self-ignore write and three unlinks; the
+# altitude review pointed out that nothing read the file after the block, so the whole
+# surface was deleted rather than guarded. Asserting the guards now would pin machinery
+# that should not exist.
 
 # The honest-window disclosure: the step must SAY the PR is created before CI is
 # readable, rather than implying the gate runs first.

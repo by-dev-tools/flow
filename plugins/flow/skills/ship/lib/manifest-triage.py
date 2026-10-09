@@ -213,6 +213,8 @@ KIND_COPY: dict[str, dict[str, str]] = {
         "why": "I already tried the automatic fix and it did not hold, so the next attempt needs a different angle",
         "then": ("I apply your answer and re-run the build check. A failing build never becomes a "
                  "ready PR automatically — if you accept the risk, you mark it ready yourself."),
+        "check_only_option": ("leave it — I won't mark a failing build ready; you can do that "
+                             "yourself on GitHub if you accept the risk"),
     },
     "coverage": {
         "clears_when": "declare the criterion in the plan's Spec-walk block, then re-run /flow:audit-coverage clean",
@@ -296,6 +298,10 @@ KIND_COPY: dict[str, dict[str, str]] = {
                       "the body either way, so flow will ask you once more to confirm that the "
                       "merge was deliberate."),
         "why": "this machine cannot build the target at all, so there is no version of trying again here that works",
+        # The hazard this kind's `means` comment above already named: the shared fallback
+        # said "I won't mark a failing BUILD ready" on a kind where nothing was built.
+        "check_only_option": ("leave it — nothing here built your code, so I won't report it as "
+                             "verified; merge it yourself if you accept it un-verified"),
     },
     # --- The three CI kinds (v1.64.0, FB-0131 corollary 3 / FB-0137) -----------
     # THREE kinds rather than one `ci`, because this dict's own design is "everything
@@ -906,17 +912,15 @@ def render_decisions(result: dict[str, Any]) -> str:
                 cost = _copy(kind, "waive_cost")
                 options.append("waive it and ship as-is" + (f" — {cost}" if cost else ""))
             elif kind in CHECK_ONLY:
-                # Per-kind, because this is the ONLY line telling the reader what they can
-                # do instead, and a generic one is actively false for two of the five
-                # CHECK_ONLY kinds: "I won't mark a failing build ready" over checks that
-                # are merely still running contradicts that kind's own `means` line two rows
-                # above it ("Nothing has failed — but nothing has passed either"), so the
-                # question argues with itself. The `toolchain` comment above already
-                # identified this hazard for its own kind; the fallback stays as the default
-                # so `verify-build` is unchanged.
-                options.append(_copy(kind, "check_only_option",
-                                     "leave it — I won't mark a failing build ready; you can do "
-                                     "that yourself on GitHub if you accept the risk"))
+                # REQUIRED per kind, with no shared fallback — see CHECK_ONLY_FALLBACK's
+                # absence asserted below. This is the ONLY line telling the reader what
+                # they can do instead, and one generic sentence was actively false for
+                # three of the five kinds: "I won't mark a failing build ready" over
+                # checks merely still running contradicts that kind's own `means` two rows
+                # above ("Nothing has failed — but nothing has passed either"), so the
+                # question argued with itself. A default would let the next CHECK_ONLY
+                # kind be silently wrong the same way, which is why there isn't one.
+                options.append(_copy(kind, "check_only_option"))
             options.append("something else — tell me")
             out.append("   - Options:")
             for opt in options:

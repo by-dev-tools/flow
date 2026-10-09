@@ -1864,108 +1864,29 @@ for it. Ben's constraint — *tokens matter, lost time doesn't* — does not mer
 form, it selects it.
 
 ```sh
-# Re-resolve EVERYTHING — this is its own Bash call, so §7a.5's and §7a.6's shell
-# state is gone. An unset $FLOW_SCRATCH would write the status blob to `/ci-status.json`
-# and an unset $N would query the wrong PR, both silently (FB-0010 silent-skip).
-R="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ship-readiness.py"; [ -f "$R" ] || R="plugins/flow/skills/ship/lib/ship-readiness.py"
-FLOW_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-[ -n "$FLOW_ROOT" ] || { echo "⚠️ BLOCKER: not inside a git repository — cannot run the CI gate." >&2; exit 1; }
-FLOW_SCRATCH="$FLOW_ROOT/.flow"
-# Same CWE-59 refusal as every other .flow writer: an untrusted clone can ship
-# .flow as a symlink, and a redirect follows it.
-[ -L "$FLOW_SCRATCH" ] && { echo "⚠️ BLOCKER: $FLOW_SCRATCH is a symlink — refusing to write flow scratch through it." >&2; exit 1; }
-mkdir -p "$FLOW_SCRATCH" || { echo "⚠️ BLOCKER: cannot create $FLOW_SCRATCH — the CI gate cannot run." >&2; exit 1; }
-CI_JSON="$FLOW_SCRATCH/ci-status.json"
-# CWE-59, SECOND HALF. The `-L` check above protects the scratch DIRECTORY; these lines
-# protect the FILES written inside it. `.flow` can be a real directory that CONTAINS
-# `ci-status.json` as a symlink to ~/.claude/settings.json or a sibling repo's .git/config —
-# git checks that out happily, the directory guard passes, and `>` then FOLLOWS the link and
-# truncates the victim. This block adds TWO independently plantable names (`.json` and its
-# `.raw` sibling). `rm -f` unlinks the symlink itself rather than writing through it, and is
-# safe unconditionally because both files are ephemeral scratch this block is about to write.
-#
-# ORDER IS LOAD-BEARING: the unlinks must precede the `.gitignore` creation. `[ -f ]` is
-# FALSE for a DANGLING symlink, so placed after, the redirect has already created an
-# attacker-named file at the link target. Step 2a's comment records this verbatim; this site
-# is why "a guard at five of six sites is not a guard" was worth writing down.
-rm -f "$CI_JSON" "$CI_JSON.raw"
-[ -L "$FLOW_SCRATCH/.gitignore" ] && rm -f "$FLOW_SCRATCH/.gitignore"
-[ -f "$FLOW_SCRATCH/.gitignore" ] || printf '# Created by flow. Ephemeral scratch; never committed.\n*\n' > "$FLOW_SCRATCH/.gitignore"
-CI_WAIT=$(jq -r '.ciWaitSeconds // 600' "$FLOW_ROOT/flow.config.json" 2>/dev/null)
-# Loud, not silent: a typo'd slot that quietly becomes 600 is a config the user believes
-# is in force and is not (CLAUDE.md's never-silently-no-op rule).
-case "$CI_WAIT" in
-  ''|*[!0-9]*) echo "⚠️ [ci-gate] flow.config.json.ciWaitSeconds is not a non-negative integer ('$CI_WAIT') — falling back to 600." >&2; CI_WAIT=600;;
-esac
-
-if ! command -v gh >/dev/null 2>&1; then
-  # FB-0121: "couldn't see" is not "nothing there". An absent or unauthenticated gh
-  # reaches the engine as an explicit --gh-failed state, never as empty stdin that a
-  # later `// empty` could turn into silence. This is also the degrade path for a
-  # consumer with no GitHub at all: it warns loudly, drafts, and never halts.
-  echo "⚠️ [ci-gate] gh is not installed — CI status cannot be read. This is NOT a passing CI." >&2
-  python3 "$R" ci --gh-failed > "$CI_JSON"
-else
-  N=$(gh pr view --json number --jq .number 2>/dev/null)
-  if [ -z "$N" ]; then
-    echo "⚠️ [ci-gate] no PR found for this branch — CI status unknown, never assumed green." >&2
-    python3 "$R" ci --gh-failed > "$CI_JSON"
-  else
-    # Block until the checks settle, bounded. --watch is the whole point: the process
-    # sleeps and the agent does not think, so waiting costs zero tokens (FB-0137).
-    #
-    # This command's exit status is deliberately NOT the verdict — measured, exit 1 is
-    # returned for a failing check, for "no checks reported", AND for a missing PR,
-    # three unlike worlds in one value. It is used ONLY to detect `timeout`'s own 124.
-    # RC capture is `|| RC=$?` and not `|| true; RC=$?`, which would capture `true`.
-    #
-    # `-gt 0` is LOAD-BEARING, not defensive. MEASURED (coreutils 8.32): `timeout 0`
-    # DISABLES the timeout — `timeout 0 sleep 3` runs the full 3s and exits 0, against
-    # `timeout 1 sleep 3` which exits 124 at 1s. So passing a documented `ciWaitSeconds: 0`
-    # ("read once, do not wait") straight to `timeout` produced an UNBOUNDED `--watch`
-    # wait: the exact opposite of the contract, on the one value a user sets to avoid
-    # waiting. Zero now skips the wait entirely and falls through to the single read below,
-    # which IS "read once".
-    RC_WATCH=0
-    if [ "$CI_WAIT" -gt 0 ]; then
-      timeout "$CI_WAIT" gh pr checks "$N" --watch --fail-fast >/dev/null 2>&1 || RC_WATCH=$?
-    fi
-    if gh pr view "$N" --json statusCheckRollup,mergeStateStatus,isDraft > "$CI_JSON.raw" 2>/dev/null; then
-      python3 "$R" ci --blob "$CI_JSON.raw" > "$CI_JSON"
-      # SETTLE RE-READ — the one branch where PASS would come from an ABSENCE.
-      # `gh pr checks --watch` does not wait for checks to APPEAR: with zero reported it
-      # returns at once. So a PR created seconds ago has an empty rollup, and on a repo
-      # with no branch protection its merge state is already CLEAN — indistinguishable
-      # from a project with no CI. The engine refuses to call that a pass without
-      # --settled, so give the checks a chance to register and look once more. Only this
-      # second look makes the absence evidence.
-      if [ "$(jq -r '.state' "$CI_JSON")" = "no-checks-unsettled" ]; then
-        # A fixed constant, deliberately NOT an env knob or a config slot: it is a
-        # registration delay, not a CI duration, and an unvalidated `${CI_SETTLE:=…}`
-        # would be the one input in this block with no `case` guard on it.
-        echo "[ci-gate] no checks reported yet — waiting 20s for them to register, then looking once more." >&2
-        sleep 20
-        if gh pr view "$N" --json statusCheckRollup,mergeStateStatus,isDraft > "$CI_JSON.raw" 2>/dev/null; then
-          python3 "$R" ci --blob "$CI_JSON.raw" --settled > "$CI_JSON"
-        fi
-      fi
-    elif [ "$RC_WATCH" -eq 124 ]; then
-      python3 "$R" ci --timed-out "$CI_WAIT" > "$CI_JSON"
-    else
-      echo "⚠️ [ci-gate] gh could not report this PR's status — treating CI as unknown, never as green." >&2
-      python3 "$R" ci --gh-failed > "$CI_JSON"
-    fi
-  fi
+# SOURCED, not executed — shell state does not cross Bash tool calls, so a verdict
+# produced in one call cannot be read in the next. Sourcing puts the sequence in this
+# fence by construction. Same idiom as `serve-preview.sh` and `verify-pr-body.sh`.
+CG="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ci-gate.sh"; [ -f "$CG" ] || CG="plugins/flow/skills/ship/lib/ci-gate.sh"
+if [ ! -f "$CG" ]; then
+  echo "⚠️ BLOCKER: ci-gate.sh not found — CI status cannot be read, so it is NOT confirmed green. Reinstall the flow plugin, or run from the flow checkout." >&2
+  exit 1
 fi
-CI_VERDICT=$(jq -r '.verdict' "$CI_JSON"); CI_KIND=$(jq -r '.kind // empty' "$CI_JSON")
-# Echo the kind, because the table below and the add-entry sites branch on it. Shell state
-# dies with this call, so a $CI_KIND nothing prints is a variable the next step cannot read.
-echo "[ci-gate] verdict=$CI_VERDICT kind=${CI_KIND:-none}"
-# Positive assertion paired with every fallback above: the engine must have produced a
-# verdict. An empty one means no branch ran, which is not a pass either.
-[ -n "$CI_VERDICT" ] || { echo "⚠️ BLOCKER: the CI gate produced no verdict — treat as NOT ready." >&2; exit 1; }
-jq -r '"[ci-gate] " + .state + " — " + .reason' "$CI_JSON"
+. "$CG"
+# It prints its own `[ci-gate]` lines and sets FLOW_CI_VERDICT / FLOW_CI_KIND. A non-zero
+# return means it could not produce a verdict at all — which is not a pass either.
+flow_ci_status || exit 1
 ```
+
+**The helper writes no files, deliberately.** An earlier cut staged the status JSON through
+`.flow/`, which pulled in a `mkdir`, a self-ignore write, two `rm -f` unlinks and a
+dangling-symlink unlink — about fourteen lines of CWE-59 defence for a file nothing read
+once the block ended. A shell variable needs none of that, so the attack surface is
+*removed* rather than guarded. The acquisition itself is shared with `/flow:ship-spike`
+because the two copies had already drifted inside the PR that introduced them (one read
+`flow.config.json` CWD-relative, silently reverting `ciWaitSeconds` from a subdirectory).
+What stays per-skill is the **policy** below — which is genuinely different in the two
+skills, and is the only part that should be.
 
 `verdict` is one of three, and the third is the one the cheapest implementation gets wrong:
 
@@ -1976,7 +1897,7 @@ jq -r '"[ci-gate] " + .state + " — " + .reason' "$CI_JSON"
 | `UNDECLARED` | `ci-pending` | checks have not finished. **Not failing is not passing** | manifest entry + draft |
 | `UNDECLARED` | `ci-unknown` | no checks reported while GitHub reports the PR blocked, an unclassifiable check state, or `gh` unreachable | manifest entry + draft |
 
-**If `CI_VERDICT` is not `PASS`, add the entry and re-run the draft decision.** The finding arrives as a
+**If `FLOW_CI_VERDICT` is not `PASS`, add the entry and re-run the draft decision.** The finding arrives as a
 **file**, like every other producer (Step 2) — never a shell argument, never a heredoc:
 
 ```sh

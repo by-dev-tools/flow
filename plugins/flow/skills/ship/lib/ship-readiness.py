@@ -219,6 +219,137 @@ def _node_url(node: dict) -> str:
     return node.get("detailsUrl") or node.get("targetUrl") or ""
 
 
+def _ci_result(
+    *,
+    state: str,
+    verdict: str,
+    kind: str | None,
+    reason: str,
+    failing: list[dict] | None = None,
+    pending: list[str] | None = None,
+    unmapped: list[str] | None = None,
+    merge_state: str | None = None,
+    counts: dict[str, int] | None = None,
+) -> dict:
+    """The ONE definition of a CI-condition result.
+
+    It was written out three times (the unreadable path, the timeout path, and the
+    body of `ci_condition`), which made adding a key a three-edit change with a
+    KeyError in the harness as the failure mode for missing one.
+    """
+    return {
+        "state": state,
+        "verdict": verdict,
+        "kind": kind,
+        "reason": reason,
+        "failing": failing if failing is not None else [],
+        "pending": pending if pending is not None else [],
+        "unmapped": unmapped if unmapped is not None else [],
+        "merge_state": merge_state,
+        "counts": counts if counts is not None else {"pass": 0, "fail": 0, "pending": 0, "unknown": 0},
+    }
+
+
+def _ci_verdict(
+    *,
+    rollup: list,
+    failing: list[dict],
+    pending: list[str],
+    unmapped: list[str],
+    merge_state: str | None,
+    counts: dict[str, int],
+    settled: bool,
+) -> tuple[str, str, str | None, str]:
+    """The precedence ladder, as a PURE function returning (state, verdict, kind, reason).
+
+    Separated from result-assembly for one safety reason, not for tidiness: the
+    previous shape was seven `result.update(...)` + `return result` pairs, where a
+    branch that forgot its `return` fell through to the all-checks-passed case --
+    the single outcome this entire file exists to prevent. A function whose every
+    branch must produce a value cannot fail that way.
+
+    PRECEDENCE, and it is the heart of the tri-state:
+
+        fail > pending > unknown > pass
+
+    `pass` is LAST, so it is reachable only when nothing else is outstanding. Any
+    other order lets "nothing has failed yet" win.
+    """
+    if failing:
+        names = ", ".join(f["name"] for f in failing)
+        return "failing", "FAIL", KIND_FAILING, f"CI is failing: {names}."
+
+    if pending:
+        return (
+            "pending",
+            "UNDECLARED",
+            KIND_PENDING,
+            f"checks pending ({len(pending)} of {len(rollup)} still running: "
+            f"{', '.join(pending)}). Not failing — not passing either.",
+        )
+
+    if unmapped:
+        return (
+            "unknown",
+            "UNDECLARED",
+            KIND_UNKNOWN,
+            f"CI status unknown — {len(unmapped)} check(s) reported a state this "
+            f"version of flow cannot classify: {', '.join(unmapped)}.",
+        )
+
+    if not rollup:
+        # The #183 disambiguation. An empty rollup is TWO different worlds, and the
+        # difference is not in the rollup -- it is in whether GitHub itself considers
+        # the PR blocked. Measured: #183 was an open PR with an empty rollup and
+        # DIRTY, where `pull_request` checks could never arrive.
+        if merge_state == "CLEAN":
+            if not settled:
+                # Not a pass: indistinguishable from a PR created moments ago whose
+                # checks have not registered. See `ci_condition`'s docstring.
+                return (
+                    "no-checks-unsettled",
+                    "UNDECLARED",
+                    KIND_UNKNOWN,
+                    "no checks have been reported yet. GitHub reports the PR as CLEAN, "
+                    "but a PR created moments ago looks exactly like a project with no "
+                    "CI at all — so this is not yet evidence that there is nothing to "
+                    "wait for.",
+                )
+            return (
+                "no-checks-clean",
+                "PASS",
+                None,
+                "no checks are configured or required for this PR, and GitHub reports "
+                "it as CLEAN after a second look — nothing to wait for.",
+            )
+        detail = _MERGE_STATE_MEANING.get(
+            merge_state or "", "GitHub did not report whether this PR can merge")
+        return (
+            "unknown",
+            "UNDECLARED",
+            KIND_UNKNOWN,
+            f"CI status unknown — no checks have been reported, and {detail}. "
+            "An absent check is not a passing check.",
+        )
+
+    # Every check passed. One last cross-check against GitHub's own verdict: if it
+    # still reports the PR as blocked, something outside the check list does (a
+    # required review, a conflict). `DRAFT` is excluded by construction -- see
+    # `_BLOCKING_MERGE_STATES`.
+    if merge_state in _BLOCKING_MERGE_STATES:
+        detail = _MERGE_STATE_MEANING.get(
+            merge_state, "GitHub did not report whether this PR can merge")
+        return (
+            "unknown",
+            "UNDECLARED",
+            KIND_UNKNOWN,
+            f"every reported check passed, but {detail}. Flow will not call a PR "
+            "ready while GitHub says otherwise.",
+        )
+
+    return "passing", "PASS", None, f"all {counts['pass']} reported check(s) passed."
+
+
 def ci_condition(
     blob: dict | None,
     *,
@@ -239,30 +370,25 @@ def ci_condition(
 
     Why it has to exist (found by review, reproduced before fixing). Ship 7a.7 runs
     immediately after `gh pr create`, and `gh pr checks --watch` does NOT wait for
-    checks to *appear* -- with zero checks reported it exits at once. So for the
-    seconds between creating a PR and Actions registering its run, the rollup is
-    `[]`; and on a repo with no branch protection `mergeStateStatus` is already
-    `CLEAN`. Without this flag the engine answered `PASS` / "no checks are
-    configured" there -- #176's exact shape ("nothing has failed") re-entering
-    through the one branch that reasons from absence of evidence. Flow's own repo
-    masked it, because required checks make a fresh PR `BLOCKED`.
+    checks to *appear* -- with zero reported it exits at once. So for the seconds
+    between creating a PR and Actions registering its run, the rollup is `[]`; and on
+    a repo with no branch protection `mergeStateStatus` is already `CLEAN`. Without
+    this flag the engine answered `PASS` / "no checks are configured" there --
+    #176's exact shape ("nothing has failed") re-entering through the one branch
+    that reasons from absence of evidence. Flow's own repo masked it, because
+    required checks make a fresh PR `BLOCKED`.
 
     So "this project has no CI" and "this PR is two seconds old" are two states, and
     only a caller that waited can tell them apart. Same rule as
     `autoplan/lib/gate.py`: a green verdict requires the arm to have RUN.
     """
     if blob is None:
-        return {
-            "state": "unknown",
-            "verdict": "UNDECLARED",
-            "kind": KIND_UNKNOWN,
-            "failing": [],
-            "pending": [],
-            "unmapped": [],
-            "merge_state": None,
-            "counts": {"pass": 0, "fail": 0, "pending": 0, "unknown": 0},
-            "reason": unreadable_reason or "CI status unknown — could not read it from GitHub.",
-        }
+        return _ci_result(
+            state="unknown",
+            verdict="UNDECLARED",
+            kind=KIND_UNKNOWN,
+            reason=unreadable_reason or "CI status unknown — could not read it from GitHub.",
+        )
 
     rollup = blob.get("statusCheckRollup")
     if rollup is None:
@@ -287,147 +413,39 @@ def ci_condition(
         elif bucket == "unknown":
             unmapped.append(name)
 
-    result = {
-        "failing": failing,
-        "pending": pending,
-        "unmapped": unmapped,
-        "merge_state": merge_state,
-        "counts": counts,
-    }
-
-    # Precedence is deliberate and is the heart of the tri-state:
-    #   fail > pending > unknown > pass
-    # `pass` is LAST, so it is reachable only when nothing else is outstanding.
-    # Any other order lets "nothing has failed yet" win.
-    if failing:
-        names = ", ".join(f["name"] for f in failing)
-        result.update(
-            state="failing",
-            verdict="FAIL",
-            kind=KIND_FAILING,
-            reason=f"CI is failing: {names}.",
-        )
-        return result
-
-    if pending:
-        result.update(
-            state="pending",
-            verdict="UNDECLARED",
-            kind=KIND_PENDING,
-            reason=(
-                f"checks pending ({len(pending)} of {len(rollup)} still running: "
-                f"{', '.join(pending)}). Not failing — not passing either."
-            ),
-        )
-        return result
-
-    if unmapped:
-        result.update(
-            state="unknown",
-            verdict="UNDECLARED",
-            kind=KIND_UNKNOWN,
-            reason=(
-                f"CI status unknown — {len(unmapped)} check(s) reported a state this "
-                f"version of flow cannot classify: {', '.join(unmapped)}."
-            ),
-        )
-        return result
-
-    if not rollup:
-        # The #183 disambiguation. An empty rollup is TWO different worlds, and
-        # the difference is not in the rollup -- it is in whether GitHub itself
-        # considers the PR blocked. Measured: #183 is an open PR with an empty
-        # rollup and DIRTY, where `pull_request` checks will never arrive.
-        if merge_state == "CLEAN":
-            if not settled:
-                # The caller has not asserted it waited, so this is indistinguishable
-                # from a PR created moments ago whose checks have not registered yet.
-                # Not a pass. The caller re-reads once with `--settled` after giving
-                # them a chance to appear; only then is the absence evidence.
-                result.update(
-                    state="no-checks-unsettled",
-                    verdict="UNDECLARED",
-                    kind=KIND_UNKNOWN,
-                    reason=(
-                        "no checks have been reported yet. GitHub reports the PR as CLEAN, "
-                        "but a PR created moments ago looks exactly like a project with no "
-                        "CI at all — so this is not yet evidence that there is nothing to "
-                        "wait for."
-                    ),
-                )
-                return result
-            result.update(
-                state="no-checks-clean",
-                verdict="PASS",
-                kind=None,
-                reason=(
-                    "no checks are configured or required for this PR, and GitHub reports "
-                    "it as CLEAN after a second look — nothing to wait for."
-                ),
-            )
-            return result
-        detail = _MERGE_STATE_MEANING.get(
-            merge_state or "",
-            "GitHub did not report whether this PR can merge",
-        )
-        result.update(
-            state="unknown",
-            verdict="UNDECLARED",
-            kind=KIND_UNKNOWN,
-            reason=(
-                f"CI status unknown — no checks have been reported, and {detail}. "
-                "An absent check is not a passing check."
-            ),
-        )
-        return result
-
-    # Every check passed. One last cross-check against GitHub's own verdict: if
-    # it still reports the PR as blocked, something outside the check list does
-    # (a required review, a conflict). `DRAFT` is excluded by construction --
-    # see `_BLOCKING_MERGE_STATES`.
-    if merge_state in _BLOCKING_MERGE_STATES:
-        detail = _MERGE_STATE_MEANING.get(merge_state, f"mergeStateStatus={merge_state}")
-        result.update(
-            state="unknown",
-            verdict="UNDECLARED",
-            kind=KIND_UNKNOWN,
-            reason=(
-                f"every reported check passed, but {detail}. Flow will not call a PR "
-                "ready while GitHub says otherwise."
-            ),
-        )
-        return result
-
-    result.update(
-        state="passing",
-        verdict="PASS",
-        kind=None,
-        reason=f"all {counts['pass']} reported check(s) passed.",
+    state, verdict, kind, reason = _ci_verdict(
+        rollup=rollup,
+        failing=failing,
+        pending=pending,
+        unmapped=unmapped,
+        merge_state=merge_state,
+        counts=counts,
+        settled=settled,
     )
-    return result
+    # ONE terminal return. Nothing can fall through to a pass.
+    return _ci_result(
+        state=state, verdict=verdict, kind=kind, reason=reason,
+        failing=failing, pending=pending, unmapped=unmapped,
+        merge_state=merge_state, counts=counts,
+    )
 
 
 def ci_timeout_condition(waited_seconds: int) -> dict:
     """A blocking wait that hit its ceiling reports PENDING, never a pass.
 
-    The budget exists to bound wall-clock, not to manufacture a verdict. This is
-    a separate entry point so the timeout path cannot accidentally fall through
-    to the all-passing branch above.
+    The budget exists to bound wall-clock, not to manufacture a verdict. This is a
+    separate entry point so the timeout path cannot accidentally fall through to the
+    all-passing branch in `_ci_verdict`.
     """
-    return {
-        "state": "pending",
-        "verdict": "UNDECLARED",
-        "kind": KIND_PENDING,
-        "failing": [],
-        "pending": [],
-        "unmapped": [],
-        "merge_state": None,
-        "counts": {"pass": 0, "fail": 0, "pending": 0, "unknown": 0},
-        "reason": (
+    return _ci_result(
+        state="pending",
+        verdict="UNDECLARED",
+        kind=KIND_PENDING,
+        reason=(
             f"checks pending — stopped waiting after {waited_seconds}s (the ciWaitSeconds "
             "setting in flow.config.json). Still running is not passing."
         ),
-    }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -675,12 +693,14 @@ def combine(conditions: list[dict]) -> dict:
     deletion shape and `autoplan/lib/gate.py`'s rule ("GREEN requires every arm
     to have RUN"). Same rule, second surface.
     """
-    seen = {c["id"] for c in conditions}
-    missing = [cid for cid in CONDITION_ORDER if cid not in seen]
-    for cid in missing:
-        conditions.append(_cond(cid, "UNDECLARED", "this condition was not evaluated."))
-    order = {cid: i for i, cid in enumerate(CONDITION_ORDER)}
-    conditions.sort(key=lambda c: order.get(c["id"], len(order)))
+    # Ordering by construction, and NOT in place: the previous shape kept the order
+    # twice (a `seen`/`missing` fill plus a sort-key index) and mutated the caller's
+    # list as a side effect.
+    by_id = {c["id"]: c for c in conditions}
+    conditions = [
+        by_id.get(cid, _cond(cid, "UNDECLARED", "this condition was not evaluated."))
+        for cid in CONDITION_ORDER
+    ]
     failed = [c["id"] for c in conditions if c["verdict"] == "FAIL"]
     undeclared = [c["id"] for c in conditions if c["verdict"] == "UNDECLARED"]
     return {
@@ -696,7 +716,7 @@ def render(result: dict) -> str:
     verdict = "READY" if result["ready"] else "NOT READY"
     lines.append(f"[ship-readiness] {verdict}")
     for c in result["conditions"]:
-        mark = {"PASS": "PASS", "FAIL": "FAIL", "UNDECLARED": "UNDECLARED"}[c["verdict"]]
+        mark = c["verdict"]
         lines.append(f"  {mark:<10} {c['id']:<15} {c['reason']}")
     if result["failed"]:
         lines.append(f"  → failed: {', '.join(result['failed'])}")

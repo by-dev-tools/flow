@@ -699,9 +699,14 @@ otherwise create a file at its target — is not. `.flow` can be a real director
 `triage.json` as a symlink to `~/.claude/settings.json`; git checks that out happily, the
 directory guard passes, and `>` follows the link.
 
-Fixed at ship §7a.7 in v1.64.0 (its two new names made it the live instance). Step 2a and
-ship-spike §2a.1 already had it. **`$FLOW_SCRATCH/triage.json` at ship §7a.5 does not**, and
-neither do the remaining writers.
+v1.64.0 added a writer here and then **removed it again**, which is the better outcome and worth
+recording as the preferred fix: its altitude review observed that nothing read the status file
+after the block ended, so the file — and with it the mkdir, the self-ignore write and three
+unlinks — was deleted rather than guarded. A shell variable has no symlink surface. So **the first
+question at any remaining site is whether the file is needed at all**, not how to guard it.
+
+Step 2a and ship-spike §2a.1 carry the file-level half correctly. **`$FLOW_SCRATCH/triage.json` at
+ship §7a.5 does not**, and neither do the remaining writers.
 
 The irony worth keeping: §7a.5's own comment is the sentence *"a guard at five of six sites is not
 a guard"* — written when the directory half was being swept, about the half that is now itself at
@@ -759,10 +764,15 @@ costs an explicit "ship it" and nothing else. It deliberately does **not** draft
 typed `/flow:ship` has already decided, and drafting on an unreadable artifact would make every ship
 a draft.
 
-**What would close it.** A small findings artifact written by `/simplify` + `/flow:staff-review` at
-the end of their passes — `{"open_blockers": [...]}` — which `ship-readiness.py` already accepts via
-`--blockers-file` and tests against. The parameter exists so the condition becomes answerable without
-a second engine.
+**What would close it, and it is cheaper than this entry first claimed.** No new artifact is
+needed. `skills/ship/lib/rigor-marker.py`'s `write` already persists `{branch, source_sha}` from
+`/flow:staff-review` **at the exact moment the BLOCKER count is known**, and
+`ship-readiness.py::no_blocker_condition` already reads an `open_blockers` field from a file it is
+handed. So the change is one field on an artifact that exists at both ends: add `--open-blockers N`
+to that write, and point `--blockers-file` at the marker. Found by v1.64.0's altitude review, which
+argued it is "not a roadmap item" — it stays one only because the gate that approved v1.64.0's plan
+explicitly confirmed this deferral, and re-deciding that mid-execution would absorb scope the human
+had already ruled on.
 
 **Surfaces when:** `/flow:staff-review` or `/simplify`'s orchestration is next touched, or when
 anyone asks why `/flow:ship` still needs an explicit "ship it" on a clean run.
