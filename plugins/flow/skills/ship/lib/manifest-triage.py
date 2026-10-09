@@ -912,8 +912,12 @@ def render_decisions(result: dict[str, Any]) -> str:
                 cost = _copy(kind, "waive_cost")
                 options.append("waive it and ship as-is" + (f" — {cost}" if cost else ""))
             elif kind in CHECK_ONLY:
-                # REQUIRED per kind, with no shared fallback — see CHECK_ONLY_FALLBACK's
-                # absence asserted below. This is the ONLY line telling the reader what
+                # REQUIRED per kind, with no shared fallback. The invariant is asserted
+                # positively in `run_ship_readiness_evals.py::
+                # test_every_check_only_kind_has_its_own_option` over `CHECK_ONLY` itself,
+                # NOT by the absence of a named constant — an earlier draft of this comment
+                # cited a `CHECK_ONLY_FALLBACK` that never existed, which is a contract with
+                # a name nothing defines. This is the ONLY line telling the reader what
                 # they can do instead, and one generic sentence was actively false for
                 # three of the five kinds: "I won't mark a failing build ready" over
                 # checks merely still running contradicts that kind's own `means` two rows

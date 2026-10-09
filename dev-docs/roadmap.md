@@ -717,6 +717,30 @@ across six shell blocks in two skills is its own reviewable PR rather than a rid
 
 **Surfaces when:** any `.flow` writer block is next edited, or a new one is added.
 
+### Should a readiness gate push commits? (v1.64.0 §7a.7, undeclared on purpose)
+
+`/flow:ship` §7a.7's closing paragraph tells the agent that on a red check it may author a fix,
+**commit it, and push to the branch** — one bounded attempt, with a `record-attempt` marker so a
+later reconcile asks instead of re-trying. Found undeclared by `/flow:audit-coverage` at ship.
+
+**Precedented but not obviously right.** §7a does the same for the visual deliverable, so the shape
+is not new. But this is a *write* action taken inside a gate whose entire job is to decide whether
+something is ready, and `.claude/rules/general.md` § Autonomous work guardrails reserves
+permanence-adjacent actions for an explicit decision. A gate that fixes what it is measuring is a
+different kind of thing from a gate that reports.
+
+**Left in the prose, un-pinned, deliberately.** Pinning attempt-once would imply the behaviour is
+settled; the open question is whether it should exist at all, which is a human call. The bound is
+real either way — the marker is written whether the attempt succeeds or fails — so the un-pinned
+risk is a second attempt, not an unbounded loop.
+
+**Three ways it could go:** keep it (and pin attempt-once); narrow it to *propose* the fix and let
+the human apply it, matching how `coverage` entries already work; or drop the attempt and let a red
+check simply draft.
+
+**Surfaces when:** §7a.7 or §7a's bounded-attempt prose is next touched, or the first time the
+attempt actually fires on a consumer's branch.
+
 ### Four deferred findings from v1.64.0's staff-review, all real, none in scope
 
 1. **`UNDECLARED` is one word for two different facts.** The render cannot tell a reader that

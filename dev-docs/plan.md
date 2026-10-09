@@ -167,8 +167,42 @@ produce a pending PR on demand, but I can fixture one, and the brief requires an
       `run_ship_readiness_evals.py::test_absent_gh_degrades_not_halts`.
 - [x] **"No checks reported" is disambiguated, both arms.** *Verify:* `statusCheckRollup: []` +
       `mergeStateStatus: CLEAN` → condition satisfied **with a stated reason**; `[]` + `DIRTY` (the
-      measured #183 shape) → not ready. *Pinned by:*
-      `run_ship_readiness_evals.py::test_no_checks_is_two_different_worlds`.
+      measured #183 shape) → not ready. Both arms take `--settled`, so the only difference between
+      them is the merge state — otherwise the pair would "disagree" for the wrong reason.
+      *Pinned by:* `run_ship_readiness_evals.py::test_no_checks_is_two_different_worlds`.
+- [x] **An empty rollup is NOT a pass on the first look.** A PR created seconds ago looks exactly
+      like a project with no CI, and GitHub already reports it `CLEAN` when nothing is required — so
+      the one branch where a pass comes from an *absence* requires the caller's positive assertion
+      that it waited. *Verify:* the same blob returns NOT-ready without `--settled` and `PASS` with
+      it; and `--settled` changes nothing on any other branch. *Pinned by:*
+      `run_ship_readiness_evals.py::test_empty_rollup_is_not_a_pass_until_settled` +
+      `::test_settle_flag_changes_only_the_empty_clean_branch`.
+- [x] **The gate actually performs that second look.** A flag no caller passes is a gate that never
+      closes (the FB-0074 unwired-composition shape). *Verify:* the shared `ci-gate.sh` both
+      recognises `no-checks-unsettled` and re-reads with `--settled`. *Pinned by:*
+      `run_ship_readiness_evals.py::test_gate_performs_the_settle_reread`.
+- [x] **`ciWaitSeconds: 0` performs no blocking wait.** Measured: `timeout 0` *disables* the
+      timeout, so the slot's documented "read once, do not wait" would otherwise have become an
+      unbounded wait — the contract inverting on the one value a user sets to avoid waiting.
+      *Verify:* paired — the `-gt 0` guard is present **and** the `timeout` call it guards is still
+      there, so the criterion cannot be satisfied by deleting the wait. *Pinned by:*
+      `run_ship_readiness_evals.py::test_zero_wait_skips_the_blocking_call`.
+- [x] **`/flow:ship-spike`'s three-state action table.** It drafts on a red check and deliberately
+      reports-without-drafting on pending/unknown, keeping spike mode's existing halt-and-adjudicate
+      shape — the one place in this change where a PR whose checks are not green is left un-drafted,
+      and spike has no manifest that would otherwise catch a regression. *Verify:* all three states
+      named with their distinct actions, plus the negative that spike never reaches for the draft
+      manifest it does not have. *Pinned by:*
+      `run_ship_readiness_evals.py::test_spike_three_state_action_table` +
+      `::test_spike_drafts_only_on_failing` + `::test_spike_never_claims_pending_is_ready`.
+- [x] **The written predicate and the engine describe the same six conditions.** A contract spelled
+      in three places with nothing checking the join is this repo's most expensive recurring bug
+      class; an agent reading a five-condition rule while the engine ships six would auto-advance on
+      the wrong predicate. *Verify:* the always-loaded rule-skill and `docs/workflow.md` both name
+      the CI condition, the workflow doc *invokes* the engine, and the engine still declares six.
+      *Pinned by:* `run_ship_readiness_evals.py::test_rule_skill_predicate_includes_ci` +
+      `::test_workflow_predicate_includes_ci` + `::test_workflow_invokes_the_engine` +
+      `::test_engine_still_declares_six_conditions`.
 - [x] **#176's measured shape is replayed as the regression case.** *Verify:* a fixture of its six real
       checks — five `pass`, `evals` `fail` — with `mergeStateStatus: BLOCKED`, and every artifact-side
       condition green (manifest READY, body "ready"): the checker returns NOT ready and names `evals`.
@@ -194,6 +228,42 @@ produce a pending PR on demand, but I can fixture one, and the brief requires an
       the harness demonstrates it can report NOT-ready on #176's shape; a suite that has only ever
       returned "ready" has produced no evidence (`.claude/rules/general.md` item 4). *Pinned by:* the
       `test_pr176_regression` arm above, which is this criterion's known-positive.
+- [x] **An all-green PR awaiting its required review is READY, not drafted.** GitHub returns
+      `BLOCKED` both for a missing required check and for a missing required review and cannot
+      distinguish them, so on a branch-protected repo it is the ordinary state of every fresh PR —
+      the state at the moment §7a.7 runs. Treating it as "CI not green" drafted every such PR.
+      *Verify:* all-pass + `BLOCKED` → ready, paired against all-pass + `DIRTY` → not ready (a
+      conflicting branch cannot mean "waiting for a human"), **plus** the proof that #176's
+      regression never relied on this cross-check — its fixture carries `BLOCKED`, so `failing`
+      must win the precedence ladder first or the fix would have silently weakened it.
+      *Pinned by:* `run_ship_readiness_evals.py::test_blocked_does_not_draft_an_all_green_pr` +
+      `::test_dirty_still_blocks_an_all_green_pr` + `::test_passing_checks_but_branch_conflicts` +
+      `::test_pr176_does_not_depend_on_the_merge_cross_check`.
+- [x] **The GitHub conclusion vocabulary is pinned by class, not just at pass/fail.** This table
+      decides shippability: `NEUTRAL`/`SKIPPED` are passes, `CANCELLED`/`STALE`/`TIMED_OUT`/
+      `ACTION_REQUIRED`/`STARTUP_FAILURE` are failures rather than pending (pending would hang the
+      blocking wait to its ceiling on a run already over), and anything unrecognised is
+      `ci-unknown`. *Verify:* one fixture per class, plus the invariant that no terminal
+      non-passing conclusion is ever classified pending. *Pinned by:*
+      `run_ship_readiness_evals.py::test_conclusion_vocabulary` +
+      `::test_terminal_non_pass_is_not_pending`.
+- [x] **An unresolvable `ci-gate.sh` degrades loudly; it does not halt.** The gate runs *after*
+      §7a.6 created the PR and *before* §7b reconciles it, so halting there leaves an open PR whose
+      body was never matched to a verdict — and it would invert this plan's own criterion 6 for a
+      neighbouring branch of the same gate. *Verify:* paired — both skills carry the `⚠️` + NOT
+      confirmed green wording **and** neither `exit 1`s on the missing-helper branch; the fallback
+      still yields a `ci-unknown` verdict when even the engine is absent. *Pinned by:*
+      `run_ship_readiness_evals.py::test_skill_refuses_when_the_gate_is_absent` (widened to assert
+      the degrade rather than a halt).
+- [x] **The `check_only_option` invariant covers all five `CHECK_ONLY` kinds, not just the three new
+      ones.** The change rewrote `verify-build`'s and `toolchain`'s only instructive option line and
+      deleted the shared default, and `_copy` falls back to an empty string — so a kind missing the
+      field renders a blank bullet where the advice used to be. *Verify:* every `CHECK_ONLY` member
+      carries a non-empty, distinct option line, and only the build kind mentions a failing build —
+      a positive invariant over `CHECK_ONLY` itself, not the absence of a deleted constant.
+      *Pinned by:* `run_ship_readiness_evals.py::test_every_check_only_kind_has_its_own_option` +
+      `::test_check_only_options_are_all_distinct` +
+      `::test_only_the_build_kind_mentions_a_failing_build`.
 - [x] **`run_ship_readiness_evals.py` is wired into `.github/workflows/ci.yml`.** *Verify:* CI's own
       harness↔runner join step passes — exit-code-driven, not a grep. An unwired harness gives zero
       regression protection while looking identical to a wired one (FB-0074).
@@ -204,6 +274,23 @@ produce a pending PR on demand, but I can fixture one, and the brief requires an
       `dev-docs/check-index.py` and `check-version-provenance.py` exit codes, plus a `git grep` sweep
       of every "N slots" occurrence (`.claude/rules/general.md` item 2's fan-out defense — grep first,
       edit second).
+
+**Six criteria above were declared at ship, not at plan time, and that is the pipeline working
+rather than a planning miss.** `/flow:audit-coverage` found four undeclared behaviours; three of
+them did not exist when the plan was written — they were *introduced by the staff-review fixes*
+(the settle gate, the `timeout 0` guard, the predicate join). The assertions were written
+immediately; the **declarations** were held for the human, because drafting a criterion is the
+agent's job and declaring its own work covered is not. Approved by the orchestrator, 2026-10-09.
+
+**One finding declared as a question rather than a criterion (ISSUE 4).** §7a.7's closing paragraph
+tells the agent that on a red check it may author a fix, **commit it, and push to the branch** —
+one bounded attempt, with a recorded marker so a later reconcile asks instead of re-trying. That is
+precedented (§7a does the same for the visual deliverable) but it is a *write* action inside a gate,
+and this plan's own guardrails reserve those for an explicit decision. It is left in the prose
+unchanged and un-pinned deliberately: pinning attempt-once would imply the behaviour is settled,
+and whether a readiness gate should push commits at all is the orchestrator's call, not mine. Filed
+to the roadmap with that framing. The bound itself is real — the marker is written either way — so
+the un-pinned risk is a second attempt, not an unbounded loop.
 
 ### Visual-walk
 

@@ -697,11 +697,25 @@ has none. Run the same engine, then act by state:
 # ship read it from the repo root). The POLICY below is what differs, deliberately.
 CG="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ci-gate.sh"; [ -f "$CG" ] || CG="plugins/flow/skills/ship/lib/ci-gate.sh"
 if [ ! -f "$CG" ]; then
-  echo "⚠️ BLOCKER: ci-gate.sh not found — CI status cannot be read, so it is NOT confirmed green." >&2
-  exit 1
+  # DEGRADE, do not halt. An earlier cut `exit 1`'d here — which fires AFTER §7a.6 has
+  # already created the PR and BEFORE §7b reconciles it, leaving an open PR whose body was
+  # never matched to a verdict. It also inverted this change's own criterion 6 ("a consumer
+  # without GitHub is not broken: it degrades loudly, never a halt"), for a neighbouring
+  # branch of the same gate. An unreadable gate is not a passing gate, so treat a missing
+  # helper exactly like a missing `gh`: loud, `ci-unknown`, drafted, pipeline continues.
+  echo "⚠️ [ci-gate] ci-gate.sh not found at either the plugin root or the repo-relative fallback — CI status CANNOT be read, so it is NOT confirmed green. Reinstall the flow plugin, or run from the flow checkout." >&2
+  R="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ship-readiness.py"; [ -f "$R" ] || R="plugins/flow/skills/ship/lib/ship-readiness.py"
+  if [ -f "$R" ]; then
+    FLOW_CI_JSON=$(python3 "$R" ci --gh-failed)
+  else
+    # Neither half of the gate resolved. Hand-build the one verdict that is always safe.
+    FLOW_CI_JSON='{"state":"unknown","verdict":"UNDECLARED","kind":"ci-unknown","reason":"CI status unknown — flow'"'"'s CI gate could not be located on this machine, so nothing read GitHub'"'"'s checks. This is not evidence that they pass."}'
+  fi
+  FLOW_CI_VERDICT=UNDECLARED; FLOW_CI_KIND=ci-unknown
+else
+  . "$CG"
+  flow_ci_status || { FLOW_CI_VERDICT=UNDECLARED; FLOW_CI_KIND=ci-unknown; }
 fi
-. "$CG"
-flow_ci_status || exit 1
 ```
 
 - **`PASS`** — say so in the hand-off and stop. Nothing changes.

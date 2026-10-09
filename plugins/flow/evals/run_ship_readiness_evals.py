@@ -50,13 +50,20 @@ ran = 0
 SHIP_SRC = SHIP_SKILL.read_text()
 SPIKE_SRC = SPIKE_SKILL.read_text()
 GATE_SRC = CI_GATE.read_text()
-# EXECUTABLE lines only. The file's comments EXPLAIN what it deliberately no longer does
-# ("dragged in a mkdir", "a self-ignore write"), so a bare substring test over the whole
-# text reads its own rationale as the behaviour it forbids. `.github/workflows/ci.yml`'s
-# harness-join step scopes itself the same way, for the same reason.
-GATE_CODE = "\n".join(
-    ln for ln in GATE_SRC.splitlines() if not ln.lstrip().startswith("#")
-)
+def code_only(text: str) -> str:
+    """Strip `#` comment lines.
+
+    Shared because this trap bit THREE times in one PR: these files' comments EXPLAIN
+    what they deliberately no longer do ("dragged in a mkdir", "an earlier cut `exit
+    1`'d here"), so a substring test over the whole text reads a file's own rationale as
+    the behaviour it forbids — and reports a regression that is actually a changelog.
+    `.github/workflows/ci.yml`'s harness-join step scopes itself the same way, for the
+    same reason, and says so in a comment this one is modelled on.
+    """
+    return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+
+
+GATE_CODE = code_only(GATE_SRC)
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -78,6 +85,11 @@ def _load(path: Path, mod: str):
 
 def _engine():
     return _load(ENGINE, "ship_readiness")
+
+
+# Loaded once, here rather than inside a later section: an assertion in § 4 reads the
+# merge-state gloss, and the definition used to sit further down the file than its use.
+_MERGE_GLOSS = _engine()._MERGE_STATE_MEANING
 
 
 _CLI_CACHE: dict[tuple[str, ...], dict] = {}
@@ -215,6 +227,39 @@ for fx in ("ci-unmapped-conclusion.json", "ci-unknown-node-type.json"):
           json.dumps(r))
 
 # =========================================================================
+# 2b. The conclusion vocabulary — the table that decides shippability.
+# =========================================================================
+print("\n[conclusion vocabulary — one fixture per class]")
+
+# Exercised only at SUCCESS/FAILURE before, so a wrong membership was invisible to every
+# declared criterion: CANCELLED in the pending set would hang the blocking wait to
+# `ciWaitSeconds` on every cancelled run, and a required-but-SKIPPED check would read as
+# green. `_bucket` has no default-to-pass branch, which is what makes the last two arms
+# below safe by construction rather than by enumeration.
+_VOCAB = [
+    ("ci-vocab-pass-neutral.json", "PASS", None),
+    ("ci-vocab-pass-skipped.json", "PASS", None),
+    ("ci-vocab-fail-cancelled.json", "FAIL", "ci-failing"),
+    ("ci-vocab-fail-stale.json", "FAIL", "ci-failing"),
+    ("ci-vocab-fail-timed-out.json", "FAIL", "ci-failing"),
+    ("ci-vocab-fail-action-required.json", "FAIL", "ci-failing"),
+    ("ci-vocab-fail-startup-failure.json", "FAIL", "ci-failing"),
+    ("ci-vocab-pending-queued.json", "UNDECLARED", "ci-pending"),
+    ("ci-vocab-unknown-empty-conclusion.json", "UNDECLARED", "ci-unknown"),
+]
+for _fx, _want_v, _want_k in _VOCAB:
+    _r = ci_fixture(_fx)
+    check(f"test_conclusion_vocabulary[{_fx.replace('ci-vocab-', '').replace('.json', '')}]",
+          _r["verdict"] == _want_v and _r["kind"] == _want_k,
+          f"got {_r['verdict']}/{_r['kind']}, want {_want_v}/{_want_k}")
+# A terminal-but-not-passing conclusion must be FAILING, never pending: pending would make
+# the blocking wait sit until its ceiling on a run that is already over.
+check("test_terminal_non_pass_is_not_pending",
+      all(ci_fixture(f)["kind"] != "ci-pending"
+          for f, v, k in _VOCAB if v == "FAIL"),
+      "a terminal non-passing conclusion was classified pending — the wait would hang")
+
+# =========================================================================
 # 3. The no-checks case is TWO different worlds (#183, measured).
 # =========================================================================
 print("\n[no checks reported — both arms]")
@@ -267,11 +312,36 @@ check("test_gate_performs_the_settle_reread",
 # =========================================================================
 print("\n[mergeStateStatus cross-check]")
 
-blocked = ci_fixture("ci-passing-but-blocked.json")
-check("test_passing_checks_but_github_blocks",
-      blocked["verdict"] == "UNDECLARED" and blocked["kind"] == "ci-unknown"
-      and "BLOCKED" in blocked["reason"],
-      json.dumps(blocked))
+# The cross-check that REMAINS after BLOCKED was removed from the blocking set: a branch
+# that conflicts with its base cannot mean "waiting for a human", so all-green + DIRTY is
+# still correctly not-ready. This is the positive half that keeps the removal above from
+# being a silent weakening — delete the cross-check entirely and this fails.
+dirty_pass = ci_cli("--blob", str(FIX / "ci-passing-but-dirty.json"), "--settled")
+check("test_passing_checks_but_branch_conflicts",
+      dirty_pass["verdict"] == "UNDECLARED" and dirty_pass["kind"] == "ci-unknown"
+      and "DIRTY" in dirty_pass["reason"],
+      json.dumps(dirty_pass))
+# BLOCKED must NOT draft an all-green PR. GitHub returns it both for a missing required
+# CHECK and for a missing required REVIEW, and cannot distinguish them — so on a
+# branch-protected repo it is the ordinary state of every fresh PR, i.e. the state at the
+# moment 7a.7 runs. Treating it as "CI not green" drafted every such PR. Paired with
+# DIRTY, which cannot mean "waiting for a human", so the cross-check still does its job.
+_blk = ci_cli("--blob", str(FIX / "ci-passing-but-blocked.json"), "--settled")  # the regression fixture
+check("test_blocked_does_not_draft_an_all_green_pr",
+      _blk["verdict"] == "PASS",
+      "an all-green PR awaiting its required review is reported not-ready and drafted")
+check("test_dirty_still_blocks_an_all_green_pr",
+      ci_cli("--blob", str(FIX / "ci-no-checks-dirty.json"), "--settled")["kind"] == "ci-unknown"
+      and "DIRTY" in _MERGE_GLOSS,
+      "the merge-state cross-check no longer catches anything")
+# And the #176 regression must not depend on that cross-check at all: its fixture carries
+# BLOCKED, so if `failing` did not win the precedence ladder first, removing BLOCKED from
+# the blocking set would have silently weakened the one case this release exists to catch.
+check("test_pr176_does_not_depend_on_the_merge_cross_check",
+      json.loads((FIX / "ci-failing-pr176.json").read_text())["mergeStateStatus"] == "BLOCKED"
+      and failing["verdict"] == "FAIL" and failing["kind"] == "ci-failing",
+      "#176's shape no longer resolves via the failing-check path")
+
 # DRAFT must NOT be read as blocking: flow drafts PRs, so DRAFT is the expected
 # state for exactly the PRs this engine is asked about. Reading it as a block
 # would wedge every re-ship of a drafted PR.
@@ -600,10 +670,23 @@ for label, src in (("ship", ship_src), ("ship-spike", spike_src)):
     check(f"test_skill_sources_the_shared_gate[{label}]",
           "ci-gate.sh" in src and "flow_ci_status" in src and ". \"$CG\"" in src,
           "the skill does not source ci-gate.sh and call flow_ci_status")
-    check(f"test_skill_refuses_when_the_gate_is_absent[{label}]",
+    # PAIRED: it must say so loudly, AND it must not halt. The gate runs after the PR
+    # exists and before §7b reconciles it, so an exit there leaves an open PR whose body
+    # was never matched to a verdict — and would invert criterion 6 for a neighbouring
+    # branch of the same gate.
+    # Boundary is the OUTER else's body (`. "$CG"`), not the first `else` — this branch
+    # contains an inner if/else, so splitting on "else" cut it in half and lost the
+    # fallback that the assertion is looking for.
+    _branch = code_only(
+        src.split('if [ ! -f "$CG" ]; then')[1].split('. "$CG"')[0]
+    )
+    check(f"test_skill_refuses_when_the_gate_is_absent[{label}:loud]",
           "ci-gate.sh not found" in src and "NOT confirmed green" in src,
-          "a missing helper degrades silently instead of refusing — an unreadable gate is "
-          "not a passing gate")
+          "a missing helper degrades silently — an unreadable gate is not a passing gate")
+    check(f"test_skill_refuses_when_the_gate_is_absent[{label}:degrades-not-halts]",
+          "exit 1" not in _branch and "ci-unknown" in _branch,
+          "the missing-helper branch halts instead of degrading to ci-unknown, leaving an "
+          "open PR whose body was never reconciled to a verdict")
 
 # The gate writes NO scratch files, which is why it needs no CWE-59 preamble. Paired: the
 # absence of file writes AND the presence of the variable that replaced them, so this
@@ -626,6 +709,20 @@ check("test_spike_drafts_only_on_failing",
       "ci-failing" in spike_src and "draft" in spike_src.lower()
       and "do not draft" in spike_src.lower(),
       "ship-spike does not state the narrower rule")
+# The third arm my manifest resolution promised: the three-state ACTION table, not just
+# the draft-on-red half. ship-spike has no manifest, so nothing else in this harness
+# would notice if its pending/unknown branch silently started drafting (or stopped
+# reporting) -- it is the one place in this change where a PR whose checks are not green
+# is deliberately left un-drafted, which is exactly why it needs a declared criterion.
+check("test_spike_three_state_action_table",
+      all(k in spike_src for k in ("ci-failing", "ci-pending", "ci-unknown"))
+      and "report it, do not draft" in spike_src
+      and "halt-and-adjudicate" in spike_src
+      # NEGATIVE half: spike must not import the draft manifest it does not have.
+      and "add-entry" not in spike_src.split("### CI gate")[1].split("The PR title MUST")[0],
+      "ship-spike's CI policy does not name all three states with their distinct actions, "
+      "or it reaches for the draft manifest it deliberately has none of")
+
 check("test_spike_never_claims_pending_is_ready",
       re.search(r"never say \"ready\"", spike_src) is not None,
       "ship-spike does not forbid calling an unconfirmed state ready")

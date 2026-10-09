@@ -1869,13 +1869,27 @@ form, it selects it.
 # fence by construction. Same idiom as `serve-preview.sh` and `verify-pr-body.sh`.
 CG="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ci-gate.sh"; [ -f "$CG" ] || CG="plugins/flow/skills/ship/lib/ci-gate.sh"
 if [ ! -f "$CG" ]; then
-  echo "⚠️ BLOCKER: ci-gate.sh not found — CI status cannot be read, so it is NOT confirmed green. Reinstall the flow plugin, or run from the flow checkout." >&2
-  exit 1
+  # DEGRADE, do not halt. An earlier cut `exit 1`'d here — which fires AFTER §7a.6 has
+  # already created the PR and BEFORE §7b reconciles it, leaving an open PR whose body was
+  # never matched to a verdict. It also inverted this change's own criterion 6 ("a consumer
+  # without GitHub is not broken: it degrades loudly, never a halt"), for a neighbouring
+  # branch of the same gate. An unreadable gate is not a passing gate, so treat a missing
+  # helper exactly like a missing `gh`: loud, `ci-unknown`, drafted, pipeline continues.
+  echo "⚠️ [ci-gate] ci-gate.sh not found at either the plugin root or the repo-relative fallback — CI status CANNOT be read, so it is NOT confirmed green. Reinstall the flow plugin, or run from the flow checkout." >&2
+  R="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ship-readiness.py"; [ -f "$R" ] || R="plugins/flow/skills/ship/lib/ship-readiness.py"
+  if [ -f "$R" ]; then
+    FLOW_CI_JSON=$(python3 "$R" ci --gh-failed)
+  else
+    # Neither half of the gate resolved. Hand-build the one verdict that is always safe.
+    FLOW_CI_JSON='{"state":"unknown","verdict":"UNDECLARED","kind":"ci-unknown","reason":"CI status unknown — flow'"'"'s CI gate could not be located on this machine, so nothing read GitHub'"'"'s checks. This is not evidence that they pass."}'
+  fi
+  FLOW_CI_VERDICT=UNDECLARED; FLOW_CI_KIND=ci-unknown
+else
+  . "$CG"
+  flow_ci_status || { FLOW_CI_VERDICT=UNDECLARED; FLOW_CI_KIND=ci-unknown; }
 fi
-. "$CG"
-# It prints its own `[ci-gate]` lines and sets FLOW_CI_VERDICT / FLOW_CI_KIND. A non-zero
-# return means it could not produce a verdict at all — which is not a pass either.
-flow_ci_status || exit 1
+# The helper prints its own `[ci-gate]` lines and sets FLOW_CI_VERDICT / FLOW_CI_KIND.
+# Every path above leaves a verdict set; none of them leaves this step without one.
 ```
 
 **The helper writes no files, deliberately.** An earlier cut staged the status JSON through

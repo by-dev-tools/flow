@@ -154,14 +154,29 @@ _PASSING_STATES = frozenset({"SUCCESS"})
 _PENDING_STATES = frozenset({"PENDING", "EXPECTED"})
 _FAILING_STATES = frozenset({"FAILURE", "ERROR"})
 
-# Merge states that mean GitHub itself would stand in the way. `DRAFT` is NOT
-# here and must never be: flow drafts PRs, so `DRAFT` is the expected state for
-# exactly the PRs this engine is asked about, and it says nothing about checks.
-# `UNKNOWN` means GitHub has not finished computing mergeability -- transient, and
-# deliberately NOT a block: when every reported check has passed, an un-computed
-# mergeability is no reason to withhold ready. It only ever withholds a pass on the
-# EMPTY-rollup path, where it is handled as "could not confirm" (see `ci_condition`).
-_BLOCKING_MERGE_STATES = frozenset({"BLOCKED", "DIRTY", "BEHIND"})
+# Merge states that mean something is wrong with the BRANCH, used only as a cross-check
+# on the all-checks-passed path. Three deliberate exclusions, each one a measured or
+# reasoned decision rather than an oversight:
+#
+# `DRAFT` is excluded and must stay excluded: flow drafts PRs, so it is the expected
+# state for exactly the PRs this engine is asked about, and it says nothing about checks.
+#
+# `UNKNOWN` is excluded: GitHub has not finished computing mergeability. Transient, and
+# when every reported check has passed an un-computed merge state is no reason to
+# withhold ready. It withholds a pass only on the EMPTY-rollup path, where it is handled
+# as "could not confirm" (see `ci_condition`).
+#
+# `BLOCKED` is excluded, and this one was a real bug found by review and REPRODUCED
+# before fixing. GitHub returns `BLOCKED` both when a required CHECK is missing and when
+# a required REVIEW has not been given, and the enum cannot distinguish them. The second
+# is the ordinary state of every freshly opened PR in a branch-protected repo — i.e.
+# precisely the state at the moment ship 7a.7 runs. Including it meant a PR with every
+# check green was reported `ci-unknown` and drafted because a human had not reviewed it
+# yet, in exactly the repos whose CI discipline is strictest. A pending review is not a
+# CI failure, and drafting a PR for not-yet-being-reviewed inverts what the PR is for.
+# This does NOT weaken the #176 regression: that shape carries a FAILING check, so
+# `failing` wins the precedence ladder and this cross-check is never reached (asserted).
+_BLOCKING_MERGE_STATES = frozenset({"DIRTY", "BEHIND"})
 _MERGE_STATE_MEANING = {
     "BLOCKED": "GitHub reports the PR as BLOCKED (a required check or review is not satisfied)",
     "DIRTY": "GitHub reports the PR as DIRTY (it conflicts with the base branch, so checks may never run)",
