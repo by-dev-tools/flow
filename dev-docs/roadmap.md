@@ -664,6 +664,148 @@ attention, so "when to include one" is the actual design question, not "how".
 **Surfaces when:** `/flow:prototype` Step 7's capture step, `verify-build`'s frame persistence, or
 any gate-1 message format is next touched.
 
+### ~~`/flow:ship` does not read CI status~~ — ✅ SHIPPED (v1.64.0, FB-0131/FB-0137)
+
+**Filed late, and that is the point.** The dispatch brief for this work cited a § Next entry
+"`/flow:ship` does not read CI status, filed with #183". No such entry existed — swept `main` and
+every remote branch including #183's own. The authoritative spec was always
+`dev-docs/research/2026-10-agentic-graphs.md` **R1** plus FB-0131's third corollary; the roadmap
+citation was simply wrong. Recorded here rather than silently skipped, because a brief that cites a
+document nobody wrote is a failure mode worth leaving visible.
+
+R1 said this and the deterministic Step-8 checker are **one** item, not two, and that was right: both
+answer "which artifact does this gate actually read". Shipped together.
+
+**What shipped.** `skills/ship/lib/ship-readiness.py` — the six-condition Step 8 predicate, plus the
+live CI condition as a tri-state (`passing` / `failing` / **`pending`**). Three `CHECK_ONLY` manifest
+kinds (`ci-failing` / `ci-pending` / `ci-unknown`) carry a non-green verdict to a draft PR. New
+`ciWaitSeconds` slot (39 slots). `/flow:ship` §7a.7; `/flow:ship-spike` reports all three states and
+drafts only on `ci-failing`.
+
+**Two residuals, deliberately not fixed here:**
+
+- **Condition 2 has no artifact** (see the next entry). It reports `UNDECLARED`, which never passes.
+- **The post-create window.** Because CI fires on `pull_request`, checks are unreadable until the PR
+  exists, so the PR is created and *then* converted to a draft if CI is not green. Bounded inside
+  §7a.7 and closed before the Step 8 hand-off, so no human is handed a ready-looking PR — but a
+  watcher polling GitHub inside that window would see one.
+
+### The CWE-59 file-level guard is at three of six `.flow` writer sites (2026-10-06, v1.64.0 security review)
+
+`.flow` writers carry two distinct guards and only one of them is universal. The **directory**
+check (`[ -L "$FLOW_SCRATCH" ]`) is everywhere. The **file** half — `rm -f` the target names
+before writing, and unlink a *dangling* `.gitignore` symlink before the `[ -f ]` test that would
+otherwise create a file at its target — is not. `.flow` can be a real directory that *contains*
+`triage.json` as a symlink to `~/.claude/settings.json`; git checks that out happily, the
+directory guard passes, and `>` follows the link.
+
+v1.64.0 added a writer here and then **removed it again**, which is the better outcome and worth
+recording as the preferred fix: its altitude review observed that nothing read the status file
+after the block ended, so the file — and with it the mkdir, the self-ignore write and three
+unlinks — was deleted rather than guarded. A shell variable has no symlink surface. So **the first
+question at any remaining site is whether the file is needed at all**, not how to guard it.
+
+Step 2a and ship-spike §2a.1 carry the file-level half correctly. **`$FLOW_SCRATCH/triage.json` at
+ship §7a.5 does not**, and neither do the remaining writers.
+
+The irony worth keeping: §7a.5's own comment is the sentence *"a guard at five of six sites is not
+a guard"* — written when the directory half was being swept, about the half that is now itself at
+three of six.
+
+**Not fixed in v1.64.0 on purpose:** those sites are not that change's diff, and a security sweep
+across six shell blocks in two skills is its own reviewable PR rather than a rider on a CI gate.
+
+**Surfaces when:** any `.flow` writer block is next edited, or a new one is added.
+
+### ~~Should a readiness gate push commits?~~ — **DECIDED: no. Propose only** (v1.64.0 §7a.7)
+
+Raised by `/flow:audit-coverage` at ship, when it found §7a.7's closing paragraph telling the agent
+it could author a fix for a red check, **commit it, and push**. Surfaced as a question rather than
+pinned, because the real issue was not whether the behaviour was tested but whether it should exist.
+
+**Decided at the gate, 2026-10-09: narrow it to propose, the same shape a `coverage` gap already
+takes.** The gate now diagnoses the failing job and drafts the change into the entry's
+`candidate resolutions:` field; the human approves; the fix is applied through the Step 7c reconcile
+like any other answered decision.
+
+**The reasoning, recorded because the superficially-similar case will come up again.** It looked
+symmetrical with §7a's bounded attempt, and it is not: §7a re-runs a *capture* and produces a
+missing artifact, while this would write to the human's branch to change what the code *does* — from
+inside the gate deciding whether that code is ready. That is the permanence-and-risk category
+`.claude/rules/general.md` § Autonomous work guardrails reserves for an explicit decision, and every
+other auto-fix in this pipeline is proposal-only for the same reason. Keeping it would have made a
+gate silently editing what it measures the **default** rather than an exception, which is a far
+larger change to flow's autonomy boundary than "read CI status" required.
+
+**The rejected option, and what would reopen it.** "Keep and pin attempt-once" was rejected on the
+above. If proposal-only proves too slow for one-line fixes, that is a future proposal **with its own
+evidence** — measured round-trip cost on real red checks — not a default to ship pre-emptively.
+
+Pinned four ways (`run_ship_readiness_evals.py::test_red_check_is_proposed_not_applied` ×2,
+`::test_red_check_copy_does_not_promise_a_push`, `::test_approved_fix_still_has_a_route`), including
+the copy join: the manifest kind the human actually reads must not promise a push the skill will not
+make, and the approval must not dead-end.
+
+### Four deferred findings from v1.64.0's staff-review, all real, none in scope
+
+1. **`UNDECLARED` is one word for two different facts.** The render cannot tell a reader that
+   `no-blocker` means "an artifact does not exist yet, roadmap-filed, expected" while `ci` means
+   "something went wrong on *this run*". Both print identically, so after a few ships the line reads
+   as furniture — which is the state in which the next real `UNDECLARED` gets skipped. The engine
+   already defends against exactly this hazard for the `confidence` condition and says so in its own
+   docstring; condition 2 has no such escape. Fix shape: a `structural: true` field on the
+   by-construction arms, and two grouped lines in `render` instead of one. Deferred because it
+   changes an output shape three skills read.
+2. **Checkbox *state* still has two readers' worth of scan logic.** `ship-readiness.py` imports
+   `CHECKBOX_RE` and `extract_block` rather than re-deriving block extent — but it then re-walks the
+   block's lines itself, because `collect_items` discards checkbox state. Equivalent today, divergent
+   the next time `collect_items` changes. Proper fix is `collect_items(..., with_state=True)` so "what
+   counts as a checkbox in a block" stays one definition. Deferred: that lib has six-plus consumers
+   and two eval harnesses ride on its return shape.
+3. **The decision list never shows `needs_you`.** `render_decisions` prints `means`, the
+   recommendation and the options, but not the field written to be "answerable in a word" — that
+   appears only in the PR-body block. Deferred because it affects all eleven kinds and the triage
+   evals.
+4. **Draft-during-the-wait is unmeasured, not rejected.** `/flow:ship` §7a.7 now distinguishes *draft
+   as the deliverable* (rejected on FB-0075) from *draft during the wait* (`gh pr create --draft` →
+   block → `gh pr ready` on PASS), whose final state on the green path is byte-identical to today's
+   and whose failure direction is the safe one. It would close the post-create window entirely. The
+   blocking unknown is cheap and specific: **do `pull_request` workflows fire for a PR opened as a
+   draft?** If they do not, the approach cannot work at all, because the checks it waits for would
+   never start. One ship run answers it.
+
+**Surfaces when:** `plugins/flow/skills/ship/lib/ship-readiness.py`, `manifest-triage.py`'s render
+paths, or `walk_extract.py` is next touched.
+
+### No artifact records the `/simplify` + `/flow:staff-review` BLOCKER count
+
+Surfaced by building the Step 8 checker (v1.64.0), and it is exactly the signal R1 predicted that
+exercise would produce: *"a case where the checker says proceed but the agent correctly stopped
+identifies exactly which sub-condition the prose encodes that the artifacts don't yet carry."*
+
+Step 8 condition 2 is "no open BLOCKER from `/simplify` (Step 6) or `/flow:staff-review` (Step 7)".
+Nothing on disk answers it. `skills/ship/lib/rigor-marker.py check` answers a *different* question —
+whether staff-review ran against the current source — never what it found. So the checker returns
+`UNDECLARED` and names the gap, rather than assuming clean.
+
+**Why `UNDECLARED` is the honest state and not a bug.** It blocks Step 8 *auto-advance* only, which
+costs an explicit "ship it" and nothing else. It deliberately does **not** draft a PR: a human who
+typed `/flow:ship` has already decided, and drafting on an unreadable artifact would make every ship
+a draft.
+
+**What would close it, and it is cheaper than this entry first claimed.** No new artifact is
+needed. `skills/ship/lib/rigor-marker.py`'s `write` already persists `{branch, source_sha}` from
+`/flow:staff-review` **at the exact moment the BLOCKER count is known**, and
+`ship-readiness.py::no_blocker_condition` already reads an `open_blockers` field from a file it is
+handed. So the change is one field on an artifact that exists at both ends: add `--open-blockers N`
+to that write, and point `--blockers-file` at the marker. Found by v1.64.0's altitude review, which
+argued it is "not a roadmap item" — it stays one only because the gate that approved v1.64.0's plan
+explicitly confirmed this deferral, and re-deciding that mid-execution would absorb scope the human
+had already ruled on.
+
+**Surfaces when:** `/flow:staff-review` or `/simplify`'s orchestration is next touched, or when
+anyone asks why `/flow:ship` still needs an explicit "ship it" on a clean run.
+
 ### `dispatchBackend` has the same unset gap in THIS repo that `previewBackend` just closed
 
 Recorded at the orchestrator's instruction, 2026-10-04, and **deliberately not fixed in v1.60.0.**

@@ -685,6 +685,51 @@ Step 2.2 spike-mode invocation: `✓` with the 3-check rubric result if it ran, 
 itself; if it could not run, that is a halt at Step 2a.3, not a row you fill in with an
 excuse. **Notable** is genuine signal only — don't manufacture notes for a spike.
 
+### CI gate — report all three states; draft only on a red check (FB-0131 corollary 3, FB-0137)
+
+A spike PR is opened **non-draft** and is explicitly not gated by the NOT-READY manifest, so this step
+is deliberately narrower than `/flow:ship` §7a.7 — it does not import draft-gating into a mode that
+has none. Run the same engine, then act by state:
+
+```sh
+# SOURCED — same helper /flow:ship §7a.7 uses, so the acquisition cannot drift between
+# the two skills (it already did once: this file read flow.config.json CWD-relative while
+# ship read it from the repo root). The POLICY below is what differs, deliberately.
+CG="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ci-gate.sh"; [ -f "$CG" ] || CG="plugins/flow/skills/ship/lib/ci-gate.sh"
+if [ ! -f "$CG" ]; then
+  # DEGRADE, do not halt. An earlier cut `exit 1`'d here — which fires AFTER §7a.6 has
+  # already created the PR and BEFORE §7b reconciles it, leaving an open PR whose body was
+  # never matched to a verdict. It also inverted this change's own criterion 6 ("a consumer
+  # without GitHub is not broken: it degrades loudly, never a halt"), for a neighbouring
+  # branch of the same gate. An unreadable gate is not a passing gate, so treat a missing
+  # helper exactly like a missing `gh`: loud, `ci-unknown`, drafted, pipeline continues.
+  echo "⚠️ [ci-gate] ci-gate.sh not found at either the plugin root or the repo-relative fallback — CI status CANNOT be read, so it is NOT confirmed green. Reinstall the flow plugin, or run from the flow checkout." >&2
+  R="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ship-readiness.py"; [ -f "$R" ] || R="plugins/flow/skills/ship/lib/ship-readiness.py"
+  if [ -f "$R" ]; then
+    FLOW_CI_JSON=$(python3 "$R" ci --gh-failed)
+  else
+    # Neither half of the gate resolved. Hand-build the one verdict that is always safe.
+    FLOW_CI_JSON='{"state":"unknown","verdict":"UNDECLARED","kind":"ci-unknown","reason":"CI status unknown — flow'"'"'s CI gate could not be located on this machine, so nothing read GitHub'"'"'s checks. This is not evidence that they pass."}'
+  fi
+  FLOW_CI_VERDICT=UNDECLARED; FLOW_CI_KIND=ci-unknown
+else
+  . "$CG"
+  flow_ci_status || { FLOW_CI_VERDICT=UNDECLARED; FLOW_CI_KIND=ci-unknown; }
+fi
+```
+
+- **`PASS`** — say so in the hand-off and stop. Nothing changes.
+- **`ci-failing`** — GitHub itself would block this merge, so **convert the PR to a draft**
+  (`gh pr edit`/`convertPullRequestToDraft` per the gh-resilience fallback above) and name the failing
+  check in the hand-off. This is the one state where a non-draft spike PR would be actively misleading.
+- **`ci-pending` / `ci-unknown`** — **report it, do not draft.** Use spike mode's existing
+  halt-and-adjudicate shape (Step 2a.3): tell the user plainly that the checks have not been observed
+  green and let them decide. Never describe either state as passing, and never say "ready".
+
+Why not full symmetry with `/flow:ship`? Drafting on pending would make draft-gating part of spike mode,
+which is a larger change to spike semantics than reading CI status needs — and spike PRs already have a
+documented adjudication path for "a check could not confirm this".
+
 The PR title MUST start with `spike:` and the PR MUST have the `spike` label. Both are spike-mode-abuse guards: a feature accidentally shipped through `/flow:ship-spike` should be visually obvious and easy to reject.
 
 ## 8. Hand off

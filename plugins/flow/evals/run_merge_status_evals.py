@@ -16,7 +16,7 @@ is prose the agent drives, but its LOAD-BEARING core is deterministic and pinned
                  (FB-0077: land's flag was cleared, so the Skill() call executes —
                  composition, not reimplementation and not a hand-off), uses `branch -d`
                  never `-D`, and writes NO feedbackPath repo doc in v1 (user-scope only).
-  schema       — the postMergeWaitSeconds slot exists and the slot count is 37 (a "N slots"
+  schema       — the postMergeWaitSeconds slot exists and the slot count is 39 (a "N slots"
                  fan-out is the most-recurring bug class this repo tracks — FB-0010).
 
 Stdlib only.
@@ -266,7 +266,7 @@ def main() -> int:
         # indistinguishable from having chosen the default. Declaring it was a
         # precondition for repointing it at a one-file-per-release directory.
         # 34 -> 36 with dispatchBackend + sensitivePaths (the orchestrator suite).
-        check("schema-slot-count-38", len(props) == 38, f"slot count = {len(props)} (want 38)")
+        check("schema-slot-count-39", len(props) == 39, f"slot count = {len(props)} (want 39)")
         # And no shipped surface may contradict it. Deliberately WRAP-TOLERANT: the
         # literal is matched across newlines, because the survivor that slipped this
         # PR's first sweep was `all 30\n  slots` wrapped inside doctor/SKILL.md's

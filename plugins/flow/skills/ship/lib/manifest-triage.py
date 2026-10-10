@@ -153,16 +153,20 @@ ATTEMPTED_MARKER = "already-attempted"
 
 # Kinds whose blocker a human's assertion CANNOT clear — only a passing check can.
 # Declared once here rather than spelled out as inline `kind == "verify-build"`
-# comparisons at every decision point: the property is real and will recur (a
-# "CI red" kind, a "migration not applied" kind have identical semantics), and
-# four coincidental string compares is how the next one gets added in three
-# places and forgotten in a fourth.
+# comparisons at every decision point: the property is real and HAS recurred —
+# this comment predicted "a `CI red` kind … identical semantics" and v1.64.0 added
+# three of them (`ci-failing`/`ci-pending`/`ci-unknown`, FB-0131/FB-0137), which
+# cost one edit here instead of the four-coincidental-string-compares it warned
+# about. A "migration not applied" kind would be the next one. Only `ci-failing`
+# is a check that FAILED; the other two are "a passing check has not been
+# OBSERVED", and that distinction is why all three belong here: no assertion by a
+# human turns an unobserved check into an observed pass.
 #
 # For these kinds: a waiver is RECORDED but never subtracted from the residual
 # set, and "waive and ship as-is" is never offered — because it would be a lie,
 # the PR stays a draft either way. SKILL.md:308,310 is unqualified: no
 # merge-ready PR on a non-PASS build.
-CHECK_ONLY = frozenset({"verify-build", "toolchain"})
+CHECK_ONLY = frozenset({"verify-build", "toolchain", "ci-failing", "ci-pending", "ci-unknown"})
 
 # Everything kind-specific in ONE record per kind, so adding a kind is one edit
 # and a missing field is visible at a glance (every read site is a .get() with a
@@ -209,6 +213,8 @@ KIND_COPY: dict[str, dict[str, str]] = {
         "why": "I already tried the automatic fix and it did not hold, so the next attempt needs a different angle",
         "then": ("I apply your answer and re-run the build check. A failing build never becomes a "
                  "ready PR automatically — if you accept the risk, you mark it ready yourself."),
+        "check_only_option": ("leave it — I won't mark a failing build ready; you can do that "
+                             "yourself on GitHub if you accept the risk"),
     },
     "coverage": {
         "clears_when": "declare the criterion in the plan's Spec-walk block, then re-run /flow:audit-coverage clean",
@@ -292,6 +298,62 @@ KIND_COPY: dict[str, dict[str, str]] = {
                       "the body either way, so flow will ask you once more to confirm that the "
                       "merge was deliberate."),
         "why": "this machine cannot build the target at all, so there is no version of trying again here that works",
+        # The hazard this kind's `means` comment above already named: the shared fallback
+        # said "I won't mark a failing BUILD ready" on a kind where nothing was built.
+        "check_only_option": ("leave it — nothing here built your code, so I won't report it as "
+                             "verified; merge it yourself if you accept it un-verified"),
+    },
+    # --- The three CI kinds (v1.64.0, FB-0131 corollary 3 / FB-0137) -----------
+    # THREE kinds rather than one `ci`, because this dict's own design is "everything
+    # kind-specific in ONE record per kind". A single `ci` kind would have to carry
+    # generic `means` copy, and "a check is failing: evals" / "checks have not finished"
+    # / "I could not see CI at all" are three genuinely different things to tell a
+    # human — the first is a bug to fix, the second is a wait, the third is a blind
+    # spot. Collapsing them is how "pending" gets read as "passing".
+    #
+    # All three are CHECK_ONLY, so no "waive and ship as-is" is ever offered and none
+    # carries `waive_cost`. That is the brief's requirement stated mechanically: flow
+    # never prints "ready" on a PR whose checks are not observed green. The dead-end
+    # that would otherwise create — a consumer with slow CI unable to resolve the
+    # entry — is handled exactly as `toolchain` handles it: the copy says plainly that
+    # the human may mark the PR ready themselves, because they can, and flow cannot.
+    "ci-failing": {
+        "clears_when": "push a fix, then re-read `gh pr checks` for the current head and confirm every check passes",
+        "means": "GitHub is reporting a failing check on this PR, so GitHub itself would block the merge.",
+        "needs_you": ("Approve the fix I drafted and I will apply it. Or mark the PR ready "
+                      "yourself; I will not call a PR with a red check shippable."),
+        "check_only_option": ("leave it — a red check will never become a ready PR from me; mark it "
+                             "ready on GitHub yourself if you accept the risk"),
+        "why": "a red check is the one readiness signal that is not my judgement — GitHub is the authority here",
+        "then": ("I apply the fix you approved, push, and re-read the checks. I never push a fix "
+                 "to a red check without your approval — proposing is mine, applying is yours to "
+                 "authorise. A failing check never becomes a ready PR automatically; if you accept "
+                 "the risk, you mark it ready yourself."),
+    },
+    "ci-pending": {
+        "clears_when": "re-read `gh pr checks` for the current head and confirm every check has finished and passed",
+        "means": ("GitHub's checks had not finished when I stopped waiting. Nothing has failed — but "
+                  "nothing has passed either."),
+        "needs_you": ("One word — \"look again\" and I will re-read them. Or mark the PR ready "
+                      "yourself once you have seen the checks go green."),
+        "check_only_option": ("leave it — I won't call unfinished checks a pass; mark it ready "
+                             "yourself once you've seen them go green"),
+        "why": ("\"nothing has failed yet\" and \"everything passed\" are different states, and only one "
+                "of them is shippable"),
+        "then": ("I re-read the checks. If they have all finished and passed, the PR becomes ready. "
+                 "If your checks routinely take longer than this, raise `ciWaitSeconds` in "
+                 "flow.config.json and I will wait that long next time."),
+    },
+    "ci-unknown": {
+        "clears_when": "re-read `gh pr checks` for the current head and confirm every check passes",
+        "means": ("I could not confirm this PR's checks are green — the line above says why. This is "
+                  "a blind spot, not a clean bill of health."),
+        "needs_you": ("Check the PR's status yourself. If this project has no CI, that is fine — say "
+                      "so and mark the PR ready."),
+        "check_only_option": ("leave it — I won't report a check I couldn't see as green; mark it "
+                             "ready yourself if you know the project has no CI"),
+        "why": "not being able to look is not the same as there being nothing there, so I will not report it as green",
+        "then": "I look again. If every check reports and passes, the PR becomes ready.",
     },
 }
 
@@ -852,8 +914,19 @@ def render_decisions(result: dict[str, Any]) -> str:
                 cost = _copy(kind, "waive_cost")
                 options.append("waive it and ship as-is" + (f" — {cost}" if cost else ""))
             elif kind in CHECK_ONLY:
-                options.append("leave it — I won't mark a failing build ready; you can do that "
-                               "yourself on GitHub if you accept the risk")
+                # REQUIRED per kind, with no shared fallback. The invariant is asserted
+                # positively in `run_ship_readiness_evals.py::
+                # test_every_check_only_kind_has_its_own_option` over `CHECK_ONLY` itself,
+                # NOT by the absence of a named constant — an earlier draft of this comment
+                # cited a `CHECK_ONLY_FALLBACK` that never existed, which is a contract with
+                # a name nothing defines. This is the ONLY line telling the reader what
+                # they can do instead, and one generic sentence was actively false for
+                # three of the five kinds: "I won't mark a failing build ready" over
+                # checks merely still running contradicts that kind's own `means` two rows
+                # above ("Nothing has failed — but nothing has passed either"), so the
+                # question argued with itself. A default would let the next CHECK_ONLY
+                # kind be silently wrong the same way, which is why there isn't one.
+                options.append(_copy(kind, "check_only_option"))
             options.append("something else — tell me")
             out.append("   - Options:")
             for opt in options:

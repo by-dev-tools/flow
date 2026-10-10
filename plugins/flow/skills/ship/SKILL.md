@@ -1834,6 +1834,154 @@ Draft status is the mechanical signal the human merge gate trusts; the manifest 
 - **`verdict != READY` → refresh + draft:** write the refreshed block, ensure draft, then `flow_verify_pr_write "$N" --expect "🚫 NOT READY TO MERGE" --forbid "{{rendered by" --forbid "{{provenance" --want-draft true`.
 - **Body-only refresh (manifest unchanged):** after the edit, `flow_verify_pr_write "$N" --expect "<a stable substring you just wrote>" --forbid "{{rendered by" --forbid "{{provenance"` so neither a no-op write nor an unreplaced renderer slot can pass silently.
 
+### 7a.7. CI gate — flow never calls a PR "ready" that GitHub would block (FB-0131 corollary 3, FB-0137)
+
+Every gate above this line reads an artifact **this session produced**. A green local sweep is not CI.
+Measured on #176: four pushes, **six** consecutive red CI runs, every flow gate green, the manifest
+`READY`, the body saying "ready" — and GitHub reporting the PR `BLOCKED`. Nothing in the pipeline
+looked, so nothing contradicted it. This step looks.
+
+**Why it runs HERE and not earlier.** flow's CI — and most projects' — triggers on `pull_request`, so
+**before the PR exists there are zero checks to read**. There is no earlier point where this condition
+is answerable. The consequence is a narrow, named window: the PR is created per §7a.6's verdict and is
+converted to a draft inside this step if CI is not green. The window closes before Step 8, so no human
+is handed a ready-looking PR — but it is a real window, not an absence of one, and the PR body says so.
+
+**Two different alternatives get rejected for two different reasons; do not collapse them.**
+*Draft as the deliverable* — open every PR as a draft and let the human promote it — is rejected on
+FB-0075: a draft PR is a last resort, not a deliverable, and this would route the green majority
+through one. *Draft during the wait* — `gh pr create --draft`, block here, then `gh pr ready` on a
+`PASS` verdict — is a different proposal, and FB-0075's argument does not reach it: its final state on
+the green path is byte-identical to today's, and its failure direction is the safe one (a crash
+mid-sequence leaves a draft, not a false "ready"). It is **not** rejected on principle; it is
+unmeasured. The open question is whether `pull_request` workflows fire at all for a PR opened as a
+draft — if they do not, draft-during-the-wait cannot work, because the checks it waits for would never
+start. That is one ship run to measure, and it is filed in the roadmap rather than assumed either way.
+
+**Wait with a blocking command, never a polling loop (FB-0137).** `timeout … --watch` produces the same
+verdict for **zero** model turns; an agent-driven poll re-reads its own output every cycle and bills
+for it. Ben's constraint — *tokens matter, lost time doesn't* — does not merely permit the blocking
+form, it selects it.
+
+```sh
+# SOURCED, not executed — shell state does not cross Bash tool calls, so a verdict
+# produced in one call cannot be read in the next. Sourcing puts the sequence in this
+# fence by construction. Same idiom as `serve-preview.sh` and `verify-pr-body.sh`.
+CG="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ci-gate.sh"; [ -f "$CG" ] || CG="plugins/flow/skills/ship/lib/ci-gate.sh"
+if [ ! -f "$CG" ]; then
+  # DEGRADE, do not halt. An earlier cut `exit 1`'d here — which fires AFTER §7a.6 has
+  # already created the PR and BEFORE §7b reconciles it, leaving an open PR whose body was
+  # never matched to a verdict. It also inverted this change's own criterion 6 ("a consumer
+  # without GitHub is not broken: it degrades loudly, never a halt"), for a neighbouring
+  # branch of the same gate. An unreadable gate is not a passing gate, so treat a missing
+  # helper exactly like a missing `gh`: loud, `ci-unknown`, drafted, pipeline continues.
+  echo "⚠️ [ci-gate] ci-gate.sh not found at either the plugin root or the repo-relative fallback — CI status CANNOT be read, so it is NOT confirmed green. Reinstall the flow plugin, or run from the flow checkout." >&2
+  R="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/ship-readiness.py"; [ -f "$R" ] || R="plugins/flow/skills/ship/lib/ship-readiness.py"
+  if [ -f "$R" ]; then
+    FLOW_CI_JSON=$(python3 "$R" ci --gh-failed)
+  else
+    # Neither half of the gate resolved. Hand-build the one verdict that is always safe.
+    FLOW_CI_JSON='{"state":"unknown","verdict":"UNDECLARED","kind":"ci-unknown","reason":"CI status unknown — flow'"'"'s CI gate could not be located on this machine, so nothing read GitHub'"'"'s checks. This is not evidence that they pass."}'
+  fi
+  FLOW_CI_VERDICT=UNDECLARED; FLOW_CI_KIND=ci-unknown
+else
+  . "$CG"
+  flow_ci_status || { FLOW_CI_VERDICT=UNDECLARED; FLOW_CI_KIND=ci-unknown; }
+fi
+# The helper prints its own `[ci-gate]` lines and sets FLOW_CI_VERDICT / FLOW_CI_KIND.
+# Every path above leaves a verdict set; none of them leaves this step without one.
+```
+
+**The helper writes no files, deliberately.** An earlier cut staged the status JSON through
+`.flow/`, which pulled in a `mkdir`, a self-ignore write, two `rm -f` unlinks and a
+dangling-symlink unlink — about fourteen lines of CWE-59 defence for a file nothing read
+once the block ended. A shell variable needs none of that, so the attack surface is
+*removed* rather than guarded. The acquisition itself is shared with `/flow:ship-spike`
+because the two copies had already drifted inside the PR that introduced them (one read
+`flow.config.json` CWD-relative, silently reverting `ciWaitSeconds` from a subdirectory).
+What stays per-skill is the **policy** below — which is genuinely different in the two
+skills, and is the only part that should be.
+
+`verdict` is one of three, and the third is the one the cheapest implementation gets wrong:
+
+| `verdict` | `kind` | meaning | what happens |
+|---|---|---|---|
+| `PASS` | *(none)* | every reported check passed — or GitHub reports `CLEAN` with no checks configured | nothing is added; the PR stands as §7a.6 left it |
+| `FAIL` | `ci-failing` | a check is red; **GitHub itself would block the merge** | manifest entry + draft |
+| `UNDECLARED` | `ci-pending` | checks have not finished. **Not failing is not passing** | manifest entry + draft |
+| `UNDECLARED` | `ci-unknown` | no checks reported while GitHub reports the PR blocked, an unclassifiable check state, or `gh` unreachable | manifest entry + draft |
+
+**If `FLOW_CI_VERDICT` is not `PASS`, add the entry and re-run the draft decision.** The finding arrives as a
+**file**, like every other producer (Step 2) — never a shell argument, never a heredoc:
+
+```sh
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+python3 "$TRIAGE" scratch-path --name ci-finding.txt --name ci-resolution.txt || exit 1
+```
+
+Now **use the Write tool** to write the raw finding to the first path printed above and the resolution
+to the second — verbatim, no added quoting. The finding text is the engine's own `reason` field (it
+already names the failing check, or the number of checks still running); do not re-word it, or the
+fingerprint a later waiver matches on will not be the one recorded here. Then, as a SEPARATE Bash call:
+
+Run **exactly one** of the three, the one matching the engine's `kind`. They are spelled out
+separately rather than parameterised because `--needs` genuinely differs — a red check needs a code
+change, while pending and unknown need another look — and because a `--kind` assembled from a shell
+variable is a kind no static check can see.
+
+```sh
+# kind == ci-failing
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)")
+python3 "$TRIAGE" add-entry --kind ci-failing --needs "regression fix" \
+  --finding-file "<absolute path CALL 1 printed, 1st>" --resolution-file "<absolute path CALL 1 printed, 2nd>" \
+  >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the CI entry was NOT recorded." >&2; exit 1; }
+```
+
+```sh
+# kind == ci-pending
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)")
+python3 "$TRIAGE" add-entry --kind ci-pending --needs re-run \
+  --finding-file "<absolute path CALL 1 printed, 1st>" --resolution-file "<absolute path CALL 1 printed, 2nd>" \
+  >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the CI entry was NOT recorded." >&2; exit 1; }
+```
+
+```sh
+# kind == ci-unknown
+TRIAGE="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/manifest-triage.py"; [ -f "$TRIAGE" ] || TRIAGE="plugins/flow/skills/ship/lib/manifest-triage.py"
+MANIFEST=$(python3 "$TRIAGE" manifest-path --branch "$(git branch --show-current)")
+python3 "$TRIAGE" add-entry --kind ci-unknown --needs re-run \
+  --finding-file "<absolute path CALL 1 printed, 1st>" --resolution-file "<absolute path CALL 1 printed, 2nd>" \
+  >> "$MANIFEST" || { echo "⚠️ BLOCKER: add-entry failed — the CI entry was NOT recorded." >&2; exit 1; }
+```
+
+Then **re-run §7a.5's `classify` and reconcile the PR to the new verdict via §7c** (re-render the body,
+ensure draft). All three `ci-*` kinds are `CHECK_ONLY`: a waiver on any of them is recorded but never
+subtracted, so the PR **stays a draft** until a check is actually observed passing. If the human accepts
+the risk, they mark it ready on GitHub themselves — you do not.
+
+**On `ci-failing`, PROPOSE the fix — do not apply it.** A red `evals` or typecheck job is usually a
+real, cheap defect, and it is tempting to let this gate author the fix, commit it and push. It must
+not. Read the failing job's log, diagnose it, and **draft** the change into the manifest entry's
+`candidate resolutions:` field — exactly the shape a `coverage` gap already takes: *here is what is
+red, here is what I would change, approve it or tell me otherwise.* You do the work of proposing;
+the human supplies the approval.
+
+**Why this is not symmetrical with §7a's bounded attempt, even though it looks like it.** §7a
+re-runs a *capture* — it produces an artifact that was missing. This would write to the human's
+branch to change what the code *does*, from inside the gate that is deciding whether that code is
+ready. That is the permanence-and-risk category `.claude/rules/general.md` § Autonomous work
+guardrails reserves for an explicit decision, and every other auto-fix in this pipeline is
+proposal-only for the same reason. A gate that silently edits what it is measuring is a different
+kind of thing from a gate that reports — and making it the default would be a far larger change to
+flow's autonomy boundary than "read CI status" needs. If proposal-only turns out to be too slow for
+a one-line fix, that is a future proposal with its own evidence, not a default to ship now.
+
+Once the human approves, apply it through the **Step 7c reconcile fast-path** like any other
+answered decision — push, re-read the checks, re-classify. Never iterate on a red check: a loop
+that keeps pushing is the shape that burns a budget without converging.
+
 ### 7b. Body↔draft coherence + Test-plan provenance (FB-0067, FB-0074 — the final gate before hand-off)
 
 After the body + draft state are settled (either path above), assert two invariants against the **live, re-fetched** body: a ready PR can never carry the NOT-READY manifest, and a published Test plan must carry the renderer's provenance stamp:
@@ -1980,5 +2128,6 @@ If your project has a dev-server skill (e.g., a `/link`-style skill), invoke it 
 | `flow.config.json.contributionsQueuePath` | `~/.claude/plugins/data/flow/contributions` | Step 4c (enqueue target) + `/flow:contribute` (drain source) |
 | `flow.config.json.flowRepoPath` | unset → `/flow:contribute` disabled | Step 4c (flow-repo nudge) + `/flow:contribute` (run-from guard + PR target) |
 | `flow.config.json.contributionThreshold` | `0.6` | `/flow:contribute` (auto-include vs hold cutoff) |
+| `flow.config.json.ciWaitSeconds` | `600` | Step 7a.7 (how long the CI gate BLOCKS waiting for GitHub's checks to settle; `0` = read once, do not wait. A timeout yields `ci-pending`, never a pass) |
 
 Consumer projects typically override the `*Path` slots to `core-docs/<name>.md` since they keep their own project docs under `core-docs/`. Flow's own dev-tracking lives under `dev-docs/` to leave `core-docs/` free as a name that consumer-template-shipped scaffolding uses.
