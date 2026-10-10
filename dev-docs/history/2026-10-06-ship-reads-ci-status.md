@@ -129,6 +129,34 @@ will"* and *"I apply the fix, push"*, so leaving that while narrowing the skill 
 one promise to the reader and a different behaviour underneath — the fan-out class in user-facing
 text. Both halves changed together, and the join is asserted.
 
+**11. The `Visual-walk: N/A` I spent a merge-gate decision on was my own authoring error, not the
+classifier bug I blamed.** This plan declared:
+
+```markdown
+### Visual-walk
+
+**N/A — this change renders no UI.** ...
+```
+
+`walk_extract`'s `declared_na` is derived from the **heading's tail**, so an N/A written as prose
+*underneath* the heading leaves the block indistinguishable from an ordinary declared Visual-walk —
+which forces `visual_significant: true` and demands screenshots for a change with nothing to
+screenshot. I attributed the resulting false positive to #183 (`An explicit Visual-walk: N/A no
+longer forces a visual review`), asked for and received a waiver on that basis, and said I would
+re-check once #183 landed.
+
+**#183 landed and the verdict did not move**, which is the only reason the real cause surfaced. With
+the N/A moved onto the heading line — `### Visual-walk — N/A` — the predicate returns
+`visual_significant: false`, the §7a producer never fires, and the entry that consumed a human
+decision does not exist. The waiver was spent on nothing.
+
+Worth recording for two reasons. The mistake is **invisible**: both forms read identically to a
+human, and nothing warns. And the diagnostic lesson is the more useful half — I had a plausible
+external explanation (a real, open, exactly-matching bug) and stopped looking, which is the shape
+FB-0131 describes from the other direction: when an instrument and an authority disagree, doubt the
+instrument *and* your own input before accepting the convenient story. The re-check I promised is
+what caught it; had I skipped it as a formality, the waiver would have been the permanent record.
+
 ## Verification
 
 - `run_ship_readiness_evals.py` — 69 checks. **Every CI state is pinned as a pair**, because a

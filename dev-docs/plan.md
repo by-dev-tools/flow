@@ -301,11 +301,20 @@ that §7a's bounded attempt re-runs a *capture*, while this would write to the b
 the code *does*, from inside the gate judging it. Declared as a criterion below rather than left in
 prose, because the decision is now settled.
 
-### Visual-walk
+### Visual-walk — N/A
 
-**N/A — this change renders no UI.** The deliverable is a stdlib Python checker, skill prose, and
-dev-docs. Declared explicitly rather than left empty, so nothing infers significance from an absent
-block.
+**This change renders no UI.** The deliverable is a stdlib Python checker, a sourced shell helper,
+skill prose, and dev-docs; it touches none of the files `uiFilePatterns` names as emitting browser
+UI, and `/flow:accessibility-review` independently skipped itself for the same reason.
+
+**The N/A belongs on the HEADING line, and that is not cosmetic.** `walk_extract`'s `declared_na` is
+derived from the heading's tail, so an N/A written as prose *underneath* the heading leaves the
+block looking like an ordinary declared Visual-walk — which forces `visual_significant: true` and
+demands screenshots for a change with nothing to screenshot. This plan had it the wrong way round
+and spent a merge-gate decision on the resulting false positive, which I misattributed to the
+`Visual-walk: N/A` classifier bug (#183) until #183 landed and the verdict did not move. #183 was
+never the cause; the authoring was. Recorded because the mistake is invisible — both forms read
+identically to a human.
 
 ### Risks
 
