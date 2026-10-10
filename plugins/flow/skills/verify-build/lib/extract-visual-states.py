@@ -36,6 +36,16 @@ Contract:
                         from a complete one (FB-0121). A terminator close that
                         collected items does NOT warn -- only a zero-item close does>,
       "block_count": <how many Visual-walk blocks exist in the file>,
+      "declared_na": <true iff the heading declares non-applicability AND zero
+                      assertions — the author declared this change has NO visual
+                      surface. §5a skips capture on it (and `warnings` then carries
+                      the skip note, not the capture nudge);
+                      `visual-significance.py` suppresses the override. The token
+                      set and the deferral/redirection exclusions have ONE
+                      definition, in `walk_extract.heading_declares_na`; the
+                      author-facing statement of the convention is
+                      `skills/plan-discipline/SKILL.md` § "Visual-walk: the N/A
+                      convention">,
       "all_demoted": <true iff block_count > 0 but every one is qualified
                       shipped/merged/demoted — no active block>,
       "warnings": ["..."]
@@ -68,7 +78,7 @@ import re
 import sys
 
 # Sibling import: lib dir is sys.path[0] when run as a script.
-from walk_extract import cli_main
+from walk_extract import EMPTY_WARNING_NA, cli_main
 
 LABEL = "Visual-walk"
 
@@ -84,6 +94,12 @@ EMPTY_WARNING = (
     "primary/launch state only and mark the rest not_tested; never invent a "
     "richer state set."
 )
+
+
+# The DECLARED-N/A counterpart lives in `walk_extract` beside the `declared_na` field
+# it belongs to, because the leak eval must pin it by exact equality and cannot import a
+# hyphenated module. Imported, never re-spelled — two copies of an allow-listed string
+# is the FB-0010 shape on the one value a security test keys on.
 
 
 def parse_assertion(text: str) -> dict:
@@ -105,5 +121,6 @@ if __name__ == "__main__":
             anchor_label="Spec-walk",
             transform_item=parse_assertion,
             empty_warning=EMPTY_WARNING,
+            empty_warning_na=EMPTY_WARNING_NA,
         )
     )

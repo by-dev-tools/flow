@@ -348,6 +348,428 @@ def main() -> int:
         check("visual-walk-all-demoted-no-override",
               o.get("visual_significant") is False and o.get("override") is None and demoted_warn, f"{o}")
 
+        # --- FB-0138: an explicit N/A declaration must not force --------------
+        #
+        # Being conscientious was punished and being careless rewarded: the override
+        # keyed on `block_count >= 1` and never read the block, so
+        # `**Visual-walk:** N/A — no UI in this change` flipped `visual_significant`
+        # to TRUE and ship §7a then demanded a walkthrough plus a visual-history
+        # entry for a diff with no UI — artifacts that cannot be produced. Omitting
+        # the block entirely gave the right verdict.
+        #
+        # FOUR cases, and they are a matrix rather than a case plus a sanity check.
+        # Any one alone is satisfiable by a wrong implementation:
+        #   - 8c alone  → passes on a predicate that never forces at all.
+        #   - 8d alone  → passes on today's broken code.
+        #   - 8e alone  → passes on a predicate keyed on emptiness, which would
+        #                 retire §5a's launch-state behaviour (the roadmap's option
+        #                 (a), deliberately NOT taken).
+        #   - 8f alone  → passes on a predicate that ignores the plan entirely.
+        na_plan = ("## PR\n\n**Visual-walk:** N/A — no UI in this change\n\n"
+                   "**Spec-walk:**\n- [ ] the roadmap entry is corrected\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=na_plan)
+        na_warn = any("declares N/A" in s and "not an override" in s
+                      for s in o.get("visual_signals", []))
+        check("8c-na-block-does-not-force",
+              o.get("visual_significant") is False and o.get("override") is None and na_warn,
+              f"an explicit N/A with zero assertions must NOT force, and must SAY it "
+              f"decided that (never a silent suppression): {o}")
+
+        # 8d. PAIRED — N/A text WITH assertions still forces. Contradictory authoring;
+        #     the assertions win, because the author named states to capture.
+        na_items = ("## PR\n\n**Visual-walk:** N/A — no UI\n"
+                    "- [ ] empty state renders centered\n\n"
+                    "**Spec-walk:**\n- [ ] x\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=na_items)
+        contradiction_warn = any("declares non-applicability but" in s
+                                 for s in o.get("visual_signals", []))
+        check("8d-na-with-assertions-still-forces",
+              o.get("visual_significant") is True and o.get("override") == "visual-walk-block",
+              f"a block that lists assertions must force whatever its heading says: {o}")
+        # The VERDICT alone is not the contract. A test asserting only
+        # `visual_significant: true` passes whether or not the operator is told the
+        # heading contradicted itself — including when the guarded `walk_extract`
+        # import fell back to None. /flow:audit-coverage flagged the signal as
+        # undeclared and unpinned; criterion 7 had scoped itself to the SUPPRESSED
+        # branch only.
+        check("8d-contradiction-is-reported",
+              contradiction_warn,
+              f"the contradiction must be NAMED to the operator, not silently resolved: {o}")
+
+        # 8g. THE UN-DENIAL ARM — the one where a false match SUPPRESSES, which is the
+        #     dangerous polarity. A deferral says WHEN and a redirection says ELSEWHERE;
+        #     both assert a visual surface exists, so both must keep forcing. Three
+        #     shapes, because the guard admitted a whole class twice before it worked.
+        for label, heading in (
+            ("deferral",    "**Visual-walk:** None, will fill in later"),
+            ("deferral-tbd", "**Visual-walk:** N/A — TBD"),
+            ("redirection", "**Visual-walk:** N/A, see the prototype for frames"),
+        ):
+            plan_u = (f"## PR\n\n{heading}\n\n**Spec-walk:**\n- [ ] x\n")
+            rc, o = run(tmp, config={"uiSurface": True},
+                        files="M\tdev-docs/roadmap.md", plan=plan_u)
+            check(f"8g-{label}-still-forces",
+                  o.get("visual_significant") is True
+                  and o.get("override") == "visual-walk-block",
+                  f"a denial that {label[:11]}s is not a denial — it asserts a visual "
+                  f"surface exists, so it must keep forcing: {o}")
+        # PAIRED against a genuine denial in the same block of assertions, or
+        # "everything forces" would pass the three rows above.
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=na_plan)
+        check("8g-paired-real-denial-still-suppresses",
+              o.get("visual_significant") is False,
+              f"and a real denial must still suppress, or the un-denial rows above are "
+              f"satisfied by a predicate that never suppresses: {o}")
+
+        # 8e. PAIRED — a BARE empty block still forces. verify-build §5a: "0 assertions
+        #     in a present block → capture the primary/launch state only". That shape
+        #     means "a visual surface, states unenumerated", not "no visual surface".
+        #     Keying the fix on emptiness would retire that behaviour by reinterpreting
+        #     it — the roadmap's option (a), rejected for this reason.
+        bare_plan = "## PR\n\n**Visual-walk:**\n\n**Spec-walk:**\n- [ ] x\n"
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=bare_plan)
+        check("8e-bare-empty-block-still-forces",
+              o.get("visual_significant") is True and o.get("override") == "visual-walk-block",
+              f"a bare 0-assertion block must STILL force — §5a gives it meaning, and a "
+              f"false non-force ships an unseen UI with a green report: {o}")
+
+        # 8f. PAIRED — an N/A declaration cannot suppress a REAL render delta. The
+        #     file-pattern heuristic is the path that does not depend on the plan, and
+        #     the fix must not have disabled it.
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tsrc/Button.tsx",
+                    diff=REAL_TSX_DIFF, plan=na_plan)
+        check("8f-na-cannot-mask-a-real-ui-diff",
+              o.get("visual_significant") is True,
+              f"an N/A declaration must never suppress a genuine render delta — the "
+              f"heuristic runs underneath the override: {o}")
+
+        # 8h. THE SIGNAL BUDGET ON THE SUPPRESSION PATH. Two assertions, and they are
+        #     a pair: the branch must stay SILENT about the parser's warnings (they
+        #     carry plan text into the forked skip-auditor's prompt — see
+        #     evals/security/test_plan_text_not_quoted.py, which owns that claim at the
+        #     composed layer) while still reporting the one remedy it genuinely owes an
+        #     author. A clean N/A therefore emits EXACTLY its declaration line.
+        #
+        #     The negative half matters because the first cut keyed the surviving
+        #     report on `len(warnings)`, and `declared_na` requires `not items`, so the
+        #     empty-assertions warning fires on every clean N/A FOREVER. That shipped
+        #     as a permanent misleading [WARN] on the happy path in v1.57.0 (the ⚠️
+        #     hedge) and must not recur: the count is keyed on `block_count`.
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=na_plan)
+        na_warns = [x for x in o.get("visual_signals", []) if x.startswith("[WARN]")]
+        # Tightened from `len(na_warns) == 1` when the declaration signal lost its
+        # `[WARN]` prefix (push-further lens): ZERO warnings is the stronger claim, and
+        # it is paired with the positive assertion below so the pair cannot be satisfied
+        # by deleting the signal altogether (item 3). Still red under the
+        # `len(warnings)` mutation, which is what 8h was written to catch.
+        check("8h-clean-na-emits-no-warnings-at-all",
+              not na_warns,
+              f"a terminal-CORRECT reading must not warn — a [WARN] here is permanent "
+              f"noise on the happy path for the life of the project: {na_warns}")
+        decl = [x for x in o.get("visual_signals", []) if "declares N/A" in x]
+        check("8h-clean-na-still-records-the-decision",
+              len(decl) == 1 and not decl[0].startswith("[WARN]"),
+              f"the decision must still be RECORDED, unprefixed — silence here would "
+              f"satisfy the assertion above by deletion: {o.get('visual_signals')}")
+        # Keyed on a marker only the PLAN carries, not on the absence of the string
+        # "N/A" — the signal's own static prose says "an explicit N/A", so asserting
+        # that was testing the message's wording rather than whether it quotes input.
+        marked_na = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                     "**Visual-walk:** N/A - ZZPLANMARKER no UI here\n")
+        rc, o2 = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                     plan=marked_na)
+        check("8h-clean-na-warn-names-a-line-number-not-the-heading",
+              any("Visual-walk at line" in x for x in o2.get("visual_signals", []))
+              and "ZZPLANMARKER" not in json.dumps(o2.get("visual_signals", [])),
+              f"the signal must identify the block by LINE and carry no plan text: "
+              f"{o2.get('visual_signals')}")
+
+        # 8i. PAIRED with 8h — a SECOND Visual-walk block is the one case where the
+        #     suppression path still owes the author a remedy: only the first block is
+        #     read, so an author whose later block holds the real assertions would see
+        #     silence. Reported as a COUNT (an int, non-forgeable), never as the text.
+        two_block_na = (
+            "## PR\n\n**Spec-walk:**\n- [ ] x\n\n**Visual-walk:** N/A - no UI\n\n"
+            "## An older PR\n\n**Visual-walk:** N/A\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=two_block_na)
+        two_warns = [x for x in o.get("visual_signals", []) if x.startswith("[WARN]")]
+        check("8i-two-block-na-adds-the-count-line",
+              any("2 Visual-walk blocks are present" in x for x in two_warns),
+              f"a second block must be reported, by count: {two_warns}")
+        check("8i-two-block-na-still-suppresses",
+              o.get("visual_significant") is False,
+              f"the count is advisory — the declared N/A still governs the verdict: {o}")
+
+        # 8j. THE DISCRIMINATING CASE, and it exists because 8h+8i did NOT catch the
+        #     mutation they were written to catch. Re-keying the count on
+        #     `len(blk["warnings"])` instead of `block_count` left BOTH green: 8h's
+        #     clean plan carries 1 warning (`1 > 1` is false, so no line appears), and
+        #     8i's two-block plan carries exactly 2 warnings, so the wrong key printed
+        #     the RIGHT NUMBER by coincidence. Two assertions agreeing with a mutant is
+        #     the "pin the DECISION, not a string that currently implies it" corollary.
+        #
+        #     This shape separates them: ONE Visual-walk block, TWO parser warnings.
+        #     Correct code says nothing; the mutant claims "2 Visual-walk blocks are
+        #     present" about a plan that has one — a false statement to an operator.
+        one_block_two_warnings = (
+            "**Spec-walk:**\n- [x] x\n\n**Visual-walk:** N/A - no UI\n"
+            "- [] stray one\n- [] stray two\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=one_block_two_warnings)
+        check("8j-count-is-keyed-on-blocks-not-warnings",
+              not any("Visual-walk blocks are present" in x
+                      for x in o.get("visual_signals", [])),
+              f"one block must never be reported as several — if this fires, the count "
+              f"is keyed on the warning total: {o.get('visual_signals')}")
+        check("8j-still-suppresses-with-malformed-lines",
+              o.get("visual_significant") is False,
+              f"malformed checkbox lines are not assertions, so the N/A still "
+              f"governs: {o}")
+
+        # 8k. THE POSITIVE HALF OF "the removal is SCOPED to the declared_na branch".
+        #     Written because it was MISSING, and the plan criterion asserting it
+        #     claimed the pairing existed (v1.62.0 staff-review). Measured: deleting
+        #     BOTH surviving `signals.extend(... warnings ...)` lines left 74/74,
+        #     166/166 and the security test all green — so the negative assertion
+        #     ("the N/A branch forwards nothing") passed in two opposite worlds, the
+        #     contract honoured AND the feature deleted. § Consistency discipline item
+        #     3, in the criterion written to invoke item 3.
+        #
+        #     The two branches below are ABNORMAL plan states, and their warning text
+        #     IS the operator's remedy — "the block sits below the active section, move
+        #     it" cannot be replaced by a line number without losing the instruction.
+        #     That is exactly why the N/A branch (a terminal CORRECT reading) drops its
+        #     passthrough and these keep theirs, and why "scoped" is the claim rather
+        #     than "removed".
+        noncolocated = (
+            "## Active PR\n\n**Spec-walk:**\n- [ ] x\n\n## Older PR\n\n"
+            "**Spec-walk:**\n- [x] y\n\n**Visual-walk:**\n- [ ] the panel renders\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=noncolocated)
+        check("8k-noncolocated-still-forwards-the-remedy",
+              any("sits BELOW the active PR's section" in x
+                  for x in o.get("visual_signals", [])),
+              f"the retained-block branch must still forward the parser warning that "
+              f"tells the author to move it: {o.get('visual_signals')}")
+
+        demoted_only = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                        "**Visual-walk (merged #99):**\n- [ ] old\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=demoted_only)
+        check("8k-all-demoted-still-forwards-the-remedy",
+              any("qualified as already-shipped/merged/demoted" in x
+                  for x in o.get("visual_signals", [])),
+              f"the all-demoted branch must still forward its parser warning: "
+              f"{o.get('visual_signals')}")
+
+        # 8l. THE NEAR-MISS SIGNAL AT THE COMPOSED LAYER. Added because mutating
+        #     `na_near_miss` to always return None — i.e. restoring the exact silence
+        #     the UX blocker described — reddened 9 checks in
+        #     run_walk_extract_evals.py and left THIS suite at 76/76. The classifier
+        #     was pinned; the thing an author actually sees was not. The claim is "the
+        #     author is told", and that claim is made in `visual_signals`, not in a
+        #     return value (§ Consistency discipline item 4's layer corollary).
+        #     The PARENTHETICAL row is here because round 4's fix was pinned only at the
+        #     unit layer (10 checks in run_walk_extract_evals.py) while the changelog
+        #     makes a GATE claim — "both now force and say which reading they got".
+        #     Measured: reverting that fix left THIS suite at 102/102. Same corollary
+        #     this 8l block was written to apply, not applied to the next round's fix
+        #     (/flow:staff-review, staff-engineer lens).
+        for tail, want in (("N/A for this PR", "runs straight into prose"),
+                           ("N/A — TBD", "says WHEN"),
+                           ("N/A — see Figma", "an artifact noun is read as"),
+                           ("(TBD):** N/A", "says WHEN")):
+            if tail.startswith("("):
+                near_plan = (f"## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                             f"**Visual-walk {tail}\n")
+            else:
+                near_plan = (f"## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                             f"**Visual-walk:** {tail}\n")
+            rc, o = run(tmp, config={"uiSurface": True},
+                        files="M\tdev-docs/roadmap.md", plan=near_plan)
+            sig = o.get("visual_signals", [])
+            check(f"8l-near-miss-is-reported::{tail[:22]}",
+                  any("LOOKS like a denial but was NOT read as one" in x for x in sig),
+                  f"a rejected denial must not be silent — this is the FB-0138 symptom "
+                  f"on near-miss spellings: {sig}")
+            check(f"8l-near-miss-names-the-reason::{tail[:22]}",
+                  any(want in x for x in sig),
+                  f"the signal must say WHICH reading it took (expected {want!r}): {sig}")
+            check(f"8l-near-miss-does-not-quote-the-heading::{tail[:22]}",
+                  not any(tail in x for x in sig),
+                  f"CLASSIFY, never quote — this crosses into the forked "
+                  f"skip-auditor's prompt: {sig}")
+            # Paired: the verdict is unchanged by the new signal. A near miss still
+            # forces, which is the behaviour the signal EXPLAINS rather than alters.
+            check(f"8l-near-miss-still-forces::{tail[:22]}",
+                  o.get("visual_significant") is True,
+                  f"a rejected denial must still force: {o}")
+
+        # 8m. THE NEAR-MISS SIGNAL ON A BLOCK THAT LISTS ASSERTIONS. All three 8l rows
+        #     use zero-item blocks, so nothing exercised the authoring path where the
+        #     remedy's claim is FALSE: "omit the block entirely — both give the same
+        #     verdict" is true with no assertions and wrong with them, because omitting
+        #     also drops §5a's per-assertion capture targets. Flagged by
+        #     /flow:audit-coverage as an undeclared behaviour.
+        #
+        #     Note which branch this reaches: `N/A — TBD` is REJECTED by the un-denial
+        #     guard, so `heading_declares_na` is false and the contradiction warning
+        #     (8d) never fires — the near-miss warning is the only signal, which is why
+        #     8d does not already cover it.
+        na_with_items = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                         "**Visual-walk:** N/A — TBD\n"
+                         "- [ ] the empty state renders centered\n"
+                         "- [ ] the error state is reachable\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=na_with_items)
+        near = [x for x in o.get("visual_signals", [])
+                if "LOOKS like a denial but was NOT read as one" in x]
+        check("8m-near-miss-fires-with-assertions", len(near) == 1,
+              f"the near-miss signal must still fire: {o.get('visual_signals')}")
+        check("8m-remedy-does-not-claim-omitting-is-equivalent",
+              near and "gives the same verdict" not in near[0],
+              f"with assertions present, omitting the block is NOT the same verdict — "
+              f"it also drops §5a's capture targets: {near}")
+        check("8m-remedy-says-the-assertions-are-used",
+              near and "ARE being used" in near[0] and "2 listed assertions" in near[0],
+              f"the remedy must tell the author their assertions are not lost: {near}")
+        check("8m-still-forces", o.get("visual_significant") is True,
+              f"a rejected denial with assertions must force: {o}")
+        # PAIRED with 8l: the zero-item wording must still carry the equivalence claim,
+        # or this assertion would pass by deleting the sentence from both branches.
+        bare_na_tbd = "## PR\n\n**Spec-walk:**\n- [ ] x\n\n**Visual-walk:** N/A — TBD\n"
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=bare_na_tbd)
+        near0 = [x for x in o.get("visual_signals", [])
+                 if "LOOKS like a denial but was NOT read as one" in x]
+        check("8m-paired-zero-item-keeps-the-equivalence-claim",
+              near0 and "gives the same verdict" in near0[0],
+              f"with no assertions, omitting the block IS equivalent and the copy must "
+              f"still say so — otherwise 8m passes by deleting the sentence: {near0}")
+
+        # 8n. THE OUTCOME CLAUSE MUST AGREE WITH THE VERDICT. Override detection runs
+        #     BEFORE Gate 1, so both forcing-arm warnings used to assert "this change
+        #     is therefore treated as visually significant" inside the same JSON that
+        #     carried `visual_significant: false` and `override SUPPRESSED by
+        #     uiSurface=false` — a signal list contradicting itself
+        #     (/flow:audit-coverage). None of the 25 declared criteria exercised
+        #     `uiSurface:false`, which is why nothing sent anyone here.
+        #
+        #     PAIRED across the config axis in BOTH branches: asserting only that the
+        #     unconditional sentence is absent would pass if the clause were deleted
+        #     entirely, so the uiSurface:true arm must still assert it.
+        near_items = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                      "**Visual-walk:** N/A for this PR\n- [ ] the panel renders\n")
+        contra = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                  "**Visual-walk:** N/A — backend only\n- [ ] the panel renders\n")
+        for plan_label, plan_text, needle in (
+                ("near-miss", near_items, "LOOKS like a denial"),
+                ("contradiction", contra, "declares non-applicability but the block")):
+            rc, o_off = run(tmp, config={"uiSurface": False},
+                            files="M\tsrc/Button.tsx", diff=REAL_TSX_DIFF, plan=plan_text)
+            rc, o_on = run(tmp, config={"uiSurface": True},
+                           files="M\tsrc/Button.tsx", diff=REAL_TSX_DIFF, plan=plan_text)
+            w_off = [x for x in o_off.get("visual_signals", []) if needle in x]
+            w_on = [x for x in o_on.get("visual_signals", []) if needle in x]
+            check(f"8n-{plan_label}-fires-on-both-configs",
+                  len(w_off) == 1 and len(w_on) == 1,
+                  f"the warning must be recorded either way: off={w_off} on={w_on}")
+            check(f"8n-{plan_label}-no-false-significance-claim-when-uisurface-false",
+                  w_off and "uiSurface:false" in w_off[0]
+                  and "is therefore treated as visually significant" not in w_off[0],
+                  f"on uiSurface:false the verdict is {o_off.get('visual_significant')}, "
+                  f"so the warning must not assert significance: {w_off}")
+            check(f"8n-{plan_label}-paired-claims-significance-when-uisurface-true",
+                  w_on and "is therefore treated as visually significant" in w_on[0],
+                  f"on uiSurface:true it must still say so — otherwise the assertion "
+                  f"above passes by deleting the clause: {w_on}")
+            check(f"8n-{plan_label}-verdict-matches-config",
+                  o_off.get("visual_significant") is False
+                  and o_on.get("visual_significant") is True,
+                  f"off={o_off.get('visual_significant')} on={o_on.get('visual_significant')}")
+
+        # Verb agreement on the items arm — the count is in hand, so use it.
+        one_item = ("## PR\n\n**Spec-walk:**\n- [ ] x\n\n"
+                    "**Visual-walk:** N/A for this PR\n- [ ] only one\n")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md",
+                    plan=one_item)
+        w = [x for x in o.get("visual_signals", []) if "LOOKS like a denial" in x]
+        check("8n-singular-verb-agreement",
+              w and "1 listed assertion IS being used" in w[0],
+              f"singular must read 'assertion IS', not 'assertion ARE': {w}")
+
+        # 8o. THE SUPPRESSING FLOOR NAMES WHAT DECIDED IT. PAIRED with the forcing
+        #     branch, which already named `visual_src` — the suppressing one said only
+        #     "diff touches no UI or asset files", reading as a measurement of the diff
+        #     when it is a decision by an allow-list. On a project that has narrowed
+        #     `uiFilePatterns` (flow's own names four files) a brand-new browser-UI file
+        #     produces exactly that line. Absent-vs-no (FB-0082) on the expensive
+        #     polarity, and it is the floor every non-forcing plan arm falls through to
+        #     (/flow:staff-review, design-engineer lens).
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tdev-docs/roadmap.md")
+        floor = [x for x in o.get("visual_signals", []) if "touches no UI" in x]
+        check("8o-suppressing-floor-names-its-pattern-source",
+              floor and "pattern from" in floor[0] and "NOT examined" in floor[0],
+              f"the suppressing floor must name the pattern that decided it: {floor}")
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tsrc/Button.tsx",
+                    diff=REAL_TSX_DIFF)
+        forcing = [x for x in o.get("visual_signals", []) if "touches UI files" in x]
+        check("8o-paired-forcing-branch-still-names-its-source",
+              forcing and "pattern from" in forcing[0],
+              f"the forcing branch must keep naming its source — otherwise 8o could be "
+              f"satisfied by deleting the attribution from both: {forcing}")
+
+        # 8p. A BROKEN PARSER IMPORT IS LOUD, not a silent false. With `walk_extract`
+        #     unimportable the whole plan-override path vanishes, and it used to do so
+        #     in total silence: `visual_significant: false`, `override: null`, exit 0,
+        #     ZERO signals — "I could not look" rendered identically to "I looked and
+        #     found nothing" (FB-0082), in a sensitivePaths gate. Run against a mirrored
+        #     lib dir whose `walk_extract.py` raises, because the import is module-level
+        #     and cannot be broken in-process after the fact.
+        # `tmp` is a str in this harness, not a Path.
+        tmpp = Path(tmp)
+        broken = tmpp / "brokenlib"
+        broken.mkdir(exist_ok=True)
+        for f in SCRIPT.parent.glob("*.py"):
+            (broken / f.name).write_text(f.read_text(encoding="utf-8"), encoding="utf-8")
+        (broken / "walk_extract.py").write_text(
+            'raise ImportError("simulated partial install")\n', encoding="utf-8")
+        (tmpp / "broken-plan.md").write_text(
+            "## PR\n\n**Spec-walk:**\n- [ ] x\n\n**Visual-walk:**\n- [ ] renders\n",
+            encoding="utf-8")
+        (tmpp / "broken-cfg.json").write_text(
+            json.dumps({"uiSurface": True, "platform": "web"}), encoding="utf-8")
+        (tmpp / "broken-files.txt").write_text("src/logic.py\n", encoding="utf-8")
+        bp = subprocess.run(
+            [sys.executable, str(broken / SCRIPT.name),
+             "--config", str(tmpp / "broken-cfg.json"),
+             "--plan", str(tmpp / "broken-plan.md"),
+             "--files-from", str(tmpp / "broken-files.txt")],
+            capture_output=True, text=True, timeout=60)
+        try:
+            bo = json.loads(bp.stdout)
+        except ValueError:
+            bo = {}
+        bsig = bo.get("visual_signals", [])
+        check("8p-broken-parser-import-is-reported",
+              any("could not be imported" in x and "COULD NOT" in x for x in bsig),
+              f"a gate that cannot read the plan must say so — a bare false here is "
+              f"indistinguishable from 'the plan declared nothing': rc={bp.returncode} "
+              f"signals={bsig}")
+        # PAIRED: the healthy path must NOT carry that warning, or the assertion above
+        # could be satisfied by emitting it unconditionally.
+        rc, o = run(tmp, config={"uiSurface": True}, files="M\tsrc/logic.py")
+        check("8p-paired-healthy-import-is-silent-about-it",
+              not any("could not be imported" in x
+                      for x in o.get("visual_signals", [])),
+              f"the healthy path must not claim a broken import: {o.get('visual_signals')}")
+
         # 9. override suppressed by uiSurface:false (recorded, not honored).
         rc, o = run(tmp, config={"uiSurface": False}, files="M\tsrc/logic.py", plan=plan)
         sup = any("SUPPRESSED" in s for s in o.get("visual_signals", []))

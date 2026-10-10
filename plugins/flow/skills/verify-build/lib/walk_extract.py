@@ -126,6 +126,270 @@ _DEMOTED_QUALIFIER_RE = re.compile(
 )
 
 
+# A heading that DECLARES non-applicability: `**Visual-walk:** N/A — no UI here`.
+#
+# Matched against the heading's TAIL (what follows the label and its punctuation),
+# anchored at the start, against a CLOSED token set. Two properties make this safe
+# where the roadmap entry feared a string match would not be:
+#
+#   * It is only ever consulted when the block parsed ZERO assertions, so a miss
+#     fails SAFE — the caller keeps today's behaviour, which is to force. The
+#     fragile direction would be a match that suppresses something real; this
+#     cannot, because there is nothing declared to suppress.
+#   * Anchoring means it recognises a CONVENTION rather than interpreting prose. A
+#     heading whose tail is a sentence that happens to contain "none" somewhere does
+#     not match; `**Visual-walk:** N/A — …` does.
+#
+# The trailing guard requires the token to END the tail or be followed by a
+# SEPARATOR — not merely by a non-alphanumeric.
+#
+# The first cut used `(?![A-Za-z0-9])`, which accepts whitespace, so
+# `**Visual-walk:** None yet, will fill in` and `**Visual-walk:** None of the states
+# change` both matched and would have SUPPRESSED the override. That is the dangerous
+# direction and the one the "a miss fails safe" argument does not cover: failing safe
+# protects against missed denials, not against invented ones — and "None yet" is
+# precisely the author-forgot reading this predicate must not adopt. Found by
+# /simplify's altitude lens.
+#
+# The accepted tradeoff: `N/A for this PR` now misses, so that heading keeps forcing
+# and the author clears a waivable manifest entry. That is the right way round — a
+# false force costs a waiver, a false suppression ships an unseen UI with a green
+# report. Measured on flow's own history, the dominant form is `N/A — <reason>`
+# (19 Visual-walk headings, all denials, 17 of them the identical boilerplate), so
+# the narrower guard matches what authors actually write.
+_NA_TAIL_RE = re.compile(
+    r"^(?:not\s+applicable|n\s*/\s*a|n\.\s*a\.?|none|nil|na)"
+    r"(?=\s*(?:$|[\u2014\u2013:.,;(\-]))",
+    re.IGNORECASE,
+)
+
+# A DEFERRAL is not a denial, and separating the two is the whole difficulty.
+#
+# The guard above went through two wrong versions before this one, and the second is
+# the instructive failure. v1 used `(?![A-Za-z0-9])`, which accepts whitespace, so
+# `None yet, will fill in` matched. v2 "fixed" it by requiring a separator — and a
+# deferral is spelled with separators too, so `None, will fill in later`,
+# `N/A - to be filled in at Step 8`, `NA: pending the prototype`, `None (TBD)` and
+# `none. TODO before the gate` all still matched. `None yet, will fill in` was
+# rejected only because the word `yet` happened to sit between `None` and the comma;
+# reorder the same sentence and it suppressed again. The 22-row table pinned the three
+# shapes its author happened to write, not the class. Found by /flow:staff-review.
+#
+# So the boundary is not where the discrimination lives. What distinguishes the two is
+# that a deferral says WHEN rather than WHY: it carries a forward-looking marker. This
+# rejects on that marker instead of trying to spell the separator set correctly.
+# Checked against every accept row — `nothing visual`, `backend only`, `no file
+# matching uiFilePatterns is in scope` carry none of these.
+# TWO rejection intents, one regex, because both are the tail UN-DENYING what the
+# token denied — and in both the consequence is identical: a visual surface exists
+# and suppressing the override would hide it.
+#
+#   DEFERRAL — "later". `None, will fill in later` · `N/A - to be filled in at
+#   Step 8` · `NA: pending the prototype` · `None (TBD)`.
+#
+#   REDIRECTION — "elsewhere". `Not applicable, see the prototype for frames`. This
+#   one is the subtler of the two and it is a plausible authoring on D1's
+#   prototype-first path, where frames really were reviewed at gate 1. It is still
+#   rejected, because the sentence asserts that visual artifacts EXIST; whether the
+#   review already happened is the human's call at the merge gate, not something a
+#   parser should infer from prose. The author who means it can omit the block.
+#
+# Deliberately NOT keyed on the word "visual": `N/A — nothing visual` is a genuine
+# denial and an accept row. The markers below name artifacts that EXIST, not the
+# adjective.
+#
+# THE THIRD LEAK, and it is the same critique one level up (v1.62.0 staff-review,
+# found independently by the design-engineer AND push-further lenses). The comment
+# above faults v2 for pinning "the three shapes its author happened to write, not the
+# class" — and then v3's own marker list omitted `deferred`, the word whose dictionary
+# definition *is* the deferral class. Measured: `N/A - deferred`, `N/A - next PR`,
+# `N/A - punted`, `N/A - awaiting design`, `N/A - blocked on the design review`,
+# `N/A - in progress` and `N/A - see Figma` all SUPPRESSED. `N/A - deferred to later`
+# was caught only because `later` happened to be present — delete that one word and
+# the identical sentence suppressed, which is v2's failure verbatim. The eval could not
+# see it because every one of its reject rows hit a listed marker: the table was
+# validated only against the vocabulary it already contained (§ Consistency discipline
+# item 4 — an instrument never run against a known positive outside its own set).
+#
+# So the lists below are split by intent, which is what lets the near-miss classifier
+# tell an author WHICH way their heading was read. Adding a marker is always the SAFE
+# direction: it can only turn a suppression into a force, and this file's asymmetry is
+# that a false force costs a waiver while a false suppression ships an unseen UI with a
+# green report. Verified zero regressions against all 16 accept rows before landing.
+#
+# THE REMAINING STRUCTURAL PROBLEM, stated rather than patched: this is a BLACKLIST on
+# the dangerous side, so every phrasing nobody enumerated still defaults to suppress.
+# Three leaks in three versions is what a blacklist on the wrong polarity looks like.
+# The inversion — require the tail to be positively denial-SHAPED — is in
+# `dev-docs/roadmap.md` § Next with its one measured casualty. Do not keep adding
+# tokens here and call the class closed.
+
+#   DEFERRAL — "later": the tail says WHEN the visual work happens.
+_DEFERRAL_MARKERS = (
+    r"yet|tbd|todo|pending|will\s|to\s+be\b|coming|later|for\s+now|"
+    r"not\s+done|unfilled|fill\s+in|filled\s+in|"
+    r"deferr?(?:ed|al|ing)?|awaiting|follow-?ups?|blocked\s+on|in\s+progress|"
+    r"next\s+(?:pr|pass|release)|punt\w*|skipping|once\s"
+)
+
+#   REDIRECTION — "elsewhere": the tail says the visual artifacts exist somewhere
+#   else. Subtler, and a plausible authoring on D1's prototype-first path where frames
+#   really were reviewed at gate 1. Still rejected: the sentence asserts the artifacts
+#   EXIST, and whether the review already happened is the human's call at the merge
+#   gate, not something a parser should infer from prose. An author who means it omits
+#   the block. The design-tool nouns (`figma`, `mockup`, `wireframe`, `video`, `gif`)
+#   were missing while `frames`/`screenshots`/`prototype` were present — three releases
+#   of vocabulary absent from a list that had already decided artifact nouns were the
+#   right lever.
+_REDIRECTION_MARKERS = (
+    r"frames?|screenshots?|prototype|walkthrough|recording|capture[sd]?|"
+    r"elsewhere|see\s|covered\s+(?:in|by|elsewhere)|documented\s+in|"
+    r"figma|mock-?ups?|wireframes?|videos?|gifs?|images?|design\s+doc"
+)
+
+_DEFERRAL_RE = re.compile(r"\b(?:%s)" % _DEFERRAL_MARKERS, re.IGNORECASE)
+_REDIRECTION_RE = re.compile(r"\b(?:%s)" % _REDIRECTION_MARKERS, re.IGNORECASE)
+# The union stays a single compiled regex so the hot path costs one scan, and so
+# `heading_declares_na`'s behaviour is defined by exactly the two lists above.
+_UNDENIAL_RE = re.compile(
+    r"\b(?:%s|%s)" % (_DEFERRAL_MARKERS, _REDIRECTION_MARKERS), re.IGNORECASE
+)
+
+
+# The one parser warning that is SAFE to echo into a prompt: static text this repo
+# writes, carrying no plan input, telling §5a not to capture. It lives here rather than
+# in `extract-visual-states.py` for one reason — `evals/security/test_plan_text_not_quoted.py`
+# must exempt it by EXACT EQUALITY, and a hyphenated module name is not importable. The
+# exemption was first written as a substring test, and a plan could then mint an exempt
+# warning carrying payload: `- [] §5a skips capture <payload>` makes the
+# malformed-checkbox warning CONTAIN this text and inherit the exemption (v1.62.0
+# security review). An allow-list keyed on a substring of attacker-influenced text is
+# not an allow-list.
+EMPTY_WARNING_NA = (
+    "the Visual-walk heading DECLARES non-applicability and the block lists no "
+    "assertions — §5a skips capture for this plan (`[§5a] skipped: Visual-walk "
+    "declared N/A`) and no frames are expected. Do NOT capture a launch state here; "
+    "that is the bare-empty-block case, which is a different shape."
+)
+
+
+def _na_tail(line: str, label: str):
+    """Normalized reason-tail of a `<label>` heading as `(anchored, full)`, or None.
+
+    Factored out of `heading_declares_na` so the near-miss classifier below reads the
+    SAME tail by construction. Two copies of this normalization would be a contract
+    with nothing asserting the join — and the classifier's whole purpose is to explain
+    a verdict the other function reached, so a divergence would make it explain the
+    wrong one (FB-0010: one definition, N readers).
+
+    TWO tails, not one, and the difference is a false-suppression hole that shipped
+    briefly (v1.62.0, /flow:audit-coverage round 4):
+
+    - `anchored` has a leading parenthetical qualifier removed, because the DENIAL
+      TOKEN has to be findable after one (`**Visual-walk** *(UI only)*: N/A`). That
+      strip is why the token match works at all.
+    - `full` keeps everything, because the UN-DENIAL search must see the parenthetical
+      too. Searching only `anchored` meant a deferral written four characters to the
+      left was *deleted before it could be searched for*: measured,
+      `**Visual-walk (TBD):** N/A`, `(deferred to #200)`, `(frames pending)`,
+      `(see Figma)` and `(awaiting design)` ALL suppressed the override with no
+      near-miss warning — the precise "a false suppression ships an unseen UI with a
+      green report" polarity the comments above say this guard exists to prevent.
+      None of them is a demoted qualifier, so they do not take the `all_demoted` path
+      either.
+
+    The cost is accepted and is in the safe direction: a benign qualifier that happens
+    to contain a marker (`(see below for scope)`) now forces, which costs one waivable
+    manifest entry. Verified the qualifiers the strip exists for are unaffected —
+    `(UI only)`, `(post-merge)`, `(UI changes only)` carry no marker.
+    """
+    bare = re.sub(r"[*_#`]+", " ", line)
+    m = re.search(re.escape(label) + r"\b", bare, re.IGNORECASE)
+    if not m:
+        return None
+    full = bare[m.end():]
+    anchored = re.sub(r"^\s*\([^)]*\)", "", full)   # a parenthetical qualifier
+    anchored = anchored.lstrip()
+    # One strip, not two: the class below already contains `:`, so the separate
+    # colon-drop that used to sit here was dead on every input (/simplify's reuse
+    # lens; verified across the pinned accept/reject table plus four extra shapes —
+    # no case behaved differently with it removed). This also covers the separator an
+    # author puts between the label and the reason.
+    anchored = anchored.lstrip(" \t:\u2013\u2014-.")
+    return anchored, full
+
+
+def heading_declares_na(line: str, label: str) -> bool:
+    """True if `line` is a `<label>` heading whose tail opens with a denial token."""
+    tails = _na_tail(line, label)
+    if tails is None:
+        return False
+    anchored, full = tails
+    if not _NA_TAIL_RE.match(anchored):
+        return False
+    # A denial that defers or redirects is not a denial. Searched on the FULL tail —
+    # parenthetical included — so the marker is found wherever in the heading it
+    # appears: `N/A - to be filled in at Step 8` denies and then un-denies, and
+    # `**Visual-walk (TBD):** N/A` un-denies before it denies. Both are un-denials.
+    return not _UNDENIAL_RE.search(full)
+
+
+# A bare `na` prefix of an ordinary word (`native`, `nonetheless`) must not register
+# as a near miss — that is a heading with no denial intent at all, and telling its
+# author "your denial was rejected" would be a false accusation. So the near-miss
+# probe requires the denial token to stand alone, which is `_NA_TAIL_RE` minus its
+# separator lookahead.
+_NA_TOKEN_RE = re.compile(
+    r"^(?:not\s+applicable|n\s*/\s*a|n\.\s*a\.?|none|nil|na)\b", re.IGNORECASE
+)
+
+
+def na_near_miss(line: str, label: str):
+    """Why a denial-SHAPED `<label>` heading was not read as a denial, or None.
+
+    Returns `"defers"`, `"redirects"`, `"unseparated"`, or None when the heading
+    either is not denial-shaped at all or WAS accepted as a denial.
+
+    WHY THIS EXISTS (v1.62.0 staff-review, UX lens). Before it, the three authoring
+    intents below produced byte-identical output:
+
+        **Visual-walk:**                 -> "plan declares a Visual-walk block"
+        **Visual-walk:** N/A for this PR -> identical, no signal
+        **Visual-walk:** N/A - TBD       -> identical, no signal
+
+    So an author who wrote `N/A` read back `plan declares a Visual-walk block` — a
+    sentence contradicting their own text — and then got a demand for a walkthrough
+    they cannot produce. That is the original FB-0138 symptom, intact, on every
+    near-miss spelling. The verdict is right in each case and is NOT what changed; the
+    SILENCE was the defect. It is the same `absent`-vs-`no` collapse (FB-0082) this
+    release's own roadmap entry names as a bug for `**Mode:**`.
+
+    The published convention makes near misses likely rather than exotic:
+    `plan-discipline` tells authors `N/A` is sanctioned and `N/A for this PR` is not,
+    so a one-word miss is the predictable failure, and it deserves a reply.
+
+    Returns a CATEGORY, never the heading text — callers put this in `visual_signals`,
+    which reaches a forked reviewer's prompt, and the CLASSIFY-never-quote rule
+    (`read_plan_mode`, v1.38.0) applies to every value crossing that boundary.
+    """
+    tails = _na_tail(line, label)
+    if tails is None:
+        return None
+    anchored, full = tails
+    if not _NA_TOKEN_RE.match(anchored):
+        return None                      # no denial intent to misread
+    if not _NA_TAIL_RE.match(anchored):
+        return "unseparated"             # `N/A for this PR` — token runs into prose
+    if not _UNDENIAL_RE.search(full):
+        return None                      # accepted as a denial; nothing to explain
+    # Deferral is reported in preference to redirection when a tail carries both
+    # (`N/A - frames later`): "when" is the more actionable half, because the author
+    # can simply write the block once the frames exist. Searched on `full` so a
+    # parenthetical deferral is both REJECTED and EXPLAINED, rather than rejected
+    # with the near-miss arm unable to say why.
+    return "defers" if _DEFERRAL_RE.search(full) else "redirects"
+
+
 def _is_demoted_heading(line: str) -> bool:
     """True if `line` is a walk heading qualified as already-shipped."""
     return bool(_DEMOTED_QUALIFIER_RE.search(line))
@@ -272,6 +536,8 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
         "first_heading_line": <int> | None,        # 1-indexed line of that heading
         "co_located":    True | False | None,      # vs anchor_label's active region
         "all_demoted":   True | False,              # every block is qualified shipped/merged/demoted
+        "declared_na":   True | False,              # heading declares N/A AND zero assertions
+                                                    # (meaningful for Visual-walk only — see below)
         "warnings":      ["..."],
       }
 
@@ -288,6 +554,15 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
     per-label first-block scoping cannot see; see the module docstring.
     `co_located` is `None` when co-location is undefined (no `anchor_label`
     passed, no anchor heading present, or no block of `label` at all).
+
+    `declared_na` is computed for whatever `label` is passed, but it is only
+    MEANINGFUL for `Visual-walk`: it answers "did the author declare there is no
+    visual surface?", and no consumer asks that of a `Spec-walk` block. A
+    `**Spec-walk:** N/A` heading with no checkboxes will set it true on
+    `extract-criteria.py`'s output, where nothing reads it. Said here rather than
+    special-cased, because a label check inside the parser would be a second place
+    that knows which labels exist (/simplify's altitude lens flagged the latent
+    misread).
     """
     lines = text.splitlines()
     warnings: list[str] = []
@@ -301,6 +576,7 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
             "first_heading_line": None,
             "co_located": None,
             "all_demoted": False,
+            "declared_na": False,
             "warnings": warnings,
         }
 
@@ -321,6 +597,7 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
             "first_heading_line": None,
             "co_located": None,
             "all_demoted": True,
+            "declared_na": False,
             "warnings": warnings,
         }
 
@@ -390,6 +667,22 @@ def extract_block(text: str, label: str, anchor_label: str | None = None) -> dic
         "ended_at_line": (ended_at + 1) if ended_at is not None else None,
         "co_located": co_located,
         "all_demoted": False,
+        # DECLARED non-applicability: the heading says N/A **and** the block parsed
+        # zero assertions. Both halves are folded in here on purpose, so a consumer
+        # reads one boolean and cannot forget the items check — the direction the
+        # roadmap's option (a) got wrong was exactly "zero assertions" without a
+        # declaration. Sibling of `all_demoted`: both mean "this block declares
+        # nothing active", for different reasons.
+        # `co_located is not False` is part of the conjunction, not an afterthought.
+        # When the match is non-co-located, `scan_end` force-empties `items`, so
+        # `not items` is VACUOUSLY true and a retained PR's `**Visual-walk:** N/A`
+        # carrying two real assertions returned `declared_na: True` — contradicting
+        # this field's own documented meaning ("declares N/A AND zero assertions").
+        # Not live, because both readers conjoin with `co_located` themselves, but a
+        # field whose docstring is false is a trap for the next reader
+        # (/flow:staff-review).
+        "declared_na": bool(co_located is not False and not items
+                            and heading_declares_na(first_heading, label)),
         "warnings": warnings,
     }
 
@@ -401,6 +694,7 @@ def cli_main(
     items_key: str,
     transform_item=None,
     empty_warning: str = "",
+    empty_warning_na: str = "",
     anchor_label: str | None = None,
 ) -> int:
     """
@@ -418,6 +712,16 @@ def cli_main(
                         (default: identity — emit the string as-is).
     - `empty_warning` — appended when no items were extracted (the
                         spike-fallback / capture-primary-only nudge).
+    - `empty_warning_na`— used INSTEAD of `empty_warning` when the block declares
+                        non-applicability. Both are "zero items", but they mean
+                        opposite things to the consumer: a bare empty block wants a
+                        launch-state capture, a declared N/A wants none. One message
+                        for both told §5a to capture frames on the very plans this
+                        release teaches it to skip — and §5a is agent-executed from
+                        this JSON, so the primary data source contradicted the prose
+                        (v1.62.0 staff-review). Omitted ⇒ `empty_warning` is used for
+                        both, which is the pre-existing behaviour for consumers that
+                        have no N/A semantics (`extract-criteria.py`).
     - `anchor_label`  — sibling label whose active region scopes this match
                         (`"Spec-walk"` for the Visual-walk parser); see
                         `extract_block`. Omitted ⇒ today's unscoped behavior.
@@ -472,8 +776,13 @@ def cli_main(
     items = [transform(s) for s in block["items"]]
     warnings = list(block["warnings"])
 
-    if not items and empty_warning:
-        warnings.append(empty_warning)
+    if not items:
+        # `declared_na` already folds in the items check, so this cannot disagree with
+        # the field the consumer reads (see extract_block).
+        chosen = empty_warning_na if (block["declared_na"] and empty_warning_na) \
+            else empty_warning
+        if chosen:
+            warnings.append(chosen)
 
     print(
         json.dumps(
@@ -492,6 +801,7 @@ def cli_main(
                 "block_count": block["block_count"],
                 "co_located": block["co_located"],
                 "all_demoted": block["all_demoted"],
+                "declared_na": block["declared_na"],
                 "warnings": warnings,
             },
             indent=2,
