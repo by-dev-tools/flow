@@ -211,9 +211,12 @@ or extrapolated.
 - [x] A backend config supplying `readSince` with `{session}{cursor}` renders via `render()`; a config
   referencing `{cursor}` on any other verb fails `check`. Verify: new eval case
   (`run_dispatch_backend_evals.py` §2b), run via `tools/eval-sweep.sh`.
-- [x] `/flow:orchestrate` step 4 states the cursor-first read contract and cites both measured figures
-  (573-vs-1-call; 105,385 characters). Verify: `grep -n "573 messages in 6\|105,385 characters"
-  plugins/flow/skills/orchestrate/SKILL.md` finds both.
+- [x] `/flow:orchestrate` step 4 states the cursor-first read contract and cites the audit's traceable
+  measured figure (105,385 characters / 62 calls). The original 573-messages-in-6-calls reference
+  point was dropped during `/simplify` — it was the dispatch brief's own number, not in the audit
+  doc, and its source session is now unrecoverable (archived). Verify: `grep -n "105,385 characters"
+  plugins/flow/skills/orchestrate/SKILL.md` finds it; `grep -n "573 messages"
+  plugins/flow/skills/orchestrate/SKILL.md` finds nothing (confirms the drop, not an oversight).
 - [x] An unnumbered "Before Step 0: choose the primitive" section exists in `/flow:spawn`, before the
   (un-renumbered) "## 0. Resolve the backend" step, carrying the three-row table above plus the
   context-cost nuance. Verify: `grep -n "Before Step 0: choose the primitive"
@@ -229,8 +232,15 @@ or extrapolated.
   Verify: `ls dev-docs/feedback/FB-0140*.md` shows the new fixture file.
 - [x] `tools/eval-sweep.sh` reports all-GREEN by exit code after the new `readSince` eval case lands.
   Verify: `bash tools/eval-sweep.sh` → 47/47 GREEN by exit code.
-  Verify: `bash tools/eval-sweep.sh` exit code 0 — the eval harness is the verification fixture for
-  this criterion and for Decision 1's evals, together.
+- [x] `/flow:doctor`'s dispatchBackend WARN listing labels an optional-but-absent verb as `(optional)`
+  with no trailing dash, while a genuinely-missing required verb still prints its reason after a
+  dash — the fix made during `/flow:staff-review` (commit f7e05e1) that `/flow:audit-coverage`
+  flagged as undeclared, approved by the orchestrator to declare rather than waive. Verify: with a
+  backend config missing `createWorker` (required) and not configuring `readSince` (optional),
+  `python3 plugins/flow/lib/dispatch_backend.py check --config <that fixture>` piped through the
+  same jq filter `plugins/flow/skills/doctor/SKILL.md:978` uses prints `- createWorker: absent —
+  \`createWorker\` is not configured` and `- readSince: absent (optional)` — reproduced live during
+  this ship run with that exact fixture and filter.
 
 ### Open calls — all three resolved by the orchestrator at the gate
 
