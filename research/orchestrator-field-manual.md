@@ -204,6 +204,18 @@ one PR and are independent.
   text without them delivers. Measured by
   a worker on 2026-10-04; the send reports success, so the loss is invisible from the sending
   end. Treat it as a delivery constraint rather than a style preference.
+- **Scope a dispatch to ship inside one weekly-limit window, not to span one.** Stated directly
+  (2026-10-31), ahead of a move to a lower usage tier: *"let's focus on intelligent and strategic
+  chunking of work so that we can actually ship it and keep making incremental progress, rather
+  than always be hitting limits as soon as we start big, large projects that end up not getting
+  shipped."* A 5-hour rate-limit stall is cheap — resume and continue, per § 1's T2/T5-class
+  findings. A weekly limit hit mid-feature is not: the branch sits unshipped for the whole
+  remaining window, which is lost progress, not delayed progress. **The fix is in how a dispatch is
+  shaped, not a new scheduling mechanism** — split a large feature into sequential PRs that each
+  stand alone and ship (the pattern this program already used for the mobile-review work: options
+  1–3 as one PR, option 4 as its own, the message-label work as a third), rather than one branch
+  that accumulates everything before opening a PR. Still true at the same time: tokens matter, lost
+  5-hour-window time does not — this rule is about shipping cadence, not about spending less.
 
 ## 4. Program facts a fresh seat asks for in its first hour
 
