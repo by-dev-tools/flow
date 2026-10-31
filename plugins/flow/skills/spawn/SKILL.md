@@ -18,7 +18,7 @@ allowed-tools: Read, Grep, Glob, Bash, Write
 
 **Deletion criterion (FB-0088):** delete when two consecutive routing audits show the `model·effort·why` line is emitted correctly *without* this skill (the practice stuck), or when the backend gains a typed dispatch API that carries the brief contract itself.
 
-### Before Step 0: choose the primitive — workspace or subagent
+## Before Step 0: choose the primitive — workspace or subagent
 
 *Deliberately unnumbered.* Other text cites this skill's existing steps by number (`/flow:spawn`
 step 1's uniqueness check, the field manual) and this section is new, so it does not take a
@@ -29,8 +29,8 @@ the job in front of you needs one at all, before you reach Step 0.
 | Signal | Primitive |
 |---|---|
 | Needs its own branch/PR, an independent `/flow:ship` pipeline, or must outlive this session | **Workspace** |
-| Needs its own distinct **installed-plugin state** (a Claude Code install is machine-scope, not session-scope — e.g. a probe that reinstalls a specific flow snapshot cannot share a parent's or sibling's own install without clobbering it) | **Workspace** |
-| Read-mostly, single-purpose, finishes inside the calling session's own turn, touches no shared install state (e.g. a review lens, a lookup, a non-reinstalling probe) | **Subagent** |
+| Needs its own distinct **installed-plugin state** (a Claude Code install is machine-scope, not session-scope) | **Workspace** |
+| Read-mostly, single-purpose, finishes inside the calling session's own turn, touches no shared install state | **Subagent** |
 
 **Measured, not assumed** (`dev-docs/research/2026-10-efficiency-audit.md` §5): `/flow:staff-review`'s
 four parallel lenses are already a correctly-provisioned subagent fan-out — no change needed there.
@@ -77,14 +77,13 @@ Three checks, all of which have caught real collisions:
 
 **Effort is a bigger lever than model tier.** Tier sets price *per token*; effort sets *how many tokens*. A strong model at low effort routinely costs less than a weak model at high effort, because a weak model flails and **flailing in an agentic loop is billed**. So the first question is not "can this be cheaper?" but "what does this job actually need?"
 
-This is **right-sizing, not rationing.** Two failure modes, and the second is worse:
+This is **right-sizing, not rationing.** Three failure modes, and the second and third are worse:
 
 - **Over-spending** — everything on the top tier by default rather than by decision.
 - **Under-dispatching** — holding back a legitimate parallel worker to conserve budget. That trades throughput, the scarce thing, for tokens, the cheap thing. **Never decline a worker that has real work for budget reasons; right-size it instead.**
+- **Capacity-shifting** — downshifting one job's model or effort to free shared capacity for a DIFFERENT job, the mirror image of under-dispatching. Named because it was measured in a live dispatch brief, not hypothesized.
 
-**A third failure mode, named because it was measured in a live dispatch brief and is the
-mirror image of under-dispatching: downshifting one job's model or effort to free shared
-capacity for a DIFFERENT job.** Measured (`dev-docs/research/2026-10-efficiency-audit.md` §4):
+Measured (`dev-docs/research/2026-10-efficiency-audit.md` §4):
 *"It's reversible, and the program's one critical-path worker needs the account's capacity."*
 Route each job by what **that job** needs — the table below, not a neighbor's workload. If the
 account is genuinely out of room, that is this skill's own step 1 admission-control call ("rate

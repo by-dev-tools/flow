@@ -71,9 +71,10 @@ below is a process fix, not a capacity ask.
 - `/flow:staff-review`'s four parallel lenses are already a correctly-provisioned subagent fan-out
   (audit §5) — nothing to change there, and Decision 3's new table says so explicitly so it reads as
   confirmed-correct rather than silently unaddressed.
-- `plugins/flow/lib/dispatch_backend.py`'s five verbs (`listWorkers`, `createWorker`, `sendMessage`,
-  `workerStatus`, `selfSession`) are **not** touched by #179 — Decision 1 can be designed now without
-  waiting on #179's shape, even though the actual edit still waits for the shared ship slot.
+- `plugins/flow/lib/dispatch_backend.py`'s five verbs at plan time (`listWorkers`, `createWorker`,
+  `sendMessage`, `workerStatus`, `selfSession` — Decision 1 below adds the sixth) are **not** touched
+  by #179 — Decision 1 can be designed now without waiting on #179's shape, even though the actual
+  edit still waits for the shared ship slot.
 
 ### Decision 1 — add a sixth verb, `readSince`, to `dispatch_backend.py`'s closed vocabulary (optional)
 

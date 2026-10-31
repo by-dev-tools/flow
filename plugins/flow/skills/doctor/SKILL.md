@@ -975,7 +975,7 @@ else
     echo "[PASS] dispatchBackend: all $NVERBS verbs valid — orchestrator suite can dispatch"
   else
     echo "[WARN] dispatchBackend is present but incomplete or malformed."
-    echo "$ADAPTER_OUT" | jq -r '.verbs | to_entries[] | select(.value.state != "ok") | "       - \(.key): \(.value.state) — \(.value.problems // [] | join("; "))"' 2>/dev/null \
+    echo "$ADAPTER_OUT" | jq -r '.verbs | to_entries[] | select(.value.state != "ok") | "       - \(.key): \(.value.state)\(if .value.optional then " (optional)" else "" end)\(if (.value.problems // [] | length) > 0 then " — " + (.value.problems // [] | join("; ")) else "" end)"' 2>/dev/null \
       || echo "       (could not parse the adapter report; run the check above by hand)"
     echo "       Fix: each verb is a command template. Placeholders are a CLOSED set —"
     PH=$(printf '%s' "$ADAPTER_OUT" | jq -r '[.known_placeholders[] | "{" + . + "}"] | join(" ")' 2>/dev/null)
