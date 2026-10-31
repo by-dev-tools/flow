@@ -138,9 +138,22 @@ DEFAULT_ASSET_PATTERN = r"\.(png|jpe?g|gif|svg|webp|avif|ico|bmp|woff2?|ttf|otf|
 # `run_capture_frames_evals.py::test_captured_frames_are_not_their_own_evidence`, which
 # fails if either side moves.
 #
-# Scoped to a `pr-frames/` path segment, NOT to `.png`: a consumer's own screenshots are
-# real evidence and must keep signalling. The paired positive is in that same eval.
-FLOW_CAPTURED_FRAMES = re.compile(r"(^|/)pr-frames/")
+# Scoped to the SHAPE THE CAPTURE ENGINE WRITES, not to a bare `pr-frames/` segment.
+# The first cut matched the segment anywhere, and /flow:security-review measured the
+# consequence: a contributor who puts a real UI asset under any directory they happen to
+# name `pr-frames/` (`src/assets/pr-frames/hero.png` — a path they choose freely in their
+# own PR) got `visual_significant: false`, so §5c, §5d and verify-build's visual gate all
+# skipped a change that genuinely alters a rendered surface. A suppression that an
+# unrelated contributor can trigger by naming a directory is a gate bypass, and it fails
+# in the expensive polarity.
+#
+# The engine writes exactly `<dir>/pr-frames/<branch-slug>/<label>-<frame>.png`, so the
+# pattern requires that depth and that filename form. `src/assets/pr-frames/hero.png` has
+# one path segment after `pr-frames/`, not two, and does not match. The frame NAMES are
+# deliberately not spelled here — that would be a third copy of the FRAMES table; the
+# character classes mirror `branch_slug`'s and `LABEL_RE`'s output instead.
+FLOW_CAPTURED_FRAMES = re.compile(
+    r"(^|/)pr-frames/[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,31}-[a-z0-9-]{1,16}\.png$")
 
 # Comment / structural-only line prefixes used by the pure-refactor exclusion. A
 # changed line whose content (after stripping the +/- and whitespace) starts with
@@ -703,6 +716,19 @@ def main(argv):
     asset_hits = [p for st, p in changes
                   if asset_re.search(p) and not visual_re.search(p)
                   and not FLOW_CAPTURED_FRAMES.search(p)]
+    # SAY WHAT WAS EXCLUDED. Without this the suppressed files fall into the `not
+    # matched` floor and the run explains itself with "diff touches no UI or asset
+    # files… a file outside those patterns is NOT examined for a render delta" — which
+    # is FALSE for a diff that touched exactly one asset file, and leaves a reader no
+    # way to see why the verdict went the way it did. An exclusion a report will not
+    # name is indistinguishable from a pattern that never matched.
+    excluded_frames = sorted({p for st, p in changes
+                              if FLOW_CAPTURED_FRAMES.search(p)})
+    if excluded_frames:
+        signals.append(
+            "%d file(s) excluded as flow's OWN captured frames (they exist because this "
+            "verdict was already true, so they cannot be evidence for it): %s"
+            % (len(excluded_frames), ", ".join(excluded_frames[:8])))
     matched = visual_hits + asset_hits
     if visual_hits:
         signals.append(f"diff touches UI files (pattern from {visual_src}): "

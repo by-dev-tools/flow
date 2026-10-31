@@ -789,8 +789,40 @@ def test_captured_frames_are_not_their_own_evidence():
         check("circular/consumer-asset-in-a-pr-frames-named-dir-still-signals",
               verdict(rename_only + ["A\tdocs/my-pr-frames-guide.png"]) is True,
               "the exclusion swallowed a path that is real evidence")
+        # THE GATE BYPASS, pinned. The first exclusion matched a bare `pr-frames/`
+        # segment anywhere, so a contributor who named a directory `pr-frames/` in their
+        # own PR silently suppressed the visual gate for a real UI asset — measured by
+        # /flow:security-review, and in the expensive polarity (the gate goes quiet).
+        # These paths have ONE segment after `pr-frames/`, where the engine always
+        # writes two.
+        for impostor in ("src/assets/pr-frames/hero.png",
+                         "pr-frames/hero.png",
+                         "docs/pr-frames/diagram.png"):
+            check("circular/not-engine-written-still-signals %s" % impostor,
+                  verdict(rename_only + ["A\t" + impostor]) is True,
+                  "a path flow's capture engine would never write suppressed the gate — "
+                  "a suppression an unrelated contributor can trigger by naming a "
+                  "directory is a bypass")
+        # And a suppression must NAME what it suppressed: the floor message otherwise
+        # reads "diff touches no UI or asset files", which is false for a diff that
+        # touched one. An exclusion a report will not name is indistinguishable from a
+        # pattern that never matched.
+        f = Path(td, "named.txt")
+        f.write_text("R100\tsrc/old.css\tsrc/new.css\nA\t" + frame + "\n", encoding="utf-8")
+        r = subprocess.run([sys.executable, str(vs), "--config", str(cfg),
+                            "--files-from", str(f), "--diff-from", str(empty)],
+                           capture_output=True, text=True, timeout=60)
+        sig = " ".join(json.loads(r.stdout).get("visual_signals", []))
+        check("circular/suppression-names-the-files-it-suppressed",
+              "excluded as flow's OWN captured frames" in sig and frame in sig, sig)
+        check("circular/suppression-does-not-claim-the-files-are-absent",
+              "diff touches no UI or asset files" not in sig, sig)
     # The two definitions must name the SAME directory.
-    m = re.search(r'FLOW_CAPTURED_FRAMES = re\.compile\(r"(.*?)"\)', src)
+    # DOTALL + optional newline: the pattern was re-scoped across two lines when the
+    # gate bypass was fixed, and a single-line extraction then found nothing — which
+    # would have silently skipped every assertion below it rather than failing. The
+    # `check("circular/pattern-found")` guard is what made that loud instead.
+    m = re.search(r'FLOW_CAPTURED_FRAMES = re\.compile\(\s*r"(.*?)"\s*\)', src, re.S)
     check("circular/pattern-found", m is not None, src[:200])
     if m:
         check("circular/names-the-shared-directory", C.PR_FRAMES_DIR in m.group(1),

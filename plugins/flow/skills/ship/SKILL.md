@@ -1285,8 +1285,16 @@ VISSIG=""; [ -f "$FINDINGS" ] && VISSIG=$(jq -r '.metadata.visual_significant //
 if [ -z "$VISSIG" ]; then
   VS="${CLAUDE_PLUGIN_ROOT}/skills/verify-build/lib/visual-significance.py"; [ -f "$VS" ] || VS="plugins/flow/skills/verify-build/lib/visual-significance.py"
   PLAN_P=$(jq -r '.planPath // "dev-docs/plan.md"' flow.config.json 2>/dev/null); [ -z "$PLAN_P" ] && PLAN_P="dev-docs/plan.md"
-  PLAN_A=""; { [ -f "$PLAN_P" ] && PLAN_A="--plan $PLAN_P"; } || echo "⚠️ [pr-frames] no plan doc at $PLAN_P — running WITHOUT plan context." >&2
-  VISSIG=$(python3 "$VS" --config flow.config.json $PLAN_A 2>/dev/null | jq -r '.visual_significant // false')
+  # `set --` rather than an unquoted `$PLAN_A`. Word-splitting an interpolated flag makes
+  # `planPath` an argv injector: `"dev-docs/plan.md --files-from /dev/null"` splits into
+  # extra arguments and forces an empty change-set, i.e. a second route to the same gate
+  # bypass /flow:security-review measured in the exclusion pattern. No shell execution,
+  # but FB-0108's rule is that a per-site quoting convention is the thing that keeps
+  # re-arriving — so this site does not add a sixth instance. (Five pre-existing sites
+  # carry the old shape; converting them is a roadmap item, not this PR's scope.)
+  set --
+  if [ -f "$PLAN_P" ]; then set -- --plan "$PLAN_P"; else echo "⚠️ [pr-frames] no plan doc at $PLAN_P — running WITHOUT plan context." >&2; fi
+  VISSIG=$(python3 "$VS" --config flow.config.json "$@" 2>/dev/null | jq -r '.visual_significant // false')
 fi
 
 # The capture target. Prototype first; the walkthrough only if there is no prototype.

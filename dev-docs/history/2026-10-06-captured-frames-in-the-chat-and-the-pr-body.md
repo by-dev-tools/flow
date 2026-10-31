@@ -373,6 +373,47 @@ Four further findings went to roadmap § Next as items 5–8 (the record pointer
 retires, multi-label interleaving and cross-label staleness, the exclusion being broader than the
 writer's path, and working-tree enumeration deciding which source ships).
 
+## The security review found the exclusion was a gate bypass
+
+`/flow:security-review` traced every sink in the diff and disproved the obvious ones — a crafted page
+`<title>` cannot break out of `![…](…)` because `md_safe.inline()` escapes at the render site; the
+`captureBackend` template never reaches a shell; `branch_slug` is a positive filter that returns `""`
+rather than traversing. Then it found the one that mattered, in the fix from the previous round.
+
+`FLOW_CAPTURED_FRAMES` matched a bare `pr-frames/` path segment **anywhere**. So a contributor who
+names a directory `pr-frames/` in their own PR — `src/assets/pr-frames/hero.png`, a path they choose
+freely — silently suppressed the visual gate for a genuinely changed UI asset. Measured on the
+shipped script: the same single-file add reads `false` under `src/assets/pr-frames/hero.png` and
+`true` under `src/assets/frames/hero.png`.
+
+And the suppressed run explained itself with *"diff touches no UI or asset files … a file outside
+those patterns is NOT examined for a render delta"* — **false** for a diff that touched exactly one
+asset file. The exclusion dropped those paths into the not-matched floor, so the verdict changed and
+the report denied the files existed.
+
+Two halves, both shipped. The pattern now requires the shape the engine actually writes —
+`pr-frames/<branch-slug>/<label>-<frame>.png`, two path segments deep, where a contributor's
+directory is one — and the frame *names* are deliberately not spelled there, which would have been a
+third copy of the `FRAMES` table. Separately, an exclusion now **names what it excluded**: an
+exclusion a report will not name is indistinguishable from a pattern that never matched.
+
+The third option the reviewer offered — matching the directory `frames_dir()` computes at runtime —
+was rejected for the same reason the literal was chosen over an import in the first place: this file
+is a `sensitivePaths` gate, and #183 shipped precisely because its one existing cross-module import
+could fail silently and void a whole gate. Trading a narrow miss for a wider blind spot is the wrong
+direction. That decision is on the PR as a question rather than absorbed, because the reviewer
+flagged it `[decision-required]` and it is not mine to close.
+
+Three impostor paths are now pinned, alongside the positive that flow's own frames stay excluded and
+that a suppression names its files.
+
+**One more, same class, one layer up:** `/flow:ship` §5d interpolated `$PLAN_A` unquoted, so
+`planPath` was an argv injector — `"dev-docs/plan.md --files-from /dev/null"` word-splits and forces
+an empty change-set, a second route to the same suppressed verdict. No shell execution, and five
+pre-existing sites carry the identical shape, but FB-0108's point is that a per-site quoting
+convention is the thing that keeps re-arriving. The site this PR adds uses `set --` instead; the five
+others are a roadmap item, not this PR's scope.
+
 ## What the harness caught that review would not have
 
 Four defects, all found by running the instruments rather than reading them:
