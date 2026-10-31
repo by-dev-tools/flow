@@ -1080,15 +1080,24 @@ else
   CHAT_OUT=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/capture_frames.py" chat-dir --json 2>/dev/null)
   CIP=$(echo "$CHAT_OUT" | jq -r '.dir // empty' 2>/dev/null)
   CIG=$(echo "$CHAT_OUT" | jq -r '.ignored' 2>/dev/null)
-  if [ -z "$CIP" ]; then
+  # PARSE FIRST. An empty $CHAT_OUT (engine missing, python3 absent) pipes into jq, which
+  # exits 0 with empty output — so `[ -z "$CIP" ]` alone reported "chatImagePath unset" as
+  # a confident PASS for a slot that may well be set. That is the same collapse the
+  # tristate in `is_git_ignored` exists to prevent, one field over: "could not read" is
+  # not "is not configured".
+  if ! printf '%s' "$CHAT_OUT" | jq -e 'has("dir")' >/dev/null 2>&1; then
+    echo "[SKIP] chatImagePath — could not read the capture engine's report, so this says"
+    echo "       nothing about whether the slot is set. Check python3 and the plugin install."
+  elif [ -z "$CIP" ]; then
     # A NOTE, not a WARN. PR-body-frames-without-a-chat-image is a legitimate, fully
     # supported configuration — the engine's own message for this state says "that is the
     # default and the line is still correct". A warning that fires on a correct setup is
     # how people learn to ignore the warnings, which this skill flags elsewhere as a
     # failure in its own right.
-    echo "[PASS] chatImagePath unset — PR-body frames only; the gate-1 message carries no"
-    echo "       image, which is a supported state. To add one, point chatImagePath at a"
-    echo "       GIT-IGNORED directory (e.g. .flow/chat-frames)."
+    # ONE line: doctor's frontmatter states each check is a single line, with an indented
+    # hint only on FAIL/WARN. Converting this from WARN to PASS was right; carrying the
+    # WARN's three-line body along with it was not.
+    echo "[PASS] chatImagePath unset — PR-body frames only; the gate-1 message carries no image (supported)."
   elif [ "$CIG" = "false" ]; then
     echo "[WARN] chatImagePath ($CIP) is not git-ignored, so captured chat frames will show"
     echo "       up as working-tree changes and can be committed by accident. These frames"
@@ -1096,7 +1105,7 @@ else
   elif [ "$CIG" = "true" ]; then
     echo "[PASS] chatImagePath: $CIP (git-ignored)"
   else
-    echo "[SKIP] chatImagePath: $CIP — could not determine whether it is git-ignored."
+    echo "[SKIP] chatImagePath: $CIP — could not determine whether it is git-ignored, so it may show as a working-tree change."
   fi
 fi
 ```

@@ -246,26 +246,57 @@ def render_local_line(kind: str, path: str, url: "str | None" = None,
                     "no image. The line itself is unchanged and still correct.\n"
                     % chat_image)
             else:
-                line += "\n\n![%s](%s)" % (_frame_alt(img.name, kind),
+                # The frame is of `prototype.html`, which carries NO dock — the dock
+                # lives in the presented file the link serves. Without this clause the
+                # reader sees a dock-free picture directly under a sentence about a
+                # dock, looks for it, and spends attention inside a ~100-word budget on
+                # a contradiction that is not real.
+                line = line.replace(
+                    "The small floating comment dock is flow's, not the design.",
+                    "The small floating comment dock is flow's, not the design — it is "
+                    "in the page itself, not in the frame below.")
+                line += "\n\n![%s](%s)" % (_frame_alt(chat_image, kind),
                                            url_path(chat_image))
     return line
 
 
-def _frame_alt(filename: str, kind: str) -> str:
-    """Alt text for a captured frame, derived from the name the capture engine wrote.
+def _frame_alt(path: str, kind: str) -> str:
+    """Alt text for the chat frame — what the PAGE is, then the viewport.
 
     Never empty: an empty alt is markdown's DECORATIVE signal, so the one reader who
     most needs the text alternative -- someone reading this gate on a screen reader --
-    would be told nothing is there. Falls back to a generic that is true of any frame
-    rather than guessing at a width it cannot confirm.
+    would be told nothing is there.
+
+    READS THE SIDECAR FROM THE WORKING TREE, and that is correct here even though its
+    sibling `_committed_descriptions` insists on `git show <sha>:<path>`. The two differ
+    because their artifacts differ: the PR body is a projection of the COMMIT, so a
+    description that exists only in this session would be a claim the commit does not
+    support. The chat frame is by construction an uncommitted local file — it is why
+    `--chat-image` is refused for `--kind walkthrough` at all — so there is no commit to
+    project from, and the file beside it is the only description that exists.
+
+    This was briefly asymmetric for no reason: the sidecar was written into the chat
+    directory (the capture call passes `--out-dir "$CHAT_DIR"`) and then not read, so the
+    chat message — the surface where a non-seeing reader has LESS context than the PR
+    body, not more — got the thinner alt.
     """
-    split = _split_frame_name(filename) if FRAME_NAMES else None
-    if split:
-        _label, frame = split
-        w, h = FRAME_SIZES[frame]
-        return inline("%s — first screen at %s width (%d×%d)"
-                      % (kind.capitalize(), frame, w, h))
-    return inline("%s screenshot" % kind.capitalize())
+    img = Path(path)
+    split = _split_frame_name(img.name) if FRAME_NAMES else None
+    if not split:
+        return inline("%s screenshot" % kind.capitalize())
+    label, frame = split
+    w, h = FRAME_SIZES[frame]
+    what = ""
+    if SIDECAR:
+        try:
+            data = json.loads((img.parent / SIDECAR).read_text(encoding="utf-8"))
+            entry = data.get(label) if isinstance(data, dict) else None
+            if isinstance(entry, dict) and isinstance(entry.get("title"), str):
+                what = entry["title"].strip()
+        except (OSError, ValueError):
+            what = ""
+    return inline("%s — first screen at %s width (%d×%d)"
+                  % (what or kind.capitalize(), frame, w, h))
 
 
 # ------------------------------------------------------- the committed record
@@ -709,6 +740,20 @@ def _captures_section(vh_path: str, branch_for_dir: str, sha: str, root: str,
     emit links and no image syntax, so a text test would fall through for exactly the
     population that most needs the frames (general.md item 4's exit-code corollary —
     prefer the signal the producer maintains over a grep of its output).
+
+    Same discipline as the visual-history source and the same reason: the section is a
+    projection of the COMMIT, never of this session. A frame earns a row only when
+    `git cat-file -t <sha>:<path>` reports a blob, so the body cannot claim an image the
+    commit does not contain. The only thing that differs is where the candidate list
+    comes from — a directory listing here, a parsed record there — and the embed policy
+    below both is one function.
+
+    `branch_for_dir` names a DIRECTORY, not a value compared against anything. On the
+    record source the same CLI flag means "the branch the newest entry must match";
+    keeping one identifier for both meanings is how a guard quietly starts answering a
+    different question than its caller thinks. (This paragraph sat in a SECOND string
+    literal below the docstring for one revision — a no-op expression `help()` never
+    shows, which is a poor home for the one note defending a deliberate collision.)
     """
     """The `## Before / after` section built from this PR's COMMITTED captured frames.
 
@@ -806,7 +851,12 @@ def _captures_section(vh_path: str, branch_for_dir: str, sha: str, root: str,
             # "first screen", not just the dimensions: a capture is ONE SCREENFUL at
             # that viewport, and a caption that reads as the page's size tells a reader
             # who scrolled nothing that they saw the whole thing.
-            "cap": inline("%sFirst screen at %s width — %d×%d"
+            # `·` for the secondary split, not a second em-dash: with a label prefix
+            # the two-em-dash form rendered "Prototype — First screen at phone width —
+            # 390×844", three peers at one weight. `·` is the separator the rest of this
+            # repo's renderers already use for exactly this (render-report,
+            # insert-visual-history, render-test-plan).
+            "cap": inline("%sFirst screen at %s width · %d×%d"
                           % (prefix.capitalize(), fr, w, h)),
             # The alt is the WHOLE content for someone who cannot see the image, so it
             # leads with what the page is — read from the committed sidecar — and the
@@ -823,14 +873,15 @@ def _captures_section(vh_path: str, branch_for_dir: str, sha: str, root: str,
     # state at two widths; a reader arriving at "Before / after" should not have to work
     # out for themselves that there is no before. (The heading itself is pinned at
     # several sites and a per-source heading is a real fan-out — roadmap, not here.)
-    lead = ("Frames captured from this PR's %s, pinned to %s — not to the branch tip, so "
-            "they keep resolving after the branch is deleted at merge. There is no "
-            "*before* here: these are the surface as this PR leaves it, at two widths, "
-            "each showing the first screen rather than the whole page."
+    # Short on purpose. "There is no *before*" answers a promise the HEADING makes and
+    # breaks; "first screen" stops a reader concluding they saw the whole page. The sha
+    # is a bare pin. What was cut — that the pin survives a branch deletion, that nothing
+    # outside the per-PR directory is read — is plumbing reassurance against a doubt no
+    # reviewer arrives with, in the one section whose whole job is to be looked at.
+    lead = ("Frames of this PR's %s at %s. There is no *before* here: this is the surface "
+            "as the PR leaves it, at two widths, each showing the first screen."
             % (what_all, code_span(sha[:7])))
-    closing = ("Committed under %s. They are this PR's own frames by construction: nothing "
-               "outside that per-PR directory is read."
-               % code_span(one_line(rel_dir, 160)))
+    closing = "Committed under %s." % code_span(one_line(rel_dir, 160))
     return _embed_section(rows, slug, vis, sha, public_lead=lead,
                           closing=closing), True
 
@@ -1066,8 +1117,32 @@ def _selftest_captures(check, root, vh_rel, cap_rel, CSHA, SHA, _git, _head_sha)
     withimg = render_local_line("prototype", "/abs/p.presented.html",
                                 chat_image=frame)
     check("chat/one-image", withimg.count("![") == 1, withimg)
-    check("chat/alt-describes-the-frame",
-          "phone width (390×844)" in withimg, withimg)
+    check("chat/alt-names-the-viewport", "phone width (390×844)" in withimg, withimg)
+    # The sidecar sits beside the chat frame (the capture writes it into --out-dir), so
+    # the chat alt must LEAD with the page, not only name the frame. It was written and
+    # not read for one revision — on the surface where a non-seeing reader has LESS
+    # context than the PR body, not more.
+    Path(root, cap_rel, SIDECAR).write_text(
+        '{"prototype": {"title": "Activity feed \u2014 empty state"}}', encoding="utf-8")
+    titled = render_local_line("prototype", "/abs/p.presented.html", chat_image=frame)
+    check("chat/alt-leads-with-the-page",
+          titled.startswith(withimg.split("\n\n![")[0])
+          and "![Activity feed — empty state — first screen at phone width" in titled,
+          titled)
+    # And it DEGRADES rather than breaking when there is no sidecar to read.
+    Path(root, cap_rel, SIDECAR).unlink()
+    bare_alt = render_local_line("prototype", "/abs/p.presented.html", chat_image=frame)
+    check("chat/alt-degrades-without-a-sidecar",
+          "![Prototype — first screen at phone width" in bare_alt, bare_alt)
+    check("chat/alt-never-empty-either-way",
+          "![](" not in titled and "![](" not in bare_alt)
+    # The dock note is scoped ONLY when a frame rides along: the frame is of
+    # prototype.html, which has no dock.
+    check("chat/dock-note-scoped-when-a-frame-rides",
+          "not in the frame below" in withimg, withimg)
+    check("chat/dock-note-unscoped-without-a-frame",
+          "not in the frame below" not in render_local_line(
+              "prototype", "/abs/p.presented.html"))
     check("chat/line-still-intact", "local file" in withimg, withimg)
     # NEGATIVE: a missing frame is never claimed.
     noimg = render_local_line("prototype", "/abs/p.presented.html",

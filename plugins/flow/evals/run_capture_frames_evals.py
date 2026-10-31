@@ -694,13 +694,22 @@ def test_chat_message_budget():
         check("chat/exactly-one-image", line.count("![") == 1, line)
         check("chat/alt-is-never-empty", "![](" not in line, line)
         check("chat/alt-names-the-width", "phone width (390×844)" in line, line)
-        # The prose is unchanged by the image: strip the image line and the result must
-        # be byte-identical to the served line without it.
+        # The image costs no prose EXCEPT one scoping clause, and that clause is the
+        # point: the frame is of `prototype.html`, which has no dock, so a reader seeing
+        # a dock-free picture under a sentence about a dock would hunt for it. Assert
+        # the difference is EXACTLY that clause — not "roughly the same", which would
+        # let any future prose creep in unnoticed.
         prose = line.split("\n\n![")[0]
-        check("chat/prose-byte-identical-without-image",
-              prose == A.render_local_line("prototype", "/abs/p.presented.html",
-                                           "https://ws.example.test/p.html",
-                                           "anyone in the acme-eng org"), prose)
+        bare = A.render_local_line("prototype", "/abs/p.presented.html",
+                                   "https://ws.example.test/p.html",
+                                   "anyone in the acme-eng org")
+        SCOPE = " — it is in the page itself, not in the frame below"
+        check("chat/prose-differs-by-exactly-the-dock-scoping",
+              prose.replace(SCOPE, "") == bare,
+              "the image changed the prose by more than the dock-scoping clause:\n%r\nvs\n%r"
+              % (prose, bare))
+        check("chat/scoping-clause-is-present-with-a-frame", SCOPE in prose, prose)
+        check("chat/scoping-clause-absent-without-a-frame", SCOPE not in bare, bare)
         words = len(re.findall(r"\S+", prose))
         check("chat/prose-within-budget", words <= 55, "%d words: %s" % (words, prose))
         check("chat/link-is-a-bare-autolink-not-a-code-span",
@@ -735,9 +744,51 @@ def test_captured_frames_are_not_their_own_evidence():
     vs = (FLOW / "skills" / "verify-build" / "lib" / "visual-significance.py")
     src = vs.read_text(encoding="utf-8")
     check("circular/exclusion-present", "FLOW_CAPTURED_FRAMES" in src)
-    check("circular/exclusion-is-applied",
-          "not FLOW_CAPTURED_FRAMES.search(p)" in src,
-          "defining the pattern without applying it to asset_hits is a no-op")
+
+    # THE DURABLE ARM: drive the shipped script and compare the VERDICT. The first cut
+    # asserted the literal `"not FLOW_CAPTURED_FRAMES.search(p)" in src` — which went
+    # green with the filter applied at ONE of the two sites that decide the verdict, so
+    # a captured frame still flipped a pure-refactor change to significant while the
+    # already-applied filter had removed that path from the signals list. The verdict
+    # flipped with nothing naming the file that flipped it, and the pin could not tell.
+    # An outcome test needs no list of sites and cannot go stale as sites are added
+    # (general.md item 4: pin the decision, not a string that currently implies it).
+    with tempfile.TemporaryDirectory() as td:
+        cfg = Path(td, "flow.config.json")
+        cfg.write_text(json.dumps({"uiSurface": True,
+                                   "visualFilePatterns": r"\.(css|html)$"}),
+                       encoding="utf-8")
+        empty = Path(td, "empty.diff"); empty.write_text("", encoding="utf-8")
+        frame = C.frames_dir("dev-docs/visual-history.html", "feat/a") + "/prototype-phone.png"
+
+        def verdict(rows):
+            f = Path(td, "files.txt")
+            f.write_text("".join(r + "\n" for r in rows), encoding="utf-8")
+            r = subprocess.run([sys.executable, str(vs), "--config", str(cfg),
+                                "--files-from", str(f), "--diff-from", str(empty)],
+                               capture_output=True, text=True, timeout=60)
+            try:
+                return json.loads(r.stdout)["visual_significant"]
+            except (ValueError, KeyError):
+                return "UNPARSEABLE: %s / %s" % (r.stdout[:200], r.stderr[:200])
+
+        rename_only = ["R100\tsrc/old.css\tsrc/new.css"]
+        # KNOWN POSITIVE first: the instrument must be able to return both answers, or a
+        # "false" below proves nothing (general.md item 4).
+        check("circular/instrument-can-say-true",
+              verdict(rename_only + ["A\tsrc/img/hero.png"]) is True,
+              "a consumer's own added asset must still read as visually significant — "
+              "without this the two assertions below pass for a filter that swallows "
+              "everything")
+        check("circular/baseline-rename-only-is-false",
+              verdict(rename_only) is False, "the baseline arm is not false")
+        check("circular/flows-own-frame-does-not-flip-the-verdict",
+              verdict(rename_only + ["A\t" + frame]) is False,
+              "adding ONLY flow's own captured frame flipped the verdict — the "
+              "exclusion is missing at one of the sites that decide it")
+        check("circular/consumer-asset-in-a-pr-frames-named-dir-still-signals",
+              verdict(rename_only + ["A\tdocs/my-pr-frames-guide.png"]) is True,
+              "the exclusion swallowed a path that is real evidence")
     # The two definitions must name the SAME directory.
     m = re.search(r'FLOW_CAPTURED_FRAMES = re\.compile\(r"(.*?)"\)', src)
     check("circular/pattern-found", m is not None, src[:200])
@@ -746,11 +797,15 @@ def test_captured_frames_are_not_their_own_evidence():
               "the exclusion regex %r no longer names capture_frames.PR_FRAMES_DIR "
               "(%r) — one of the two moved" % (m.group(1), C.PR_FRAMES_DIR))
         rx = re.compile(m.group(1))
-        # NEGATIVE: a captured frame is excluded...
-        check("circular/flows-frame-excluded",
-              bool(rx.search("dev-docs/pr-frames/feat-a/prototype-phone.png")))
-        check("circular/flows-frame-excluded-at-root",
-              bool(rx.search("pr-frames/feat-a/prototype-phone.png")))
+        # NEGATIVE: a captured frame is excluded. The probe is BUILT FROM frames_dir()
+        # rather than typed as a literal — if the directory composition ever changes
+        # shape, a hardcoded probe would keep passing while the exclusion stopped
+        # covering what flow actually writes (general.md item 4: pin the decision, not a
+        # string that currently implies it).
+        for vh in ("dev-docs/visual-history.html", "visual-history.html"):
+            probe = C.frames_dir(vh, "feat/a") + "/prototype-phone.png"
+            check("circular/flows-frame-excluded %s" % probe, bool(rx.search(probe)),
+                  "the exclusion no longer covers the path the capture engine writes")
         # ...and the POSITIVE, without which the exclusion could be widened to
         # everything and every line above would still pass.
         for keep in ("src/img/hero.png", "assets/pr-frames.png",
@@ -784,7 +839,11 @@ def test_no_vendor_token_in_plugin():
         txt = f.read_text(encoding="utf-8", errors="replace").lower()
         for v in vendor:
             check("vendor/%s carries no %r" % (f.name, v), v not in txt)
-    check("vendor/scan-covered-every-target", scanned == len(targets), str(scanned))
+    # A HARD LITERAL, not `len(targets)`: the latter is a tautology in both directions —
+    # empty the list and every `v not in txt` assertion vanishes while `0 == 0` passes
+    # (general.md item 3, a prohibition satisfiable by deletion). Re-key this number when
+    # a target is genuinely added; that is the intended cost.
+    check("vendor/scan-covered-every-target", scanned == 7, str(scanned))
     # And the shared-lib sweep that owns `plugins/flow/lib/` must have COUNTED this new
     # file: an exact count is the mechanism, and leaving it stale is how a new lib
     # enters the directory unswept.
@@ -820,15 +879,15 @@ def test_schema_declares_the_slots():
     check("schema/chatImagePath-declared", "chatImagePath" in props)
     check("schema/screenshot-sub-slot",
           "screenshot" in props["captureBackend"]["properties"])
-    # The slot count is a fan-out contract (general.md item 2): a doc that still claims
-    # the old number is a contradiction a reader will find tomorrow.
-    n = len(props)
-    for doc in (FLOW / "docs" / "workflow.md", REPO / "template" / "base" / "CLAUDE.md.template"):
-        if doc.is_file():
-            txt = doc.read_text(encoding="utf-8")
-            stale = [m for m in re.findall(r"(\d+) slots", txt) if int(m) != n]
-            check("schema/slot-count-current in %s" % doc.name, not stale,
-                  "doc claims %r, schema has %d" % (stale, n))
+    # The slot-count fan-out is DELIBERATELY NOT RE-CHECKED HERE. It is a real contract,
+    # and it is already owned by `run_merge_status_evals.py`, which runs the shared
+    # `doctor/lib/slot_count_scan.py` over `plugins/` + `template/` + `README.md` — a
+    # strict superset of anything this harness would scan. The private `r"(\d+) slots"`
+    # regex that used to sit here was a FOURTH copy of a shape that module's own header
+    # documents escaping three ways (a newline wrap, an interposed adjective, a hyphen:
+    # `39\n slots`, `39 schema slots`, `39-slot` all evade it), guarding a contract that
+    # was already guarded — and its `if doc.is_file()` meant a moved doc registered zero
+    # checks and stayed green. One contract, one scanner.
 
 
 def test_skills_wire_the_capture():

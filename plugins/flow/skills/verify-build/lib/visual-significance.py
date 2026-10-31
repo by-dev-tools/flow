@@ -714,7 +714,22 @@ def main(argv):
     # render delta by construction (its content is all-added). For modified files
     # we inspect the diff: if NONE of the matched files carry a content delta, the
     # change is rename-only / comment-only / whitespace-only ⇒ not significant.
-    new_files = [p for st, p in changes if st in ("A", "U") and (visual_re.search(p) or asset_re.search(p))]
+    # FLOW_CAPTURED_FRAMES is applied HERE TOO, and the first cut applied it only to
+    # `asset_hits` above — which left the circle open at the site that actually decides,
+    # and made the report WORSE than before the exclusion existed: a newly-added
+    # `pr-frames/…png` still set `content_changed`, flipping a pure-refactor verdict to
+    # significant, while the filter above had already removed that path from
+    # `visual_signals` — so the verdict flipped with nothing naming the file that
+    # flipped it. Measured on the shipped script: a rename-only change-set reads
+    # `false`; the same change-set plus one captured frame reads `true`.
+    #
+    # Two sites, one predicate. An exclusion that is not applied everywhere the value is
+    # read is not an exclusion, and a literal grep for "the filter is applied" cannot
+    # tell one site from two — which is why the eval that pins this drives the script
+    # and compares the VERDICT, rather than asserting a substring of its source.
+    new_files = [p for st, p in changes
+                 if st in ("A", "U") and (visual_re.search(p) or asset_re.search(p))
+                 and not FLOW_CAPTURED_FRAMES.search(p)]
     diff_changed, debug_only_skipped = _diff_content_changed(diff_text, visual_re, asset_re)
     content_changed = bool(new_files) or diff_changed
     # An asset whose path matched but which only appears under a rename (R) with no

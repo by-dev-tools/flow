@@ -297,6 +297,82 @@ Worth stating plainly: this defect is only reachable because the feature writes 
 into the repo. Nothing else flow ships does that, so no existing gate had to think about its own
 output being read back as input.
 
+## Round two — the rigor gate's re-review, and the finding that mattered most
+
+The rebase moved source after the first staff-review, so the rigor gate reported `source-drift` and
+prescribed its auto-resolution: re-run all four lenses on the final tree. That re-run earned its
+cost twice over.
+
+**BLOCKER — the circularity fix was applied at one of the two sites that decide the verdict.**
+`visual-significance.py` reads the change-set twice: once for `asset_hits` (what the report *names*)
+and once for `new_files` (what sets `content_changed`, which *decides*). The exclusion went into the
+first and not the second. So a captured frame still flipped a pure-refactor verdict from `false` to
+`true` — **and the result was worse than before the exclusion existed**, because the filter had
+already removed that path from `visual_signals`, so the verdict flipped with nothing in the report
+naming the file that flipped it.
+
+Measured on the shipped script, two change-sets differing by exactly one row:
+
+```
+R100  src/old.css → src/new.css                              → false
+R100  src/old.css → src/new.css
+A     dev-docs/pr-frames/feat-a/prototype-phone.png          → true   ← flow's own frame
+```
+
+Worth sitting with: the previous commit's history entry and roadmap row both asserted the circle was
+closed. It was not, and **the eval I wrote to pin it could not tell** — `circular/exclusion-is-applied`
+asserted the literal `"not FLOW_CAPTURED_FRAMES.search(p)" in src`, which is satisfied by the filter
+appearing at one site. That is `general.md` item 4's own corollary — *pin the decision, not a string
+that currently implies it* — committed inside the test written to honour it.
+
+The replacement drives the shipped script and compares the **verdict** across those three
+change-sets, so it needs no list of sites and cannot go stale as sites are added. It is
+mutation-sensitive: reverting the second-site fix turns it red, where the literal pin stayed green.
+It also leads with a known-positive (`instrument-can-say-true`), because two `false` assertions prove
+nothing from an instrument that can only say `false`.
+
+**A sixth unearned green, in the sidecar.** `capture()` unlinks the previous run's *frame* before
+writing — with a comment calling a stale frame "the wrong-frame class the whole engine is built to
+refuse" — but merged the *sidecar*. Merge-not-clobber is right across labels and wrong across
+iterations of one: re-capturing a page that had since lost its `<title>` left the previous run's
+description attached to this run's frames. Driven, not reasoned about:
+
+```
+iter1  title "Activity feed — empty state"  → sidecar {"prototype": {"title": "Activity feed — empty state"}}
+iter2  title removed                        → frames: fresh.  sidecar: UNCHANGED
+```
+
+The engine's own note was false while it happened — it said the frames "carry no description" while a
+description sat in the file and would be used. The label is now dropped when its source is, exactly
+as the frame is.
+
+**And the chat alt was the half I did not fix.** Two lenses, independently: the PR-body alt was given
+the sidecar's title; the chat alt — on the surface where a non-seeing reader has *less* context, not
+more — still read `Prototype — first screen at phone width (390×844)`, with `frames.json` sitting
+unread in the same directory the capture had just written it to. My own eval pinned that defective
+string by name. It now reads the sidecar from the working tree, which is correct precisely *because*
+the chat frame is uncommitted by construction — the `git show` pinning on the sibling exists only
+because a PR body is a projection of the commit, and a chat message is not.
+
+Five smaller ones, each verified before fixing: the `branch_for_dir` note — the one defence against
+the two-meanings-of-`--branch` collision this PR deliberately accepted — was sitting in a **dead
+string expression** below the real docstring, invisible to `help()`; `/flow:doctor` printed a
+confident `[PASS] chatImagePath unset` for a state nobody measured (an empty engine report pipes
+through `jq` with exit 0); `warn_if_not_ignored` went fully silent on its own "could not measure"
+tristate at the one shipped call site; a comment claimed all three adapters agree on a `warnings`
+key that two of them do not have; and `vendor/scan-covered-every-target` asserted
+`scanned == len(targets)`, a tautology that passes if you empty the list — `general.md` item 3 inside
+the harness built to catch item 3.
+
+One deletion: a private `r"(\d+) slots"` sweep I had added here was a **fourth** copy of a shape
+`doctor/lib/slot_count_scan.py` documents escaping three ways, guarding a contract
+`run_merge_status_evals.py` already covers over a strict superset of the same files. Removed rather
+than fixed — one contract, one scanner.
+
+Four further findings went to roadmap § Next as items 5–8 (the record pointer the captures arm
+retires, multi-label interleaving and cross-label staleness, the exclusion being broader than the
+writer's path, and working-tree enumeration deciding which source ships).
+
 ## What the harness caught that review would not have
 
 Four defects, all found by running the instruments rather than reading them:

@@ -827,11 +827,12 @@ had already ruled on.
 **Surfaces when:** `/flow:staff-review` or `/simplify`'s orchestration is next touched, or when
 anyone asks why `/flow:ship` still needs an explicit "ship it" on a clean run.
 
-### Captured frames: four craft findings from v1.65.0's staff-review, deliberately not fixed at ship
+### Captured frames: eight findings from v1.65.0's two staff-review rounds, deliberately not fixed at ship
 
-All four are real, all four were raised by the lens agents, and none is a correctness bug. Routed
-here rather than absorbed because each widens the PR past "capture a frame and put it where the
-human is".
+All eight are real, all eight were raised by the lens agents across two review rounds, and none is
+a correctness bug the PR ships with. Routed here rather than absorbed because each widens the PR
+past "capture a frame and put it where the human is". Items 1–4 came from round one, 5–8 from the
+rigor-gate's re-review on the final tree.
 
 1. **Frames are DPR-1, and the dimension check makes retina capture structurally impossible.**
    `capture_frames.capture()` asserts `size == (width, height)` exactly, so a backend capturing at
@@ -854,8 +855,40 @@ human is".
    right answer and is a genuine fan-out: the string is pinned at ~8 sites including
    `pr-coherence.py`'s body slot, both SKILL templates, and five eval arms.
 
-**Surfaces when:** `plugins/flow/lib/capture_frames.py`, `artifact-handoff.py`'s `_embed_section`,
-or `dev-docs/design-language.md` is next touched.
+5. **The captures arm retires the record's POINTER even when a record exists.** Round two's fix made
+   `auto` fall through when there are *zero* captures; when there are captures, the record's closing
+   sentence — "The full record — rationale, decision test, questions carried — is `…`" — is dropped,
+   and `_omit_with_record`'s own docstring calls that "the single most useful sentence in the
+   render". The premise licensing it (`/flow:ship` §5d: "a PR that has no curated visual-history
+   record to draw on") is false in every state §5d runs, because §7a *requires* a visual-history
+   entry under the identical `visual_significant` gate. Shape: when the newest entry's branch
+   matches, append `render_frames`' existing record string to the captures closing — one
+   conditional, one shared string — and correct §5d's prose to say the captures source *leads*
+   rather than substitutes. Deferred because "what the body carries when both sources are live" is
+   a body-length call that item 4 above already owns the adjacent half of.
+6. **Multi-label directories interleave by viewport and never prune the other label.**
+   `_captures_section` sorts `(frame, label)`, so two artifacts render as phone-A, phone-B,
+   desktop-A, desktop-B rather than as two coherent pairs — while the lead says "the surface as this
+   PR leaves it, at two widths". Separately, `capture()` unlinks only the label it is capturing and
+   `git add "$FRAME_DIR"` stages everything, so a branch whose earlier ship captured `walkthrough`
+   and whose later ship captures `prototype` publishes the previous iteration's walkthrough frame
+   under this PR's name. Within a label the engine refuses exactly this; across labels it does not.
+7. **The asset exclusion is broader than the writer's path.** `FLOW_CAPTURED_FRAMES` matches a
+   `pr-frames/` segment anywhere, but flow only ever writes under
+   `<dir of visualHistoryPath>/pr-frames/<slug>/`. A consumer whose own `docs/pr-frames/` holds real
+   screenshots is silently de-signalled by a flow-internal directory name inside a project-agnostic
+   artifact. An optional `--captured-frames-dir` (the shape `--asset-patterns` already uses) would
+   scope it without adding the cross-module import that was correctly refused.
+8. **`_captures_section` enumerates the WORKING TREE and verifies against the commit.** A frame
+   present at `<sha>` but absent from the working tree is invisible, and under the shipped `auto`
+   default that silently selects the *record* source instead of the committed frames. Strictly
+   better than the previous behaviour (which omitted entirely), so not a regression — but the
+   enumeration source now decides which of two sources ships. Closed by enumerating with
+   `git ls-tree <sha>:<rel_dir>`.
+
+**Surfaces when:** `plugins/flow/lib/capture_frames.py`, `artifact-handoff.py`'s `_embed_section`
+or `_captures_section`, `visual-significance.py`'s asset signal, or `dev-docs/design-language.md`
+is next touched.
 
 ### The design-language doc's screenshot rule is now contradicted by a shipped surface
 
@@ -870,6 +903,30 @@ when it is picked up; do not build a rival item.
 are never resized and carry no size warning. Cheap in practice (~20 KB measured) and wrong in
 principle. Both of the new surfaces — the PR-body frame embed and the gate-1 chat message — are
 ungrounded by that doc's own scope line, which is the gap the Exploration entry already names.
+
+### The provenance reporter says "no in-session signal exists" — but the agent has one
+
+**Measured during v1.65.0's ship, and the reporter was wrong in flow's own favour.** The
+`## Flow run` provenance block states: *"This host exposes no run-pinned signal for the flow plugin,
+so the number above is read from the plugin registry… There is no in-session check on this host."*
+On that ship the registry read **1.64.0** while the session was in fact running **1.60.0** — the
+`SessionStart` currency hook had updated the install mid-session, which per FB-0107 takes effect
+only on restart. The reporter's own caveat describes this exact case and then cannot detect it.
+
+**But a signal does exist, and the agent sees it on every invocation:** a skill's loaded base
+directory is printed when the skill is invoked, and it is version-pinned
+(`…/plugins/cache/flow/flow/<version>/skills/<name>`). That is the copy Claude Code actually
+resolved — the ground truth the registry number only approximates.
+
+**Why it is not a one-line fix.** `plugin-provenance.py` is a Python script; it cannot see the
+skill's base directory, because that string is given to the *model*, not to the process. So the fix
+is not in the reporter — it is a line in `/flow:ship` instructing the agent to compare the base
+directory it was handed against the version the reporter printed, and to correct the row when they
+disagree. That makes a gate's output depend on an agent remembering to look, which is the shape this
+repo is usually trying to remove, so it wants a deliberate decision rather than a quick patch.
+
+**Surfaces when:** `plugins/flow/skills/ship/lib/plugin-provenance.py` or the `## Flow run`
+provenance block in `/flow:ship` is next touched, or FB-0107 is revisited.
 
 ### `render_template`'s two trailing hint parameters stopped being honest at the third adapter
 

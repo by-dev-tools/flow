@@ -228,10 +228,12 @@ def validate(backend):
     catch an adapter that would fail invisibly, so a green report over a template that
     cannot render would defeat it entirely.
     """
-    # `warnings`, not `notes`: `preview_backend.validate` and `dispatch_backend.validate`
-    # both emit `warnings` for this exact field, and /flow:doctor Checks 2.12/2.13/2.14
-    # read the three reports side by side. A third adapter inventing a third key is the
-    # drift that makes a reader check which one they are holding.
+    # `warnings`, not `notes`: it matches `preview_backend`'s `check` output, which
+    # /flow:doctor Checks 2.13 and 2.14 read side by side. (`dispatch_backend`'s `check`
+    # carries no notes field at all, and in BOTH siblings the key is injected by `main`'s
+    # `check` branch rather than by `validate()` itself — an earlier version of this
+    # comment claimed all three agreed on a field two of them do not have, which is the
+    # comment-asserts-a-property-the-code-lacks class this file was already caught on.)
     report = {"verbs": {}, "usable": False, "configured": 0,
               "known_placeholders": sorted(KNOWN_PLACEHOLDERS),
               "frames": [{"name": n, "width": w, "height": h} for n, w, h in FRAMES]}
@@ -567,6 +569,22 @@ def capture(backend, target, out_dir, label, frames=FRAMES, timeout=90, config_d
                 reasons.append(f"{PREFIX} note: could not write {side} ({exc}); the "
                                f"frames are fine, their alt text will be less specific.")
         else:
+            # DROP this label's description, exactly as the capture dropped this label's
+            # stale frame before writing. Merge-not-clobber is right ACROSS labels and
+            # wrong across ITERATIONS of one: without the pop, re-capturing a page that
+            # has since lost its <title> leaves the previous run's title describing the
+            # new run's frames — a description of a surface that is no longer there, in
+            # the one channel nobody can eyeball-check. Same class as the stale frame,
+            # and the note below was itself false while it happened: it said the frames
+            # "carry no description" while a description sat in the file and would be used.
+            if existing.pop(label, None) is not None:
+                try:
+                    side.write_text(json.dumps(existing, indent=2, sort_keys=True) + "\n",
+                                    encoding="utf-8")
+                except OSError as exc:
+                    reasons.append(f"{PREFIX} ⚠️ could not drop the stale description for "
+                                   f"{label} from {side} ({exc}); its alt text may "
+                                   f"describe a page these frames are no longer of.")
             reasons.append(
                 f"{PREFIX} note: {tgt} has no <title>, so the committed frames carry no "
                 f"description and their alt text can only name the viewport. Give the "
@@ -606,8 +624,17 @@ def warn_if_not_ignored(path, root=None):
     "invisible and not fatal" is how a repo accumulates screenshots nobody chose to
     keep.
     """
-    if is_git_ignored(path, root) is not False:
+    state = is_git_ignored(path, root)
+    if state is True:
         return None
+    if state is None:
+        # Pair the "could not measure" branch with a note rather than silence
+        # (general.md item 1). The only shipped caller is /flow:prototype section 8,
+        # which prints stderr but has no other channel — so returning None here made an
+        # unmeasurable ignore state indistinguishable from a clean one.
+        return (f"{PREFIX} note: could not determine whether {path} is git-ignored "
+                f"(not a git repo, or git is unavailable). Captured chat frames may show "
+                f"up as working-tree changes; check it is ignored.")
     return (f"{PREFIX} note: {path} is not git-ignored, so captured chat frames will show "
             f"up as working-tree changes and can be committed by accident. Add it to "
             f"`.gitignore` — these frames are for the chat message, not the repo.")
@@ -753,6 +780,21 @@ def selftest() -> int:
                   Path(outd, SIDECAR).read_text(encoding="utf-8")),
               "an empty description must be ABSENT, not an empty string the reader "
               "would render as a blank alt")
+
+        # A RE-CAPTURE whose page lost its <title> must not keep the old description.
+        # Merge-not-clobber is right across labels, wrong across iterations of one.
+        got, _why = capture(be("ok"), page, outd, "staleness")
+        check("sidecar/title-present-before-recapture",
+              json.loads(Path(outd, SIDECAR).read_text(encoding="utf-8"))
+              .get("staleness", {}).get("title") == "Empty feed")
+        got, why = capture(be("ok"), untitled, outd, "staleness")
+        after = json.loads(Path(outd, SIDECAR).read_text(encoding="utf-8"))
+        check("sidecar/stale-description-dropped-on-recapture",
+              "staleness" not in after,
+              "the previous run's title survived over this run's frames: %r" % after)
+        check("sidecar/recapture-still-produced-frames", len(got) == 2, repr(got))
+        # PAIRED: the OTHER label's description is untouched by that drop.
+        check("sidecar/other-labels-survive-the-drop", "proto2" in after, repr(after))
 
         # --- frames-dir: ONE composition, and it refuses an unsluggable branch.
         check("frames-dir/composes",
