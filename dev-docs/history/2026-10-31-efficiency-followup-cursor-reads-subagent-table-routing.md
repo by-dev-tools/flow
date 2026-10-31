@@ -13,11 +13,12 @@ Executes three of `dev-docs/research/2026-10-efficiency-audit.md`'s findings aga
 brief Ben filed the same day the audit merged (#181):
 
 1. **`dispatch_backend.py` gains a sixth, optional verb, `readSince {session} {cursor}`** — messages
-   since a cursor, not a full re-read. `KNOWN_PLACEHOLDERS` gains `cursor`; a new `OPTIONAL_VERBS`
-   set lets `validate()` report an absent `readSince` as `absent` without flipping `report["ok"]`
-   to False, which every other (required) verb's absence still does. `/flow:orchestrate` step 4
-   states the contract explicitly, citing the measured 573-messages-in-6-calls figure and the
-   audit's independent 105,385-character transcript-polling finding.
+   since a cursor, not a full re-read. `KNOWN_PLACEHOLDERS` gains `cursor`; `VERBS`' per-verb tuple
+   gains a 4th `optional` field, so `validate()` can report an absent `readSince` as `absent`
+   without flipping `report["ok"]` to False, which every other (required) verb's absence still
+   does. `/flow:orchestrate` step 4 states the contract explicitly, citing the audit's measured
+   105,385-character transcript-polling finding and naming a concrete default query for the common
+   no-backend case.
 2. **`/flow:spawn` gains an unnumbered "Before Step 0: choose the primitive" section** — a
    workspace-vs-subagent table, plus the nuance that a subagent's output lands directly in the
    calling session's own context, so a long-lived seat should scope a subagent dispatch to a short,
@@ -39,10 +40,12 @@ written rule against it anywhere — this closes that gap, plus the two measured
 
 - **`readSince` is optional, not required.** Unlike every other verb in `dispatch_backend.py`'s closed
   vocabulary, a consumer with no cheap cursor primitive can leave it unconfigured without the adapter
-  reporting itself broken. This needed a new concept (`OPTIONAL_VERBS`) rather than reusing
-  `required`/`absent` as-is, since those already mean "this verb's own placeholders" and "no template
-  at all" respectively — overloading either would have made the one existing optional-shaped signal
-  ambiguous with a real gap.
+  reporting itself broken. First shipped as a second, separately-maintained `OPTIONAL_VERBS` set
+  cross-referenced by membership — `/simplify`'s reuse, simplification, and altitude lenses
+  independently converged on the same finding (three of four lenses, unprompted) that this was the
+  fan-out-contradiction class `general.md` names: two structures encoding the same fact, one of them
+  invisible from the other. Fixed by folding `optional` into the existing per-verb tuple as a 4th
+  field instead — one place to add a verb correctly, not two that can silently disagree.
 - **The cursor-first read contract lives in `/flow:orchestrate` step 4 only, not duplicated into §8's
   digest.** §8 already says "run steps 2, 3 and 4, then stop" — it inherits step 4's rule by
   reference. The original plan drafted a second copy for §8; executing it found that would be the
@@ -86,3 +89,18 @@ result — recorded here as a confirmed-again instance of a known hazard, not a 
   says before executing it literally — §8's own text already delegates to step 4, and the plan's
   original phrasing would have introduced the exact duplication this repo's documentation discipline
   exists to prevent.
+- **A number carried across a dispatch brief is not the same as a number in a committed document,
+  and citing it as the latter is a fabricated citation waiting to be checked.** The dispatch brief's
+  "reference point" ("573 messages in 6 API calls once, then 1 call / 0.6s per re-read") was written
+  into `dispatch_backend.py`'s docstring and `/flow:orchestrate` step 4 attributed to
+  `dev-docs/research/2026-10-efficiency-audit.md §3` — which does not contain that number, or
+  "cursor" or "readSince," anywhere (confirmed by grep over the whole doc). `/simplify`'s
+  altitude lens caught it on a direct source check, not on the strength of the number sounding
+  plausible. Worse: the session that measured it was the earlier worker whose workspace was archived
+  before it pushed anything, so the figure is now unverifiable at the source. Fixed by dropping it
+  from every shipped artifact (lib docstring, skill prose, changelog) and keeping only the audit's
+  own traceable figure (62 calls, 105,385 characters). `dev-docs/plan.md`'s own narrative text
+  correctly distinguished "the dispatch's own reference point" from "the audit's §3" throughout and
+  needed no correction — the error was introduced only when translating plan prose into shipped
+  prose, under a verb ("§3: 573...") that reads as one citation covering two different-provenance
+  numbers.

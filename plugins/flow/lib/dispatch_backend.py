@@ -23,8 +23,9 @@ Six verbs, and the placeholder vocabulary is **closed**:
     selfSession   (no placeholders)      this seat's own id — the ping return address
     readSince     {session} {cursor}     OPTIONAL — messages since a cursor, not the whole
                                           history (dev-docs/research/2026-10-efficiency-audit.md
-                                          §3: 573 messages in 6 calls once, then 1 call / 0.6s
-                                          per re-read, vs. a full re-walk every check)
+                                          §3: a full re-walk every check measured as the
+                                          orchestrator's 3rd-largest Bash-output category — 62
+                                          calls, 105,385 characters, over 22 days)
 
 `readSince` is the one verb in this vocabulary that may be legitimately absent — a host with no
 cheap cursor primitive simply doesn't configure it, and `check` reports `absent` (not `invalid`)
@@ -84,41 +85,45 @@ PREFIX = "[dispatch-backend]"
 # was in this set with no required verb and no supplier, and was removed.
 KNOWN_PLACEHOLDERS = {"name", "messageFile", "session", "cursor"}
 
-# Verbs a consumer may legitimately leave unconfigured. Unlike every other verb,
-# an absent OPTIONAL verb does NOT flip `report["ok"]` to False — the orchestrator
-# workflow still applies in full, it only loses the cheap path `readSince` offers
-# (dev-docs/research/2026-10-efficiency-audit.md §3). Every other verb is load-
-# bearing for the workflow itself and stays required.
-OPTIONAL_VERBS = {"readSince"}
-
-# Verb → (required placeholders, what it is for, what to do by hand if absent).
+# Verb → (required placeholders, what it is for, what to do by hand if absent,
+# optional). `optional=True` is the one load-bearing difference: an absent optional
+# verb does NOT flip `report["ok"]` to False — the orchestrator workflow still
+# applies in full, it only loses the cheap path that verb offers. This lives as a
+# 4th field on the SAME tuple every other fact about a verb already lives in,
+# rather than a second, separately-maintained set — one place to add a verb
+# correctly instead of two that can silently disagree.
 VERBS = {
     "listWorkers": (
         set(),
         "re-derive live worker state (§4.4 'state is live', §4.9 succession)",
         "list the live workspaces in your host's UI or CLI and paste the result",
+        False,
     ),
     "createWorker": (
         {"name", "messageFile"},
         "spawn a worker whose first message is the dispatch brief (§4.10 instruct-not-remote-invoke)",
         "create the workspace by hand and paste the brief as its first message",
+        False,
     ),
     "sendMessage": (
         {"session", "messageFile"},
         "message an existing session — re-address broadcasts, follow-ups, gate relays (§4.8 rules 5/6)",
         "open the worker and paste the message",
+        False,
     ),
     "workerStatus": (
         {"session"},
         "last-activity timestamp for the silent-worker sweep (field manual T2, discharged 2026-09-17 — this verb is what subsumed it)",
         "check each worker's last activity by hand; do NOT read `status`, which cannot "
         "distinguish 'waiting at a gate' from 'rate-limited hours ago'",
+        False,
     ),
     "selfSession": (
         set(),
         "this seat's own session id — the address workers ping back on (§4.8 rule 6, §4.9 step 4)",
         "ask the human for this session's id; do NOT skip the re-address, because a failed "
         "re-address produces silence and silence reads as 'no worker needs anything' (FB-0105)",
+        False,
     ),
     "readSince": (
         {"session", "cursor"},
@@ -126,6 +131,7 @@ VERBS = {
         "sweep and the §8 digest (dev-docs/research/2026-10-efficiency-audit.md §3)",
         "read the worker's full history by hand, or use `workerStatus` for a last-activity-only "
         "check — the workflow still applies, it only loses the cheap path",
+        True,
     ),
 }
 
@@ -187,18 +193,17 @@ def validate(backend):
     # three places, with nothing to catch a miss.
     report = {"verbs": {}, "ok": True, "configured": 0,
               "known_placeholders": sorted(KNOWN_PLACEHOLDERS)}
-    for verb, (required, purpose, manual) in VERBS.items():
+    for verb, (required, purpose, manual, optional) in VERBS.items():
         tmpl = backend.get(verb)
-        entry = {"purpose": purpose, "manual_fallback": manual, "optional": verb in OPTIONAL_VERBS}
+        entry = {"purpose": purpose, "manual_fallback": manual, "optional": optional}
         if tmpl is None:
-            if verb in OPTIONAL_VERBS:
-                # Absent-but-optional is not a failure: the orchestrator workflow applies in
-                # full either way, it only loses the cheap path this verb offers. Reported as
-                # `absent`, same state name as a required verb's absence, so a caller that
-                # filters on `state` still sees it — but it does NOT flip `report["ok"]`.
-                entry.update(state="absent", problems=[])
-            else:
-                entry.update(state="absent", problems=[f"`{verb}` is not configured"])
+            # Absent-but-optional is not a failure: the orchestrator workflow applies in full
+            # either way, it only loses the cheap path this verb offers. Reported as `absent`,
+            # same state name as a required verb's absence, so a caller that filters on `state`
+            # still sees it — but only a required verb's absence flips `report["ok"]`.
+            problems = [] if optional else [f"`{verb}` is not configured"]
+            entry.update(state="absent", problems=problems)
+            if problems:
                 report["ok"] = False
         elif not isinstance(tmpl, str) or not tmpl.strip():
             entry.update(state="invalid", problems=[f"`{verb}` must be a non-empty string"])
@@ -401,7 +406,7 @@ def render(backend, verb, values):
     """Return (argv, error). `argv` is None when the command cannot be rendered."""
     if verb not in VERBS:
         return None, f"{PREFIX} ⚠️ unknown verb {verb!r}. Known: {', '.join(sorted(VERBS))}."
-    required, _purpose, manual = VERBS[verb]
+    required, _purpose, manual, _optional = VERBS[verb]
     return render_template(
         backend.get(verb), verb, required, KNOWN_PLACEHOLDERS, values, PREFIX, manual,
         "dispatchBackend",

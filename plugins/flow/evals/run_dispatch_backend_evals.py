@@ -121,7 +121,7 @@ check("{message} is not in the known vocabulary at all", "message" not in D.KNOW
 # refuses at render is the check-passes/dispatch-fails class the doctor check exists
 # to prevent — `{branch}` was exactly that and was removed.
 _suppliers = set()
-for _req, _p, _m in D.VERBS.values():
+for _req, _p, _m, _opt in D.VERBS.values():
     _suppliers |= _req
 check("every advertised placeholder is required by at least one verb (none validates "
       "then refuses at render)", D.KNOWN_PLACEHOLDERS == _suppliers,
