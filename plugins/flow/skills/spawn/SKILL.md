@@ -18,6 +18,36 @@ allowed-tools: Read, Grep, Glob, Bash, Write
 
 **Deletion criterion (FB-0088):** delete when two consecutive routing audits show the `model·effort·why` line is emitted correctly *without* this skill (the practice stuck), or when the backend gains a typed dispatch API that carries the brief contract itself.
 
+### Before Step 0: choose the primitive — workspace or subagent
+
+*Deliberately unnumbered.* Other text cites this skill's existing steps by number (`/flow:spawn`
+step 1's uniqueness check, the field manual) and this section is new, so it does not take a
+number — renumbering the rest to fit it is the fan-out-contradiction class (`.claude/rules/general.md`
+§ Consistency item 2) for no gain. This skill creates a *workspace*; the question below is whether
+the job in front of you needs one at all, before you reach Step 0.
+
+| Signal | Primitive |
+|---|---|
+| Needs its own branch/PR, an independent `/flow:ship` pipeline, or must outlive this session | **Workspace** |
+| Needs its own distinct **installed-plugin state** (a Claude Code install is machine-scope, not session-scope — e.g. a probe that reinstalls a specific flow snapshot cannot share a parent's or sibling's own install without clobbering it) | **Workspace** |
+| Read-mostly, single-purpose, finishes inside the calling session's own turn, touches no shared install state (e.g. a review lens, a lookup, a non-reinstalling probe) | **Subagent** |
+
+**Measured, not assumed** (`dev-docs/research/2026-10-efficiency-audit.md` §5): `/flow:staff-review`'s
+four parallel lenses are already a correctly-provisioned subagent fan-out — no change needed there.
+A probe suite that reinstalls a specific flow plugin snapshot per arm could not have been subagents
+without clobbering the parent's or a sibling's own install; several arms of that same suite that did
+*not* reinstall anything ran as workspaces anyway, paying a real bootstrap tax for no reason the
+table above would have required.
+
+**The nuance the table alone doesn't carry: a subagent's output lands directly in the calling
+session's own context** — there is no separate thread to inspect later. On a short-lived caller
+this is free; on a long-lived seat like the orchestrator it compounds exactly like unscoped Bash
+output does (§3 of the same audit: 865,545 characters of raw tool output over 22 days, against only
+5 subagent dispatches in the same window). So the table is necessary but not sufficient — scope a
+subagent dispatch to return a short, structured result (the staff-review-lenses pattern), not "go
+explore broadly and report everything back," which would just relocate the Bash-output problem into
+the Agent tool instead of fixing it.
+
 ## 0. Resolve the backend
 
 ```sh
@@ -51,6 +81,18 @@ This is **right-sizing, not rationing.** Two failure modes, and the second is wo
 
 - **Over-spending** — everything on the top tier by default rather than by decision.
 - **Under-dispatching** — holding back a legitimate parallel worker to conserve budget. That trades throughput, the scarce thing, for tokens, the cheap thing. **Never decline a worker that has real work for budget reasons; right-size it instead.**
+
+**A third failure mode, named because it was measured in a live dispatch brief and is the
+mirror image of under-dispatching: downshifting one job's model or effort to free shared
+capacity for a DIFFERENT job.** Measured (`dev-docs/research/2026-10-efficiency-audit.md` §4):
+*"It's reversible, and the program's one critical-path worker needs the account's capacity."*
+Route each job by what **that job** needs — the table below, not a neighbor's workload. If the
+account is genuinely out of room, that is this skill's own step 1 admission-control call ("rate
+window near exhausted? ... hold the queue"), made **explicitly** as a queue decision, never a
+silent per-job effort cut dressed as routing judgment. Ben's own priority, stated directly
+(2026-10-05, `research/orchestrator-field-manual.md` § 3): token efficiency matters, but neither
+overage nor a tier change is this skill's call to propose — a capacity shortfall is a human
+decision, not a routing-table workaround.
 
 | Job shape | Model | Effort |
 |---|---|---|

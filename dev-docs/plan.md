@@ -204,28 +204,30 @@ or extrapolated.
 
 ### Spec-walk
 
-- [ ] `dispatch_backend.py` gains `readSince` in `KNOWN_PLACEHOLDERS` and `VERBS`, marked optional — a
+- [x] `dispatch_backend.py` gains `readSince` in `KNOWN_PLACEHOLDERS` and `VERBS`, marked optional — a
   backend missing it reports `absent` (not `invalid`) with the named manual fallback. Verify:
   `python3 plugins/flow/lib/dispatch_backend.py check --config <fixture-without-readSince>`.
-- [ ] A backend config supplying `readSince` with `{session}{cursor}` renders via `render()`; a config
-  referencing `{cursor}` on any other verb fails `check`. Verify: new eval case, run via
-  `tools/eval-sweep.sh`.
-- [ ] `/flow:orchestrate` step 4 states the cursor-first read contract and cites both measured figures
-  (573-vs-1-call; 105,385 characters). Verify: read-through, grep the figures appear verbatim.
-- [ ] An unnumbered "Before Step 0: choose the primitive" section exists in `/flow:spawn`, before the
+- [x] A backend config supplying `readSince` with `{session}{cursor}` renders via `render()`; a config
+  referencing `{cursor}` on any other verb fails `check`. Verify: new eval case
+  (`run_dispatch_backend_evals.py` §2b), run via `tools/eval-sweep.sh`.
+- [x] `/flow:orchestrate` step 4 states the cursor-first read contract and cites both measured figures
+  (573-vs-1-call; 105,385 characters). Verify: `grep -n "573 messages in 6\|105,385 characters"
+  plugins/flow/skills/orchestrate/SKILL.md` finds both.
+- [x] An unnumbered "Before Step 0: choose the primitive" section exists in `/flow:spawn`, before the
   (un-renumbered) "## 0. Resolve the backend" step, carrying the three-row table above plus the
   context-cost nuance. Verify: `grep -n "Before Step 0: choose the primitive"
-  plugins/flow/skills/spawn/SKILL.md` finds it, by a doc-diff read-through.
-- [ ] `/flow:spawn` step 2 names the "needs the capacity" downshift as forbidden, immediately after
+  plugins/flow/skills/spawn/SKILL.md` finds it.
+- [x] `/flow:spawn` step 2 names the "needs the capacity" downshift as forbidden, immediately after
   "right-sizing, not rationing," quoting the audit's exact phrase. Verify: `grep -n "needs the
-  capacity" plugins/flow/skills/spawn/SKILL.md` finds it, by a doc-diff read-through.
-- [ ] `research/orchestrator-field-manual.md` § 3 carries Ben's 2026-10-05 quote verbatim, dated,
-  matching the section's existing direct-quote convention. Verify: diff against the quote above,
-  byte-for-byte.
-- [ ] A new FB entry synthesizes the "capacity is not a routing reason" correction. Number claimed at
-  execution time via a fresh sweep, not reserved here. Verify: `ls dev-docs/feedback/FB-*.md` shows
-  the new fixture file matching the claimed number.
-- [ ] `tools/eval-sweep.sh` reports all-GREEN by exit code after the new `readSince` eval case lands.
+  account's capacity" plugins/flow/skills/spawn/SKILL.md` finds it.
+- [x] `research/orchestrator-field-manual.md` § 3 carries Ben's 2026-10-05 quote verbatim, dated,
+  matching the section's existing direct-quote convention. Verify: byte-for-byte diff against the
+  quote above — matches.
+- [x] A new FB entry synthesizes the "capacity is not a routing reason" correction, claimed as
+  **FB-0140** (next free after a fresh sweep: main FB-0138, open-branch high FB-0139 on #185).
+  Verify: `ls dev-docs/feedback/FB-0140*.md` shows the new fixture file.
+- [x] `tools/eval-sweep.sh` reports all-GREEN by exit code after the new `readSince` eval case lands.
+  Verify: `bash tools/eval-sweep.sh` → 47/47 GREEN by exit code.
   Verify: `bash tools/eval-sweep.sh` exit code 0 — the eval harness is the verification fixture for
   this criterion and for Decision 1's evals, together.
 

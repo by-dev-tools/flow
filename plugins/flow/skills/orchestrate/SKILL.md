@@ -88,6 +88,8 @@ Workers ping you when they finish or stall, so you react rather than poll. **But
 
 So for each live worker, render `workerStatus` and read the **last-activity timestamp**. Flag anything quiet for materially longer than its work should take. **This sweep finds quiet workers; it does not classify them** — `SILENT` here is the same token §8's digest renders, and §8 carries the test that separates a genuinely stalled worker from one parked at a plan gate. Do not treat silence as progress, and do not let the ping protocol's existence be mistaken for coverage.
 
+**Reading a worker means messages since the last-read cursor, never the whole history.** `workerStatus` above answers "is it quiet"; this is the separate question of actually catching up on what a worker said. Measured, not asserted: one seat's cursor reader read 573 messages in 6 API calls once, then 1 call / 0.6s per re-read — the walk-everything-every-time alternative measured as the orchestrator's own 3rd-largest Bash-output category, 62 calls and 105,385 characters over 22 days (`dev-docs/research/2026-10-efficiency-audit.md` §3). Render and use `readSince` when the backend configures it. When it doesn't, ask the narrowest question the task actually needs — `workerStatus` for a timestamp-only check, or a scoped `gh ... --json <fields>` — rather than a full transcript dump; the fallback being less convenient is the cost of not having the verb, not a license to re-walk everything anyway.
+
 ## 5. Re-address the ping channel — the successor's true first action (see step 4's note)
 
 > **Precondition — run this ONLY from the session that is becoming the addressee.** This step
