@@ -63,7 +63,7 @@ from md_safe import code_span, inline, one_line  # noqa: E402  (sibling-module i
 # copies of either value would be a writer and a reader that agree today and diverge
 # the first time one is tidied -- and the divergence would be SILENT, because an empty
 # read renders as the ordinary "no frames to show" line. Degrades to the
-# visual-history source alone when the lib is unreachable, which is the pre-v1.63.0
+# visual-history source alone when the lib is unreachable, which is the pre-v1.65.0
 # behaviour and still correct.
 # `except Exception`, not `except ImportError`: computing the path can fail too.
 # `parents[3]` raises IndexError for a copy of this file sitting at a shallower depth --

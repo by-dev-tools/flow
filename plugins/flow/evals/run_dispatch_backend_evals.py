@@ -280,7 +280,7 @@ for f in sorted((PLUGIN / "lib").glob("*.py")):
         check(f"{f.name} carries no host/roster literal {lit!r}", lit.lower() not in txt.lower())
 # 4 SKILL.md + 2 skill libs (gate, handoff) + 7 shared libs in plugins/flow/lib/
 # (dispatch_backend, sensitive_paths, doc_patterns, arg_placeholders at v1.50.0/FB-0116,
-# rule_skills at v1.53.0/FB-0124, preview_backend at v1.60.0, capture_frames at v1.63.0).
+# rule_skills at v1.53.0/FB-0124, preview_backend at v1.60.0, capture_frames at v1.65.0).
 # The inventory above said "5 shared libs" while the count said 12 and the directory held
 # 6 — the prose and the number had drifted apart, which is the same fan-out class the
 # number exists to catch, inside the comment explaining the number. An exact count, not a

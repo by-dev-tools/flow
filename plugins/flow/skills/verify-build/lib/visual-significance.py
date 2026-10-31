@@ -120,6 +120,28 @@ except Exception as _exc:  # pragma: no cover - defensive; file_patterns ships a
 # source edit. Generic, project-agnostic; overridable via --asset-patterns.
 DEFAULT_ASSET_PATTERN = r"\.(png|jpe?g|gif|svg|webp|avif|ico|bmp|woff2?|ttf|otf|eot)$"
 
+# FLOW'S OWN CAPTURED FRAMES ARE NOT EVIDENCE ABOUT THE DIFF, and excluding them closes
+# a circle this gate would otherwise feed itself. `/flow:ship` §5d captures PR-body
+# frames into `<dir of visualHistoryPath>/pr-frames/<branch-slug>/` and commits them --
+# but it only runs when THIS verdict is already true. Counting those PNGs as an asset
+# signal means a later run reads flow's own output as the reason the change is visually
+# significant, which is circular: the frames exist *because* the answer was true, so they
+# cannot be why it is true. Measured while re-verifying the §5d trigger after #183 --
+# arm 3's frames made arm 2 (an explicit `Visual-walk: N/A`) read as significant on the
+# asset path, for a plan that had just declared it has no visual surface.
+#
+# `pr-frames` is a LITERAL here rather than an import from `plugins/flow/lib/
+# capture_frames.py`, deliberately: this file is a `sensitivePaths` gate and #183 shipped
+# specifically because its one existing cross-module import could fail silently and void
+# the whole plan-override path. A second such import trades a narrow circularity for a
+# wider blind spot. The two definitions are pinned to agree by
+# `run_capture_frames_evals.py::test_captured_frames_are_not_their_own_evidence`, which
+# fails if either side moves.
+#
+# Scoped to a `pr-frames/` path segment, NOT to `.png`: a consumer's own screenshots are
+# real evidence and must keep signalling. The paired positive is in that same eval.
+FLOW_CAPTURED_FRAMES = re.compile(r"(^|/)pr-frames/")
+
 # Comment / structural-only line prefixes used by the pure-refactor exclusion. A
 # changed line whose content (after stripping the +/- and whitespace) starts with
 # one of these — or is pure punctuation — does not constitute a render delta.
@@ -678,7 +700,9 @@ def main(argv):
 
     # --- heuristic evidence ---
     visual_hits = [p for st, p in changes if visual_re.search(p)]
-    asset_hits = [p for st, p in changes if asset_re.search(p) and not visual_re.search(p)]
+    asset_hits = [p for st, p in changes
+                  if asset_re.search(p) and not visual_re.search(p)
+                  and not FLOW_CAPTURED_FRAMES.search(p)]
     matched = visual_hits + asset_hits
     if visual_hits:
         signals.append(f"diff touches UI files (pattern from {visual_src}): "

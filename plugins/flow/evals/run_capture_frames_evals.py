@@ -537,7 +537,7 @@ def test_curated_record_untouched():
 
 
 def test_auto_never_retires_the_record():
-    """THE BLOCKER v1.63.0's own staff-review caught, pinned so it cannot come back.
+    """THE BLOCKER v1.65.0's own staff-review caught, pinned so it cannot come back.
 
     `/flow:ship` picks its source from whether the capture ADAPTER validates, which says
     nothing about whether anything was captured. With `--source captures` that silently
@@ -715,6 +715,49 @@ def test_chat_message_budget():
         # And never in a PR body, where a local path is a broken image.
         wrong = A.render_local_line("walkthrough", "/abs/r.html", chat_image=frame)
         check("chat/refused-on-the-pr-body-handoff", "![" not in wrong, wrong)
+
+
+def test_captured_frames_are_not_their_own_evidence():
+    """PAIRED: flow's own pr-frames do not signal; a consumer's own asset still does.
+
+    `/flow:ship` §5d commits PNGs into `pr-frames/<slug>/`, but it runs ONLY when
+    `visual_significant` is already true — so counting those frames as an asset signal
+    makes flow's own output the reason its own gate fires. Circular: the frames exist
+    because the answer was true, so they cannot be why it is true. Found by running the
+    §5d trigger's three arms in sequence after #183, where arm 3's frames made arm 2 (an
+    explicit `Visual-walk: N/A`) read as visually significant on the asset path.
+
+    The exclusion is a LITERAL in `visual-significance.py` rather than an import — that
+    file is a `sensitivePaths` gate whose one existing cross-module import failing
+    silently is what #183 shipped to fix. So the two definitions are pinned to agree
+    HERE instead, and this check fails if either side moves.
+    """
+    vs = (FLOW / "skills" / "verify-build" / "lib" / "visual-significance.py")
+    src = vs.read_text(encoding="utf-8")
+    check("circular/exclusion-present", "FLOW_CAPTURED_FRAMES" in src)
+    check("circular/exclusion-is-applied",
+          "not FLOW_CAPTURED_FRAMES.search(p)" in src,
+          "defining the pattern without applying it to asset_hits is a no-op")
+    # The two definitions must name the SAME directory.
+    m = re.search(r'FLOW_CAPTURED_FRAMES = re\.compile\(r"(.*?)"\)', src)
+    check("circular/pattern-found", m is not None, src[:200])
+    if m:
+        check("circular/names-the-shared-directory", C.PR_FRAMES_DIR in m.group(1),
+              "the exclusion regex %r no longer names capture_frames.PR_FRAMES_DIR "
+              "(%r) — one of the two moved" % (m.group(1), C.PR_FRAMES_DIR))
+        rx = re.compile(m.group(1))
+        # NEGATIVE: a captured frame is excluded...
+        check("circular/flows-frame-excluded",
+              bool(rx.search("dev-docs/pr-frames/feat-a/prototype-phone.png")))
+        check("circular/flows-frame-excluded-at-root",
+              bool(rx.search("pr-frames/feat-a/prototype-phone.png")))
+        # ...and the POSITIVE, without which the exclusion could be widened to
+        # everything and every line above would still pass.
+        for keep in ("src/img/hero.png", "assets/pr-frames.png",
+                     "core-docs/visual-history-assets/before.png",
+                     "docs/my-pr-frames-guide.png"):
+            check("circular/still-signals %s" % keep, not rx.search(keep),
+                  "the exclusion swallowed a path that is real evidence")
 
 
 def test_no_vendor_token_in_plugin():
@@ -895,6 +938,7 @@ def main() -> int:
              test_private_fails_closed, test_curated_record_untouched,
              test_chat_message_budget, test_auto_never_retires_the_record,
              test_alt_text_says_what_the_frame_shows, test_frames_dir_is_composed_once,
+             test_captured_frames_are_not_their_own_evidence,
              test_no_vendor_token_in_plugin,
              test_schema_declares_the_slots, test_skills_wire_the_capture,
              test_doctor_checks_the_slot, test_ci_wired, test_engine_selftests_pass)

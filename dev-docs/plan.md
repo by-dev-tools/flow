@@ -3,7 +3,7 @@
 ## Current Focus
 
 **▶ EXECUTED, shipping (this branch `conductor/chat-and-pr-screenshots`, version claimed
-mechanically at **v1.63.0** in both manifests, no new FB). Plan APPROVED with all four open calls
+mechanically at **v1.65.0** in both manifests, no new FB). Plan APPROVED with all four open calls
 answered: (1) **one** chat image, the phone frame, both frames in the PR body; (2) `frames --source
 captures` as a flag, with the orchestrator's added condition that the `--branch` collision be made
 visible **in the code** — bound to `branch_to_match` / `branch_for_dir` with a comment at each read
@@ -22,6 +22,17 @@ source unchanged rather than losing a shipped path; (c) the plan's "verify-build
 rendered report to the capture engine" was **not** implemented as written — §5a's drive-then-assert
 ladder is the whole point of that step and a one-shot headless capture satisfies neither half, so
 §5a gained a boundary note saying why and the capture lives at `/flow:ship` §5d, after judging.
+**Held at the ship gate for 21 days while #183 and #184 landed, then rebased 2026-10-31.** Three
+things changed at rebase and none was a replay: (a) **version re-swept 1.63.0 → v1.65.0** — #184
+courteously re-numbered itself off 1.63.0 for this branch but merged first, so the reserved number
+is now *backwards* and would strand every consumer already on 1.64.0; (b) **slot count re-swept a
+second time, 40 → 41** — #184 had concurrently swept the same five fan-out sites to 39 for its own
+`ciWaitSeconds`, so both branches were individually right and the merged tree is neither, resolved
+against the schema file rather than either side; (c) **the §5d capture trigger was re-driven against
+post-#183 `visual-significance.py` rather than assumed** — the plan's reading did NOT survive, in
+this feature's favour, and running the three arms in sequence exposed a circular gate the feature
+was introducing (flow's own committed frames counting as the asset signal for the verdict that
+caused them). Both recorded in the history entry.
 Original gate framing: PR C — a worker's chat message carries a
 captured screenshot inline and the preview link; the PR description carries the screenshots.**
 Ben, 2026-10-05: *"ideally the agent could report with screenshots and preview links in the chat,
@@ -257,7 +268,7 @@ Prototype: https://ws-abc.example.show/prototype.presented-2b7c91de.html — any
       harness↔runner join step passes — exit-code-driven, not a grep.
 - [x] **Docs reconciled:** a `dev-docs/history/` entry, roadmap **D7** with the "inline chat images"
       § Next item CLOSED and moved into D7's shipped list, this block flipped to EXECUTED,
-      `changelog/v1.63.0.md`, the new slots in the schema, and `/flow:doctor` coverage for
+      `changelog/v1.65.0.md`, the new slots in the schema, and `/flow:doctor` coverage for
       `captureBackend`. *Verified by:* the dev-docs index and version-provenance CI jobs' own exit
       codes, plus the doc-diff showing every file present.
 
@@ -292,8 +303,8 @@ Prototype: https://ws-abc.example.show/prototype.presented-2b7c91de.html — any
 | `plugins/flow/evals/run_dispatch_backend_evals.py` | § 7 sweep count 12 → 13 (the new lib) |
 | `.github/workflows/ci.yml` | wire the new harness |
 | `flow.config.json` | set `captureBackend` + `chatImagePath` so the feature is exercised here |
-| `plugins/flow/.claude-plugin/plugin.json` · `.claude-plugin/marketplace.json` | 1.60.0 → **1.63.0** (**already pushed at this gate**) |
-| `dev-docs/{plan,roadmap}.md`, `dev-docs/history/…`, `changelog/v1.63.0.md` | doc reconciliation at ship |
+| `plugins/flow/.claude-plugin/plugin.json` · `.claude-plugin/marketplace.json` | 1.60.0 → **1.65.0** (**already pushed at this gate**) |
+| `dev-docs/{plan,roadmap}.md`, `dev-docs/history/…`, `changelog/v1.65.0.md` | doc reconciliation at ship |
 
 ### Open calls for the human gate
 
@@ -324,8 +335,8 @@ APPROVED at the gate with both MEDIUM calls resolved: (1) **add the `ciWaitSecon
 condition that the slot-count fan-out sweep ships in *this* PR rather than as a follow-up — done, and
 it caught two stale counts nobody had noticed (`skills/doctor/SKILL.md`, `README.md`); (2)
 **`/flow:ship-spike` reports all three CI states and drafts only on `ci-failing`**, keeping spike's
-existing halt-and-adjudicate shape for the other two. **Version re-claimed 1.63.0 → 1.64.0** at the
-orchestrator's instruction: `conductor/chat-and-pr-screenshots` claimed 1.63.0 first and its plan was
+existing halt-and-adjudicate shape for the other two. **Version re-claimed 1.65.0 → 1.64.0** at the
+orchestrator's instruction: `conductor/chat-and-pr-screenshots` claimed 1.65.0 first and its plan was
 approved earlier. Filing the missing roadmap entry and deferring the BLOCKER-count artifact were both
 confirmed; the post-create residual window is accepted and named in the PR body. The Step 8
 ship-readiness verdict becomes computed rather than remembered: a deterministic stdlib checker

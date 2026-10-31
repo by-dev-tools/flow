@@ -548,7 +548,7 @@ def test_md_safety_layering():
           "the engine has eight markdown TEXT positions and each must be wrapped in "
           "inline(). Four from the visual-history source (figcaption, alt, last-resort "
           "alt, and the preview audience clause added at v1.60.0); four added at "
-          "v1.63.0 (the captures source's caption and alt, and `_frame_alt`'s derived "
+          "v1.65.0 (the captures source's caption and alt, and `_frame_alt`'s derived "
           "and fallback strings for the chat image). Found %d call site(s). Re-key this "
           "number deliberately when a position is genuinely added — that is the "
           "intended cost." % n_inline)

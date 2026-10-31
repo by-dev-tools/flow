@@ -405,7 +405,7 @@ other workers, so nobody should duplicate them here.
   an unauthenticated `raw.githubusercontent.com` fetch is 200 for a public blob and **404** for a
   private one — and `/blob/` links, openable by any authorised viewer on any client, in every other
   case including "`gh` could not tell us".
-- **Still frames, captured. SHIPPED v1.63.0.** The gate-1 chat message carries one captured
+- **Still frames, captured. SHIPPED v1.65.0.** The gate-1 chat message carries one captured
   phone-width frame, and the PR body carries both frames committed per-PR. A `captureBackend` host
   adapter (one verb, a CLOSED `{url}`/`{out}`/`{width}`/`{height}` vocabulary, all four required)
   plus a `chatImagePath` slot, both unset by default. **Success is the artifact, never the exit
@@ -650,9 +650,9 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
-### ~~Inline chat images as the always-available route for still frames (D7, option 1's sibling)~~ — ✅ SHIPPED v1.63.0
+### ~~Inline chat images as the always-available route for still frames (D7, option 1's sibling)~~ — ✅ SHIPPED v1.65.0
 
-**Closed by v1.63.0** (`captureBackend` + `chatImagePath`; see D7's third shipped bullet above and
+**Closed by v1.65.0** (`captureBackend` + `chatImagePath`; see D7's third shipped bullet above and
 `dev-docs/history/2026-10-06-captured-frames-in-the-chat-and-the-pr-body.md`). Kept here rather than
 deleted because the reasoning below is what shaped the answer: the design question really was
 *when* to include an image, and the answer shipped is **one** — the phone frame — with the desktop
@@ -836,7 +836,7 @@ human is".
 1. **Frames are DPR-1, and the dimension check makes retina capture structurally impossible.**
    `capture_frames.capture()` asserts `size == (width, height)` exactly, so a backend capturing at
    device-pixel-ratio 2 is refused. A 390×844 PNG sits at 1:1 inside GitHub's ~800px body column —
-   visibly softer than every other screenshot on that page. v1.63.0 fixed only the *reason* (a 2x
+   visibly softer than every other screenshot on that page. v1.65.0 fixed only the *reason* (a 2x
    capture now says so instead of blaming the template). The real fix is to accept an integer
    multiple `k` and carry `k` into the row so the caption still states the CSS size.
 2. **Dark mode is never photographed.** `design-language.md` commits the walkthrough report to
@@ -849,7 +849,7 @@ human is".
    it is meant to be compared against. The fix (HTML `<img width>`, or a two-column table) collides
    with `artifact-handoff.py`'s escaping policy and its one deliberate soft break, which is correct
    as written and should not be traded casually.
-4. **`## Before / after` is the wrong heading for an after-only set.** v1.63.0 names the absence in
+4. **`## Before / after` is the wrong heading for an after-only set.** v1.65.0 names the absence in
    the lead ("there is no *before* here"), which is the honest minimum. A per-source heading is the
    right answer and is a genuine fan-out: the string is pinned at ~8 sites including
    `pr-coherence.py`'s body slot, both SKILL templates, and five eval arms.
@@ -866,14 +866,14 @@ contradiction that nobody wrote down gets discovered instead of decided. Fold it
 when it is picked up; do not build a rival item.
 
 `dev-docs/design-language.md` line 36 sets flow's only screenshot policy: cap display width at
-600px, resize to ~460–620px before persisting, warn over ~500KB. v1.63.0 commits 1280px frames that
+600px, resize to ~460–620px before persisting, warn over ~500KB. v1.65.0 commits 1280px frames that
 are never resized and carry no size warning. Cheap in practice (~20 KB measured) and wrong in
 principle. Both of the new surfaces — the PR-body frame embed and the gate-1 chat message — are
 ungrounded by that doc's own scope line, which is the gap the Exploration entry already names.
 
 ### `render_template`'s two trailing hint parameters stopped being honest at the third adapter
 
-**Found during v1.63.0, routed here deliberately rather than fixed in that PR** (orchestrator call):
+**Found during v1.65.0, routed here deliberately rather than fixed in that PR** (orchestrator call):
 the fix is a refactor of a function three shipped adapters now call, and bundling it with a feature
 PR would make the feature's diff unreviewable for the one reason the refactor exists.
 
@@ -881,7 +881,7 @@ PR would make the feature's diff unreviewable for the one reason the refactor ex
 sharing the refusal POLICY does not flatten the REMEDIATION — the advice a preview author needs
 ("put the backgrounding inside a script the template calls") is meaningless for a dispatch verb.
 That was a clean trade for two adapters. The v1.60.0 review said explicitly that it would stop being
-one at a third, and **v1.63.0 is that third**: `captureBackend` passes both hints, so the call sites
+one at a third, and **v1.65.0 is that third**: `captureBackend` passes both hints, so the call sites
 now carry three unrelated remediation vocabularies threaded through two positional-ish keywords with
 no structure tying a hint to the refusal branch it belongs to.
 

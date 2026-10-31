@@ -1,6 +1,6 @@
-# Captured frames in the chat message and in the PR description (v1.63.0)
+# Captured frames in the chat message and in the PR description (v1.65.0)
 
-**PR:** TBD · **Branch:** `conductor/chat-and-pr-screenshots` · **Date:** 2026-10-06
+**PR:** TBD · **Branch:** `conductor/chat-and-pr-screenshots` · **Date:** 2026-10-06, rebased and shipped 2026-10-31
 **Spec:** roadmap **D7** § Next "Inline chat images as the always-available route for still frames",
 which this closes. No new FB.
 
@@ -239,6 +239,63 @@ being photographed, the two frames rendering at very different scale when stacke
 `## Before / after` being the wrong heading for an after-only set (the string is pinned at ~8 sites,
 so a per-source heading is a genuine fan-out). `validate()`'s triplication across the three adapters
 joined the existing `render_template` hint-parameter item, since both are the same refactor.
+
+## What the rebase surfaced, 21 days later
+
+This branch was held at the ship gate while #183 and #184 landed. Rebasing onto a `main` that had
+moved two releases produced two findings, neither of which a clean replay would have.
+
+**The version had to move, and the courtesy that was extended could not be honoured.** #184
+deliberately re-claimed itself `1.63.0 → 1.64.0` so this branch could keep the number it claimed
+first. But #184 merged first, so 1.63.0 became a *backwards* version: shipping it would leave every
+consumer already on 1.64.0 unable to update. Re-swept to **1.65.0**, and 1.63.0 is now a permanently
+skipped number — a reserved-then-overtaken claim. The reservation was the right instinct and the
+wrong mechanism; version numbers cannot be reserved across a merge queue, only taken at merge.
+
+**Two concurrent branches each swept the same five sites, and both were individually right.** #184
+added `ciWaitSeconds` and swept the slot-count fan-out 38 → 39. This branch added `captureBackend` +
+`chatImagePath` and swept the same five sites 38 → 40. Every one of those five files conflicted at
+rebase, and *taking either side* would have shipped a wrong number — the merged schema holds **41**.
+Resolved against the schema file itself rather than against either side of the conflict.
+`run_merge_status_evals.py`'s slot-count check is what forced the question at rebase instead of
+after merge; its comment now records why neither branch's number survived.
+
+## The §5d trigger did NOT survive its own plan's reading, and that is the point of re-checking
+
+The plan assumed `visual_significance.py`'s verdict would mean what it meant in September. Driven on
+post-#183 code against three plan shapes rather than read:
+
+| Plan declares | pre-#183 | post-#183 | §5d |
+|---|---|---|---|
+| no `Visual-walk` block | false | false | skips |
+| **`Visual-walk: N/A`** | **true** (forced) | **false** | **skips** |
+| `Visual-walk` + an assertion | true | true | captures |
+
+The middle row is the one that moved, and it moved in this feature's favour: pre-#183, a PR that had
+*explicitly declared it has no visual surface* would have had §5d capture two frames, commit ~20 KB
+of PNGs, and publish a `## Before / after` section nobody asked for. The gate is correct **because**
+#183 landed, not independently of it.
+
+### And running the three arms in sequence found a circular gate this feature was introducing
+
+Arm 3 left its captured frames in the working tree, and arm 2 then read as visually significant —
+not via the `Visual-walk` path, but because `visual-significance.py` counts added **asset files**,
+and `pr-frames/*.png` are assets. So flow's own captured frames were about to become evidence for
+the very verdict that caused them to be captured. The frames exist *because* the answer was true, so
+they cannot be why it is true.
+
+`visual-significance.py` now excludes a `pr-frames/` path segment from the asset signal. Scoped to
+that segment and **not** to `.png`, because a consumer's own screenshots are real evidence and must
+keep signalling — pinned in both directions (`src/img/hero.png`, `assets/pr-frames.png` and
+`docs/my-pr-frames-guide.png` all still signal). The exclusion is a literal rather than an import
+from `capture_frames.py`, deliberately: that file is a `sensitivePaths` gate whose one existing
+cross-module import failing silently is precisely what #183 shipped to fix, and a second such import
+would trade a narrow circularity for a wider blind spot. The two definitions are pinned to agree by
+`test_captured_frames_are_not_their_own_evidence`, which fails if either moves.
+
+Worth stating plainly: this defect is only reachable because the feature writes committed images
+into the repo. Nothing else flow ships does that, so no existing gate had to think about its own
+output being read back as input.
 
 ## What the harness caught that review would not have
 
