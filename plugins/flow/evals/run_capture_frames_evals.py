@@ -111,6 +111,20 @@ def _page(td, name="p.html", charset=True, title="Empty activity feed"):
     return p
 
 
+def _extract_sh_block(path, heading):
+    """The first ```sh fence under `heading` in a SKILL.md, or None.
+
+    Extracted rather than copied into the test so the thing under test is the thing
+    that ships — a transcribed copy would pass while the shipped block was broken.
+    """
+    text = path.read_text(encoding="utf-8")
+    if heading not in text:
+        return None
+    after = text[text.index(heading):]
+    m = re.search(r"```sh\n(.*?)\n```", after, re.S)
+    return m.group(1) if m else None
+
+
 def _git(args, cwd):
     subprocess.run(["git"] + args, cwd=cwd, check=True,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -726,6 +740,207 @@ def test_chat_message_budget():
         check("chat/refused-on-the-pr-body-handoff", "![" not in wrong, wrong)
 
 
+def test_capture_step_states_a_reason_on_every_path():
+    """`/flow:ship` §5d, driven as the SHELL — not as the Python under it.
+
+    This pins the COMPOSED layer. Every other arm in this harness drives a Python
+    entry point; §5d is a shell block that decides whether this PR gets frames at all,
+    and `general.md` item 4's corollary is explicit that a criterion verified one layer
+    below the surface it describes can be green while the surface is false. So the block
+    is extracted from the shipped SKILL.md and run.
+
+    The four skip arms must each state their OWN reason. That is not stylistic: two of
+    them were briefly collapsed into one message, and the result was a confident
+    "a detached HEAD reads as empty" printed for a missing capture engine — a diagnosis
+    of a condition nobody had measured.
+    """
+    import shutil
+    block = _extract_sh_block(SHIP, "### 5d. Capture this PR's frames")
+    check("5d/block-extracted", block is not None and "pr-frames" in (block or ""),
+          "could not find §5d's shell block — re-key this extraction, do not drop it")
+    if not block:
+        return
+
+    def run(td, *, significant=True, target=True, engine=True, detached=False,
+            plan=True, buffer=True):
+        root = Path(td, "r"); shutil.rmtree(root, ignore_errors=True)
+        (root / "dev-docs").mkdir(parents=True)
+        (root / ".flow" / "prototypes" / "p").mkdir(parents=True)
+        _git(["init", "-q", "-b", "main"], root)
+        _git(["config", "user.email", "e@v.al"], root); _git(["config", "user.name", "e"], root)
+        stub = _stub(td)
+        cfg = {"visualHistoryPath": "dev-docs/visual-history.html",
+               "verifyFindingsPath": ".flow/f.json", "planPath": "dev-docs/plan.md",
+               "captureBackend": {"screenshot":
+                   "python3 %s ok {url} {out} {width} {height}" % stub}}
+        (root / "flow.config.json").write_text(json.dumps(cfg), encoding="utf-8")
+        if buffer:
+            (root / ".flow" / "f.json").write_text(
+                json.dumps({"metadata": {"visual_significant": bool(significant)}}),
+                encoding="utf-8")
+        if plan:
+            (root / "dev-docs" / "plan.md").write_text("# p\n", encoding="utf-8")
+        (root / "dev-docs" / "visual-history.html").write_text("<html></html>", encoding="utf-8")
+        if target:
+            (root / ".flow" / "prototypes" / "p" / "prototype.html").write_text(
+                '<!doctype html><meta charset="utf-8"><title>T</title><p>x</p>',
+                encoding="utf-8")
+        _git(["add", "-A"], root); _git(["commit", "-qm", "b"], root)
+        if detached:
+            _git(["checkout", "-q", "--detach"], root)
+        else:
+            _git(["checkout", "-q", "-b", "feat/a"], root)
+        env = dict(os.environ)
+        # An absent engine is simulated by pointing the plugin root at nothing AND
+        # removing the checkout-relative fallback, which is how §5d resolves `$CF`.
+        env["CLAUDE_PLUGIN_ROOT"] = str(FLOW) if engine else str(Path(td, "nope"))
+        r = subprocess.run(["sh", "-c", block], cwd=str(root), capture_output=True,
+                           text=True, timeout=180, env=env)
+        return (r.stdout + r.stderr), root
+
+    with tempfile.TemporaryDirectory() as td:
+        # KNOWN POSITIVE FIRST — without it, four "it skipped" assertions are satisfied
+        # by a block that can only ever skip (general.md item 4).
+        out, root = run(td)
+        frames = sorted(q.name for q in
+                        (root / "dev-docs/pr-frames/feat-a").iterdir()) \
+            if (root / "dev-docs/pr-frames/feat-a").is_dir() else []
+        check("5d/positive-captures-two-frames",
+              frames == [C.SIDECAR, "prototype-desktop.png", "prototype-phone.png"],
+              "the happy path produced %r — every skip assertion below is vacuous if "
+              "this block cannot capture at all. out=%s" % (frames, out[-400:]))
+        staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=str(root),
+                                capture_output=True, text=True).stdout
+        check("5d/positive-stages-the-frames", "pr-frames/feat-a" in staged, staged)
+
+        arms = {
+            "not-significant": (dict(significant=False), "visual_significant=false"),
+            "no-engine": (dict(engine=False), "capture engine not found"),
+            "no-target": (dict(target=False), "no prototype and no walkthrough"),
+            "detached-head": (dict(detached=True), "could not derive a per-PR directory"),
+        }
+        seen = {}
+        for name, (kw, needle) in arms.items():
+            out, root = run(td, **kw)
+            check("5d/%s-states-its-reason" % name, needle in out,
+                  "expected %r in:\n%s" % (needle, out[-500:]))
+            check("5d/%s-captures-nothing" % name,
+                  not (root / "dev-docs/pr-frames").exists(),
+                  "a skip arm wrote frames anyway")
+            seen[name] = needle
+        # The reasons must be DISTINCT. Collapsing two of these produced a confident
+        # diagnosis of a condition nobody measured, which is the defect this pins.
+        check("5d/every-arm-has-its-own-reason", len(set(seen.values())) == len(arms),
+              repr(seen))
+
+        # THE FIFTH PATH, found by the second coverage audit: no plan doc. §5d then
+        # computes significance from the DIFF ALONE, so a plan declaring
+        # `Visual-walk: N/A` cannot suppress capture — the exact suppression #183
+        # shipped — reachable through a misconfigured `planPath` rather than through
+        # the plan. The behaviour kept is warn-and-continue, matching §5c and §7b
+        # (making §5d uniquely refuse would be a new divergence between three sites
+        # that read the same verdict); what this pins is that the warning is LOUD, so
+        # a plan-less verdict is never silently taken for a plan-informed one.
+        out, root = run(td, plan=False, buffer=False)
+        check("5d/no-plan-doc-warns-loudly", "running WITHOUT plan context" in out, out[-400:])
+        check("5d/no-plan-doc-names-the-path",
+              "no plan doc at" in out, out[-400:])
+        # The warning is ADDITIVE, not a substitute: with no buffer and no plan the
+        # heuristic correctly also reports not-significant, so both lines appear. What
+        # must hold is that the plan-less warning is its own sentence and never doubles
+        # as one of the skip reasons — a reader has to be able to tell "I skipped" from
+        # "I decided without the plan". (The first cut asserted the skip reason was
+        # ABSENT, which was wrong about the code, not about the contract.)
+        check("5d/no-plan-warning-is-its-own-sentence",
+              "running WITHOUT plan context" not in " ".join(seen.values()),
+              "the plan-less warning collides with a skip reason: %r" % seen)
+        check("5d/no-plan-still-reports-the-significance-verdict",
+              any(n in out for n in seen.values()),
+              "a plan-less run must still say what it decided, not fall silent: %s"
+              % out[-400:])
+
+
+def test_ignore_state_is_a_tristate_and_reaches_a_human():
+    """Three states, and "could not measure" is never reported as "not ignored".
+
+    Found undeclared by the scoped coverage re-run over the slice the full pass could
+    not read — and both halves of this behaviour were themselves review-round fixes:
+    the note could not reach a human because its only call site swallowed stderr, and
+    the predicate went silent on its own "could not measure".
+    """
+    import shutil
+    with tempfile.TemporaryDirectory() as td:
+        def chat_dir_json(root, slot):
+            (root / "flow.config.json").write_text(
+                json.dumps({"chatImagePath": slot}), encoding="utf-8")
+            r = subprocess.run([sys.executable, str(LIB), "chat-dir", "--json",
+                                "--config", str(root / "flow.config.json")],
+                               cwd=str(root), capture_output=True, text=True, timeout=60)
+            return json.loads(r.stdout), r.stderr
+
+        repo = Path(td, "repo"); repo.mkdir()
+        _git(["init", "-q", "-b", "main"], repo)
+        (repo / ".gitignore").write_text(".flow/\n", encoding="utf-8")
+        (repo / "docs").mkdir()
+
+        got, err = chat_dir_json(repo, ".flow/chat-frames")
+        check("ignore/true-when-ignored", got["ignored"] is True, repr(got))
+        check("ignore/true-emits-no-note", not got["notes"], repr(got["notes"]))
+
+        got, err = chat_dir_json(repo, "docs/frames")
+        check("ignore/false-when-tracked", got["ignored"] is False, repr(got))
+        check("ignore/false-names-the-directory-and-the-risk",
+              any("docs/frames" in n and "committed by accident" in n
+                  for n in got["notes"]), repr(got["notes"]))
+
+        # NOT a git repo: the state cannot be measured. `None`, never `False` — a
+        # confident "is not git-ignored" for something nobody measured is the
+        # unverified-claim class the whole engine exists to refuse.
+        bare = Path(td, "bare"); bare.mkdir()
+        got, err = chat_dir_json(bare, "frames")
+        check("ignore/null-when-unmeasurable", got["ignored"] is None, repr(got))
+        check("ignore/null-is-not-false", got["ignored"] is not False, repr(got))
+        check("ignore/null-says-it-could-not-determine",
+              any("could not determine" in n for n in got["notes"]), repr(got["notes"]))
+
+        # PAIRED POSITIVE — the two shipped consumers must SURFACE it, not re-derive it.
+        proto = PROTO.read_text(encoding="utf-8")
+        check("ignore/prototype-does-not-swallow-the-note",
+              '"$CF" chat-dir 2>/dev/null' not in proto,
+              "the only shipped caller discarding stderr makes this note unreachable — "
+              "which is exactly how it shipped unreadable once already")
+        doc = DOCTOR.read_text(encoding="utf-8")
+        check("ignore/doctor-reads-the-engine", "chat-dir --json" in doc)
+        check("ignore/doctor-does-not-rederive",
+              'git check-ignore -q "$CIP"' not in doc,
+              "one predicate, one copy — a second one cannot be a tristate by accident")
+        # The FOURTH outcome, one axis up from the tristate: the REPORT itself is
+        # unparseable (engine missing, python3 absent). Before the fix this printed a
+        # confident "chatImagePath unset", because an empty string pipes through jq with
+        # exit 0 — "could not read" reported as "is not configured", which is the same
+        # could-not-measure collapse the tristate below it exists to prevent.
+        blk = _extract_sh_block(DOCTOR, "**Check 2.14")
+        check("ignore/doctor-block-extracted", blk is not None and "chat-dir --json" in (blk or ""))
+        if blk:
+            (repo / "flow.config.json").write_text(
+                json.dumps({"captureBackend": {"screenshot": "c {url} {out} {width} {height}"},
+                            "chatImagePath": ".flow/chat-frames"}), encoding="utf-8")
+            env = dict(os.environ, CLAUDE_PLUGIN_ROOT=str(Path(td, "no-such-plugin-root")))
+            r = subprocess.run(["sh", "-c", blk], cwd=str(repo), capture_output=True,
+                               text=True, timeout=120, env=env)
+            o = r.stdout + r.stderr
+            check("ignore/doctor-skips-on-an-unreadable-report",
+                  "[SKIP] chatImagePath" in o, o[-400:])
+            check("ignore/doctor-does-not-claim-unset-on-an-unreadable-report",
+                  "chatImagePath unset" not in o,
+                  "doctor reported the slot as unset for a report it could not read: %s"
+                  % o[-400:])
+        for arm in ("[WARN] chatImagePath", "[SKIP] chatImagePath", "[PASS] chatImagePath"):
+            check("ignore/doctor-renders %s" % arm, arm in doc,
+                  "doctor must render all three states, or the tristate collapses at "
+                  "the surface a human reads")
+
+
 def test_captured_frames_are_not_their_own_evidence():
     """PAIRED: flow's own pr-frames do not signal; a consumer's own asset still does.
 
@@ -1029,6 +1244,8 @@ def main() -> int:
              test_private_fails_closed, test_curated_record_untouched,
              test_chat_message_budget, test_auto_never_retires_the_record,
              test_alt_text_says_what_the_frame_shows, test_frames_dir_is_composed_once,
+             test_capture_step_states_a_reason_on_every_path,
+             test_ignore_state_is_a_tristate_and_reaches_a_human,
              test_captured_frames_are_not_their_own_evidence,
              test_no_vendor_token_in_plugin,
              test_schema_declares_the_slots, test_skills_wire_the_capture,

@@ -414,6 +414,50 @@ pre-existing sites carry the identical shape, but FB-0108's point is that a per-
 convention is the thing that keeps re-arriving. The site this PR adds uses `set --` instead; the five
 others are a roadmap item, not this PR's scope.
 
+## Coverage, declared — and what three successive audits kept finding
+
+`/flow:audit-coverage` ran three times and the plan grew **14 → 24 criteria**. That is not a sign
+the audit was noisy; every finding was a behaviour a review round had *added* after the plan was
+approved, which is precisely the under-declaration the gate exists to catch. The agent drafted each
+criterion; the human declared them. Declaring one's own coverage is grading one's own homework.
+
+**Run 1 (full diff, truncated)** — six findings, all declared: the frame exclusion, §5d's capture
+decision, the sidecar alt text, `--source auto`'s fall-through, the dock-sentence/`prototype.html`
+pair, and the verify-build boundary.
+
+**Run 2 (scoped to the two files run 1 could not read)** — commissioned by the human rather than
+accepted as "probably fine", and it earned its cost. 36 behaviours inventoried from the unread
+remainder, **one undeclared**: the chat directory's git-ignore tristate. Both halves of that
+behaviour were themselves review-round fixes — the note was unreachable because its only shipped
+call site swallowed stderr, and the predicate went silent on its own "could not measure" — so it is
+the changed-late-and-never-declared shape exactly. It was also genuinely **unpinned**: the functions
+appeared in the selftest's text but carried no assertion, which a grep for the names would have
+reported as covered. Written, then declared.
+
+**Run 3 (full diff again, with 21 criteria)** — three more, and one is the sharpest of the lot:
+
+> **§5d has a fifth path nobody had enumerated: no plan doc.** It warns and then computes visual
+> significance *from the diff alone*, so a plan declaring `Visual-walk: N/A` cannot suppress
+> capture — the exact suppression #183 shipped — reachable through a misconfigured `planPath`
+> rather than through the plan.
+
+The criterion I had declared enumerated exactly four arms, and all four presupposed the plan
+resolved. The behaviour kept is warn-and-continue, because §5c and §7b do the same thing with the
+same verdict and making §5d uniquely refuse would put three readers of one value into two minds;
+the residual is bounded in the cheap direction (over-capture commits ~20 KB nobody asked for, it
+never skips a gate). The point is that it is now *declared* rather than *unnoticed*.
+
+The other two were the chat-side alt text — my criterion was PR-body-scoped and its pairing asserts
+the *opposite* source, so the chat path had no criterion at all — and `/flow:doctor`'s fourth
+outcome, where an unreadable engine report was being reported as "the slot is unset" because an
+empty string pipes through `jq` with exit 0. Same could-not-measure collapse as the tristate one
+layer below it.
+
+**The honest residual:** run 3 was *also* truncated — this diff is simply larger than a 60 KB
+evidence cap. Run 2 closed the biggest unread slice by hand. What remains unaudited is smaller and
+overlapping, and three four-lens rounds plus a security pass read those files end to end. Recorded
+rather than rounded off.
+
 ## What the harness caught that review would not have
 
 Four defects, all found by running the instruments rather than reading them:

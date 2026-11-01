@@ -220,7 +220,9 @@ Prototype: https://ws-abc.example.show/prototype.presented-2b7c91de.html — any
       strings, written out rather than imported. *Pinned by:*
       `run_capture_frames_evals.py::test_unset_is_byte_identical`.
 - [x] **A capture is accepted only on a valid PNG of the requested dimensions.** *Verify:* four
-      arms — a real capture (dimensions asserted), a command that exits 0 writing nothing, one
+      arms, run **over a directory a previous arm already wrote to** — which is what exercises the
+      unlink-before-write rule, since a rejected capture must not leave a stale frame the next run
+      reads as its own — — a real capture (dimensions asserted), a command that exits 0 writing nothing, one
       writing a truncated non-PNG, and one writing a PNG of the wrong size; only the first is
       accepted. *Pinned by:* `run_capture_frames_evals.py::test_only_a_valid_png_counts`.
 - [x] **dbus stderr noise is not read as failure.** *Verify:* a stub backend that writes a valid PNG
@@ -241,7 +243,8 @@ Prototype: https://ws-abc.example.show/prototype.presented-2b7c91de.html — any
       `dispatch_backend.render_template` so there is no third copy of the policy.
 - [x] **A PR-body frame is embedded only when the named SHA CONTAINS it as a blob.** *Verify:*
       paired — a committed frame emits a row; one staged-but-uncommitted, and one named by a SHA
-      predating it, each emit none. *Pinned by:*
+      predating it, each emit none; and a committed file the capture engine did not write (a stray
+      `.txt`, or a `.png` of another shape) is ignored rather than rendered as an unlabelled row. *Pinned by:*
       `run_capture_frames_evals.py::test_only_frames_in_the_commit`.
 - [x] **Another PR's frames are unreachable.** *Verify:* two `pr-frames/<slug>/` directories
       committed; rendering for branch A emits only A's frames and names no file from B.
@@ -290,12 +293,15 @@ decision that each belongs in the verified set.
 - [x] **`/flow:ship` §5d captures only on a visual change, picks the right target, and states a
       distinct reason on every path where it does nothing.** *Verify:* run the block with
       `visual_significant` false, then true with (a) no prototype and no walkthrough, (b) the
-      capture engine absent, (c) a branch name that slugs to nothing. Each prints its own reason;
-      only the fully-working arm emits frames. *Verified by:* driven by hand this session on all
-      four arms — which is how two of them were found collapsed into one message that confidently
-      diagnosed a condition nobody had measured. Flow is `platform: library`, so `/flow:verify-build`
-      self-skips and there is no behavioural gate above this; the arms are reproducible from the
-      §5d block directly.
+      capture engine absent, (c) a branch name that slugs to nothing. Each prints its own reason,
+      the reasons are distinct, and only the fully-working arm emits frames. *Pinned by:*
+      `run_capture_frames_evals.py::test_capture_step_states_a_reason_on_every_path`, which
+      **extracts §5d's shell block from the shipped SKILL.md and runs it** rather than driving the
+      Python underneath — the composed layer is the one the criterion describes, and a pin one
+      layer down can be green while the surface is false. It leads with the known-positive arm, so
+      four "it skipped" assertions cannot be satisfied by a block that can only ever skip. Written
+      at ship because the autoplan pin gate correctly refused "driven by hand this session" as a
+      verification artifact.
 - [x] **A PR-body frame always carries a description, and the description never goes stale.**
       *Verify:* three arms — with the committed `frames.json` sidecar the alt leads with the page's
       own title; with it corrupt or absent the alt degrades to naming the label and viewport and is
@@ -326,9 +332,58 @@ decision that each belongs in the verified set.
 - [x] **`/flow:verify-build`'s capture ladder cannot be satisfied by a `captureBackend` frame.**
       *Verify:* the boundary note is present in `verify-build/SKILL.md` and names the reason, paired
       with the negative that the skill invokes no capture — so deleting the note turns the pair red
-      rather than green. *Pinned by:* `wiring/verify-build-does-not-capture` +
-      `wiring/verify-build-says-why-not`. Declared as a criterion rather than waived as
+      rather than green. *Pinned by:* the `wiring/verify-build-does-not-capture` and
+      `wiring/verify-build-says-why-not` arms of `run_capture_frames_evals.py`. Declared as a
+      criterion rather than waived as
       documentation-of-existing-policy: the human's call, on the ground that it constrains a gate.
+- [x] **A chat-image directory git does not ignore is called out, and an ignore state nobody could
+      measure is never reported as clean.** *Verify:* three arms over
+      `capture_frames.py chat-dir --json` — a `.gitignore`d directory (`ignored: true`, no note); a
+      tracked one (`ignored: false`, plus a note naming the directory and saying the frames can be
+      committed by accident); and the same call outside a git repo (`ignored: null` and a "could
+      not determine" note, **never** `false`). Paired with the positive that the two shipped
+      consumers SURFACE it rather than re-deriving it: `/flow:prototype` §8 does not discard the
+      engine's stderr, and `/flow:doctor` Check 2.14 renders all three states from `chat-dir --json`
+      with no `git check-ignore` of its own. *Pinned by:*
+      `run_capture_frames_evals.py::test_ignore_state_is_a_tristate_and_reaches_a_human`.
+      **This is the seventh, and it arrived AFTER the human's decision on the other six** — found
+      by the scoped coverage re-run over the slice the full pass could not read, written and
+      declared on the pattern they set for the identical class. Both halves of this behaviour were
+      themselves review-round fixes (the note was unreachable because its only call site swallowed
+      stderr; the predicate went silent on its own "could not measure"), which is precisely the
+      changed-late-and-never-declared shape the audit looks for.
+- [x] **§5d has a FIFTH path — no plan doc — and a plan-less verdict is never passed off as a
+      plan-informed one.** *Verify:* run §5d's extracted block with `planPath` pointing at a
+      nonexistent file; it must warn loudly, name the path it looked for, still report what it
+      decided, and the warning must be its own sentence rather than doubling as one of the four
+      skip reasons. *Pinned by:* the `5d/no-plan-*` arms of
+      `run_capture_frames_evals.py::test_capture_step_states_a_reason_on_every_path`.
+      **The decision this criterion records, and it is the interesting part:** with no plan doc
+      the verdict is computed from the DIFF ALONE, so a plan declaring `Visual-walk: N/A` cannot
+      suppress capture — the exact suppression #183 shipped, reachable through a misconfigured
+      `planPath` rather than through the plan. The behaviour kept is **warn-and-continue**, because
+      §5c and §7b do the same thing with the same verdict and making §5d uniquely refuse would put
+      three readers of one value into two minds. The residual is bounded in the cheap direction:
+      over-capture commits ~20 KB of frames nobody asked for; it never skips a gate.
+- [x] **The CHAT frame's alt text names the page too, and reads the WORKING TREE deliberately.**
+      *Verify:* three arms — sidecar present (the alt leads with the page's title); absent or
+      corrupt (it names the kind and the viewport, never empty); filename not a known frame (the
+      `<Kind> screenshot` fallback). *Pinned by:* the `chat/alt-leads-with-the-page`,
+      `chat/alt-degrades-without-a-sidecar` and `chat/alt-never-empty-either-way` arms of
+      `artifact-handoff.py --selftest`. **Stated so the two sources are never conflated:** the
+      PR-body path reads the sidecar from the COMMIT because a PR body is a projection of the
+      commit; the chat path reads the WORKING TREE because the chat frame is uncommitted by
+      construction — which is why `--chat-image` is refused for `--kind walkthrough` at all. The
+      previous criterion's pairing asserts the opposite source on purpose, and is not a
+      contradiction.
+- [x] **`/flow:doctor` has a FOURTH outcome: an engine report it cannot read is `[SKIP]`, never
+      "unset".** *Verify:* run Check 2.14's block with the capture engine unreachable; it must
+      print `[SKIP] chatImagePath` and must not claim the slot is unset. *Pinned by:* the
+      `ignore/doctor-skips-on-an-unreadable-report` and
+      `ignore/doctor-does-not-claim-unset-on-an-unreadable-report` arms of
+      `run_capture_frames_evals.py`. One axis above criterion 21's tristate and the same collapse:
+      an empty report pipes through `jq` with exit 0, so "could not read" was being reported as
+      "is not configured".
 
 ### Risks
 
