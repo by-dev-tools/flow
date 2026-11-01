@@ -102,3 +102,20 @@ missed the second.
   change that needs one. It is exactly that kind of change: the one place consumers are told to
   check before upgrading is precisely where a hard rename with no alias should have been flagged.
   A diff's apparent simplicity doesn't exempt it from the project's own documented contracts.
+- **The rigor-gate marker went stale after the first staff-review pass's own fixes landed**,
+  because those fixes touched source *after* the marker was written — so `/flow:ship`'s
+  Step 1.0a correctly flagged it and staff-review was re-run on the final tree rather than
+  routed to a draft. Four fresh lenses on the already-fixed diff caught a second, smaller
+  round: the plan's own Spec-walk verify command claimed a grep "returns exactly one line"
+  when it actually returns two (nobody had re-run it before checking the box — the "a
+  measurement that can only return clean" class `.claude/rules/general.md` item 4 already
+  names); the new SKILL.md description buried the one phrase ("the workspace retro") that
+  motivated the whole rename inside a parenthetical instead of leading with it; a
+  continuation-line indent went stale after `pm_calls` → `retro_calls` lengthened the
+  variable name; and the new "Often searched for as…" vs. `Trigger:` distinction this PR
+  introduced exists nowhere as a documented convention, so the next `disable-model-invocation`
+  skill is likely to copy the wrong neighbor. The first three were cheap in-tree fixes; the
+  last two (that convention, and a separate push-further finding that `docs/upgrade.md`'s
+  bump-cadence table doesn't know a minor version can carry breaking changes — which this
+  PR's own changelog entry does) were filed to `dev-docs/roadmap.md` § Next rather than
+  built here, since neither is in this PR's declared scope.
