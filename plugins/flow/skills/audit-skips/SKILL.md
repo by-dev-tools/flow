@@ -40,6 +40,15 @@ against the config, the diff, and the canonical artifact's existence + freshness
 `LEGITIMATE` or `SHOULD-RE-RUN`. Apply your own judgment ONLY to stages it marks
 `NEEDS-JUDGMENT` (a mode-declared spike/tiny skip, an unrecognized skip reason).
 
+On a successful run the block also reports **where it found flow itself** — `plugin_root`,
+`plugin_root_arm` (`host-var` | `install-record` | `checkout`), and
+`plugin_root_ambiguous`. These are provenance, not verdicts: do not let them change a
+stage classification. Quote `plugin_root_arm` in your summary when anything looks off, so
+the operator can tell whether the engine came from the host variable, the install record,
+or a local checkout — the question that went unanswerable for 35 releases (FB-0141). If
+`plugin_root_ambiguous` is `true`, flow matched more than one installed root and this run
+picked one arbitrarily; say so.
+
 !`
 # Root anchor (FB-0074) — MUST precede every relative read below (the engine fallback path,
 # flow.config.json, and the diff block). A fork inherits the SESSION cwd, not necessarily the
@@ -79,10 +88,121 @@ command -v jq >/dev/null 2>&1 || { printf '{"jq_error": "jq is not on PATH; flow
 # by construction, which also ends the cross-project clobbering of the global /tmp namespace.
 # Relative default resolves against $ROOT because of the cd above.
 STAGES="${FLOW_SKIP_AUDIT_STAGES:-.flow/skip-audit-stages.json}"
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/audit-skips/lib/skip-audit-checks.py" ]; then
-  H="${CLAUDE_PLUGIN_ROOT}/skills/audit-skips/lib/skip-audit-checks.py"
-else
-  H="plugins/flow/skills/audit-skips/lib/skip-audit-checks.py"
+# Flow plugin root -- THREE arms (FB-0141 has the measurements, the ~35-site class, and
+# the review history; this block keeps only what a maintainer needs in place).
+# SECURITY: arm 3 is cwd-relative. READ THE SECURITY NOTE BELOW BEFORE PORTING THIS.
+#
+# Arm 1 was $CLAUDE_PLUGIN_ROOT; arm 2 was a bare, UNGATED plugins/flow/... --
+# flow-repo-relative, so in a consumer project it cannot exist. On any run where the host
+# variable was absent every helper below was unreachable, and the gate reported "cannot
+# verify the stamp" on every single invocation. Neither arm may be assumed: CPR is set in
+# SOME forked context blocks and unset in others, measured in one session, and WHY is not
+# established -- so every arm must stand on its own.
+#
+# WHAT ARM 2 IS, AND IS NOT. The host's own install record: the only LIVE source of the
+# root, and version-bearing, which is why a cache glob is wrong (a host can hold several
+# cached versions, so a glob can run one version's engine against another's handoff). It
+# does NOT name "the version in use". ship/lib/plugin-provenance.py::read_running measured
+# that: an update rewrites the record immediately yet needs a restart to apply, so a
+# session that began before the update keeps running the OLD tree while the record
+# advertises the new one (observed: record 1.41.0, session executing 1.29.0). Arm 2 fires
+# exactly when CPR is unset, so a cached old skill body CAN resolve to a newer tree. PATH
+# is the reliable signal per that module, and it is not available to this bootstrap.
+#
+# SECURITY -- the honest version, not the flattering one. Both greps below are CONTENT
+# checks. They detect a mis-install; they are NOT an attacker boundary, because no file
+# inside a tree can authenticate that tree against whoever wrote it.
+#   Arm 2 is still not an attacker primitive: forging it means writing into the user's own
+#   config dir, where settings.json hooks already live, so anyone who can has easier
+#   options. That location -- not the grep -- is what makes it safer than a cwd guess.
+#   Arm 3 IS cwd-relative, and this block runs after a cd into the repo under review. An
+#   untrusted repo shipping plugins/flow/.claude-plugin/plugin.json with the right name
+#   plus its own two scripts gets its Python executed. That exposure is INHERITED: the arm
+#   it replaces had no gate at all and was reached whenever CPR missed. This change
+#   strictly NARROWS it (arm 2 shadows arm 3 on any normal install, and a name check now
+#   exists where there was none) and does NOT close it. An arm-2 miss falls through to
+#   arm 3, not to a refusal. Open decision on the PR; see FB-0141 § "A content check is
+#   not an identity check" before porting this to another skill.
+#
+# (No backticks: this is a single-backtick dynamic-context span. One inner backtick
+# truncated this exact block once already -- FB-0010.)
+FPR=""; FPR_ARM="none"; FPR_AMBIGUOUS=false
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json" ]; then
+  FPR="$CLAUDE_PLUGIN_ROOT"; FPR_ARM="host-var"
+fi
+if [ -z "$FPR" ]; then
+  # jq is guaranteed here -- the command -v jq gate above exits before this point.
+  # The loop lives INSIDE the command substitution: a "while read" on the right of a
+  # pipe runs in a subshell, so an assignment there would not survive the pipeline.
+  # read -r, not "for C in $(...)", so an install path containing a space survives.
+  IPJ="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json"
+  IPJ_STATE=absent
+  if [ -f "$IPJ" ]; then
+    # Probe parseability SEPARATELY from the query. The query ends 2>/dev/null, so an
+    # unparseable record yielded no candidates and NO signal, and arm 3 (cwd-relative)
+    # was then reached silently -- a bare 2>/dev/null with no [WARN] branch, which
+    # general.md item 1 forbids. Worse, the refusal below would have reported "no flow@
+    # entry points at an installed flow", asserting a search result for what was really a
+    # parse failure: the same say-what-you-detected rule this block closes on.
+    if jq empty "$IPJ" >/dev/null 2>&1; then
+      IPJ_STATE=ok
+    else
+      IPJ_STATE=unparseable
+      echo "⚠️ [audit-skips] the install record at $IPJ is present but could not be parsed, so flow's installed location could not be read from it. Falling back to the local checkout if there is one. Fix: reinstall the flow plugin, or set CLAUDE_PLUGIN_ROOT to the installed flow directory." >&2
+    fi
+  fi
+  if [ "$IPJ_STATE" = ok ]; then
+    CANDS=$(jq -r '(.plugins // {}) | to_entries[] | select(.key | startswith("flow@")) | .value[]? | .installPath? // empty' "$IPJ" 2>/dev/null       | while IFS= read -r C; do
+          if [ -n "$C" ] && [ -f "$C/.claude-plugin/plugin.json" ] && grep -q '"name": *"flow"' "$C/.claude-plugin/plugin.json" 2>/dev/null; then
+            printf '%s\n' "$C"
+          fi
+        done)
+    FPR=$(printf '%s' "$CANDS" | head -1)
+    [ -n "$FPR" ] && FPR_ARM="install-record"
+    # First-match-wins is the only sane default, but it must not be SILENT. A dual
+    # user+project install puts two entries under one key, and presenting an arbitrary
+    # pick as the answer is the thing plugin-provenance.py reports entry_count to avoid.
+    if [ "$(printf '%s\n' "$CANDS" | grep -c .)" -gt 1 ]; then
+      # Name EVERY candidate, not just the winner: "set CLAUDE_PLUGIN_ROOT to the one
+      # you mean" is unusable advice if the message printed only one of them.
+      echo "⚠️ [audit-skips] flow looks installed more than once, so this run picked one arbitrarily. Using: $FPR. Also matched: $(printf '%s\n' "$CANDS" | grep -v "^$FPR$" | tr '\n' ' ')" >&2
+      echo "   If the verdicts look wrong, set CLAUDE_PLUGIN_ROOT to the installed flow directory you mean, then re-run." >&2
+      FPR_AMBIGUOUS=true
+    fi
+  fi
+fi
+if [ -z "$FPR" ] && [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null; then
+  # Arm 3: the flow checkout itself. Dogfooding only -- a consumer project never has
+  # this. Content-gated, not authenticated; see the SECURITY note above.
+  FPR="plugins/flow"; FPR_ARM="checkout"
+fi
+# Both helpers resolve off the SAME root. They were two independent copies of the
+# two-arm shape, so both were dead together on an unset CPR -- meaning the skill was
+# wholly unusable against an install, not merely unable to check the stamp. One root
+# also removes the state where the stamp is checked by the install and the verdicts are
+# computed by the checkout.
+H="$FPR/skills/audit-skips/lib/skip-audit-checks.py"
+# When NO arm resolved, say THAT. An empty $FPR would otherwise compose
+# "/scripts/flow_scratch.py" and the operator is told a helper is missing from a path
+# that was never a real location -- the same unreadable garbage /flow:audit-coverage
+# calls out in its INVENTORY-UNAVAILABLE branch. The remedy for an unresolved root
+# (reinstall / point CLAUDE_PLUGIN_ROOT at the install) is not the remedy for a helper
+# missing from a root that DID resolve, so the two must not share one message.
+FPR_NOTE=""
+if [ -z "$FPR" ]; then
+  # Branch on whether the record EXISTS. $IPJ is assigned unconditionally but only READ
+  # under [ -f "$IPJ" ], so a flat "no flow@ entry in <path>" asserts a search that never
+  # happened and sends the operator to inspect a file that is not there. This block's own
+  # rule: say what the gate detected, not what it hoped to prevent.
+  case "${IPJ_STATE:-absent}" in
+    ok)          FPR_WHERE="no flow@ entry in $IPJ points at an installed flow" ;;
+    unparseable) FPR_WHERE="the install record at $IPJ could not be parsed" ;;
+    *)           FPR_WHERE="there is no install record at ${IPJ:-the usual location}" ;;
+  esac
+  # Ends on a REMEDY, like its two siblings in this block (root_error ends "Re-run from
+  # the repo root, or set CLAUDE_PROJECT_DIR"; jq_error ends "Install jq ... and re-run").
+  # The remedy was known -- it was sitting in the comment above instead of in the message.
+  FPR_NOTE="flow could not find its own installation, so the handoff stamp was not checked. Looked at: CLAUDE_PLUGIN_ROOT, the install record, and ./plugins/flow ($FPR_WHERE). Fix: reinstall the flow plugin, or set CLAUDE_PLUGIN_ROOT to the installed flow directory, then re-run"
 fi
 PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
 # Stamp gate (FB-0082). A handoff must PROVE it belongs to this repo+branch+HEAD before
@@ -91,11 +211,7 @@ PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] 
 # mismatch is refused loudly rather than read-and-hope -- and is kept DISTINCT from the
 # absent case, because collapsing the two is exactly how a foreign buffer reads as
 # "nothing to do". An UNSTAMPED handoff is refused too (fail closed -- FB-0062).
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/flow_scratch.py" ]; then
-  SCRATCH_PY="${CLAUDE_PLUGIN_ROOT}/scripts/flow_scratch.py"
-else
-  SCRATCH_PY="plugins/flow/scripts/flow_scratch.py"
-fi
+SCRATCH_PY="$FPR/scripts/flow_scratch.py"
 STAMP_STATUS=""; STAMP_REASON=""
 if [ -f "$STAGES" ]; then
   if [ ! -f "$SCRATCH_PY" ]; then
@@ -103,7 +219,18 @@ if [ -f "$STAGES" ]; then
     # handoff is ours, and "cannot prove" must never read as "verified" -- that is
     # the exact failure this whole branch exists to remove.
     STAMP_STATUS="unverifiable"
-    STAMP_REASON="stamp checker not reachable at $SCRATCH_PY -- cannot prove this handoff belongs to this workspace"
+    # Two genuinely DIFFERENT sentences, not one interpolation. Appending the
+    # handoff-provenance tail to the unresolved-root case composed a ~470-character
+    # sentence with two colons whose lede was the wrong story: nothing about "flow cannot
+    # locate itself" concerns whether the handoff belongs to this workspace, and the
+    # caller nests this inside "COULD NOT VERIFY the handoff stamp (<path>): ...".
+    # (/simplify had collapsed these into one line; its objection was that the two arms
+    # were the same sentence twice with drifted wording. They no longer are.)
+    if [ -n "$FPR_NOTE" ]; then
+      STAMP_REASON="$FPR_NOTE"
+    else
+      STAMP_REASON="stamp checker not reachable at $SCRATCH_PY -- cannot prove this handoff belongs to this workspace"
+    fi
   else
     STAMP_JSON=$(python3 "$SCRATCH_PY" check "$STAGES" 2>/dev/null)
     STAMP_STATUS=$(printf '%s' "$STAMP_JSON" | jq -r '.status // empty' 2>/dev/null)
@@ -146,8 +273,33 @@ elif [ -f "$STAGES" ]; then
   # no-op this branch exists to prevent. (No backticks in this block -- it runs inside a
   # single-backtick dynamic-context span; an inner backtick would truncate it. FB-0010.)
   ENGINE_ERR=$(mktemp)
+  # No pre-check on $H. Arm 1 now gates on the MANIFEST rather than on this specific
+  # helper, so a root carrying a manifest but a missing engine is newly ACCEPTED here
+  # instead of falling through -- deliberately (silently reaching past a resolved root
+  # into a different tree is how a working-tree engine ends up grading an installed
+  # release's handoff). That state needs no extra branch: python3 exits non-zero, its
+  # stderr names the full path, and the failure arm below already routes it as
+  # engine_error, which already blocks. Pinned by the engine-absent eval case.
   if OUT=$(python3 "$H" --report "$STAGES" --config flow.config.json $PLAN_ARG 2>"$ENGINE_ERR"); then
-    printf '%s\n' "$OUT"
+    # PROVENANCE ON THE SUCCESS PATH. Every other diagnostic in this block is a JSON key
+    # on stdout -- the channel the reader demonstrably sees -- and until now the success
+    # path said nothing about WHICH root produced the verdicts. On the one gate whose
+    # failure mode was 35 releases of invisible wrongness, that is the obvious thing left
+    # undone: a verdict that looks wrong gave the operator no way to tell whether the
+    # engine came from the host variable, the install record, or ./plugins/flow.
+    #
+    # It also stops relying on stderr for the ambiguity signal. Whether a forked
+    # context block's stderr reaches the model at all is UNMEASURED here (filed in the
+    # roadmap); the >&2 warning above stays, but the fact now also travels on the channel
+    # that is proven. Leaning on an unmeasured channel is the shape of the bug this whole
+    # change exists to fix. (And no backticks in that sentence -- writing it with them
+    # truncated this span and broke the block, exactly as the header warns. FB-0010.)
+    #
+    # Additive keys only, and failure-tolerant: if jq cannot re-emit the object, print the
+    # engine's output unchanged rather than losing the audit to a diagnostic.
+    printf '%s\n' "$OUT" | jq --arg r "$FPR" --arg a "$FPR_ARM" --argjson amb "$FPR_AMBIGUOUS" \
+      '. + {plugin_root: $r, plugin_root_arm: $a, plugin_root_ambiguous: $amb}' 2>/dev/null \
+      || printf '%s\n' "$OUT"
   else
     # Both interpolations go through jq -Rs . (sound JSON-string escaping). The || branches only
     # fire if jq is missing (it's a declared pipeline prerequisite) and emit a SAFE CONSTANT
@@ -251,7 +403,8 @@ BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remo
   `/flow:ship` Step 2a this routes to the draft manifest as `[decision-required]`
   (`[skip-audit] handoff failed its stamp check — needs: re-run ship Step 2a.1 | human-waive — confidence: auto-resolvable — candidate resolutions: rewrite the handoff from this workspace`).
 - If the mechanical block carries **`"stamp_unverifiable"`** (a handoff was present but the
-  stamp checker itself could not run — `flow_scratch.py` missing, or no `python3`/`jq`), this
+  stamp checker itself could not run — **flow's own installation could not be located**,
+  `flow_scratch.py` missing, or no `python3`/`jq`), this
   is an **install/toolchain** problem, NOT a foreign handoff. Do not claim the handoff belongs
   to someone else, and do not tell the operator to re-run ship Step 2a.1 — rewriting the
   handoff cannot fix a missing interpreter. Output:

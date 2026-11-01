@@ -7,7 +7,9 @@ FB-0010 fan-out class this repo's own consistency rule names, so it gets one hom
 like every other shared predicate in this codebase (`_lint()` / `skill-composition-lint.py`,
 `slot_count_scan.py`).
 
-Also home to `git_repo()` / `commit()`, the throwaway-repo builders. Those are the
+Also home to the fixture builders: `git_repo()` / `commit()` for throwaway repos, and
+`installed_registry()` for the host's `installed_plugins.json` shape (hoisted here because
+that shape is host-private state with no stability contract and two harnesses stage it). Those are the
 HOIST TARGET for a debt this repo has recorded rather than paid: five eval harnesses each
 define their own temp-git-repo helper (`run_coverage_source_mode_evals.py` added the fifth
 and said so in its PR rather than quietly fanning out a sixth). Deleting those five copies
@@ -79,3 +81,16 @@ def commit(path, files, message):
     subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
                     "commit", "-qm", message], cwd=path, capture_output=True)
     return path
+
+def installed_registry(version, install_path="/nonexistent", *, scope="user"):
+    """A fake `installed_plugins.json` payload, in the host's shape.
+
+    Hoisted here because that shape is HOST-PRIVATE state with no stability contract
+    (`"version": 2` today) and two harnesses now stage it. Two spellings means a host
+    change updates one and leaves the other testing the retired shape while printing
+    PASS -- the fan-out class, on the one structure flow cannot control.
+    """
+    return {"version": 2, "plugins": {"flow@flow": [
+        {"scope": scope, "installPath": str(install_path), "version": version,
+         "gitCommitSha": "abcdef1234567890"}]}}
+

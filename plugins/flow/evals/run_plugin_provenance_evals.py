@@ -33,6 +33,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import eval_utils
+
 HERE = Path(__file__).resolve().parent
 FLOW = HERE.parent                      # plugins/flow
 REPO = FLOW.parent.parent               # repo root
@@ -144,9 +146,10 @@ def home_from_fixture(td: Path, name: str) -> tuple[Path, dict]:
 
 
 def registry(version: str, install_path: str = "/nonexistent") -> dict:
-    return {"version": 2, "plugins": {"flow@flow": [
-        {"scope": "user", "installPath": install_path, "version": version,
-         "gitCommitSha": "abcdef1234567890"}]}}
+    # ONE spelling of the host's private registry shape, shared with
+    # run_scratch_isolation_evals.py. Kept as a thin alias so this file's many call
+    # sites stay unchanged.
+    return eval_utils.installed_registry(version, install_path)
 
 
 def marketplace_json(version: str) -> str:
