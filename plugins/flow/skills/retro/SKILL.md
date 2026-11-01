@@ -10,8 +10,10 @@ description: >
   /flow:ship structurally can't see (your review→iterate→merge comments) into
   user-scope agent memory + the /flow:contribute queue; (4) safe-deletes the
   merged branch; (5) prints a ✅ safe to archive / 🚫 not safe verdict. Never
-  merges. Trigger: "/flow:retro <PR#>", "retro #N", "workspace retro",
-  "merged — safe to archive?".
+  merges. Often searched for as "retro #N", "workspace retro", or "merged — safe
+  to archive?" — but `disable-model-invocation: true` means only the literal
+  `/flow:retro <PR#>` slash command actually fires it; those are search terms
+  for a human, not phrases the model can route on.
 disable-model-invocation: true
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Skill
 ---

@@ -63,11 +63,15 @@ missed the second.
   "is this in `dev-docs/`" — it was "does this describe something that already happened (leave)
   or something that might still happen and needs the current path to find it (fix)." Several
   § Next/§ Later items were the latter and got the correct `retro/` path; the one explicitly
-  "✅ SHIPPED (v1.21.0...)" block (which also retains a deferred v1b design record) was left as a
-  historical/design retention rather than parsed clause-by-clause for which sentences describe the
-  shipped v1 (leave) versus the still-open v1b spec (arguably fix) — the effort to split that
-  precisely was disproportionate to a small rename task, and is named here rather than silently
-  skipped.
+  "✅ SHIPPED (v1.21.0...)" block (which also retains a deferred v1b design record) was initially
+  left as a historical/design retention wholesale, on the reasoning that parsing it clause-by-clause
+  for shipped-v1 (leave) versus still-open-v1b (fix) prose was disproportionate to a small rename
+  task. `/flow:staff-review`'s staff-engineer lens correctly caught one exception inside that same
+  block: its "v1b staff-review follow-ups... **Surfaces when:**" line is not narrative at all — it's
+  an actionable trigger naming a path, and that path (`skills/post-merge/...`) no longer exists.
+  Fixed (two path strings); everything else in the block stayed as retained prose, since the "is this
+  an actionable trigger naming a current path, or is it narration" test — not "is it inside a SHIPPED
+  header" — is what actually decides it, and the rest of that block genuinely is narration.
 - **`postMergeWaitSeconds`'s key stays unrenamed, for a sturdier reason than "it's config, not the
   command."** That framing is true but not the load-bearing one. The real reason: `flow.config.json`
   is a consumer-owned artifact, and any project that already set this key would have it silently
