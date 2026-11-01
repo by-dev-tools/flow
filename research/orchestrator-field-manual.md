@@ -204,6 +204,27 @@ one PR and are independent.
   text without them delivers. Measured by
   a worker on 2026-10-04; the send reports success, so the loss is invisible from the sending
   end. Treat it as a delivery constraint rather than a style preference.
+- **Scope a dispatch to one shippable PR, named as the brief's Outcome — not to a time or token
+  budget.** Stated directly (2026-10-31), ahead of a move to a lower usage tier: *"let's focus on
+  intelligent and strategic chunking of work so that we can actually ship it and keep making
+  incremental progress, rather than always be hitting limits as soon as we start big, large
+  projects that end up not getting shipped."* **Corrected the same day** (2026-10-31, before the
+  PR carrying the first version of this entry had even merged): the orchestrator has no reliable
+  way to measure or predict how much of a usage window a piece of work will consume, so a rule
+  justified by "fits inside one weekly-limit window" rests on a number nobody can see. Keep the
+  goal; drop the unmeasurable yardstick.
+
+  **What's measurable instead:** whether a dispatch produced exactly the one shippable PR its
+  brief named, or whether scope grew mid-flight and had to be split or absorbed. That's auditable
+  after the fact from the PR history, and it's set directly by what the brief's Outcome line
+  commits to — not predicted, decided. The mobile-review work already did this before the rule was
+  written down: options 1–3 as one PR, option 4 as its own, the message-label work as a third,
+  each a brief that named one PR rather than "the whole feature." When new scope surfaces inside a
+  dispatch, `general.md`'s existing rule already covers it — surface it, don't silently absorb it;
+  route it to a follow-up dispatch rather than grow the current branch. A worker that reports new
+  scope and asks rather than building it (observed 2026-11-01, the audit-skips-plugin-root fix
+  surfacing that four sibling skills share its bug, and asking whether to widen or follow up) is
+  this rule working, not a stall.
 
 ## 4. Program facts a fresh seat asks for in its first hour
 
