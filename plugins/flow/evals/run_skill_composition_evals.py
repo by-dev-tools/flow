@@ -228,11 +228,11 @@ def main() -> int:
         0 if re.search(r"^disable-model-invocation:\s*false\s*$", land_fm, re.M) else 1,
         0, land_fm)
 
-    pm_calls = [c for c in table["calls"]
+    retro_calls = [c for c in table["calls"]
                 if c["caller"] == "retro" and bare(c["target"]) == "land"]
     expect(
         'retro §3 emits a fenced Skill("flow:land") call — the composition, not a hand-off',
-        0 if pm_calls else 1, 0,
+        0 if retro_calls else 1, 0,
         "no fenced Skill() call naming land found in retro/SKILL.md")
 
     # retro must itself stay human-gated: it is the human gate above land now

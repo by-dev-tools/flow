@@ -284,7 +284,7 @@ elif [ -z "$MERGED_BRANCH" ]; then
   esac
 fi
 WORKTREE_PATH=$(git rev-parse --show-toplevel 2>/dev/null)
-CO_ERR=$(mktemp "${TMPDIR:-/tmp}/flow-pm-co.XXXXXX")   # per-run (concurrent runs won't cross-contaminate)
+CO_ERR=$(mktemp "${TMPDIR:-/tmp}/flow-retro-co.XXXXXX")   # per-run (concurrent runs won't cross-contaminate)
 if [ -z "$MERGED_BRANCH" ] || [ "$MERGED_BRANCH" = "$DEFAULT_BRANCH" ]; then
   echo "[retro] on $DEFAULT_BRANCH (or detached) — no feature branch to delete here."
   rm -f "$CO_ERR"

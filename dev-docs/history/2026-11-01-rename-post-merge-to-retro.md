@@ -43,6 +43,15 @@ missed the second.
   for `/code-review`. You can't define your own." The "directory name also invokes the skill"
   behavior is documented only for personal/project skills, not plugin skills, so even that
   indirect route doesn't apply here. Straight rename, no deprecated-alias period.
+- **A self-authored redirect stub was considered and explicitly rejected, not overlooked.**
+  `/simplify`'s altitude lens correctly pointed out that "no host-provided alias" doesn't preclude
+  a one-line `plugins/flow/skills/post-merge/SKILL.md` stub that just says "renamed, run
+  `/flow:retro`" — that's real and the dispatch anticipated it directly: "if aliases aren't a real
+  mechanism, say so and ship the straight rename **instead of inventing one**." Taken as a
+  deliberate instruction, not a gap in the check. The real cost this absorbs: a saved shortcut or
+  a script invoking `/flow:post-merge` non-interactively breaks with no redirect — flagged
+  explicitly in the changelog's new "Breaking changes" line (added after the same lens caught its
+  absence) rather than silently accepted.
 - **Historical records left untouched.** `changelog/`, `dev-docs/history/`, other
   `dev-docs/feedback/` entries, and the "Shipped"/"Prior" narrative inside `dev-docs/plan.md` and
   `dev-docs/roadmap.md` § Now all describe what was true at the time those PRs shipped, under the
@@ -59,6 +68,13 @@ missed the second.
   shipped v1 (leave) versus the still-open v1b spec (arguably fix) — the effort to split that
   precisely was disproportionate to a small rename task, and is named here rather than silently
   skipped.
+- **`postMergeWaitSeconds`'s key stays unrenamed, for a sturdier reason than "it's config, not the
+  command."** That framing is true but not the load-bearing one. The real reason: `flow.config.json`
+  is a consumer-owned artifact, and any project that already set this key would have it silently
+  stop being read if the key were renamed with no back-compat alias and no `⚠️` warning — exactly
+  the "never silently no-op on a missing slot" failure CLAUDE.md names directly. Leaving the slot
+  name alone and only updating its description text is correct for that reason, not merely because
+  config and command names are different categories.
 
 ## Tradeoffs discussed
 
@@ -75,3 +91,10 @@ missed the second.
   ~50 files; the judgment call was almost entirely about which of those describe *current* reality
   (fix) versus *past* reality (leave), and that distinction doesn't follow any single directory
   boundary (`dev-docs/roadmap.md` needed both kinds of edit within the same file).
+- `/simplify`'s altitude lens caught something the other three lenses (and the author) missed on a
+  diff that looked "too mechanical to need a quality pass": `CHANGELOG.md` states its own format
+  contract — every entry needs a "Breaking changes:" line — and the new `changelog/v1.66.0.md`
+  skipped it on the reasoning that a pure find-and-replace rename "obviously" isn't the kind of
+  change that needs one. It is exactly that kind of change: the one place consumers are told to
+  check before upgrading is precisely where a hard rename with no alias should have been flagged.
+  A diff's apparent simplicity doesn't exempt it from the project's own documented contracts.
