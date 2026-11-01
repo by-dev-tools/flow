@@ -119,7 +119,7 @@ The brief's "Your first action" section already carries this, including the reso
 ## 6. Archive-safety on the outgoing seat
 
 ```sh
-python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/post-merge/lib/merge-status.py" archive-check
+python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/skills/retro/lib/merge-status.py" archive-check
 ```
 
 A workspace is safe to archive when **all four** hold:

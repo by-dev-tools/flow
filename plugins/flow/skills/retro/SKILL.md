@@ -1,16 +1,17 @@
 ---
-name: post-merge
+name: retro
 description: >
   The "merged — anything left, or safe to archive?" skill (FB-0072). Human-invoked
-  AFTER you merge a PR, it runs the whole post-merge close-out in one command:
-  (1) confirms the PR is actually merged with a MERGE-QUEUE-SAFE gate (a queued PR
-  that hasn't landed yet is "not merged YET", not a failure); (2) reconciles the
-  forward docs by calling /flow:land, which opens its own `docs: land #N` PR;
-  (3) synthesizes the merge-gate feedback window /flow:ship structurally can't see
-  (your review→iterate→merge comments) into user-scope agent memory + the
-  /flow:contribute queue; (4) safe-deletes the merged branch; (5) prints a
-  ✅ safe to archive / 🚫 not safe verdict. Never merges. Trigger: "/flow:post-merge
-  <PR#>", "post-merge #N", "merged — safe to archive?".
+  AFTER you merge a PR, it runs the whole post-merge close-out — the workspace
+  retro — in one command: (1) confirms the PR is actually merged with a
+  MERGE-QUEUE-SAFE gate (a queued PR that hasn't landed yet is "not merged YET",
+  not a failure); (2) reconciles the forward docs by calling /flow:land, which
+  opens its own `docs: land #N` PR; (3) synthesizes the merge-gate feedback window
+  /flow:ship structurally can't see (your review→iterate→merge comments) into
+  user-scope agent memory + the /flow:contribute queue; (4) safe-deletes the
+  merged branch; (5) prints a ✅ safe to archive / 🚫 not safe verdict. Never
+  merges. Trigger: "/flow:retro <PR#>", "retro #N", "workspace retro",
+  "merged — safe to archive?".
 disable-model-invocation: true
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Skill
 ---
@@ -25,7 +26,7 @@ that question implies.
 when the PR opens* — but your richest design-taste feedback lands *after*: you review
 the PR + walkthrough at the merge gate, comment, the agent iterates, you merge. That
 merge-gate window is structurally outside ship's synthesis, and there's no next ship
-on the branch to catch it (FB-0072). `/flow:post-merge` captures it. It also folds in
+on the branch to catch it (FB-0072). `/flow:retro` captures it. It also folds in
 the doc-currency reconciliation (`/flow:land`), the stale-branch cleanup, and the
 archive-safety check you'd otherwise do by hand. `disable-model-invocation: true`: a
 human runs this after merging — it must never auto-fire mid-loop.
@@ -33,7 +34,7 @@ human runs this after merging — it must never auto-fire mid-loop.
 **Composition, not combination (from #79; settled by FB-0077).** This skill delegates the
 doc-currency step to `/flow:land` rather than reimplementing reconciliation. `/flow:land`
 stays a narrow, independently-invocable skill (you can still run it alone after a GitHub-web
-merge with no local workspace); `/flow:post-merge` is the orchestrator that does the feedback
+merge with no local workspace); `/flow:retro` is the orchestrator that does the feedback
 + cleanup + verdict around it. **The delegation is a real `Skill("flow:land")` call** — see §3.
 
 That call took two tries to get right, and the history is the point. #79 specified it, but
@@ -57,7 +58,7 @@ and still passes — now because the composition is legal, not because the call 
 
 ## Argument
 
-`/flow:post-merge <PR#>` — the PR you just merged (or queued). If omitted, resolve the
+`/flow:retro <PR#>` — the PR you just merged (or queued). If omitted, resolve the
 open/most-recent PR for the current branch (`gh pr list --head "$(git branch --show-current)"`)
 and **confirm the number with the user before any cleanup** — cleaning up the wrong
 branch loses work. If you can't resolve a number, stop and ask; never guess.
@@ -73,7 +74,7 @@ command -v jq >/dev/null 2>&1 || MISSING="$MISSING jq"
 command -v git >/dev/null 2>&1 || MISSING="$MISSING git"
 if [ -n "$MISSING" ]; then
   MISSING_TRIMMED=$(echo "$MISSING" | sed 's/^ //')
-  echo "⚠️ BLOCKER: /flow:post-merge requires $MISSING_TRIMMED (missing on PATH)." >&2
+  echo "⚠️ BLOCKER: /flow:retro requires $MISSING_TRIMMED (missing on PATH)." >&2
   echo "   Install: macOS 'brew install$MISSING' · Debian/Ubuntu 'apt install$MISSING' · gh: https://cli.github.com" >&2
   case " $MISSING_TRIMMED " in *" gh "*) echo "   After install: gh auth login" >&2 ;; esac
   exit 1
@@ -88,8 +89,8 @@ queue's 1–2 min delay never produces a false failure (FB-0072). The classifica
 poll policy live in the deterministic helper; the loop's I/O (fetch + sleep) is here.
 
 ```sh
-if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then H="${CLAUDE_PLUGIN_ROOT}/skills/post-merge/lib/merge-status.py"; else H="plugins/flow/skills/post-merge/lib/merge-status.py"; fi
-[ -f "$H" ] || { echo "⚠️ BLOCKER: post-merge helper not found at $H — reinstall the flow plugin." >&2; exit 1; }
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then H="${CLAUDE_PLUGIN_ROOT}/skills/retro/lib/merge-status.py"; else H="plugins/flow/skills/retro/lib/merge-status.py"; fi
+[ -f "$H" ] || { echo "⚠️ BLOCKER: retro helper not found at $H — reinstall the flow plugin." >&2; exit 1; }
 N="<PR#>"                                   # from the Argument step
 CAP=$(jq -r '.postMergeWaitSeconds // 150' flow.config.json 2>/dev/null); [ -z "$CAP" ] && CAP=150
 INTERVAL=20                                 # seconds between polls
@@ -100,18 +101,18 @@ while : ; do
   VERDICT=$(python3 "$H" poll-verdict --state "$STATE" --elapsed "$ELAPSED" --cap "$CAP")
   case "$VERDICT" in
     proceed)
-      echo "[post-merge] PR #$N is merged — proceeding." ; break ;;
+      echo "[retro] PR #$N is merged — proceeding." ; break ;;
     terminal)
       echo "🚫 BLOCKER: PR #$N is CLOSED without merging — nothing to close out here." >&2
       echo "   Not running doc reconciliation / branch cleanup on an unmerged PR. (If you meant to" >&2
-      echo "   merge, reopen + re-merge the PR, then re-run '/flow:post-merge $N'.)" >&2
+      echo "   merge, reopen + re-merge the PR, then re-run '/flow:retro $N'.)" >&2
       exit 1 ;;
     wait)
-      echo "[post-merge] PR #$N still open (queued/auto-merge?) — polling up to ${CAP}s; re-checking in ${INTERVAL}s…"
+      echo "[retro] PR #$N still open (queued/auto-merge?) — polling up to ${CAP}s; re-checking in ${INTERVAL}s…"
       sleep "$INTERVAL" ; ELAPSED=$((ELAPSED + INTERVAL)) ;;
     giveup-graceful)
       echo "🕒 PR #$N is still open after ${ELAPSED}s. If it's in a merge queue it may just need more time —" >&2
-      echo "   re-run '/flow:post-merge $N' once it lands. (Nothing was changed; this is not a failure.)" >&2
+      echo "   re-run '/flow:retro $N' once it lands. (Nothing was changed; this is not a failure.)" >&2
       exit 0 ;;                             # graceful, distinct from the terminal exit 1
     *)
       # Defensive default: classify/poll-verdict always print one of the four words above, so this
@@ -137,7 +138,7 @@ Now that the merge is confirmed, the forward docs need reconciling: flipping the
 "merged (#N)" across roadmap / plan / history, clearing reserved numbers, checking CHANGELOG
 currency, and opening a small `docs: land #N` PR. That is exactly `/flow:land`'s job. **Call
 it — do not reimplement it here**, and do not degrade it into a note asking the human to run
-it themselves. This step is the reason `/flow:post-merge` is an orchestrator.
+it themselves. This step is the reason `/flow:retro` is an orchestrator.
 
 First, check whether it already ran (idempotent re-run, or the human ran it by hand before
 invoking this skill). If an open or merged `docs: land #N` PR exists, treat doc-currency as
@@ -222,14 +223,14 @@ python3 "$S/harvest_lesson.py" prescan --marker-file "$MARKER"   # exit 0 = sign
 
 If the pre-scan trips, analyze + enqueue the merge-gate lessons exactly as `/flow:ship`
 Step 4c does (noise filter → destination test → source type → `harvest_lesson.py enqueue`),
-then advance the watermark. If it doesn't trip, print `[post-merge] no merge-gate feedback
+then advance the watermark. If it doesn't trip, print `[retro] no merge-gate feedback
 signal — synthesis skipped` and advance the watermark anyway:
 
 ```sh
 python3 "$S/harvest_lesson.py" mark --marker-file "$MARKER"
 ```
 
-Emit one honest line either way (never silent): `[post-merge] merge-gate synthesis: M memory
+Emit one honest line either way (never silent): `[retro] merge-gate synthesis: M memory
 entr(ies), F queued contribution(s)` or the skipped line.
 
 ## 5. Stale-branch cleanup (gated on the §2 merge confirmation)
@@ -266,7 +267,7 @@ MERGED_BRANCH=$(printf '%s' "$PRJSON" | jq -r '.headRefName // empty' 2>/dev/nul
 IS_FORK=$(printf '%s' "$PRJSON" | jq -r '.isCrossRepository // empty' 2>/dev/null)
 
 if [ "$IS_FORK" = "true" ]; then
-  echo "[post-merge] PR #$N came from a fork — its head branch ('$MERGED_BRANCH') lives on the"
+  echo "[retro] PR #$N came from a fork — its head branch ('$MERGED_BRANCH') lives on the"
   echo "   contributor's repo, not origin. Nothing to clean up here; skipping branch deletion."
   MERGED_BRANCH=""
 elif [ -z "$MERGED_BRANCH" ]; then
@@ -275,7 +276,7 @@ elif [ -z "$MERGED_BRANCH" ]; then
   CUR=$(git branch --show-current)
   case "$CUR" in
     *land-"$N")
-      echo "⚠️ [post-merge] gh could not resolve PR #$N's head branch, and the current branch" >&2
+      echo "⚠️ [retro] gh could not resolve PR #$N's head branch, and the current branch" >&2
       echo "   ($CUR) is /flow:land's, not the merged one. Skipping cleanup rather than deleting" >&2
       echo "   the wrong branch — clean up by hand, or re-run once gh is reachable." >&2
       MERGED_BRANCH="" ;;
@@ -285,7 +286,7 @@ fi
 WORKTREE_PATH=$(git rev-parse --show-toplevel 2>/dev/null)
 CO_ERR=$(mktemp "${TMPDIR:-/tmp}/flow-pm-co.XXXXXX")   # per-run (concurrent runs won't cross-contaminate)
 if [ -z "$MERGED_BRANCH" ] || [ "$MERGED_BRANCH" = "$DEFAULT_BRANCH" ]; then
-  echo "[post-merge] on $DEFAULT_BRANCH (or detached) — no feature branch to delete here."
+  echo "[retro] on $DEFAULT_BRANCH (or detached) — no feature branch to delete here."
   rm -f "$CO_ERR"
 else
   git fetch origin --quiet
@@ -300,13 +301,13 @@ else
     # Safe delete — `-d` refuses if the branch isn't fully merged, a last backstop even though
     # §2 confirmed the PR merged. NEVER `-D`.
     if git branch -d -- "$MERGED_BRANCH" 2>/dev/null; then
-      echo "[post-merge] deleted local branch $MERGED_BRANCH."
+      echo "[retro] deleted local branch $MERGED_BRANCH."
     else
-      echo "⚠️ [post-merge] 'git branch -d $MERGED_BRANCH' refused (not fully merged into $DEFAULT_BRANCH locally)." >&2
+      echo "⚠️ [retro] 'git branch -d $MERGED_BRANCH' refused (not fully merged into $DEFAULT_BRANCH locally)." >&2
       echo "   Left it in place — inspect before deleting. Do NOT force-delete blindly." >&2
     fi
   else
-    echo "⚠️ [post-merge] could not switch off $MERGED_BRANCH ($(head -1 "$CO_ERR" 2>/dev/null))." >&2
+    echo "⚠️ [retro] could not switch off $MERGED_BRANCH ($(head -1 "$CO_ERR" 2>/dev/null))." >&2
     echo "   This is usually a linked worktree (the default branch is checked out elsewhere) or a dirty tree." >&2
     echo "   To clean up, from another checkout: 'git worktree remove ${WORKTREE_PATH:-<this-worktree-path>}' then 'git branch -d $MERGED_BRANCH'," >&2
     echo "   or commit/stash the dirty tree and re-run. Skipping local branch delete (never delete the branch you're on)." >&2
@@ -315,10 +316,10 @@ else
   # Remote delete is independent of the local checkout — attempt it either way (graceful:
   # many repos auto-delete the head branch on merge, so it may already be gone).
   if git ls-remote --exit-code --heads origin -- "$MERGED_BRANCH" >/dev/null 2>&1; then
-    git push origin --delete -- "$MERGED_BRANCH" 2>/dev/null && echo "[post-merge] deleted remote branch $MERGED_BRANCH." \
-      || echo "[post-merge] could not delete remote $MERGED_BRANCH (may lack permission); harmless." >&2
+    git push origin --delete -- "$MERGED_BRANCH" 2>/dev/null && echo "[retro] deleted remote branch $MERGED_BRANCH." \
+      || echo "[retro] could not delete remote $MERGED_BRANCH (may lack permission); harmless." >&2
   else
-    echo "[post-merge] remote branch $MERGED_BRANCH already gone (auto-deleted on merge?)."
+    echo "[retro] remote branch $MERGED_BRANCH already gone (auto-deleted on merge?)."
   fi
 fi
 ```
@@ -339,8 +340,8 @@ warning printed seconds earlier. Assemble the verdict from THREE inputs you have
 1. **Git-state (deterministic, from the helper)** — any uncommitted / unpushed / stray-untracked
    work archiving would lose. It names each reason and never deletes anything:
    ```sh
-   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then H="${CLAUDE_PLUGIN_ROOT}/skills/post-merge/lib/merge-status.py"; else H="plugins/flow/skills/post-merge/lib/merge-status.py"; fi
-   [ -f "$H" ] || { echo "⚠️ BLOCKER: post-merge helper not found at $H — reinstall the flow plugin." >&2; exit 1; }
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then H="${CLAUDE_PLUGIN_ROOT}/skills/retro/lib/merge-status.py"; else H="plugins/flow/skills/retro/lib/merge-status.py"; fi
+   [ -f "$H" ] || { echo "⚠️ BLOCKER: retro helper not found at $H — reinstall the flow plugin." >&2; exit 1; }
    python3 "$H" archive-check    # prints `safe` (exit 0) or `not-safe: <reason(s)>` (exit 1)
    ```
 2. **Branch cleanup (from §5, which you just ran)** — did §5 actually delete the local branch, or

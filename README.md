@@ -99,7 +99,7 @@ The canonical reference — every step with its rationale, gate semantics, spike
 | `/flow:workflow-help` | "What's the workflow?" — prints the loop + your config |
 | `/flow:doctor` | After bootstrap, or when something feels off |
 | `/flow:ship-spike` | Throwaway exploratory PRs — skips the craft reviews (`/simplify`, staff-review), keeps security, accessibility, the behavioral check, and the skip audit |
-| `/flow:post-merge` | After you merge — "anything left, or safe to archive?" Confirms the merge (queue-safe), reconciles the docs, captures your merge-gate feedback, cleans up the branch, gives a safe-to-archive verdict |
+| `/flow:retro` | After you merge — "anything left, or safe to archive?" Confirms the merge (queue-safe), reconciles the docs, captures your merge-gate feedback, cleans up the branch, gives a safe-to-archive verdict |
 | `/flow:log-disagreement` | Fires on its own when you dispute a finding |
 | `/flow:review-brief` | One review pass over a queued document — a design brief before a prototype (D1 Phase 1), or a technical plan before Execute (D1 Phase 3): one extraction fanned to `auditor` + `plan-critic` + `lens-experience`, one triaged verdict. The caller names the artifact and the next step. Wired into the loop at both points |
 | `/flow:autoplan` | D1 Phase 3 — after prototype approval, writes the technical plan against the approved prototype and gates it by **machine**: criterion quality (deterministic), completeness (coverage union, never passes on silence), conformance + experience. Clean proceeds to Execute; anything unresolved pauses and escalates an answerable question. Prototype-first path only |
