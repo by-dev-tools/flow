@@ -38,41 +38,55 @@ message while `checkout-cpr-unset-resolves` stays green. Sweep 47/47 GREEN by ex
 **Spec-walk:** (declared here, in `planPath`, because `/flow:audit-coverage` correctly found that
 nothing in this doc covered the diff — the criteria had been written into a scratch file, which is not
 a declaration. Placed inside Current Focus so it is the FIRST Spec-walk block in the file, which is
-the one `extract-criteria.py` reads.)
+the one `extract-criteria.py` reads. Every box names its verification artifact after a pin marker —
+`/flow:autoplan`'s pin gate caught the first draft citing check names with no marker, so they read as
+unpinned.)
 
 - [x] With `CLAUDE_PLUGIN_ROOT` unset and a valid `flow@` install record present, the gate resolves a
-      root and returns real stage verdicts — and with the record absent too, it returns the
-      unresolved-root refusal and never an audit. *(B1; paired, `installed-layout-resolves` /
-      `-no-record-refuses` / `-no-record-not-audit`)*
-- [x] An `installPath` whose own `plugin.json` is not flow's is rejected, not executed from.
-      *(`installed-layout-imposter-refused`)*
-- [x] A root carrying a manifest but no engine is ACCEPTED by arm 1 and then terminates as a blocking
-      `engine_error` — never a working-tree fallback, never a pass, never "nothing to audit".
-      *(B2; `installed-layout-engine-absent-is-engine-error` / `-not-audit`)*
-- [x] Two matching install entries produce the arbitrary-pick warning naming every candidate, and
-      report `plugin_root_ambiguous: true`; exactly one entry produces neither. *(B3)*
+      root and returns real stage verdicts; with the record absent it returns the unresolved-root
+      refusal and never an audit — pinned by eval `installed-layout-resolves` +
+      `-no-record-refuses` + `-no-record-not-audit` (B1)
+- [x] An `installPath` whose own `plugin.json` is not flow's is rejected, not executed from —
+      pinned by eval `installed-layout-imposter-refused`
+- [x] A root carrying a manifest but no engine is accepted by arm 1 and then terminates as a blocking
+      `engine_error` — never a working-tree fallback, never a pass, never "nothing to audit" —
+      pinned by eval `installed-layout-engine-absent-is-engine-error` + `-not-audit` (B2)
+- [x] Two matching install entries produce the arbitrary-pick warning naming every candidate and
+      report `plugin_root_ambiguous: true`; exactly one entry produces neither — verified by eval
+      `installed-layout-resolves-via-record` plus the executed multi-candidate fixture (B3)
 - [x] The `plugins/flow` cwd arm resolves ONLY when arms 1 and 2 both missed, and an arm-2 hit shadows
-      it. Residual exposure: the arm is content-gated, not authenticated — inherited from the ungated
-      arm it replaces, narrowed but not closed, and routed to this PR as a security decision.
-      *(B4; `checkout-cpr-unset-resolves` + `installed-layout-resolves-via-record`)*
+      it — pinned by eval `checkout-cpr-unset-resolves` + `checkout-cpr-unset-uses-checkout-arm` +
+      `installed-layout-resolves-via-record` (B4). Residual: the arm is content-gated, not
+      authenticated — inherited from the ungated arm it replaces, narrowed but not closed, and routed
+      to this PR as a security decision
 - [x] The unresolved-root refusal attributes the failure to flow being unable to locate itself (not to
       the handoff), ends on an actionable fix naming `CLAUDE_PLUGIN_ROOT`, and does not claim to have
-      read an install record that is absent. *(B5; three paired checks)*
-- [x] A present-but-unparseable install record is reported loudly rather than falling through silently,
-      and the refusal says "could not be parsed" rather than "no entry found".
-- [x] The stamp checker and the engine resolve off ONE root, asserted positively by construction.
-      *(B6; `installed-one-root-two-helpers`)*
-- [x] A successful run reports which arm resolved (`host-var` / `install-record` / `checkout`), and the
-      precedence is asserted rather than inferred from fixture starvation.
-      *(`installed-layout-cpr-wins-precedence`, `-resolves-via-record`, `checkout-...-uses-checkout-arm`)*
-- [x] `read_installed` and this block select the same entry from one fixture. *(`registry-readers-agree`)*
+      read an install record that is absent — pinned by eval
+      `installed-layout-names-the-root-failure` + `-refusal-carries-a-remedy` +
+      `-refusal-honest-about-the-record` (B5)
+- [x] A present-but-unparseable install record is reported loudly rather than falling through
+      silently, and says "could not be parsed" rather than "no entry found" — verified by the
+      executed corrupt-record fixture (an unparseable record yields the warning on stderr)
+- [x] The stamp checker and the engine resolve off ONE root, asserted positively by construction —
+      pinned by eval `installed-one-root-two-helpers` (B6)
+- [x] A successful run reports which arm resolved (`host-var` / `install-record` / `checkout`), and
+      precedence is asserted rather than inferred from fixture starvation — pinned by eval
+      `installed-layout-cpr-wins-precedence` + `-resolves-via-record` +
+      `checkout-cpr-unset-uses-checkout-arm`
+- [x] `read_installed` and this block select the same entry from one fixture — pinned by eval
+      `registry-readers-agree`, mutation-verified by breaking only `read_installed`
 - [x] Every `context: fork` skill is ported or on a ledger with a reason; the ledger's claim is pinned
       by the broken shape positively, so a port by ANY mechanism retires it; a broken population scan
-      cannot pass vacuously. *(`roster-*`, 5 checks, each mutation-verified)*
-- [x] The edited block contains no backtick (it would truncate the dynamic-context span), verified with
-      the ANCHORED extractor — a naive first-backtick scan reported clean on a truncated fragment, and
-      did so during this very PR.
-- [x] `tools/eval-sweep.sh` GREEN by exit code; `gh pr checks` consulted before calling anything ready.
+      cannot pass vacuously — pinned by eval `roster-count-exact` +
+      `roster-every-fork-skill-accounted` + `roster-no-stale-exemptions` +
+      `roster-exempt-still-unported-*` + `roster-exempt-still-has-broken-shape-*`
+- [x] The edited block contains no backtick (one would truncate the dynamic-context span) — verified
+      by grep with the ANCHORED extractor, after a naive first-backtick scan reported clean on a
+      truncated fragment during this very PR
+- [x] The harness passes under CI's detached HEAD, not only on a named branch — verified by running
+      the eval under `git checkout --detach` after CI caught the branch-dependent case
+- [x] `tools/eval-sweep.sh` GREEN by exit code, and `gh pr checks` consulted before calling anything
+      ready — verified by the CI report quoted in the PR body
 
 **Visual-walk:** N/A — no browser UI in this change.
 

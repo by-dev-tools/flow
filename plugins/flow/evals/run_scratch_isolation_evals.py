@@ -467,24 +467,32 @@ def test_installed_layout():
         # checkout with CPR unset and no install record, arm 3 resolves. This is the
         # dogfooding path; it passing is not evidence about (1), which is the whole
         # lesson of this test existing.
-        # NOTE this case needs CLAUDE_CONFIG_DIR pointed at an EMPTY dir. In real
-        # dogfooding arm 2 wins here too: the SessionStart currency hook keeps flow
-        # installed, so a flow checkout normally has an install record and arm 3 is
-        # effectively unreachable (measured by the efficiency pass). That is a
-        # security property worth having -- arm 2 shadows the cwd-relative arm on any
-        # machine with flow installed -- but it means arm 3 can only be exercised by
-        # hiding the record, which is what `empty` does.
+        # (6) THE ARM THAT MASKED THE BUG, pinned so it cannot regress: a repo that
+        # VENDORS flow resolves via the cwd-relative arm when the host var is unset and
+        # no install record names a root. This passing is not evidence about case (1) --
+        # that asymmetry is the whole lesson of this test existing.
         #
-        # try/finally: this is the one case that writes inside the LIVE checkout, so a
-        # raising check must not leave a stray file behind for the rest of the harness.
-        stray = REPO / ".flow" / "_eval-stages.json"
-        try:
-            _write_stamped(REPO, stray)
-            got, out = run(REPO, empty, FLOW_SKIP_AUDIT_STAGES=".flow/_eval-stages.json")
-        finally:
-            stray.unlink(missing_ok=True)
+        # Staged as a COPY in a temp repo rather than run against the live checkout, for
+        # two reasons that only showed up once CI ran it. (a) GitHub Actions checks out in
+        # DETACHED HEAD, so `git branch --show-current` is empty, flow_scratch refuses with
+        # "cannot determine local branch", and the case failed in CI while passing locally
+        # -- a green local sweep is not CI (FB-0131). (b) The live-checkout version was the
+        # one case in this file with side effects outside its tempdir. A faithful copy
+        # exercises arm 3 identically: the arm is cwd-relative, so what it needs is a repo
+        # whose root carries plugins/flow, not THIS repo.
+        vendored = _seed_consumer(tmp / "vendored")
+        vplug = vendored / "plugins" / "flow"
+        # The WHOLE tree, not a hand-picked subset. A first cut staged only scripts/ and
+        # skills/audit-skips/ and the engine failed importing lib/toolchain.py -- the
+        # engine's dependency set is its own business and enumerating it here would be a
+        # second, silently-drifting copy of it.
+        vplug.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(install, vplug)
+        _write_stamped(vendored, vendored / ".flow" / "skip-audit-stages.json")
+        got, out = run(vendored, empty)
         check("checkout-cpr-unset-resolves", got == "AUDIT",
-              f"arm 3 (flow checkout) must still resolve with CPR unset; got {got}: {out[:220]}")
+              f"arm 3 (a repo vendoring flow) must resolve with CPR unset and no record; "
+              f"got {got}: {out[:220]}")
         check("checkout-cpr-unset-uses-checkout-arm", _arm(out) == "checkout",
               f"with no host var and no record, the checkout arm must be the one that "
               f"resolved; got arm={_arm(out)}")
