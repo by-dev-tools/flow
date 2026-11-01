@@ -1,9 +1,9 @@
 ---
 name: retro
 description: >
-  The "merged — anything left, or safe to archive?" skill (FB-0072). Human-invoked
-  AFTER you merge a PR, it runs the whole post-merge close-out — the workspace
-  retro — in one command: (1) confirms the PR is actually merged with a
+  The workspace retro (FB-0072): the "merged — anything left, or safe to
+  archive?" skill. Human-invoked AFTER you merge a PR, it runs the whole
+  close-out in one command: (1) confirms the PR is actually merged with a
   MERGE-QUEUE-SAFE gate (a queued PR that hasn't landed yet is "not merged YET",
   not a failure); (2) reconciles the forward docs by calling /flow:land, which
   opens its own `docs: land #N` PR; (3) synthesizes the merge-gate feedback window

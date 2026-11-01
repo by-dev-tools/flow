@@ -229,7 +229,7 @@ def main() -> int:
         0, land_fm)
 
     retro_calls = [c for c in table["calls"]
-                if c["caller"] == "retro" and bare(c["target"]) == "land"]
+                   if c["caller"] == "retro" and bare(c["target"]) == "land"]
     expect(
         'retro §3 emits a fenced Skill("flow:land") call — the composition, not a hand-off',
         0 if retro_calls else 1, 0,

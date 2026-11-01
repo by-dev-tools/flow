@@ -36,8 +36,9 @@ run straight through to `/flow:ship` without a separate plan gate, per the dispa
 - [x] Every live `/flow:post-merge` reference across the plugin resolves to `/flow:retro` — the
   skill-composition evals, `workflow-help`, `docs/workflow.md`, `land/SKILL.md`, `doctor/SKILL.md`,
   `handoff/SKILL.md`, and `README.md`. Verify: `grep -rn '/flow:post-merge' plugins/flow/ README.md`
-  returns exactly one line (`doctor/SKILL.md`'s deliberate "`/flow:retro` (formerly
-  `/flow:post-merge`)" historical clarifier) — not zero, and not more than that one.
+  returns exactly two lines — `doctor/SKILL.md`'s deliberate "`/flow:retro` (formerly
+  `/flow:post-merge`)" historical clarifier, and `flow.config.schema.json`'s `postMergeWaitSeconds`
+  description carrying the same kind of clarifier — not zero, and not more than those two.
 - [x] The `postMergeWaitSeconds` schema slot's description text says `/flow:retro`, not
   `/flow:post-merge`; the slot name itself is unchanged. Verify: `grep -n "flow:retro"
   plugins/flow/schema/flow.config.schema.json` finds it in the `postMergeWaitSeconds` entry.

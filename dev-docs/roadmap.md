@@ -653,6 +653,44 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### A human-only skill's description must name search terms as search terms, not as `Trigger:` phrases (staff-review finding, rename-to-retro PR)
+
+**The problem.** `/flow:retro`'s rename (FB-0141) added an "Often searched for as…" sentence to
+its SKILL.md description, naming the human-language terms ("retro #N", "workspace retro", "merged
+— safe to archive?") someone might actually type or say, and explicitly distinguishing them from
+`Trigger:` phrases a model could mistake as routable — load-bearing, since `retro` carries
+`disable-model-invocation: true` and a `Trigger:` phrase there would silently promise automatic
+routing that cannot happen. `/flow:land`'s neighboring description still uses plain `Trigger: …`
+wording, which is correct for `land` (model-invocable) but means the convention distinguishing the
+two phrasings exists nowhere except as an inline, one-off edit in `retro`'s own file.
+
+**Why this is not fixed inline.** The fix that actually closes the gap is a documented authoring
+rule, not another skill edit — e.g. one line in `.claude/rules/documentation.md` (or wherever
+skill-frontmatter conventions live) stating "a `disable-model-invocation: true` skill's description
+names human search terms as search terms, never as `Trigger:` phrases." Scoping that into a
+pure-rename PR would be the FOLLOW-UP-as-scope-creep failure mode `general.md` warns against.
+
+**Surfaces when:** the next `disable-model-invocation: true` skill is authored or renamed — the
+likeliest failure is copying the nearest example (`land`'s `Trigger:` wording) and reintroducing
+the exact confusion this PR fixed in one place.
+
+### `docs/upgrade.md`'s bump-cadence table doesn't know a minor bump can carry breaking changes (push-further finding, rename-to-retro PR)
+
+**The problem.** `changelog/v1.66.0.md` (the `/flow:retro` rename) is this changelog's first-ever
+entry with `Breaking changes: yes`, and it ships on a **minor** version bump (1.64.0 → 1.66.0).
+`docs/upgrade.md`'s "when to run it" cadence table only tells a reader to check the
+`Breaking changes:` line on a *major* bump; its minor-bump row frames minor bumps as purely
+additive and gives no cue to check for breaking changes there at all. A consumer following that
+table's own stated cadence for a minor bump would have no textual reason, within `docs/upgrade.md`
+itself, to go read the changelog entry before a script invoking the renamed command starts failing.
+
+**Why this is not fixed inline.** It's a pre-existing gap in `docs/upgrade.md` that this PR happened
+to be the first to expose, not something this rename caused — fixing it is a one-sentence addition
+to a file this PR doesn't otherwise touch, independent of the rename itself.
+
+**Surfaces when:** `docs/upgrade.md`'s cadence table is next revised, or another minor/patch bump
+ships with `Breaking changes: yes` before this is fixed.
+
 ### §5b's doc-currency version gate has no good fallback for a project with no real release versioning (relayed from `byamron/portfolio` #212)
 
 **Relayed, not reproduced here** — an external agent forwarded this on Ben's behalf from the
