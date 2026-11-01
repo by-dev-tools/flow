@@ -272,6 +272,64 @@ Prototype: https://ws-abc.example.show/prototype.presented-2b7c91de.html — any
       `captureBackend`. *Verified by:* the dev-docs index and version-provenance CI jobs' own exit
       codes, plus the doc-diff showing every file present.
 
+**Declared at ship, on the human's instruction, after two staff-review rounds and a security pass
+added behaviour this block did not originally cover.** `/flow:audit-coverage` flagged each as an
+undeclared change; the agent drafted the criteria and the human declared them — the agent never
+declares its own coverage. Every one is already pinned and passing; what was missing was the
+decision that each belongs in the verified set.
+
+- [x] **Flow's own captured frames are never evidence that a change is visual.** *Verify:* drive the
+      shipped `visual-significance.py` on three change-sets — a rename with no content delta
+      (expect not visual), the same plus one of flow's own captured frames (expect still not
+      visual), and the same plus a screenshot the project itself added (expect visual) — plus three
+      impostor paths a contributor could name `pr-frames/` (expect all visual), and the assertion
+      that a suppression names the files it suppressed rather than reporting the diff touched none.
+      *Pinned by:* `run_capture_frames_evals.py::test_captured_frames_are_not_their_own_evidence`,
+      which leads with the known-positive arm so that two `false` results mean something, and which
+      goes red on the exact pre-fix state at **either** of the two decision sites.
+- [x] **`/flow:ship` §5d captures only on a visual change, picks the right target, and states a
+      distinct reason on every path where it does nothing.** *Verify:* run the block with
+      `visual_significant` false, then true with (a) no prototype and no walkthrough, (b) the
+      capture engine absent, (c) a branch name that slugs to nothing. Each prints its own reason;
+      only the fully-working arm emits frames. *Verified by:* driven by hand this session on all
+      four arms — which is how two of them were found collapsed into one message that confidently
+      diagnosed a condition nobody had measured. Flow is `platform: library`, so `/flow:verify-build`
+      self-skips and there is no behavioural gate above this; the arms are reproducible from the
+      §5d block directly.
+- [x] **A PR-body frame always carries a description, and the description never goes stale.**
+      *Verify:* three arms — with the committed `frames.json` sidecar the alt leads with the page's
+      own title; with it corrupt or absent the alt degrades to naming the label and viewport and is
+      never empty; and re-capturing a page that has since lost its `<title>` DROPS the previous
+      run's description rather than leaving it over the new frames. Paired with the positive that
+      the sidecar is read from the COMMIT (`git show <sha>:<path>`), so deleting it from the working
+      tree changes nothing. *Pinned by:*
+      `run_capture_frames_evals.py::test_alt_text_says_what_the_frame_shows` plus the
+      `sidecar/stale-description-dropped-on-recapture` arm in the engine's own selftest.
+      *Known limit, stated rather than closed:* the description is the page's `<title>`, which says
+      what the page IS, not what the frame SHOWS, and nothing yet asks an author for a meaningful
+      one — recorded in the history entry.
+- [x] **A configured capture adapter never retires a consumer's curated record.** *Verify:* paired —
+      `--source auto` on a branch WITH committed frames renders those; on a branch WITHOUT any it
+      falls back to the curated visual-history frames rather than "no frames to show". Pinned at the
+      COMPOSED layer too: both `/flow:ship` and `/flow:ship-spike` must pass `auto`, never
+      `captures`. *Pinned by:* `run_capture_frames_evals.py::test_auto_never_retires_the_record`.
+- [x] **The gate-1 frame is of the dock-free prototype, and the dock sentence is adjusted only when
+      a frame rides along.** *Verify:* three arms — the captured target is `prototype.html` and not
+      `prototype.presented.html`; with a frame attached the line says the dock is in the page and
+      not in the frame; without one the sentence is untouched. *Pinned by:* the
+      `chat/dock-note-scoped-when-a-frame-rides` and `chat/dock-note-unscoped-without-a-frame` arms,
+      plus `wiring/{ship,prototype}-captures-the-unpresented-prototype`. *Carried fragility, routed
+      to roadmap § Next rather than left in this PR's history:* the adjustment is an exact-sentence
+      `replace`, so a future reword stops it adjusting. Bounded — a reword can only stop the
+      adjustment, never make it lie — but "works until someone edits a string" is a class this repo
+      keeps re-finding, so it is a named roadmap entry.
+- [x] **`/flow:verify-build`'s capture ladder cannot be satisfied by a `captureBackend` frame.**
+      *Verify:* the boundary note is present in `verify-build/SKILL.md` and names the reason, paired
+      with the negative that the skill invokes no capture — so deleting the note turns the pair red
+      rather than green. *Pinned by:* `wiring/verify-build-does-not-capture` +
+      `wiring/verify-build-says-why-not`. Declared as a criterion rather than waived as
+      documentation-of-existing-policy: the human's call, on the ground that it constrains a gate.
+
 ### Risks
 
 - **A third `*Backend` adapter.** `render_template`'s two trailing hint parameters were honest for

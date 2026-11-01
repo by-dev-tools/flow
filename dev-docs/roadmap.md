@@ -928,6 +928,45 @@ repo is usually trying to remove, so it wants a deliberate decision rather than 
 **Surfaces when:** `plugins/flow/skills/ship/lib/plugin-provenance.py` or the `## Flow run`
 provenance block in `/flow:ship` is next touched, or FB-0107 is revisited.
 
+### A gate-1 sentence is adjusted by exact-string match, so a reword silently stops the adjustment
+
+**Filed as its own entry at the human's instruction, rather than left as a sentence in v1.65.0's PR
+body** — "works until someone edits a string" is a class this repo keeps finding and re-finding, and
+it should be discoverable without excavating one PR's history.
+
+`artifact-handoff.render_local_line` rewrites one sentence when a captured frame is attached to the
+gate-1 message:
+
+```python
+line = line.replace(
+    "The small floating comment dock is flow's, not the design.",
+    "The small floating comment dock is flow's, not the design — it is in the page itself, "
+    "not in the frame below.")
+```
+
+The adjustment exists because the frame is of `prototype.html`, which carries no dock, while the
+*served link* in the same message does — so without it a reader sees a dock-free picture directly
+under a sentence about a dock and goes looking for one, inside a ~100-word budget.
+
+**Why it is not urgent.** The failure is bounded in the safe direction: a reword can only stop the
+adjustment from happening, never make it assert something false. And the sentence is pinned —
+`local/prototype-names-the-dock` and `sites/prototype-*-keeps-the-dock-note` both assert the
+substring `comment dock is flow's, not the design` survives — so the string cannot simply vanish.
+
+**Why it is still worth fixing.** The pin protects the *base* sentence, not the *adjustment*: a
+reword that keeps the pinned substring while changing the surrounding words (adding a clause before
+the period, say) passes every check and silently drops the amendment. Nothing fails; the reader just
+quietly gets the confusing version back.
+
+**Shape of the fix:** compose the sentence from two parts at render time — a base clause and an
+optional frame clause selected by whether `chat_image` is set — so there is no string to match and
+no edit that can desynchronise them. ~10 lines in one function, plus re-keying the two site evals to
+the composed form. It was not done in v1.65.0 because the alternative on the table was editing
+wording that an existing check pins, mid-ship, on a surface the whole PR is about.
+
+**Surfaces when:** `artifact-handoff.py::render_local_line` is next touched, or the gate-1 dock
+sentence is reworded for any reason.
+
 ### `render_template`'s two trailing hint parameters stopped being honest at the third adapter
 
 **Found during v1.65.0, routed here deliberately rather than fixed in that PR** (orchestrator call):
