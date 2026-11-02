@@ -18,7 +18,7 @@ These files are published when the plugin is installed.
 
 | Path | Purpose |
 |------|---------|
-| `.claude-plugin/marketplace.json` | Marketplace declaration (one plugin: `flow`) |
+| `.claude-plugin/marketplace.json` | Marketplace declaration: `flow` (this repo) plus `deep-dives`, a sibling plugin whose source is [`by-dev-tools/deep-dives`](https://github.com/by-dev-tools/deep-dives). Interactive design sessions, deliberately NOT bundled into flow: they are used in incubation repos that do not run flow (FB-0141). `plugin-provenance.py` reads flow's entry **by name**, never by position |
 | `plugins/flow/.claude-plugin/plugin.json` | Plugin manifest |
 | `plugins/flow/agents/auditor.md` | Auditor subagent system prompt |
 | `plugins/flow/agents/plan-critic.md` | Plan-critic subagent system prompt |
@@ -111,7 +111,7 @@ When you see `agents/` and `skills/` under `plugins/flow/`, those are **plugin a
 
 ## Tech Stack
 
-- **Platform:** Claude Code plugin marketplace (one plugin per repo today: `flow`)
+- **Platform:** Claude Code plugin marketplace. This repo hosts one plugin, `flow`; the marketplace also lists `deep-dives` from its own repo
 - **Language:** Python 3.7+ (stdlib only, no external deps) for preprocessing; Markdown for prompts, skills, and the workflow doc
 - **AI:** delegates to Claude Code subagents defined in `plugins/flow/agents/*.md`; no direct API calls
 - **Persistence:** none in the plugin runtime; reviewer pushback writes to `~/.claude/plugins/data/flow/disagreements/`; consumer-side memory entries (PR 2) live at `~/.claude/projects/<canonical>/memory/`

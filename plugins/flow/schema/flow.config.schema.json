@@ -77,7 +77,7 @@
         "type": "string",
         "enum": ["staff-engineer", "ux-designer", "design-engineer", "push-further", "uncommon-care"]
       },
-      "description": "Which lens agents /flow:staff-review spawns in parallel. Default is the 4-lens baseline; opt-in 'uncommon-care' (deeper standalone lens) when flow ships it in a future version. Removing a lens means /flow:staff-review won't spawn it; document the reason in the project's plan doc.",
+      "description": "Which lens agents /flow:staff-review spawns in parallel. Default is the 4-lens baseline. 'uncommon-care' is still accepted so existing configs validate, but it spawns nothing and flow will not ship it: the deeper, hands-on version is a human-run design session in the separate deep-dives plugin (/deep-dives:puckett-uncommon-care), not an automated lens (FB-0141). Removing a lens means /flow:staff-review won't spawn it; document the reason in the project's plan doc.",
       "default": ["staff-engineer", "ux-designer", "design-engineer", "push-further"],
       "examples": [
         ["staff-engineer", "ux-designer", "design-engineer", "push-further"],
