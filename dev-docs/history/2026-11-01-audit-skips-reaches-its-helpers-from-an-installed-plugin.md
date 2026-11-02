@@ -13,12 +13,15 @@
 `plugins/flow/skills/audit-skips/SKILL.md`'s first `!`-block resolved two helpers — the stamp checker
 (`scripts/flow_scratch.py`) and the engine (`skills/audit-skips/lib/skip-audit-checks.py`) — with two
 independent copies of the same two-arm shape: `$CLAUDE_PLUGIN_ROOT`, else `plugins/flow/<path>`.
-Replaced both with one three-arm resolver (`$FPR`):
+Replaced both with one resolver (`$FPR`) with **two** arms and no local guess:
 
 1. `$CLAUDE_PLUGIN_ROOT`, accepted only if it carries `.claude-plugin/plugin.json`.
 2. `installPath` from `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json`, taking the
    first `flow@*` candidate whose own `plugin.json` says `"name": "flow"`.
-3. The guarded `plugins/flow` checkout arm, unchanged — dogfooding only.
+
+If neither resolves, the gate refuses. A third, cwd-relative arm (`./plugins/flow`, for a flow
+checkout with no install) was in the first cut and was **deleted by decision** — see the SAFETY
+tradeoff below.
 
 Plus: an unresolved root now *says so* in both failure paths instead of composing a leading-slash path
 that was never a location.
@@ -62,17 +65,29 @@ extracted block — a real forked invocation cannot exercise a working-tree chan
   so a cached old skill body *can* resolve to a newer tree. Both texts now state the skew. Caught by
   this PR's own `/simplify` altitude pass — an unmeasured premise in a comment, in the PR whose thesis
   is that an unmeasured premise in a comment cost 35 releases.
-- **SAFETY — arm 3 is content-gated, not authenticated, and the earlier claim here was false.** The
-  sentence this bullet replaces said a miss "degrades to today's loud refusal — never to a false pass."
-  That is wrong: an arm-2 miss falls through to **arm 3**, which is cwd-relative, and this block runs
-  after a `cd` into the repo under review. An untrusted repo shipping `plugins/flow/.claude-plugin/plugin.json`
-  with `"name": "flow"` plus its own two scripts gets its Python executed. The exposure is
-  **inherited, not introduced** — the arm it replaces was a bare `plugins/flow/...` with *no* gate at
-  all, reached whenever `CLAUDE_PLUGIN_ROOT` missed — and this change strictly narrows it: arm 2 now
-  shadows arm 3 on any normal install, and a name check exists where there was none. It does **not**
-  close it, because no file inside a tree can authenticate that tree against whoever wrote it. Routed
-  to the PR as a `[decision-required]` security blocker rather than best-effort patched; the candidate
-  fixes all cost in-repo dogfooding, which is a call for the human. Found by `/flow:security-review`.
+- **SAFETY — the cwd-relative arm was DELETED, and the review is why.** The first cut kept it, and the
+  entry here claimed a miss "degrades to today's loud refusal — never to a false pass." That was false:
+  an arm-2 miss fell through to **arm 3**, which is cwd-relative, and this block runs after a `cd` into
+  the repo under review. `/flow:security-review` raised it as `[decision-required]` with three options
+  rather than letting me patch it on my own judgment; Ben chose **delete** (FB-0141 records the
+  reasoning). Arm 2 already resolves on every machine flow is actually used on, and the only population
+  the fallback served was "cloned flow, not installed yet" — the same one-time install step everyone
+  performs anyway. So it protected nobody while leaving a code-execution path open.
+  **Accepted consequence:** the gate can no longer run from a flow checkout with no installed flow; it
+  refuses loudly. A gate that cannot locate its own engine must not guess.
+  **Pinned as a demonstrated exploit, not a preference:** the fixture vendors a complete, name-matching
+  `plugins/flow` whose `flow_scratch.py` forges an `ok` stamp and writes a marker. Restoring the arm makes
+  the marker appear — so the test distinguishes "it refused" from "it never executed", and only the second
+  rules out the path. All six assertions go red on that mutation.
+- **SAFETY — deleting the arm was NOT sufficient; the root must also be absolute.** Caught by the
+  staff-engineer re-review of the deletion, and measured: with `CLAUDE_PLUGIN_ROOT=plugins/flow` from
+  a repo that vendors flow, arm 1 accepted it and the repo-under-review's own `flow_scratch.py`
+  **executed** — the exact path option C deleted, re-entered through a relative value. An
+  `installPath` of `"plugins/flow"` does the same via arm 2, because both arms compose `"$FPR/..."`
+  against the earlier `cd` into the repo under review. It also repairs this entry's own claim that
+  arm 2 is safe "because of its location": true only while the path it names is absolute. A
+  non-absolute root is now refused with a warning. Four paired checks
+  (`relative-root-refused-*` / `relative-root-no-execution-*`), all red without the guard.
 - **Why the identity greps are not an attacker boundary, stated at both arms.** Forging arm 2 means
   writing into the user's own config dir — where `settings.json` hooks already live — so anyone able
   to do it has easier options; that, not the grep, is what makes arm 2 safer than a cwd guess. The
@@ -92,20 +107,19 @@ extracted block — a real forked invocation cannot exercise a working-tree chan
   checker and the engine fail together while presenting as one bug, and it admits a state where the
   install checks the stamp and the checkout computes the verdicts.
 
-- **Arm ordering quietly retires the dogfooding path, and that deserves to be written down somewhere
-  other than a test comment.** Arm 2 precedes arm 3, and the `SessionStart` currency hook keeps flow
-  installed in this checkout — so here arm 2 now wins and the **installed** `skip-audit-checks.py`
-  grades the handoff, where before (CPR unset in this fork) the working-tree engine ran. Measured in
-  this pass: from the real checkout the block reports `plugin_root_arm: install-record`, and only with
-  the record hidden does it report `checkout`. That is more coherent than the old mixed state, but
-  `CLAUDE.md` § How to Work 3 still tells a reader that "everything the Bash tool resolves comes from
-  the working tree", which now over-promises for this skill's helpers. Routed to the PR alongside the
+- **With no cwd arm, this skill's helpers now ALWAYS come from the installed tree — which makes the
+  CLAUDE.md correction sharper, not softer.** `CLAUDE.md` § How to Work 3 tells a reader that
+  "everything the Bash tool resolves comes from the working tree." For `/flow:audit-skips` that is now
+  simply false in every case: both arms resolve an *installed* root, and there is no third arm that
+  could reach the checkout. Measured in this pass — from the real checkout the block reports
+  `plugin_root_arm: install-record`, and with the record hidden it refuses rather than falling back.
+  Before this change the same fork ran the working-tree engine. Routed to the PR alongside the
   CLAUDE.md `CLAUDE_PLUGIN_ROOT` correction rather than edited here (out of this worker's lane).
 
 ## Evals
 
 `run_scratch_isolation_evals.py` gains `test_installed_layout()` + `test_fork_skill_roster()`
-— **31 checks** (counted on the wire, not estimated), all run with
+— **37 checks** (counted on the wire, not estimated), all run with
 `CLAUDE_PLUGIN_ROOT` **unset** from a temp git repo that has a `flow.config.json` and **no**
 `plugins/flow/`, against a staged *copy* of the plugin tree named by a fake `CLAUDE_CONFIG_DIR` install
 record. The existing `block-*` cases `export CLAUDE_PLUGIN_ROOT="{FLOW}"` first, so they could not
@@ -113,8 +127,8 @@ observe this; the positive here comes from outside the harness's own path vocabu
 
 Paired per `general.md` items 3 and 4: the positive (`installed-layout-resolves`) has two mutations
 (install record removed; record pointing at a non-flow tree) that must refuse, each named separately so
-a failure says which assertion died, plus positive pins for all three arms so deleting the resolver
-cannot turn the test green.
+a failure says which assertion died, plus positive pins for both arms (and a paired negative that the
+deleted cwd arm stays deleted) so deleting the resolver cannot turn the test green.
 
 **Instrument validated against a known positive:** reverting only `SKILL.md` to pre-fix turns
 `installed-layout-resolves` red with the exact message from the field report, while
@@ -123,17 +137,19 @@ checkout-based case can detect this class.
 
 `tools/eval-sweep.sh`: 47/47 GREEN by exit code; `--selftest` confirms it can report RED.
 
-## Known gap — the class is ~35 call sites, not five
+## Known gap — the class is ~38 call sites, not five
 
-**The first draft of this entry said "five `!`-block fork skills". That was a ~7x under-count**, found
-by this PR's own reuse pass and then verified by grep. The flow-repo-relative arm also appears in:
+**The first draft said "five `!`-block fork skills" (a ~7x under-count), and the correction to it was
+itself low.** Both misses had one cause: a grep scoped to `skills/*/SKILL.md`, which skips nested
+files. Final counts are over all of `plugins/flow`. The flow-repo-relative arm also appears in:
 
-- **13 `resolve-doc-slot.sh` preludes across 8 skills** (`accessibility-review`, `gate`, `land`,
+- **15 `resolve-doc-slot.sh` preludes** (`accessibility-review`, `gate`, `land`,
   `orchestrate`, `security-review`, `ship-spike`, `staff-review`, `verify-build`). Consequence there is
   the exact silent degradation `resolve-doc-slot.sh` was built to kill: a cold-read reviewer running
   with no design-language or feedback context.
-- **17 bare `${CLAUDE_PLUGIN_ROOT:-plugins/flow}` defaults across 5 skills** (`gate` 5, `spawn` 4,
-  `handoff` 3, `orchestrate` 3, `doctor` 2). **This form is strictly worse than the gated one and is
+- **19 bare `${CLAUDE_PLUGIN_ROOT:-plugins/flow}` defaults** (`gate` 5, `spawn` 4, `handoff` 3,
+  `orchestrate` 3, `doctor` 2, plus **two in the sourced helper `ship/lib/serve-preview.sh`** — the
+  file class both earlier greps missed). **This form is strictly worse than the gated one and is
   its own security item**: it is an *unconditional* cwd-relative `python3` target with no identity
   check at all — the shape `skills/doctor/SKILL.md`'s own SECURITY header records as having shipped
   once and been arbitrary code execution. Filed as a separate roadmap item, not folded into the
@@ -159,7 +175,7 @@ becomes `python3 /scripts/extract_session.py`, the extractor never runs, and the
 downstream catches it. So this PR fixed the fail-closed instance and deferred the two fail-open ones.
 That was the seat's explicit call on scope, not an oversight — but the follow-up should take
 `audit-plan`/`audit-completion` first, and the port must carry the **arm-3 security decision**, not
-just the three-arm mechanics, or the cwd-relative arm gets copied into four more deployed prompts.
+just the two-arm mechanics — the cwd-relative arm is deleted and must not be re-added.
 
 **A mechanical tripwire now guards the deferral.** `test_installed_layout()` derives every
 `context: fork` skill from disk and requires each to be either ported or named in an explicit

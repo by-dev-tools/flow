@@ -95,9 +95,11 @@ because in the checkout the broken arm is the working one. A measurement that ca
 ## The class, not the instance — ~35 sites, not five
 
 **I first wrote "five `!`-block fork skills." That was a ~7x under-count**, caught by this PR's own
-`/simplify` reuse pass and then verified by grep. The flow-repo-relative arm is also in **13
-`resolve-doc-slot.sh` preludes across 8 skills** and **17 bare `${CLAUDE_PLUGIN_ROOT:-plugins/flow}`
-defaults across 5**. Anyone closing the roadmap item after four skills closes ~31 open sites.
+`/simplify` reuse pass and then verified by grep. Re-counted twice and corrected twice: **15 `resolve-doc-slot.sh` preludes** and **19 bare
+`${CLAUDE_PLUGIN_ROOT:-plugins/flow}` defaults**, ~38 sites in all. Both earlier counts were low for
+the same reason — the grep was scoped to `skills/*/SKILL.md` and missed nested files, including two in
+the *sourced* helper `ship/lib/serve-preview.sh`. **Scope a census grep to the whole of
+`plugins/flow`.** A count is a claim; mine was wrong twice before it was right.
 
 **Fix the fail-OPEN instances first.** `audit-skips` failed *closed* — it announced "I cannot verify"
 on every run. `audit-plan` and `audit-completion` have **no fallback at all**, so an unset CPR makes
@@ -112,8 +114,41 @@ is an *unconditional* cwd-relative `python3` target with no identity check — t
 execution from any repo the user opened. It needs the default *removed*, not widened, so it must not
 be folded into the reachability port.
 
-**And the port must carry the security decision, not just the mechanics** — see below. Copying the
-three arms into four more deployed prompts without it propagates a cwd-execution arm four times.
+**And the port is TWO arms, not three** — see the DECIDED section below. The cwd-relative arm is
+deleted; copying it into four more deployed prompts would propagate a code-execution path four times.
+
+## DECIDED: the cwd-relative fallback is deleted, not narrowed (2026-11-02)
+
+**This is the record the port must read before copying the resolver.** The first cut of this change
+kept a third arm — when neither the host variable nor the install record resolved, run the helpers out
+of `./plugins/flow`. Since the block runs after a `cd` into the repo **under review**, that executed
+Python out of whatever repo was open, gated only by a grep for `"name": "flow"` in a manifest inside
+that same repo. It shipped to the PR as a `[decision-required]` security blocker with three options.
+
+**Ben chose C — delete it.** The reasoning, recorded because it generalizes:
+
+- **Arm 2 already resolves on every machine flow is actually used on**, this checkout included
+  (measured: `plugin_root_arm: install-record`). Arm 3 was not covering a real present-day workflow.
+- **The only population it served was "cloned flow but hasn't installed it yet"** — and that is the
+  same one-time install step (`claude plugin marketplace add` + `claude plugin install`) everyone
+  performs regardless, contributor or not. It protected nobody while leaving a code-execution path open.
+- **B (an opt-in env var) is strictly worse than C**: it keeps the risk surface *and* adds a step.
+- Contributions are not being accepted at present, and the real contributor-facing risk vector is
+  `CONTRIBUTING.md`'s hook-execution note (never `gh pr checkout` an unreviewed branch) — unrelated to
+  this fallback, which removes the last argument for keeping flow's dev loop runnable without an install.
+
+**Consequence, accepted:** `/flow:audit-skips` can no longer run from a flow checkout with no installed
+flow. It refuses loudly. **A gate that cannot locate its own engine must not guess** — that is the rule,
+and it is worth more than the convenience it costs.
+
+**Pinned as an exploit, not as a preference.** `cwd-arm-deleted-no-execution` stages a repo that vendors
+a complete, name-matching `plugins/flow` whose `flow_scratch.py` is hostile — it forges an `ok` stamp and
+writes a marker file. Restoring the arm makes the marker appear, which is a *demonstrated* execution, and
+all six assertions go red. "It refused" and "it never executed" are different claims; only the second
+rules out the code path.
+
+**The generalization for the 19 bare `${CLAUDE_PLUGIN_ROOT:-plugins/flow}` defaults still live:** they are this same shape, ungated, and the decision above is now the precedent. The fix there
+is to *remove* the default, not to add a second arm.
 
 ## A content check is not an identity check
 
@@ -125,8 +160,9 @@ against whoever wrote it. What makes the install-record arm safe is not its grep
 forging it means writing to the user's own config dir, where `settings.json` hooks already live, so
 anyone who can do that has easier options. The cwd-relative arm has no such property, and this block
 runs after a `cd` into the repo under review. My first draft wrote that a failed lookup "degrades to a
-loud refusal, never a false pass"; it degrades to the **cwd arm**. Write what the gate detects, not
-what you hope it prevents.
+loud refusal, never a false pass"; at the time it degraded to the **cwd arm**. That arm is now gone, so
+the sentence is finally true — but it was written before it was true, which is the point. Write what the
+gate detects, not what you hope it prevents.
 
 Related: [[FB-0107-dogfooding-runs-the-installed-plugin-not-the-branch-under-review]],
 [[FB-0136-a-detector-validated-only-against-its-own-vocabulary]], [[FB-0082]], [[FB-0074]].

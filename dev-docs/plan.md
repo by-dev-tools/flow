@@ -8,6 +8,10 @@
 
 **Mode:** feature (bug fix, repro in hand) · **Surface:** non-visual · **Pre-execution gate:** plan
 
+**Gate resolved 2026-11-02:** the `[decision-required]` security blocker on the cwd-relative fallback
+was answered **C — delete it** (reasoning in FB-0141). Implemented: the resolver has two arms and
+refuses when neither resolves; the arm-3 tests are inverted into an exploit-shaped refusal case.
+
 **Measured, not inferred.** An external agent in `byamron/portfolio` saw `stamp_unverifiable` on every
 run against an installed 1.29.0 while `lib/skip-audit-checks.py` worked when invoked directly.
 Reproduced here on 1.64.0: with the working-tree `flow_scratch.py` moved aside so only the
@@ -25,12 +29,13 @@ fallback in a consumer project at all. **Why CPR differs per skill is NOT establ
 env could not be probed (installed-SKILL.md edits have no effect; the body is cached at session start,
 and `claude -p` is not logged in here). The fix therefore assumes neither state.
 
-**Fix:** one three-arm resolver (`$FPR`) for both helpers — `$CLAUDE_PLUGIN_ROOT` (manifest-gated) →
-`installPath` from `installed_plugins.json` (each `flow@*` candidate identity-checked against its own
-`plugin.json`) → the guarded checkout arm. Fail-closed preserved: no arm resolving still refuses.
+**Fix:** one resolver (`$FPR`) for both helpers, **two arms and no local guess** —
+`$CLAUDE_PLUGIN_ROOT` (manifest-gated) → `installPath` from `installed_plugins.json` (each `flow@*`
+candidate identity-checked against its own `plugin.json`). Neither resolving refuses loudly. The
+cwd-relative third arm from the first cut was deleted by decision (FB-0141 option C).
 
 **Evals:** `run_scratch_isolation_evals.py::test_installed_layout()` + `test_fork_skill_roster()`,
-**31 checks**, all from a simulated
+**37 checks**, all from a simulated
 **consumer** layout with CPR unset and no `plugins/flow/`. Instrument validated against a known
 positive — reverting only `SKILL.md` turns `installed-layout-resolves` red with the field report's exact
 message while `checkout-cpr-unset-resolves` stays green. Sweep 47/47 GREEN by exit code.
@@ -54,11 +59,18 @@ unpinned.)
 - [x] Two matching install entries produce the arbitrary-pick warning naming every candidate and
       report `plugin_root_ambiguous: true`; exactly one entry produces neither — verified by eval
       `installed-layout-resolves-via-record` plus the executed multi-candidate fixture (B3)
-- [x] The `plugins/flow` cwd arm resolves ONLY when arms 1 and 2 both missed, and an arm-2 hit shadows
-      it — pinned by eval `checkout-cpr-unset-resolves` + `checkout-cpr-unset-uses-checkout-arm` +
-      `installed-layout-resolves-via-record` (B4). Residual: the arm is content-gated, not
-      authenticated — inherited from the ungated arm it replaces, narrowed but not closed, and routed
-      to this PR as a security decision
+- [x] The resolved root must be ABSOLUTE: a relative `CLAUDE_PLUGIN_ROOT`, or a relative `installPath`
+      in the record, is refused with a warning and never executed — because a relative path resolves
+      against the repo being audited, which re-opens the deleted path. Pinned by eval
+      `relative-root-refused-{host-var,install-record}` + `relative-root-no-execution-*` (the hostile
+      vendored script must not run), all four mutation-verified red
+- [x] There is NO cwd-relative fallback: a repo that vendors a complete, name-matching
+      `plugins/flow` is refused, its scripts are never executed, and the refusal says it will not
+      guess at a local copy — pinned by eval `cwd-arm-deleted-refuses` +
+      `cwd-arm-deleted-no-execution` (a hostile `flow_scratch.py` writes a marker; restoring the arm
+      makes it appear) + `cwd-arm-deleted-reports-no-arm` +
+      `cwd-arm-deleted-refusal-says-it-will-not-guess` + `cwd-arm-stays-deleted`, all six
+      mutation-verified red (B4, resolved as FB-0141 option C)
 - [x] The unresolved-root refusal attributes the failure to flow being unable to locate itself (not to
       the handoff), ends on an actionable fix naming `CLAUDE_PLUGIN_ROOT`, and does not claim to have
       read an install record that is absent — pinned by eval
@@ -99,17 +111,21 @@ either ported or named with a reason, and a *new* fork skill with the two-arm sh
 (mutation-verified both ways).
 
 **Corrections the review pass forced on this PR's own first draft** — all three were claims, not code:
-1. **The census was ~7x low.** "Five `!`-block fork skills" → verified **~35 sites**: 13
-   `resolve-doc-slot.sh` preludes across 8 skills, plus **17 bare
-   `${CLAUDE_PLUGIN_ROOT:-plugins/flow}` defaults** across 5 — and that bare form is *ungated*
-   cwd-relative `python3`, its own security item, now filed separately.
+1. **The census was ~7x low, and my correction to it was ALSO low.** "Five `!`-block fork skills" →
+   "13 preludes + 17 bare defaults" → finally, by grepping all of `plugins/flow` instead of
+   `skills/*/SKILL.md`: **15 `resolve-doc-slot.sh` preludes + 19 bare
+   `${CLAUDE_PLUGIN_ROOT:-plugins/flow}` defaults**, ~38 sites. Both undercounts had the same cause —
+   a grep scoped to top-level SKILL.md files, which misses nested ones including two in the *sourced*
+   helper `ship/lib/serve-preview.sh`. That bare form is *ungated* cwd-relative execution and is its
+   own security item, now filed separately with the option-C precedent attached.
 2. **"The install record names the exact version in use" was false, and flow had already measured it
    false.** `ship/lib/plugin-provenance.py::read_running` records: an update rewrites the record but
    needs a restart, so a session can run 1.29.0 while the record says 1.41.0. Arm 2 fires exactly when
    CPR is unset. Comment and changelog corrected.
-3. **"A miss degrades to a loud refusal, never a false pass" was false.** An arm-2 miss falls through
-   to **arm 3**, which is cwd-relative and content-gated only. Corrected, and routed to the PR as a
-   `[decision-required]` security blocker rather than patched on the worker's own judgment.
+3. **"A miss degrades to a loud refusal, never a false pass" was false.** An arm-2 miss fell through
+   to a cwd-relative, content-gated-only third arm. Routed to the PR as a `[decision-required]`
+   security blocker rather than patched on the worker's own judgment — and **answered 2026-11-02:
+   delete it.** The sentence is true now, but it was written before it was true, which was the problem.
 
 **⚠️ Still open — not this worker's lane:**
 - **CLAUDE.md § How to Work 3 carries the falsified CPR claim** and is always loaded, so the next

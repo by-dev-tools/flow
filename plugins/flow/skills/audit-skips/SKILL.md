@@ -88,16 +88,16 @@ command -v jq >/dev/null 2>&1 || { printf '{"jq_error": "jq is not on PATH; flow
 # by construction, which also ends the cross-project clobbering of the global /tmp namespace.
 # Relative default resolves against $ROOT because of the cd above.
 STAGES="${FLOW_SKIP_AUDIT_STAGES:-.flow/skip-audit-stages.json}"
-# Flow plugin root -- THREE arms (FB-0141 has the measurements, the ~35-site class, and
-# the review history; this block keeps only what a maintainer needs in place).
-# SECURITY: arm 3 is cwd-relative. READ THE SECURITY NOTE BELOW BEFORE PORTING THIS.
+# Flow plugin root -- TWO arms, and NO cwd-relative fallback by decision (FB-0141 has the
+# measurements, the ~35-site class, and the review history; this block keeps only what a
+# maintainer needs in place). READ THE SECURITY NOTE BELOW BEFORE PORTING THIS.
 #
-# Arm 1 was $CLAUDE_PLUGIN_ROOT; arm 2 was a bare, UNGATED plugins/flow/... --
+# Before: arm 1 was $CLAUDE_PLUGIN_ROOT; arm 2 was a bare, UNGATED plugins/flow/... --
 # flow-repo-relative, so in a consumer project it cannot exist. On any run where the host
 # variable was absent every helper below was unreachable, and the gate reported "cannot
 # verify the stamp" on every single invocation. Neither arm may be assumed: CPR is set in
 # SOME forked context blocks and unset in others, measured in one session, and WHY is not
-# established -- so every arm must stand on its own.
+# established -- so every arm must stand on its own, and an unresolved root REFUSES.
 #
 # WHAT ARM 2 IS, AND IS NOT. The host's own install record: the only LIVE source of the
 # root, and version-bearing, which is why a cache glob is wrong (a host can hold several
@@ -109,20 +109,28 @@ STAGES="${FLOW_SKIP_AUDIT_STAGES:-.flow/skip-audit-stages.json}"
 # exactly when CPR is unset, so a cached old skill body CAN resolve to a newer tree. PATH
 # is the reliable signal per that module, and it is not available to this bootstrap.
 #
-# SECURITY -- the honest version, not the flattering one. Both greps below are CONTENT
-# checks. They detect a mis-install; they are NOT an attacker boundary, because no file
-# inside a tree can authenticate that tree against whoever wrote it.
-#   Arm 2 is still not an attacker primitive: forging it means writing into the user's own
-#   config dir, where settings.json hooks already live, so anyone who can has easier
-#   options. That location -- not the grep -- is what makes it safer than a cwd guess.
-#   Arm 3 IS cwd-relative, and this block runs after a cd into the repo under review. An
-#   untrusted repo shipping plugins/flow/.claude-plugin/plugin.json with the right name
-#   plus its own two scripts gets its Python executed. That exposure is INHERITED: the arm
-#   it replaces had no gate at all and was reached whenever CPR missed. This change
-#   strictly NARROWS it (arm 2 shadows arm 3 on any normal install, and a name check now
-#   exists where there was none) and does NOT close it. An arm-2 miss falls through to
-#   arm 3, not to a refusal. Open decision on the PR; see FB-0141 § "A content check is
-#   not an identity check" before porting this to another skill.
+# SECURITY -- and this is the reason there is no third arm. There USED to be one: a
+# cwd-relative fallback to ./plugins/flow, for a flow checkout with no install. This
+# block runs after a cd into the repo UNDER REVIEW, so that arm executed Python out of
+# whatever repo was open, gated only by a grep for "flow" in a manifest inside that same
+# repo -- forgeable with one 20-byte file, because no file inside a tree can authenticate
+# that tree against whoever wrote it. It was DELETED by decision rather than narrowed
+# (FB-0141): the only population it served was "cloned flow, has not installed it yet",
+# and that is the same one-time install step everyone performs anyway, so it protected
+# nobody while leaving a code-execution path open.
+#   DO NOT RE-ADD IT when porting this to another skill. A cwd-relative fallback here is
+#   not a convenience, it is arbitrary code execution from any repo the user opens --
+#   /flow:doctor shipped exactly that shape once (${CLAUDE_PLUGIN_ROOT:-.}) and its own
+#   SECURITY header records what it cost. The 19 bare ${CLAUDE_PLUGIN_ROOT:-plugins/flow}
+#   defaults still live elsewhere in this plugin are that same shape, UNGATED, and are
+#   filed for removal -- count verified by grep over all of plugins/flow, not estimated.
+#   The grep on arm 2 is a CONTENT check too -- it detects a mis-install and is not an
+#   attacker boundary either. What makes arm 2 safe is its LOCATION: forging it means
+#   writing into the user's own config dir, where settings.json hooks already live, so
+#   anyone who can already has easier options.
+# CONSEQUENCE, accepted deliberately: with no cwd arm, this gate CANNOT run from a flow
+# checkout that has no installed flow. It refuses loudly instead. That is the intended
+# behaviour -- a gate that cannot locate its own engine must not guess.
 #
 # (No backticks: this is a single-backtick dynamic-context span. One inner backtick
 # truncated this exact block once already -- FB-0010.)
@@ -139,16 +147,16 @@ if [ -z "$FPR" ]; then
   IPJ_STATE=absent
   if [ -f "$IPJ" ]; then
     # Probe parseability SEPARATELY from the query. The query ends 2>/dev/null, so an
-    # unparseable record yielded no candidates and NO signal, and arm 3 (cwd-relative)
-    # was then reached silently -- a bare 2>/dev/null with no [WARN] branch, which
-    # general.md item 1 forbids. Worse, the refusal below would have reported "no flow@
-    # entry points at an installed flow", asserting a search result for what was really a
-    # parse failure: the same say-what-you-detected rule this block closes on.
+    # unparseable record yields no candidates, and with no [WARN] branch that was
+    # silent -- which general.md item 1 forbids. The refusal below would also have
+    # reported "no flow@ entry points at an installed flow", asserting a search result
+    # for what was really a parse failure: the same say-what-you-detected rule this
+    # block closes on.
     if jq empty "$IPJ" >/dev/null 2>&1; then
       IPJ_STATE=ok
     else
       IPJ_STATE=unparseable
-      echo "⚠️ [audit-skips] the install record at $IPJ is present but could not be parsed, so flow's installed location could not be read from it. Falling back to the local checkout if there is one. Fix: reinstall the flow plugin, or set CLAUDE_PLUGIN_ROOT to the installed flow directory." >&2
+      echo "⚠️ [audit-skips] the install record at $IPJ is present but could not be parsed, so flow's installed location could not be read from it. Fix: reinstall the flow plugin, or set CLAUDE_PLUGIN_ROOT to the installed flow directory." >&2
     fi
   fi
   if [ "$IPJ_STATE" = ok ]; then
@@ -165,26 +173,38 @@ if [ -z "$FPR" ]; then
     if [ "$(printf '%s\n' "$CANDS" | grep -c .)" -gt 1 ]; then
       # Name EVERY candidate, not just the winner: "set CLAUDE_PLUGIN_ROOT to the one
       # you mean" is unusable advice if the message printed only one of them.
-      echo "⚠️ [audit-skips] flow looks installed more than once, so this run picked one arbitrarily. Using: $FPR. Also matched: $(printf '%s\n' "$CANDS" | grep -v "^$FPR$" | tr '\n' ' ')" >&2
+      echo "⚠️ [audit-skips] flow looks installed more than once, so this run picked one arbitrarily. Using: $FPR. Also matched: $(printf '%s\n' "$CANDS" | grep -vxF "$FPR" | tr '\n' ' ')" >&2
       echo "   If the verdicts look wrong, set CLAUDE_PLUGIN_ROOT to the installed flow directory you mean, then re-run." >&2
       FPR_AMBIGUOUS=true
     fi
   fi
 fi
-if [ -z "$FPR" ] && [ -f plugins/flow/.claude-plugin/plugin.json ] && grep -q '"name": *"flow"' plugins/flow/.claude-plugin/plugin.json 2>/dev/null; then
-  # Arm 3: the flow checkout itself. Dogfooding only -- a consumer project never has
-  # this. Content-gated, not authenticated; see the SECURITY note above.
-  FPR="plugins/flow"; FPR_ARM="checkout"
-fi
+# THE ROOT MUST BE ABSOLUTE, or deleting the cwd arm accomplished nothing. Measured:
+# with CLAUDE_PLUGIN_ROOT=plugins/flow, from a repo that vendors flow, arm 1 accepts it
+# and the repo-under-review's own flow_scratch.py EXECUTES -- the exact path option C
+# deleted, re-entered through a relative value. An installPath of "plugins/flow" in the
+# record does the same through arm 2. Both are resolved against the cd above, i.e.
+# against the repo under review.
+#
+# This is not hypothetical politeness: the refusal below tells the operator to "set
+# CLAUDE_PLUGIN_ROOT to the installed flow directory", and a hand-typed relative value is
+# the obvious next move. It also repairs the claim above that arm 2 is safe because of
+# its LOCATION -- true only while the path it names is absolute, since a relative
+# installPath moves the executed CONTENT back into the repo under review.
+case "$FPR" in
+  ""|/*) ;;
+  *) echo "⚠️ [audit-skips] ignoring a non-absolute flow plugin root ($FPR): a relative path resolves against the repo being audited, which would run that repo's code. Set CLAUDE_PLUGIN_ROOT to an absolute path." >&2
+     FPR=""; FPR_ARM="none" ;;
+esac
 # Both helpers resolve off the SAME root. They were two independent copies of the
 # two-arm shape, so both were dead together on an unset CPR -- meaning the skill was
 # wholly unusable against an install, not merely unable to check the stamp. One root
 # also removes the state where the stamp is checked by the install and the verdicts are
 # computed by the checkout.
 H="$FPR/skills/audit-skips/lib/skip-audit-checks.py"
-# When NO arm resolved, say THAT. An empty $FPR would otherwise compose
-# "/scripts/flow_scratch.py" and the operator is told a helper is missing from a path
-# that was never a real location -- the same unreadable garbage /flow:audit-coverage
+# When NEITHER arm resolved, say THAT -- and it is now a terminal state, not a step
+# before a guess. An empty $FPR would otherwise compose "/scripts/flow_scratch.py" and
+# the operator is told a helper is missing from a path that was never a real location -- the same unreadable garbage /flow:audit-coverage
 # calls out in its INVENTORY-UNAVAILABLE branch. The remedy for an unresolved root
 # (reinstall / point CLAUDE_PLUGIN_ROOT at the install) is not the remedy for a helper
 # missing from a root that DID resolve, so the two must not share one message.
@@ -202,7 +222,7 @@ if [ -z "$FPR" ]; then
   # Ends on a REMEDY, like its two siblings in this block (root_error ends "Re-run from
   # the repo root, or set CLAUDE_PROJECT_DIR"; jq_error ends "Install jq ... and re-run").
   # The remedy was known -- it was sitting in the comment above instead of in the message.
-  FPR_NOTE="flow could not find its own installation, so the handoff stamp was not checked. Looked at: CLAUDE_PLUGIN_ROOT, the install record, and ./plugins/flow ($FPR_WHERE). Fix: reinstall the flow plugin, or set CLAUDE_PLUGIN_ROOT to the installed flow directory, then re-run"
+  FPR_NOTE="flow could not find its own installation, so the handoff stamp was not checked. Looked at CLAUDE_PLUGIN_ROOT and the install record ($FPR_WHERE). This gate will not guess at a local copy -- running code out of whatever repo is open is how a checkout you did not write gets executed. Fix: install the flow plugin (claude plugin install flow@flow), or set CLAUDE_PLUGIN_ROOT to the installed flow directory, then re-run"
 fi
 PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN="dev-docs/plan.md"
 # Stamp gate (FB-0082). A handoff must PROVE it belongs to this repo+branch+HEAD before
@@ -214,7 +234,13 @@ PLAN=$(jq -r '.planPath // empty' flow.config.json 2>/dev/null); [ -z "$PLAN" ] 
 SCRATCH_PY="$FPR/scripts/flow_scratch.py"
 STAMP_STATUS=""; STAMP_REASON=""
 if [ -f "$STAGES" ]; then
-  if [ ! -f "$SCRATCH_PY" ]; then
+  # [ -z "$FPR" ] FIRST, and not merely for a nicer message. With no root, the two paths
+  # above compose "/scripts/flow_scratch.py" and "/skills/audit-skips/lib/..." -- ABSOLUTE,
+  # not relative. So on a host that happens to have a /scripts/flow_scratch.py, the -f test
+  # below would be TRUE and this gate would execute a file at the filesystem root. That is
+  # exotic, but "it works because that path usually does not exist" is an environmental
+  # accident, not a guard: refusing on an unresolved root removes the class instead.
+  if [ -z "$FPR" ] || [ ! -f "$SCRATCH_PY" ]; then
     # The gate CANNOT fail open. If the checker is unreachable we cannot prove the
     # handoff is ours, and "cannot prove" must never read as "verified" -- that is
     # the exact failure this whole branch exists to remove.
@@ -286,7 +312,7 @@ elif [ -f "$STAGES" ]; then
     # path said nothing about WHICH root produced the verdicts. On the one gate whose
     # failure mode was 35 releases of invisible wrongness, that is the obvious thing left
     # undone: a verdict that looks wrong gave the operator no way to tell whether the
-    # engine came from the host variable, the install record, or ./plugins/flow.
+    # engine came from the host variable or the install record.
     #
     # It also stops relying on stderr for the ambiguity signal. Whether a forked
     # context block's stderr reaches the model at all is UNMEASURED here (filed in the

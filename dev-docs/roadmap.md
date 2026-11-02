@@ -665,11 +665,18 @@ empty-context or no-transcript guard, so nothing downstream notices. A reviewer 
 emitting the string that means "I looked and it was fine" — on the two skills whose entire job is to
 catch exactly that shape of claim.
 
-**The port must carry the SECURITY decision, not just the three-arm mechanics.** Arm 3 is
-cwd-relative and content-gated only (`grep '"name": *"flow"'` on a file inside the same
-attacker-controlled subtree), and these blocks `cd` into the repo under review. Copying the resolver
-into four more deployed prompts without resolving that propagates a cwd-execution arm four times. The
-open decision is on PR #<this one>; read its `[decision-required]` security entry before porting.
+**THE PORT IS TWO ARMS, NOT THREE — this is decided, not open.** The resolver is
+`$CLAUDE_PLUGIN_ROOT` → the install record, and **no cwd-relative fallback**. Do not re-add one as a
+convenience: these blocks `cd` into the repo under review, so a `plugins/flow` fallback is arbitrary
+code execution from any repo the user opens. Decided 2026-11-02; FB-0141 § "DECIDED: the cwd-relative
+fallback is deleted, not narrowed" carries the full reasoning and is the durable record — not the PR
+body, which a reader months from now cannot grep for. It is pinned as a demonstrated exploit
+(`cwd-arm-deleted-no-execution` stages a hostile vendored `flow_scratch.py` and fails if it runs).
+**Carry the absolute-path guard with it — deleting the arm alone is NOT sufficient.** Measured: a
+relative `CLAUDE_PLUGIN_ROOT` (or a relative `installPath`) resolves against the repo under review and
+re-opens the same execution path. Any port must refuse a non-absolute root.
+**Accepted consequence to carry with it:** a ported skill can no longer run from a flow checkout with
+no installed flow — it refuses loudly, which is correct.
 
 **A tripwire already guards this deferral.** `run_scratch_isolation_evals.py::test_installed_layout()`
 derives every `context: fork` skill from disk and requires each to be either ported or named in an
@@ -696,7 +703,7 @@ degradation rather than as a systematic install-path failure. That misclassifica
 learn from, not just the paths to patch.
 
 **The fix is already written and tested** in `plugins/flow/skills/audit-skips/SKILL.md` (the `$FPR`
-three-arm resolver) with **31** paired checks in
+two-arm resolver) with **37** paired checks in
 `run_scratch_isolation_evals.py::test_installed_layout()` + `test_fork_skill_roster()`.
 Port the *mechanism* rather than reinventing it — but **one thing genuinely needs deciding per site
 class, not transcribing**: arm 1 here gates on the plugin **manifest**, whereas the 13
@@ -734,25 +741,36 @@ narrative docs but not over these three.
    loaded — see `read_running`."
 3. **`CLAUDE.md` § How to Work 3 now over-promises for this skill, in two ways.** (a) It states
    `CLAUDE_PLUGIN_ROOT` is "set in `!`-preprocessor blocks" — falsified by FB-0141's measurement.
-   (b) It tells a reader that "everything the Bash tool resolves comes from the working tree", but
-   arm 2 precedes arm 3 and the `SessionStart` currency hook keeps flow installed, so in this checkout
-   `/flow:audit-skips` now resolves `plugin_root_arm: install-record` and the **installed** engine
-   grades the handoff where the working-tree engine used to. Measured both ways in the v1.66.0 pass.
-   CLAUDE.md is always loaded, so the next session inherits both. `flow_scratch.py`'s module docstring
+   (b) It tells a reader that "everything the Bash tool resolves comes from the working tree", which
+   for `/flow:audit-skips` is now false in **every** case: with the cwd arm deleted, both remaining
+   arms resolve an *installed* root and nothing can reach the checkout. Measured 2026-11-02 — from
+   this checkout the block reports `plugin_root_arm: install-record`, and with the record hidden it
+   refuses rather than falling back. CLAUDE.md is always loaded, so the next session inherits both
+   errors. `flow_scratch.py`'s module docstring
    and `dev-docs/history/2026-07-29-safety-flow-s-ephemeral-scratch-*` repeat (a).
 
-### The flow-repo-relative arm is ~35 call sites, and 17 of them are UNGATED (security)
+### The cwd-relative arm is ~38 call sites, and 19 of them are UNGATED (security)
 
 Verified by grep 2026-11-01, after the FB-0141 PR's first draft under-counted the class by ~7x.
 Separate item from the one above because the **fix is different**: these need the default *removed*,
 not a third arm added.
 
-- **17 bare `${CLAUDE_PLUGIN_ROOT:-plugins/flow}` defaults** — `gate` (5), `spawn` (4), `handoff` (3),
-  `orchestrate` (3), `doctor` (2). Each is an *unconditional* cwd-relative `python3` target with **no
-  identity check whatsoever**. This is precisely the shape `skills/doctor/SKILL.md`'s own SECURITY
-  header records as having shipped once and been arbitrary code execution with the user's privileges
-  from any repo they opened — and `doctor` itself still carries two. Highest-value item in this family.
-- **13 `resolve-doc-slot.sh` preludes across 8 skills** — `accessibility-review`, `gate`, `land`,
+**Counts verified by grep over all of `plugins/flow`, 2026-11-02 — and corrected twice.** The FB-0141
+PR first said "five fork skills", then "13 preludes + 17 bare defaults". Both were low, for the same
+reason both times: the grep was scoped to `skills/*/SKILL.md` and missed nested files. **Scope it to
+the whole of `plugins/flow`.**
+
+- **19 bare `${CLAUDE_PLUGIN_ROOT:-plugins/flow}` defaults** — `gate` (5), `spawn` (4), `handoff` (3),
+  `orchestrate` (3), `doctor` (2), and **two in `ship/lib/serve-preview.sh`** — a *sourced helper*,
+  not a SKILL.md, which is exactly the file class the earlier greps missed. Each is an *unconditional*
+  cwd-relative target with **no identity check whatsoever** — strictly worse than the arm FB-0141 just
+  deleted, which at least had a name check. **There is now a decided precedent: remove the default, do
+  not add a second arm** (FB-0141 option C). This is precisely the shape `skills/doctor/SKILL.md`'s own
+  SECURITY header records as having shipped once and been arbitrary code execution with the user's
+  privileges from any repo they opened — and `doctor` itself still carries two. Highest-value item in
+  this family. (There are **no** live `${CLAUDE_PLUGIN_ROOT:-.}` sites left; both grep hits for that
+  spelling are prose warnings about the shape.)
+- **15 `resolve-doc-slot.sh` preludes** — across `accessibility-review`, `gate`, `land`,
   `orchestrate`, `security-review`, `ship-spike`, `staff-review`, `verify-build`. These are gated, so
   the consequence is not execution but the exact silent degradation `resolve-doc-slot.sh` exists to
   kill: a cold-read reviewer running with no design-language or feedback context, reporting clean.
