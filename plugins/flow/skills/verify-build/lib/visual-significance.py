@@ -120,6 +120,41 @@ except Exception as _exc:  # pragma: no cover - defensive; file_patterns ships a
 # source edit. Generic, project-agnostic; overridable via --asset-patterns.
 DEFAULT_ASSET_PATTERN = r"\.(png|jpe?g|gif|svg|webp|avif|ico|bmp|woff2?|ttf|otf|eot)$"
 
+# FLOW'S OWN CAPTURED FRAMES ARE NOT EVIDENCE ABOUT THE DIFF, and excluding them closes
+# a circle this gate would otherwise feed itself. `/flow:ship` §5d captures PR-body
+# frames into `<dir of visualHistoryPath>/pr-frames/<branch-slug>/` and commits them --
+# but it only runs when THIS verdict is already true. Counting those PNGs as an asset
+# signal means a later run reads flow's own output as the reason the change is visually
+# significant, which is circular: the frames exist *because* the answer was true, so they
+# cannot be why it is true. Measured while re-verifying the §5d trigger after #183 --
+# arm 3's frames made arm 2 (an explicit `Visual-walk: N/A`) read as significant on the
+# asset path, for a plan that had just declared it has no visual surface.
+#
+# `pr-frames` is a LITERAL here rather than an import from `plugins/flow/lib/
+# capture_frames.py`, deliberately: this file is a `sensitivePaths` gate and #183 shipped
+# specifically because its one existing cross-module import could fail silently and void
+# the whole plan-override path. A second such import trades a narrow circularity for a
+# wider blind spot. The two definitions are pinned to agree by
+# `run_capture_frames_evals.py::test_captured_frames_are_not_their_own_evidence`, which
+# fails if either side moves.
+#
+# Scoped to the SHAPE THE CAPTURE ENGINE WRITES, not to a bare `pr-frames/` segment.
+# The first cut matched the segment anywhere, and /flow:security-review measured the
+# consequence: a contributor who puts a real UI asset under any directory they happen to
+# name `pr-frames/` (`src/assets/pr-frames/hero.png` — a path they choose freely in their
+# own PR) got `visual_significant: false`, so §5c, §5d and verify-build's visual gate all
+# skipped a change that genuinely alters a rendered surface. A suppression that an
+# unrelated contributor can trigger by naming a directory is a gate bypass, and it fails
+# in the expensive polarity.
+#
+# The engine writes exactly `<dir>/pr-frames/<branch-slug>/<label>-<frame>.png`, so the
+# pattern requires that depth and that filename form. `src/assets/pr-frames/hero.png` has
+# one path segment after `pr-frames/`, not two, and does not match. The frame NAMES are
+# deliberately not spelled here — that would be a third copy of the FRAMES table; the
+# character classes mirror `branch_slug`'s and `LABEL_RE`'s output instead.
+FLOW_CAPTURED_FRAMES = re.compile(
+    r"(^|/)pr-frames/[a-z0-9][a-z0-9-]{0,63}/[a-z0-9][a-z0-9-]{0,31}-[a-z0-9-]{1,16}\.png$")
+
 # Comment / structural-only line prefixes used by the pure-refactor exclusion. A
 # changed line whose content (after stripping the +/- and whitespace) starts with
 # one of these — or is pure punctuation — does not constitute a render delta.
@@ -678,7 +713,22 @@ def main(argv):
 
     # --- heuristic evidence ---
     visual_hits = [p for st, p in changes if visual_re.search(p)]
-    asset_hits = [p for st, p in changes if asset_re.search(p) and not visual_re.search(p)]
+    asset_hits = [p for st, p in changes
+                  if asset_re.search(p) and not visual_re.search(p)
+                  and not FLOW_CAPTURED_FRAMES.search(p)]
+    # SAY WHAT WAS EXCLUDED. Without this the suppressed files fall into the `not
+    # matched` floor and the run explains itself with "diff touches no UI or asset
+    # files… a file outside those patterns is NOT examined for a render delta" — which
+    # is FALSE for a diff that touched exactly one asset file, and leaves a reader no
+    # way to see why the verdict went the way it did. An exclusion a report will not
+    # name is indistinguishable from a pattern that never matched.
+    excluded_frames = sorted({p for st, p in changes
+                              if FLOW_CAPTURED_FRAMES.search(p)})
+    if excluded_frames:
+        signals.append(
+            "%d file(s) excluded as flow's OWN captured frames (they exist because this "
+            "verdict was already true, so they cannot be evidence for it): %s"
+            % (len(excluded_frames), ", ".join(excluded_frames[:8])))
     matched = visual_hits + asset_hits
     if visual_hits:
         signals.append(f"diff touches UI files (pattern from {visual_src}): "
@@ -690,7 +740,22 @@ def main(argv):
     # render delta by construction (its content is all-added). For modified files
     # we inspect the diff: if NONE of the matched files carry a content delta, the
     # change is rename-only / comment-only / whitespace-only ⇒ not significant.
-    new_files = [p for st, p in changes if st in ("A", "U") and (visual_re.search(p) or asset_re.search(p))]
+    # FLOW_CAPTURED_FRAMES is applied HERE TOO, and the first cut applied it only to
+    # `asset_hits` above — which left the circle open at the site that actually decides,
+    # and made the report WORSE than before the exclusion existed: a newly-added
+    # `pr-frames/…png` still set `content_changed`, flipping a pure-refactor verdict to
+    # significant, while the filter above had already removed that path from
+    # `visual_signals` — so the verdict flipped with nothing naming the file that
+    # flipped it. Measured on the shipped script: a rename-only change-set reads
+    # `false`; the same change-set plus one captured frame reads `true`.
+    #
+    # Two sites, one predicate. An exclusion that is not applied everywhere the value is
+    # read is not an exclusion, and a literal grep for "the filter is applied" cannot
+    # tell one site from two — which is why the eval that pins this drives the script
+    # and compares the VERDICT, rather than asserting a substring of its source.
+    new_files = [p for st, p in changes
+                 if st in ("A", "U") and (visual_re.search(p) or asset_re.search(p))
+                 and not FLOW_CAPTURED_FRAMES.search(p)]
     diff_changed, debug_only_skipped = _diff_content_changed(diff_text, visual_re, asset_re)
     content_changed = bool(new_files) or diff_changed
     # An asset whose path matched but which only appears under a rename (R) with no
