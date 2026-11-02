@@ -541,11 +541,17 @@ def test_md_safety_layering():
     # why the real guarantee is the behavioural property in
     # test_every_record_field_is_neutralized — that one does not care how a new sink
     # is spelled. Re-key this number deliberately if a position is genuinely added.
-    check("mdsafe/exactly-four-text-positions-escape", n_inline == 4,
-          "the engine has four markdown TEXT positions (figcaption, alt, last-resort alt, "
-          "and the preview audience clause added at v1.60.0) and each must be wrapped in "
-          "inline(); found %d call site(s). Re-key this number deliberately when a "
-          "position is genuinely added — that is the intended cost." % n_inline)
+    # The count lives in the ASSERTION, not in the check's NAME: a name carrying a
+    # number becomes a second place the contract is written down, and it goes stale
+    # without failing anything (the fan-out class, inside the fan-out guard).
+    check("mdsafe/every-text-position-escapes", n_inline == 8,
+          "the engine has eight markdown TEXT positions and each must be wrapped in "
+          "inline(). Four from the visual-history source (figcaption, alt, last-resort "
+          "alt, and the preview audience clause added at v1.60.0); four added at "
+          "v1.65.0 (the captures source's caption and alt, and `_frame_alt`'s derived "
+          "and fallback strings for the chat image). Found %d call site(s). Re-key this "
+          "number deliberately when a position is genuinely added — that is the "
+          "intended cost." % n_inline)
     # A raw count comparison was wrong here (code_span=11, one_line=9) because two
     # code_span calls wrap `sha[:7]`, which is validated hex and needs no collapsing.
     # Assert the PROPERTY instead: every code_span argument is a one_line(...) call,

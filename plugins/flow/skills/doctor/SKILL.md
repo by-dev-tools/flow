@@ -274,7 +274,7 @@ Existence-checks the doc-path slots a fresh project is expected to scaffold: `pl
 
 The unset-slot fallback below builds `dev-docs/<slot>.md` — matching `flow.config.schema.json`'s own declared `default` for every doc-path slot, and the convention every *other* call site in the plugin already uses (16 sites across `ship`, `ship-spike`, `land`, `verify-build`, `staff-review`, `security-review`, `accessibility-review`, `audit-coverage`, `audit-skips`, `planner`, `docs` — all `dev-docs/`). Before FB-0098 this line was the *only* `core-docs/` outlier against that convention (FB-0098's own root cause, caught mid-fix: setting flow's own `flow.config.json` slots explicitly would have masked the symptom on this one dogfood repo while leaving the same false-WARN live for every other consumer with an unset slot — the fix belongs in the default, not the config).
 
-**This loop is deliberately not exhaustive over all 39 schema slots** — see the frontmatter for the honest scope claim. Not existence-checked here, on purpose:
+**This loop is deliberately not exhaustive over all 41 schema slots** — see the frontmatter for the honest scope claim. Not existence-checked here, on purpose:
 - `verifyFindingsPath`, `verifyReportPath`, `visualHistoryPath`, `lastHarvestedPath` — ephemeral or CREATED ON FIRST WRITE by design (not scaffolded by `bootstrap.sh`); a missing file is the correct steady state.
 - `statusDocs`, `statusSurfaceCandidates` (Check 2.7/2.9), `flowRepoPath`, `contributionsQueuePath` (Check 2.8) — path-shaped but already existence/coherence-checked by a different check (arrays or dev-tooling paths, not scalar doc paths).
 - `ciWaitSeconds`, `postMergeWaitSeconds` — integers, not paths. There is no file to existence-check; an out-of-range value is the schema's job, and both have documented defaults that apply when unset.
@@ -1025,6 +1025,87 @@ else
     echo "       \`publish\`'s stdout, never a value a template supplies."
     echo "       A template carrying a shell operator (& > ; | \`) is refused — put any"
     echo "       backgrounding inside a script the template CALLS."
+  fi
+fi
+```
+
+**Check 2.14 — `captureBackend` adapter shape (PR-body + chat frames, roadmap D7)**
+
+Validates the adapter that turns an HTML page flow authored into a PNG still. **Silent when the slot is absent** — unset is the documented default and the full, correct behaviour (no image syntax anywhere, every hand-off byte-identical to v1.60.0), so nagging about it would be noise. WARN, never FAIL, when present but malformed.
+
+Why it exists, and it is the same reason as Check 2.13: the failure mode is **invisible**. A malformed template makes capture fail *open* — no frame, a stated reason on a stream nobody re-reads, and a hand-off that is still correct — so nothing looks wrong while a project that believes it configured captures silently never produces one. Setup is the only cheap place to catch it.
+
+It also reports `chatImagePath`, because the two are a pair: an adapter with nowhere to write the chat frame produces PR-body frames and no chat image, which reads as a half-working feature rather than the two independent slots it is.
+
+**Deletion criterion (FB-0088):** delete when `captureBackend` goes, or when schema validation can express the placeholder contract well enough to subsume this.
+
+```sh
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[SKIP] captureBackend adapter — jq not on PATH (see Check 4.1)."
+elif [ ! -f flow.config.json ]; then
+  : # no config at all — Check 2.1 already reports it; the slot is optional anyway
+elif ! jq -e 'has("captureBackend")' flow.config.json >/dev/null 2>&1; then
+  : # deliberately silent: no capture adapter is the normal case and the correct default
+else
+  # stdout ONLY — the lib writes its notes to stderr, and folding them into the capture
+  # makes the JSON unparseable in exactly the case that needs the detail.
+  CAPTURE_OUT=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/capture_frames.py" check 2>/dev/null)
+  if echo "$CAPTURE_OUT" | jq -e '.usable' >/dev/null 2>&1; then
+    NF=$(echo "$CAPTURE_OUT" | jq -r '[.frames[].name] | join(" and ")' 2>/dev/null)
+    [ -n "$NF" ] || NF="the configured"
+    echo "[PASS] captureBackend: screenshot template valid — $NF frames will be captured"
+  else
+    echo "[WARN] captureBackend is present but incomplete or malformed, so no frame will be captured."
+    echo "       The hand-off is still correct without one, so this fails OPEN and INVISIBLY —"
+    echo "       which is why it is checked here rather than discovered at a gate."
+    # `manual_fallback` is printed, not just `problems`: this is the one moment a human
+    # reads the report, and the engine already carries a sentence saying what to do by hand.
+    echo "$CAPTURE_OUT" | jq -r '.verbs | to_entries[] | select(.value.state != "ok") | "       - \(.key): \(.value.state) — \(.value.problems // [] | join("; "))\n         by hand instead: \(.value.manual_fallback)"' 2>/dev/null \
+      || echo "       (could not parse the adapter report; run the check above by hand)"
+    CPH=$(printf '%s' "$CAPTURE_OUT" | jq -r '[.known_placeholders[] | "{" + . + "}"] | join(" ")' 2>/dev/null)
+    [ -n "$CPH" ] || CPH="(could not read the vocabulary from the adapter report)"
+    echo "       Fix: \`screenshot\` is the only verb, and its placeholders are a CLOSED set"
+    echo "       of which ALL are required — $CPH. A template that cannot be told a size"
+    echo "       produces two identical frames under two different size labels, which is a"
+    echo "       picture that lies. A template carrying a shell operator (& > ; | \`) is"
+    echo "       refused — put any such flags inside a script the template CALLS."
+  fi
+  # The paired slot, reported only when an adapter exists, so a project with no captures
+  # is never told about a directory it has no use for.
+  #
+  # The ignore state comes from the ENGINE (`chat-dir --json`), not from a second
+  # `git check-ignore` here. One predicate, one copy — and the engine's version is a
+  # TRISTATE: `null` means "could not measure" (outside a repo, corrupt index, git
+  # absent), which must never be reported as "not ignored".
+  CHAT_OUT=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/flow}/lib/capture_frames.py" chat-dir --json 2>/dev/null)
+  CIP=$(echo "$CHAT_OUT" | jq -r '.dir // empty' 2>/dev/null)
+  CIG=$(echo "$CHAT_OUT" | jq -r '.ignored' 2>/dev/null)
+  # PARSE FIRST. An empty $CHAT_OUT (engine missing, python3 absent) pipes into jq, which
+  # exits 0 with empty output — so `[ -z "$CIP" ]` alone reported "chatImagePath unset" as
+  # a confident PASS for a slot that may well be set. That is the same collapse the
+  # tristate in `is_git_ignored` exists to prevent, one field over: "could not read" is
+  # not "is not configured".
+  if ! printf '%s' "$CHAT_OUT" | jq -e 'has("dir")' >/dev/null 2>&1; then
+    echo "[SKIP] chatImagePath — could not read the capture engine's report, so this says"
+    echo "       nothing about whether the slot is set. Check python3 and the plugin install."
+  elif [ -z "$CIP" ]; then
+    # A NOTE, not a WARN. PR-body-frames-without-a-chat-image is a legitimate, fully
+    # supported configuration — the engine's own message for this state says "that is the
+    # default and the line is still correct". A warning that fires on a correct setup is
+    # how people learn to ignore the warnings, which this skill flags elsewhere as a
+    # failure in its own right.
+    # ONE line: doctor's frontmatter states each check is a single line, with an indented
+    # hint only on FAIL/WARN. Converting this from WARN to PASS was right; carrying the
+    # WARN's three-line body along with it was not.
+    echo "[PASS] chatImagePath unset — PR-body frames only; the gate-1 message carries no image (supported)."
+  elif [ "$CIG" = "false" ]; then
+    echo "[WARN] chatImagePath ($CIP) is not git-ignored, so captured chat frames will show"
+    echo "       up as working-tree changes and can be committed by accident. These frames"
+    echo "       are for the chat message; the PR-body frames are a separate, committed set."
+  elif [ "$CIG" = "true" ]; then
+    echo "[PASS] chatImagePath: $CIP (git-ignored)"
+  else
+    echo "[SKIP] chatImagePath: $CIP — could not determine whether it is git-ignored, so it may show as a working-tree change."
   fi
 fi
 ```

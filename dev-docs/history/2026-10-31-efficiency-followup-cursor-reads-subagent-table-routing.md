@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-31
 **Branch:** `conductor/efficiency-follow-up-checking-subagents-routing`
-**Version:** v1.65.0
+**Version:** v1.66.0
 **Feedback:** FB-0140 (capacity is not a routing reason)
 **Scope:** `plugins/flow/lib/dispatch_backend.py` + its evals, `plugins/flow/skills/orchestrate/SKILL.md`,
 `plugins/flow/skills/spawn/SKILL.md`, `research/orchestrator-field-manual.md` § 3.
