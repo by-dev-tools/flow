@@ -266,7 +266,11 @@ def main() -> int:
         # indistinguishable from having chosen the default. Declaring it was a
         # precondition for repointing it at a one-file-per-release directory.
         # 34 -> 36 with dispatchBackend + sensitivePaths (the orchestrator suite).
-        check("schema-slot-count-39", len(props) == 39, f"slot count = {len(props)} (want 39)")
+        # 39 with ciWaitSeconds (v1.64.0); 41 with captureBackend + chatImagePath
+        # (v1.65.0). Two concurrent branches each swept 38 -> their own number and
+        # both were right in isolation; the merged tree is neither. This check is
+        # what forced the question at rebase rather than after merge.
+        check("schema-slot-count-41", len(props) == 41, f"slot count = {len(props)} (want 41)")
         # And no shipped surface may contradict it. Deliberately WRAP-TOLERANT: the
         # literal is matched across newlines, because the survivor that slipped this
         # PR's first sweep was `all 30\n  slots` wrapped inside doctor/SKILL.md's

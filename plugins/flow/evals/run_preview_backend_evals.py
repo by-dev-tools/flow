@@ -368,9 +368,21 @@ def test_no_vendor_token_in_plugin():
     check("vendor/existing-sweep-covers-the-shared-lib-dir",
           'PLUGIN / "lib"' in sweep and "HOST_LITERALS" in sweep,
           "if that sweep stops scanning plugins/flow/lib, this lib loses its guard")
-    check("vendor/sweep-count-was-bumped-for-this-lib",
-          "scanned == 12" in sweep and "preview_backend at v1.60.0" in sweep,
-          "the exact count is the mechanism; bumping it with a reason is the cost")
+    # DERIVE the expected count rather than pinning the literal the sweep happens to
+    # carry today. A hardcoded `scanned == 12` here made every future shared lib a
+    # two-file edit, and this harness would go red for a change that has nothing to do
+    # with previewBackend -- which is how a pin stops being read as signal. What this
+    # harness actually owns is the JOIN: the sweep still covers this directory, and its
+    # inventory still names this lib.
+    n_libs = len(list((FLOW / "lib").glob("*.py")))
+    check("vendor/sweep-count-matches-the-directory",
+          ("scanned == %d" % (6 + n_libs)) in sweep,
+          "the sweep scans 4 SKILL.md + 2 skill libs + every plugins/flow/lib/*.py (now "
+          "%d); its exact count must track the directory or it silently stops covering "
+          "part of it" % n_libs)
+    check("vendor/sweep-inventory-still-names-this-lib",
+          "preview_backend at v1.60.0" in sweep,
+          "the count alone cannot tell you WHICH files it covers")
     # POSITIVE, paired: the vendor-naming EXAMPLE must survive in the schema, or the
     # negative above could be satisfied by deleting the documentation.
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))

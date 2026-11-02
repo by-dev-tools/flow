@@ -25,7 +25,7 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 > replaced by whatever Ben sets next — not silently carried forward as the implied stopping point
 > once it's been reached.
 
-**Plugin at v1.66.0 (this PR — `/flow:post-merge` is now `/flow:retro`, FB-0141).** Ben reaches
+**Plugin at v1.67.0 (this PR — `/flow:post-merge` is now `/flow:retro`, FB-0141).** Ben reaches
 for this skill as "the workspace retro" — relayed from `byamron/portfolio`, since that workspace's
 contribution queue couldn't survive its own archival. Renamed the directory + frontmatter `name`
 and every live reference (workflow-help, `docs/workflow.md`, `/flow:land`'s caller text, doctor's
@@ -36,7 +36,12 @@ first against Claude Code's own docs and confirmed plugin skills have no author-
 mechanism. Historical records (changelog, history, this section's own "Shipped"/"Prior" narrative
 below) deliberately left naming `post-merge`, since they describe what was true when those PRs
 shipped. Also filed (not built): § Next now carries the `/flow:ship` Step 5b version-gate fallback
-gap the same relay surfaced — a judgment call for its own future plan, not decided here.
+gap the same relay surfaced — a judgment call for its own future plan, not decided here. **Version
+re-swept v1.66.0 → v1.67.0 at this rebase:** `conductor/efficiency-follow-up-checking-subagents-routing`
+(#187) claimed v1.66.0 first and was still queued ahead of this PR, so this PR re-sweeps up one
+more — the same precedent #184, #185, #186, and #187 each set in turn.
+
+**Previously: v1.65.0 (shipped [#186](https://github.com/by-dev-tools/flow/pull/186) — a captured still frame reaches the human in the chat message and in the PR description; roadmap D7's § Next "inline chat images" item, which this closes, no new FB). The third and last route to a reviewer's eye, and the only one with no dependency on something staying alive or public: v1.60.0's preview URL stops serving when its workspace sleeps, v1.59.0's PR-body image needs the repo to be public, and the local path is honest and unreachable by construction. A `captureBackend` host adapter modelled on `previewBackend` — **one** verb `screenshot`, a CLOSED `{url}`/`{out}`/`{width}`/`{height}` vocabulary in which **all four are required**, because a template that cannot be told a size produces two identical frames under two different size labels. **SUCCESS IS THE ARTIFACT, NEVER THE EXIT STREAM**, and that came from measurement rather than taste: every headless run prints `Failed to connect to the bus` to stderr and still exits 0 with a correct PNG, so a stderr-sensitive reader discards every working capture while an exit-code-trusting one accepts a truncated file. The engine reads the PNG magic bytes and the IHDR dimensions and consults the exit code only to make an already-failed reason specific. A page declaring no UTF-8 charset is **REFUSED before capture, not warned about** — a screenshot of a mojibake page is a picture that lies, published into the one message the human is guaranteed to read, and nothing downstream can tell it from a correct one. **ONE image in the chat, both in the PR body:** the ~100-word gate-1 budget exists because the messages were too long to read, and while image syntax costs no prose words, an image is not free attention. PR-body frames are committed per-PR under `<dir of visualHistoryPath>/pr-frames/<branch-slug>/` and deliberately NOT in the curated visual-history record, whose own §5c calls it curated rather than a per-PR dump — and the per-PR directory IS the own-PR guard: another PR's frames are not excluded by a comparison, they are never listed. ~20 KB per visual PR, measured and accepted. Schema 39 → 41 slots (`captureBackend`, `chatImagePath`), on top of v1.64.0's `ciWaitSeconds`, fan-out fixed at five shipped sites plus two eval harnesses whose hardcoded counts were re-keyed — and re-swept a second time at rebase, because #184 had concurrently swept the same five sites to 39 for its own new slot, so both branches were individually right and the merged tree was neither. `/flow:doctor` Check 2.14 WARNs on a malformed template, because this feature also fails **open and invisible**. See `dev-docs/history/2026-10-06-captured-frames-in-the-chat-and-the-pr-body.md`.)**
 
 **Previously: v1.64.0 (shipped [#184](https://github.com/by-dev-tools/flow/pull/184) — `/flow:ship` never calls a PR "ready" that GitHub would block, FB-0137).** `gh pr checks` cannot carry a three-way verdict (passing / failing / not-yet-run) through its own exit code — measured, not assumed — so the gate reads the `--json` rollup instead and treats a still-running check as neither ready nor failed. `ship-spike` reports the same three states but drafts only on a genuine failure, keeping its existing halt-and-adjudicate shape rather than importing full draft-gating. **Autonomy correction mid-build:** the first design let the gate author, commit, and push a fix for a red check unsupervised; narrowed to propose-only (the same shape `coverage` gaps already take) because an unattended write to the branch is the risk class the autonomous-work guardrails exist for — the skill prose and the human-facing copy were updated together so neither promises a push the code no longer makes. Recently shipped: **v1.62.0 ([#183](https://github.com/by-dev-tools/flow/pull/183) — an explicit `Visual-walk: N/A` no longer forces a visual-significance false positive), v1.61.0 ([#179](https://github.com/by-dev-tools/flow/pull/179) — worker messages identifiable at a glance, and fleet state glanceable without scrolling chat; FB-0132/FB-0133), v1.57.0 ([#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131).**
 
@@ -418,6 +423,16 @@ other workers, so nobody should duplicate them here.
   an unauthenticated `raw.githubusercontent.com` fetch is 200 for a public blob and **404** for a
   private one — and `/blob/` links, openable by any authorised viewer on any client, in every other
   case including "`gh` could not tell us".
+- **Still frames, captured. SHIPPED v1.65.0.** The gate-1 chat message carries one captured
+  phone-width frame, and the PR body carries both frames committed per-PR. A `captureBackend` host
+  adapter (one verb, a CLOSED `{url}`/`{out}`/`{width}`/`{height}` vocabulary, all four required)
+  plus a `chatImagePath` slot, both unset by default. **Success is the artifact, never the exit
+  stream** — measured, a headless run writes dbus noise to stderr on every invocation and still
+  exits 0 with a correct PNG, so the engine asserts a real PNG of exactly the requested dimensions
+  and consults the exit code only to make an already-failed reason specific. A page declaring no
+  UTF-8 charset is **refused**, not warned about: a screenshot of a mojibake page is a picture that
+  lies, published into the one message the human is guaranteed to read. Closes the § Next item
+  below. See `dev-docs/history/2026-10-06-captured-frames-in-the-chat-and-the-pr-body.md`.
 - **Option 1 — a served preview URL. SHIPPED v1.60.0**, as a `previewBackend` host adapter
   rather than a hardcoded vendor CLI: three verbs (`serve`/`publish`/`unpublish`), a closed
   `{dir}`/`{port}` vocabulary with **no `{url}`** (the URL is output, never something a
@@ -676,8 +691,8 @@ the exact confusion this PR fixed in one place.
 
 ### `docs/upgrade.md`'s bump-cadence table doesn't know a minor bump can carry breaking changes (push-further finding, rename-to-retro PR)
 
-**The problem.** `changelog/v1.66.0.md` (the `/flow:retro` rename) is this changelog's first-ever
-entry with `Breaking changes: yes`, and it ships on a **minor** version bump (1.64.0 → 1.66.0).
+**The problem.** `changelog/v1.67.0.md` (the `/flow:retro` rename) is this changelog's first-ever
+entry with `Breaking changes: yes`, and it ships on a **minor** version bump (1.64.0 → 1.67.0).
 `docs/upgrade.md`'s "when to run it" cadence table only tells a reader to check the
 `Breaking changes:` line on a *major* bump; its minor-bump row frames minor bumps as purely
 additive and gives no cue to check for breaking changes there at all. A consumer following that
@@ -726,7 +741,14 @@ roadmap entry.
 **Surfaces when:** `/flow:ship` Step 5b's version-resolution logic is next touched, OR another
 project with no real release-versioning discipline reports the same false-block / false-pass pair.
 
-### Inline chat images as the always-available route for still frames (D7, option 1's sibling)
+### ~~Inline chat images as the always-available route for still frames (D7, option 1's sibling)~~ — ✅ SHIPPED v1.65.0
+
+**Closed by v1.65.0** (`captureBackend` + `chatImagePath`; see D7's third shipped bullet above and
+`dev-docs/history/2026-10-06-captured-frames-in-the-chat-and-the-pr-body.md`). Kept here rather than
+deleted because the reasoning below is what shaped the answer: the design question really was
+*when* to include an image, and the answer shipped is **one** — the phone frame — with the desktop
+frame committed into the PR body instead. The capture-path concern was also right: it became a new
+engine (`lib/capture_frames.py`), not a string change.
 
 **Recommended to Ben as the next mobile item** (orchestrator, 2026-10-04), and deliberately **not**
 folded into v1.60.0's adapter PR: that would have widened "an adapter" into "an adapter plus a
@@ -895,6 +917,175 @@ had already ruled on.
 
 **Surfaces when:** `/flow:staff-review` or `/simplify`'s orchestration is next touched, or when
 anyone asks why `/flow:ship` still needs an explicit "ship it" on a clean run.
+
+### Captured frames: eight findings from v1.65.0's two staff-review rounds, deliberately not fixed at ship
+
+All eight are real, all eight were raised by the lens agents across two review rounds, and none is
+a correctness bug the PR ships with. Routed here rather than absorbed because each widens the PR
+past "capture a frame and put it where the human is". Items 1–4 came from round one, 5–8 from the
+rigor-gate's re-review on the final tree.
+
+1. **Frames are DPR-1, and the dimension check makes retina capture structurally impossible.**
+   `capture_frames.capture()` asserts `size == (width, height)` exactly, so a backend capturing at
+   device-pixel-ratio 2 is refused. A 390×844 PNG sits at 1:1 inside GitHub's ~800px body column —
+   visibly softer than every other screenshot on that page. v1.65.0 fixed only the *reason* (a 2x
+   capture now says so instead of blaming the template). The real fix is to accept an integer
+   multiple `k` and carry `k` into the row so the caption still states the CSS size.
+2. **Dark mode is never photographed.** `design-language.md` commits the walkthrough report to
+   `prefers-color-scheme` support; headless browsers default to light, so every frame is the light
+   arm and nothing says so. Either capture a dark frame (widening `FRAMES` and the per-PR byte
+   budget) or state the limitation beside the frames.
+3. **The two frames render at wildly different scale when stacked.** The phone frame is 390px wide
+   and 844 tall at 1:1; the desktop frame downscales 1280→~800 (≈540 tall). The "small" viewport is
+   the physically larger, sharper image, and a reader scrolls past 844px of phone to reach the thing
+   it is meant to be compared against. The fix (HTML `<img width>`, or a two-column table) collides
+   with `artifact-handoff.py`'s escaping policy and its one deliberate soft break, which is correct
+   as written and should not be traded casually.
+4. **`## Before / after` is the wrong heading for an after-only set.** v1.65.0 names the absence in
+   the lead ("there is no *before* here"), which is the honest minimum. A per-source heading is the
+   right answer and is a genuine fan-out: the string is pinned at ~8 sites including
+   `pr-coherence.py`'s body slot, both SKILL templates, and five eval arms.
+
+5. **The captures arm retires the record's POINTER even when a record exists.** Round two's fix made
+   `auto` fall through when there are *zero* captures; when there are captures, the record's closing
+   sentence — "The full record — rationale, decision test, questions carried — is `…`" — is dropped,
+   and `_omit_with_record`'s own docstring calls that "the single most useful sentence in the
+   render". The premise licensing it (`/flow:ship` §5d: "a PR that has no curated visual-history
+   record to draw on") is false in every state §5d runs, because §7a *requires* a visual-history
+   entry under the identical `visual_significant` gate. Shape: when the newest entry's branch
+   matches, append `render_frames`' existing record string to the captures closing — one
+   conditional, one shared string — and correct §5d's prose to say the captures source *leads*
+   rather than substitutes. Deferred because "what the body carries when both sources are live" is
+   a body-length call that item 4 above already owns the adjacent half of.
+6. **Multi-label directories interleave by viewport and never prune the other label.**
+   `_captures_section` sorts `(frame, label)`, so two artifacts render as phone-A, phone-B,
+   desktop-A, desktop-B rather than as two coherent pairs — while the lead says "the surface as this
+   PR leaves it, at two widths". Separately, `capture()` unlinks only the label it is capturing and
+   `git add "$FRAME_DIR"` stages everything, so a branch whose earlier ship captured `walkthrough`
+   and whose later ship captures `prototype` publishes the previous iteration's walkthrough frame
+   under this PR's name. Within a label the engine refuses exactly this; across labels it does not.
+7. **The asset exclusion is broader than the writer's path.** `FLOW_CAPTURED_FRAMES` matches a
+   `pr-frames/` segment anywhere, but flow only ever writes under
+   `<dir of visualHistoryPath>/pr-frames/<slug>/`. A consumer whose own `docs/pr-frames/` holds real
+   screenshots is silently de-signalled by a flow-internal directory name inside a project-agnostic
+   artifact. An optional `--captured-frames-dir` (the shape `--asset-patterns` already uses) would
+   scope it without adding the cross-module import that was correctly refused.
+8. **`_captures_section` enumerates the WORKING TREE and verifies against the commit.** A frame
+   present at `<sha>` but absent from the working tree is invisible, and under the shipped `auto`
+   default that silently selects the *record* source instead of the committed frames. Strictly
+   better than the previous behaviour (which omitted entirely), so not a regression — but the
+   enumeration source now decides which of two sources ships. Closed by enumerating with
+   `git ls-tree <sha>:<rel_dir>`.
+
+**Surfaces when:** `plugins/flow/lib/capture_frames.py`, `artifact-handoff.py`'s `_embed_section`
+or `_captures_section`, `visual-significance.py`'s asset signal, or `dev-docs/design-language.md`
+is next touched.
+
+### The design-language doc's screenshot rule is now contradicted by a shipped surface
+
+**NOT a new item — this is evidence for § Exploration's "A copy/console-voice section for flow's
+human-facing text surfaces", whose trigger ("a fourth human-facing rendered surface appears") this
+PR fires.** Recorded here only because it is a *concrete contradiction* rather than a gap, and a
+contradiction that nobody wrote down gets discovered instead of decided. Fold it into that entry
+when it is picked up; do not build a rival item.
+
+`dev-docs/design-language.md` line 36 sets flow's only screenshot policy: cap display width at
+600px, resize to ~460–620px before persisting, warn over ~500KB. v1.65.0 commits 1280px frames that
+are never resized and carry no size warning. Cheap in practice (~20 KB measured) and wrong in
+principle. Both of the new surfaces — the PR-body frame embed and the gate-1 chat message — are
+ungrounded by that doc's own scope line, which is the gap the Exploration entry already names.
+
+### The provenance reporter says "no in-session signal exists" — but the agent has one
+
+**Measured during v1.65.0's ship, and the reporter was wrong in flow's own favour.** The
+`## Flow run` provenance block states: *"This host exposes no run-pinned signal for the flow plugin,
+so the number above is read from the plugin registry… There is no in-session check on this host."*
+On that ship the registry read **1.64.0** while the session was in fact running **1.60.0** — the
+`SessionStart` currency hook had updated the install mid-session, which per FB-0107 takes effect
+only on restart. The reporter's own caveat describes this exact case and then cannot detect it.
+
+**But a signal does exist, and the agent sees it on every invocation:** a skill's loaded base
+directory is printed when the skill is invoked, and it is version-pinned
+(`…/plugins/cache/flow/flow/<version>/skills/<name>`). That is the copy Claude Code actually
+resolved — the ground truth the registry number only approximates.
+
+**Why it is not a one-line fix.** `plugin-provenance.py` is a Python script; it cannot see the
+skill's base directory, because that string is given to the *model*, not to the process. So the fix
+is not in the reporter — it is a line in `/flow:ship` instructing the agent to compare the base
+directory it was handed against the version the reporter printed, and to correct the row when they
+disagree. That makes a gate's output depend on an agent remembering to look, which is the shape this
+repo is usually trying to remove, so it wants a deliberate decision rather than a quick patch.
+
+**Surfaces when:** `plugins/flow/skills/ship/lib/plugin-provenance.py` or the `## Flow run`
+provenance block in `/flow:ship` is next touched, or FB-0107 is revisited.
+
+### A gate-1 sentence is adjusted by exact-string match, so a reword silently stops the adjustment
+
+**Filed as its own entry at the human's instruction, rather than left as a sentence in v1.65.0's PR
+body** — "works until someone edits a string" is a class this repo keeps finding and re-finding, and
+it should be discoverable without excavating one PR's history.
+
+`artifact-handoff.render_local_line` rewrites one sentence when a captured frame is attached to the
+gate-1 message:
+
+```python
+line = line.replace(
+    "The small floating comment dock is flow's, not the design.",
+    "The small floating comment dock is flow's, not the design — it is in the page itself, "
+    "not in the frame below.")
+```
+
+The adjustment exists because the frame is of `prototype.html`, which carries no dock, while the
+*served link* in the same message does — so without it a reader sees a dock-free picture directly
+under a sentence about a dock and goes looking for one, inside a ~100-word budget.
+
+**Why it is not urgent.** The failure is bounded in the safe direction: a reword can only stop the
+adjustment from happening, never make it assert something false. And the sentence is pinned —
+`local/prototype-names-the-dock` and `sites/prototype-*-keeps-the-dock-note` both assert the
+substring `comment dock is flow's, not the design` survives — so the string cannot simply vanish.
+
+**Why it is still worth fixing.** The pin protects the *base* sentence, not the *adjustment*: a
+reword that keeps the pinned substring while changing the surrounding words (adding a clause before
+the period, say) passes every check and silently drops the amendment. Nothing fails; the reader just
+quietly gets the confusing version back.
+
+**Shape of the fix:** compose the sentence from two parts at render time — a base clause and an
+optional frame clause selected by whether `chat_image` is set — so there is no string to match and
+no edit that can desynchronise them. ~10 lines in one function, plus re-keying the two site evals to
+the composed form. It was not done in v1.65.0 because the alternative on the table was editing
+wording that an existing check pins, mid-ship, on a surface the whole PR is about.
+
+**Surfaces when:** `artifact-handoff.py::render_local_line` is next touched, or the gate-1 dock
+sentence is reworded for any reason.
+
+### `render_template`'s two trailing hint parameters stopped being honest at the third adapter
+
+**Found during v1.65.0, routed here deliberately rather than fixed in that PR** (orchestrator call):
+the fix is a refactor of a function three shipped adapters now call, and bundling it with a feature
+PR would make the feature's diff unreviewable for the one reason the refactor exists.
+
+`dispatch_backend.render_template` takes `shell_operator_hint=""` and `placeholder_hint=""` so that
+sharing the refusal POLICY does not flatten the REMEDIATION — the advice a preview author needs
+("put the backgrounding inside a script the template calls") is meaningless for a dispatch verb.
+That was a clean trade for two adapters. The v1.60.0 review said explicitly that it would stop being
+one at a third, and **v1.65.0 is that third**: `captureBackend` passes both hints, so the call sites
+now carry three unrelated remediation vocabularies threaded through two positional-ish keywords with
+no structure tying a hint to the refusal branch it belongs to.
+
+**The same PR surfaced a second, larger copy of the same shape**, and it belongs in this item
+rather than in a third: `validate()` is now triplicated across `dispatch_backend`,
+`preview_backend` and `capture_frames` — 34 of 48 stripped lines identical between the latter two
+(the dummy-value render, the prefix strip, the `extra`-placeholders branch, the `ESSENTIAL` fold).
+Whoever does the hint refactor should lift `validate` at the same time; doing one without the other
+touches the same three files twice.
+
+**Shape of the fix:** convert the two hints into a per-branch mapping the caller supplies —
+`{"shell_operator": "...", "unknown_placeholder": "..."}` — keyed by the refusal branch rather than
+by argument position, so adding a fourth refusal branch cannot silently ship with no advice. That is
+the trigger the v1.60.0 review already recorded; this entry is it firing.
+
+**Surfaces when:** `plugins/flow/lib/dispatch_backend.py::render_template` is next touched, or a
+fourth `*Backend` adapter is proposed.
 
 ### `dispatchBackend` has the same unset gap in THIS repo that `previewBackend` just closed
 

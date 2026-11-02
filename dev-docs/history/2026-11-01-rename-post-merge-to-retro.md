@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-01
 **Branch:** `conductor/rename-post-merge-to-retro`
-**Version:** v1.66.0
+**Version:** v1.67.0
 **Feedback:** FB-0141
 **Scope:** `plugins/flow/skills/post-merge/` → `plugins/flow/skills/retro/` and every live
 reference to it.
@@ -97,7 +97,7 @@ missed the second.
   boundary (`dev-docs/roadmap.md` needed both kinds of edit within the same file).
 - `/simplify`'s altitude lens caught something the other three lenses (and the author) missed on a
   diff that looked "too mechanical to need a quality pass": `CHANGELOG.md` states its own format
-  contract — every entry needs a "Breaking changes:" line — and the new `changelog/v1.66.0.md`
+  contract — every entry needs a "Breaking changes:" line — and the new `changelog/v1.67.0.md`
   skipped it on the reasoning that a pure find-and-replace rename "obviously" isn't the kind of
   change that needs one. It is exactly that kind of change: the one place consumers are told to
   check before upgrading is precisely where a hard rename with no alias should have been flagged.
