@@ -225,6 +225,15 @@ one PR and are independent.
   scope and asks rather than building it (observed 2026-11-01, the audit-skips-plugin-root fix
   surfacing that four sibling skills share its bug, and asking whether to widen or follow up) is
   this rule working, not a stall.
+- **Token efficiency over schedule speed, and overage/tier changes are Ben's call, never
+  flow's to propose.** Stated directly (2026-10-05): *"If I run out of usage I run out of
+  usage, I just want to make sure that we're not wasting the tokens we have. Lost time isn't a
+  concern right now… If I do get a higher tier in the future, flow should already be tuned to
+  be as efficient as possible."* No overage or tier change absent that request; a higher tier
+  would be preferred over overage if that ever changes. This is the priority `/flow:spawn`
+  step 2's "needs the capacity" routing failure violates — route each job by what it needs, and
+  raise a genuine capacity shortfall to Ben as a decision rather than quietly ration it through
+  model/effort choice.
 
 ## 4. Program facts a fresh seat asks for in its first hour
 

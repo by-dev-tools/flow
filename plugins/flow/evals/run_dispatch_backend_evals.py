@@ -121,7 +121,7 @@ check("{message} is not in the known vocabulary at all", "message" not in D.KNOW
 # refuses at render is the check-passes/dispatch-fails class the doctor check exists
 # to prevent — `{branch}` was exactly that and was removed.
 _suppliers = set()
-for _req, _p, _m in D.VERBS.values():
+for _req, _p, _m, _opt in D.VERBS.values():
     _suppliers |= _req
 check("every advertised placeholder is required by at least one verb (none validates "
       "then refuses at render)", D.KNOWN_PLACEHOLDERS == _suppliers,
@@ -188,6 +188,41 @@ for _label, _adapter in [("clean", GOOD)] + list(_HISTORICAL.items()):
               f"(check-clean implies dispatchable)", _e is None, str(_e))
 check("a clean adapter still reports all five verbs configured — the closing assertion "
       "must not reject valid templates", D.validate(GOOD)["configured"] == 5)
+
+print("\n§2b  readSince — the one OPTIONAL verb")
+# (a) Absent is NOT a failure for this verb alone — the orchestrator workflow still
+# applies in full, it only loses the cheap path. Paired against every OTHER verb's
+# absence, which DOES fail (line ~108 above), so "optional" is this verb's property,
+# not a loophole in validate() generally.
+_r = D.validate(GOOD)
+check("readSince absent from an otherwise-complete adapter still validates OK",
+      _r["ok"] and _r["verbs"]["readSince"]["state"] == "absent"
+      and _r["verbs"]["readSince"]["problems"] == [])
+check("  ... and is reported as optional, so a caller can tell it apart from a real gap",
+      _r["verbs"]["readSince"]["optional"] is True)
+check("  ... and every required verb's own optional flag reads False",
+      all(_r["verbs"][v]["optional"] is False
+          for v in ("listWorkers", "createWorker", "sendMessage", "workerStatus", "selfSession")))
+# (b) Configured correctly, it renders like any other two-placeholder verb.
+_WITH_CURSOR = {**GOOD, "readSince": "xctl session read {session} --since {cursor} --json"}
+check("readSince with {session}{cursor} validates", D.validate(_WITH_CURSOR)["ok"])
+_a, _e = D.render(_WITH_CURSOR, "readSince", {"session": "abc-123", "cursor": "tok-7"})
+check("  ... and renders both placeholders", _e is None
+      and _a == "xctl session read abc-123 --since tok-7 --json".split(), str(_e))
+# (c) {session} alone — missing the required {cursor} — is invalid, same shape as any
+# other verb missing a required placeholder.
+_NO_CURSOR = {**GOOD, "readSince": "xctl session read {session} --json"}
+_r = D.validate(_NO_CURSOR)
+check("readSince with {session} alone (missing {cursor}) is invalid",
+      not _r["ok"] and any("cursor" in p for p in _r["verbs"]["readSince"]["problems"]),
+      json.dumps(_r["verbs"]["readSince"]["problems"]))
+# (d) {cursor} is scoped to readSince alone — referencing it on any other verb is the
+# same unknown-placeholder-on-this-verb shape §2 already covers for {session}/{branch}.
+_CURSOR_ELSEWHERE = {**GOOD, "workerStatus": "xctl session status {session} --since {cursor}"}
+_r = D.validate(_CURSOR_ELSEWHERE)
+check("{cursor} referenced on a verb that does not supply it is invalid",
+      not _r["ok"] and any("cursor" in p for p in _r["verbs"]["workerStatus"]["problems"]),
+      json.dumps(_r["verbs"]["workerStatus"]["problems"]))
 
 print("\n§3  safe rendering")
 argv, err = D.render(GOOD, "sendMessage", {"session": "abc-123", "messageFile": ".flow/msg.md"})
@@ -296,8 +331,9 @@ for name in SUITE:
     txt = (PLUGIN / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
     check(f"POSITIVE: {name} still reaches the backend or the shared predicate",
           "dispatch_backend.py" in txt or "sensitive_paths.py" in txt)
-check("POSITIVE: the adapter still defines all five verbs",
-      set(D.VERBS) == {"listWorkers", "createWorker", "sendMessage", "workerStatus", "selfSession"})
+check("POSITIVE: the adapter still defines all six verbs",
+      set(D.VERBS) == {"listWorkers", "createWorker", "sendMessage", "workerStatus",
+                        "selfSession", "readSince"})
 
 print("\n§7b  the render extraction's one behavioural delta, measured")
 # Extracting `render_template` (v1.60.0) made `render` refuse an unexpanded `~/`, which

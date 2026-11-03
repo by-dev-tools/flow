@@ -30,9 +30,9 @@ What is pinned, each with its own mutation in --selftest:
                   is prompt text by nature: the sentence IS the mechanism a
                   model reads, so presence of the rule is the decision.
   session-pointer The future-exploration bucket names the deep-dives session for
-                  interaction-feel questions, spelled exactly, with its install
-                  line, and the pointer lives in that bucket and nowhere else in
-                  the bucket list (it is a routing hint, not a fourth bucket).
+                  interaction-feel questions (exact name, with a closing
+                  boundary) and its install line, and no other bucket mentions
+                  deep-dives at all: it is a routing hint, not a fourth bucket.
   lens-b-buckets-exact, lens-b-absence-rule
                   The same two contracts for lens-experience's Lens B, which
                   runs push-further at the brief/plan gate with its own labels.
@@ -108,12 +108,14 @@ def evaluate(lens: str, staff: str, brief: str, experience: str) -> dict[str, tu
                          "lens must state it never blocks and that an uncalled-for "
                          "missing quality is not a finding")
 
-    bullets = {m[1]: m[2] for m in re.finditer(r"^- \*\*([\w-]+)\*\*(.*)$",
-                                               section(lens, "## Findings buckets"), re.M)}
-    fx = bullets.get("future-exploration", "")
-    elsewhere = sorted(k for k, v in bullets.items() if k != "future-exploration" and SESSION_CMD in v)
-    r["session-pointer"] = (SESSION_CMD in fx and SESSION_INSTALL in fx and not elsewhere,
-                            f"future-exploration names session={SESSION_CMD in fx}, "
+    bullets = re.findall(r"^- \*\*([\w-]+)\*\*(.*)$", section(lens, "## Findings buckets"), re.M)
+    fx = " ".join(v for k, v in bullets if k == "future-exploration")
+    # Exact name: a closing boundary, so "/deep-dives:puckett-uncommon-care-v2" does not count.
+    named = re.search(re.escape(SESSION_CMD) + r"(?![\w-])", fx) is not None
+    # Leak marker is the plugin name, not the command: any spelling of the pointer counts.
+    elsewhere = sorted({k for k, v in bullets if k != "future-exploration" and "deep-dives" in v})
+    r["session-pointer"] = (named and SESSION_INSTALL in fx and not elsewhere,
+                            f"future-exploration names session={named}, "
                             f"install={SESSION_INSTALL in fx}; also in other buckets: {elsewhere}")
 
     lens_b = section(experience, "## Lens B", stop="## ")
@@ -153,8 +155,13 @@ def selftest(lens: str, staff: str, brief: str, experience: str) -> list[str]:
          (L.replace(SESSION_CMD, "/deep-dives:uncommon-care"), S, B, E)),
         ("session-pointer", "install line removed",
          (L.replace(SESSION_INSTALL, "the plugin's install"), S, B, E)),
-        ("session-pointer", "pointer leaks into another bucket",
-         (L.replace("- **inline-cheap** —", "- **inline-cheap** — try " + SESSION_CMD + " —", 1), S, B, E)),
+        ("session-pointer", "session name suffixed",
+         (L.replace(SESSION_CMD, SESSION_CMD + "-v2"), S, B, E)),
+        # Shares no text with SESSION_CMD: the leak check must not depend on one spelling.
+        ("session-pointer", "a differently-worded pointer leaks into another bucket",
+         (L.replace("- **inline-cheap** —", "- **inline-cheap** — or try the deep-dives session —", 1), S, B, E)),
+        ("session-pointer", "a duplicate bucket bullet carries the pointer",
+         (L.replace("- **inline-cheap** —", "- **inline-cheap** — see deep-dives —\n- **inline-cheap** —", 1), S, B, E)),
         ("lens-b-buckets-exact", "new label in Lens B's format line",
          (L, S, B, E.replace(fmt_b, fmt_b[:-1] + " | push-further / gate]"))),
         ("lens-b-buckets-exact", "new bucket in Lens B's bucket list only",

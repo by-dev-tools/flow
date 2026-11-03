@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Flow: Claude plans, builds and opens the PR; you approve the plan and merge. deep-dives: interactive design sessions where you make every call.",
-    "version": "1.66.0"
+    "version": "1.67.0"
   },
   "plugins": [
     {
       "name": "flow",
       "source": "./plugins/flow",
       "description": "Runs every coding task through one loop: Claude plans, builds, reviews, and opens the PR. You approve the plan and you merge the PR. Skeptical reviewers check the plan, the \"done\" claims, and any step Claude skipped.",
-      "version": "1.66.0",
+      "version": "1.67.0",
       "author": {
         "name": "by-dev-tools"
       },

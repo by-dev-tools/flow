@@ -1,4 +1,4 @@
-# SAFETY — Push-further never blocks, and deep-dives joins the marketplace (v1.66.0)
+# SAFETY — Push-further never blocks, and deep-dives joins the marketplace (v1.67.0)
 
 **Date:** 2026-11-02
 **Branch:** `florence-v6`
