@@ -13,6 +13,9 @@ surface, may find nothing, and never asks; and an **interactive design session**
 which owns Puckett's 8 lenses and in which the agent generates and evaluates but the human makes
 every taste call. The lens consults the 8 lenses only when the surface is an interaction. Never
 collapse the session into a longer automated critique, and never bind the lens to the eight.
+A **quick mode** inside the session skill is welcome (refined 2026-11-03), as long as it is an
+addition and not a replacement: it recommends, never decides or applies, and ends by handing
+control back to the human.
 
 ## What was said
 
@@ -71,3 +74,11 @@ the same automated judgment, more of it. Ben's distinction is about **who holds 
   (plan-before-code, confidence verdicts) into exactly the place they cost most and earn least. So
   the session cannot live where using it means adopting flow, and its own process must stay
   incubation-weight: throwaway sketches, short turns, no setup.
+- **A quick review belongs in deep-dives too, beside the session, not instead of it.** Ben, after
+  comparing ui-playground's one-pass `/uncommon-care` with the deep-dives session: "we're still
+  forming the shape of deep dives, but i think the lighter weight shape mode would make sense. i want
+  to leave room for back and forth and control and interactivity, but sometimes a quick review is
+  nice." So `/deep-dives:puckett-uncommon-care quick` gives one read through the lenses that fit, a
+  Top 3, and a question back: apply, sketch one, or go deeper. The full session stays the default.
+  ui-playground keeps its own copy for now; Ben will decide whether to switch once the quick mode is
+  in use.
