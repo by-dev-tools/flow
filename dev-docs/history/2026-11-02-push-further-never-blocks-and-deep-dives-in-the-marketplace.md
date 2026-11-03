@@ -103,3 +103,16 @@ copies. Flow's lens and `exploration` skill both pointed at a deep-dive skill "n
 - A concept copied into many repos had drifted in two directions at once: vocabulary (6 vs 8 lenses)
   and purpose (automated critique vs human session). The vocabulary drift was easy to see; the
   purpose split only surfaced when Ben named it.
+
+## Merge-gate decisions (Ben, 2026-11-03)
+
+- **deep-dives' `main` is now protected (security finding, option 1a).** The marketplace lists deep-dives
+  unpinned, and its `main` had no protection while flow's did, so anything pushed there would have reached
+  flow-marketplace installs unreviewed. Chosen over pinning a `sha` (every deep-dives tweak would need a
+  flow PR, the process deep-dives exists to avoid) and over a separate marketplace. Applied: a PR is
+  required, with zero approvals so Ben can merge his own; admins included; force-push and deletion
+  blocked. Verified from this workspace via `gh api` (`protected: true`, `enforce_admins: true`). The
+  roadmap § Next entry on trusting deep-dives' `main` stays open for the day it ships executable code.
+- **The lens's deep-dives pointer is now pinned (coverage finding).** `session-pointer` in
+  `run_push_further_evals.py`.
+

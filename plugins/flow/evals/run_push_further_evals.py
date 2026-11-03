@@ -29,6 +29,10 @@ What is pinned, each with its own mutation in --selftest:
                   call for is not a finding, and that it never blocks. This one
                   is prompt text by nature: the sentence IS the mechanism a
                   model reads, so presence of the rule is the decision.
+  session-pointer The future-exploration bucket names the deep-dives session for
+                  interaction-feel questions, spelled exactly, with its install
+                  line, and the pointer lives in that bucket and nowhere else in
+                  the bucket list (it is a routing hint, not a fourth bucket).
   lens-b-buckets-exact, lens-b-absence-rule
                   The same two contracts for lens-experience's Lens B, which
                   runs push-further at the brief/plan gate with its own labels.
@@ -55,6 +59,8 @@ BUCKETS = {"inline-cheap", "roadmap-concrete", "future-exploration"}
 LENS_B_BUCKETS = {"artifact-revision", "prototype-target", "future-exploration"}
 FORMAT_LINE = re.compile(r"^\[push-further / [^\]]+\]$", re.M)
 ABSENCE_RULE = "doesn't call for is not a finding"
+SESSION_CMD = "/deep-dives:puckett-uncommon-care"
+SESSION_INSTALL = "/plugin install deep-dives@flow"
 TRIAGE_LINE = re.compile(r"^- \*\*(?P<head>[^\n]*?)\*\*(?P<rest>[^\n]*)$", re.M)
 
 
@@ -102,6 +108,14 @@ def evaluate(lens: str, staff: str, brief: str, experience: str) -> dict[str, tu
                          "lens must state it never blocks and that an uncalled-for "
                          "missing quality is not a finding")
 
+    bullets = {m[1]: m[2] for m in re.finditer(r"^- \*\*([\w-]+)\*\*(.*)$",
+                                               section(lens, "## Findings buckets"), re.M)}
+    fx = bullets.get("future-exploration", "")
+    elsewhere = sorted(k for k, v in bullets.items() if k != "future-exploration" and SESSION_CMD in v)
+    r["session-pointer"] = (SESSION_CMD in fx and SESSION_INSTALL in fx and not elsewhere,
+                            f"future-exploration names session={SESSION_CMD in fx}, "
+                            f"install={SESSION_INSTALL in fx}; also in other buckets: {elsewhere}")
+
     lens_b = section(experience, "## Lens B", stop="## ")
     r["lens-b-buckets-exact"] = labels_exact(lens_b, "### Buckets", LENS_B_BUCKETS)
     r["lens-b-absence-rule"] = ("**never blocks**" in lens_b and ABSENCE_RULE in lens_b,
@@ -135,6 +149,12 @@ def selftest(lens: str, staff: str, brief: str, experience: str) -> list[str]:
          (L.replace("You never block", "You rarely block"), S, B, E)),
         ("absence-rule", "not-a-finding sentence removed",
          (L.replace(ABSENCE_RULE, "lacks is a finding"), S, B, E)),
+        ("session-pointer", "session command misspelled",
+         (L.replace(SESSION_CMD, "/deep-dives:uncommon-care"), S, B, E)),
+        ("session-pointer", "install line removed",
+         (L.replace(SESSION_INSTALL, "the plugin's install"), S, B, E)),
+        ("session-pointer", "pointer leaks into another bucket",
+         (L.replace("- **inline-cheap** —", "- **inline-cheap** — try " + SESSION_CMD + " —", 1), S, B, E)),
         ("lens-b-buckets-exact", "new label in Lens B's format line",
          (L, S, B, E.replace(fmt_b, fmt_b[:-1] + " | push-further / gate]"))),
         ("lens-b-buckets-exact", "new bucket in Lens B's bucket list only",

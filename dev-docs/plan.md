@@ -27,6 +27,11 @@ workspace is building `yuan-brand` for the same plugin.
       so and say they never block; Puckett's lenses appear only as an optional frame for interaction
       surfaces. *Pinned by:* `run_push_further_evals.py` checks `absence-rule` and
       `lens-b-absence-rule` (each mutation-caught on every run).
+- [x] **push-further's `future-exploration` bucket points questions about how an interaction should
+      feel to `/deep-dives:puckett-uncommon-care` and names its install, `/plugin install deep-dives@flow`.**
+      Declared at the merge gate (Ben approved audit-coverage's drafted criterion). *Pinned by:*
+      `run_push_further_evals.py` check `session-pointer` (misspelling, a removed install line, and
+      the pointer leaking into another bucket each turn it red).
 - [x] **Provenance reads flow's marketplace entry by name, not position.** A sibling listed first is
       not read as flow, and a version-less flow entry falls back to metadata, not the sibling's.
       *Pinned by:* `run_plugin_provenance_evals.py::test_marketplace_version_is_read_by_name` (red

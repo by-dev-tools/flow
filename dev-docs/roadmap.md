@@ -654,11 +654,12 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 **Owner: Ben, before deep-dives gains a hook, a script, or a `!` block.** `.claude-plugin/marketplace.json`
 lists `deep-dives` by GitHub source with no `ref`/`sha`, so whatever lands on that repo's `main` is
-offered to every user of this marketplace without passing flow's review. That was the deliberate
-tradeoff (FB-0141: deep-dives exists to avoid flow's per-change process), and today it ships only
-markdown. It stops being cheap the day it ships anything that executes. Two options, unevaluated:
-pin a `sha` and bump it on purpose, or write the trust decision into `.claude/rules/safety.md` so a
-reviewer does not have to rediscover it. **Surfaces when:** `.claude-plugin/marketplace.json` is edited,
+offered to every user of this marketplace. **Partly closed 2026-11-03:** Ben chose to protect
+deep-dives' `main` (PR required, zero approvals, admins included, no force-push), so every change is
+now a visible PR rather than a silent push. What stays open: protection makes changes *visible*, not
+*reviewed*, and that is enough only while deep-dives ships markdown. It stops being enough the day it
+ships anything that executes. Two further options, unevaluated: pin a `sha` and bump it on purpose,
+or write the trust decision into `.claude/rules/safety.md` so a reviewer does not have to rediscover it. **Surfaces when:** `.claude-plugin/marketplace.json` is edited,
 or deep-dives adds `hooks/`, `scripts/`, or a `!` block.
 
 ### Should lens-experience's Lens A still be able to BLOCK on a missing "feel"? (from v1.66.0's /simplify)
