@@ -14,13 +14,25 @@ rejected alternative was a backend *name* the plugin maps to a built-in command
 table — which would have put host literals straight back into shipped artifacts,
 i.e. the thing the adapter exists to prevent.
 
-Five verbs, and the placeholder vocabulary is **closed**:
+Six verbs, and the placeholder vocabulary is **closed**:
 
     listWorkers   (no placeholders)      re-derive live state; never a snapshot
     createWorker  {name} {messageFile}   spawn a worker, first message = the brief
     sendMessage   {session} {messageFile} message an existing session
     workerStatus  {session}              last-activity, for the silent-worker sweep
     selfSession   (no placeholders)      this seat's own id — the ping return address
+    readSince     {session} {cursor}     OPTIONAL — messages since a cursor, not the whole
+                                          history (dev-docs/research/2026-10-efficiency-audit.md
+                                          §3: a full re-walk every check measured as the
+                                          orchestrator's 3rd-largest Bash-output category — 62
+                                          calls, 105,385 characters, over 22 days)
+
+`readSince` is the one verb in this vocabulary that may be legitimately absent — a host with no
+cheap cursor primitive simply doesn't configure it, and `check` reports `absent` (not `invalid`)
+with a named manual fallback: read the worker's full history, or use `workerStatus` for a
+last-activity-only check. `cursor` is opaque: flow stores and replays whatever the backend returns
+(from a prior `readSince`, or from `createWorker`'s reply if the host provides one) and never
+parses or constructs a value itself — the same posture as `selfSession`'s returned id.
 
 **Why there is no `{message}` placeholder, and why an unknown placeholder is a
 hard error.** The orchestrator field manual's trap T6 records the shell-
@@ -71,36 +83,55 @@ PREFIX = "[dispatch-backend]"
 # supplies passes `check` and then fails at `render`, which is exactly the
 # check-passes/dispatch-fails class the doctor check exists to prevent. `{branch}`
 # was in this set with no required verb and no supplier, and was removed.
-KNOWN_PLACEHOLDERS = {"name", "messageFile", "session"}
+KNOWN_PLACEHOLDERS = {"name", "messageFile", "session", "cursor"}
 
-# Verb → (required placeholders, what it is for, what to do by hand if absent).
+# Verb → (required placeholders, what it is for, what to do by hand if absent,
+# optional). `optional=True` is the one load-bearing difference: an absent optional
+# verb does NOT flip `report["ok"]` to False — the orchestrator workflow still
+# applies in full, it only loses the cheap path that verb offers. This lives as a
+# 4th field on the SAME tuple every other fact about a verb already lives in,
+# rather than a second, separately-maintained set — one place to add a verb
+# correctly instead of two that can silently disagree.
 VERBS = {
     "listWorkers": (
         set(),
         "re-derive live worker state (§4.4 'state is live', §4.9 succession)",
         "list the live workspaces in your host's UI or CLI and paste the result",
+        False,
     ),
     "createWorker": (
         {"name", "messageFile"},
         "spawn a worker whose first message is the dispatch brief (§4.10 instruct-not-remote-invoke)",
         "create the workspace by hand and paste the brief as its first message",
+        False,
     ),
     "sendMessage": (
         {"session", "messageFile"},
         "message an existing session — re-address broadcasts, follow-ups, gate relays (§4.8 rules 5/6)",
         "open the worker and paste the message",
+        False,
     ),
     "workerStatus": (
         {"session"},
         "last-activity timestamp for the silent-worker sweep (field manual T2, discharged 2026-09-17 — this verb is what subsumed it)",
         "check each worker's last activity by hand; do NOT read `status`, which cannot "
         "distinguish 'waiting at a gate' from 'rate-limited hours ago'",
+        False,
     ),
     "selfSession": (
         set(),
         "this seat's own session id — the address workers ping back on (§4.8 rule 6, §4.9 step 4)",
         "ask the human for this session's id; do NOT skip the re-address, because a failed "
         "re-address produces silence and silence reads as 'no worker needs anything' (FB-0105)",
+        False,
+    ),
+    "readSince": (
+        {"session", "cursor"},
+        "OPTIONAL — messages since a cursor instead of a full re-read, for the orchestrate step-4 "
+        "sweep and the §8 digest (dev-docs/research/2026-10-efficiency-audit.md §3)",
+        "read the worker's full history by hand, or use `workerStatus` for a last-activity-only "
+        "check — the workflow still applies, it only loses the cheap path",
+        True,
     ),
 }
 
@@ -142,8 +173,9 @@ def load_backend(config_path="flow.config.json"):
             f"{PREFIX} ⚠️ flow.config.json has no `dispatchBackend` slot, so this project has no "
             f"dispatch adapter. The orchestrator workflow still applies — every step that would "
             f"call the backend must be performed by hand, and the skill will tell you which. "
-            f"To wire one, add the five verbs (listWorkers, createWorker, sendMessage, "
-            f"workerStatus, selfSession) as command templates; see the schema."
+            f"To wire one, add the five required verbs (listWorkers, createWorker, sendMessage, "
+            f"workerStatus, selfSession) as command templates — `readSince` is a sixth, optional "
+            f"verb; see the schema."
         ]
     if not isinstance(backend, dict):
         return {}, [
@@ -161,12 +193,18 @@ def validate(backend):
     # three places, with nothing to catch a miss.
     report = {"verbs": {}, "ok": True, "configured": 0,
               "known_placeholders": sorted(KNOWN_PLACEHOLDERS)}
-    for verb, (required, purpose, manual) in VERBS.items():
+    for verb, (required, purpose, manual, optional) in VERBS.items():
         tmpl = backend.get(verb)
-        entry = {"purpose": purpose, "manual_fallback": manual}
+        entry = {"purpose": purpose, "manual_fallback": manual, "optional": optional}
         if tmpl is None:
-            entry.update(state="absent", problems=[f"`{verb}` is not configured"])
-            report["ok"] = False
+            # Absent-but-optional is not a failure: the orchestrator workflow applies in full
+            # either way, it only loses the cheap path this verb offers. Reported as `absent`,
+            # same state name as a required verb's absence, so a caller that filters on `state`
+            # still sees it — but only a required verb's absence flips `report["ok"]`.
+            problems = [] if optional else [f"`{verb}` is not configured"]
+            entry.update(state="absent", problems=problems)
+            if problems:
+                report["ok"] = False
         elif not isinstance(tmpl, str) or not tmpl.strip():
             entry.update(state="invalid", problems=[f"`{verb}` must be a non-empty string"])
             report["ok"] = False
@@ -368,7 +406,7 @@ def render(backend, verb, values):
     """Return (argv, error). `argv` is None when the command cannot be rendered."""
     if verb not in VERBS:
         return None, f"{PREFIX} ⚠️ unknown verb {verb!r}. Known: {', '.join(sorted(VERBS))}."
-    required, _purpose, manual = VERBS[verb]
+    required, _purpose, manual, _optional = VERBS[verb]
     return render_template(
         backend.get(verb), verb, required, KNOWN_PLACEHOLDERS, values, PREFIX, manual,
         "dispatchBackend",
