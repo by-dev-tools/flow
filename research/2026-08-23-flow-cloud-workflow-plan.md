@@ -311,7 +311,7 @@ discipline this session shipped.
 
 Post-merge/archive safety carries a doc-currency requirement: reconcile the forward docs so
 the *next* agent doesn't work from a stale `main`. Pre-orchestrator, that reconciliation is
-what `/flow:post-merge` → `/flow:land` did — a second PR (the doubling §4.5 removes). The
+what `/flow:retro` → `/flow:land` did — a second PR (the doubling §4.5 removes). The
 orchestrator model splits doc-currency into **two lifetimes**, and only the second touches git:
 
 - **Handoff currency — live, immediate, NOT in git.** The next workspace is

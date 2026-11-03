@@ -107,8 +107,8 @@ To customize: edit `flow.config.json` at the project root. The schema lives at `
 | `/flow:spawn` | Dispatch one worker: admission control, `model · effort · why` routing (floored for `sensitivePaths`), the brief, the workspace |
 | `/flow:handoff` | Orchestrator succession: flush durable currency, externalize sandbox-local artifacts, hand over a mechanically-checked brief, archive-safety verdict |
 | `/flow:gate` | Four-axis plan-gate + merge-gate classification, ships-or-paperwork pre-check, escalation formatting. Classifies only — never merges |
-| `/flow:land` | (Post-merge) reconcile forward docs to "merged (#N)" after a human merges; late visual-history distill; opens a `docs: land #N` PR. Type it, or let `/flow:post-merge` call it — never auto-fires, because its §1a gate refuses any PR that isn't already merged |
-| `/flow:post-merge` | (Post-merge, human-only) the "merged — safe to archive?" close-out: queue-safe merge confirm → **calls `/flow:land`** → merge-gate feedback synthesis (user-scope) → branch cleanup → archive-safety verdict |
+| `/flow:land` | (Post-merge) reconcile forward docs to "merged (#N)" after a human merges; late visual-history distill; opens a `docs: land #N` PR. Type it, or let `/flow:retro` call it — never auto-fires, because its §1a gate refuses any PR that isn't already merged |
+| `/flow:retro` | (Post-merge, human-only) the "merged — safe to archive?" close-out: queue-safe merge confirm → **calls `/flow:land`** → merge-gate feedback synthesis (user-scope) → branch cleanup → archive-safety verdict |
 
 # Bundled Claude Code native skills
 

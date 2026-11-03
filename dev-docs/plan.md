@@ -2,6 +2,57 @@
 
 ## Current Focus
 
+**▶ EXECUTED, shipping (this branch `conductor/rename-post-merge-to-retro`, **v1.67.0**, FB-0141):
+`/flow:post-merge` is now `/flow:retro`.** Ben's own words, relayed from `byamron/portfolio`: he
+reaches for it as "the workspace retro," and "post-merge" didn't come to mind when he went looking
+for it by name — even though the name accurately described *when* the skill runs, not *what* it is
+to the person invoking it. Confirmed first, not assumed: Claude Code has no author-definable
+skill-alias mechanism for plugin skills (checked against the official docs before deciding), so this
+is a straight rename with no deprecated-alias period. Renamed the directory + frontmatter `name`,
+then fixed every live reference: `workflow-help`, `docs/workflow.md` (10 occurrences), `/flow:land`'s
+caller text + its `merge-status.py` path, `doctor`'s skill-composition example, three eval harnesses'
+live composition assertions, the `postMergeWaitSeconds` slot's description text (slot name
+unchanged), `README.md`, and the canonical `research/2026-08-23-flow-cloud-workflow-plan.md`. Also
+fixed several not-yet-picked-up `roadmap.md` § Next/§ Later items that named the skill by path —
+forward-looking triggers that would have silently misdirected a future session. Historical records
+(`changelog/`, `dev-docs/history/`, other FB entries, and the "Shipped"/"Prior" narrative in this
+doc's own retained blocks below and in `roadmap.md` § Now) deliberately left naming `post-merge` —
+they describe what was true when those PRs shipped, under the name the skill had then.
+
+**Also filed, not built:** a `roadmap.md` § Next entry for an unrelated gap in the same relay —
+`/flow:ship` Step 5b's doc-currency version gate has no good fallback for a project with no real
+release-versioning discipline (`byamron/portfolio`'s Vite-scaffolded `package.json` stuck at
+`0.0.1`). What the fallback should be is a judgment call with more than one defensible answer, so
+it gets its own future plan rather than a decision made inside this PR.
+
+**Mode:** feature · **Surface:** non-visual (skill rename + doc/eval fan-out; no UI). Small enough to
+run straight through to `/flow:ship` without a separate plan gate, per the dispatch.
+
+### Spec-walk
+
+- [x] `plugins/flow/skills/retro/` exists with frontmatter `name: retro`; `plugins/flow/skills/post-merge/`
+  no longer exists. Verify: `grep -n "^name: retro" plugins/flow/skills/retro/SKILL.md` finds it;
+  `ls plugins/flow/skills/post-merge` fails.
+- [x] Every live `/flow:post-merge` reference across the plugin resolves to `/flow:retro` — the
+  skill-composition evals, `workflow-help`, `docs/workflow.md`, `land/SKILL.md`, `doctor/SKILL.md`,
+  `handoff/SKILL.md`, and `README.md`. Verify: `grep -rn '/flow:post-merge' plugins/flow/ README.md`
+  returns exactly two lines — `doctor/SKILL.md`'s deliberate "`/flow:retro` (formerly
+  `/flow:post-merge`)" historical clarifier, and `flow.config.schema.json`'s `postMergeWaitSeconds`
+  description carrying the same kind of clarifier — not zero, and not more than those two.
+- [x] The `postMergeWaitSeconds` schema slot's description text says `/flow:retro`, not
+  `/flow:post-merge`; the slot name itself is unchanged. Verify: `grep -n "flow:retro"
+  plugins/flow/schema/flow.config.schema.json` finds it in the `postMergeWaitSeconds` entry.
+- [x] No deprecated alias was added, because none exists for plugin skills — confirmed against
+  Claude Code's own docs before deciding, not assumed. Verify: `grep -c "^aliases:"
+  plugins/flow/skills/retro/SKILL.md` returns 0; the rename rationale is stated with its citation in
+  this doc and in FB-0141.
+- [x] `run_land_evals.py`, `run_merge_status_evals.py`, and `run_skill_composition_evals.py` all pass
+  against the renamed skill, including the live composition assertions (`retro` calls `land`, `retro`
+  stays `disable-model-invocation: true`). Verify: `bash tools/eval-sweep.sh` → 47/47 GREEN by exit code.
+- [x] A new FB entry (FB-0141) and a `dev-docs/roadmap.md` § Next entry exist for the two things this
+  dispatch said to route rather than build (the rename rationale + relay-mechanism note; the portfolio
+  doc-currency gate gap). Verify: `ls dev-docs/feedback/FB-0141*.md` shows the file; `grep -n
+  "byamron/portfolio" dev-docs/roadmap.md` finds the filed entry.
 **▶ EXECUTING (resumed 2026-10-31 after a merge-ping gap from 2026-10-06 — #179 merged, nothing on
 the worker's end was wrong), this branch `conductor/efficiency-follow-up-checking-subagents-routing`:
 the token-efficiency follow-up — cursor-based worker reads, a workspace-vs-subagent table, and

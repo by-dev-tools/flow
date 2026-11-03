@@ -3,7 +3,7 @@ name: land
 description: >
   Post-merge doc-currency reconciliation. Runs only AFTER a human merges a PR
   (Claude can't merge, so this can't live inside /flow:ship). Reachable two ways:
-  the human types it, or /flow:post-merge §3 calls it — and /flow:post-merge is
+  the human types it, or /flow:retro §3 calls it — and /flow:retro is
   itself human-invoked, so a human gate always sits above it. It must NEVER
   auto-fire at the end of a loop; §0 states that precondition and §1a enforces it
   mechanically by refusing any PR that is not already merged. It flips the merged
@@ -33,7 +33,7 @@ This skill opens a PR, so **it must never auto-fire at the end of a loop.** Ther
 are exactly two legitimate ways in:
 
 1. A human typed `/flow:land <PR#>`.
-2. `/flow:post-merge` §3 called you — and `/flow:post-merge` is itself
+2. `/flow:retro` §3 called you — and `/flow:retro` is itself
    `disable-model-invocation: true`, so a human typed *that*.
 
 Anything else — you noticed a merge and decided to reconcile, a ship pipeline
@@ -42,8 +42,8 @@ Stop and say so rather than proceeding.
 
 **Why this is a precondition and not a frontmatter flag (FB-0077).** `/flow:land`
 carried `disable-model-invocation: true` until v1.25.0. That flag blocks *all*
-programmatic invocation, which also blocked `/flow:post-merge` §3 — the one caller
-with a human gate above it, and the step that made `/flow:post-merge` an orchestrator
+programmatic invocation, which also blocked `/flow:retro` §3 — the one caller
+with a human gate above it, and the step that made `/flow:retro` an orchestrator
 rather than a reminder to run another command. Two mechanical gates below do the
 flag's job more precisely, and between them they bound both *which* PRs this can act
 on and *when*: **§1a** refuses to edit anything unless `gh` confirms the PR is merged,
@@ -104,10 +104,10 @@ fi
 STATE=$(printf '%s' "$STATE_JSON" | jq -r '.state')
 MERGED_AT=$(printf '%s' "$STATE_JSON" | jq -r '.mergedAt // empty')
 # MERGED **or** a truthy mergedAt — deliberately the same predicate as
-# `post-merge/lib/merge-status.py classify()`, which is eval-pinned and documents the
+# `retro/lib/merge-status.py classify()`, which is eval-pinned and documents the
 # reason: a merge queue can lag the `state` field, so a genuinely-merged PR can still
 # report OPEN with mergedAt set. Requiring BOTH (the pre-FB-0077 form) made this gate
-# stricter than the classifier that now calls it — so `/flow:post-merge` §2 could
+# stricter than the classifier that now calls it — so `/flow:retro` §2 could
 # classify `merged`, invoke §3, and have this gate reject the very PR it just confirmed.
 # Divergent copies of one predicate is the FB-0010 fan-out class; keep them in step.
 if [ "$STATE" != "MERGED" ] && [ -z "$MERGED_AT" ]; then
@@ -241,7 +241,7 @@ HISTORY=$(jq -r '.historyPath // "dev-docs/history.md"' flow.config.json 2>/dev/
 # reconciliation edits off a match-everything set. Git already forbids most of the
 # dangerous characters in ref names, but not all (`[`, `]`, `{`, `}`, `+`, `.`, `|` are
 # legal), and a FORK PR's head ref is chosen entirely by an outside contributor. Since
-# FB-0077 made this skill model-invocable and wired /flow:post-merge to call it
+# FB-0077 made this skill model-invocable and wired /flow:retro to call it
 # automatically, that value now reaches here without a human reading it first. Accept only
 # ref-safe characters as a literal alternative; anything else falls back to the `#N` match.
 case "$HEADREF" in

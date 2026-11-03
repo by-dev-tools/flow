@@ -12,10 +12,10 @@ Three layers:
      false-positive case, unknown targets, self-calls, absent-flag default.
   2. A live assertion over flow's OWN skills directory, so the repo can never
      reintroduce the shape the lint exists to forbid.
-  3. Live assertions that the post-merge → land composition is INTACT (FB-0077).
+  3. Live assertions that the retro → land composition is INTACT (FB-0077).
      Layer 2 passes two opposite ways — the composition is legal, or the call was
      deleted — and the lint cannot tell them apart. That ambiguity is how FB-0074
-     "fixed" this defect by conceding it, leaving /flow:post-merge a reminder to run
+     "fixed" this defect by conceding it, leaving /flow:retro a reminder to run
      another command. Layer 3 pins the composition positively from both ends.
 
 Stdlib only. No network. Run:
@@ -201,10 +201,10 @@ def main() -> int:
     rc, out = lint(FLOW_SKILLS)
     expect("flow's own skills/ carry no disabled-target Skill() call", rc, 0, out)
 
-    # --- 10. live: the post-merge → land composition is INTACT (FB-0077) -----
+    # --- 10. live: the retro → land composition is INTACT (FB-0077) -----
     # The lint above passes two ways: the composition is legal, or the call was
     # deleted. Those are opposite outcomes and it cannot tell them apart — which is
-    # how FB-0074 "fixed" this defect by conceding it, leaving /flow:post-merge a
+    # how FB-0074 "fixed" this defect by conceding it, leaving /flow:retro a
     # reminder to run another command. So assert the composition positively, from
     # both ends. Deleting either half must fail CI, not quietly satisfy the lint.
     # Reuse the lint's OWN parser rather than hand-rolling a second one here. A
@@ -228,19 +228,19 @@ def main() -> int:
         0 if re.search(r"^disable-model-invocation:\s*false\s*$", land_fm, re.M) else 1,
         0, land_fm)
 
-    pm_calls = [c for c in table["calls"]
-                if c["caller"] == "post-merge" and bare(c["target"]) == "land"]
+    retro_calls = [c for c in table["calls"]
+                   if c["caller"] == "retro" and bare(c["target"]) == "land"]
     expect(
-        'post-merge §3 emits a fenced Skill("flow:land") call — the composition, not a hand-off',
-        0 if pm_calls else 1, 0,
-        "no fenced Skill() call naming land found in post-merge/SKILL.md")
+        'retro §3 emits a fenced Skill("flow:land") call — the composition, not a hand-off',
+        0 if retro_calls else 1, 0,
+        "no fenced Skill() call naming land found in retro/SKILL.md")
 
-    # post-merge must itself stay human-gated: it is the human gate above land now
+    # retro must itself stay human-gated: it is the human gate above land now
     # that land's own flag is gone. Losing BOTH flags is the state nothing guards.
     expect(
-        "post-merge stays disable-model-invocation: true — the human gate above land",
-        0 if table["skills"].get("post-merge", {}).get("disabled") is True else 1, 0,
-        f"post-merge entry: {table['skills'].get('post-merge')}")
+        "retro stays disable-model-invocation: true — the human gate above land",
+        0 if table["skills"].get("retro", {}).get("disabled") is True else 1, 0,
+        f"retro entry: {table['skills'].get('retro')}")
 
     # land's §1a gate is what makes clearing the flag safe. If it ever stops refusing
     # unmerged PRs, the flag's removal becomes unsafe retroactively.
@@ -261,7 +261,7 @@ def main() -> int:
     # here looked for it.
     #
     # Found live: `/flow:ship-spike` declared `Read, Edit, Write, Glob, Grep, Bash,
-    # Agent` while Step 2 instructed `Skill("flow:verify-build")`. `ship`, `post-merge`
+    # Agent` while Step 2 instructed `Skill("flow:verify-build")`. `ship`, `retro`
     # and `verify-build` all declared `Skill`; ship-spike alone did not.
     #
     # Uses the lint's own fenced-call parser, so a PROSE mention of `Skill("flow:x")`

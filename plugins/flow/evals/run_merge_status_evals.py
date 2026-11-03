@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Eval harness for /flow:post-merge's deterministic core + skill contract (FB-0072).
+"""Eval harness for /flow:retro's deterministic core + skill contract (FB-0072).
 
 The skill orchestration (merge-detect → land → feedback-synth → cleanup → archive-verdict)
 is prose the agent drives, but its LOAD-BEARING core is deterministic and pinned here:
@@ -36,7 +36,7 @@ from pathlib import Path
 from eval_utils import fenced_block
 
 HERE = Path(__file__).parent
-SKILLDIR = HERE.parent / "skills" / "post-merge"
+SKILLDIR = HERE.parent / "skills" / "retro"
 HELPER = SKILLDIR / "lib" / "merge-status.py"
 SKILL = SKILLDIR / "SKILL.md"
 SCHEMA = HERE.parent / "schema" / "flow.config.schema.json"
@@ -188,7 +188,7 @@ def main() -> int:
 
     # ---- SKILL contract (the composition + safety commitments the plan pinned) ----
     skill = SKILL.read_text(encoding="utf-8") if SKILL.exists() else ""
-    check("skill-exists", bool(skill), "skills/post-merge/SKILL.md missing")
+    check("skill-exists", bool(skill), "skills/retro/SKILL.md missing")
     # Anchored to the FRONTMATTER block. A whole-file substring test false-passes here:
     # the SKILL's prose quotes `disable-model-invocation: true` while narrating the FB-0077
     # history, so the string survives even after the flag itself is flipped. Verified by
@@ -196,14 +196,14 @@ def main() -> int:
     check("skill-human-invoked",
           bool(re.search(r"^disable-model-invocation:\s*true\s*$",
                          _lint()._frontmatter(skill), re.M)),
-          "post-merge must stay human-invoked, never auto-fire — it is the human gate above "
+          "retro must stay human-invoked, never auto-fire — it is the human gate above "
           "/flow:land now that land's own flag is cleared (FB-0077)")
     # This check has now been inverted TWICE, and the history is why it is worth reading.
-    # v1.21.0 asserted post-merge CALLS Skill("flow:land") — but land was
+    # v1.21.0 asserted post-merge (now /flow:retro) CALLS Skill("flow:land") — but land was
     # disable-model-invocation: true, so the call was rejected on every run and §3 silently
     # degraded to its fallback; the check was pinning a bug. FB-0074 inverted it to assert the
     # call is ABSENT, which pinned the *concession* — §3 rewritten as "ask the human" — and made
-    # /flow:post-merge a reminder to run another command. FB-0077 cleared land's flag (its §1a
+    # /flow:retro a reminder to run another command. FB-0077 cleared land's flag (its §1a
     # merged-PR gate is the real never-auto-fire guard) and restored the call, so the assertion
     # returns to its original polarity, now against a callee that can actually be invoked.
     #
@@ -215,7 +215,7 @@ def main() -> int:
     # this harness used to carry) silently misses a call inside a ~~~ block.
     _calls = _lint().scan(SKILLDIR.parent)["calls"]
     check("skill-CALLS-land",
-          any(c["caller"] == "post-merge" and _lint()._bare(c["target"]) == "land"
+          any(c["caller"] == "retro" and _lint()._bare(c["target"]) == "land"
               for c in _calls),
           "§3 must emit an executable Skill(\"flow:land\") call (FB-0077) — delegation downgraded "
           "to a hand-off is the defect, not the fix; land is model-invocable so this executes")
@@ -240,10 +240,10 @@ def main() -> int:
     # fields. Dropped — Claude Code generates the plugin's component inventory from
     # disk for the /plugin UI, so a hand-maintained skill catalog inside `description`
     # was a redundant copy that could go stale. The docs are the catalog sites.
-    check("reg-workflow-help", has("plugins/flow/skills/workflow-help/SKILL.md", "flow:post-merge"),
-          "/flow:post-merge not listed in workflow-help")
-    check("reg-workflow-doc", has("plugins/flow/docs/workflow.md", "flow:post-merge"),
-          "/flow:post-merge not documented in workflow.md")
+    check("reg-workflow-help", has("plugins/flow/skills/workflow-help/SKILL.md", "flow:retro"),
+          "/flow:retro not listed in workflow-help")
+    check("reg-workflow-doc", has("plugins/flow/docs/workflow.md", "flow:retro"),
+          "/flow:retro not documented in workflow.md")
     check("ci-wired", has(".github/workflows/ci.yml", "run_merge_status_evals.py"),
           "run_merge_status_evals.py not wired into ci.yml (CI enumerates, doesn't glob)")
 
