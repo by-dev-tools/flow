@@ -280,8 +280,12 @@ def read_marketplace(home: Path) -> dict:
         return {"state": "clone_malformed", "path": str(mf), "error": str(exc)}
     plugins = data.get("plugins") if isinstance(data, dict) else None
     ver = None
-    if isinstance(plugins, list) and plugins and isinstance(plugins[0], dict):
-        ver = plugins[0].get("version")
+    # By NAME, not position: the marketplace lists more than one plugin (deep-dives),
+    # and an entry reordered ahead of flow's would report its version as flow's.
+    entry = next((p for p in plugins if isinstance(p, dict) and p.get("name") == "flow"),
+                 None) if isinstance(plugins, list) else None
+    if entry:
+        ver = entry.get("version")
     if not ver and isinstance(data, dict):
         ver = (data.get("metadata") or {}).get("version")
     if not ver:

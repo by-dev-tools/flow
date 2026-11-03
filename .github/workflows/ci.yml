@@ -91,6 +91,7 @@ jobs:
       - run: python3 plugins/flow/evals/run_arg_safety_evals.py
       - run: python3 plugins/flow/evals/run_ping_label_evals.py
       - run: python3 plugins/flow/evals/run_capture_frames_evals.py
+      - run: python3 plugins/flow/evals/run_push_further_evals.py
 
   dev-docs:
     name: dev-docs index

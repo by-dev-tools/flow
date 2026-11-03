@@ -82,6 +82,10 @@ bash /path/to/flow-checkout/template/base/bootstrap.sh --stack web   # or swift 
 
 Adoption guides: [new project](docs/bootstrap.md) · [existing project](docs/migration.md) · [your first PR](docs/first-pr.md) · [upgrading](docs/upgrade.md).
 
+### Also in this marketplace: deep-dives
+
+[deep-dives](https://github.com/by-dev-tools/deep-dives) is a separate plugin for **interactive design sessions**: Claude facilitates and sketches, and you make every call. It's the opposite of flow's automation, and it's meant for incubating ideas rather than shipping code, so it doesn't need flow or a `flow.config.json`. Install it with `/plugin install deep-dives@flow`. Flow's push-further lens points to it when a question about how an interaction should feel needs a person's hands, not a reviewer's verdict.
+
 ## Under the hood
 
 - **2 review agents** (`auditor`, `plan-critic`) + **4 staff-review lenses** (engineer, UX, design-engineer, push-further) + the **D1 `lens-experience` agent** (experience/ambition + push-further-on-quality, reached via `/flow:review-brief`) + 2 context-isolation helpers (`planner`, `docs`).

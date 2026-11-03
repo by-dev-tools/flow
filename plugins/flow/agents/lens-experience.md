@@ -81,6 +81,8 @@ Inherits `lens-push-further`'s uncommon-care framing and restraint-first default
 
 Ask: given exactly what the artifact already commits to, where could the *execution* of that scope be more distinctive, more considered, more itself — without adding a single new capability?
 
+Like `lens-push-further`, this lens **never blocks**, and a missing quality the artifact doesn't call for is not a finding (FB-0141): a brief for a settings form that promises no playfulness has not under-reached.
+
 ### Buckets (re-scoped for pre-pixel review — no code exists yet to fix inline)
 
 - **artifact-revision** — cheap enough to fold into the artifact right now: a sharpened constraint, a named edge state, an explicit exclusion, a sentence on feel. Does not expand what the brief promises to build.

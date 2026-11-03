@@ -29,7 +29,7 @@ Exploration items decay if no one looks at them. The Exploration section lives i
 
 - **Don't auto-apply** an inline-cheap finding without proposing first. The exploration item is a suggestion, not a queued task.
 - **Don't expand scope** of the current PR to address every triggered item. One inline-cheap fix bundled into a related PR is fine; three is scope creep. The remaining items wait for their own pass.
-- **Don't add new exploration items here** — `/flow:staff-review`'s push-further lens owns that (or a future `/flow:uncommon-care`-style skill). This rule is read-only on the Exploration section.
+- **Don't add new exploration items here** — `/flow:staff-review`'s push-further lens owns that. (A hands-on design session, such as the separate deep-dives plugin's `/deep-dives:puckett-uncommon-care`, may also leave ideas there, but only when the human asks.) This rule is read-only on the Exploration section.
 
 ## Coexists with safety.md
 

@@ -23,6 +23,8 @@ Nothing to push — surface at ceiling for its scope.
 
 False-positive "we could add X" findings pollute the roadmap and train the next session to mistrust the lens. The bar is honesty, not productivity.
 
+**You never block, and a missing quality the surface doesn't call for is not a finding.** None of your buckets holds a PR up. Not every surface should be playful, tactile or memorable: a settings form without fidgetability, a list without motion, or a CLI without delight is normal (FB-0141).
+
 ## Inputs
 
 The skill that spawns you (`/flow:staff-review`) passes:
@@ -51,13 +53,15 @@ For the diff in front of you, ask:
 - **Hospitality.** Does the first thing a new user encounters feel welcoming, or merely functional?
 - **Memorable specificity.** Is there a detail that could make this moment memorable — not bigger, not louder, just more itself?
 
+These are prompts, not a checklist: ask the ones that fit, whether the surface is an interaction, a pipeline, a doc or a data view. Most of them are Puckett's own lenses. On an interaction, two more of his apply: **range→depth** (were genuinely different approaches tried before this one was polished?) and **metaphor integrity** (is a central metaphor carried all the way through?).
+
 ## Findings buckets
 
 Name the bucket explicitly per finding:
 
 - **inline-cheap** — a concrete improvement small enough to apply in this PR (single file, single concern, ≤30 min). Treated like a NIT — fix in-tree.
 - **roadmap-concrete** — a deferred-but-scoped extension worth a roadmap entry. Specific shape, named cost. Routes to the project's roadmap doc under the appropriate horizon (Now / Next / Later) or — if it's open-ended — Exploration.
-- **future-exploration** — an area inviting exploration without a clear shape yet. Routes to the roadmap's Exploration section with a `Surfaces when:` trigger naming the file paths / area that should re-surface it later.
+- **future-exploration** — an area inviting exploration without a clear shape yet. Routes to the roadmap's Exploration section with a `Surfaces when:` trigger naming the file paths / area that should re-surface it later. When the open question is how an *interaction* should feel, say so in the Direction: it is a candidate for a hands-on design session (`/deep-dives:puckett-uncommon-care`, from the separate deep-dives plugin; name its install, `/plugin install deep-dives@flow`, since the reader may not have it), where a human touches sketches and makes the call. The lens can't settle that kind of question.
 
 ### Tiebreakers when a finding straddles buckets
 
@@ -66,7 +70,7 @@ Name the bucket explicitly per finding:
 
 ## Output cap
 
-Output typically ≤2 items per bucket. If the lens turns up more than that, the surface deserves a dedicated standalone deep-dive pass (a `/uncommon-care`-style skill — not yet shipped in flow), not a `/flow:staff-review` side-channel. Flag the overflow rather than cramming everything in.
+Output typically ≤2 items per bucket. If the lens turns up more than that, the surface deserves a dedicated deep dive (see `future-exploration`), not a `/flow:staff-review` side-channel. Flag the overflow rather than cramming everything in.
 
 ## Output format
 

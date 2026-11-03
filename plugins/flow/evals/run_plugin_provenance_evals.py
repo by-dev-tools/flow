@@ -852,6 +852,31 @@ def test_graceful_degradation():
                 check(lab in out, f"{name}: row {lab!r} must still render")
 
 
+def test_marketplace_version_is_read_by_name():
+    """The marketplace lists two plugins, so flow's version is the entry NAMED flow.
+
+    Paired: a sibling listed first must not be read as flow (the defect), and the
+    flow entry must still be found (so deleting the read cannot pass). The flow
+    entry carries no version in the third world, which must fall back to metadata
+    rather than borrow the sibling's.
+    """
+    def head(plugins: list, meta: str = "9.9.9") -> dict:
+        with tempfile.TemporaryDirectory() as t:
+            home = make_home(Path(t), None, json.dumps(
+                {"name": "flow", "metadata": {"version": meta}, "plugins": plugins}))
+            return _engine.read_marketplace(home)
+    sibling = {"name": "deep-dives", "source": {"source": "github", "repo": "x/deep-dives"},
+               "version": "0.1.0"}
+    flow = {"name": "flow", "version": "1.65.0"}
+    for plugins, want, world in (
+            ([sibling, flow], "1.65.0", "sibling listed first"),
+            ([flow, sibling], "1.65.0", "flow listed first"),
+            ([sibling, {"name": "flow"}], "9.9.9",
+             "flow entry without a version (must fall back to metadata, not the sibling's 0.1.0)")):
+        got = head(plugins).get("version")
+        check(got == want, f"{world}: must read {want}, got {got!r}")
+
+
 def test_decoy_repo_refused():
     """A repo whose flow plugin manifest does not name flow gets no version read.
 
@@ -2203,6 +2228,7 @@ def main() -> int:
                test_callout_splits_rule_skills_from_command_skills,
                test_is_rule_skill_pinned_to_the_real_four,
                test_row_labels, test_both_polarities, test_graceful_degradation,
+               test_marketplace_version_is_read_by_name,
                test_decoy_repo_refused, test_surface_drift, test_contracts,
                test_hook_single_predicate, test_hook_loud_failure,
                test_hook_never_executes_the_checkout,

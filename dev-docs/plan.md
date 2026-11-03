@@ -2,7 +2,89 @@
 
 ## Current Focus
 
-**▶ EXECUTING (resumed 2026-10-31 after a merge-ping gap from 2026-10-06 — #179 merged, nothing on
+**▶ EXECUTED, shipping (this branch `florence-v6`, **v1.67.0**, FB-0141): push-further never
+blocks, and the marketplace lists deep-dives.** Plan approved by Ben in conversation, shaped across
+four corrections (all in FB-0141): uncommon care is two things, an unattended review lens and a
+human-in-the-loop design session; the lens stays general and is NOT bound to Puckett's eight
+lenses; a regular feature must never be held up for lacking fidgetability; and the session must not
+require flow, because the repos it serves (ui-playground) incubate ideas and don't run flow. So the
+session ships as a **separate plugin in its own public repo**,
+[`by-dev-tools/deep-dives`](https://github.com/by-dev-tools/deep-dives) (v0.1.0, first skill
+`puckett-uncommon-care`), listed in this marketplace by GitHub source. The other session in this
+workspace is building `yuan-brand` for the same plugin.
+
+**Mode:** feature · **Surface:** non-visual · **Pre-execution gate:** plan
+
+### Spec-walk
+
+- [x] **Push-further can never hold up a PR.** The lens's output labels are exactly its three
+      non-blocking buckets, no bucket reaches staff-review's BLOCKER triage line while every bucket is
+      still routed, and review-brief treats push-further as non-blocking. *Pinned by:*
+      `run_push_further_evals.py` checks `buckets-exact`, `triage-never-blocks`,
+      `triage-routes-every-bucket`, `brief-never-blocks`, and for lens-experience's Lens B
+      `lens-b-buckets-exact`; every run also fails if any check stays green under its own mutation.
+- [x] **A missing quality the surface doesn't call for is not a finding.** Both push-further lenses say
+      so and say they never block; Puckett's lenses appear only as an optional frame for interaction
+      surfaces. *Pinned by:* `run_push_further_evals.py` checks `absence-rule` and
+      `lens-b-absence-rule` (each mutation-caught on every run).
+- [x] **push-further's `future-exploration` bucket points questions about how an interaction should
+      feel to `/deep-dives:puckett-uncommon-care` and names its install, `/plugin install deep-dives@flow`.**
+      Declared at the merge gate (Ben approved audit-coverage's drafted criterion). *Pinned by:*
+      `run_push_further_evals.py` check `session-pointer` (misspelling, a removed install line, and
+      the pointer leaking into another bucket each turn it red).
+- [x] **Provenance reads flow's marketplace entry by name, not position.** A sibling listed first is
+      not read as flow, and a version-less flow entry falls back to metadata, not the sibling's.
+      *Pinned by:* `run_plugin_provenance_evals.py::test_marketplace_version_is_read_by_name` (red
+      when the read is reverted to `plugins[0]`).
+- [x] **deep-dives installs from this marketplace by GitHub source.** *Verify:* install report quoted
+      in the PR body, from: `claude plugin validate .`
+      passes; in a throwaway `HOME`, `claude plugin marketplace add <this checkout>` then
+      `claude plugin install deep-dives@flow` succeeds and `claude plugin details deep-dives` lists
+      `puckett-uncommon-care`.
+- [x] **The install-surface descriptions stay within their contract with two entries.** *Pinned by:*
+      `run_plugin_desc_evals.py`.
+- [x] **No shipped file points at an unshipped `/uncommon-care` skill.** *Verify:*
+      `git grep -nE 'not yet shipped in flow|flow ships it|flow:uncommon-care|/uncommon-care.-style' -- plugins`
+      returns nothing. (The first pattern set missed the schema's "when flow ships it" wording, found
+      by staff-review; the widened grep was checked against that line before the fix.)
+
+### Visual-walk — N/A
+
+No UI. Agent prompt text, a Python reader, an eval, manifests and docs.
+
+### Confidence verdicts
+
+- **HIGH** — the lens has no blocking path today (no BLOCKER bucket; staff-review triage and
+  review-brief both route it non-blocking). Measured by the new eval, not assumed.
+- **HIGH** — a GitHub-sourced entry installs from this marketplace. Measured with a real install in a
+  throwaway HOME; it cloned `by-dev-tools/deep-dives` and inventoried the skill.
+- **Version re-claimed twice at rebase, 1.65.0 → 1.66.0 → 1.67.0.** #186 landed as 1.65.0; #187 then
+  landed with its manifests still at 1.65.0 but its changelog and docs written as v1.66.0, so this PR
+  skips to 1.67.0 rather than collide with either.
+
+### Risks
+
+1. **The lens now names a skill from another plugin.** Consumers without deep-dives see a pointer
+   to something they haven't installed. The wording names it as a separate plugin, and the pointer is
+   advisory text in a Direction, never an invocation.
+2. **Marketplace description broadened** to cover two plugins: install surface, so
+   `run_plugin_desc_evals.py` and `claude plugin validate` both ran on it.
+
+### Files touched
+
+- `plugins/flow/agents/lens-push-further.md`, `plugins/flow/skills/exploration/SKILL.md`
+- `plugins/flow/skills/ship/lib/plugin-provenance.py`, `plugins/flow/evals/run_plugin_provenance_evals.py`
+- `plugins/flow/evals/run_push_further_evals.py` (new), `.github/workflows/ci.yml`
+- `.claude-plugin/marketplace.json`, `plugins/flow/.claude-plugin/plugin.json`
+- `README.md`, `CLAUDE.md`, `changelog/v1.67.0.md`
+- `plugins/flow/agents/lens-experience.md` (Lens B carries the same rule),
+  `plugins/flow/schema/flow.config.schema.json` (`reviewLenses` no longer promises a flow
+  `uncommon-care` lens)
+- `dev-docs/`: `history/`, `feedback/FB-0141-*.md`, `plan.md`, `roadmap.md`
+
+---
+
+**✓ SHIPPED as #187 (resumed 2026-10-31 after a merge-ping gap from 2026-10-06 — #179 merged, nothing on
 the worker's end was wrong), this branch `conductor/efficiency-follow-up-checking-subagents-routing`:
 the token-efficiency follow-up — cursor-based worker reads, a workspace-vs-subagent table, and
 routing-by-job-fit (not account capacity).** Plan APPROVED at the gate; all three open calls
@@ -260,7 +342,7 @@ or extrapolated.
 ---
 
 
-**▶ EXECUTED, shipping (this branch `conductor/chat-and-pr-screenshots`, version claimed
+**✓ SHIPPED as #186 (branch `conductor/chat-and-pr-screenshots`, version claimed
 mechanically at **v1.65.0** in both manifests, no new FB). Plan APPROVED with all four open calls
 answered: (1) **one** chat image, the phone frame, both frames in the PR body; (2) `frames --source
 captures` as a flag, with the orchestrator's added condition that the `--branch` collision be made
