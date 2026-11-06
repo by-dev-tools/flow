@@ -1,0 +1,34 @@
+{
+  "id": "20261106-073624-rule-edit-orchestrator-wrap-up-must-archive-at-every-level",
+  "schema_version": 1,
+  "created_utc": "2026-11-06T07:36:24.902602+00:00",
+  "status": "queued",
+  "provenance": {
+    "project_slug": "flow",
+    "pr": "docs/archive-mobile-option-4-touch-prototype",
+    "branch": "docs/archive-mobile-option-4-touch-prototype",
+    "session_id": "sha256:ab2f7bc6578e9e89"
+  },
+  "source_type": "decision",
+  "artifact_kind": "rule-edit",
+  "lesson": {
+    "summary": "Orchestrator wrap-up must archive at every level the host tracks, and leave a handoff for unfinished work",
+    "synthesized_rule": "When an orchestrator seat winds down supervised work (a human says pause/wrap up), archiving a worker's chat/session is not the same as archiving its workspace — a host may track status at both levels independently, and leaving the workspace level unarchived makes finished work look still-active in any fleet view. Archive both. For any workstream that is genuinely unfinished (not merged, not approved), write a durable handoff artifact before archiving the context that held it, naming: what's done, what's not, the human's last feedback verbatim, and the specific next action — so a cold resume (a different session, a different person) doesn't have to re-derive context from a conversation it wasn't part of.",
+    "target_hint": "plugins/flow/skills/handoff/SKILL.md (archive-safety check) and/or plugins/flow/skills/orchestrate/SKILL.md (fleet wind-down guidance)"
+  },
+  "evidence": {
+    "window_path": "(not committed - raw transcript window, see README)",
+    "evidence_strength": "direct-quote",
+    "lesson_hash": "sha256:edd266d9e14f63eb5409152e95cfbc535d1d5b8603058b3ffa7bb37bf5fa40ae",
+    "window_path_original_basename": "20261106-073624-orchestrator-wrap-up-must-archive-at-every-level.window.jsonl"
+  },
+  "signals": {
+    "source_type": "decision",
+    "source_weight": 0.9,
+    "evidence_strength": "direct-quote",
+    "evidence_weight": 1.0,
+    "recurrence_count": 1,
+    "sanitization_clean": null
+  },
+  "confidence": 0.9
+}
