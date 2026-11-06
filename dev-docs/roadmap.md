@@ -25,25 +25,9 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 > replaced by whatever Ben sets next — not silently carried forward as the implied stopping point
 > once it's been reached.
 
-**Plugin at v1.67.0 (this PR — `/flow:post-merge` is now `/flow:retro`, FB-0141).** Ben reaches
-for this skill as "the workspace retro" — relayed from `byamron/portfolio`, since that workspace's
-contribution queue couldn't survive its own archival. Renamed the directory + frontmatter `name`
-and every live reference (workflow-help, `docs/workflow.md`, `/flow:land`'s caller text, doctor's
-skill-composition example, three eval harnesses' live composition assertions, the
-`postMergeWaitSeconds` slot's description, README, the canonical cloud-workflow plan, and several
-not-yet-picked-up § Next/§ Later items that named the skill by path). No deprecated alias — checked
-first against Claude Code's own docs and confirmed plugin skills have no author-definable alias
-mechanism. Historical records (changelog, history, this section's own "Shipped"/"Prior" narrative
-below) deliberately left naming `post-merge`, since they describe what was true when those PRs
-shipped. Also filed (not built): § Next now carries the `/flow:ship` Step 5b version-gate fallback
-gap the same relay surfaced — a judgment call for its own future plan, not decided here. **Version
-re-swept v1.66.0 → v1.67.0 at this rebase:** `conductor/efficiency-follow-up-checking-subagents-routing`
-(#187) claimed v1.66.0 first and was still queued ahead of this PR, so this PR re-sweeps up one
-more — the same precedent #184, #185, #186, and #187 each set in turn. **Manifest sync note:** #187
-merged with its changelog/roadmap/plan prose already at v1.66.0 but never bumped
-`plugin.json`/`marketplace.json` past 1.65.0 — a gap introduced during this PR's own manual rebase
-resolution, caught only here. This PR's manifest bump to 1.67.0 closes it; there was never a window
-where the installed manifest claimed a version its own content didn't ship.
+**Plugin at v1.68.0 (this PR — the skip-legitimacy gate can find its own checker when flow is INSTALLED rather than checked out, FB-0142). `/flow:audit-skips` resolved its stamp checker and its engine as `$CLAUDE_PLUGIN_ROOT/...` else `plugins/flow/...`, and that second arm is flow-repo-relative — in a consumer project it cannot exist. So on any run where the host variable was absent BOTH helpers were unreachable together and the gate reported `stamp_unverifiable` on every single invocation; reported against an installed 1.29.0, reproduced on 1.64.0, and structurally invisible from this checkout for 35 releases because here, and only here, the broken arm is the working one. Resolution is now TWO arms off one root — the host variable (manifest-gated) and the `installPath` in the host's own install record (identity-checked) — and **a successful run reports which arm resolved**, so "which flow graded this?" stops being unanswerable. **The cwd-relative third arm was DELETED by decision, not narrowed** (option C): it ran helper scripts out of whatever repo was open, gated only by a forgeable grep, and the only population it served was "cloned flow, not installed yet" — the same one-time install step everyone performs anyway. Deleting it was NOT sufficient: a RELATIVE root re-opens the same path, measured, so a non-absolute root is now refused too. Three fixtures vendor a hostile `flow_scratch.py` and assert it never runs. Only `audit-skips` is fixed; the ~38-site class and the four fail-open sibling skills are filed below. **Version re-swept v1.66.0 → v1.68.0, and FB re-swept FB-0141 → FB-0142, both at this rebase:** #187 re-swept to v1.66.0 and merged, then #188 re-swept to v1.67.0 AND pushed its own FB-0141 file first (a different relayed request — the `/flow:retro` rename) — both ahead of this PR, so this PR re-sweeps up past both on both axes.)**
+
+**Previously: v1.67.0 (shipped [#188](https://github.com/by-dev-tools/flow/pull/188) — `/flow:post-merge` is now `/flow:retro`, FB-0141). Ben reaches for this skill as "the workspace retro" — relayed from `byamron/portfolio`, since that workspace's contribution queue couldn't survive its own archival. Renamed the directory + frontmatter `name` and every live reference (workflow-help, `docs/workflow.md`, `/flow:land`'s caller text, doctor's skill-composition example, three eval harnesses' live composition assertions, the `postMergeWaitSeconds` slot's description, README, the canonical cloud-workflow plan, and several not-yet-picked-up § Next/§ Later items that named the skill by path). No deprecated alias — checked first against Claude Code's own docs and confirmed plugin skills have no author-definable alias mechanism. Historical records (changelog, history, this section's own "Shipped"/"Prior" narrative below) deliberately left naming `post-merge`, since they describe what was true when those PRs shipped. Also filed (not built): § Next now carries the `/flow:ship` Step 5b version-gate fallback gap the same relay surfaced — a judgment call for its own future plan, not decided here.)**
 
 **Previously: v1.66.0 (shipped [#187](https://github.com/by-dev-tools/flow/pull/187) — cheap worker reads, a workspace-vs-subagent table, and routing by job fit, FB-0140). Executes three findings from the merged token-efficiency audit (`dev-docs/research/2026-10-efficiency-audit.md`, [#181](https://github.com/by-dev-tools/flow/pull/181)) against Ben's 2026-10-05 follow-up brief. `dispatch_backend.py` gains a sixth, optional verb, `readSince {session}{cursor}` — messages since a cursor instead of a full re-read, with `/flow:orchestrate` step 4 now stating the contract explicitly. `/flow:spawn` gains an unnumbered "Before Step 0: choose the primitive" workspace-vs-subagent table, plus the nuance that a subagent's output lands in the calling session's own context. "Needs the account's capacity" is now a named-forbidden routing reason in `/flow:spawn` step 2, and `research/orchestrator-field-manual.md` § 3 carries Ben's priority verbatim. `/simplify` caught and fixed a fan-out contradiction (an `OPTIONAL_VERBS` set duplicating a fact already in the per-verb tuple's `purpose` string) and a fabricated citation (a measured figure attributed to a doc section that never contained it, traced to a now-unrecoverable source session). Resuming this branch after a 25-day merge-ping gap also re-confirmed a known hazard: a clean rebase can silently reorder `dev-docs/plan.md`'s active block, caught by `extract-criteria.py` before any gate graded the wrong PR's criteria.)**
 
@@ -674,6 +658,148 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
+### The other four forked skills cannot reach their helpers from an installed plugin (FB-0142)
+
+**Filed by the v1.68.0 worker, which fixed only `/flow:audit-skips`; the orchestrator seat confirmed
+that scoping on 2026-11-01 (one shippable PR, FB-0139 chunking) and routed the rest here.**
+
+**▶ DO `audit-plan` + `audit-completion` FIRST — the fixed instance was the least dangerous one.**
+`audit-skips` failed **closed**: it said "I cannot verify" on every run, loudly, blocking. Those two
+fail **OPEN**. They have *no fallback at all*, so an unset `CLAUDE_PLUGIN_ROOT` turns
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/extract_session.py` into `python3 /scripts/extract_session.py`,
+the extractor never runs, the reviewer audits an **empty session context**, and it reports
+**"No issues flagged."** Verified 2026-11-01: `plugins/flow/agents/auditor.md` contains no
+empty-context or no-transcript guard, so nothing downstream notices. A reviewer that cannot see,
+emitting the string that means "I looked and it was fine" — on the two skills whose entire job is to
+catch exactly that shape of claim.
+
+**THE PORT IS TWO ARMS, NOT THREE — this is decided, not open.** The resolver is
+`$CLAUDE_PLUGIN_ROOT` → the install record, and **no cwd-relative fallback**. Do not re-add one as a
+convenience: these blocks `cd` into the repo under review, so a `plugins/flow` fallback is arbitrary
+code execution from any repo the user opens. Decided 2026-11-02; FB-0142 § "DECIDED: the cwd-relative
+fallback is deleted, not narrowed" carries the full reasoning and is the durable record — not the PR
+body, which a reader months from now cannot grep for. It is pinned as a demonstrated exploit
+(`cwd-arm-deleted-no-execution` stages a hostile vendored `flow_scratch.py` and fails if it runs).
+**Carry the absolute-path guard with it — deleting the arm alone is NOT sufficient.** Measured: a
+relative `CLAUDE_PLUGIN_ROOT` (or a relative `installPath`) resolves against the repo under review and
+re-opens the same execution path. Any port must refuse a non-absolute root.
+**Accepted consequence to carry with it:** a ported skill can no longer run from a flow checkout with
+no installed flow — it refuses loudly, which is correct.
+
+**A tripwire already guards this deferral.** `run_scratch_isolation_evals.py::test_installed_layout()`
+derives every `context: fork` skill from disk and requires each to be either ported or named in an
+explicit known-broken ledger with its reason. Removing a name without porting goes red, and so does
+adding a *new* fork skill with the two-arm shape (both mutation-verified). When you port one of the
+four, move it from `EXEMPT` to `PORTED` — the failure message says so.
+
+The bug is a class, not an instance. Every `!`-preprocessor-block-bearing skill is `context: fork`, and all five resolved their
+helpers as `$CLAUDE_PLUGIN_ROOT/...` else `plugins/flow/...` — and that second arm is
+**flow-repo-relative**, so in a consumer project it cannot exist. `CLAUDE_PLUGIN_ROOT` was measured
+**unset** inside one forked skill's `!`-block and **set** inside another's in the same session
+(v1.64.0), so neither arm can be assumed.
+
+| skill | helpers resolved | fallback | severity |
+|---|---|---|---|
+| `audit-plan` | `scripts/extract_session.py` | **none** | **worst** — reviewer audits an empty context |
+| `audit-completion` | `scripts/extract_session.py` | **none** | **worst** — same |
+| `critique-plan` | `extract_session.py`, `walk-pin-lint.py` | `plugins/flow/...` | high |
+| `audit-coverage` | `extract-criteria.py`, `change-inventory.py`, `evidence-budget.py` | `plugins/flow/...` / guarded | high (already prints a `WEAKENED` line) |
+
+`audit-coverage` already ships a `WEAKENED · INVENTORY-UNAVAILABLE` branch naming
+"CLAUDE_PLUGIN_ROOT unset" as a real failure — so the repo had **observed** this and classified it as
+degradation rather than as a systematic install-path failure. That misclassification is the thing to
+learn from, not just the paths to patch.
+
+**The fix is already written and tested** in `plugins/flow/skills/audit-skips/SKILL.md` (the `$FPR`
+two-arm resolver) with **37** paired checks in
+`run_scratch_isolation_evals.py::test_installed_layout()` + `test_fork_skill_roster()`.
+Port the *mechanism* rather than reinventing it — but **one thing genuinely needs deciding per site
+class, not transcribing**: arm 1 here gates on the plugin **manifest**, whereas the 13
+`resolve-doc-slot.sh` preludes gate on the **target file**. At those sites a manifest gate would be a
+behaviour change, not a transcription, so choose deliberately which gate each class wants.
+
+**One thing to settle when porting:** whether this becomes one PR or four — the four skills share no
+code, only a convention, so a single PR touches four deployed prompt surfaces at once. (Extending
+`test_contracts()`'s own `idiom_sites` roster to the arm-2 idiom is tracked separately; the
+orchestrator seat took that item on 2026-11-01.)
+
+### Three one-line doc survivors of the FB-0142 change (found by its own review, left out of lane)
+
+Each is a direct consequence of v1.68.0 and each is a **one-line prose fix** in a file outside the
+FB-0142 worker's declared write scope (`plugins/flow/skills/ship/**` is `sensitivePaths`; `CLAUDE.md`
+is project-dev infra). Drafted here so the next owner does not have to re-derive them. This is the
+FB-0010 item-2 shape — grep first, edit second — and the grep was run over the comment and the
+narrative docs but not over these three.
+
+1. **`plugins/flow/skills/ship/SKILL.md` (§2a.3, the `stamp_unverifiable` branch) prescribes a remedy
+   that cannot fix the new dominant cause.** It still defines the condition as "the stamp checker
+   itself could not run — `flow_scratch.py` missing, or no `python3`/`jq`" and tells the operator to
+   "install python3/jq". After v1.68.0 the dominant cause is an unresolvable plugin root, so the
+   headline bug this release fixes now hands an installed-flow user advice to install Python they
+   already have. The skill's own copy was updated; this one was not. **Fix:** add "flow's own
+   installation could not be located" to the cause list and extend the remedy to "Reinstall the flow
+   plugin, or set `CLAUDE_PLUGIN_ROOT` to the installed flow directory, or install python3/jq."
+   *User-facing; highest priority of the three.*
+2. **`plugins/flow/skills/ship/lib/plugin-provenance.py::read_installed`'s docstring still carries the
+   overclaim this release corrected, in the module cited as the authority for correcting it.** It
+   reads "The version that actually ran the skills, agents and `!`-blocks." — while `read_running`'s
+   docstring 33 lines below records the measurement that falsifies exactly that (record 1.41.0, session
+   executing 1.29.0). Two docstrings in one file now assert opposite things about the same artifact.
+   **Fix:** re-point it to "what is installed *now*, which is not necessarily what this session
+   loaded — see `read_running`."
+3. **`CLAUDE.md` § How to Work 3 now over-promises for this skill, in two ways.** (a) It states
+   `CLAUDE_PLUGIN_ROOT` is "set in `!`-preprocessor blocks" — falsified by FB-0142's measurement.
+   (b) It tells a reader that "everything the Bash tool resolves comes from the working tree", which
+   for `/flow:audit-skips` is now false in **every** case: with the cwd arm deleted, both remaining
+   arms resolve an *installed* root and nothing can reach the checkout. Measured 2026-11-02 — from
+   this checkout the block reports `plugin_root_arm: install-record`, and with the record hidden it
+   refuses rather than falling back. CLAUDE.md is always loaded, so the next session inherits both
+   errors. `flow_scratch.py`'s module docstring
+   and `dev-docs/history/2026-07-29-safety-flow-s-ephemeral-scratch-*` repeat (a).
+
+### The cwd-relative arm is ~38 call sites, and 19 of them are UNGATED (security)
+
+Verified by grep 2026-11-01, after the FB-0142 PR's first draft under-counted the class by ~7x.
+Separate item from the one above because the **fix is different**: these need the default *removed*,
+not a third arm added.
+
+**Counts verified by grep over all of `plugins/flow`, 2026-11-02 — and corrected twice.** The FB-0142
+PR first said "five fork skills", then "13 preludes + 17 bare defaults". Both were low, for the same
+reason both times: the grep was scoped to `skills/*/SKILL.md` and missed nested files. **Scope it to
+the whole of `plugins/flow`.**
+
+- **19 bare `${CLAUDE_PLUGIN_ROOT:-plugins/flow}` defaults** — `gate` (5), `spawn` (4), `handoff` (3),
+  `orchestrate` (3), `doctor` (2), and **two in `ship/lib/serve-preview.sh`** — a *sourced helper*,
+  not a SKILL.md, which is exactly the file class the earlier greps missed. Each is an *unconditional*
+  cwd-relative target with **no identity check whatsoever** — strictly worse than the arm FB-0142 just
+  deleted, which at least had a name check. **There is now a decided precedent: remove the default, do
+  not add a second arm** (FB-0142 option C). This is precisely the shape `skills/doctor/SKILL.md`'s own
+  SECURITY header records as having shipped once and been arbitrary code execution with the user's
+  privileges from any repo they opened — and `doctor` itself still carries two. Highest-value item in
+  this family. (There are **no** live `${CLAUDE_PLUGIN_ROOT:-.}` sites left; both grep hits for that
+  spelling are prose warnings about the shape.)
+- **15 `resolve-doc-slot.sh` preludes** — across `accessibility-review`, `gate`, `land`,
+  `orchestrate`, `security-review`, `ship-spike`, `staff-review`, `verify-build`. These are gated, so
+  the consequence is not execution but the exact silent degradation `resolve-doc-slot.sh` exists to
+  kill: a cold-read reviewer running with no design-language or feedback context, reporting clean.
+
+Also open from the same pass: `plugins/flow/skills/ship/lib/plugin-provenance.py::read_installed`
+selects `plugins["flow@flow"][0]` with **no** identity check and keys the marketplace name exactly,
+while `audit-skips`' new arm 2 accepts any `flow@*` key and identity-checks each candidate. Two shipped
+readers of the same host-private file with different rules, so on a differently-named marketplace (or a
+dual user+project install) `/flow:audit-skips` can resolve and audit while the PR's provenance rows
+report a different `installPath` or `plugin_absent` — two surfaces disagreeing about the one question
+`plugin-provenance.py` exists to answer. `.claude/hooks/flow-plugin-currency.sh::_registry_field` is a
+third reader, and its own comment says "ONE parser of the registry's shape, not two." A cross-reader
+agreement pin now exists (`registry-readers-agree`), so a divergence fails CI; reconciling the rules
+is still open.
+
+**Also pending from the same measurement:** CLAUDE.md § How to Work 3 states
+`CLAUDE_PLUGIN_ROOT` is "set in `!`-preprocessor blocks". That is falsified and CLAUDE.md is always
+loaded, so the next session inherits the wrong premise. `flow_scratch.py`'s module docstring and
+`dev-docs/history/2026-07-29-safety-flow-s-ephemeral-scratch-moves-from-tmp-to-a-repo-loc.md` repeat
+it. The v1.68.0 worker left all three alone (outside its lane) and filed FB-0142 instead.
+
 ### A human-only skill's description must name search terms as search terms, not as `Trigger:` phrases (staff-review finding, rename-to-retro PR)
 
 **The problem.** `/flow:retro`'s rename (FB-0141) added an "Often searched for as…" sentence to
@@ -755,6 +881,7 @@ deleted because the reasoning below is what shaped the answer: the design questi
 *when* to include an image, and the answer shipped is **one** — the phone frame — with the desktop
 frame committed into the PR body instead. The capture-path concern was also right: it became a new
 engine (`lib/capture_frames.py`), not a string change.
+
 
 **Recommended to Ben as the next mobile item** (orchestrator, 2026-10-04), and deliberately **not**
 folded into v1.60.0's adapter PR: that would have widened "an adapter" into "an adapter plus a
@@ -4153,6 +4280,27 @@ with it the property that just caught this, so it is not obviously the right tra
   not their deployed surface.
 
 ## § Exploration
+
+### A deferral ledger as a named flow idiom
+
+**Surfaces when:** `plugins/flow/evals/run_scratch_isolation_evals.py` has a name moved from `EXEMPT`
+to `PORTED`, **or** any other harness under `plugins/flow/evals/` grows a hand-maintained
+known-broken list.
+
+FB-0142's eval needed a way to make a *deliberate* deferral impossible to forget, and what it grew is
+a small pattern: derive the population from disk, require every member to be either fixed or named in
+a ledger with a reason, assert no ledger entry has gone stale, assert the derived population matches
+the ledger exactly (so a broken scan cannot make the whole thing vacuously true), and pin the
+**broken shape itself** positively so a fix by any mechanism retires the entry.
+
+That is more general than one test. "We knowingly shipped N of M, and here is the reason for each"
+is a claim this repo makes often and currently spells by hand each time — usually as prose in a
+roadmap entry, which nothing checks. A named idiom would make it mechanically readable.
+
+**Why it is here and not in § Next:** the API and the cost are both unknown. One instance is not a
+pattern, and the honest tiebreaker is to wait for the second consumer rather than design for it.
+Raised by the push-further lens on PR #<FB-0142>, which could not name the shape either.
+
 
 ### Durable-execution precedent (Temporal / AWS Step Functions) for R1/R4's checker shape — found by the push-further lens, 2026-10-04
 

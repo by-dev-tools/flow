@@ -2,6 +2,149 @@
 
 ## Current Focus
 
+**▶ EXECUTED, shipping (this branch
+`conductor/fix-audit-skips-cant-find-its-checker-from-installed-plugin`, **v1.68.0**, FB-0142):
+`/flow:audit-skips` can reach its own helpers when flow is INSTALLED rather than checked out.**
+
+**Mode:** feature (bug fix, repro in hand) · **Surface:** non-visual · **Pre-execution gate:** plan
+
+**Gate resolved 2026-11-02:** the `[decision-required]` security blocker on the cwd-relative fallback
+was answered **C — delete it** (reasoning in FB-0142). Implemented: the resolver has two arms and
+refuses when neither resolves; the arm-3 tests are inverted into an exploit-shaped refusal case.
+
+**Measured, not inferred.** An external agent in `byamron/portfolio` saw `stamp_unverifiable` on every
+run against an installed 1.29.0 while `lib/skip-audit-checks.py` worked when invoked directly.
+Reproduced here on 1.64.0: with the working-tree `flow_scratch.py` moved aside so only the
+`$CLAUDE_PLUGIN_ROOT` arm could win, the real forked skill printed the **fallback** path. Executing the
+shipped `!`-block three ways pins the mechanism — CPR set → full audit; CPR **unset** →
+**byte-identical to what the fork printed**; CPR unset with the fallback present → full audit. That
+third run is why this survived 35 releases: in the flow checkout, and only there, the broken arm is the
+working one.
+
+**Two premises in flow's own docs were falsified.** (1) CLAUDE.md § How to Work 3,
+`flow_scratch.py`'s docstring, and the FB-0082 history entry all say `CLAUDE_PLUGIN_ROOT` is set inside
+a `!`-block; measured in one session it was **unset** for `audit-skips`' fork and **set** for
+`audit-plan`'s, both `context: fork`. (2) `plugins/flow/...` is flow-repo-relative, so it is not a
+fallback in a consumer project at all. **Why CPR differs per skill is NOT established** — the fork's
+env could not be probed (installed-SKILL.md edits have no effect; the body is cached at session start,
+and `claude -p` is not logged in here). The fix therefore assumes neither state.
+
+**Fix:** one resolver (`$FPR`) for both helpers, **two arms and no local guess** —
+`$CLAUDE_PLUGIN_ROOT` (manifest-gated) → `installPath` from `installed_plugins.json` (each `flow@*`
+candidate identity-checked against its own `plugin.json`). Neither resolving refuses loudly. The
+cwd-relative third arm from the first cut was deleted by decision (FB-0142 option C).
+
+**Evals:** `run_scratch_isolation_evals.py::test_installed_layout()` + `test_fork_skill_roster()`,
+**37 checks**, all from a simulated
+**consumer** layout with CPR unset and no `plugins/flow/`. Instrument validated against a known
+positive — reverting only `SKILL.md` turns `installed-layout-resolves` red with the field report's exact
+message while `checkout-cpr-unset-resolves` stays green. Sweep 47/47 GREEN by exit code.
+
+**Spec-walk:** (declared here, in `planPath`, because `/flow:audit-coverage` correctly found that
+nothing in this doc covered the diff — the criteria had been written into a scratch file, which is not
+a declaration. Placed inside Current Focus so it is the FIRST Spec-walk block in the file, which is
+the one `extract-criteria.py` reads. Every box names its verification artifact after a pin marker —
+`/flow:autoplan`'s pin gate caught the first draft citing check names with no marker, so they read as
+unpinned.)
+
+- [x] With `CLAUDE_PLUGIN_ROOT` unset and a valid `flow@` install record present, the gate resolves a
+      root and returns real stage verdicts; with the record absent it returns the unresolved-root
+      refusal and never an audit — pinned by eval `installed-layout-resolves` +
+      `-no-record-refuses` + `-no-record-not-audit` (B1)
+- [x] An `installPath` whose own `plugin.json` is not flow's is rejected, not executed from —
+      pinned by eval `installed-layout-imposter-refused`
+- [x] A root carrying a manifest but no engine is accepted by arm 1 and then terminates as a blocking
+      `engine_error` — never a working-tree fallback, never a pass, never "nothing to audit" —
+      pinned by eval `installed-layout-engine-absent-is-engine-error` + `-not-audit` (B2)
+- [x] Two matching install entries produce the arbitrary-pick warning naming every candidate and
+      report `plugin_root_ambiguous: true`; exactly one entry produces neither — verified by eval
+      `installed-layout-resolves-via-record` plus the executed multi-candidate fixture (B3)
+- [x] The resolved root must be ABSOLUTE: a relative `CLAUDE_PLUGIN_ROOT`, or a relative `installPath`
+      in the record, is refused with a warning and never executed — because a relative path resolves
+      against the repo being audited, which re-opens the deleted path. Pinned by eval
+      `relative-root-refused-{host-var,install-record}` + `relative-root-no-execution-*` (the hostile
+      vendored script must not run), all four mutation-verified red
+- [x] There is NO cwd-relative fallback: a repo that vendors a complete, name-matching
+      `plugins/flow` is refused, its scripts are never executed, and the refusal says it will not
+      guess at a local copy — pinned by eval `cwd-arm-deleted-refuses` +
+      `cwd-arm-deleted-no-execution` (a hostile `flow_scratch.py` writes a marker; restoring the arm
+      makes it appear) + `cwd-arm-deleted-reports-no-arm` +
+      `cwd-arm-deleted-refusal-says-it-will-not-guess` + `cwd-arm-stays-deleted`, all six
+      mutation-verified red (B4, resolved as FB-0142 option C)
+- [x] The unresolved-root refusal attributes the failure to flow being unable to locate itself (not to
+      the handoff), ends on an actionable fix naming `CLAUDE_PLUGIN_ROOT`, and does not claim to have
+      read an install record that is absent — pinned by eval
+      `installed-layout-names-the-root-failure` + `-refusal-carries-a-remedy` +
+      `-refusal-honest-about-the-record` (B5)
+- [x] A present-but-unparseable install record is reported loudly rather than falling through
+      silently, and says "could not be parsed" rather than "no entry found" — verified by the
+      executed corrupt-record fixture (an unparseable record yields the warning on stderr)
+- [x] The stamp checker and the engine resolve off ONE root, asserted positively by construction —
+      pinned by eval `installed-one-root-two-helpers` (B6)
+- [x] A successful run reports which arm resolved (`host-var` / `install-record` / `checkout`), and
+      precedence is asserted rather than inferred from fixture starvation — pinned by eval
+      `installed-layout-cpr-wins-precedence` + `-resolves-via-record` +
+      `checkout-cpr-unset-uses-checkout-arm`
+- [x] `read_installed` and this block select the same entry from one fixture — pinned by eval
+      `registry-readers-agree`, mutation-verified by breaking only `read_installed`
+- [x] Every `context: fork` skill is ported or on a ledger with a reason; the ledger's claim is pinned
+      by the broken shape positively, so a port by ANY mechanism retires it; a broken population scan
+      cannot pass vacuously — pinned by eval `roster-count-exact` +
+      `roster-every-fork-skill-accounted` + `roster-no-stale-exemptions` +
+      `roster-exempt-still-unported-*` + `roster-exempt-still-has-broken-shape-*`
+- [x] The edited block contains no backtick (one would truncate the dynamic-context span) — verified
+      by grep with the ANCHORED extractor, after a naive first-backtick scan reported clean on a
+      truncated fragment during this very PR
+- [x] The harness passes under CI's detached HEAD, not only on a named branch — verified by running
+      the eval under `git checkout --detach` after CI caught the branch-dependent case
+- [x] `tools/eval-sweep.sh` GREEN by exit code, and `gh pr checks` consulted before calling anything
+      ready — verified by the CI report quoted in the PR body
+
+**Visual-walk:** N/A — no browser UI in this change.
+
+**Scope questions — ANSWERED by the orchestrator seat, 2026-11-01:** ship `audit-skips` only; route
+the four sibling fork skills to a separate dispatch (FB-0139 chunking); the seat owns extending
+`test_contracts()`'s `idiom_sites` roster for the arm-2 idiom. Both answers are reflected above and in
+the roadmap. What this worker did add, inside its own test rather than `test_contracts()`, is a
+**derived known-broken ledger** so the deferral has a tripwire: every `context: fork` skill must be
+either ported or named with a reason, and a *new* fork skill with the two-arm shape goes red
+(mutation-verified both ways).
+
+**Corrections the review pass forced on this PR's own first draft** — all three were claims, not code:
+1. **The census was ~7x low, and my correction to it was ALSO low.** "Five `!`-block fork skills" →
+   "13 preludes + 17 bare defaults" → finally, by grepping all of `plugins/flow` instead of
+   `skills/*/SKILL.md`: **15 `resolve-doc-slot.sh` preludes + 19 bare
+   `${CLAUDE_PLUGIN_ROOT:-plugins/flow}` defaults**, ~38 sites. Both undercounts had the same cause —
+   a grep scoped to top-level SKILL.md files, which misses nested ones including two in the *sourced*
+   helper `ship/lib/serve-preview.sh`. That bare form is *ungated* cwd-relative execution and is its
+   own security item, now filed separately with the option-C precedent attached.
+2. **"The install record names the exact version in use" was false, and flow had already measured it
+   false.** `ship/lib/plugin-provenance.py::read_running` records: an update rewrites the record but
+   needs a restart, so a session can run 1.29.0 while the record says 1.41.0. Arm 2 fires exactly when
+   CPR is unset. Comment and changelog corrected.
+3. **"A miss degrades to a loud refusal, never a false pass" was false.** An arm-2 miss fell through
+   to a cwd-relative, content-gated-only third arm. Routed to the PR as a `[decision-required]`
+   security blocker rather than patched on the worker's own judgment — and **answered 2026-11-02:
+   delete it.** The sentence is true now, but it was written before it was true, which was the problem.
+
+**⚠️ Still open — not this worker's lane:**
+- **CLAUDE.md § How to Work 3 carries the falsified CPR claim** and is always loaded, so the next
+  session inherits the wrong premise. Correction proposed, not made. FB-0142 carries the measurement.
+  `flow_scratch.py`'s docstring and the FB-0082 history entry repeat it.
+- **Version slot.** #186 and #187 *both* claim v1.65.0; this PR originally took **1.66.0** to stay
+  clear of both. #187 re-swept to v1.66.0 and merged first, then #188 re-swept to v1.67.0 and merged
+  next — both ahead of this PR. **Re-swept a second time at rebase: v1.66.0 → v1.68.0.**
+  **FB number collision too, caught separately from the version number:** #188 pushed its own
+  FB-0141 file first (a different relayed request — the `/flow:retro` rename), so this PR's FB-0141
+  is renumbered to **FB-0142** at the same rebase. Every site in this PR's own content (plan, roadmap,
+  changelog, evals, SKILL.md) is re-swept; #188's own FB-0141 references, inherited unchanged below
+  and in `roadmap.md`, are untouched because they correctly describe #188, not this PR.
+
+---
+
+### Previously in focus
+
+**Previously in focus — now merged:** **▶ EXECUTED, shipping (this branch `conductor/chat-and-pr-screenshots`, version claimed
 **▶ EXECUTED, shipping (this branch `conductor/rename-post-merge-to-retro`, **v1.67.0**, FB-0141):
 `/flow:post-merge` is now `/flow:retro`.** Ben's own words, relayed from `byamron/portfolio`: he
 reaches for it as "the workspace retro," and "post-merge" didn't come to mind when he went looking
