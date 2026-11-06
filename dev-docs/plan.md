@@ -2,7 +2,14 @@
 
 ## Current Focus
 
-**▶ EXECUTED, shipping (this branch
+**Nothing in flight.** #187, #188, and #189 all merged 2026-11-03 – 2026-11-06; reconciled by
+`/flow:land` below. Work is deliberately paused here — no new dispatch queued. The next session
+should read `### Previously in focus` for the last few shipped items and `dev-docs/roadmap.md`
+`## Next` for what's queued but not started, rather than assume anything is mid-flight.
+
+### Previously in focus
+
+**▶ EXECUTED, merged [#189](https://github.com/by-dev-tools/flow/pull/189) (this branch
 `conductor/fix-audit-skips-cant-find-its-checker-from-installed-plugin`, **v1.68.0**, FB-0142):
 `/flow:audit-skips` can reach its own helpers when flow is INSTALLED rather than checked out.**
 
@@ -140,12 +147,8 @@ either ported or named with a reason, and a *new* fork skill with the two-arm sh
   changelog, evals, SKILL.md) is re-swept; #188's own FB-0141 references, inherited unchanged below
   and in `roadmap.md`, are untouched because they correctly describe #188, not this PR.
 
----
 
-### Previously in focus
-
-**Previously in focus — now merged:** **▶ EXECUTED, shipping (this branch `conductor/chat-and-pr-screenshots`, version claimed
-**▶ EXECUTED, shipping (this branch `conductor/rename-post-merge-to-retro`, **v1.67.0**, FB-0141):
+**▶ EXECUTED, merged [#188](https://github.com/by-dev-tools/flow/pull/188) (this branch `conductor/rename-post-merge-to-retro`, **v1.67.0**, FB-0141):
 `/flow:post-merge` is now `/flow:retro`.** Ben's own words, relayed from `byamron/portfolio`: he
 reaches for it as "the workspace retro," and "post-merge" didn't come to mind when he went looking
 for it by name — even though the name accurately described *when* the skill runs, not *what* it is
@@ -196,7 +199,7 @@ run straight through to `/flow:ship` without a separate plan gate, per the dispa
   dispatch said to route rather than build (the rename rationale + relay-mechanism note; the portfolio
   doc-currency gate gap). Verify: `ls dev-docs/feedback/FB-0141*.md` shows the file; `grep -n
   "byamron/portfolio" dev-docs/roadmap.md` finds the filed entry.
-**▶ EXECUTING (resumed 2026-10-31 after a merge-ping gap from 2026-10-06 — #179 merged, nothing on
+**▶ EXECUTED, merged [#187](https://github.com/by-dev-tools/flow/pull/187) (resumed 2026-10-31 after a merge-ping gap from 2026-10-06 — #179 merged, nothing on
 the worker's end was wrong), this branch `conductor/efficiency-follow-up-checking-subagents-routing`:
 the token-efficiency follow-up — cursor-based worker reads, a workspace-vs-subagent table, and
 routing-by-job-fit (not account capacity).** Plan APPROVED at the gate; all three open calls
