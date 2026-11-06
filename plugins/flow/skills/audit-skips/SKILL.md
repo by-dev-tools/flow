@@ -45,7 +45,7 @@ On a successful run the block also reports **where it found flow itself** — `p
 `plugin_root_ambiguous`. These are provenance, not verdicts: do not let them change a
 stage classification. Quote `plugin_root_arm` in your summary when anything looks off, so
 the operator can tell whether the engine came from the host variable, the install record,
-or a local checkout — the question that went unanswerable for 35 releases (FB-0141). If
+or a local checkout — the question that went unanswerable for 35 releases (FB-0142). If
 `plugin_root_ambiguous` is `true`, flow matched more than one installed root and this run
 picked one arbitrarily; say so.
 
@@ -88,7 +88,7 @@ command -v jq >/dev/null 2>&1 || { printf '{"jq_error": "jq is not on PATH; flow
 # by construction, which also ends the cross-project clobbering of the global /tmp namespace.
 # Relative default resolves against $ROOT because of the cd above.
 STAGES="${FLOW_SKIP_AUDIT_STAGES:-.flow/skip-audit-stages.json}"
-# Flow plugin root -- TWO arms, and NO cwd-relative fallback by decision (FB-0141 has the
+# Flow plugin root -- TWO arms, and NO cwd-relative fallback by decision (FB-0142 has the
 # measurements, the ~35-site class, and the review history; this block keeps only what a
 # maintainer needs in place). READ THE SECURITY NOTE BELOW BEFORE PORTING THIS.
 #
@@ -115,7 +115,7 @@ STAGES="${FLOW_SKIP_AUDIT_STAGES:-.flow/skip-audit-stages.json}"
 # whatever repo was open, gated only by a grep for "flow" in a manifest inside that same
 # repo -- forgeable with one 20-byte file, because no file inside a tree can authenticate
 # that tree against whoever wrote it. It was DELETED by decision rather than narrowed
-# (FB-0141): the only population it served was "cloned flow, has not installed it yet",
+# (FB-0142): the only population it served was "cloned flow, has not installed it yet",
 # and that is the same one-time install step everyone performs anyway, so it protected
 # nobody while leaving a code-execution path open.
 #   DO NOT RE-ADD IT when porting this to another skill. A cwd-relative fallback here is

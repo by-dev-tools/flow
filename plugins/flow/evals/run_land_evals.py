@@ -26,7 +26,7 @@ Covers:
   skill 3 — SKILL.md: late visual-history distill reuses §5c / insert-visual-history.py.
   skill 4 — SKILL.md: never merges; uses REST PR-body form, never `gh pr edit --body`.
   skill 5 — SKILL.md: disable-model-invocation: FALSE (FB-0077 — model-invocable so
-           /flow:post-merge §3 can call it); 5b — §0 carries the never-auto-fire intent.
+           /flow:retro §3 can call it); 5b — §0 carries the never-auto-fire intent.
   reg 1 — workflow-help + docs/workflow.md reference /flow:land.
           (This previously also asserted the manifest `description` fields listed the
           skill. Dropped in FB-0078: the /plugin UI generates the component inventory
@@ -161,7 +161,7 @@ check("skill 3", "insert-visual-history.py" in skill and "§5c" in skill,
 check("skill 4",
       "Do not merge" in skill and "gh pr edit --body" in skill and "gh api -X PATCH" in skill,
       "must never merge; must use REST PR-body form not gh pr edit")
-# FB-0077 flipped this: land is model-invocable so /flow:post-merge §3 can call it.
+# FB-0077 flipped this: land is model-invocable so /flow:retro §3 can call it.
 # Anchored to the FRONTMATTER block, not a bare substring — the previous form
 # (`"disable-model-invocation: true" in skill`) kept passing after the flag was
 # flipped, because §0's prose quotes the old value while explaining the change. A
@@ -174,7 +174,7 @@ check("skill 5",
       bool(re.search(r"^disable-model-invocation:\s*false\s*$",
                      _frontmatter(skill), re.M)),
       "land must be model-invocable (disable-model-invocation: false, FB-0077) so "
-      "/flow:post-merge §3 can call it; the never-auto-fire guard is its §1a merged-PR gate")
+      "/flow:retro §3 can call it; the never-auto-fire guard is its §1a merged-PR gate")
 check("skill 5b", "## 0. Invocation precondition" in skill and "§1a" in skill,
       "land must state the never-auto-fire precondition in prose (§0), since the "
       "frontmatter flag no longer carries that intent")

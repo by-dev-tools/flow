@@ -3,8 +3,8 @@
 **Date:** 2026-11-01
 **Branch:** `conductor/fix-audit-skips-cant-find-its-checker-from-installed-plugin`
 **Commit / PR:** [this commit] — PR link pending push
-**Version:** v1.66.0
-**Feedback:** FB-0141
+**Version:** v1.68.0
+**Feedback:** FB-0142
 **SAFETY** — gate machinery. The failure mode was a gate that could never look, reporting
 "I could not verify" on every invocation in every consumer project.
 
@@ -37,7 +37,7 @@ running `lib/skip-audit-checks.py` directly worked), and reproduced here on **1.
 The premise that made this look impossible was wrong. CLAUDE.md § How to Work 3,
 `flow_scratch.py`'s docstring, and `2026-07-29-safety-flow-s-ephemeral-scratch-*` all state that
 `CLAUDE_PLUGIN_ROOT` is set inside a `!`-block. Measured in one session on 1.64.0: it was **unset** for
-`audit-skips`' fork and **set** for `audit-plan`'s — both `context: fork`. See FB-0141 for what was and
+`audit-skips`' fork and **set** for `audit-plan`'s — both `context: fork`. See FB-0142 for what was and
 was not established.
 
 ## How it was measured
@@ -69,7 +69,7 @@ extracted block — a real forked invocation cannot exercise a working-tree chan
   entry here claimed a miss "degrades to today's loud refusal — never to a false pass." That was false:
   an arm-2 miss fell through to **arm 3**, which is cwd-relative, and this block runs after a `cd` into
   the repo under review. `/flow:security-review` raised it as `[decision-required]` with three options
-  rather than letting me patch it on my own judgment; Ben chose **delete** (FB-0141 records the
+  rather than letting me patch it on my own judgment; Ben chose **delete** (FB-0142 records the
   reasoning). Arm 2 already resolves on every machine flow is actually used on, and the only population
   the fallback served was "cloned flow, not installed yet" — the same one-time install step everyone
   performs anyway. So it protected nobody while leaving a code-execution path open.

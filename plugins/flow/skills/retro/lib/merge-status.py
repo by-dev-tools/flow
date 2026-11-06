@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic core for /flow:post-merge (v1, FB-0072).
+"""Deterministic core for /flow:retro (v1, FB-0072).
 
 Three subcommands, each a pure-ish function the SKILL's bash drives so the
 merge-queue-safe gate + the archive-safety verdict are testable without a live
@@ -131,7 +131,7 @@ def archive_check(cwd: str | None = None) -> tuple[bool, list[str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Deterministic core for /flow:post-merge.")
+    ap = argparse.ArgumentParser(description="Deterministic core for /flow:retro.")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("classify", help="gh pr view --json blob (stdin) → merged/closed/open")

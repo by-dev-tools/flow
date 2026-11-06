@@ -467,7 +467,7 @@ def test_installed_layout():
         # (6) THE CWD-RELATIVE FALLBACK IS GONE, AND THIS IS THE EXPLOIT IT CLOSED.
         # There used to be a third arm: when neither the host variable nor the install
         # record resolved, the block ran its helpers out of ./plugins/flow -- and it runs
-        # after a cd into the repo UNDER REVIEW. Deleted by decision (FB-0141, option C),
+        # after a cd into the repo UNDER REVIEW. Deleted by decision (FB-0142, option C),
         # not narrowed: the only population it served was "cloned flow, not installed
         # yet", which is the same one-time install step everyone performs anyway.
         #
@@ -496,7 +496,7 @@ def test_installed_layout():
         check("cwd-arm-deleted-no-execution", not marker.exists(),
               "the repo-under-review's flow_scratch.py was EXECUTED -- the cwd-relative "
               "arm is still reachable, which is the arbitrary-code-execution path "
-              "FB-0141 option C deleted")
+              "FB-0142 option C deleted")
         check("cwd-arm-deleted-reports-no-arm", _arm(out) is None,
               f"a refused run must report no resolving arm; got arm={_arm(out)}")
         check("cwd-arm-deleted-refusal-says-it-will-not-guess",
@@ -577,7 +577,7 @@ def test_installed_layout():
                   f"it returned {pr.stdout[:200]} stderr={pr.stderr[:160]}")
 
 
-# ------------------------------------------------------- fork-skill roster (FB-0141)
+# ------------------------------------------------------- fork-skill roster (FB-0142)
 def test_fork_skill_roster():
     """Every `context: fork` skill is either ported to the two-arm resolver or on a
     named known-broken ledger.
@@ -596,7 +596,7 @@ def test_fork_skill_roster():
     # a port that misses a skill, and a NEW fork skill written with the two-arm shape.
     #
     # The exemptions are a LEDGER OF KNOWN-BROKEN, not an approval. Each is a live
-    # FB-0141 instance; audit-plan and audit-completion are the WORST of them (no
+    # FB-0142 instance; audit-plan and audit-completion are the WORST of them (no
     # fallback at all, so an unset CLAUDE_PLUGIN_ROOT means extract_session.py never
     # runs and the reviewer audits an EMPTY session context, then reports "No issues
     # flagged" -- fail-OPEN, where audit-skips failed closed). Deleting a line here
@@ -605,10 +605,10 @@ def test_fork_skill_roster():
     block = blocks[0] if blocks else ""
     PORTED = {"audit-skips"}
     EXEMPT = {
-        "audit-plan": "FB-0141, UNPORTED + fail-OPEN: no fallback; unset CPR -> empty session context",
-        "audit-completion": "FB-0141, UNPORTED + fail-OPEN: no fallback; unset CPR -> empty session context",
-        "critique-plan": "FB-0141, UNPORTED: flow-repo-relative arm for extract_session + walk-pin-lint",
-        "audit-coverage": "FB-0141, UNPORTED: flow-repo-relative arm for three libs",
+        "audit-plan": "FB-0142, UNPORTED + fail-OPEN: no fallback; unset CPR -> empty session context",
+        "audit-completion": "FB-0142, UNPORTED + fail-OPEN: no fallback; unset CPR -> empty session context",
+        "critique-plan": "FB-0142, UNPORTED: flow-repo-relative arm for extract_session + walk-pin-lint",
+        "audit-coverage": "FB-0142, UNPORTED: flow-repo-relative arm for three libs",
     }
     forks = []
     for skill_md in sorted(FLOW.glob("skills/*/SKILL.md")):
@@ -626,7 +626,7 @@ def test_fork_skill_roster():
     # A fork skill that is neither ported nor on the ledger is an unreviewed instance.
     unaccounted = sorted(names - PORTED - set(EXEMPT))
     check("roster-every-fork-skill-accounted", not unaccounted,
-          f"fork skill(s) {unaccounted} are neither ported nor listed as a known FB-0141 "
+          f"fork skill(s) {unaccounted} are neither ported nor listed as a known FB-0142 "
           "exemption. If you added a fork skill, resolve its helpers off the two-arm "
           "resolver; if it genuinely needs none, add it to EXEMPT with the reason.")
     # And the ledger may not outlive the thing it describes: a retired or renamed skill
@@ -675,7 +675,7 @@ def test_fork_skill_roster():
     # cases, which fail if resolution stops working at all.
     check("cwd-arm-stays-deleted",
           'FPR="plugins/flow"' not in block and 'FPR_ARM="checkout"' not in block,
-          "the cwd-relative fallback is back. It was deleted by decision (FB-0141 option "
+          "the cwd-relative fallback is back. It was deleted by decision (FB-0142 option "
           "C) because this block runs after a cd into the repo under review, so it is "
           "arbitrary code execution from any repo the user opens -- not a convenience.")
     # >= 1, not == 1. Identity-gating arm 1 as well (it currently checks only that the

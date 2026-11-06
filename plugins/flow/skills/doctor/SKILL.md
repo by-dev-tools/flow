@@ -124,7 +124,7 @@ If the agent has the `SlashCommand` tool available, it CAN invoke `/help` via th
 
 **Check 1.4 — skill composition targets are model-invocable (FB-0074)**
 
-A skill can instruct the agent to run another skill (`Skill("flow:x")`) — flow's "composition, not reimplementation" idiom. But `disable-model-invocation: true` blocks *programmatic* invocation, not just auto-selection: the call is rejected at runtime and the composition degrades to its fallback on **every** run, silently. The two halves of the contract live in different files (call site vs. callee frontmatter), so only a cross-file lint catches it — this is the FB-0010 fan-out class. Flow shipped exactly this bug in `/flow:post-merge` → `/flow:land` and could not see it for two releases.
+A skill can instruct the agent to run another skill (`Skill("flow:x")`) — flow's "composition, not reimplementation" idiom. But `disable-model-invocation: true` blocks *programmatic* invocation, not just auto-selection: the call is rejected at runtime and the composition degrades to its fallback on **every** run, silently. The two halves of the contract live in different files (call site vs. callee frontmatter), so only a cross-file lint catches it — this is the FB-0010 fan-out class. Flow shipped exactly this bug in `/flow:retro` (formerly `/flow:post-merge`) → `/flow:land` and could not see it for two releases.
 
 Runs over the installed plugin's skills, and over the project's own `.claude/skills/` when present (a consumer writing custom skills hits the same trap).
 
@@ -975,7 +975,7 @@ else
     echo "[PASS] dispatchBackend: all $NVERBS verbs valid — orchestrator suite can dispatch"
   else
     echo "[WARN] dispatchBackend is present but incomplete or malformed."
-    echo "$ADAPTER_OUT" | jq -r '.verbs | to_entries[] | select(.value.state != "ok") | "       - \(.key): \(.value.state) — \(.value.problems // [] | join("; "))"' 2>/dev/null \
+    echo "$ADAPTER_OUT" | jq -r '.verbs | to_entries[] | select(.value.state != "ok") | "       - \(.key): \(.value.state)\(if .value.optional then " (optional)" else "" end)\(if (.value.problems // [] | length) > 0 then " — " + (.value.problems // [] | join("; ")) else "" end)"' 2>/dev/null \
       || echo "       (could not parse the adapter report; run the check above by hand)"
     echo "       Fix: each verb is a command template. Placeholders are a CLOSED set —"
     PH=$(printf '%s' "$ADAPTER_OUT" | jq -r '[.known_placeholders[] | "{" + . + "}"] | join(" ")' 2>/dev/null)

@@ -25,13 +25,19 @@ The plugin extraction umbrella (PRs 1-3 in flow + PRs 4-6 in md-manager) is the 
 > replaced by whatever Ben sets next — not silently carried forward as the implied stopping point
 > once it's been reached.
 
-**Plugin at v1.66.0 (this PR — the skip-legitimacy gate can find its own checker when flow is INSTALLED rather than checked out, FB-0141). `/flow:audit-skips` resolved its stamp checker and its engine as `$CLAUDE_PLUGIN_ROOT/...` else `plugins/flow/...`, and that second arm is flow-repo-relative — in a consumer project it cannot exist. So on any run where the host variable was absent BOTH helpers were unreachable together and the gate reported `stamp_unverifiable` on every single invocation; reported against an installed 1.29.0, reproduced on 1.64.0, and structurally invisible from this checkout for 35 releases because here, and only here, the broken arm is the working one. Resolution is now TWO arms off one root — the host variable (manifest-gated) and the `installPath` in the host's own install record (identity-checked) — and **a successful run reports which arm resolved**, so "which flow graded this?" stops being unanswerable. **The cwd-relative third arm was DELETED by decision, not narrowed** (option C): it ran helper scripts out of whatever repo was open, gated only by a forgeable grep, and the only population it served was "cloned flow, not installed yet" — the same one-time install step everyone performs anyway. Deleting it was NOT sufficient: a RELATIVE root re-opens the same path, measured, so a non-absolute root is now refused too. Three fixtures vendor a hostile `flow_scratch.py` and assert it never runs. Only `audit-skips` is fixed; the ~38-site class and the four fail-open sibling skills are filed below.)**
+**Plugin at v1.68.0 (this PR — the skip-legitimacy gate can find its own checker when flow is INSTALLED rather than checked out, FB-0142). `/flow:audit-skips` resolved its stamp checker and its engine as `$CLAUDE_PLUGIN_ROOT/...` else `plugins/flow/...`, and that second arm is flow-repo-relative — in a consumer project it cannot exist. So on any run where the host variable was absent BOTH helpers were unreachable together and the gate reported `stamp_unverifiable` on every single invocation; reported against an installed 1.29.0, reproduced on 1.64.0, and structurally invisible from this checkout for 35 releases because here, and only here, the broken arm is the working one. Resolution is now TWO arms off one root — the host variable (manifest-gated) and the `installPath` in the host's own install record (identity-checked) — and **a successful run reports which arm resolved**, so "which flow graded this?" stops being unanswerable. **The cwd-relative third arm was DELETED by decision, not narrowed** (option C): it ran helper scripts out of whatever repo was open, gated only by a forgeable grep, and the only population it served was "cloned flow, not installed yet" — the same one-time install step everyone performs anyway. Deleting it was NOT sufficient: a RELATIVE root re-opens the same path, measured, so a non-absolute root is now refused too. Three fixtures vendor a hostile `flow_scratch.py` and assert it never runs. Only `audit-skips` is fixed; the ~38-site class and the four fail-open sibling skills are filed below. **Version re-swept v1.66.0 → v1.68.0, and FB re-swept FB-0141 → FB-0142, both at this rebase:** #187 re-swept to v1.66.0 and merged, then #188 re-swept to v1.67.0 AND pushed its own FB-0141 file first (a different relayed request — the `/flow:retro` rename) — both ahead of this PR, so this PR re-sweeps up past both on both axes.)**
+
+**Previously: v1.67.0 (shipped [#188](https://github.com/by-dev-tools/flow/pull/188) — `/flow:post-merge` is now `/flow:retro`, FB-0141). Ben reaches for this skill as "the workspace retro" — relayed from `byamron/portfolio`, since that workspace's contribution queue couldn't survive its own archival. Renamed the directory + frontmatter `name` and every live reference (workflow-help, `docs/workflow.md`, `/flow:land`'s caller text, doctor's skill-composition example, three eval harnesses' live composition assertions, the `postMergeWaitSeconds` slot's description, README, the canonical cloud-workflow plan, and several not-yet-picked-up § Next/§ Later items that named the skill by path). No deprecated alias — checked first against Claude Code's own docs and confirmed plugin skills have no author-definable alias mechanism. Historical records (changelog, history, this section's own "Shipped"/"Prior" narrative below) deliberately left naming `post-merge`, since they describe what was true when those PRs shipped. Also filed (not built): § Next now carries the `/flow:ship` Step 5b version-gate fallback gap the same relay surfaced — a judgment call for its own future plan, not decided here.)**
+
+**Previously: v1.66.0 (shipped [#187](https://github.com/by-dev-tools/flow/pull/187) — cheap worker reads, a workspace-vs-subagent table, and routing by job fit, FB-0140). Executes three findings from the merged token-efficiency audit (`dev-docs/research/2026-10-efficiency-audit.md`, [#181](https://github.com/by-dev-tools/flow/pull/181)) against Ben's 2026-10-05 follow-up brief. `dispatch_backend.py` gains a sixth, optional verb, `readSince {session}{cursor}` — messages since a cursor instead of a full re-read, with `/flow:orchestrate` step 4 now stating the contract explicitly. `/flow:spawn` gains an unnumbered "Before Step 0: choose the primitive" workspace-vs-subagent table, plus the nuance that a subagent's output lands in the calling session's own context. "Needs the account's capacity" is now a named-forbidden routing reason in `/flow:spawn` step 2, and `research/orchestrator-field-manual.md` § 3 carries Ben's priority verbatim. `/simplify` caught and fixed a fan-out contradiction (an `OPTIONAL_VERBS` set duplicating a fact already in the per-verb tuple's `purpose` string) and a fabricated citation (a measured figure attributed to a doc section that never contained it, traced to a now-unrecoverable source session). Resuming this branch after a 25-day merge-ping gap also re-confirmed a known hazard: a clean rebase can silently reorder `dev-docs/plan.md`'s active block, caught by `extract-criteria.py` before any gate graded the wrong PR's criteria.)**
 
 **Previously: v1.65.0 (shipped [#186](https://github.com/by-dev-tools/flow/pull/186) — a captured still frame reaches the human in the chat message and in the PR description; roadmap D7's § Next "inline chat images" item, which this closes, no new FB). The third and last route to a reviewer's eye, and the only one with no dependency on something staying alive or public: v1.60.0's preview URL stops serving when its workspace sleeps, v1.59.0's PR-body image needs the repo to be public, and the local path is honest and unreachable by construction. A `captureBackend` host adapter modelled on `previewBackend` — **one** verb `screenshot`, a CLOSED `{url}`/`{out}`/`{width}`/`{height}` vocabulary in which **all four are required**, because a template that cannot be told a size produces two identical frames under two different size labels. **SUCCESS IS THE ARTIFACT, NEVER THE EXIT STREAM**, and that came from measurement rather than taste: every headless run prints `Failed to connect to the bus` to stderr and still exits 0 with a correct PNG, so a stderr-sensitive reader discards every working capture while an exit-code-trusting one accepts a truncated file. The engine reads the PNG magic bytes and the IHDR dimensions and consults the exit code only to make an already-failed reason specific. A page declaring no UTF-8 charset is **REFUSED before capture, not warned about** — a screenshot of a mojibake page is a picture that lies, published into the one message the human is guaranteed to read, and nothing downstream can tell it from a correct one. **ONE image in the chat, both in the PR body:** the ~100-word gate-1 budget exists because the messages were too long to read, and while image syntax costs no prose words, an image is not free attention. PR-body frames are committed per-PR under `<dir of visualHistoryPath>/pr-frames/<branch-slug>/` and deliberately NOT in the curated visual-history record, whose own §5c calls it curated rather than a per-PR dump — and the per-PR directory IS the own-PR guard: another PR's frames are not excluded by a comparison, they are never listed. ~20 KB per visual PR, measured and accepted. Schema 39 → 41 slots (`captureBackend`, `chatImagePath`), on top of v1.64.0's `ciWaitSeconds`, fan-out fixed at five shipped sites plus two eval harnesses whose hardcoded counts were re-keyed — and re-swept a second time at rebase, because #184 had concurrently swept the same five sites to 39 for its own new slot, so both branches were individually right and the merged tree was neither. `/flow:doctor` Check 2.14 WARNs on a malformed template, because this feature also fails **open and invisible**. See `dev-docs/history/2026-10-06-captured-frames-in-the-chat-and-the-pr-body.md`.)**
 
 **Previously: v1.64.0 (shipped [#184](https://github.com/by-dev-tools/flow/pull/184) — `/flow:ship` never calls a PR "ready" that GitHub would block, FB-0137).** `gh pr checks` cannot carry a three-way verdict (passing / failing / not-yet-run) through its own exit code — measured, not assumed — so the gate reads the `--json` rollup instead and treats a still-running check as neither ready nor failed. `ship-spike` reports the same three states but drafts only on a genuine failure, keeping its existing halt-and-adjudicate shape rather than importing full draft-gating. **Autonomy correction mid-build:** the first design let the gate author, commit, and push a fix for a red check unsupervised; narrowed to propose-only (the same shape `coverage` gaps already take) because an unattended write to the branch is the risk class the autonomous-work guardrails exist for — the skill prose and the human-facing copy were updated together so neither promises a push the code no longer makes. Recently shipped: **v1.62.0 ([#183](https://github.com/by-dev-tools/flow/pull/183) — an explicit `Visual-walk: N/A` no longer forces a visual-significance false positive), v1.61.0 ([#179](https://github.com/by-dev-tools/flow/pull/179) — worker messages identifiable at a glance, and fleet state glanceable without scrolling chat; FB-0132/FB-0133), v1.57.0 ([#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131).**
 
-**Roadmap-hygiene finding, not fixed here:** the `## Now` section above this headline still reads as the 2026-09-28 stopping-point narrative ("S0, CV1, D1 Phase 3 — then stop"), whose own stated deletion criterion ("remove this line when S0 + CV1 + D1 Phase 3 have shipped") fired weeks ago. Three PRs in a row (#180/#183/#184) bumped this headline's version without touching that narrative. Left for a dedicated pass rather than folded into this docs-only field-manual PR.
+**Roadmap-hygiene finding, not fixed here:** the `## Now` section above this headline still reads as the 2026-09-28 stopping-point narrative ("S0, CV1, D1 Phase 3 — then stop"), whose own stated deletion criterion ("remove this line when S0 + CV1 + D1 Phase 3 have shipped") fired weeks ago. Six PRs in a row (#180/#183/#184/#186/#187/this one) bumped this headline's version without touching that narrative. Left for a dedicated pass rather than folded into any one of them.
+
+**Previously: v1.61.0 (shipped [#179](https://github.com/by-dev-tools/flow/pull/179) — worker messages identifiable at a glance, and fleet state glanceable without scrolling chat; FB-0132/FB-0133).** Worker→seat messages now open `[w:<short-name>] <STATUS>` over four statuses (`GATE` · `DONE` · `BLOCKED` · `FYI`), stated identically at the four docs that state the ping contract and pinned by a new CI-wired `run_ping_label_evals.py`. A stall reports as `BLOCKED` because the seat's next action is identical to a block's; the body's first line (`waiting on:` / `stalled on:`) carries the distinction. `/flow:orchestrate` gains a **digest-only `status` path**: it re-runs the derivation that already exists (steps 2–4), prints one phone-sized four-column table, and **stores nothing** — a stored status table was measured stale within minutes — and it skips steps 5 and 6, with step 5 now stating that precondition at its own site. **The eval derives its site list AND pins it:** the derived half alone was measurably insufficient — rewording one site's trigger phrase while adding a conforming fifth site left the harness green over a shipped doc carrying none of the contract. **SAFETY:** `/flow:security-review` found that the digest's classification block interpolated repository-derived branch names into shell commands, and `git check-ref-format` permits `;`, `$(…)` and backticks in a ref name — a fork's branch name could execute on the seat's host; values are now reduced and single-quoted, pinned by its own predicate after review measured that stripping the quotes passed every other check. **Eight review-driven behaviours ship UNDECLARED and route to the draft manifest** — the PR is a draft and names each as a decision. Recently shipped: **v1.57.0 ([#176](https://github.com/by-dev-tools/flow/pull/176) — the plugin auto-updater could only update installs that did not need updating, FB-0131), v1.56.0 ([#174](https://github.com/by-dev-tools/flow/pull/174) — CV1's unfinished half: three gates that read less than they report).**
 
 **Previously: v1.60.0 (shipped [#180](https://github.com/by-dev-tools/flow/pull/180) — the two ephemeral HTML artifacts can be served at a sign-in-gated URL a phone can open; roadmap D7 option 1, no new FB). A `previewBackend` host adapter modelled on `dispatchBackend`: three verbs, a CLOSED `{dir}`/`{port}` vocabulary with deliberately **no `{url}`** — the URL is the adapter's output, read from `publish`'s stdout, never a value a template composes, because a template that could compose it would let config decide what the hand-off claims. No host CLI is named in any plugin artifact; the existing `run_dispatch_backend_evals.py` § 7 sweep already covers `plugins/flow/lib/`, and its exact artifact count is what noticed the new file. **The constraint that reshaped the feature came from the host CLI's own `--help`, not from an assumption:** a workspace has ONE preview URL and pointing it at a different port *keeps* that URL, so two artifacts cannot hold two live links — both are staged into one `.flow/preview/` directory and handed out as `<url>/<file>`. A second port would have silently re-pointed the first link while leaving it looking valid, which is the exact defect v1.59.0 removed. The URL is **additive**: measured, a served preview stops serving when its workspace sleeps while the registration survives, so the honest local line stays as the floor. The URL is a bare autolink and the path stays a code span — deliberately opposite, since a code span is untappable on a measured touch client; the rule *render it the way the reader can act on it* is written into the engine so the two are not later harmonised. Flow's own `flow.config.json` sets the slot (FB-0085: a slot unset everywhere is a feature exercised nowhere), with `serve` calling a `.claude/bin/` script because the adapter refuses a template carrying a shell operator. `/flow:doctor` Check 2.13 WARNs on a malformed template, because this feature fails **open and invisible**. Schema 37 → 38 slots, fan-out fixed at four shipped sites. See `dev-docs/history/2026-10-04-serve-the-ephemeral-artifacts-at-a-url.md`.)**
 
@@ -428,7 +434,7 @@ other workers, so nobody should duplicate them here.
   (86 bytes) — the sign-in gate is real, not merely documented.
 
   **Residuals, stated rather than discovered later:** one orphaned static server per workspace
-  (teardown is `unpublish`, called only by `/flow:post-merge`, because a ship may be followed
+  (teardown is `unpublish`, called only by `/flow:retro`, because a ship may be followed
   by a human reading the page minutes later); the link's audience is the **org**, not the
   public, and persists until the workspace sleeps or is archived; and the biggest one — **a
   reviewer without workspace read access gets nothing from the link, and the local line is all
@@ -652,9 +658,9 @@ Strengthen the consumer-side memory→preflight loop so the agent checks its wor
 
 ## Next
 
-### The other four forked skills cannot reach their helpers from an installed plugin (FB-0141)
+### The other four forked skills cannot reach their helpers from an installed plugin (FB-0142)
 
-**Filed by the v1.66.0 worker, which fixed only `/flow:audit-skips`; the orchestrator seat confirmed
+**Filed by the v1.68.0 worker, which fixed only `/flow:audit-skips`; the orchestrator seat confirmed
 that scoping on 2026-11-01 (one shippable PR, FB-0139 chunking) and routed the rest here.**
 
 **▶ DO `audit-plan` + `audit-completion` FIRST — the fixed instance was the least dangerous one.**
@@ -670,7 +676,7 @@ catch exactly that shape of claim.
 **THE PORT IS TWO ARMS, NOT THREE — this is decided, not open.** The resolver is
 `$CLAUDE_PLUGIN_ROOT` → the install record, and **no cwd-relative fallback**. Do not re-add one as a
 convenience: these blocks `cd` into the repo under review, so a `plugins/flow` fallback is arbitrary
-code execution from any repo the user opens. Decided 2026-11-02; FB-0141 § "DECIDED: the cwd-relative
+code execution from any repo the user opens. Decided 2026-11-02; FB-0142 § "DECIDED: the cwd-relative
 fallback is deleted, not narrowed" carries the full reasoning and is the durable record — not the PR
 body, which a reader months from now cannot grep for. It is pinned as a demonstrated exploit
 (`cwd-arm-deleted-no-execution` stages a hostile vendored `flow_scratch.py` and fails if it runs).
@@ -717,10 +723,10 @@ code, only a convention, so a single PR touches four deployed prompt surfaces at
 `test_contracts()`'s own `idiom_sites` roster to the arm-2 idiom is tracked separately; the
 orchestrator seat took that item on 2026-11-01.)
 
-### Three one-line doc survivors of the FB-0141 change (found by its own review, left out of lane)
+### Three one-line doc survivors of the FB-0142 change (found by its own review, left out of lane)
 
-Each is a direct consequence of v1.66.0 and each is a **one-line prose fix** in a file outside the
-FB-0141 worker's declared write scope (`plugins/flow/skills/ship/**` is `sensitivePaths`; `CLAUDE.md`
+Each is a direct consequence of v1.68.0 and each is a **one-line prose fix** in a file outside the
+FB-0142 worker's declared write scope (`plugins/flow/skills/ship/**` is `sensitivePaths`; `CLAUDE.md`
 is project-dev infra). Drafted here so the next owner does not have to re-derive them. This is the
 FB-0010 item-2 shape — grep first, edit second — and the grep was run over the comment and the
 narrative docs but not over these three.
@@ -728,7 +734,7 @@ narrative docs but not over these three.
 1. **`plugins/flow/skills/ship/SKILL.md` (§2a.3, the `stamp_unverifiable` branch) prescribes a remedy
    that cannot fix the new dominant cause.** It still defines the condition as "the stamp checker
    itself could not run — `flow_scratch.py` missing, or no `python3`/`jq`" and tells the operator to
-   "install python3/jq". After v1.66.0 the dominant cause is an unresolvable plugin root, so the
+   "install python3/jq". After v1.68.0 the dominant cause is an unresolvable plugin root, so the
    headline bug this release fixes now hands an installed-flow user advice to install Python they
    already have. The skill's own copy was updated; this one was not. **Fix:** add "flow's own
    installation could not be located" to the cause list and extend the remedy to "Reinstall the flow
@@ -742,7 +748,7 @@ narrative docs but not over these three.
    **Fix:** re-point it to "what is installed *now*, which is not necessarily what this session
    loaded — see `read_running`."
 3. **`CLAUDE.md` § How to Work 3 now over-promises for this skill, in two ways.** (a) It states
-   `CLAUDE_PLUGIN_ROOT` is "set in `!`-preprocessor blocks" — falsified by FB-0141's measurement.
+   `CLAUDE_PLUGIN_ROOT` is "set in `!`-preprocessor blocks" — falsified by FB-0142's measurement.
    (b) It tells a reader that "everything the Bash tool resolves comes from the working tree", which
    for `/flow:audit-skips` is now false in **every** case: with the cwd arm deleted, both remaining
    arms resolve an *installed* root and nothing can reach the checkout. Measured 2026-11-02 — from
@@ -753,11 +759,11 @@ narrative docs but not over these three.
 
 ### The cwd-relative arm is ~38 call sites, and 19 of them are UNGATED (security)
 
-Verified by grep 2026-11-01, after the FB-0141 PR's first draft under-counted the class by ~7x.
+Verified by grep 2026-11-01, after the FB-0142 PR's first draft under-counted the class by ~7x.
 Separate item from the one above because the **fix is different**: these need the default *removed*,
 not a third arm added.
 
-**Counts verified by grep over all of `plugins/flow`, 2026-11-02 — and corrected twice.** The FB-0141
+**Counts verified by grep over all of `plugins/flow`, 2026-11-02 — and corrected twice.** The FB-0142
 PR first said "five fork skills", then "13 preludes + 17 bare defaults". Both were low, for the same
 reason both times: the grep was scoped to `skills/*/SKILL.md` and missed nested files. **Scope it to
 the whole of `plugins/flow`.**
@@ -765,9 +771,9 @@ the whole of `plugins/flow`.**
 - **19 bare `${CLAUDE_PLUGIN_ROOT:-plugins/flow}` defaults** — `gate` (5), `spawn` (4), `handoff` (3),
   `orchestrate` (3), `doctor` (2), and **two in `ship/lib/serve-preview.sh`** — a *sourced helper*,
   not a SKILL.md, which is exactly the file class the earlier greps missed. Each is an *unconditional*
-  cwd-relative target with **no identity check whatsoever** — strictly worse than the arm FB-0141 just
+  cwd-relative target with **no identity check whatsoever** — strictly worse than the arm FB-0142 just
   deleted, which at least had a name check. **There is now a decided precedent: remove the default, do
-  not add a second arm** (FB-0141 option C). This is precisely the shape `skills/doctor/SKILL.md`'s own
+  not add a second arm** (FB-0142 option C). This is precisely the shape `skills/doctor/SKILL.md`'s own
   SECURITY header records as having shipped once and been arbitrary code execution with the user's
   privileges from any repo they opened — and `doctor` itself still carries two. Highest-value item in
   this family. (There are **no** live `${CLAUDE_PLUGIN_ROOT:-.}` sites left; both grep hits for that
@@ -792,10 +798,80 @@ is still open.
 `CLAUDE_PLUGIN_ROOT` is "set in `!`-preprocessor blocks". That is falsified and CLAUDE.md is always
 loaded, so the next session inherits the wrong premise. `flow_scratch.py`'s module docstring and
 `dev-docs/history/2026-07-29-safety-flow-s-ephemeral-scratch-moves-from-tmp-to-a-repo-loc.md` repeat
-it. The v1.66.0 worker left all three alone (outside its lane) and filed FB-0141 instead.
+it. The v1.68.0 worker left all three alone (outside its lane) and filed FB-0142 instead.
 
+### A human-only skill's description must name search terms as search terms, not as `Trigger:` phrases (staff-review finding, rename-to-retro PR)
 
-### Inline chat images as the always-available route for still frames (D7, option 1's sibling)
+**The problem.** `/flow:retro`'s rename (FB-0141) added an "Often searched for as…" sentence to
+its SKILL.md description, naming the human-language terms ("retro #N", "workspace retro", "merged
+— safe to archive?") someone might actually type or say, and explicitly distinguishing them from
+`Trigger:` phrases a model could mistake as routable — load-bearing, since `retro` carries
+`disable-model-invocation: true` and a `Trigger:` phrase there would silently promise automatic
+routing that cannot happen. `/flow:land`'s neighboring description still uses plain `Trigger: …`
+wording, which is correct for `land` (model-invocable) but means the convention distinguishing the
+two phrasings exists nowhere except as an inline, one-off edit in `retro`'s own file.
+
+**Why this is not fixed inline.** The fix that actually closes the gap is a documented authoring
+rule, not another skill edit — e.g. one line in `.claude/rules/documentation.md` (or wherever
+skill-frontmatter conventions live) stating "a `disable-model-invocation: true` skill's description
+names human search terms as search terms, never as `Trigger:` phrases." Scoping that into a
+pure-rename PR would be the FOLLOW-UP-as-scope-creep failure mode `general.md` warns against.
+
+**Surfaces when:** the next `disable-model-invocation: true` skill is authored or renamed — the
+likeliest failure is copying the nearest example (`land`'s `Trigger:` wording) and reintroducing
+the exact confusion this PR fixed in one place.
+
+### `docs/upgrade.md`'s bump-cadence table doesn't know a minor bump can carry breaking changes (push-further finding, rename-to-retro PR)
+
+**The problem.** `changelog/v1.67.0.md` (the `/flow:retro` rename) is this changelog's first-ever
+entry with `Breaking changes: yes`, and it ships on a **minor** version bump (1.64.0 → 1.67.0).
+`docs/upgrade.md`'s "when to run it" cadence table only tells a reader to check the
+`Breaking changes:` line on a *major* bump; its minor-bump row frames minor bumps as purely
+additive and gives no cue to check for breaking changes there at all. A consumer following that
+table's own stated cadence for a minor bump would have no textual reason, within `docs/upgrade.md`
+itself, to go read the changelog entry before a script invoking the renamed command starts failing.
+
+**Why this is not fixed inline.** It's a pre-existing gap in `docs/upgrade.md` that this PR happened
+to be the first to expose, not something this rename caused — fixing it is a one-sentence addition
+to a file this PR doesn't otherwise touch, independent of the rename itself.
+
+**Surfaces when:** `docs/upgrade.md`'s cadence table is next revised, or another minor/patch bump
+ships with `Breaking changes: yes` before this is fixed.
+
+### §5b's doc-currency version gate has no good fallback for a project with no real release versioning (relayed from `byamron/portfolio` #212)
+
+**Relayed, not reproduced here** — an external agent forwarded this on Ben's behalf from the
+`byamron/portfolio` repo, whose workspace was about to be archived (so it couldn't drain through
+the normal `/flow:contribute` queue; see FB-0141 on why that path matters and what degraded when
+it wasn't available).
+
+**The problem.** `/flow:ship` Step 5b's doc-currency gate resolves the project's current version
+from the first versioned manifest it finds (`plugins/flow/.claude-plugin/plugin.json`, else root
+`package.json`) and BLOCKS every ship until that exact version string appears on the plan/roadmap
+headline. `byamron/portfolio` has no `flow.config.json` and a `package.json` whose version Vite
+scaffolded as `0.0.1` and nothing since has bumped — a site, not a published package, so nothing
+in the project's own workflow ever had a reason to touch that field. Two ways this is worse than a
+normal unversioned-manifest project: (1) the gate still finds *a* version string (it is not the
+"no versioned manifest found" N/A path — `0.0.1` is a real, parseable value), so it demands
+`0.0.1` appear on a forward-doc headline for a project that will never again have a reason to
+write a version number anywhere; (2) once written once, `0.0.1` satisfies the gate FOREVER — the
+string never changes, so a future real regression in doc-currency (the thing this gate exists to
+catch) would read as clean no matter how stale the forward docs actually are. The gate's whole
+design assumes the version source of truth is a value someone deliberately bumps on every release;
+a Vite-default that nobody bumps breaks that assumption silently.
+
+**Why this is not built here.** What the fallback *should* be is a genuine design question with
+more than one defensible answer — skip the gate entirely when no `flow.config.json` is present
+and the only version source is an unbumped scaffold default; require an explicit
+`flow.config.json.versionSource: none` opt-out; or derive a different currency signal entirely
+(e.g. the latest commit SHA, or a dated marker) for projects with no release versioning. Each has
+real tradeoffs (silent weakening of a real gate vs. new config-slot surface vs. a different
+mechanism entirely), and picking one without the project's own input is exactly the kind of
+unilateral judgment call this repo's own guardrails reserve for a plan + human approval, not a
+roadmap entry.
+
+**Surfaces when:** `/flow:ship` Step 5b's version-resolution logic is next touched, OR another
+project with no real release-versioning discipline reports the same false-block / false-pass pair.
 
 ### ~~Inline chat images as the always-available route for still frames (D7, option 1's sibling)~~ — ✅ SHIPPED v1.65.0
 
@@ -3273,7 +3349,7 @@ lenses and consciously deferred, not missed.
 
 **Mechanize the `.claude/rules/{general,documentation}.md` ↔ plugin-skill sync obligation (from `/simplify` altitude lens, v1.33.0).** Phase 00 (FB-0085) added a cross-reference note to both sides of two file pairs stating that 3 sections in `general.md` (Scope discipline, Decision tracking, Autonomous work guardrails) and the history.md/feedback.md format fields in `documentation.md` are intentionally mirrored between this repo's dev-side rules and the plugin's shipped `general`/`documentation` skills — "edit both together, or note why." Nothing mechanically enforces that promise; it's pure honor-system, weaker than this repo's own Consistency-discipline bar ("never ship a negative assertion alone... treat every survivor as a fix that ships with the contract change"). **Shape:** a small eval (same shape as `run_jq_guard_evals.py`, which derives its guarded set from disk rather than a hardcoded list) that extracts the named sections from both files in each pair and asserts textual equality, failing loudly the next time one side is edited and the other forgotten. **Surfaces when:** either file in either pair is touched.
 
-**Harden the in-repo helper-path fallback across ~15 SKILL sites (from `/flow:security-review`, v1.32.0 — pre-existing, systemic).** Every SKILL that resolves a helper does `if [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -f "$CLAUDE_PLUGIN_ROOT/…" ]; then … elif [ -f "plugins/flow/skills/…" ]; then …`. The `elif` executes Python by *repo-relative* path when `CLAUDE_PLUGIN_ROOT` is unset — so a cloned untrusted repo that ships that exact path gets its own code run by the agent. Sites include `ship/SKILL.md:130,292,426,991,1014,1058,1306,1331`, `post-merge/SKILL.md:91`, `doctor/SKILL.md:136`, and now `verify-build/SKILL.md:147`. **v1.32.0 added one more instance of an existing convention and was explicitly NOT blocked for it** — blocking one instance of a 15-site pattern would be arbitrary. **Shape:** gate the in-repo fallback on the checkout actually *being* the flow repo (a marker file, or `git config --get remote.origin.url` match) rather than on mere path existence. **Surfaces when:** touching any SKILL helper-resolution block.
+**Harden the in-repo helper-path fallback across ~15 SKILL sites (from `/flow:security-review`, v1.32.0 — pre-existing, systemic).** Every SKILL that resolves a helper does `if [ -n "$CLAUDE_PLUGIN_ROOT" ] && [ -f "$CLAUDE_PLUGIN_ROOT/…" ]; then … elif [ -f "plugins/flow/skills/…" ]; then …`. The `elif` executes Python by *repo-relative* path when `CLAUDE_PLUGIN_ROOT` is unset — so a cloned untrusted repo that ships that exact path gets its own code run by the agent. Sites include `ship/SKILL.md:130,292,426,991,1014,1058,1306,1331`, `retro/SKILL.md:91` (formerly `post-merge/SKILL.md`), `doctor/SKILL.md:136`, and now `verify-build/SKILL.md:147`. **v1.32.0 added one more instance of an existing convention and was explicitly NOT blocked for it** — blocking one instance of a 15-site pattern would be arbitrary. **Shape:** gate the in-repo fallback on the checkout actually *being* the flow repo (a marker file, or `git config --get remote.origin.url` match) rather than on mere path existence. **Surfaces when:** touching any SKILL helper-resolution block.
 
 **`_repo_scratch` guards the scratch *directory* against symlinks but not the *leaf file* (from `/flow:security-review`, v1.32.0).** `manifest-triage.py:315` refuses to write when `.flow/` is a symlink (CWE-59, added with the repo-local move), but does not check the file it returns. v1.32.0 adds a new `>>` redirect through that path at `ship/SKILL.md:432`, so a repo committing `.flow/manifest-<branch>.md` as a symlink would have flow append through it. **Not a BLOCKER and correctly not treated as one:** the appended content is flow-controlled prose, not attacker-chosen, so no real primitive follows — the reviewer tried and could not build one. **Shape:** an `O_NOFOLLOW`-equivalent check on the leaf, which closes the class rather than this instance. **Surfaces when:** touching `_repo_scratch` or adding a writer under `.flow/`.
 
@@ -3411,9 +3487,9 @@ The FB-0079 parity eval extracts and checks the gate's *slot-resolution* jq, but
 
 The asymmetry is the argument: `ship → {security-review, accessibility-review, verify-build, audit-coverage, audit-skips}` and `ship-spike → verify-build` are equally load-bearing compositions with **zero** positive pinning. Delete any of those `Skill()` calls tomorrow and the lint still reports PASS — the FB-0074 concession could recur in six places right now, silently.
 
-The deeper form: declare each edge as data — an `invoked-by: [flow:post-merge]` frontmatter key (the runtime ignores unknown keys, so it costs nothing at load) or a small edge table — then replace every hand-pin with two generic invariants: (a) every declared edge exists as a fenced `Skill()` call whose target is model-invocable; (b) every fenced `Skill()` call is a declared edge. That covers land/post-merge *and* the six unpinned pairs, and it makes "who may call this skill" lintable in both directions — which is also the missing mechanism behind `/flow:land` §0, whose never-auto-fire intent is currently prose (the flag it replaced was enforceable; the prose is not).
+The deeper form: declare each edge as data — an `invoked-by: [flow:retro]` frontmatter key (the runtime ignores unknown keys, so it costs nothing at load) or a small edge table — then replace every hand-pin with two generic invariants: (a) every declared edge exists as a fenced `Skill()` call whose target is model-invocable; (b) every fenced `Skill()` call is a declared edge. That covers land/retro *and* the six unpinned pairs, and it makes "who may call this skill" lintable in both directions — which is also the missing mechanism behind `/flow:land` §0, whose never-auto-fire intent is currently prose (the flag it replaced was enforceable; the prose is not).
 
-Also folds in: the composition contract has **no argument channel**. `_SKILL_CALL_RE` only matches `Skill("name")`, so `/flow:post-merge` §3 must tell `/flow:land` its PR number in prose, and the lint can only assert the call *exists*, never that it is invoked correctly. "Composition, not hand-off" currently only holds cleanly for zero-argument callees.
+Also folds in: the composition contract has **no argument channel**. `_SKILL_CALL_RE` only matches `Skill("name")`, so `/flow:retro` §3 must tell `/flow:land` its PR number in prose, and the lint can only assert the call *exists*, never that it is invoked correctly. "Composition, not hand-off" currently only holds cleanly for zero-argument callees.
 
 ### `/flow:staff-review`'s `/tmp` diff handoff collided across projects — live, this session (from the FB-0077 staff-review)
 
@@ -3450,11 +3526,11 @@ FB-0078 sharpened the urgency: it removed the manifest `description` fields as a
 
 Still open, and correctly exploratory: the same accretion in SKILL.md **bodies**, which is a different problem (they cite versions legitimately, and the cost is context loaded on every invocation rather than a rendered pane).
 
-FB-0077 added ~40 lines of *retrospective narration* to two shipped skills — land §0's "Why this is a precondition and not a frontmatter flag", post-merge's "That call took two tries to get right, and the history is the point", and the rewritten Gotcha. Each is well-written and defensible alone. But `SKILL.md` is not documentation; it is context loaded into the model on **every** invocation. `post-merge` is now ~360 lines / 12 FB references, `land` ~390 / 11, `ship` ~1300 / 40, and the trend is that every skill converges on being its own `history.md`.
+FB-0077 added ~40 lines of *retrospective narration* to two shipped skills — land §0's "Why this is a precondition and not a frontmatter flag", retro's "That call took two tries to get right, and the history is the point", and the rewritten Gotcha. Each is well-written and defensible alone. But `SKILL.md` is not documentation; it is context loaded into the model on **every** invocation. `retro` is now ~360 lines / 12 FB references, `land` ~390 / 11, `ship` ~1300 / 40, and the trend is that every skill converges on being its own `history.md`.
 
 There is a second-order cost visible in this very PR: land §0's normative instruction ("exactly two legitimate ways in — stop and say so") was immediately followed by ten lines arguing why the previous, stronger guard was removed. Admirable in a decision record; an odd thing to hand a model at the moment you want it to obey a precondition. `CLAUDE.md` already draws this line — "'What' goes in the change itself. 'Why' goes in the documentation" — it just isn't applied to the deployed prompts themselves.
 
-Not decision-shaped yet: we don't know how much inline rationale is load-bearing for a model *not* re-breaking a fixed defect. Plausibly a lot. The answer might be a per-skill `## Decision history` appendix, a one-sentence + FB-ID pointer convention, or nothing — it needs an experiment. **Surfaces when:** any `SKILL.md` crosses ~400 lines, or a third retrospective paragraph lands in `post-merge`/`land`/`ship`. Files: `plugins/flow/skills/*/SKILL.md`.
+Not decision-shaped yet: we don't know how much inline rationale is load-bearing for a model *not* re-breaking a fixed defect. Plausibly a lot. The answer might be a per-skill `## Decision history` appendix, a one-sentence + FB-ID pointer convention, or nothing — it needs an experiment. **Surfaces when:** any `SKILL.md` crosses ~400 lines, or a third retrospective paragraph lands in `retro`/`land`/`ship`. Files: `plugins/flow/skills/*/SKILL.md`.
 
 ### §7c's cross-session reconcile can silently downgrade a passing Test plan (from the FB-0075 integration review)
 
@@ -3476,9 +3552,9 @@ FB-0075 gave the manifest line ONE owner (`manifest-triage.py add-entry`, which 
 
 ### Un-performed waivers have a durable record and no reader (from the FB-0075 staff-review)
 
-**Surfaces when:** `/flow:post-merge` §4 is next touched, or a merged PR turns out to have carried an accepted debt nobody tracked.
+**Surfaces when:** `/flow:retro` §4 is next touched, or a merged PR turns out to have carried an accepted debt nobody tracked.
 
-`## Waived at ship` records `fixed anyway | shipped as-is` — and the measured evidence says 2 of 3 real waivers were "un-performed" (the human said ship it, I'll deal with it later). But after merge nothing ever reads that section: `/flow:post-merge` shipped as the close-out skill (#80), already fetches the merged PR, and contains zero occurrences of "waive". The field that distinguishes "I did it" from "I owe this" is written correctly and consumed by nobody. Direction: `/flow:post-merge` §4 parses `## Waived at ship` off the merged body (reuse `manifest-triage.py`'s `_waivers_from_body`, already written), turns each un-performed entry into an explicit close-out line and a plan-doc item, and §6's archive-safety verdict stops calling a branch with un-performed waivers silently safe to archive.
+`## Waived at ship` records `fixed anyway | shipped as-is` — and the measured evidence says 2 of 3 real waivers were "un-performed" (the human said ship it, I'll deal with it later). But after merge nothing ever reads that section: `/flow:retro` shipped as the close-out skill (#80), already fetches the merged PR, and contains zero occurrences of "waive". The field that distinguishes "I did it" from "I owe this" is written correctly and consumed by nobody. Direction: `/flow:retro` §4 parses `## Waived at ship` off the merged body (reuse `manifest-triage.py`'s `_waivers_from_body`, already written), turns each un-performed entry into an explicit close-out line and a plan-doc item, and §6's archive-safety verdict stops calling a branch with un-performed waivers silently safe to archive.
 
 ### Stage the resolution, don't just describe it (from the FB-0075 push-further lens)
 
@@ -3624,7 +3700,7 @@ On classic-projects repos with affected `gh` versions, `gh pr edit` / `gh pr rea
 
 **Shipped v1** as `skills/post-merge/` (SKILL.md + `lib/merge-status.py`) + `run_merge_status_evals.py` + the `postMergeWaitSeconds` slot; the queue-safe three-state merge gate + compose-with-`/flow:land` + user-scope-only feedback synthesis are all in. See `history.md` "`/flow:post-merge` skill v1". **v1b remains** (deferred, below the design record): the transcript-timestamp watermark + `feedbackPath` FB-inbox for repo-doc capture; robust multi-session / Conductor-worktree window resolution; and converging `/flow:land`'s standalone §1a merge gate onto the shared three-state helper (v1 leaves land's gate as-is since post-merge polls before calling it). The design record below is retained for the v1b work.
 
-**v1b staff-review follow-ups (from the `/flow:staff-review` on this branch; deferred, not blockers). Surfaces when:** `skills/post-merge/lib/merge-status.py` or `skills/post-merge/SKILL.md` §2/§5/§6 is next touched.
+**v1b staff-review follow-ups (from the `/flow:staff-review` on this branch; deferred, not blockers). Surfaces when:** `skills/retro/lib/merge-status.py` (formerly `post-merge/`) or `skills/retro/SKILL.md` §2/§5/§6 is next touched.
 - **Distinguish a broken/absent `gh` from a genuinely-OPEN PR in the poll loop.** v1's `classify` folds an empty/garbage blob into `open` (the deliberate transient-not-terminal default), which is correct for the merge gate but *masks* the case where `gh pr view` itself failed (no auth, offline, rate-limited) — it reads as "not merged yet, keep polling" and then exits graceful-giveup, never telling the human their `gh` is broken. Fix: capture `gh`'s exit code in §2 separately from the JSON parse, and on a non-zero `gh` surface a distinct "couldn't reach GitHub — check `gh auth status`" message instead of silently polling to the cap. (Keeps `classify` pure; the gh-health signal lives in the bash shell, like the rest of the I/O.)
 - **Precise "auto-merge armed vs nothing-scheduled" wait copy.** The design (step 1) calls for the `OPEN` poll message to read differently when `autoMergeRequest != null` (poll confidently — a merge is intended) vs an `OPEN` PR with nothing scheduled (honest "not merged yet"). v1's `classify` reads `autoMergeRequest` into the blob but the SKILL's §2 wait message doesn't yet branch on it — both paths print the same "still queued" line. Thread the armed/unscheduled bit into the §2 human-facing copy.
 - **"Branch merged + remote gone ⇒ treat as pushed" in `archive-check`.** After a squash-merge with auto-delete-branch, the local branch's upstream ref can be gone, so `archive_check` reports "no upstream set … cannot confirm work is pushed" even though the work is *provably* on `main` (it merged). That's a false not-safe on the exact happy path the skill targets. Fix: when the upstream is missing, before flagging it, check whether HEAD is an ancestor of the default branch (`git merge-base --is-ancestor HEAD origin/<default>`) — if so, the work is merged and the missing upstream is expected, not a warning.
@@ -4181,6 +4257,7 @@ with it the property that just caught this, so it is not obviously the right tra
 - **Doc-currency gate: `jq`-absent hardening** (PR DC staff-review FOLLOW-UP) — the Step 5b / Check 2.6 currency gate assumes `jq` is on PATH; if absent (with a manifest present), it false-FAILs with a misleading "no .version" diagnosis. Add a `command -v jq` preflight with a clean install hint (FB-0009 fail-fast shape). Low priority — consistent with existing `jq` reliance (Step 1c, doctor 2.5). **Surfaces when:** the currency-gate shell is next touched, OR a consumer reports a jq-missing false-FAIL.
 - **Narrative-currency micro-check: "in-flight" vs merged** (PR DC push-further FOLLOW-UP) — the version-token gate is mechanical; full narrative correctness is (correctly) left to 5a judgment. But ONE narrative assertion is mechanical, not fuzzy: flag any `## Now` line marking a PR/branch "in flight" whose PR is actually merged on the default branch (`gh pr list --state merged`, FB-0009 early-exit shape). The second-worst drift this PR's evidence cited ("PR Q in flight" while shipped). Net-new doctor/ship check. **Surfaces when:** a "PR X in flight" line is next found stale, OR the next doctor-check-touching PR.
 - **`## Flow run` skip-vocabulary consistency check** (PR T staff-review FOLLOW-UP) — the skip-reason vocabulary (`skipped (spike)` / `skipped (tiny)` / `uiSurface:false` / `verifyEnabled:false` / `platform library|none`) + the `<✓ / skipped (reason)>` Status-cell shape now live in `/flow:ship` §7, `/flow:ship-spike` §7, and (by reference) the dev-side `.claude/skills/ship`. PR T guards drift with a one-PR spec-walk grep; the durable fix is a `/flow:doctor` check that diffs the skip-reason token set + Status-cell convention across those surfaces. Net-new check; fold into the Check 2.5 generalization above. **Surfaces when:** the `## Flow run` table wording is edited in any ship skill.
+- **`readSince`'s adoption details are unspecified** (`dispatch_backend.py` v1.66.0 staff-review FOLLOW-UPs, both latent since no shipped backend configures the verb yet). Two gaps: (1) no stated fallback for a worker's *first* `readSince` call when the host's `createWorker` reply carries no cursor to prime it — the docstring says `cursor` comes from a prior read or from that reply, but names no in-between case; (2) a per-worker cursor is seat-local state with no stated recovery path, which sits awkwardly against `/flow:handoff`'s invariant that the orchestrator holds nothing unrecoverable from git/the backend/the human. Both degrade safely today (worst case: one extra full read) so neither blocked v1.66.0. **Surfaces when:** a `flow.config.json.dispatchBackend` first configures `readSince` for real, OR `/flow:handoff`'s succession-brief contract is next touched.
 
 ---
 
@@ -4210,7 +4287,7 @@ with it the property that just caught this, so it is not obviously the right tra
 to `PORTED`, **or** any other harness under `plugins/flow/evals/` grows a hand-maintained
 known-broken list.
 
-FB-0141's eval needed a way to make a *deliberate* deferral impossible to forget, and what it grew is
+FB-0142's eval needed a way to make a *deliberate* deferral impossible to forget, and what it grew is
 a small pattern: derive the population from disk, require every member to be either fixed or named in
 a ledger with a reason, assert no ledger entry has gone stale, assert the derived population matches
 the ledger exactly (so a broken scan cannot make the whole thing vacuously true), and pin the
@@ -4222,7 +4299,7 @@ roadmap entry, which nothing checks. A named idiom would make it mechanically re
 
 **Why it is here and not in § Next:** the API and the cost are both unknown. One instance is not a
 pattern, and the honest tiebreaker is to wait for the second consumer rather than design for it.
-Raised by the push-further lens on PR #<FB-0141>, which could not name the shape either.
+Raised by the push-further lens on PR #<FB-0142>, which could not name the shape either.
 
 
 ### Durable-execution precedent (Temporal / AWS Step Functions) for R1/R4's checker shape — found by the push-further lens, 2026-10-04
@@ -4702,7 +4779,7 @@ _Original entry (kept for context):_
 The audit-skips engine-error fix (this PR) makes a *present-but-malformed* handoff exit non-zero and surface loudly. But a *distinct* failure remains: when the skill is **forked** (`Skill("flow:audit-skips")`), the parent's `/tmp/flow-skip-audit-stages.json` can be invisible to the fork's filesystem, so `[ -f "$STAGES" ]` is false → the fork emits the *absent-handoff* no-op ("no stage report to audit") even though a valid handoff exists → the whole skip-legitimacy gate silently no-ops (reproduced in-session). A per-caller guard in ship (re-run the engine in the parent shell) was prototyped and **rejected by the /simplify altitude lens**: it patches a *symptom* in one caller and duplicates the engine invocation, when the `/tmp`-handoff-as-IPC pattern is used by *every* forked reader in flow — so if fork-`/tmp`-isolation is real, they're all exposed. The right shape is a **transport** fix, not N per-caller guards: candidates are (a) default the handoff to a repo-relative / scratchpad path both parent and fork share (the `FLOW_SKIP_AUDIT_STAGES` override already exists as the seam), or (b) recognize the mechanical engine is *deterministic* and doesn't need the fork at all — run it in the parent and fork only the LLM-judgment layer over its output (which also removes the duplication). Investigate whether the fork isolation is systematic before committing to (a) vs (b). Note if (b) is chosen: the engine would then be the *sole* arbiter of input presence, so it must own the absent-vs-malformed distinction itself (today the shell's `[ -f "$STAGES" ]` owns "absent → legit no-op" while the engine's non-zero exit owns "present-but-unreadable"; the engine currently maps a nonexistent path and malformed JSON to the *same* exit-1 "cannot read", which is safe only because the shell filters absent-but-expected first). A distinct exit code or a `--require-report` flag would let the parent-run engine keep "absent-but-expected → legit no-op" without the shell guard.
 
 ### Archive-safety over live background processes, not just git state (FB-0072 post-merge staff-review exploration)
-**Surfaces when:** `archive_check` in `plugins/flow/skills/post-merge/lib/merge-status.py` is next touched, OR a dogfood archives a worktree that still had a flow-started dev server / watcher / background task running.
+**Surfaces when:** `archive_check` in `plugins/flow/skills/retro/lib/merge-status.py` is next touched, OR a dogfood archives a worktree that still had a flow-started dev server / watcher / background task running.
 
 The v1 design (step 4) listed "no flow-started background processes" as an archive-safety input, but v1 ships only the git-state checks (uncommitted / untracked / unpushed / no-upstream) — the process check was dropped because it has no clean, portable shape. "Flow-started background process" is genuinely hard to pin down: a `preview_start` dev server, a `run_in_background` Bash task, a `Monitor` loop, and a Conductor-worktree watcher are all different mechanisms with no shared registry to query, and a naive `pgrep`/`lsof` sweep would both miss the session-scoped ones and false-flag unrelated user processes. The honest v1 verdict is "safe to archive *per git state*"; extending it to "and nothing this session left running" wants either a flow-side background-task registry (nothing writes one today) or a session-transcript scan for un-stopped `run_in_background` / `preview_start` calls (fragile, and outside the deterministic-core boundary the helper deliberately keeps). Investigate whether a lightweight session-scoped process ledger is worth the coupling before adding the check — until then the git-state verdict is the defensible scope, and the human still eyeballs their own terminal.
 

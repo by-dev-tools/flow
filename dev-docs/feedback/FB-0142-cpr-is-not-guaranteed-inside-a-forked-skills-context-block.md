@@ -1,4 +1,4 @@
-# FB-0141 — `CLAUDE_PLUGIN_ROOT` is not guaranteed inside a forked skill's `!`-block, and a flow-repo-relative fallback is not a fallback
+# FB-0142 — `CLAUDE_PLUGIN_ROOT` is not guaranteed inside a forked skill's `!`-block, and a flow-repo-relative fallback is not a fallback
 
 **Date:** 2026-11-01
 **Source type:** review feedback (external agent field report, relayed as user direction)
