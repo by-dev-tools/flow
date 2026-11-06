@@ -3,8 +3,6 @@
 Flow's own development tracking. **Not shipped** — none of this is part of the plugin (see `CLAUDE.md` § Repository Layout for the three-surface boundary).
 
 This file exists because point-in-time docs get buried by default: `CLAUDE.md`'s Core Documents table listed only the five living docs, so `research/` and `handoffs/` were invisible to any agent orienting from it. **Every new doc under `research/` or `handoffs/` must be added here in the same PR that creates it** — see § Rules below.
-| `dev-docs/handoffs/2026-10-01-cv1-followup-dispatch.md` | CV1 follow-up: the orchestrator's dispatch verbatim — scope bound + both open decisions' authority (ACTIVE) |
-| `dev-docs/handoffs/2026-10-03-mobile-options-1-3-dispatch.md` | Mobile options 1–3: the orchestrator's dispatch verbatim — PR A/PR B scope bound, write scope, number-claiming protocol, and PR B's blocking dependency on Ben's measured iOS answers (ACTIVE) |
 
 ---
 
@@ -72,6 +70,9 @@ A **second** research location exists outside `dev-docs/`, added by #104. It is 
 | [`handoffs/pr-q-verify-build-plan.md`](handoffs/pr-q-verify-build-plan.md) | ⚪ **SHIPPED** — `/flow:verify-build`, v1.3.0 (#26). Historical record; its "Phase 3 in progress" status line is stale |
 | [`handoffs/pr2-flow-plan.md`](handoffs/pr2-flow-plan.md) | ⚪ **SHIPPED** — the workflow-skills extraction. Historical record; status line is stale |
 | [`handoffs/md-manager-pr4-6-spec.md`](handoffs/md-manager-pr4-6-spec.md) | ⚪ **FOREIGN REPO** — spec for md-manager PRs 4–6, not flow. Kept for cross-repo context |
+| [`handoffs/2026-10-01-cv1-followup-dispatch.md`](handoffs/2026-10-01-cv1-followup-dispatch.md) | ⚪ **SHIPPED** — merged as #174 (v1.56.0). Historical record; its internal "Status: ACTIVE" line is stale |
+| [`handoffs/2026-10-03-mobile-options-1-3-dispatch.md`](handoffs/2026-10-03-mobile-options-1-3-dispatch.md) | ⚪ **SHIPPED** — PR A merged as #186, PR B merged as #180. Historical record; its internal "Status: ACTIVE" line and unchecked Done-means boxes are stale |
+| [`handoffs/2026-10-03-mobile-option-4-touch-annotation-layer.md`](handoffs/2026-10-03-mobile-option-4-touch-annotation-layer.md) | 🅿️ **PAUSED 2026-11-06 by Ben — not abandoned.** Touch support for the gate-1 annotation layer, round 3 in review. Informal feedback given, gate 1 not approved; worker's round-4 candidate list proposed but not built. Worker workspace archived; resume by reading this doc first |
 
 ---
 
