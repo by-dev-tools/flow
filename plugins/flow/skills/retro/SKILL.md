@@ -86,8 +86,8 @@ and `run_skill_composition_evals.py` pins that clause alongside the flag.
 
 ## Argument
 
-`/flow:retro [<PR#> …]` — zero or more PR numbers (`151`, `#151`, or a PR URL; space- or
-comma-separated).
+`/flow:retro [<PR#> …]` — zero or more PR numbers (`151` or `#151`; space- or
+comma-separated — a PR URL is refused, since it could name another repo).
 
 - **One or more numbers** — exactly that group. Use this when the conversation names the PRs.
 - **None** — **do not ask.** The group is every PR merged into the default branch since the
@@ -148,6 +148,9 @@ else
   [ -z "$MARKER" ] && MARKER="${FLOW_CONTRIB_DIR:-$HOME/.claude/plugins/data/flow/contributions}/last_harvested.json"
   WM="$(dirname "$MARKER")/last_retro.json"
   LISTJSON=$(gh pr list --state merged --base "$DEFAULT_BRANCH" --limit 100 --json number,title,mergedAt 2>/dev/null)
+  # `gh pr list` orders by CREATION, so a long-lived PR merged recently can sit outside a full
+  # page. Say so rather than let the watermark advance silently past it.
+  [ "$(printf '%s' "$LISTJSON" | jq 'length' 2>/dev/null)" = "100" ] && echo "⚠️ [retro] 100 merged PRs came back (the page limit) — an older-created PR merged recently may be missing from the default group. Pass its number explicitly if so." >&2
   [ -n "$LISTJSON" ] || { echo "🚫 BLOCKER: 'gh pr list' returned nothing (auth/network?) — cannot tell what merged. Nothing was changed." >&2; exit 1; }
   NUMS=$(printf '%s' "$LISTJSON" | python3 "$H" select --watermark-file "$WM" --repo "$REPO") || { echo "🚫 BLOCKER: could not select the default group." >&2; exit 1; }
   if [ -z "$NUMS" ]; then
@@ -250,7 +253,8 @@ the reason `/flow:retro` is an orchestrator.
 
 First, find which PRs already have a landing PR (idempotent re-run, or the human ran `/flow:land`
 by hand). Match on the **title naming that number** — a group's PR names all of them — and only
-land the rest:
+land the rest. A *closed-unmerged* landing PR does not count (an abandoned docs PR must not
+satisfy doc-currency forever); an open or merged one does:
 
 ```sh
 NUMS="<MERGED from §2, space-separated>"
@@ -258,7 +262,7 @@ TODO=""
 LANDS=$(gh pr list --search "docs: land in:title" --state all --limit 100 --json number,state,url,title 2>/dev/null)
 while read -r N; do
   [ -n "$N" ] || continue
-  HIT=$(printf '%s' "$LANDS" | jq -r --arg n "$N" '[.[] | select(.title | test("(^|[^0-9])#" + $n + "([^0-9]|$)"))] | .[0].url // empty' 2>/dev/null)
+  HIT=$(printf '%s' "$LANDS" | jq -r --arg n "$N" '[.[] | select(.state != "CLOSED") | select(.title | test("(^|[^0-9])#" + $n + "([^0-9]|$)"))] | .[0].url // empty' 2>/dev/null)
   if [ -n "$HIT" ]; then echo "[retro] #$N already has a landing PR: $HIT — doc-currency satisfied."; else TODO="$TODO $N"; fi
 done <<EOF
 $(printf '%s' "$NUMS" | tr -s ' ,\n' '\n')
@@ -415,7 +419,12 @@ while read -r N; do
 
   # A merged parent's branch can be the base of an open child PR — leave it, name the child.
   if [ -n "$BR" ]; then
-    DEPS=$(gh pr list --state open --base "$BR" --json number --jq '[.[].number] | map("#" + tostring) | join(" ")' 2>/dev/null)
+    # Fail CLOSED: a gh error (rate limit, network) must not read as "no dependents" — that is the
+    # exact case this guard exists for, and it would delete the base out from under a stacked child.
+    if ! DEPS=$(gh pr list --state open --base "$BR" --json number --jq '[.[].number] | map("#" + tostring) | join(" ")' 2>/dev/null); then
+      echo "⚠️ [retro] #$N: could not check whether open PRs are based on '$BR' (gh failed) — branch left in place." >&2
+      continue
+    fi
     if [ -n "$DEPS" ]; then
       echo "⚠️ [retro] #$N: '$BR' is the base of open PR(s) $DEPS — branch left in place so they are not retargeted/closed under you." >&2
       continue
@@ -495,7 +504,8 @@ contradict a warning printed seconds earlier. Assemble the verdict from FOUR inp
    success with no PR to show for it is a contradiction — report the contradiction, don't pick the
    flattering side.
 4. **PRs not closed out (from §2)** — each `CLOSED` or still-open PR is a `🚫` item by itself: it
-   was left out of every step above.
+   was left out of every step above. Likewise, if §1b's selection said `N more merged PR(s) beyond the
+   cap`, the group is not complete: that is a `🚫` item (`N more merged PRs waiting — re-run`), never a ✅.
 
 **Assemble:** print `✅ safe to archive` ONLY when ALL hold — git-state `safe`; §5 left no local
 branch behind for a PR in `MERGED`; every merged PR has a landing PR that is merged (or that you

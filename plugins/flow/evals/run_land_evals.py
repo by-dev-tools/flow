@@ -185,6 +185,9 @@ check("skill group 2", "refuses the whole call" in skill and "A group lands whol
       "one unmerged number must refuse the whole group (never a half-landed group)")
 check("skill group 3", "carries **every** number" in skill and "docs: land #151 #153 #154" in skill,
       "the group PR title must name every number — retro's already-landed search keys on it")
+check("skill group 3b", 'TITLE_NUMS=$(' in skill and '--title "docs: land ${TITLE_NUMS}' in skill
+      and '--title "docs: land #${N}' not in skill,
+      "the shipped gh pr create BLOCK must build the title from the whole list, not from the lowest N")
 check("skill group 4", '${PREFIX}land-${LO}-${HI}' in skill and '${PREFIX}land-${LO}"' in skill,
       "single PR keeps land-<N>; a group gets land-<lowest>-<highest>")
 check("skill 5b", "## 0. Invocation precondition" in skill and "§1a" in skill,

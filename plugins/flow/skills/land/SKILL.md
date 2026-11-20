@@ -420,7 +420,9 @@ use the canonical `gh`-resilience fallback (see `/flow:ship` Step 7 § "gh
 resilience"), never `gh pr edit --body`:
 
 ```sh
-gh pr create --base "$BASE" --title "docs: land #${N} — post-merge currency" --body-file <bodyfile>
+# Title names EVERY number (retro's already-landed search keys on it); N above is only the lowest.
+TITLE_NUMS=$(printf '%s' "$NUMS" | tr -s ' ,\n' '\n' | sort -n | sed 's/^/#/' | tr '\n' ' ' | sed 's/ $//')
+gh pr create --base "$BASE" --title "docs: land ${TITLE_NUMS} — post-merge currency" --body-file <bodyfile>
 ```
 
 For a group the title carries **every** number — `docs: land #151 #153 #154 — post-merge

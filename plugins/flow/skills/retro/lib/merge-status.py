@@ -18,7 +18,7 @@ merge-queue-safe gate + the archive-safety verdict are testable without a live
 Group handling (v1.69.0) — a batch of merged PRs is closed out in ONE run:
 
   parse-prs     — raw tokens → normalized, de-duplicated PR numbers (accepts `151`, `#151`,
-                  a PR URL, comma-separated). Refuses anything else with exit 2.
+                  comma/space-separated). Refuses anything else, URLs included, with exit 2.
   select        — the DEFAULT group: `gh pr list --state merged` JSON (stdin) → the PR
                   numbers merged since the last retro, per a per-repo watermark. Excludes
                   `docs: land` PRs (the output of a previous retro is not input to the next).
@@ -149,14 +149,12 @@ def archive_check(cwd: str | None = None) -> tuple[bool, list[str]]:
 # Group handling (v1.69.0)
 # --------------------------------------------------------------------------------------
 
-_PR_URL_RE = re.compile(r"^https?://[^/\s]+/[^/\s]+/[^/\s]+/pull/(\d+)/?(?:[#?].*)?$")
-
-
 def parse_prs(tokens: list[str]) -> list[int]:
     """Normalize raw argument tokens into an ordered, de-duplicated list of PR numbers.
 
-    Accepts `151`, `#151`, `https://github.com/o/r/pull/151`, and comma- or space-separated
-    runs (`151,153`, `"151 153"`). Anything else raises ValueError — a non-number reaching `gh pr view` or a
+    Accepts `151`, `#151`, and comma- or space-separated runs (`151,153`, `"151 153"`). A PR URL
+    is deliberately NOT accepted: it names an owner/repo, and reducing it to a bare number would
+    run the close-out (including branch cleanup) against the CURRENT repo's PR of that number. Anything else raises ValueError — a non-number reaching `gh pr view` or a
     branch name is how a typo becomes a cleanup of the wrong thing, so it stops here."""
     out: list[int] = []
     for raw in tokens:
@@ -164,17 +162,19 @@ def parse_prs(tokens: list[str]) -> list[int]:
             tok = tok.strip()
             if not tok:
                 continue
-            m = _PR_URL_RE.match(tok)
-            if m:
-                num = m.group(1)
-            else:
-                num = tok[1:] if tok.startswith("#") else tok
+            num = tok[1:] if tok.startswith("#") else tok
             if not num.isdigit() or int(num) <= 0:
                 raise ValueError(f"not a PR number: {tok!r}")
             n = int(num)
             if n not in out:
                 out.append(n)
     return out
+
+
+# What /flow:land actually emits: `docs: land #<N> …`. A bare "docs: land" prefix would also drop
+# a legitimate "docs: landing page copy" PR from the default group, and the watermark would then
+# advance past it.
+_LAND_TITLE_RE = re.compile(r"docs: land #\d", re.IGNORECASE)
 
 
 def _parse_ts(value: str):
@@ -216,7 +216,7 @@ def select_group(prs: list, watermark: dict, now: datetime, fallback_days: int =
         if not isinstance(pr, dict):
             continue
         title = str(pr.get("title", "") or "")
-        if title.lower().startswith("docs: land"):
+        if _LAND_TITLE_RE.match(title):
             continue
         ts = _parse_ts(pr.get("mergedAt", ""))
         num = pr.get("number")
@@ -279,7 +279,7 @@ def advance_watermark(path: str, repo: str, closed: list) -> dict:
     return rec
 
 
-_REF_SAFE_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
+_REF_SAFE_RE = re.compile(r"[A-Za-z0-9._/-]+")
 
 
 def _worktree_branches(cwd: str | None) -> dict:
@@ -328,12 +328,19 @@ def branch_plan(blob: dict, default_branch: str, cwd: str | None = None) -> dict
     if name == default_branch:
         plan.update(remote="skip-default", local="skip-default", detail="head is the default branch")
         return plan
-    if not _REF_SAFE_RE.match(name) or name.startswith("-"):
+    if not _REF_SAFE_RE.fullmatch(name) or name.startswith("-"):
         plan.update(remote="unsafe-name", local="unsafe-name", detail=f"unusual branch name {name!r}")
         return plan
 
-    rc, out = _git(["ls-remote", "--heads", "origin", "--", name], cwd)
-    tips = [ln.split()[0] for ln in out.splitlines() if ln.strip()]
+    # `ls-remote <pattern>` matches by ref SUFFIX: `x` also returns `refs/heads/a/x`. Query the
+    # full ref and keep only the line whose ref is EXACTLY that one, or a namespaced sibling
+    # whose tip happens to equal the merged head would be approved for deletion in its place.
+    rc, out = _git(["ls-remote", "--heads", "origin", "--", f"refs/heads/{name}"], cwd)
+    tips = []
+    for ln in out.splitlines():
+        parts = ln.split()
+        if len(parts) == 2 and parts[1] == f"refs/heads/{name}":
+            tips.append(parts[0])
     if rc != 0:
         plan["remote"] = "unverified"
         plan["detail"] = "could not reach origin"

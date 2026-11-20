@@ -195,9 +195,12 @@ def main() -> int:
 
 
     # ---- group handling (v1.69.0): parse-prs / select / advance / branch-plan ----
-    rc, out = run(["parse-prs", "151", "#153", "https://github.com/o/r/pull/154", "155,156", "151"])
-    check("parse-prs-normalizes-and-dedups", rc == 0 and out.split() == ["151", "153", "154", "155", "156"],
+    rc, out = run(["parse-prs", "151", "#153", "155,156", "151"])
+    check("parse-prs-normalizes-and-dedups", rc == 0 and out.split() == ["151", "153", "155", "156"],
           f"{out!r} rc={rc}")
+    # A URL names an owner/repo; reducing it to a number would act on the WRONG repo's PR.
+    rc, out = run(["parse-prs", "https://github.com/other/repo/pull/12"])
+    check("parse-prs-refuses-a-url-it-would-misattribute", rc == 2 and out == "", f"{out!r} rc={rc}")
     rc, out = run(["parse-prs", "151 153"])
     check("parse-prs-splits-one-quoted-string", rc == 0 and out.split() == ["151", "153"], f"{out!r} rc={rc}")
     # A non-number must be REFUSED, and a refusal must be distinguishable from an empty group.
@@ -223,18 +226,20 @@ def main() -> int:
         {"number": 11, "title": "docs: land #10 — post-merge currency", "mergedAt": ts(0.9)},
         {"number": 12, "title": "feat: b", "mergedAt": ts(0.5)},
         {"number": 5, "title": "feat: old", "mergedAt": ts(30)},
+        {"number": 13, "title": "docs: landing page copy", "mergedAt": ts(0.4)},
     ]
     rc, got = select(prs)
     # first run in a repo: last 7 days only (NOT the whole history), docs: land excluded, oldest first
-    check("select-first-run-bounded-and-excludes-land", got == ["10", "12"], f"{got}")
+    # 13 is "docs: landing page copy": a real PR whose title merely starts like a land PR — must stay in.
+    check("select-first-run-bounded-and-excludes-land", got == ["10", "12", "13"], f"{got}")
     rc, got = select(prs, wm={"since": ts(0.95), "done": []})
-    check("select-after-watermark", got == ["12"], f"{got}")
+    check("select-after-watermark", got == ["12", "13"], f"{got}")
     # boundary: a PR AT the watermark instant is excluded iff it is in `done`
     at = ts(0.5)
     rc, got = select(prs, wm={"since": at, "done": [12]})
-    check("select-boundary-done-is-excluded", got == [], f"{got}")
+    check("select-boundary-done-is-excluded", got == ["13"], f"{got}")  # 13 merged later: still newer
     rc, got = select(prs, wm={"since": at, "done": []})
-    check("select-boundary-not-done-is-included", got == ["12"], f"{got}")
+    check("select-boundary-not-done-is-included", got == ["12", "13"], f"{got}")
     # cap: oldest first, and the truncation is announced, never silent
     many = [{"number": 100 + i, "title": f"feat {i}", "mergedAt": ts(3 - i * 0.01)} for i in range(5)]
     with tempfile.TemporaryDirectory() as d:
@@ -251,7 +256,7 @@ def main() -> int:
         wmf = Path(d) / "w.json"
         wmf.write_text(json.dumps({"other/repo": {"since": ts(0.1), "done": []}}))
         rc, out = run(["select", "--watermark-file", str(wmf), "--repo", "o/r"], stdin=json.dumps(prs))
-    check("select-watermark-is-per-repo", out.split() == ["10", "12"], f"{out!r}")
+    check("select-watermark-is-per-repo", out.split() == ["10", "12", "13"], f"{out!r}")
 
     # advance: monotonic, per-repo, boundary-aware
     with tempfile.TemporaryDirectory() as d:
@@ -332,6 +337,12 @@ def main() -> int:
         for bad in ("-D", "a b", "x;y", "$(id)"):
             pu = plan(bad, a)
             check(f"branch-plan-unsafe-name-refused-{bad!r}", pu["remote"] == "unsafe-name", f"{pu}")
+        # ls-remote matches by ref SUFFIX: a namespaced sibling `a/feat-n` must not stand in for `feat-n`.
+        n_tip = branch("feat-n")
+        git(repo, "push", "-q", "origin", "feat-n:refs/heads/a/feat-n")   # sibling at the SAME tip
+        git(repo, "push", "-q", "origin", ":refs/heads/feat-n")           # ...and the real branch is gone
+        pn2 = plan("feat-n", n_tip)
+        check("branch-plan-ls-remote-suffix-sibling-is-not-the-branch", pn2["remote"] == "gone", f"{pn2}")
         # checked out HERE → 'current'
         git(repo, "checkout", "-q", "feat-a")
         check("branch-plan-current-branch", plan("feat-a", a)["local"] == "current", f"{plan('feat-a', a)}")

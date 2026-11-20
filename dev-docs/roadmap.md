@@ -802,6 +802,16 @@ loaded, so the next session inherits the wrong premise. `flow_scratch.py`'s modu
 `dev-docs/history/2026-07-29-safety-flow-s-ephemeral-scratch-moves-from-tmp-to-a-repo-loc.md` repeat
 it. The v1.68.0 worker left all three alone (outside its lane) and filed FB-0142 instead.
 
+### `/flow:retro` follow-ups from the v1.69.0 staff review (deferred, not blockers)
+
+1. **In a squash-merge repo the verdict can almost never read ✅** (push-further lens). §5 says `git branch -d` refuses every squash-merged local branch and that this is not evidence of unmerged work; §6 then makes "no local branch left behind" a condition of ✅. Proposed: two tiers — *blocks ✅* (docs PR still open, closed/unmerged PR, moved remote tip) vs *housekeeping* (local branch whose tip equals the merged head, which `branch-plan` already reports as `tip_matches`), printed as one trailing `N branches safe to delete by hand: <names>` line that does not flip the verdict. Not applied: it changes a gate condition and the eval pinning it, so it wants an owner decision.
+2. **§6b's "advance only if every PR reconciled" is prose, not code.** `advance` takes whatever the model feeds it, and a failed `gh pr view` silently drops a PR from the list. Move the predicate into the helper (take only satisfied PRs; refuse otherwise).
+3. **Long-lived head branches** (`develop`, `release/x` merged into the default branch) get a `delete` verdict when the tip matches; only server-side protection stops it. Add a protected-branch list or refuse any head that is not a `feature`-shaped name.
+4. **Land branch name collides across different groups** with the same lowest/highest number (`land-1-5` for `{1,5}` and `{1,3,5}`); the re-run path reuses and rebases the first group's branch. Add a short hash of the list.
+5. **`gh stack` commands are verified against the README only**, never run. A doctor check or version caveat would help once someone installs it.
+
+**Surfaces when:** `/flow:retro` §5/§6 or `merge-status.py` is next touched, or the first real 9-PR squash batch reports a 🚫 verdict that was only housekeeping.
+
 ### Review skills cold-read the session's own worktree, so an orchestrator cannot run the pipeline on another PR's checkout (FB-0144, deferred from the v1.69.0 retro PR)
 
 **The problem.** `/flow:security-review`, `/flow:accessibility-review`, `/flow:staff-review` and `/flow:ship`'s own diff resolution all take "the diff" as `origin/<default>..HEAD` plus `git diff HEAD` **in the session's working directory**. An orchestrator that wants to delegate reviews of PRs checked out in *other* worktrees cannot: it gets hand-reviews with no verify-build or skip-audit artifacts. Reported (confidence 0.36, paraphrase) from a designer session that reviewed nine PRs.
