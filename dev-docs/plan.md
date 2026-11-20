@@ -2,7 +2,9 @@
 
 ## Current Focus
 
-**Nothing in flight.** #187, #188, and #189 all merged 2026-11-03 – 2026-11-06; reconciled by
+**▶ At PR (branch `claude/retro-groups-auto-stacks`, **v1.69.0**, FB-0144): `/flow:retro` closes out a GROUP of merged PRs, is model-invocable, and stacked PRs are documented.** `/flow:retro [<PR#> …]` — a list, or none for "everything merged since the last retro" (per-repo watermark, no prompt); shared steps once per group (one `/flow:land` call → one docs PR, one synthesis, one verdict), per-PR steps per PR; branch cleanup verifies the remote tip equals `headRefOid`, skips other-worktree checkouts, and reports squash-merged locals instead of force-deleting. `disable-model-invocation: false` + an AUTO-INVOCATION clause (merge gate §2 is the safety). Stacked PRs documented once in `docs/workflow.md`; the plan-noting follow-up below is implemented there. Review-skill targets (item 4) deliberately NOT built — roadmap § Next.
+
+**Previously: nothing in flight.** #187, #188, and #189 all merged 2026-11-03 – 2026-11-06; reconciled by
 `/flow:land` below. Work is deliberately paused here — no new dispatch queued. The next session
 should read `### Previously in focus` for the last few shipped items and `dev-docs/roadmap.md`
 `## Next` for what's queued but not started, rather than assume anything is mid-flight.
@@ -9649,7 +9651,7 @@ Per user direction, ran the canonical 4-parallel pattern (engineer + push-furthe
 
 3. **Cross-repo provenance one-liner inside /flow:ship Step 1.0 emitted block** (push-further roadmap-concrete). Current block cites "FB-0033-style discipline" only in the prose AROUND the verbatim emit. Surfacing "(dogfood-driven: md-manager FB-0033 + flow FB-0008)" inside the printed block would let consumers know this is real burned-cost lesson, not arbitrary nagging. Reduces "why is this here" friction. Horizon: same as #2.
 
-4. **Stacked-PR plan-noting convention** (plan-critic INTERNAL-INCOHERENCE FOLLOW-UP). When PRs chain off each other for review (B branched off A; C off B; D off C; E off D), the per-PR plan's "Files touched" list will appear to mismatch the actual PR diff (which contains stacked content from earlier PRs in the chain). Future stacked-PR plans should note "this is the C slice of a stacked A+B+C PR" so reviewers can map the file list correctly. Horizon: convention update in workflow.md or plan-template; trigger on next stacked-PR sequence.
+4. **Stacked-PR plan-noting convention** — ✅ DONE in v1.69.0 (FB-0144): implemented in `plugins/flow/docs/workflow.md` § "Stacked PRs" (a layer's plan says "layer K of N, based on X" and lists *its own* diff against its parent). Original note: (plan-critic INTERNAL-INCOHERENCE FOLLOW-UP). When PRs chain off each other for review (B branched off A; C off B; D off C; E off D), the per-PR plan's "Files touched" list will appear to mismatch the actual PR diff (which contains stacked content from earlier PRs in the chain). Future stacked-PR plans should note "this is the C slice of a stacked A+B+C PR" so reviewers can map the file list correctly. Horizon: convention update in workflow.md or plan-template; trigger on next stacked-PR sequence.
 
 5. **`/plugin marketplace list` output-shape eval test** (audit-completion MEDIUM #2). The `^flow` anchor in PR C's verify recipe depends on marketplace-list outputting names at column 0 with no leading bullet/indent/glyph. Today's behavior matches; a Claude Code version change could break it silently. Add a regression fixture under `plugins/flow/evals/security/test_marketplace_list_format.py` paralleling the existing fixture shape — assert that `claude --print "/plugin marketplace list" 2>&1 | head -5` returns names at column 0 (or the test fails with a clear "output format changed; update bootstrap.md grep recipe" message). Cheap; one-shot. Bootstrap.md now documents this assumption inline so consumers can adjust without grepping the eval. Horizon: PR D or E.
 

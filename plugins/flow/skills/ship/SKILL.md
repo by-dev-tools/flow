@@ -27,6 +27,8 @@ allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Agent, Skill
 
 You are running the flow ship pipeline. Follow every step in order. **Never merge.**
 
+**`gh` pitfall, up front:** `gh pr edit`, `gh pr ready` and `gh pr view --json` can fail with a Projects-classic `projectCards` GraphQL error. The fallback (REST `gh api -X PATCH`) is documented at Step 7 § "`gh` resilience" — don't re-derive it, and never pipe a `gh` write.
+
 ## Project context (resolved at invocation)
 
 - Project config: !`cat flow.config.json 2>/dev/null || echo "(no flow.config.json — using built-in defaults)"`
@@ -1574,7 +1576,7 @@ python3 "$TRIAGE" render-manifest --entries-file "$MANIFEST" --state-file "$STAT
 
 Draft status is the mechanical signal the human merge gate trusts; the manifest is the human-readable one. A not-ready PR can never *look* ready.
 
-**LOCAL-ONLY**: `gh pr create --base $BASE_BRANCH` (add `--draft` iff `verdict != READY`) with:
+**LOCAL-ONLY**: `gh pr create --base $BASE_BRANCH` (add `--draft` iff `verdict != READY`; if this PR depends on another open PR its base is *that PR's branch* — see workflow.md § "Stacked PRs") with:
 
 > **After the create, read-back-verify (FB-0067).** `gh pr create` is unaffected by the projectCards deprecation, but a create can still land a body you didn't intend (a truncated `--body-file`, a race). Re-fetch and assert before handing off: source the helper and call `flow_verify_pr_write "$N"` — **always with `--forbid "{{rendered by" --forbid "{{provenance"`**, plus `--forbid "🚫 NOT READY TO MERGE" --want-draft false` when `verdict == READY`, or `--expect "🚫 NOT READY TO MERGE" --want-draft true` otherwise. Those two are not optional and not only illustrative: this body carries three renderer slots, a first publish is the likeliest place one survives unreplaced, and a published marker is a renderer that never ran — visible to a human, invisible to every other gate. **Forbid the marker PREFIXES, never a bare `{{`** — `--forbid` is a plain substring match, so a bare `{{` also fails a body that legitimately quotes a Handlebars/Jinja/Vue template, halting hand-off after a *successful* write. **Key on the verdict, not on manifest emptiness** — they diverge exactly in the case this change introduces: waive every non-`verify-build` entry and the manifest file is still non-empty while `verdict` is `READY` and `render-manifest` returns nothing, so an emptiness-keyed assertion would demand a manifest that is correctly absent and wedge Step 7. A mismatch means the body↔draft state on GitHub contradicts the manifest decision — fix it before Step 8, don't hand off a PR you never confirmed.
 

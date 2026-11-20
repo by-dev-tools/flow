@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Deterministic core for /flow:retro (v1, FB-0072).
+"""Deterministic core for /flow:retro (v1, FB-0072; group-aware since v1.69.0).
 
-Three subcommands, each a pure-ish function the SKILL's bash drives so the
+Subcommands, each a pure-ish function the SKILL's bash drives so the
 merge-queue-safe gate + the archive-safety verdict are testable without a live
 `gh` or a real merge:
 
@@ -15,6 +15,17 @@ merge-queue-safe gate + the archive-safety verdict are testable without a live
   archive-check — git-state cleanliness in the cwd → `safe` / `not-safe: <reasons>`. The
                   answer to "merged — anything left, safe to archive?".
 
+Group handling (v1.69.0) — a batch of merged PRs is closed out in ONE run:
+
+  parse-prs     — raw tokens → normalized, de-duplicated PR numbers (accepts `151`, `#151`,
+                  a PR URL, comma-separated). Refuses anything else with exit 2.
+  select        — the DEFAULT group: `gh pr list --state merged` JSON (stdin) → the PR
+                  numbers merged since the last retro, per a per-repo watermark. Excludes
+                  `docs: land` PRs (the output of a previous retro is not input to the next).
+  advance       — advance that watermark past the PRs that were fully closed out.
+  branch-plan   — per-PR cleanup decision (remote/local) from the PR's own head ref + head
+                  SHA and the repo's real git state. Decides; never deletes.
+
 The verdict is the printed WORD (stdout): `classify` prints merged/closed/open, and
 `poll-verdict` prints proceed/terminal/wait/giveup-graceful — the SKILL branches on those
 words. There is exactly ONE consumed exit code: `archive-check`'s 0 (safe) / 1 (not-safe),
@@ -27,8 +38,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import subprocess
 import sys
+import tempfile
+from datetime import datetime, timedelta, timezone
 
 
 def _load_blob() -> dict:
@@ -130,6 +145,227 @@ def archive_check(cwd: str | None = None) -> tuple[bool, list[str]]:
     return (not reasons), reasons
 
 
+# --------------------------------------------------------------------------------------
+# Group handling (v1.69.0)
+# --------------------------------------------------------------------------------------
+
+_PR_URL_RE = re.compile(r"^https?://[^/\s]+/[^/\s]+/[^/\s]+/pull/(\d+)/?(?:[#?].*)?$")
+
+
+def parse_prs(tokens: list[str]) -> list[int]:
+    """Normalize raw argument tokens into an ordered, de-duplicated list of PR numbers.
+
+    Accepts `151`, `#151`, `https://github.com/o/r/pull/151`, and comma- or space-separated
+    runs (`151,153`, `"151 153"`). Anything else raises ValueError — a non-number reaching `gh pr view` or a
+    branch name is how a typo becomes a cleanup of the wrong thing, so it stops here."""
+    out: list[int] = []
+    for raw in tokens:
+        for tok in re.split(r"[,\s]+", raw):
+            tok = tok.strip()
+            if not tok:
+                continue
+            m = _PR_URL_RE.match(tok)
+            if m:
+                num = m.group(1)
+            else:
+                num = tok[1:] if tok.startswith("#") else tok
+            if not num.isdigit() or int(num) <= 0:
+                raise ValueError(f"not a PR number: {tok!r}")
+            n = int(num)
+            if n not in out:
+                out.append(n)
+    return out
+
+
+def _parse_ts(value: str):
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def _load_watermark(path: str, repo: str) -> dict:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            obj = json.load(fh)
+        rec = obj.get(repo) if isinstance(obj, dict) else None
+        return rec if isinstance(rec, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def select_group(prs: list, watermark: dict, now: datetime, fallback_days: int = 7,
+                 cap: int = 20) -> tuple[list[int], int]:
+    """The default group: merged PRs since the last retro. Returns (numbers, remaining).
+
+    `prs` is the `gh pr list --state merged --json number,title,mergedAt` array.
+    - `docs: land` PRs are excluded: they are the OUTPUT of a retro, and once the human
+      merges one it would otherwise be picked up as the next retro's input — forever.
+    - With a watermark `{"since": <mergedAt>, "done": [numbers merged AT that instant]}`: a PR
+      is in iff it merged strictly after `since`, or at `since` and is not in `done`. The
+      `done` list is what lets the boundary be inclusive without re-picking its own PRs.
+    - Without one (first run in this repo): only the last `fallback_days` days, so a repo's
+      whole history is never swept up by a bare `/flow:retro`.
+    - Oldest first, at most `cap`; `remaining` says how many more a re-run would pick up, so
+      the cap is never a silent truncation."""
+    since = _parse_ts(watermark.get("since", "")) if watermark else None
+    done = {int(n) for n in watermark.get("done", [])} if watermark else set()
+    floor = now - timedelta(days=fallback_days)
+    picked = []
+    for pr in prs if isinstance(prs, list) else []:
+        if not isinstance(pr, dict):
+            continue
+        title = str(pr.get("title", "") or "")
+        if title.lower().startswith("docs: land"):
+            continue
+        ts = _parse_ts(pr.get("mergedAt", ""))
+        num = pr.get("number")
+        if ts is None or not isinstance(num, int):
+            continue
+        if since is not None:
+            if ts < since or (ts == since and num in done):
+                continue
+        elif ts < floor:
+            continue
+        picked.append((ts, num))
+    picked.sort()
+    nums = [n for _, n in picked]
+    return nums[:cap], max(0, len(nums) - cap)
+
+
+def advance_watermark(path: str, repo: str, closed: list) -> dict:
+    """Move the per-repo watermark to the newest `mergedAt` among `closed` PRs
+    (`[{"number":…, "mergedAt":…}]`). Monotonic: never moves backwards, and keeps other
+    repos' records. Atomic (temp file + replace). Returns the record written."""
+    stamped = []
+    for p in closed:
+        ts = _parse_ts(p.get("mergedAt", "")) if isinstance(p, dict) else None
+        if ts is not None and isinstance(p.get("number"), int):
+            stamped.append((ts, int(p["number"])))
+    if not stamped:
+        return {}
+    newest = max(ts for ts, _ in stamped)
+    done = sorted(n for ts, n in stamped if ts == newest)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            whole = json.load(fh)
+        if not isinstance(whole, dict):
+            whole = {}
+    except (OSError, ValueError):
+        whole = {}
+    prev = whole.get(repo) if isinstance(whole.get(repo), dict) else {}
+    prev_since = _parse_ts(prev.get("since", ""))
+    if prev_since is not None:
+        if newest < prev_since:
+            return prev
+        if newest == prev_since:
+            done = sorted(set(done) | {int(n) for n in prev.get("done", [])})
+    rec = {"since": newest.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"), "done": done}
+    whole[repo] = rec
+    d = os.path.dirname(os.path.abspath(path))
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".last_retro.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(whole, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return rec
+
+
+_REF_SAFE_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
+
+
+def _worktree_branches(cwd: str | None) -> dict:
+    """branch short-name -> worktree path, for every worktree that has a branch checked out."""
+    rc, out = _git(["worktree", "list", "--porcelain"], cwd)
+    found: dict = {}
+    if rc != 0:
+        return found
+    path = None
+    for ln in out.splitlines():
+        if ln.startswith("worktree "):
+            path = ln[len("worktree "):]
+        elif ln.startswith("branch refs/heads/") and path:
+            found[ln[len("branch refs/heads/"):]] = path
+    return found
+
+
+def branch_plan(blob: dict, default_branch: str, cwd: str | None = None) -> dict:
+    """Per-PR branch-cleanup DECISION from the PR's own fields and the repo's real git state.
+    Decides only — the SKILL executes, and executes only `delete` verdicts.
+
+    remote: skip-fork | skip-default | unsafe-name | unverified | gone | moved | delete
+      - A fork PR's head ref names a branch on someone else's repo; a same-named origin
+        branch is unrelated, so a fork is never deleted from here.
+      - `delete` requires the remote tip to EQUAL the PR's `headRefOid`. A squash-merge makes
+        the merged content unrecognizable to `git branch -d`, so "is it merged?" cannot be
+        asked of git; the question that can be answered is "is the branch still exactly what
+        the PR merged?". `moved` means someone pushed after the merge — those commits were
+        never reviewed, so the branch stays.
+      - no `headRefOid` ⇒ `unverified`, never `delete`: no claim to compare against.
+    local: absent | skip-* | current | worktree:<path> | delete
+      - `worktree:<path>` — checked out in ANOTHER worktree; `git branch -d` would refuse and
+        the branch is somebody's live workspace. Named, never touched.
+      - `tip_matches` says whether the local tip is the PR's head. `-d` refuses a
+        squash-merged branch even then; the SKILL reports it left behind rather than force
+        deleting, and this flag lets the report say how safe a manual delete would be."""
+    plan = {"remote": "unverified", "local": "absent", "tip_matches": None, "detail": ""}
+    name = str(blob.get("headRefName", "") or "")
+    oid = str(blob.get("headRefOid", "") or "")
+    if blob.get("isCrossRepository") is True:
+        plan.update(remote="skip-fork", local="skip-fork", detail="fork PR: head branch lives on the contributor's repo")
+        return plan
+    if not name:
+        plan["detail"] = "gh did not report a head branch"
+        return plan
+    if name == default_branch:
+        plan.update(remote="skip-default", local="skip-default", detail="head is the default branch")
+        return plan
+    if not _REF_SAFE_RE.match(name) or name.startswith("-"):
+        plan.update(remote="unsafe-name", local="unsafe-name", detail=f"unusual branch name {name!r}")
+        return plan
+
+    rc, out = _git(["ls-remote", "--heads", "origin", "--", name], cwd)
+    tips = [ln.split()[0] for ln in out.splitlines() if ln.strip()]
+    if rc != 0:
+        plan["remote"] = "unverified"
+        plan["detail"] = "could not reach origin"
+    elif not tips:
+        plan["remote"] = "gone"
+    elif not oid:
+        plan["remote"] = "unverified"
+        plan["detail"] = "no headRefOid to compare the remote tip against"
+    elif tips[0] == oid:
+        plan["remote"] = "delete"
+    else:
+        plan["remote"] = "moved"
+        plan["detail"] = f"remote tip {tips[0][:9]} != merged head {oid[:9]}"
+
+    rc, lsha = _git(["rev-parse", "--verify", "--quiet", f"refs/heads/{name}"], cwd)
+    if rc != 0:
+        plan["local"] = "absent"
+        return plan
+    plan["tip_matches"] = bool(oid) and lsha.strip() == oid
+    owners = _worktree_branches(cwd)
+    rc_top, top = _git(["rev-parse", "--show-toplevel"], cwd)
+    here = os.path.realpath(top.strip()) if rc_top == 0 else None
+    owner = owners.get(name)
+    if owner is None:
+        plan["local"] = "delete"
+    elif here is not None and os.path.realpath(owner) == here:
+        plan["local"] = "current"
+    else:
+        plan["local"] = f"worktree:{owner}"
+    return plan
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Deterministic core for /flow:retro.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -144,6 +380,23 @@ def main(argv: list[str] | None = None) -> int:
     ac = sub.add_parser("archive-check", help="git-state cleanliness → safe/not-safe")
     ac.add_argument("--cwd", default=None, help="repo dir (default: current)")
 
+    pp = sub.add_parser("parse-prs", help="raw tokens → normalized PR numbers, one per line")
+    pp.add_argument("tokens", nargs="*")
+
+    se = sub.add_parser("select", help="gh pr list --state merged JSON (stdin) → PRs since the last retro")
+    se.add_argument("--watermark-file", required=True)
+    se.add_argument("--repo", required=True)
+    se.add_argument("--fallback-days", type=int, default=7)
+    se.add_argument("--cap", type=int, default=20)
+
+    mk = sub.add_parser("advance", help="[{number,mergedAt}] (stdin) → advance the per-repo watermark")
+    mk.add_argument("--watermark-file", required=True)
+    mk.add_argument("--repo", required=True)
+
+    bp = sub.add_parser("branch-plan", help="gh pr view blob (stdin) → JSON cleanup decision")
+    bp.add_argument("--default-branch", required=True)
+    bp.add_argument("--cwd", default=None)
+
     args = ap.parse_args(argv)
 
     # classify + poll-verdict emit their verdict as the printed WORD and always exit 0
@@ -154,6 +407,47 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "poll-verdict":
         print(poll_verdict(args.state, args.elapsed, args.cap))
+        return 0
+
+    if args.cmd == "parse-prs":
+        try:
+            nums = parse_prs(args.tokens)
+        except ValueError as exc:
+            print(f"parse-prs: {exc}", file=sys.stderr)
+            return 2
+        if not nums:
+            print("parse-prs: no PR numbers given", file=sys.stderr)
+            return 2
+        print("\n".join(str(n) for n in nums))
+        return 0
+
+    if args.cmd == "select":
+        try:
+            prs = json.loads(sys.stdin.read() or "[]")
+        except ValueError:
+            print("select: stdin is not JSON (did `gh pr list` fail?)", file=sys.stderr)
+            return 2
+        nums, remaining = select_group(prs, _load_watermark(args.watermark_file, args.repo),
+                                       datetime.now(timezone.utc), args.fallback_days, args.cap)
+        if nums:
+            print("\n".join(str(n) for n in nums))
+        if remaining:
+            print(f"select: {remaining} more merged PR(s) beyond the cap of {args.cap} — re-run to take them",
+                  file=sys.stderr)
+        return 0
+
+    if args.cmd == "advance":
+        try:
+            closed = json.loads(sys.stdin.read() or "[]")
+        except ValueError:
+            print("advance: stdin is not JSON", file=sys.stderr)
+            return 2
+        rec = advance_watermark(args.watermark_file, args.repo, closed)
+        print(json.dumps(rec) if rec else "no-change")
+        return 0
+
+    if args.cmd == "branch-plan":
+        print(json.dumps(branch_plan(_load_blob(), args.default_branch, args.cwd), sort_keys=True))
         return 0
 
     if args.cmd == "archive-check":
