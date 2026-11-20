@@ -228,6 +228,12 @@ def main() -> int:
         {"number": 5, "title": "feat: old", "mergedAt": ts(30)},
         {"number": 13, "title": "docs: landing page copy", "mergedAt": ts(0.4)},
     ]
+    # a land-shaped TITLE alone is attacker-writable; with a known head ref the exclusion needs both.
+    spoof = prs + [{"number": 14, "title": "docs: land #99 — x", "mergedAt": ts(0.3), "headRefName": "feature/x"},
+                   {"number": 15, "title": "docs: land #98 — post-merge currency", "mergedAt": ts(0.2),
+                    "headRefName": "claude/land-98"}]
+    rc, got = select(spoof)
+    check("select-land-title-needs-a-land-head-when-known", got == ["10", "12", "13", "14"], f"{got}")
     rc, got = select(prs)
     # first run in a repo: last 7 days only (NOT the whole history), docs: land excluded, oldest first
     # 13 is "docs: landing page copy": a real PR whose title merely starts like a land PR — must stay in.
@@ -334,6 +340,12 @@ def main() -> int:
         check("branch-plan-no-headRefOid-is-unverified-never-delete", pn["remote"] == "unverified", f"{pn}")
         check("branch-plan-default-branch-is-never-a-target",
               plan("main", a)["remote"] == "skip-default", f"{plan('main', a)}")
+        for ll in ("develop", "staging", "release/1.x", "release-2", "gh-pages", "hotfix/a"):
+            pl = plan(ll, a)
+            check(f"branch-plan-long-lived-never-a-target-{ll}", pl["remote"] == "skip-long-lived"
+                  and pl["local"] == "skip-long-lived", f"{pl}")
+        check("branch-plan-ordinary-name-not-mistaken-for-long-lived",
+              plan("feat-a", a)["remote"] == "delete", f"{plan('feat-a', a)}")
         for bad in ("-D", "a b", "x;y", "$(id)"):
             pu = plan(bad, a)
             check(f"branch-plan-unsafe-name-refused-{bad!r}", pu["remote"] == "unsafe-name", f"{pu}")
@@ -420,13 +432,21 @@ def main() -> int:
     check("skill-cleanup-uses-branch-plan", " branch-plan --default-branch " in skill,
           "per-PR cleanup must go through the deterministic branch-plan decision")
     check("skill-remote-delete-is-verified-against-headRefOid",
-          "headRefOid" in skill and "tip == merged head" in skill,
+          "headRefOid" in skill and 'refs/heads/$BR:$OID' in skill,
           "remote head deletion must be gated on the tip equalling the PR's headRefOid")
     check("skill-leaves-squash-merged-branches-and-says-so",
           "LEFT BEHIND" in skill and "never force-deletes" in skill,
           "a branch `-d` refuses must be REPORTED as left behind, not force-deleted")
     check("skill-skips-other-worktrees", "checked out in another worktree" in skill and "worktree:*" in skill,
           "branches checked out in other worktrees must be skipped and named")
+    check("skill-landing-pr-match-is-not-title-only",
+          'select(.isCrossRepository == false)' in skill and 'select(.baseRefName == $b)' in skill
+          and 'test("(^|/)land-[0-9]")' in skill,
+          "'already landed' must require a same-repo, default-based land-<N> PR, not merely a title naming #N")
+    check("skill-remote-delete-is-leased-and-protected-checked",
+          "--force-with-lease=" in skill and ".protected" in skill and "does not match the repo gh resolved" in skill
+          and "git push origin --delete" not in "\n".join(re.findall(r"```sh\n(.*?)```", skill, re.S)),
+          "remote delete must be fully-qualified, leased on headRefOid, fail-closed on protection + repo match")
     check("skill-keeps-fork-guard", "skip-fork" in skill and "fork PR" in skill,
           "fork PRs must never have their head branch deleted from origin")
     # Fenced blocks only: the prose NAMES the forbidden form while explaining it.

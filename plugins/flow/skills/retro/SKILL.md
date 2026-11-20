@@ -131,7 +131,7 @@ as bare digits — the helper exists so that a stray token fails here, not insid
 ```sh
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then H="${CLAUDE_PLUGIN_ROOT}/skills/retro/lib/merge-status.py"; else H="plugins/flow/skills/retro/lib/merge-status.py"; fi
 [ -f "$H" ] || { echo "⚠️ BLOCKER: retro helper not found at $H — reinstall the flow plugin." >&2; exit 1; }
-ARGS=""    # the PR numbers typed or passed, bare digits, e.g. ARGS="151 153 154"; leave EMPTY when none were given
+ARGS=''    # the PR numbers typed or passed, bare digits, e.g. ARGS="151 153 154"; leave EMPTY when none were given
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
@@ -147,7 +147,7 @@ else
   MARKER="$(jq -r '.lastHarvestedPath // empty' flow.config.json 2>/dev/null | sed "s#^~#$HOME#")"
   [ -z "$MARKER" ] && MARKER="${FLOW_CONTRIB_DIR:-$HOME/.claude/plugins/data/flow/contributions}/last_harvested.json"
   WM="$(dirname "$MARKER")/last_retro.json"
-  LISTJSON=$(gh pr list --state merged --base "$DEFAULT_BRANCH" --limit 100 --json number,title,mergedAt 2>/dev/null)
+  LISTJSON=$(gh pr list --state merged --base "$DEFAULT_BRANCH" --limit 100 --json number,title,mergedAt,headRefName 2>/dev/null)
   # `gh pr list` orders by CREATION, so a long-lived PR merged recently can sit outside a full
   # page. Say so rather than let the watermark advance silently past it.
   [ "$(printf '%s' "$LISTJSON" | jq 'length' 2>/dev/null)" = "100" ] && echo "⚠️ [retro] 100 merged PRs came back (the page limit) — an older-created PR merged recently may be missing from the default group. Pass its number explicitly if so." >&2
@@ -180,7 +180,7 @@ merged does the run stop.
 ```sh
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then H="${CLAUDE_PLUGIN_ROOT}/skills/retro/lib/merge-status.py"; else H="plugins/flow/skills/retro/lib/merge-status.py"; fi
 [ -f "$H" ] || { echo "⚠️ BLOCKER: retro helper not found at $H — reinstall the flow plugin." >&2; exit 1; }
-NUMS="<the group from §1b, space-separated>"
+NUMS='<the group from §1b, space-separated>'
 CAP=$(jq -r '.postMergeWaitSeconds // 150' flow.config.json 2>/dev/null); [ -z "$CAP" ] && CAP=150
 INTERVAL=20                                 # seconds between polls
 ELAPSED=0
@@ -257,12 +257,18 @@ land the rest. A *closed-unmerged* landing PR does not count (an abandoned docs 
 satisfy doc-currency forever); an open or merged one does:
 
 ```sh
-NUMS="<MERGED from §2, space-separated>"
+NUMS='<MERGED from §2, space-separated>'
 TODO=""
-LANDS=$(gh pr list --search "docs: land in:title" --state all --limit 100 --json number,state,url,title 2>/dev/null)
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'); [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null); [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
+LANDS=$(gh pr list --search "docs: land in:title" --state all --limit 100 --json number,state,url,title,headRefName,baseRefName,isCrossRepository 2>/dev/null)
+# A "landing PR" is one /flow:land could have made: same repo (not a fork), based on the default
+# branch, on a `land-<N>` head, with a `docs: land #…` title. A title alone is writable by anyone
+# who can open a PR — naming #151 in one would otherwise mark #151 "already landed", skip the real
+# reconciliation, and advance the watermark past it.
+LANDQ='[.[] | select(.isCrossRepository == false) | select(.baseRefName == $b) | select(.headRefName | test("(^|/)land-[0-9]")) | select(.title | test("^docs: land #")) | select(.state != "CLOSED")'
 while read -r N; do
   [ -n "$N" ] || continue
-  HIT=$(printf '%s' "$LANDS" | jq -r --arg n "$N" '[.[] | select(.state != "CLOSED") | select(.title | test("(^|[^0-9])#" + $n + "([^0-9]|$)"))] | .[0].url // empty' 2>/dev/null)
+  HIT=$(printf '%s' "$LANDS" | jq -r --arg n "$N" --arg b "$DEFAULT_BRANCH" "$LANDQ"' | select(.title | test("(^|[^0-9])#" + $n + "([^0-9]|$)"))] | .[0].url // empty' 2>/dev/null)
   if [ -n "$HIT" ]; then echo "[retro] #$N already has a landing PR: $HIT — doc-currency satisfied."; else TODO="$TODO $N"; fi
 done <<EOF
 $(printf '%s' "$NUMS" | tr -s ' ,\n' '\n')
@@ -398,10 +404,16 @@ the block leaves it and names the dependent.
 ```sh
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then H="${CLAUDE_PLUGIN_ROOT}/skills/retro/lib/merge-status.py"; else H="plugins/flow/skills/retro/lib/merge-status.py"; fi
 [ -f "$H" ] || { echo "⚠️ BLOCKER: retro helper not found at $H — reinstall the flow plugin." >&2; exit 1; }
-NUMS="<MERGED from §2, space-separated>"
+NUMS='<MERGED from §2, space-separated>'
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
+# `gh` resolves a PR number in ITS repo; the delete below goes to `origin`. In a fork/upstream layout
+# those can differ, so only delete when origin is the repo gh resolved (case-insensitive substring).
+GH_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
+ORIGIN_URL=$(git remote get-url origin 2>/dev/null)
+REPO_MATCH=no
+[ -n "$GH_REPO" ] && printf '%s' "$ORIGIN_URL" | tr 'A-Z' 'a-z' | grep -qF "$(printf '%s' "$GH_REPO" | tr 'A-Z' 'a-z')" && REPO_MATCH=yes
 git fetch origin --quiet 2>/dev/null || echo "⚠️ [retro] 'git fetch origin' failed — remote tips below may be stale; deletes are verified against the live remote anyway." >&2
 while read -r N; do
   [ -n "$N" ] || continue
@@ -433,13 +445,26 @@ while read -r N; do
 
   case "$RPLAN" in
     delete)
-      git push origin --delete -- "$BR" 2>/dev/null \
-        && echo "[retro] #$N: deleted remote branch $BR (tip == merged head)." \
-        || echo "[retro] #$N: could not delete remote $BR (may lack permission); harmless." >&2 ;;
+      # Second line of defence behind the helper's long-lived-name list: ask GitHub. Fail CLOSED — an
+      # unanswered question is not "unprotected".
+      PROT=$(gh api "repos/{owner}/{repo}/branches/$BR" --jq '.protected' 2>/dev/null)
+      OID=$(printf '%s' "$BLOB" | jq -r '.headRefOid // empty')
+      if [ "$PROT" != "false" ]; then
+        echo "⚠️ [retro] #$N: remote $BR left in place — GitHub did not confirm it is unprotected (protected=${PROT:-unknown})." >&2
+      elif [ "$REPO_MATCH" != "yes" ]; then
+        echo "⚠️ [retro] #$N: remote $BR left in place — 'origin' does not match the repo gh resolved PR #$N in." >&2
+      else
+        # Fully-qualified ref + a lease on the exact tip the PR merged: a push that landed between
+        # the check and now makes this fail instead of discarding commits nobody reviewed.
+        git push origin --force-with-lease="refs/heads/$BR:$OID" ":refs/heads/$BR" 2>/dev/null \
+          && echo "[retro] #$N: deleted remote branch $BR (was ${OID%${OID#???????}}; restorable from that SHA)." \
+          || echo "[retro] #$N: could not delete remote $BR (moved, protected, or no permission); left in place." >&2
+      fi ;;
     gone)         echo "[retro] #$N: remote branch $BR already gone (auto-deleted on merge?)." ;;
     moved)        echo "⚠️ [retro] #$N: remote $BR left in place — $DETAIL (pushed after the merge)." >&2 ;;
     skip-fork)    echo "[retro] #$N: fork PR — its head branch lives on the contributor's repo; nothing to clean up on origin." ;;
     skip-default) echo "[retro] #$N: head is the default branch — nothing to delete." ;;
+    skip-long-lived) echo "[retro] #$N: head '$BR' looks like a long-lived branch (release/develop/…) — never deleted from here." ;;
     *)            echo "⚠️ [retro] #$N: remote branch left in place (${RPLAN}${DETAIL:+: $DETAIL})." >&2 ;;
   esac
 
@@ -495,8 +520,12 @@ contradict a warning printed seconds earlier. Assemble the verdict from FOUR inp
 3. **Doc-currency (from §3)** — branch on what §3 actually did this run, then confirm it against
    the repo rather than trusting the call's own report:
    ```sh
-   gh pr list --search "docs: land in:title" --state all --json number,url,state,title 2>/dev/null
+   DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'); [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
+   gh pr list --search "docs: land in:title" --state all --json number,url,state,title,headRefName,baseRefName,isCrossRepository 2>/dev/null \
+     | jq -r --arg b "$DEFAULT_BRANCH" '.[] | select(.isCrossRepository == false) | select(.baseRefName == $b) | select(.headRefName | test("(^|/)land-[0-9]")) | select(.title | test("^docs: land #")) | "#\(.number) \(.state) \(.url) covers: \(.title | [scan("#[0-9]+")] | join(" "))"'
    ```
+   Same filter as §3, and the output is **projected**: PR titles are written by whoever opened the PR,
+   so they are never printed raw into this run — only the numbers they name.
    For each merged PR: a landing PR whose title names it exists ⇒ that PR is the human's **one
    remaining merge** — name it with its URL (a group usually has exactly one). Merged already ⇒
    doc-currency is fully satisfied for it. §3 errored or was rejected, and no such PR names it ⇒
@@ -520,14 +549,14 @@ not lie on the path the design highlights.
 
 Move the per-repo watermark past this group so the next bare `/flow:retro` starts after it —
 **only** when this run's group was the **default** one (not an explicit list) **and** every PR in
-`MERGED` is doc-currency-satisfied **and** §2 left nothing out. Advancing past a PR whose docs were
+`MERGED` is doc-currency-satisfied **and** §2 left nothing out **and** §1b did not warn that the page of merged PRs was full (a full page can omit an older-created PR, and advancing would drop it for good). Advancing past a PR whose docs were
 never reconciled would drop it from the next default group; not advancing costs only a harmless,
 idempotent re-pick. An explicit-list run never moves it: a hand-picked subset says nothing about
 the PRs it skipped. Skip this block otherwise.
 
 ```sh
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then H="${CLAUDE_PLUGIN_ROOT}/skills/retro/lib/merge-status.py"; else H="plugins/flow/skills/retro/lib/merge-status.py"; fi
-NUMS="<MERGED from §2, space-separated>"
+NUMS='<MERGED from §2, space-separated>'
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
 QUEUE_ROOT="$(jq -r '.contributionsQueuePath // empty' flow.config.json 2>/dev/null | sed "s#^~#$HOME#")"
 [ -n "$QUEUE_ROOT" ] && export FLOW_CONTRIB_DIR="$QUEUE_ROOT"

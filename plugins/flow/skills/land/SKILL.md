@@ -105,7 +105,7 @@ fi
 closed-unmerged PR would write a lie. Verify first; fail loudly, edit nothing:
 
 ```sh
-NUMS="<PR#> [<PR#> …]"   # the argument(s), space-separated
+NUMS='<PR#> [<PR#> …]'   # the argument(s), space-separated
 # Iterate with while-read over a newline list — NOT `for N in $NUMS`: zsh does not word-split
 # an unquoted variable, so that form silently runs ONCE with the whole list as "N".
 LIST=$(printf '%s' "$NUMS" | tr -s ' ,\n' '\n')
@@ -171,7 +171,7 @@ else
   PC="$(_flow_pr_coherence_py)"
   BODYFILE="$(mktemp 2>/dev/null || { echo "⚠️ WARN: mktemp failed — skipping coherence check rather than using a predictable temp path." >&2; true; })"
   if [ -n "$PC" ] && [ -n "$BODYFILE" ]; then
-   NUMS="<PR#> [<PR#> …]"   # the same list as 1a
+   NUMS='<PR#> [<PR#> …]'   # the same list as 1a
    LIST=$(printf '%s' "$NUMS" | tr -s ' ,\n' '\n')
    while read -r N; do
     [ -n "$N" ] || continue
@@ -207,7 +207,7 @@ Create the reconciliation branch from the up-to-date default branch (Step 6 comm
 here; Claude never pushes to `main` directly):
 
 ```sh
-NUMS="<PR#> [<PR#> …]"   # the same list as 1a
+NUMS='<PR#> [<PR#> …]'   # the same list as 1a
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null); [ -z "$BASE" ] && BASE=main
 PREFIX=$(jq -r '.branchPrefix // empty' flow.config.json 2>/dev/null)
@@ -260,15 +260,18 @@ skill's Bash blocks do NOT share variables across invocations). For a group, the
 the union of every PR's `#N` and head ref, so one sweep finds every line to flip:
 
 ```sh
-NUMS="<PR#> [<PR#> …]"   # the same list as 1a
+NUMS='<PR#> [<PR#> …]'   # the same list as 1a
 ROADMAP=$(jq -r '.roadmapPath // "dev-docs/roadmap.md"' flow.config.json 2>/dev/null); [ -z "$ROADMAP" ] && ROADMAP=dev-docs/roadmap.md
 PLAN=$(jq -r '.planPath // "dev-docs/plan.md"' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN=dev-docs/plan.md
 HISTORY=$(jq -r '.historyPath // "dev-docs/history.md"' flow.config.json 2>/dev/null); [ -z "$HISTORY" ] && HISTORY=dev-docs/history.md
 PAT=""
+BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'); [ -z "$BASE" ] && BASE=main
 LIST=$(printf '%s' "$NUMS" | tr -s ' ,\n' '\n')
 while read -r N; do
 [ -n "$N" ] || continue
-HEADREF=$(gh pr view "$N" --json headRefName --jq '.headRefName' 2>/dev/null)
+# A FORK PR's head ref is chosen by an outside contributor and may be `main`, `e`, `docs` — a legal
+# name that, used as a grep -E substring, matches most lines of the docs. Fork heads are not used.
+HEADREF=$(gh pr view "$N" --json headRefName,isCrossRepository --jq 'select(.isCrossRepository | not) | .headRefName' 2>/dev/null)
 # Build the pattern WITHOUT an empty alternative: an unset $HEADREF must not turn
 # `#N\b|$HEADREF` into `#N\b|` (the trailing `|` matches EVERY line, which would
 # make the no-match WARN below unreachable — the FB-0010 silent-skip class).
@@ -287,7 +290,7 @@ case "$HEADREF" in
     [ -n "$HEADREF" ] && echo "[land] NOTE: head ref '$HEADREF' has regex-unsafe characters; matching on #$N only." >&2
     HEADREF="" ;;
 esac
-PAT="${PAT:+${PAT}|}#${N}\b"; [ -n "$HEADREF" ] && PAT="${PAT}|${HEADREF}"
+PAT="${PAT:+${PAT}|}#${N}\b"; [ -n "$HEADREF" ] && [ "$HEADREF" != "$BASE" ] && PAT="${PAT}|(^|[^A-Za-z0-9._/-])${HEADREF}([^A-Za-z0-9._/-]|$)"
 done <<EOF
 $LIST
 EOF

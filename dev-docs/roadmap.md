@@ -808,7 +808,8 @@ it. The v1.68.0 worker left all three alone (outside its lane) and filed FB-0142
 2. **§6b's "advance only if every PR reconciled" is prose, not code.** `advance` takes whatever the model feeds it, and a failed `gh pr view` silently drops a PR from the list. Move the predicate into the helper (take only satisfied PRs; refuse otherwise).
 3. **Long-lived head branches** (`develop`, `release/x` merged into the default branch) get a `delete` verdict when the tip matches; only server-side protection stops it. Add a protected-branch list or refuse any head that is not a `feature`-shaped name.
 4. **Land branch name collides across different groups** with the same lowest/highest number (`land-1-5` for `{1,5}` and `{1,3,5}`); the re-run path reuses and rebases the first group's branch. Add a short hash of the list.
-5. **`gh stack` commands are verified against the README only**, never run. A doctor check or version caveat would help once someone installs it.
+5. **Watermark directory comes from repo-controlled config** (`lastHarvestedPath`/`contributionsQueuePath`, unvalidated); require it to sit under `$HOME/.claude`. A malformed `done` in the watermark file crashes `select`/`advance` with a traceback (local only).
+6. **`gh stack` commands are verified against the README only**, never run. A doctor check or version caveat would help once someone installs it.
 
 **Surfaces when:** `/flow:retro` §5/§6 or `merge-status.py` is next touched, or the first real 9-PR squash batch reports a 🚫 verdict that was only housekeeping.
 

@@ -175,6 +175,19 @@ def parse_prs(tokens: list[str]) -> list[int]:
 # a legitimate "docs: landing page copy" PR from the default group, and the watermark would then
 # advance past it.
 _LAND_TITLE_RE = re.compile(r"docs: land #\d", re.IGNORECASE)
+# ...and the head branch /flow:land creates: `<prefix>land-<N>` or `<prefix>land-<lo>-<hi>`. A title
+# alone is attacker-writable (anyone can title a PR `docs: land #151`), so when the head ref is
+# known the exclusion needs BOTH; a contributor's PR with a land-shaped title but an ordinary head
+# stays in the group instead of silently dropping out of it.
+_LAND_HEAD_RE = re.compile(r"(^|/)land-\d")
+
+# Long-lived branches a same-repo PR can legitimately have as its HEAD (release / forward-merge PRs).
+# Their tip trivially equals headRefOid at merge time, so the tip check alone would approve deleting
+# them. Never a cleanup target; server-side protection is a second line, not the only one.
+_LONG_LIVED_RE = re.compile(
+    r"(main|master|trunk|develop|development|dev|staging|stage|production|prod|gh-pages|"
+    r"(release|releases|hotfix|support|maint|maintenance)(/.*)?|(release|hotfix)-.*)"
+)
 
 
 def _parse_ts(value: str):
@@ -216,7 +229,8 @@ def select_group(prs: list, watermark: dict, now: datetime, fallback_days: int =
         if not isinstance(pr, dict):
             continue
         title = str(pr.get("title", "") or "")
-        if _LAND_TITLE_RE.match(title):
+        head = pr.get("headRefName")
+        if _LAND_TITLE_RE.match(title) and (head is None or _LAND_HEAD_RE.search(str(head))):
             continue
         ts = _parse_ts(pr.get("mergedAt", ""))
         num = pr.get("number")
@@ -301,7 +315,7 @@ def branch_plan(blob: dict, default_branch: str, cwd: str | None = None) -> dict
     """Per-PR branch-cleanup DECISION from the PR's own fields and the repo's real git state.
     Decides only — the SKILL executes, and executes only `delete` verdicts.
 
-    remote: skip-fork | skip-default | unsafe-name | unverified | gone | moved | delete
+    remote: skip-fork | skip-default | skip-long-lived | unsafe-name | unverified | gone | moved | delete
       - A fork PR's head ref names a branch on someone else's repo; a same-named origin
         branch is unrelated, so a fork is never deleted from here.
       - `delete` requires the remote tip to EQUAL the PR's `headRefOid`. A squash-merge makes
@@ -327,6 +341,10 @@ def branch_plan(blob: dict, default_branch: str, cwd: str | None = None) -> dict
         return plan
     if name == default_branch:
         plan.update(remote="skip-default", local="skip-default", detail="head is the default branch")
+        return plan
+    if _LONG_LIVED_RE.fullmatch(name):
+        plan.update(remote="skip-long-lived", local="skip-long-lived",
+                    detail=f"'{name}' looks like a long-lived branch, never a cleanup target")
         return plan
     if not _REF_SAFE_RE.fullmatch(name) or name.startswith("-"):
         plan.update(remote="unsafe-name", local="unsafe-name", detail=f"unusual branch name {name!r}")

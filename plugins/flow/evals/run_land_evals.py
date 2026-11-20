@@ -188,13 +188,15 @@ check("skill group 3", "carries **every** number" in skill and "docs: land #151 
 check("skill group 3b", 'TITLE_NUMS=$(' in skill and '--title "docs: land ${TITLE_NUMS}' in skill
       and '--title "docs: land #${N}' not in skill,
       "the shipped gh pr create BLOCK must build the title from the whole list, not from the lowest N")
+check("skill group 5", "isCrossRepository | not" in skill and '"$HEADREF" != "$BASE"' in skill,
+      "land must not use a fork's (or the base branch's) head ref as a grep pattern")
 check("skill group 4", '${PREFIX}land-${LO}-${HI}' in skill and '${PREFIX}land-${LO}"' in skill,
       "single PR keeps land-<N>; a group gets land-<lowest>-<highest>")
 check("skill 5b", "## 0. Invocation precondition" in skill and "§1a" in skill,
       "land must state the never-auto-fire precondition in prose (§0), since the "
       "frontmatter flag no longer carries that intent")
 # Guard the two staff-review BLOCKERs so they can't regress green:
-check("skill 6", '[ -n "$HEADREF" ] && PAT=' in skill and 'HEADREF=$(gh pr view' in skill,
+check("skill 6", '[ -n "$HEADREF" ] && [ "$HEADREF" != "$BASE" ] && PAT=' in skill and 'HEADREF=$(gh pr view' in skill,
       "Step 2 discovery must assign HEADREF + guard the empty alternative (no `#N|` match-all)")
 check("skill 7", 'git show-ref --verify --quiet' in skill and "reusing existing branch" in skill,
       "Step 1b branch creation must be idempotent (reuse existing land branch on re-run)")
