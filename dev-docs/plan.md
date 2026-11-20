@@ -4,6 +4,24 @@
 
 **▶ At PR (branch `claude/retro-groups-auto-stacks`, **v1.69.0**, FB-0144): `/flow:retro` closes out a GROUP of merged PRs, is model-invocable, and stacked PRs are documented.** `/flow:retro [<PR#> …]` — a list, or none for "everything merged since the last retro" (per-repo watermark, no prompt); shared steps once per group (one `/flow:land` call → one docs PR, one synthesis, one verdict), per-PR steps per PR; branch cleanup verifies the remote tip equals `headRefOid`, skips other-worktree checkouts, and reports squash-merged locals instead of force-deleting. `disable-model-invocation: false` + an AUTO-INVOCATION clause (merge gate §2 is the safety). Stacked PRs documented once in `docs/workflow.md`; the plan-noting follow-up below is implemented there. Review-skill targets (item 4) deliberately NOT built — roadmap § Next.
 
+**Mode:** feature · **Surface:** non-visual (prompts + stdlib Python) · **Pre-execution gate:** plan — the brief from the orchestrating session was the plan.
+
+**Spec-walk:** (declared here so it is the FIRST block `extract-criteria.py` reads; `/flow:verify-build` self-skips on `platform: library`, so each box is verified by the named eval or a recorded bash/zsh smoke test, not a build run)
+
+- [x] `/flow:retro` accepts a list or no argument, and a bare run resolves the default group without prompting — verify: eval `parse-prs-*`, `select-*`, `skill-no-argument-does-not-prompt`, `skill-default-group-uses-watermark` in `run_merge_status_evals.py`
+- [x] `parse-prs` refuses a non-number or a PR URL (exit 2) instead of acting on another repo's PR — verify: eval `parse-prs-refuses-*` + `parse-prs-refuses-a-url-it-would-misattribute`
+- [x] The default group excludes `docs: land` PRs only when title AND `land-` head both match, honors the inclusive watermark boundary, caps at 20 and says so — verify: eval `select-land-title-needs-a-land-head-when-known`, `select-boundary-*`, `select-cap-takes-oldest-and-says-so`
+- [x] The watermark advances monotonically per repo, never on an explicit-list run — verify: eval `advance-*`; prose rule pinned by `skill-default-group-uses-watermark`
+- [x] A group of merged PRs polls under one shared cap; a closed or queued PR is named and left out, and only an all-unmerged group stops — verify: bash+zsh smoke of the shipped §2 block (merged/closed/open/mixed, rc 0/1/0)
+- [x] One `/flow:land` call covers the whole group and opens one `docs: land #A #B …` PR; one unmerged number refuses the whole call — verify: eval `skill group 1`–`5` in `run_land_evals.py`, `skill-land-called-once-with-the-group`
+- [x] "Already landed" requires a same-repo, default-based, `land-<N>`-headed, non-closed PR, and PR titles are never printed raw — verify: eval `skill-landing-pr-match-is-not-title-only` + bash+zsh smoke of §3 with spoofed, fork and closed PRs
+- [x] Remote branch deletion happens only when the tip equals `headRefOid`, with a lease, a GitHub-unprotected answer and a matching origin; never for forks, the default or long-lived branches, other-worktree checkouts, or a branch that is the base of an open PR (fail closed on a gh error) — verify: eval `branch-plan-*`, `skill-remote-delete-is-leased-and-protected-checked` + bash+zsh smoke of §5
+- [x] A squash-merged local branch that `git branch -d` refuses is reported left behind, never force-deleted — verify: eval `skill-safe-branch-delete`, `skill-leaves-squash-merged-branches-and-says-so`
+- [x] `/flow:retro` is model-invocable with an AUTO-INVOCATION clause (when to fire, never mid-loop) and its §2 merge gate still refuses unmerged PRs; no flow skill is model-disabled — verify: eval `skill-model-invocable-declared`, `skill-has-auto-invocation-clause`, `skill-clause-forbids-mid-loop`, `skill-merge-gate-still-refuses-closed`; `run_skill_composition_evals.py` retro assertions
+- [x] The shipped shell blocks iterate with `while read`, never `for x in $LIST` (zsh) — verify: eval `skill-iterates-with-while-read-not-for-in-var`; `skill group 1`
+- [x] Stacked PRs are documented once, in `workflow.md`, with a one-line pointer at `/flow:ship`'s PR-creation step — verify: `git grep -n "Stacked PRs" plugins/flow` returns the workflow.md section, the ship pointer and the retro cross-reference only
+- [x] `/flow:ship` opens with the `gh` projectCards pitfall pointer — verify: `grep -n "gh. pitfall, up front" plugins/flow/skills/ship/SKILL.md`
+
 **Previously: nothing in flight.** #187, #188, and #189 all merged 2026-11-03 – 2026-11-06; reconciled by
 `/flow:land` below. Work is deliberately paused here — no new dispatch queued. The next session
 should read `### Previously in focus` for the last few shipped items and `dev-docs/roadmap.md`
