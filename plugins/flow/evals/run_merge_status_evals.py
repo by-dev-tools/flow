@@ -447,6 +447,16 @@ def main() -> int:
           "--force-with-lease=" in skill and ".protected" in skill and "does not match the repo gh resolved" in skill
           and "git push origin --delete" not in "\n".join(re.findall(r"```sh\n(.*?)```", skill, re.S)),
           "remote delete must be fully-qualified, leased on headRefOid, fail-closed on protection + repo match")
+    # §6 / §6b are PROSE rules the agent executes — pinned here as text, which is weaker than a
+    # behavioral test (stated in the PR body), but a deletion of any condition now fails CI.
+    check("skill-verdict-requires-all-four-inputs",
+          "ONLY when ALL hold" in skill and "§5 left no local branch behind" in skill
+          and "§2 left nothing out" in skill and "never a ✅" in skill and "🚫 not fully closed out" in skill,
+          "the ✅ line must stay conditional on git-state, branch cleanup, landing PRs AND PRs left out of §2")
+    check("skill-watermark-advance-conditions-are-all-named",
+          "**default**" in skill and "doc-currency-satisfied" in skill and "§2 left nothing out" in skill
+          and "page of merged PRs was full" in skill and "An explicit-list run never moves it" in skill,
+          "§6b must keep every advance condition: default group, all reconciled, nothing left out, page not full, never explicit")
     check("skill-keeps-fork-guard", "skip-fork" in skill and "fork PR" in skill,
           "fork PRs must never have their head branch deleted from origin")
     # Fenced blocks only: the prose NAMES the forbidden form while explaining it.
