@@ -449,13 +449,14 @@ def main() -> int:
           "remote delete must be fully-qualified, leased on headRefOid, fail-closed on protection + repo match")
     # §6 / §6b are PROSE rules the agent executes — pinned here as text, which is weaker than a
     # behavioral test (stated in the PR body), but a deletion of any condition now fails CI.
+    _flat = " ".join(skill.split())   # the prose is hard-wrapped; compare on whitespace-normalized text
     check("skill-verdict-requires-all-four-inputs",
-          "ONLY when ALL hold" in skill and "§5 left no local branch behind" in skill
-          and "§2 left nothing out" in skill and "never a ✅" in skill and "🚫 not fully closed out" in skill,
+          "ONLY when ALL hold" in _flat and "§5 left no local branch behind" in _flat
+          and "§2 left nothing out" in _flat and "never a ✅" in _flat and "🚫 not fully closed out" in _flat,
           "the ✅ line must stay conditional on git-state, branch cleanup, landing PRs AND PRs left out of §2")
     check("skill-watermark-advance-conditions-are-all-named",
-          "**default**" in skill and "doc-currency-satisfied" in skill and "§2 left nothing out" in skill
-          and "page of merged PRs was full" in skill and "An explicit-list run never moves it" in skill,
+          "**default**" in _flat and "doc-currency-satisfied" in _flat and "§2 left nothing out" in _flat
+          and "page of merged PRs was full" in _flat and "An explicit-list run never moves it" in _flat,
           "§6b must keep every advance condition: default group, all reconciled, nothing left out, page not full, never explicit")
     check("skill-keeps-fork-guard", "skip-fork" in skill and "fork PR" in skill,
           "fork PRs must never have their head branch deleted from origin")
