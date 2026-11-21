@@ -207,6 +207,8 @@ def main() -> int:
     for label, toks in [("junk", ["x;rm"]), ("zero", ["0"]), ("word", ["abc"]), ("neg", ["-5"])]:
         rc, out = run(["parse-prs", *toks])
         check(f"parse-prs-refuses-{label}", rc == 2 and out == "", f"{toks} → rc={rc} out={out!r}")
+    rc, out = run(["parse-prs", "²"])
+    check("parse-prs-refuses-unicode-digits-without-a-traceback", rc == 2 and out == "", f"{out!r} rc={rc}")
     rc, _ = run(["parse-prs"])
     check("parse-prs-empty-is-error-not-empty-group", rc == 2, f"rc={rc}")
 
@@ -299,11 +301,12 @@ def main() -> int:
         {"number": 5, "state": "OPEN", "url": "u5", "title": "docs: land #151", "headRefName": "land-151", "baseRefName": "develop", "isCrossRepository": False},  # wrong base
         {"number": 6, "state": "CLOSED", "url": "u6", "title": "docs: land #151", "headRefName": "land-151", **base},    # abandoned
         {"number": 8, "state": "OPEN", "url": "u8", "title": "docs: landing page", "headRefName": "land-9", **base},
+        {"number": 10, "state": "OPEN", "url": "u10", "title": "docs: land #12", "headRefName": "bot-land-12", **base},  # branchPrefix without a slash
         {"number": 9, "state": "OPEN", "url": "u9", "title": "docs: land #9"},   # fields not fetched: the strict form must not guess
     ]
     rc, out = run(["landing-prs", "--default-branch", "main"], stdin=json.dumps(lp))
     check("landing-prs-keeps-the-real-ones-and-projects-titles",
-          rc == 0 and out.splitlines() == ["#1 OPEN u1 covers: #151 #154", "#2 MERGED u2 covers: #7"], f"{out!r}")
+          rc == 0 and out.splitlines() == ["#1 OPEN u1 covers: #151 #154", "#2 MERGED u2 covers: #7", "#10 OPEN u10 covers: #12"], f"{out!r}")
     for n, why in ((3, "title-only"), (4, "fork"), (5, "wrong-base"), (6, "closed"), (8, "title-not-land"), (9, "unfetched-fields")):
         check(f"landing-prs-excludes-{why}", f"u{n} " not in out, f"{out!r}")
     rc, _ = run(["landing-prs", "--default-branch", "main"], stdin="not json")
@@ -463,6 +466,8 @@ def main() -> int:
     check("skill-landing-pr-match-goes-through-the-one-helper-predicate",
           skill.count(" landing-prs --default-branch ") == 2 and "select(.headRefName" not in skill,
           "§3 and §6 must both use `landing-prs` — one definition of a landing PR, not a jq copy per site")
+    check("skill-repo-match-is-exact-not-substring", "ORIGIN_SLUG" in skill and "grep -qF" not in skill,
+          "origin must equal the gh-resolved owner/name exactly — a substring lets me/repo-fork pass as me/repo")
     check("skill-remote-delete-is-leased-and-protected-checked",
           "--force-with-lease=" in skill and ".protected" in skill and "does not match the repo gh resolved" in skill
           and "git push origin --delete" not in "\n".join(re.findall(r"```sh\n(.*?)```", skill, re.S)),

@@ -423,8 +423,12 @@ use the canonical `gh`-resilience fallback (see `/flow:ship` Step 7 § "gh
 resilience"), never `gh pr edit --body`:
 
 ```sh
+NUMS='<PR#> [<PR#> …]'   # the same list as 1a (blocks do not share variables)
+BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'); [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null); [ -z "$BASE" ] && BASE=main
 # Title names EVERY number (retro's already-landed search keys on it); N above is only the lowest.
 TITLE_NUMS=$(printf '%s' "$NUMS" | tr -s ' ,\n' '\n' | sort -n | sed 's/^/#/' | tr '\n' ' ' | sed 's/ $//')
+# An empty list would title the PR `docs: land  — …`, which retro can never match to any PR: stop instead.
+[ -n "$TITLE_NUMS" ] || { echo "⚠️ BLOCKER: no PR numbers to put in the docs PR title — refusing to open an unmatchable PR." >&2; exit 1; }
 gh pr create --base "$BASE" --title "docs: land ${TITLE_NUMS} — post-merge currency" --body-file <bodyfile>
 ```
 

@@ -164,7 +164,7 @@ def parse_prs(tokens: list[str]) -> list[int]:
             if not tok:
                 continue
             num = tok[1:] if tok.startswith("#") else tok
-            if not num.isdigit() or int(num) <= 0:
+            if not (num.isascii() and num.isdigit()) or int(num) <= 0:
                 raise ValueError(f"not a PR number: {tok!r}")
             n = int(num)
             if n not in out:
@@ -180,7 +180,7 @@ _LAND_TITLE_RE = re.compile(r"docs: land #\d")
 # alone is attacker-writable (anyone can title a PR `docs: land #151`), so when the head ref is
 # known the exclusion needs BOTH; a contributor's PR with a land-shaped title but an ordinary head
 # stays in the group instead of silently dropping out of it.
-_LAND_HEAD_RE = re.compile(r"(^|/)land-\d")
+_LAND_HEAD_RE = re.compile(r"land-\d+(-\d+)?$")   # branchPrefix is any string (`claude/`, `bot-`, none)
 
 # Long-lived branches a same-repo PR can legitimately have as its HEAD (release / forward-merge PRs).
 # Their tip trivially equals headRefOid at merge time, so the tip check alone would approve deleting

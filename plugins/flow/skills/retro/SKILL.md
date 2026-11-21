@@ -147,7 +147,7 @@ else
   MARKER="$(jq -r '.lastHarvestedPath // empty' flow.config.json 2>/dev/null | sed "s#^~#$HOME#")"
   [ -z "$MARKER" ] && MARKER="${FLOW_CONTRIB_DIR:-$HOME/.claude/plugins/data/flow/contributions}/last_harvested.json"
   WM="$(dirname "$MARKER")/last_retro.json"
-  LISTJSON=$(gh pr list --state merged --base "$DEFAULT_BRANCH" --limit 100 --json number,title,mergedAt,headRefName 2>/dev/null)
+  LISTJSON=$(gh pr list --state merged --base "$DEFAULT_BRANCH" --limit 100 --json number,title,mergedAt,headRefName,isCrossRepository 2>/dev/null)
   # `gh pr list` orders by CREATION, so a long-lived PR merged recently can sit outside a full
   # page. Say so rather than let the watermark advance silently past it.
   [ "$(printf '%s' "$LISTJSON" | jq 'length' 2>/dev/null)" = "100" ] && echo "⚠️ [retro] 100 merged PRs came back (the page limit) — an older-created PR merged recently may be missing from the default group. Pass its number explicitly if so." >&2
@@ -411,11 +411,13 @@ DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null)
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
 # `gh` resolves a PR number in ITS repo; the delete below goes to `origin`. In a fork/upstream layout
-# those can differ, so only delete when origin is the repo gh resolved (case-insensitive substring).
+# those can differ, so only delete when origin is the repo gh resolved (exact owner/name, case-insensitive).
 GH_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
 ORIGIN_URL=$(git remote get-url origin 2>/dev/null)
 REPO_MATCH=no
-[ -n "$GH_REPO" ] && printf '%s' "$ORIGIN_URL" | tr 'A-Z' 'a-z' | grep -qF "$(printf '%s' "$GH_REPO" | tr 'A-Z' 'a-z')" && REPO_MATCH=yes
+# Exact owner/name from the origin URL (ssh or https), NOT a substring: `me/repo` must not match `me/repo-fork`.
+ORIGIN_SLUG=$(printf '%s' "$ORIGIN_URL" | sed -E 's#^.*[:/]([^/:]+/[^/]+)$#\1#; s#\.git$##' | tr 'A-Z' 'a-z')
+[ -n "$GH_REPO" ] && [ "$ORIGIN_SLUG" = "$(printf '%s' "$GH_REPO" | tr 'A-Z' 'a-z')" ] && REPO_MATCH=yes
 git fetch origin --quiet 2>/dev/null || echo "⚠️ [retro] 'git fetch origin' failed — remote tips below may be stale; deletes are verified against the live remote anyway." >&2
 while read -r N; do
   [ -n "$N" ] || continue

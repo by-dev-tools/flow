@@ -190,6 +190,11 @@ check("skill group 3b", 'TITLE_NUMS=$(' in skill and '--title "docs: land ${TITL
       "the shipped gh pr create BLOCK must build the title from the whole list, not from the lowest N")
 check("skill group 5", "isCrossRepository | not" in skill and '"$HEADREF" != "$BASE"' in skill,
       "land must not use a fork's (or the base branch's) head ref as a grep pattern")
+_blocks = re.findall(r"```sh\n(.*?)```", skill, re.S)
+_pr_create = [b for b in _blocks if "TITLE_NUMS=$(" in b]
+check("skill group 3c", len(_pr_create) == 1 and "NUMS='" in _pr_create[0] and "BASE=$(" in _pr_create[0]
+      and "[ -n \"$TITLE_NUMS\" ]" in _pr_create[0],
+      "the gh pr create block must set NUMS and BASE itself (blocks do not share variables) and refuse an empty title list")
 check("skill group 4", '${PREFIX}land-${LO}-${HI}' in skill and '${PREFIX}land-${LO}"' in skill,
       "single PR keeps land-<N>; a group gets land-<lowest>-<highest>")
 check("skill 5b", "## 0. Invocation precondition" in skill and "§1a" in skill,
