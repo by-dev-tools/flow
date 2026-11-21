@@ -259,16 +259,18 @@ satisfy doc-currency forever); an open or merged one does:
 ```sh
 NUMS='<MERGED from §2, space-separated>'
 TODO=""
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then H="${CLAUDE_PLUGIN_ROOT}/skills/retro/lib/merge-status.py"; else H="plugins/flow/skills/retro/lib/merge-status.py"; fi
+[ -f "$H" ] || { echo "⚠️ BLOCKER: retro helper not found at $H — reinstall the flow plugin." >&2; exit 1; }
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'); [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null); [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
-LANDS=$(gh pr list --search "docs: land in:title" --state all --limit 100 --json number,state,url,title,headRefName,baseRefName,isCrossRepository 2>/dev/null)
-# A "landing PR" is one /flow:land could have made: same repo (not a fork), based on the default
-# branch, on a `land-<N>` head, with a `docs: land #…` title. A title alone is writable by anyone
-# who can open a PR — naming #151 in one would otherwise mark #151 "already landed", skip the real
-# reconciliation, and advance the watermark past it.
-LANDQ='[.[] | select(.isCrossRepository == false) | select(.baseRefName == $b) | select(.headRefName | test("(^|/)land-[0-9]")) | select(.title | test("^docs: land #")) | select(.state != "CLOSED")'
+# `landing-prs` owns the definition of "a PR /flow:land could have opened": same repo (not a fork), based
+# on the default branch, on a `land-<N>` head, titled `docs: land #…`, not closed. A title alone is writable
+# by anyone who can open a PR — naming #151 in one would otherwise mark #151 "already landed", skip the real
+# reconciliation, and advance the watermark past it. Its output is PROJECTED (`#N STATE url covers: #a #b`):
+# titles are written by whoever opened the PR and are never printed into this run.
+LANDING=$(gh pr list --search "docs: land in:title" --state all --limit 100 --json number,state,url,title,headRefName,baseRefName,isCrossRepository 2>/dev/null | python3 "$H" landing-prs --default-branch "$DEFAULT_BRANCH")
 while read -r N; do
   [ -n "$N" ] || continue
-  HIT=$(printf '%s' "$LANDS" | jq -r --arg n "$N" --arg b "$DEFAULT_BRANCH" "$LANDQ"' | select(.title | test("(^|[^0-9])#" + $n + "([^0-9]|$)"))] | .[0].url // empty' 2>/dev/null)
+  HIT=$(printf '%s\n' "$LANDING" | grep -E "covers:.*#${N}( |$)" | head -1 | cut -d' ' -f3)
   if [ -n "$HIT" ]; then echo "[retro] #$N already has a landing PR: $HIT — doc-currency satisfied."; else TODO="$TODO $N"; fi
 done <<EOF
 $(printf '%s' "$NUMS" | tr -s ' ,\n' '\n')
@@ -520,12 +522,14 @@ contradict a warning printed seconds earlier. Assemble the verdict from FOUR inp
 3. **Doc-currency (from §3)** — branch on what §3 actually did this run, then confirm it against
    the repo rather than trusting the call's own report:
    ```sh
+   if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then H="${CLAUDE_PLUGIN_ROOT}/skills/retro/lib/merge-status.py"; else H="plugins/flow/skills/retro/lib/merge-status.py"; fi
    DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'); [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=main
    gh pr list --search "docs: land in:title" --state all --json number,url,state,title,headRefName,baseRefName,isCrossRepository 2>/dev/null \
-     | jq -r --arg b "$DEFAULT_BRANCH" '.[] | select(.isCrossRepository == false) | select(.baseRefName == $b) | select(.headRefName | test("(^|/)land-[0-9]")) | select(.title | test("^docs: land #")) | "#\(.number) \(.state) \(.url) covers: \(.title | [scan("#[0-9]+")] | join(" "))"'
+     | python3 "$H" landing-prs --default-branch "$DEFAULT_BRANCH"
    ```
-   Same filter as §3, and the output is **projected**: PR titles are written by whoever opened the PR,
-   so they are never printed raw into this run — only the numbers they name.
+   Same helper subcommand as §3 (one definition of "landing PR"), and its output is **projected**: PR
+   titles are written by whoever opened the PR, so they are never printed raw into this run — only the
+   numbers they name. (A closed landing PR is not listed: it does not count as doc-currency.)
    For each merged PR: a landing PR whose title names it exists ⇒ that PR is the human's **one
    remaining merge** — name it with its URL (a group usually has exactly one). Merged already ⇒
    doc-currency is fully satisfied for it. §3 errored or was rejected, and no such PR names it ⇒

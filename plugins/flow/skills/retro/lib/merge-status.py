@@ -23,6 +23,7 @@ Group handling (v1.69.0) — a batch of merged PRs is closed out in ONE run:
                   numbers merged since the last retro, per a per-repo watermark. Excludes
                   `docs: land` PRs (the output of a previous retro is not input to the next).
   advance       — advance that watermark past the PRs that were fully closed out.
+  landing-prs   — which of the open/merged `docs: land` PRs really are /flow:land's (one shared predicate).
   branch-plan   — per-PR cleanup decision (remote/local) from the PR's own head ref + head
                   SHA and the repo's real git state. Decides; never deletes.
 
@@ -174,7 +175,7 @@ def parse_prs(tokens: list[str]) -> list[int]:
 # What /flow:land actually emits: `docs: land #<N> …`. A bare "docs: land" prefix would also drop
 # a legitimate "docs: landing page copy" PR from the default group, and the watermark would then
 # advance past it.
-_LAND_TITLE_RE = re.compile(r"docs: land #\d", re.IGNORECASE)
+_LAND_TITLE_RE = re.compile(r"docs: land #\d")
 # ...and the head branch /flow:land creates: `<prefix>land-<N>` or `<prefix>land-<lo>-<hi>`. A title
 # alone is attacker-writable (anyone can title a PR `docs: land #151`), so when the head ref is
 # known the exclusion needs BOTH; a contributor's PR with a land-shaped title but an ordinary head
@@ -188,6 +189,41 @@ _LONG_LIVED_RE = re.compile(
     r"(main|master|trunk|develop|development|dev|staging|stage|production|prod|gh-pages|"
     r"(release|releases|hotfix|support|maint|maintenance)(/.*)?|(release|hotfix)-.*)"
 )
+
+
+def is_landing_pr(pr: dict, default_branch: str | None = None) -> bool:
+    """THE one definition of "a PR /flow:land could have opened" (producer: land/SKILL.md names its
+    branch `land-<lo>[-<hi>]` and titles it `docs: land #N …`). Three consumers share it — the default
+    group's exclusion (`select`), retro §3's already-landed check and §6's confirmation — so the rule
+    cannot drift between them. A title alone is writable by anyone who can open a PR, so it is never
+    enough on its own.
+
+    Fields a caller did not fetch are not checked, never assumed: `select` has only title + head, so it
+    tests those; the `landing-prs` subcommand fetches all of them and additionally requires same-repo
+    (not a fork), base == the default branch, and not CLOSED (an abandoned docs PR is not a landing)."""
+    if not _LAND_TITLE_RE.match(str(pr.get("title", "") or "")):
+        return False
+    head = pr.get("headRefName")
+    if head is not None and not _LAND_HEAD_RE.search(str(head)):
+        return False
+    if pr.get("isCrossRepository") is True:
+        return False
+    if default_branch is not None and pr.get("baseRefName") != default_branch:
+        return False
+    return str(pr.get("state", "") or "").upper() != "CLOSED"
+
+
+def landing_lines(prs: list, default_branch: str) -> list[str]:
+    """`#<N> <STATE> <url> covers: #a #b` per landing PR. The title is PROJECTED to the numbers it names:
+    it is written by whoever opened the PR, so it is never printed into the run."""
+    out = []
+    for pr in prs if isinstance(prs, list) else []:
+        if not isinstance(pr, dict) or pr.get("baseRefName") is None or pr.get("headRefName") is None:
+            continue    # `landing-prs` is the strict form: it must have fetched every field it checks
+        if is_landing_pr(pr, default_branch):
+            covers = " ".join(re.findall(r"#\d+", str(pr.get("title", ""))))
+            out.append(f"#{pr.get('number')} {pr.get('state')} {pr.get('url')} covers: {covers}")
+    return out
 
 
 def _parse_ts(value: str):
@@ -221,16 +257,16 @@ def select_group(prs: list, watermark: dict, now: datetime, fallback_days: int =
       whole history is never swept up by a bare `/flow:retro`.
     - Oldest first, at most `cap`; `remaining` says how many more a re-run would pick up, so
       the cap is never a silent truncation."""
-    since = _parse_ts(watermark.get("since", "")) if watermark else None
-    done = {int(n) for n in watermark.get("done", [])} if watermark else set()
+    since = _parse_ts(watermark.get("since", ""))
+    done = {int(n) for n in watermark.get("done", [])}
     floor = now - timedelta(days=fallback_days)
     picked = []
     for pr in prs if isinstance(prs, list) else []:
         if not isinstance(pr, dict):
             continue
         title = str(pr.get("title", "") or "")
-        head = pr.get("headRefName")
-        if _LAND_TITLE_RE.match(title) and (head is None or _LAND_HEAD_RE.search(str(head))):
+        # `select` has no state/base fields: is_landing_pr checks only what is present.
+        if is_landing_pr({k: v for k, v in pr.items() if k != "state"}):
             continue
         ts = _parse_ts(pr.get("mergedAt", ""))
         num = pr.get("number")
@@ -354,11 +390,7 @@ def branch_plan(blob: dict, default_branch: str, cwd: str | None = None) -> dict
     # full ref and keep only the line whose ref is EXACTLY that one, or a namespaced sibling
     # whose tip happens to equal the merged head would be approved for deletion in its place.
     rc, out = _git(["ls-remote", "--heads", "origin", "--", f"refs/heads/{name}"], cwd)
-    tips = []
-    for ln in out.splitlines():
-        parts = ln.split()
-        if len(parts) == 2 and parts[1] == f"refs/heads/{name}":
-            tips.append(parts[0])
+    tips = [p[0] for p in (ln.split() for ln in out.splitlines()) if len(p) == 2 and p[1] == f"refs/heads/{name}"]
     if rc != 0:
         plan["remote"] = "unverified"
         plan["detail"] = "could not reach origin"
@@ -418,6 +450,9 @@ def main(argv: list[str] | None = None) -> int:
     mk.add_argument("--watermark-file", required=True)
     mk.add_argument("--repo", required=True)
 
+    lp = sub.add_parser("landing-prs", help="gh pr list JSON (stdin) → `#N STATE url covers: #a #b` lines")
+    lp.add_argument("--default-branch", required=True)
+
     bp = sub.add_parser("branch-plan", help="gh pr view blob (stdin) → JSON cleanup decision")
     bp.add_argument("--default-branch", required=True)
     bp.add_argument("--cwd", default=None)
@@ -469,6 +504,17 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         rec = advance_watermark(args.watermark_file, args.repo, closed)
         print(json.dumps(rec) if rec else "no-change")
+        return 0
+
+    if args.cmd == "landing-prs":
+        try:
+            prs = json.loads(sys.stdin.read() or "[]")
+        except ValueError:
+            print("landing-prs: stdin is not JSON (did `gh pr list` fail?)", file=sys.stderr)
+            return 2
+        lines = landing_lines(prs, args.default_branch)
+        if lines:
+            print("\n".join(lines))
         return 0
 
     if args.cmd == "branch-plan":

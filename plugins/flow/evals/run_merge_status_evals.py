@@ -289,6 +289,26 @@ def main() -> int:
         rc, out = run(["advance", "--watermark-file", str(wmf), "--repo", "o/r"], stdin="[]")
         check("advance-empty-is-no-change", rc == 0 and out == "no-change", f"{out!r}")
 
+    # landing-prs: the ONE predicate. Every negative is paired with a positive that still matches.
+    base = {"baseRefName": "main", "isCrossRepository": False}
+    lp = [
+        {"number": 1, "state": "OPEN", "url": "u1", "title": "docs: land #151 #154 — x", "headRefName": "claude/land-151-154", **base},
+        {"number": 2, "state": "MERGED", "url": "u2", "title": "docs: land #7", "headRefName": "land-7", **base},
+        {"number": 3, "state": "OPEN", "url": "u3", "title": "docs: land #151", "headRefName": "feature/x", **base},      # title only
+        {"number": 4, "state": "OPEN", "url": "u4", "title": "docs: land #151", "headRefName": "land-151", "baseRefName": "main", "isCrossRepository": True},  # fork
+        {"number": 5, "state": "OPEN", "url": "u5", "title": "docs: land #151", "headRefName": "land-151", "baseRefName": "develop", "isCrossRepository": False},  # wrong base
+        {"number": 6, "state": "CLOSED", "url": "u6", "title": "docs: land #151", "headRefName": "land-151", **base},    # abandoned
+        {"number": 8, "state": "OPEN", "url": "u8", "title": "docs: landing page", "headRefName": "land-9", **base},
+        {"number": 9, "state": "OPEN", "url": "u9", "title": "docs: land #9"},   # fields not fetched: the strict form must not guess
+    ]
+    rc, out = run(["landing-prs", "--default-branch", "main"], stdin=json.dumps(lp))
+    check("landing-prs-keeps-the-real-ones-and-projects-titles",
+          rc == 0 and out.splitlines() == ["#1 OPEN u1 covers: #151 #154", "#2 MERGED u2 covers: #7"], f"{out!r}")
+    for n, why in ((3, "title-only"), (4, "fork"), (5, "wrong-base"), (6, "closed"), (8, "title-not-land"), (9, "unfetched-fields")):
+        check(f"landing-prs-excludes-{why}", f"u{n} " not in out, f"{out!r}")
+    rc, _ = run(["landing-prs", "--default-branch", "main"], stdin="not json")
+    check("landing-prs-garbage-input-is-an-error", rc == 2, f"rc={rc}")
+
     # branch-plan against REAL git state: bare origin + clone + linked worktree
     with tempfile.TemporaryDirectory() as d:
         origin, repo, wt = f"{d}/origin.git", f"{d}/repo", f"{d}/wt"
@@ -338,14 +358,14 @@ def main() -> int:
         check("branch-plan-missing-branches", pg["remote"] == "gone" and pg["local"] == "absent", f"{pg}")
         pn = plan("feat-a", "")
         check("branch-plan-no-headRefOid-is-unverified-never-delete", pn["remote"] == "unverified", f"{pn}")
-        check("branch-plan-default-branch-is-never-a-target",
-              plan("main", a)["remote"] == "skip-default", f"{plan('main', a)}")
+        pm = plan("main", a)
+        check("branch-plan-default-branch-is-never-a-target", pm["remote"] == "skip-default", f"{pm}")
         for ll in ("develop", "staging", "release/1.x", "release-2", "gh-pages", "hotfix/a"):
             pl = plan(ll, a)
             check(f"branch-plan-long-lived-never-a-target-{ll}", pl["remote"] == "skip-long-lived"
                   and pl["local"] == "skip-long-lived", f"{pl}")
-        check("branch-plan-ordinary-name-not-mistaken-for-long-lived",
-              plan("feat-a", a)["remote"] == "delete", f"{plan('feat-a', a)}")
+        po = plan("feat-a", a)
+        check("branch-plan-ordinary-name-not-mistaken-for-long-lived", po["remote"] == "delete", f"{po}")
         for bad in ("-D", "a b", "x;y", "$(id)"):
             pu = plan(bad, a)
             check(f"branch-plan-unsafe-name-refused-{bad!r}", pu["remote"] == "unsafe-name", f"{pu}")
@@ -357,7 +377,8 @@ def main() -> int:
         check("branch-plan-ls-remote-suffix-sibling-is-not-the-branch", pn2["remote"] == "gone", f"{pn2}")
         # checked out HERE → 'current'
         git(repo, "checkout", "-q", "feat-a")
-        check("branch-plan-current-branch", plan("feat-a", a)["local"] == "current", f"{plan('feat-a', a)}")
+        pcur = plan("feat-a", a)
+        check("branch-plan-current-branch", pcur["local"] == "current", f"{pcur}")
         git(repo, "checkout", "-q", "main")
 
     # ---- SKILL contract (the composition + safety commitments the plan pinned) ----
@@ -439,10 +460,9 @@ def main() -> int:
           "a branch `-d` refuses must be REPORTED as left behind, not force-deleted")
     check("skill-skips-other-worktrees", "checked out in another worktree" in skill and "worktree:*" in skill,
           "branches checked out in other worktrees must be skipped and named")
-    check("skill-landing-pr-match-is-not-title-only",
-          'select(.isCrossRepository == false)' in skill and 'select(.baseRefName == $b)' in skill
-          and 'test("(^|/)land-[0-9]")' in skill,
-          "'already landed' must require a same-repo, default-based land-<N> PR, not merely a title naming #N")
+    check("skill-landing-pr-match-goes-through-the-one-helper-predicate",
+          skill.count(" landing-prs --default-branch ") == 2 and "select(.headRefName" not in skill,
+          "§3 and §6 must both use `landing-prs` — one definition of a landing PR, not a jq copy per site")
     check("skill-remote-delete-is-leased-and-protected-checked",
           "--force-with-lease=" in skill and ".protected" in skill and "does not match the repo gh resolved" in skill
           and "git push origin --delete" not in "\n".join(re.findall(r"```sh\n(.*?)```", skill, re.S)),
