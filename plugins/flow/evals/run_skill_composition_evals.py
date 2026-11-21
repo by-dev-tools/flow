@@ -12,7 +12,8 @@ Three layers:
      false-positive case, unknown targets, self-calls, absent-flag default.
   2. A live assertion over flow's OWN skills directory, so the repo can never
      reintroduce the shape the lint exists to forbid.
-  3. Live assertions that the retro → land composition is INTACT (FB-0077).
+  3. Live assertions that the retro → land composition is INTACT (FB-0077); since v1.69.0
+     retro is itself model-invocable, guarded by its §2 merge gate + an AUTO-INVOCATION clause.
      Layer 2 passes two opposite ways — the composition is legal, or the call was
      deleted — and the lint cannot tell them apart. That ambiguity is how FB-0074
      "fixed" this defect by conceding it, leaving /flow:retro a reminder to run
@@ -235,12 +236,36 @@ def main() -> int:
         0 if retro_calls else 1, 0,
         "no fenced Skill() call naming land found in retro/SKILL.md")
 
-    # retro must itself stay human-gated: it is the human gate above land now
-    # that land's own flag is gone. Losing BOTH flags is the state nothing guards.
+    # v1.69.0: retro is MODEL-invocable too. This block used to pin it `disabled is True` as "the
+    # human gate above land" (FB-0077); that flag only ever blocked the user it was meant to
+    # serve (a chat "run the retro" got a refused Skill() call). The guard was never the flag —
+    # it is retro §2 (refuses unmerged PRs) plus land §1a, both pinned here and in
+    # run_merge_status_evals. What replaces the flag is a WHEN clause, so pin that, positively.
+    retro_entry = table["skills"].get("retro", {})
     expect(
-        "retro stays disable-model-invocation: true — the human gate above land",
-        0 if table["skills"].get("retro", {}).get("disabled") is True else 1, 0,
-        f"retro entry: {table['skills'].get('retro')}")
+        "retro is model-invocable (v1.69.0) — a user's chat 'run the retro' must be runnable",
+        0 if retro_entry.get("disabled") is False else 1, 0, f"retro entry: {retro_entry}")
+    retro_fm = _frontmatter_of(FLOW_SKILLS / "retro" / "SKILL.md")
+    expect(
+        "retro declares the flag explicitly rather than relying on the default",
+        0 if re.search(r"^disable-model-invocation:\s*false\s*$", retro_fm, re.M) else 1, 0, retro_fm)
+    flat_fm = " ".join(retro_fm.split())
+    expect(
+        "retro carries an AUTO-INVOCATION clause that says both when to fire and when NEVER to",
+        0 if ("AUTO-INVOCATION" in retro_fm and "asks for a retro" in flat_fm
+              and "NEVER invoke" in flat_fm and "mid-loop" in flat_fm) else 1, 0,
+        "the flag no longer says when; without the clause nothing does")
+    # Losing BOTH the flag and the merge gate is the state nothing would guard.
+    retro_text = (FLOW_SKILLS / "retro" / "SKILL.md").read_text(encoding="utf-8")
+    expect(
+        "retro keeps its §2 three-state merge gate — the guard its cleared flag now leans on",
+        0 if re.search(r"^## 2\. Merge-detect", retro_text, re.M) and "CLOSED without merging" in retro_text else 1,
+        0, "retro/SKILL.md no longer declares the §2 merge gate")
+    # No skill in the tree may stay human-only by accident: if one is, this suite should know
+    # which, because workflow.md's "human-only skills" section asserts the count.
+    disabled = sorted(n for n, v in table["skills"].items() if v.get("disabled"))
+    expect("no flow skill is model-disabled today (workflow.md § Human-only skills says so)",
+           0 if disabled == [] else 1, 0, f"disabled skills: {disabled}")
 
     # land's §1a gate is what makes clearing the flag safe. If it ever stops refusing
     # unmerged PRs, the flag's removal becomes unsafe retroactively.

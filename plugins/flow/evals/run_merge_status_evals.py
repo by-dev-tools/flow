@@ -11,8 +11,14 @@ is prose the agent drives, but its LOAD-BEARING core is deterministic and pinned
                  from the CLOSED terminal fail), and cap==0 fail-fast on OPEN is also
                  graceful, never terminal. This is the false-fail-on-merge-queue fix.
   archive-check— the "safe to archive?" verdict over real git state in a temp repo.
-  contract     — the SKILL wires the pieces the way the plan committed: human-invoked
-                 (disable-model-invocation), and CALLS /flow:land for doc-currency
+  group        — (v1.69.0) a batch of merged PRs closes out in ONE run: `parse-prs`
+                 normalizes the argument, `select` picks "merged since the last retro"
+                 from a per-repo watermark (excluding the `docs: land` PRs a previous retro
+                 produced), `advance` moves that watermark monotonically, and `branch-plan`
+                 decides per-PR cleanup against REAL git state in a temp repo (remote tip must
+                 equal the PR's headRefOid; forks and other-worktree checkouts are never touched).
+  contract     — the SKILL wires the pieces the way the plan committed: MODEL-invocable with an
+                 AUTO-INVOCATION clause (v1.69.0; was human-only), and CALLS /flow:land for doc-currency
                  (FB-0077: land's flag was cleared, so the Skill() call executes —
                  composition, not reimplementation and not a hand-off), uses `branch -d`
                  never `-D`, and writes NO feedbackPath repo doc in v1 (user-scope only).
@@ -31,6 +37,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from eval_utils import fenced_block
@@ -186,6 +193,197 @@ def main() -> int:
         rc, out = run(["archive-check", "--cwd", repo2])
         check("archive-no-upstream-notsafe", rc == 1 and "upstream" in out, f"{out!r} rc={rc}")
 
+
+    # ---- group handling (v1.69.0): parse-prs / select / advance / branch-plan ----
+    rc, out = run(["parse-prs", "151", "#153", "155,156", "151"])
+    check("parse-prs-normalizes-and-dedups", rc == 0 and out.split() == ["151", "153", "155", "156"],
+          f"{out!r} rc={rc}")
+    # A URL names an owner/repo; reducing it to a number would act on the WRONG repo's PR.
+    rc, out = run(["parse-prs", "https://github.com/other/repo/pull/12"])
+    check("parse-prs-refuses-a-url-it-would-misattribute", rc == 2 and out == "", f"{out!r} rc={rc}")
+    rc, out = run(["parse-prs", "151 153"])
+    check("parse-prs-splits-one-quoted-string", rc == 0 and out.split() == ["151", "153"], f"{out!r} rc={rc}")
+    # A non-number must be REFUSED, and a refusal must be distinguishable from an empty group.
+    for label, toks in [("junk", ["x;rm"]), ("zero", ["0"]), ("word", ["abc"]), ("neg", ["-5"])]:
+        rc, out = run(["parse-prs", *toks])
+        check(f"parse-prs-refuses-{label}", rc == 2 and out == "", f"{toks} → rc={rc} out={out!r}")
+    rc, out = run(["parse-prs", "²"])
+    check("parse-prs-refuses-unicode-digits-without-a-traceback", rc == 2 and out == "", f"{out!r} rc={rc}")
+    rc, _ = run(["parse-prs"])
+    check("parse-prs-empty-is-error-not-empty-group", rc == 2, f"rc={rc}")
+
+    def select(prs, wm=None, extra=()):
+        with tempfile.TemporaryDirectory() as d:
+            wmf = Path(d) / "last_retro.json"
+            if wm is not None:
+                wmf.write_text(json.dumps({"o/r": wm}))
+            rc, out = run(["select", "--watermark-file", str(wmf), "--repo", "o/r", *extra],
+                          stdin=json.dumps(prs))
+            return rc, out.split()
+
+    now = datetime.now(timezone.utc)
+    ts = lambda days: (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
+    prs = [
+        {"number": 10, "title": "feat: a", "mergedAt": ts(1)},
+        {"number": 11, "title": "docs: land #10 — post-merge currency", "mergedAt": ts(0.9)},
+        {"number": 12, "title": "feat: b", "mergedAt": ts(0.5)},
+        {"number": 5, "title": "feat: old", "mergedAt": ts(30)},
+        {"number": 13, "title": "docs: landing page copy", "mergedAt": ts(0.4)},
+    ]
+    # a land-shaped TITLE alone is attacker-writable; with a known head ref the exclusion needs both.
+    spoof = prs + [{"number": 14, "title": "docs: land #99 — x", "mergedAt": ts(0.3), "headRefName": "feature/x"},
+                   {"number": 15, "title": "docs: land #98 — post-merge currency", "mergedAt": ts(0.2),
+                    "headRefName": "claude/land-98"}]
+    rc, got = select(spoof)
+    check("select-land-title-needs-a-land-head-when-known", got == ["10", "12", "13", "14"], f"{got}")
+    rc, got = select(prs)
+    # first run in a repo: last 7 days only (NOT the whole history), docs: land excluded, oldest first
+    # 13 is "docs: landing page copy": a real PR whose title merely starts like a land PR — must stay in.
+    check("select-first-run-bounded-and-excludes-land", got == ["10", "12", "13"], f"{got}")
+    rc, got = select(prs, wm={"since": ts(0.95), "done": []})
+    check("select-after-watermark", got == ["12", "13"], f"{got}")
+    # boundary: a PR AT the watermark instant is excluded iff it is in `done`
+    at = ts(0.5)
+    rc, got = select(prs, wm={"since": at, "done": [12]})
+    check("select-boundary-done-is-excluded", got == ["13"], f"{got}")  # 13 merged later: still newer
+    rc, got = select(prs, wm={"since": at, "done": []})
+    check("select-boundary-not-done-is-included", got == ["12", "13"], f"{got}")
+    # cap: oldest first, and the truncation is announced, never silent
+    many = [{"number": 100 + i, "title": f"feat {i}", "mergedAt": ts(3 - i * 0.01)} for i in range(5)]
+    with tempfile.TemporaryDirectory() as d:
+        proc = subprocess.run([sys.executable, str(HELPER), "select", "--watermark-file", f"{d}/w.json",
+                               "--repo", "o/r", "--cap", "2"], input=json.dumps(many),
+                              capture_output=True, text=True)
+    check("select-cap-takes-oldest-and-says-so",
+          proc.stdout.split() == ["100", "101"] and "3 more" in proc.stderr,
+          f"{proc.stdout!r} / {proc.stderr!r}")
+    rc, _ = select("not-a-list-of-prs")
+    check("select-garbage-input-is-empty-group-not-crash", rc == 0, f"rc={rc}")
+    # a watermark for ANOTHER repo must not filter this one (the file is user-scope, cross-project)
+    with tempfile.TemporaryDirectory() as d:
+        wmf = Path(d) / "w.json"
+        wmf.write_text(json.dumps({"other/repo": {"since": ts(0.1), "done": []}}))
+        rc, out = run(["select", "--watermark-file", str(wmf), "--repo", "o/r"], stdin=json.dumps(prs))
+    check("select-watermark-is-per-repo", out.split() == ["10", "12", "13"], f"{out!r}")
+
+    # advance: monotonic, per-repo, boundary-aware
+    with tempfile.TemporaryDirectory() as d:
+        wmf = Path(d) / "sub" / "last_retro.json"
+        rc, out = run(["advance", "--watermark-file", str(wmf), "--repo", "o/r"],
+                      stdin=json.dumps([{"number": 1, "mergedAt": "2026-11-01T00:00:00Z"},
+                                        {"number": 2, "mergedAt": "2026-11-02T00:00:00Z"},
+                                        {"number": 3, "mergedAt": "2026-11-02T00:00:00Z"}]))
+        rec = json.loads(wmf.read_text())["o/r"]
+        check("advance-writes-newest-and-its-boundary-prs",
+              rc == 0 and rec == {"since": "2026-11-02T00:00:00Z", "done": [2, 3]}, f"{rec}")
+        run(["advance", "--watermark-file", str(wmf), "--repo", "o/r"],
+            stdin=json.dumps([{"number": 9, "mergedAt": "2026-10-01T00:00:00Z"}]))
+        check("advance-never-moves-backwards",
+              json.loads(wmf.read_text())["o/r"]["since"] == "2026-11-02T00:00:00Z", wmf.read_text())
+        run(["advance", "--watermark-file", str(wmf), "--repo", "o/r"],
+            stdin=json.dumps([{"number": 4, "mergedAt": "2026-11-02T00:00:00Z"}]))
+        check("advance-same-instant-unions-done",
+              json.loads(wmf.read_text())["o/r"]["done"] == [2, 3, 4], wmf.read_text())
+        run(["advance", "--watermark-file", str(wmf), "--repo", "x/y"],
+            stdin=json.dumps([{"number": 7, "mergedAt": "2026-11-05T00:00:00Z"}]))
+        whole = json.loads(wmf.read_text())
+        check("advance-keeps-other-repos", set(whole) == {"o/r", "x/y"}, f"{sorted(whole)}")
+        rc, out = run(["advance", "--watermark-file", str(wmf), "--repo", "o/r"], stdin="[]")
+        check("advance-empty-is-no-change", rc == 0 and out == "no-change", f"{out!r}")
+
+    # landing-prs: the ONE predicate. Every negative is paired with a positive that still matches.
+    base = {"baseRefName": "main", "isCrossRepository": False}
+    lp = [
+        {"number": 1, "state": "OPEN", "url": "u1", "title": "docs: land #151 #154 — x", "headRefName": "claude/land-151-154", **base},
+        {"number": 2, "state": "MERGED", "url": "u2", "title": "docs: land #7", "headRefName": "land-7", **base},
+        {"number": 3, "state": "OPEN", "url": "u3", "title": "docs: land #151", "headRefName": "feature/x", **base},      # title only
+        {"number": 4, "state": "OPEN", "url": "u4", "title": "docs: land #151", "headRefName": "land-151", "baseRefName": "main", "isCrossRepository": True},  # fork
+        {"number": 5, "state": "OPEN", "url": "u5", "title": "docs: land #151", "headRefName": "land-151", "baseRefName": "develop", "isCrossRepository": False},  # wrong base
+        {"number": 6, "state": "CLOSED", "url": "u6", "title": "docs: land #151", "headRefName": "land-151", **base},    # abandoned
+        {"number": 8, "state": "OPEN", "url": "u8", "title": "docs: landing page", "headRefName": "land-9", **base},
+        {"number": 10, "state": "OPEN", "url": "u10", "title": "docs: land #12", "headRefName": "bot-land-12", **base},  # branchPrefix without a slash
+        {"number": 9, "state": "OPEN", "url": "u9", "title": "docs: land #9"},   # fields not fetched: the strict form must not guess
+    ]
+    rc, out = run(["landing-prs", "--default-branch", "main"], stdin=json.dumps(lp))
+    check("landing-prs-keeps-the-real-ones-and-projects-titles",
+          rc == 0 and out.splitlines() == ["#1 OPEN u1 covers: #151 #154", "#2 MERGED u2 covers: #7", "#10 OPEN u10 covers: #12"], f"{out!r}")
+    for n, why in ((3, "title-only"), (4, "fork"), (5, "wrong-base"), (6, "closed"), (8, "title-not-land"), (9, "unfetched-fields")):
+        check(f"landing-prs-excludes-{why}", f"u{n} " not in out, f"{out!r}")
+    rc, _ = run(["landing-prs", "--default-branch", "main"], stdin="not json")
+    check("landing-prs-garbage-input-is-an-error", rc == 2, f"rc={rc}")
+
+    # branch-plan against REAL git state: bare origin + clone + linked worktree
+    with tempfile.TemporaryDirectory() as d:
+        origin, repo, wt = f"{d}/origin.git", f"{d}/repo", f"{d}/wt"
+        subprocess.run(["git", "init", "-q", "--bare", origin], check=True, capture_output=True)
+        subprocess.run(["git", "clone", "-q", origin, repo], check=True, capture_output=True)
+        git(repo, "config", "user.email", "t@t"); git(repo, "config", "user.name", "t")
+        git(repo, "checkout", "-q", "-b", "main")
+        (Path(repo) / "a").write_text("a\n"); git(repo, "add", "-A"); git(repo, "commit", "-q", "-m", "base")
+        git(repo, "push", "-q", "origin", "main")
+
+        def sha(ref="HEAD"):
+            return subprocess.run(["git", "-C", repo, "rev-parse", ref], capture_output=True,
+                                  text=True).stdout.strip()
+
+        def branch(name):
+            git(repo, "checkout", "-q", "-b", name, "main")
+            (Path(repo) / f"{name}.txt").write_text(name); git(repo, "add", "-A")
+            git(repo, "commit", "-q", "-m", name); git(repo, "push", "-q", "origin", name)
+            tip = sha(); git(repo, "checkout", "-q", "main"); return tip
+
+        a, b, c = branch("feat-a"), branch("feat-b"), branch("feat-c")
+        git(repo, "worktree", "add", "-q", wt, "feat-c")
+
+        def plan(name, oid, fork=False, default="main"):
+            blob = {"headRefName": name, "headRefOid": oid, "isCrossRepository": fork}
+            rc, out = run(["branch-plan", "--default-branch", default, "--cwd", repo], stdin=json.dumps(blob))
+            return json.loads(out)
+
+        pa = plan("feat-a", a)
+        check("branch-plan-remote-tip-equals-head-is-delete", pa["remote"] == "delete", f"{pa}")
+        # THE squash-merge case: local branch exists, not an ancestor of main → `-d` would refuse,
+        # so the plan must say the local branch is a delete CANDIDATE only; the SKILL reports the refusal.
+        check("branch-plan-local-reports-tip-match", pa["local"] == "delete" and pa["tip_matches"] is True, f"{pa}")
+        # remote moved after the merge → never delete
+        git(repo, "checkout", "-q", "feat-b"); (Path(repo) / "late").write_text("x"); git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", "late"); git(repo, "push", "-q", "origin", "feat-b")
+        git(repo, "checkout", "-q", "main")
+        pb = plan("feat-b", b)
+        check("branch-plan-remote-moved-is-not-deleted", pb["remote"] == "moved", f"{pb}")
+        pc = plan("feat-c", c)
+        check("branch-plan-other-worktree-is-named-not-deleted",
+              pc["local"].startswith("worktree:") and os.path.realpath(wt) == os.path.realpath(pc["local"][9:]),
+              f"{pc}")
+        pf = plan("feat-a", a, fork=True)
+        check("branch-plan-fork-is-never-cleaned", pf["remote"] == "skip-fork" and pf["local"] == "skip-fork", f"{pf}")
+        pg = plan("feat-zzz", a)
+        check("branch-plan-missing-branches", pg["remote"] == "gone" and pg["local"] == "absent", f"{pg}")
+        pn = plan("feat-a", "")
+        check("branch-plan-no-headRefOid-is-unverified-never-delete", pn["remote"] == "unverified", f"{pn}")
+        pm = plan("main", a)
+        check("branch-plan-default-branch-is-never-a-target", pm["remote"] == "skip-default", f"{pm}")
+        for ll in ("develop", "staging", "release/1.x", "release-2", "gh-pages", "hotfix/a"):
+            pl = plan(ll, a)
+            check(f"branch-plan-long-lived-never-a-target-{ll}", pl["remote"] == "skip-long-lived"
+                  and pl["local"] == "skip-long-lived", f"{pl}")
+        po = plan("feat-a", a)
+        check("branch-plan-ordinary-name-not-mistaken-for-long-lived", po["remote"] == "delete", f"{po}")
+        for bad in ("-D", "a b", "x;y", "$(id)"):
+            pu = plan(bad, a)
+            check(f"branch-plan-unsafe-name-refused-{bad!r}", pu["remote"] == "unsafe-name", f"{pu}")
+        # ls-remote matches by ref SUFFIX: a namespaced sibling `a/feat-n` must not stand in for `feat-n`.
+        n_tip = branch("feat-n")
+        git(repo, "push", "-q", "origin", "feat-n:refs/heads/a/feat-n")   # sibling at the SAME tip
+        git(repo, "push", "-q", "origin", ":refs/heads/feat-n")           # ...and the real branch is gone
+        pn2 = plan("feat-n", n_tip)
+        check("branch-plan-ls-remote-suffix-sibling-is-not-the-branch", pn2["remote"] == "gone", f"{pn2}")
+        # checked out HERE → 'current'
+        git(repo, "checkout", "-q", "feat-a")
+        pcur = plan("feat-a", a)
+        check("branch-plan-current-branch", pcur["local"] == "current", f"{pcur}")
+        git(repo, "checkout", "-q", "main")
+
     # ---- SKILL contract (the composition + safety commitments the plan pinned) ----
     skill = SKILL.read_text(encoding="utf-8") if SKILL.exists() else ""
     check("skill-exists", bool(skill), "skills/retro/SKILL.md missing")
@@ -193,11 +391,31 @@ def main() -> int:
     # the SKILL's prose quotes `disable-model-invocation: true` while narrating the FB-0077
     # history, so the string survives even after the flag itself is flipped. Verified by
     # mutation — the bare form did not catch the flip.
-    check("skill-human-invoked",
-          bool(re.search(r"^disable-model-invocation:\s*true\s*$",
-                         _lint()._frontmatter(skill), re.M)),
-          "retro must stay human-invoked, never auto-fire — it is the human gate above "
-          "/flow:land now that land's own flag is cleared (FB-0077)")
+    # v1.69.0 INVERTED this check. FB-0077 pinned retro as the human gate above /flow:land; in
+    # practice the flag only blocked the user it was meant to serve (a chat "run the retro" got a
+    # refused Skill() call, once per PR). The guard was never the flag — it is §2's merged-PR gate.
+    # The flag is now `false`, DECLARED (an absent flag also parses invocable, so a deletion would
+    # lose the recorded decision), and the WHEN is pinned as an AUTO-INVOCATION clause, because
+    # nothing mechanical bounds timing and the clause is the only thing that does.
+    fm = _lint()._frontmatter(skill)
+    check("skill-model-invocable-declared",
+          bool(re.search(r"^disable-model-invocation:\s*false\s*$", fm, re.M)),
+          "retro must declare disable-model-invocation: false (v1.69.0) so the model can run a "
+          "retro the user asks for in chat")
+    check("skill-has-auto-invocation-clause", "AUTO-INVOCATION" in fm,
+          "model-invocable without an AUTO-INVOCATION clause leaves nothing saying WHEN — the "
+          "flag no longer does")
+    # The clause must carry BOTH halves: when to fire, and when NOT to (mid-loop / before a merge).
+    check("skill-clause-fires-on-ask-or-landed-batch",
+          "asks for a retro" in fm and "have merged" in fm.replace("\n", " ").replace("  ", " "),
+          "clause must name both triggers: the user asking in words, and PRs having merged")
+    check("skill-clause-forbids-mid-loop",
+          "NEVER invoke" in fm and "mid-loop" in fm and "end of /flow:ship" in fm.replace("\n", " ").replace("  ", " "),
+          "clause must forbid firing mid-loop / at the end of /flow:ship / ahead of a merge")
+    # The safety the clause leans on must still exist: §2 refuses non-merged, in the shipped blocks.
+    check("skill-merge-gate-still-refuses-closed",
+          "CLOSED without merging" in skill and 'closed) CLOSED=' in skill,
+          "§2 must still classify and refuse closed-unmerged PRs — it is the guard the flag used to stand in for")
     # This check has now been inverted TWICE, and the history is why it is worth reading.
     # v1.21.0 asserted post-merge (now /flow:retro) CALLS Skill("flow:land") — but land was
     # disable-model-invocation: true, so the call was rejected on every run and §3 silently
@@ -224,6 +442,54 @@ def main() -> int:
     check("skill-uses-helper", "merge-status.py" in skill, "must drive the deterministic helper")
     check("skill-safe-branch-delete", "branch -d" in skill and "branch -D" not in skill,
           "cleanup must use `git branch -d` (safe), never `-D`")
+    # ---- v1.69.0 group contract. Every negative is paired with the positive it protects. ----
+    check("skill-group-argument", "[<PR#> …]" in skill and "parse-prs" in skill,
+          "retro must accept a LIST of PRs and normalize it through the helper")
+    check("skill-no-argument-does-not-prompt",
+          "**do not ask.**" in skill and "confirm the number with the user" not in skill,
+          "a bare /flow:retro must resolve the default group without a confirmation prompt")
+    check("skill-default-group-uses-watermark", " select --watermark-file " in skill and "last_retro.json" in skill,
+          "the default group must come from the per-repo watermark helper")
+    check("skill-land-called-once-with-the-group",
+          "ONCE for the group" in skill and "passing every number in `TODO`" in skill,
+          "the land call must carry the whole group (one docs PR), not run per PR")
+    check("skill-cleanup-uses-branch-plan", " branch-plan --default-branch " in skill,
+          "per-PR cleanup must go through the deterministic branch-plan decision")
+    check("skill-remote-delete-is-verified-against-headRefOid",
+          "headRefOid" in skill and 'refs/heads/$BR:$OID' in skill,
+          "remote head deletion must be gated on the tip equalling the PR's headRefOid")
+    check("skill-leaves-squash-merged-branches-and-says-so",
+          "LEFT BEHIND" in skill and "never force-deletes" in skill,
+          "a branch `-d` refuses must be REPORTED as left behind, not force-deleted")
+    check("skill-skips-other-worktrees", "checked out in another worktree" in skill and "worktree:*" in skill,
+          "branches checked out in other worktrees must be skipped and named")
+    check("skill-landing-pr-match-goes-through-the-one-helper-predicate",
+          skill.count(" landing-prs --default-branch ") == 2 and "select(.headRefName" not in skill,
+          "§3 and §6 must both use `landing-prs` — one definition of a landing PR, not a jq copy per site")
+    check("skill-repo-match-is-exact-not-substring", "ORIGIN_SLUG" in skill and "grep -qF" not in skill,
+          "origin must equal the gh-resolved owner/name exactly — a substring lets me/repo-fork pass as me/repo")
+    check("skill-remote-delete-is-leased-and-protected-checked",
+          "--force-with-lease=" in skill and ".protected" in skill and "does not match the repo gh resolved" in skill
+          and "git push origin --delete" not in "\n".join(re.findall(r"```sh\n(.*?)```", skill, re.S)),
+          "remote delete must be fully-qualified, leased on headRefOid, fail-closed on protection + repo match")
+    # §6 / §6b are PROSE rules the agent executes — pinned here as text, which is weaker than a
+    # behavioral test (stated in the PR body), but a deletion of any condition now fails CI.
+    _flat = " ".join(skill.split())   # the prose is hard-wrapped; compare on whitespace-normalized text
+    check("skill-verdict-requires-all-four-inputs",
+          "ONLY when ALL hold" in _flat and "§5 left no local branch behind" in _flat
+          and "§2 left nothing out" in _flat and "never a ✅" in _flat and "🚫 not fully closed out" in _flat,
+          "the ✅ line must stay conditional on git-state, branch cleanup, landing PRs AND PRs left out of §2")
+    check("skill-watermark-advance-conditions-are-all-named",
+          "**default**" in _flat and "doc-currency-satisfied" in _flat and "§2 left nothing out" in _flat
+          and "page of merged PRs was full" in _flat and "An explicit-list run never moves it" in _flat,
+          "§6b must keep every advance condition: default group, all reconciled, nothing left out, page not full, never explicit")
+    check("skill-keeps-fork-guard", "skip-fork" in skill and "fork PR" in skill,
+          "fork PRs must never have their head branch deleted from origin")
+    # Fenced blocks only: the prose NAMES the forbidden form while explaining it.
+    _code = "\n".join(re.findall(r"```[a-z]*\n(.*?)```", skill, re.S))
+    check("skill-iterates-with-while-read-not-for-in-var",
+          "while read -r N" in _code and not re.search(r"for \w+ in \$\w+", _code),
+          "zsh does not word-split an unquoted variable — iterate with while-read, not `for x in $LIST`")
     # v1 writes user-scope stores only — assert the SPECIFIC negative phrasing (a bare "NOT"
     # substring is always present and can't catch a regression that adds a feedbackPath write).
     check("skill-no-feedbackpath-write", "does **NOT** write the repo `feedbackPath`" in skill,

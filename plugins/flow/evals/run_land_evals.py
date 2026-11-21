@@ -175,11 +175,33 @@ check("skill 5",
                      _frontmatter(skill), re.M)),
       "land must be model-invocable (disable-model-invocation: false, FB-0077) so "
       "/flow:retro §3 can call it; the never-auto-fire guard is its §1a merged-PR gate")
+# v1.69.0: land takes a GROUP of PRs and opens ONE docs PR for it (retro §3 calls it once).
+# Pinned positively from both ends — the list argument, the per-number merged check, and the
+# every-number title that retro's idempotency search depends on. Deleting group support must fail.
+check("skill group 1", "[<PR#> …]" in skill and "while read -r N" in skill and "for N in $NUMS; do" not in
+      "\n".join(re.findall(r"```sh\n(.*?)```", skill, re.S)),
+      "land must accept a list and iterate it with while-read (zsh does not word-split `for N in $VAR`)")
+check("skill group 2", "refuses the whole call" in skill and "A group lands whole or not at all" in skill,
+      "one unmerged number must refuse the whole group (never a half-landed group)")
+check("skill group 3", "carries **every** number" in skill and "docs: land #151 #153 #154" in skill,
+      "the group PR title must name every number — retro's already-landed search keys on it")
+check("skill group 3b", 'TITLE_NUMS=$(' in skill and '--title "docs: land ${TITLE_NUMS}' in skill
+      and '--title "docs: land #${N}' not in skill,
+      "the shipped gh pr create BLOCK must build the title from the whole list, not from the lowest N")
+check("skill group 5", "isCrossRepository | not" in skill and '"$HEADREF" != "$BASE"' in skill,
+      "land must not use a fork's (or the base branch's) head ref as a grep pattern")
+_blocks = re.findall(r"```sh\n(.*?)```", skill, re.S)
+_pr_create = [b for b in _blocks if "TITLE_NUMS=$(" in b]
+check("skill group 3c", len(_pr_create) == 1 and "NUMS='" in _pr_create[0] and "BASE=$(" in _pr_create[0]
+      and "[ -n \"$TITLE_NUMS\" ]" in _pr_create[0],
+      "the gh pr create block must set NUMS and BASE itself (blocks do not share variables) and refuse an empty title list")
+check("skill group 4", '${PREFIX}land-${LO}-${HI}' in skill and '${PREFIX}land-${LO}"' in skill,
+      "single PR keeps land-<N>; a group gets land-<lowest>-<highest>")
 check("skill 5b", "## 0. Invocation precondition" in skill and "§1a" in skill,
       "land must state the never-auto-fire precondition in prose (§0), since the "
       "frontmatter flag no longer carries that intent")
 # Guard the two staff-review BLOCKERs so they can't regress green:
-check("skill 6", '[ -n "$HEADREF" ] && PAT=' in skill and 'HEADREF=$(gh pr view' in skill,
+check("skill 6", '[ -n "$HEADREF" ] && [ "$HEADREF" != "$BASE" ] && PAT=' in skill and 'HEADREF=$(gh pr view' in skill,
       "Step 2 discovery must assign HEADREF + guard the empty alternative (no `#N|` match-all)")
 check("skill 7", 'git show-ref --verify --quiet' in skill and "reusing existing branch" in skill,
       "Step 1b branch creation must be idempotent (reuse existing land branch on re-run)")

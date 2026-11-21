@@ -2,13 +2,14 @@
 name: land
 description: >
   Post-merge doc-currency reconciliation. Runs only AFTER a human merges a PR
-  (Claude can't merge, so this can't live inside /flow:ship). Reachable two ways:
-  the human types it, or /flow:retro §3 calls it — and /flow:retro is
-  itself human-invoked, so a human gate always sits above it. It must NEVER
-  auto-fire at the end of a loop; §0 states that precondition and §1a enforces it
-  mechanically by refusing any PR that is not already merged. It flips the merged
-  PR's item to "merged (#N)" across roadmap / plan / history and moves it to
-  "Recently shipped", then opens a small `docs: land #N` PR — never merges. Also
+  (Claude can't merge, so this can't live inside /flow:ship). Takes ONE PR number
+  or a GROUP of them (`/flow:land 151 153 154`) and reconciles the whole group in a
+  single docs PR. Reachable two ways: the human types it, or /flow:retro §3 calls
+  it. It must NEVER auto-fire at the end of a loop; §0 states that precondition and
+  §1a enforces it mechanically by refusing any PR that is not already merged. It
+  flips each merged PR's item to "merged (#N)" across roadmap / plan / history and
+  moves it to "Recently shipped", then opens ONE small `docs: land #N` PR — never
+  merges. Also
   re-runs the visual-history distill if a visual pass was blocked at ship and has
   since completed, clears any feedback-ID reservations the PR claimed, and checks
   CHANGELOG currency. Closes the "at PR → merged never reconciles" gap. Trigger:
@@ -17,9 +18,11 @@ disable-model-invocation: false
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash
 ---
 
-You are running the flow **post-merge** doc-currency reconciliation for a PR that
-a human has already merged. **You never merge anything** — you open a small
-reconciliation PR the human merges.
+You are running the flow **post-merge** doc-currency reconciliation for one PR — or a
+group of PRs — that a human has already merged. **You never merge anything** — you open
+ONE small reconciliation PR the human merges. A group is reconciled in a single pass and
+a single PR on purpose: N sequential `docs: land` PRs each edit the same roadmap/plan/
+history lines, so merging them in a row is N rebases of the same hunks.
 
 This skill exists because `/flow:ship` reconciles forward docs at **PR-open** time
 (Step 5a), but nothing flips the item to "merged (#N)" once the human merges — so
@@ -32,9 +35,11 @@ replaces that hand-edit.
 This skill opens a PR, so **it must never auto-fire at the end of a loop.** There
 are exactly two legitimate ways in:
 
-1. A human typed `/flow:land <PR#>`.
-2. `/flow:retro` §3 called you — and `/flow:retro` is itself
-   `disable-model-invocation: true`, so a human typed *that*.
+1. A human typed `/flow:land <PR#> [<PR#> …]`.
+2. `/flow:retro` §3 called you, passing the PR numbers it just confirmed merged.
+   `/flow:retro` is itself model-invocable (v1.69.0), but only for an explicit retro/
+   close-out request or a just-landed batch, and its own §2 merge gate has already
+   refused every unmerged PR before it reaches you.
 
 Anything else — you noticed a merge and decided to reconcile, a ship pipeline
 advanced into you, a loop iteration reached for you — is **not** a valid entry.
@@ -64,10 +69,15 @@ lives in those two gates, not in this paragraph.
 
 ## Argument
 
-`/flow:land <PR#>` — the merged PR number. If the user omits it, try the most
-recent merged PR for the current branch's lineage, but **confirm the number with
+`/flow:land <PR#> [<PR#> …]` — one merged PR number, or several. Every number must be
+merged (§1a checks each; one unmerged number refuses the whole call, since a half-landed
+group is the "docs claim what main doesn't have" failure). If the user omits it, try the
+most recent merged PR for the current branch's lineage, but **confirm the number with
 the user before editing anything** — landing the wrong PR corrupts the forward
 docs. If you can't resolve a number, stop and ask; never guess silently.
+
+Every Bash block below begins with `NUMS="<PR#> …"` — the space-separated list, one
+number for the ordinary case. Blocks do not share variables, so each re-declares it.
 
 ## 1. Pre-flight
 
@@ -95,7 +105,13 @@ fi
 closed-unmerged PR would write a lie. Verify first; fail loudly, edit nothing:
 
 ```sh
-N="<PR#>"   # the argument
+NUMS='<PR#> [<PR#> …]'   # the argument(s), space-separated
+# Iterate with while-read over a newline list — NOT `for N in $NUMS`: zsh does not word-split
+# an unquoted variable, so that form silently runs ONCE with the whole list as "N".
+LIST=$(printf '%s' "$NUMS" | tr -s ' ,\n' '\n')
+while read -r N; do
+[ -n "$N" ] || continue
+case "$N" in ''|*[!0-9]*) echo "⚠️ BLOCKER: '$N' is not a PR number. Nothing changed." >&2; exit 1 ;; esac
 STATE_JSON=$(gh pr view "$N" --json state,mergedAt,title,headRefName,mergeCommit,url,body 2>/dev/null)
 if [ -z "$STATE_JSON" ]; then
   echo "⚠️ BLOCKER: gh could not read PR #$N (wrong number, wrong repo, or no auth). Nothing changed." >&2
@@ -117,9 +133,12 @@ if [ "$STATE" != "MERGED" ] && [ -z "$MERGED_AT" ]; then
 fi
 echo "[land] PR #$N is MERGED (${MERGED_AT:-state=MERGED}). Title: $(printf '%s' "$STATE_JSON" | jq -r '.title')"
 echo "[land] branch=$(printf '%s' "$STATE_JSON" | jq -r '.headRefName')  mergeCommit=$(printf '%s' "$STATE_JSON" | jq -r '.mergeCommit.oid // "unknown" | .[0:9]')"
+done <<EOF
+$LIST
+EOF
 ```
 
-Carry `title`, `headRefName`, and the short `mergeCommit` forward — Step 2 matches
+Carry each PR's `title`, `headRefName`, and short `mergeCommit` forward — Step 2 matches
 on the PR number AND the branch name.
 
 ### 1a-coherence. Assert the merged PR did NOT carry the NOT-READY manifest (FB-0067 — BLOCKING)
@@ -135,9 +154,9 @@ legitimate:
 ```sh
 # Source the shared helper for path resolution to pr-coherence.py (single source of
 # truth — the exact fan-out contradiction FB-0010 warns against otherwise). We reuse
-# the ALREADY-FETCHED $STATE_JSON from Step 1a rather than the helper's own re-fetch —
-# a merged PR's body is immutable, so there's nothing new a re-fetch would learn, and
-# it saves a redundant API call.
+# a fetched `gh pr view` blob rather than the helper's own re-fetch — a merged PR's
+# body is immutable, so there's nothing new a re-fetch would learn. Blocks do not share
+# variables, so the loop below fetches each PR's blob once itself.
 VPB=""
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh" ]; then
   VPB="${CLAUDE_PLUGIN_ROOT}/skills/ship/lib/verify-pr-body.sh"
@@ -152,6 +171,11 @@ else
   PC="$(_flow_pr_coherence_py)"
   BODYFILE="$(mktemp 2>/dev/null || { echo "⚠️ WARN: mktemp failed — skipping coherence check rather than using a predictable temp path." >&2; true; })"
   if [ -n "$PC" ] && [ -n "$BODYFILE" ]; then
+   NUMS='<PR#> [<PR#> …]'   # the same list as 1a
+   LIST=$(printf '%s' "$NUMS" | tr -s ' ,\n' '\n')
+   while read -r N; do
+    [ -n "$N" ] || continue
+    STATE_JSON=$(gh pr view "$N" --json body 2>/dev/null)
     printf '%s' "$STATE_JSON" | jq -r '.body // ""' > "$BODYFILE"
     # A merged PR is never a draft → --is-draft false. A manifest present ⇒ coherence FAIL.
     if ! python3 "$PC" coherence --body-file "$BODYFILE" --is-draft false >/dev/null 2>&1; then
@@ -162,8 +186,11 @@ else
       rm -f "$BODYFILE"
       exit 1
     fi
+    echo "[land] coherence OK — merged PR #$N body carries no NOT-READY manifest."
+   done <<EOF
+$LIST
+EOF
     rm -f "$BODYFILE"
-    echo "[land] coherence OK — merged PR body carries no NOT-READY manifest."
   elif [ -z "$PC" ]; then
     echo "⚠️ WARN: pr-coherence.py not reachable via the sourced helper — coherence check skipped for this land run." >&2
   fi
@@ -180,10 +207,16 @@ Create the reconciliation branch from the up-to-date default branch (Step 6 comm
 here; Claude never pushes to `main` directly):
 
 ```sh
+NUMS='<PR#> [<PR#> …]'   # the same list as 1a
 BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
 [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null); [ -z "$BASE" ] && BASE=main
 PREFIX=$(jq -r '.branchPrefix // empty' flow.config.json 2>/dev/null)
-BR="${PREFIX}land-${N}"
+# One PR → land-<N> (unchanged). A group → land-<lowest>-<highest>: a LABEL, stable across a
+# re-run of the same group so the reuse-existing-branch path below stays idempotent.
+SORTED=$(printf '%s' "$NUMS" | tr -s ' ,\n' '\n' | sort -n)
+LO=$(printf '%s\n' "$SORTED" | head -1); HI=$(printf '%s\n' "$SORTED" | tail -1)
+if [ "$LO" = "$HI" ]; then BR="${PREFIX}land-${LO}"; else BR="${PREFIX}land-${LO}-${HI}"; fi
+N="$LO"   # used by the messages below
 
 # Clean-tree gate (BLOCKING) — the checkout below MUTATES the working tree, so it must never
 # run over someone else's work in progress. With the disable-model-invocation flag cleared
@@ -202,7 +235,7 @@ BR="${PREFIX}land-${N}"
 #    re-run after a partial land is safe. Blocking here would break both.
 if [ "$(git branch --show-current)" != "$BR" ] && [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
   echo "⚠️ BLOCKER: /flow:land switches branches, and the working tree has uncommitted changes." >&2
-  echo "   Nothing was touched. Commit or stash them, then re-run '/flow:land $N'." >&2
+  echo "   Nothing was touched. Commit or stash them, then re-run '/flow:land $NUMS'." >&2
   git status --short --untracked-files=no 2>/dev/null | head -20 >&2
   exit 1
 fi
@@ -222,15 +255,23 @@ Find what this PR was tracked as in the forward docs, so you flip the right line
 Search `roadmapPath` "Now" and `planPath` "Current Focus" / "Active Work Items" for
 a reference to **`#N`** or the **branch name** (`headRefName`):
 
-This block is self-contained — re-resolve `N` and the branch name inline (the
-skill's Bash blocks do NOT share variables across invocations):
+This block is self-contained — re-resolve the numbers and branch names inline (the
+skill's Bash blocks do NOT share variables across invocations). For a group, the pattern is
+the union of every PR's `#N` and head ref, so one sweep finds every line to flip:
 
 ```sh
-N="<PR#>"
-HEADREF=$(gh pr view "$N" --json headRefName --jq '.headRefName' 2>/dev/null)
+NUMS='<PR#> [<PR#> …]'   # the same list as 1a
 ROADMAP=$(jq -r '.roadmapPath // "dev-docs/roadmap.md"' flow.config.json 2>/dev/null); [ -z "$ROADMAP" ] && ROADMAP=dev-docs/roadmap.md
 PLAN=$(jq -r '.planPath // "dev-docs/plan.md"' flow.config.json 2>/dev/null); [ -z "$PLAN" ] && PLAN=dev-docs/plan.md
 HISTORY=$(jq -r '.historyPath // "dev-docs/history.md"' flow.config.json 2>/dev/null); [ -z "$HISTORY" ] && HISTORY=dev-docs/history.md
+PAT=""
+BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'); [ -z "$BASE" ] && BASE=main
+LIST=$(printf '%s' "$NUMS" | tr -s ' ,\n' '\n')
+while read -r N; do
+[ -n "$N" ] || continue
+# A FORK PR's head ref is chosen by an outside contributor and may be `main`, `e`, `docs` — a legal
+# name that, used as a grep -E substring, matches most lines of the docs. Fork heads are not used.
+HEADREF=$(gh pr view "$N" --json headRefName,isCrossRepository --jq 'select(.isCrossRepository | not) | .headRefName' 2>/dev/null)
 # Build the pattern WITHOUT an empty alternative: an unset $HEADREF must not turn
 # `#N\b|$HEADREF` into `#N\b|` (the trailing `|` matches EVERY line, which would
 # make the no-match WARN below unreachable — the FB-0010 silent-skip class).
@@ -249,7 +290,10 @@ case "$HEADREF" in
     [ -n "$HEADREF" ] && echo "[land] NOTE: head ref '$HEADREF' has regex-unsafe characters; matching on #$N only." >&2
     HEADREF="" ;;
 esac
-PAT="#${N}\b"; [ -n "$HEADREF" ] && PAT="${PAT}|${HEADREF}"
+PAT="${PAT:+${PAT}|}#${N}\b"; [ -n "$HEADREF" ] && [ "$HEADREF" != "$BASE" ] && PAT="${PAT}|(^|[^A-Za-z0-9._/-])${HEADREF}([^A-Za-z0-9._/-]|$)"
+done <<EOF
+$LIST
+EOF
 # `-r` (FB-0102): $HISTORY may be a DIRECTORY of one-file-per-entry fragments.
 # Plain `grep` on a directory emits "Is a directory" to stderr and contributes no
 # matches, so the history half of this sweep would silently drop out while the
@@ -259,7 +303,7 @@ MATCHES=$(grep -rnE "$PAT" "$ROADMAP" "$PLAN" "$HISTORY" 2>/dev/null)
 if [ -n "$MATCHES" ]; then
   printf '%s\n' "$MATCHES"
 else
-  echo "[land] WARN: no active-slot reference to #$N or branch '${HEADREF:-?}' in $ROADMAP / $PLAN / $HISTORY — reconciling CHANGELOG + version currency only; flip the item by hand if it lives under a non-standard heading." >&2
+  echo "[land] WARN: no active-slot reference to any of: $NUMS (or their branches) in $ROADMAP / $PLAN / $HISTORY — reconciling CHANGELOG + version currency only; flip the item by hand if it lives under a non-standard heading." >&2
 fi
 ```
 
@@ -289,10 +333,17 @@ the agent owns the wording):
 Do **not** rewrite narrative you can't ground in the merge — only the status of the
 item this PR shipped.
 
+**A group is one pass, not N.** Do the flips for every number in `NUMS` together: the
+"Recently shipped" line gets all of them at once (still trimmed to ~5 — a batch larger
+than that keeps the newest), and "▶ Next up" is refreshed once, after every item is
+flipped, not once per PR. Several PRs often touch one stacked item (a parent and its
+children): flip each PR's own line, don't merge two PRs' narratives into one claim.
+
 ## 4. CHANGELOG currency check
 
 The merged version should already carry a `## v<version>` entry (written at ship).
-Assert it; a missing entry is the FLOW-1 currency gap (it shipped uncaught once):
+For a group this checks the manifest's *current* version (the newest merge); an
+intermediate PR's version entry is not asserted separately. Assert it; a missing entry is the FLOW-1 currency gap (it shipped uncaught once):
 
 ```sh
 CHANGELOG=$(jq -r '.changelogPath // "CHANGELOG.md"' flow.config.json 2>/dev/null); [ -z "$CHANGELOG" ] && CHANGELOG=CHANGELOG.md
@@ -372,8 +423,19 @@ use the canonical `gh`-resilience fallback (see `/flow:ship` Step 7 § "gh
 resilience"), never `gh pr edit --body`:
 
 ```sh
-gh pr create --base "$BASE" --title "docs: land #${N} — post-merge currency" --body-file <bodyfile>
+NUMS='<PR#> [<PR#> …]'   # the same list as 1a (blocks do not share variables)
+BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'); [ -z "$BASE" ] && BASE=$(jq -r '.defaultBranch // "main"' flow.config.json 2>/dev/null); [ -z "$BASE" ] && BASE=main
+# Title names EVERY number (retro's already-landed search keys on it); N above is only the lowest.
+TITLE_NUMS=$(printf '%s' "$NUMS" | tr -s ' ,\n' '\n' | sort -n | sed 's/^/#/' | tr '\n' ' ' | sed 's/ $//')
+# An empty list would title the PR `docs: land  — …`, which retro can never match to any PR: stop instead.
+[ -n "$TITLE_NUMS" ] || { echo "⚠️ BLOCKER: no PR numbers to put in the docs PR title — refusing to open an unmatchable PR." >&2; exit 1; }
+gh pr create --base "$BASE" --title "docs: land ${TITLE_NUMS} — post-merge currency" --body-file <bodyfile>
 ```
+
+For a group the title carries **every** number — `docs: land #151 #153 #154 — post-merge
+currency` — because `/flow:retro` §3 finds an existing landing PR by searching the title
+for each number; a title naming only the lowest would make the others look un-landed on a
+re-run, and a second docs PR would open for them. The commit subject follows the same form.
 
 Body: a one-paragraph summary of what was reconciled + a checklist of the steps that
 ran vs skipped-with-reason (mirror the `/flow:ship` honesty bar). End with the
@@ -382,7 +444,7 @@ ran vs skipped-with-reason (mirror the `/flow:ship` honesty bar). End with the
 ## 8. Hand off
 
 Output the reconciliation PR URL + a one-line summary (`landed #N: <item> → merged;
-<n> docs reconciled`). **Do not merge.** The human merges the small currency PR.
+<n> docs reconciled`; for a group, one line per PR). **Do not merge.** The human merges the small currency PR.
 
 ## Gotchas
 
@@ -396,6 +458,9 @@ Output the reconciliation PR URL + a one-line summary (`landed #N: <item> → me
 - **Never `gh pr edit --body` for a body *update*.** Use the canonical `gh`-resilience
   fallback (`/flow:ship` Step 7 § "gh resilience": REST `gh api -X PATCH` + draft-toggle
   mutations); `gh pr create --body-file` for the initial open is fine.
+- **A group lands whole or not at all.** §1a refuses the call if any number is unmerged,
+  rather than landing the merged ones: the caller (`/flow:retro`) has already filtered to
+  merged PRs, so a refusal here means the list is wrong, not that the group is partly done.
 - **Idempotent by design.** Re-running `/flow:land #N` after a partial run must not
   error: already-flipped lines stay flipped, already-cleared numbers are no-ops, an
   already-distilled visual decision is skipped.
